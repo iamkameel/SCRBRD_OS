@@ -91,15 +91,24 @@ const TYPE_FLOOR_CEILING = {
   // headings, roster list and tab strip (ProfilesView.jsx) — brought onto the
   // floor here, same as dashboard's and Match Centre's own labels were.
   // Analytics is left at 18, matching matchcentre/matchview exactly: the
-  // shell (Sidebar, TopBar) and nothing of the tab's own. Career is left at
+  // shell (Sidebar, TopBar) and nothing of the tab's own. Career was left at
   // 30 — the same 18-item shell, plus 12 the fix above could not plainly
   // reach: eight roster-row avatar initials (ui/primitives.jsx's Avatar,
   // sized off the avatar itself) and four hero badges (that file's own
   // Badge, 9px by default) — both shared by some 28 other screens, so
-  // lowering either's own floor is a design-system change, not this one.
+  // lowering either's own floor was left as the design-system change, not
+  // that one.
+  //
+  // That change: Avatar's initials no longer shrink under 12px — below a
+  // ~34px avatar the circle grows to fit the floor instead — and Badge moved
+  // its 9px onto the same floor as scorer/ui.jsx's own Badge already drew at
+  // (padding grew with it, not a one-off override). Every one of the 28
+  // screens these two primitives share inherits it, and Career — the one
+  // screen this walk had already found sub-floor instances on — drops
+  // straight to the 18-item shell, matching Analytics.
   analytics:   18,
-  career:      30,
-};                   // 80 in all
+  career:      18,
+};                   // 108 in all
 
 /**
  * Things tapped under 44px, on the pad (§3.5, §3.8: "no tappable element
@@ -138,16 +147,24 @@ const CONTRAST_CEILING = {
   // padOver (step 3b): the chips' figures, black or white on the chip's own
   // fill, and the day sheet's board with its Tier 2 line, are in these.
   //
-  // SCRBRD-102 (2026-09-28): the Analytics tab's Bowling Economy figures,
-  // in daylight only — four amber Badges (an economy of 6–9, scorer/ui.jsx's
-  // Badge) at 4.06:1, short of 4.5. The Badge's ink is chosen for the full
-  // colour (textOn(color)) but drawn on a ~12%-opacity tint of it
-  // (background:${color}1e), the same "figure on a tint of itself" pattern
-  // padOver's own entry above names — reported here rather than re-tuned,
-  // since Badge is one shared primitive behind some 30 screens this walk has
-  // not audited. Career's own reads are clean in both themes.
+  // SCRBRD-102 (2026-09-28) found the Analytics tab's Bowling Economy
+  // figures, in daylight only — four amber Badges (an economy of 6–9,
+  // scorer/ui.jsx's Badge) at 4.06:1, short of 4.5. The Badge's ink was
+  // chosen for the full colour (textOn(color)) but drawn on a ~12%-opacity
+  // tint of it (background:${color}1e), the same "figure on a tint of
+  // itself" pattern padOver's own entry above names.
+  //
+  // Fixed at the token level rather than re-tuned per call site: warning now
+  // has a readable half, semantic.warningText (design/tokens.js), the same
+  // pairing critical and fielding already had, and textOn(D.amber) returns it.
+  // Floodlit's is identical to warning itself (already 7.14:1 on the Badge's
+  // own tint — nothing there needed to move); Daylight's is one shade darker
+  // (5.74:1 on the surfaces, 4.92:1 on the Badge's own tint), still amber and
+  // still clearly apart from critical's red and positive's green. Every
+  // caller of textOn(D.amber) — Badge in both ui/primitives.jsx and
+  // scorer/ui.jsx, and the handful of direct reads elsewhere — inherits it.
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0 },
-  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 4, career: 0 },
+  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0 },
 };
 
 /**
