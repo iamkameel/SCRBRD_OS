@@ -492,6 +492,10 @@ const BUNDLES = {
   competitionadmin: [
     "fixture.read", "fixture.update", "fixture.cancel", "team.read", "news.read",
     "competition.read", "competition.manage", "officiating.assign",
+    // The league's playing conditions (SCRBRD-114, db/61). Held here alone
+    // for the pilot (D8): the standings will name who adjusted what, and a
+    // union that wants the ladder and the log in two hands assigns two.
+    "competition.conditions.manage",
     // Whoever appoints officials across a league is the one who keeps the
     // panel: accreditation, grade and whether somebody still stands at all.
     "officiating.registry.manage",

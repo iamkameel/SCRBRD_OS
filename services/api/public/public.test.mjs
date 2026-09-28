@@ -259,6 +259,8 @@ const fakePool = {
         away_team: "1XI", away_on_platform: true, sport: "cricket", format: "T10", overs: 10, starts_at: "2026-09-26T08:00:00Z",
         ground: "Gordon Sherwood Oval", status: seen.status, toss_won_by: "home", toss_decision: "bat", home_published: true,
         away_published: true, scores: [{ innings: 0, runs: 25, wickets: 2, balls: 12 }], served_on: ON }] : [] };
+      // The match's frozen playing conditions (SCRBRD-114, db/61): this one has none.
+      if (/public_match_conditions/.test(text)) return { rows: [] };
       if (/public_match_people/.test(text)) return { rows: served ? PEOPLE : [] };
       if (/public_match_log/.test(text)) return { rows: served ? ROWS : [] };
       if (/public_shot_sectors/.test(text)) return { rows: served ? [{ innings: 0, sector: 9, shots: 1, runs: 4 }] : [] };

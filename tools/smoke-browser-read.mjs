@@ -855,7 +855,9 @@ try {
     ok("...reflected in the preview's own words, not left showing the empty placeholder", !(await preview.innerText()).includes("—"));
 
     ok("the format defaults sensibly and adjusts the overs together", await c.page.locator('input[type="number"]').first().inputValue() === "20");
-    await c.page.locator("select").nth(3).selectOption("One-Day");
+    // By its name, not its place: the form now offers the competitions the
+    // home side entered (SCRBRD-114) above the format, when it has any.
+    await c.page.locator('[data-testid="fixture-format"]').selectOption("One-Day");
     await c.page.waitForTimeout(300);
     ok("...changing it changes the overs, live, without a submit", await c.page.locator('input[type="number"]').first().inputValue() === "50");
 

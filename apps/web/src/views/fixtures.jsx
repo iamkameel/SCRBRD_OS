@@ -39,6 +39,7 @@ const FIXTURE_REFUSAL = {
   no_such_school_ground_or_sport: "That school, ground or sport could not be found.",
   nothing_to_change: "Nothing was changed.",
   not_permitted: "You do not hold the authority to arrange or amend a fixture for that school and team.",
+  competition_invalid: "That competition could not be read.",
 };
 
 /** A CHECK violation's own message, read for the one case that already states
@@ -46,6 +47,9 @@ const FIXTURE_REFUSAL = {
  *  and is not shown as though it were the product's. */
 function invalidFixtureSentence(detail) {
   if (typeof detail === "string" && /is not switched on for this school/.test(detail)) return detail;
+  // db/61 (SCRBRD-114): a side that did not enter the competition, or a
+  // scored fixture's competition — both said in full sentences there.
+  if (typeof detail === "string" && /has not entered that competition|does not change once it has been scored/.test(detail)) return detail;
   return "That fixture breaks one of the game's own rules — check that the two sides differ and, for cricket, that a format is set.";
 }
 
@@ -85,6 +89,37 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
   const [overs, setOvers] = useState("20");
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
+  // The competition it is played under (SCRBRD-114), or a friendly: only
+  // those the home side entered are offered — db/61 refuses any other — and
+  // choosing one pre-fills the format and overs from its playing conditions
+  // in force on the fixture's day. The fixture still wins: both stay
+  // editable, because they are what the umpires agree on the day.
+  const [competitions, setCompetitions] = useState([]);
+  const [competitionId, setCompetitionId] = useState("");
+  const [prefilled, setPrefilled] = useState(null);
+
+  useEffect(() => { let off = false; (async () => {
+    setCompetitions([]); setCompetitionId("");
+    if (!schoolId || !teamCode || await mode() !== "live") return;
+    const r = await api(`/api/competitions/entered?schoolId=${encodeURIComponent(schoolId)}&teamCode=${encodeURIComponent(teamCode)}`).catch(() => null);
+    if (!off && r?.rows) setCompetitions(r.rows);
+  })(); return () => { off = true; }; }, [schoolId, teamCode]);
+
+  useEffect(() => { let off = false; (async () => {
+    setPrefilled(null);
+    if (!competitionId) return;
+    const on = date || dateStr(today);
+    const r = await api(`/api/competitions/${competitionId}/playing-conditions/preview?on=${on}`).catch(() => null);
+    if (off || !r) return;
+    const f = r.prefill?.format;
+    if (f && FORMATS[f] != null) { setFormat(f); setOvers(String(r.prefill?.overs ?? FORMATS[f])); }
+    else if (r.prefill?.overs) setOvers(String(r.prefill.overs));
+    setPrefilled(r.set ? { title: r.set.title, version: r.set.version, format: f ?? null, overs: r.prefill?.overs ?? null }
+                       : { title: null, version: null, format: f ?? null, overs: r.prefill?.overs ?? null });
+  })(); return () => { off = true; };
+    // FORMATS is a constant of this render; the pre-fill follows the competition and the day.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [competitionId, date]);
 
   // The away-school list is the same one onboarding offers a stranger — a
   // public fact, nothing more — fetched once, only if this mode is ever used.
@@ -123,6 +158,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
         groundId: groundId || null,
         startsAt: new Date(`${date}T${time}`).toISOString(),
         format, overs: Number(overs),
+        ...(competitionId ? { competitionId } : {}),
       }});
       onCreated();
     } catch (e) { setSaid(fixtureRefusal(e)); }
@@ -199,8 +235,19 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
           {clash&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.amber,marginTop:"-8px",marginBottom:"12px"}}>
             <Icon name="triangle-alert"/> Another fixture is already down for {ground.name} that day.</div>}
 
+          {competitions.length>0&&(
+            <Select label="Competition" value={competitionId} onChange={setCompetitionId} data-testid="fixture-competition"
+              options={[{value:"",label:"A friendly"}, ...competitions.map(c=>({value:c.id,label:c.name}))]}/>
+          )}
+          {prefilled&&(
+            <div data-testid="fixture-prefill" style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,marginTop:"-8px",marginBottom:"12px"}}>
+              {prefilled.title
+                ? `Format and overs from ${prefilled.title} v${prefilled.version}, in force that day. Change them if the day's match differs.`
+                : "No playing conditions are published for that day yet: the platform's defaults apply."}
+            </div>
+          )}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
-            <Select label="Format" value={format} onChange={setFmt} options={Object.keys(FORMATS)}/>
+            <Select label="Format" value={format} onChange={setFmt} options={Object.keys(FORMATS)} data-testid="fixture-format"/>
             <Input label="Overs" value={overs} onChange={setOvers} type="number"/>
           </div>
         </div>

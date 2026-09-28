@@ -72,7 +72,15 @@ export const REJECT = {
   // for the incoming scorer to verify), not waiting out a lease.
   HANDOVER_PENDING:"handover_pending",
   VERIFYING:       "verifying",
+  // The incoming device folded the log under other playing conditions than
+  // the match's frozen document (SCRBRD-114). Asked before any figure: a
+  // board compared under the wrong rules proves nothing either way.
+  CONDITIONS_CHANGED: "conditions_changed",
 };
+
+/** The words for a CONDITIONS_CHANGED refusal, as the route says them. */
+export const CONDITIONS_CHANGED_TEXT =
+  "This match's playing conditions changed since the pad opened it. Reopen the match to read them, then check the scoreboard again.";
 
 // ─────────────────────────────────────────────────────────
 //  Server-side match session (authoritative)
@@ -83,11 +91,14 @@ export class MatchSession {
    * @param {string} o.matchId
    * @param {(role:string)=>boolean} o.canScore  RBAC capability check
    * @param {()=>number} [o.now]                 injectable clock (ms)
+   * @param {string | null} [o.conditionsHash]   the match's frozen playing conditions' hash
+   *   (SCRBRD-114, match_conditions.doc_hash), or null: none
    */
-  constructor({ matchId, canScore, now = () => Date.now() }) {
+  constructor({ matchId, canScore, now = () => Date.now(), conditionsHash = null }) {
     this.matchId = matchId;
     this.canScore = canScore;
     this.now = now;
+    this.conditionsHash = conditionsHash;
 
     this.state   = SESSION.IDLE;
     this.epoch   = 0;        // increments on every token transfer/claim
@@ -237,18 +248,29 @@ export class MatchSession {
     this.state = SESSION.VERIFYING;
     this.pendingHandover = { ...ph, claimant: { scorerId, deviceId, name } };
     this._log("handover_claimed", { scorerId, deviceId });
-    return { ok: true, events: this.events.slice(), expect: this.replay() };
+    return { ok: true, events: this.events.slice(), expect: this.replay(), conditionsHash: this.conditionsHash };
   }
 
   /**
    * Step 3 — incoming scorer confirms the on-field state against the
    * physical scoreboard. Only on a match does the token transfer.
-   * @param {{ deviceId: string, confirm: Confirmation }} args
+   *
+   * The playing conditions are compared first (SCRBRD-114): `conditionsHash`
+   * is the hash of the document the incoming device folded the log under.
+   * When the match has one and the device's differs, the device was
+   * folding under other rules, and that is refused in words before any
+   * figure is compared; nothing moves. A device that sends none (undefined)
+   * is not asked, as a build from before the check.
+   * @param {{ deviceId: string, confirm: Confirmation, conditionsHash?: string | null }} args
    */
-  verifyAndTakeOver({ deviceId, confirm }) {
+  verifyAndTakeOver({ deviceId, confirm, conditionsHash }) {
     if (this.state !== SESSION.VERIFYING) return { ok: false, reason: REJECT.NOT_PENDING };
     const claimant = this.pendingHandover?.claimant;
     if (claimant?.deviceId !== deviceId) return { ok: false, reason: REJECT.NOT_TOKEN_HOLDER };
+    if (conditionsHash !== undefined && this.conditionsHash != null && conditionsHash !== this.conditionsHash) {
+      this._log("handover_conditions_changed", { expected: this.conditionsHash, got: conditionsHash });
+      return { ok: false, reason: REJECT.CONDITIONS_CHANGED, text: CONDITIONS_CHANGED_TEXT };
+    }
 
     const truth = this.replay();
     const diff = diffConfirmation(truth, confirm);

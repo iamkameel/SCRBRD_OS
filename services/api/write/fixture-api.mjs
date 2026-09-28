@@ -38,6 +38,7 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
 const STATUS = ["scheduled", "live", "complete", "abandoned"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function fixtureRoutes({ pool, secret }) {
@@ -72,9 +73,25 @@ export function fixtureRoutes({ pool, secret }) {
     return { school: null, team: null, label: String(b.opponent).trim().slice(0, 120) };
   };
 
+  /**
+   * The competition a fixture is played under (SCRBRD-114): a uuid, or null
+   * for a friendly; undefined when the request does not say. Whether its
+   * sides entered it is db/61's trigger (match_competition_entered()), whose
+   * words come back as invalid_fixture.
+   * @param {unknown} v
+   * @returns {string | null | undefined}
+   */
+  const competitionOf = (v) => {
+    if (v === undefined) return undefined;
+    if (v === null || v === "") return null;
+    if (typeof v !== "string" || !UUID.test(v)) throw err("competition_invalid");
+    return v;
+  };
+
   return {
     // POST /api/fixtures { schoolId, teamCode, startsAt, sport?, groundId?,
-    //                      format?, overs?, opponent? | awaySchoolId+awayTeamCode }
+    //                      format?, overs?, opponent? | awaySchoolId+awayTeamCode,
+    //                      competitionId? }
     create: handle(async (req) => {
       const b = req.body || {};
       if (!b.schoolId) throw err("school_required");
@@ -102,22 +119,25 @@ export function fixtureRoutes({ pool, secret }) {
       }
 
       const away = awaySide(b);
+      const competition = competitionOf(b.competitionId);
 
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rows } = await client.query(
           `insert into match (school_id, team_code, away_school_id, away_team_code,
-                              opponent, ground_id, starts_at, sport, format, overs, status)
-           values ($1, btrim($2), $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                              opponent, ground_id, starts_at, sport, format, overs, status, competition_id)
+           values ($1, btrim($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            returning id, school_id, team_code, away_school_id, away_team_code,
-                     opponent, starts_at, sport, format, overs, status`,
+                     opponent, starts_at, sport, format, overs, status, competition_id`,
           [b.schoolId, b.teamCode, away.school, away.team, away.label,
-           b.groundId ?? null, when.toISOString(), sport, format, overs, status]);
+           b.groundId ?? null, when.toISOString(), sport, format, overs, status, competition ?? null]);
         if (!rows.length) throw err("not_permitted", 403);
         const m = rows[0];
         return { id: m.id, school: m.school_id, team: m.team_code,
                  awaySchool: m.away_school_id, awayTeam: m.away_team_code,
                  opponent: m.opponent, startsAt: m.starts_at, sport: m.sport,
                  format: m.format, overs: m.overs, status: m.status,
+                 // The competition it is played under, or null: a friendly (SCRBRD-114).
+                 competitionId: m.competition_id ?? null,
                  // Said back explicitly, because it is the thing a sportsmaster
                  // arranging a derby wants to know: is the other school going
                  // to see this, or am I keeping my own copy?
@@ -136,24 +156,29 @@ export function fixtureRoutes({ pool, secret }) {
       const when = b.startsAt == null ? null : new Date(b.startsAt);
       if (when && Number.isNaN(when.getTime())) throw err("starts_at_invalid");
       if (b.status != null && !STATUS.includes(b.status)) throw err("status_invalid");
-      if (when === null && b.groundId === undefined && b.status == null) throw err("nothing_to_change");
+      // The competition it is played under (SCRBRD-114): a correction before
+      // the first ball; db/61 refuses it once the match is scored.
+      const competition = competitionOf(b.competitionId);
+      if (when === null && b.groundId === undefined && b.status == null && competition === undefined) throw err("nothing_to_change");
 
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rows } = await client.query(
           `update match
               set starts_at = coalesce($2::timestamptz, starts_at),
                   ground_id = case when $3::boolean then $4::uuid else ground_id end,
-                  status    = coalesce($5, status)
+                  status    = coalesce($5, status),
+                  competition_id = case when $6::boolean then $7::uuid else competition_id end
             where id = $1
-           returning id, starts_at, ground_id, status`,
+           returning id, starts_at, ground_id, status, competition_id`,
           [req.params.id, when ? when.toISOString() : null,
-           b.groundId !== undefined, b.groundId ?? null, b.status ?? null]);
+           b.groundId !== undefined, b.groundId ?? null, b.status ?? null,
+           competition !== undefined, competition ?? null]);
         // No row is either "no such fixture" or "not yours to move", and the
         // API must not distinguish them: telling somebody a fixture exists at a
         // school they have no assignment at is the disclosure.
         if (!rows.length) throw err("not_permitted", 403);
         return { id: rows[0].id, startsAt: rows[0].starts_at,
-                 ground: rows[0].ground_id, status: rows[0].status };
+                 ground: rows[0].ground_id, status: rows[0].status, competitionId: rows[0].competition_id ?? null };
       });
     }),
   };

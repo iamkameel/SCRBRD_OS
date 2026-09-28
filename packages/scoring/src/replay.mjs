@@ -37,7 +37,7 @@ import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOn
 import { NB_RUNS, runsToBowler } from "./events.mjs";
 import { countsInOver, FACES_NEXT } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
-import { freeHitsApply } from "./format.mjs";
+import { conditionsOf, freeHit, oversPerInnings } from "./conditions.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -174,6 +174,12 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {boolean} freeHits      whether a no-ball gives a free hit in this match:
  *   its format's answer (format.mjs, SCRBRD-113) — false in a declaration or
  *   timed match, true in every other and in one whose format is not known
+ * @property {Readonly<Record<string, unknown>>} conditions  the match's play conditions the
+ *   fold was told (FoldContext.conditions, SCRBRD-114), or {} when it was told none:
+ *   the same on every innings of the match; what rulesOf() hands back
+ * @property {string | null} conditionsHash  match_conditions.doc_hash of the document
+ *   the fold was told (computed in SQL, carried here), or null: no document. The
+ *   handover check compares it with the server's before any figure
  * @property {boolean} penaltyWin    4th Edition, a chase: this innings had
  *   been completed short of its target, and an award of penalty runs to it
  *   then made its total enough (Law 16.7). The result reads "by penalty runs"
@@ -193,6 +199,14 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   no-ball gives a free hit (format.mjs, freeHitsApply()). Not given — the
  *   pad's own match, a caller that does not hold the fixture — a free hit
  *   after every no-ball, as before
+ * @property {Readonly<Record<string, unknown>> | null} [conditions]  the match's play
+ *   conditions (SCRBRD-114): match_conditions.doc.play, as
+ *   match_playing_conditions() gives them (db/61), or the pad's copy from the
+ *   same read. Absent — the pad's own match, a caller without the fixture,
+ *   every match before SCRBRD-114 — every reader falls back to today's rule
+ *   (conditions.mjs: the format's free hit, the innings_start's overs)
+ * @property {string | null} [conditionsHash]  that document's hash
+ *   (match_conditions.doc_hash), stamped on every innings as inn.conditionsHash
  */
 
 /**
@@ -206,7 +220,14 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
 export function rulesOf(innings) {
   const inn = (innings ?? []).find((x) => x != null);
   if (!inn) return {};
-  return { edition: inn.lawsEdition, ...(inn.freeHits === false ? { format: "declaration" } : {}) };
+  // The conditions ride along (SCRBRD-114) so a second fold reads the same
+  // free hit and overs the first did; with none, exactly the context it was.
+  const told = inn.conditions != null && Object.keys(inn.conditions).length > 0;
+  return {
+    edition: inn.lawsEdition,
+    ...(inn.freeHits === false ? { format: "declaration" } : {}),
+    ...(told ? { conditions: inn.conditions, conditionsHash: inn.conditionsHash ?? null } : {}),
+  };
 }
 
 /**
@@ -339,8 +360,14 @@ function inningsFolder(ctx = {}, carried = 0) {
     lawsEdition: ctx.edition === LAWS_EDITION.THIRD ? LAWS_EDITION.THIRD : LAWS_EDITION.FOURTH,
     penaltyWin: false,
     // A free hit after a no-ball is a limited-overs playing condition, not a
-    // Law: the match's format decides it (format.mjs, SCRBRD-113).
-    freeHits: freeHitsApply(ctx.format),
+    // Law: the match's format decides it (format.mjs, SCRBRD-113) — or, where
+    // the match has a conditions document, its `format.free_hit` (SCRBRD-114,
+    // conditions.mjs). No document is the format's answer, as before.
+    freeHits: freeHit(conditionsOf(ctx), ctx.format),
+    // The document the fold was told, and its hash (SCRBRD-114): the same on
+    // every innings; {} and null when there is none.
+    conditions: conditionsOf(ctx),
+    conditionsHash: typeof ctx.conditionsHash === "string" ? ctx.conditionsHash : null,
   };
 
   // Name resolution comes from the squads carried on innings_start, so a
@@ -509,7 +536,10 @@ function inningsFolder(ctx = {}, carried = 0) {
           bowlingTeamKey: ev.bowlingTeamKey ?? ev.bowlingTeam,
           squad: ev.squad ?? [], bowlingSquad: ev.bowlingSquad ?? [],
           twelfthMan: ev.twelfthMan ?? null,
-          overs: ev.overs ?? 20, target: ev.target ?? null,
+          // The innings_start's overs, as always; only one that states none
+          // takes the conditions' figure before the 20 it always fell back
+          // to (conditions.mjs oversPerInnings(), SCRBRD-114).
+          overs: oversPerInnings(conditionsOf(ctx), ev), target: ev.target ?? null,
         });
         targetTyped = false;
         if (ctx.flagFor) inn.teamFlag = ctx.flagFor(inn.teamKey) ?? "🏏";

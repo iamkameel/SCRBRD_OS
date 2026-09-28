@@ -1305,6 +1305,96 @@ CREATE OR REPLACE FUNCTION _v60_ewma(p uuid, OUT acute numeric, OUT chronic nume
   SELECT a, c FROM ew WHERE k = 89
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/61 (section 39). Playing conditions per competition, phase 1
+-- (SCRBRD-114). A festival Hilton organises (Hilton 1XI entered), and five
+-- fixtures in it or beside it, dated from the South African today: a T20 on
+-- day +3, a One-Day Declaration on day +7, a T20 on day +8, a Two-Day
+-- friendly on day +3, and a T20 friendly scored "before db/61" — a no-ball
+-- then a bowled, and no document — for the seed-wide comparison to be able
+-- to go red. Returns the ids, by name.
+CREATE OR REPLACE FUNCTION _seed_61() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  c uuid; ids jsonb := '{}'; m uuid; r record;
+BEGIN
+  INSERT INTO competition (school_id, name, comp_type, format, age_group, level)
+  VALUES (HIL, 'Verify 061 Festival', 'festival', 'T20', '1XI', 'school') RETURNING id INTO c;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, HIL, '1XI', 'Hilton 1st XI');
+  ids := ids || jsonb_build_object('c', c);
+  FOR r IN SELECT * FROM (VALUES
+      ('t20',  c,    3, 'T20', 20::smallint),
+      ('decl', c,    7, 'One-Day Declaration', 100::smallint),
+      ('late', c,    8, 'T20', 20::smallint),
+      ('fr',   NULL, 3, 'Two-Day', 80::smallint),
+      ('old',  NULL, -9, 'T20', 20::smallint)) AS v(k, comp, days, fmt, ov)
+  LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+    VALUES (HIL, '1XI', 'Verify 061 ' || r.k, ((sa_today() + r.days)::timestamp + interval '10 hours') AT TIME ZONE 'Africa/Johannesburg',
+            'cricket', r.fmt, r.ov, CASE WHEN r.k = 'old' THEN 'complete' ELSE 'scheduled' END, r.comp)
+    RETURNING id INTO m;
+    ids := ids || jsonb_build_object(r.k, m);
+  END LOOP;
+  PERFORM _log_61((ids->>'old')::uuid);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A no-ball, then the striker bowled, written as the owner (as db/54's proof
+-- writes): the two deliveries every free-hit question turns on.
+CREATE OR REPLACE FUNCTION _log_61(p_match uuid) RETURNS void AS $$
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, ball_type, value, striker_id, non_striker_id, bowler_id, dismissal, payload)
+  SELECT p_match, '11111111-1111-1111-1111-111111111111', x.k, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-061',
+         'v61:' || p_match || ':' || x.k, x.k, now(), 'ball', x.bt, 0,
+         'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+         'aaaaaaaa-0000-0000-0000-000000000003', x.dis, '{}'::jsonb
+    FROM (VALUES (1, 'Nb', NULL), (2, 'W', 'bowled')) AS x(k, bt, dis)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- An owner's statement, for the claims that are about the schema itself (a
+-- CHECK, a trigger) and not about who may reach it: the SQLSTATE, or 'ok'.
+CREATE OR REPLACE FUNCTION _owner_61(p_sql text) RETURNS text AS $$
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'ok';
+EXCEPTION WHEN others THEN RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every figure the SQL readers keep about every scored innings, as one
+-- string: the live score, the handover's count, the balls each bowler's
+-- overs hold, and each delivery's free hit. Read as the owner: the claim is
+-- about the whole log.
+CREATE OR REPLACE FUNCTION _figures_61() RETURNS text AS $$
+  SELECT string_agg(format('%s/%s %s %s %s %s', l.match_id, l.innings, row(l.runs, l.wickets, l.legal_balls)::text,
+                           (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(l.match_id, l.innings::smallint) f),
+                           (SELECT sum(o.legal_balls) FROM bowler_over o WHERE o.match_id = l.match_id AND o.innings = l.innings),
+                           (SELECT count(*) FILTER (WHERE ball_on_free_hit(b.match_id, b.innings, b.seq)) FROM ball_event b
+                             WHERE b.match_id = l.match_id AND b.innings = l.innings)), ' ' ORDER BY l.match_id, l.innings)
+    FROM match_live_score l
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Give every scored match with no document one (p_mode 'resolved': what the
+-- resolver would have fixed; 'flipped': the other free hit), or take those
+-- rows away again ('none'). The rows it writes are marked (fixed_by NULL,
+-- sources {"verify": 61}) so 'none' removes exactly them.
+CREATE OR REPLACE FUNCTION _seed_rows_61(p_mode text) RETURNS integer AS $$
+DECLARE n integer := 0; r record; d jsonb;
+BEGIN
+  DELETE FROM match_conditions WHERE sources = '{"verify": 61}'::jsonb;
+  IF p_mode = 'none' THEN RETURN 0; END IF;
+  FOR r IN SELECT m.id, m.format FROM match m
+            WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id)
+              AND NOT EXISTS (SELECT 1 FROM match_conditions c WHERE c.match_id = m.id) LOOP
+    SELECT c.doc INTO d FROM match_conditions_compute(r.id) c;
+    IF p_mode = 'flipped' THEN
+      d := jsonb_set(d, '{play,format.free_hit}', to_jsonb(NOT free_hits_apply(r.format)));
+    END IF;
+    INSERT INTO match_conditions (match_id, doc, sources, doc_hash) VALUES (r.id, d, '{"verify": 61}', '');
+    n := n + 1;
+  END LOOP;
+  RETURN n;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -5601,7 +5691,13 @@ BEGIN
        AND (p.prosrc LIKE '%''fixture.read''%' OR p.prosrc LIKE '%''scoring.edit''%' OR p.prosrc LIKE '%''scoring.start''%');
     -- match_fold_context (db/54): the fixture's start and format, the two
     -- facts the fold is told, for the credential's own match only.
-    PERFORM _assert(detail = 'duty_status,duty_suspended,match_fold_context,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
+    -- match_conditions_fix, match_conditions_resolve, match_playing_conditions
+    -- (db/61, SCRBRD-114): the playing conditions the fold is told, read for
+    -- the credential's own match (fixture.read), and fixed on its first event
+    -- by the append the credential already makes (scoring.edit) — a league's
+    -- published figures, nothing about a person, and no other match's.
+    PERFORM _assert(detail = 'duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
+                             || 'match_playing_conditions,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
@@ -7354,6 +7450,277 @@ BEGIN
     PERFORM _assert(_v60_due(P_T) = (current_date + interval '12 months')::date,
       format('db/60 (retention): due %s, expected twelve months from today', _v60_due(P_T)));
     PERFORM _assert(_v60_due(P_B) IS NULL, 'db/60 (retention): a boy with no consent recorded has a due date');
+  END;
+
+  -- ── 39. Playing conditions per competition, phase 1 (SCRBRD-114, db/61) ──
+  -- The design's phase 1 "proves" (docs/design/SCRBRD-114_playing_conditions.md
+  -- §9), on a festival Hilton organises and five fixtures (_seed_61()). The
+  -- JavaScript half is packages/scoring/test/conditions.test.mjs, which pins
+  -- the same catalogue and parity strings; the API half is
+  -- tools/smoke-playing-conditions.mjs (the write path and the pad's
+  -- credential fixing the document, the handover's hash).
+  --
+  -- Each labelled assertion was falsified once — the thing it guards broken
+  -- in db/61, the database rebuilt and this file run — and went red (three
+  -- at db/61's own proof first, which runs before this file can):
+  --   (catalogue)   a catalogue row's readers changed in db/61 and not in conditions.mjs
+  --   (deny)        the CHECK's deny-list taken off the key (db/61's proof first)
+  --   (immutable)   condition_value_guard() not asking the version's status
+  --   (retroactive) condition_set_publish() comparing < sa_today() for <=
+  --   (support)     condition_set_publish() without its support check
+  --   (scorer)      condition_set_read admitting any signed-in reader
+  --   (entrant)     match_competition_entered() not asking for the home side
+  --   (fix)         match_conditions_fix() not refusing a scored match
+  --   (override)    match_condition_override_set() not asking for a row: the
+  --                 override table's own trigger refused it, the second wall
+  --   (frozen)      match_conditions_guard() not comparing the play part (db/61's proof first)
+  --   (parity)      match_free_hits_apply() back to db/54's (db/61's proof first)
+  --   (seed)        _seed_rows_61('resolved') writing the other free hit
+  DECLARE
+    ids jsonb;
+    C uuid; M_T20 uuid; M_DECL uuid; M_LATE uuid; M_FR uuid; M_OLD uuid;
+    V1 uuid; V2 uuid; VX uuid;
+    n bigint;
+    got text; f0 text; f1 text; f2 text;
+    h1 text; h2 text;
+    pc record;
+    v_ver smallint;
+    t text;
+    CATALOGUE text :=
+         'format.kind|play|enum|-|limited,declaration,timed|-|-|pad,fold,laws,sql; '
+      || 'format.overs_per_innings|play|int|overs|-|-|-|pad,fold,sql,table; '
+      || 'format.innings_per_side|play|int|-|-|-|-|fold,pad; '
+      || 'format.free_hit|play|bool|-|-|-|-|pad,fold,laws,sql; '
+      || 'bowling.max_overs_per_bowler_innings|play|int|overs|-|-|-|pad,sql; '
+      || 'bowling.limit|play|object|overs|-|band|-|sql,pad; '
+      || 'result.min_overs_per_side|play|int|overs|-|-|-|pad,sql; '
+      || 'result.tie_break|play|enum|-|none,super_over|-|"none"|fold,table; '
+      || 'points.win|table|int|points|-|-|-|table; '
+      || 'points.tie|table|int|points|-|-|-|table; '
+      || 'points.draw|table|int|points|-|-|-|table; '
+      || 'points.no_result|table|int|points|-|-|-|table; '
+      || 'points.loss|table|int|points|-|-|-|table; '
+      || 'points.abandoned|table|int|points|-|-|-|table; '
+      || 'bonus.kind|table|enum|-|none,run_rate_ratio,batting_bowling|-|"none"|table; '
+      || 'bonus.params|table|object|-|-|-|-|table; '
+      || 'nrr.method|table|enum|-|standard|-|"standard"|table; '
+      || 'table.order|table|list|-|points,wins,nrr,head_to_head,fewer_losses|-|["points", "wins", "nrr"]|table; '
+      || 'over_rate.kind|table|enum|-|none,points,runs|-|"none"|table; '
+      || 'eligibility.age_on|sheet|date|-|-|-|-|selection,sql; '
+      || 'eligibility.max_age_open|sheet|int|years|-|-|-|selection,sql; '
+      || 'eligibility.bona_fide_scholar|sheet|bool|-|-|-|false|selection,pad; '
+      || 'over.max_balls|play|int|balls|-|-|-|-; '
+      || 'over.free_hit_falls_away_on_last_ball|play|bool|-|-|-|-|-; '
+      || 'batting.retire_at_runs|play|int|runs|-|-|-|-; '
+      || 'pitch.length_m|play|int|m|-|-|-|-; '
+      || 'ball.weight_g|play|int|g|-|-|-|-; '
+      || 'fielding.powerplay|play|object|-|-|-|-|-; '
+      || 'target.method|play|enum|-|umpires_revision|-|"umpires_revision"|-; '
+      || 'bowling.rest_overs_between_spells|play|int|overs|-|-|-|-; '
+      || 'eligibility.max_overage_players|sheet|int|-|-|-|-|-';
+  BEGIN
+    ids := _seed_61();
+    C := (ids->>'c')::uuid; M_T20 := (ids->>'t20')::uuid; M_DECL := (ids->>'decl')::uuid;
+    M_LATE := (ids->>'late')::uuid; M_FR := (ids->>'fr')::uuid; M_OLD := (ids->>'old')::uuid;
+
+    -- (catalogue) the table serialises to conditions.test.mjs's CATALOGUE, read by anyone signed in
+    PERFORM _as(U_SCORER);
+    SELECT string_agg(concat_ws('|', k.key, k.part, k.value_type, coalesce(k.unit, '-'),
+                                coalesce(array_to_string(k.enum_values, ','), '-'), CASE WHEN k.by_age_band THEN 'band' ELSE '-' END,
+                                coalesce(k.platform_default::text, '-'),
+                                CASE WHEN cardinality(k.readers) = 0 THEN '-' ELSE array_to_string(k.readers, ',') END),
+                      '; ' ORDER BY k.sort_order, k.key) INTO got
+      FROM playing_condition_key k;
+    PERFORM _assert(got = CATALOGUE, format('db/61 (catalogue): the table reads %s', got));
+    -- (deny) the schema refuses a key that would need a child's race, whoever writes it
+    PERFORM _assert(_owner_61($q$INSERT INTO playing_condition_key (key, part, value_type, readers) VALUES ('quota.black_players', 'sheet', 'int', '{}')$q$) = '23514'
+                    AND _owner_61($q$INSERT INTO playing_condition_key (key, part, value_type, readers) VALUES ('transformation.targets', 'sheet', 'int', '{}')$q$) = '23514',
+      'db/61 (deny): a quota key was taken into the catalogue');
+    PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'playing_condition_key', 'INSERT'),
+      'db/61 (deny): the application may write the catalogue');
+
+    -- (parity) the readers over conditions.test.mjs's list (PARITY)
+    SELECT string_agg(format('%s:%s/%s', k, play_free_hit(d, f)::text, play_overs(d, o)), ' ' ORDER BY k) INTO got
+      FROM (VALUES ('a', '{}'::jsonb, 'T20', 20), ('b', '{}', 'Two-Day', NULL), ('c', '{}', NULL, NULL),
+                   ('d', '{"format.free_hit": false}', 'T20', 20), ('e', '{"format.free_hit": true}', 'One-Day Declaration', 100),
+                   ('f', '{"format.free_hit": false}', NULL, NULL), ('g', '{"format.overs_per_innings": 25}', 'T20', NULL),
+                   ('h', '{"format.overs_per_innings": 25}', 'T20', 20), ('i', '{"format.free_hit": "no"}', 'T20', 20),
+                   ('j', '{"format.overs_per_innings": 0}', 'Two-Day', NULL),
+                   ('k', '{"format.free_hit": true, "format.overs_per_innings": 50}', 'multi-day', NULL)) AS x(k, d, f, o);
+    PERFORM _assert(got = 'a:true/20 b:false/20 c:true/20 d:false/20 e:true/100 f:false/20 g:true/25 h:true/20 i:true/20 j:false/20 k:true/50',
+      format('db/61 (parity): the readers read %s', got));
+
+    -- (seed) every scored log folds byte for byte alike with no document and
+    -- with the document the resolver would fix; the other free hit moves it
+    f0 := _figures_61();
+    PERFORM _assert(_seed_rows_61('resolved') >= 2, 'db/61 (seed): no scored match to give a document to');
+    f1 := _figures_61();
+    PERFORM _assert(f1 = f0, format('db/61 (seed): a document saying what the format says moved a figure: %s against %s', left(f1, 300), left(f0, 300)));
+    PERFORM _seed_rows_61('flipped');
+    f2 := _figures_61();
+    PERFORM _assert(f2 <> f0, 'db/61 (seed): the other free hit moved nothing — the comparison compares nothing');
+    PERFORM _seed_rows_61('none');
+    PERFORM _assert(_figures_61() = f0, 'db/61 (seed): taking the rows away did not restore the figures');
+
+    -- A version, by the league (competitionadmin, platform-wide): drafted,
+    -- a figure entered, published from day +2.
+    PERFORM _as(U_LEAGUE);
+    SELECT d.set_id, d.version INTO V1, v_ver FROM condition_set_draft(C, 'Verify 061 v1', sa_today() + 2) d;
+    PERFORM _assert(V1 IS NOT NULL AND v_ver = 1, 'db/61: the league could not draft version 1');
+    PERFORM _assert((SELECT e.ok FROM condition_value_enter(V1, 'format.free_hit', '', 'false', 'unconfirmed') e),
+      'db/61: the league could not enter a figure');
+    PERFORM _assert((SELECT e.reason FROM condition_value_enter(V1, 'bowling.max_overs_per_bowler_innings', '', '4', 'confirmed') e) = 'citation_required',
+      'db/61: a confirmed figure was taken with no citation');
+    PERFORM _assert((SELECT e.ok FROM condition_value_enter(V1, 'bowling.max_overs_per_bowler_innings', '', '4', 'confirmed',
+                                                            'Verify 061 bye-laws', '7.3', sa_today() - 10) e),
+      'db/61: a cited figure was refused');
+
+    -- (scorer) a scorer reads no version, no figure — draft or published
+    PERFORM _as(U_SCORER);
+    SELECT count(*) INTO n FROM condition_set;
+    PERFORM _assert(n = 0 AND _count_rows('condition_set') > 0, format('db/61 (scorer): a scorer reads %s of condition_set', n));
+    -- A director of sport at the organising school reads no draft either.
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM condition_set WHERE id = V1;
+    PERFORM _assert(n = 0, 'db/61: a draft is read by somebody who does not manage the conditions');
+    PERFORM _assert((SELECT d.reason FROM condition_set_draft(C, 'Not mine', sa_today() + 2) d) = 'not_permitted',
+      'db/61: a school''s director of sport drafted a league''s conditions');
+
+    -- (retroactive) never dated today or earlier
+    PERFORM _as(U_LEAGUE);
+    SELECT d.set_id INTO VX FROM condition_set_draft(C, 'Verify 061 dated today', sa_today()) d;
+    PERFORM _assert((SELECT p.reason FROM condition_set_publish(VX) p) = 'effective_from_not_future',
+      'db/61 (retroactive): a version dated today was published');
+    PERFORM condition_set_amend(VX, NULL, sa_today() - 1);
+    PERFORM _assert((SELECT p.reason FROM condition_set_publish(VX) p) = 'effective_from_not_future',
+      'db/61 (retroactive): a version dated yesterday was published');
+    PERFORM _assert((SELECT w.ok FROM condition_set_withdraw(VX, 'Verify 061: dated wrongly') w), 'db/61: a draft could not be withdrawn');
+
+    -- (support) a support session reaches Hilton as competitionadmin, and
+    -- may draft, but never publishes
+    PERFORM _as(U_PLAT);
+    SELECT ok, reason, id INTO v_ok, v_reason, S_ID FROM support_access_begin(HIL, 'competitionadmin', 'ticket 5114: festival conditions');
+    PERFORM _assert(v_ok, format('db/61 (support): the session was not issued (%s)', v_reason));
+    PERFORM _assert((SELECT p.reason FROM condition_set_publish(V1) p) = 'support_session',
+      'db/61 (support): a support session published a competition''s conditions');
+    PERFORM _assert((SELECT w.reason FROM condition_set_withdraw(V1, 'support tidying up') w) = 'support_session',
+      'db/61 (support): a support session withdrew a competition''s conditions');
+    PERFORM support_access_end(S_ID);
+
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert((SELECT p.ok FROM condition_set_publish(V1) p), 'db/61: the league could not publish version 1');
+    -- (immutable) a published figure never changes; a change is a new version
+    PERFORM _assert((SELECT e.reason FROM condition_value_enter(V1, 'format.free_hit', '', 'true', 'unconfirmed') e) = 'published_is_immutable',
+      'db/61 (immutable): a published figure was re-entered');
+    -- A value that would be valid in a draft, so only the version's status
+    -- can refuse it.
+    PERFORM _assert(_owner_61(format($q$UPDATE condition_value SET value = 'true' WHERE set_id = %L AND key = 'format.free_hit'$q$, V1)) = '23514',
+      'db/61 (immutable): the owner changed a published figure straight at the table');
+    PERFORM _assert(_owner_61(format($q$DELETE FROM condition_value WHERE set_id = %L$q$, V1)) = '23514'
+                    AND _owner_61(format($q$UPDATE condition_set SET effective_from = effective_from + 1 WHERE id = %L$q$, V1)) = '23514',
+      'db/61 (immutable): the owner deleted a published figure, or moved a published version''s date');
+    SELECT d.set_id INTO V2 FROM condition_set_new_version(V1) d;
+    PERFORM _assert((SELECT count(*) FROM condition_value WHERE set_id = V2) = (SELECT count(*) FROM condition_value WHERE set_id = V1)
+                    AND (SELECT supersedes FROM condition_set WHERE id = V2) = V1,
+      'db/61 (immutable): the new version did not copy the old');
+    PERFORM condition_value_enter(V2, 'format.free_hit', '', 'true', 'unconfirmed');
+    PERFORM condition_set_amend(V2, NULL, sa_today() + 6);
+    PERFORM _assert((SELECT p.ok FROM condition_set_publish(V2) p), 'db/61: the league could not publish version 2');
+
+    -- The start day decides: T20 on day +3 is under v1 (published before v2,
+    -- and v2 does not reach back); the declaration on day +7 and the T20 on
+    -- day +8 under v2.
+    PERFORM _as(U_SARAH);
+    SELECT * INTO pc FROM match_playing_conditions(M_T20);
+    PERFORM _assert(pc.set_version = 1 AND NOT pc.fixed AND pc.applies AND (pc.doc->'play'->>'format.free_hit')::boolean = false,
+      format('db/61 (day): the day +3 fixture resolves %s', row(pc.set_version, pc.fixed, pc.doc->'play')::text));
+    PERFORM _assert((SELECT set_id FROM match_playing_conditions(M_LATE)) = V2 AND (SELECT set_id FROM match_playing_conditions(M_DECL)) = V2,
+      format('db/61 (day): the day +7 and +8 fixtures resolve versions %s and %s, not the second published',
+             (SELECT set_version FROM match_playing_conditions(M_DECL)), (SELECT set_version FROM match_playing_conditions(M_LATE))));
+    -- A friendly: the platform's defaults and the fixture.
+    SELECT * INTO pc FROM match_playing_conditions(M_FR);
+    PERFORM _assert(pc.set_id IS NULL AND pc.doc->'play'->'format.free_hit' = 'false' AND pc.doc->'play'->>'format.kind' = 'declaration'
+                    AND pc.doc->'play'->'format.overs_per_innings' = '80' AND pc.doc->'table'->>'nrr.method' = 'standard'
+                    AND pc.sources->'format.free_hit'->>'from' = 'fixture' AND pc.sources->'points.win'->>'from' = 'platform_default',
+      format('db/61 (friendly): %s', pc.doc::text));
+
+    -- (entrant) a fixture in a competition its side never entered is refused
+    BEGIN
+      INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, competition_id)
+      VALUES (HIL, 'U16B', 'Verify 061 not entered', now() + interval '3 days', 'cricket', 'T20', 20, C);
+      PERFORM _assert(false, 'db/61 (entrant): a U16B fixture was arranged in a league only the 1st XI entered');
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    -- A departure before play, by the league, with its reason.
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert((SELECT o.ok FROM match_condition_override_set(M_T20, 'bowling.max_overs_per_bowler_innings', '', '3', 'Verify 061: shortened spells') o),
+      'db/61: the league could not depart from its conditions before play');
+
+    -- (fix) the first event fixes it — as the scorer the write path runs as —
+    -- and a later version, override or change of competition moves nothing.
+    -- A match scored with no document is never given one (D4).
+    PERFORM _as(U_SCORER);
+    SELECT count(*) INTO n FROM match_conditions WHERE match_id = M_T20;
+    PERFORM _assert(n = 0, 'db/61 (fix): a document before the first event');
+    PERFORM _assert((SELECT fx.fixed FROM match_conditions_fix(M_T20) fx) AND (SELECT fx.fixed FROM match_conditions_fix(M_DECL) fx),
+      'db/61 (fix): the scorer could not fix the documents');
+    PERFORM _assert((SELECT fx.reason FROM match_conditions_fix(M_OLD) fx) = 'scored_before_conditions'
+                    AND NOT EXISTS (SELECT 1 FROM match_conditions WHERE match_id = M_OLD),
+      'db/61 (fix): a match scored before db/61 was given a document');
+    PERFORM _as(U_PARENT);
+    PERFORM _assert((SELECT fx.reason FROM match_conditions_fix(M_LATE) fx) = 'not_permitted',
+      'db/61 (fix): somebody who may not score the match fixed its conditions');
+    -- The scorer reads the document of a match he may read (fixture.read).
+    PERFORM _as(U_SCORER);
+    PERFORM _log_61(M_T20);
+    PERFORM _log_61(M_DECL);
+    SELECT doc_hash INTO h1 FROM match_conditions WHERE match_id = M_T20;
+    PERFORM _assert(h1 = (SELECT md5(doc::text) FROM match_conditions WHERE match_id = M_T20)
+                    AND (SELECT (doc->'play'->>'bowling.max_overs_per_bowler_innings')::int FROM match_conditions WHERE match_id = M_T20) = 3,
+      'db/61 (fix): the fixed document is not the resolved one, or its hash is not md5(doc::text)');
+    -- (override) refused once fixed
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert((SELECT o.reason FROM match_condition_override_set(M_T20, 'format.free_hit', '', 'true', 'Verify 061: too late now') o) = 'conditions_fixed',
+      'db/61 (override): a departure was taken after the first ball');
+    -- A later version does not touch it.
+    SELECT d.set_id INTO VX FROM condition_set_new_version(V2) d;
+    PERFORM condition_set_amend(VX, NULL, sa_today() + 9);
+    PERFORM condition_set_publish(VX);
+    PERFORM _assert((SELECT doc_hash FROM match_conditions WHERE match_id = M_T20) = h1, 'db/61: a later version moved a fixed document');
+    -- (frozen) the play part never changes, even for the owner
+    PERFORM _assert(_owner_61(format($q$UPDATE match_conditions SET doc = jsonb_set(doc, '{play,format.free_hit}', 'true') WHERE match_id = %L$q$, M_T20)) = '23514',
+      'db/61 (frozen): a fixed play document changed');
+    -- ...nor the competition it was played under.
+    PERFORM _assert(_owner_61(format($q$UPDATE match SET competition_id = NULL WHERE id = %L$q$, M_T20)) = '23514',
+      'db/61: a scored fixture changed competition');
+
+    -- (parity) the frozen document decides the free hit, both ways round,
+    -- in every SQL reader: a T20 under free_hit = false stands the bowled
+    -- after the no-ball; a declaration under free_hit = true saves it. The
+    -- fold reads the same (conditions.test.mjs, D).
+    PERFORM _as(U_OWNER);
+    SELECT string_agg(format('%s(%s,%s,%s,%s)', x.label,
+             (SELECT l.wickets FROM match_live_score l WHERE l.match_id = x.m AND l.innings = 0),
+             (SELECT f.wickets FROM innings_score_as_folded(x.m, 0::smallint) f),
+             (SELECT sum(o.legal_balls) FROM bowler_over o WHERE o.match_id = x.m),
+             ball_on_free_hit(x.m, 0::smallint, 2)::text), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('decl', M_DECL), ('old', M_OLD), ('t20', M_T20)) AS x(label, m);
+    PERFORM _assert(got = 'decl(0,0,1,true) old(0,0,1,true) t20(1,1,1,false)',
+      format('db/61 (parity): the readers read %s', got));
+    PERFORM _assert((SELECT fixed FROM match_playing_conditions(M_T20)) AND NOT (SELECT applies FROM match_playing_conditions(M_OLD)),
+      'db/61: a fold would apply the wrong document');
+
+    -- The grants: the application's alone.
+    FOREACH t IN ARRAY ARRAY['match_playing_conditions(uuid)', 'match_conditions_fix(uuid)', 'match_conditions_resolve(uuid)',
+                             'condition_set_publish(uuid)', 'public_match_conditions(uuid)'] LOOP
+      PERFORM _assert(has_function_privilege('scrbrd_app', t::regprocedure, 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                       WHERE p.oid = t::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE'),
+        format('db/61 (grants): %s is not the application''s alone', t));
+    END LOOP;
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'match_conditions_compute(uuid)', 'EXECUTE'),
+      'db/61 (grants): the application may compute a match''s document with no guard');
   END;
 
   PERFORM set_config('app.user_id', '', true);

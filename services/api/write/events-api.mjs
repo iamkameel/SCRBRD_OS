@@ -26,7 +26,7 @@
  */
 import { runAsPrincipal, who } from "../auth/auth-db.mjs";
 import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
-         PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE } from "@scrbrd/scoring";
+         PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE, CONDITION } from "@scrbrd/scoring";
 /** @import { Pool, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest, RouteDeps, DressedError } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs): pg's
 // carry a SQLSTATE `code` (and `table`, `constraint`, `detail`), this
@@ -99,16 +99,70 @@ function columnsFor(matchId, ev) {
  * itself; anyone else gets nulls, and the fold then dates the match by its
  * first event and gives a free hit after every no-ball, as it does a match
  * with no fixture.
+ *
+ * AND ITS PLAYING CONDITIONS (SCRBRD-114, db/61): the play part of the
+ * match's frozen document and its hash, from match_playing_conditions() —
+ * asked of the same caller, under the same fixture.read. `conditions` is
+ * given only where a fold applies it (`applies`: the match's frozen row, or
+ * the preview of a match with no event yet, which is what its first event
+ * will fix); a match scored before db/61 has none, and folds exactly as
+ * before. `conditionsFixed`, `conditionsSources` (the play part's) and
+ * `conditionsTitle` are for the pad's words; the fold reads only
+ * `conditions` and `conditionsHash`.
  * @param {{ query: Function }} client
  * @param {string | null | undefined} matchId
- * @returns {Promise<{startsAt: string | null, format: string | null}>}
+ * @returns {Promise<FoldCtx>}
  */
 export async function matchFoldContext(client, matchId) {
-  if (!matchId) return { startsAt: null, format: null };
+  /** @type {FoldCtx} */
+  const none = { startsAt: null, format: null, conditions: null, conditionsHash: null, conditionsFixed: false,
+                 conditionsSources: null, conditionsTitle: null, conditionsVersion: null };
+  if (!matchId) return none;
   /** @type {{ rows: {starts_at: Date | string | null, format: string | null}[] }} */
   const { rows } = await client.query(`select starts_at, format from match_fold_context($1)`, [matchId]);
   const t = rows[0]?.starts_at ?? null;
-  return { startsAt: t == null ? null : new Date(t).toISOString(), format: rows[0]?.format ?? null };
+  const out = { ...none, startsAt: t == null ? null : new Date(t).toISOString(), format: rows[0]?.format ?? null };
+  if (!rows.length) return out;
+  /** @type {{ rows: {doc: any, sources: any, doc_hash: string, fixed: boolean, applies: boolean, set_title: string | null, set_version: number | null}[] }} */
+  const { rows: c } = await client.query(
+    `select doc, sources, doc_hash, fixed, applies, set_title, set_version from match_playing_conditions($1)`, [matchId]);
+  const pc = c[0];
+  if (!pc?.applies) return out;
+  const play = pc.doc?.play ?? {};
+  /** @type {Record<string, unknown>} */
+  const sources = {};
+  for (const k of Object.keys(pc.sources ?? {})) if (CONDITION[k]?.part === "play") sources[k] = pc.sources[k];
+  return { ...out, conditions: play, conditionsHash: pc.doc_hash, conditionsFixed: pc.fixed === true,
+           conditionsSources: sources, conditionsTitle: pc.set_title ?? null, conditionsVersion: pc.set_version ?? null };
+}
+
+/**
+ * What matchFoldContext() answers: the FoldContext (packages/scoring
+ * replay.mjs) plus the words' extras.
+ * @typedef {object} FoldCtx
+ * @property {string | null} startsAt
+ * @property {string | null} format
+ * @property {Record<string, unknown> | null} conditions
+ * @property {string | null} conditionsHash
+ * @property {boolean} conditionsFixed
+ * @property {Record<string, unknown> | null} conditionsSources
+ * @property {string | null} conditionsTitle
+ * @property {number | null} conditionsVersion
+ */
+
+/**
+ * Fix the match's playing conditions before its first event is written
+ * (SCRBRD-114, db/61 match_conditions_fix()): a no-op once fixed, and for a
+ * match already scored before db/61 (no backfill, D4). Called inside the
+ * per-match lock, by the live path (the pad's resume credential included)
+ * and a release from quarantine. Never refuses a delivery (D1): whatever it
+ * answers, the caller goes on.
+ * @param {{ query: Function }} client @param {string} matchId
+ * @returns {Promise<{fixed: boolean, docHash: string | null, reason: string | null}>}
+ */
+export async function fixMatchConditions(client, matchId) {
+  const { rows } = await client.query(`select fixed, doc_hash, reason from match_conditions_fix($1)`, [matchId]);
+  return { fixed: rows[0]?.fixed === true, docHash: rows[0]?.doc_hash ?? null, reason: rows[0]?.reason ?? null };
 }
 
 /**
@@ -308,6 +362,18 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       [matchId, device, events[0].epoch]);
     /** @type {LeaseCheck} */
     const lease = lrows[0] || { found: false, holds: false, epoch: null };
+
+    // THE MATCH'S PLAYING CONDITIONS ARE FIXED FIRST (SCRBRD-114, db/61):
+    // inside the per-match lock scoring_lease_check() now holds, before the
+    // match's first event can be written, the document is resolved from the
+    // version in force on the match's start day and frozen. Here, once per
+    // batch and outside the per-event savepoints below, so a first event
+    // refused and rolled back cannot take the fix with it while the next is
+    // written. Only for the device holding the token, with an event of its
+    // generation to write. A no-op once fixed, and for a match scored before
+    // db/61 (no backfill, D4). Never a refusal (D1).
+    if (lease.holds && events.some((ev) => ev.epoch === lease.epoch)) await fixMatchConditions(client, matchId);
+
     /** @type {AppendResult} */
     const result = { accepted: [], duplicates: [], quarantined: [], conflicts: [], refused: [] };
 
@@ -858,6 +924,11 @@ export function quarantineRoutes({ pool, secret }) {
           row = columnsFor(q[0].match_id, { ...q[0].body, payload });
         }
         await client.query("savepoint quarantine_release");
+        // A released ball may be the match's first (every live one held):
+        // its playing conditions are fixed before it is written, as the live
+        // path fixes them (SCRBRD-114, db/61). Rolled back with the release
+        // if the Laws refuse it.
+        if (accept) await fixMatchConditions(client, q[0].match_id);
         let rows;
         try {
           ({ rows } = await client.query(

@@ -330,6 +330,33 @@ group("The confirmation is THIS innings', penalties included (SCRBRD-088)");
 }
 
 // ─────────────────────────────────────────────
+group("The playing conditions are compared first (SCRBRD-114)");
+{
+  const s = new MatchSession({ matchId: "m9", canScore, now, conditionsHash: "hash-of-the-fixed-doc" });
+  s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" });
+  s.append({ deviceId:"dA", epoch:1, idempotencyKey:"c1", payload: ball({ value: 4 }) });
+  const armed = s.armHandover({ deviceId:"dA", epoch:1, pendingCount:0 });
+  const claimed = s.claimHandover({ scorerId:"uB", deviceId:"dB", role:"coach", code: armed.code });
+  ok("the claim hands the incoming device the document's hash", claimed.conditionsHash === "hash-of-the-fixed-doc");
+  const truth = s.replay();
+  const other = s.verifyAndTakeOver({ deviceId:"dB", confirm:{ runs: truth.runs, wickets: truth.wickets, balls: truth.balls },
+                                      conditionsHash: "a-stale-preview" });
+  ok("a device folded under other conditions is refused, in words, before the figures",
+     other.ok === false && other.reason === REJECT.CONDITIONS_CHANGED && /conditions changed/.test(other.text ?? "") && !other.diff);
+  ok("...and nothing moved: still verifying, still A's token", s.state === SESSION.VERIFYING && s.holder?.scorerId === "uA" && s.epoch === 1);
+  const none = s.verifyAndTakeOver({ deviceId:"dB", confirm:{ runs: truth.runs }, conditionsHash: null });
+  ok("a device that folded with no document, where the match has one, is refused too", none.reason === REJECT.CONDITIONS_CHANGED);
+  const same = s.verifyAndTakeOver({ deviceId:"dB", confirm:{ runs: truth.runs, wickets: truth.wickets, balls: truth.balls },
+                                     conditionsHash: "hash-of-the-fixed-doc" });
+  ok("the same hash, the right board: taken over", same.ok === true && s.holder?.scorerId === "uB");
+  const plain = mk();
+  plain.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" });
+  const a2 = plain.armHandover({ deviceId:"dA", epoch:1, pendingCount:0 });
+  plain.claimHandover({ scorerId:"uB", deviceId:"dB", role:"coach", code: a2.code });
+  ok("a match with no document is not asked (every match before db/61)",
+     plain.verifyAndTakeOver({ deviceId:"dB", confirm:{ runs: 0 }, conditionsHash: "anything" }).ok === true);
+}
+
 group("Handover code + confirmation helpers");
 {
   ok("code stable for same match+epoch", handoverCode("m3", 1) === handoverCode("m3", 1));
