@@ -651,6 +651,13 @@ Each phase's `tables.mjs` entries regenerate `db/09`'s successor policies into t
 - **Screens.** The Settings toggle and the eighteen card are on Settings → Me (`views/healthconsent.jsx`). The SCRBRD-092 sign-up consent screen does not exist (nor its public-name row), and a consent is given through a verified link the sign-up flow cannot yet have; so the guardian's sign-up step shows the separate, off consent in words and takes no answer, and `HealthConsentRow` is the row that screen draws when it is built. **Open for Kameel** — see the report.
 - **No record-a-session or load-chart screen** in this phase (the row names none): the API and the reads are there for phase 2's screens.
 
+**Decided (Kameel, 2026-09-28), on the build's questions, as recommended:**
+1. **Consent after the link is verified, not at sign-up.** No pending or half-given state. When a guardian's link to a child becomes verified, a one-time card asks "Health monitoring: yes or no?" for that child, with the terms; answering or dismissing it stores nothing but the answer (through `health_monitoring_consent_set()`); the Settings toggle stays the place to change it.
+2. **The module arrives off everywhere**; the platform switches it on per school (the pilot by Kameel). **Where it is off, the toggle, the card and the eighteen card are hidden**, so no family agrees to something that is not in use. A record already given stays and counts again if the module is switched back on.
+3. **`wellness.read`** is held now by coach, assistant coach, physio, director of sport, the boy and `fitness`, gating nothing until phase 2.
+4. Phase 2 grants or wraps `health_consent_live()` for its restrictive policies.
+5. **Support sessions never read consent records** (narrower than §6.5; kept).
+
 ---
 
 ## 10 · Decisions, and the questions they opened
