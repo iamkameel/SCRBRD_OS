@@ -288,6 +288,20 @@ then `/live/<fixture id>` (and `/scorecard/<fixture id>`). Firebase Hosting
 rewrites those four prefixes to the API (`firebase.json`); the single-service
 deployment (`SERVE_CLIENT`) needs nothing more.
 
+#### Workload monitoring (SCRBRD-110, db/60)
+
+`db/60_workload_consent_count.sql` adds the nets band, each bowler's load
+figures and the health-monitoring consent. It needs no secret. The feature
+`workload_monitoring` arrives **off** for every school: until the platform
+grants it to a school (Settings → Modules, as a `platform.feature.manage`
+holder), `POST /api/load-entry` and the `load` / `load_weeks` reads answer
+`module_disabled`, and the database refuses the row as well. The consent
+route and the `consents` read are never switched off — a family's answer is
+theirs to give and withdraw. `db/60` stands without SCRBRD-110's phase 0 (the
+guardian link past eighteen, waiting on the information officer): until that
+lands, a parent's health consent ends on her son's eighteenth birthday with
+her access, which is today's rule.
+
 ### 5 · Cloud Run, the first time
 
 ```sh

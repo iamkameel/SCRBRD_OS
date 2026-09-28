@@ -416,6 +416,8 @@ const HAND_WRITTEN_SINCE_47 = {
     ended_at: "when it was ended",
   },
   player_never_public: {},
+  // db/60: the health-monitoring consent is never public as a whole (N2).
+  health_monitoring_consent: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */

@@ -10,7 +10,7 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, MASKED_SINCE_09, maskPairs } from "./generate-rls.mjs";
+import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, MASKED_SINCE_09, TABLES_ADDED_SINCE_09, GENERATED_BEGIN, GENERATED_END, tablesAddedIn, spliceTablesAdded, maskPairs } from "./generate-rls.mjs";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -189,7 +189,16 @@ const rx = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 // the first argument to app_can(); only the quoting differs.
 const capArg = (/** @type {string} */ c) => (isCapabilityExpression(c) ? rx(c) : `'${rx(c)}'`);
 
+// A table added after db/09 shipped is held to the file TABLES_ADDED_SINCE_09
+// names (group C2), with the same assertions; the rest to db/01 + db/09.
+const DB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "db");
+/** @param {string} table */
+const policySql = (table) => {
+  const file = /** @type {Record<string, string>} */ (TABLES_ADDED_SINCE_09)[table];
+  return file ? (existsSync(join(DB_DIR, file)) ? readFileSync(join(DB_DIR, file), "utf8") : "") : SQL;
+};
 for (const [table, def] of Object.entries(TABLES)) {
+  const SQL = policySql(table);
   ok(`${table}: RLS enabled`,      new RegExp(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`).test(SQL));
   ok(`${table}: read policy uses ${def.read}`,
      new RegExp(`CREATE POLICY ${table}_read ON ${table}[\\s\\S]{0,300}app_can\\(${capArg(def.read)}`).test(SQL));
@@ -209,6 +218,41 @@ for (const [table, def] of Object.entries(TABLES)) {
        !new RegExp(`OR\\s+app_can\\(${capArg(def.readAlso)}`).test(policy));
   }
 }
+// ── C2. Tables added after db/09 shipped ─────────────────
+// The mirror of ADDED_SINCE_01 for a table: db/09 must not name it (it is
+// frozen), and the hand-written file that creates it must carry, between its
+// markers, exactly the block the generator emits from tables.mjs today — so
+// `pnpm rls:generate` leaves it unchanged, and a later edit to the table's
+// entry cannot leave the live policies behind.
+group("C2. Tables added after db/09 shipped (SCRBRD-110)");
+{
+  const later = Object.entries(TABLES_ADDED_SINCE_09);
+  ok("the list is in use, so this group is testing something", later.length > 0);
+  const expected = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../expected-migrations.json"), "utf8"));
+  for (const [table, file] of later) {
+    ok(`${table} is a table in tables.mjs`, table in TABLES);
+    ok(`...and db/09 does not name it`, !new RegExp(`\\b${table}\\b`).test(policies()));
+    const path = join(DB_DIR, file);
+    ok(`${file} exists and the API expects it`, existsSync(path) && expected.includes(file));
+    const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+    const at = text.indexOf(`CREATE TABLE IF NOT EXISTS ${table} (`);
+    ok(`${file} creates ${table} above its generated block`, at !== -1 && at < text.indexOf(GENERATED_BEGIN));
+  }
+  for (const file of new Set(Object.values(TABLES_ADDED_SINCE_09))) {
+    const text = readFileSync(join(DB_DIR, file), "utf8");
+    ok(`${file} carries its generated block exactly once`,
+       text.split(GENERATED_BEGIN).length === 2 && text.split(GENERATED_END).length === 2);
+    ok(`...verbatim: regenerating would not change ${file}`, spliceTablesAdded(text, file) === text);
+    ok(`...and it is the whole of what tables.mjs says for its tables`, text.includes(tablesAddedIn(file)));
+    ok(`...with no DELETE policy`, !/FOR DELETE/.test(tablesAddedIn(file)));
+  }
+  // It can fail: an edit inside the block is seen.
+  const file = Object.values(TABLES_ADDED_SINCE_09)[0];
+  const text = readFileSync(join(DB_DIR, file), "utf8");
+  const edited = text.replace("app_can('player.workload.write'", "app_can('player.workload.read'");
+  ok("a hand edit inside the block is caught", edited !== text && spliceTablesAdded(edited, file) !== edited);
+}
+
 // Records about minors are deactivated, never deleted, so an audit trail survives.
 ok("no DELETE policy is granted anywhere", !/FOR DELETE/.test(SQL));
 ok("injury anchors its team through the linked player",

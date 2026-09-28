@@ -231,6 +231,15 @@ export const NEVER_PUBLIC = Object.freeze({
   "public_name_consent.giver_link_id": "N4",
   "public_name_consent.recorded_by": "N4",
   "public_name_consent.ended_by": "N4",
+
+  // ── db/60, SCRBRD-110 phase 1 ──
+  // N2. A boy's nets load is a reading of his body's work kept for injury
+  // prevention, as bowling_breach is; his match overs stay on the scorecard.
+  load_entry: "N2",
+  // N2. Whether a family agreed to health monitoring, and when they stopped,
+  // is a fact about the child's health care — the row's existence is the
+  // disclosure — and its giver is N4 besides.
+  health_monitoring_consent: "N2",
 });
 
 /**

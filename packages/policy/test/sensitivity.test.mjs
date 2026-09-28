@@ -103,6 +103,13 @@ const NOT_YET_IMPLEMENTED = {
   "safeguarding.suspend": "Held by dso alone since db/57 and gating nothing yet: " +
     "safeguarding_suspension, safeguarding_suspend() and the liveness clause in " +
     "the decision functions are SAFEGUARDING_DSO phase 2 (§5, §9.2).",
+  // SCRBRD-110 phase 1 (db/60) creates both with the `fitness` role, so the
+  // role is whole when it is appointed (§6.1); their tables come later.
+  "wellness.read": "Created by db/60 with the fitness role and gating nothing yet: " +
+    "wellness_checkin and wellness_flag (and their logged checkins/flags reads) " +
+    "are SCRBRD-110 phase 2, capacity_test phase 4.",
+  "fitness.test.write": "Created by db/60 with the fitness role and gating nothing yet: " +
+    "capacity_test, the one table it writes, is SCRBRD-110 phase 4 (§5, §6.2).",
 };
 
 // ── The two lists agree ──────────────────────────────────

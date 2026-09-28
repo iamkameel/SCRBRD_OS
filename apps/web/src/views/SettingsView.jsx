@@ -14,6 +14,7 @@ import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
+import { EighteenCard, HealthConsentSection } from "./healthconsent.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 import { Icon } from "../ui/icons.jsx";
 
@@ -636,7 +637,7 @@ const DOMAIN_LABEL = {
   opposition: "Opposition", scouting: "Scouting", officiating: "Officials",
   recognition: "Recognition", discipline: "Discipline", availability: "Availability",
   audit: "Audit", broadcast: "Broadcast", guardian: "Guardians",
-  safeguarding: "Safeguarding",
+  safeguarding: "Safeguarding", wellness: "Wellness", fitness: "Fitness",
 };
 const capsOf = (r) => [...(ROLE_CAPABILITIES[r] ?? [])];
 const domainsOf = (r) => {
@@ -779,6 +780,9 @@ function BoundariesSection({ role }) {
 
 function MeTab({ role }) {
   const me = profile();
+  // One answer, two places: the eighteen card and the consent section redraw together.
+  const [consentNonce, setConsentNonce] = useState(0);
+  const consentChanged = () => setConsentNonce((n) => n + 1);
   const live = signedIn();
   const assignments = me?.assignments ?? [];
   return (
@@ -793,6 +797,10 @@ function MeTab({ role }) {
           <Badge color={live ? D.emerald : D.amber}>{live ? "Signed in" : "Demo"}</Badge>
         </div>
       </Panel>
+
+      {/* SCRBRD-110 §7.4: asked once, from his eighteenth birthday, when a
+          parent had said yes to health monitoring for him. Drawn only then. */}
+      <EighteenCard role={role} nonce={consentNonce} onChanged={consentChanged}/>
 
       {/* This device's theme (DESIGN_DIRECTION §3.1): second, under who you
           are, because it is the one setting here somebody changes standing
@@ -833,6 +841,10 @@ function MeTab({ role }) {
             </div>
           )}
       </Panel>
+
+      {/* Health monitoring's own consent (SCRBRD-110 §7): a row per child
+          this person answers for, and his own. Nothing for staff. */}
+      <HealthConsentSection role={role} nonce={consentNonce} onChanged={consentChanged}/>
 
       <BoundariesSection role={role}/>
       <AlertsSection role={role}/>

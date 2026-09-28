@@ -100,6 +100,10 @@ const ROLE_IDENTITY = {
   scout:                  { label:"Scout", icon:"search", color:"#fcb483", family:"analysis" },  // 8.56:1
   // clinical — clinical care
   medical:                { label:"Medical Staff", icon:"stethoscope", color:"#f99fae", family:"clinical" },  // 7.57:1
+  // The strength-and-conditioning coach (SCRBRD-110, db/60): clinical's
+  // family, a coral beside the physio's pink — 16.0 dE from it and 6.20:1 on
+  // the darkest surface, computed against the table, not chosen by eye.
+  fitness:                { label:"Strength & Conditioning", icon:"dumbbell", color:"#de998d", family:"clinical" },  // 6.20:1
   // operations — getting people and grounds ready
   transportcoordinator:   { label:"Transport Coordinator", icon:"map", color:"#13aa9a", family:"operations" },  // 5.17:1
   driver:                 { label:"Driver", icon:"bus", color:"#16cab7", family:"operations" },  // 7.26:1
@@ -153,6 +157,7 @@ const ROLE_DAYLIGHT = {
   analyst:              "#9c3407",  // 5.76:1
   scout:                "#98552e",  // 4.56:1
   medical:              "#992d3f",  // 5.98:1
+  fitness:              "#a51b2a",  // 6.00:1, 16.0 dE from medical
   transportcoordinator: "#004844",  // 8.33:1
   driver:               "#005d56",  // 6.20:1
   facilities:           "#00736a",  // 4.57:1

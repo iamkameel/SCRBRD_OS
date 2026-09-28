@@ -182,6 +182,9 @@ const BUNDLES = {
     "opposition.read",
     // The one most often told "this boy must not appear" (db/47, C5).
     "player.public.withhold",
+    // SCRBRD-110 (decided Q2): he may open a bowler's check-ins and flags when
+    // he asks, on the access log. NOT wellness.alert (phase 2): he is not paged.
+    "wellness.read",
   ],
   schooladmin: ["recognition.manage", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
@@ -232,6 +235,8 @@ const BUNDLES = {
   // children they actually coach, this term, and nobody else's. It is not
   // school-wide, and it stops the moment a player changes side.
   coach: ["player.workload.read",
+    // SCRBRD-110: the nets band for his side, and (phase 2) their check-ins.
+    "player.workload.write", "wellness.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "team.select",
     // The kit and the drill library, for his own school. Not the roster or
@@ -249,6 +254,7 @@ const BUNDLES = {
     "news.publish.team", "opposition.read",
   ],
   assistantcoach: ["player.workload.read",
+    "player.workload.write", "wellness.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
@@ -342,6 +348,9 @@ const BUNDLES = {
   // physiotherapy notes and will not show them to the child is on the wrong
   // side of that.
   selfaccess: ["player.workload.read",
+    // SCRBRD-110: his own nets band — his figure is the one that counts for a
+    // session (§1.3) — and his own check-ins (phase 2).
+    "player.workload.write", "wellness.read",
     "availability.read", "availability.declare",
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read", "player.development.read",
@@ -389,6 +398,29 @@ const BUNDLES = {
     // calculated from them.
     "player.biometric.read",
     "medical.status.read", "medical.nature.read", "medical.details.read", "medical.write",
+    // SCRBRD-110: the load, the check-ins (phase 2) and the capacity tests (phase 4).
+    "player.workload.write", "wellness.read", "fitness.test.write",
+  ],
+  // THE STRENGTH-AND-CONDITIONING COACH (SCRBRD-110 §5, decided Q3 and Q13).
+  // A role because it passes ADR 0003's first test: he must write and read
+  // capacity tests, which `coach` cannot, and must NOT read the physio's
+  // clinical notes, which `medical` does — no existing role has that shape.
+  // He reads the load and (phase 2) the check-ins; of an injury he reads the
+  // coach's tier — status and nature, so he knows a boy is back from a
+  // hamstring — and never medical.details.read or player.note.read
+  // (separation.test.mjs holds both). Not player.workload.plan, not
+  // wellness.alert, not wellness.share: he sets no guideline, is not paged,
+  // and does not share with a parent. School-scoped, like `medical`, and
+  // appointed by the director of sport. The whole list from phase 1, so the
+  // appointment is made once; wellness.read and fitness.test.write gate
+  // their tables from phases 2 and 4.
+  fitness: [
+    ...READ_TEAM, "player.age.read",
+    // Height and weight are the inputs to a strength test, as they are for `medical`.
+    "player.biometric.read",
+    "player.workload.read", "player.workload.write",
+    "wellness.read", "fitness.test.write",
+    "medical.status.read", "medical.nature.read",
   ],
   // SCRBRD-030 split this in two. Widening SENSITIVE to level >= 2 pulled
   // invoice.read/invoice.manage into it, and this role held both those and
@@ -572,6 +604,9 @@ export const GRANTABLE_ROLES = Object.freeze({
   directorofsport: [
     "coach", "assistantcoach", "teammanager", "scorer", "official",
     "medical", "player", "analyst", "facilities", "media",
+    // SCRBRD-110 §5: he appoints the strength-and-conditioning coach, as he
+    // appoints the physio.
+    "fitness",
   ],
 
   // THE RECOVERY PATH, and the reason it exists at all.

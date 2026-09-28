@@ -210,8 +210,11 @@ group("K3  A pupil reads no team-mate's injury, at any tier");
      tiers.every((c) => caps("guardian").includes(c)));
   // Who may know that a child is out: staff who need it, the child, his parent.
   // A new holder of the status tier is a decision against p52, not a tidy-up.
+  // `fitness` joined by decision (SCRBRD-110 Q13, Kameel 2026-09-27): the
+  // strength-and-conditioning coach bringing a boy back needs the coach's
+  // tier — status and nature — and never the notes.
   const staff = ["principal", "directorofsport", "schooladmin", "sportsadmin",
-                 "coach", "assistantcoach", "teammanager", "medical", "enquiry", "guardian", "selfaccess"];
+                 "coach", "assistantcoach", "teammanager", "medical", "fitness", "enquiry", "guardian", "selfaccess"];
   ok("the status tier is held by staff who need it, the child and his parent, and nobody else",
      others("medical.status.read").every((r) => staff.includes(r))
        && staff.every((r) => caps(r).includes("medical.status.read")),
@@ -252,6 +255,40 @@ group("SG  Nobody but a DSO reads a safeguarding concern");
   // SCRBRD-110 plans a `fitness` role; whenever it lands it reads no concern.
   ok("SCRBRD-110's fitness role, if it has landed, holds none of it",
      !ROLES.includes("fitness") || reach("fitness", SG).length === 0);
+}
+
+// ── WL · A boy's load and his body are his, his staff's, and nobody else's ──
+// SCRBRD-110 §6.5 and §6.1, phase 1 (db/60). The nets band, the check-ins and
+// the tests are read by the people who look after him and by him; a
+// team-mate, an observer and a borrowed enquiry grant reach none of it. The
+// strength-and-conditioning coach reads the load and an injury at the coach's
+// tier, and never the physio's notes or a coach's prose. Falsified by adding
+// player.workload.write to `player` and medical.details.read to `fitness`:
+// both go red below.
+group("WL  Workload and wellness: his staff and him, never a team-mate");
+{
+  const WL = ALL_CAPABILITIES.filter((c) => /^(wellness|player\.workload|fitness)\./.test(c));
+  ok("the phase 1 capabilities exist", ["player.workload.write", "wellness.read", "fitness.test.write"]
+       .every((c) => WL.includes(c)), WL.join(" "));
+  const observers = ["player", "spectator", "analyst", "scorer", "official", "media", "scout", "enquiry"];
+  const crossing = observers.filter((r) => reach(r, WL).length > 0);
+  ok("no team-mate, observer or enquiry grant holds a workload, wellness or fitness capability",
+     crossing.length === 0, crossing.map((r) => `${r}: ${reach(r, WL).join(",")}`).join(" · "));
+  ok("fitness holds neither the physio's notes nor a coach's prose",
+     ROLES.includes("fitness") && reach("fitness", ["medical.details.read", "medical.write", "player.note.read"]).length === 0);
+  ok("...and holds the load, the check-ins, the tests and the coach's injury tier (Q13)",
+     ["player.workload.read", "player.workload.write", "wellness.read", "fitness.test.write",
+      "medical.status.read", "medical.nature.read"].every((c) => caps("fitness").includes(c)));
+  ok("fitness sets no guideline and shares nothing (it is not paged either)",
+     reach("fitness", ["player.workload.plan", "wellness.alert", "wellness.share"]).length === 0);
+  ok("a guardian reads no wellness record by standing (a share is an act, §6.3)",
+     !caps("guardian").includes("wellness.read") && !caps("guardian").includes("player.workload.read"));
+  ok("the boy records his own nets band and reads his own load",
+     ["player.workload.read", "player.workload.write"].every((c) => caps("selfaccess").includes(c)));
+  ok("the director of sport appoints the fitness coach; the office does not",
+     mayGrantRole("directorofsport", "fitness") && !mayGrantRole("schooladmin", "fitness"));
+  ok("fitness holds a school, like medical: not a team, not a child",
+     !TEAM_SCOPED_ROLES.includes("fitness") && !SUBJECT_SCOPED_ROLES.includes("fitness"));
 }
 
 group("§11.4  Administering a school is not conducting a safeguarding case");
