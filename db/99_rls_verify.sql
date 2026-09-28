@@ -5601,7 +5601,13 @@ BEGIN
        AND (p.prosrc LIKE '%''fixture.read''%' OR p.prosrc LIKE '%''scoring.edit''%' OR p.prosrc LIKE '%''scoring.start''%');
     -- match_fold_context (db/54): the fixture's start and format, the two
     -- facts the fold is told, for the credential's own match only.
-    PERFORM _assert(detail = 'duty_status,duty_suspended,match_fold_context,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
+    -- match_conditions_fix, match_conditions_resolve, match_playing_conditions
+    -- (db/61, SCRBRD-114): the playing conditions the fold is told, read for
+    -- the credential's own match (fixture.read), and fixed on its first event
+    -- by the append the credential already makes (scoring.edit) — a league's
+    -- published figures, nothing about a person, and no other match's.
+    PERFORM _assert(detail = 'duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
+                             || 'match_playing_conditions,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 

@@ -68,6 +68,7 @@ import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { safeguardingRoutes } from "./write/safeguarding-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
+import { playingConditionsRoutes } from "./write/playing-conditions-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
@@ -406,6 +407,7 @@ const load = loadRoutes({ pool, secret: SECRET });
 const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
 const publication = publicationRoutes({ pool, secret: SECRET });
+const playing = playingConditionsRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -662,6 +664,23 @@ const PLAYER_ROUTES = [
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],
   [/^\/api\/competition-entrants\/([^/]+)\/division$/, "POST", competitions.place],
+  // A competition's playing conditions (SCRBRD-114, db/61): dated versions,
+  // each figure with its source, published for matches to come; a match's
+  // frozen document and its departures before play. Not module-gated, like
+  // the fixture: the pad folds every match by them. Every decision is a
+  // db/61 definer function's (playing-conditions-api.mjs).
+  [/^\/api\/playing-conditions\/catalogue$/,                   "GET",  playing.catalogue],
+  [/^\/api\/competitions\/([^/]+)\/playing-conditions$/,        "GET",  playing.list],
+  [/^\/api\/competitions\/([^/]+)\/playing-conditions$/,        "POST", playing.draft],
+  [/^\/api\/competitions\/([^/]+)\/playing-conditions\/preview$/, "GET", playing.preview],
+  [/^\/api\/condition-sets\/([^/]+)$/,                          "POST", playing.amend],
+  [/^\/api\/condition-sets\/([^/]+)\/new-version$/,             "POST", playing.newVersion],
+  [/^\/api\/condition-sets\/([^/]+)\/values$/,                  "POST", playing.enter],
+  [/^\/api\/condition-sets\/([^/]+)\/values\/clear$/,           "POST", playing.clear],
+  [/^\/api\/condition-sets\/([^/]+)\/publish$/,                 "POST", playing.publish],
+  [/^\/api\/condition-sets\/([^/]+)\/withdraw$/,                "POST", playing.withdraw],
+  [/^\/api\/matches\/([^/]+)\/playing-conditions$/,             "GET",  playing.match],
+  [/^\/api\/matches\/([^/]+)\/playing-conditions\/override$/,   "POST", playing.override],
   // Skills owns player_skill and its read; the write was untagged. Same
   // finding as /api/training above.
   [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record, "skills"],

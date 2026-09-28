@@ -477,6 +477,9 @@ export const ADDED_SINCE_01 = {
   "player.workload.write":       "60_workload_consent_count.sql",
   "wellness.read":               "60_workload_consent_count.sql",
   "fitness.test.write":          "60_workload_consent_count.sql",
+  // Playing conditions per competition, phase 1 (SCRBRD-114): competitionadmin
+  // (and superadmin, whose bundle is every capability).
+  "competition.conditions.manage": "61_playing_conditions.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

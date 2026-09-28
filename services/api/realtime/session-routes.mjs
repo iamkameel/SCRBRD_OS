@@ -11,7 +11,7 @@
  * scoring-session.test.mjs. This just exposes it and keeps the hub in sync.
  */
 import { runAsPrincipal, who } from "../auth/auth-db.mjs";
-import { EVENT_COLUMNS } from "../write/events-api.mjs";
+import { EVENT_COLUMNS, matchFoldContext } from "../write/events-api.mjs";
 /** @import { Pool, IdHandler } from "../api-types.mjs" */
 /** @import { MatchHub } from "./realtime.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
@@ -154,16 +154,42 @@ export function sessionRoutes({ pool, secret, hub }) {
           const evs = await runAsPrincipal(pool, secret, b, async client =>
             client.query(`select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [id]));
           r.events = evs.rows;
+          // ...and how to fold it (SCRBRD-113/114): the fixture's start and
+          // format and the match's playing conditions with their hash, which
+          // the verify step below asks back.
+          r.fold = await runAsPrincipal(pool, secret, b, (client) => matchFoldContext(client, id));
           await broadcastState(pool, secret, b, hub, id);
         }
         res.json(r);
       } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 
-    // POST /matches/:id/session/handover/verify { device, runs, wickets, balls }
+    // POST /matches/:id/session/handover/verify { device, runs, wickets, balls, conditionsHash? }
+    //
+    // THE CONDITIONS FIRST (SCRBRD-114, design §3.5). The incoming pad sends
+    // the hash of the playing conditions it folded the log under (the one
+    // the events read gave it, inn.conditionsHash). If the match's frozen
+    // document says otherwise, the pad's figures were folded under other
+    // rules — a free hit where the match has none — and comparing them with
+    // the board would refuse or pass for the wrong reason. So it is refused
+    // first, in words, nothing changes (the session stays verifying), and the
+    // pad reopens the match to read them again. db/61 makes this a case for
+    // the proof, not a scorer: a version is settled before its day, and a
+    // fixed document never changes. A pad that sends no hash (a build from
+    // before this) is not asked.
     verifyTakeover: async (req, res) => {
       const { id } = req.params, b = req.headers?.authorization;
       try {
+        const sent = req.body?.conditionsHash;
+        if (typeof sent === "string" || sent === null) {
+          const fixed = await runAsPrincipal(pool, secret, b, async (client) =>
+            (await client.query(`select doc_hash, fixed from match_playing_conditions($1)`, [id])).rows[0] ?? null);
+          if (fixed?.fixed && fixed.doc_hash !== sent) {
+            res.json({ ok: false, reason: "conditions_changed", epoch: null, state: null,
+                       text: "This match's playing conditions changed since the pad opened it. Reopen the match to read them, then check the scoreboard again." });
+            return;
+          }
+        }
         const r = await callFn(pool, secret, b,
           `select * from scoring_verify_takeover($1,$2,$3,$4,$5)`,
           [id, req.body.device, req.body.runs, req.body.wickets, req.body.balls]);

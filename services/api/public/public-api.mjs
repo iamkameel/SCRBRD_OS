@@ -375,7 +375,12 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     const { rows } = await asNobody((c) => c.query(`select * from public_match_header($1)`, [id]));
     const r = rows[0];
     if (!r) return null;
+    // The match's frozen playing conditions (SCRBRD-114, db/61), so the page
+    // folds the log as the server does: a league with no free hit stands the
+    // wicket there too. None for a match with no document.
+    const { rows: pc } = await asNobody((c) => c.query(`select play, doc_hash from public_match_conditions($1)`, [id]));
     return {
+      conditions: pc[0]?.play ?? null, conditionsHash: pc[0]?.doc_hash ?? null,
       id,
       homeLabel: r.home_label, homeCode: r.home_code, homeTeam: r.home_team,
       awayLabel: r.away_label, awayCode: r.away_code, awayTeam: r.away_team, awayOnPlatform: r.away_on_platform,
@@ -470,8 +475,9 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
         send(res, 200, shellHtml({ view: shellMatch[1], matchId: id, header: h }),
           { type: "text/html; charset=utf-8", cache: NO_STORE, robots: SHELL_ROBOTS }, head);
       } else if (!apiMatch?.[2]) {
-        const { servedOn: _day, ...match } = h;
-        send(res, 200, JSON.stringify({ match, fold: { startsAt: h.startsAt, format: h.format } }), { cache: TEAM_LEVEL }, head);
+        const { servedOn: _day, conditions: _conditions, conditionsHash: _hash, ...match } = h;
+        send(res, 200, JSON.stringify({ match, fold: { startsAt: h.startsAt, format: h.format,
+          ...(h.conditions ? { conditions: h.conditions, conditionsHash: h.conditionsHash } : {}) } }), { cache: TEAM_LEVEL }, head);
       } else if (apiMatch[2] === "/log") {
         const l = await log(id, h, hot);
         const since = Math.max(0, Number.parseInt(url.searchParams.get("since") ?? "0", 10) || 0);

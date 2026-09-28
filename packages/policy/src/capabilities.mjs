@@ -301,6 +301,12 @@ export const CAPABILITIES = {
   // ── Competition ──
   "competition.read":            "See competitions and standings",
   "competition.manage":          "Administer a competition",
+  // A competition's playing conditions (SCRBRD-114): draft a dated version,
+  // enter each figure with its source, publish it for matches to come,
+  // withdraw one not yet in force, and depart from it for one fixture before
+  // play. Its own capability, not competition.manage: the figures a match is
+  // folded under are a different act from naming a division (db/61).
+  "competition.conditions.manage": "Set a competition's playing conditions",
 
   // ── Publishing ──
   "news.read":                   "Read news and headlines",
@@ -518,6 +524,8 @@ export const LEVEL = Object.freeze({
 
   // ── Competition ──
   "competition.read": 0, "competition.manage": 1,
+  // A league's rules: no person's data in them (design §7.3).
+  "competition.conditions.manage": 1,
 
   // ── Publishing ──
   "news.read": 0, "news.publish.team": 1, "news.publish.school": 1,
