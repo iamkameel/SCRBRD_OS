@@ -760,7 +760,7 @@ except the signed-out walk, which exists.
   `services/api/public/public.test.mjs` pins the allowlist, projects a log full of
   reasons, placement, typed names and ids, and drives the router over a fake pool
   (one 404, a staff token byte-identical, always `ANON`, headers, 429, the cache);
-  `apps/web/test/public-page.test.mjs`; db/99 §35; `tools/smoke-public.mjs` (every
+  `apps/web/test/public-page.test.mjs`; db/99 §37; `tools/smoke-public.mjs` (every
   public answer of the seed's fixtures and two of its own, in every state of the
   rule, for ids, dates, photos, reasons and unconsented names; a withdrawal on the
   next request of a finished page); `tools/smoke-browser-public.mjs`.
@@ -800,7 +800,7 @@ except the signed-out walk, which exists.
 9. **`fixture_publish()` refusing a transcribed match** waits: no provenance column
    exists yet. SCRBRD-099's migration adds the refusal and the exclusion when it adds
    the column.
-10. **db/99 §35 asserts facts, not labels**: labels are `publicName()`'s, in the API;
+10. **db/99 §37 asserts facts, not labels**: labels are `publicName()`'s, in the API;
     the walks assert the labels.
 
 ### Phase 2 — Competition pages, fixtures and results, honours

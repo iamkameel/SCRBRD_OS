@@ -65,7 +65,7 @@
 -- pseudonyms and labels before anything leaves the server. A grant to `anon`
 -- would hand a stranger holding the platform's anonymous key the raw inputs
 -- to the rule rather than its answer. The design's §2.2 says the same; the
--- check at the foot of this file and db/99 section 35 hold it.
+-- check at the foot of this file and db/99 section 37 hold it.
 --
 -- NOT HERE, on purpose:
 --   - fixture_publish() refusing a transcribed (backfilled) match (design

@@ -13,7 +13,7 @@
 //
 // The same claims against the real database and a real browser are
 // tools/smoke-public.mjs and tools/smoke-browser-public.mjs; the SQL is held
-// by db/99 section 35 and by packages/policy/test/public.test.mjs.
+// by db/99 section 37 and by packages/policy/test/public.test.mjs.
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

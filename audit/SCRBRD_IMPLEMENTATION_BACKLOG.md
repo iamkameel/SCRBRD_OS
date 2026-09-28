@@ -3380,7 +3380,7 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   `publicName()` labels; a 5 s / 60 s cache dropped by LISTEN; noindex; one 404; a per-address token bucket.
   `apps/web/src/public/` — the Match Centre's tabs in public mode, its own bundle (`/public-app.js`), held free of
   the signed-in app by `check-bundle`. The publish switch per side on the fixture screen. Proofs: the policy suite
-  reads db/59's bodies against `NEVER_PUBLIC`; `services/api/public/public.test.mjs`; db/99 §35;
+  reads db/59's bodies against `NEVER_PUBLIC`; `services/api/public/public.test.mjs`; db/99 §37;
   `tools/smoke-public.mjs`; `tools/smoke-browser-public.mjs`. Left for later phases: competition, fixtures-list
   and honours reads (2), AI commentary (3), the overlay and `broadcast_state()` (4), turning 18 (5); the
   transcribed-match refusal waits on SCRBRD-099's provenance column.
