@@ -1022,6 +1022,98 @@ BEGIN
             'Verify 057: a session support may not be issued', v_asg, now() + interval '1 hour');
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/59 (section 37). Two fixtures for the signed-out read path, written as
+-- the owner: Hilton 1XI v Westville 1XI (both on SCRBRD, live) and Hilton 1XI
+-- v Kearsney College (not on SCRBRD, finished, its names typed). Five boys of
+-- their own, so nothing earlier sections did to the seed's consents can
+-- decide an answer here: one to consent, one to consent and mark, one with
+-- nothing recorded, one fourteen or so playing up in the 1st XI (names off
+-- for his own age group), and a Westville boy who consents while Westville
+-- has not published. Each consenting boy has a verified guardian of his own.
+-- Returns the ids, by name.
+CREATE OR REPLACE FUNCTION _seed_59() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  ids jsonb := '{}';
+  r record;
+  v_p uuid; v_u uuid; v_a uuid; m_on uuid; m_off uuid;
+  s int := 0;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('named',  'Andile Named',     HIL, 17, true),
+      ('marked', 'Brandon Marked',   HIL, 17, true),
+      ('none',   'Craig Nothing',    HIL, 16, false),
+      ('up',     'Dumisani Playsup', HIL, 13, true),
+      ('wes',    'Ethan Westville',  WES, 17, true)) AS v(k, nm, school, age, consent)
+  LOOP
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (r.school, '1XI', r.nm, split_part(r.nm, ' ', 2), 90 + s, 'batter',
+            current_date - make_interval(years => r.age) - interval '40 days')
+    RETURNING id INTO v_p;
+    s := s + 1;
+    ids := ids || jsonb_build_object(r.k, v_p);
+    IF r.consent THEN
+      INSERT INTO app_user (school_id, email, name, role)
+      VALUES (r.school, 'guardian59.' || r.k || '@example.invalid', 'Parent ' || r.k, 'guardian') RETURNING id INTO v_u;
+      INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'guardian', r.school) RETURNING id INTO v_a;
+      INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                      consent_state, consent_version, consent_at, created_by, valid_from)
+      VALUES (v_a, v_p, 'parent', 'verified', v_u, now() - interval '30 days', 'granted', 'popia-2026-01',
+              now() - interval '30 days', v_u, current_date - 30);
+      ids := ids || jsonb_build_object('g_' || r.k, v_u);
+    END IF;
+  END LOOP;
+
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', WES, '1XI', 'Westville Boys'' High 1XI', now() - interval '1 hour', 'cricket', 'T10', 10, 'live')
+  RETURNING id INTO m_on;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', 'Kearsney College 1XI', now() - interval '3 days', 'cricket', 'T5', 5, 'complete')
+  RETURNING id INTO m_off;
+  ids := ids || jsonb_build_object('m_on', m_on, 'm_off', m_off);
+
+  -- M_ON: the squads (four Hilton boys and a typed one; the Westville boy),
+  -- two deliveries, a Law 41 suspension, a retirement "hurt".
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, payload, ball_type, value, striker_id, non_striker_id, bowler_id, seg, dismissal)
+  VALUES
+    (m_on, HIL, 1, 1, 0, SCORER, 'v59', 'v59-on-1', 1, now(), 'innings_start', jsonb_build_object(
+       'battingTeam', '1XI', 'bowlingTeam', 'Westville Boys'' High 1XI', 'overs', 10, 'twelfthMan', 'Twelfth Fiftynine',
+       'captureProfile', 'full',
+       'squad', jsonb_build_array(jsonb_build_object('id', ids->>'named', 'name', 'Andile Named'),
+                                  jsonb_build_object('id', ids->>'marked', 'name', 'Brandon Marked'),
+                                  jsonb_build_object('id', ids->>'none', 'name', 'Craig Nothing'),
+                                  jsonb_build_object('id', ids->>'up', 'name', 'Dumisani Playsup'),
+                                  jsonb_build_object('id', 'Typed Fiftynine', 'name', 'Typed Fiftynine')),
+       'bowlingSquad', jsonb_build_array(jsonb_build_object('id', ids->>'wes', 'name', 'Ethan Westville'))),
+     NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+    (m_on, HIL, 2, 1, 0, SCORER, 'v59', 'v59-on-2', 2, now(), 'batters', '{}', NULL, NULL,
+       (ids->>'named')::uuid, (ids->>'marked')::uuid, NULL, NULL, NULL),
+    (m_on, HIL, 3, 1, 0, SCORER, 'v59', 'v59-on-3', 3, now(), 'bowler', '{}', NULL, NULL, NULL, NULL, (ids->>'wes')::uuid, NULL, NULL),
+    (m_on, HIL, 4, 1, 0, SCORER, 'v59', 'v59-on-4', 4, now(), 'ball', '{"shot": "drive"}', 'run', 4,
+       (ids->>'named')::uuid, (ids->>'marked')::uuid, (ids->>'wes')::uuid, 9, NULL),
+    (m_on, HIL, 5, 1, 0, SCORER, 'v59', 'v59-on-5', 5, now(), 'ball', jsonb_build_object('fielder', 'Typed Fiftynine'), 'W', 0,
+       (ids->>'named')::uuid, (ids->>'marked')::uuid, (ids->>'wes')::uuid, NULL, 'caught'),
+    (m_on, HIL, 6, 1, 0, SCORER, 'v59', 'v59-on-6', 6, now(), 'bowler_suspended',
+       '{"reason": "dangerous_bowling", "scope": "innings"}', NULL, NULL, NULL, NULL, (ids->>'wes')::uuid, NULL, NULL),
+    (m_on, HIL, 7, 1, 0, SCORER, 'v59', 'v59-on-7', 7, now(), 'retire',
+       jsonb_build_object('batter', ids->>'marked', 'reason', 'hurt'), NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+  -- M_OFF: Hilton against typed names.
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, payload, ball_type, value, striker_id, bowler_id)
+  VALUES
+    (m_off, HIL, 1, 1, 0, SCORER, 'v59', 'v59-off-1', 1, now(), 'innings_start', jsonb_build_object(
+       'battingTeam', '1XI', 'bowlingTeam', 'Kearsney College 1XI', 'overs', 5,
+       'squad', jsonb_build_array(jsonb_build_object('id', ids->>'named', 'name', 'Andile Named')),
+       'bowlingSquad', jsonb_build_array('Kearsney Bowlerone')), NULL, NULL, NULL, NULL),
+    (m_off, HIL, 2, 1, 0, SCORER, 'v59', 'v59-off-2', 2, now(), 'ball', '{"bowler": "Kearsney Bowlerone"}', 'run', 1,
+       (ids->>'named')::uuid, NULL);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -6539,6 +6631,155 @@ BEGIN
     PERFORM _as(U_BEKKER);
     SELECT count(*) INTO n FROM player_masked WHERE id = P_OTHER AND fitness IS NOT NULL;
     PERFORM _assert(n = 1, 'db/58 (staff): A Bekker does not read his own son''s fitness');
+  END;
+
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 37. The signed-out read path (SCRBRD-083 phase 1, db/59) ──
+  -- A public request runs as nobody: app.user_id empty, every base table
+  -- denied, and only db/59's four SECURITY DEFINER reads answer — and only
+  -- for a fixture with a published side. What they return is the rule's
+  -- inputs for the API (it applies publicName() and the pseudonyms; see
+  -- services/api/public/); here it is held that the inputs are the right
+  -- ones: each boy's facts for HIS side, his side's publication, no date of
+  -- birth, no reason, no kind that is a conduct matter, and that a
+  -- withdrawal, a mark and a publication flip change the next call.
+  DECLARE
+    ids      jsonb := _seed_59();
+    M_ON     uuid;
+    M_OFF    uuid;
+    U_OFFICE uuid := '88888888-0000-0000-0000-00000000000c';   -- registrar, guardian.link.manage at Hilton
+    v_facts  jsonb;
+    v_pub    boolean;
+    v_grp    text;
+    v_keys   text;
+    t        text;
+    h        record;
+  BEGIN
+    M_ON := (ids->>'m_on')::uuid;
+    M_OFF := (ids->>'m_off')::uuid;
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (unpublished) nothing, for nobody and for a signed-in reader alike
+    SELECT (SELECT count(*) FROM public_match_header(M_ON)) + (SELECT count(*) FROM public_match_log(M_ON, 0))
+         + (SELECT count(*) FROM public_match_people(M_ON)) + (SELECT count(*) FROM public_shot_sectors(M_ON)) INTO n;
+    PERFORM _assert(n = 0, format('db/59 (unpublished): a fixture nobody published answered %s rows', n));
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0);
+    PERFORM _assert(n = 0, format('db/59 (unpublished-signed-in): a signed-in reader got %s public rows of an unpublished fixture', n));
+
+    -- the rule's records, through their own doors — starting from every
+    -- Hilton age group named (section 25 leaves some switched off)
+    PERFORM _as(U_SARAH);
+    FOR v_grp IN SELECT o.age_group FROM public_names_off o WHERE o.school_id = HIL AND o.names_off LOOP
+      PERFORM public_names_off_set(HIL, v_grp, false);
+    END LOOP;
+    PERFORM _as((ids->>'g_named')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set((ids->>'named')::uuid, true, 'public-names-2026-09') s;
+    PERFORM _assert(v_ok, format('db/59: the named boy''s guardian could not consent (%s)', v_reason));
+    FOREACH t IN ARRAY ARRAY['marked', 'up', 'wes'] LOOP
+      PERFORM _as((ids->>('g_' || t))::uuid);
+      SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set((ids->>t)::uuid, true, 'public-names-2026-09') s;
+      PERFORM _assert(v_ok, format('db/59: %s''s guardian could not consent (%s)', t, v_reason));
+    END LOOP;
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_set((ids->>'marked')::uuid, 'a court order') s;
+    PERFORM _assert(v_ok, format('db/59: the mark could not be set (%s)', v_reason));
+    v_grp := birth_age_group(_born_of((ids->>'up')::uuid));
+    PERFORM _assert(v_grp IS NOT NULL AND v_grp NOT IN ('open'), format('db/59: the boy playing up is %s by birth', v_grp));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_names_off_set(HIL, v_grp, true) s;
+    PERFORM _assert(v_ok, format('db/59: names could not be switched off for %s (%s)', v_grp, v_reason));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_ON, 'home', true) s;
+    PERFORM _assert(v_ok, format('db/59: Hilton could not publish its side (%s)', v_reason));
+
+    -- (signed-out) nobody reads a base table; the definers answer
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH t IN ARRAY ARRAY['player', 'match', 'ball_event', 'public_name_consent', 'player_never_public',
+                             'fixture_publication', 'assignment_subject', 'match_toss', 'school'] LOOP
+      EXECUTE format('SELECT count(*) FROM %I', t) INTO n;
+      PERFORM _assert(n = 0 AND _count_rows(t) > 0, format('db/59 (signed-out): nobody reads %s of %s''s %s rows', n, t, _count_rows(t)));
+    END LOOP;
+    SELECT * INTO h FROM public_match_header(M_ON);
+    PERFORM _assert(h.home_published AND NOT h.away_published AND h.away_on_platform AND h.home_label = 'Hilton College 1XI'
+                    AND h.served_on = to_char(sa_today(), 'YYYY-MM-DD'),
+      format('db/59 (header): %s', row(h.home_published, h.away_published, h.away_on_platform, h.home_label, h.served_on)::text));
+
+    -- (people) each boy the log names, his facts for his side, his side's publication
+    SELECT count(*) INTO n FROM public_match_people(M_ON);
+    PERFORM _assert(n = 5, format('db/59 (people): %s people for a log naming four Hilton boys, a typed one and a Westville boy — expected 5 (no typed name)', n));
+    SELECT string_agg(DISTINCT k, ',' ORDER BY k) INTO v_keys FROM public_match_people(M_ON) pp, jsonb_object_keys(pp.facts) k;
+    PERFORM _assert(v_keys = 'consents,namesOff,neverPublic', format('db/59 (facts-clean): the facts carry %s', v_keys));
+    SELECT pp.facts, pp.school_published INTO v_facts, v_pub FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'named')::uuid;
+    PERFORM _assert(v_pub AND v_facts->'consents'->0->>'competent' = 'true' AND v_facts->'consents'->0->>'endedOn' IS NULL
+                    AND (v_facts->>'neverPublic')::boolean = false AND (v_facts->>'namesOff')::boolean = false,
+      format('db/59 (named): %s, published %s', v_facts, v_pub));
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'marked')::uuid;
+    PERFORM _assert((v_facts->>'neverPublic')::boolean, format('db/59 (marked): the mark is not in his facts: %s', v_facts));
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'none')::uuid;
+    PERFORM _assert(jsonb_array_length(v_facts->'consents') = 0, format('db/59 (nothing): %s', v_facts));
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'up')::uuid;
+    PERFORM _assert((v_facts->>'namesOff')::boolean, format('db/59 (playing up): names off for his own age group did not hold him back: %s', v_facts));
+    SELECT pp.school_published INTO v_pub FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'wes')::uuid;
+    PERFORM _assert(NOT v_pub, 'db/59 (L5): the Westville boy reads as published while only Hilton published');
+
+    -- (log) every event but the Law 41 suspension, every field by name
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0);
+    PERFORM _assert(n = 6, format('db/59 (log): %s events, expected the 7 written less the suspension', n));
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0) l WHERE l.kind = 'bowler_suspended';
+    PERFORM _assert(n = 0, 'db/59 (log): a Law 41 suspension of one boy reached the public log');
+    SELECT string_agg(DISTINCT k, ',') INTO v_keys FROM public_match_log(M_ON, 0) l, jsonb_object_keys(l.detail) k
+     WHERE k NOT IN ('battingTeam', 'bowlingTeam', 'teamKey', 'bowlingTeamKey', 'squad', 'bowlingSquad', 'overs', 'target',
+                     'striker', 'nonStriker', 'bowler', 'dismissed', 'captainConsent', 'fielder', 'freeHit', 'nbRuns', 'nbType',
+                     'outAt', 'facesNext', 'notInOver', 'runs', 'toBattingTeam', 'batter', 'reason', 'confirmed');
+    PERFORM _assert(v_keys IS NULL, format('db/59 (log): the detail carries %s', v_keys));
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0) l WHERE l.detail ? 'twelfthMan' OR l.detail ? 'captureProfile' OR l.detail ? 'shot';
+    PERFORM _assert(n = 0, 'db/59 (log): the twelfth man, a capture profile or a shot reached the public log');
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 4);
+    PERFORM _assert(n = 2, format('db/59 (since): %s events after seq 4, expected 2', n));
+    SELECT count(*) INTO n FROM public_shot_sectors(M_ON) WHERE sector = 9 AND runs = 4 AND shots = 1;
+    PERFORM _assert(n = 1, 'db/59 (sectors): the four through sector 9 is not the team''s');
+
+    -- (off-platform) a typed opposition is nobody's to name
+    PERFORM _as(U_SARAH);
+    SELECT s.ok INTO v_ok FROM fixture_publish(M_OFF, 'home', true) s;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT * INTO h FROM public_match_header(M_OFF);
+    PERFORM _assert(NOT h.away_on_platform AND h.away_label = 'Kearsney College 1XI',
+      format('db/59 (off-platform): %s', row(h.away_on_platform, h.away_label)::text));
+    SELECT count(*) INTO n FROM public_match_people(M_OFF);
+    PERFORM _assert(n = 1, format('db/59 (off-platform): %s people, expected only the Hilton boy — typed names have no row', n));
+
+    -- (flips) the next call sees each change
+    PERFORM _as(U_OFFICE);
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set((ids->>'named')::uuid, false, 'public-names-2026-09', (ids->>'g_named')::uuid) s;
+    PERFORM _assert(v_ok, format('db/59: the office could not withdraw a consent (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'named')::uuid;
+    PERFORM _assert(v_facts->'consents'->0->>'endedOn' = to_char(sa_today(), 'YYYY-MM-DD'),
+      format('db/59 (withdrawal): the next call still has a live consent: %s', v_facts));
+    PERFORM _as(U_SARAH);
+    PERFORM player_never_public_end((ids->>'marked')::uuid);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'marked')::uuid;
+    PERFORM _assert(NOT (v_facts->>'neverPublic')::boolean, format('db/59 (mark ended): %s', v_facts));
+    PERFORM _as(U_SARAH);
+    PERFORM fixture_publish(M_ON, 'home', false);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT (SELECT count(*) FROM public_match_header(M_ON)) + (SELECT count(*) FROM public_match_log(M_ON, 0))
+         + (SELECT count(*) FROM public_match_people(M_ON)) + (SELECT count(*) FROM public_shot_sectors(M_ON)) INTO n;
+    PERFORM _assert(n = 0, format('db/59 (withdrawn): a fixture Hilton took back down answered %s rows', n));
+
+    -- (grants) the application, and not PUBLIC or a managed host's API roles
+    FOREACH t IN ARRAY ARRAY['public_match_header(uuid)', 'public_match_log(uuid,integer)', 'public_match_people(uuid)',
+                             'public_shot_sectors(uuid)'] LOOP
+      PERFORM _assert(has_function_privilege('scrbrd_app', t::regprocedure, 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                       WHERE p.oid = t::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname IN ('anon', 'authenticated')
+                                         AND has_function_privilege(r.oid, t::regprocedure, 'EXECUTE')),
+        format('db/59 (grants): %s is not the application''s alone', t));
+    END LOOP;
   END;
 
   PERFORM set_config('app.user_id', '', true);
