@@ -78,6 +78,7 @@ const SLIDES = [
   { id: "wheel",    label: "Every ball, where it went" },
   { id: "platform", label: "One switchboard" },
   { id: "access",   label: "Who may see what" },
+  { id: "care",     label: "A duty of care, kept" },
   { id: "school",   label: "Your school, now" },
   { id: "roadmap",  label: "Built, underneath, planned" },
   { id: "close",    label: "See it on your fixtures" },
@@ -254,7 +255,7 @@ function Bars({ rows, max, tone, label }) {
   );
 }
 
-const COVER_LEDE = "SCRBRD is the operating system for a school sports programme: live scoring that survives a lost signal, a squad and medical record the right people can read and nobody else can, and a roadmap that is checked against the code rather than promised.";
+const COVER_LEDE = "SCRBRD is the operating system for a school sports programme: live scoring that survives a lost signal, a squad and medical record the right people can read and nobody else can, safeguarding and consent kept to CSA's policy and POPIA, and a roadmap that is checked against the code rather than promised.";
 function CoverSlide() {
   return (
     <div style={{ maxWidth: "880px" }}>
@@ -280,6 +281,36 @@ const PAIN = [
   { where: "The spreadsheet",    cost: "Squads, kit, umpires and transport in tabs that agree with each other only on the day they were made." },
 ];
 const PROBLEM_LEDE = "A school already has all of this information. What it does not have is one record of it that a coach, a parent, a physio and a scorer can each open and see exactly their part of, and be shown nothing else.";
+// What the platform owes a child, built and proved in the database: each
+// card names the rule it keeps, not a feature list. Kept to what has shipped.
+const CARE_LEDE = "School sport is children. The rules that protect them are CSA's Safeguarding Policy, POPIA and the Laws of Cricket, and each one is kept where it cannot be skipped: in the database, proved by a check that runs before anything reaches production.";
+const CARE = [
+  { what: "Safeguarding, to CSA's policy", how: "A concern goes to the school's Designated Safeguarding Officer and nobody else: not the coach, not the principal, not the platform's own staff, and never the adult it names." },
+  { what: "Adults cleared before they coach", how: "Police clearance, the Child Protection and Sexual Offences Registers and the Safeguarding Awareness Certificate, each held to CSA's maximum age. Pupils never appear on it." },
+  { what: "Consent a parent can see and withdraw", how: "A pupil is named on a public page, or a fast bowler's load is monitored, only with a recorded consent. At eighteen he is asked for his own, and a withdrawal takes effect at once." },
+  { what: "The Laws, and your competition's rules", how: "The MCC Laws of Cricket, 4th Edition, from 1 October 2026, and each competition's own playing conditions, frozen for a match at its first ball and cited to the clause they come from." },
+];
+
+function CareSlide() {
+  return (
+    <div className="deck-two">
+      <div>
+        <Kicker>Duty of care</Kicker>
+        <H>The rules that protect a child, kept where they cannot be skipped.</H>
+        <p className="deck-lede">{CARE_LEDE}</p>
+      </div>
+      <div className="deck-grid" style={{ gridTemplateColumns: "1fr" }} data-testid="deck-care">
+        {CARE.map((c, i) => (
+          <div key={c.what} className="deck-card deck-rise" style={{ "--i": i + 2 }}>
+            <div className="deck-cap" style={{ marginTop: 0, fontSize: "12px" }}>{c.what}</div>
+            <div className="deck-sub" style={{ fontSize: "12px", color: D.textSecondary }}>{c.how}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProblemSlide() {
   return (
     <div className="deck-two">
@@ -595,6 +626,7 @@ function PitchDeckView({ role, onNav }) {
             {s.id === "wheel"    && <WheelSlide filter={filter} setFilter={setFilter}/>}
             {s.id === "platform" && <PlatformSlide/>}
             {s.id === "access"   && <AccessSlide/>}
+            {s.id === "care"     && <CareSlide/>}
             {s.id === "school"   && <SchoolSlide role={role}/>}
             {s.id === "roadmap"  && <RoadmapSlide/>}
             {s.id === "close"    && <CloseSlide onNav={onNav}/>}
