@@ -155,5 +155,9 @@ below. Kameel confirmed all of them the same day.
    or after the boy's eighteenth birthday is refused and does not count.
 3. **Signed-out reads** that apply the rule on the server, never in the browser, and a
    `noindex` on every public page.
+   **Built for the live page and the scorecard (2026-09-28), and switched off**:
+   `db/59_public_read_path.sql` and `services/api/public/`, as
+   `docs/design/SCRBRD-083_public_pages.md` §8 phase 1 records. No deployment serves
+   them until it sets `PUBLIC_PAGES=on`, which waits on item 5.
 4. **The overlay brought under the rule** (D2).
 5. **The information officer's confirmation** of this document.

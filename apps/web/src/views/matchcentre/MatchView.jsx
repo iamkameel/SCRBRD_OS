@@ -33,9 +33,10 @@ import { BigScreen } from "./spectator.jsx";
  * `GET /api/matches/:id/events`, folded by @scrbrd/scoring — the read the
  * scorecard always used. Names are the ones the log carries (the squads the
  * scorer's pad wrote), exactly as the scorecard shows them; the commentary
- * takes them through its `nameOf` hook, which is the door a future public
- * page (SCRBRD-083 step 3) will pass publicName() through instead. Nothing
- * here is public.
+ * takes them through its `nameOf` hook. Nothing here is public: the public
+ * page (SCRBRD-083, src/public/PublicMatch.jsx) is its own component, which
+ * shares this view's tabs (tabs-core.jsx, scorecard.jsx) over a log the
+ * server has already redacted, and imports nothing signed-in.
  *
  * Signed out (the demonstration), the fixture's summary score is
  * reconstructed by the seeder, as the Scorecard always was, and says so; it

@@ -1,6 +1,8 @@
 # SCRBRD-083 — The public pages: how the rule is built
 
-Status: **design, for Kameel's review** (Fable, 2026-09-27). Nothing here is built.
+Status: **design, for Kameel's review** (Fable, 2026-09-27); §9 decided the same day.
+**Phase 1 built 2026-09-28 (Opus), and not live**: off unless a deployment sets
+`PUBLIC_PAGES=on` (§8, phase 1, "As built"). Phases 2–5 are not built.
 Opus builds from it, phase by phase (§8). The rule itself is decided and is not
 reopened here: `docs/policy/PUBLIC_DATA.md` (§1–§4, confirmed reading §5a). This
 document is that rule's §6 items 3 and 4, and everything that now hangs off them.
@@ -707,6 +709,99 @@ side of one fixture and withdrawn it; the never-public mark exercised on the pil
 with the reason held away from every page (`player.public.withhold` only); the rate
 limit measured against a real live match's poll; SCRBRD-098's open "signed-out
 walk" closed by the walk above.
+
+**As built (2026-09-28). Not live.** Off unless the API runs with `PUBLIC_PAGES=on`
+(and then it needs `PUBLIC_PSEUDONYM_SECRET`, 32+ bytes, not the session secret;
+`PUBLIC_TRUST_PROXY_HOPS` for the rate limit behind a proxy) — DEPLOYING.md,
+"Turning the public pages on". Every "before live" condition above is still open
+except the signed-out walk, which exists.
+
+- **Migration `db/59_public_read_path.sql`.** `public_match_header(match)`,
+  `public_match_log(match, since)`, `public_match_people(match)` (one row per player
+  the log names: the three facts for *his* side, whether his side is published, and
+  the three name columns for the formatter — a function of its own rather than part
+  of the log's), `public_shot_sectors(match)`; each SECURITY DEFINER with a pinned
+  search path, granted to `scrbrd_app` only (PUBLIC, `anon`, `authenticated`
+  revoked: the API is the only caller, and these return the rule's *inputs* — ids,
+  full names — which only the API turns into its answer), each empty for a fixture
+  with no published side. `public_fixture_served()` (owner only) is the one test.
+  `public_data_notify()` triggers on `public_name_consent`, `player_never_public`,
+  `public_names_off`, `fixture_publication`, `competition_publication`,
+  `match_broadcast`, `honour` — and three the list did not name: `assignment_subject`
+  (a revoked guardian link unmakes a consent's competence), `player` (the name
+  columns, `born`, the side) and `match` (a side's school changing unpublishes it).
+  The payload is `{k, id}` — never the table, so a listener cannot tell a
+  never-public mark from a consent. No page-view counter (Q8).
+- **The read path, `services/api/public/`.** `public-api.mjs` answers
+  `GET /api/public/matches/:id` (the header), `…/log?since=`, `…/shots`, and the
+  shells `/live/:id`, `/scorecard/:id` (`/table/` and `/fixtures/` answer the one 404
+  until phase 2), before anything reads a credential, as `ANON`. `redact.mjs` is the
+  projection: `PUBLIC_EVENT_FIELDS` per kind, each kept field checked (a dismissal
+  canonical, a reason a code), per-match `hmac(secret, match ‖ ref)` pseudonyms of
+  12 hex characters for every player reference, and of the event ids too, squads
+  as `{id, label, batHand}`, and `people` naming exactly the boys `publicName()`
+  names. Cache 5 s live / 60 s otherwise, doubled past 2,000 requests a minute on one
+  fixture (§2.8's ceiling), dropped by `LISTEN public_data_changed`; `no-store` on the
+  log, every 404, 429 and shell; `public, max-age=30` on the header and sectors;
+  `X-Robots-Tag: noindex` on everything (`noindex, nofollow` on the shells, with the
+  meta); a token bucket of 120 a minute, bursts of 30, per client address.
+- **The page, `apps/web/src/public/`.** A second Vite entry built to a fixed
+  `/public-app.js` (the API's shells load it; the API image carries no `dist/`). It
+  folds the redacted log with `@scrbrd/scoring` and draws the Match Centre's own
+  Summary, Scorecard, Commentary and Partnerships tabs (moved to `tabs-core.jsx`;
+  `scorecard.jsx` now takes its signed-in parts as props), a team-level Analytics
+  (the side's twelve sectors) and a header-only Match details. `check-bundle`
+  reads each entry's static graph and holds the public one free of eight
+  signed-in markers. The publish switch per side is on the fixture screen
+  (`views/publication.jsx`, `GET/POST /api/matches/:id/publication`).
+- **Proofs.** `packages/policy/test/public.test.mjs` reads every `public_*()` body in
+  db/59 on and holds its columns to `NEVER_PUBLIC` (views mapped to their tables;
+  `*`, `alias.*` and a whole payload refused; the checker falsified in-suite);
+  `services/api/public/public.test.mjs` pins the allowlist, projects a log full of
+  reasons, placement, typed names and ids, and drives the router over a fake pool
+  (one 404, a staff token byte-identical, always `ANON`, headers, 429, the cache);
+  `apps/web/test/public-page.test.mjs`; db/99 §35; `tools/smoke-public.mjs` (every
+  public answer of the seed's fixtures and two of its own, in every state of the
+  rule, for ids, dates, photos, reasons and unconsented names; a withdrawal on the
+  next request of a finished page); `tools/smoke-browser-public.mjs`.
+
+**Where the code differs from this design, and why:**
+
+1. **The header's route** is `GET /api/public/matches/:id` (§2.3's table), not
+   `…/header` (§2.9). It carries **no competition or division**: nothing links a
+   fixture to a competition in the schema. It carries **no result text**: no result
+   is stored; the page's fold decides it, as the signed-in Match Centre's does. It
+   carries the score by innings (`match_live_score`), which the shell's Open Graph
+   title uses.
+2. **The allowlist's kinds.** `milestone`, `over_end` and `short_running` are not
+   event kinds (milestones and over ends are the commentary's, short running is a
+   ball and a penalty), so there is nothing to list. `bowler_suspended` is a kind
+   the table did not name, so it is dropped whole — a Law 41 suspension of one boy is
+   N3. No ball carries a `speed`.
+3. **A retirement's reason cannot simply be dropped:** the fold writes
+   `retired ${reason ?? "hurt"}` as the batter's dismissal, so a missing reason
+   *reads* "hurt". The projection sends "not out" for every retirement that is not a
+   dismissal (retired out and timed out keep theirs).
+4. **The fielder is the one reference the fold does not look up** — it writes it into
+   the scorecard line as it stands ("c C Botha b …", from logs where the scorer typed
+   him). The page gives the fold the fielder's label ("Fielder", or his name) and the
+   commentary his pseudonym to look up. The browser walk found this: "c d20bf7b8e52a
+   b Bowler" on the first render.
+5. **Event ids are pseudonymised too.** An event's id is its idempotency key, which
+   names the scoring device; a void's target is mapped the same way.
+6. **A squad may hold bare strings** (typed names), and `twelfthMan` is a name, not an
+   id: both handled (the twelfth man is dropped: a team sheet, A7).
+7. **`MatchView.jsx` does not gain a public source** (§2.9): the public page is its own
+   component sharing the tabs, because `MatchView` imports the role model, the API
+   client and the shell, none of which may reach a stranger's bundle.
+8. **The app's service worker** would have cached a public shell as the app's offline
+   shell and served a stale `/public-app.js`; it now leaves the public paths to the
+   network.
+9. **`fixture_publish()` refusing a transcribed match** waits: no provenance column
+   exists yet. SCRBRD-099's migration adds the refusal and the exclusion when it adds
+   the column.
+10. **db/99 §35 asserts facts, not labels**: labels are `publicName()`'s, in the API;
+    the walks assert the labels.
 
 ### Phase 2 — Competition pages, fixtures and results, honours
 

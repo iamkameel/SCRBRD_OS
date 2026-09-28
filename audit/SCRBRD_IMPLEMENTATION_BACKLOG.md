@@ -3370,6 +3370,20 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   judgements never public; withdrawal reaches past pages; noindex. Build order in its §6: the rule as
   `packages/policy/src/public.mjs` with tests, then the consent / never-public / age-group / publish records (a
   migration, Opus), then signed-out reads applying it server-side, then the overlay under it (D2).
+  **Designed 2026-09-27** (`docs/design/SCRBRD-083_public_pages.md`, §9 decided). **Phase 1 built 2026-09-28, NOT
+  LIVE** (off unless `PUBLIC_PAGES=on`; go-live waits on the information officer's written confirmation and the
+  design's other "before live" conditions): `db/59_public_read_path.sql` — `public_match_header()`,
+  `public_match_log()`, `public_match_people()`, `public_shot_sectors()`, SECURITY DEFINER, `scrbrd_app` only, nothing
+  for an unpublished fixture; `public_data_changed` notify triggers. `services/api/public/` — `/api/public/*` and the
+  `/live`, `/scorecard` shells as the anonymous principal whatever the request carries; the log projected through a
+  per-kind allowlist with per-match HMAC pseudonyms (`PUBLIC_PSEUDONYM_SECRET`, environment only) and
+  `publicName()` labels; a 5 s / 60 s cache dropped by LISTEN; noindex; one 404; a per-address token bucket.
+  `apps/web/src/public/` — the Match Centre's tabs in public mode, its own bundle (`/public-app.js`), held free of
+  the signed-in app by `check-bundle`. The publish switch per side on the fixture screen. Proofs: the policy suite
+  reads db/59's bodies against `NEVER_PUBLIC`; `services/api/public/public.test.mjs`; db/99 §35;
+  `tools/smoke-public.mjs`; `tools/smoke-browser-public.mjs`. Left for later phases: competition, fixtures-list
+  and honours reads (2), AI commentary (3), the overlay and `broadcast_state()` (4), turning 18 (5); the
+  transcribed-match refusal waits on SCRBRD-099's provenance column.
 - **SCRBRD-084 — Season awards and MVP.** Season roll-up of figures and ratings already computed.
 - **SCRBRD-085 — Phone day-of views for drivers and groundskeepers.**
 
@@ -4421,6 +4435,9 @@ it; the pad's AI line is unchanged and spectators never see one. Guards: `packag
 (every kind, void, amendment, free hit, penalty credits both ways, determinism, 60 generated matches with no id or
 typed name reaching a line, public mode) and `tools/smoke-browser-matchcentre.mjs`. Still open: the signed-out walk
 (with the public page, SCRBRD-083 step 3) and item 4.
+**The signed-out walk: built 2026-09-28** with SCRBRD-083 phase 1 — `tools/smoke-browser-public.mjs` opens the
+public live page and scorecard signed out and reads the Commentary tab's lines from the redacted log, names by the
+rule and a role word for everyone else, never "hurt". Item 4 (AI lines) is SCRBRD-083 phase 3.
 The same lines feed the Match Centre's spectator side (Kameel's premium-feel checklist, step 3c): the highlights on
 Summary, a moment on the board for a boundary, a wicket or a milestone (the hat-trick ball among them) that arrives
 while the page is open, the end-of-over line between overs, and big-screen mode (`views/matchcentre/spectator.jsx`).
