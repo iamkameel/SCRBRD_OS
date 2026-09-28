@@ -145,7 +145,7 @@ try {
 
   // ── The keyboard ────────────────────────────────────────────────
   group("Every slide, from the keyboard");
-  const order = ["cover", "problem", "wheel", "platform", "access", "school", "roadmap", "close"];
+  const order = ["cover", "problem", "wheel", "platform", "access", "care", "school", "roadmap", "close"];
   ok("it opens on the cover", (await slideNow()) === "cover");
   for (let i = 1; i < order.length; i++) {
     await press("ArrowRight", 1100);
@@ -187,12 +187,12 @@ try {
   ok("...and picking it again releases it", (await zone.getAttribute("aria-pressed")) === "false");
   ok("no filter chip is offered for a line the wheel cannot draw", (await count('[data-testid="deck-key-W"]')) === 0);
 
-  await press("6", 1800);
+  await press("7", 1800);
   const summary = page.locator('[data-testid="deck-summary"]');
   ok("the school slide's figures came from the server, not the demo", (await summary.getAttribute("data-live")) === "true");
   ok("...and say what they are scoped to", /summary read/i.test(await page.locator('[data-testid="deck-summary-source"]').innerText()));
 
-  await press("7", 1200);
+  await press("8", 1200);
   const want = Object.fromEntries(["shipped", "partial", "planned"].map((s) => [s, UPGRADES.filter((u) => u.status === s).length]));
   for (const st of Object.keys(want)) {
     const col = page.locator(`[data-testid="deck-roadmap-${st}"]`);
