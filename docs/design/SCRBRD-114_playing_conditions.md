@@ -390,6 +390,8 @@ Phase 1 must be first. Phases 2, 3 and 4 are independent of each other and may l
 
 ## 10 · Decisions for Kameel
 
+**Decided (Kameel, 2026-09-28): D1–D12 as recommended.** A1–A8 stay open until the KZN bye-laws are in hand.
+
 Each with the recommendation the body assumes.
 
 | # | decision | recommendation |
