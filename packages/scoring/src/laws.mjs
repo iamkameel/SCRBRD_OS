@@ -37,7 +37,13 @@
  *     it, by design, because an offline queue can replay one);
  *   - a late capture-profile declaration (the fold ignores it; SCRBRD-039);
  *   - how many innings a format has, and whether a player is in the squad
- *     (opposition players are typed names SCRBRD holds no row for).
+ *     (opposition players are typed names SCRBRD holds no row for);
+ *   - a competition's playing conditions (SCRBRD-114, conditions.mjs): a
+ *     bowler past a league's innings cap, a spell past its limit. The
+ *     innings still ends at its innings_start's overs, as before. Decided
+ *     by Kameel (D1, 2026-09-28): the
+ *     umpires allowed it, the scorer records it, and the pad says so in
+ *     words; this module reads no condition at all.
  */
 import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS,
   PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason,

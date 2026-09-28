@@ -279,9 +279,11 @@ try {
   ok("a later version is published", (await api(`/api/condition-sets/${v3.body?.setId}/publish`, { method: "POST", token: league })).body?.ok === true);
   const [again] = await q(`select doc_hash from match_conditions where match_id = $1`, [M1]);
   ok("...and M1's document is untouched", again?.doc_hash === row?.doc_hash);
-  ok("a second batch fixes nothing again", (await api(`/api/matches/${M1}/events`, { method: "POST", token: scorer,
-    body: { events: [envelope(ball({ type: BALL_TYPE.RUN, value: 1 }), c1.body.epoch, DEV_A)] } })).body?.accepted?.length === 0
-    || (await q(`select count(*)::int n from match_conditions where match_id = $1`, [M1]))[0].n === 1);
+  const more = await api(`/api/matches/${M1}/events`, { method: "POST", token: scorer,
+    body: { events: [envelope(batters({ striker: P[2], nonStriker: P[1] }), c1.body.epoch, DEV_A)] } });
+  const [after2] = await q(`select doc_hash, fixed_at from match_conditions where match_id = $1`, [M1]);
+  ok("a second batch is written and fixes nothing again", more.body?.accepted?.length === 1 && after2?.doc_hash === row?.doc_hash,
+     JSON.stringify(more.body));
 
   // No backfill: a match with events and no row stays without one.
   const OLD = "77777777-0000-0000-0000-000000000004";

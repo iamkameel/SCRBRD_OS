@@ -7461,18 +7461,20 @@ BEGIN
   -- credential fixing the document, the handover's hash).
   --
   -- Each labelled assertion was falsified once — the thing it guards broken
-  -- in db/61, the database rebuilt and this file run — and went red:
-  --   (catalogue)   a key added to the INSERT and not to conditions.mjs
-  --   (deny)        the CHECK's deny-list taken off the key
+  -- in db/61, the database rebuilt and this file run — and went red (three
+  -- at db/61's own proof first, which runs before this file can):
+  --   (catalogue)   a catalogue row's readers changed in db/61 and not in conditions.mjs
+  --   (deny)        the CHECK's deny-list taken off the key (db/61's proof first)
   --   (immutable)   condition_value_guard() not asking the version's status
   --   (retroactive) condition_set_publish() comparing < sa_today() for <=
   --   (support)     condition_set_publish() without its support check
   --   (scorer)      condition_set_read admitting any signed-in reader
-  --   (entrant)     match_competition_entered() dropped
+  --   (entrant)     match_competition_entered() not asking for the home side
   --   (fix)         match_conditions_fix() not refusing a scored match
-  --   (override)    match_condition_override_set() not asking for a row
-  --   (frozen)      match_conditions_guard() not comparing the play part
-  --   (parity)      match_free_hits_apply() back to db/54's (the format only)
+  --   (override)    match_condition_override_set() not asking for a row: the
+  --                 override table's own trigger refused it, the second wall
+  --   (frozen)      match_conditions_guard() not comparing the play part (db/61's proof first)
+  --   (parity)      match_free_hits_apply() back to db/54's (db/61's proof first)
   --   (seed)        _seed_rows_61('resolved') writing the other free hit
   DECLARE
     ids jsonb;
@@ -7610,10 +7612,13 @@ BEGIN
     -- (immutable) a published figure never changes; a change is a new version
     PERFORM _assert((SELECT e.reason FROM condition_value_enter(V1, 'format.free_hit', '', 'true', 'unconfirmed') e) = 'published_is_immutable',
       'db/61 (immutable): a published figure was re-entered');
-    PERFORM _assert(_owner_61(format($q$UPDATE condition_value SET value = 'true' WHERE set_id = %L$q$, V1)) = '23514'
-                    AND _owner_61(format($q$DELETE FROM condition_value WHERE set_id = %L$q$, V1)) = '23514'
+    -- A value that would be valid in a draft, so only the version's status
+    -- can refuse it.
+    PERFORM _assert(_owner_61(format($q$UPDATE condition_value SET value = 'true' WHERE set_id = %L AND key = 'format.free_hit'$q$, V1)) = '23514',
+      'db/61 (immutable): the owner changed a published figure straight at the table');
+    PERFORM _assert(_owner_61(format($q$DELETE FROM condition_value WHERE set_id = %L$q$, V1)) = '23514'
                     AND _owner_61(format($q$UPDATE condition_set SET effective_from = effective_from + 1 WHERE id = %L$q$, V1)) = '23514',
-      'db/61 (immutable): the owner changed a published version straight at the table');
+      'db/61 (immutable): the owner deleted a published figure, or moved a published version''s date');
     SELECT d.set_id INTO V2 FROM condition_set_new_version(V1) d;
     PERFORM _assert((SELECT count(*) FROM condition_value WHERE set_id = V2) = (SELECT count(*) FROM condition_value WHERE set_id = V1)
                     AND (SELECT supersedes FROM condition_set WHERE id = V2) = V1,
