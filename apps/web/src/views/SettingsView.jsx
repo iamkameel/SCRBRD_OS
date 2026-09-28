@@ -14,7 +14,7 @@ import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
-import { EighteenCard, HealthConsentSection } from "./healthconsent.jsx";
+import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 import { Icon } from "../ui/icons.jsx";
 
@@ -801,6 +801,10 @@ function MeTab({ role }) {
       {/* SCRBRD-110 §7.4: asked once, from his eighteenth birthday, when a
           parent had said yes to health monitoring for him. Drawn only then. */}
       <EighteenCard role={role} nonce={consentNonce} onChanged={consentChanged}/>
+
+      {/* SCRBRD-110 §9.1, Decided 1: the one-time ask, once a guardian's link
+          to a child is verified and nobody has answered for him yet. */}
+      <HealthConsentPrompt role={role} nonce={consentNonce} onChanged={consentChanged}/>
 
       {/* This device's theme (DESIGN_DIRECTION §3.1): second, under who you
           are, because it is the one setting here somebody changes standing

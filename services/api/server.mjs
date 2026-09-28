@@ -641,7 +641,12 @@ const PLAYER_ROUTES = [
   // Health monitoring's own consent, for one child: his guardian, the office
   // from its forms, or he himself from eighteen. NOT module-gated, as the
   // scouting consent below is not: a withdrawal a school could switch off by
-  // hiding a module is not a withdrawal.
+  // hiding a module is not a withdrawal. Where the module is off, the
+  // screens (the toggle, the one-time prompt, the eighteen card) simply do
+  // not draw — the `consents` read's `module_on` (SCRBRD-110 §9.1, Decided
+  // 2), not this route — so no family is asked to answer through the UI;
+  // this route still answers a direct POST, and its record counts again the
+  // day the school switches the module on.
   [/^\/api\/players\/([^/]+)\/consents\/health$/,    "POST", load.healthConsent],
   // A boy joins the roster one at a time, under the same authority as the
   // bulk CSV import (player.profile.manage).

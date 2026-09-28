@@ -1299,10 +1299,23 @@ export const READ_QUERIES = {
    * his own account — as words and dates, naming nobody. my_health_consents()
    * finds the caller's own live links; it takes no id, so it cannot be asked
    * about somebody else's child. Not module-gated: a family's answer is
-   * theirs to see and to withdraw whatever a school has switched on.
+   * theirs to see and to withdraw whatever a school has switched on, and a
+   * record already given stays and counts again if the school switches the
+   * module back on (§9.1, Decided 2).
+   *
+   * `module_on` is the one addition (§9.1, Decided 2): whether
+   * workload_monitoring is on for THAT CHILD'S school, read with the two
+   * PUBLIC-granted functions the schema already has for exactly this shape —
+   * player_school() (a caller may know a child's school without being able to
+   * read the child) and feature_enabled(). It decides nothing here; the
+   * screens use it to hide the toggle, the one-time card and the eighteen
+   * card where the module is off, so no family is asked about something that
+   * is not in use. No new capability, no new function, no new endpoint.
    */
   consents: {
-    text: `select 'health' as kind, c.* from my_health_consents() c`,
+    text: `select 'health' as kind, c.*,
+                  feature_enabled('workload_monitoring', player_school(c.player_id), null) as module_on
+             from my_health_consents() c`,
   },
 
   /*

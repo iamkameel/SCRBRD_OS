@@ -18,12 +18,24 @@ import { useLive } from "../lib/live.js";
  *                         returns them no rows.
  *   EighteenCard          Me: "you are 18 — is this still all right?", asked
  *                         once, from his birthday, when a parent had said yes.
+ *   HealthConsentPrompt   Me: the one-time ask, once a guardian's link to a
+ *                         child is verified and nobody has answered for him
+ *                         yet (SCRBRD-110 §9.1, Decided 1). Same wording, same
+ *                         endpoint as the switch; "Not now" hides it on this
+ *                         device only, never on another.
  *
  * WHAT THIS SCREEN DECIDES: nothing. The switch calls
  * health_monitoring_consent_set(); the database says who may answer for whom
  * (a verified parent while he is a child, he himself from eighteen) and
  * refuses the rest with a word this file puts into a sentence. Turning it off
  * asks once, in plain words, before it withdraws.
+ *
+ * ALL THREE CARDS HIDE WHEN THE MODULE IS OFF (§9.1, Decided 2): each
+ * `consents` row carries `moduleOn`, read server-side from `feature_enabled`
+ * for that child's own school, so no family is asked about something the
+ * school has not switched on. A record already given is kept and counts
+ * again the day the module comes back on; nothing here decides that — the
+ * server does, on every write and read that matters.
  *
  * NO DEMONSTRATION FALLBACK: a consent on screen is somebody's real answer.
  *
@@ -112,11 +124,16 @@ function useStyles() {
   };
 }
 
-/** The wording, as a list a parent can read before she decides. */
-export function HealthConsentWords({ open = false }) {
+/**
+ * The wording, as a list a parent can read before she decides. `testid`
+ * disambiguates when more than one card draws it on the same screen at once
+ * (the one-time prompt sits beside the Settings section and the eighteen
+ * card); the default keeps the Settings section's own id unchanged.
+ */
+export function HealthConsentWords({ open = false, testid = "health-consent-words" }) {
   const s = useStyles();
   return (
-    <details open={open} data-testid="health-consent-words">
+    <details open={open} data-testid={testid}>
       <summary style={{ ...s.small, cursor: "pointer", minHeight: "44px", display: "flex", alignItems: "center" }}>
         What this covers
       </summary>
@@ -192,7 +209,10 @@ export function HealthConsentSection({ role, nonce = 0, onChanged }) {
   const s = useStyles();
   const [nudge, setNudge] = useState(0);
   const { rows } = useLive("consents", role, nonce + nudge);
-  const health = rows.filter((c) => c.kind === "health");
+  // §9.1, Decided 2: hidden per child where that child's school has not
+  // switched the module on — `moduleOn !== false` so an older/missing value
+  // reads as on, never off.
+  const health = rows.filter((c) => c.kind === "health" && c.moduleOn !== false);
   if (!signedIn() || health.length === 0) return null;
   return (
     <section style={s.card} data-testid="health-consent-section" aria-labelledby="health-consent-title">
@@ -217,7 +237,8 @@ export function EighteenCard({ role, nonce = 0, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState("");
   const { rows } = useLive("consents", role, nonce + nudge);
-  const mine = rows.find((c) => c.kind === "health" && c.relation === "self" && c.askAt18);
+  // §9.1, Decided 2: hidden where his own school has switched the module off.
+  const mine = rows.find((c) => c.kind === "health" && c.relation === "self" && c.askAt18 && c.moduleOn !== false);
   if (!signedIn() || !mine) return null;
   const answer = async (yes) => {
     setBusy(true); setSaid("");
@@ -250,5 +271,76 @@ export function EighteenCard({ role, nonce = 0, onChanged }) {
       <p style={s.meta}>Either way you can change your mind in the section below.</p>
       {said && <p role="alert" style={s.alert}>{said}</p>}
     </section>
+  );
+}
+
+/**
+ * "Not now" — this device only (SCRBRD-110 §9.1, Decided 1: "answering or
+ * dismissing it stores nothing but the answer"). Never the server: a school
+ * switch or a guardian's own account carries no half-given state, and the
+ * card simply asks again on another device, or if storage here is blocked.
+ */
+const promptDismissKey = (playerId) => `scrbrd:health-consent-prompt:${playerId}`;
+const isPromptDismissed = (playerId) => {
+  try { return localStorage.getItem(promptDismissKey(playerId)) === "1"; } catch { return false; }
+};
+const dismissPrompt = (playerId) => {
+  try { localStorage.setItem(promptDismissKey(playerId), "1"); }
+  catch { /* private window or storage blocked: the card simply shows again next time,
+             which is the safe side to fail on — never worse than asking twice. */ }
+};
+
+/**
+ * The one-time ask (SCRBRD-110 §9.1, Decided 1): once a guardian's link to a
+ * child is verified and nobody — neither her nor him — has made a
+ * health-monitoring record for him yet, Me asks once: "Health monitoring for
+ * <him>: yes or no?" Yes and No are the same switch, the same endpoint, the
+ * same wording as Settings; this card stores no state of its own, so there is
+ * no pending or half-given answer anywhere. It never asks at sign-up (that
+ * row stays informational) and never for the boy's own account — his own
+ * "yes or no" is the eighteen card's, asked at eighteen, not before.
+ *
+ * A CHILD LEAVES THIS LIST THE MOMENT ANYBODY ANSWERS: a real "yes"/"no" sets
+ * `state` away from `not_answered`, so the card is gone everywhere, not just
+ * on this device. "Not now" only ever removes it from this one screen.
+ */
+export function HealthConsentPrompt({ role, nonce = 0, onChanged }) {
+  const s = useStyles();
+  const [nudge, setNudge] = useState(0);
+  const [busy, setBusy] = useState(null);
+  const [said, setSaid] = useState({});
+  const { rows } = useLive("consents", role, nonce + nudge);
+  const due = rows.filter((c) => c.kind === "health" && c.relation !== "self" && c.state === "not_answered"
+    && c.canSayYes && c.moduleOn !== false && !isPromptDismissed(c.playerId));
+  if (!signedIn() || due.length === 0) return null;
+  const answer = async (c, yes) => {
+    setBusy(c.playerId); setSaid((m) => ({ ...m, [c.playerId]: "" }));
+    try {
+      await api(`/api/players/${c.playerId}/consents/health`, { method: "POST", body: { yes, version: HEALTH_CONSENT_VERSION } });
+      setNudge((n) => n + 1);
+      onChanged?.();
+    } catch (e) { setSaid((m) => ({ ...m, [c.playerId]: say(e) })); }
+    finally { setBusy(null); }
+  };
+  const notNow = (c) => { dismissPrompt(c.playerId); setNudge((n) => n + 1); };
+  return (
+    <>
+      {due.map((c) => (
+        <section key={c.playerId} style={{ ...s.card, borderColor: T.content.primary }}
+                 data-testid={`health-consent-prompt-${c.playerId}`} aria-labelledby={`health-consent-prompt-title-${c.playerId}`}>
+          <h2 id={`health-consent-prompt-title-${c.playerId}`} style={s.h2}>Health monitoring for {c.name}: yes or no?</h2>
+          <HealthConsentWords testid={`health-consent-words-prompt-${c.playerId}`}/>
+          <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+            <button type="button" style={s.primary} disabled={busy === c.playerId}
+                    onClick={() => answer(c, true)} data-testid={`health-consent-prompt-yes-${c.playerId}`}>Yes</button>
+            <button type="button" style={s.secondary} disabled={busy === c.playerId}
+                    onClick={() => answer(c, false)} data-testid={`health-consent-prompt-no-${c.playerId}`}>No</button>
+            <button type="button" style={s.secondary} disabled={busy === c.playerId}
+                    onClick={() => notNow(c)} data-testid={`health-consent-prompt-later-${c.playerId}`}>Not now</button>
+          </div>
+          {said[c.playerId] && <p role="alert" style={s.alert}>{said[c.playerId]}</p>}
+        </section>
+      ))}
+    </>
   );
 }

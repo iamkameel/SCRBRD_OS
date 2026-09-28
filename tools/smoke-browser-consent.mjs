@@ -1,22 +1,32 @@
 #!/usr/bin/env node
 /**
- * Health monitoring's consent, from a browser (SCRBRD-110 phase 1, db/60).
+ * Health monitoring's consent, from a browser (SCRBRD-110 phase 1, db/60;
+ * the one-time card and the module gate, §9.1, Decided 1 and 2).
  *
- * tools/smoke-load.mjs proves the routes. This drives the three screens a
- * family actually uses, and asks what curl cannot:
+ * tools/smoke-load.mjs proves the routes. This drives the screens a family
+ * actually uses, and asks what curl cannot:
  *
+ *   0. THE ONE-TIME CARD. Once a guardian's link to a child is verified and
+ *      nobody has answered for him, Me asks once — the same wording, the
+ *      same endpoint as the switch. "Not now" hides it on that device only
+ *      and it is back on another; a yes records her answer and the card
+ *      goes everywhere; a no records a refusal and the card goes too.
  *   1. SETTINGS → ME. A parent finds "Health monitoring" with her son's row,
  *      off and unanswered; turns it on with one switch and the database holds
  *      her yes; turning it off asks first, in words, and the database holds
  *      the withdrawal.
- *   2. THE EIGHTEEN CARD. A boy who has just turned eighteen, whose parent
+ *   2. THE MODULE GATE. Where a school has not switched workload_monitoring
+ *      on, the toggle, the one-time card and the eighteen card all draw
+ *      nothing — for a family that would otherwise see them — and all three
+ *      are back the moment the school switches it on.
+ *   3. THE EIGHTEEN CARD. A boy who has just turned eighteen, whose parent
  *      said yes while he was a child, is asked on his Me screen whether it is
  *      still all right — in today's words (her agreement ended on his
  *      birthday: phase 0 has not landed) — answers, and the card goes.
- *   3. STAFF. A coach's Me screen draws neither.
- *   4. SIGN-UP. The guardian's step of the sign-up flow shows the separate,
+ *   4. STAFF. A coach's Me screen draws neither.
+ *   5. SIGN-UP. The guardian's step of the sign-up flow shows the separate,
  *      off consent and takes no answer.
- *   5. Nothing on those pieces is set under 12px, nothing pressed is under
+ *   6. Nothing on those pieces is set under 12px, nothing pressed is under
  *      44px, and they draw in Daylight as well as Floodlit.
  *
  * Leaves the database as it found it.
@@ -173,6 +183,53 @@ try {
   await q(`insert into health_monitoring_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
            values ($1, 'guardian', $2, $3, 'health-monitoring-2026-09', current_date - 40, $4)`, [SIPHO, A.mum, L.mum, U_MUM]);
 
+  // The module, ON for Hilton (§9.1, Decided 2: it arrives off everywhere;
+  // the platform grants it per school). Every screen below except group 2
+  // (the module gate itself) assumes it is on, exactly as smoke-load.mjs's
+  // API walk does.
+  await q(`delete from feature_grant where key = 'workload_monitoring' and school_id = $1`, [HIL]);
+  await q(`insert into feature_grant (key, school_id, granted, note) values ('workload_monitoring', $1, true, 'smoke-browser-consent')`, [HIL]);
+  const moduleOn  = (on) => q(`update feature_grant set granted = $2 where key = 'workload_monitoring' and school_id = $1`, [HIL, on]);
+  const resetPillay = () => q(`delete from health_monitoring_consent where player_id = $1`, [PILLAY]);
+  await resetPillay();
+
+  // ── 0. The one-time card, before anyone has answered ─────────────
+  group("The one-time card, once her link to him is verified");
+  const first = await open();
+  ok("the parent signs in", await signIn(first.page, "parent@example.invalid"));
+  ok("Settings → Me opens", await toMe(first.page));
+  const promptTitle = await tid(first.page, `health-consent-prompt-${PILLAY}`).innerText().catch(() => "");
+  ok("the card asks yes or no for him by name", /Health monitoring for R Pillay: yes or no\?/.test(promptTitle), promptTitle.slice(0, 200));
+  await tid(first.page, `health-consent-words-prompt-${PILLAY}`).locator("summary").click();
+  ok("...with the same terms the Settings switch uses",
+     /check-in/.test(await tid(first.page, `health-consent-words-prompt-${PILLAY}`).innerText().catch(() => ""))
+     && /counted either way/.test(await tid(first.page, `health-consent-words-prompt-${PILLAY}`).innerText().catch(() => "")));
+  const fp = await floors(first.page, `health-consent-prompt-${PILLAY}`);
+  ok("nothing in it is set under 12px", fp.small.length === 0, fp.small.slice(0, 4).join(" · "));
+  ok("nothing pressed in it is under 44px", fp.tiny.length === 0, fp.tiny.slice(0, 4).join(" · "));
+  await tid(first.page, `health-consent-prompt-later-${PILLAY}`).click();
+  await first.page.waitForTimeout(400);
+  ok("...\"Not now\" hides it, on this device", (await tid(first.page, `health-consent-prompt-${PILLAY}`).count()) === 0);
+  ok("...and stores nothing: no record was made", (await records(PILLAY)).length === 0);
+  await first.ctx.close();
+
+  const another = await open();
+  ok("the same parent, on another device", await signIn(another.page, "parent@example.invalid"));
+  ok("Settings → Me opens", await toMe(another.page));
+  ok("...the card is back: \"Not now\" was this device only",
+     (await tid(another.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
+  await tid(another.page, `health-consent-prompt-yes-${PILLAY}`).click();
+  await another.page.waitForTimeout(1500);
+  let firstRecs = await records(PILLAY);
+  ok("Yes calls the same endpoint the switch does: the database holds her yes",
+     firstRecs.length === 1 && firstRecs[0].given_by === "guardian" && firstRecs[0].open, JSON.stringify(firstRecs));
+  ok("...and the card is gone, having really answered", (await tid(another.page, `health-consent-prompt-${PILLAY}`).count()) === 0);
+  ok("...the switch now reads on, agreed by her",
+     /On — agreed by you/.test(await tid(another.page, `health-consent-state-${PILLAY}`).innerText().catch(() => "")));
+  ok("no page error", another.errors.length === 0, another.errors.join(" | "));
+  await another.ctx.close();
+  await resetPillay();
+
   // ── 1. A parent, on Settings → Me ───────────────────────────────
   group("A parent turns health monitoring on, and off");
   const parent = await open();
@@ -215,8 +272,65 @@ try {
      JSON.stringify(recs));
   ok("no page error for the parent", parent.errors.length === 0, parent.errors.join(" | "));
   await parent.ctx.close();
+  await resetPillay();
 
-  // ── 2. Eighteen ─────────────────────────────────────────────────
+  // ── No records a refusal, and the card goes ───────────────────────
+  group("No records a refusal, and the card goes");
+  const declines = await open();
+  ok("the parent signs in", await signIn(declines.page, "parent@example.invalid"));
+  ok("Settings → Me opens", await toMe(declines.page));
+  ok("the card is there before she answers", (await tid(declines.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
+  await tid(declines.page, `health-consent-prompt-no-${PILLAY}`).click();
+  await declines.page.waitForTimeout(1500);
+  const declineRecs = await records(PILLAY);
+  ok("No calls the same endpoint: the database holds a refusal, already closed",
+     declineRecs.length === 1 && declineRecs[0].given_by === "guardian" && declineRecs[0].end_reason === "refused" && !declineRecs[0].open,
+     JSON.stringify(declineRecs));
+  ok("...and the card is gone, having really answered", (await tid(declines.page, `health-consent-prompt-${PILLAY}`).count()) === 0);
+  ok("the switch now reads off, and says she said no",
+     /Off — you said no/.test(await tid(declines.page, `health-consent-state-${PILLAY}`).innerText().catch(() => "")));
+  ok("no page error", declines.errors.length === 0, declines.errors.join(" | "));
+  await declines.ctx.close();
+  await resetPillay();
+
+  // ── 2. The module gate ─────────────────────────────────────────────
+  group("Where the module is off: no toggle, no card, no eighteen card");
+  await moduleOn(false);
+  const off1 = await open();
+  ok("the parent signs in", await signIn(off1.page, "parent@example.invalid"));
+  ok("Settings → Me opens", await toMe(off1.page));
+  ok("no Health monitoring section and no one-time card",
+     (await tid(off1.page, "health-consent-section").count()) === 0
+     && (await tid(off1.page, `health-consent-prompt-${PILLAY}`).count()) === 0);
+  ok("no page error for her", off1.errors.length === 0, off1.errors.join(" | "));
+  await off1.ctx.close();
+
+  const off2 = await open();
+  ok("Sipho signs in", await signIn(off2.page, "sipho.eighteen@example.invalid"));
+  ok("Settings → Me opens", await toMe(off2.page));
+  ok("...and no eighteen card, though his mother said yes and he has not answered",
+     (await tid(off2.page, "eighteen-card").count()) === 0);
+  ok("no page error for him", off2.errors.length === 0, off2.errors.join(" | "));
+  await off2.ctx.close();
+
+  await moduleOn(true);
+  const on1 = await open();
+  ok("the school switches it back on: the parent signs in", await signIn(on1.page, "parent@example.invalid"));
+  ok("Settings → Me opens", await toMe(on1.page));
+  ok("the section and the one-time card are back",
+     (await tid(on1.page, "health-consent-section").count()) === 1
+     && (await tid(on1.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
+  ok("no page error for her", on1.errors.length === 0, on1.errors.join(" | "));
+  await on1.ctx.close();
+
+  const on2 = await open();
+  ok("Sipho signs in", await signIn(on2.page, "sipho.eighteen@example.invalid"));
+  ok("Settings → Me opens", await toMe(on2.page));
+  ok("...and the eighteen card is back too", (await tid(on2.page, "eighteen-card").count()) === 1);
+  ok("no page error for him", on2.errors.length === 0, on2.errors.join(" | "));
+  await on2.ctx.close();
+
+  // ── 3. Eighteen ─────────────────────────────────────────────────
   group("He turned eighteen: the card asks him once");
   const sipho = await open();
   ok("Sipho signs in", await signIn(sipho.page, "sipho.eighteen@example.invalid"));
@@ -238,7 +352,7 @@ try {
   ok("no page error for him", sipho.errors.length === 0, sipho.errors.join(" | "));
   await sipho.ctx.close();
 
-  // ── 3. Staff ────────────────────────────────────────────────────
+  // ── 4. Staff ────────────────────────────────────────────────────
   group("A coach's Me screen draws neither");
   const coach = await open();
   ok("the coach signs in", await signIn(coach.page, "coach@example.invalid"));
@@ -247,7 +361,7 @@ try {
      (await tid(coach.page, "health-consent-section").count()) === 0 && (await tid(coach.page, "eighteen-card").count()) === 0);
   await coach.ctx.close();
 
-  // ── 4. Sign-up ──────────────────────────────────────────────────
+  // ── 5. Sign-up ──────────────────────────────────────────────────
   group("The sign-up flow says it is separate and off");
   const signup = await open();
   await click(signup.page, /Get Started/, 5000);
@@ -268,7 +382,7 @@ try {
   ok("...with no type under 12px", fs.small.length === 0, fs.small.slice(0, 4).join(" · "));
   await signup.ctx.close();
 
-  // ── 5. Daylight ─────────────────────────────────────────────────
+  // ── 6. Daylight ─────────────────────────────────────────────────
   group("The section in Daylight");
   const day = await open("daylight");
   ok("the parent signs in again", await signIn(day.page, "parent@example.invalid"));
@@ -292,6 +406,7 @@ try {
   await q(`delete from app_user where id in ($1, $2)`, [U_SIPHO, U_MUM]).catch(() => {});
   await q(`delete from player where id = $1`, [SIPHO]).catch(() => {});
   await q(`delete from role_request where email = 'a.newparent@example.invalid'`).catch(() => {});
+  await q(`delete from feature_grant where key = 'workload_monitoring' and school_id = $1`, [HIL]).catch(() => {});
   await browser.close();
   web.close();
   apiProc.kill();

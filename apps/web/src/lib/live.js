@@ -678,7 +678,12 @@ function asConsent(r) {
            live: r.live, state: r.state, givenBy: r.given_by, byYou: r.by_you, fromForm: r.from_form,
            givenOn: d(r.given_on), endedOn: d(r.ended_on), version: r.version,
            canSayYes: r.can_say_yes, canSayNo: r.can_say_no, parentSaidYes: r.parent_said_yes,
-           askAt18: r.ask_at_18, retentionDue: d(r.retention_due) };
+           askAt18: r.ask_at_18, retentionDue: d(r.retention_due),
+           // Whether workload_monitoring is on for THIS CHILD'S school
+           // (SCRBRD-110 §9.1, Decided 2). Screens hide the toggle, the
+           // one-time card and the eighteen card when this is false;
+           // `!== false` below treats an older/missing value as on, never off.
+           moduleOn: r.module_on };
 }
 function asSpell(r) {
   return { matchId: r.match_id, innings: r.innings, bowlerId: r.bowler_id, name: r.full_name,
