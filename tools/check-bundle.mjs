@@ -23,7 +23,7 @@
  *   node tools/check-bundle.mjs        (after pnpm build)
  */
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, dirname } from "node:path";
 import { WEIGHT_KEYS } from "../services/api/rewards/weights.mjs";
 
 const DIST = "apps/web/dist";
@@ -158,10 +158,33 @@ const js = files.filter((f) => /\.js$/.test(f) && !/\.map$/.test(f));
 const html = readFileSync(join(DIST, "index.html"), "utf8");
 const entryName = html.match(/<script[^>]+type="module"[^>]+src="\/?assets\/(index-[^"]+\.js)"/)?.[1];
 const entry = entryName ? js.find((f) => f.endsWith(entryName)) : undefined;
+
+// THE ENTRY IS ITS STATIC GRAPH, not its one file (SCRBRD-083). The build has
+// two entries since the public pages' bundle arrived (vite.config.js), and
+// Rollup puts what both share — React, the tokens — in a chunk the app's
+// entry imports statically. A view folded into that shared chunk would be
+// downloaded by every visitor exactly as if it were in the entry file, and a
+// check of the entry file alone would pass it. So every check below reads the
+// entry together with every chunk it imports statically (never a dynamic
+// import(), which is the split working), and the ceiling is the whole of it.
+const STATIC_IMPORT = /\bimport\s*(?:[^"'();]*?\bfrom\s*)?["'](\.{1,2}\/[^"']+\.js)["']/g;
+/** An entry file and every chunk reachable from it by static import. @param {string} file */
+function staticGraph(file) {
+  const seen = new Set();
+  const todo = [file];
+  while (todo.length) {
+    const f = todo.pop();
+    if (seen.has(f) || !existsSync(f)) continue;
+    seen.add(f);
+    for (const m of readFileSync(f, "utf8").matchAll(STATIC_IMPORT)) todo.push(join(dirname(f), m[1]));
+  }
+  return [...seen];
+}
+const entryGraph = entry ? staticGraph(entry) : [];
 const SDK = ["@firebase/app", "@firebase/analytics"];
-const entryText = entry ? readFileSync(entry, "utf8") : "";
+const entryText = entryGraph.map((f) => readFileSync(f, "utf8")).join("\n");
 const inEntry = SDK.filter((m) => entryText.includes(m));
-const elsewhere = SDK.filter((m) => js.some((f) => f !== entry && readFileSync(f, "utf8").includes(m)));
+const elsewhere = SDK.filter((m) => js.some((f) => !entryGraph.includes(f) && readFileSync(f, "utf8").includes(m)));
 if (!entry || inEntry.length || elsewhere.length !== SDK.length) {
   console.error(`✗ FIREBASE SDK PLACEMENT — entry chunk ${entry ? relative(".", entry) : "(none)"}`);
   if (inEntry.length) console.error(`  in the entry chunk: ${inEntry.join(", ")} — a static import of firebase/* reached the entry graph`);
@@ -193,10 +216,10 @@ const OUTSIDE_ENTRY = [
   ["a view (SettingsView)",  "dob-gaps"],
   ["the scorer (sheets.jsx)", "revise-target"],
 ];
-const others = js.filter((f) => f !== entry).map((f) => readFileSync(f, "utf8"));
-const entryKB = Math.round(statSync(entry).size / 1024);
+const others = js.filter((f) => !entryGraph.includes(f)).map((f) => readFileSync(f, "utf8"));
+const entryKB = Math.round(entryGraph.reduce((n, f) => n + statSync(f).size, 0) / 1024);
 const splitProblems = [];
-if (entryKB > ENTRY_LIMIT_KB) splitProblems.push(`the entry chunk is ${entryKB} KB; the ceiling is ${ENTRY_LIMIT_KB} KB`);
+if (entryKB > ENTRY_LIMIT_KB) splitProblems.push(`the entry chunk and its static imports are ${entryKB} KB; the ceiling is ${ENTRY_LIMIT_KB} KB`);
 for (const [what, marker] of OUTSIDE_ENTRY) {
   if (entryText.includes(marker)) splitProblems.push(`${what} is in the entry chunk ("${marker}" found there) — something in the entry graph imports it statically`);
   else if (!others.some((t) => t.includes(marker))) splitProblems.push(`${what} is in no chunk at all ("${marker}" not found) — the marker or the screen went missing`);
@@ -209,5 +232,49 @@ if (splitProblems.length) {
   console.error("  those directories) and make it dynamic or delete it.");
   process.exit(1);
 }
-console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry chunk (ceiling ${ENTRY_LIMIT_KB} KB)`);
+// ── The public pages carry nothing signed-in (SCRBRD-083) ──
+//
+// /public-app.js is what a stranger's browser loads from /live/:match and
+// /scorecard/:match. Its static graph must hold none of the app a signed-in
+// person uses: not the scorer, not a view, not the App shell, not the API
+// client that sends a bearer token, not the governed read path, not a
+// signed-in match route, not the Firebase SDK, not the service worker. Each
+// marker must still be found somewhere else in the build, so the check cannot
+// pass because a marker went stale. And the bundle must be the public one:
+// it reads /api/public/matches/.
+const PUBLIC_ENTRY = join(DIST, "public-app.js");
+const NOT_PUBLIC = [
+  ["the scorer (sheets.jsx)",            "revise-target"],
+  ["a view (SettingsView)",              "dob-gaps"],
+  ["the signed-in shell (App.jsx)",      "demo-banner-signin"],
+  ["the API client (lib/api.js)",        "Bearer "],
+  ["the governed read path",             "/api/read/"],
+  ["a signed-in match route",            "/api/matches/"],
+  ["the Firebase SDK",                   "@firebase/app"],
+  ["the service worker's registration",  "serviceWorker"],
+];
+const publicProblems = [];
+let publicKB = 0;
+if (!existsSync(PUBLIC_ENTRY)) {
+  publicProblems.push("dist/public-app.js is missing — the public pages have no bundle (vite.config.js's `public` entry)");
+} else {
+  const graph = staticGraph(PUBLIC_ENTRY);
+  publicKB = Math.round(graph.reduce((n, f) => n + statSync(f).size, 0) / 1024);
+  const text = graph.map((f) => readFileSync(f, "utf8")).join("\n");
+  const rest = js.filter((f) => !graph.includes(f)).map((f) => readFileSync(f, "utf8"));
+  if (!text.includes("/api/public/matches/")) publicProblems.push("public-app.js does not read /api/public/matches/ — it is not the public bundle");
+  for (const [what, marker] of NOT_PUBLIC) {
+    if (text.includes(marker)) publicProblems.push(`${what} is in the public pages' graph ("${marker}" found)`);
+    else if (!rest.some((t) => t.includes(marker))) publicProblems.push(`${what}'s marker "${marker}" is in no chunk at all — the marker went stale`);
+  }
+}
+if (publicProblems.length) {
+  console.error("✗ THE PUBLIC PAGES' BUNDLE REACHES THE SIGNED-IN APP");
+  for (const p of publicProblems) console.error(`  ${p}`);
+  console.error("\n  apps/web/src/public/ may import only what a signed-out page draws: the Match");
+  console.error("  Centre's shared tabs (tabs-core.jsx, scorecard.jsx, banners.jsx), lib/matchCentre.js,");
+  console.error("  the design tokens and @scrbrd/scoring. Find the static import that reaches the rest.");
+  process.exit(1);
+}
+console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry graph (ceiling ${ENTRY_LIMIT_KB} KB) · the ${publicKB} KB public pages' graph holds none of the ${NOT_PUBLIC.length} signed-in markers`);
 process.exit(0);

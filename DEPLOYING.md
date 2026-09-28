@@ -267,6 +267,26 @@ In Secret Manager, on the project:
 | `WEB_ORIGIN` | `https://scrbrd-os.web.app` (or the custom domain) |
 | `ANTHROPIC_API_KEY` | optional; without it Stats-Magic and commentary answer null |
 | `OWNER_RECOVERY_SECRET` | optional; unset means /api/auth/owner/recover is a 501. Separate from SESSION_SECRET — see §3b |
+| `GUARDIAN_APP_URL` | The Guardian's app, CSA's anonymous-reporting partner, linked from Safeguarding (db/57). https only; unset, the screen says the link has not been set. Not a secret, but set here with the rest |
+| `PUBLIC_PAGES` | **leave unset** until the information officer has confirmed `docs/policy/PUBLIC_DATA.md` in writing (filed in `docs/policy/`). Unset (or anything but `on`), every public path — `/api/public/*`, `/live/*`, `/scorecard/*`, `/table/*`, `/fixtures/*` — answers the one 404. `on` serves the signed-out pages (SCRBRD-083, see below) |
+| `PUBLIC_PSEUDONYM_SECRET` | required when `PUBLIC_PAGES=on`: 32+ random bytes (`openssl rand -hex 32`), **not** the `SESSION_SECRET`. Keys the per-match HMAC pseudonyms that stand in for every player id on a public page; it is never in the code or the database, so a database dump cannot turn a pseudonym back into a boy. The API refuses to start without it, or with the session secret reused. Rotating it changes every pseudonym (harmless: they are per-match and nothing stores them) |
+| `PUBLIC_TRUST_PROXY_HOPS` | optional, default `0`. How many proxies in front of the API append to `X-Forwarded-For`, for the public pages' per-address rate limit (120 a minute, bursts of 30). `1` behind Cloud Run alone or Render; `2` behind Firebase Hosting in front of Cloud Run. `0` behind a proxy limits everybody as one address |
+
+#### Turning the public pages on (SCRBRD-083)
+
+They are off by default because go-live waits on the design's phase 1 "before
+live" conditions: the information officer's written confirmation of
+PUBLIC_DATA.md, one pilot school publishing and withdrawing a side, the
+never-public mark exercised on the pilot, and the rate limit measured against
+a real match's poll. Then, on the API: set `PUBLIC_PSEUDONYM_SECRET` (a new
+secret), set `PUBLIC_PAGES=on`, and redeploy. `GET /api/health` says
+`"public": "on"` (or `"on_without_notifications"` if its LISTEN connection is
+down, when a change reaches a page within the cache's 60 seconds rather than
+on the next request). Nothing is public until a school's `broadcast.publish`
+holder publishes its side of a fixture from the fixture screen; the page is
+then `/live/<fixture id>` (and `/scorecard/<fixture id>`). Firebase Hosting
+rewrites those four prefixes to the API (`firebase.json`); the single-service
+deployment (`SERVE_CLIENT`) needs nothing more.
 
 ### 5 · Cloud Run, the first time
 

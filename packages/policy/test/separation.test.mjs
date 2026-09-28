@@ -24,8 +24,10 @@
  * one that never claimed them, so the prose-only list is part of the output.
  *
  * `superadmin` is the one standing exception throughout: it holds every
- * capability by construction (roles.mjs line 90), which is the platform's
- * break-glass and is asserted elsewhere. Every OTHER exception has to be
+ * capability outside `safeguarding.*` by construction (roles.mjs), which is
+ * the platform's break-glass and is asserted elsewhere. Safeguarding is the
+ * one domain it is kept from (CSA p63, db/57), and the SG group below holds
+ * it to that. Every OTHER exception has to be
  * written into KNOWN below with a reason, and each one is checked to still be
  * real — an exception that has been fixed must be deleted, not left to rot.
  *
@@ -40,7 +42,7 @@
  *
  *   node packages/policy/test/separation.test.mjs
  */
-import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES, boundaries } from "../src/roles.mjs";
+import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, boundaries, mayGrantRole } from "../src/roles.mjs";
 import { ALL_CAPABILITIES, SENSITIVE, PLATFORM_ONLY } from "../src/capabilities.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -217,6 +219,41 @@ group("K3  A pupil reads no team-mate's injury, at any tier");
 }
 
 // ── §11.4 School administration vs safeguarding ──────────
+// ── SG · Safeguarding: nobody but a DSO reads a concern ──
+// CSA Safeguarding Policy p15–17, p52 item 5, p63; docs/design/SAFEGUARDING_DSO.md
+// §2.2; db/57. The four capabilities are the DSO's and nobody else's — the
+// owner's key included — and the DSO reaches a family only through an open
+// concern, never by standing. Falsified by adding safeguarding.concern.read
+// to `principal`, and by typing `superadmin` back to [...ALL_CAPABILITIES]:
+// both go red below.
+group("SG  Nobody but a DSO reads a safeguarding concern");
+{
+  const SG = ALL_CAPABILITIES.filter((c) => c.startsWith("safeguarding."));
+  ok("the four safeguarding capabilities exist",
+     ["safeguarding.concern.read", "safeguarding.concern.manage", "safeguarding.suspend", "safeguarding.authorise"]
+       .every((c) => SG.includes(c)) && SG.length === 4, SG.join(" "));
+  const wrong = SG.filter((c) => holders(c).join() !== "dso");
+  ok("safeguarding.* is held by dso and by no other role — the owner's key included",
+     wrong.length === 0, wrong.map((c) => `${c}: ${holders(c).join(",")}`).join(" · "));
+  ok("the owner's key holds every capability outside safeguarding.*",
+     ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.")).every((c) => caps("superadmin").includes(c)));
+  const kept = [...ALL_CAPABILITIES.filter((c) => /^(medical|discipline|scoring)\./.test(c)),
+                "user.role.assign", "player.pii.read", "player.emergency.read", "player.age.read",
+                "player.note.read", "broadcast.publish"];
+  ok("dso holds no medical, disciplinary or scoring capability, no appointments, and not the family's file",
+     reach("dso", kept).length === 0, reach("dso", kept).join(","));
+  ok("...and does hold what the job at the institution needs",
+     ["clearance.read", "clearance.manage", "audit.read", "player.public.withhold", "player.profile.read"]
+       .every((c) => caps("dso").includes(c)));
+  ok("the principal appoints a DSO; the office and the director of sport do not",
+     mayGrantRole("principal", "dso") && !mayGrantRole("schooladmin", "dso") && !mayGrantRole("directorofsport", "dso"));
+  ok("a DSO holds an institution, not a team or a child",
+     !TEAM_SCOPED_ROLES.includes("dso") && !SUBJECT_SCOPED_ROLES.includes("dso"));
+  // SCRBRD-110 plans a `fitness` role; whenever it lands it reads no concern.
+  ok("SCRBRD-110's fitness role, if it has landed, holds none of it",
+     !ROLES.includes("fitness") || reach("fitness", SG).length === 0);
+}
+
 group("§11.4  Administering a school is not conducting a safeguarding case");
 ok("schooladmin sees that a disciplinary record exists and cannot write one",
    caps("schooladmin").includes("discipline.read") && !caps("schooladmin").includes("discipline.write"));
@@ -349,8 +386,10 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
 // drift from the policy above — which is the whole reason it is not prose.
 group("§11, said to the person rather than about them");
 {
-  ok("the owner's key has no boundary, because it holds everything",
-     boundaries("superadmin").length === 0);
+  ok("the owner's key's only boundary is safeguarding.*, which it is kept from",
+     boundaries("superadmin").length > 0
+       && boundaries("superadmin").every((b) => b.capability.startsWith("safeguarding.") && b.askInstead.join() === "dso"),
+     boundaries("superadmin").map((b) => b.capability).join(" "));
   ok("an operational role does have one", boundaries("coach").length >= 4,
      `coach: ${boundaries("coach").length}`);
 

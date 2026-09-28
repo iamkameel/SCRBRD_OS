@@ -15,6 +15,7 @@ import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
 import { QuarantinePanel } from "./quarantine.jsx";
 import { DrsPanel } from "./drs.jsx";
+import { PublishPanel } from "./publication.jsx";
 import { ReportIncident } from "./discipline.jsx";
 import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
 import { useRows, useWeather } from "../lib/live.js";
@@ -236,6 +237,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                   reads match_duties through the choke point and says "nothing
                   on record" where nothing is, rather than falling silent. */}
               <DutyRoster matchId={selMatch.id} role={role}/>
+              {/* SCRBRD-083: a side on the public pages, for broadcast.publish
+                  holders. fixture_publish() (db/47) is the gate. */}
+              <PublishPanel matchId={selMatch.id} role={role}/>
               {/* SCRBRD-003. Offered only to whoever holds scoring.amend.approve
                   — see quarantine.jsx for why that check is a courtesy and not
                   the gate. Placed in Match Centre rather than the live pad: a

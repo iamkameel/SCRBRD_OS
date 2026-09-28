@@ -29,6 +29,9 @@
  *   POST /api/access-requests/:id/decide          answer such a request
  *   GET  /api/matches/:id/events?since=           incremental sync
  *   POST /api/ai/stats-magic, /api/ai/commentary
+ *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
+ *   GET  /api/public/…, /live/:id, /scorecard/:id  the signed-out pages (off unless
+ *                                         PUBLIC_PAGES=on — public/public-api.mjs)
  *
  *   node services/api/server.mjs        # PORT=8787 by default
  *
@@ -62,6 +65,7 @@ import { supportAccessRoutes } from "./write/support-access-api.mjs";
 import { dutyAuthorityRoutes } from "./write/duty-authority-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
+import { safeguardingRoutes } from "./write/safeguarding-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
@@ -71,6 +75,8 @@ import { workloadRoutes } from "./write/workload-api.mjs";
 import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
+import { publicationRoutes } from "./write/publication-api.mjs";
+import { publicPages } from "./public/public-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 import { schemaRefusal } from "./schema-guard.mjs";
 import { appUrl, port } from "../../tools/db-url.mjs";
@@ -171,6 +177,36 @@ const SECRET = process.env.SESSION_SECRET || (() => {
 })();
 
 const hub = new MatchHub();
+
+// ── The signed-out pages (SCRBRD-083 phase 1) ────────────────────
+// OFF unless PUBLIC_PAGES=on. Going live waits on the information officer's
+// written confirmation of docs/policy/PUBLIC_DATA.md (the design's phase 1
+// "before live"), so a deployment that says nothing serves none of them:
+// every public path is the same 404 an unknown fixture gets.
+//
+// PUBLIC_PSEUDONYM_SECRET keys the per-match pseudonyms that stand in for
+// every player id on a public page (public/redact.mjs). It has no safe
+// default either: outside development the server refuses to start with the
+// pages on and no secret, or with the session's secret reused for it (one
+// leak would then be two). In development one is generated per boot, which
+// only changes the pseudonyms at the next restart.
+const PUBLIC_ON = process.env.PUBLIC_PAGES === "on";
+const PUBLIC_SECRET = PUBLIC_ON ? (process.env.PUBLIC_PSEUDONYM_SECRET || (() => {
+  if (!DEV) {
+    console.error("PUBLIC_PAGES=on needs PUBLIC_PSEUDONYM_SECRET outside development. Refusing to start.");
+    process.exit(1);
+  }
+  return `dev-only-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+})()) : null;
+if (PUBLIC_ON && !DEV && (String(PUBLIC_SECRET).length < 32 || PUBLIC_SECRET === SECRET)) {
+  console.error("PUBLIC_PSEUDONYM_SECRET must be 32+ characters and not SESSION_SECRET. Refusing to start.");
+  process.exit(1);
+}
+const publicSite = publicPages({
+  pool, enabled: PUBLIC_ON, secret: PUBLIC_SECRET,
+  trustProxyHops: Number(process.env.PUBLIC_TRUST_PROXY_HOPS || 0),
+  listenUrl: PUBLIC_ON ? DATABASE_URL : null,
+});
 
 // ── Tiny Express-shaped adapter ──────────────────────────────────
 // The route modules were written against (req, res) with req.params/body/query
@@ -357,6 +393,8 @@ const duties = dutyAuthorityRoutes({ pool, secret: SECRET });
 // reaches the manifest through the trip, see trip_contacts() in db/08.
 const contacts = contactRoutes({ pool, secret: SECRET });
 const clearances = clearanceRoutes({ pool, secret: SECRET });
+// Safeguarding, phase 1 (db/57): raising a concern, and the DSO's record.
+const safeguarding = safeguardingRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
@@ -365,6 +403,7 @@ const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
 const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
+const publication = publicationRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -525,6 +564,12 @@ const MATCH_ROUTES = [
   // rides the id-bearing table rather than SCOUT_ROUTES.
   [/^\/api\/notifications\/([^/]+)\/push$/,       "POST", notices.push],
   [/^\/api\/fixtures\/([^/]+)$/,                  "POST", fixtures.amend],
+  // A side of the fixture on the public pages (SCRBRD-083). fixture_publish()
+  // (db/47) decides who: broadcast.publish at THAT side's school and team.
+  // Not module-gated, like the fixture itself: publishing is off by default
+  // and taking a side off must never depend on a menu setting.
+  [/^\/api\/matches\/([^/]+)\/publication$/,        "GET",  publication.read],
+  [/^\/api\/matches\/([^/]+)\/publication$/,        "POST", publication.set],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
@@ -637,6 +682,32 @@ const PLAYER_ROUTES = [
 // no id at all — it always means "me" — so its capture group is simply
 // absent; the dispatcher's params.id comes back undefined and the handler
 // never looks at it.
+/**
+ * Safeguarding (db/57, docs/design/SAFEGUARDING_DSO.md). Every route calls
+ * one SECURITY DEFINER function under the caller's identity; the function
+ * decides who may, and logs every read of the record under the institution
+ * that holds it. NEVER module-gated: a school cannot switch off a child's way
+ * to tell somebody. Raising takes an Idempotency-Key like any write, so a
+ * retry on a bad connection raises once.
+ * @type {Route[]}
+ */
+const SAFEGUARDING_ROUTES = [
+  [/^\/api\/safeguarding\/contacts$/,                    "GET",  safeguarding.contacts],
+  [/^\/api\/safeguarding\/concerns$/,                    "POST", safeguarding.raise],
+  [/^\/api\/safeguarding\/receipts$/,                    "GET",  safeguarding.receipts],
+  [/^\/api\/safeguarding\/inbox$/,                       "GET",  safeguarding.inbox],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)$/,           "GET",  safeguarding.open],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/family$/,   "GET",  safeguarding.family],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/notes$/,    "POST", safeguarding.note],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/assign$/,   "POST", safeguarding.assign],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/shares$/,   "POST", safeguarding.share],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/close$/,    "POST", safeguarding.close],
+  [/^\/api\/safeguarding\/shares$/,                      "GET",  safeguarding.shares],
+  [/^\/api\/safeguarding\/shares\/([^/]+)$/,             "GET",  safeguarding.shareOpen],
+  [/^\/api\/safeguarding\/shares\/([^/]+)\/revoke$/,     "POST", safeguarding.shareRevoke],
+  [/^\/api\/safeguarding\/appointments\/([^/]+)\/end$/,  "POST", safeguarding.endAppointment],
+];
+
 /** @type {Route[]} */
 const SCOUT_ROUTES = [
   [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation, "scouting"],
@@ -801,6 +872,10 @@ async function servePad(req, res) {
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
+  // The signed-out pages, before anything reads a credential: they run as
+  // nobody whatever the request carries (public/public-api.mjs).
+  if (await publicSite.handle(req, res)) return;
+
   // A resume credential goes no further than servePad(): see there.
   if (isPadAuthorization(req.headers.authorization)) return servePad(req, res);
 
@@ -820,6 +895,7 @@ const server = createServer(async (req, res) => {
       read: liveResources(),
       write: "mounted",
       handover: "mounted",
+      public: PUBLIC_ON ? (publicSite.listening() ? "on" : "on_without_notifications") : "off",
     });
   }
 
@@ -859,7 +935,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES]) {
+    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
       // The write side of the module gate, in the one place every write route
@@ -968,6 +1044,8 @@ server.listen(PORT, () => {
   if (CLIENT_DIR) console.log(`  web:  serving the client from ${CLIENT_DIR}`);
   if (!process.env.SESSION_SECRET) console.log("  auth: EPHEMERAL dev secret — tokens die on restart");
   if (DEV && process.env.ALLOW_DEV_LOGIN === "1") console.log("  auth: DEV LOGIN ENABLED — /api/auth/dev-login mints tokens without a code");
+  console.log(`  public pages: ${PUBLIC_ON ? "ON (PUBLIC_PAGES=on)" : "off (set PUBLIC_PAGES=on once the information officer has confirmed PUBLIC_DATA.md)"}`);
+  if (PUBLIC_ON && !process.env.PUBLIC_PSEUDONYM_SECRET) console.log("  public: EPHEMERAL dev pseudonym secret — pseudonyms change on restart");
 });
 
 export { server, pool };

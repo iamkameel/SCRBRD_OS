@@ -1,10 +1,6 @@
 import { useState } from "react";
 import { T } from "../../design/tokens.js";
-import { can, filterRecord } from "../../rbac/index.js";
-import { signedIn } from "../../lib/api.js";
 import { didNotBat, dismissalKey, extrasOf, fowLines, oversOf, runCounts, teamOf } from "../../lib/matchCentre.js";
-import { ShotWheel } from "../../scorer/charts.jsx";
-import { PlayerProfileModal } from "../shared.jsx";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName, Quiet } from "./bits.jsx";
 
@@ -17,6 +13,14 @@ import { SideName, Quiet } from "./bits.jsx";
  *
  * A batter's row opens (p8, item 8), for a signed-in reader: his 1s, 2s, 3s,
  * 4s and 6s, his wagon wheel, and the commentary line of his dismissal.
+ *
+ * NOTHING SIGNED-IN IS IMPORTED HERE (SCRBRD-083). The signed-in Match
+ * Centre passes what only it has — `opens` (the row opens), `profileOf`
+ * (the reader's own profile of a player, by his roster read and role) and
+ * `Wheel` (a batter's wagon wheel, which needs the placement the public log
+ * never carries) — and the public page (src/public/) passes none of them.
+ * So the public bundle can use this tab without pulling the role model, the
+ * profile screens or the scorer's charts into its entry.
  */
 
 /** Which innings the tab shows: one button per side, as the prototype has it. */
@@ -77,7 +81,7 @@ function howOut(b) {
 }
 
 /** A batter's row, which opens for a signed-in reader. */
-function BatterRow({ b, inn, open, onToggle, commentaryLine, profile }) {
+function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
   const opens = !!onToggle;
@@ -115,7 +119,7 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, profile }) {
               </span>
             ))}
           </div>
-          <ShotWheel inn={inn} playerId={b.id} title={`${b.name}: wagon wheel`}/>
+          {Wheel && <Wheel inn={inn} playerId={b.id} title={`${b.name}: wagon wheel`}/>}
           {commentaryLine && (
             <p data-testid="mc-dismissal-line" style={{ ...T.role.body, color: T.content.primary, margin: 0,
               borderLeft: `3px solid ${T.line.strong}`, paddingLeft: T.space.md }}>
@@ -136,25 +140,16 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, profile }) {
   );
 }
 
-export function ScorecardTab({ match, role, innings, commentary, events, demo, inningsSel, setInningsSel, players, onNavProfile }) {
+export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null }) {
   const [openId, setOpenId] = useState(null);
-  const [prof, setProf] = useState(null);
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-scorecard-empty">Nothing has been scored yet.</Quiet>;
   const side = teamOf(match, inn.battingTeam);
   const ex = extrasOf(inn);
   const fow = fowLines(inn);
   const dnb = didNotBat(inn);
-  const opens = signedIn() && !demo;
   const innEvents = (events ?? []).filter((e) => (e.innings ?? 0) === inningsSel);
   const byKey = new Map((commentary ?? []).map((c) => [c.key, c]));
-  // Name → the reader's own profile of that player, when their role reads
-  // profiles at all (the same courtesy the scorecard always offered).
-  const profileOf = (id) => {
-    if (!can(role, "players", "r").allowed) return null;
-    const p = players.find((x) => x.id === id);
-    return p ? () => setProf(filterRecord(role, "players", p)) : null;
-  };
   return (
     <section data-testid="mc-scorecard" aria-label="Scorecard">
       <InningsToggle match={match} innings={innings} inningsSel={inningsSel} setInningsSel={(i) => { setInningsSel(i); setOpenId(null); }}/>
@@ -176,7 +171,7 @@ export function ScorecardTab({ match, role, innings, commentary, events, demo, i
           <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
             onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
             commentaryLine={b.status === "out" ? byKey.get(dismissalKey(inn, b.id, innEvents) ?? "")?.text ?? null : null}
-            profile={profileOf(b.id)}/>
+            profile={profileOf(b.id)} Wheel={Wheel}/>
         ))}
         {dnb.map((p) => (
           <div key={p.id} role="row" data-testid="mc-dnb" style={{ display: "grid", gridTemplateColumns: COLS, gap: T.space.xs, alignItems: "center",
@@ -240,8 +235,6 @@ export function ScorecardTab({ match, role, innings, commentary, events, demo, i
           </ol>
         </div>
       )}
-      {prof && <PlayerProfileModal player={prof} role={role} onClose={() => setProf(null)}
-        onFullProfile={onNavProfile ? (id) => { setProf(null); onNavProfile(id); } : null}/>}
     </section>
   );
 }

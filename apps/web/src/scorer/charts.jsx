@@ -83,15 +83,15 @@ function WormChart({innings,curIn,match}){
       <div style={{display:"flex",gap:"16px",marginTop:"8px"}}>
         {inn1&&<div style={{display:"flex",alignItems:"center",gap:"5px"}}>
           <div style={{width:"18px",height:"2px",background:D.sky,borderRadius:"1px"}}/>
-          <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{inn1.battingTeam}</span>
+          <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{inn1.battingTeam}</span>
         </div>}
         {inn2&&inn2.ballLog.length>0&&<div style={{display:"flex",alignItems:"center",gap:"5px"}}>
           <div style={{width:"18px",height:"2px",background:D.amber,borderRadius:"1px"}}/>
-          <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{inn2.battingTeam}</span>
+          <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{inn2.battingTeam}</span>
         </div>}
         {(wk1.length>0||wk2.length>0)&&<div style={{display:"flex",alignItems:"center",gap:"5px"}}>
           <div style={{width:"9px",height:"9px",borderRadius:"50%",background:D.rose,border:`1.5px solid ${D.surf1}`}}/>
-          <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Wicket</span>
+          <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Wicket</span>
         </div>}
       </div>
     </Card>
@@ -232,7 +232,7 @@ function BatsmanChart({inn}){
             <div key={b.id}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:"3px"}}>
                 <span style={{fontFamily:D.body,fontSize:"12px",color:b.status==="batting"?D.emerald:D.textSecondary,fontWeight:500}}>{b.name}{b.status==="batting"?"*":""}</span>
-                <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textPrimary}}>{b.runs}<span style={{color:D.textMuted,fontSize:"10px"}}> ({b.balls}b · SR {sr})</span></span>
+                <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textPrimary}}>{b.runs}<span style={{color:D.textMuted,fontSize:"12px"}}> ({b.balls}b · SR {sr})</span></span>
               </div>
               <div style={{height:"6px",borderRadius:"3px",background:D.surf2,overflow:"hidden"}}>
                 <div style={{height:"100%",width:(pct*100)+"%",borderRadius:"3px",background:col,transition:"width .5s ease"}}/>
@@ -265,7 +265,7 @@ function BowlerChart({inn}){
               <span style={{fontFamily:D.body,fontSize:"12px",color:b.id===inn.bowler?D.orange:D.textPrimary,fontWeight:500}}>{b.name}{b.id===inn.bowler?"*":""}</span>
               <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{Math.floor(b.balls/6)+"-"+(b.balls%6)}</span>
               <span style={{fontFamily:D.mono,fontSize:"12px",color:b.wickets>0?textOn(D.rose):D.textSecondary,fontWeight:b.wickets?"600":"400"}}>{b.wickets+"W-"+b.runs+"R"}</span>
-              <Badge color={econCol} sx={{fontSize:"9px"}}>{econ}</Badge>
+              <Badge color={econCol}>{econ}</Badge>
             </div>
           );
         })}
@@ -322,7 +322,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
     <Card style={{padding:"14px 16px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"10px"}}>
         <Lbl>{title}</Lbl>
-        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>
+        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>
           {runs} run{runs===1?"":"s"} · {drawn.length} shown
         </span>
       </div>
@@ -461,7 +461,7 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
     <Card style={{padding:"14px 16px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"10px"}}>
         <Lbl>{title}</Lbl>
-        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{d.n} placed</span>
+        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{d.n} placed</span>
       </div>
       {d.n===0?<NothingHere mine={mine} ev={ev} declared={declaredOf(inn,mine)}/>:(
         <div style={{width:"100%",maxWidth:"260px",margin:"0 auto",aspectRatio:"1"}}>
@@ -508,7 +508,7 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
     <Card style={{padding:"14px 16px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"10px"}}>
         <Lbl>{title}</Lbl>
-        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{p.n} placed</span>
+        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{p.n} placed</span>
       </div>
       {p.n===0?<NothingHere mine={mine} ev={ev} declared={declaredOf(inn,mine)}/>:(
         <div style={{width:"100%",maxWidth:"280px",margin:"0 auto",aspectRatio:"1"}}>

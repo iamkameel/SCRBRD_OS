@@ -728,6 +728,128 @@ group("C6: turning eighteen");
      }))) === "Batter");
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  §6 step 3 — the signed-out reads (db/59, SCRBRD-083 phase 1)
+//
+//  Every public_*() function in a migration from db/59 on is read here: its
+//  FROM and JOIN clauses give each alias its table, every `alias.column` it
+//  names is collected, and assertPublicSelect() is asked about them, table by
+//  table. A function that selects player.born, anything from injury, a
+//  `SELECT *`, an `alias.*`, or an event's payload whole fails this suite.
+//  The checker is asked about text built to be wrong, too, so it cannot pass
+//  by reading nothing.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Each `public_…` function in `sql`: its name and body.
+ * @param {string} sql @returns {{name: string, body: string}[]}
+ */
+function publicFunctions(sql) {
+  const text = stripComments(sql);
+  return [...text.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(public_\w+)\s*\(/gi)].map((m) => {
+    const from = (m.index ?? 0) + m[0].length;
+    const open = text.indexOf("$$", from);
+    const close = text.indexOf("$$", open + 2);
+    return { name: m[1].toLowerCase(), body: text.slice(open + 2, close) };
+  });
+}
+
+/** Every view db/ creates. */
+const VIEWS = new Set(readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f))
+  .flatMap((f) => [...stripComments(readFileSync(join(DB, f), "utf8")).matchAll(/\bCREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?:public\.)?(\w+)/gi)]
+    .map((m) => m[1].toLowerCase())));
+/**
+ * The views a public read may use, each held to the rules of the table it is
+ * a view of. A view not listed here is refused: a view can be over anything,
+ * an injury included, and its name says nothing.
+ */
+const PUBLIC_VIEW_BASE = Object.freeze({ ball_event_live: "ball_event", match_live_score: "ball_event" });
+
+/**
+ * What one function body selects, by table: {table: [columns]}, and anything
+ * the rule refuses outright.
+ * @param {string} body
+ */
+function selectedBy(body) {
+  /** @type {Map<string, string>} alias → table */
+  const alias = new Map();
+  /** @type {string[]} */
+  const unknownViews = [];
+  for (const m of body.matchAll(/\b(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/gi)) {
+    let t = m[1].toLowerCase();
+    if (VIEWS.has(t)) {
+      if (!Object.hasOwn(PUBLIC_VIEW_BASE, t)) { unknownViews.push(`the view ${t} (no public read may use a view this suite has not placed)`); continue; }
+      t = PUBLIC_VIEW_BASE[/** @type {keyof typeof PUBLIC_VIEW_BASE} */ (t)];
+    } else if (!SCHEMA.has(t)) continue;          // a function, a CTE, a VALUES list
+    const a = (m[2] ?? "").toLowerCase();
+    alias.set(t, t);
+    if (a && !/^(on|where|join|left|cross|inner|group|order|limit|using|lateral)$/.test(a)) alias.set(a, t);
+  }
+  /** @type {Record<string, Set<string>>} */
+  const cols = {};
+  const refused = [...unknownViews];
+  for (const m of body.matchAll(/\b(\w+)\.(\w+|\*)/g)) {
+    const t = alias.get(m[1].toLowerCase());
+    if (!t) continue;
+    (cols[t] ??= new Set()).add(m[2].toLowerCase());
+  }
+  if (/\bSELECT\s+(DISTINCT\s+)?\*/i.test(body)) refused.push("SELECT * (a public read names its columns)");
+  // An event's payload may be read key by key (->, ->>, #>>), never whole.
+  for (const [a, t] of alias) {
+    if (t !== "ball_event") continue;
+    if (new RegExp(String.raw`\b${a}\.payload\b(?!\s*(->|#>))`, "i").test(body)) refused.push(`${a}.payload whole (the payload goes key by key)`);
+  }
+  return { tables: Object.fromEntries(Object.entries(cols).map(([t, s]) => [t, [...s]])), refused };
+}
+
+/** Every problem the rule has with one function body. @param {string} body */
+function publicReadProblems(body) {
+  const { tables, refused } = selectedBy(body);
+  const problems = [...refused];
+  for (const [t, cols] of Object.entries(tables)) {
+    try { assertPublicSelect(t, cols); } catch (/** @type {any} */ e) { problems.push(e.message); }
+  }
+  return problems;
+}
+
+group("§6 step 3 — the signed-out reads name their columns, and none §3 forbids (db/59)");
+{
+  const files = readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && Number(f.slice(0, 2)) >= 59 && !/^9[89]_/.test(f)).sort();
+  const fns = files.flatMap((f) => publicFunctions(readFileSync(join(DB, f), "utf8")).map((x) => ({ ...x, file: f })));
+  const names = fns.map((f) => f.name);
+  for (const want of ["public_match_header", "public_match_log", "public_match_people", "public_shot_sectors"])
+    ok(`db/59 has ${want}()`, names.includes(want), names.join(" "));
+  for (const fn of fns) {
+    const { tables } = selectedBy(fn.body);
+    const problems = publicReadProblems(fn.body);
+    ok(`${fn.name}() (${fn.file}) selects ${Object.entries(tables).map(([t, c]) => `${t}(${c.join(",")})`).join(" ") || "no table column"} — none §3 forbids`,
+       problems.length === 0, problems.join(" | "));
+  }
+  const reads = fns.filter((f) => /^public_(match_header|match_log|match_people|shot_sectors)$/.test(f.name));
+  ok("the four reads between them read the log, the fixture and the player",
+     ["ball_event", "match", "player"].every((t) => reads.some((f) => Object.hasOwn(selectedBy(f.body).tables, t))));
+  const people = fns.find((f) => f.name === "public_match_people");
+  ok("public_match_people() reads player's three name columns and nothing else of his",
+     JSON.stringify([...(selectedBy(people?.body ?? "").tables.player ?? [])].sort()) === JSON.stringify(["full_name", "id", "known_as", "school_id", "surname"]),
+     String(selectedBy(people?.body ?? "").tables.player));
+
+  // The checker fails when it should.
+  const log = fns.find((f) => f.name === "public_match_log")?.body ?? "";
+  const born = (people?.body ?? "").replace("p.full_name, p.surname", "p.full_name, p.born, p.surname");
+  ok("a read that selects player.born is refused (N1)", publicReadProblems(born).some((p) => /player\.born/.test(p)));
+  ok("a read that selects p.* is refused", publicReadProblems((people?.body ?? "").replace("p.full_name,", "p.*,")).some((p) => /\*/.test(p)));
+  ok("a read with SELECT * is refused", publicReadProblems("SELECT * FROM match m WHERE m.id = p_match").length > 0);
+  ok("a read that joins injury is refused whole (N2)",
+     publicReadProblems(`${log} UNION SELECT i.status FROM injury i`).some((p) => /injury/.test(p)));
+  ok("a read that returns the payload whole is refused", publicReadProblems(log.replace("b.idempotency_key,", "b.idempotency_key, b.payload,")).some((p) => /payload whole/.test(p)));
+  ok("a read through a view this suite has not placed is refused", VIEWS.has("player_masked")
+     && publicReadProblems("SELECT pm.full_name FROM player_masked pm").some((p) => /player_masked/.test(p)));
+  ok("public_shot_sectors() is read through ball_event_live as ball_event",
+     Object.hasOwn(selectedBy(fns.find((f) => f.name === "public_shot_sectors")?.body ?? "").tables, "ball_event"));
+  ok("...and a read of the never-public mark is refused whole (C5)",
+     publicReadProblems("SELECT m.set_on FROM player_never_public m").some((p) => /player_never_public/.test(p)));
+}
+
 console.log("\n" + "─".repeat(52));
 console.log(`PUBLIC: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

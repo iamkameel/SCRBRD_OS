@@ -52,3 +52,9 @@ services:
       # demonstration that wants one-click sign-in as seeded people must set
       # NODE_ENV=development knowingly, with fixture data only. See
       # DEPLOYING.md, "A demonstration is not a pilot".
+      #
+      # PUBLIC_PAGES is deliberately absent too: the signed-out match pages
+      # (SCRBRD-083) stay off until the information officer has confirmed
+      # PUBLIC_DATA.md. Turning them on is PUBLIC_PAGES=on plus a
+      # PUBLIC_PSEUDONYM_SECRET of their own and PUBLIC_TRUST_PROXY_HOPS=1 —
+      # DEPLOYING.md, "Turning the public pages on".

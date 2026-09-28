@@ -131,6 +131,10 @@ const WALKS = [
   // and gated nothing, and the only policy in the schema whose fixture anchor
   // is allowed to be NULL.
   "discipline",
+  // Safeguarding, phase 1 (db/57): anybody raises a concern and keeps only a
+  // reference; the DSO, and nobody else, reads it — and the log says so to
+  // nobody else either.
+  "safeguarding",
   // How a boy is out, and how a bowler takes wickets, by method rather than
   // as a single count.
   "dismissals",
@@ -149,6 +153,7 @@ const WALKS = [
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
+  "public",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
@@ -206,7 +211,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // wicket; the next batter at once, the over finished, the scorecard's
   // "retired hurt", and his return with his line going on — held to the
   // API's live score and SQL's player_innings at 390 × 844.
-  "browser-retire"];
+  "browser-retire",
+  // Safeguarding, phase 1 (db/57): a parent raises a concern and keeps a
+  // reference; the DSO finds it in her inbox; a coach sees nothing of it.
+  "browser-safeguarding",
+  // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
+  "browser-public"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

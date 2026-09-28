@@ -108,7 +108,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <div style={{flex:1}}>
               <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"4px"}}>
                 <span style={{fontFamily:D.head,fontSize:"22px",fontWeight:800,color:D.textPrimary}}>{p.name}</span>
-                {p.cap&&<span style={{padding:"2px 8px",borderRadius:D.pill,background:D.amber+"22",border:`1px solid ${D.amber}33`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.amber}}>{p.cap==="c"?"CAPTAIN":"VICE CAPTAIN"}</span>}
+                {p.cap&&<span style={{padding:"2px 8px",borderRadius:D.pill,background:D.amber+"22",border:`1px solid ${D.amber}33`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.amber}}>{p.cap==="c"?"CAPTAIN":"VICE CAPTAIN"}</span>}
               </div>
               <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
                 <Badge color={rCol}>{p.role==="BAT"?"Batter":p.role==="BOWL"?"Bowler":p.role==="ALL"?"Allrounder":"WK Batter"}</Badge>
@@ -120,15 +120,15 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             </div>
             <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
               {p.born&&<div style={{textAlign:"center",padding:"8px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`}}>
-                <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Born</div>
-                <div style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary,marginTop:"2px"}}>{p.born}</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>Born</div>
+                <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,marginTop:"2px"}}>{p.born}</div>
               </div>}
               {p.height&&<div style={{textAlign:"center",padding:"8px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`}}>
-                <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Height</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>Height</div>
                 <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginTop:"2px"}}>{p.height}</div>
               </div>}
               {p.weight&&<div style={{textAlign:"center",padding:"8px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`}}>
-                <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Weight</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>Weight</div>
                 <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginTop:"2px"}}>{p.weight}</div>
               </div>}
             </div>
@@ -147,7 +147,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <button key={t} onClick={()=>setTab(t)} className="pressBtn" data-testid={`profile-tab-${t.replace(/ /g,"-")}`} style={{
               padding:"5px 14px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",flexShrink:0,
               border:`1px solid ${tab===t?rCol+"55":D.border}`,background:tab===t?rCol+"12":"transparent",
-              fontFamily:D.body,fontSize:"11px",fontWeight:tab===t?600:400,color:tab===t?rCol:D.textMuted,
+              fontFamily:D.body,fontSize:"12px",fontWeight:tab===t?600:400,color:tab===t?rCol:D.textMuted,
             }}>{t}</button>
           ))}
         </div>
@@ -236,7 +236,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
                 <Card sx={{padding:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>BATTING CAREER</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>BATTING CAREER</div>
                   {[
                     ["Innings",      p.careerTotals?.innings||"—"],
                     ["Total Runs",   p.careerTotals?.runs||"—"],
@@ -247,7 +247,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     ["Strike Rate",  p.sr],
                   ].map(([l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
                       <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{v}</span>
                     </div>
                   ))}
@@ -262,7 +262,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   emptyMessage="No dismissals yet."/>
                 {p.wkts>0&&(
                   <Card sx={{padding:"14px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>BOWLING CAREER</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>BOWLING CAREER</div>
                     {[
                       ["Career Wickets", p.careerTotals?.wktsTotal||"—"],
                       ["Season Wickets", p.wkts],
@@ -273,7 +273,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                       ["Bowl Style",     p.bowlStyle==="F"?"Fast":p.bowlStyle==="S"?"Spin":"Medium"],
                     ].map(([l,v])=>(
                       <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
-                        <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
+                        <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
                         <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{v}</span>
                       </div>
                     ))}
@@ -291,13 +291,13 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               {/* Batting position visual */}
               {p.battingPos&&(
                 <Card sx={{padding:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>BATTING POSITION</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>BATTING POSITION</div>
                   <div style={{display:"flex",gap:"6px"}}>
                     {Array.from({length:11},(_,i)=>i+1).map(n=>(
                       <div key={n} style={{width:"32px",height:"32px",borderRadius:D.sm,display:"flex",alignItems:"center",justifyContent:"center",
                         background:n===p.battingPos?rCol:"transparent",
                         border:`1px solid ${n===p.battingPos?rCol:D.border}`,}}>
-                        <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:n===p.battingPos?700:400,color:n===p.battingPos?inkOn(rCol):D.textMuted}}>{n}</span>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:n===p.battingPos?700:400,color:n===p.battingPos?inkOn(rCol):D.textMuted}}>{n}</span>
                       </div>
                     ))}
                   </div>
@@ -561,7 +561,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               <button key={c2} onClick={()=>{setCat(c2);setSelId(null);}} className="pressBtn" style={{
                 flex:1,padding:"6px 0",borderRadius:D.md,cursor:"pointer",textTransform:"capitalize",
                 border:`1px solid ${cat===c2?D.violet+"55":D.border}`,background:cat===c2?D.violet+"14":"transparent",
-                fontFamily:D.body,fontSize:"10px",fontWeight:cat===c2?600:400,color:cat===c2?D.violet:D.textMuted,
+                fontFamily:D.body,fontSize:"12px",fontWeight:cat===c2?600:400,color:cat===c2?D.violet:D.textMuted,
               }}>{c2}</button>
             ))}
           </div>
@@ -570,10 +570,10 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
               {schoolGroups.map((g,gi)=>(
                 <div key={g.id} data-testid={`roster-school-${gi}`}>
-                  <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:gi?"10px":"4px",textTransform:"uppercase"}}>{g.label}</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:gi?"10px":"4px",textTransform:"uppercase"}}>{g.label}</div>
                   {g.teams.map(team=>(
                     <div key={team}>
-                      <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,padding:"3px 8px"}}>{team}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,padding:"3px 8px"}}>{team}</div>
                       {g.players.filter(p=>p.team===team).map(p=>(
                         <button key={p.id} onClick={()=>handleSelect(p.id,"players")} className="pressBtn" data-testid={`roster-player-${p.id}`} style={{
                           width:"100%",padding:"7px 10px",borderRadius:D.md,cursor:"pointer",textAlign:"left",marginBottom:"2px",
@@ -585,8 +585,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                               {seesFitness&&<div style={{position:"absolute",bottom:-1,right:-1,width:"8px",height:"8px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>}
                             </div>
                             <div style={{minWidth:0}}>
-                              <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:selId===p.id?600:400,color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
-                              <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.role}{p.cap?` · ${p.cap.toUpperCase()}`:""}</div>
+                              <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:selId===p.id?600:400,color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+                              <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.role}{p.cap?` · ${p.cap.toUpperCase()}`:""}</div>
                             </div>
                           </div>
                         </button>
@@ -833,7 +833,7 @@ function DismissalMethodCard({ title, testId, color, live, playerId, side, empty
   if (!signedIn()) {
     return (
       <Card sx={{padding:"14px"}} data-testid={testId}>
-        <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>{title}</div>
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>{title}</div>
         <EmptyState message="Sign in to see dismissal analysis — it is derived from live match data."/>
       </Card>
     );
@@ -848,7 +848,7 @@ function DismissalMethodCard({ title, testId, color, live, playerId, side, empty
     (a.method===null)-(b.method===null) || b.count-a.count);
   return (
     <Card sx={{padding:"14px"}} data-testid={testId}>
-      <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>{title}</div>
+      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>{title}</div>
       {loading ? <EmptyState loading/>
        : error ? <EmptyState error/>
        : !sorted.length ? <EmptyState message={emptyMessage}/>

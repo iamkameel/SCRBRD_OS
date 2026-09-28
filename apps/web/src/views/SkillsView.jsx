@@ -179,7 +179,7 @@ function SkillsView({ role }) {
                 <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"8px"}}>{selPlayer.team} · {selPlayer.role} · {selPlayer.batHand}HB</div>
                 <div style={{display:"flex",gap:"6px"}}>
                   <Badge color={D.sky}>{selPlayer.role}</Badge>
-                  <Badge color={fitnessColor(selPlayer.fitness)}>{selPlayer.fitness}</Badge>
+                  {selPlayer.fitness&&<Badge color={fitnessColor(selPlayer.fitness)}>{selPlayer.fitness}</Badge>}
                 </div>
               </div>
               {skills&&(

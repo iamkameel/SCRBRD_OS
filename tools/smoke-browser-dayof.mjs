@@ -83,7 +83,20 @@ const pool = new pg.Pool({ connectionString: DB });
 const dbq = async (text, params) => (await pool.query(text, params)).rows;
 const browser = await chromium.launch({ ...launchOptions() });
 
-/** A fresh page per person, at a phone viewport — the width this screen is for. */
+// The instant every browser page's clock is pinned to (see open()), set once
+// the SA day is known, below — declared here, ahead of open(), so open()'s
+// closure sees the assignment made inside the try block.
+let FROZEN_MS;
+
+/** A fresh page per person, at a phone viewport — the width this screen is for.
+ *
+ * Its clock is pinned to FROZEN_MS (set once the SA day is known, below) so
+ * every page's own `new Date()` — DayOfView's `today`, evaluated fresh at
+ * each navigation — names the same day the fixtures below were seeded under,
+ * no matter how much real time this walk's signing-in and waiting take, or
+ * whether a real midnight falls in the middle of it. Only the no-argument
+ * form is touched: `new Date(x)` still parses a real timestamp exactly as
+ * given, which is what every trip and match card is drawn from. */
 async function open() {
   const ctx = await browser.newContext({ viewport: { width: 360, height: 740 } });
   await offline(ctx);
@@ -95,6 +108,16 @@ async function open() {
     const t = m.text();
     if (!/Failed to load resource/.test(t)) errors.push(`console.error: ${t}`);
   });
+  await page.addInitScript(`(() => {
+    const FROZEN = ${FROZEN_MS};
+    const RealDate = Date;
+    class FrozenDate extends RealDate {
+      constructor(...a) { a.length === 0 ? super(FROZEN) : super(...a); }
+      static now() { return FROZEN; }
+    }
+    // eslint-disable-next-line no-global-assign
+    Date = FrozenDate;
+  })();`);
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
   return { ctx, page, errors };
@@ -125,17 +148,35 @@ async function signIn(page, email) {
 }
 
 try {
+  // The day this walk runs against: the server's own, sa_today() (db/08) —
+  // SAST, not the UTC day Node's own clock would give — read from Postgres
+  // ONCE, here, before anything else, and never recomputed as the walk runs.
+  // A run long enough to cross a real calendar-day boundary between seeding
+  // "today's" fixture and a later phone opening it used to see two different
+  // days: this walk's own `new Date()` at setup, and each browser page's own
+  // live `new Date()` when it later navigated (DayOfView's `today`, module
+  // scope, re-evaluated fresh per page) — eight checks failed the day a full
+  // verify run crossed 00:00 UTC in the middle of this file, while the file
+  // run alone (too fast to cross it) passed 53/0. FROZEN_MS pins every page's
+  // own clock to this same day (see open()), closing the race outright rather
+  // than merely picking the "more correct" of two clocks that can still drift
+  // apart mid-run.
+  //
+  // SCRBRD_SMOKE_NOW (an ISO instant) overrides it, for a verify that wants to
+  // force exactly that crossing on demand rather than wait for a real one.
+  const SA_TODAY = process.env.SCRBRD_SMOKE_NOW
+    ? new Date(process.env.SCRBRD_SMOKE_NOW)
+    : (await dbq(`select sa_today() as today`))[0].today;
+  FROZEN_MS = Date.UTC(SA_TODAY.getUTCFullYear(), SA_TODAY.getUTCMonth(), SA_TODAY.getUTCDate(), 12, 0, 0);
+  const todayAt = (h, m = 0) =>
+    new Date(Date.UTC(SA_TODAY.getUTCFullYear(), SA_TODAY.getUTCMonth(), SA_TODAY.getUTCDate(), h, m)).toISOString();
+
   for (let i = 0; i < 60; i++) {
     try { const r = await fetch(`${API}/api/health`); if ((await r.json()).db === "ok") break; } catch { /* not up */ }
     await new Promise((r) => setTimeout(r, 250));
   }
 
   // ── Fixtures this walk needs and the seed does not carry ────────────
-  // Real times, computed in Node rather than in SQL, so "today" here and
-  // "today" in the browser's own Date() — the client's dateStr(today) — name
-  // the same UTC calendar day regardless of the database session's timezone.
-  const now = new Date();
-  const todayAt = (h, m = 0) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, m)).toISOString();
   const MATCH_STARTS = todayAt(9, 0);
   const TRIP_DEPART = todayAt(8, 30);
 

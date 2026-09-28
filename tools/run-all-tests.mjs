@@ -66,6 +66,9 @@ const SUITES = [
   // The Match Centre's own derivations (redesign step 3c): sides named in
   // full and by code, the match line, the scorecard's parts, the break.
   ["match-centre",      "apps/web/test/match-centre.test.mjs"],
+  // The public page (SCRBRD-083): the redacted log made foldable, no
+  // pseudonym ever shown as a name.
+  ["public-page",       "apps/web/test/public-page.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.
@@ -108,6 +111,8 @@ const SUITES = [
   // verifies, and a signed request reaches five routes and nothing else.
   ["pad-resume", "services/api/auth/pad-resume.test.mjs"],
   ["read",     "services/api/read/read.test.mjs"],
+  // The signed-out read path (SCRBRD-083): the projection, the router, the shell.
+  ["public-api", "services/api/public/public.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],

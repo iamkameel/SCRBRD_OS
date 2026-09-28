@@ -7,7 +7,9 @@ import { api, signedIn } from "../../lib/api.js";
 import { useRows, useWeather } from "../../lib/live.js";
 import { boardInnings, inningsPhase, matchLine, nameBook, resultText, revisionNotice, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { seedCompletedMatch } from "../../scorer/seed.js";
-import { parseBalls, parseScore, teamSquad } from "../shared.jsx";
+import { PlayerProfileModal, parseBalls, parseScore, teamSquad } from "../shared.jsx";
+import { can, filterRecord } from "../../rbac/index.js";
+import { ShotWheel } from "../../scorer/charts.jsx";
 import { useIsMobile } from "../../shell/MobileNav.jsx";
 import { Icon } from "../../ui/icons.jsx";
 import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
@@ -31,9 +33,10 @@ import { BigScreen } from "./spectator.jsx";
  * `GET /api/matches/:id/events`, folded by @scrbrd/scoring — the read the
  * scorecard always used. Names are the ones the log carries (the squads the
  * scorer's pad wrote), exactly as the scorecard shows them; the commentary
- * takes them through its `nameOf` hook, which is the door a future public
- * page (SCRBRD-083 step 3) will pass publicName() through instead. Nothing
- * here is public.
+ * takes them through its `nameOf` hook. Nothing here is public: the public
+ * page (SCRBRD-083, src/public/PublicMatch.jsx) is its own component, which
+ * shares this view's tabs (tabs-core.jsx, scorecard.jsx) over a log the
+ * server has already redacted, and imports nothing signed-in.
  *
  * Signed out (the demonstration), the fixture's summary score is
  * reconstructed by the seeder, as the Scorecard always was, and says so; it
@@ -202,9 +205,20 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const notice = revisionNotice(boardInn);
   const isLive = match.status === "live";
 
+  // What the Scorecard's rows open to, which only a signed-in reader has
+  // (scorecard.jsx takes these rather than importing them, so the public page
+  // can share the tab): the row opens, with the batter's wagon wheel, and his
+  // profile where the reader's role reads profiles at all.
+  const [prof, setProf] = useState(null);
+  const profileOf = (id) => {
+    if (!can(role, "players", "r").allowed) return null;
+    const p = PLAYERS.find((x) => x.id === id);
+    return p ? () => setProf(filterRecord(role, "players", p)) : null;
+  };
+
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
-    moment, overSummary, shownRuns };
+    moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>
@@ -300,6 +314,8 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           : tab === "analytics" ? <AnalyticsTab {...ctx}/>
           : <DetailsTab {...ctx}/>}
       </div>
+      {prof && <PlayerProfileModal player={prof} role={role} onClose={() => setProf(null)}
+        onFullProfile={onNavProfile ? (id) => { setProf(null); onNavProfile(id); } : null}/>}
     </div>
   );
 }

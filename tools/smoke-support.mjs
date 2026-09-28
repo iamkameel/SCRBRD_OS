@@ -72,6 +72,8 @@ try {
     ["a platform role at a school",      plat,  { schoolId: HIL, role: "platformadmin",   reason: REASON }, 422, "role_not_supportable"],
     ["the owner's key",                  plat,  { schoolId: HIL, role: "superadmin",      reason: REASON }, 422, "role_not_supportable"],
     ["a parent's role",                  plat,  { schoolId: HIL, role: "guardian",        reason: REASON }, 422, "role_needs_subject"],
+    // db/57: no support read of a safeguarding concern (SAFEGUARDING_DSO Q9).
+    ["the DSO's role",                   plat,  { schoolId: HIL, role: "dso",             reason: REASON }, 422, "role_not_supportable"],
     ["a role that does not exist",       plat,  { schoolId: HIL, role: "wizard",          reason: REASON }, 422, "role_unknown"],
     ["no reason worth reading",          plat,  { schoolId: HIL, role: "directorofsport", reason: "fix" },  422, "reason_required"],
     ["zero minutes",                     plat,  { schoolId: HIL, role: "directorofsport", reason: REASON, minutes: 0 },   422, "minutes_out_of_range"],

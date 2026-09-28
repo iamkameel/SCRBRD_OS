@@ -87,7 +87,18 @@ const BUNDLES = {
   // real: support_access_begin() issues one role at one school for an hour,
   // and every read under it is stamped in that school's log. That path is
   // built; this key is what it replaces, and the reason to stop using it.
-  superadmin: [...ALL_CAPABILITIES],
+  //
+  // THE ONE CARVE-OUT: `safeguarding.*`. A key that reads every concern at
+  // every school, and records nothing, is exactly the reader CSA's
+  // Safeguarding Policy forbids (p63: the DSO keeps the records, and nobody
+  // else reads them by standing; SAFEGUARDING_DSO §2.2, decided Q9). Where
+  // access from outside a school is ever needed, the route is the provincial
+  // or national DSO — people with assignments — not the operator. db/57 also
+  // cuts every safeguarding table with a RESTRICTIVE policy that is false for
+  // any platform-wide assignment, so granting the row back would still read
+  // nothing. Still derived, never typed: a new capability outside that
+  // domain reaches this key the day it is written.
+  superadmin: ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.")),
 
   // ── Platform ──
   // Operating the platform is not a licence to read a school's confidential
@@ -414,6 +425,38 @@ const BUNDLES = {
   // been explicitly, individually opted in by a guardian, and only once the
   // scout's OWN accreditation has been verified. See db/08_schema_programme.sql.
   scout: ["fixture.read", "team.read", "news.read", "scouting.read", "scouting.write"],
+  // ── Safeguarding ──
+  //
+  // THE DESIGNATED SAFEGUARDING OFFICER (CSA Safeguarding Policy p15–17;
+  // docs/design/SAFEGUARDING_DSO.md §2). A role and not a capability set on an
+  // existing role, because it passes both of ADR 0003's tests: nobody else may
+  // read a concern (every existing role is already somebody's boss, colleague
+  // or parent), and the DSO signs things nobody else signs.
+  //
+  // The four safeguarding capabilities are held HERE AND NOWHERE ELSE —
+  // separation.test.mjs fails the build on a second holder. The existing ones
+  // are the DSO's job at the tenant: checking adults' clearances (p17 a–c),
+  // answering "who read this child's record" (audit.read), the never-public
+  // mark (a safeguarding mark, db/47), and enough of the roster, the teams,
+  // the fixtures and the trips to name a child, an adult and a place.
+  //
+  // NOT player.pii.read, player.emergency.read or player.age.read: a DSO
+  // reaches a family only through an open concern, logged under it
+  // (safeguarding_family(), db/57; decided Q3). NOT medical.*, discipline.*,
+  // scoring.*, user.role.assign or player.note.read.
+  //
+  // Tenant-scoped, always: db/57 refuses a `dso` assignment with no school
+  // (there is no platform-wide DSO) or with a team (a DSO holds the whole
+  // institution's concerns). A PDSO is a `dso` at a `union` tenant, the NDSO
+  // a `dso` at the `federation` tenant.
+  dso: [
+    "safeguarding.concern.read", "safeguarding.concern.manage",
+    "safeguarding.suspend", "safeguarding.authorise",
+    "clearance.read", "clearance.manage", "audit.read", "player.public.withhold",
+    "school.read", "user.read", "team.read", "fixture.read", "news.read",
+    "transport.read", "player.profile.read",
+  ],
+
   competitionadmin: [
     "fixture.read", "fixture.update", "fixture.cancel", "team.read", "news.read",
     "competition.read", "competition.manage", "officiating.assign",
@@ -515,9 +558,16 @@ export const GRANTABLE_ROLES = Object.freeze({
   // school office deliberately cannot. A director of sport hiring a
   // physiotherapist is a real appointment made by a real person; a school
   // administrator quietly adding it to their own account is not.
+  //
+  // `dso`: the chairperson appoints the DSO (CSA p17). Not the office and not
+  // the director of sport — the director of sport is exactly the person a
+  // concern about staff may name. A union's or the federation's principal
+  // appoints the PDSO or NDSO the same way. Ending the appointment while a
+  // concern naming the principal is open is refused by db/57's
+  // dso_appointment_guard().
   principal: [
     "directorofsport", "sportsadmin", "schooladmin", "medical", "finance", "sponsorship",
-    "coach", "assistantcoach", "teammanager", "facilities",
+    "coach", "assistantcoach", "teammanager", "facilities", "dso",
   ],
   directorofsport: [
     "coach", "assistantcoach", "teammanager", "scorer", "official",

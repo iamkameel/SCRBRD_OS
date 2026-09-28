@@ -245,6 +245,17 @@ export const CAPABILITIES = {
   "discipline.read":             "See disciplinary matters",
   "discipline.write":            "Record and progress disciplinary matters",
 
+  // ── Safeguarding (CSA Safeguarding Policy; docs/design/SAFEGUARDING_DSO.md) ──
+  // Held by the `dso` role and by NOBODY else — not the principal, not the
+  // office, not the owner's key (roles.mjs). A concern is the one record on
+  // the platform whose readers are named by the policy itself: "the club's
+  // DSOs" (p63). Anybody signed in may RAISE one; that is a function, not a
+  // capability, so no bundle can forget it (db/57).
+  "safeguarding.concern.read":   "Read the safeguarding concerns held at your institution",
+  "safeguarding.concern.manage": "Work a safeguarding concern: notes, sharing on need to know, closing",
+  "safeguarding.suspend":        "Suspend an adult's work with children while a concern is open",
+  "safeguarding.authorise":      "Sign the safeguarding approvals: a stream, a trip, the emergency-contact list",
+
   // ── Operations ──
   "transport.read":              "See transport arrangements",
   "transport.manage":            "Plan trips, vehicles and drivers",
@@ -468,6 +479,13 @@ export const LEVEL = Object.freeze({
 
   // ── Conduct ──
   "discipline.read": 3, "discipline.write": 3,
+
+  // ── Safeguarding ──
+  // A concern has no safe tier beneath it: the account, who it is about and
+  // who raised it are all it is. A suspension names an adult and says a DSO
+  // acted on him. A signature on a fixture or a trip names no child.
+  "safeguarding.concern.read": 4, "safeguarding.concern.manage": 4,
+  "safeguarding.suspend": 3, "safeguarding.authorise": 1,
 
   // ── Operations ──
   "transport.read": 1, "transport.manage": 1, "transport.drive": 1,

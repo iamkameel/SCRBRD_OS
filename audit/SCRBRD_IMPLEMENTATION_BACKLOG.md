@@ -3370,6 +3370,20 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   judgements never public; withdrawal reaches past pages; noindex. Build order in its §6: the rule as
   `packages/policy/src/public.mjs` with tests, then the consent / never-public / age-group / publish records (a
   migration, Opus), then signed-out reads applying it server-side, then the overlay under it (D2).
+  **Designed 2026-09-27** (`docs/design/SCRBRD-083_public_pages.md`, §9 decided). **Phase 1 built 2026-09-28, NOT
+  LIVE** (off unless `PUBLIC_PAGES=on`; go-live waits on the information officer's written confirmation and the
+  design's other "before live" conditions): `db/59_public_read_path.sql` — `public_match_header()`,
+  `public_match_log()`, `public_match_people()`, `public_shot_sectors()`, SECURITY DEFINER, `scrbrd_app` only, nothing
+  for an unpublished fixture; `public_data_changed` notify triggers. `services/api/public/` — `/api/public/*` and the
+  `/live`, `/scorecard` shells as the anonymous principal whatever the request carries; the log projected through a
+  per-kind allowlist with per-match HMAC pseudonyms (`PUBLIC_PSEUDONYM_SECRET`, environment only) and
+  `publicName()` labels; a 5 s / 60 s cache dropped by LISTEN; noindex; one 404; a per-address token bucket.
+  `apps/web/src/public/` — the Match Centre's tabs in public mode, its own bundle (`/public-app.js`), held free of
+  the signed-in app by `check-bundle`. The publish switch per side on the fixture screen. Proofs: the policy suite
+  reads db/59's bodies against `NEVER_PUBLIC`; `services/api/public/public.test.mjs`; db/99 §37;
+  `tools/smoke-public.mjs`; `tools/smoke-browser-public.mjs`. Left for later phases: competition, fixtures-list
+  and honours reads (2), AI commentary (3), the overlay and `broadcast_state()` (4), turning 18 (5); the
+  transcribed-match refusal waits on SCRBRD-099's provenance column.
 - **SCRBRD-084 — Season awards and MVP.** Season roll-up of figures and ratings already computed.
 - **SCRBRD-085 — Phone day-of views for drivers and groundskeepers.**
 
@@ -4138,7 +4152,20 @@ check. Each went red for the right reason, and the file's own proof block was fa
 office still records one through `POST /api/clearances`; there was no form before either); an advisory for legacy
 rows older than 24 months (the design leaves them to lapse on their own dates).
 
-### SCRBRD-117 — `player.fitness` is readable by anyone who reads a player's profile
+### ~~SCRBRD-117~~ — BUILT · `player.fitness` is readable by anyone who reads a player's profile
+**Built 2026-09-28 (Opus), with safeguarding phase 1 (SCRBRD-119): `db/58_player_fitness_masked.sql`.** `tables.mjs`
+masks `fitness` behind `medical.status.read`. The mask is anchored to the boy's own team, as the injury row is. db/58
+rebuilds `player_masked` with db/09's ten masks and this one (db/47's shape). `MASKED_SINCE_09` in `generate-rls.mjs`
+keeps `db/09` as shipped. `rls.test.mjs` D2 holds db/58's list to `tables.mjs`'s whole list, verbatim, and checks
+that db/09 lacks the tuple. `read-api.mjs` now logs `fitness` with the players read. The Analytics and Skills screens,
+the two that still drew the column for any reader, draw nothing when it comes back masked.
+**Who reads it now:** the side's coach, assistant and manager; the physio; the office and leadership; a granted
+enquiry for its one boy; the boy's parent and the boy himself. A team-mate, another side's coach and a scorer read
+NULL. **Proof:** db/99 section 36 covers a school-wide pupil, R Pillay (his own and not a team-mate's), the U14A coach
+(roster yes, fitness no), the physio, the director of sport and A Bekker (his son's). Falsified by rebuilding the view
+without the mask: section 36 (pupil) goes red.
+
+**As found:**
 **Priority:** P2 · **Domain:** RBAC / Privacy · **Type:** found building K3 (Opus)
 `player.fitness` (`fit`, `injured`, `rehab`, `unavailable`) is health, and PUBLIC_DATA marks it N2 (`public.mjs`). It
 is unmasked in `player_masked` under `player.profile.read`, which pupils, a granted enquiry, media, analysts and scorers
@@ -4160,6 +4187,66 @@ re-emission of db/48's) counts the value and the wicket. Either the view is wron
 takes `ball_wicket_stands` without the fold's retirement rule), or section 32 should exclude that fixture. **Opus
 (scoring) to decide and fix.** SCRBRD-115 and SCRBRD-116's walks were run with only that one assertion downgraded to a
 warning, locally, and it is not committed.
+
+### SCRBRD-119 — Safeguarding phase 1: the DSO and the concern record
+**Priority:** P1 · **Domain:** RBAC / Privacy / Safeguarding · **Type:** CSA Safeguarding Policy (SAFEGUARDING_DSO
+§9.1; CSA_SAFEGUARDING_CHECK SG-1 to SG-6, SG-9)
+**Built 2026-09-28 (Opus): `db/57_safeguarding_dso.sql`**, with SCRBRD-117 (db/58) beside it.
+- **The role.** `dso` holds `safeguarding.concern.read`, `.concern.manage`, `.suspend` and `.authorise`, and no
+  other role holds them, the owner's key included (`ALL_CAPABILITIES` minus `safeguarding.*`). The bundle also has
+  `clearance.read/manage`, `audit.read`, `player.public.withhold` and the reads a DSO needs to name a child, an adult
+  and a place. It has no `medical.*`, `discipline.*`, `scoring.*`, `user.role.assign`, PII, emergency or age read.
+  The principal appoints a DSO, and so can the platform and the owner's key as the recovery path. A DSO assignment
+  with no school, or with a team, is refused.
+- **Raising a concern** is open to anyone signed in, through `safeguarding_concern_raise()`. A child may be named only
+  if the reporter can already see him, and an adult only if he holds an appointment at the school. The reporter gets
+  back a reference (`SG-XXXX-YYYY`) and a time; `my_concern_receipts()` returns his references and nothing more.
+- **Routing.** The school's DSOs hold the concern. For a concern about leadership, the union's DSOs are also told by
+  a nameless notice, but never given the record. A concern about the DSO, or at a school with no DSO, is held at the
+  union, or at the federation if the union has no DSO. When nobody can hold it, it is still written and marked
+  `unheld`, and the reporter is told to use The Guardian's app as well.
+- **Who reads it.** Four layers guard every table and every function: `app_can` at the holding institution with no
+  team and no fixture, and RESTRICTIVE cuts for a support session, a platform-wide assignment and the adult named.
+  `access_log` hides every `safeguarding%` row from other `audit.read` holders.
+- **Notices.** Each is nameless and gated on the capability. `notification.recipient_id` and its RESTRICTIVE policy
+  carry the share notice. SG-9: a private notice to a pupil is refused unless the system writes it. The publish route
+  cannot write or edit a safeguarding notice.
+- **Doors.** The inbox shows the 24-hour (NDSO) and 72-hour (The Guardian's app) clocks. Opening a concern, the
+  family (only through an open concern), notes, assign, need-to-know shares (thirty days at most, parts named, never
+  the reporter, revoked on close) and close (three or five years kept) each have a function, and each read is logged.
+- **Around it.** `support_access_begin()` refuses any role that carries `safeguarding.*`. `dso_appointment_guard()`
+  stops the principal (and the office, always) from ending a DSO while a leadership or DSO concern naming him, or
+  nobody, is open. The provincial DSO may end it. The six `dso` clearance requirements are added.
+
+**Routes and screen.** The routes are `/api/safeguarding/*`, and `GUARDIAN_APP_URL` (https only) is The Guardian's
+link. **Safeguarding** is one destination for everyone. It shows the DSO card, a form in plain words that says it is
+confidential and not anonymous, The Guardian's app, and after sending only the receipt. A DSO also sees the inbox and
+the concern page with its record, notes, family, shares and close. The seed has a DSO at Hilton (N Dube, on the pilot
+list).
+**Proof.** db/99 section 35 covers appointment, support, raise and refusals, routing, the DSO, the named DSO, the
+union, another school's DSO, and the zero matrix: coach, parent, office, principal, director of sport, league,
+owner's key, platform, the named physio, the pupil and the teachers. Then come the support session, the owner-cut and
+support-cut isolated, receipts, contacts, open, family, clock, share, notice, guard and catalogue. Also
+`separation.test.mjs` group SG, `rls.test.mjs` B2 and B3, `smoke-safeguarding` (76), `smoke-browser-safeguarding`
+(38), and the support walks (the DSO's role is refused and not offered).
+**Falsified** once per class against a live database. Every class went red at its own assertion except where two
+layers each suffice: `competitionadmin` holding the capability is still cut by the platform-wide policy, and a share
+outliving the close needs both of its guards removed.
+**Run, 2026-09-28 (on dd8ddf5):**
+- Typecheck: 0 errors. Lint: 0 errors, 82 warnings. Build, the bundle check (423 KB entry) and the import check pass.
+- `generate-rls` leaves `db/` unchanged, and the shipped test is 53/0.
+- `migrate --reset --seed --verify` passes, and so does `run-all-tests` (5500 across 65 suites).
+- `run-smoke-api`: 3063 across 71 walks. `run-smoke-api --browser`: 1899 across 32 walks.
+- The offline-day walk under LIE_FI is 56/56, and `pnpm smoke` is 8, 25, 16 and 214.
+- Rehearsed: origin/main's `db/` (to 54) seeded, then `apply-55`, `-56`, `-57` and `-58` pasted in order. `apply-58`
+  was refused ahead of 57, and a second 57 was refused. This branch's `db/99` then passed in full.
+**Not built (later phases):** suspension and the DSO register (phase 2), referral to the PDSO or NDSO and purge
+(phase 5), the DSO-removal notice period (phase 5, Q1), trips (phase 5), media and the stream authorisation (phase 4),
+a push of the DSO's notice (no system-written notice is pushed anywhere yet), and the principal's red Settings line
+for a school with no DSO. The card says "not yet appointed" instead.
+**Go-live:** the pilot's principal appoints a DSO. The union tenant for KwaZulu-Natal exists (one per province is now a
+unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information officer has §9.7's note. Paste
+`apply-57`, then `apply-58`, then `verify`, then add both to `db/SHIPPED.sha256`.
 
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
@@ -4348,6 +4435,9 @@ it; the pad's AI line is unchanged and spectators never see one. Guards: `packag
 (every kind, void, amendment, free hit, penalty credits both ways, determinism, 60 generated matches with no id or
 typed name reaching a line, public mode) and `tools/smoke-browser-matchcentre.mjs`. Still open: the signed-out walk
 (with the public page, SCRBRD-083 step 3) and item 4.
+**The signed-out walk: built 2026-09-28** with SCRBRD-083 phase 1 — `tools/smoke-browser-public.mjs` opens the
+public live page and scorecard signed out and reads the Commentary tab's lines from the redacted log, names by the
+rule and a role word for everyone else, never "hurt". Item 4 (AI lines) is SCRBRD-083 phase 3.
 The same lines feed the Match Centre's spectator side (Kameel's premium-feel checklist, step 3c): the highlights on
 Summary, a moment on the board for a boundary, a wicket or a milestone (the hat-trick ball among them) that arrives
 while the page is open, the end-of-over line between overs, and big-screen mode (`views/matchcentre/spectator.jsx`).

@@ -906,6 +906,214 @@ EXCEPTION WHEN check_violation THEN
   RETURN SQLERRM;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/57 (section 35). The safeguarding fixture, owner-written and rolled back
+-- with everything else, so the section does not depend on which seed a
+-- database carries: the KwaZulu-Natal union (found, or made), a school in
+-- that province with no DSO and one teacher, a DSO at Westville, a second
+-- DSO at Hilton, a DSO at the union (the PDSO), and two accounts with no
+-- appointment yet — one the principal appoints below, one a support session
+-- is simulated for. Returns the union.
+CREATE OR REPLACE FUNCTION _seed_57() RETURNS uuid AS $$
+DECLARE
+  HIL     uuid := '11111111-1111-1111-1111-111111111111';
+  WES     uuid := '22222222-2222-2222-2222-222222222222';
+  V57     uuid := '57570000-0000-0000-0000-000000000001';
+  v_union uuid;
+BEGIN
+  SELECT s.id INTO v_union FROM school s WHERE s.kind = 'union' AND lower(btrim(s.province)) = 'kwazulu-natal';
+  IF v_union IS NULL THEN
+    INSERT INTO school (id, code, name, kind, province)
+      VALUES ('57570000-0000-0000-0000-0000000000a1', 'verify-057-union', 'Verify 057 KZN Cricket Union', 'union', 'KwaZulu-Natal')
+      RETURNING id INTO v_union;
+  END IF;
+  INSERT INTO school (id, code, name, kind, province) VALUES
+    (V57, 'verify-057', 'Verify 057 School', 'school', 'KwaZulu-Natal'),
+    -- A province with no union: nobody above to hold a concern. One school
+    -- there with no DSO, and one with two.
+    ('57570000-0000-0000-0000-000000000002', 'verify-057b', 'Verify 057 Far School', 'school', 'Verify 057 Province'),
+    ('57570000-0000-0000-0000-000000000003', 'verify-057c', 'Verify 057 Far School Two', 'school', 'Verify 057 Province');
+  INSERT INTO app_user (id, school_id, email, name, role) VALUES
+    ('88888888-0000-0000-0000-000000005701', HIL, 'dso1.v57@example.invalid', 'V57 DSO One', 'dso'),
+    ('88888888-0000-0000-0000-000000005702', HIL, 'dso2.v57@example.invalid', 'V57 DSO Two', 'dso'),
+    ('88888888-0000-0000-0000-000000005703', WES, 'dso.wes.v57@example.invalid', 'V57 DSO Westville', 'dso'),
+    ('88888888-0000-0000-0000-000000005704', v_union, 'pdso.v57@example.invalid', 'V57 Provincial DSO', 'dso'),
+    ('88888888-0000-0000-0000-000000005705', V57, 'teacher.v57@example.invalid', 'V57 Teacher', 'coach'),
+    ('88888888-0000-0000-0000-000000005706', NULL, 'support.v57@example.invalid', 'V57 Support', 'platformadmin'),
+    ('88888888-0000-0000-0000-000000005707', '57570000-0000-0000-0000-000000000002', 'teacher2.v57@example.invalid', 'V57 Far Teacher', 'coach'),
+    ('88888888-0000-0000-0000-000000005708', '57570000-0000-0000-0000-000000000003', 'dso.far.v57@example.invalid', 'V57 Far DSO', 'dso'),
+    ('88888888-0000-0000-0000-000000005709', '57570000-0000-0000-0000-000000000003', 'teacher3.v57@example.invalid', 'V57 Far Teacher Two', 'coach'),
+    ('88888888-0000-0000-0000-000000005710', '57570000-0000-0000-0000-000000000003', 'dso2.far.v57@example.invalid', 'V57 Far DSO Two', 'dso');
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES
+    ('88888888-0000-0000-0000-000000005702', 'dso', HIL, NULL),
+    ('88888888-0000-0000-0000-000000005703', 'dso', WES, NULL),
+    ('88888888-0000-0000-0000-000000005704', 'dso', v_union, NULL),
+    ('88888888-0000-0000-0000-000000005705', 'coach', V57, '1XI'),
+    ('88888888-0000-0000-0000-000000005707', 'coach', '57570000-0000-0000-0000-000000000002', '1XI'),
+    ('88888888-0000-0000-0000-000000005708', 'dso', '57570000-0000-0000-0000-000000000003', NULL),
+    ('88888888-0000-0000-0000-000000005709', 'coach', '57570000-0000-0000-0000-000000000003', '1XI'),
+    ('88888888-0000-0000-0000-000000005710', 'dso', '57570000-0000-0000-0000-000000000003', NULL);
+  RETURN v_union;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Where a concern went, by its reference: the holding institution's code,
+-- what it is about, and whether it is unheld. The claim is about the row,
+-- which no reader's policy could tell from a hidden one.
+CREATE OR REPLACE FUNCTION _route_57(p_ref text) RETURNS text AS $$
+  SELECT format('%s/%s/%s', t.code, c.about_kind, c.unheld::text)
+    FROM safeguarding_concern c JOIN school t ON t.id = c.tenant_id WHERE c.reference = p_ref
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _concern_57(p_ref text) RETURNS uuid AS $$
+  SELECT c.id FROM safeguarding_concern c WHERE c.reference = p_ref
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The two clocks and a share's end need time to pass; the record's own
+-- triggers refuse the edit, so they are stepped round for one statement.
+CREATE OR REPLACE FUNCTION _age_concern_57(p_id uuid, p_hours integer) RETURNS void AS $$
+BEGIN
+  ALTER TABLE safeguarding_concern DISABLE TRIGGER safeguarding_concern_fixed;
+  UPDATE safeguarding_concern SET raised_at = now() - make_interval(hours => p_hours) WHERE id = p_id;
+  ALTER TABLE safeguarding_concern ENABLE TRIGGER safeguarding_concern_fixed;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _expire_share_57(p_id uuid) RETURNS void AS $$
+BEGIN
+  ALTER TABLE safeguarding_share DISABLE TRIGGER safeguarding_share_append_only;
+  UPDATE safeguarding_share SET shared_at = now() - interval '2 hours', open_until = now() - interval '1 minute' WHERE id = p_id;
+  ALTER TABLE safeguarding_share ENABLE TRIGGER safeguarding_share_append_only;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- SG-9: a notice to one person, as the system writes one. 'ok' or 'refused'.
+CREATE OR REPLACE FUNCTION _notice_57(p_person uuid, p_kind text) RETURNS text AS $$
+BEGIN
+  INSERT INTO notification (school_id, scope_level, kind, title, body, recipient_id)
+    VALUES ('11111111-1111-1111-1111-111111111111', 'school', p_kind, 'Verify 057', 'Verify 057', p_person);
+  RETURN 'ok';
+EXCEPTION WHEN check_violation THEN
+  RETURN 'refused';
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The owner's key with the capability row granted back, and taken away again:
+-- the platform-wide cut, on its own.
+CREATE OR REPLACE FUNCTION _owner_grant_57(p_on boolean) RETURNS void AS $$
+BEGIN
+  IF p_on THEN
+    INSERT INTO role_capability (role, capability) VALUES ('superadmin', 'safeguarding.concern.read') ON CONFLICT DO NOTHING;
+  ELSE
+    DELETE FROM role_capability WHERE role = 'superadmin' AND capability LIKE 'safeguarding.%';
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A support session as `dso`, which support_access_begin() refuses to issue:
+-- written by the owner as that function would have, for an account with NO
+-- platform-wide assignment, so the support cut is tested on its own. p_end
+-- ends it again (the assignment stays live), which is the control.
+CREATE OR REPLACE FUNCTION _support_dso_57(p_end boolean) RETURNS void AS $$
+DECLARE v_asg uuid;
+BEGIN
+  IF p_end THEN
+    UPDATE support_access SET ended_at = now(), ended_by = actor_id
+     WHERE actor_id = '88888888-0000-0000-0000-000000005706' AND ended_at IS NULL;
+    RETURN;
+  END IF;
+  INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
+    VALUES ('88888888-0000-0000-0000-000000005706', 'dso', '11111111-1111-1111-1111-111111111111', true, current_date, now() + interval '1 hour')
+    RETURNING id INTO v_asg;
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+    VALUES ('88888888-0000-0000-0000-000000005706', '11111111-1111-1111-1111-111111111111', 'dso',
+            'Verify 057: a session support may not be issued', v_asg, now() + interval '1 hour');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/59 (section 37). Two fixtures for the signed-out read path, written as
+-- the owner: Hilton 1XI v Westville 1XI (both on SCRBRD, live) and Hilton 1XI
+-- v Kearsney College (not on SCRBRD, finished, its names typed). Five boys of
+-- their own, so nothing earlier sections did to the seed's consents can
+-- decide an answer here: one to consent, one to consent and mark, one with
+-- nothing recorded, one fourteen or so playing up in the 1st XI (names off
+-- for his own age group), and a Westville boy who consents while Westville
+-- has not published. Each consenting boy has a verified guardian of his own.
+-- Returns the ids, by name.
+CREATE OR REPLACE FUNCTION _seed_59() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  ids jsonb := '{}';
+  r record;
+  v_p uuid; v_u uuid; v_a uuid; m_on uuid; m_off uuid;
+  s int := 0;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('named',  'Andile Named',     HIL, 17, true),
+      ('marked', 'Brandon Marked',   HIL, 17, true),
+      ('none',   'Craig Nothing',    HIL, 16, false),
+      ('up',     'Dumisani Playsup', HIL, 13, true),
+      ('wes',    'Ethan Westville',  WES, 17, true)) AS v(k, nm, school, age, consent)
+  LOOP
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (r.school, '1XI', r.nm, split_part(r.nm, ' ', 2), 90 + s, 'batter',
+            current_date - make_interval(years => r.age) - interval '40 days')
+    RETURNING id INTO v_p;
+    s := s + 1;
+    ids := ids || jsonb_build_object(r.k, v_p);
+    IF r.consent THEN
+      INSERT INTO app_user (school_id, email, name, role)
+      VALUES (r.school, 'guardian59.' || r.k || '@example.invalid', 'Parent ' || r.k, 'guardian') RETURNING id INTO v_u;
+      INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'guardian', r.school) RETURNING id INTO v_a;
+      INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                      consent_state, consent_version, consent_at, created_by, valid_from)
+      VALUES (v_a, v_p, 'parent', 'verified', v_u, now() - interval '30 days', 'granted', 'popia-2026-01',
+              now() - interval '30 days', v_u, current_date - 30);
+      ids := ids || jsonb_build_object('g_' || r.k, v_u);
+    END IF;
+  END LOOP;
+
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', WES, '1XI', 'Westville Boys'' High 1XI', now() - interval '1 hour', 'cricket', 'T10', 10, 'live')
+  RETURNING id INTO m_on;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', 'Kearsney College 1XI', now() - interval '3 days', 'cricket', 'T5', 5, 'complete')
+  RETURNING id INTO m_off;
+  ids := ids || jsonb_build_object('m_on', m_on, 'm_off', m_off);
+
+  -- M_ON: the squads (four Hilton boys and a typed one; the Westville boy),
+  -- two deliveries, a Law 41 suspension, a retirement "hurt".
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, payload, ball_type, value, striker_id, non_striker_id, bowler_id, seg, dismissal)
+  VALUES
+    (m_on, HIL, 1, 1, 0, SCORER, 'v59', 'v59-on-1', 1, now(), 'innings_start', jsonb_build_object(
+       'battingTeam', '1XI', 'bowlingTeam', 'Westville Boys'' High 1XI', 'overs', 10, 'twelfthMan', 'Twelfth Fiftynine',
+       'captureProfile', 'full',
+       'squad', jsonb_build_array(jsonb_build_object('id', ids->>'named', 'name', 'Andile Named'),
+                                  jsonb_build_object('id', ids->>'marked', 'name', 'Brandon Marked'),
+                                  jsonb_build_object('id', ids->>'none', 'name', 'Craig Nothing'),
+                                  jsonb_build_object('id', ids->>'up', 'name', 'Dumisani Playsup'),
+                                  jsonb_build_object('id', 'Typed Fiftynine', 'name', 'Typed Fiftynine')),
+       'bowlingSquad', jsonb_build_array(jsonb_build_object('id', ids->>'wes', 'name', 'Ethan Westville'))),
+     NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+    (m_on, HIL, 2, 1, 0, SCORER, 'v59', 'v59-on-2', 2, now(), 'batters', '{}', NULL, NULL,
+       (ids->>'named')::uuid, (ids->>'marked')::uuid, NULL, NULL, NULL),
+    (m_on, HIL, 3, 1, 0, SCORER, 'v59', 'v59-on-3', 3, now(), 'bowler', '{}', NULL, NULL, NULL, NULL, (ids->>'wes')::uuid, NULL, NULL),
+    (m_on, HIL, 4, 1, 0, SCORER, 'v59', 'v59-on-4', 4, now(), 'ball', '{"shot": "drive"}', 'run', 4,
+       (ids->>'named')::uuid, (ids->>'marked')::uuid, (ids->>'wes')::uuid, 9, NULL),
+    (m_on, HIL, 5, 1, 0, SCORER, 'v59', 'v59-on-5', 5, now(), 'ball', jsonb_build_object('fielder', 'Typed Fiftynine'), 'W', 0,
+       (ids->>'named')::uuid, (ids->>'marked')::uuid, (ids->>'wes')::uuid, NULL, 'caught'),
+    (m_on, HIL, 6, 1, 0, SCORER, 'v59', 'v59-on-6', 6, now(), 'bowler_suspended',
+       '{"reason": "dangerous_bowling", "scope": "innings"}', NULL, NULL, NULL, NULL, (ids->>'wes')::uuid, NULL, NULL),
+    (m_on, HIL, 7, 1, 0, SCORER, 'v59', 'v59-on-7', 7, now(), 'retire',
+       jsonb_build_object('batter', ids->>'marked', 'reason', 'hurt'), NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+  -- M_OFF: Hilton against typed names.
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, payload, ball_type, value, striker_id, bowler_id)
+  VALUES
+    (m_off, HIL, 1, 1, 0, SCORER, 'v59', 'v59-off-1', 1, now(), 'innings_start', jsonb_build_object(
+       'battingTeam', '1XI', 'bowlingTeam', 'Kearsney College 1XI', 'overs', 5,
+       'squad', jsonb_build_array(jsonb_build_object('id', ids->>'named', 'name', 'Andile Named')),
+       'bowlingSquad', jsonb_build_array('Kearsney Bowlerone')), NULL, NULL, NULL, NULL),
+    (m_off, HIL, 2, 1, 0, SCORER, 'v59', 'v59-off-2', 2, now(), 'ball', '{"bowler": "Kearsney Bowlerone"}', 'run', 1,
+       (ids->>'named')::uuid, NULL);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -2147,10 +2355,14 @@ BEGIN
   -- quietly stopped being "everything" would leave the operator locked out of
   -- the thing they most need to reach, and nobody would find out until the day
   -- it mattered.
+  -- Every capability but one domain: safeguarding.* is the owner's key's one
+  -- carve-out (roles.mjs, db/57; CSA p63). Section 35 proves it reads no
+  -- concern even when the rows are granted back.
   PERFORM _assert(
     (SELECT count(*) FROM role_capability WHERE role = 'superadmin')
-      = (SELECT count(*) FROM capability),
-    'the owner''s key does not hold every capability');
+      = (SELECT count(*) FROM capability WHERE name NOT LIKE 'safeguarding.%')
+    AND NOT EXISTS (SELECT 1 FROM role_capability WHERE role = 'superadmin' AND capability LIKE 'safeguarding.%'),
+    'the owner''s key does not hold every capability outside safeguarding.*, or holds one inside it');
 
   PERFORM _as(U_OWNER);
 
@@ -5922,6 +6134,652 @@ BEGIN
     v_err := _trip_56(U_DRV);
     PERFORM _assert(v_err LIKE '%Safeguarding Awareness Certificate expired%',
       format('db/56 (trip): a driver whose recorded certificate lapsed was not refused as db/08''s guard refuses (%s)', v_err));
+  END;
+
+  -- ── 35. Safeguarding, phase 1: the DSO and the concern record (db/57) ──
+  -- CSA Safeguarding Policy p15–17, p52, p63; docs/design/SAFEGUARDING_DSO.md
+  -- §9.1. Nobody but a DSO of the institution that HOLDS a concern reads it:
+  -- not the coach, the parent, the office, the principal, the director of
+  -- sport, the league, the owner's key, the platform, a support session, the
+  -- adult it names — and the audit log does not say it exists. The four
+  -- layers are proved one at a time: (owner-cut) and (support-cut) take the
+  -- others away and show the one left still holds, and (named) is the case
+  -- where only the fourth stands between a DSO and a concern about him.
+  -- Falsified once per class against a live database (section 35 alone, so
+  -- no earlier section caught it first), each going red at the assertion
+  -- named: safeguarding.concern.read granted to principal, schooladmin,
+  -- directorofsport, guardian (→ zero); to coach with the policy's team
+  -- widened to '*' (→ zero); to competitionadmin and to platformadmin with
+  -- the platform cut dropped (→ zero; with the cut kept, only (catalogue)
+  -- fired); the platform cut dropped (→ owner-cut); the support cut dropped
+  -- (→ support-cut); the named cut dropped, the log's names-me check
+  -- removed, the named DSO sent the tenant-wide notice (→ named); the
+  -- policy made app_holds() (→ dso); the access_log policy dropped, the
+  -- recipient cut dropped, the notices' platform cut dropped, the insert cut
+  -- dropped, the SG-9 trigger off, the two role_assignment triggers off,
+  -- receipts unfiltered, support allowed to begin as dso, routing blind to a
+  -- named DSO and to leadership, a share returning the reporter or ignoring
+  -- revocation, the office's rule removed (each → its own letter). A share
+  -- outliving the close needed both of its guards removed: the close revokes
+  -- every share, and share_open() also refuses a closed concern.
+  DECLARE
+    n        bigint;
+    n2       bigint;
+    n3       bigint;
+    v_ok     boolean;
+    v_why    text;
+    v_err    text;
+    v_ref1   text;  -- a parent, about his child and the physio
+    v_ref2   text;  -- the 2XI coach, about the principal
+    v_ref3   text;  -- a pupil, about Hilton's second DSO
+    v_ref4   text;  -- a teacher at a school with no DSO
+    v_ref5   text;  -- a teacher where there is nobody at all
+    v_ref6   text;  -- a DSO, recording a report from The Guardian's app
+    v_ref7   text;  -- a teacher, about his school's DSO, with nobody above
+    v_unheld boolean;
+    v_id1    uuid;
+    v_id2    uuid;
+    v_share  uuid;
+    v_asg    uuid;
+    v_json   jsonb;
+    v_date   date;
+    v_union  uuid;
+    i        integer;
+    who      uuid[];
+    what     text[];
+    U_DSO1   uuid := '88888888-0000-0000-0000-000000005701';  -- appointed by the principal below
+    U_DSO2   uuid := '88888888-0000-0000-0000-000000005702';  -- Hilton's second DSO
+    U_DSOW   uuid := '88888888-0000-0000-0000-000000005703';  -- Westville's DSO
+    U_PDSO   uuid := '88888888-0000-0000-0000-000000005704';  -- the union's DSO
+    U_V57    uuid := '88888888-0000-0000-0000-000000005705';  -- teacher, school with no DSO
+    U_SUP57  uuid := '88888888-0000-0000-0000-000000005706';  -- a support session, simulated
+    U_FAR    uuid := '88888888-0000-0000-0000-000000005707';  -- teacher, no union in his province
+    U_FDSO   uuid := '88888888-0000-0000-0000-000000005708';  -- a DSO there, named in #7
+    U_FAR2   uuid := '88888888-0000-0000-0000-000000005709';  -- a teacher there
+    U_FDSO2  uuid := '88888888-0000-0000-0000-000000005710';  -- the other DSO there
+    V57C     uuid := '57570000-0000-0000-0000-000000000003';
+    U_BEKKER uuid := '88888888-0000-0000-0000-000000000011';  -- A Bekker, guardian of T Bekker
+    V57      uuid := '57570000-0000-0000-0000-000000000001';
+    V57B     uuid := '57570000-0000-0000-0000-000000000002';
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    v_union := _seed_57();
+
+
+    -- (appoint) the principal appoints a DSO; the office and the director of
+    -- sport cannot; nobody makes a DSO with no institution, or with a team
+    PERFORM _as(U_HEAD_M);
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (U_DSO1, 'dso', HIL);
+    PERFORM _as(U_DSO1);
+    SELECT count(*) INTO n FROM role_assignment WHERE person_id = U_DSO1 AND role = 'dso' AND school_id = HIL AND active;
+    PERFORM _assert(n = 1, 'db/57 (appoint): the principal could not appoint a DSO');
+    FOREACH v_asg IN ARRAY ARRAY[U_REGISTRAR, U_SARAH] LOOP
+      PERFORM _as(v_asg);
+      BEGIN
+        INSERT INTO role_assignment (person_id, role, school_id) VALUES (U_BURSAR, 'dso', HIL);
+        v_err := NULL;
+      EXCEPTION WHEN insufficient_privilege THEN v_err := SQLERRM; END;
+      PERFORM _assert(v_err IS NOT NULL, format('db/57 (appoint): %s appointed a DSO', v_asg));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    BEGIN
+      INSERT INTO role_assignment (person_id, role, school_id) VALUES (U_BURSAR, 'dso', NULL);
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%must name a school%', format('db/57 (appoint): a DSO with no institution was not refused (%s)', coalesce(v_err, 'accepted')));
+    BEGIN
+      INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES (U_BURSAR, 'dso', HIL, '1XI');
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%names no team%', format('db/57 (appoint): a team-scoped DSO was not refused (%s)', coalesce(v_err, 'accepted')));
+    -- (support) support may not take a DSO into a school
+    SELECT s.ok, s.reason INTO v_ok, v_why FROM support_access_begin(HIL, 'dso', 'Verify 057: read the concerns') s;
+    PERFORM _assert(NOT v_ok AND v_why = 'role_not_supportable', format('db/57 (support): a support session as dso was %s', coalesce(v_why, 'issued')));
+
+    -- (raise) anybody signed in raises, at a school he belongs to; a child only if he can see him
+    PERFORM _as(U_BEKKER);
+    SELECT r.reason INTO v_why FROM safeguarding_concern_raise(HIL, 'child', ARRAY['bullying'], 'suspicion',
+      'He comes home from nets upset and will not say why.', 'told', p_subject_player => P_U16B) r;
+    PERFORM _assert(v_why = 'child_not_visible', format('db/57 (raise): a parent named a child he cannot see (%s)', coalesce(v_why, 'accepted')));
+    SELECT r.reason INTO v_why FROM safeguarding_concern_raise(WES, 'child', ARRAY['bullying'], 'suspicion',
+      'He comes home from nets upset and will not say why.', 'told') r;
+    PERFORM _assert(v_why = 'not_your_school', format('db/57 (raise): a Hilton parent raised at Westville (%s)', coalesce(v_why, 'accepted')));
+    SELECT r.reason INTO v_why FROM safeguarding_concern_raise(HIL, 'child', ARRAY['bullying'], 'suspicion',
+      'A report The Guardian passed on to the school.', 'anonymous_app') r;
+    PERFORM _assert(v_why = 'anonymous_app_is_recorded_by_a_dso', format('db/57 (raise): a parent recorded an anonymous-app report (%s)', coalesce(v_why, 'accepted')));
+    -- #1: a parent, about his child, naming the physio
+    SELECT r.ok, r.reference, r.unheld INTO v_ok, v_ref1, v_unheld FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['physical', 'psychological'],
+      'suspicion', 'He says the physio grabbed his arm hard in the change room and shouted at him.', 'told',
+      p_subject_player => P_OTHER, p_subject_person => U_MEDICAL, p_occurred_where => 'Pavilion change room') r;
+    PERFORM _assert(v_ok AND v_ref1 ~ '^SG-[0-9A-Z]{4}-[0-9]{4}$' AND NOT v_unheld, format('db/57 (raise): the parent''s concern was not taken (%s)', v_ref1));
+    -- #2: the 2XI coach, about the principal (ticked "an adult"; the principal's appointment makes it leadership)
+    PERFORM _as(U_COACH2);
+    SELECT r.ok, r.reference INTO v_ok, v_ref2 FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['psychological'],
+      'suspicion', 'The head shouts at the U13 boys on the touchline and they are frightened of him.', 'witness',
+      p_subject_person => U_HEAD_M) r;
+    PERFORM _assert(v_ok, 'db/57 (raise): the coach''s concern about the principal was not taken');
+    -- #3: a pupil, about Hilton's second DSO
+    PERFORM _as(U_SELF);
+    SELECT r.ok, r.reference INTO v_ok, v_ref3 FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['sexual_harassment'],
+      'suspicion', 'The DSO sends me messages late at night that make me uncomfortable.', 'victim',
+      p_subject_person => U_DSO2) r;
+    PERFORM _assert(v_ok, 'db/57 (raise): the pupil''s concern about the DSO was not taken');
+    -- #4: a teacher at a school with no DSO; #5: one where nobody above has one either
+    PERFORM _as(U_V57);
+    SELECT r.ok, r.reference INTO v_ok, v_ref4 FROM safeguarding_concern_raise(V57, 'child', ARRAY['neglect'],
+      'recognised', 'A boy in my side has come to nets hungry every day this week.', 'witness') r;
+    PERFORM _assert(v_ok, 'db/57 (raise): a concern at a school with no DSO was not taken');
+    PERFORM _as(U_FAR);
+    SELECT r.ok, r.reference, r.unheld INTO v_ok, v_ref5, v_unheld FROM safeguarding_concern_raise(V57B, 'unknown', ARRAY['other'],
+      'suspicion', 'Something is wrong on the bus home and the boys will not say what.', 'other') r;
+    PERFORM _assert(v_ok AND v_unheld, 'db/57 (raise): a concern with nobody above was not written, or not marked unheld');
+    -- #7: a teacher, about his school's DSO, with nobody above: held at the
+    -- school by the other DSO, and the one it names is not told
+    PERFORM _as(U_FAR2);
+    SELECT r.ok, r.reference INTO v_ok, v_ref7 FROM safeguarding_concern_raise(V57C, 'dso', ARRAY['psychological'],
+      'suspicion', 'The DSO humiliates the younger boys in front of the side.', 'witness', p_subject_person => U_FDSO) r;
+    PERFORM _assert(v_ok, 'db/57 (raise): a concern about the DSO with nobody above was not taken');
+
+    -- (route) the school holds a child's and leadership's; the union holds the DSO's and the DSO-less school's
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_route_57(v_ref1) = 'HIL/adult/false', format('db/57 (route): #1 went to %s', _route_57(v_ref1)));
+    PERFORM _assert(_route_57(v_ref2) = 'HIL/leadership/false', format('db/57 (route): #2 went to %s — the principal''s appointment did not make it leadership', _route_57(v_ref2)));
+    PERFORM _assert(_route_57(v_ref3) LIKE '%/dso/false' AND _route_57(v_ref3) NOT LIKE 'HIL/%', format('db/57 (route): #3, about a DSO, went to %s', _route_57(v_ref3)));
+    PERFORM _assert(_route_57(v_ref4) NOT LIKE 'verify-057/%' AND _route_57(v_ref4) LIKE '%/child/false', format('db/57 (route): #4, at a school with no DSO, went to %s', _route_57(v_ref4)));
+    PERFORM _assert(_route_57(v_ref5) = 'verify-057b/unknown/true', format('db/57 (route): #5, with nobody above, went to %s', _route_57(v_ref5)));
+    PERFORM _assert(_route_57(v_ref7) = 'verify-057c/dso/true', format('db/57 (route): #7, about a DSO with nobody above, went to %s', _route_57(v_ref7)));
+    v_id1 := _concern_57(v_ref1);
+    v_id2 := _concern_57(v_ref2);
+
+    -- (dso) Hilton's DSOs read Hilton's two, reporter and notes included; not the union's
+    FOREACH v_asg IN ARRAY ARRAY[U_DSO1, U_DSO2] LOOP
+      PERFORM _as(v_asg);
+      SELECT count(*) INTO n FROM safeguarding_concern WHERE reference IN (v_ref1, v_ref2);
+      SELECT count(*) INTO n2 FROM safeguarding_concern_reporter r JOIN safeguarding_concern c ON c.id = r.concern_id
+       WHERE c.reference IN (v_ref1, v_ref2);
+      SELECT count(*) INTO n3 FROM safeguarding_concern WHERE reference IN (v_ref3, v_ref4, v_ref5);
+      PERFORM _assert(n = 2 AND n2 = 2 AND n3 = 0, format('db/57 (dso): a Hilton DSO reads %s of Hilton''s two, %s reporters, %s held elsewhere', n, n2, n3));
+      SELECT count(*) INTO n FROM notification WHERE kind = 'safeguarding';
+      PERFORM _assert(n = 2, format('db/57 (dso): a Hilton DSO has %s safeguarding notices, expected Hilton''s two', n));
+      SELECT count(*) INTO n FROM access_log WHERE resource = 'safeguarding_concern_raise' AND school_id = HIL;
+      PERFORM _assert(n = 2, format('db/57 (dso): a Hilton DSO sees %s of the two raises on the log', n));
+    END LOOP;
+    -- (named-dso) the DSO a concern is about reads it nowhere: it went above him
+    PERFORM _as(U_DSO2);
+    SELECT count(*) INTO n FROM safeguarding_concern WHERE reference = v_ref3;
+    PERFORM _assert(n = 0, 'db/57 (named-dso): Hilton''s second DSO reads the concern about himself');
+    -- (named) where nobody above can hold it, the other DSO reads it and is
+    -- told; the DSO it names reads nothing of it, and is not told
+    PERFORM _as(U_FDSO2);
+    SELECT count(*) INTO n FROM safeguarding_concern WHERE reference = v_ref7;
+    SELECT count(*) INTO n2 FROM notification WHERE kind = 'safeguarding' AND recipient_id = U_FDSO2;
+    PERFORM _assert(n = 1 AND n2 = 1, format('db/57 (named): the other DSO reads %s of the concern about his colleague, with %s notice', n, n2));
+    PERFORM _as(U_FDSO);
+    SELECT (SELECT count(*) FROM safeguarding_concern) + (SELECT count(*) FROM safeguarding_concern_reporter)
+         + (SELECT count(*) FROM safeguarding_concern_note) + (SELECT count(*) FROM safeguarding_share) INTO n;
+    SELECT count(*) INTO n2 FROM notification WHERE kind = 'safeguarding';
+    SELECT count(*) INTO n3 FROM access_log WHERE resource LIKE 'safeguarding%';
+    PERFORM _assert(n = 0 AND n2 = 0 AND n3 = 0 AND safeguarding_concern_open(_concern_57(v_ref7)) IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM safeguarding_inbox()),
+      format('db/57 (named): the DSO a concern names reads %s rows, %s notices, %s log rows of it', n, n2, n3));
+
+    -- (union) the union's DSO reads what is held there, and a leadership notice — never the school's record
+    PERFORM _as(U_PDSO);
+    SELECT count(*) INTO n FROM safeguarding_concern WHERE reference IN (v_ref3, v_ref4);
+    SELECT count(*) INTO n2 FROM safeguarding_concern WHERE reference IN (v_ref1, v_ref2, v_ref5);
+    PERFORM _assert(n = 2 AND n2 = 0, format('db/57 (union): the provincial DSO reads %s of the two held at the union and %s held elsewhere', n, n2));
+    SELECT count(*) INTO n FROM notification WHERE kind = 'safeguarding';
+    SELECT count(*) INTO n2 FROM notification WHERE kind = 'safeguarding' AND body LIKE '%leadership of Hilton College%';
+    PERFORM _assert(n = 3 AND n2 = 1, format('db/57 (union): the provincial DSO has %s notices (expected 3), %s about Hilton''s leadership (expected 1)', n, n2));
+    PERFORM _assert(safeguarding_concern_open(v_id2) IS NULL, 'db/57 (union): the provincial DSO opened the leadership concern the school holds');
+    -- (other-dso) Westville's DSO reads none of Hilton's
+    PERFORM _as(U_DSOW);
+    SELECT count(*) INTO n FROM safeguarding_concern;
+    SELECT count(*) INTO n2 FROM notification WHERE kind = 'safeguarding';
+    PERFORM _assert(n = 0 AND n2 = 0, format('db/57 (other-dso): Westville''s DSO reads %s concerns and %s notices', n, n2));
+
+    -- (zero) everyone else reads nothing of it: a row, a hidden log row, a notice.
+    -- A row on the log that is NOT a safeguarding read is written first, so an
+    -- auditor's zero below is the policy, not an empty log.
+    PERFORM _as(U_COACH2);
+    PERFORM log_restricted_read('players', ARRAY[P_OTHER], ARRAY['born'], HIL);
+    who  := ARRAY[U_COACH2, U_BEKKER, U_REGISTRAR, U_HEAD_M, U_SARAH, U_LEAGUE, U_OWNER, U_PLAT, U_MEDICAL, U_SELF, U_V57, U_FAR];
+    what := ARRAY['the 2XI coach (a reporter)', 'the parent of the named child (a reporter)', 'the office', 'the principal (named)',
+                  'the director of sport', 'the league', 'the owner''s key', 'the platform', 'the physio (named)',
+                  'the pupil (a reporter)', 'the teacher (a reporter)', 'the far teacher (a reporter)'];
+    FOR i IN 1 .. array_length(who, 1) LOOP
+      PERFORM _as(who[i]);
+      SELECT (SELECT count(*) FROM safeguarding_concern) + (SELECT count(*) FROM safeguarding_concern_reporter)
+           + (SELECT count(*) FROM safeguarding_concern_note) + (SELECT count(*) FROM safeguarding_share) INTO n;
+      SELECT count(*) INTO n2 FROM access_log WHERE resource LIKE 'safeguarding%';
+      SELECT count(*) INTO n3 FROM notification WHERE kind = 'safeguarding';
+      PERFORM _assert(n = 0 AND n2 = 0 AND n3 = 0,
+        format('db/57 (zero): %s reads %s safeguarding rows, %s hidden log rows, %s safeguarding notices', what[i], n, n2, n3));
+      PERFORM _assert(safeguarding_concern_open(v_id1) IS NULL AND safeguarding_family(v_id1) IS NULL
+                      AND NOT EXISTS (SELECT 1 FROM safeguarding_inbox()),
+        format('db/57 (zero): %s opened a concern through a function', what[i]));
+    END LOOP;
+    -- ...and the auditors among them still read the rest of the log (the zero is the cut, not an empty log)
+    FOREACH v_asg IN ARRAY ARRAY[U_REGISTRAR, U_HEAD_M, U_SARAH, U_OWNER, U_PLAT] LOOP
+      PERFORM _as(v_asg);
+      SELECT count(*) INTO n FROM access_log WHERE resource = 'players' AND school_id = HIL;
+      PERFORM _assert(n >= 1, format('db/57 (hidden): an auditor (%s) reads no log at all — the zero above proves nothing', v_asg));
+    END LOOP;
+    -- ...and the physio, named, is a live account: she reads the injuries she treats
+    PERFORM _as(U_MEDICAL);
+    SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
+    PERFORM _assert(n > 0, 'db/57 (zero): the physio reads no injury — her zero above proves nothing');
+
+    -- (support) a support session, as a coach and as the office, reads nothing either
+    PERFORM _as(U_PLAT);
+    FOREACH v_why IN ARRAY ARRAY['coach', 'schooladmin'] LOOP
+      SELECT s.ok, s.reason INTO v_ok, v_err FROM support_access_begin(HIL, v_why, 'Verify 057: ticket 5757 about the roster',
+                                                                       CASE v_why WHEN 'coach' THEN '2XI' END) s;
+      PERFORM _assert(v_ok OR v_err = 'already_live', format('db/57 (support): a session as %s was not begun (%s)', v_why, v_err));
+    END LOOP;
+    PERFORM _assert(app_support_access_id(HIL) IS NOT NULL, 'db/57 (support): no support session is live at Hilton');
+    SELECT (SELECT count(*) FROM safeguarding_concern) + (SELECT count(*) FROM safeguarding_concern_note) INTO n;
+    SELECT count(*) INTO n2 FROM access_log WHERE resource LIKE 'safeguarding%';
+    SELECT count(*) INTO n3 FROM notification WHERE kind = 'safeguarding';
+    PERFORM _assert(n = 0 AND n2 = 0 AND n3 = 0, format('db/57 (support): a support session reads %s rows, %s hidden log rows, %s notices', n, n2, n3));
+
+    -- (owner-cut) the owner's key with the capability granted back still reads nothing:
+    -- the platform-wide cut on its own
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _owner_grant_57(true);
+    PERFORM _as(U_OWNER);
+    PERFORM _assert(app_can('safeguarding.concern.read', HIL, NULL::text, '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid),
+      'db/57 (owner-cut): the owner''s key does not hold the capability granted back — the zero below proves nothing');
+    SELECT count(*) INTO n FROM safeguarding_concern;
+    SELECT count(*) INTO n2 FROM access_log WHERE resource LIKE 'safeguarding%';
+    SELECT count(*) INTO n3 FROM notification WHERE kind = 'safeguarding';
+    PERFORM _assert(n = 0 AND n2 = 0 AND n3 = 0 AND safeguarding_concern_open(v_id1) IS NULL,
+      format('db/57 (owner-cut): the owner''s key, holding the capability, reads %s concerns, %s hidden log rows, %s notices', n, n2, n3));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _owner_grant_57(false);
+
+    -- (support-cut) a session as dso, for an account with no platform-wide
+    -- assignment, reads nothing; ended, the same assignment reads Hilton's
+    PERFORM _support_dso_57(false);
+    PERFORM _as(U_SUP57);
+    PERFORM _assert(NOT app_is_platform_wide() AND app_support_access_id(HIL) IS NOT NULL,
+      'db/57 (support-cut): the simulated session is not a support session without a platform-wide assignment');
+    SELECT count(*) INTO n FROM safeguarding_concern;
+    SELECT count(*) INTO n2 FROM access_log WHERE resource LIKE 'safeguarding%';
+    SELECT count(*) INTO n3 FROM notification WHERE kind = 'safeguarding';
+    PERFORM _assert(n = 0 AND n2 = 0 AND n3 = 0 AND safeguarding_concern_open(v_id1) IS NULL,
+      format('db/57 (support-cut): a support session as dso reads %s concerns, %s hidden log rows, %s notices', n, n2, n3));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _support_dso_57(true);
+    PERFORM _as(U_SUP57);
+    SELECT count(*) INTO n FROM safeguarding_concern WHERE reference IN (v_ref1, v_ref2);
+    SELECT count(*) INTO n3 FROM notification WHERE kind = 'safeguarding';
+    PERFORM _assert(n = 2 AND n3 >= 2, format('db/57 (support-cut): with the session ended the same assignment reads %s of Hilton''s two and %s notices — the zero above proves nothing', n, n3));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _revoke(U_SUP57);
+
+    -- (receipt) the reporter keeps a reference and a time, and nothing else
+    PERFORM _as(U_BEKKER);
+    SELECT count(*), max(reference) INTO n, v_why FROM my_concern_receipts();
+    PERFORM _assert(n = 1 AND v_why = v_ref1, format('db/57 (receipt): the parent has %s receipts (%s), expected his one', n, v_why));
+    PERFORM _as(U_SELF);
+    SELECT count(*), max(reference) INTO n, v_why FROM my_concern_receipts();
+    PERFORM _assert(n = 1 AND v_why = v_ref3, format('db/57 (receipt): the pupil has %s receipts (%s), expected his one', n, v_why));
+    PERFORM _as(U_DSO1);
+    SELECT count(*) INTO n FROM my_concern_receipts();
+    PERFORM _assert(n = 0, 'db/57 (receipt): a DSO has a receipt for a concern somebody else raised');
+
+    -- (contacts) the card: Hilton's DSOs to a Hilton parent; the union's at a school with none
+    PERFORM _as(U_BEKKER);
+    SELECT count(*) INTO n FROM dso_contacts(HIL) WHERE held_at = 'school' AND name IN ('V57 DSO One', 'V57 DSO Two');
+    PERFORM _assert(n = 2, format('db/57 (contacts): a Hilton parent sees %s of Hilton''s two DSOs', n));
+    SELECT count(*) INTO n FROM dso_contacts(WES);
+    PERFORM _assert(n = 0, 'db/57 (contacts): a Hilton parent reads Westville''s DSOs');
+    PERFORM _as(U_V57);
+    SELECT count(*) INTO n FROM dso_contacts() WHERE held_at = 'union' AND name = 'V57 Provincial DSO';
+    PERFORM _assert(n = 1, 'db/57 (contacts): a school with no DSO is not shown the union''s');
+
+    -- (open) the DSO opens the record — account, reporter — and the read is on the log
+    PERFORM _as(U_DSO1);
+    v_json := safeguarding_concern_open(v_id1);
+    PERFORM _assert(v_json->>'account' LIKE '%grabbed his arm%' AND v_json->'reporter'->>'name' = 'A Bekker'
+                    AND v_json->'subjectPlayer'->>'name' = 'T Bekker' AND NOT (v_json ? 'born'),
+      format('db/57 (open): the DSO''s open is not the record (%s)', left(v_json::text, 200)));
+    SELECT count(*) INTO n FROM access_log WHERE resource = 'safeguarding_concern' AND v_id1 = ANY (record_ids);
+    PERFORM _assert(n = 1, format('db/57 (open): the DSO''s open left %s log rows, expected 1', n));
+    -- (family) the child's guardians and contacts, through the open concern, logged
+    v_json := safeguarding_family(v_id1);
+    PERFORM _assert(v_json->'guardians' @> '[{"name": "A Bekker"}]'::jsonb,
+      format('db/57 (family): the DSO does not reach the child''s guardian (%s)', v_json::text));
+    SELECT count(*) INTO n FROM access_log WHERE resource = 'safeguarding_family' AND v_id1 = ANY (record_ids);
+    PERFORM _assert(n = 1, 'db/57 (family): the DSO''s reach into the family is not on the log');
+
+    -- (clock) 24 hours, red after; the NDSO informed stops it; a report from The Guardian's app runs 72
+    SELECT count(*) INTO n FROM safeguarding_inbox() WHERE reference = v_ref1 AND clock_hours = 24 AND NOT overdue;
+    PERFORM _assert(n = 1, 'db/57 (clock): a fresh concern is not on a 24-hour clock, or is already overdue');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _age_concern_57(v_id1, 25);
+    PERFORM _as(U_DSO1);
+    SELECT count(*) INTO n FROM safeguarding_inbox() WHERE reference = v_ref1 AND overdue AND hours_open >= 25;
+    PERFORM _assert(n = 1, 'db/57 (clock): a concern 25 hours old is not overdue');
+    SELECT r.ok INTO v_ok FROM safeguarding_note(v_id1, 'ndso_informed', 'NDSO told by phone at 09:10') r;
+    SELECT count(*) INTO n FROM safeguarding_inbox() WHERE reference = v_ref1 AND clock_stopped AND NOT overdue;
+    PERFORM _assert(v_ok AND n = 1, 'db/57 (clock): informing the NDSO did not stop the clock');
+    SELECT r.ok, r.reference INTO v_ok, v_ref6 FROM safeguarding_concern_raise(HIL, 'unknown', ARRAY['bullying'], 'suspicion',
+      'The Guardian passed on an anonymous report of bullying in the U14 side.', 'anonymous_app') r;
+    SELECT count(*) INTO n FROM safeguarding_inbox() WHERE reference = v_ref6 AND clock_hours = 72;
+    PERFORM _assert(v_ok AND n = 1, 'db/57 (clock): a report from The Guardian''s app is not on a 72-hour clock');
+    SELECT count(*) INTO n FROM access_log WHERE resource = 'safeguarding_inbox';
+    PERFORM _assert(n >= 1, 'db/57 (clock): the inbox read is not on the log');
+
+    -- (share) need to know: to a named person, the parts named, until a date, and never the reporter
+    SELECT r.reason INTO v_why FROM safeguarding_share(v_id1, U_SELF, ARRAY['summary'], now() + interval '1 day', 'The boy needs to know it is being handled') r;
+    PERFORM _assert(v_why = 'recipient_is_pupil', format('db/57 (share): a share to a pupil was %s', coalesce(v_why, 'made')));
+    SELECT r.reason INTO v_why FROM safeguarding_share(v_id1, U_MEDICAL, ARRAY['summary'], now() + interval '1 day', 'She should know what is said of her') r;
+    PERFORM _assert(v_why = 'recipient_is_subject', format('db/57 (share): a share to the adult it names was %s', coalesce(v_why, 'made')));
+    SELECT r.reason INTO v_why FROM safeguarding_share(v_id1, U_SARAH, ARRAY['summary'], now() + interval '31 days', 'The director of sport runs the fixture list') r;
+    PERFORM _assert(v_why = 'open_until_out_of_range', format('db/57 (share): a 31-day share was %s', coalesce(v_why, 'made')));
+    SELECT r.ok, r.share_id INTO v_ok, v_share FROM safeguarding_share(v_id1, U_SARAH, ARRAY['summary', 'account'],
+      now() + interval '1 day', 'The director of sport must keep the physio away from the U16s this week') r;
+    PERFORM _assert(v_ok, 'db/57 (share): the DSO could not share with the director of sport');
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM notification WHERE kind = 'safeguarding' AND recipient_id = U_SARAH;
+    PERFORM _assert(n = 1, format('db/57 (share): the director of sport has %s share notices, expected 1', n));
+    SELECT (SELECT count(*) FROM safeguarding_concern) + (SELECT count(*) FROM safeguarding_share) INTO n;
+    PERFORM _assert(n = 0, 'db/57 (share): a share opened the tables to its person');
+    SELECT count(*) INTO n FROM my_safeguarding_shares() WHERE id = v_share;
+    v_json := safeguarding_share_open(v_share);
+    PERFORM _assert(n = 1 AND v_json->>'account' LIKE '%grabbed his arm%' AND v_json ? 'summary'
+                    AND NOT (v_json ? 'child') AND NOT (v_json ? 'actions') AND NOT (v_json ? 'reporter')
+                    AND v_json::text NOT LIKE '%A Bekker%',
+      format('db/57 (share): the share did not open to exactly what was named (%s)', left(v_json::text, 300)));
+    PERFORM _as(U_HEAD_M);
+    SELECT count(*) INTO n FROM notification WHERE kind = 'safeguarding';
+    PERFORM _assert(n = 0 AND safeguarding_share_open(v_share) IS NULL,
+      'db/57 (share): the principal reads the director of sport''s share, or its notice');
+    PERFORM _as(U_DSO1);
+    SELECT count(*) INTO n FROM access_log WHERE resource = 'safeguarding_share' AND v_share = ANY (record_ids);
+    PERFORM _assert(n = 1, 'db/57 (share): opening a share is not on the log');
+    -- ...and it closes: on revocation, on expiry, and with the concern, on the next statement
+    SELECT r.ok INTO v_ok FROM safeguarding_share_revoke(v_share) r;
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(v_ok AND safeguarding_share_open(v_share) IS NULL AND NOT EXISTS (SELECT 1 FROM my_safeguarding_shares()),
+      'db/57 (share): a revoked share still opens');
+    PERFORM _as(U_DSO1);
+    SELECT r.share_id INTO v_share FROM safeguarding_share(v_id1, U_SARAH, ARRAY['summary'], now() + interval '1 day', 'A second share, to let lapse') r;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _expire_share_57(v_share);
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(safeguarding_share_open(v_share) IS NULL, 'db/57 (share): a lapsed share still opens');
+    PERFORM _as(U_DSO1);
+    SELECT r.share_id INTO v_share FROM safeguarding_share(v_id1, U_SARAH, ARRAY['summary'], now() + interval '1 day', 'A third share, to end with the concern') r;
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(safeguarding_share_open(v_share) IS NOT NULL, 'db/57 (share): the third share does not open — the closes below prove nothing');
+    PERFORM _as(U_DSO1);
+    SELECT r.ok, r.retain_until INTO v_ok, v_date FROM safeguarding_close(v_id1, 'supported', false, 'Physio moved to the 1XI only') r;
+    PERFORM _assert(v_ok AND v_date = ((now() AT TIME ZONE 'Africa/Johannesburg') + interval '3 years')::date,
+      format('db/57 (close): the close was refused or kept it until %s, not three years', v_date));
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(safeguarding_share_open(v_share) IS NULL, 'db/57 (share): a share outlived its concern''s close');
+    -- the account is written once
+    PERFORM _as(U_DSO1);
+    BEGIN
+      UPDATE safeguarding_concern SET account = 'Changed by the DSO afterwards.' WHERE id = v_id2;
+      v_err := NULL;
+    EXCEPTION WHEN insufficient_privilege THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err IS NOT NULL, 'db/57 (share): the application edited a concern''s account');
+
+    -- (notice) SG-9: a private notice to a pupil is the system's alone; and
+    -- nobody publishes a safeguarding notice through the publish route
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_notice_57(U_SELF, 'news') = 'refused', 'db/57 (notice): a private news notice to a pupil was written');
+    PERFORM _assert(_notice_57(U_SELF, 'system') = 'ok', 'db/57 (notice): the system''s own notice to a pupil was refused');
+    PERFORM _assert(_notice_57(U_SARAH, 'news') = 'ok', 'db/57 (notice): a private notice to an adult was refused');
+    PERFORM _as(U_SARAH);
+    BEGIN
+      INSERT INTO notification (school_id, scope_level, kind, title, body, required_capability)
+        VALUES (HIL, 'school', 'safeguarding', 'A safeguarding concern has been raised', 'Forged', 'safeguarding.concern.read');
+      v_err := NULL;
+    EXCEPTION WHEN insufficient_privilege THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err IS NOT NULL, 'db/57 (notice): the director of sport published a safeguarding notice');
+    INSERT INTO notification (school_id, scope_level, kind, title, body) VALUES (HIL, 'school', 'news', 'Verify 057', 'Ordinary');
+    SELECT count(*) INTO n FROM notification WHERE title = 'Verify 057' AND kind = 'news' AND recipient_id IS NULL;
+    PERFORM _assert(n = 1, 'db/57 (notice): the director of sport cannot publish an ordinary notice — the refusal above proves nothing');
+
+    -- (guard) the principal, named in an open leadership concern, cannot end a
+    -- DSO's appointment, by any column; neither can the office, ever; the
+    -- provincial DSO can; a DSO at the school cannot
+    PERFORM _as(U_HEAD_M);
+    SELECT a.id INTO v_asg FROM role_assignment a WHERE a.person_id = U_DSO2 AND a.role = 'dso' AND a.active;
+    PERFORM _assert(v_asg IS NOT NULL, 'db/57 (guard): the principal cannot read the DSO''s appointment');
+    BEGIN
+      UPDATE role_assignment SET active = false WHERE id = v_asg;
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%cannot be ended from here%', format('db/57 (guard): the principal ended a DSO''s appointment (%s)', coalesce(v_err, 'ended')));
+    BEGIN
+      UPDATE role_assignment SET valid_until = current_date WHERE id = v_asg;
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%cannot be ended from here%', format('db/57 (guard): the principal dated out a DSO''s appointment (%s)', coalesce(v_err, 'dated out')));
+    PERFORM _as(U_REGISTRAR);
+    BEGIN
+      UPDATE role_assignment SET active = false WHERE id = v_asg;
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%cannot be ended from here%', format('db/57 (guard): the office ended a DSO''s appointment (%s)', coalesce(v_err, 'ended')));
+    PERFORM _as(U_DSO1);
+    SELECT e.ok, e.reason INTO v_ok, v_why FROM safeguarding_dso_end(v_asg) e;
+    PERFORM _assert(NOT v_ok AND v_why = 'not_permitted', 'db/57 (guard): a DSO at the school ended another''s appointment');
+    PERFORM _as(U_PDSO);
+    SELECT e.ok INTO v_ok FROM safeguarding_dso_end(v_asg) e;
+    PERFORM _as(U_DSO2);
+    SELECT count(*) INTO n FROM safeguarding_concern;
+    PERFORM _assert(v_ok AND n = 0, format('db/57 (guard): the provincial DSO could not end the appointment, or it still reads %s', n));
+    -- with the leadership concern closed, the principal may end one again
+    PERFORM _as(U_DSO1);
+    SELECT r.ok INTO v_ok FROM safeguarding_close(v_id2, 'handed_to_union', true) r;
+    PERFORM _assert(v_ok, 'db/57 (guard): the DSO could not close the leadership concern');
+    PERFORM _as(U_HEAD_M);
+    SELECT a.id INTO v_asg FROM role_assignment a WHERE a.person_id = U_DSO1 AND a.role = 'dso' AND a.active;
+    UPDATE role_assignment SET active = false WHERE id = v_asg;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, 'db/57 (guard): with nothing open that names him, the principal cannot end a DSO''s appointment');
+
+    -- (catalogue) the four capabilities are dso's alone; the owner's key holds
+    -- none. Last, so a falsification that grants one elsewhere is caught by
+    -- the reads above first.
+    PERFORM _assert((SELECT string_agg(DISTINCT role, ',') FROM role_capability WHERE capability LIKE 'safeguarding.%') = 'dso',
+      'db/57 (catalogue): a role other than dso holds a safeguarding capability');
+    PERFORM _assert((SELECT count(*) FROM role_capability WHERE role = 'dso' AND capability LIKE 'safeguarding.%') = 4,
+      'db/57 (catalogue): dso does not hold the four safeguarding capabilities');
+  END;
+
+  -- ── 36. A boy's fitness is his health (SCRBRD-117, db/58) ─────────
+  -- player.fitness was unmasked under player.profile.read, which a pupil holds
+  -- across his side. Masked behind medical.status.read on his own team: a
+  -- team-mate and another side's coach read NULL, the physio, his coach's
+  -- tier, his parent and he himself read it. db/58 undone (fitness taken out
+  -- of the mask list) and this file run: (pupil) and (coach) failed.
+  DECLARE
+    n       bigint;
+    v_fit   text;
+    U_BEKKER uuid := '88888888-0000-0000-0000-000000000011';
+  BEGIN
+    -- (pupil) a pupil reads the side, and nobody's fitness but his own
+    PERFORM _as(U_PUPIL);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED AND fitness IS NULL;
+    PERFORM _assert(n = 1, 'db/58 (pupil): a pupil reads a team-mate''s fitness, or cannot read the side at all');
+    SELECT count(*) INTO n FROM player_masked WHERE fitness IS NOT NULL;
+    PERFORM _assert(n = 0, format('db/58 (pupil): a pupil reads %s players'' fitness', n));
+    PERFORM _as(U_SELF);
+    SELECT fitness INTO v_fit FROM player_masked WHERE id = P_INJURED;
+    SELECT count(*) INTO n FROM player_masked WHERE id <> P_INJURED AND fitness IS NOT NULL;
+    PERFORM _assert(v_fit = 'injured' AND n = 0, format('db/58 (pupil): R Pillay reads his own fitness as %s and %s team-mates''', v_fit, n));
+    -- (coach) another side's coach sees the boy on the roster and not his
+    -- fitness. The U14A coach: section 33 granted the 2XI coach an enquiry
+    -- for R Pillay, which reads the status tier (db/55 as amended).
+    PERFORM _as('88888888-0000-0000-0000-00000000000b'::uuid);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED AND fitness IS NULL;
+    PERFORM _assert(n = 1, 'db/58 (coach): the U14A coach reads a 1XI boy''s fitness, or cannot see him on the roster');
+    -- (staff) the physio and the director of sport read it; a parent reads his own child's
+    FOREACH v_fit IN ARRAY ARRAY[U_MEDICAL::text, U_SARAH::text] LOOP
+      PERFORM _as(v_fit::uuid);
+      SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED AND fitness = 'injured';
+      PERFORM _assert(n = 1, format('db/58 (staff): %s does not read R Pillay''s fitness', v_fit));
+    END LOOP;
+    PERFORM _as(U_BEKKER);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_OTHER AND fitness IS NOT NULL;
+    PERFORM _assert(n = 1, 'db/58 (staff): A Bekker does not read his own son''s fitness');
+  END;
+
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 37. The signed-out read path (SCRBRD-083 phase 1, db/59) ──
+  -- A public request runs as nobody: app.user_id empty, every base table
+  -- denied, and only db/59's four SECURITY DEFINER reads answer — and only
+  -- for a fixture with a published side. What they return is the rule's
+  -- inputs for the API (it applies publicName() and the pseudonyms; see
+  -- services/api/public/); here it is held that the inputs are the right
+  -- ones: each boy's facts for HIS side, his side's publication, no date of
+  -- birth, no reason, no kind that is a conduct matter, and that a
+  -- withdrawal, a mark and a publication flip change the next call.
+  DECLARE
+    ids      jsonb := _seed_59();
+    M_ON     uuid;
+    M_OFF    uuid;
+    U_OFFICE uuid := '88888888-0000-0000-0000-00000000000c';   -- registrar, guardian.link.manage at Hilton
+    v_facts  jsonb;
+    v_pub    boolean;
+    v_grp    text;
+    v_keys   text;
+    t        text;
+    h        record;
+  BEGIN
+    M_ON := (ids->>'m_on')::uuid;
+    M_OFF := (ids->>'m_off')::uuid;
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (unpublished) nothing, for nobody and for a signed-in reader alike
+    SELECT (SELECT count(*) FROM public_match_header(M_ON)) + (SELECT count(*) FROM public_match_log(M_ON, 0))
+         + (SELECT count(*) FROM public_match_people(M_ON)) + (SELECT count(*) FROM public_shot_sectors(M_ON)) INTO n;
+    PERFORM _assert(n = 0, format('db/59 (unpublished): a fixture nobody published answered %s rows', n));
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0);
+    PERFORM _assert(n = 0, format('db/59 (unpublished-signed-in): a signed-in reader got %s public rows of an unpublished fixture', n));
+
+    -- the rule's records, through their own doors — starting from every
+    -- Hilton age group named (section 25 leaves some switched off)
+    PERFORM _as(U_SARAH);
+    FOR v_grp IN SELECT o.age_group FROM public_names_off o WHERE o.school_id = HIL AND o.names_off LOOP
+      PERFORM public_names_off_set(HIL, v_grp, false);
+    END LOOP;
+    PERFORM _as((ids->>'g_named')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set((ids->>'named')::uuid, true, 'public-names-2026-09') s;
+    PERFORM _assert(v_ok, format('db/59: the named boy''s guardian could not consent (%s)', v_reason));
+    FOREACH t IN ARRAY ARRAY['marked', 'up', 'wes'] LOOP
+      PERFORM _as((ids->>('g_' || t))::uuid);
+      SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set((ids->>t)::uuid, true, 'public-names-2026-09') s;
+      PERFORM _assert(v_ok, format('db/59: %s''s guardian could not consent (%s)', t, v_reason));
+    END LOOP;
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_set((ids->>'marked')::uuid, 'a court order') s;
+    PERFORM _assert(v_ok, format('db/59: the mark could not be set (%s)', v_reason));
+    v_grp := birth_age_group(_born_of((ids->>'up')::uuid));
+    PERFORM _assert(v_grp IS NOT NULL AND v_grp NOT IN ('open'), format('db/59: the boy playing up is %s by birth', v_grp));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_names_off_set(HIL, v_grp, true) s;
+    PERFORM _assert(v_ok, format('db/59: names could not be switched off for %s (%s)', v_grp, v_reason));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_ON, 'home', true) s;
+    PERFORM _assert(v_ok, format('db/59: Hilton could not publish its side (%s)', v_reason));
+
+    -- (signed-out) nobody reads a base table; the definers answer
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH t IN ARRAY ARRAY['player', 'match', 'ball_event', 'public_name_consent', 'player_never_public',
+                             'fixture_publication', 'assignment_subject', 'match_toss', 'school'] LOOP
+      EXECUTE format('SELECT count(*) FROM %I', t) INTO n;
+      PERFORM _assert(n = 0 AND _count_rows(t) > 0, format('db/59 (signed-out): nobody reads %s of %s''s %s rows', n, t, _count_rows(t)));
+    END LOOP;
+    SELECT * INTO h FROM public_match_header(M_ON);
+    PERFORM _assert(h.home_published AND NOT h.away_published AND h.away_on_platform AND h.home_label = 'Hilton College 1XI'
+                    AND h.served_on = to_char(sa_today(), 'YYYY-MM-DD'),
+      format('db/59 (header): %s', row(h.home_published, h.away_published, h.away_on_platform, h.home_label, h.served_on)::text));
+
+    -- (people) each boy the log names, his facts for his side, his side's publication
+    SELECT count(*) INTO n FROM public_match_people(M_ON);
+    PERFORM _assert(n = 5, format('db/59 (people): %s people for a log naming four Hilton boys, a typed one and a Westville boy — expected 5 (no typed name)', n));
+    SELECT string_agg(DISTINCT k, ',' ORDER BY k) INTO v_keys FROM public_match_people(M_ON) pp, jsonb_object_keys(pp.facts) k;
+    PERFORM _assert(v_keys = 'consents,namesOff,neverPublic', format('db/59 (facts-clean): the facts carry %s', v_keys));
+    SELECT pp.facts, pp.school_published INTO v_facts, v_pub FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'named')::uuid;
+    PERFORM _assert(v_pub AND v_facts->'consents'->0->>'competent' = 'true' AND v_facts->'consents'->0->>'endedOn' IS NULL
+                    AND (v_facts->>'neverPublic')::boolean = false AND (v_facts->>'namesOff')::boolean = false,
+      format('db/59 (named): %s, published %s', v_facts, v_pub));
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'marked')::uuid;
+    PERFORM _assert((v_facts->>'neverPublic')::boolean, format('db/59 (marked): the mark is not in his facts: %s', v_facts));
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'none')::uuid;
+    PERFORM _assert(jsonb_array_length(v_facts->'consents') = 0, format('db/59 (nothing): %s', v_facts));
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'up')::uuid;
+    PERFORM _assert((v_facts->>'namesOff')::boolean, format('db/59 (playing up): names off for his own age group did not hold him back: %s', v_facts));
+    SELECT pp.school_published INTO v_pub FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'wes')::uuid;
+    PERFORM _assert(NOT v_pub, 'db/59 (L5): the Westville boy reads as published while only Hilton published');
+
+    -- (log) every event but the Law 41 suspension, every field by name
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0);
+    PERFORM _assert(n = 6, format('db/59 (log): %s events, expected the 7 written less the suspension', n));
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0) l WHERE l.kind = 'bowler_suspended';
+    PERFORM _assert(n = 0, 'db/59 (log): a Law 41 suspension of one boy reached the public log');
+    SELECT string_agg(DISTINCT k, ',') INTO v_keys FROM public_match_log(M_ON, 0) l, jsonb_object_keys(l.detail) k
+     WHERE k NOT IN ('battingTeam', 'bowlingTeam', 'teamKey', 'bowlingTeamKey', 'squad', 'bowlingSquad', 'overs', 'target',
+                     'striker', 'nonStriker', 'bowler', 'dismissed', 'captainConsent', 'fielder', 'freeHit', 'nbRuns', 'nbType',
+                     'outAt', 'facesNext', 'notInOver', 'runs', 'toBattingTeam', 'batter', 'reason', 'confirmed');
+    PERFORM _assert(v_keys IS NULL, format('db/59 (log): the detail carries %s', v_keys));
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0) l WHERE l.detail ? 'twelfthMan' OR l.detail ? 'captureProfile' OR l.detail ? 'shot';
+    PERFORM _assert(n = 0, 'db/59 (log): the twelfth man, a capture profile or a shot reached the public log');
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 4);
+    PERFORM _assert(n = 2, format('db/59 (since): %s events after seq 4, expected 2', n));
+    SELECT count(*) INTO n FROM public_shot_sectors(M_ON) WHERE sector = 9 AND runs = 4 AND shots = 1;
+    PERFORM _assert(n = 1, 'db/59 (sectors): the four through sector 9 is not the team''s');
+
+    -- (off-platform) a typed opposition is nobody's to name
+    PERFORM _as(U_SARAH);
+    SELECT s.ok INTO v_ok FROM fixture_publish(M_OFF, 'home', true) s;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT * INTO h FROM public_match_header(M_OFF);
+    PERFORM _assert(NOT h.away_on_platform AND h.away_label = 'Kearsney College 1XI',
+      format('db/59 (off-platform): %s', row(h.away_on_platform, h.away_label)::text));
+    SELECT count(*) INTO n FROM public_match_people(M_OFF);
+    PERFORM _assert(n = 1, format('db/59 (off-platform): %s people, expected only the Hilton boy — typed names have no row', n));
+
+    -- (flips) the next call sees each change
+    PERFORM _as(U_OFFICE);
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set((ids->>'named')::uuid, false, 'public-names-2026-09', (ids->>'g_named')::uuid) s;
+    PERFORM _assert(v_ok, format('db/59: the office could not withdraw a consent (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'named')::uuid;
+    PERFORM _assert(v_facts->'consents'->0->>'endedOn' = to_char(sa_today(), 'YYYY-MM-DD'),
+      format('db/59 (withdrawal): the next call still has a live consent: %s', v_facts));
+    PERFORM _as(U_SARAH);
+    PERFORM player_never_public_end((ids->>'marked')::uuid);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT pp.facts INTO v_facts FROM public_match_people(M_ON) pp WHERE pp.player_id = (ids->>'marked')::uuid;
+    PERFORM _assert(NOT (v_facts->>'neverPublic')::boolean, format('db/59 (mark ended): %s', v_facts));
+    PERFORM _as(U_SARAH);
+    PERFORM fixture_publish(M_ON, 'home', false);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT (SELECT count(*) FROM public_match_header(M_ON)) + (SELECT count(*) FROM public_match_log(M_ON, 0))
+         + (SELECT count(*) FROM public_match_people(M_ON)) + (SELECT count(*) FROM public_shot_sectors(M_ON)) INTO n;
+    PERFORM _assert(n = 0, format('db/59 (withdrawn): a fixture Hilton took back down answered %s rows', n));
+
+    -- (grants) the application, and not PUBLIC or a managed host's API roles
+    FOREACH t IN ARRAY ARRAY['public_match_header(uuid)', 'public_match_log(uuid,integer)', 'public_match_people(uuid)',
+                             'public_shot_sectors(uuid)'] LOOP
+      PERFORM _assert(has_function_privilege('scrbrd_app', t::regprocedure, 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                       WHERE p.oid = t::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname IN ('anon', 'authenticated')
+                                         AND has_function_privilege(r.oid, t::regprocedure, 'EXECUTE')),
+        format('db/59 (grants): %s is not the application''s alone', t));
+    END LOOP;
   END;
 
   PERFORM set_config('app.user_id', '', true);
