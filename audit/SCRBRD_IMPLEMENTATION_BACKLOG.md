@@ -4086,6 +4086,23 @@ Candidates, to be confirmed from the actual bye-laws (research so far is unverif
 only with Kameel's explicit decision and the information officer's advice.
 **Needs first:** the KZN school bye-laws and playing conditions (the sites are blocked here; Kameel supplies the
 PDFs). Then an Opus design (a `competition_conditions` shape and where each rule reads it), then the build.
+**Received 2026-09-28:** CSA *Club Cricket Standardisation Regulations* (September 2018, 10 pages). KZN has two
+CSA members: the KZN Cricket Union (KZNCU; Durban and the coast) and KZN Inland (KZNICU; Pietermaritzburg and the
+Midlands). Their matches follow the MCC Laws, then these CSA regulations, then each league's bye-laws. The document is
+**club administration, not playing conditions**: it has no overs, bowling limits, points or free-hit rules, so it
+does not unblock this item. The KZN schools' bye-laws and playing conditions are still needed. What it does cover,
+recorded for clubs (C7 "the same rules as schools") and not built:
+- a player under 18 must have an indemnity form from a parent or guardian before he may be selected for any club
+  team, and a second one for a national tournament (3.3.2–3.3.3): a per-player record that selection would check;
+- players are registered with the Member every season and verified by the club (3.1–3.2); one club per competition
+  per season without written consent (3.1.3);
+- transfers need a clearance certificate from the former club (good standing, no unpaid fees for the previous season),
+  refused while a disciplinary matter is open (4.4); a waiting period of up to 14 days between clubs (4.1.4.1);
+- at most one foreign player per Premier and Promotion League team (3.5.2);
+- the captain files a match report, including an umpire grading, by the Monday or Wednesday after the fixture (1.3);
+- Premier League coaches hold at least Level 2 (1.2.4; `coaching_accreditation` exists as a clearance kind).
+**Not built, by decision:** 1.2.5 (players of colour per team) and 3.5.4 (foreign players counted as white) are
+transformation quotas, and the transformation-quota rule above applies to them.
 
 ### SCRBRD-115 — K3: a pupil does not read whether a team-mate is out
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** safeguarding (CSA_SAFEGUARDING_CHECK K3; SAFEGUARDING_DSO §6.3)
