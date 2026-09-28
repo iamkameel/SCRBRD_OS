@@ -4073,6 +4073,93 @@ only with Kameel's explicit decision and the information officer's advice.
 **Needs first:** the KZN school bye-laws and playing conditions (the sites are blocked here; Kameel supplies the
 PDFs). Then an Opus design (a `competition_conditions` shape and where each rule reads it), then the build.
 
+### SCRBRD-115 — K3: a pupil does not read whether a team-mate is out
+**Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** safeguarding (CSA_SAFEGUARDING_CHECK K3; SAFEGUARDING_DSO §6.3)
+**Decided (Kameel, 2026-09-27):** withdraw `medical.status.read` from `player` and `enquiry` (check §5 Q12; design
+§10 Q8). CSA's Safeguarding Policy p52 item 6 says a child's medical needs are "not in general view to other ...
+children".
+
+**Built 2026-09-28 (Opus).** `db/55_medical_status_withdrawn.sql` deletes the two `role_capability` rows. `roles.mjs`
+drops the capability from both bundles, and `WITHDRAWN_SINCE_01` keeps `db/01` as shipped (db/21's shape). Regenerating
+leaves `db/` unchanged. A pupil now reads no team-mate's injury row at any tier. That covers date injured, return date
+and restricted; the Dashboard's "Who is out"; the status-tier injury notice; and the readiness read's clinical half.
+His own injury, at every tier, still reaches him through `selfaccess`. The screens (Squad, Profiles, the profile
+modal, Injuries' "Available" count) draw `player.fitness` only for a role holding the status tier.
+**Proof:** db/99 section 33, with sections 3b, 3c and 11 flipped. It covers the catalogue, R Pillay beside T Bekker,
+a school-wide pupil, the physio and the director of sport still reading, and a real `access_request_decide()` grant to
+the 2XI coach that reaches the boy's profile and not his injury. There is a K3 group in `separation.test.mjs`, which
+pins the status tier's holders. `smoke-read` and `smoke-access` are updated, and the browser day sheet has a pupil
+case. Falsified: putting each row back turns 3b and 33 (pupil), 33 (enquiry), the separation group and both walks red.
+**Review (Kameel):** in the code, `enquiry` is not a family. It is a same-school coach granted one boy by that boy's
+own coach. After K3 the grant carries only his profile, which that coach already sees on the roster, so asking
+another coach now buys nothing on screen, and the answer travels in the decision's note. The design's Q8 premise did
+not hold. Restoring it is one file (db/55's header says how).
+
+### SCRBRD-116 — K4 and SG-7: the clearance register to CSA's rules
+**Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** safeguarding (CSA_SAFEGUARDING_CHECK K4, SG-7; SAFEGUARDING_DSO
+§6.4, §9.3)
+**Built 2026-09-28 (Opus).** `db/56_clearance_csa.sql`:
+- **Kinds.** `sexual_offences_register` (the NRSO check), plus SG-7's `safeguarding_awareness`, `dso_training`,
+  `good_standing_declaration`, `safeguarding_acknowledgement` and `references_checked`, each with a label.
+- **Ages.** `clearance_kind_max_days`, behind RLS and db/50's pad guard, readable when signed in and written by
+  nobody. The three checks run 731 days. A first police clearance at the school may be at most 183 days old when it
+  is recorded; a row that was revoked does not count as held. The SAC and DSO training run 366 days.
+- **The rule.** A `BEFORE INSERT` definer trigger enforces the ages and refuses with a sentence naming the date the
+  check should carry. Revoking a row is never refused.
+- **Requirements.** The three checks, the SAC and the acknowledgement are required for coach, assistantcoach,
+  teammanager, medical, driver, transportcoordinator, official, scorer, facilities, media, scout, schooladmin,
+  sportsadmin, directorofsport and principal.
+- **The register.** `clearance_register()` leaves off a pupil known to be under 18, and is now granted to
+  `scrbrd_app` alone.
+
+The API accepts the new kinds. The register and My clearances panels meet the 12px and 44px floors on T tokens and
+state CSA's rule. The seed's clearances go in as pre-db/56 history, and the physio's is a five-year legacy row.
+**What changes for people:** every adult in those roles now shows "missing" for the Sexual Offences Register, the SAC
+and the acknowledgement until the office records them. Administrators, officials, media and scouts are on the register
+for the first time. A check recorded before db/56 reads as it did (current, then expiring) until its own date.
+**What does not:** nothing refuses more from the paste. `trip_driver_cleared()` is unchanged and never refuses a
+missing check. Once a new kind is recorded for a driver and later lapses or is revoked, it refuses him, as it does
+today for a lapsed police clearance.
+**Proof:** db/99 section 34 covers roles, age, first check, legacy row, reference data, pupil and trip. The
+`smoke-clearance` walk has a CSA group (85), and the browser register walk checks the new names, the rule line and
+the 12px floor on every chip. Falsified: the ages table emptied, "first" counting a revoked row, the register without
+the pupil exclusion, the exclusion reaching an adult, the SOR requirement rows removed, and a guard refusing a missing
+check. Each went red for the right reason, and the file's own proof block was falsified twice.
+**Run (with SCRBRD-115), 2026-09-28:**
+- Typecheck: 0 errors. Lint: 0 errors, 82 warnings. Build and the bundle check pass.
+- `generate-rls` leaves `db/` unchanged, and the shipped test is 53/0.
+- `run-all-tests`: 5427 across 65 suites.
+- `run-smoke-api`: 2984 across 70 walks. `run-smoke-api --browser`: 1860 across 31 walks.
+- The offline-day walk under LIE_FI is 56/56, and `pnpm smoke` is 8, 25, 16 and 214.
+- Rehearsed: origin/main's db/ (to 52) seeded, then the apply bundles for 53, 54, 55 and 56 pasted in order (a
+  second 56 refused by its guard), then this branch's db/99. Every assertion passed except the pre-existing
+  SCRBRD-118. The walks ran with that one assertion downgraded, locally.
+**Not built:** the `dso` requirement rows (phase 1, when the role exists); a screen for recording a clearance (the
+office still records one through `POST /api/clearances`; there was no form before either); an advisory for legacy
+rows older than 24 months (the design leaves them to lapse on their own dates).
+
+### SCRBRD-117 — `player.fitness` is readable by anyone who reads a player's profile
+**Priority:** P2 · **Domain:** RBAC / Privacy · **Type:** found building K3 (Opus)
+`player.fitness` (`fit`, `injured`, `rehab`, `unavailable`) is health, and PUBLIC_DATA marks it N2 (`public.mjs`). It
+is unmasked in `player_masked` under `player.profile.read`, which pupils, a granted enquiry, media, analysts and scorers
+all hold. No route writes it and every live row defaults to `fit`, but the seed marks R Pillay `injured`, and any
+import that sets it would publish it to the whole side. The screens now draw it only for a holder of
+`medical.status.read` (SCRBRD-115). **Fix (Opus):** mask it behind `medical.status.read` in `tables.mjs`, with a
+hand-written `player_masked` re-emission (db/47 rebuilds that view the same way) and a generator carve-out so `db/09`
+stays as shipped. Or drop the column, since the injury rows are the clinical truth and `read-api.mjs` already refuses
+to read it.
+
+### SCRBRD-118 — db/99's db/54 "(same)" check fails on the db/45 fixture: the live score and the fold disagree
+**Priority:** P1 · **Domain:** Scoring · **Type:** found 2026-09-28 (it blocks `--verify` and `run-smoke-api`)
+At `d42b56c`, before any K3 or K4 change, `migrate --reset --seed --verify` stops at section 32's "(same)" check:
+`live/folded 77777777-…-0003/0` reads live (81,15,20) and folded (78,14,20). Section 23 (db/45) writes two
+deliberately awkward rows into that innings: a `penalty` row with `value` 3, and a `retire` of a hurt batter marked `W`
+with method bowled. `innings_score_as_folded()` ignores both, as db/45 asserts. `match_live_score` (db/54's
+re-emission of db/48's) counts the value and the wicket. Either the view is wrong (it sums `value` over every kind and
+takes `ball_wicket_stands` without the fold's retirement rule), or section 32 should exclude that fixture. **Opus
+(scoring) to decide and fix.** SCRBRD-115 and SCRBRD-116's walks were run with only that one assertion downgraded to a
+warning, locally, and it is not committed.
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)

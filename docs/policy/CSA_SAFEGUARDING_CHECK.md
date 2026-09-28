@@ -161,6 +161,8 @@ that fixes it.
   sheet, which is how STEP4 §2.2 already handles availability. STEP4's phase A walk
   flips its assertion. His own injury still reaches him through `selfaccess`. Tier:
   Opus (a role change touching minors' medical data).
+- **Built 2026-09-28:** `db/55_medical_status_withdrawn.sql`, from `player` and `enquiry` (SCRBRD-115;
+  `docs/design/SAFEGUARDING_DSO.md` §6.3 has the note on what `enquiry` is in the code).
 
 ### K4 · The clearance register is narrower and longer-lived than CSA's
 
@@ -195,6 +197,8 @@ that fixes it.
      "missing" (the requirement is for adults, p19).
 
   The new safeguarding kinds are SG-7.
+- **Built 2026-09-28:** `db/56_clearance_csa.sql`, K4 with SG-7's kinds (SCRBRD-116). Existing rows lapse on their
+  own dates; nothing that blocks a trip refuses more from the paste.
 
 ### K5 · Emergency contacts are released by role, not by a DSO's decision
 

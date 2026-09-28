@@ -652,6 +652,19 @@ the same reason — an enquiring family is not staff — unless Kameel says othe
 (**Q8**). STEP4 phase A's pupil walk flips its assertion ("the Squad shows a team-mate's
 `rtw_date`" becomes "shows none"). His own injury still reaches him through `selfaccess`.
 
+**Built 2026-09-28 (Opus): `db/55_medical_status_withdrawn.sql`**, from `player` and `enquiry` as decided, with db/99
+section 33 and SCRBRD-115 in the backlog. **Where the code differs from this section's reading:** `enquiry` is not "an
+enquiring family". In the code it is a coach at the same school, granted one named player for up to fourteen days by
+that player's own coach, through `access_request_decide()` (`db/08` ~742; "can I have him for the 2nd XI on
+Saturday"). CSA p52 allows "staff and coaches who need it", so the premise of Q8 did not hold. The withdrawal was built
+as decided, since it is the fail-closed direction. A granted enquiry now carries only `player.profile.read`, and the
+coach who answers says whether the boy is available in the decision's note. For a same-school coach, who already sees
+the roster, the grant now buys nothing new on screen. The file header says how to restore it: one INSERT, the line
+back in `roles.mjs`, and the entry out of `WITHDRAWN_SINCE_01`. Kameel should confirm Q8 knowing this. One more health
+signal was found that this section does not name: `player.fitness` (`fit`, `injured`, `rehab`, `unavailable`) is
+unmasked in `player_masked` under `player.profile.read`. No route writes it, but the seed does. The screens now draw it
+only for a role holding the status tier. The column mask is SCRBRD-117.
+
 ### 6.4 K4 · The clearance register
 
 One migration on `adult_clearance` and `clearance_requirement` (db/08 4794–4860):
@@ -677,6 +690,21 @@ One migration on `adult_clearance` and `clearance_requirement` (db/08 4794–486
 
 `tools/smoke-clearance.mjs` and `services/api/write/clearance-api.mjs` gain the kinds
 and the refusals.
+
+**Built 2026-09-28 (Opus): `db/56_clearance_csa.sql`**, with SG-7's kinds, db/99 section 34 and SCRBRD-116. It follows
+the points above, with four readings made explicit:
+- **`dso` requirement rows wait for phase 1.** The role does not exist yet, so its rows (the three checks, the SAC and
+  `dso_training`) are left to phase 1 (§9.1). `dso_training` is in the vocabulary and has its 366 days.
+- **"First" police clearance.** It means the person holds no other *unrevoked* police clearance at that school. A row
+  revoked because it was wrong is not a check held. The trigger is `BEFORE INSERT` only, so revoking a legacy row is
+  never refused.
+- **The pupil exclusion.** A person is left off the register when he holds a live `player` assignment and his own
+  record (`app_user.player_id`, or a live selfaccess `self` link) says he is under 18 today. Someone who holds `player`
+  with no linked record, or whose record says 18 or more, stays on the register, so the gap stays visible.
+- **The trip guard.** `trip_driver_cleared()` is unchanged. From the paste nothing refuses that did not refuse before:
+  every new requirement starts as missing, and missing never refuses. Once a new kind is recorded for a driver and
+  later lapses or is revoked, the guard refuses him, as it does today for a lapsed police clearance. That is db/08's
+  existing rule reading the requirement table, not a new one.
 
 ### 6.5 K5 · The emergency-contact role list, approved by the DSO
 
@@ -765,7 +793,8 @@ trigger; `notification.recipient_id` and its `RESTRICTIVE` policy if SCRBRD-110 
 added it; `support_access_begin()` refusing `dso`; `clearance_requirement` rows for `dso`.
 **Policy:** `roles.mjs` (`dso`, the masterkey carve-out, `GRANTABLE_ROLES.principal`),
 `capabilities.mjs`, the generator lists. K3's withdrawal ships as its own small file in
-this phase.
+this phase. **K3 built ahead of the rest of phase 1: db/55 (2026-09-28, SCRBRD-115).** Phase 1's migration still owns
+the `clearance_requirement` rows for `dso`, which db/56 could not add before the role exists.
 **Tests.** `separation.test.mjs`: `safeguarding.*` held by `dso` and no other role;
 `superadmin` holds none of it and everything else; SCRBRD-110's `fitness` role, if it has
 landed, holds none of it; `dso` holds none of `medical.*`,
@@ -811,6 +840,9 @@ of `player.emergency.read` fails the build until a DSO re-signs. **Walks:**
 line.
 
 ### 9.3 Phase 3 — Clearances (P1)
+
+**Built 2026-09-28 (Opus): db/56 (SCRBRD-116).** K4 and SG-7 ship together as planned, ahead of phases 1 and 2. The
+`dso` rows wait for phase 1 (§6.4).
 
 **Migration (one):** K4 and SG-7: the kinds, `clearance_kind_max_days`, the trigger, the
 requirement rows, `clearance_register()` re-emitted for the pupil exclusion. **Tests.**
