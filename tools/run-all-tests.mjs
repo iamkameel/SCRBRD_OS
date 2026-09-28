@@ -31,6 +31,10 @@ const SUITES = [
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],
+  // Playing conditions per competition (SCRBRD-114, phase 1): the catalogue
+  // pinned against db/99, the readers, the fold under a document, and no
+  // document folding exactly as before.
+  ["conditions", "packages/scoring/test/conditions.test.mjs"],
   // A refusal's likely cause, in words beside REFUSAL_TEXT (SCRBRD-100): names
   // from the fold and never an id, no Law clause numbers.
   ["causes",   "packages/scoring/test/causes.test.mjs"],

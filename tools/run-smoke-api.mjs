@@ -42,6 +42,10 @@ const WALKS = [
   // Pre-match: who can play, naming the side, calling the toss, and the
   // conditions both sides play in.
   "availability", "squad", "toss", "conditions",
+  // A competition's playing conditions (SCRBRD-114, db/61): versions,
+  // citations, the fixture's competition, the document fixed on the first
+  // event (live and on the pad's credential), the handover's hash.
+  "playing-conditions",
   // Getting the side there: three capabilities that had nothing to act on.
   "transport",
   // The dashboard's figures, and the scope they are counted over.
