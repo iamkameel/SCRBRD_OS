@@ -77,6 +77,9 @@ const SUITES = [
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.
   ["review",   "apps/web/test/innings-review.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pitch deck's live slides: the demonstration match is a real folded log,
+  // the showcase reads nothing, every frame is inert and draws the app's own ids.
+  ["deck-showcase", "apps/web/test/deck-showcase.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the pad's "can't score yet" panel from a folded innings, same transform.
   ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // What a live pad says about the server when it cannot send (SCRBRD-078), same transform.

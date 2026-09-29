@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import pkg from "../../package.json";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { D, T, clr, textOn, themeName, themed } from "../design/tokens.js";
@@ -14,11 +14,12 @@ import { ROLES, ROLE_CAPABILITIES } from "@scrbrd/policy/roles";
 import { MASKED_TABLES, TABLES } from "@scrbrd/policy/tables";
 import { FEATURES, MODULES, SPORTS } from "@scrbrd/policy/modules";
 import { Icon } from "../ui/icons.jsx";
+import { deviceCss } from "./pitchdeck/Device.jsx";
 
 // ══════════════════════════════════════════════════════
 //  PITCH DECK
 //
-//  Eight slides over one stage. The stage is a three.js field with an
+//  Thirteen slides over one stage. The stage is a three.js field with an
 //  innings drawn on it, fetched on first use (views/pitchdeck/scene.js) so
 //  the library never reaches the entry chunk; when the browser cannot draw in
 //  3D the same wheel is drawn flat in SVG and the deck says nothing about it.
@@ -30,7 +31,13 @@ import { Icon } from "../ui/icons.jsx";
 //  slide that is prose — the problem — is prose, and is labelled as the
 //  argument rather than the evidence.
 //
-//  Keyboard: arrows, Space, PageUp/Down, Home, End, 1-8, F for full screen.
+//  Four of the slides are not drawn by the deck at all: "field", "centre",
+//  "families" and "safeguard" show the app's own screens, rendered live in
+//  device frames on demonstration data (views/pitchdeck/Showcase.jsx), so the
+//  deck cannot describe a screen the product no longer has. That module is
+//  fetched when the first of them opens.
+//
+//  Keyboard: arrows, Space, PageUp/Down, Home, End, 1-9, F for full screen.
 // ══════════════════════════════════════════════════════
 
 // ── Facts, computed once from the policy ──
@@ -70,19 +77,28 @@ const DEMO = (() => {
   };
 })();
 
-const VIEW_OF = { cover: "orbit", problem: "low", wheel: "wheel", platform: "far", access: "top", school: "close", roadmap: "far", close: "orbit" };
+const VIEW_OF = { cover: "orbit", problem: "low", wheel: "wheel", field: "close", centre: "far", platform: "far", access: "top", care: "low",
+                  families: "far", safeguard: "low", school: "close", roadmap: "far", close: "orbit" };
 
 const SLIDES = [
   { id: "cover",    label: "SCRBRD" },
   { id: "problem",  label: "The season, today" },
   { id: "wheel",    label: "Every ball, where it went" },
+  { id: "field",    label: "On the field" },
+  { id: "centre",   label: "The Match Centre" },
   { id: "platform", label: "One switchboard" },
   { id: "access",   label: "Who may see what" },
   { id: "care",     label: "A duty of care, kept" },
+  { id: "families", label: "For families" },
+  { id: "safeguard",label: "Duty of care, in the product" },
   { id: "school",   label: "Your school, now" },
   { id: "roadmap",  label: "Built, underneath, planned" },
   { id: "close",    label: "See it on your fixtures" },
 ];
+
+// The real screens, fetched on the first live slide: the pad, the Match Centre's
+// tabs and the consent and safeguarding cards stay out of the deck's own load.
+const Showcase = lazy(() => import("./pitchdeck/Showcase.jsx"));
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -124,25 +140,25 @@ const css = () => `
 @keyframes deckBack{from{opacity:0;transform:translate3d(0,-22px,0) scale(.985);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
 .deck-rise{animation:deckRise ${T.motion.context} ${T.motion.ease} both;animation-delay:calc(var(--i,0)*70ms)}
 @keyframes deckRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-.deck-kicker{font-family:${D.mono};font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:${D.cyan};margin-bottom:10px}
+.deck-kicker{font-family:${D.mono};font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:${D.cyan};margin-bottom:10px}
 .deck-h{font-family:${D.head};font-weight:800;line-height:1.02;letter-spacing:-.02em;color:${D.textPrimary};font-size:clamp(28px,4.6vw,54px);margin:0 0 14px}
 .deck-lede{font-family:${D.body};font-size:clamp(14px,1.4vw,17px);color:${D.textSecondary};line-height:1.65;max-width:720px;margin:0}
 .deck-grid{display:grid;gap:12px}
 .deck-card{border-radius:${D.lg};border:1px solid ${D.border};background:${clr(T.surface.raised,.82)};padding:14px 16px;backdrop-filter:blur(6px)}
 .deck-num{font-family:${D.mono};font-weight:700;font-size:clamp(26px,3.2vw,40px);line-height:1;color:${D.textPrimary};font-variant-numeric:tabular-nums}
-.deck-cap{font-family:${D.head};font-size:11px;font-weight:700;color:${D.textPrimary};margin-top:6px}
-.deck-sub{font-family:${D.body};font-size:11px;color:${D.textMuted};margin-top:2px;line-height:1.45}
-.deck-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:${D.pill};border:1px solid ${D.border};background:${clr(T.surface.raised,.7)};font-family:${D.mono};font-size:11px;color:${D.textSecondary};cursor:pointer;transition:border-color ${T.motion.micro} ${T.motion.swift},transform ${T.motion.micro} ${T.motion.swift}}
+.deck-cap{font-family:${D.head};font-size:12px;font-weight:700;color:${D.textPrimary};margin-top:6px}
+.deck-sub{font-family:${D.body};font-size:12px;color:${D.textMuted};margin-top:2px;line-height:1.45}
+.deck-chip{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:5px 14px;border-radius:${D.pill};border:1px solid ${D.border};background:${clr(T.surface.raised,.7)};font-family:${D.mono};font-size:12px;color:${D.textSecondary};cursor:pointer;transition:border-color ${T.motion.micro} ${T.motion.swift},transform ${T.motion.micro} ${T.motion.swift}}
 .deck-chip:hover{transform:translateY(-1px)}
 .deck-chip[aria-pressed="true"]{border-color:${D.cyan};color:${D.textPrimary}}
-.deck-row{display:grid;grid-template-columns:110px 1fr 40px;align-items:center;gap:10px;font-family:${D.mono};font-size:11px;color:${D.textSecondary}}
+.deck-row{display:grid;grid-template-columns:110px 1fr 40px;align-items:center;gap:10px;font-family:${D.mono};font-size:12px;color:${D.textSecondary}}
 .deck-track{height:8px;border-radius:4px;background:${T.line.subtle};overflow:hidden}
 .deck-fill{height:100%;border-radius:4px;transform-origin:left;animation:deckGrow ${T.motion.interrupt} ${T.motion.ease} both;animation-delay:calc(var(--i,0)*60ms);display:block}
 @keyframes deckGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 .deck-nav{display:flex;gap:6px;align-items:center}
-.deck-dot{width:22px;height:6px;border-radius:3px;border:none;padding:0;cursor:pointer;background:${T.line.strong};transition:background ${T.motion.control} ${T.motion.swift},width ${T.motion.control} ${T.motion.swift}}
+.deck-dot{position:relative;width:22px;height:6px;border-radius:3px;border:none;padding:0;cursor:pointer;background:${T.line.strong};transition:background ${T.motion.control} ${T.motion.swift},width ${T.motion.control} ${T.motion.swift}}
 .deck-dot[aria-current="true"]{background:${D.cyan};width:34px}
-.deck-btn{padding:7px 14px;border-radius:${D.pill};border:1px solid ${D.border};background:${clr(T.surface.raised,.7)};color:${D.textSecondary};font-family:${D.head};font-size:11px;font-weight:700;cursor:pointer;transition:border-color ${T.motion.micro} ${T.motion.swift},color ${T.motion.micro} ${T.motion.swift}}
+.deck-btn{min-height:44px;padding:7px 16px;border-radius:${D.pill};border:1px solid ${D.border};background:${clr(T.surface.raised,.7)};color:${D.textSecondary};font-family:${D.head};font-size:12px;font-weight:700;cursor:pointer;transition:border-color ${T.motion.micro} ${T.motion.swift},color ${T.motion.micro} ${T.motion.swift}}
 .deck-btn:hover:not(:disabled){border-color:${D.cyan};color:${D.textPrimary}}
 .deck-btn:disabled{opacity:.35;cursor:default}
 .deck-btn[data-primary="true"]{background:${D.cyan};border-color:${D.cyan};color:${D.bg}}
@@ -151,7 +167,15 @@ const css = () => `
 .deck-sw{width:10px;height:10px;border-radius:2px;display:inline-block}
 .deck-two{display:grid;grid-template-columns:1.1fr .9fr;gap:24px;align-items:start}
 .deck-plain{background:none;border:none;padding:4px 0;text-align:left;cursor:pointer;color:${D.textSecondary};font-family:${D.body};font-size:12px;line-height:1.4}
-@media (max-width:840px){.deck-body{padding:20px 18px 26px}.deck-wheel,.deck-two{grid-template-columns:1fr}.deck-wheel{min-height:0}}
+.deck-dot::after{content:"";position:absolute;left:-3px;right:-3px;top:-19px;bottom:-19px}
+.deck-show{display:grid;grid-template-columns:minmax(240px,340px) minmax(0,1fr);gap:28px;align-items:center}
+.deck-show-stage{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:22px;align-items:start;justify-items:center}
+.deck-tabs{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:14px}
+.deck-centre{display:flex;flex-direction:column;align-items:center;min-width:0;width:100%}
+.deck-note{font-family:${D.body};font-size:12px;line-height:1.5;color:${D.textMuted};margin:14px 0 0;max-width:46ch}
+.deck-pointlist{display:grid;gap:8px;margin-top:16px}
+${deviceCss()}
+@media (max-width:840px){.deck-body{padding:20px 18px 26px}.deck-wheel,.deck-two,.deck-show{grid-template-columns:1fr}.deck-show-stage{grid-template-columns:minmax(0,1fr)}.deck-wheel{min-height:0}}
 `;
 
 // ══════════════════════════════════════════════════════
@@ -311,6 +335,77 @@ function CareSlide() {
   );
 }
 
+// ── The live slides: the app's own screens, in device frames ──
+// Copy only. The screens are Showcase's, drawn by the components the app draws
+// them with; what these say is what is true of those components, and each line
+// is one a reader can check against the screen beside it.
+const SHOW = {
+  field: {
+    n: 2, kicker: "On the field", title: "The scorer's pad, mid-over.",
+    lede: "This is the pad a scorer holds, drawn live on a demonstration chase: the score once, on the black board; the state in one line; then the pad asks. Shot, area and outcome in three steps, or the outcome alone under Basic Scoring.",
+    points: [
+      ["The board", "The score is drawn one way everywhere: the pad, the Match Centre and the public page draw it with one component."],
+      ["Built for speed and trust", "Nothing read under 12 pixels and nothing tapped under 44. Dot and one are the biggest keys; a wide or a no ball is two taps."],
+      ["Where it went", "The area step records a point on the field, stored relative to the batter, so a left-hander and a right-hander read on the same wheel."],
+    ],
+    note: "A demonstration match with invented players. Nothing on this slide can be tapped, and nothing on it is saved.",
+  },
+  centre: {
+    n: 1, kicker: "The Match Centre", title: "Read from the ball log, not typed in afterwards.",
+    lede: "One fixture, followed. The summary, the scorecard, the commentary, the partnerships and the analytics are all folded from the same ball log the scorer writes, by the same replay, so no figure is entered twice.",
+    points: [
+      ["Choose a tab", "The buttons above the screen pick which of the Match Centre's own tabs is drawn. They change the slide and nothing else."],
+      ["One replay", "The scorer's pad, this screen and the public page fold one log with one package, so they cannot disagree."],
+    ],
+    note: "The frame shows each tab's contents; the header and tab strip belong to the screen around them, and the day sheet is not shown. A demonstration match with invented players.",
+  },
+  families: {
+    n: 2, kicker: "For families", title: "A parent decides, and can undo it.",
+    lede: "Health monitoring is off until a parent turns it on, for each child on his own switch. At eighteen the pupil is asked for his own answer, and from then on it is his. These are the screens a family opens under Settings, Me.",
+    points: [
+      ["Asked once", "The first time a parent's link to a child is verified, Me asks yes or no. \"Not now\" hides it on that device only."],
+      ["Withdrawn at once", "Turning it off asks once, in plain words, what happens to what was collected, then takes effect immediately."],
+    ],
+    note: "Drawn here and not wired: the switches on these screens do nothing on a slide. Invented children.",
+  },
+  safeguard: {
+    n: 2, kicker: "Duty of care, in the product", title: "A concern reaches the right person, in one screen.",
+    lede: "Anybody signed in can raise a concern with the school's Designated Safeguarding Officer, in their own words, without needing to be sure. The form says plainly that a report is confidential, not anonymous, and points to The Guardian's app for one that is.",
+    points: [
+      ["A reference, and nothing else", "What comes back is a reference and the time. Nothing of what was said is shown again on the reporter's screen."],
+      ["Kept to CSA's policy", "The 24-hour expectation is on the form; the routing and who may see a concern are enforced in the database, not on this screen."],
+    ],
+    note: "The form is the real one, cropped at the fold, with nothing typed in. Nothing is sent from a slide. The reference is a demonstration's.",
+  },
+};
+
+function ShowSlide({ id }) {
+  const c = SHOW[id];
+  return (
+    <div className="deck-show" data-testid={`deck-show-${id}`}>
+      <div>
+        <Kicker>{c.kicker}</Kicker>
+        <h2 className="deck-h" style={{ fontSize: "clamp(26px,3vw,38px)" }}>{c.title}</h2>
+        <p className="deck-lede">{c.lede}</p>
+        <div className="deck-pointlist">
+          {c.points.map(([what, how], i) => (
+            <div key={what} className="deck-card deck-rise" style={{ "--i": i + 2, padding: "10px 12px" }}>
+              <div className="deck-cap" style={{ marginTop: 0 }}>{what}</div>
+              <div className="deck-sub" style={{ color: D.textSecondary }}>{how}</div>
+            </div>
+          ))}
+        </div>
+        <p className="deck-note">{c.note}</p>
+      </div>
+      <div className="deck-show-stage" style={{ "--n": c.n }}>
+        <Suspense fallback={<div className="deck-sub" role="status">Drawing the real screens…</div>}>
+          <Showcase id={id}/>
+        </Suspense>
+      </div>
+    </div>
+  );
+}
+
 function ProblemSlide() {
   return (
     <div className="deck-two">
@@ -367,7 +462,7 @@ function WheelSlide({ filter, setFilter }) {
         <div style={{ display: "grid", gap: "5px" }} role="group" aria-label="Sectors">
           {DEMO.zones.slice(0, 6).map((z, i) => (
             <button key={z.id} type="button" onClick={() => toggleSeg(z.id)} aria-pressed={filter.seg === z.id} data-testid={`deck-zone-${z.id}`}
-                    className="deck-row deck-plain" style={{ padding: "2px 0", color: filter.seg === z.id ? D.textPrimary : D.textSecondary }}>
+                    className="deck-row deck-plain" style={{ padding: "2px 0", minHeight: "44px", color: filter.seg === z.id ? D.textPrimary : D.textSecondary }}>
               <span>{z.label}</span>
               <span className="deck-track"><span className="deck-fill" style={{ "--i": i, width: `${(z.runs / maxZone) * 100}%`, background: z.side === "off" ? D.cyan : D.lime }}/></span>
               <span style={{ textAlign: "right" }}>{z.runs}</span>
@@ -612,7 +707,7 @@ function PitchDeckView({ role, onNav }) {
             ))}
           </div>
           <button type="button" className="deck-btn" onClick={() => go((c) => c + 1)} disabled={i === n - 1} data-testid="deck-next" aria-label="Next slide">Next →</button>
-          <span style={{ fontFamily: D.mono, fontSize: "11px", color: D.textMuted }}>{i + 1}/{n} · {s.label}</span>
+          <span style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }}>{i + 1}/{n} · {s.label}</span>
           <span style={{ flex: 1 }}/>
           <button type="button" className="deck-btn" aria-pressed={auto} onClick={() => setAuto((a) => !a)} data-testid="deck-auto">{auto ? "■ Stop" : <><Icon name="play"/> Auto</>}</button>
           <button type="button" className="deck-btn" aria-pressed={want3d} onClick={() => setWant3d((v) => !v)} data-testid="deck-3d-toggle">{threeLabel}</button>
@@ -624,6 +719,7 @@ function PitchDeckView({ role, onNav }) {
             {s.id === "cover"    && <CoverSlide/>}
             {s.id === "problem"  && <ProblemSlide/>}
             {s.id === "wheel"    && <WheelSlide filter={filter} setFilter={setFilter}/>}
+            {SHOW[s.id]          && <ShowSlide id={s.id}/>}
             {s.id === "platform" && <PlatformSlide/>}
             {s.id === "access"   && <AccessSlide/>}
             {s.id === "care"     && <CareSlide/>}
@@ -633,8 +729,8 @@ function PitchDeckView({ role, onNav }) {
           </div>
         </div>
       </div>
-      <div style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, marginTop: "8px" }}>
-        Arrow keys, Space and 1–{n} move between slides. F presents full screen. Drag the field to turn it.
+      <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "8px" }}>
+        Arrow keys, Space and 1–{Math.min(n, 9)} move between slides. F presents full screen. Drag the field to turn it.
       </div>
     </div>
   );

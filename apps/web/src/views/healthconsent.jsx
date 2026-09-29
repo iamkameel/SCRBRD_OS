@@ -156,6 +156,11 @@ export function HealthConsentRow({ c, onChanged }) {
   const on = c.state === "given";
   const canAnswer = on ? c.canSayNo : c.canSayYes;
   const answer = async (yes) => {
+    // A row the pitch deck draws (`demo`, views/pitchdeck/demo.js) is nobody's
+    // answer and has no child behind it: it never reaches the server, whoever
+    // or whatever presses it. The deck's frames are inert as well; this is the
+    // second lock on the one write in this file that a drawn row could reach.
+    if (c.demo) return;
     setBusy(true); setSaid("");
     try {
       await api(`/api/players/${c.playerId}/consents/health`, { method: "POST", body: { yes, version: HEALTH_CONSENT_VERSION } });
@@ -206,7 +211,6 @@ export function HealthConsentRow({ c, onChanged }) {
  * answer given in either redraws both.
  */
 export function HealthConsentSection({ role, nonce = 0, onChanged }) {
-  const s = useStyles();
   const [nudge, setNudge] = useState(0);
   const { rows } = useLive("consents", role, nonce + nudge);
   // §9.1, Decided 2: hidden per child where that child's school has not
@@ -214,15 +218,26 @@ export function HealthConsentSection({ role, nonce = 0, onChanged }) {
   // reads as on, never off.
   const health = rows.filter((c) => c.kind === "health" && c.moduleOn !== false);
   if (!signedIn() || health.length === 0) return null;
+  return <HealthConsentCard rows={health} onChanged={() => { setNudge((n) => n + 1); onChanged?.(); }}/>;
+}
+
+/**
+ * The Settings section as drawn, from the rows it is given: no read, no
+ * session. The section above hands it the server's rows; the pitch deck
+ * (views/pitchdeck/) hands it a built-in demonstration, so the deck shows this
+ * card itself and not a picture of it. `idSuffix` keeps the heading's id unique
+ * when the deck draws two of these on one slide.
+ */
+export function HealthConsentCard({ rows, onChanged, idSuffix = "" }) {
+  const s = useStyles();
   return (
-    <section style={s.card} data-testid="health-consent-section" aria-labelledby="health-consent-title">
-      <h2 id="health-consent-title" style={s.h2}>Health monitoring</h2>
+    <section style={s.card} data-testid="health-consent-section" aria-labelledby={`health-consent-title${idSuffix}`}>
+      <h2 id={`health-consent-title${idSuffix}`} style={s.h2}>Health monitoring</h2>
       <p style={s.body}>
         A separate choice for each child, off unless you turn it on, and yours to change at any time.
       </p>
       <HealthConsentWords/>
-      {health.map((c) => <HealthConsentRow key={c.playerId} c={c}
-                                           onChanged={() => { setNudge((n) => n + 1); onChanged?.(); }}/>)}
+      {rows.map((c) => <HealthConsentRow key={c.playerId} c={c} onChanged={onChanged}/>)}
     </section>
   );
 }
@@ -232,7 +247,6 @@ export function HealthConsentSection({ role, nonce = 0, onChanged }) {
  * said yes and he has not answered for himself. Gone once he answers.
  */
 export function EighteenCard({ role, nonce = 0, onChanged }) {
-  const s = useStyles();
   const [nudge, setNudge] = useState(0);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState("");
@@ -249,6 +263,12 @@ export function EighteenCard({ role, nonce = 0, onChanged }) {
     } catch (e) { setSaid(say(e)); }
     finally { setBusy(false); }
   };
+  return <EighteenCardView mine={mine} busy={busy} said={said} onAnswer={answer}/>;
+}
+
+/** The eighteen card as drawn, for a row and its handlers: no read, no session (see HealthConsentCard). */
+export function EighteenCardView({ mine, busy = false, said = "", onAnswer }) {
+  const s = useStyles();
   return (
     <section style={{ ...s.card, borderColor: T.content.primary }} data-testid="eighteen-card" aria-labelledby="eighteen-title">
       <h2 id="eighteen-title" style={s.h2}>You are 18 — is this still all right?</h2>
@@ -261,10 +281,10 @@ export function EighteenCard({ role, nonce = 0, onChanged }) {
       </p>
       <HealthConsentWords/>
       <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
-        <button type="button" style={s.primary} disabled={busy} onClick={() => answer(true)} data-testid="eighteen-yes">
+        <button type="button" style={s.primary} disabled={busy} onClick={() => onAnswer(true)} data-testid="eighteen-yes">
           {mine.live ? "Yes, carry on" : "Yes, turn it on"}
         </button>
-        <button type="button" style={s.secondary} disabled={busy} onClick={() => answer(false)} data-testid="eighteen-no">
+        <button type="button" style={s.secondary} disabled={busy} onClick={() => onAnswer(false)} data-testid="eighteen-no">
           {mine.live ? "No, stop it" : "No, leave it off"}
         </button>
       </div>
@@ -305,7 +325,6 @@ const dismissPrompt = (playerId) => {
  * on this device. "Not now" only ever removes it from this one screen.
  */
 export function HealthConsentPrompt({ role, nonce = 0, onChanged }) {
-  const s = useStyles();
   const [nudge, setNudge] = useState(0);
   const [busy, setBusy] = useState(null);
   const [said, setSaid] = useState({});
@@ -326,21 +345,30 @@ export function HealthConsentPrompt({ role, nonce = 0, onChanged }) {
   return (
     <>
       {due.map((c) => (
-        <section key={c.playerId} style={{ ...s.card, borderColor: T.content.primary }}
-                 data-testid={`health-consent-prompt-${c.playerId}`} aria-labelledby={`health-consent-prompt-title-${c.playerId}`}>
-          <h2 id={`health-consent-prompt-title-${c.playerId}`} style={s.h2}>Health monitoring for {c.name}: yes or no?</h2>
-          <HealthConsentWords testid={`health-consent-words-prompt-${c.playerId}`}/>
-          <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
-            <button type="button" style={s.primary} disabled={busy === c.playerId}
-                    onClick={() => answer(c, true)} data-testid={`health-consent-prompt-yes-${c.playerId}`}>Yes</button>
-            <button type="button" style={s.secondary} disabled={busy === c.playerId}
-                    onClick={() => answer(c, false)} data-testid={`health-consent-prompt-no-${c.playerId}`}>No</button>
-            <button type="button" style={s.secondary} disabled={busy === c.playerId}
-                    onClick={() => notNow(c)} data-testid={`health-consent-prompt-later-${c.playerId}`}>Not now</button>
-          </div>
-          {said[c.playerId] && <p role="alert" style={s.alert}>{said[c.playerId]}</p>}
-        </section>
+        <HealthConsentAsk key={c.playerId} c={c} busy={busy === c.playerId} said={said[c.playerId]}
+                          onYes={() => answer(c, true)} onNo={() => answer(c, false)} onLater={() => notNow(c)}/>
       ))}
     </>
+  );
+}
+
+/** One child's one-time ask as drawn: no read, no session (see HealthConsentCard). */
+export function HealthConsentAsk({ c, busy = false, said = "", onYes, onNo, onLater }) {
+  const s = useStyles();
+  return (
+    <section style={{ ...s.card, borderColor: T.content.primary }}
+             data-testid={`health-consent-prompt-${c.playerId}`} aria-labelledby={`health-consent-prompt-title-${c.playerId}`}>
+      <h2 id={`health-consent-prompt-title-${c.playerId}`} style={s.h2}>Health monitoring for {c.name}: yes or no?</h2>
+      <HealthConsentWords testid={`health-consent-words-prompt-${c.playerId}`}/>
+      <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+        <button type="button" style={s.primary} disabled={busy}
+                onClick={onYes} data-testid={`health-consent-prompt-yes-${c.playerId}`}>Yes</button>
+        <button type="button" style={s.secondary} disabled={busy}
+                onClick={onNo} data-testid={`health-consent-prompt-no-${c.playerId}`}>No</button>
+        <button type="button" style={s.secondary} disabled={busy}
+                onClick={onLater} data-testid={`health-consent-prompt-later-${c.playerId}`}>Not now</button>
+      </div>
+      {said && <p role="alert" style={s.alert}>{said}</p>}
+    </section>
   );
 }

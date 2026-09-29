@@ -376,14 +376,24 @@ function Clock({ c }) {
 //  Raising a concern
 // ══════════════════════════════════════════════════════
 
-function RaiseForm({ role, isDso, contacts, onSent, onCancel }) {
+function RaiseForm({ role, ...rest }) {
+  const players = useRows("players", role);
+  return <RaiseFormView {...rest} players={players}/>;
+}
+
+/**
+ * The form as drawn, over the pupils it is given: no read, no session. The
+ * page above reads them; the pitch deck (views/pitchdeck/) hands it none and
+ * shows this form itself, inert, on a phone, with `demo` set so that the send
+ * key does nothing.
+ */
+export function RaiseFormView({ isDso, contacts, onSent, onCancel, players, demo = false }) {
   const s = useStyles();
   const schools = useMemo(() => {
     const seen = new Map();
     for (const c of contacts.rows) if (!seen.has(c.schoolId)) seen.set(c.schoolId, c.schoolName);
     return [...seen.entries()];
   }, [contacts.rows]);
-  const players = useRows("players", role);
   const [f, setF] = useState({
     schoolId: schools[0]?.[0] ?? "", aboutKind: "", subjectPlayerId: "", subjectText: "", nature: [],
     certainty: "", howLearned: "", occurredOn: "", occurredWhere: "", account: "", authoritiesTold: "",
@@ -396,6 +406,9 @@ function RaiseForm({ role, isDso, contacts, onSent, onCancel }) {
   const dsos = contacts.rows.filter((c) => c.schoolId === f.schoolId && c.heldAt === "school");
 
   const send = async () => {
+    // `demo`: the pitch deck's copy of this form. It sends nothing, whoever or
+    // whatever presses the key; the frame it is drawn in is inert as well.
+    if (demo) return;
     setSaid(""); setBusy(true);
     try {
       const r = await api("/api/safeguarding/concerns", { method: "POST", body: {
@@ -504,7 +517,7 @@ function RaiseForm({ role, isDso, contacts, onSent, onCancel }) {
 }
 
 /** After sending: the receipt, and nothing else (SG-2). */
-function Receipt({ r, guardianAppUrl, onDone }) {
+export function Receipt({ r, guardianAppUrl, onDone }) {
   const s = useStyles();
   return (
     <div className="os-page" style={s.page} data-testid="sg-sent">
