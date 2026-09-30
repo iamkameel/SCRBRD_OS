@@ -272,7 +272,9 @@ export function scorebookRoutes({ pool, secret, store }) {
       await c.query("savepoint scorebook_commit");
       const out = (await c.query(`select * from scorebook_import_commit($1, $2, $3, $4)`,
         [id, [], req.body?.acknowledgeUnreconciled === true, req.body?.note ?? null])).rows[0];
-      if (!out?.ok) { await c.query("release savepoint scorebook_commit"); return answer(out); }
+      // Refused: whatever the function did before it refused (a lock, the
+      // playing conditions fixed) goes with the savepoint.
+      if (!out?.ok) { await c.query("rollback to savepoint scorebook_commit"); return answer(out); }
 
       // Written, under the per-match lock. Now the Laws, over the log the
       // events landed on, each asked in turn against the fold before it.

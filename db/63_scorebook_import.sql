@@ -905,7 +905,6 @@ DECLARE
   v_inn    smallint;
   v_keys   text[] := '{}';
   v_key    text;
-  v_n      integer;
 BEGIN
   -- Read to learn the match; locked below, in the live path's order.
   SELECT * INTO i FROM scorebook_import x WHERE x.id = p_import;
@@ -919,10 +918,24 @@ BEGIN
   IF cardinality(coalesce(p_resolve, '{}')) > 0 THEN
     RETURN QUERY SELECT false, 'not_in_this_phase', 'retiring a coach''s workload estimate at the commit is SCRBRD-120 phase 3', NULL::text[]; RETURN;
   END IF;
+  -- Everything that can refuse without the lock, before anything is taken or
+  -- fixed: a refused commit leaves the match exactly as it was.
+  IF i.state <> 'submitted' THEN RETURN QUERY SELECT false, 'not_submitted', i.state, NULL::text[]; RETURN; END IF;
+  SELECT * INTO p FROM scorebook_cards_problem(p_import);
+  IF p.reason IS NOT NULL THEN RETURN QUERY SELECT false, p.reason, p.detail, NULL::text[]; RETURN; END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(i.card) e WHERE jsonb_typeof(e->'unreconciled') = 'object')
+     AND p_acknowledge IS NOT TRUE THEN
+    RETURN QUERY SELECT false, 'unreconciled_not_acknowledged',
+      'the book''s batting does not add up to its total; confirm that it is recorded as the book has it', NULL::text[]; RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM match x WHERE x.id = i.match_id AND x.status = 'complete')
+     AND NOT EXISTS (SELECT 1 FROM scorebook_import x WHERE x.match_id = i.match_id AND x.state = 'confirmed') THEN
+    RETURN QUERY SELECT false, 'match_complete', 'a completed match is corrected by an amendment', NULL::text[]; RETURN;
+  END IF;
 
   -- The live path's lock: the session row, then the match's conditions lock
   -- (match_conditions_fix() takes both, in that order), held to the caller's
-  -- commit; then the import, asked again under it.
+  -- commit; then the import and the match, asked again under it.
   SELECT * INTO f FROM match_conditions_fix(i.match_id);
   IF NOT f.fixed AND f.reason IS DISTINCT FROM 'scored_before_conditions' THEN
     RETURN QUERY SELECT false, coalesce(f.reason, 'not_permitted'), NULL::text, NULL::text[]; RETURN;
@@ -935,13 +948,6 @@ BEGIN
   SELECT * INTO m FROM match x WHERE x.id = i.match_id FOR UPDATE;
   IF m.status = 'complete' AND NOT EXISTS (SELECT 1 FROM scorebook_import x WHERE x.match_id = m.id AND x.state = 'confirmed') THEN
     RETURN QUERY SELECT false, 'match_complete', 'a completed match is corrected by an amendment', NULL::text[]; RETURN;
-  END IF;
-  SELECT * INTO p FROM scorebook_cards_problem(p_import);
-  IF p.reason IS NOT NULL THEN RETURN QUERY SELECT false, p.reason, p.detail, NULL::text[]; RETURN; END IF;
-  IF EXISTS (SELECT 1 FROM jsonb_array_elements(i.card) e WHERE jsonb_typeof(e->'unreconciled') = 'object')
-     AND p_acknowledge IS NOT TRUE THEN
-    RETURN QUERY SELECT false, 'unreconciled_not_acknowledged',
-      'the book''s batting does not add up to its total; confirm that it is recorded as the book has it', NULL::text[]; RETURN;
   END IF;
 
   v_play := coalesce((SELECT mc.doc->'play' FROM match_conditions mc WHERE mc.match_id = m.id), '{}'::jsonb);
