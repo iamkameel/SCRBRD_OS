@@ -577,6 +577,9 @@ $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
 --              derives its end from them), and the plan fixture it was made
 --              for when this competition's planner made it. No names, no
 --              opponent, no school: a booking is a time and a place.
+--   made       every match this competition's planner has made, whenever it
+--              is: the fixture it was made for, where and when it is now.
+--              A later draw keeps such a fixture where its match is.
 CREATE OR REPLACE FUNCTION planner_inputs_for(p_competition uuid, p_from date, p_to date) RETURNS jsonb AS $$
 DECLARE
   v_lo   timestamptz := p_from::timestamp AT TIME ZONE 'Africa/Johannesburg';
@@ -641,6 +644,12 @@ BEGIN
                                                           AND k.closed_from < v_hi + interval '1 day'), '[]'))
                                           ORDER BY g.name, g.id)
                            FROM ground g WHERE g.id = ANY (v_tree)), '[]'),
+    'made', coalesce((SELECT jsonb_agg(jsonb_build_object('fixtureKey', i.fixture_key, 'matchId', m.id, 'groundId', m.ground_id,
+                                                          'startsAt', planner_instant(m.starts_at), 'sport', m.sport, 'format', m.format,
+                                                          'overs', m.overs, 'status', m.status)
+                                       ORDER BY i.fixture_key)
+                        FROM fixture_plan_item i JOIN match m ON m.id = i.match_id
+                       WHERE i.competition_id = p_competition), '[]'),
     'blackouts', coalesce((SELECT jsonb_agg(jsonb_build_object('id', b.id, 'day', to_char(b.day, 'YYYY-MM-DD'), 'entrantId', b.entrant_id, 'reason', b.reason)
                                             ORDER BY b.day, b.entrant_id NULLS FIRST, b.id)
                              FROM competition_blackout b

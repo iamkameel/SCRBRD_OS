@@ -213,11 +213,13 @@ export function computePlan({ inputs, format, rules, locks, entrants }) {
   const prep = (rules.preparationMinutes ?? 0) * MINUTE;
   const hold = (rules.durationMinutes + (rules.recoveryMinutes ?? 0)) * MINUTE;
 
-  /** @type {Map<string, any>} fixture id → its match, as planner_inputs() lists it */
+  /** @type {Map<string, any>} fixture id → its match, as planner_inputs() lists it (`made`, any date) */
   const made = new Map();
+  for (const m of inputs.made ?? []) if (drawIds.has(m.fixtureKey)) made.set(m.fixtureKey, m);
   /** @type {PlanKnown[]} */ const known = [];
   for (const k of inputs.known ?? []) {
-    if (k.fixtureKey && drawIds.has(k.fixtureKey) && !made.has(k.fixtureKey)) { made.set(k.fixtureKey, k); if (knockout) continue; }
+    // A made knockout fixture is its pinned window below, not a commitment.
+    if (knockout && k.fixtureKey && made.has(k.fixtureKey)) continue;
     const sides = (k.entrants ?? []).filter((/** @type {string} */ e) => inDraw.has(e));
     if (!sides.length && !k.groundId) continue;
     known.push({ entrants: sides, groundId: k.groundId ?? null, startsAt: k.startsAt, endsAt: knownFixtureEnd(k) });

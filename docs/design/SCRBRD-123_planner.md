@@ -134,7 +134,9 @@ All five tables carry db/50's pad guard.
 - **known** fixtures: every match not `abandoned`, starting from 15 days before the range to 15 after (rest
   is at most 14 days), that holds an entrant side (school and team code) or is on one of those grounds: its
   start, ground, the entrants it holds, sport, format and overs, and the plan fixture it was made for when
-  this competition's planner made it. No opponent, school or name: a booking is a time and a place.
+  this competition's planner made it. No opponent, school or name: a booking is a time and a place;
+- **made**: every match this competition's planner has made, whatever its date — the fixture it was made
+  for, and where and when the match is now (§5.4 keeps it there).
 
 The API draws only the entrants in the plan: a known fixture's other sides and a blackout for an entrant not
 drawn are dropped before the engine sees them.
@@ -195,6 +197,7 @@ rest. Instants are ISO with an offset (`…Z` or `…+02:00`); a bare local time
      grounds: [{ id, name, schoolId, parentId, closed: [{ id, from, to, reason }] }],
      blackouts: [{ id, day, entrantId, reason }],
      known: [{ matchId, groundId, startsAt, endsAt, sport, format, overs, entrants: [entrantId], fixtureKey }],
+     made: [{ fixtureKey, matchId, groundId, startsAt, sport, format, overs, status }],
      defaults: { durationMinutes, format, overs } }`.
   Refusals: `range_invalid` (400: from after to, or more than 366 days).
 - `GET /api/competitions/:id/plans` → `{ canManage, plans: [{ id, version, state, format, from, to,
