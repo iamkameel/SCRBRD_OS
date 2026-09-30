@@ -347,7 +347,7 @@ Phase 1 must be first and is useful alone. Phases 2 and 3 are independent of eac
 
 Each with the recommendation the body assumes.
 
-**Decided (Kameel, 2026-09-30): D1–D13 as recommended.** Still open before phase 1 is built: where the photos are stored (D9's private bucket, Supabase Storage or Firebase Storage).
+**Decided (Kameel, 2026-09-30): D1–D13 as recommended.** The photos are stored in Supabase Storage (Kameel, 2026-09-30): a private bucket in the database's project and region, reached only by the API with the service key, behind the one `object-store.mjs` adapter (a local directory in development and tests).
 
 | # | decision | recommendation |
 |---|---|---|
