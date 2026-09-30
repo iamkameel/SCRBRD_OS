@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { D, px, textOn, themed } from "../design/tokens.js";
-import { fitnessColor } from "../lib/format.js";
+import { fitnessColor, stat } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useLive } from "../lib/live.js";
 import { Metric, MetricGroup, dash } from "../ui/data.jsx";
@@ -178,7 +178,7 @@ function AnalyticsView({ role }) {
                       <td style={{padding:"10px 12px",textAlign:"center"}}><Badge color={rCol}>{p.role}</Badge></td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",color:p.batHand==="L"?D.amber:D.sky}}>{p.batHand}HB</td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",fontWeight:500,color:p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber}}>{p.avg}</td>
-                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber}}>{p.sr}</td>
+                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber}}>{stat(p.sr)}</td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.wkts>=15?D.rose:p.wkts>=8?D.violet:D.textMuted}}>{p.wkts||"—"}</td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.econ&&p.econ<=6.5?D.emerald:p.econ&&p.econ<=8?D.amber:p.econ?D.rose:D.textMuted}}>{p.econ||"—"}</td>
                       <td style={{padding:"10px 12px"}}>

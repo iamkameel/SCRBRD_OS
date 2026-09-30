@@ -62,6 +62,25 @@ const humanDateTime = (isoDate, time) => {
 const stat = (v, suffix = "") => (v === null || v === undefined ? "—" : `${v}${suffix}`);
 
 /**
+ * A count a scorebook may not have recorded (SCRBRD-120 D12): the dash when
+ * the figure is null, and "at least N" when it is a lower bound because some
+ * innings behind it did not record one (`partial`). 0 stays 0.
+ */
+const atLeast = (v, partial = false) =>
+  (v === null || v === undefined ? "—" : partial ? `at least ${v}` : `${v}`);
+
+/**
+ * One small line saying a player's figures include innings from a scorebook,
+ * and in how many of them the balls were not recorded. Null when none did.
+ * @param {{bookInnings?: number, inningsWithoutBalls?: number}} p  an asCareer() row
+ */
+const bookNote = (p) => {
+  const n = Number(p?.bookInnings ?? 0), m = Number(p?.inningsWithoutBalls ?? 0);
+  if (!(n > 0)) return null;
+  return `Includes ${n} innings from a scorebook${m > 0 ? `; balls not recorded in ${m}` : ""}.`;
+};
+
+/**
  * A field the reader is not cleared for.
  *
  * Masked columns arrive as null — the database decided, per row, that this
@@ -77,4 +96,4 @@ const stat = (v, suffix = "") => (v === null || v === undefined ? "—" : `${v}$
 const withheld = (v, label = "Not shown at your access level") =>
   (v === null || v === undefined ? label : v);
 
-export { addDays, dateStr, fitnessColor, humanDate, humanDateTime, initials, pctDays, roleColor, severityColor, stat, today, withheld };
+export { addDays, atLeast, bookNote, dateStr, fitnessColor, humanDate, humanDateTime, initials, pctDays, roleColor, severityColor, stat, today, withheld };

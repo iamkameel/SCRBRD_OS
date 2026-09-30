@@ -130,12 +130,19 @@ const matchesWord = (/** @type {number} */ n) => `${n} ${n === 1 ? "match" : "ma
 /** @param {string} name @param {any} c  a /read/career row, or none */
 function careerLine(name, c) {
   const n = (/** @type {string} */ k) => Number(c?.[k] ?? 0);
+  // A figure a scorebook did not record is NULL in /read/career (SCRBRD-120
+  // D12) and is said as "not recorded", never as 0. The strike rate is over
+  // the innings whose balls are recorded: runs less runs_without_balls.
+  const rec = (/** @type {string} */ k) => (c?.[k] == null ? null : Number(c[k]));
+  const balls = rec("balls_faced");
+  const sr = balls == null ? null : rate(100 * (n("runs") - n("runs_without_balls")), balls, 1);
+  const atLeast = n("innings_without_boundaries") > 0 ? "at least " : "";
   const bat = n("bat_matches") === 0 ? "no record" : [
     matchesWord(n("bat_matches")),
-    `${n("runs")} runs off ${n("balls_faced")} balls`,
-    rate(100 * n("runs"), n("balls_faced"), 1) ? `SR ${rate(100 * n("runs"), n("balls_faced"), 1)}` : "no strike rate (no ball faced)",
+    `${n("runs")} runs off ${balls == null ? "an unrecorded number of" : balls} balls`,
+    sr ? `SR ${sr}` : (balls == null ? "no strike rate (balls not recorded)" : "no strike rate (no ball faced)"),
     rate(n("runs"), n("dismissals"), 2) ? `average ${rate(n("runs"), n("dismissals"), 2)}` : "no average (never dismissed)",
-    `${n("fours")}x4 ${n("sixes")}x6`,
+    rec("fours") == null || rec("sixes") == null ? "boundaries not recorded" : `${atLeast}${n("fours")}x4 ${atLeast}${n("sixes")}x6`,
   ].join(", ");
   const bowl = n("bowl_matches") === 0 ? "no record" : [
     matchesWord(n("bowl_matches")),

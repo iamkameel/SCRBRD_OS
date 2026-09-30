@@ -331,6 +331,76 @@ try {
      && !/source|checkedBy|typed|three short/.test(pubText), pubText.slice(0, 300));
   ok("no shot sector served", (await q(`select count(*)::int as n from public_shot_sectors($1)`, [M]))[0].n === 0);
 
+  // ── F2 ─────────────────────────────────────────────────────────
+  group("F2. What a book leaves unrecorded stays NULL through the reads (D12, db/64)");
+  {
+    // A second import: a home innings in which the book has no balls column for
+    // three of our boys. 12 (J Sithole) has no other record; 04 (M Cele) has a
+    // live one; 05 (R Pillay, the pupil account) has a book innings with balls
+    // from F and now a second without.
+    const [B12, B13, B04, B05] = [DNB[0], DNB[1], P[3], P[4]];
+    const careerOf = async (id, resource = "career") =>
+      ((await api(`/api/read/${resource}`, { token: sarah })).body?.rows ?? []).filter((r) => r.player_id === id);
+    const before04 = (await careerOf(B04))[0];
+    const M2 = await fixture({ days: -4 });
+    const I2 = (await api(`/api/matches/${M2}/scorebook`, { method: "POST", token: scorer })).body?.id;
+    const nobook = baseCard([B12, B13, DNB[2], B04, B05, P[0]]);
+    for (const i of [0, 4]) Object.assign(nobook.batting[i], { balls: null, fours: null, sixes: null });
+    const book2 = [nobook];
+    const sv = await api(`/api/scorebook/${I2}/save`, { method: "POST", token: scorer, body: { cards: book2, typed: TYPED, checked: allTicked(book2), version: 1 } });
+    const sb = await api(`/api/scorebook/${I2}/submit`, { method: "POST", token: scorer, body: { version: sv.body?.version } });
+    const cf = await api(`/api/scorebook/${I2}/confirm`, { method: "POST", token: sarah, body: {} });
+    ok("a second import, with no balls for two of our boys, is committed", sb.status === 200 && cf.status === 200, JSON.stringify([sb.body, cf.body]));
+
+    const [c12] = await careerOf(B12);
+    ok("a boy whose one innings is a book's without balls: balls faced, fours and sixes are null, not 0",
+       c12 && Number(c12.runs) === 34 && c12.balls_faced === null && c12.fours === null && c12.sixes === null, JSON.stringify(c12));
+    ok("...and the read says how partial: one innings without balls (34 runs in it) and without boundaries, one from a book",
+       c12 && c12.innings_without_balls === 1 && c12.runs_without_balls === 34 && c12.innings_without_boundaries === 1 && c12.book_innings === 1, JSON.stringify(c12));
+    ok("...so no strike rate: (runs − runs_without_balls) over null balls is nothing to divide",
+       c12 && c12.balls_faced === null && Number(c12.runs) - c12.runs_without_balls === 0);
+    ok("he has not bowled: 0 wides, a fact, where the view has no row", c12 && Number(c12.wides) === 0 && Number(c12.no_balls) === 0 && c12.bowling_without_extras === 0, JSON.stringify(c12));
+    const [c13] = await careerOf(B13);
+    ok("a book innings with every figure recorded reads as recorded: 12 off 15, a four, no sixes, nothing unrecorded",
+       c13 && Number(c13.runs) === 12 && Number(c13.balls_faced) === 15 && Number(c13.fours) === 1 && Number(c13.sixes) === 0
+       && c13.innings_without_balls === 0 && c13.innings_without_boundaries === 0 && c13.book_innings === 1, JSON.stringify(c13));
+    const [c04] = await careerOf(B04);
+    // 04 already has the first book's innings (25, no balls) beside his live ones.
+    ok("a boy with live innings and book innings without balls: his balls stay his recorded balls, the runs take the book's 25 more",
+       c04 && Number(c04.balls_faced) === Number(before04.balls_faced) && Number(c04.runs) === Number(before04.runs) + 25
+       && c04.runs_without_balls === before04.runs_without_balls + 25 && c04.book_innings === before04.book_innings + 1, JSON.stringify([before04, c04]));
+    ok("...so (runs − runs_without_balls) / balls has not moved, where runs / balls has",
+       (Number(c04.runs) - c04.runs_without_balls) * Number(before04.balls_faced) === (Number(before04.runs) - before04.runs_without_balls) * Number(c04.balls_faced)
+       && Number(c04.runs) * Number(before04.balls_faced) !== Number(before04.runs) * Number(c04.balls_faced));
+    const [c05] = await careerOf(B05);
+    ok("a boy with a book innings with balls (40 off 30, five fours, a six) and one without: 80 runs, 30 balls, 40 runs unrecorded",
+       c05 && Number(c05.runs) === 80 && Number(c05.balls_faced) === 30 && Number(c05.fours) === 5 && Number(c05.sixes) === 1
+       && c05.runs_without_balls === 40 && c05.innings_without_balls === 1 && c05.innings_without_boundaries === 1 && c05.book_innings === 2, JSON.stringify(c05));
+    ok("...his bowling row in the first book has no wides or no-balls: null, one row unrecorded",
+       c05 && c05.wides === null && c05.no_balls === null && c05.bowling_without_extras === 1 && Number(c05.balls_bowled) === 24, JSON.stringify(c05));
+
+    const seasons = await careerOf(B12, "career_by_season");
+    ok("the season read says the same: null balls, the unrecorded columns, one from a book",
+       seasons.length === 1 && seasons[0].balls_faced === null && seasons[0].fours === null && seasons[0].innings_without_balls === 1
+       && seasons[0].runs_without_balls === 34 && seasons[0].book_innings === 1, JSON.stringify(seasons));
+    const s05 = await careerOf(B05, "career_by_season");
+    ok("...and a season's rows sum to the lifetime read for his balls and his unrecorded runs",
+       s05.reduce((a, r) => a + Number(r.balls_faced ?? 0), 0) === Number(c05.balls_faced)
+       && s05.reduce((a, r) => a + r.runs_without_balls, 0) === c05.runs_without_balls, JSON.stringify(s05));
+
+    // The dashboard: the pupil account linked to 05 reads his own strike rate over the innings whose balls are recorded.
+    const pillay = await login("pillay@example.invalid");
+    const mine = (await api("/api/read/summary", { token: pillay })).body?.rows?.[0];
+    ok("the pupil's own runs include the book (80), and his strike rate is over the recorded balls: 40 off 30 is 133, not 80 off 30",
+       mine && Number(mine.my_runs) === 80 && Number(mine.my_strike_rate) === 133, JSON.stringify(mine));
+
+    // The passport says where the career came from.
+    const pp = (await api(`/api/read/passport?playerId=${B05}`, { token: coach })).body?.rows ?? [];
+    const careerLines = pp.filter((l) => l.family === "career");
+    ok("the passport's career lines are sourced to the match record, not the ball log alone",
+       careerLines.length >= 1 && careerLines.every((l) => l.recorded_by === "the match record") && !pp.some((l) => l.recorded_by === "the ball log"), JSON.stringify(pp));
+  }
+
   // ── G ──────────────────────────────────────────────────────────
   group("G. A league's fixture");
   const [set] = await q(`insert into condition_set (competition_id, version, title, effective_from, created_by)
