@@ -4316,6 +4316,16 @@ subpath export kept off the package index): `pairings()`, `plan()` and `toFixtur
 fixture route's own handler). No database change, route or screen. Ground hierarchy and closures are planner input
 until a record exists. The API, what phase 2 adds and what was left out: `docs/design/SCRBRD-123_planner.md`.
 
+**Built 2026-09-30 (Opus): phase 2, drafts, inputs and publish.** `db/67_fixture_planner.sql` (db/99 §45):
+`ground.parent_id` (a pitch on its field, never a cycle), `ground_closure` and `ground_window` (the ground owner's,
+`facility.manage`), `competition_blackout` (the manager's, or an entrant school's own day under `fixture.update`),
+`fixture_plan` (versioned, computed on the server, a draft read by the manager alone) and `fixture_plan_item` (the match
+each published fixture made, once). The manager is `competition_conditions_manager()` (db/61); no new capability.
+`services/api/write/planner-api.mjs`: inputs, drafts, locks, publish through the fixture route's own validation and
+insert (exported from `fixture-api.mjs`), idempotent, rechecked against the database first (`clash`), and the small
+CRUD. A known fixture's end comes from its format (`knownFixtureEnd()`). `tools/smoke-planner.mjs`. The API contract
+for the Sonnet screen: `docs/design/SCRBRD-123_planner.md` §5.5. **Next:** the screen (Sonnet); phase 3, approvals.
+
 ### SCRBRD-124 — Parent lift clubs: families offering each other lifts to fixtures
 **Priority:** P2 · **Domain:** Transport / Families / Safeguarding · **Type:** Fable design, then build after SCRBRD-122 and
 SCRBRD-123 (Kameel, 2026-09-30: "a feature I still believe in … I've used parent lift clubs like this")

@@ -1,6 +1,8 @@
 # SCRBRD-123 — the fixture planner: the engine
 
 Status: **phase 1 built** (2026-09-30): the engine, with tests, and no database change, route or screen.
+**Phase 2 built** (2026-09-30): `db/67_fixture_planner.sql`, `services/api/write/planner-api.mjs`, the API
+contract in §5 for the screen (a Sonnet build). The screen is not built.
 The backlog item is `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md` → SCRBRD-123. The idea came from
 `competition-planner.ts` in `iamkameel/scrbrd` (0a90c71); the behaviour was taken, not the code.
 
@@ -73,11 +75,216 @@ toFixtureDrafts(plan, competition)        // → { drafts: [{ fixtureId, body }]
 
 ## 4 · Deliberately left out
 
-- **No database, route or screen.** The plan reserves nothing; windows are what the caller declares.
+- **No database, route or screen** (phase 1). The plan reserves nothing; windows are what the caller declares.
+  Phase 2 (§5) gives windows, closures and the ground hierarchy a home; the plan still reserves nothing.
 - **Ground hierarchy and closures are input.** `ground` has no parent and `ground_condition` has no closed
-  state, so `plan()` takes `grounds` with `parentId` and `closed` spans; phase 2 decides where they live.
+  state, so `plan()` takes `grounds` with `parentId` and `closed` spans; phase 2 decides where they live
+  (`ground.parent_id` and `ground_closure`, db/67).
 - **Soft preferences** (preferred weekdays, less travel, home/away alternation across rounds) and
   **optimality**: the search is greedy and says why a fixture was not placed rather than backtracking.
 - **Pools, group-then-knockout, placement matches, reserve days.** Same model, later.
 - **Surface, sport and inspection checks** (the source's warnings): `ground.surface` is free text today.
 - **Travel times are not guessed**: one `travelMinutes` between different sites, from the organiser.
+
+## 5 · Phase 2 as built
+
+Built 2026-09-30 (Opus): `db/67_fixture_planner.sql` (db/99 §45), `services/api/write/planner-api.mjs`
+(registered in `services/api/server.mjs`), `tools/smoke-planner.mjs` (in `run-smoke-api`), and two engine
+helpers, `fixtureLength()` and `knownFixtureEnd()` (§5.3, `planner.test.mjs` G). The screen is not built;
+§5.5 is its contract.
+
+### 5.1 · The tables, and who
+
+| Table / column | What | Who writes | Who reads |
+|---|---|---|---|
+| `ground.parent_id` | the field a pitch lies on: same school, never a cycle, at most 8 deep (`ground_parent_guard()`) | `facility.manage` at the ground's school (the ground's own policy) | as the ground (`facility.read`) |
+| `ground_closure` | a span a ground cannot be used, reason 3–120 characters | `facility.manage` at the ground's school | `facility.read` there; the manager through `planner_inputs()` |
+| `ground_window` | a slot offered for fixtures, to one competition or (`competition_id` NULL) to any; at most a week | as above | as above |
+| `competition_blackout` | a day nobody in the competition plays, or one entrant does not | the manager, any; an entrant school, its own side's (`fixture.update` at the entrant's school and team) | the manager; a competition-wide day by whoever may reach the competition; an entrant's day by that side (`fixture.read` there) |
+| `fixture_plan` | a version: format, range, rules, the entrants in seed order, locks, the inputs `planner_inputs()` read, the engine's output; `draft → published → superseded` | the manager, through definer functions only | the manager; once published, whoever may reach the competition. A draft is the organiser's: an entrant school reads nothing of it |
+| `fixture_plan_item` | the match each published fixture made, primary key `(competition_id, fixture_key)` | the manager, through `fixture_plan_item_record()` | as the plan that made it |
+
+**The manager** is db/61's `competition_conditions_manager()` — `competition.conditions.manage` at the
+organiser, which for a league with no organising school is a platform-wide `competitionadmin`. No new
+capability: when SCRBRD-125 scopes the function to a competition, the planner follows. **The ground owner**
+keeps windows and closures under `facility.manage`, the capability that already writes `ground` and
+`ground_condition` (the generated policies, `tables.mjs` → db/67's block; DELETE by hand, same predicate).
+**An entrant school's blackout** is `fixture.update` at that entrant, because the people who put a school's
+Saturdays in are the ones who know its exam calendar, and a blackout constrains that side alone; it may
+remove its own side's days, never the league's or another school's.
+
+`fixture_plan`, `fixture_plan_item` and `competition_blackout` are written only through SECURITY DEFINER
+functions (the application holds SELECT alone): `fixture_plan_save`, `fixture_plan_recompute` (a draft
+only), `fixture_plan_publish` (never under a support session; supersedes every earlier version not already
+superseded; a second call on a published plan is a retry), `fixture_plan_item_begin` (a per-fixture advisory
+lock to the end of the transaction, and the match already made) and `fixture_plan_item_record`,
+`competition_blackout_add` / `_remove`. A published plan's content never changes (`fixture_plan_guard()`).
+All five tables carry db/50's pad guard.
+
+### 5.2 · Reading the inputs from the database
+
+`planner_inputs(competition, from, to)` answers the manager (NULL to anybody else, which the API says as
+`not_permitted`). Everything is read in South African days:
+
+- **windows** offered to the competition or to any, wholly inside the range;
+- **grounds**: every ground on the same site as a window's ground or an entrant's fixture's ground — up to
+  the top of its tree and down every pitch — with `parentId` and its closures near the range. The engine
+  closes a pitch when its field is closed and the field when a pitch is (§2);
+- **blackouts** of the competition on days in the range;
+- **known** fixtures: every match not `abandoned`, starting from 15 days before the range to 15 after (rest
+  is at most 14 days), that holds an entrant side (school and team code) or is on one of those grounds: its
+  start, ground, the entrants it holds, sport, format and overs, and the plan fixture it was made for when
+  this competition's planner made it. No opponent, school or name: a booking is a time and a place.
+
+The API draws only the entrants in the plan: a known fixture's other sides and a blackout for an entrant not
+drawn are dropped before the engine sees them.
+
+### 5.3 · How a known fixture's end is derived
+
+`match` records a start and never an end, so `knownFixtureEnd()` (the engine, `fixtureLength()`) gives one:
+
+- **limited overs** (T20, One-Day, any format that is not a declaration, or none stated): two innings of
+  the match's `overs` at `OVER_MINUTES` (4) an over, plus `INNINGS_BREAK_MINUTES` (20) — a T20 is 180
+  minutes, fifty overs 420. With no overs recorded: fifty for a one-day format, else twenty (the fixture
+  route's own default);
+- **declaration** (One-Day Declaration, timed, Two-Day, multi-day, a test): whole South African days — the
+  number in the name (two to five; multi-day two, a test five), else one — ending at midnight SAST;
+- **another sport**: its whole SA day.
+
+Generous on purpose: an end late costs a slot, one early double-books a side. The same function gives a
+draft's default `durationMinutes` from the competition's format (the published conditions in force on the
+range's first day, then `competition.format`); a declaration format must be told its minutes.
+
+### 5.4 · Drafting, fixtures already made, and publishing
+
+- **The server computes every plan**: the API calls `pairings()` and `plan()` over `planner_inputs()`'s
+  document and stores both beside it. A client sends a format, a range, rules, seeds and locks — never a plan.
+- **Locks** are set on a draft and recompute it in place over the inputs as they are now; regenerating is a
+  new version (`basedOn`), which carries the locks unless told otherwise.
+- **A fixture this competition's planner has already made stays where its match is.** In a round robin it
+  leaves the draw and its match is a known commitment, so nothing else is put on its sides or its ground; in
+  a knockout, whose later rounds need it, it is locked to a window that is exactly its match. A lock the
+  organiser set on it is reported stale (`published`).
+- **Publishing** first marks the plan published (earlier versions superseded), then checks it against the
+  database as it is now: every placed, unmade fixture is locked to its window and `plan()` is run over fresh
+  inputs. A fixture whose window is gone is refused `window_withdrawn`; one whose slot no longer fits (a
+  booking typed since, a closure, a blackout) is refused `clash` with the engine's reasons. Each remaining
+  fixture is, in its own transaction: `fixture_plan_item_begin()`; the body `toFixtureDrafts()` makes (with
+  the conditions in force on its own day) through `fixtureInsertParams()` and `insertFixture()` — the
+  validation and the insert `POST /api/fixtures` runs, exported from `fixture-api.mjs` for this; then
+  `fixture_plan_item_record()`. A refusal anywhere rolls the fixture back whole: no match without its item.
+  Knockout rounds past the first are `held` (`awaiting_winner`), as are unscheduled fixtures and a side with
+  no team code.
+- **Idempotent**: a retry, or a second person publishing at once, finds the item and reports `already`.
+  An item is per competition and fixture id, so a later version's same pairing is `already` too.
+
+### 5.5 · The API contract (for the screen)
+
+Every route needs a signed-in token. Every refusal is `{ error, detail? }`: **401** `missing_token` /
+`unauthorized`; **403** `not_permitted`, which never says whether the competition, plan, ground or blackout
+exists; **404** `not_found` for an id that is not a uuid; **400** for a malformed request; **422** for the
+rest. Instants are ISO with an offset (`…Z` or `…+02:00`); a bare local time is refused. Days are
+`YYYY-MM-DD` on the South African calendar.
+
+**The planner (the competition's manager)**
+
+- `GET /api/competitions/:id/planner/inputs?from=&to=` →
+  `{ competition: { id, name, format, organiserId }, from, to,
+     entrants: [{ id, schoolId, teamCode, name, divisionId }],
+     windows: [{ id, groundId, startsAt, endsAt, competitionId }],
+     grounds: [{ id, name, schoolId, parentId, closed: [{ id, from, to, reason }] }],
+     blackouts: [{ id, day, entrantId, reason }],
+     known: [{ matchId, groundId, startsAt, endsAt, sport, format, overs, entrants: [entrantId], fixtureKey }],
+     defaults: { durationMinutes, format, overs } }`.
+  Refusals: `range_invalid` (400: from after to, or more than 366 days).
+- `GET /api/competitions/:id/plans` → `{ canManage, plans: [{ id, version, state, format, from, to,
+  fixtures, placed, unscheduled, basedOn, createdBy, createdAt, computedAt, publishedAt, supersededAt }] }`,
+  newest first. The manager sees every version; anybody else only published ones (an empty list otherwise).
+- `POST /api/competitions/:id/plans` `{ format, from, to, rules?, locks?, entrants?, basedOn? }` → **the
+  plan** (below), version next. `format`: `round_robin` | `double_round_robin` | `knockout`. `rules`: any of
+  `durationMinutes` (default from the format, §5.3), `preparationMinutes`, `recoveryMinutes`,
+  `restMinutes`, `travelMinutes`, `maxPerDay` (whole minutes; the engine's ranges, §2). `locks`:
+  `[{ fixtureId, windowId }]`. `entrants`: entrant ids in seed order (default: every entrant, by name) —
+  seed order matters for a knockout. `basedOn`: a plan of this competition; anything not sent is taken from
+  it (regenerate is `{ basedOn }` alone). Refusals: `format_invalid`, `range_invalid`, `rules_invalid`,
+  `locks_invalid`, `entrants_invalid` (400); `too_few_entrants`, `too_many_entrants` (16),
+  `duration_required` (a declaration format), `plan_input_invalid` with the engine's words in `detail`
+  (a rule out of range, more than 256 windows …) (422).
+- `GET /api/competitions/:id/plans/:planId[?inputs=1]` → **the plan**. `?inputs=1` returns the stored
+  inputs in full to the manager; anybody else gets counts.
+- `POST /api/competitions/:id/plans/:planId/locks` `{ locks }` → **the plan**, recomputed in place.
+  Refusals: `locks_invalid`, `not_a_draft` (422, `detail` the state), `plan_input_invalid`.
+- `POST /api/competitions/:id/plans/:planId/publish` →
+  `{ plan: { id, version, state }, first, counts: { created, already, refused, held },
+     results: [{ fixtureId, round, home, away, outcome, … }] }`, one result per fixture in the draw's order;
+  `home`/`away` are names (or "winner of …"). By `outcome`:
+  `created` `{ matchId, startsAt, sharedWithOpponent }`; `already` `{ matchId }`;
+  `held` `{ held: "unscheduled" | "awaiting_winner" | "no_team_code", text }`;
+  `refused` `{ error, detail?, reasons? }` with `error` one of the fixture route's —
+  `invalid_fixture` (its `detail` names the rule: a side that has not entered, a side playing itself …),
+  `not_permitted` (the publisher may not arrange the home school's fixture), `no_such_school_ground_or_sport`,
+  or its 400s — or the planner's: `clash` (with `reasons: [{ code, text }]`), `window_withdrawn`,
+  `match_not_in_competition`. `first` is false on a retry. Refusals of the whole call: `superseded`,
+  `support_session` (422).
+
+**The plan** → `{ id, competitionId, version, state, format, from, to, rules, locks, basedOn, createdBy,
+createdAt, computedAt, publishedBy, publishedAt, supersededAt, canManage,
+entrants: [{ id, name, schoolId, teamCode }],
+summary: { fixtures, placed, unscheduled, made, byes },
+fixtures: [{ id, round, leg, match, home, away, locked, windowId, groundId, groundName, startsAt, endsAt,
+             reasons: [{ code, text }], held: { code, text } | null,
+             made: { matchId, planId, startsAt, groundId } | null }],
+byes: [{ round, entrantId, name }],
+staleLocks: [{ fixtureId, windowId, reason, text }],
+inputs: { windows, grounds, blackouts, known } }` (counts; the document with `?inputs=1` for the manager).
+A side is `{ entrantId, name }` or `{ winnerOf: fixtureId }`. `startsAt`/`endsAt` are the match itself
+(after preparation). A fixture with a slot has `reasons: []`; one without lists every reason any window
+refused it, in `PLAN_REASON` order, with the words of `PLAN_REASON_TEXT`. A made fixture in a round robin
+has `windowId: null` and the slot of its match. `staleLocks[].reason`: `no_such_fixture`,
+`no_such_window`, `published`.
+
+**Blackouts**
+
+- `GET /api/competitions/:id/blackouts` → `{ blackouts: [{ id, day, entrantId, entrantName, reason,
+  createdAt }] }`, as the reader may see them (§5.1).
+- `POST /api/competitions/:id/blackouts` `{ day, entrantId?, reason? }` → `{ ok, id }`; the same day again
+  is the same row. Refusals: `day_invalid`, `reason_invalid` (400); `not_permitted`; `entrant_invalid` (to
+  the manager only), `reason_too_long` (120) (422).
+- `POST /api/competition-blackouts/:id/remove` → `{ ok }`. Refusal: `not_permitted`.
+
+**The ground owner's (facility.manage at the ground's school)**
+
+- `GET /api/grounds/:id/windows[?from=&to=]` → `{ windows: [{ id, groundId, startsAt, endsAt,
+  competitionId, createdAt }] }`.
+- `POST /api/grounds/:id/windows` `{ startsAt, endsAt, competitionId? }` → the window. Refusals:
+  `starts_at_invalid`, `ends_at_invalid`, `window_invalid` (400 ends first; 422 longer than a week, in the
+  database's words), `competition_invalid`, `not_permitted`.
+- `POST /api/ground-windows/:id/remove` → `{ ok }`.
+- `GET /api/grounds/:id/closures` → `{ closures: [{ id, groundId, from, to, reason, createdAt }] }`.
+- `POST /api/grounds/:id/closures` `{ from, to, reason }` → the closure. Refusals: `from_invalid`,
+  `to_invalid`, `closure_invalid`, `reason_required` (3–120 characters), `not_permitted`.
+- `POST /api/ground-closures/:id/remove` → `{ ok }`.
+- `POST /api/grounds/:id/parent` `{ parentId: uuid | null }` → `{ id, parentId }`. Refusals:
+  `parent_invalid` (422: itself, a cycle, another school's ground, too deep, no such ground),
+  `not_permitted`. `/api/read/grounds` now carries `parent_id`; `/api/read/matches` carries
+  `competition_id`.
+
+The dispatcher passes a second capture group as `params.sub` (the plan id).
+
+### 5.6 · Left out of phase 2, and why
+
+- **The screen** (Sonnet, from §5.5): inputs, a calendar and bracket preview, reasons in words, locks,
+  regenerate, publish with its per-fixture report; the ground owner's windows and closures.
+- **The venue does not follow the home side.** `plan()` puts a fixture in any window, so the "home" entrant
+  (the one whose school owns the fixture record) may play on another school's ground. Asking the engine to
+  prefer, or require, the home side's grounds is a rule for a later phase; today the organiser offers only
+  the windows he means, or locks.
+- **Nothing is reserved.** A window is an offer; a draft holds no slot; publishing rechecks and refuses a
+  clash rather than taking the slot from whoever booked it.
+- **Divisions and pools** are drawn by naming the entrants; there is no per-division plan record.
+- **A made fixture is not moved or withdrawn by a later version.** Every later version keeps it where its
+  match is (§5.4) and publishing reports it `already`; moving one is `POST /api/fixtures/:id` (the route
+  that exists), and a match no longer wanted is the school's to call off. A made fixture whose slot a later
+  closure or blackout now breaks shows its reasons in a knockout (it is locked) and none in a round robin
+  (its match is a known commitment, not re-checked): phase 3's recheck.
+- **Approvals** (each school its fixtures, the ground owner the slot) are phase 3.

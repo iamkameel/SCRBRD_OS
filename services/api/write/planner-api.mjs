@@ -336,7 +336,8 @@ function planOut(row, { items, manage, withInputs = false }) {
         locked: f.locked, windowId: f.windowId, groundId: f.groundId, groundName: f.groundId ? grounds.get(f.groundId) ?? null : null,
         startsAt: f.startsAt, endsAt: f.endsAt,
         reasons: (f.reasons ?? []).map((/** @type {keyof typeof PLAN_REASON_TEXT} */ code) => ({ code, text: PLAN_REASON_TEXT[code] })),
-        held: held.get(f.id) ? { code: held.get(f.id), text: HELD_TEXT[/** @type {keyof typeof HELD_TEXT} */ (held.get(f.id))] } : null,
+        // Why publishing would not make it (none once it is made).
+        held: !item && held.get(f.id) ? { code: held.get(f.id), text: HELD_TEXT[/** @type {keyof typeof HELD_TEXT} */ (held.get(f.id))] } : null,
         // The match publishing made for it (any version of this competition's plans), as made.
         made: item ? { matchId: item.match_id, planId: item.plan_id, startsAt: item.starts_at, groundId: item.ground_id ?? null } : null,
       };
