@@ -1622,6 +1622,23 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _names_63(p_import uuid) RETURNS text AS $$
   SELECT coalesce(string_agg(n.player_id::text, ',' ORDER BY n.player_id), '') FROM scorebook_import_names(p_import) n
 $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _actors_63(p_import uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(a.actor_id || ':' || a.name, ',' ORDER BY a.actor_id), '') FROM scorebook_import_actors(p_import) a
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+-- A person's name, past RLS.
+CREATE OR REPLACE FUNCTION _user_name_63(p_user uuid) RETURNS text AS $$
+  SELECT name FROM app_user WHERE id = p_user
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Make a person a pupil for a moment (a player assignment), or not.
+CREATE OR REPLACE FUNCTION _pupil_63(p_user uuid, p_on boolean) RETURNS void AS $$
+BEGIN
+  IF p_on THEN
+    INSERT INTO role_assignment (person_id, role, school_id, team_code)
+    VALUES (p_user, 'player', '11111111-1111-1111-1111-111111111111', '1XI');
+  ELSE
+    DELETE FROM role_assignment WHERE person_id = p_user AND role = 'player';
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _publish_63(p_match uuid) RETURNS void AS $$
   INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
   VALUES (p_match, 'home', '11111111-1111-1111-1111-111111111111', '1XI', true, '88888888-0000-0000-0000-000000000007')
@@ -8318,6 +8335,8 @@ BEGIN
   --               filter (the Westville boy was named), and asking app_can()
   --               for the read in place of scorebook_may() (the support
   --               session was given the names)
+  --   (actors)    scorebook_import_actors() without its pupil filter (the
+  --               owner, made a pupil for a moment, was named)
   --   (remove)    scorebook_import_page_remove() asking scorebook_may() for
   --               confirm as well as write (the confirmer went through)
   --   (purge)     scorebook_import_purge_due() without the removed-page branch
@@ -8527,6 +8546,35 @@ BEGIN
     PERFORM set_config('app.scope', '', true);
     PERFORM set_config('app.match_id', '', true);
     PERFORM _assert(got = '', format('db/63 (names): a pad''s credential is given %s', got));
+
+    -- (actors) the history's authors by name — the scorer and the owner, who
+    -- typed — to the two who check it, and to nobody else; a pupil unnamed
+    got := U_SCORER || ':' || _user_name_63(U_SCORER) || ',' || U_OWNER || ':' || _user_name_63(U_OWNER);
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(_actors_63(I) = got, format('db/63 (actors): the director of sport is given %s', _actors_63(I)));
+    PERFORM _as(U_SCORER);
+    PERFORM _assert(_actors_63(I) = got, format('db/63 (actors): the scorer is given %s', _actors_63(I)));
+    PERFORM _pupil_63(U_OWNER, true);
+    got := _actors_63(I);
+    PERFORM _pupil_63(U_OWNER, false);
+    PERFORM _assert(got = U_SCORER || ':' || _user_name_63(U_SCORER), format('db/63 (actors): a pupil is named: %s', got));
+    FOREACH got IN ARRAY ARRAY[U_PARENT::text, U_PUPIL::text, U_WESC::text, U_WATCHER::text, U_BURSAR::text, U_HEAD_M::text] LOOP
+      PERFORM _as(got::uuid);
+      PERFORM _assert(_actors_63(I) = '', format('db/63 (actors): %s is given the authors: %s', got, _actors_63(I)));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'directorofsport', 'ticket 6367: who typed this') s;
+    S_ID := r.id;
+    got := _actors_63(I);
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(got = '', format('db/63 (actors): a support session as the director of sport is given %s', got));
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    got := _actors_63(I);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(got = '', format('db/63 (actors): a pad''s credential is given %s', got));
 
     -- (support) a support session as the director of sport reads and signs nothing
     PERFORM _as(U_PLAT);

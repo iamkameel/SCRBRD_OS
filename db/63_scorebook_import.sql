@@ -1254,7 +1254,7 @@ BEGIN
   RETURN true;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- ── 9a · The names on a card, for whoever checks it (§9.4) ─────────
+-- ── 9a · The names on a card and on its history, for whoever checks it (§9.4)
 -- The display name of each of the school's own boys the import's card names,
 -- for a caller who may read the import (scorebook_may('scoring.import.read'):
 -- the typist and the confirmer, as themselves; never a support session or a
@@ -1278,6 +1278,34 @@ BEGIN
       FROM scorebook_card_refs(i.card) x(ref)
       JOIN player p ON p.id = public_ref_uuid(x.ref) AND p.school_id = i.school_id
      ORDER BY p.id;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Who wrote each revision, by name, under the same rule: only to a caller
+-- who may read the import, with the module on. Staff names only: the actors
+-- are the adults who typed, returned, confirmed or abandoned it. A person who
+-- is also a pupil (a player record of their own, or a live player or
+-- selfaccess assignment: a pupil scorer) is left unnamed — the history still
+-- says a revision was theirs by id, and a pupil's name is not sent to a
+-- league's administrator for the sake of a history line.
+CREATE OR REPLACE FUNCTION scorebook_import_actors(p_import uuid)
+RETURNS TABLE (actor_id uuid, name text) AS $$
+DECLARE i scorebook_import%ROWTYPE;
+BEGIN
+  SELECT * INTO i FROM scorebook_import x WHERE x.id = p_import;
+  IF NOT FOUND OR NOT scorebook_may('scoring.import.read', i.match_id)
+     OR NOT coalesce(feature_enabled('scorebook_import', i.school_id, app_user_id()), false) THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT DISTINCT u.id, u.name
+      FROM scorebook_import_revision r
+      JOIN app_user u ON u.id = r.actor_id
+     WHERE r.import_id = p_import
+       AND u.player_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM role_assignment ra
+                        WHERE ra.person_id = u.id AND ra.role IN ('player', 'selfaccess') AND ra.active
+                          AND (ra.valid_until IS NULL OR ra.valid_until > current_date))
+     ORDER BY u.id;
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- ── 10 · The two readers the commit and the score rely on (§2.4) ────
@@ -1435,6 +1463,7 @@ DECLARE f text; r text;
   app text[] := ARRAY[
     'scorebook_import_open(uuid)', 'scorebook_import_page_add(uuid,text,text,integer,integer,integer,text)',
     'scorebook_import_page_remove(uuid,integer)', 'scorebook_caller_may(uuid)', 'scorebook_import_names(uuid)',
+    'scorebook_import_actors(uuid)',
     'scorebook_import_save(uuid,jsonb,jsonb,jsonb,integer)', 'scorebook_import_submit(uuid,integer)',
     'scorebook_import_return(uuid,text)', 'scorebook_import_commit(uuid,uuid[],boolean,text)',
     'scorebook_import_abandon(uuid)', 'scorebook_page_open(uuid,integer)',

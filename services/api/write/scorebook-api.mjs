@@ -211,6 +211,9 @@ export function scorebookRoutes({ pool, secret, store }) {
     //   card names, given only to a caller who may read the import
     //   (scorebook_import_names(): a confirmer outside the school, who cannot
     //   read its roster, checks them against the photo); {} to anybody else.
+    //   Each revision carries actorName beside actorId under the same rule
+    //   (scorebook_import_actors(): staff only — null for a pupil scorer, and
+    //   for a caller who may only audit the card).
     get: handle(async (req) => as(req.headers?.authorization, async (c) => {
       const i = await readImport(c, req.params.id);
       await moduleOn(c, i.school_id);
@@ -222,6 +225,8 @@ export function scorebookRoutes({ pool, secret, store }) {
       const { rows: revisions } = await c.query(
         `select version, action, note, actor_id, at from scorebook_import_revision where import_id = $1 order by version`, [i.id]);
       const { rows: named } = await c.query(`select player_id, name from scorebook_import_names($1)`, [i.id]);
+      const actors = new Map((await c.query(`select actor_id, name from scorebook_import_actors($1)`, [i.id]))
+        .rows.map((/** @type {any} */ a) => [a.actor_id, a.name]));
       const m = await readMatch(c, i.match_id);
       const ctx = { typed: i.typed, ours: m ? oursOf(m) : null };
       return {
@@ -231,7 +236,8 @@ export function scorebookRoutes({ pool, secret, store }) {
         pages: pages.map((/** @type {any} */ p) => ({ pageNo: p.page_no, mime: p.mime, bytes: p.bytes, width: p.width, height: p.height,
                                    sha256: p.sha256, addedBy: p.added_by, addedAt: p.added_at,
                                    removedAt: p.removed_at, removedBy: p.removed_by, deletedAt: p.deleted_at })),
-        revisions: revisions.map((/** @type {any} */ r) => ({ version: r.version, action: r.action, note: r.note, actorId: r.actor_id, at: r.at })),
+        revisions: revisions.map((/** @type {any} */ r) => ({ version: r.version, action: r.action, note: r.note, actorId: r.actor_id,
+                                                            actorName: actors.get(r.actor_id) ?? null, at: r.at })),
         innings: await inningsState(c, i.match_id),
         refusals: (Array.isArray(i.card) ? i.card : []).map((/** @type {unknown} */ card) => summaryRefusal(card, ctx)),
         unchecked: uncheckedCells(i.card, checked),

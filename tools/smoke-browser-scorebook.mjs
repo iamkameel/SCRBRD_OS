@@ -32,7 +32,8 @@
  *   F  A PERSON WHO WORKED ON THE CARD (the owner's key holds both halves)
  *      is told why she cannot confirm, not given a dead button.
  *   F2 A LEAGUE'S FIXTURE: its administrator, who reads no roster of the
- *      school's, is told the card's boys' names by the import.
+ *      school's, is told the card's boys' names by the import, and who wrote
+ *      each line of its history.
  *   G  Nothing under 12px, nothing pressed under 44px, no sideways scroll at
  *      390 wide, in Daylight too; no console error, no browser dialog.
  *
@@ -569,6 +570,10 @@ try {
   const readL = await said(k, "sb-read-0");
   ok("the card names the school's boys to him, though he reads no roster of theirs", readL.includes(names[P[0]]) && readL.includes(names[P[5]]) && !/name not shown/.test(readL), readL.slice(0, 300));
   ok("he may decide it: Confirm and Return are offered", (await tid(k, "sb-confirm-go").count()) === 1 && (await tid(k, "sb-return-go").count()) === 1);
+  const scorerName = (await dbq(`select name from app_user where email = 'scorer@example.invalid'`))[0].name;
+  await k.locator('[data-testid="sb-history"] summary').click();
+  ok("the history says who did each thing, by name", (await said(k, "sb-history-1")).startsWith(`Opened by ${scorerName},`)
+     && (await said(k, "sb-history-3")).startsWith(`Submitted by ${scorerName},`), await said(k, "sb-history"));
   ok("no console errors (league)", lg.errors.length === 0, lg.errors.join(" | "));
   await lg.ctx.close().catch(() => {});
 

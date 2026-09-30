@@ -779,7 +779,11 @@ export function ScorebookImportView({ importId, match, onClose }) {
         <details style={{ ...S.card, marginTop: T.space.lg }} data-testid="sb-history">
           <summary style={{ ...S.h4, cursor: "pointer", minHeight: "44px", display: "flex", alignItems: "center" }}>History of this import</summary>
           <ol style={{ margin: 0, paddingLeft: "20px", display: "flex", flexDirection: "column", gap: T.space.xs }}>
-            {d.revisions.map((r) => <li key={r.version} style={S.body}>{REVISION_WORDS[r.action] ?? r.action}, {formatWhen(r.at)}{r.note ? `: ${r.note}` : ""}</li>)}
+            {d.revisions.map((r) => (
+              <li key={r.version} style={S.body} data-testid={`sb-history-${r.version}`}>
+                {REVISION_WORDS[r.action] ?? r.action}{r.actorName ? ` by ${r.actorName}` : ""}, {formatWhen(r.at)}{r.note ? `: ${r.note}` : ""}
+              </li>
+            ))}
           </ol>
         </details>
       )}

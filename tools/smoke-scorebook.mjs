@@ -187,7 +187,8 @@ try {
   ok("signed out: nothing", (await api(`/api/scorebook/${I}/pages/1`)).status >= 400);
   { const hg = await api(`/api/scorebook/${I}`, { token: head });
     ok("the principal reads the card and its history (audit.read), and is given no name by the import",
-       hg.status === 200 && Object.keys(hg.body?.names ?? { x: 1 }).length === 0, JSON.stringify(hg.body?.names)); }
+       hg.status === 200 && Object.keys(hg.body?.names ?? { x: 1 }).length === 0, JSON.stringify(hg.body?.names));
+    ok("...nor the name of anybody in its history", hg.body?.revisions?.length > 0 && hg.body.revisions.every((r) => r.actorId && r.actorName === null)); }
   for (const [who, t] of [["a parent", parent], ["a pupil", pupil], ["another school's coach", wes]]) {
     ok(`${who} reads no import`, (await api(`/api/scorebook/${I}`, { token: t })).status === 403);
   }
@@ -464,6 +465,10 @@ try {
      && cardIds.every((id) => lget.body.names[id] === realNames[id]), JSON.stringify(lget.body?.names));
   ok("...a name and nothing else", Object.values(lget.body?.names ?? {}).every((v) => typeof v === "string"));
   ok("another school's coach reads no import, so no name", (await api(`/api/scorebook/${L}`, { token: wes })).status === 403);
+  const [scorerName] = await q(`select name from app_user where id = '88888888-0000-0000-0000-000000000006'`);
+  ok("...and the history names who wrote each revision (§9.4 4)",
+     lget.body?.revisions?.length >= 3 && lget.body.revisions.every((r) => r.actorId === "88888888-0000-0000-0000-000000000006" && r.actorName === scorerName.name),
+     JSON.stringify(lget.body?.revisions));
   ok("the director of sport is not told she may confirm a league's fixture, and the league's administrator is",
      (await api(`/api/matches/${ML}/scorebook`, { token: sarah })).body?.may?.confirm === false
      && (await api(`/api/matches/${ML}/scorebook`, { token: league })).body?.may?.confirm === true);
