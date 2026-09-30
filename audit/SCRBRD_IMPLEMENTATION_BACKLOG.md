@@ -3923,6 +3923,7 @@ similar algorithm")
    `phases.mjs` refuses; the phases' "par = the other side in the same phase" stays.
 Fable designs (SCRBRD-114 territory: conditions, results, the fold); Opus builds; Sonnet the screens. Sits beside
 SCRBRD-114 phase 3 (db/69–71).
+**Designed 2026-09-30:** `docs/design/SCRBRD-130_rain_and_par.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D14 as recommended** — umpires' figure is the record; `target.method` umpires_revision | dls_standard (no average run rate); table in the database only, from Kameel's source; G50 a cited condition; venue par floor 5, window this season + two, rain-shortened excluded. Phases R1 db/72, R3 db/74, R2 db/73 when the table arrives.
 
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,

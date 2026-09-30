@@ -267,6 +267,8 @@ JS tests beside them: `replay.test.mjs` (interruptions, par, words), `laws.test.
 
 ## 8 · Decisions for Kameel
 
+**Decided (Kameel, 2026-09-30): D1–D14 as recommended.** Order: R1 interruptions (db/72, after phase 3a), R3 venue par (db/74), R2 the DLS table and calculator (db/73) once Kameel supplies the official Standard Edition document and permission is confirmed; Opus checks the formulas against it before R2.
+
 Each with the recommendation the body assumes and one line of why.
 
 | # | decision | recommendation |
