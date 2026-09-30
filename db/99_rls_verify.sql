@@ -1780,7 +1780,7 @@ CREATE OR REPLACE FUNCTION _seed_67() RETURNS jsonb AS $$
 DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
   WES uuid := '22222222-2222-2222-2222-222222222222';
-  c uuid; eh uuid; ew uuid; f uuid; p uuid;
+  c uuid; eh uuid; ew uuid; f uuid; p uuid; hc uuid; hs uuid;
 BEGIN
   INSERT INTO competition (school_id, name, comp_type, format, age_group, gender, level)
   VALUES (NULL, 'Verify 067 League', 'league', 'T20', '1XI', 'boys', 'school') RETURNING id INTO c;
@@ -1788,11 +1788,31 @@ BEGIN
   INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, WES, '1XI', 'Westville 1st XI') RETURNING id INTO ew;
   INSERT INTO ground (school_id, name) VALUES (HIL, 'Verify 067 Field') RETURNING id INTO f;
   INSERT INTO ground (school_id, name) VALUES (HIL, 'Verify 067 Pitch') RETURNING id INTO p;
-  RETURN jsonb_build_object('comp', c, 'eh', eh, 'ew', ew, 'field', f, 'pitch', p);
+  -- A competition administrator appointed at Westville (Westville's leagues).
+  INSERT INTO app_user (id, school_id, email, name, role)
+  VALUES ('88888888-0000-0000-0000-0000000067c0', WES, 'verify067.wesleague@example.invalid', 'Verify 067 Westville League Admin', 'competitionadmin')
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  SELECT '88888888-0000-0000-0000-0000000067c0', 'competitionadmin', WES, NULL
+   WHERE NOT EXISTS (SELECT 1 FROM role_assignment WHERE person_id = '88888888-0000-0000-0000-0000000067c0');
+  -- A cup Hilton organises for its own sides, with a version in force today
+  -- carrying one cited figure: a source Westville's administrator cannot read.
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 067 Hilton Cup', 'knockout', 'T20', 'school') RETURNING id INTO hc;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (hc, HIL, 'U15A', 'Hilton U15A');
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by)
+  VALUES (hc, 1, 'Verify 067 Cup conditions', sa_today() - 10, '88888888-0000-0000-0000-000000000022') RETURNING id INTO hs;
+  INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by)
+  VALUES (hs, 'points.win', '3', 'confirmed', 'Verify 067 Cup Rules', '4.2', sa_today() - 20, '88888888-0000-0000-0000-000000000022');
+  UPDATE condition_set SET status = 'published', published_by = created_by, published_at = now() WHERE id = hs;
+  RETURN jsonb_build_object('comp', c, 'eh', eh, 'ew', ew, 'field', f, 'pitch', p, 'hcup', hc);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Past RLS: a competition's matches and items, as "matches/items".
 CREATE OR REPLACE FUNCTION _made_67(p_comp uuid) RETURNS text AS $$
   SELECT (SELECT count(*) FROM match WHERE competition_id = p_comp) || '/' || (SELECT count(*) FROM fixture_plan_item WHERE competition_id = p_comp)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: an entrant's status.
+CREATE OR REPLACE FUNCTION _status_67(p_entrant uuid) RETURNS text AS $$
+  SELECT status FROM competition_entrant WHERE id = p_entrant
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Past RLS: whether any match at all has this opponent label (a refused
 -- insert must leave none).
@@ -9534,6 +9554,12 @@ BEGIN
   --   (twice)   fixture_plan_item without its primary key
   --   (half)    fixture_plan_item_record() without the competition check
   --   (frozen)  fixture_plan_recompute() without the draft check
+  -- and for making a league (§8a–8c):
+  --   (create)  competition_create() without the competition.manage check
+  --   (accept)  competition_entrant_acceptor() without "not the manager"
+  --   (columns) competition_entrant's UPDATE granted back whole
+  --   (entered) match_competition_entered() without the accepted status
+  --   (copy)    condition_set_start() without the source's visibility check
   DECLARE
     ids   jsonb := _seed_67();
     C     uuid := (ids->>'comp')::uuid;
@@ -9554,6 +9580,8 @@ BEGIN
     n     integer;
     who   uuid;
     U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    U_WESLG uuid := '88888888-0000-0000-0000-0000000067c0';  -- competitionadmin at Westville (_seed_67)
+    NC    uuid; NH1 uuid; NW1 uuid; NW2 uuid;
   BEGIN
     KEY  := 'rr:' || least(EH::text, EW::text) || ':' || greatest(EH::text, EW::text) || ':1';
     KEY2 := 'rr:' || least(EH::text, EW::text) || ':' || greatest(EH::text, EW::text) || ':2';
@@ -9763,6 +9791,112 @@ BEGIN
     PERFORM _assert((SELECT count(*) FROM fixture_plan WHERE competition_id = C) = 2 AND NOT EXISTS (SELECT 1 FROM fixture_plan WHERE id = P3),
       'db/67: Hilton reads other than the two published versions');
     PERFORM _assert((SELECT count(*) FROM fixture_plan_item WHERE competition_id = C) = 1, 'db/67: Hilton does not read the published plan''s item');
+
+    -- ── Making a league (db/67 §8a–8c) ──
+    -- (create) competition.manage at the organiser, and nobody else: Hilton's
+    -- director of sport creates none; Westville's competition administrator
+    -- creates Westville's and not Hilton's or a league with no organiser —
+    -- and manages what he created, with no new role.
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM competition_create(NULL, 'Verify 067 Sarah League', 'league', 'T20', NULL, NULL, NULL, NULL);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/67 (create): Hilton''s director of sport created a league (%s)', r.reason));
+    SELECT * INTO r FROM competition_create(HIL, 'Verify 067 Sarah League', 'league', 'T20', NULL, NULL, NULL, NULL);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/67 (create): Hilton''s director of sport created Hilton''s league (%s)', r.reason));
+    PERFORM _as(U_WESLG);
+    SELECT * INTO r FROM competition_create(HIL, 'Verify 067 Hilton League', 'league', 'T20', NULL, NULL, NULL, NULL);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/67 (create): Westville''s administrator created Hilton''s league (%s)', r.reason));
+    SELECT * INTO r FROM competition_create(NULL, 'Verify 067 Open League', 'league', 'T20', NULL, NULL, NULL, NULL);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/67 (create): Westville''s administrator created a league with no organiser (%s)', r.reason));
+    SELECT * INTO r FROM competition_create(WES, 'Verify 067 Westville League', 'league', 'T20', '1XI', 'boys', 'school', NULL);
+    PERFORM _assert(r.ok, format('db/67: Westville''s administrator could not create Westville''s league (%s)', r.reason));
+    NC := r.competition_id;
+    PERFORM _assert(competition_conditions_manager(NC), 'db/67: the creator does not manage what he created');
+    SELECT * INTO r FROM competition_create(WES, 'Verify 067 Westville League', 'league', 'T20', NULL, NULL, NULL, '1999');
+    PERFORM _assert(NOT r.ok AND r.reason = 'season_unknown', format('db/67: an unknown season was taken (%s)', r.reason));
+
+    -- (accept) Invited by the league; answered by each school for its own
+    -- side, never by the league's managers (the Westville administrator holds
+    -- fixture.update at Westville; the platform-wide one everywhere).
+    SELECT * INTO r FROM competition_entrant_invite(NC, HIL, '1XI', NULL);
+    NH1 := r.entrant_id;
+    SELECT * INTO r FROM competition_entrant_invite(NC, WES, '1XI', NULL);
+    NW1 := r.entrant_id;
+    SELECT * INTO r FROM competition_entrant_invite(NC, WES, '2XI', NULL);
+    NW2 := r.entrant_id;
+    PERFORM _assert(r.ok AND r.status = 'invited' AND _status_67(NH1) = 'invited', format('db/67: the invitations were not made (%s)', r.reason));
+    FOREACH who IN ARRAY ARRAY[U_WESLG, U_LEAGUE] LOOP
+      PERFORM _as(who);
+      SELECT * INTO r FROM competition_entrant_respond(NW1, true);
+      PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/67 (accept): the league''s manager %s accepted for Westville (%s)', who, r.reason));
+    END LOOP;
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM competition_entrant_respond(NW1, true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/67 (accept): Hilton accepted for Westville (%s)', r.reason));
+    SELECT * INTO r FROM competition_entrant_invite(NC, HIL, '2XI', NULL);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/67: Hilton invited itself (%s)', r.reason));
+    SELECT * INTO r FROM competition_entrant_respond(NH1, true);
+    PERFORM _assert(r.ok AND r.status = 'accepted', format('db/67: Hilton could not accept for its own side (%s)', r.reason));
+    PERFORM _as(U_WES_ADM);
+    SELECT * INTO r FROM competition_entrant_respond(NW1, true);
+    PERFORM _assert(r.ok, format('db/67: Westville could not accept (%s)', r.reason));
+    SELECT * INTO r FROM competition_entrant_respond(NW2, false);
+    PERFORM _assert(r.ok AND _status_67(NW2) = 'declined', format('db/67: Westville could not decline (%s)', r.reason));
+    SELECT * INTO r FROM competition_entrant_respond(NW2, true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_invited', format('db/67: a declined side was accepted after (%s)', r.reason));
+
+    -- (columns) Nobody writes an entrant's status, or enters a side, but
+    -- through those functions: not the league's manager, not the school.
+    FOREACH who IN ARRAY ARRAY[U_WESLG, U_WES_ADM] LOOP
+      PERFORM _as(who);
+      BEGIN
+        UPDATE competition_entrant SET status = 'accepted' WHERE id = NW2;
+        PERFORM _assert(false, format('db/67 (columns): %s wrote an entrant''s status', who));
+      EXCEPTION WHEN insufficient_privilege THEN NULL;
+      END;
+      BEGIN
+        INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, status) VALUES (NC, WES, '3XI', 'Westville 3rd XI', 'accepted');
+        PERFORM _assert(false, format('db/67 (columns): %s entered a side directly', who));
+      EXCEPTION WHEN insufficient_privilege THEN NULL;
+      END;
+    END LOOP;
+    PERFORM _assert(_status_67(NW2) = 'declined', 'db/67 (columns): the declined side is no longer declined');
+
+    -- (entered) A side that declined has no fixture in the competition; the
+    -- planner draws the two that accepted.
+    PERFORM _as(U_WESLG);
+    BEGIN
+      INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+      VALUES (WES, '2XI', 'Verify 067 declined', T0 + interval '3 days', 'cricket', 'T20', 20, 'scheduled', NC);
+      PERFORM _assert(false, 'db/67 (entered): the side that declined was given a fixture in the league');
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    PERFORM _assert(NOT _any_match_67('Verify 067 declined'), 'db/67 (entered): a refused fixture left a match');
+    v_in := planner_inputs(NC, D, D);
+    PERFORM _assert((SELECT string_agg(e->>'id', ',' ORDER BY e->>'id') FROM jsonb_array_elements(v_in->'entrants') e)
+                    = (SELECT string_agg(x::text, ',' ORDER BY x::text) FROM unnest(ARRAY[NH1, NW1]) x),
+      format('db/67 (entered): the planner draws %s', v_in->'entrants'));
+
+    -- (copy) Conditions from a competition the caller cannot read are refused
+    -- in the same words as none at all; from the platform's defaults they
+    -- are unconfirmed, each saying where from. The platform-wide league
+    -- administrator, who may read the Hilton cup, copies its cited figure.
+    SELECT * INTO r FROM condition_set_start(NC, 'competition', (ids->>'hcup')::uuid, NULL, NULL);
+    PERFORM _assert(NOT r.ok AND r.reason = 'source_invalid', format('db/67 (copy): Westville copied a competition it cannot read (%s)', r.reason));
+    SELECT * INTO r FROM condition_set_start(NC, 'competition', gen_random_uuid(), NULL, NULL);
+    PERFORM _assert(NOT r.ok AND r.reason = 'source_invalid', format('db/67: a competition that is not there was answered otherwise (%s)', r.reason));
+    SELECT * INTO r FROM condition_set_start(NC, 'defaults', NULL, NULL, NULL);
+    PERFORM _assert(r.ok AND r.version = 1 AND r.entered > 5, format('db/67: the defaults were not entered (%s)', r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM condition_value v WHERE v.set_id = r.set_id AND (v.status <> 'unconfirmed' OR v.source_note IS NULL))
+                    AND (SELECT v.value FROM condition_value v WHERE v.set_id = r.set_id AND v.key = 'bowling.limit' AND v.age_band = 'U13') = '{"day": 10, "spell": 5}',
+      'db/67: the defaults are not unconfirmed with their source, or the U13 limit is not the directive''s');
+    SELECT * INTO r FROM condition_set_start(NC, 'defaults', NULL, NULL, NULL);
+    PERFORM _assert(NOT r.ok AND r.reason = 'already_started', format('db/67: conditions were started twice (%s)', r.reason));
+    PERFORM _as(U_LEAGUE);
+    SELECT * INTO r FROM competition_create(NULL, 'Verify 067 Copy League', 'league', 'T20', NULL, NULL, NULL, NULL);
+    SELECT * INTO r FROM condition_set_start(r.competition_id, 'competition', (ids->>'hcup')::uuid, NULL, NULL);
+    PERFORM _assert(r.ok AND r.entered = 1, format('db/67: the league could not copy the Hilton cup (%s)', r.reason));
+    PERFORM _assert((SELECT v.status || '|' || v.source_document || '|' || v.source_clause FROM condition_value v WHERE v.set_id = r.set_id)
+                    = 'confirmed|Verify 067 Cup Rules|4.2', 'db/67 (copy): the cited figure was not copied with its citation');
   END;
 
   PERFORM set_config('app.user_id', '', true);
