@@ -95,7 +95,10 @@ group("D. Try again resets it");
 group("E. The test hook is inert here");
 {
   const src = readFileSync(new URL("../src/ui/ErrorBoundary.jsx", import.meta.url), "utf8");
-  ok("it is gated on a build-time flag, compared to the string \"1\"", /VITE_SCRBRD_TEST_HOOKS\s*===\s*"1"/.test(src));
+  ok("it is gated on a build-time constant, read through typeof so node is safe", /typeof __SCRBRD_TEST_HOOKS__ !== "undefined" && __SCRBRD_TEST_HOOKS__/.test(src));
+  const vite = readFileSync(new URL("../vite.config.js", import.meta.url), "utf8");
+  ok("...which vite.config.js defines true only for SCRBRD_TEST_HOOKS=1, and false otherwise",
+     /__SCRBRD_TEST_HOOKS__:\s*JSON\.stringify\(process\.env\.SCRBRD_TEST_HOOKS === "1"\)/.test(vite));
   const b = mount({ name: "scorecard", children: h("p", null, "x") });
   globalThis.window = { __SCRBRD_TEST_THROW__: "scorecard" };
   let out;
