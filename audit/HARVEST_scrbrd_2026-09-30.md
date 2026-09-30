@@ -241,7 +241,7 @@ The inventory above over-counts. Checked against the code, most of its "not in O
 | **Availability reconfirmation** (each answer keeps the fixture's time, venue, format and overs; a change asks again) | **Take: SCRBRD-122.** OS keeps the answer only, so a moved fixture keeps a stale "available". |
 | **League and knockout planner** (`competition-planner.ts`: round robin, double, seeded knockout with byes; placing into windows under blackouts, rest, travel, a daily cap and closures; locks survive regeneration; unscheduled with reasons) | **Take the idea: SCRBRD-123.** OS has competitions and entrants but no generator. Rewrite readably, with tests; do not copy the one-line code. |
 | Ground reservations and closures flowing to fixtures | **Later.** Worth it after 122 and 123. |
-| Parent lift clubs | **Skip.** A safeguarding exposure under the CSA policy; the source itself awaits school policy approval. OS trips (vehicle, driver, clearance) are the safer model. |
+| Parent lift clubs | **Take, carefully: SCRBRD-124** (Kameel, 2026-09-30, overruling my first "skip"). Useful to families; the safeguarding exposure is designed out by the seven rules in the backlog item, with a Fable design pass first. |
 | Skills rubric catalogue | **Nothing new.** It is OS's draft rubric (same scale and gate) in JSON. |
 | Liquid-glass styling, almanac, workspace navigation | **Skip.** OS has its design system and season history. |
 | D1/SQLite with access in application code | **Skip.** The source's own ledger lists the PostgreSQL/RLS move as a blocker. |

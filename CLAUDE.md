@@ -22,7 +22,10 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   the fold, the Laws check and SQL) and the scorebook importer (added
   2026-09-30: a photo of a paper scorebook read by OCR, checked by a person,
   imported as match events marked with their source; who may import, and
-  how photos of children's names are kept). A new problem joins this list
+  how photos of children's names are kept) and parent lift clubs (added
+  2026-09-30, SCRBRD-124: parents driving other families' children to
+  fixtures; consent per child and per lift, who may drive, what is shared,
+  handovers, and the route to the DSO). A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write

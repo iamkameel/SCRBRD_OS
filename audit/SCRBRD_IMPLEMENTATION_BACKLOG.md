@@ -4238,6 +4238,24 @@ Publishing creates fixtures through the existing fixture route, with `match.comp
 Schools approving their own fixtures and cross-school calendars are a later phase. Opus for the algorithm (plain JS in
 `packages/`, with tests) and the publish path; Sonnet for the draft screen.
 
+### SCRBRD-124 — Parent lift clubs: families offering each other lifts to fixtures
+**Priority:** P2 · **Domain:** Transport / Families / Safeguarding · **Type:** Fable design, then build after SCRBRD-122 and
+SCRBRD-123 (Kameel, 2026-09-30: "a feature I still believe in … I've used parent lift clubs like this")
+From the second harvest (`iamkameel/scrbrd` PR #2 has opt-in offers, mutual acceptance and handovers, and still awaits
+school policy approval). Parents arrange lifts with each other; the school facilitates and does not operate them. The
+rules the design must hold, as agreed with Kameel:
+1. **Consent per child, per lift.** A boy rides only when his own guardian has accepted that driver for that lift. Nothing
+   carries over automatically.
+2. **Only known adults drive.** The driver is a linked guardian at the school who declares a licence; the school may require
+   the clearance it already asks of other adults (db/56).
+3. **Least shared.** Passengers' names go only to the driver and the accepting guardians; pickup at a named point (the gate,
+   the ground), never a home address; no location tracking.
+4. **Adults talk to adults.** Arrangements are between guardians; no adult messages a child.
+5. **Handover confirmed.** The driver marks each drop-off; the receiving guardian acknowledges; a missed handover alerts both.
+6. **A route to the DSO.** Any concern about a lift raises through `safeguarding_concern_raise()` (db/57).
+7. **The school decides.** A module off by default; the principal switches it on with the school's own lift policy.
+Fable designs (on its list since 2026-09-30); Opus builds the schema, policy and RLS; Sonnet the screens.
+
 ### SCRBRD-121 — News: a second person approves a post before it reaches pupils
 **Priority:** P3 · **Domain:** Communications · **Type:** small build (Kameel, 2026-09-30)
 From the harvest. News today scopes by anchor and publishes at `published_at` (db/12). This adds a draft, then approval, then
