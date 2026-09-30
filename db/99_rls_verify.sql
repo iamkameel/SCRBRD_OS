@@ -1692,6 +1692,45 @@ CREATE OR REPLACE FUNCTION _typed_players_64() RETURNS bigint AS $$
   SELECT count(*) FROM player WHERE full_name LIKE 'Opp %'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/65 (section 43). Two Hilton 1XI fixtures at Gordon Sherwood Oval, T20
+-- of 20 overs: one ten days ahead (on the hour), one three days past.
+CREATE OR REPLACE FUNCTION _seed_65() RETURNS jsonb AS $$
+DECLARE m uuid; mp uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify 065', date_trunc('hour', now()) + interval '10 days',
+          'cricket', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001')
+  RETURNING id INTO m;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify 065 past', date_trunc('hour', now()) - interval '3 days',
+          'cricket', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001')
+  RETURNING id INTO mp;
+  RETURN jsonb_build_object('m', m, 'past', mp);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: every ask-again notice about a fixture, as recipient/player/kind,
+-- sorted; and how many there are.
+CREATE OR REPLACE FUNCTION _notices_65(p_match uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(n.recipient_id || '/' || n.subject_person_id || '/' || n.kind, ' '
+                             ORDER BY n.recipient_id || '/' || n.subject_person_id || '/' || n.kind), '')
+    FROM notification n WHERE n.subject_id = p_match AND n.required_capability = 'availability.read'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _notice_count_65(p_match uuid) RETURNS bigint AS $$
+  SELECT count(*) FROM notification n WHERE n.subject_id = p_match AND n.required_capability = 'availability.read'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Whether a person's newest guardian link to a child is live today, past RLS.
+CREATE OR REPLACE FUNCTION _link_live_65(p_player uuid, p_person uuid) RETURNS boolean AS $$
+  SELECT coalesce(bool_or(s.verification_state = 'verified' AND a.active
+                          AND (s.valid_until IS NULL OR s.valid_until > current_date)), false)
+    FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+   WHERE s.player_id = p_player AND a.person_id = p_person
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Each answer the CALLER can read for a fixture, as the last digit of the
+-- boy's id and its effective status. Not a definer.
+CREATE OR REPLACE FUNCTION _eff_65(p_match uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(right(a.player_id::text, 1) || '=' || availability_effective(a, m), ' ' ORDER BY a.player_id), '')
+    FROM match_availability a JOIN match m ON m.id = a.match_id WHERE a.match_id = p_match
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -8975,6 +9014,214 @@ BEGIN
       SELECT count(*) INTO n FROM (SELECT 1 FROM _career_season_drift() UNION ALL SELECT 1 FROM _career_lifetime_drift()) d;
       PERFORM _assert(n = 0, format('db/64 (same), after the voids, as %s: %s career figure(s) differ', who, n));
     END LOOP;
+  END;
+
+  -- ── 43. Availability asks again when the fixture changes (SCRBRD-122, db/65) ──
+  -- Each answer carries the fixture as it stood when it was given; a change
+  -- to its time, ground, format or overs makes the answer read
+  -- needs_reconfirming (not its status), keeps the old answer readable, and
+  -- asks whoever gave it and the boy's live guardians to answer again. A
+  -- change to anything else (the opponent's name) does none of that, and a
+  -- re-declaration clears it. Four families: Whitfield (P1) answered by his
+  -- guardian, Bekker (P2) by his, Cele (P4) by the director of sport, and
+  -- R Pillay (P5) by himself. tools/smoke-availability.mjs holds the API's
+  -- readers (availability, readiness) to the same rule.
+  --
+  -- Each labelled assertion was falsified once — the thing it guards broken
+  -- in db/65, the database rebuilt and this file run — and went red:
+  --   (stamp)     availability_stamp_fixture() fired BEFORE INSERT only (a
+  --               re-declaration kept the old snapshot: (redeclare) went red),
+  --               and stamping only a snapshot the caller left empty (the
+  --               supplied one stood)
+  --   (opponent)  availability_ask_again() on every update of the fixture,
+  --               asking about every answer (the rename asked five people)
+  --   (move)      availability_effective() returning the status as given
+  --   (ground)    availability_fixture_moved() without the ground
+  --   (notice)    availability_ask_again() without its guardians (Cele's
+  --               guardian was not asked), and without its live-link test
+  --               (R Pillay's parent, whose link the expiry check above ended,
+  --               was asked)
+  --   (reach)     the notice without its recipient_id: (notice) first; with
+  --               (notice) set aside, the director of sport read every
+  --               family's notice
+  --   (history)   availability_keep_history() dropped
+  --   (rls)       the history's person anchor dropped (Bekker's guardian read
+  --               Whitfield's earlier answer)
+  --   (write)     the history granted to the application
+  --   (past)      availability_ask_again() without its future-only test
+  DECLARE
+    ids     jsonb := _seed_65();
+    M       uuid;
+    MP      uuid;
+    U_WHIT  uuid := '88888888-0000-0000-0000-000000000010';   -- guardian of J Whitfield (P1)
+    U_BEKK  uuid := '88888888-0000-0000-0000-000000000011';   -- guardian of T Bekker (P2)
+    U_CELE  uuid := '88888888-0000-0000-0000-000000000013';   -- guardian of P4
+    P1      uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+    P2      uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
+    P4      uuid := 'aaaaaaaa-0000-0000-0000-000000000004';
+    GROUND  uuid := 'ffffffff-0000-0000-0000-000000000001';   -- Gordon Sherwood Oval
+    v_start timestamptz;
+    got     text;
+    want    text;
+    k       bigint;
+    who     uuid;
+    r       record;
+  BEGIN
+    M := (ids->>'m')::uuid; MP := (ids->>'past')::uuid;
+    SELECT starts_at INTO v_start FROM match WHERE id = M;
+
+    -- The four answers, each by the person who gives it.
+    PERFORM _as(U_WHIT);
+    -- A snapshot in the request is not the caller's to give.
+    INSERT INTO match_availability (match_id, player_id, school_id, status, declared_by,
+                                    fixture_starts_at, fixture_ground_id, fixture_format, fixture_overs)
+    VALUES (M, P1, HIL, 'available', U_WHIT, '2000-01-01', NULL, 'Test', 90);
+    PERFORM _as(U_BEKK);
+    INSERT INTO match_availability (match_id, player_id, school_id, status, reason_kind, declared_by)
+    VALUES (M, P2, HIL, 'unavailable', 'family', U_BEKK);
+    PERFORM _as(U_SARAH);
+    INSERT INTO match_availability (match_id, player_id, school_id, status, reason_kind, declared_by)
+    VALUES (M, P4, HIL, 'doubtful', 'academic', U_SARAH);
+    PERFORM _as(U_SELF);
+    INSERT INTO match_availability (match_id, player_id, school_id, status, declared_by)
+    VALUES (M, P_INJURED, HIL, 'available', U_SELF);
+
+    -- (stamp) every answer carries the fixture as it stands, whatever was sent
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(format('%s:%s', right(a.player_id::text, 1),
+                             (a.fixture_starts_at, a.fixture_ground_id, a.fixture_format, a.fixture_overs)
+                               IS NOT DISTINCT FROM (f.starts_at, f.ground_id, f.format, f.overs)), ' ' ORDER BY a.player_id)
+      INTO got FROM match_availability a JOIN match f ON f.id = a.match_id WHERE a.match_id = M;
+    PERFORM _assert(got = '1:t 2:t 4:t 5:t',
+      format('db/65 (stamp): the answers'' snapshots against the fixture read %s', got));
+    PERFORM _assert(_eff_65(M) = '1=available 2=unavailable 4=doubtful 5=available',
+      format('db/65: before any change the answers read %s', _eff_65(M)));
+
+    -- (opponent) a change to what is not in the snapshot asks nobody anything
+    UPDATE match SET opponent = 'Verify 065 Renamed' WHERE id = M;
+    GET DIAGNOSTICS k = ROW_COUNT;
+    PERFORM _assert(k = 1, 'db/65: the director of sport could not rename the opposition');
+    PERFORM _assert(_eff_65(M) = '1=available 2=unavailable 4=doubtful 5=available' AND _notice_count_65(M) = 0,
+      format('db/65 (opponent): renaming the opposition made the answers read %s and wrote %s notice(s)',
+             _eff_65(M), _notice_count_65(M)));
+
+    -- (move) the fixture moves a day: every answer asks again, the old one kept
+    UPDATE match SET starts_at = starts_at + interval '1 day' WHERE id = M;
+    PERFORM _assert(_eff_65(M) = '1=needs_reconfirming 2=needs_reconfirming 4=needs_reconfirming 5=needs_reconfirming',
+      format('db/65 (move): after the move the answers read %s', _eff_65(M)));
+    SELECT string_agg(format('%s:%s:%s', right(a.player_id::text, 1), a.status, a.fixture_starts_at = v_start), ' ' ORDER BY a.player_id)
+      INTO got FROM match_availability a WHERE a.match_id = M;
+    PERFORM _assert(got = '1:available:t 2:unavailable:t 4:doubtful:t 5:available:t',
+      format('db/65 (move): the answers as given, and the fixture they were about, read %s', got));
+
+    -- (notice) whoever answered, and the boy's live guardians, once each
+    SELECT string_agg(x, ' ' ORDER BY x) INTO want FROM unnest(ARRAY[
+      U_WHIT || '/' || P1 || '/availability',            -- answered, and his guardian: once
+      U_BEKK || '/' || P2 || '/availability',
+      U_SARAH || '/' || P4 || '/availability',           -- the director of sport, who recorded it
+      U_CELE || '/' || P4 || '/availability',            -- and the boy's guardian, who did not
+      U_SELF || '/' || P_INJURED || '/system']           -- a pupil: the system's own notice (SG-9)
+      || CASE WHEN _link_live_65(P_INJURED, U_PARENT) THEN ARRAY[U_PARENT || '/' || P_INJURED || '/availability'] ELSE '{}'::text[] END) x;
+    PERFORM _assert(_notices_65(M) = want,
+      format('db/65 (notice): the move asked %s; expected %s', _notices_65(M), want));
+
+    -- (reach) each reads his own notice and nobody else's
+    FOR r IN SELECT * FROM (VALUES (U_WHIT, P1), (U_BEKK, P2), (U_SARAH, P4), (U_CELE, P4), (U_SELF, P_INJURED)) v(who, boy) LOOP
+      PERFORM _as(r.who);
+      SELECT string_agg(n.subject_person_id || ':' || (n.body LIKE '%is now%' AND n.body LIKE '%was for%'), ',') INTO got
+        FROM notification n WHERE n.subject_id = M;
+      PERFORM _assert(got = r.boy || ':true', format('db/65 (reach): %s reads %s of the fixture''s notices', r.who, got));
+    END LOOP;
+    FOREACH who IN ARRAY ARRAY[U_WATCHER, U_COACH2, U_NAIDOO] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM notification WHERE subject_id = M;
+      PERFORM _assert(n = 0, format('db/65 (reach): %s reads %s of the fixture''s notices', who, n));
+    END LOOP;
+
+    -- (redeclare) Whitfield's guardian answers again: current, and the old kept
+    PERFORM _as(U_WHIT);
+    INSERT INTO match_availability (match_id, player_id, school_id, status, declared_by, declared_at)
+    VALUES (M, P1, HIL, 'available', U_WHIT, now())
+    ON CONFLICT (match_id, player_id) DO UPDATE
+      SET status = excluded.status, reason_kind = excluded.reason_kind, note = excluded.note,
+          declared_by = excluded.declared_by, declared_at = now();
+    PERFORM _assert(_eff_65(M) = '1=available',
+      format('db/65 (redeclare): after answering again the guardian reads %s', _eff_65(M)));
+    -- (history) the answer it replaced, the fixture it was about, and why
+    SELECT string_agg(format('%s:%s:%s:%s', h.status, h.fixture_starts_at = v_start, h.was_stale, h.superseded_by = U_WHIT), ' ')
+      INTO got FROM match_availability_history h WHERE h.match_id = M;
+    PERFORM _assert(got = 'available:t:t:t',
+      format('db/65 (history): the guardian reads the history %s', got));
+
+    -- (rls) a guardian reads his own child's answers and history, nobody else's
+    SELECT (SELECT count(*) FROM match_availability WHERE match_id = M AND player_id <> P1)
+         + (SELECT count(*) FROM match_availability_history WHERE match_id = M AND player_id <> P1) INTO n;
+    PERFORM _assert(n = 0, format('db/65 (rls): Whitfield''s guardian reads %s row(s) of other boys''', n));
+    PERFORM _as(U_BEKK);
+    INSERT INTO match_availability (match_id, player_id, school_id, status, reason_kind, declared_by)
+    VALUES (M, P2, HIL, 'unavailable', 'family', U_BEKK)
+    ON CONFLICT (match_id, player_id) DO UPDATE
+      SET status = excluded.status, reason_kind = excluded.reason_kind, declared_by = excluded.declared_by, declared_at = now();
+    SELECT string_agg(right(h.player_id::text, 1), ',') INTO got FROM match_availability_history h WHERE h.match_id = M;
+    PERFORM _assert(got = '2' AND _eff_65(M) = '2=unavailable',
+      format('db/65 (rls): Bekker''s guardian reads the history of %s and the answers %s', got, _eff_65(M)));
+    FOREACH who IN ARRAY ARRAY[U_WATCHER, U_COACH2, U_NAIDOO] LOOP
+      PERFORM _as(who);
+      SELECT (SELECT count(*) FROM match_availability WHERE match_id = M)
+           + (SELECT count(*) FROM match_availability_history WHERE match_id = M) INTO n;
+      PERFORM _assert(n = 0, format('db/65 (rls): %s reads %s answer(s) or earlier answer(s)', who, n));
+    END LOOP;
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM match_availability_history WHERE match_id = M;
+    PERFORM _assert(n = 2 AND _eff_65(M) = '1=available 2=unavailable 4=needs_reconfirming 5=needs_reconfirming',
+      format('db/65 (rls): the director of sport reads %s earlier answers and %s', n, _eff_65(M)));
+    -- match_availability's own policies, as db/39 left them.
+    SELECT string_agg(policyname || ':' || (coalesce(qual, '') || coalesce(with_check, '') LIKE '%match_school(match_id), match_team(match_id), player_id, match_id)%'), ' ' ORDER BY policyname)
+      INTO got FROM pg_policies WHERE tablename = 'match_availability' AND policyname NOT LIKE 'pad_scope_%';
+    PERFORM _assert(got = 'match_availability_insert:true match_availability_read:true match_availability_update:true',
+      format('db/65 (rls): match_availability''s policies are now %s', got));
+
+    -- (write) nobody writes the history but its trigger
+    PERFORM _as(U_WHIT);
+    BEGIN
+      INSERT INTO match_availability_history (match_id, player_id, school_id, status, declared_at, fixture_starts_at, was_stale)
+      VALUES (M, P1, HIL, 'unavailable', now(), now(), false);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, 'db/65 (write): a guardian wrote an earlier answer into the history');
+    BEGIN
+      UPDATE match_availability_history SET status = 'unavailable' WHERE match_id = M;
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, 'db/65 (write): a guardian rewrote the history');
+
+    -- (ground) a new ground alone asks again; the old ground back answers it
+    PERFORM _as(U_SARAH);
+    k := _notice_count_65(M);
+    UPDATE match SET ground_id = NULL WHERE id = M;
+    PERFORM _assert(_eff_65(M) = '1=needs_reconfirming 2=needs_reconfirming 4=needs_reconfirming 5=needs_reconfirming'
+                    AND _notice_count_65(M) = k + 5 + CASE WHEN _link_live_65(P_INJURED, U_PARENT) THEN 1 ELSE 0 END,
+      format('db/65 (ground): with no ground the answers read %s, and %s notice(s) were added', _eff_65(M), _notice_count_65(M) - k));
+    UPDATE match SET ground_id = GROUND WHERE id = M;
+    -- (back) the fixture back where it was: the two answered for the move
+    -- stand, and Cele's, given for the original, asks again no more once the
+    -- day is back too
+    PERFORM _assert(_eff_65(M) = '1=available 2=unavailable 4=needs_reconfirming 5=needs_reconfirming',
+      format('db/65 (back): with the ground back the answers read %s', _eff_65(M)));
+    UPDATE match SET starts_at = v_start WHERE id = M;
+    PERFORM _assert(_eff_65(M) = '1=needs_reconfirming 2=needs_reconfirming 4=doubtful 5=available',
+      format('db/65 (back): with the day back the answers read %s', _eff_65(M)));
+
+    -- (past) a played fixture's time corrected asks nobody, though it reads so
+    PERFORM _as(U_WHIT);
+    INSERT INTO match_availability (match_id, player_id, school_id, status, declared_by)
+    VALUES (MP, P1, HIL, 'available', U_WHIT);
+    PERFORM _as(U_SARAH);
+    UPDATE match SET starts_at = starts_at - interval '1 hour', overs = 25 WHERE id = MP;
+    PERFORM _assert(_eff_65(MP) = '1=needs_reconfirming' AND _notice_count_65(MP) = 0,
+      format('db/65 (past): the played fixture''s answer reads %s and %s notice(s) went out', _eff_65(MP), _notice_count_65(MP)));
   END;
 
   PERFORM set_config('app.user_id', '', true);

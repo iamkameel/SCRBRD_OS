@@ -62,5 +62,6 @@
   "61_playing_conditions.sql",
   "62_guardian_link_past_eighteen.sql",
   "63_scorebook_import.sql",
-  "64_scorebook_careers.sql"
+  "64_scorebook_careers.sql",
+  "65_availability_reconfirm.sql"
 ]

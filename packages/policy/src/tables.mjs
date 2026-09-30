@@ -923,6 +923,23 @@ export const TABLES = {
     },
     masked: {},
   },
+  // ── SCRBRD-122 (db/65): the answers a re-declaration replaced ────────
+  // Added after db/09 shipped: emitted into db/65 (TABLES_ADDED_SINCE_09).
+  // Read exactly as the live answer is — the same capability and the same
+  // four anchors, so a guardian reads his own child's earlier answers and
+  // nobody else's. Written by nobody directly: db/65 REVOKEs INSERT, UPDATE
+  // and DELETE from the application, and the only writer is the trigger that
+  // keeps the answer an update replaces. db/50's pad guard as everywhere.
+  match_availability_history: {
+    read:  "availability.read",
+    write: "availability.declare",
+    anchors: {
+      ...viaMatch("match_availability_history"),
+      person:  "player_id",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
 
   sponsor: {
     // A brand the school has signed. Read under sponsorship.read, which sits
