@@ -493,18 +493,17 @@ function knockout(ids) {
  * @typedef {object} Win
  * @property {string} id
  * @property {string} groundId
- * @property {number} from
- * @property {number} to
+ * @property {number} from    the window opens
+ * @property {number} to      the window closes
+ * @property {number} start   a match placed here starts (after preparation)…
+ * @property {number} end     …and ends
+ * @property {number} free    the ground is free again (after recovery)
+ * @property {string[]} days  the SA days of the match
  */
 
 /**
- * @typedef {object} Placed
- * @property {Win} window
- * @property {number} from    the ground is in use from here (preparation)…
- * @property {number} start   …the match starts…
- * @property {number} end     …and ends…
- * @property {number} to      …and the ground is free again (after recovery)
- * @property {string[]} days  the SA days of the match itself
+ * A fixture in a window: the window says when, the sides say who.
+ * @typedef {{ window: Win, sides: string[] }} Placed
  */
 
 /**
@@ -558,6 +557,9 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
   };
   /** @param {PairedFixture} f @returns {string[]} */
   const feedersOf = (f) => [f.home, f.away].flatMap((s) => "winnerOf" in s ? [s.winnerOf] : []);
+  /** @type {Map<string, string>} a knockout fixture → the fixture its winner goes on to */
+  const feeds = new Map();
+  for (const f of draw.fixtures) for (const x of feedersOf(f)) feeds.set(x, f.id);
 
   // ── Grounds: which lie on which, and when each is closed ──
   if (grounds.length > PLAN_LIMITS.grounds) refuse(`at most ${PLAN_LIMITS.grounds} grounds`);
@@ -575,6 +577,15 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
       }),
     });
   }
+  // A ground that lies (through its fields) on itself is refused now, not
+  // when a window happens to ask about it.
+  for (const id of groundMap.keys()) {
+    const seen = new Set();
+    for (let at = /** @type {string | null} */ (id); at != null; at = groundMap.get(at)?.parentId ?? null) {
+      if (seen.has(at)) refuse(`ground ${id} lies on itself`);
+      seen.add(at);
+    }
+  }
   /** @type {Map<string, string[]>} a ground, then the field it lies on, and up */
   const chains = new Map();
   /** @param {string} id */
@@ -582,15 +593,18 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
     let c = chains.get(id);
     if (c) return c;
     c = [];
-    for (let at = /** @type {string | null} */ (id); at != null; at = groundMap.get(at)?.parentId ?? null) {
-      if (c.includes(at)) refuse(`ground ${id} lies on itself`);
-      c.push(at);
-    }
+    for (let at = /** @type {string | null} */ (id); at != null; at = groundMap.get(at)?.parentId ?? null) c.push(at);
     chains.set(id, c);
     return c;
   };
+  /** @type {Map<string, boolean>} */ const relatedMemo = new Map();
   /** One ground lies on the other, or they are the same ground. */
-  const related = (/** @type {string} */ a, /** @type {string} */ b) => chain(a).includes(b) || chain(b).includes(a);
+  const related = (/** @type {string} */ a, /** @type {string} */ b) => {
+    const key = `${a}\u0000${b}`;
+    let r = relatedMemo.get(key);
+    if (r === undefined) { r = chain(a).includes(b) || chain(b).includes(a); relatedMemo.set(key, r); }
+    return r;
+  };
   /** The same site: no travel between them. */
   const sameSite = (/** @type {string} */ a, /** @type {string} */ b) => chain(a).at(-1) === chain(b).at(-1);
   /** @type {Map<string, { from: number, to: number }[]>} */ const closures = new Map();
@@ -613,7 +627,10 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
     if (typeof w.groundId !== "string" || !w.groundId) refuse(`window ${w.id} names no ground`);
     const from = instant(w.startsAt, `window ${w.id} startsAt`), to = instant(w.endsAt, `window ${w.id} endsAt`);
     if (to <= from) refuse(`window ${w.id} ends before it starts`);
-    winById.set(w.id, { id: w.id, groundId: w.groundId, from, to });
+    // Where a match would sit in it depends only on the window and the
+    // rules, so it is worked out once here, not once per fixture tried.
+    const start = from + prep, end = start + duration;
+    winById.set(w.id, { id: w.id, groundId: w.groundId, from, to, start, end, free: end + recovery, days: saDays(start, end) });
   }
   const sorted = [...winById.values()].sort((a, b) => a.from - b.from || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
@@ -644,73 +661,95 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
   }
 
   /** @type {Map<string, Placed>} */ const placed = new Map();
+  // Three indexes over what is placed, kept as fixtures are put, so a check
+  // looks only at what could clash: the fixtures on the same site (only
+  // those can share ground), each side's fixtures, and each side's count of
+  // matches per SA day (known commitments counted from the start).
+  /** @type {Map<string, string[]>} site → placed fixture ids */ const onSite = new Map();
+  /** @type {Map<string, string[]>} entrant → placed fixture ids */ const ofSide = new Map();
+  /** @type {Map<string, number>} "entrant|day" → matches */ const perDay = new Map();
+  /** @type {Set<string>} */ const usedWindows = new Set();
+  /** @param {Map<string, string[]>} m @param {string} k @param {string} v */
+  const push = (m, k, v) => { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); };
+  const site = (/** @type {string} */ g) => /** @type {string} */ (chain(g).at(-1));
+  const bump = (/** @type {string} */ e, /** @type {string} */ d) => perDay.set(`${e}|${d}`, (perDay.get(`${e}|${d}`) ?? 0) + 1);
+  for (const k of commitments) for (const e of k.entrants) for (const d of k.days) bump(e, d);
 
   /**
-   * Everything wrong with putting fixture f in window w, given what is
-   * already placed. Empty means it goes there.
-   * @param {PairedFixture} f @param {Win} w @param {{ deferFeeders?: boolean }} [opt]
+   * What is wrong with putting fixture f in window w, given what is already
+   * placed. Empty means it goes there. With `first`, it stops at the first
+   * thing wrong — enough to pass a window by, and most of the search's
+   * cost saved; without, it lists everything, for the reasons of a fixture
+   * no window would take.
+   * @param {PairedFixture} f @param {Win} w @param {{ deferFeeders?: boolean, first?: boolean }} [opt]
    * @returns {Set<PlanReason>}
    */
-  const refusals = (f, w, { deferFeeders = false } = {}) => {
+  const refusals = (f, w, { deferFeeders = false, first = false } = {}) => {
     /** @type {Set<PlanReason>} */ const out = new Set();
     const sides = /** @type {Set<string>} */ (sidesOf.get(f.id));
-    const from = w.from, start = from + prep, end = start + duration, to = end + recovery;
-    const days = saDays(start, end);
+    const { from, start, end, free: to, days } = w;
+    const done = () => first && out.size > 0;
 
     if (to > w.to) out.add(PLAN_REASON.WINDOW_SHORT);
+    if (done()) return out;
 
     for (const b of dark) {
       if ((b.entrant == null || sides.has(b.entrant)) && days.includes(b.day)) out.add(PLAN_REASON.BLACKOUT);
     }
+    if (done()) return out;
 
     for (const c of closuresTouching(w.groundId)) if (overlaps(from, to, c.from, c.to)) out.add(PLAN_REASON.GROUND_CLOSED);
+    if (done()) return out;
 
-    // A side's matches on a day: entrant|day → count, the ones already placed and known.
-    /** @type {Map<string, number>} */ const perDay = new Map();
-    /** @param {string[]} shared @param {string[]} theirDays */
-    const tally = (shared, theirDays) => {
-      for (const e of shared) for (const d of theirDays) if (days.includes(d)) perDay.set(`${e}|${d}`, (perDay.get(`${e}|${d}`) ?? 0) + 1);
-    };
-
-    for (const [id, q] of placed) {
-      if (id === f.id) continue;
-      if (q.window.id === w.id || (related(q.window.groundId, w.groundId) && overlaps(from, to, q.from, q.to))) {
-        out.add(PLAN_REASON.GROUND_TAKEN);
-      }
-      const shared = [...sides].filter((e) => sidesOf.get(id)?.has(e));
-      if (shared.length) {
-        const gap = rest + (sameSite(w.groundId, q.window.groundId) ? 0 : travel);
-        if (overlaps(start - gap, end + gap, q.start, q.end)) out.add(PLAN_REASON.REST);
-        tally(shared, q.days);
-      }
-      // A later round already placed that this fixture feeds.
-      if (feedersOf(byId.get(id) ?? f).includes(f.id) && q.start < end + rest) out.add(PLAN_REASON.FEEDER);
+    // The ground: one fixture per window, and nothing else on this ground,
+    // a field it lies on or a pitch on it (all of which share its site).
+    if (usedWindows.has(w.id)) out.add(PLAN_REASON.GROUND_TAKEN);
+    for (const id of onSite.get(site(w.groundId)) ?? []) {
+      const q = /** @type {Placed} */ (placed.get(id)).window;
+      if (overlaps(from, to, q.from, q.free) && related(q.groundId, w.groundId)) out.add(PLAN_REASON.GROUND_TAKEN);
     }
+    if (done()) return out;
+
+    // Each side's rest, and travel between sites.
+    for (const e of sides) for (const id of ofSide.get(e) ?? []) {
+      const q = /** @type {Placed} */ (placed.get(id)).window;
+      const gap = rest + (sameSite(w.groundId, q.groundId) ? 0 : travel);
+      if (overlaps(start - gap, end + gap, q.start, q.end)) out.add(PLAN_REASON.REST);
+    }
+    if (done()) return out;
+    // A later round already placed that this fixture feeds.
+    const next = placed.get(feeds.get(f.id) ?? "");
+    if (next && next.window.start < end + rest) out.add(PLAN_REASON.FEEDER);
 
     for (const k of commitments) {
-      if (k.groundId != null && related(k.groundId, w.groundId) && overlaps(from, to, k.start, k.end)) out.add(PLAN_REASON.GROUND_TAKEN);
-      const shared = k.entrants.filter((e) => sides.has(e));
-      if (shared.length) {
+      if (k.groundId != null && overlaps(from, to, k.start, k.end) && related(k.groundId, w.groundId)) out.add(PLAN_REASON.GROUND_TAKEN);
+      if (k.entrants.some((e) => sides.has(e))) {
         // A commitment somewhere unknown is somewhere else: travel applies.
         const gap = rest + (k.groundId != null && sameSite(w.groundId, k.groundId) ? 0 : travel);
         if (overlaps(start - gap, end + gap, k.start, k.end)) out.add(PLAN_REASON.REST);
-        tally(shared, k.days);
       }
     }
-    for (const n of perDay.values()) if (n + 1 > maxPerDay) { out.add(PLAN_REASON.DAILY_CAP); break; }
+    if (done()) return out;
+
+    // The daily cap: any side that could be in it, on any day it touches.
+    for (const e of sides) for (const d of days) if ((perDay.get(`${e}|${d}`) ?? 0) + 1 > maxPerDay) out.add(PLAN_REASON.DAILY_CAP);
+    if (done()) return out;
 
     for (const x of feedersOf(f)) {
       const q = placed.get(x);
       if (!q) { if (!deferFeeders) out.add(PLAN_REASON.FEEDER_UNSCHEDULED); }
-      else if (start < q.end + rest) out.add(PLAN_REASON.FEEDER);
+      else if (start < q.window.end + rest) out.add(PLAN_REASON.FEEDER);
     }
     return out;
   };
 
   /** @param {PairedFixture} f @param {Win} w */
   const put = (f, w) => {
-    const start = w.from + prep, end = start + duration;
-    placed.set(f.id, { window: w, from: w.from, start, end, to: end + recovery, days: saDays(start, end) });
+    const sides = [.../** @type {Set<string>} */ (sidesOf.get(f.id))];
+    placed.set(f.id, { window: w, sides });
+    usedWindows.add(w.id);
+    push(onSite, site(w.groundId), f.id);
+    for (const e of sides) { push(ofSide, e, f.id); for (const d of w.days) bump(e, d); }
   };
 
   /** @type {Map<string, Set<PlanReason>>} */ const why = new Map();
@@ -732,18 +771,18 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
     if (lockOf.has(f.id)) continue;
     if (feedersOf(f).some((x) => !placed.has(x))) { why.set(f.id, new Set([PLAN_REASON.FEEDER_UNSCHEDULED])); continue; }
     if (!sorted.length) { why.set(f.id, new Set([PLAN_REASON.NO_WINDOWS])); continue; }
+    const home = sorted.find((w) => refusals(f, w, { first: true }).size === 0);
+    if (home) { put(f, home); continue; }
+    // No window: every window's every reason, so the administrator sees
+    // all that would have to change.
     /** @type {Set<PlanReason>} */ const all = new Set();
-    let home = null;
-    for (const w of sorted) {
-      const no = refusals(f, w);
-      if (!no.size) { home = w; break; }
-      for (const x of no) all.add(x);
-    }
-    if (home) put(f, home); else why.set(f.id, all);
+    for (const w of sorted) for (const x of refusals(f, w)) all.add(x);
+    why.set(f.id, all);
   }
 
   // A locked later round whose feeder found no slot waits with it. The draw
-  // lists feeders first, so one pass in its order settles every chain.
+  // lists feeders first, so one pass in its order settles every chain. (The
+  // indexes are not needed after this, so they are not unwound.)
   for (const f of draw.fixtures) {
     if (placed.has(f.id) && feedersOf(f).some((x) => !placed.has(x))) {
       placed.delete(f.id);
@@ -759,8 +798,8 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
       locked: lockOf.has(f.id),
       windowId: q ? q.window.id : null,
       groundId: q ? q.window.groundId : null,
-      startsAt: q ? new Date(q.start).toISOString() : null,
-      endsAt: q ? new Date(q.end).toISOString() : null,
+      startsAt: q ? new Date(q.window.start).toISOString() : null,
+      endsAt: q ? new Date(q.window.end).toISOString() : null,
       reasons: q ? [] : REASON_ORDER.filter((x) => why.get(f.id)?.has(x)),
     };
   });
