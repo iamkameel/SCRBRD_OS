@@ -423,10 +423,20 @@ function asTrip(r) {
            state: r.state, live: true };
 }
 
-/** One boy's answer about one fixture, and null status means he has not answered. */
+/**
+ * One boy's answer about one fixture, and null status means he has not answered.
+ *
+ * `status` is the server's EFFECTIVE status (SCRBRD-122, db/65):
+ * "needs_reconfirming" when the fixture has moved since the answer was given,
+ * which counts as no answer. `saidStatus` is what was said and `wasLine` what
+ * it was said about; `fixtureWords` is the fixture now, on the same clock.
+ */
 function asAvailability(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
-           status: r.status, reasonKind: r.reason_kind, note: r.note,
+           status: r.status, saidStatus: r.said_status ?? null,
+           needsReconfirming: r.needs_reconfirming === true,
+           wasLine: r.was_line ?? null, fixtureWords: r.fixture_words ?? null,
+           reasonKind: r.reason_kind, note: r.note,
            declaredAt: r.declared_at, selfDeclared: r.self_declared === true,
            declaredByName: r.declared_by_name,
            // Deliberately NOT coerced to a boolean. Null is a third answer
@@ -863,7 +873,11 @@ function asRosterOn(r) {
 function asReadiness(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
            state: r.state,
-           declaredStatus: r.declared_status, reasonKind: r.reason_kind,
+           // Effective, as the availability read's `status` (SCRBRD-122);
+           // what was said is saidStatus.
+           declaredStatus: r.declared_status, saidStatus: r.said_status ?? null,
+           needsReconfirming: r.needs_reconfirming === true,
+           reasonKind: r.reason_kind,
            selfDeclared: r.self_declared === true,
            declaredByName: r.declared_by_name,
            // Tri-state, as above: true restricted, false cleared, null not asked.

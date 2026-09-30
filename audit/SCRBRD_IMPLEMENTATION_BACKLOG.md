@@ -4226,6 +4226,21 @@ ground, format, overs). When any of them changes, the answer reads `needs_reconf
 guardian screens say so and ask again. Nothing is deleted: the old answer stays as history. Opus for the migration, the
 staleness rule and its db/99 proof; Sonnet for the squad and guardian screens.
 
+> **Built 2026-09-30 (not yet shipped).** `db/65_availability_reconfirm.sql`: a SNAPSHOT on each answer, not a fixture
+> version — `fixture_starts_at`, `fixture_ground_id`, `fixture_format`, `fixture_overs`, stamped from the match by a
+> trigger on every insert and update (a value in the request is overwritten; existing answers backfilled from the match
+> as it stands). `availability_effective(a, m)` reads `needs_reconfirming` when they differ from the match; a fixture
+> moved back is the fixture the family answered about, so its answer stands again. Opponent, status, competition and
+> sport are not in the snapshot and ask nobody. `match_availability_history` keeps every answer a re-declaration
+> replaces (read as the live row is; written only by its trigger). A future, scheduled fixture's change writes one
+> `notification` per stale answer to whoever gave it and to the boy's live guardians (`recipient_id`, gated on
+> `availability.read` with the boy as person anchor; a pupil's is the system's own, SG-9). Readers changed: the API's
+> `availability` (effective `status`, `said_status`, `was_line`) and `readiness` (`needs_reconfirming` ranks and
+> conflicts as silence); new `availability_history` read. `packages/scoring/src/readiness.mjs` does not read
+> availability and is unchanged. The Squad screen gains an availability panel (a guardian's rows are his child's):
+> "Needs reconfirming", the was-line and a one-tap "Still available". Proofs: db/99 §43, smoke-availability,
+> smoke-readiness, smoke-browser-read.
+
 ### SCRBRD-123 — A league and knockout fixture planner (drafts only)
 **Priority:** P2 · **Domain:** Competitions · **Type:** build, after SCRBRD-122 (Kameel, 2026-09-30)
 From the second harvest (`competition-planner.ts` in `iamkameel/scrbrd` PR #2, ported as an idea, not code). A league

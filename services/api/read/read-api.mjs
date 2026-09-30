@@ -1110,6 +1110,9 @@ export const READ_QUERIES = {
                              || availability_fixture_words(a.fixture_starts_at, a.fixture_ground_id,
                                                            a.fixture_format, a.fixture_overs)
                    end)                as was_line,
+                  -- The fixture as it stands, in the same words, so a screen
+                  -- sets "now" beside "was" on one clock.
+                  availability_fixture_words(m.starts_at, m.ground_id, m.format, m.overs) as fixture_words,
                   a.reason_kind,
                   a.note,
                   a.declared_at,
