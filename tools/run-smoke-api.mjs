@@ -260,7 +260,17 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // "From the scorebook"; a book that is out is acknowledged; a person who
   // worked on the card is told why she cannot confirm; a parent sees no entry
   // point; phone, Daylight, the 12px and 44px floors.
-  "browser-scorebook"];
+  "browser-scorebook",
+  // Making a league and planning its fixtures (SCRBRD-127 the wizard, SCRBRD-123
+  // the planner screen): a league administrator makes a league and invites four
+  // teams, told in words she cannot accept for a school; two schools answer from
+  // "Invitations to leagues" (three accept, one declines); conditions start from
+  // the Laws and the platform's defaults, are ticked and entered (points 4/2/2/0,
+  // a super over) and published from tomorrow; a ground owner offers slots,
+  // closes the ground and names its ends; the planner draws a bracket and a
+  // round robin, shows a fixture's reasons, locks, regenerates and publishes with
+  // a per-fixture report; phone, Daylight, the 12px and 44px floors.
+  "browser-league"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

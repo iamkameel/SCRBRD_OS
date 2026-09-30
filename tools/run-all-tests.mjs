@@ -125,6 +125,11 @@ const SUITES = [
   // point, a refusal in words, a blank that is null and never nought, the ticks
   // that follow a row, an opposition name that is a typed key and never a player.
   ["scorebook-screen", "apps/web/test/scorebook.test.mjs"],
+  // The league wizard's and the fixture planner's words (SCRBRD-123/127): an
+  // entrant's standing (the organiser cannot accept for a school), a checklist
+  // row's kind, the rules she types, a plan by round and by day and as a
+  // bracket, the locks a click makes, a publishing outcome, a refusal.
+  ["league-screen", "apps/web/test/league.test.mjs"],
   // No Law clause number on any scorer screen: every words table, every
   // refusal helper over every code, and the sheets' literal text (SCRBRD-094).
   ["law-clauses", "apps/web/test/law-clauses.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
