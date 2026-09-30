@@ -39,7 +39,7 @@
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -70,15 +70,19 @@ const apiProc = spawn(process.execPath, ["services/api/server.mjs"], {
 const apiErr = [];
 apiProc.stderr.on("data", (d) => apiErr.push(d.toString()));
 
+// What the page is served from. The walk switches it, for one group, to its own
+// build with the test hook in it (see "An error boundary" below); every other
+// group runs against the ordinary build in dist/.
+let WEB_ROOT = "apps/web/dist";
 const web = createServer(async (req, res) => {
   const url = new URL(req.url, "http://x").pathname;
   let body, type;
   try {
-    const f = join("apps/web/dist", url === "/" ? "index.html" : url);
+    const f = join(WEB_ROOT, url === "/" ? "index.html" : url);
     body = await readFile(f);
     type = TYPES[extname(f)] ?? "application/octet-stream";
   } catch {
-    body = await readFile("apps/web/dist/index.html");
+    body = await readFile(join(WEB_ROOT, "index.html"));
     type = "text/html";
   }
   res.writeHead(200, { "content-type": type });
@@ -91,7 +95,7 @@ const q = async (t, p) => (await pool.query(t, p)).rows;
 const browser = await chromium.launch({ ...launchOptions() });
 
 /** A fresh session, at a width and in a theme (the device's colour scheme). `liveMs` reads a live match that often. */
-async function open({ viewport = DESK, scheme = "dark", liveMs = null } = {}) {
+async function open({ viewport = DESK, scheme = "dark", liveMs = null, init = null } = {}) {
   const ctx = await browser.newContext({ viewport, colorScheme: scheme });
   await offline(ctx);
   const page = await ctx.newPage();
@@ -104,6 +108,7 @@ async function open({ viewport = DESK, scheme = "dark", liveMs = null } = {}) {
   });
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   if (liveMs) await page.addInitScript(`window.__SCRBRD_LIVE_MS__ = ${liveMs};`);
+  if (init) await page.addInitScript(init);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
   return { ctx, page, errors };
 }
@@ -554,6 +559,82 @@ try {
   }
   ok("no console errors (phone)", ph.errors.length === 0, ph.errors.join(" | "));
   await ph.ctx.close();
+
+  group("An error boundary: a panel that throws is a card in its own place, and its neighbours stand");
+  // The walks run against a production build, where the test hook is compiled
+  // out (vite.config.js `define`; tools/check-bundle.mjs holds that). So this
+  // group builds ITS OWN copy with the hook in — apps/web/dist-test, never
+  // dist — and serves that for these pages only.
+  const made = spawnSync("pnpm", ["--filter", "@scrbrd/web", "exec", "vite", "build", "--outDir", "dist-test", "--emptyOutDir"],
+    { env: { ...process.env, SCRBRD_TEST_HOOKS: "1" }, encoding: "utf8" });
+  ok("the walk's own build, with the test hook, is made", made.status === 0, (made.stderr || made.stdout || "").slice(-300));
+  WEB_ROOT = "apps/web/dist-test";
+  const panelLogs = [];
+  try {
+    const bd = await open({ init: `window.__SCRBRD_TEST_THROW__ = "commentary";` });
+    bd.page.on("console", (m) => { if (/^\[panel\]/.test(m.text())) panelLogs.push(m.text()); });
+    ok("the director of sport signs in", await signIn(bd.page, /sarah@example\.invalid|Director/));
+    ok("the decided fixture opens", await openMatch(bd.page, fx.live));
+    const B = bd.page;
+    ok("Summary draws, with no failure card", await tid(B, "mc-board-total").count() === 1 && await tid(B, "panel-error").count() === 0);
+
+    await tab(B, "commentary");
+    const card = tid(B, "panel-error");
+    ok("the commentary panel, made to throw, is a card in its place", await card.count() === 1 && await card.getAttribute("data-panel") === "commentary");
+    ok("...that says so in words, with the panel's name", (await card.innerText()).includes("The commentary panel couldn't be shown."), await card.innerText());
+    ok("...is an alert", await card.getAttribute("role") === "alert");
+    const geo = await tid(B, "panel-error-retry").evaluate((e) => ({ h: e.getBoundingClientRect().height, f: parseFloat(getComputedStyle(e).fontSize), t: e.textContent.trim() }));
+    ok("...with a Try again button, 44px tall, on the 12px floor", geo.t === "Try again" && geo.h >= 44 && geo.f >= 12, JSON.stringify(geo));
+    ok("...and the commentary's own lines are not drawn", await tid(B, "mc-line").count() === 0);
+    ok("its neighbours stand: the header, the scores and the tab bar", await tid(B, "mc-title").count() === 1
+       && await tid(B, "mc-scores").count() === 1 && await tid(B, "mc-tabs").count() === 1);
+    ok("...and so does the shell: the navigation", await B.locator('[data-testid="nav"], [data-testid="mnav"]').first().isVisible());
+    ok("the failure is logged once, with the panel's name and the message only", panelLogs.length === 1
+       && /^\[panel\] commentary could not be shown: test throw$/.test(panelLogs[0] ?? ""), panelLogs.join(" | "));
+
+    await tab(B, "scorecard");
+    ok("another tab still draws (Scorecard, with the hook still armed)", await tid(B, "mc-bat-row").count() > 0 && await tid(B, "panel-error").count() === 0);
+    await tab(B, "analytics");
+    ok("...and Analytics", await tid(B, "mc-analytics").count() === 1 && await tid(B, "panel-error").count() === 0);
+    await tab(B, "commentary");
+    ok("back on Commentary it is still the card (the hook is still armed), and that second failure is logged once more", await tid(B, "panel-error").count() === 1 && panelLogs.length === 2, panelLogs.join(" | "));
+
+    await B.evaluate(() => { window.__SCRBRD_TEST_THROW__ = null; });
+    await tid(B, "panel-error-retry").click();
+    await B.waitForTimeout(500);
+    ok("Try again, once the fault has gone, brings the panel back", await tid(B, "panel-error").count() === 0 && await tid(B, "mc-line").count() > 0);
+    ok("...and logged nothing more: a retry that works is silent", panelLogs.length === 2, panelLogs.join(" | "));
+
+    // The routed view: the shell's boundary, keyed on the page.
+    await tid(B, "mc-back").click();
+    await B.waitForTimeout(400);
+    await B.evaluate(() => { window.__SCRBRD_TEST_THROW__ = "Calendar"; });
+    const cal = B.locator('[data-testid="nav-calendar"], [data-testid="mnav-calendar"]').first();
+    ok("Calendar is in the director's navigation", await cal.count() === 1);
+    await cal.click().catch(() => {});
+    await B.waitForTimeout(800);
+    ok("a routed view that throws is a card inside <main>", await B.locator('[data-testid="os-main"] [data-testid="panel-error"][data-panel="Calendar"]').count() === 1);
+    ok("...with the navigation and the top bar still there", await B.locator('[data-testid="nav"], [data-testid="mnav"]').first().isVisible());
+    await B.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click();
+    await B.waitForTimeout(1200);
+    ok("...and choosing another view leaves the failure behind", await B.locator('[data-testid="panel-error"]').count() === 0
+       && await B.locator('[data-testid="os-main"]').getAttribute("data-page") === "matches");
+    const pageErrors = bd.errors.filter((e) => /^pageerror/.test(e));
+    ok("no uncaught page error — every throw was caught", pageErrors.length === 0, pageErrors.join(" | "));
+    await bd.ctx.close();
+
+    // And the ordinary build does not carry the hook at all.
+    WEB_ROOT = "apps/web/dist";
+    const plain = await open({ init: `window.__SCRBRD_TEST_THROW__ = "commentary";` });
+    await signIn(plain.page, /sarah@example\.invalid|Director/);
+    await openMatch(plain.page, fx.live);
+    await tab(plain.page, "commentary");
+    ok("in the ordinary build, asking a panel to throw does nothing", await tid(plain.page, "panel-error").count() === 0 && await tid(plain.page, "mc-line").count() > 0);
+    ok("no console errors (ordinary build)", plain.errors.length === 0, plain.errors.join(" | "));
+    await plain.ctx.close();
+  } finally {
+    WEB_ROOT = "apps/web/dist";
+  }
 
   if (SHOTS) {
     group(`Screenshots → ${SHOTS}`);

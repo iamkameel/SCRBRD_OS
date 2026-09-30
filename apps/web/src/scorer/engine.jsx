@@ -42,6 +42,7 @@ import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, Ne
 import { INT_TEAMS } from "./teams.js";
 import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
 import { Icon } from "../ui/icons.jsx";
+import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { hapticTick } from "./haptic.js";
 import { undoWords } from "./prompts.js";
 
@@ -1895,7 +1896,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           </Glass>
           {suspensions.length>0&&<ReportOffer count={suspensions.length} onOpen={()=>setModal("suspendReport")}/>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px",marginBottom:"28px"}}>
-            {[0,1].map(ii=>innings[ii]&&<ScorecardPanel key={ii} innings={innings} idx={ii}/>)}
+            {[0,1].map(ii=>innings[ii]&&<ErrorBoundary key={ii} name="scorecard"><ScorecardPanel innings={innings} idx={ii}/></ErrorBoundary>)}
           </div>
           <div style={{textAlign:"center"}}>
             <Btn variant="primary" size="lg" onClick={()=>{setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setSelSeg(null);}}>
@@ -2055,6 +2056,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                 recorded. */}
             {matchOver&&suspensions.length>0&&!modal&&<ReportOffer count={suspensions.length} onOpen={()=>setModal("suspendReport")}/>}
           </div>
+          {/* ERROR BOUNDARIES (ui/ErrorBoundary.jsx): one round each panel that
+              only SHOWS the match back — the scorecards, the partnership, the
+              run chart, the analysis, the commentary and the over cards — so
+              one of them failing to draw leaves the others and the pad
+              standing. None round the keys (Pad, ScoringPanel), the sheets,
+              the outbox or the sync: they hold taps that have not been sent,
+              and a boundary that caught there would unmount them. */}
           <div className="pad-main">
           {activeTab==="score"&&uiMode==="focus"&&(
             <Pad inn={inn} basic={basic}
@@ -2092,18 +2100,18 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                   };
                   if(cardId==="scoring")return (
                     <div key="scoring" {...dragProps}>
-                      <ScorecardPanel innings={innings} idx={curIn}/>
-                      {curIn===1&&innings[0]&&<div style={{marginTop:"12px"}}><ScorecardPanel innings={innings} idx={0}/></div>}
+                      <ErrorBoundary name="scorecard"><ScorecardPanel innings={innings} idx={curIn}/></ErrorBoundary>
+                      {curIn===1&&innings[0]&&<div style={{marginTop:"12px"}}><ErrorBoundary name="first innings scorecard"><ScorecardPanel innings={innings} idx={0}/></ErrorBoundary></div>}
                     </div>
                   );
                   if(cardId==="partnership")return (
                     <div key="partnership" {...dragProps}>
-                      <PartnershipCard inn={inn}/>
+                      <ErrorBoundary name="partnership"><PartnershipCard inn={inn}/></ErrorBoundary>
                     </div>
                   );
                   if(cardId==="commentary")return (
                     <div key="commentary" {...dragProps}>
-                      <ManhattanChart inn={inn} match={match}/>
+                      <ErrorBoundary name="runs per over"><ManhattanChart inn={inn} match={match}/></ErrorBoundary>
                     </div>
                   );
                   return null;
@@ -2113,20 +2121,21 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           )}
           {activeTab==="cards"&&(
             <div className="sc-grid-2">
-              <div><Lbl sx={{marginBottom:"10px"}}>1st Innings</Lbl><ScorecardPanel innings={innings} idx={0}/></div>
+              <div><Lbl sx={{marginBottom:"10px"}}>1st Innings</Lbl><ErrorBoundary name="first innings scorecard"><ScorecardPanel innings={innings} idx={0}/></ErrorBoundary></div>
               <div>
                 <Lbl sx={{marginBottom:"10px"}}>2nd Innings</Lbl>
                 {innings[1]
-                  ?<ScorecardPanel innings={innings} idx={1}/>
+                  ?<ErrorBoundary name="second innings scorecard"><ScorecardPanel innings={innings} idx={1}/></ErrorBoundary>
                   :<Card style={{padding:"36px",textAlign:"center"}}><span style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Not started yet</span></Card>
                 }
               </div>
             </div>
           )}
-          {activeTab==="analysis"&&<AnalysisDashboard inn={inn} match={match} curIn={curIn} innings={innings}/>}
+          {activeTab==="analysis"&&<ErrorBoundary name="analysis"><AnalysisDashboard inn={inn} match={match} curIn={curIn} innings={innings}/></ErrorBoundary>}
           {activeTab==="history"&&(
             <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
               {/* Commentary log — shows shot type per ball */}
+              <ErrorBoundary name="commentary">
               <Card>
                 <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
                   <Lbl>Ball-by-Ball Commentary</Lbl>
@@ -2163,7 +2172,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                   {!inn?.ballLog?.length&&<div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px",padding:"12px"}}>No balls bowled yet.</div>}
                 </div>
               </Card>
+              </ErrorBoundary>
               {/* Over cards */}
+              <ErrorBoundary name="over-by-over">
               <Card>
                 <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
                   <Lbl>Over-by-Over</Lbl>
@@ -2189,6 +2200,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                   {!inn?.overLog?.length&&<div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>No overs completed.</div>}
                 </div>
               </Card>
+              </ErrorBoundary>
             </div>
           )}
           </div>

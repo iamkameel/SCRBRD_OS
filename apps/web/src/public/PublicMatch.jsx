@@ -10,6 +10,7 @@ import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx"
 import { Panel, Quiet, SideName } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "../views/matchcentre/live.js";
+import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { asPublicMatch, foldable, unnamedToPositions } from "./publicLog.js";
 
 /**
@@ -285,6 +286,12 @@ export function PublicMatch({ matchId, view }) {
   return (
     <Frame>
       <div className="os-page" data-testid="public-match" data-match={matchId}>
+        {/* A boundary round each main section (ui/ErrorBoundary.jsx): the
+            scoreboard header, the notices, and the open tab's panel. One that
+            fails to draw is a card in its place, and the rest of a live match
+            stays on screen. The tab bar, which moves between them, is not
+            wrapped. */}
+        <ErrorBoundary name="scoreboard">
         <header style={{ display: "grid", gap: T.space.sm }}>
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !folded?.result ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
@@ -309,19 +316,24 @@ export function PublicMatch({ matchId, view }) {
           {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         </header>
+        </ErrorBoundary>
+        <ErrorBoundary name="match notices">
         <div style={{ display: "grid", gap: T.space.md, margin: `${T.space.md} 0` }}>
           {match.status === "upcoming" && played.length === 0 && <PreTossCard match={match} weather={null}/>}
           {notice && <RevisionBanner notice={notice}/>}
         </div>
+        </ErrorBoundary>
 
         <TabBar tab={tab} setTab={setTab}/>
         <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={`mc-tab-${tab}`} data-testid={`mc-panel-${tab}`} tabIndex={0} style={{ outline: "none" }}>
-          {tab === "summary" ? <SummaryTab {...ctx}/>
-            : tab === "scorecard" ? <ScorecardTab {...ctx}/>
-            : tab === "commentary" ? <CommentaryTab {...ctx}/>
-            : tab === "partnerships" ? <PartnershipsTab {...ctx}/>
-            : tab === "analytics" ? <TeamAnalyticsTab {...ctx} sectors={sectors}/>
-            : <PublicDetailsTab {...ctx}/>}
+          <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
+            {tab === "summary" ? <SummaryTab {...ctx}/>
+              : tab === "scorecard" ? <ScorecardTab {...ctx}/>
+              : tab === "commentary" ? <CommentaryTab {...ctx}/>
+              : tab === "partnerships" ? <PartnershipsTab {...ctx}/>
+              : tab === "analytics" ? <TeamAnalyticsTab {...ctx} sectors={sectors}/>
+              : <PublicDetailsTab {...ctx}/>}
+          </ErrorBoundary>
         </div>
         <p data-testid="public-note" style={{ ...T.role.body, fontSize: "13px", color: T.content.tertiary, margin: `${T.space.xl} 0 0` }}>
           Players are named here only where their school and family have agreed to it; everyone else is shown by position.

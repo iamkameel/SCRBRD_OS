@@ -95,6 +95,9 @@ const SUITES = [
   ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // What a live pad says about the server when it cannot send (SCRBRD-078), same transform.
   ["sync-banner", "apps/web/test/sync-banner.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // A panel that throws is a quiet card in its place, logs its name and the
+  // message once, and resets on "Try again" (ui/ErrorBoundary.jsx); same transform.
+  ["error-boundary", "apps/web/test/error-boundary.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the profile's dismissal-by-method card, same transform.
   ["dismissal-card", "apps/web/test/dismissal-breakdown.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the placement charts and the capture-profile picker (SCRBRD-039).
