@@ -4255,6 +4255,7 @@ rules the design must hold, as agreed with Kameel:
 6. **A route to the DSO.** Any concern about a lift raises through `safeguarding_concern_raise()` (db/57).
 7. **The school decides.** A module off by default; the principal switches it on with the school's own lift policy.
 Fable designs (on its list since 2026-09-30); Opus builds the schema, policy and RLS; Sonnet the screens.
+**Designed 2026-09-30:** `docs/design/SCRBRD-124_lift_clubs.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D18 as recommended** (D9 three years; D11's words as drafted). Four phases; the module goes live for a school after phase 2.
 
 ### SCRBRD-125 — Roles scoped to a competition
 **Priority:** P3 (before a second league) · **Domain:** RBAC · **Type:** design + build (found 2026-09-30, SCRBRD-120 §9.4)
