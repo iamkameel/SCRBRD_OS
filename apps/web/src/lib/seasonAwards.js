@@ -81,7 +81,7 @@ const round1 = (v) => Math.round(v * 10) / 10;
 /** @param {any} p  a row from usePlayersWithCareer() */
 export function playerIndices(p) {
   return {
-    batting: battingIndex({ runs: p.runs, ballsFaced: p.ballsFaced, dismissals: p.dismissals }),
+    batting: battingIndex({ runs: p.runs, ballsFaced: p.ballsFaced, dismissals: p.dismissals, runsWithoutBalls: p.runsWithoutBalls }),
     bowling: bowlingIndex({ runsConceded: p.runsConceded, ballsBowled: p.ballsBowled, wickets: p.wkts }),
   };
 }
@@ -135,7 +135,7 @@ export function topWicketTakers(players, opts = {}) {
  */
 export function bestBattingAverages(players, opts = {}) {
   return scoped(players, opts)
-    .map((p) => ({ player: p, index: battingIndex({ runs: p.runs, ballsFaced: p.ballsFaced, dismissals: p.dismissals }) }))
+    .map((p) => ({ player: p, index: battingIndex({ runs: p.runs, ballsFaced: p.ballsFaced, dismissals: p.dismissals, runsWithoutBalls: p.runsWithoutBalls }) }))
     .filter((x) => x.index.value != null)
     .sort((a, b) => /** @type {number} */ (b.index.value) - /** @type {number} */ (a.index.value))
     .slice(0, opts.limit ?? 10);

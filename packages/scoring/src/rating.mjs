@@ -153,7 +153,11 @@ const confidence = (kind, sample) => {
  * Batting, from the career counts the read path returns.
  *
  * @param {{runs?: number | string | null, ballsFaced?: number | string | null,
- *          dismissals?: number | string | null}} [c]  numbers, or the strings pg returns for them
+ *          dismissals?: number | string | null,
+ *          runsWithoutBalls?: number | string | null}} [c]  numbers, or the strings pg returns for them.
+ *   `runsWithoutBalls`: runs scored in innings whose balls were not recorded
+ *   (a scorebook without a balls column, SCRBRD-120 D12). They count in the
+ *   average but not in the strike rate, which is taken over recorded balls.
  * @returns {{value:number|null, confidence:string, reason:string|null, parts:Record<string, number|null>}}
  *   `value` is null whenever the sample cannot support a number. `parts`
  *   carries the working, so a screen can show why the score is what it is
@@ -174,7 +178,9 @@ export function battingIndex(c = {}) {
              parts: { ballsFaced: balls } };
   }
 
-  const strikeRate = (runs * 100) / balls;
+  // Over the innings whose balls are known: runs from a book innings with no
+  // balls column would otherwise inflate the rate (SCRBRD-120 D12).
+  const strikeRate = ((runs - Number(c.runsWithoutBalls ?? 0)) * 100) / balls;
   const srScore = scoreFrom(STAT_ANCHORS.battingStrikeRate, strikeRate);
 
   // Never out is not the same as no data. The average is genuinely undefined,

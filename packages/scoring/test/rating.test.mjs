@@ -90,6 +90,18 @@ group("B2. A non-finite count is never scored");
      battingIndex({ runs: 400, ballsFaced: 360, dismissals: "x" }).value === null);
   ok("a non-finite runs count is refused even with valid balls and dismissals",
      battingIndex({ runs: "x", ballsFaced: 360, dismissals: 12 }).value === null);
+  // SCRBRD-120 D12: runs from a scorebook innings with no balls column count in
+  // the average but not the strike rate.
+  {
+    const mixed = battingIndex({ runs: 120, ballsFaced: 60, dismissals: 3, runsWithoutBalls: 40 });
+    const liveOnly = battingIndex({ runs: 80, ballsFaced: 60, dismissals: 3 });
+    ok("runs without balls leave the strike rate over recorded balls",
+       mixed.parts.strikeRate === 133.3 && mixed.parts.average === 40);
+    ok("...and the same balls give the same strike-rate score as the live runs alone",
+       mixed.parts.strikeRateScore === liveOnly.parts.strikeRateScore);
+    ok("no runsWithoutBalls reads as none",
+       battingIndex({ runs: 80, ballsFaced: 60, dismissals: 3 }).parts.strikeRate === 133.3);
+  }
 
   ok("a non-numeric ballsBowled string is refused",
      bowlingIndex({ runsConceded: 40, ballsBowled: "x", wickets: 2 }).value === null);
