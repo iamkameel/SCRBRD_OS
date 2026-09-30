@@ -295,6 +295,44 @@ export const TABLES = {
     },
     masked: {},
   },
+  // ── SCRBRD-120, phase 1 (db/63): the scorebook importer ─────────────
+  // Added after db/09 shipped: emitted into db/63 (TABLES_ADDED_SINCE_09).
+  // All three are keyed on the fixture's school, team and match, stamped from
+  // the fixture by db/63's triggers, so a scorer assigned to one fixture
+  // reaches that fixture's import and no other. Written by nobody directly:
+  // db/63 REVOKEs INSERT, UPDATE and DELETE from the application, and every
+  // change is a SECURITY DEFINER function that decides who and writes a
+  // revision. db/63 adds a RESTRICTIVE cut on each (never under a support
+  // session) and db/50's pad guard.
+  scorebook_import: {
+    // The import and its card. Read by the two roles that work on it
+    // (scoring.import.read: the typist's and the confirmer's), and by a
+    // school's auditors — the card and its history, never the photos.
+    read:  "scoring.import.read",
+    write: "scoring.import.write",
+    anchors: { school: "school_id", team: "team_code", fixture: "match_id" },
+    visibleWhen: "app_can('audit.read', scorebook_import.school_id, scorebook_import.team_code, '00000000-0000-0000-0000-000000000000'::uuid, scorebook_import.match_id)",
+    masked: {},
+  },
+  scorebook_import_page: {
+    // A photo's record: its key in the store, its hash and size. The photo
+    // itself is read only through scorebook_page_open() (db/63), which asks
+    // this same capability and writes access_log. NOT readable under
+    // audit.read: a page carries twenty-two children's names (§5.2).
+    read:  "scoring.import.read",
+    write: "scoring.import.write",
+    anchors: { school: "school_id", team: "team_code", fixture: "match_id" },
+    masked: {},
+  },
+  scorebook_import_revision: {
+    // Every card as it stood, who and when: the audit of an import (§4.5).
+    // Readable as the import is.
+    read:  "scoring.import.read",
+    write: "scoring.import.write",
+    anchors: { school: "school_id", team: "team_code", fixture: "match_id" },
+    visibleWhen: "app_can('audit.read', scorebook_import_revision.school_id, scorebook_import_revision.team_code, '00000000-0000-0000-0000-000000000000'::uuid, scorebook_import_revision.match_id)",
+    masked: {},
+  },
   emergency_contact: {
     // Who to ring when something happens to a child. Read by the people around
     // him on the day, kept by his family and the office. Anchored through the

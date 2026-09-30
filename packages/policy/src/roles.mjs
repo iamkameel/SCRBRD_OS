@@ -178,6 +178,9 @@ const BUNDLES = {
     "sponsorship.read",
     "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
     "scoring.amend.approve",
+    // SCRBRD-120: he signs a scorebook import for a match in no competition
+    // (a league's is its administrator's: db/63), and never types one.
+    "scoring.import.read", "scoring.import.confirm",
     "news.publish.team", "news.publish.school", "audit.read",
     "opposition.read",
     // The one most often told "this boy must not appear" (db/47, C5).
@@ -251,6 +254,9 @@ const BUNDLES = {
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
+    // SCRBRD-120: the lower side's match went into the paper book; he types
+    // it in from the photos, and somebody else confirms it.
+    "scoring.import.read", "scoring.import.write",
     "news.publish.team", "opposition.read",
   ],
   assistantcoach: ["player.workload.read",
@@ -262,6 +268,7 @@ const BUNDLES = {
     "player.age.read", "player.roster.read", "player.emergency.read",
     "player.access.request", "player.access.grant",
     "transport.read", "scoring.start", "scoring.edit", "opposition.read",
+    "scoring.import.read", "scoring.import.write",
   ],
   teammanager: [
     "availability.read", "availability.declare",
@@ -282,7 +289,10 @@ const BUNDLES = {
   // correction to a locked match and somebody else signs it (db/24).
   scorer: ["fixture.read", "team.read", "news.read", "player.profile.read",
            "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
-           "scoring.amend.request"],
+           "scoring.amend.request",
+           // SCRBRD-120: the match he scored on paper, typed in from its
+           // photos; confirmed by somebody else (scoring.import.confirm).
+           "scoring.import.read", "scoring.import.write"],
   official: ["fixture.read", "team.read", "news.read", "officiating.report", "discipline.write"],
 
   // ── The people the data is about ──
@@ -500,6 +510,8 @@ const BUNDLES = {
     // panel: accreditation, grade and whether somebody still stands at all.
     "officiating.registry.manage",
     "discipline.read", "scoring.correct", "scoring.amend.approve",
+    // SCRBRD-120: he signs a scorebook import for a match in his league.
+    "scoring.import.read", "scoring.import.confirm",
     "news.publish.competition",
   ],
 };

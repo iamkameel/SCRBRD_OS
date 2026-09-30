@@ -113,9 +113,31 @@ group("§11.1  Viewing a match does not grant scoring rights");
   const SESSION = ["scoring.start", "scoring.edit", "scoring.finalise"];
   const RECOVERY = ["scoring.correct"];
   const GOVERNANCE = ["scoring.amend.request", "scoring.amend.approve"];
-  ok("every scoring capability is a session act, a recovery act or a governance one",
-     ALL_CAPABILITIES.filter((c) => c.startsWith("scoring.")).length === SESSION.length + RECOVERY.length + GOVERNANCE.length,
+  // The fourth thing (SCRBRD-120): a match scored on paper, typed in from
+  // photos of the book and confirmed by somebody else. Not the live act — no
+  // token, no lease — and governed like an amendment: two people, by role.
+  const IMPORT = ["scoring.import.read", "scoring.import.write", "scoring.import.confirm"];
+  ok("every scoring capability is a session act, a recovery act, a governance one or an import",
+     ALL_CAPABILITIES.filter((c) => c.startsWith("scoring.")).length
+       === SESSION.length + RECOVERY.length + GOVERNANCE.length + IMPORT.length,
      ALL_CAPABILITIES.filter((c) => c.startsWith("scoring.")).join(" "));
+  // An import takes two people, by the role catalogue, as a correction does
+  // (§4.2): nobody who types a card may confirm one. db/63 adds the per-import
+  // rule — the submitter and every revision's author are refused — for the
+  // person holding both through two assignments.
+  const typists = new Set(others("scoring.import.write"));
+  const signers = new Set(others("scoring.import.confirm"));
+  ok("an import takes two people: no role both types and confirms one",
+     [...typists].every((r) => !signers.has(r)) && typists.size > 0 && signers.size > 0,
+     `write ${[...typists].join(",")} · confirm ${[...signers].join(",")}`);
+  ok("...and both can open the import they work on",
+     [...typists, ...signers].every((r) => caps(r).includes("scoring.import.read")));
+  ok("...and only a role that can score a match live may type one in",
+     [...typists].every((r) => caps(r).includes("scoring.edit")), [...typists].join(","));
+  ok("...and the confirmers are the approvers of a correction",
+     [...signers].every((r) => caps(r).includes("scoring.amend.approve")), [...signers].join(","));
+  ok("no family, pupil or support role reaches an import",
+     ["guardian", "player", "selfaccess", "enquiry", "spectator", "platformadmin"].every((r) => reach(r, IMPORT).length === 0));
   const leaked = ROLES.filter((r) => !SCORING_ROLES.includes(r) && reach(r, SESSION).length);
   ok("no role outside SCORING_ROLES reaches the live scoring session", leaked.length === 0,
      leaked.map((r) => `${r}: ${reach(r, SESSION).join(",")}`).join(" · "));
