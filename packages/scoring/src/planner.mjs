@@ -64,9 +64,13 @@
  *
  * BOUNDED. At most 16 entrants (a double round robin of 16 is 240
  * fixtures) and 256 windows. With F fixtures, W windows, and K known
- * commitments, B blackouts and C closures, plan() is
- * O(F · W · (F + K + B + C)) — about fifteen million cheap comparisons at
- * the ceiling, well under a second. pairings() is O(F).
+ * commitments, B blackouts and C closures, plan() is at worst
+ * O(F · W · (F + K + B + C)): each fixture may try each window, and each
+ * try looks at what is placed. Indexes by site, side and day keep the look
+ * to what could clash, and a window is passed at its first refusal, so the
+ * ceiling (240 fixtures, 256 windows) plans in about a tenth of a second;
+ * a fixture no window takes is tried again in full, for its reasons.
+ * pairings() is O(F).
  *
  * WHY IT LIVES IN @scrbrd/scoring. It is pure JavaScript about a
  * competition, like conditions.mjs beside it; it dates a day the way
@@ -520,7 +524,7 @@ function knockout(ids) {
  * @returns {Plan}
  */
 export function plan({ pairings: draw, windows = [], blackouts = [], rules, known = [], locks = [], grounds = [] }) {
-  if (!draw || !FORMATS.has(draw.format) || !Array.isArray(draw.fixtures)) refuse("pairings must be what pairings() returned");
+  if (!draw || !FORMATS.has(draw.format) || !Array.isArray(draw.fixtures) || !Array.isArray(draw.byes)) refuse("pairings must be what pairings() returned");
 
   // ── The rules ──
   const r = rules ?? refuse("rules are required");
@@ -605,8 +609,10 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
     if (r === undefined) { r = chain(a).includes(b) || chain(b).includes(a); relatedMemo.set(key, r); }
     return r;
   };
+  /** The site a ground is on: the top of its chain. */
+  const site = (/** @type {string} */ g) => /** @type {string} */ (chain(g).at(-1));
   /** The same site: no travel between them. */
-  const sameSite = (/** @type {string} */ a, /** @type {string} */ b) => chain(a).at(-1) === chain(b).at(-1);
+  const sameSite = (/** @type {string} */ a, /** @type {string} */ b) => site(a) === site(b);
   /** @type {Map<string, { from: number, to: number }[]>} */ const closures = new Map();
   /** Every closure on this ground, on a field it lies on, or on a pitch lying on it. */
   const closuresTouching = (/** @type {string} */ g) => {
@@ -671,7 +677,6 @@ export function plan({ pairings: draw, windows = [], blackouts = [], rules, know
   /** @type {Set<string>} */ const usedWindows = new Set();
   /** @param {Map<string, string[]>} m @param {string} k @param {string} v */
   const push = (m, k, v) => { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); };
-  const site = (/** @type {string} */ g) => /** @type {string} */ (chain(g).at(-1));
   const bump = (/** @type {string} */ e, /** @type {string} */ d) => perDay.set(`${e}|${d}`, (perDay.get(`${e}|${d}`) ?? 0) + 1);
   for (const k of commitments) for (const e of k.entrants) for (const d of k.days) bump(e, d);
 

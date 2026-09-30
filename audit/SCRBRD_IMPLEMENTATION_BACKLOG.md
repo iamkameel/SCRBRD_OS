@@ -4238,6 +4238,12 @@ Publishing creates fixtures through the existing fixture route, with `match.comp
 Schools approving their own fixtures and cross-school calendars are a later phase. Opus for the algorithm (plain JS in
 `packages/`, with tests) and the publish path; Sonnet for the draft screen.
 
+**Built 2026-09-30 (Opus): the engine, phase 1.** `@scrbrd/scoring/planner` (`packages/scoring/src/planner.mjs`, a
+subpath export kept off the package index): `pairings()`, `plan()` and `toFixtureDrafts()`, with
+`packages/scoring/test/planner.test.mjs` and `services/api/write/planner-drafts.test.mjs` (every draft through the
+fixture route's own handler). No database change, route or screen. Ground hierarchy and closures are planner input
+until a record exists. The API, what phase 2 adds and what was left out: `docs/design/SCRBRD-123_planner.md`.
+
 ### SCRBRD-124 — Parent lift clubs: families offering each other lifts to fixtures
 **Priority:** P2 · **Domain:** Transport / Families / Safeguarding · **Type:** Fable design, then build after SCRBRD-122 and
 SCRBRD-123 (Kameel, 2026-09-30: "a feature I still believe in … I've used parent lift clubs like this")
