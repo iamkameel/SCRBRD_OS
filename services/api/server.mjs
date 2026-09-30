@@ -70,6 +70,8 @@ import { safeguardingRoutes } from "./write/safeguarding-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { playingConditionsRoutes } from "./write/playing-conditions-api.mjs";
+import { plannerRoutes } from "./write/planner-api.mjs";
+import { leagueRoutes } from "./write/league-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
@@ -415,6 +417,9 @@ const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
 const publication = publicationRoutes({ pool, secret: SECRET });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
+// The fixture planner, phase 2 (SCRBRD-123, db/67).
+const planner = plannerRoutes({ pool, secret: SECRET });
+const league = leagueRoutes({ pool, secret: SECRET });
 // The scorebook importer (SCRBRD-120, db/63). Its photos go to the private
 // store (io/object-store.mjs): Supabase Storage when SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are set, a local directory in development, and
@@ -696,6 +701,40 @@ const PLAYER_ROUTES = [
   [/^\/api\/condition-sets\/([^/]+)\/withdraw$/,                "POST", playing.withdraw],
   [/^\/api\/matches\/([^/]+)\/playing-conditions$/,             "GET",  playing.match],
   [/^\/api\/matches\/([^/]+)\/playing-conditions\/override$/,   "POST", playing.override],
+  // The fixture planner, phase 2 (SCRBRD-123, db/67): the inputs read for a
+  // competition's manager, versioned drafts the server computes, locks, and
+  // publishing through the fixture route's own insert. The ground owner's
+  // windows and closures, a pitch on its field, and blackout days. Not
+  // module-gated, like the fixture itself. planner-api.mjs.
+  [/^\/api\/competitions\/([^/]+)\/planner\/inputs$/,           "GET",  planner.inputs],
+  [/^\/api\/competitions\/([^/]+)\/plans$/,                     "GET",  planner.list],
+  [/^\/api\/competitions\/([^/]+)\/plans$/,                     "POST", planner.create],
+  [/^\/api\/competitions\/([^/]+)\/plans\/([^/]+)$/,            "GET",  planner.get],
+  [/^\/api\/competitions\/([^/]+)\/plans\/([^/]+)\/locks$/,     "POST", planner.locks],
+  [/^\/api\/competitions\/([^/]+)\/plans\/([^/]+)\/publish$/,   "POST", planner.publish],
+  [/^\/api\/competitions\/([^/]+)\/blackouts$/,                 "GET",  planner.blackouts],
+  [/^\/api\/competitions\/([^/]+)\/blackouts$/,                 "POST", planner.blackoutAdd],
+  [/^\/api\/competition-blackouts\/([^/]+)\/remove$/,           "POST", planner.blackoutRemove],
+  [/^\/api\/grounds\/([^/]+)\/windows$/,                        "GET",  planner.windows],
+  [/^\/api\/grounds\/([^/]+)\/windows$/,                        "POST", planner.windowAdd],
+  [/^\/api\/ground-windows\/([^/]+)\/remove$/,                  "POST", planner.windowRemove],
+  [/^\/api\/grounds\/([^/]+)\/closures$/,                       "GET",  planner.closures],
+  [/^\/api\/grounds\/([^/]+)\/closures$/,                       "POST", planner.closureAdd],
+  [/^\/api\/ground-closures\/([^/]+)\/remove$/,                 "POST", planner.closureRemove],
+  [/^\/api\/grounds\/([^/]+)\/parent$/,                         "POST", planner.parent],
+  [/^\/api\/grounds\/([^/]+)\/ends$/,                           "POST", planner.ends],
+  // Making a league (SCRBRD-123, db/67 §8a–8c): the competition, its
+  // entrants invited by the organiser and answered by the school, and its
+  // first conditions from a starting point. league-api.mjs.
+  [/^\/api\/competitions$/,                                     "POST", league.create],
+  [/^\/api\/competitions\/([^/]+)$/,                            "POST", league.amend],
+  [/^\/api\/competitions\/([^/]+)\/entrants$/,                  "GET",  league.entrants],
+  [/^\/api\/competitions\/([^/]+)\/entrants$/,                  "POST", league.invite],
+  [/^\/api\/competitions\/([^/]+)\/schools$/,                   "GET",  league.schools],
+  [/^\/api\/competition-invitations$/,                          "GET",  league.invitations],
+  [/^\/api\/competition-entrants\/([^/]+)\/accept$/,            "POST", league.accept],
+  [/^\/api\/competition-entrants\/([^/]+)\/decline$/,           "POST", league.decline],
+  [/^\/api\/competitions\/([^/]+)\/playing-conditions\/start$/, "POST", league.startConditions],
   // Importing a paper scorebook (SCRBRD-120, db/63): photos of the book, a
   // card typed and ticked beside them, a second person's confirmation, and
   // then three events per innings in the log. NOT tagged with the module,
@@ -1060,7 +1099,10 @@ const server = createServer(async (req, res) => {
         return json(res, 403, { error: "module_disabled", module });
       }
       const body = (req.method === "POST" || req.method === "PATCH") ? await readJson(req) : {};
-      const request = { params: { id: m[1] }, query: Object.fromEntries(url.searchParams), body, headers: req.headers };
+      // A second capture group (/competitions/:id/plans/:planId, SCRBRD-123)
+      // is `sub`; every other route has one group, or none.
+      const request = { params: { id: m[1], ...(m[2] !== undefined ? { sub: m[2] } : {}) },
+                        query: Object.fromEntries(url.searchParams), body, headers: req.headers };
 
       // A RETRY WRITES ONCE. A write that carries an Idempotency-Key header
       // is answered from its receipt (db/15_request_replay.sql) when the same
@@ -1074,7 +1116,7 @@ const server = createServer(async (req, res) => {
       const idem = (req.method === "POST" || req.method === "PATCH") ? String(req.headers["idempotency-key"] ?? "").trim() : "";
       const keyed = Boolean(idem && req.headers.authorization);
       const route = keyed
-        ? `${req.method} ${pattern.source.replace(/\\\//g, "/").replace(/\(\[\^\/\]\+\)/g, ":id").replace(/[\^$]/g, "")}${m[1] ? ` ${m[1]}` : ""}`
+        ? `${req.method} ${pattern.source.replace(/\\\//g, "/").replace(/\(\[\^\/\]\+\)/g, ":id").replace(/[\^$]/g, "")}${m[1] ? ` ${m[1]}` : ""}${m[2] ? ` ${m[2]}` : ""}`
         : null;
       if (keyed) {
         const seen = await runAsPrincipal(pool, SECRET, req.headers.authorization, async (client) =>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
-import { boardFromInnings } from "../../scorer/boardData.js";
+import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { boardInsights } from "../../scorer/signals.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
@@ -73,14 +73,19 @@ function InningsBreakCard({ match, innings, overs }) {
   );
 }
 
-export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns }) {
+// `quietMoments`: the page has a live region of its own (the public page's),
+// so the moment and the over summary are drawn but not announced a second time.
+export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false }) {
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
   const chase = innings.length >= 2 && inn === innings[1];
   const target = chase ? targetOf(innings) : null;
   const inOvers = inn.overs ?? overs;
-  const props = boardFromInnings(inn, { target, overs: inOvers });
+  // "At this rate", in a first innings still being played (scorer/boardData.js
+  // says when it is left off); nothing to project once the match is decided.
+  const projected = result || match.status === "complete" ? null : atThisRate(inn, { overs: inOvers, chasing: chase, format: match.format });
+  const props = boardFromInnings(inn, { target, overs: inOvers, projected });
   const side = teamOf(match, inn.battingTeam);
   const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
@@ -90,10 +95,10 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
             insight={insight.length ? insight : undefined}/>
-          <MomentMark moment={moment}/>
+          <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
       )}
-      <OverSummary item={overSummary}/>
+      <OverSummary item={overSummary} announce={!quietMoments}/>
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}
       {latest.length > 0 && (
         <Panel testid="mc-latest">

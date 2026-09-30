@@ -572,11 +572,34 @@ async function walk(theme) {
        }));
     ok("the active page is marked, not just tinted", landmarks.current >= 1);
 
+    // A view change is told (WCAG 4.1.3) and focus follows it (2.4.3): the shell
+    // swaps views without a page load, so without this a screen-reader user
+    // hears nothing when they choose one and focus stays on the menu item.
+    const announcer = page.locator('[data-testid="view-announcer"]');
+    const viewRegion = await announcer.evaluate((e) => ({ live: e.getAttribute("aria-live"), atomic: e.getAttribute("aria-atomic"), text: e.textContent,
+      hidden: getComputedStyle(e).position === "absolute" && e.getBoundingClientRect().width <= 1 })).catch(() => null);
+    ok("view changes have a polite, atomic live region, visually hidden", viewRegion?.live === "polite" && viewRegion.atomic === "true" && viewRegion.hidden, JSON.stringify(viewRegion));
+    ok("...which is empty on first load: nothing is announced for the page the app opens on", viewRegion?.text === "", JSON.stringify(viewRegion));
+    const inMain = () => page.evaluate(() => { const m = document.getElementById("os-content"), a = document.activeElement;
+      return { isMain: a === m, tag: a?.tagName, inside: !!m && m.contains(a), landmark: m?.tagName }; });
+
     // Settings → Me carries the theme control (DESIGN_DIRECTION §3.1).
     await page.locator("nav button", { hasText: /Settings/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(700);
+    ok("choosing Settings says \"Settings, page loaded\"", await announcer.textContent() === "Settings, page loaded", await announcer.textContent());
+    const afterSettings = await inMain();
+    ok("...and moves focus to the main landmark, off the menu item", afterSettings.isMain && afterSettings.tag === "MAIN", JSON.stringify(afterSettings));
+    await page.keyboard.press("Tab");
+    const afterTab = await inMain();
+    ok("...so the next Tab lands on the page's first control", afterTab.inside && !afterTab.isMain, JSON.stringify(afterTab));
     await page.locator('[role="tab"]', { hasText: /^Me$/ }).first().click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(500);
+    const onTab = await page.evaluate(() => document.activeElement?.getAttribute("role") + ":" + document.activeElement?.textContent?.trim());
+    await page.waitForTimeout(2500);
+    ok("a background refresh of the data moves nothing: focus is where the person left it",
+       await page.evaluate(() => document.activeElement?.getAttribute("role") + ":" + document.activeElement?.textContent?.trim()) === onTab
+       && onTab === "tab:Me", onTab);
+    ok("...and says nothing more", await announcer.textContent() === "Settings, page loaded");
     const settingsChoice = await page.evaluate(() => {
       const g = document.querySelector('[data-testid="theme-choice"]');
       return g ? { role: g.getAttribute("role"), radios: [...g.querySelectorAll('[role="radio"]')].map((b) => [b.textContent.trim(), b.getAttribute("aria-checked")]) } : null;
@@ -587,6 +610,8 @@ async function walk(theme) {
 
     await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(900);
+    ok("a second view change: the words change to \"Match Centre, page loaded\"", await announcer.textContent() === "Match Centre, page loaded", await announcer.textContent());
+    ok("...and focus is on the main landmark again", (await inMain()).isMain);
     await measure(page, theme, "matchcentre");
     // The fixture's own view (step 3c): its Scorecard, the densest tab.
     await page.locator('[data-testid^="mc-open-"]').first().click({ timeout: 4000 }).catch(() => {});
@@ -704,6 +729,15 @@ async function walk(theme) {
     ok("the score is in a live region",
        await page.evaluate(() => !!document.querySelector('[aria-live="polite"]')));
 
+    // The pad's own change of view (its tab bar) moves focus to the pad's main,
+    // like the shell's; nothing else the pad does does (checked after the taps).
+    await page.locator('[data-testid="pad-tabs"] button', { hasText: /Cards/ }).click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const padFocus = await page.evaluate(() => ({ id: document.activeElement?.id, tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute("aria-label") }));
+    ok("choosing the pad's Cards view moves focus to its main landmark, named for the view", padFocus.id === "pad-content" && padFocus.tag === "MAIN" && padFocus.label === "Cards", JSON.stringify(padFocus));
+    await page.locator('[data-testid="pad-tabs"] button', { hasText: /Score/ }).click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
     // ── The over as chips (DESIGN_DIRECTION §10, step 3b) ──
     // A run, a four and a wide, so the board draws chips of three kinds; then
     // the pad is measured again as "padOver", against the same floors as the
@@ -723,6 +757,7 @@ async function walk(theme) {
     ok("...every chip at least 24px, with tabular figures",
        chips.every((c) => c.w >= 24 && c.h >= 24 && /tabular-nums/.test(c.tab)), JSON.stringify(chips.filter((c) => c.w < 24 || c.h < 24)));
     ok("...and the over is said in words", /This over: .*4 runs.*wide/.test(await page.locator('[data-testid="board-over"] .sr-only').textContent().catch(() => "")));
+    ok("scoring balls never moved focus to the main landmark (only a change of view does)", await page.evaluate(() => document.activeElement?.id !== "pad-content"));
     await measure(page, theme, "padOver");
 
     // ── Pro mode (SCRBRD-095 item 2) ──

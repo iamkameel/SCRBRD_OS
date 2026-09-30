@@ -49,6 +49,14 @@ host with a free tier and no billing account:
 A free instance sleeps when idle and takes a while to answer the first
 request after that. It is a demonstration, not a service a school depends on.
 
+Until the pilot moves to a paid plan, `.github/workflows/keep-warm.yml` keeps
+it awake through school cricket's hours (weekday afternoons and Saturdays,
+SAST) by pinging `/api/health` every ten minutes, about 170 of the plan's 750
+instance-hours a month. Set the repository variable `SCRBRD_HEALTH_URL`
+(Settings → Secrets and variables → Actions → Variables) to the service's
+`/api/health` address; unset, the job does nothing. Run it once by hand from
+the Actions tab to see it answer 200.
+
 ### A demonstration is not a pilot
 
 The fixtures in `98_seed_pilot.sql` are invented people at invented schools,

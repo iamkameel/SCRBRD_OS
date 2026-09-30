@@ -84,6 +84,12 @@ const SUITES = [
   // The public page (SCRBRD-083): the redacted log made foldable, no
   // pseudonym ever shown as a name.
   ["public-page",       "apps/web/test/public-page.test.mjs"],
+  // The public page's live region: each new ball in plain words, only what is
+  // new, nobody named (lib/announce.js).
+  ["announce",          "apps/web/test/announce.test.mjs"],
+  // "At this rate" on the first innings' board: plain arithmetic, left off
+  // when it would say nothing (scorer/boardData.js atThisRate).
+  ["at-this-rate",      "apps/web/test/at-this-rate.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.
@@ -95,6 +101,9 @@ const SUITES = [
   ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // What a live pad says about the server when it cannot send (SCRBRD-078), same transform.
   ["sync-banner", "apps/web/test/sync-banner.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // A panel that throws is a quiet card in its place, logs its name and the
+  // message once, and resets on "Try again" (ui/ErrorBoundary.jsx); same transform.
+  ["error-boundary", "apps/web/test/error-boundary.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the profile's dismissal-by-method card, same transform.
   ["dismissal-card", "apps/web/test/dismissal-breakdown.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the placement charts and the capture-profile picker (SCRBRD-039).
@@ -116,6 +125,11 @@ const SUITES = [
   // point, a refusal in words, a blank that is null and never nought, the ticks
   // that follow a row, an opposition name that is a typed key and never a player.
   ["scorebook-screen", "apps/web/test/scorebook.test.mjs"],
+  // The league wizard's and the fixture planner's words (SCRBRD-123/127): an
+  // entrant's standing (the organiser cannot accept for a school), a checklist
+  // row's kind, the rules she types, a plan by round and by day and as a
+  // bracket, the locks a click makes, a publishing outcome, a refusal.
+  ["league-screen", "apps/web/test/league.test.mjs"],
   // No Law clause number on any scorer screen: every words table, every
   // refusal helper over every code, and the sheets' literal text (SCRBRD-094).
   ["law-clauses", "apps/web/test/law-clauses.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

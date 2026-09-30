@@ -152,7 +152,10 @@ function asUser(r) {
 
 function asGround(r) {
   return { id: r.id, name: r.name, shortName: r.name, school: r.school_id,
-           type: r.surface, available: true, live: true };
+           type: r.surface, available: true, live: true,
+           // The field a pitch lies on, and the strip's two named ends (db/67),
+           // for the ground owner's fixture-slot panel (views/groundoffers.jsx).
+           parentId: r.parent_id ?? null, endA: r.end_a_name ?? null, endB: r.end_b_name ?? null };
 }
 
 function asTraining(r) {

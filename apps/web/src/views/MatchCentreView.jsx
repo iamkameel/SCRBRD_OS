@@ -20,6 +20,7 @@ import { ReportIncident } from "./discipline.jsx";
 import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
+import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
@@ -246,23 +247,26 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                   the same shape of problem the scorecard button had. This
                   reads match_duties through the choke point and says "nothing
                   on record" where nothing is, rather than falling silent. */}
-              <DutyRoster matchId={selMatch.id} role={role}/>
+              {/* Each of these side panels has its own error boundary, so one
+                  that fails to draw is a card in its place and the rest of
+                  the details stay. */}
+              <ErrorBoundary name="duties"><DutyRoster matchId={selMatch.id} role={role}/></ErrorBoundary>
               {/* SCRBRD-083: a side on the public pages, for broadcast.publish
                   holders. fixture_publish() (db/47) is the gate. */}
-              <PublishPanel matchId={selMatch.id} role={role}/>
+              <ErrorBoundary name="publication"><PublishPanel matchId={selMatch.id} role={role}/></ErrorBoundary>
               {/* SCRBRD-003. Offered only to whoever holds scoring.amend.approve
                   — see quarantine.jsx for why that check is a courtesy and not
                   the gate. Placed in Match Centre rather than the live pad: a
                   stale-epoch ball is reviewed after the fact, by the person who
                   approves corrections, not by the scorer mid-over. */}
-              <QuarantinePanel matchId={selMatch.id} role={role}/>
-              <DrsPanel matchId={selMatch.id} role={role}/>
-              <ReportIncident match={selMatch} role={role}/>
+              <ErrorBoundary name="quarantine"><QuarantinePanel matchId={selMatch.id} role={role}/></ErrorBoundary>
+              <ErrorBoundary name="review"><DrsPanel matchId={selMatch.id} role={role}/></ErrorBoundary>
+              <ErrorBoundary name="incident report"><ReportIncident match={selMatch} role={role}/></ErrorBoundary>
               {/* SCRBRD-120. A played fixture's paper scorebook, typed beside
                   photos of its pages and confirmed by a second person. Drawn
                   only when the API lists the fixture's imports (module on,
                   this person's to see); see views/scorebook.jsx. */}
-              <ScorebookPanel match={selMatch} onOpen={(id)=>setSbOpen({ id, match: selMatch })}/>
+              <ErrorBoundary name="scorebook"><ScorebookPanel match={selMatch} onOpen={(id)=>setSbOpen({ id, match: selMatch })}/></ErrorBoundary>
               {ground&&pitch&&(
                 <div style={{marginBottom:"12px",background:D.surf2,borderRadius:D.md,padding:"10px 12px",border:`1px solid ${D.teal}22`}}>
                   <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.teal,letterSpacing:"0.08em",marginBottom:"7px"}}>PITCH REPORT</div>

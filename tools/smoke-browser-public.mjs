@@ -33,6 +33,8 @@ import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildPublicFixture, EXPECTED, HIL } from "./fixture-public.mjs";
+import { writeEvents } from "./fixture-matchcentre.mjs";
+import { ball, batters, bowler, inningsStart, BALL_TYPE } from "@scrbrd/scoring";
 
 const PORT = port(8848);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -73,10 +75,11 @@ const userId = async (/** @type {string} */ email) => (await q(`select id from a
 const browser = await chromium.launch({ ...launchOptions() });
 let ipN = 0;
 /** A fresh visitor: a context of its own, from an address of its own, signed out. */
-async function visit(/** @type {string} */ path, { width = 1280 } = {}) {
+async function visit(/** @type {string} */ path, { width = 1280, init = null } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.84.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
+  if (init) await page.addInitScript(init);
   const errors = [];
   const requests = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
@@ -126,6 +129,10 @@ try {
   ok("both sides are named in full", /Hilton College 1XI/.test(title) && /Westville Boys' High 1XI/.test(title), title);
   ok("it says Live", (await tid(v.page, "mc-status").textContent().catch(() => "")) === "Live");
   ok("the board is drawn", await tid(v.page, "mc-board").count() === 1);
+  const region = await tid(v.page, "public-announcer").evaluate((e) => ({ role: e.getAttribute("role"), live: e.getAttribute("aria-live"),
+    atomic: e.getAttribute("aria-atomic"), text: e.textContent, hidden: getComputedStyle(e).position === "absolute" && e.getBoundingClientRect().width <= 1 })).catch(() => null);
+  ok("a polite, atomic live region, visually hidden", region?.role === "status" && region.live === "polite" && region.atomic === "true" && region.hidden, JSON.stringify(region));
+  ok("...and EMPTY on first load: the log as it stands is not read out", region?.text === "", JSON.stringify(region));
   ok("six tabs, in the Match Centre's order", (await v.page.locator('[role="tab"]').allInnerTexts()).join("|") === "Summary|Scorecard|Commentary|Partnerships|Analytics|Match details");
   let body = await text(v.page);
   ok("Summary: nothing the rule forbids", leaks(body).length === 0, leaks(body).join(","));
@@ -199,6 +206,88 @@ try {
     const after = (await r.page.locator('[data-testid="mc-bat-row"]').allInnerTexts()).map((x) => x.split("\n")[0].replace("*", "").trim());
     ok(`reloaded ${Date.now() - t0} ms later (the finished page's cache holds 60 s): he is 'Batter'`, !after.includes(EXPECTED.erasmus) && after[0] === "Batter", after.join("|"));
     ok("...and L Botha is still named", after.includes(EXPECTED.botha));
+    await r.ctx.close();
+  }
+
+  group("7. The ball, said: a live region that speaks only what arrives");
+  {
+    // Read every 5 s (the page's floor), from the API's 5 s live cache.
+    const lv = await visit(`/live/${pub}`, { init: `window.__SCRBRD_LIVE_MS__ = 1000;` });
+    await lv.page.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
+    const said = () => tid(lv.page, "public-announcer").evaluate((/** @type {any} */ e) => e.textContent);
+    /** Wait for the region to hold exactly `want`. */
+    const heard = async (/** @type {string} */ want, ms = 30000) => {
+      try { await lv.page.waitForFunction((/** @type {string} */ w) => document.querySelector('[data-testid="public-announcer"]')?.textContent === w, want, { timeout: ms, polling: 100 }); return true; } catch { return false; }
+    };
+    /** The region's span, to tell a new announcement from the same words left standing. */
+    const mark = () => lv.page.evaluate(() => { /** @type {any} */ (window).__said = document.querySelector('[data-testid="public-announcer"] > span'); });
+    const replaced = async (ms = 30000) => {
+      try { await lv.page.waitForFunction(() => { const s = document.querySelector('[data-testid="public-announcer"] > span'); return s && s !== /** @type {any} */ (window).__said; }, null, { timeout: ms, polling: 100 }); return true; } catch { return false; }
+    };
+    const put = async (/** @type {number} */ n, /** @type {any} */ ev) => {
+      const last = Number((await q(`select max(seq) as s from ball_event where match_id = $1`, [pub]))[0].s);
+      await writeEvents(q, pub, [{ ...ev, innings: 1, id: `pub-said-${n}`, clientTs: Date.now() + n }], last);
+    };
+    const heardAll = [];
+    ok("a fresh load says nothing", (await said()) === "");
+    ok("the chase's board has no \"At this rate\": it shows the required rate", /Need \d+ off \d+/.test(await tid(lv.page, "mc-board-sub").innerText().catch(() => ""))
+       && !/At this rate/.test(await tid(lv.page, "mc-board-sub").innerText().catch(() => "")));
+    await lv.page.waitForTimeout(6500);
+    ok("...and a re-read or two with nothing new says nothing either", (await said()) === "", await said());
+
+    await put(1, ball({ type: BALL_TYPE.RUN, value: 4 }));
+    ok("a new four is announced: \"Four runs\"", await heard("Four runs"), await said());
+    heardAll.push(await said());
+    ok("...and it is the only live region on the page speaking (the moment on the board is drawn, not said again)",
+       await lv.page.evaluate(() => document.querySelectorAll('[data-testid="public-match"] [role="status"], [data-testid="public-match"] [aria-live]').length) === 1);
+
+    await mark();
+    await put(2, ball({ type: BALL_TYPE.RUN, value: 4 }));
+    ok("the same words again are announced again (a new node in the region, not an unchanged one)", await replaced() && (await said()) === "Four runs");
+
+    await put(3, ball({ type: BALL_TYPE.WIDE, value: 0 }));
+    ok("a wide: \"Wide\"", await heard("Wide"), await said());
+    heardAll.push(await said());
+
+    await put(4, ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" }));
+    ok("a wicket: \"Wicket — bowled\"", await heard("Wicket — bowled"), await said());
+    heardAll.push(await said());
+
+    ok("nothing it said names a boy or shows a pseudonym", heardAll.every((s) => leaks(s).length === 0 && !/Batter|Bowler|Fielder/.test(s)), heardAll.join(" | "));
+    ok("no console errors (live region)", lv.errors.length === 0, lv.errors.join(" | "));
+    await lv.ctx.close();
+  }
+
+  group("8. \"At this rate\", on a first innings still being played");
+  {
+    const GROUND = "ffffffff-0000-0000-0000-000000000001";
+    const liveId = (await q(
+      `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - interval '1 hour', 'cricket', 'T10', 10, 'live') returning id`, [HIL, GROUND]))[0].id;
+    await as(SARAH, `select * from fixture_publish($1, 'home', true)`, [liveId]);
+    const OAKES = "Gareth Oakes";
+    let n = 0;
+    const at = (/** @type {any} */ ev) => ({ ...ev, innings: 0, id: `pub-rate-${++n}`, clientTs: Date.parse("2026-09-30T08:00:00Z") + n * 1000 });
+    const squad = ["erasmus", "botha", "markham"].map((k) => ({ id: ids[k], name: k }));
+    await writeEvents(q, liveId, [
+      at(inningsStart({ battingTeam: "1XI", bowlingTeam: "Kearsney College 1XI", teamKey: "1XI", bowlingTeamKey: "Kearsney College 1XI",
+        squad, bowlingSquad: [{ id: OAKES, name: OAKES }], overs: 10 })),
+      at(batters({ striker: ids.erasmus, nonStriker: ids.botha })), at(bowler({ bowler: OAKES })),
+      at(ball({ type: BALL_TYPE.RUN, value: 4 })), at(ball({ type: BALL_TYPE.RUN, value: 1 })),
+      at(ball({ type: BALL_TYPE.RUN, value: 0 })), at(ball({ type: BALL_TYPE.RUN, value: 2 })),
+    ]);
+    // Worked out here, from the same four balls, not read back from the page.
+    const rate = (/** @type {number} */ runs, /** @type {number} */ balls) => Math.round(runs + (runs / balls) * (10 * 6 - balls));
+    const r = await visit(`/live/${liveId}`, { init: `window.__SCRBRD_LIVE_MS__ = 1000;` });
+    await r.page.waitForSelector('[data-testid="mc-board-sub"]', { timeout: 10000 }).catch(() => {});
+    const sub = () => tid(r.page, "mc-board-sub").innerText().catch(() => "");
+    ok(`7 off 4 balls, ten overs: "At this rate: ${rate(7, 4)}", beside the run rate`, (await sub()) === `CRR 10.50 · At this rate: ${rate(7, 4)}`, await sub());
+    await writeEvents(q, liveId, [at(ball({ type: BALL_TYPE.RUN, value: 6 }))], 7);
+    ok(`a six arrives and the line follows it: 13 off 5 is "At this rate: ${rate(13, 5)}"`,
+       await r.page.waitForFunction((/** @type {string} */ w) => document.querySelector('[data-testid="mc-board-sub"]')?.textContent?.includes(w), `At this rate: ${rate(13, 5)}`,
+         { timeout: 30000, polling: 100 }).then(() => true, () => false), await sub());
+    ok("...and it names nobody", leaks(await sub()).length === 0);
+    ok("no console errors (at this rate)", r.errors.length === 0, r.errors.join(" | "));
     await r.ctx.close();
   }
 

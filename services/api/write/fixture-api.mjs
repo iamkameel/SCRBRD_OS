@@ -40,52 +40,132 @@ const err = (/** @type {string} */ code, status = 400) => Object.assign(new Erro
 const STATUS = ["scheduled", "live", "complete", "abandoned"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * A refusal as the route answers it: 23514 is one of the fixture's own rules
+ * — a sport the school has not been granted, an over count on a hockey match,
+ * a side playing itself, a side that has not entered the competition, a
+ * played fixture whose opponent somebody tried to change. Every one of those
+ * messages names the thing that is wrong, so they are passed through rather
+ * than flattened. Exported for the fixture planner's publish
+ * (planner-api.mjs), which reports each fixture's refusal in these words.
+ * @param {any} e  a caught error
+ * @returns {{ status: number, body: { error: string, detail?: string } }}
+ */
+export function fixtureRefusal(e) {
+  if (e.code === "23514") return { status: 422, body: { error: "invalid_fixture", detail: e.message } };
+  if (e.code === "23503") return { status: 404, body: { error: "no_such_school_ground_or_sport", detail: e.message } };
+  const status = e.code === "42501" ? 403 : (e.status || 500);
+  return { status, body: { error: e.code === "42501" ? "not_permitted" : (e.message || "error") } };
+}
+
+/** The away side, validated into the one shape the database takes. */
+const awaySide = (/** @type {any} */ b) => {   // the request body, unvalidated
+  const named = b.awaySchoolId != null && String(b.awaySchoolId) !== "";
+  const typed = b.opponent != null && String(b.opponent).trim() !== "";
+  if (named && typed) throw err("name_the_away_side_once");
+  if (named) {
+    if (!b.awayTeamCode || !String(b.awayTeamCode).trim()) throw err("away_team_required");
+    // opponent is stamped by the trigger; a placeholder is sent only because
+    // the column is NOT NULL and the trigger runs after the value arrives.
+    return { school: b.awaySchoolId, team: String(b.awayTeamCode).trim(), label: "pending" };
+  }
+  if (!typed) throw err("opponent_required");
+  return { school: null, team: null, label: String(b.opponent).trim().slice(0, 120) };
+};
+
+/**
+ * The competition a fixture is played under (SCRBRD-114): a uuid, or null
+ * for a friendly; undefined when the request does not say. Whether its
+ * sides entered it is db/61's trigger (match_competition_entered()), whose
+ * words come back as invalid_fixture.
+ * @param {unknown} v
+ * @returns {string | null | undefined}
+ */
+const competitionOf = (v) => {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  if (typeof v !== "string" || !UUID.test(v)) throw err("competition_invalid");
+  return v;
+};
+
+/**
+ * A new fixture's body, checked: every refusal the route makes before the
+ * database, thrown as an Error whose message is the reason and whose
+ * `status` is 400. Returns the insert's parameters in order.
+ * @param {any} b  the request body, unvalidated
+ * @returns {unknown[]}
+ */
+export function fixtureInsertParams(b) {
+  if (!b.schoolId) throw err("school_required");
+  if (!b.teamCode || !String(b.teamCode).trim()) throw err("team_required");
+  if (!b.startsAt) throw err("starts_at_required");
+  const when = new Date(b.startsAt);
+  if (Number.isNaN(when.getTime())) throw err("starts_at_invalid");
+  const sport = b.sport == null || b.sport === "" ? "cricket" : String(b.sport);
+  const status = b.status ?? "scheduled";
+  if (!STATUS.includes(status)) throw err("status_invalid");
+
+  // Cricket's two columns, and the database's constraints behind them. The
+  // shape is checked here so a sportsmaster is told which field is wrong
+  // rather than reading a constraint name.
+  const cricket = sport === "cricket";
+  const format = b.format == null || b.format === "" ? (cricket ? "T20" : null) : String(b.format);
+  if (cricket && !format) throw err("format_required_for_cricket");
+  let overs = null;
+  if (b.overs != null && b.overs !== "") {
+    if (!cricket) throw err("overs_are_a_cricket_unit");
+    overs = Number(b.overs);
+    if (!Number.isInteger(overs) || overs < 1 || overs > 120) throw err("overs_invalid");
+  } else if (cricket) {
+    overs = 20;
+  }
+
+  const away = awaySide(b);
+  const competition = competitionOf(b.competitionId);
+  return [b.schoolId, b.teamCode, away.school, away.team, away.label,
+          b.groundId ?? null, when.toISOString(), sport, format, overs, status, competition ?? null];
+}
+
+/**
+ * THE ONE WAY A FIXTURE IS MADE: the insert, under the caller's own identity,
+ * on a client already inside runAsPrincipal() — match_insert (db/09) decides
+ * who, db/61's trigger whether its sides entered the competition. The route
+ * below calls it; so does publishing a fixture plan (planner-api.mjs), inside
+ * the transaction that records which plan fixture the match was made for.
+ * No row is a refusal (not_permitted, 403).
+ * @param {import("../api-types.mjs").Db} client
+ * @param {unknown[]} params  fixtureInsertParams()'s
+ */
+export async function insertFixture(client, params) {
+  const { rows } = await client.query(
+    `insert into match (school_id, team_code, away_school_id, away_team_code,
+                        opponent, ground_id, starts_at, sport, format, overs, status, competition_id)
+     values ($1, btrim($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     returning id, school_id, team_code, away_school_id, away_team_code,
+               opponent, starts_at, sport, format, overs, status, competition_id`, params);
+  if (!rows.length) throw err("not_permitted", 403);
+  const m = rows[0];
+  return { id: m.id, school: m.school_id, team: m.team_code,
+           awaySchool: m.away_school_id, awayTeam: m.away_team_code,
+           opponent: m.opponent, startsAt: m.starts_at, sport: m.sport,
+           format: m.format, overs: m.overs, status: m.status,
+           // The competition it is played under, or null: a friendly (SCRBRD-114).
+           competitionId: m.competition_id ?? null,
+           // Said back explicitly, because it is the thing a sportsmaster
+           // arranging a derby wants to know: is the other school going
+           // to see this, or am I keeping my own copy?
+           sharedWithOpponent: m.away_school_id != null };
+}
+
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function fixtureRoutes({ pool, secret }) {
   /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
     catch (/** @type {any} */ e) {
-      // 23514 is one of the fixture's own rules — a sport the school has not
-      // been granted, an over count on a hockey match, a side playing itself,
-      // a played fixture whose opponent somebody tried to change. Every one of
-      // those messages names the thing that is wrong, so they are passed
-      // through rather than flattened.
-      if (e.code === "23514") return res.status(422).json({ error: "invalid_fixture", detail: e.message });
-      if (e.code === "23503") return res.status(404).json({ error: "no_such_school_ground_or_sport", detail: e.message });
-      const status = e.code === "42501" ? 403 : (e.status || 500);
-      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      const r = fixtureRefusal(e);
+      res.status(r.status).json(r.body);
     }
-  };
-
-  /** The away side, validated into the one shape the database takes. */
-  const awaySide = (/** @type {any} */ b) => {   // the request body, unvalidated
-    const named = b.awaySchoolId != null && String(b.awaySchoolId) !== "";
-    const typed = b.opponent != null && String(b.opponent).trim() !== "";
-    if (named && typed) throw err("name_the_away_side_once");
-    if (named) {
-      if (!b.awayTeamCode || !String(b.awayTeamCode).trim()) throw err("away_team_required");
-      // opponent is stamped by the trigger; a placeholder is sent only because
-      // the column is NOT NULL and the trigger runs after the value arrives.
-      return { school: b.awaySchoolId, team: String(b.awayTeamCode).trim(), label: "pending" };
-    }
-    if (!typed) throw err("opponent_required");
-    return { school: null, team: null, label: String(b.opponent).trim().slice(0, 120) };
-  };
-
-  /**
-   * The competition a fixture is played under (SCRBRD-114): a uuid, or null
-   * for a friendly; undefined when the request does not say. Whether its
-   * sides entered it is db/61's trigger (match_competition_entered()), whose
-   * words come back as invalid_fixture.
-   * @param {unknown} v
-   * @returns {string | null | undefined}
-   */
-  const competitionOf = (v) => {
-    if (v === undefined) return undefined;
-    if (v === null || v === "") return null;
-    if (typeof v !== "string" || !UUID.test(v)) throw err("competition_invalid");
-    return v;
   };
 
   return {
@@ -93,56 +173,8 @@ export function fixtureRoutes({ pool, secret }) {
     //                      format?, overs?, opponent? | awaySchoolId+awayTeamCode,
     //                      competitionId? }
     create: handle(async (req) => {
-      const b = req.body || {};
-      if (!b.schoolId) throw err("school_required");
-      if (!b.teamCode || !String(b.teamCode).trim()) throw err("team_required");
-      if (!b.startsAt) throw err("starts_at_required");
-      const when = new Date(b.startsAt);
-      if (Number.isNaN(when.getTime())) throw err("starts_at_invalid");
-      const sport = b.sport == null || b.sport === "" ? "cricket" : String(b.sport);
-      const status = b.status ?? "scheduled";
-      if (!STATUS.includes(status)) throw err("status_invalid");
-
-      // Cricket's two columns, and the database's constraints behind them. The
-      // shape is checked here so a sportsmaster is told which field is wrong
-      // rather than reading a constraint name.
-      const cricket = sport === "cricket";
-      const format = b.format == null || b.format === "" ? (cricket ? "T20" : null) : String(b.format);
-      if (cricket && !format) throw err("format_required_for_cricket");
-      let overs = null;
-      if (b.overs != null && b.overs !== "") {
-        if (!cricket) throw err("overs_are_a_cricket_unit");
-        overs = Number(b.overs);
-        if (!Number.isInteger(overs) || overs < 1 || overs > 120) throw err("overs_invalid");
-      } else if (cricket) {
-        overs = 20;
-      }
-
-      const away = awaySide(b);
-      const competition = competitionOf(b.competitionId);
-
-      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
-        const { rows } = await client.query(
-          `insert into match (school_id, team_code, away_school_id, away_team_code,
-                              opponent, ground_id, starts_at, sport, format, overs, status, competition_id)
-           values ($1, btrim($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-           returning id, school_id, team_code, away_school_id, away_team_code,
-                     opponent, starts_at, sport, format, overs, status, competition_id`,
-          [b.schoolId, b.teamCode, away.school, away.team, away.label,
-           b.groundId ?? null, when.toISOString(), sport, format, overs, status, competition ?? null]);
-        if (!rows.length) throw err("not_permitted", 403);
-        const m = rows[0];
-        return { id: m.id, school: m.school_id, team: m.team_code,
-                 awaySchool: m.away_school_id, awayTeam: m.away_team_code,
-                 opponent: m.opponent, startsAt: m.starts_at, sport: m.sport,
-                 format: m.format, overs: m.overs, status: m.status,
-                 // The competition it is played under, or null: a friendly (SCRBRD-114).
-                 competitionId: m.competition_id ?? null,
-                 // Said back explicitly, because it is the thing a sportsmaster
-                 // arranging a derby wants to know: is the other school going
-                 // to see this, or am I keeping my own copy?
-                 sharedWithOpponent: m.away_school_id != null };
-      });
+      const params = fixtureInsertParams(req.body || {});
+      return runAsPrincipal(pool, secret, req.headers?.authorization, (client) => insertFixture(client, params));
     }),
 
     // POST /api/fixtures/:id { startsAt?, groundId?, status? }

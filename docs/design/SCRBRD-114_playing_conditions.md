@@ -357,6 +357,23 @@ Wherever a figure is shown — the pad's words, the rulebook, the competition's 
 3. The competition admin — for the pilot, Kameel as platform-wide holder, on the unions' behalf — enters each figure on the conditions screen with its citation and publishes the first version with an `effective_from`. Nothing is seeded by migration: the unions' figures are application data they must be able to change per season, unlike the catalogue.
 4. The demonstration seed (`db/98_seed_pilot.sql`, the demonstration path) gets one published set per seeded competition with plausible figures marked `unconfirmed`, so every screen has something to show and no unconfirmed figure ever ships as confirmed.
 
+### 8.3a Decided (Kameel, 2026-09-30): KZN schools play the MCC Laws, and four figures are ours
+
+KZN schools' cricket follows the MCC Laws of Cricket (the platform plays the 4th Edition from 1 October 2026) with no
+further bye-laws to extract, so step 1–2 above are closed and the platform defaults are the rules. The Laws leave four
+things to the competition, and Kameel decided them for the pilot league:
+
+| key | value | source recorded on the set |
+|---|---|---|
+| `points.win` / `points.tie` / `points.no_result` / `points.loss` | 4 / 2 / 2 / 0 (no bonus points) | "Pilot league decision, Kameel, 2026-09-30" |
+| `result.tie_break` | `super_over` for a knockout; a league match's tie stands (Law 16) | same |
+| `bowling.limit` by age band | the platform defaults (db/08, db/32): **the ECB fast-bowling directives mapped onto the school bands**, which most South African schools apply in the absence of a published CSA schedule (corrected 2026-09-30: these are not CSA figures) | "Pilot league decision, Kameel, 2026-09-30: the ECB fast-bowling directives as SCRBRD maps them" until a CSA or KZN schedule is published |
+
+The competition admin enters these on the conditions screen as the pilot league's first published set (step 3); nothing
+is seeded into production. Assumptions A1, A2, A5 and A6 below are answered by this: one league, the CSA figures, fixed
+points with no bonus, no over-rate penalties. The build this still needs is phase 3 (§9): the points table reading
+`points.*`, and a super over the fold can play as its own innings pair.
+
 ### 8.4 Assumptions about the KZN rules, each to be confirmed
 
 | # | assumption | where it bites |

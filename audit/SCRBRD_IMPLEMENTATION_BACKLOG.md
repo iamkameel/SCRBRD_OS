@@ -3884,6 +3884,61 @@ It is signed-in only, for a role that may already read the match, so names are s
 
 It reuses SCRBRD-106's components where they fit. There is no migration.
 
+### SCRBRD-129 — Wagon wheel v2: bowling ends, in the air, over or round the wicket, and more wheels
+**Priority:** P2 · **Domain:** Scoring engine / analytics · **Type:** build (Kameel, 2026-09-30, from his three wagon-wheel
+specs: "recording different bowling ends is important data. I'm all about the nuanced details.")
+Compared with Kameel's *Wagon-Wheel Loop*, *Complete Data Model* and *Scoring Tool Technical Spec*, most is built
+(point storage, batter-relative, runs ≠ distance, placement-null reasons, shot ≠ location, event-sourced undo, density
+maps). This item closes the gaps:
+1. **Bowling ends.** The ground names its two ends (added to `ground` in db/67). The scorer sets the end for the first
+   over only; the engine alternates by Law thereafter and the scorer corrects after an interruption or a change the
+   umpires make. Every ball carries its end (derived in the fold from the over's end, not typed per ball). Unlocks figures
+   by end, scoring by end, and ground-relative wheels (the point transformed through the end and the batter's hand) with
+   estimated distances from the ground's boundary sizes, always labelled "estimated".
+2. **In the air.** A one-tap aerial toggle on fours, sixes and catches, into the existing `trajectory` field
+   (ground-versus-aerial analysis).
+3. **Over or round the wicket.** Persistent state per bowler, set once and kept until changed, recorded on the ball.
+4. **Fours and sixes drawn to the rope** on every wheel, whatever point was tapped.
+5. **More wheels from existing data:** bowler-conceded wheel, dismissal/catch map, batter-versus-bowler wheel, and
+   filters by bowler, pace or spin, phase, over range and end.
+Not adopted, by design: subjective ratings (timing, power, risk), swing or difficulty indices, launch angle, speed without
+a sensor. Opus: the end and bowling-side events, the fold, SQL parity; Sonnet: the pad toggles, the rope lines, the new
+wheels and filters.
+
+### SCRBRD-130 — Rain: a DLS calculator, and venue par from the grounds' own record
+**Priority:** P2 · **Domain:** Scoring engine / results / conditions · **Type:** Fable design, then build (Kameel,
+2026-09-30: "we need a DLS calculator"; "PAR scores for venues will be derived based on the average score at grounds so
+similar algorithm")
+1. **The rain rule** is a playing condition (the MCC Laws have none): none, DLS Standard Edition, or average run rate.
+   Interruptions are events in the log (stopped, restarted, overs lost). SCRBRD computes and shows the revised target and
+   overs; the scorer records the target the umpires announce (the umpires' figure is the record; a difference from the
+   calculation is kept and shown). The chase board, required rate, "at this rate", result words ("won by 12 runs (DLS)"),
+   `min_overs_per_side` and NRR (revised overs) read the revised figures.
+2. **The DLS Standard Edition resource table** is entered only from the official source Kameel supplies, with permission
+   confirmed (CSA or KZNCU); never typed from memory. The Professional Edition is ICC-licensed software and out of scope.
+3. **Venue par:** the typical first-innings total at a ground for the same format, overs and age group, from completed
+   innings only (rain-shortened ones scaled or left out), with a sample floor below which it says "not enough matches here
+   yet", and always shown with its evidence (innings, seasons). **Par at a point** in an innings is the venue par times the
+   resources used (the same table), for either innings. This is evidence, not the invented absolute par
+   `phases.mjs` refuses; the phases' "par = the other side in the same phase" stays.
+Fable designs (SCRBRD-114 territory: conditions, results, the fold); Opus builds; Sonnet the screens. Sits beside
+SCRBRD-114 phase 3 (db/69–71).
+**Designed 2026-09-30:** `docs/design/SCRBRD-130_rain_and_par.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D14 as recommended** — umpires' figure is the record; `target.method` umpires_revision | dls_standard (no average run rate); table in the database only, from Kameel's source; G50 a cited condition; venue par floor 5, window this season + two, rain-shortened excluded. Phases R1 db/72, R3 db/74, R2 db/73 when the table arrives.
+
+### SCRBRD-128 — A placement helper: a second device adds where the ball went
+**Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
+2026-09-30)
+The pad asks one scorer for three taps a ball (shot, where it went, outcome). In a busy over a scorer alone falls behind or
+places from memory, and placement is what suffers first. As broadcast data operators split core scoring from extended
+data, a second person on a second device (a "placement helper", joined to the match like a second scorer but with no
+power to score) adds the shot and the point for each ball the scorer has committed, and later the pitch map's line and
+length (SCRBRD-108). The ball stays one event: the helper's entry is an annotation of a committed ball, never a second
+ball, and the capture profile says which balls it covered. Needs a design pass on the event shape (an annotation event
+keyed to the ball's idempotency key, with the Laws/fold ignoring it for the score), the helper's credential (as the pad's
+resume credential, match-scoped), and what the wagon wheel shows while a ball waits for its point. Also check how the
+wheel draws fours and sixes (to the rope, not where the fielder stopped it). Opus design and engine; Sonnet the helper's
+screen.
+
 ### SCRBRD-108 — A pitch map, entered by hand: line and length per delivery
 **Priority:** P2 · **Domain:** Analytics / coaching · **Type:** feature (Kameel, 2026-09-27; the roadmap's "Pitch Map", up18)
 This is the bowling half of the wagon wheel. The ICC gets it from Hawk-Eye; a school gets it from a person tapping where the ball pitched.
@@ -4103,6 +4158,9 @@ recorded for clubs (C7 "the same rules as schools") and not built:
 - Premier League coaches hold at least Level 2 (1.2.4; `coaching_accreditation` exists as a clearance kind).
 **Not built, by decision:** 1.2.5 (players of colour per team) and 3.5.4 (foreign players counted as white) are
 transformation quotas, and the transformation-quota rule above applies to them.
+**Phase 3 designed (Fable, 2026-09-30):** `docs/design/SCRBRD-114_phase3_results_super_over.md`; D1–D17 decided as recommended (Kameel). db/69 results and table, db/70 the super over, db/71 knockout progression.
+**KZN rules decided (Kameel, 2026-09-30):** KZN schools play the MCC Laws with no further bye-laws, so phase 5's "KZN figures" are the platform defaults. Pilot league: points win 4 / tie 2 / no result 2 / loss 0, no bonus; a knockout tie goes to a super over (a league tie stands); bowling limits are the platform's defaults, which are the ECB fast-bowling directives mapped onto school bands (corrected 2026-09-30: not CSA figures; db/32 says so), cited as the pilot league's decision until a CSA or KZN schedule is published. Entered on the conditions screen, not seeded. Recorded in the design's §8.3a. Phase 3 (the points table and a playable super over) is unblocked.
+**Tie-breaks (Kameel, 2026-09-30, from the `sundayMatches` review):** `result.tie_break` (`none` | `super_over`) is reserved in the catalogue but the fold cannot play a super over. Phase 3 (match results) must: play a super over as its own innings pair (one over, two wickets, the Laws and the fold as for any innings), and support whatever tie rule the KZN bye-laws name instead (e.g. fewer wickets lost, or shared points). The fixture planner's knockouts (SCRBRD-123) need a winner, so this comes before knockout rounds are published.
 
 ### SCRBRD-115 — K3: a pupil does not read whether a team-mate is out
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** safeguarding (CSA_SAFEGUARDING_CHECK K3; SAFEGUARDING_DSO §6.3)
@@ -4259,6 +4317,22 @@ subpath export kept off the package index): `pairings()`, `plan()` and `toFixtur
 fixture route's own handler). No database change, route or screen. Ground hierarchy and closures are planner input
 until a record exists. The API, what phase 2 adds and what was left out: `docs/design/SCRBRD-123_planner.md`.
 
+**Built 2026-09-30 (Opus): phase 2, drafts, inputs and publish.** `db/67_fixture_planner.sql` (db/99 §45):
+`ground.parent_id` (a pitch on its field, never a cycle), `ground_closure` and `ground_window` (the ground owner's,
+`facility.manage`), `competition_blackout` (the manager's, or an entrant school's own day under `fixture.update`),
+`fixture_plan` (versioned, computed on the server, a draft read by the manager alone) and `fixture_plan_item` (the match
+each published fixture made, once). The manager is `competition_conditions_manager()` (db/61); no new capability.
+`services/api/write/planner-api.mjs`: inputs, drafts, locks, publish through the fixture route's own validation and
+insert (exported from `fixture-api.mjs`), idempotent, rechecked against the database first (`clash`), and the small
+CRUD. A known fixture's end comes from its format (`knownFixtureEnd()`). `tools/smoke-planner.mjs`. The API contract
+for the Sonnet screen: `docs/design/SCRBRD-123_planner.md` §5.5. **Next:** the screen (Sonnet); phase 3, approvals.
+**Added the same day (Kameel): making a league** (db/67 §8a–8c, `services/api/write/league-api.mjs`,
+`tools/smoke-competition.mjs`): `POST /api/competitions` under `competition.manage` (the creator is its manager);
+entrants invited by the organiser and accepted or declined by the school (`fixture.update` at the entrant, never the
+competition's manager; only accepted entrants are drawn, published, laddered, or given a fixture); version 1 of the
+conditions from the platform's defaults (all unconfirmed, sourced) or copied from a readable competition. Contract for
+the Sonnet league wizard: §5.7.
+
 ### SCRBRD-124 — Parent lift clubs: families offering each other lifts to fixtures
 **Priority:** P2 · **Domain:** Transport / Families / Safeguarding · **Type:** Fable design, then build after SCRBRD-122 and
 SCRBRD-123 (Kameel, 2026-09-30: "a feature I still believe in … I've used parent lift clubs like this")
@@ -4285,6 +4359,27 @@ league (`competition_conditions_manager()` asks `app_can()` at the organiser sch
 one appointed at a school reaches only that school's fixtures, even in his own league. Fine for the pilot's one league.
 Before a second league: a competition-scoped assignment, read by `competition_conditions_manager()`, `scorebook_league_reach()`
 and the conditions and standings policies. Opus.
+
+### SCRBRD-126 — The wicket-keeper: who is keeping, and only he stumps
+**Priority:** P2 · **Domain:** Scoring engine · **Type:** small build (Kameel, 2026-09-30; from the `sundayMatches` review)
+The engine does not know who is keeping. So a stumping can be credited to any fielder (Law 39 says it is always the
+wicket-keeper's), the scorecard cannot mark the keeper with †, and careers cannot count keeper catches and stumpings
+apart. School sides change keeper mid-innings, so: record the keeper at the start of each innings and on every change
+(an event, as the bowler is), have the Laws check refuse `stumped` credited to anyone but the keeper at that ball, show †
+on the scorecard, and let the careers count dismissals as keeper. Opus for the event, the fold and the Laws; Sonnet for
+the pad's keeper picker and the scorecard mark.
+
+### SCRBRD-127 — The League Administrator's wizard: create a league, enter schools, set its conditions
+**Priority:** P1 (the pilot cannot create a league without it) · **Domain:** Competitions · **Type:** build with
+SCRBRD-123 phase 2 (Kameel, 2026-09-30)
+Found 2026-09-30: there is no way to create a competition in the app (no create route, no entrant-enrol route, a dead
+"+ New Competition" button; leagues exist only in the seed). A four-step wizard: (1) the league: name, season, age group,
+format, overs; (2) entrants: the organiser invites schools' teams, each school's administrator accepts or declines its
+own; (3) playing conditions as a checklist of every catalogue key with its default and source, "use default" or an own
+value with a citation, shortcuts "start from the MCC Laws and CSA defaults" and "copy from another league", producing
+version 1 as a draft; (4) review and publish with an effective date, then open the fixture planner. Later changes stay on
+the conditions screen as dated versions. Opus: the API and db/67 (with the planner's phase 2); Sonnet: the wizard, with
+the planner screen.
 
 ### SCRBRD-121 — News: a second person approves a post before it reaches pupils
 **Priority:** P3 · **Domain:** Communications · **Type:** small build (Kameel, 2026-09-30)

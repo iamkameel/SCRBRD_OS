@@ -1,30 +1,74 @@
-
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
-import { D } from "../design/tokens.js";
-import { Avatar, Badge, Btn, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
+import { D, T, inkOn } from "../design/tokens.js";
+import { Avatar, Badge, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useRows } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
+import { LeagueInvitations } from "./leagueinvites.jsx";
+
+// The league wizard (SCRBRD-127) and the fixture planner (SCRBRD-123) are opened
+// from here and are the largest screens in this view, so they load when first
+// asked for, not with the list of competitions.
+const LeagueWizard = lazy(() => import("./leaguewizard.jsx").then((m) => ({ default: m.LeagueWizard })));
+const FixturePlanner = lazy(() => import("./planner.jsx").then((m) => ({ default: m.FixturePlanner })));
+
+/** A 44px button in the wizard's style, for the competitions screen's league actions. */
+function leagueButton(primary) {
+  return { minHeight: "44px", padding: "10px 18px", borderRadius: T.radius.pill, cursor: "pointer", boxSizing: "border-box",
+           fontFamily: T.type.body, fontSize: "14px", fontWeight: 600,
+           ...(primary ? { border: "none", background: T.content.primary, color: inkOn(T.content.primary) }
+                       : { background: "transparent", color: T.content.primary, border: `1px solid ${T.line.strong}` }) };
+}
 
 function CompetitionsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const COMPETITIONS = useRows("competitions", role);
+  // `nonce` reads the competitions again after the wizard has made or changed one.
+  const [nonce, setNonce] = useState(0);
+  const COMPETITIONS = useRows("competitions", role, nonce);
   const MATCHES = useRows("matches", role);
   const PLAYERS = usePlayersWithCareer(role);
   const [active, setActive] = useState("comp1");
-  const comp = COMPETITIONS.find(c=>c.id===active);
+  // What the screen is showing in place of the list: the league wizard (new, or
+  // reopened for a league part-made), or a league's fixture planner.
+  const [mode, setMode] = useState(/** @type {any} */ (null));
+  const comp = COMPETITIONS.find(c=>c.id===active) ?? COMPETITIONS[0];
+  const closeWizard = (/** @type {{ planner?: any, competition?: any } | undefined} */ r) => {
+    setNonce((n) => n + 1);
+    if (r?.competition?.id) setActive(r.competition.id);
+    setMode(r?.planner ? { planner: r.planner } : null);
+  };
+  const canMake = holdsCapability(role,"competition.manage");
+  if (mode?.wizard) {
+    return (
+      <div className="os-page">
+        <Suspense fallback={<div role="status" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Loading the league wizard…</div>}>
+          <LeagueWizard role={role} competitionId={mode.competitionId} onClose={closeWizard}/>
+        </Suspense>
+      </div>
+    );
+  }
+  if (mode?.planner) {
+    return (
+      <div className="os-page">
+        <Suspense fallback={<div role="status" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Loading the planner…</div>}>
+          <FixturePlanner competition={mode.planner} onBack={() => setMode(null)}/>
+        </Suspense>
+      </div>
+    );
+  }
   return (
     <div className="os-page">
       <SectionHeader title="Competitions" sub="Leagues, cups and tournaments" color={D.amber}
-        actions={holdsCapability(role,"competition.manage")&&<Btn size="sm">+ New Competition</Btn>}/>
+        actions={canMake&&<button type="button" data-testid="new-competition" onClick={()=>setMode({wizard:true,competitionId:null})} style={leagueButton(true)}>+ New Competition</button>}/>
+      <LeagueInvitations role={role} onAnswered={()=>setNonce((n)=>n+1)}/>
       <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
         {COMPETITIONS.map(c=>(
-          <button key={c.id} onClick={()=>setActive(c.id)} className="pressBtn" style={{
-            padding:"8px 16px",borderRadius:D.md,border:`1px solid ${active===c.id?D.amber+"55":D.border}`,
-            background:active===c.id?D.amber+"14":"transparent",cursor:"pointer",textAlign:"left",
+          <button key={c.id} onClick={()=>setActive(c.id)} aria-pressed={comp?.id===c.id} data-testid={`competition-${c.id}`} className="pressBtn" style={{
+            padding:"8px 16px",minHeight:"44px",borderRadius:D.md,border:`1px solid ${comp?.id===c.id?D.amber+"55":D.border}`,
+            background:comp?.id===c.id?D.amber+"14":"transparent",cursor:"pointer",textAlign:"left",
           }}>
-            <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:active===c.id?600:400,color:active===c.id?D.textPrimary:D.textSecondary}}>{c.name}</div>
+            <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:comp?.id===c.id?600:400,color:comp?.id===c.id?D.textPrimary:D.textSecondary}}>{c.name}</div>
             <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px",textTransform:"uppercase"}}>{c.type} · {c.format} · {c.ageGroup}</div>
           </button>
         ))}
@@ -43,6 +87,12 @@ function CompetitionsView({ role }) {
                 <Badge color={comp.active?D.emerald:D.textMuted}>{comp.active?"Active":"Inactive"}</Badge>
                 <Badge color={D.sky}>{comp.type}</Badge>
               </div>
+              {comp.live&&(canMake||holdsCapability(role,"competition.conditions.manage"))&&(
+                <div style={{padding:"12px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                  {canMake&&<button type="button" data-testid="finish-setup" onClick={()=>setMode({wizard:true,competitionId:comp.id})} style={leagueButton(false)}>Finish setting up</button>}
+                  {holdsCapability(role,"competition.conditions.manage")&&<button type="button" data-testid="open-planner" onClick={()=>setMode({planner:{id:comp.id,name:comp.name,format:comp.format}})} style={leagueButton(false)}>Fixture planner</button>}
+                </div>
+              )}
               {comp.table&&(
                 <div>
                   <div style={{padding:"10px 16px",background:D.surf2,display:"grid",gridTemplateColumns:"var(--g-league,2fr 1fr 1fr 1fr 1fr 1fr 1fr)",gap:"8px"}}>
@@ -81,7 +131,7 @@ function CompetitionsView({ role }) {
             {/* Fixtures for this comp */}
             <SectionHeader title="Fixtures" color={D.amber}/>
             <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-              {MATCHES.filter(m=>m.competition===active).map(m=>(
+              {MATCHES.filter(m=>m.competition===comp.id).map(m=>(
                 <Card key={m.id} sx={{padding:"12px 16px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
                     <StatusDot status={m.status}/>

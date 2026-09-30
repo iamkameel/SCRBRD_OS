@@ -17,3 +17,4 @@ scrbrd-supabase-apply-*.sql
 # Personal Claude Code overrides. The project hooks in .claude/settings.json
 # are committed; anything you set for yourself alone is not.
 .claude/settings.local.json
+dist-test/

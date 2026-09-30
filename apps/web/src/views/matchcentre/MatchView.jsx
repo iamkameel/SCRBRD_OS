@@ -12,6 +12,7 @@ import { can, filterRecord } from "../../rbac/index.js";
 import { ShotWheel } from "../../scorer/charts.jsx";
 import { useIsMobile } from "../../shell/MobileNav.jsx";
 import { Icon } from "../../ui/icons.jsx";
+import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
 import { ScorecardTab } from "./scorecard.jsx";
 import { Quiet, SideName } from "./bits.jsx";
@@ -307,12 +308,17 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
         style={{ outline: "none" }}>
         {log.loading ? <Quiet>Loading the match…</Quiet>
           : log.error ? <Quiet>Could not load this match ({log.error}). This is not the same as there being nothing.</Quiet>
-          : tab === "summary" ? <SummaryTab {...ctx}/>
-          : tab === "scorecard" ? <ScorecardTab {...ctx}/>
-          : tab === "commentary" ? <CommentaryTab {...ctx}/>
-          : tab === "partnerships" ? <PartnershipsTab {...ctx}/>
-          : tab === "analytics" ? <AnalyticsTab {...ctx}/>
-          : <DetailsTab {...ctx}/>}
+          // One boundary per tab's panel, keyed on the tab: a panel that
+          // throws is a card in its own place, and the header, the tab bar
+          // and the other five tabs stay.
+          : <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
+            {tab === "summary" ? <SummaryTab {...ctx}/>
+              : tab === "scorecard" ? <ScorecardTab {...ctx}/>
+              : tab === "commentary" ? <CommentaryTab {...ctx}/>
+              : tab === "partnerships" ? <PartnershipsTab {...ctx}/>
+              : tab === "analytics" ? <AnalyticsTab {...ctx}/>
+              : <DetailsTab {...ctx}/>}
+          </ErrorBoundary>}
       </div>
       {prof && <PlayerProfileModal player={prof} role={role} onClose={() => setProf(null)}
         onFullProfile={onNavProfile ? (id) => { setProf(null); onNavProfile(id); } : null}/>}

@@ -142,6 +142,28 @@ if (findings.length) {
   console.error("  have the API return the FIGURE and its bands, never the weights.");
   process.exit(1);
 }
+// ── The browser walks' test hook is not in the shipped client ──
+//
+// ui/ErrorBoundary.jsx lets a walk make one panel throw
+// (window.__SCRBRD_TEST_THROW__), but only in a build made with
+// SCRBRD_TEST_HOOKS=1: vite.config.js `define`s the flag to `false` otherwise
+// and the hook is dead code, dropped by the minifier. Sourcemaps are left out
+// of THIS scan on purpose — they carry the original module text, hook and all,
+// which is not code that runs. The second half, the boundary's own card being
+// in the build, is so this cannot pass because the boundary went missing.
+{
+  const HOOK = "__SCRBRD_TEST_THROW__";
+  const code = files.filter((f) => !/\.map$/.test(f));
+  const hooked = code.filter((f) => readFileSync(f, "utf8").includes(HOOK));
+  const boundaries = code.some((f) => readFileSync(f, "utf8").includes("panel-error"));
+  if (hooked.length || !boundaries) {
+    console.error("✗ THE TEST HOOK IS IN THE SHIPPED CLIENT, OR THE ERROR BOUNDARY IS NOT\n");
+    for (const f of hooked) console.error(`  ${relative(".", f)} contains ${HOOK}`);
+    if (!boundaries) console.error('  no asset contains the boundary\'s card ("panel-error") — ui/ErrorBoundary.jsx is not in the build');
+    console.error("\n  Build without SCRBRD_TEST_HOOKS (the walks make their own apps/web/dist-test).");
+    process.exit(1);
+  }
+}
 // ── The Firebase SDK is not in the chunk every visitor downloads ──
 //
 // Analytics runs only on a device that consented (lib/firebase.js), and the

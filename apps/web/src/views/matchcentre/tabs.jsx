@@ -7,6 +7,7 @@ import { WeatherChip } from "../shared.jsx";
 import { teamOf } from "../../lib/matchCentre.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart } from "../../scorer/charts.jsx";
 import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
+import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { InningsToggle } from "./scorecard.jsx";
 import { Panel, Quiet } from "./bits.jsx";
 
@@ -80,12 +81,16 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs 
           subset of spokes, off side against on side, and the eight named
           areas with their runs and boundaries. */}
       <div style={{ marginTop: T.space.lg }}>
-        <WagonAnalysisPanel
-          balls={inn.ballLog}
-          handOf={(strikerId) => batHandOf(inn, strikerId)}
-          batters={inn.batsmen.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
-          bowlers={inn.bowlers.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
-        />
+        {/* Its own boundary: the heaviest panel here, so the figures and
+            charts above it stay if it is the one that fails. */}
+        <ErrorBoundary name="wagon-wheel analysis">
+          <WagonAnalysisPanel
+            balls={inn.ballLog}
+            handOf={(strikerId) => batHandOf(inn, strikerId)}
+            batters={inn.batsmen.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
+            bowlers={inn.bowlers.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
+          />
+        </ErrorBoundary>
       </div>
     </section>
   );

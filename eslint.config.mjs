@@ -36,6 +36,7 @@ export default [
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      "**/dist-test/**",
       "**/build/**",
       "**/coverage/**",
       "apps/web/public/assets/generated/**",
@@ -55,7 +56,8 @@ export default [
       // Server, tools and packages run on Node; packages/* also ship to the
       // browser (the outbox uses IndexedDB), and the client's tests run under
       // Node. So both, everywhere, except where narrowed below.
-      globals: { ...globals.node, ...globals.browser },
+      // __SCRBRD_TEST_HOOKS__ is vite.config.js's compile-time `define` (ui/ErrorBoundary.jsx).
+      globals: { ...globals.node, ...globals.browser, __SCRBRD_TEST_HOOKS__: "readonly" },
     },
     linterOptions: { reportUnusedDisableDirectives: "error" },
     rules: {

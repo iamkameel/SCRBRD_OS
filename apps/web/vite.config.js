@@ -3,6 +3,11 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  // Compile-time, never runtime: `false` in every build but the browser walks'
+  // own (tools/smoke-browser-matchcentre.mjs makes one with SCRBRD_TEST_HOOKS=1
+  // into dist-test/). ui/ErrorBoundary.jsx reads it; with `false` the test
+  // hook is dead code and is not in the bundle. check-bundle.mjs holds that.
+  define: { __SCRBRD_TEST_HOOKS__: JSON.stringify(process.env.SCRBRD_TEST_HOOKS === "1") },
   // The repository root, so the same .env that tools/dev.mjs hands the API
   // also supplies VITE_* variables here. Two env files for one local run is
   // how the client ends up pointed at an API the server is not running on.

@@ -776,6 +776,9 @@ export const TABLES_ADDED_SINCE_09 = Object.freeze({
   scorebook_import_page:     "63_scorebook_import.sql",
   scorebook_import_revision: "63_scorebook_import.sql",
   match_availability_history: "65_availability_reconfirm.sql",
+  // The fixture planner's ground inputs (SCRBRD-123 phase 2).
+  ground_window:  "67_fixture_planner.sql",
+  ground_closure: "67_fixture_planner.sql",
 });
 const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
 

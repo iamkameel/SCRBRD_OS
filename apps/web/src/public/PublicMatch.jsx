@@ -9,7 +9,8 @@ import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
 import { Panel, Quiet, SideName } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
-import { liveRefreshMs, useMoments, useTicker } from "../views/matchcentre/live.js";
+import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
+import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { asPublicMatch, foldable, unnamedToPositions } from "./publicLog.js";
 
 /**
@@ -266,6 +267,9 @@ export function PublicMatch({ matchId, view }) {
 
   const result = match ? (resultText(match, folded?.result) ?? null) : null;
   const { moment, overSummary } = useMoments(commentary, !data.loading && !!match);
+  // What a screen reader is told as each ball arrives (lib/announce.js): the
+  // newest only, and nothing for the log as it stood on first load.
+  const said = useAnnouncement(commentary, data.events, !data.loading && !!match);
   const bi = boardInnings(played, folded?.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${matchId}:${bi.index}`);
@@ -280,11 +284,26 @@ export function PublicMatch({ matchId, view }) {
   const line = matchLine({ match, competition: null, weather: null, phase });
   const notice = revisionNotice(boardInn);
   const ctx = { match, innings: played, result, commentary, events, demo: false, overs: match.overs || 20,
-    inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns };
+    inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
+    quietMoments: true };   // the region below says it; the moment is drawn, not said twice
 
   return (
     <Frame>
       <div className="os-page" data-testid="public-match" data-match={matchId}>
+        {/* The ball, said (WCAG 4.1.3): "Four runs", "Wicket — bowled", "Wide",
+            "End of over 5: 8 runs…". Empty on first load and on a reconnect;
+            the latest ball or over only, as it arrives. Keyed on the count so
+            the same words twice are two announcements. Nobody is named: the
+            words are what happened to the score (lib/announce.js). */}
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="public-announcer">
+          {said.text && <span key={said.n}>{said.text}</span>}
+        </div>
+        {/* A boundary round each main section (ui/ErrorBoundary.jsx): the
+            scoreboard header, the notices, and the open tab's panel. One that
+            fails to draw is a card in its place, and the rest of a live match
+            stays on screen. The tab bar, which moves between them, is not
+            wrapped. */}
+        <ErrorBoundary name="scoreboard">
         <header style={{ display: "grid", gap: T.space.sm }}>
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !folded?.result ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
@@ -309,19 +328,24 @@ export function PublicMatch({ matchId, view }) {
           {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         </header>
+        </ErrorBoundary>
+        <ErrorBoundary name="match notices">
         <div style={{ display: "grid", gap: T.space.md, margin: `${T.space.md} 0` }}>
           {match.status === "upcoming" && played.length === 0 && <PreTossCard match={match} weather={null}/>}
           {notice && <RevisionBanner notice={notice}/>}
         </div>
+        </ErrorBoundary>
 
         <TabBar tab={tab} setTab={setTab}/>
         <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={`mc-tab-${tab}`} data-testid={`mc-panel-${tab}`} tabIndex={0} style={{ outline: "none" }}>
-          {tab === "summary" ? <SummaryTab {...ctx}/>
-            : tab === "scorecard" ? <ScorecardTab {...ctx}/>
-            : tab === "commentary" ? <CommentaryTab {...ctx}/>
-            : tab === "partnerships" ? <PartnershipsTab {...ctx}/>
-            : tab === "analytics" ? <TeamAnalyticsTab {...ctx} sectors={sectors}/>
-            : <PublicDetailsTab {...ctx}/>}
+          <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
+            {tab === "summary" ? <SummaryTab {...ctx}/>
+              : tab === "scorecard" ? <ScorecardTab {...ctx}/>
+              : tab === "commentary" ? <CommentaryTab {...ctx}/>
+              : tab === "partnerships" ? <PartnershipsTab {...ctx}/>
+              : tab === "analytics" ? <TeamAnalyticsTab {...ctx} sectors={sectors}/>
+              : <PublicDetailsTab {...ctx}/>}
+          </ErrorBoundary>
         </div>
         <p data-testid="public-note" style={{ ...T.role.body, fontSize: "13px", color: T.content.tertiary, margin: `${T.space.xl} 0 0` }}>
           Players are named here only where their school and family have agreed to it; everyone else is shown by position.

@@ -5,6 +5,7 @@ import { boardFromInnings } from "../../scorer/boardData.js";
 import { teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName } from "./bits.jsx";
+import { BEAT_WORD, overSummaryText } from "../../lib/announce.js";
 
 /**
  * The spectator's side of the Match Centre (Kameel's premium-feel checklist):
@@ -17,15 +18,13 @@ import { SideName } from "./bits.jsx";
 /** The black or the white of the board, whichever reads better on a fill. */
 const inkFor = (fill) => (contrast(fill, T.board.face) >= contrast(fill, T.board.figure) ? T.board.face : T.board.figure);
 
-const BEAT_WORD = { four: "Four", six: "Six", wicket: "Wicket" };
-
 /**
  * A moment, over the board's own left-hand corner — never over the total,
  * which stays where it is, and gone within a second and a half. A four, a six
  * or a wicket is a chip-coloured beat; a milestone is the board's lime, larger,
  * with its words. Reduced motion makes the entrance a cut (GLOBAL_CSS).
  */
-export function MomentMark({ moment, big = false }) {
+export function MomentMark({ moment, big = false, announce = true }) {
   if (!moment) return null;
   // The result — the match's own decided moment (SCRBRD-100 item 3) — reads
   // the same big, held slot a milestone does: never longer, never hiding the
@@ -34,7 +33,7 @@ export function MomentMark({ moment, big = false }) {
   const fill = bigMark ? T.board.lime : moment.kind === "wicket" ? T.board.figure : chipFill(moment.kind);
   const ink = inkFor(fill);
   return (
-    <div data-testid="mc-moment" data-kind={moment.kind} role="status" aria-live="polite"
+    <div data-testid="mc-moment" data-kind={moment.kind} {...(announce ? { role: "status", "aria-live": "polite" } : { "aria-hidden": "true" })}
       className={bigMark ? "mc-moment-big" : "mc-moment"}
       style={{ position: "absolute", top: big ? T.space.xl : T.space.sm, left: big ? T.space.xl : T.space.lg, zIndex: 2,
         maxWidth: bigMark ? "58%" : "none", padding: bigMark ? `${T.space.sm} ${T.space.lg}` : `${T.space.xs} ${T.space.md}`,
@@ -42,19 +41,23 @@ export function MomentMark({ moment, big = false }) {
         fontFamily: T.type.body, fontWeight: 700, lineHeight: 1.25,
         fontSize: big ? (bigMark ? "clamp(20px, 3.4vmin, 44px)" : "clamp(18px, 3vmin, 36px)") : (bigMark ? "16px" : "14px") }}>
       {bigMark ? moment.text : (BEAT_WORD[moment.kind] ?? moment.text)}
-      {!bigMark && <span className="sr-only">: {moment.text}</span>}
+      {!bigMark && announce && <span className="sr-only">: {moment.text}</span>}
     </div>
   );
 }
 
-/** "End of over 5: 9 runs. Hilton College 1XI 48/2." — the generator's own line, its first two sentences. */
-export const overSummaryText = (item) => (item?.text ?? "").split(/(?<=\.)\s+/).slice(0, 2).join(" ");
+// The words are lib/announce.js's, shared with the public page's live region.
+export { overSummaryText };
 
-/** The gentle over summary between overs: the generator's end-of-over line, for a few seconds. */
-export function OverSummary({ item, big = false }) {
+/**
+ * The gentle over summary between overs: the generator's end-of-over line, for
+ * a few seconds. `announce={false}` where a page has a live region of its own
+ * (the public page's), so the same over is not said twice.
+ */
+export function OverSummary({ item, big = false, announce = true }) {
   if (!item) return null;
   return (
-    <div data-testid="mc-over-summary" role="status" aria-live="polite" className="mc-moment"
+    <div data-testid="mc-over-summary" {...(announce ? { role: "status", "aria-live": "polite" } : { "aria-hidden": "true" })} className="mc-moment"
       style={{ padding: big ? `${T.space.md} ${T.space.xl}` : `${T.space.sm} ${T.space.lg}`, borderRadius: T.radius.lg,
         background: big ? "transparent" : T.surface.raised, border: `1px solid ${big ? T.board.rule : T.line.normal}`,
         color: big ? T.board.figure : T.content.primary, fontFamily: T.type.body,

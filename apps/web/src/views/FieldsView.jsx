@@ -6,6 +6,7 @@ import { Avatar, Badge, Btn, Card, EmptyState, Modal, Select, SectionHeader } fr
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { Icon } from "../ui/icons.jsx";
+import { GroundOffers } from "./groundoffers.jsx";
 
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
@@ -221,7 +222,7 @@ function FieldsView({ role }) {
 
           {/* Tabs */}
           <div style={{display:"flex",gap:"6px",marginBottom:"14px"}}>
-            {["overview","pitches","facilities","prep"]
+            {["overview","pitches","facilities","prep","offers"]
               .filter(t=>selGround.type!=="nets"||["overview","pitches"].includes(t))
               // A tab that opens onto nothing is worse than an absent tab: the
               // first reads as a broken screen, the second as a ground nobody
@@ -230,15 +231,17 @@ function FieldsView({ role }) {
               .filter(t=>t==="overview"
                 || (t==="pitches"    && selGround.pitches?.length)
                 || (t==="facilities" && selGround.facilities)
-                || (t==="prep"       && selGround.prep))
+                || (t==="prep"       && selGround.prep)
+                // SCRBRD-123: the ground owner's slots, closures and ends, for a ground on the platform.
+                || (t==="offers"     && canEdit && selGround.live))
               .map(t=>(
-              <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
-                padding:"6px 16px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
+              <button key={t} onClick={()=>setTab(t)} aria-pressed={tab===t} data-testid={`fields-tab-${t}`} className="pressBtn" style={{
+                padding:"6px 16px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
                 border:`1px solid ${tab===t?D.teal+"55":D.border}`,
                 background:tab===t?D.teal+"14":"transparent",
-                fontFamily:D.body,fontSize:"11px",fontWeight:tab===t?600:400,
+                fontFamily:D.body,fontSize:"12px",fontWeight:tab===t?600:400,
                 color:tab===t?D.teal:D.textMuted,
-              }}>{t}</button>
+              }}>{t==="offers"?"Fixture slots":t}</button>
             ))}
           </div>
 
@@ -250,6 +253,8 @@ function FieldsView({ role }) {
               title. They are omitted entirely instead, and when every block is
               empty the tab says so in one line. The GROUND CONDITION panel
               above is the part that is real. */}
+          {tab==="offers"&&canEdit&&selGround.live&&<GroundOffers ground={selGround} role={role}/>}
+
           {tab==="overview"&&(() => {
             const surface = [["Type",selGround.surfaceType],["Outfield Grade",selGround.outfieldGrade],
                              ["Mow Height",selGround.outfieldMowHeight],["Drainage",selGround.drainage]]
