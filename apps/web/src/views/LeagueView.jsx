@@ -9,6 +9,7 @@ import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.
 import { WeatherChip } from "./shared.jsx";
 import { SeasonHistory } from "./SeasonHistoryView.jsx";
 import { AddFixtureModal } from "./fixtures.jsx";
+import { PlayingConditions } from "./playingconditions.jsx";
 import { useLive, usePlayersWithCareerState, useRows, useWeather } from "../lib/live.js";
 import { T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
@@ -131,17 +132,19 @@ function LeagueView({ role }) {
       {comp&&(
         <>
           {/* Tab bar */}
-          <div style={{display:"flex",gap:"6px",marginBottom:"16px"}}>
-            {["table","fixtures","results","performers","awards","history"].filter(t=>{
+          <div style={{display:"flex",gap:"6px",marginBottom:"16px",flexWrap:"wrap"}}>
+            {["table","fixtures","results","performers","awards","history","conditions"].filter(t=>{
               if(t==="table") return comp.table||comp.type==="league"||comp.type==="tournament";
+              // SCRBRD-114: a competition on the platform has playing conditions; a demonstration row has none to read.
+              if(t==="conditions") return !!comp.live;
               if(t==="performers") return true;
               return true;
             }).map(t=>(
-              <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
-                padding:"6px 16px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
+              <button key={t} aria-pressed={tab===t} data-testid={`league-tab-${t}`} onClick={()=>setTab(t)} className="pressBtn" style={{
+                padding:"6px 16px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",textTransform:t==="conditions"?"none":"capitalize",
                 border:`1px solid ${tab===t?D.amber+"55":D.border}`,background:tab===t?D.amber+"14":"transparent",
-                fontFamily:D.body,fontSize:"11px",fontWeight:tab===t?600:400,color:tab===t?D.amber:D.textMuted,
-              }}>{t}</button>
+                fontFamily:D.body,fontSize:"12px",fontWeight:tab===t?600:400,color:tab===t?D.amber:D.textMuted,
+              }}>{t==="conditions"?"Playing conditions":t}</button>
             ))}
           </div>
 
@@ -424,6 +427,7 @@ function LeagueView({ role }) {
 
           {/* ── SEASON HISTORY ── */}
           {tab==="history"&&<SeasonHistory role={role}/>}
+          {tab==="conditions"&&comp.live&&<PlayingConditions competition={comp}/>}
         </>
       )}
 

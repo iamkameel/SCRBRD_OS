@@ -4687,3 +4687,18 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - ~~**The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
   sending mid-match — see SCRBRD-078's open item. (P1 before launch)~~ **Closed 2026-09-26** with SCRBRD-078
   option B (db/50, the pad's resume credential).
+
+---
+
+## Resume here (written 2026-09-29, weekly budget spent; resets Wed 2026-09-30 01:00)
+
+**Production:** db/01–db/60 pasted and verified (health table all OK, 86 capabilities). **db/61 pasted and verified 2026-09-29** (61 applied, 87 capabilities, all OK). The `workload_monitoring` module is off until Kameel switches it on for the pilot school.
+
+**Stopped mid-build (local worktrees only; they may not survive a container restart; restart from the briefs, not the worktrees):**
+1. **db/62 — the link past 18** (SCRBRD-110 phase 0; signed off by Kameel as information officer 2026-09-28). Opus. Brief: `docs/design/SCRBRD-110_workload.md` §7.4 items 1–4 and phase 0's "proves"; SCRBRD-083 §6.3 (option C). Flip db/99 §38's assertion marked "(12)". **Also update `tools/bundle-sql.mjs`'s health table:** "Guardianship ends at 18" and "Every guardian link has an end date" would read PROBLEM once enrolled adults' links are open. New rule: a guardian link may be open-ended only while the child is a minor or `still_at_school()`. Prove each check still reads PROBLEM on a forced violation.
+2. **Playing-conditions screen** (SCRBRD-114, over #52's API; routes in design §9.1). Sonnet. Draft, enter a value with its citation, publish (future date), withdraw, new version. Figures grouped by part, each with its source or "platform default, unconfirmed". "N of M figures confirmed". Read-only for non-managers.
+3. **Pitch deck: live screens** (Kameel, 2026-09-28: "the pitch deck should have UI/UX features and elements of the app showcased visually"; chose real components over screenshots). Sonnet. Render real components on demo data inside phone and laptop frames in `views/PitchDeckView.jsx`: the pad mid-over, the live board and Match Centre, a parent's Me screen with the consent card, the coach's day sheet, and raising a safeguarding concern. Keep `smoke-browser-deck` walking every slide (its digit shortcuts follow slide order).
+
+4. **Harvest iamkameel/scrbrd** (Kameel, 2026-09-29: "what do we have here that we can learn and take from?"). Attach it with `add_repo` (read). A Haiku agent inventories it (features, screens, data model, anything SCRBRD_OS lacks) and compares it with the earlier harvest artifacts ("SCRBRD OS — the beta-2 harvest" https://claude.ai/artifact/7eNpDHLo9XRMsNJERzjPia, "SCRBRD Convergence Audit", "Four SCRBRD Builds"), so only what is new is reviewed. Opus reviews the candidates, and Kameel gets a short take/skip list. Nothing is copied without that review.
+
+**Then:** SCRBRD-110 phase 2 (check-ins and flags; needs db/62), safeguarding phase 2 (suspension), public pages phase 2, SCRBRD-114 phases 2–4. **Waiting on Kameel:** the KZN schools' bye-laws and playing conditions (SCRBRD-114 phase 5; the CSA club regulations received are club administration only).

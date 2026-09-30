@@ -425,10 +425,13 @@ function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null 
  * tap on No ball always asked it: a pad that cannot score opens the fix, not
  * the runs. `undoWhat` is what undo will take back, in words (prompts.js).
  */
-export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBall, onUndo, guard, undoWhat = null }) {
-  const [phase, setPhase] = useState(1);      // 1 Shot · 2 Area · 3 Outcome
-  const [shot, setShot] = useState(null);
-  const [area, setArea] = useState(null);     // a placement: the point tapped, or didNotTravel() | null (not asked yet)
+export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBall, onUndo, guard, undoWhat = null, preset = null }) {
+  // `preset` is where the pad opens, for the pitch deck's showcase (views/pitchdeck/):
+  // a ball part-way through, drawn by this pad and not by a picture of it. The
+  // scorer never passes it, so every pad on a ground opens on Shot as before.
+  const [phase, setPhase] = useState(preset?.phase ?? 1);      // 1 Shot · 2 Area · 3 Outcome
+  const [shot, setShot] = useState(preset?.shot ?? null);
+  const [area, setArea] = useState(preset?.area ?? null);     // a placement: the point tapped, or didNotTravel() | null (not asked yet)
   const [extra, setExtra] = useState(null);   // the kind whose runs are being asked
   if (!inn) return null;
 
