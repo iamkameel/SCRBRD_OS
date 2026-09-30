@@ -347,6 +347,8 @@ Phase 1 must be first and is useful alone. Phases 2 and 3 are independent of eac
 
 Each with the recommendation the body assumes.
 
+**Decided (Kameel, 2026-09-30): D1–D13 as recommended.** Still open before phase 1 is built: where the photos are stored (D9's private bucket, Supabase Storage or Firebase Storage).
+
 | # | decision | recommendation |
 |---|---|---|
 | **D1** | The reader produces a summary scorecard per innings, never ball by ball, and ball-by-ball is not a later phase | **Yes.** The book does not know who faced what; a guess in the log is the one thing this platform has never allowed |
