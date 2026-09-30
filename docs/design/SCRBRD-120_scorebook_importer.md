@@ -1,6 +1,6 @@
 # SCRBRD-120 — The scorebook importer: the design
 
-**Status:** for Kameel's review, 2026-09-30. Nothing here is built. Every figure that is not already in the repository is an **assumption to be confirmed** and is marked as one.
+**Status:** decided by Kameel 2026-09-30 (D1–D13 as recommended); phase 1 built 2026-09-30 — §9.2 records it and its API. Every figure that is not already in the repository is an **assumption to be confirmed** and is marked as one.
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`, SCRBRD-120; the reviewer's verdict at the end of `audit/HARVEST_scrbrd_2026-09-30.md`; the earlier build's importer (`/home/user/scrbrd/apps/product/components/scrbrd/scorecard-importer.tsx`, `lib/server/scorecard-imports.ts`, `lib/server/scorecard-ocr.ts`, `lib/scorecard-import.ts`), read as a pattern and not as a model.
 **Reader:** the product owner and information officer first, then whoever builds it. Plain words open each section; the schema and the functions follow. A builder reads §1–§7 and builds §8; §9 is the decision record.
 
@@ -364,6 +364,59 @@ Each with the recommendation the body assumes.
 | **D11** | Retiring a coach's `match_elsewhere` estimate is the confirmer's tick per entry, never automatic, written as a superseding row naming the match | **Yes.** A festival has two matches a day; the log records what a person decided |
 | **D12** | Balls faced, fours and sixes stay null where the book has none; careers count them only where recorded; nothing is zero-filled | **Yes.** SCRBRD-110's rule: nothing that was not recorded is counted |
 | **D13** | The module `scorebook_import` is off by default and granted per school by the platform; the fixture must exist before an import (created through the fixture route as today) | **Yes.** No new bypass for creating a match; the pilot's schools are switched on by Kameel |
+
+### 9.2 · Phase 1 as built (Opus, 2026-09-30)
+
+The schema is `db/63_scorebook_import.sql` (db/99 §41); the engine is `packages/scoring` (`innings_summary`, `inningsSummary()`, the fold, the three Laws rules, `summary.mjs`); the API is `services/api/write/scorebook-api.mjs` over `services/api/io/object-store.mjs` and `io/page-image.mjs`; the walk is `tools/smoke-scorebook.mjs`. No screen and no reader: the upload, review and confirm screens are next (Sonnet), over the contract below.
+
+#### Where the build departs from the letter above, and why
+
+1. **`.write` holders are scorer, coach and assistantcoach** (§4.1). The design said "the roles that hold `scoring.amend.request`" and listed teammanager, but only the scorer holds that capability, and a teammanager may not score at all. The safer reading: whoever may score the match live (`separation.test.mjs` holds it: every `.write` holder holds `scoring.edit`). `.confirm` is directorofsport and competitionadmin (both approve amendments); superadmin holds all three.
+2. **A league's match is confirmed by the league.** "The school's director of sport for a match in no competition" is enforced: for a fixture with a `competition_id`, the confirmer must also hold `competition.conditions.manage` over the competition (its administrator); the director of sport is refused.
+3. **Pages are the stripped original, not a re-encode** (§5.2). The API adds no image library: it accepts only JPEG or PNG by their signature (≤ 8 MB, a side ≤ 12 000 px) and removes every JPEG APPn but APP0, every COM and any trailer after EOI; every PNG chunk but IHDR, PLTE, IDAT, IEND and the display-only tRNS, gAMA, cHRM, sRGB, sBIT, bKGD, pHYs, with each CRC checked. GPS, device, captions and XMP go; a photo whose orientation lived in EXIF shows as the sensor stored it. The page row records `mime`.
+4. **Photos are proxied, never signed** (§5.2's "proxies or signs"): no URL to a photo exists outside the API. `access_log` is written before the photo is fetched, in its own committed transaction.
+5. **The module is asked per school, in the database, not by the dispatcher's per-caller gate.** Every definer function asks `feature_enabled('scorebook_import', <the fixture's school>, …)`, and the two reads ask it too; the dispatcher's gate refuses anybody with an assignment at a school that has not got the module (a director of sport who is a parent at another school), which is the DRS reasoning already recorded in `server.mjs`.
+6. **A saved card moves a draft or a returned import to `review`; adding a page changes no state.** There is no `reading` step in phase 1 (§6.4).
+7. **The card's ending vocabulary** is `all_out | overs | target | declared | time | other`; the commit writes `all_out`, `overs_complete`, `target_reached`, `declared`, `time`, `other` as the innings_end reason. The first three are checked against the figures at the seal; the rest are taken on the book's word. The public page shows no reason for `time` or `other` (not on its closed list).
+8. **A fielder need not be a bowler of the card.** §2.3 said every ref "names a row"; a fielder who did not bowl is on no row. A fielder ref is checked to be a player id or a typed name the import spells, and on the fielding side; a bowler ref must be a bowling row; a fall-of-wicket ref a batting row.
+9. **A summarised innings' `extras`, a batter's balls, fours and sixes, a bowler's maidens, wides and no-balls, and a fall of wicket's score and over are `null` in the fold where the book gives none** (D12). The `Innings` typedefs still say `number` (every pad innings has one); `inn.summarised` is the flag a reader asks first (`replay.mjs`, SUMMARY_NULLS).
+10. **Also refused in a summarised innings: a new `innings_start` and a `revision`** (they would re-open or re-limit the innings its seal was checked against), besides the design's six kinds. Because the commit writes the new import's `innings_start` first, a second import over a standing summary is answered `summarised_innings`; `already_summarised` remains for a summary event met directly.
+11. **Penalty runs credited to a summarised innings from another innings** make its seal refuse (`figures_moved`): the card's total is the innings' own, and `confirmed.runs` is the card's total. Rare, and the answer is in words; it is the one mixed case left for a later phase.
+12. **Denormalised anchors.** `school_id`, `team_code` and `match_id` are stamped on the page and revision rows from their import, so all three tables' policies anchor like the import's.
+13. **`resolve_entries` (§3.2's ticks)** is phase 3: `scorebook_import_commit()` keeps the parameter and refuses a non-empty list (`not_in_this_phase`).
+14. **`summary_reconciles(card, typed, ours)`** takes the typed names and the side as well as the card, so SQL asks the name and side rules summaryRefusal() asks; the two agree over `packages/scoring/test/scorebook-cards.mjs`'s PARITY list (the walk compares them, card by card, against a live database).
+15. **The live path cannot write a summary.** A trigger on `ball_event` refuses `innings_summary`, and any event whose device names a scorebook, unless `scorebook_import_commit()` is writing it for that import as the table's owner.
+
+#### The API (for the screens)
+
+Every route takes `Authorization: Bearer <token>`. Every refusal is `{ error, detail? }`: **403** `not_permitted` (which never says whether the import or match exists) or `module_disabled`; **409** `version_conflict` (`detail`: the current version) or `import_open` (`detail`: the open import's id); **413/415** for a photo; **503** `store_unconfigured` / `store_*_failed`; **422** for the rest. A card is `ScorebookCard` v1 (§1.2; `summary.mjs`), an import holds up to four (one per innings), `typed` maps `t:<n>` to a name (1–80 characters), and `checked` maps a cell path (`cellPaths()`: `0.total`, `1.batting.3.runs`, …) to `true`.
+
+| route | who | body → answer | refusals (422 unless said) |
+|---|---|---|---|
+| `POST /api/matches/:id/scorebook` | `.write` | `{}` → `{ id }` | `module_disabled`, `not_cricket`, `not_yet_played`, `match_abandoned`, `match_complete`, `import_open` (409) |
+| `GET /api/matches/:id/scorebook` | `.read`, `audit.read` | → `{ imports: [{id, state, version, pages, createdBy, createdAt, submittedAt, confirmedAt, abandonedAt}], innings: [InningsState] }` | `module_disabled` |
+| `GET /api/scorebook/:id` | `.read`, `audit.read` (no page rows for audit) | → `{ import, pages, revisions, innings, refusals, unchecked, cells }` | `module_disabled` |
+| `POST /api/scorebook/:id/pages` | `.write` | the photo's bytes, `content-type: image/jpeg` or `image/png`, ≤ 8 MB → `{ pageNo, bytes, width, height, sha256, removed }` | 413 `page_too_large`; 415 `not_an_image`, `image_unreadable`, `image_size`; `not_editable`, `too_many_pages` (12), `duplicate_page`, `key_invalid`; 503 |
+| `GET /api/scorebook/:id/pages/:n` | `.read` only | → the photo's bytes (`cache-control: no-store`, `nosniff`, a sandbox CSP); one `access_log` row per read | `no_such_page`, `page_deleted`, 404 `page_missing` |
+| `POST /api/scorebook/:id/save` | `.write` | `{ cards, typed, checked, version }` → `{ version, refusals, unchecked }` (cards kept to a card's fields) | `not_editable`, `version_conflict` (409), `card_shape`, `typed_invalid`, `version_required` |
+| `POST /api/scorebook/:id/submit` | `.write` | `{ version }` → `{ version }` | `cells_unchecked` (`detail`: the paths), `card_refused` (`detail`: per card, `[{path, code, text}]`), `not_submittable`, `version_conflict`, `no_card`, `innings_twice`, `not_our_player` |
+| `POST /api/scorebook/:id/return` | `.confirm`, never an author | `{ note }` (≥ 10 characters) → `{ ok: true }` | `cannot_confirm_your_own`, `not_submitted`, `note_required` |
+| `POST /api/scorebook/:id/confirm` | `.confirm` (the league's for a league fixture), never an author | `{ acknowledgeUnreconciled?, note? }` → `{ ok: true, keys }` | `cannot_confirm_your_own`, `not_submitted`, `match_complete`, `unreconciled_not_acknowledged`, `laws_refused` (`detail: {law, text, key, innings}`), `seal_refused` (`detail: {seal, text, innings}`), `card_refused`, `not_in_this_phase` |
+| `POST /api/scorebook/:id/abandon` | `.write` or `.confirm` | `{}` → `{ ok: true, purged: {due, deleted, failed} }` | `not_abandonable` |
+| `POST /api/scorebook/purge` | the platform (`platform.feature.manage`, platform-wide) | `{}` → `{ due, deleted, failed }` (anybody else: nothing due) | — |
+
+`InningsState` is `{ innings, battingTeam, deliveries, summarised, complete, runs, wickets, balls }`: "which innings already have deliveries" (§6.3) is `deliveries > 0`. The `import` object is `{ id, matchId, schoolId, teamCode, state, version, cards, typed, checked, createdBy, createdAt, touchedAt, submittedBy, submittedAt, returnedBy, returnedAt, returnedNote, confirmedBy, confirmedAt, confirmNote, unreconciledAcknowledged, abandonedBy, abandonedAt, appliedKeys, pagesPurgedAt }`. The screen runs `summaryRefusal(card, { typed, ours: "home" })` and `uncheckedCells(cards, checked)` from `@scrbrd/scoring` as the person types: the server runs the same two.
+
+After a confirm the match's log carries, per innings, `innings_start` → `innings_summary` → `innings_end` (keys `scorebook:<import>:<innings>:start|summary|end`); the fold gives `inn.summarised = { import, checkedBy, confirmedBy, unreconciled }`, and the public log serves the summary's card with every ref pseudonymised and no typed name, source or note.
+
+#### For Kameel, in production
+
+1. Paste `apply-63` then `verify` (rehearsed on a database at db/62: `ALL RLS LIVE ASSERTIONS PASSED`, and a second paste refuses); then record it in `db/SHIPPED.sha256`.
+2. Confirm the Supabase project's region is where the children's data may live (DEPLOYING.md, "The scorebook importer's photos").
+3. Create the private bucket `scorebook-pages` (public off, no policies).
+4. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on the API; `GET /api/health` says `"pages": "supabase"`.
+5. Schedule (or run daily) `POST /api/scorebook/purge` with a platform token.
+6. Grant the `scorebook_import` module to the pilot schools when their screens exist.
 
 ---
 

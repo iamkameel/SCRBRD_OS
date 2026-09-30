@@ -270,6 +270,9 @@ In Secret Manager, on the project:
 | `GUARDIAN_APP_URL` | The Guardian's app, CSA's anonymous-reporting partner, linked from Safeguarding (db/57). https only; unset, the screen says the link has not been set. Not a secret, but set here with the rest |
 | `PUBLIC_PAGES` | **leave unset** until the information officer has confirmed `docs/policy/PUBLIC_DATA.md` in writing (filed in `docs/policy/`). Unset (or anything but `on`), every public path — `/api/public/*`, `/live/*`, `/scorecard/*`, `/table/*`, `/fixtures/*` — answers the one 404. `on` serves the signed-out pages (SCRBRD-083, see below) |
 | `PUBLIC_PSEUDONYM_SECRET` | required when `PUBLIC_PAGES=on`: 32+ random bytes (`openssl rand -hex 32`), **not** the `SESSION_SECRET`. Keys the per-match HMAC pseudonyms that stand in for every player id on a public page; it is never in the code or the database, so a database dump cannot turn a pseudonym back into a boy. The API refuses to start without it, or with the session secret reused. Rotating it changes every pseudonym (harmless: they are per-match and nothing stores them) |
+| `SUPABASE_URL` | where scorebook photos are stored (SCRBRD-120, db/63): the Supabase project's URL, `https://<project-ref>.supabase.co` — the project that holds the database, so the photos sit in its region. Not a secret. See "The scorebook importer's photos" below |
+| `SUPABASE_SERVICE_ROLE_KEY` | the same project's **service-role** key (Project Settings → API). A secret: it reads and writes every bucket, and never leaves the API — no photo is ever signed for a browser. Unset with `NODE_ENV=production`, photo uploads answer 503 `store_unconfigured` and nothing is written to the server's disk |
+| `SCOREBOOK_BUCKET` | optional, default `scorebook-pages`: the private bucket's name |
 | `PUBLIC_TRUST_PROXY_HOPS` | optional, default `0`. How many proxies in front of the API append to `X-Forwarded-For`, for the public pages' per-address rate limit (120 a minute, bursts of 30). `1` behind Cloud Run alone or Render; `2` behind Firebase Hosting in front of Cloud Run. `0` behind a proxy limits everybody as one address |
 
 #### Turning the public pages on (SCRBRD-083)
@@ -301,6 +304,49 @@ theirs to give and withdraw. `db/60` stands without SCRBRD-110's phase 0 (the
 guardian link past eighteen, waiting on the information officer): until that
 lands, a parent's health consent ends on her son's eighteenth birthday with
 her access, which is today's rule.
+
+#### The scorebook importer's photos (SCRBRD-120, db/63)
+
+`db/63_scorebook_import.sql` adds importing a match scored on paper: photos
+of the scorebook's pages, a card typed beside them, a second person's
+confirmation. The module `scorebook_import` arrives **off** for every school;
+the platform grants it per school (Settings → Modules, as a
+`platform.feature.manage` holder) — until then every route answers
+`module_disabled`, and the database refuses as well.
+
+The photos carry children's names and handwriting from two schools, so they
+are kept privately, read only through the API (every read on `access_log`),
+and deleted thirty days after the import is confirmed (at once when it is
+abandoned). They live in **Supabase Storage**, in the database's own project:
+
+1. In the Supabase dashboard of the project that holds the database: check
+   **Project Settings → General → Region** is the region you mean the
+   children's data to be in. The photos go where the project is; this is
+   the residency check the design asks for before the first photo is stored.
+2. **Storage → New bucket**: name `scorebook-pages`, **Public bucket OFF**.
+   Optionally set its file size limit to 8 MB and its allowed types to
+   `image/jpeg, image/png`. Add **no** storage policies: the API reaches it
+   with the service-role key, which bypasses them, and with none nobody
+   else — not `anon`, not `authenticated` — can list, read or write it.
+3. On the API (Render, Cloud Run): set `SUPABASE_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY` (and `SCOREBOOK_BUCKET` if the bucket has
+   another name). `GET /api/health` then says `"pages": "supabase"`.
+   `"unconfigured"` means the variables are missing and uploads are refused;
+   `"local"` must never appear outside development.
+4. **The daily purge.** Photos past their window are deleted by
+   `POST /api/scorebook/purge`, called with a platform administrator's (or
+   the owner's) token; for anybody else it deletes nothing. Until a
+   scheduler exists, run it by hand, or from any daily job:
+   ```sh
+   curl -X POST -H "Authorization: Bearer <platform token>" https://<your-domain>/api/scorebook/purge
+   # {"due": 4, "deleted": 4, "failed": 0}
+   ```
+   It also abandons drafts nobody has touched for thirty days. A photo the
+   store would not delete stays due and is tried again on the next run.
+
+In development and in the walks the photos go to a local directory
+(`SCOREBOOK_STORE_DIR`, default under the OS temp directory); that backend
+refuses to exist when `NODE_ENV=production`.
 
 ### 5 · Cloud Run, the first time
 
