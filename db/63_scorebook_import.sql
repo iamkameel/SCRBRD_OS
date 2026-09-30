@@ -994,7 +994,7 @@ BEGIN
         FROM (SELECT j.inn,
                      (SELECT coalesce(b.payload->>'teamKey', b.payload->>'battingTeam') FROM ball_event_live b
                        WHERE b.match_id = m.id AND b.innings = j.inn AND b.kind = 'innings_start' ORDER BY b.seq DESC LIMIT 1) AS side,
-                     (SELECT r.runs FROM innings_score_as_folded(m.id, j.inn) r) AS runs
+                     (SELECT r.runs FROM innings_score_as_folded(m.id, j.inn::smallint) r) AS runs
                 FROM generate_series(0, v_inn - 1) AS j(inn)) s;
     END IF;
 

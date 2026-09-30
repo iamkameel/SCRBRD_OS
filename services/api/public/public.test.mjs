@@ -15,12 +15,12 @@
 // tools/smoke-public.mjs and tools/smoke-browser-public.mjs; the SQL is held
 // by db/99 section 37 and by packages/policy/test/public.test.mjs.
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   inningsStart, batters, bowler, ball, penalty, retire, voidEvent, revision, sealInnings, toRow,
-  deriveMatch, BALL_TYPE,
+  deriveMatch, BALL_TYPE, inningsSummary,
 } from "@scrbrd/scoring";
 import { PUBLIC_EVENT_FIELDS, PUBLIC_EVENT_COMMON, projectLog, playerPseudonym, eventPseudonym, nameFor, RETIRED_NOT_OUT } from "./redact.mjs";
 import {
@@ -117,9 +117,18 @@ LOG.push(at({ ...sealInnings(sealed, "overs_complete") }));
  * payload only the keys db/59 names — read out of db/59 itself, so a key
  * added there and not here (or here and not there) is a failure below.
  */
-const SQL = readFileSync(join(ROOT, "db", "59_public_read_path.sql"), "utf8");
+// The definition that runs: the last file that makes it (db/59's, then
+// db/63's, which serves an innings_summary's card, SCRBRD-120).
+const LOG_FILE = readdirSync(join(ROOT, "db")).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort()
+  .filter((f) => readFileSync(join(ROOT, "db", f), "utf8").includes("CREATE OR REPLACE FUNCTION public_match_log")).pop() ?? "";
+const SQL = readFileSync(join(ROOT, "db", LOG_FILE), "utf8");
 const logBody = SQL.slice(SQL.indexOf("CREATE OR REPLACE FUNCTION public_match_log"), SQL.indexOf("REVOKE ALL ON FUNCTION public_match_log"));
-const DETAIL_KEYS = [...logBody.matchAll(/'(\w+)',\s+b\.payload -> '(\w+)'/g)].map((m) => { if (m[1] !== m[2]) throw new Error(`db/59 renames ${m[2]}`); return m[1]; });
+const DETAIL_KEYS = [
+  ...[...logBody.matchAll(/'(\w+)',\s+b\.payload -> '(\w+)'/g)].map((m) => { if (m[1] !== m[2]) throw new Error(`${LOG_FILE} renames ${m[2]}`); return m[1]; }),
+  // A key served for one kind only: 'card', CASE WHEN b.kind = '…' THEN (b.payload -> 'card') …
+  ...[...logBody.matchAll(/'(\w+)',\s+CASE WHEN b\.kind = '\w+' THEN \(b\.payload -> '(\w+)'\)/g)]
+    .map((m) => { if (m[1] !== m[2]) throw new Error(`${LOG_FILE} renames ${m[2]}`); return m[1]; }),
+];
 /** @param {any} ev @param {number} seq */
 const asLogRow = (ev, seq) => {
   const row = toRow(ev);
@@ -145,6 +154,7 @@ ok("PUBLIC_EVENT_FIELDS is exactly the reviewed list", JSON.stringify(PUBLIC_EVE
   innings_end: ["reason", "confirmed"],
   revision: ["overs", "target", "reason"],
   void: ["target"],
+  innings_summary: ["card"],
 }), PUBLIC_EVENT_FIELDS);
 ok("db/59 returns exactly the kinds the allowlist lists", JSON.stringify([...KINDS_SQL].sort()) === JSON.stringify(Object.keys(PUBLIC_EVENT_FIELDS).sort()), KINDS_SQL);
 const COLUMN_FIELDS = new Set(["type", "value", "dismissal", "striker", "nonStriker", "bowler", "dismissed"]);
@@ -194,6 +204,37 @@ const v = out.events.find((e) => e.kind === "void");
 ok("a void keeps its target, pseudonymised as its target's id, and no reason", v && v.target === eventPseudonym(SECRET, M1, undone.id) && !("reason" in v)
    && out.events.some((e) => e.id === v.target));
 ok("the real player ids behind it are kept for the cache, never on the wire", out.playerIds.has(P.erasmus) && !wire.includes(P.erasmus));
+
+// An innings from a paper scorebook (SCRBRD-120): the card, its refs as
+// pseudonyms, a typed opposition name nowhere, no source, no note.
+{
+  const card = {
+    v: 1, innings: 1, battingSide: "away",
+    batting: [{ order: 1, ref: "t:1", howOut: "caught", fielderRef: P.erasmus, bowlerRef: P.bowl1, runs: 20, balls: null, fours: 2, sixes: 0, name: "Warren Typedfielder" }],
+    didNotBat: ["t:2"],
+    bowling: [{ ref: P.bowl1, overs: "3.4", maidens: null, runs: 21, wickets: 1, wides: 1, noBalls: 0 }],
+    extras: { byes: null, legByes: 0, wides: 1, noBalls: 0, penalty: 0 },
+    total: 22, wickets: 1, overs: "3.4",
+    fallOfWickets: [{ wicket: 1, score: 22, ref: "t:1", over: "3.4" }],
+    endReason: "other", unreconciled: { runs: 1, note: "Pieter Markedly's dad kept the book" },
+  };
+  const ev = inningsSummary({ innings: 1, card: /** @type {any} */ (card), id: `scorebook:x:1:summary`, clientTs: 0,
+                              typed: { "t:1": "Warren Typedfielder", "t:2": "Musa Quietbowler" },
+                              source: { kind: "scorebook", import: "x", checkedBy: P.nobody, confirmedBy: P.marked } });
+  const row = asLogRow(ev, 1);
+  ok("db/63 serves the summary's card and nothing else of its payload", JSON.stringify(Object.keys(row.detail)) === JSON.stringify(["card"]), row.detail);
+  const proj = projectLog({ rows: [row], people: PEOPLE, secret: SECRET, matchId: M1, on: ON });
+  const s = /** @type {any} */ (proj.events[0]);
+  const sWire = JSON.stringify({ events: proj.events, people: proj.people });
+  ok("the summary reaches the page, as its card", s?.kind === "innings_summary" && s.card?.total === 22 && s.card?.overs === "3.4");
+  ok("no typed name, no player id, no note, no source on the wire", leaks(sWire).length === 0 && !sWire.includes("kept the book")
+     && !/checkedBy|confirmedBy|source|typed/.test(sWire), leaks(sWire));
+  ok("a typed key is a pseudonym naming nobody", s.card.batting[0].ref === playerPseudonym(SECRET, M1, "t:1") && !(s.card.batting[0].ref in proj.people));
+  ok("our consenting boy is his pseudonym, and named in people", s.card.batting[0].fielderRef === pE && proj.people[pE] === "D Erasmus");
+  ok("a figure the book does not give stays null", s.card.batting[0].balls === null && s.card.extras.byes === null && s.card.bowling[0].maidens === null);
+  ok("a stray field on a row is not copied", !("name" in s.card.batting[0]));
+  ok("the recorded difference keeps its runs alone", JSON.stringify(s.card.unreconciled) === JSON.stringify({ runs: 1 }));
+}
 
 // Checks on odd values each field refuses.
 const odd = projectLog({ secret: SECRET, matchId: M1, on: ON, people: [], rows: /** @type {any[]} */ ([

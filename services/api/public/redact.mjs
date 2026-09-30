@@ -42,7 +42,7 @@ import { createHmac } from "node:crypto";
 import { publicName, POSITION_LABELS } from "@scrbrd/policy/public";
 import {
   BALL_TYPE, DISMISSALS, INNINGS_END_REASON, NB_RUNS_VALUES, NB_TYPES, RUN_OUT_ENDS,
-  FACES_NEXT_VALUES, NOT_IN_OVER, PENALTY_REASONS, RETIRE_REASON,
+  FACES_NEXT_VALUES, NOT_IN_OVER, PENALTY_REASONS, RETIRE_REASON, CARD_END_REASON, CARD_HOW_OUT,
 } from "@scrbrd/scoring";
 
 /**
@@ -69,6 +69,11 @@ export const PUBLIC_EVENT_FIELDS = Object.freeze({
   innings_end:   Object.freeze(["reason", "confirmed"]),
   revision:      Object.freeze(["overs", "target", "reason"]),
   void:          Object.freeze(["target"]),
+  // An innings from a paper scorebook (SCRBRD-120, db/63): its card, every
+  // figure checked and every ref pseudonymised (publicCard()). The typed
+  // names, who checked and who confirmed, and a reviewer's note never reach
+  // this projection: db/63 does not select them.
+  innings_summary: Object.freeze(["card"]),
 });
 
 /** The fields every public event carries. */
@@ -323,7 +328,52 @@ function keep(kind, f, src, { who, squadOf, secret, matchId }) {
     case "target":
       if (kind === "void") return str(v) ? eventPseudonym(secret, matchId, v) : undefined;
       return int(v) ?? undefined;
+    case "card":
+      return kind === "innings_summary" ? publicCard(v, who) : undefined;
     default:
       return undefined;                               // listed but unknown: never emitted
   }
+}
+
+/** "47.3" as a book writes overs, or null. @param {unknown} v */
+const overs = (v) => (typeof v === "string" && /^\d{1,3}(\.[0-5])?$/.test(v) ? v : null);
+const SIDES = new Set(["home", "away"]);
+const CARD_ENDINGS = new Set(Object.keys(CARD_END_REASON));
+
+/**
+ * A scorebook card, rebuilt field by field from the fields a card has
+ * (summary.mjs), each checked: every ref — a boy's id or a typed key — as its
+ * pseudonym in this match (a typed key names nobody, so the page shows a
+ * position), every figure a whole number or null (never nought for a
+ * missing one), a recorded difference as its runs alone. A field the card
+ * has no place for is not copied, whatever the row carried.
+ * @param {unknown} v
+ * @param {(ref: unknown) => string | null} who
+ * @returns {Record<string, any> | undefined}
+ */
+function publicCard(v, who) {
+  if (v == null || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const c = /** @type {Record<string, any>} */ (v);
+  /** @param {unknown} a */
+  const list = (a) => (Array.isArray(a) ? a.filter((x) => x != null && typeof x === "object") : []);
+  const x = c.extras != null && typeof c.extras === "object" ? c.extras : {};
+  return {
+    v: 1, innings: int(c.innings), battingSide: oneOf(c.battingSide, SIDES),
+    batting: list(c.batting).map((b) => ({
+      order: int(b.order), ref: who(b.ref), howOut: oneOf(b.howOut, CARD_HOW_OUT),
+      fielderRef: who(b.fielderRef), bowlerRef: who(b.bowlerRef),
+      runs: int(b.runs), balls: int(b.balls), fours: int(b.fours), sixes: int(b.sixes),
+    })),
+    didNotBat: (Array.isArray(c.didNotBat) ? c.didNotBat : []).map(who).filter((r) => r != null),
+    bowling: list(c.bowling).map((b) => ({
+      ref: who(b.ref), overs: overs(b.overs), maidens: int(b.maidens), runs: int(b.runs), wickets: int(b.wickets),
+      wides: int(b.wides), noBalls: int(b.noBalls),
+    })),
+    extras: { byes: int(x.byes), legByes: int(x.legByes), wides: int(x.wides), noBalls: int(x.noBalls), penalty: int(x.penalty) },
+    total: int(c.total), wickets: int(c.wickets), overs: overs(c.overs),
+    fallOfWickets: list(c.fallOfWickets).map((f) => ({ wicket: int(f.wicket), score: int(f.score), ref: who(f.ref), over: overs(f.over) })),
+    endReason: oneOf(c.endReason, CARD_ENDINGS),
+    unreconciled: c.unreconciled != null && typeof c.unreconciled === "object" && int(c.unreconciled.runs) != null
+      ? { runs: int(c.unreconciled.runs) } : null,
+  };
 }

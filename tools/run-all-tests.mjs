@@ -128,6 +128,9 @@ const SUITES = [
   // The signed-out read path (SCRBRD-083): the projection, the router, the shell.
   ["public-api", "services/api/public/public.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
+  // A scorebook page's photo (SCRBRD-120): JPEG or PNG only, its metadata
+  // stripped without a decoder, and the private store's two backends.
+  ["page-image", "services/api/io/page-image.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
   // No file under tools/, services/ or packages/ hard-codes the database

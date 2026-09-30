@@ -46,6 +46,10 @@ const WALKS = [
   // citations, the fixture's competition, the document fixed on the first
   // event (live and on the pad's credential), the handover's hash.
   "playing-conditions",
+  // The scorebook importer (SCRBRD-120, db/63): photos stripped and read on
+  // the log, a card ticked and checked, two people, the commit's Laws and
+  // seal, the match complete, the amendment path, the purge.
+  "scorebook",
   // Getting the side there: three capabilities that had nothing to act on.
   "transport",
   // The dashboard's figures, and the scope they are counted over.
