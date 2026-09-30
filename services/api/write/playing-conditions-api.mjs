@@ -32,7 +32,7 @@
  * document and its departures to whoever may read the fixture.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { fixtureFormatFrom } from "@scrbrd/scoring";
+import { CONDITION, fixtureFormatFrom } from "@scrbrd/scoring";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
 
@@ -96,16 +96,27 @@ export function playingConditionsRoutes({ pool, secret }) {
 
   return {
     // GET /api/playing-conditions/catalogue
-    //   → { keys: [{ key, part, type, unit, values, byAgeBand, platformDefault, readers, reserved }] }
+    //   → { keys: [{ key, part, type, unit, values, byAgeBand, platformDefault, readers, reserved, clauseCode }],
+    //       ageBands }
+    //   platformDefault is what applies when a league sets nothing: the table's
+    //   column, else conditions.mjs's CONDITION (the mirror the fold reads; the
+    //   two are pinned equal), else null (the reader's own fallback, e.g. the
+    //   fixture's format). For bowling.limit it is { band: { spell, day } } from
+    //   bowling_directive, read in this request; open carries no limit (nulls).
     catalogue: handle(async (req) => runAsPrincipal(pool, secret, as(req), async (client) => {
       const { rows } = await client.query(
         `select key, part, value_type, unit, enum_values, by_age_band, platform_default, readers, clause_code
            from playing_condition_key order by sort_order, key`);
       const { rows: bands } = await client.query(
-        `select age_band from bowling_directive where age_band <> 'unknown' order by age_band`);
+        `select age_band, max_overs_per_spell, max_overs_per_day from bowling_directive where age_band <> 'unknown' order by age_band`);
+      /** @type {Record<string, {spell: number | null, day: number | null}>} */
+      const perBand = {};
+      for (const b of bands) perBand[b.age_band] = { spell: b.max_overs_per_spell ?? null, day: b.max_overs_per_day ?? null };
+      /** @param {any} r */
+      const defaultOf = (r) => r.key === "bowling.limit" ? perBand : (r.platform_default ?? CONDITION[r.key]?.platformDefault ?? null);
       return {
         keys: rows.map((r) => ({ key: r.key, part: r.part, type: r.value_type, unit: r.unit ?? null, values: r.enum_values ?? null,
-                                 byAgeBand: r.by_age_band, platformDefault: r.platform_default ?? null, readers: r.readers,
+                                 byAgeBand: r.by_age_band, platformDefault: defaultOf(r), readers: r.readers,
                                  reserved: (r.readers ?? []).length === 0, clauseCode: r.clause_code ?? null })),
         ageBands: bands.map((b) => b.age_band),
       };

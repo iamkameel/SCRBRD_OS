@@ -77,10 +77,10 @@ function Alert({ words, testid = "pc-error" }) {
 }
 
 /** The chips: what a figure stands on, and who entered it. */
-function Source({ entered }) {
+function Source({ entered, fallback = null }) {
   const S = styles();
   if (!entered) {
-    return <Badge data-testid="pc-chip-default" color={T.semantic.warning}>platform default, unconfirmed</Badge>;
+    return <Badge data-testid="pc-chip-default" color={T.semantic.warning}>platform default, unconfirmed{fallback ? `: ${fallback}` : ""}</Badge>;
   }
   const who = entered.enteredBy && entered.enteredBy === profile()?.user?.id ? "you" : entered.enteredByName;
   const by = who ? <span data-testid="pc-entered-by" style={S.meta}>Entered by {who}</span> : null;
@@ -272,7 +272,7 @@ function FigureRow({ entry, entered, applied = true, canEdit, setId, catalogue, 
         <div data-testid="pc-value" style={{ ...S.body, color: T.content.primary }}>{cap(shown)}</div>
       </div>
       <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-        {(applied || entered) ? <Source entered={entered}/> : null}
+        {(applied || entered) ? <Source entered={entered} fallback={applied ? shown : null}/> : null}
       </div>
       <FigureActions entry={entry} band={null} entered={entered} canEdit={canEdit} setId={setId} catalogue={catalogue}
         editing={editing} setEditing={setEditing} onChanged={onChanged}/>
@@ -304,7 +304,7 @@ function BandTable({ entry, values, bands, canEdit, setId, catalogue, onChanged 
             <tbody>
               {bands.map((b) => {
                 const entered = values.find((v) => v.key === entry.key && v.ageBand === b);
-                const shown = entered ? entered.value : bandDefault(b);
+                const shown = entered ? entered.value : bandDefault(entry, b);
                 return [
                   <tr key={b} data-testid={`pc-figure-${entry.key}-${b}`}>
                     <th scope="row" style={{ ...td, fontWeight: 600 }}>{b}</th>

@@ -25,7 +25,7 @@ const CAT = { ageBands: ["U13", "U14", "U15", "U16", "open"], keys: [
   K("format.overs_per_innings", "int", { unit: "overs" }),
   K("format.free_hit", "bool"),
   K("bowling.max_overs_per_bowler_innings", "int", { unit: "overs" }),
-  K("bowling.limit", "object", { unit: "overs", byAgeBand: true }),
+  K("bowling.limit", "object", { unit: "overs", byAgeBand: true, platformDefault: { U13: { spell: 5, day: 10 }, U15: { spell: 6, day: 12 }, open: { spell: null, day: null } } }),
   K("table.order", "list", { part: "table", values: ["points", "wins", "nrr"], platformDefault: ["points", "wins", "nrr"] }),
   K("eligibility.age_on", "date", { part: "sheet" }),
   K("pitch.length_m", "int", { unit: "m", reserved: true, readers: [] }),
@@ -49,7 +49,8 @@ ok("...and no limit for null", valueWords(E("bowling.limit"), { spell: null, day
 
 group("Where a figure comes from");
 ok("a citation: document, clause, date", sourceWords({ sourceDocument: "KZNCU Schools Bye-laws", sourceClause: "7.3", sourceDate: "2026-09-15" }) === `KZNCU Schools Bye-laws, clause 7.3, ${formatDay("2026-09-15")}`);
-ok("the platform's default for a band is the directive's", bandDefault("U15").spell === 6 && bandDefault("U15").day === 12 && bandDefault("open").spell === null);
+ok("the platform's default for a band is the one the catalogue carries", bandDefault(E("bowling.limit"), "U15").spell === 6 && bandDefault(E("bowling.limit"), "U15").day === 12 && bandDefault(E("bowling.limit"), "open").spell === null);
+ok("...a band the catalogue does not name has no limit, not a guess; it is worded", bandDefault(E("bowling.limit"), "U99").spell === null && platformDefaultWords(E("bowling.limit"), "U13") === "5 overs a spell, 10 overs a day");
 ok("a default the catalogue carries is worded", platformDefaultWords(E("table.order")) === "Points, then Wins, then Net run rate");
 ok("a default it does not carry is described", platformDefaultWords(E("bowling.max_overs_per_bowler_innings")) === "no cap");
 ok("every applied key has words for today", CAT.keys.filter((k) => !k.reserved).every((k) => KEY_WORDS[k.key]?.label && (KEY_WORDS[k.key].byDefault || k.platformDefault != null)));

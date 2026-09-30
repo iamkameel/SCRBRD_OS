@@ -207,6 +207,12 @@ try {
   ok(`the count is 0 of ${M} figures confirmed`, (await said(p, "pc-count")) === `0 of ${M} figures confirmed`, await said(p, "pc-count"));
   ok("every figure carries the chip, and the by-band limit is a table", (await tid(p, "pc-chip-default").count()) >= M
      && (await tid(p, "pc-figure-bowling.limit").locator("table").count()) === 1 && (await tid(p, "pc-figure-bowling.limit").locator("tbody tr").count()) === cat.ageBands.length);
+  ok("a figure with no league figure says what applies: 'platform default, unconfirmed: <the default>'",
+     /platform default, unconfirmed: Points, then Wins, then Net run rate/i.test(await said(p, "pc-figure-table.order"))
+     && /platform default, unconfirmed: no cap/i.test(await said(p, "pc-figure-bowling.max_overs_per_bowler_innings"))
+     && /platform default, unconfirmed: None/i.test(await said(p, "pc-figure-result.tie_break")), await said(p, "pc-figure-table.order"));
+  ok("...and a band shows the platform's own figures, from the catalogue, not from the screen",
+     /5 overs.*10 overs.*platform default/i.test(await said(p, "pc-figure-bowling.limit-U13")) && /6 overs.*12 overs.*platform default/i.test(await said(p, "pc-figure-bowling.limit-U14")));
   ok("she is offered a new draft", (await tid(p, "pc-new-draft").count()) === 1 && (await tid(p, "pc-readonly").count()) === 0);
   ok("the three parts are there: play, table, sheet", (await tid(p, "pc-part-play").count()) === 1 && (await tid(p, "pc-part-table").count()) === 1 && (await tid(p, "pc-part-sheet").count()) === 1);
   ok("with no draft there is nothing to record under 'Recorded, not applied', so it is not drawn", (await tid(p, "pc-reserved").count()) === 0);
@@ -277,6 +283,7 @@ try {
   await enter(p, "bowling.limit", { band: "U15", spell: 6, day: 12, status: "confirmed", doc: "KZNCU Schools Bye-laws", clause: "7.4", docDate: "2026-09-15" });
   const u15 = await said(p, "pc-figure-bowling.limit-U15");
   ok("a limit by band is a row of its table: a spell, a day, its source", /U15/.test(u15) && /6 overs/.test(u15) && /12 overs/.test(u15) && /clause 7\.4/.test(u15), u15);
+  ok("...and who entered it: 'Entered by you' (her own id, so not her name)", /Entered by you/.test(u15), u15);
   ok("...the other bands still say platform default", /U16.*platform default, unconfirmed/i.test(await said(p, "pc-figure-bowling.limit-U16")));
   // a reserved key
   await p.locator('[data-testid="pc-reserved"] summary').click();
@@ -406,6 +413,8 @@ try {
      && /6 overs.*12 overs.*clause 7\.4/.test(await said(r, "pc-figure-bowling.limit-U15")));
   ok("...the versions that are hers to see: 1 (in force) and 2 (withdrawn, with its note)", (await tid(r, "pc-version-1").count()) === 1 && (await tid(r, "pc-version-2").getAttribute("data-standing")) === "withdrawn"
      && /Dated wrongly/.test(await said(r, "pc-version-2")));
+  ok("...who published it, by name where she may read that user, else 'another administrator' (never an id)",
+     /Published by (K Naidu|another administrator), \d/.test(await said(r, "pc-version-1")) && !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(await said(r, "pc-version-1")), await said(r, "pc-version-1"));
   ok("...and no draft: the third version is not there", (await tid(r, "pc-version-3").count()) === 0 && !/Unpublished ideas/.test(await text(r)));
   ok("nothing to create, enter, clear, publish, amend or withdraw",
      (await tid(r, "pc-new-draft").count()) === 0 && (await r.locator('[data-testid^="pc-enter-"], [data-testid^="pc-clear-"]').count()) === 0

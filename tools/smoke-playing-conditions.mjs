@@ -30,7 +30,7 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { newPadKeyPair, padPublicJwk, padProof, padAuthorization } from "@scrbrd/sync";
-import { inningsStart, batters, bowler, ball, BALL_TYPE, newEventId, fromRow, deriveMatch } from "@scrbrd/scoring";
+import { inningsStart, batters, bowler, ball, BALL_TYPE, newEventId, fromRow, deriveMatch, CONDITION } from "@scrbrd/scoring";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const PORT = port(8877);
@@ -107,6 +107,15 @@ try {
   ok("...with the reserved keys marked, and the age bands a limit is given for",
      cat.body?.keys?.find((k) => k.key === "over.max_balls")?.reserved === true && cat.body?.ageBands?.includes("U15")
      && !cat.body?.ageBands?.includes("unknown"));
+  const dflt = (k) => cat.body?.keys?.find((x) => x.key === k)?.platformDefault;
+  ok("a key's platformDefault is what applies when a league sets nothing: the enum and list defaults, and false",
+     dflt("result.tie_break") === "none" && JSON.stringify(dflt("table.order")) === '["points","wins","nrr"]' && dflt("eligibility.bona_fide_scholar") === false);
+  ok("...null only where the reader's own fallback applies (the fixture's format, no cap)", dflt("format.kind") === null && dflt("bowling.max_overs_per_bowler_innings") === null);
+  ok("...every key agrees with conditions.mjs's CONDITION, the fold's truth",
+     cat.body.keys.every((k) => k.key === "bowling.limit" || JSON.stringify(k.platformDefault) === JSON.stringify(CONDITION[k.key]?.platformDefault ?? null)));
+  ok("...and the bowling limit's is the directive, per band: U13 5/10, U16 7/18, open none",
+     JSON.stringify(dflt("bowling.limit")?.U13) === '{"spell":5,"day":10}' && JSON.stringify(dflt("bowling.limit")?.U16) === '{"spell":7,"day":18}'
+     && JSON.stringify(dflt("bowling.limit")?.open) === '{"spell":null,"day":null}' && dflt("bowling.limit")?.unknown === undefined);
   ok("signed out: not read", (await api("/api/playing-conditions/catalogue")).status >= 400);
   let refused = null;
   try { await q(`insert into playing_condition_key (key, part, value_type, readers) values ('quota.black_players', 'sheet', 'int', '{}')`); }
