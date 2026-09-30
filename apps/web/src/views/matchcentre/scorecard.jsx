@@ -66,7 +66,7 @@ function HeadRow({ cols, heads, label, icon }) {
 function Figs({ values, strong = 0 }) {
   return values.map((v, i) => (
     <span key={i} role="cell" style={{ ...T.role.figure.sm, textAlign: "right", color: i === strong ? T.content.primary : T.content.secondary,
-      fontWeight: i === strong ? 500 : 400 }}>{v}</span>
+      fontWeight: i === strong ? 500 : 400 }}>{v ?? "–"}</span>
   ));
 }
 
@@ -154,9 +154,18 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
     <section data-testid="mc-scorecard" aria-label="Scorecard">
       <InningsToggle match={match} innings={innings} inningsSel={inningsSel} setInningsSel={(i) => { setInningsSel(i); setOpenId(null); }}/>
 
-      <div data-testid="mc-innings-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md,
+      <div data-testid="mc-innings-head" data-from-scorebook={inn.summarised ? "true" : undefined} style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md,
         padding: `${T.space.md} ${T.space.lg}`, background: T.board.face, color: T.board.figure, borderRadius: `${T.radius.lg} ${T.radius.lg} 0 0` }}>
-        <span style={{ ...T.role.title.md, color: T.board.figure, minWidth: 0 }}><SideName side={side}/></span>
+        <span style={{ ...T.role.title.md, color: T.board.figure, minWidth: 0 }}>
+          <SideName side={side}/>
+          {/* SCRBRD-120: an innings known by its figures, typed from a paper scorebook
+              and confirmed by a second person, has no deliveries to show. A label, no more. */}
+          {inn.summarised && (
+            <span data-testid="mc-from-scorebook" style={{ display: "block", fontFamily: T.type.body, fontSize: "13px", fontWeight: 400, color: T.board.dim }}>
+              From the scorebook
+            </span>
+          )}
+        </span>
         <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
           <span style={{ ...T.role.figure.lg, color: T.board.figure }}>{inn.runs}/{inn.wickets}</span>
           <span style={{ display: "block", fontFamily: T.type.body, fontSize: "13px", color: T.board.dim }}>
@@ -185,9 +194,9 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
         ))}
         <div data-testid="mc-extras" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: T.space.sm,
           padding: `${T.space.sm} ${T.space.md}`, background: T.surface.base, borderBottom: `1px solid ${T.line.normal}` }}>
-          <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>Extras <span style={{ ...T.role.figure.sm }}>{ex.total}</span></span>
+          <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>Extras <span style={{ ...T.role.figure.sm }}>{ex.total ?? "–"}</span></span>
           <span style={{ ...T.role.figure.sm, color: T.content.secondary }}>
-            {Object.entries(ex.parts).map(([k, v]) => `${k} ${v}`).join(" · ")}
+            {Object.entries(ex.parts).map(([k, v]) => `${k} ${v ?? "–"}`).join(" · ")}
           </span>
         </div>
         <div data-testid="mc-total" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.md,

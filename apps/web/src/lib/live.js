@@ -65,6 +65,9 @@ function asMatch(r) {
     overs: r.overs,
     format: r.format,
     schoolId: r.school_id,
+    // The away side's school, where it is a school on SCRBRD: a fixture between
+    // two of one school's own teams is a scorebook's "both sides ours" (SCRBRD-120).
+    awaySchoolId: r.away_school_id ?? null,
     // Both sides named in full ("Hilton College 1XI"), and each side's short
     // code where this reader's read returns one (school.code) — the Match
     // Centre names a side in full where there is room and by code where not
