@@ -389,6 +389,8 @@ The schema is `db/63_scorebook_import.sql` (db/99 §41); the engine is `packages
 
 #### The API (for the screens)
 
+(Amended by §9.4: a page can be removed, the list and the import say what the caller may do, and the import names the card's boys and its history's authors.)
+
 Every route takes `Authorization: Bearer <token>`. Every refusal is `{ error, detail? }`: **403** `not_permitted` (which never says whether the import or match exists) or `module_disabled`; **409** `version_conflict` (`detail`: the current version) or `import_open` (`detail`: the open import's id); **413/415** for a photo; **503** `store_unconfigured` / `store_*_failed`; **422** for the rest. A card is `ScorebookCard` v1 (§1.2; `summary.mjs`), an import holds up to four (one per innings), `typed` maps `t:<n>` to a name (1–80 characters), and `checked` maps a cell path (`cellPaths()`: `0.total`, `1.batting.3.runs`, …) to `true`.
 
 | route | who | body → answer | refusals (422 unless said) |
@@ -453,6 +455,54 @@ The schema is `db/64_scorebook_careers.sql` (db/99 §42); the fold's side is a n
 #### For Kameel, in production
 
 1. After `apply-63`: paste `apply-64` then `verify` (rehearsed on a database at db/63, seeded: `ALL RLS LIVE ASSERTIONS PASSED`, and a second paste refuses); then record it in `db/SHIPPED.sha256`. No secret, no flag, no bucket.
+
+### 9.4 · Phase 1 gaps closed (Opus, 2026-09-30)
+
+The screens (Sonnet, over §9.2's contract) found four things the API could not do or say. All four are in `db/63_scorebook_import.sql`, edited in place because it has not shipped (it is not in `db/SHIPPED.sha256`); `db/64` applies after it unchanged. db/99 §41 gains the labels `(remove)`, `(may)`, `(names)` and `(actors)` and a second `(purge)`, each falsified once (the guard broken in db/63, the database rebuilt, red, restored); `tools/smoke-scorebook.mjs` and `tools/smoke-browser-scorebook.mjs` walk each through the API and the screens.
+
+#### 1. A wrong page is taken off
+
+`scorebook_import_page_remove(import, page_no)` → `(ok, reason, detail, version)`: the guards of `scorebook_import_page_add()` (`scorebook_may('scoring.import.write')`, which carries the actor check — signed in, not a pad's credential, not a support session — and the module), the import in `draft`, `review` or `returned`. It records `removed_at` and `removed_by` on the page row at once (the guard lets a page row change only to say it was removed, once, and that its photo was deleted), and writes a `pages` revision with the note `page <n> removed`, so removing a page makes its remover an author exactly as adding one does (§4.2). The state does not change.
+
+The photo goes as the purge's go: the row first, committed, then the object. `scorebook_import_purge_due()` now names a removed page whose photo is not yet deleted, **whatever its import's state**, and `scorebook_page_purged()` accepts one; so a store that fails to delete is asked again — by the route straight after (the import's due photos, this one among them) and by the platform's daily run. `pages_purged_at` is set only on a confirmed or abandoned import: a draft whose one page was removed is not "purged".
+
+Page numbers are never reused (the next page is one more than any the import has had, a removed one's included), so "page 3" names one photo for good and the screen shows the gaps. The same photo may go back on after a removal: the hash is unique among the pages **not removed** (a partial unique index in place of §4.3's `UNIQUE (import_id, sha256)`). A removed page counts towards nothing (not the twelve, not the list's count) and is not served (`page_removed`).
+
+| route | who | answer | refusals |
+|---|---|---|---|
+| `DELETE /api/scorebook/:id/pages/:n` | `.write` | `{ ok: true, version, purged: {due, deleted, failed} }` | 403 `not_permitted`, `module_disabled`; `not_editable`, `no_such_page`, `page_removed`, `page_deleted` |
+
+`GET /api/scorebook/:id/pages/:n` also refuses `page_removed`; each page in `GET /api/scorebook/:id` carries `removedAt` and `removedBy`. CORS allows `DELETE`. The screen offers "Remove page N" to the writer beside the page shown, and asks in the page ("Take page N off this import? Its photo is deleted. The other pages keep their numbers."), never a dialog.
+
+#### 2. What the caller may do
+
+`scorebook_caller_may(match)` → `(may_write, may_confirm, may_read, may_audit, module)`: `scorebook_may()` for each of the three capabilities — the very checks the state functions ask — and audit as the import's read policy asks it (`audit.read` at the fixture), behind the same actor check. `module` is `feature_enabled('scorebook_import', <the fixture's school>)`, told only to a caller who may do one of the four; every answer is false for a match that does not exist or that the caller cannot reach.
+
+- `GET /api/matches/:id/scorebook` → `{ module, may: { write, confirm, read }, imports, innings }`. A caller who may do none of the three and may not audit the card is refused **403 `not_permitted`**. Where the module is off, a caller who may is answered `module: false` with no import and no innings (it used to be 403 `module_disabled`; the write routes still refuse that way).
+- `GET /api/scorebook/:id` carries the same `may`, so the import screen draws from it too.
+- The screens infer nothing from assignments any more (`mayImport()` is gone): the Match Centre panel draws only when `module` is true and one of the three is; the import screen offers editing only on `may.write`, confirm and return only on `may.confirm` (the two-person rule stays the functions' to refuse, and the screen's `workedOn()` still says why before it does).
+
+**Departures.** A person who may only audit (the principal) is answered 200 with all three false, as before, and the panel draws nothing for him; `audit` is not in `may` (the screens have no use for it). A person who could read the fixture but may do nothing with its imports used to be answered 200 with an empty list; now 403.
+
+#### 3. The card's boys, named
+
+`scorebook_import_names(import)` → `(player_id, name)`: the `full_name` of each player of **the import's school** whose id **the import's card** names (a batter, his fielder or bowler, a name that did not bat, a bowler, a fall of wicket's batter — `scorebook_card_refs()`, which `scorebook_cards_problem()` now reads too), and only to a caller for whom `scorebook_may('scoring.import.read', match)` holds, with the module on. Nothing else: no other field, no boy the card does not name, no child of another school a draft may name (submit refuses those, `not_our_player`), no typed name (the card's `typed` map has those, and they are not player rows, D6). It is the minimal answer to D5's confirmer outside the school — a league's administrator cannot read the school's roster, and checks each name against the photo that already shows it. Not to an `audit.read` holder who does not hold `.read`, a support session, a pad's credential, a parent, a pupil or another school.
+
+`GET /api/scorebook/:id` carries `names: { <playerId>: <name> }` (`{}` for anybody the function does not answer). The screen names the card's boys from it, the roster (where the person can read it) on top; "A player (name not shown to you)" remains only for a reader who is given neither.
+
+#### 4. The history, named
+
+`scorebook_import_actors(import)` → `(actor_id, name)`: the `app_user.name` of each revision's author, under rule 3 (a caller who may read the import, the module on). Each revision in `GET /api/scorebook/:id` carries `actorName` beside `actorId` (`null` where not given), and the history line reads "Submitted by <name>, <when>".
+
+**Departure: staff names only, enforced.** The actors are the adults who typed, returned, confirmed or abandoned the import — but a school may appoint a pupil as its scorer (SAFEGUARDING_DSO.md's "pupil scorer"). A person with a player record of their own (`app_user.player_id`) or a live `player` or `selfaccess` assignment is left unnamed (`actorName: null`); the revision still carries their id. The rule is the conservative reading of "adults": an eighteen-year-old pupil is left unnamed too.
+
+#### Found, not changed
+
+The pilot seed's league administrator (`competitionadmin`, an assignment with no school) holds `scoring.import.confirm` and `.read` over **every** school's fixtures, and `scorebook_may('scoring.import.confirm')` refuses him nothing for a match in no competition: he may confirm (and read the photos of) a friendly, which §4.1 gives to the school's director of sport. It predates this section (the same assignment approves amendments anywhere), `scorebook_caller_may()` reports it faithfully, and db/99 does not assert it either way. If a friendly is the school's alone, `scorebook_may()` should refuse `.confirm` and `.read` for a match with no `competition_id` to a holder whose only grant is `competitionadmin`; that is a decision for Kameel (it narrows the role catalogue's reach, which is his).
+
+#### For Kameel, in production
+
+Nothing new: §9.2's steps and §9.3's, in that order. `apply-63` now carries these four (rehearsed with `apply-64` after it onto a seeded db/62 database, then the verify bundle).
 
 ---
 

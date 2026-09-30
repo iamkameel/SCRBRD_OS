@@ -35,6 +35,12 @@
 --                             abandon (§4.3; not the two _read_* of phase 4),
 --                             page_open (every photo read logged in
 --                             access_log), purge_due and page_purged (§5.3).
+--   for the screens (§9.4)    caller_may (what the caller may do, by the
+--                             functions' own checks), import_names (the card's
+--                             own boys, named to whoever may read the import)
+--                             and import_actors (the history's authors, staff
+--                             only). A writer removes a wrong page
+--                             (page_remove); its photo goes as the purge's do.
 --   ball_event                a new kind, innings_summary (D2), written by
 --                             scorebook_import_commit() and by nothing else —
 --                             a trigger refuses it (and any event naming a
