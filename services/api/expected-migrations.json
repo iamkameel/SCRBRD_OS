@@ -59,5 +59,6 @@
   "58_player_fitness_masked.sql",
   "59_public_read_path.sql",
   "60_workload_consent_count.sql",
-  "61_playing_conditions.sql"
+  "61_playing_conditions.sql",
+  "62_guardian_link_past_eighteen.sql"
 ]

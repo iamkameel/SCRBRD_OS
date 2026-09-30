@@ -65,10 +65,34 @@ $$ LANGUAGE sql SECURITY DEFINER;
 -- Reach past RLS to state a fact about the whole table. Used only where the
 -- claim IS "no such row exists anywhere" — an assertion scoped to what one
 -- reader can see could not tell an empty table from a well-hidden row.
+--
+-- Since db/62 a guardian link is open while the child is at school, so the
+-- claim is no longer "none is open-ended" but "none is open-ended without
+-- cause": an open link belongs to a minor, or to a pupil still_at_school().
+-- The first counts the ones that break that; the second counts the ones
+-- that keep it, so the rule is seen to be in use and not merely unbroken.
 CREATE OR REPLACE FUNCTION _count_open_guardian_links() RETURNS integer AS $$
   SELECT count(*)::int FROM assignment_subject s
     JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
-   WHERE s.valid_until IS NULL;
+    JOIN player p ON p.id = s.player_id
+   WHERE s.valid_until IS NULL
+     AND NOT coalesce(majority_on(p.born) > current_date, false)
+     AND NOT still_at_school(p.id);
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- The end dates of one person's guardian links to one child, as the owner
+-- reads them (NULL: open), newest first.
+CREATE OR REPLACE FUNCTION _guardian_link_ends(p_player uuid, p_person uuid) RETURNS SETOF date AS $$
+  SELECT s.valid_until FROM assignment_subject s
+    JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+   WHERE s.player_id = p_player AND a.person_id = p_person
+   ORDER BY s.created_at DESC, s.id;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION _count_open_pupil_links() RETURNS integer AS $$
+  SELECT count(*)::int FROM assignment_subject s
+    JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+   WHERE s.valid_until IS NULL AND still_at_school(s.player_id);
 $$ LANGUAGE sql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION _count_guardian_assignments(p_person uuid) RETURNS integer AS $$
@@ -1122,10 +1146,10 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- coach, a coach of another side, a physio, a strength-and-conditioning
 -- coach, a team-mate, an office, a platform account for support, the
 -- bowler's own account (self-access), the turning boy's account, and two
--- parents: the turning boy's (her link is made in the section,
--- through guardian_link_establish(), so it ends where that function ends it
--- today) and one of the fourth boy. A training session today, a match the
--- bowler bowled in two days ago (thirteen deliveries: twelve legal and a
+-- parents: the turning boy's (her link is made in the section, through
+-- guardian_link_establish(), so it ends where that function ends it: open
+-- while he is at school, since db/62) and one of the fourth boy. A training
+-- session today, a match the bowler bowled in two days ago (thirteen deliveries: twelve legal and a
 -- wide), and a hamstring on his record with a physio's note.
 -- workload_monitoring is NOT granted here: the section proves the switch first.
 CREATE OR REPLACE FUNCTION _seed_60() RETURNS jsonb AS $$
@@ -1259,10 +1283,12 @@ BEGIN
    WHERE player_id = p;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- What phase 0 (the link past eighteen, waiting on the information officer)
--- will do to an enrolled pupil's parent: her link stays open.
-CREATE OR REPLACE FUNCTION _v60_phase0_open_link(p uuid) RETURNS void AS $$
-  UPDATE assignment_subject SET valid_until = NULL WHERE player_id = p AND relationship IS DISTINCT FROM 'self';
+-- What phase 0 (db/62) does to an enrolled pupil's parent: her link stays
+-- open. Section 38 held it open by hand before db/62 landed; it now asks
+-- whether db/62 left it so.
+CREATE OR REPLACE FUNCTION _v38_link_open(p uuid, mum uuid) RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id
+                  WHERE s.player_id = p AND a.person_id = mum AND a.role = 'guardian' AND s.valid_until IS NULL)
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- He leaves the school system (his last school membership closes today), and comes back.
@@ -1394,6 +1420,128 @@ BEGIN
   END LOOP;
   RETURN n;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/62 (section 40). SCRBRD-110 phase 0: the guardian link past eighteen,
+-- and SCRBRD-083 §6.3 (option C) on top of it. Written as the owner and
+-- rolled back. Hilton boys of their own, so nothing earlier sections did to
+-- the seed's people can decide an answer here:
+--   pupil  17, 1XI — two parents; turns eighteen at school
+--   adult  17, 1XI — turns eighteen at school, then leaves
+--   minor  16, 1XI — leaves as a minor, comes back, leaves, turns eighteen
+--   late   17, 1XI — out of the school system when his link is made, then enrols
+--   grown  18 and four months, 1XI — no link, and none can be made
+--   club   17, at a CLUB (kind 'club') — not the school system
+-- A club, its office, Hilton's office, the pupil's own account, and one
+-- parent each (two for the pupil). Links are made in the section, through
+-- guardian_link_establish() and guardian_link_verify(), as the offices.
+CREATE OR REPLACE FUNCTION _seed_62() RETURNS jsonb AS $$
+DECLARE
+  HIL  uuid := '11111111-1111-1111-1111-111111111111';
+  CLUB uuid;
+  ids  jsonb := '{}';
+  r    record;
+  v_u  uuid; v_a uuid; v_p uuid;
+  s    int := 0;
+BEGIN
+  INSERT INTO school (code, name, kind, province) VALUES ('V62C', 'Verify Sixty-Two Cricket Club', 'club', 'KwaZulu-Natal')
+  RETURNING id INTO CLUB;
+  ids := ids || jsonb_build_object('club', CLUB);
+
+  FOR r IN SELECT * FROM (VALUES
+      ('pupil', 'Pieter Pupilsixtytwo', 17, 40, 'hil'),
+      ('adult', 'Andile Adultsixtytwo', 17, 60, 'hil'),
+      ('minor', 'Mike Minorsixtytwo',   16, 40, 'hil'),
+      ('late',  'Liam Latesixtytwo',    17, 40, 'hil'),
+      ('grown', 'Gary Grownsixtytwo',   18, 120, 'hil'),
+      ('club',  'Craig Clubsixtytwo',   17, 40, 'club')) AS v(k, nm, age, days, at)
+  LOOP
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (CASE r.at WHEN 'hil' THEN HIL ELSE CLUB END, '1XI', r.nm, split_part(r.nm, ' ', 2), 620 + s, 'batter',
+            (current_date - make_interval(years => r.age) - make_interval(days => r.days))::date)
+    RETURNING id INTO v_p;
+    s := s + 1;
+    ids := ids || jsonb_build_object('p_' || r.k, v_p);
+  END LOOP;
+
+  FOR r IN SELECT * FROM (VALUES
+      ('office',  'schooladmin', 'hil',  'schooladmin'),
+      ('coffice', 'schooladmin', 'club', 'schooladmin'),
+      ('mum',     NULL,          'hil',  'guardian'),
+      ('dad',     NULL,          'hil',  'guardian'),
+      ('amum',    NULL,          'hil',  'guardian'),
+      ('mmum',    NULL,          'hil',  'guardian'),
+      ('lmum',    NULL,          'hil',  'guardian'),
+      ('gmum',    NULL,          'hil',  'guardian'),
+      ('cmum',    NULL,          'club', 'guardian'),
+      ('self',    'selfaccess',  'hil',  'player')) AS v(k, role, at, urole)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (CASE r.at WHEN 'hil' THEN HIL ELSE CLUB END, 'v62.' || r.k || '@example.invalid', 'V62 ' || r.k, r.urole)
+    RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+    IF r.role IS NOT NULL THEN
+      INSERT INTO role_assignment (person_id, role, school_id)
+      VALUES (v_u, r.role, CASE r.at WHEN 'hil' THEN HIL ELSE CLUB END)
+      RETURNING id INTO v_a;
+      ids := ids || jsonb_build_object('a_' || r.k, v_a);
+    END IF;
+  END LOOP;
+  -- The pupil's own account: his verified link to himself.
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES ((ids->>'a_self')::uuid, (ids->>'p_pupil')::uuid, 'self', 'verified', (ids->>'u_office')::uuid, now(),
+          'granted', 'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/62's two triggers are deferred to the end of the transaction, and this
+-- file ends in ROLLBACK, so section 40 fires them where the claim needs them
+-- — on exactly the statements the application's transaction would commit.
+CREATE OR REPLACE FUNCTION _v62_fire() RETURNS void AS $$
+BEGIN
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
+END $$ LANGUAGE plpgsql;
+
+-- Wind a boy's whole history back d days: his date of birth, his parents'
+-- links, both consents recorded about him and his memberships' start move
+-- back together — so a "yes" given at seventeen is still a yes given while
+-- he was a child, and a link that was to end on his birthday ends d days
+-- sooner. A closed membership's left_on is not moved: the day he left is the
+-- day it happened.
+CREATE OR REPLACE FUNCTION _v62_older(p uuid, d int) RETURNS void AS $$
+BEGIN
+  UPDATE player SET born = born - d WHERE id = p;
+  UPDATE assignment_subject SET valid_from = valid_from - d, valid_until = valid_until - d,
+                                verified_at = verified_at - make_interval(days => d), consent_at = consent_at - make_interval(days => d)
+   WHERE player_id = p AND relationship IS DISTINCT FROM 'self';
+  UPDATE health_monitoring_consent SET given_on = given_on - d, ended_on = ended_on - d, form_date = form_date - d,
+                                       recorded_at = recorded_at - make_interval(days => d), ended_at = ended_at - make_interval(days => d)
+   WHERE player_id = p;
+  UPDATE public_name_consent SET given_on = given_on - d, ended_on = ended_on - d, form_date = form_date - d,
+                                 recorded_at = recorded_at - make_interval(days => d), ended_at = ended_at - make_interval(days => d)
+   WHERE player_id = p;
+  UPDATE team_membership SET joined_on = joined_on - d WHERE player_id = p;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- ...by as many days as make TODAY his eighteenth birthday.
+CREATE OR REPLACE FUNCTION _v62_turn_eighteen(p uuid) RETURNS void AS $$
+  SELECT _v62_older(p, (SELECT majority_on(born) - current_date FROM player WHERE id = p))
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A move between sides, as the move route makes one: player.team_code, and
+-- db/08's history trigger closes the old membership and opens the new.
+CREATE OR REPLACE FUNCTION _v62_move(p uuid, team text) RETURNS void AS $$
+  UPDATE player SET team_code = team WHERE id = p;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One guardian's link to one child, as the owner reads it: ended or open, and to when.
+CREATE OR REPLACE FUNCTION _v62_link(p uuid, mum uuid, OUT open boolean, OUT until date) AS $$
+  SELECT s.valid_until IS NULL, s.valid_until FROM assignment_subject s
+    JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+   WHERE s.player_id = p AND a.person_id = mum
+   ORDER BY s.created_at DESC, s.id LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -2434,13 +2582,21 @@ BEGIN
   -- the full passport when that person was thirty. These assertions are what
   -- stop it going back.
 
-  -- Not one open-ended guardian link survives the seed. Asked of the whole
-  -- table rather than of one reader's view, because "I cannot see one" and
-  -- "there is not one" are different claims and only the second is the point.
+  -- Not one guardian link survives the seed open-ended without cause. Since
+  -- db/62 (SCRBRD-110 §7.4) a link is open while the child is at school —
+  -- the seed's pupils' links are, and the second assertion says so — and
+  -- ends at the later of his majority and his leaving. So the claim is: an
+  -- open link is a minor's or a pupil's, never an adult's out of school.
+  -- Asked of the whole table rather than of one reader's view, because "I
+  -- cannot see one" and "there is not one" are different claims and only
+  -- the second is the point.
   PERFORM _assert(_count_open_guardian_links() = 0,
-    'a guardian link was created with no end date');
+    'a guardian link is open-ended for an adult who is not at school');
+  PERFORM _assert(_count_open_pupil_links() > 0,
+    'no pupil at school has an open guardian link: db/62''s rule is not in use');
 
-  -- The date is the child's eighteenth birthday, not an approximation of it.
+  -- Where a link has a date, it is the child's eighteenth birthday, not an
+  -- approximation of it (a NULL date is the open link above, which <> skips).
   SELECT count(*) INTO n FROM assignment_subject s
     JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
     JOIN player p ON p.id = s.player_id
@@ -2505,7 +2661,8 @@ BEGIN
   PERFORM _assert(_count_guardian_assignments(U_BURSAR) = 0,
     'a link refused for want of a date of birth left an assignment behind');
 
-  -- Restore the date, and the same call now succeeds and ends on his birthday.
+  -- Restore the date, and the same call now succeeds: open, because he is
+  -- at school (db/62); his own birthday for a boy who is not (section 40).
   PERFORM _set_born(P_U13, (current_date - interval '13 years')::date);
   SELECT ok INTO v_ok FROM guardian_link_establish(U_BURSAR, P_U13, 'parent');
   PERFORM _assert(v_ok, 'a guardian cannot be linked to a thirteen-year-old');
@@ -2525,10 +2682,14 @@ BEGIN
   -- The two structural claims again, now that a link has been made THROUGH THE
   -- FUNCTION rather than by the seed. Asked twice on purpose: the first pair
   -- above runs before any link is created here, so on its own it only ever
-  -- proves the seed carries end dates, and guardian_link_establish() could
-  -- quietly go back to writing NULL without a single assertion turning red.
+  -- proves the seed's links, and guardian_link_establish() could quietly
+  -- write NULL for the wrong child without a single assertion turning red.
+  -- (Section 40 asks the same of a boy who is NOT at school: his birthday.)
   PERFORM _assert(_count_open_guardian_links() = 0,
-    'guardian_link_establish created a link with no end date');
+    'guardian_link_establish created an open-ended link for an adult out of school');
+  SELECT count(*) INTO n FROM _guardian_link_ends(P_U13, U_BURSAR) e WHERE e IS NULL;
+  PERFORM _assert(n = 1 AND _count_subjects(P_U13) = 1,
+    'guardian_link_establish did not leave a pupil''s link open while he is at school');
   SELECT count(*) INTO n FROM assignment_subject s
     JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
     JOIN player p ON p.id = s.player_id
@@ -5169,16 +5330,27 @@ BEGIN
     PERFORM _assert(NOT v_ok AND v_reason = 'already_given' AND _consent_open_rows(P_JW) = 1,
       format('db/47 (again): a repeated consent was written (ok %s, %s)', v_ok, v_reason));
     -- (adult) a guardian answers for a minor: James made nineteen, as the
-    -- owner, and his guardian's link still open (a link written before links
-    -- ended at majority), the guardian's answer is refused and the consent
-    -- he gave today is not a competent one; made sixteen again, it is
+    -- owner, with his guardian's link still open (he is at school, db/62).
+    -- Under option C (SCRBRD-083 §6.3, db/62) the guardian's "yes" is
+    -- refused for the reason, and the consent given today is not a competent
+    -- one. A guardian's "no" is theirs to give only while he is at school:
+    -- with his membership closed and the link not yet dated (the close is
+    -- deferred to the end of the transaction), the old link still says live
+    -- and the "no" is refused as before. Section 40 proves the "no" a
+    -- guardian may give. Made sixteen again, and back in his side, the
+    -- consent is competent again.
     v_born := _born_of(P_JW);
     PERFORM _set_born(P_JW, (current_date - interval '19 years')::date);
-    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V) s;
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V || '-adult') s;
     v_facts := public_name_facts(P_JW);
-    PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult' AND _consent_open_rows(P_JW) = 1
+    PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself' AND _consent_open_rows(P_JW) = 1
                     AND v_facts #> '{consents,0,competent}' = 'false'::jsonb,
-      format('db/47 (adult): a guardian answered for, or counted for, a boy of nineteen (ok %s, %s, facts %s)', v_ok, v_reason, v_facts));
+      format('db/47 (adult): a guardian named, or counted for, a boy of nineteen (ok %s, %s, facts %s)', v_ok, v_reason, v_facts));
+    PERFORM _v60_leave(P_JW);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult' AND _consent_open_rows(P_JW) = 1,
+      format('db/47 (adult): a guardian answered for a boy of nineteen who is not at school (ok %s, %s)', v_ok, v_reason));
+    PERFORM _v60_rejoin(P_JW);
     PERFORM _set_born(P_JW, v_born);
     PERFORM _assert(public_name_facts(P_JW) #> '{consents,0,competent}' = 'true'::jsonb,
       'db/47 (adult): the consent is not competent again once he is sixteen');
@@ -7077,7 +7249,7 @@ BEGIN
   -- is marked, not dropped. The EWMA word agrees with workload()'s thresholds
   -- and with the recursion it is the closed form of. The consent: a parent's
   -- yes for a boy of seventeen, and what happens on his eighteenth birthday —
-  -- TODAY'S RULE, before phase 0 (see the note at (18)). A team-mate, another
+  -- phase 0's rule since db/62 (see the note at (12)). A team-mate, another
   -- side's coach and a parent read and write no load; the fitness coach reads
   -- a load chart and not an injury's notes; a support session reads no
   -- consent and records none.
@@ -7388,37 +7560,40 @@ BEGIN
     -- (12) The eighteenth birthday. His whole history moves back together, so
     -- the mother's yes was given while he was a child and today is the day.
     PERFORM _v60_turn_eighteen(P_T);
-    -- ┌─ TODAY'S RULE (before phase 0). Her link ends on his birthday — that is
-    -- │  what guardian_link_establish() writes today — and her consent counts
-    -- │  only through a live link, so it ends with her access: collection
-    -- │  pauses until he says yes. THIS ASSERTION FLIPS WHEN PHASE 0 LANDS:
-    -- │  guardian_link_establish() will then write an open link for an enrolled
-    -- │  pupil, the consent will be live here (as (13) shows with the link held
-    -- │  open by hand), and this line becomes `_v60_live(P_T)`, with her row in
-    -- │  my_health_consents() still present and his row's `live` true.
-    PERFORM _assert(NOT _v60_live(P_T), 'db/60 (18, today''s rule): a parent''s consent outlived her link on his birthday');
+    -- ┌─ PHASE 0'S RULE (db/62; flipped from "today's rule" when it landed).
+    -- │  guardian_link_establish() wrote her link OPEN, because he is an
+    -- │  enrolled pupil, so it does not end on his birthday; her consent
+    -- │  counts through a link that is live today, so it carries on while he
+    -- │  is at school — no pause in collection (§7.4, Q7). Before db/62 her
+    -- │  link ended here, the consent with it, and these read the other way.
+    PERFORM _assert(_v38_link_open(P_T, U_MUM), 'db/60 (18, phase 0): guardian_link_establish() did not leave an enrolled pupil''s link open');
+    PERFORM _assert(_v60_live(P_T), 'db/60 (18, phase 0): a parent''s pre-18 consent lapsed on his birthday while he is at school');
     PERFORM _as(U_MUM);
-    SELECT count(*) INTO n FROM my_health_consents() x WHERE x.player_id = P_T;
-    PERFORM _assert(n = 0, 'db/60 (18, today''s rule): the mother still answers for him after her link ended');
-    -- └─ end of the assertions phase 0 flips.
+    SELECT * INTO c FROM my_health_consents() x WHERE x.player_id = P_T;
+    PERFORM _assert(c.relation = 'guardian' AND c.live AND c.state = 'given' AND NOT c.can_say_yes AND c.can_say_no,
+      format('db/60 (18, phase 0): the mother''s row after his birthday is %s', row(c.relation, c.live, c.state, c.can_say_yes, c.can_say_no)::text));
+    -- └─ end of the assertions phase 0 flipped.
     -- Her yes after eighteen is refused, for the reason, whatever her link says.
     SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V || '-b');
     PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself', format('db/60 (18): her yes after eighteen: %s', v_reason));
     PERFORM _as(U_OFF);
     SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V || '-b', U_MUM, 'Admission form 2026', sa_today());
     PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself', format('db/60 (18): the office''s yes for her after eighteen: %s', v_reason));
-    -- He is asked, once.
+    -- He is asked, once — and until he answers, collection carries on on hers.
     PERFORM _as(U_TURN);
     SELECT * INTO c FROM my_health_consents() x WHERE x.player_id = P_T;
-    PERFORM _assert(c.relation = 'self' AND c.adult AND c.ask_at_18 AND c.state = 'lapsed' AND NOT c.live AND c.can_say_yes AND c.parent_said_yes,
+    PERFORM _assert(c.relation = 'self' AND c.adult AND c.ask_at_18 AND c.state = 'given' AND c.live AND c.can_say_yes AND c.parent_said_yes,
       format('db/60 (18): his own row is %s', row(c.relation, c.adult, c.ask_at_18, c.state, c.live)::text));
 
-    -- (13) With the link open past the birthday, as phase 0 will leave it for
-    -- an enrolled pupil: her pre-18 yes is live while he is at school, dead
+    -- (13) With the link open past the birthday, as phase 0 leaves it for an
+    -- enrolled pupil: her pre-18 yes is live while he is at school, dead
     -- when he is not in the school system (a club member, or left), live
     -- again when he is back; her yes is still refused; and once he declines,
-    -- only his record counts.
-    PERFORM _v60_phase0_open_link(P_T);
+    -- only his record counts. The link was held open by hand here before
+    -- db/62; it is open already, so this now asserts what db/62 wrote.
+    -- (Section 40 fires db/62's triggers on his leaving; here the leave is
+    -- the membership alone, so the consent's own at-school test is proved.)
+    PERFORM _assert(_v38_link_open(P_T, U_MUM), 'db/60 (18, phase 0): the link is not open past his birthday');
     PERFORM _assert(_v60_live(P_T), 'db/60 (18, phase 0): her yes is not live on his birthday while he is at school');
     PERFORM _v60_leave(P_T);
     PERFORM _assert(NOT _v60_live(P_T), 'db/60 (18, phase 0): her yes is live for an adult out of the school system');
@@ -7447,7 +7622,10 @@ BEGIN
     SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, false, V);
     PERFORM _assert(v_ok AND _v60_due(P_T) IS NULL, 'db/60 (retention): a boy still at school has a due date');
     PERFORM _v60_leave(P_T);
-    PERFORM _assert(_v60_due(P_T) = (current_date + interval '12 months')::date,
+    -- sa_today(), not current_date: health_retention_due() counts from the
+    -- database's own today (Africa/Johannesburg), and between 22:00 and
+    -- midnight UTC the two are a day apart — the consent ended on sa_today().
+    PERFORM _assert(_v60_due(P_T) = (sa_today() + interval '12 months')::date,
       format('db/60 (retention): due %s, expected twelve months from today', _v60_due(P_T)));
     PERFORM _assert(_v60_due(P_B) IS NULL, 'db/60 (retention): a boy with no consent recorded has a due date');
   END;
@@ -7721,6 +7899,253 @@ BEGIN
     END LOOP;
     PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'match_conditions_compute(uuid)', 'EXECUTE'),
       'db/61 (grants): the application may compute a match''s document with no guard');
+  END;
+
+  -- ── 40. The guardian link past eighteen (SCRBRD-110 phase 0, db/62) ──
+  -- §9's phase 0 row: a pupil's link is open on his eighteenth birthday and
+  -- app_can() still grants his parent; a club member's ends on the birthday
+  -- as before; a minor who leaves keeps it until his birthday; an adult who
+  -- leaves loses it that day; a boy re-enrolled, or enrolled after his link
+  -- was made, has it re-opened; guardian_link_establish() still refuses a new
+  -- link for an adult. (db/10 unchanged is the ledger's and shipped.test's:
+  -- migrate.mjs refuses a changed file, and tools/smoke-link18.mjs compares
+  -- db/10's hash with db/SHIPPED.sha256 and the ledger.) Then the two
+  -- consents on top of it: her health "yes" carries on at eighteen while he
+  -- is at school and dies when he leaves; her "yes" after eighteen is refused
+  -- and her "no" is not; his own answer governs once given. And option C
+  -- for the public name (SCRBRD-083 §6.3): after eighteen she may take his
+  -- name off, never put it on, and her "no" beats the other parent's "yes".
+  --
+  -- db/62's triggers are deferred to the end of the transaction; _v62_fire()
+  -- fires them where the application's transaction would commit.
+  --
+  -- Each guard in db/62 was broken once, the database rebuilt and this file
+  -- run, and went red — at the first assertion able to see it, which for
+  -- some is an earlier section's:
+  --   establish writes the birthday for a pupil  → "did not leave a pupil's link open" (guardianship block)
+  --   establish's adult refusal taken out        → "a guardian can be linked to a player who has turned eighteen"
+  --   the triggers INITIALLY IMMEDIATE           → db/62's own proof; with that cut too, "no pupil at school has
+  --                                                an open guardian link", and (move) in tools/smoke-link18.mjs
+  --   the CLOSE doing nothing                    → (leaves)
+  --   the CLOSE ending a minor's on the day      → (minor)
+  --   the OPEN doing nothing                     → "no pupil at school has an open guardian link" (the seed's)
+  --   the OPEN re-opening any ended link         → "a guardian still reads ... turned eighteen" (S Naidoo's)
+  --   her "no" after 18 refused (db/47's rule)   → (no-18)
+  --   her "yes" after 18 taken                   → section 25's (adult)
+  --   the facts without the refusal arm          → (facts)
+  --   option C's not-at-school refusal cut       → section 25's (adult)
+  --   the data step doing nothing                → db/62's own proof, in the paste rehearsal (on a fresh
+  --                                                database the step has nothing to do)
+  DECLARE
+    ids     jsonb := _seed_62();
+    HIL     uuid := '11111111-1111-1111-1111-111111111111';
+    ZERO    uuid := '00000000-0000-0000-0000-000000000000';
+    CLUB    uuid;
+    P_PUP   uuid; P_ADU uuid; P_MIN uuid; P_LATE uuid; P_GROWN uuid; P_CLUB uuid;
+    U_OFF   uuid; U_COFF uuid; U_MUM uuid; U_DAD uuid; U_AMUM uuid; U_MMUM uuid;
+    U_LMUM  uuid; U_GMUM uuid; U_CMUM uuid; U_SELF uuid;
+    V       text := 'health-monitoring-2026-09';
+    VP      text := 'public-name-2026-09';
+    l       record;
+    v_facts jsonb;
+    v_body  text;
+  BEGIN
+    CLUB := (ids->>'club')::uuid;
+    P_PUP := (ids->>'p_pupil')::uuid;  P_ADU := (ids->>'p_adult')::uuid; P_MIN := (ids->>'p_minor')::uuid;
+    P_LATE := (ids->>'p_late')::uuid;  P_GROWN := (ids->>'p_grown')::uuid; P_CLUB := (ids->>'p_club')::uuid;
+    U_OFF := (ids->>'u_office')::uuid; U_COFF := (ids->>'u_coffice')::uuid;
+    U_MUM := (ids->>'u_mum')::uuid;    U_DAD := (ids->>'u_dad')::uuid;     U_AMUM := (ids->>'u_amum')::uuid;
+    U_MMUM := (ids->>'u_mmum')::uuid;  U_LMUM := (ids->>'u_lmum')::uuid;   U_GMUM := (ids->>'u_gmum')::uuid;
+    U_CMUM := (ids->>'u_cmum')::uuid;  U_SELF := (ids->>'u_self')::uuid;
+    -- The seed's memberships were opened in this transaction; what the
+    -- application's commit would do to them happens now, before anything
+    -- is asked. Liam is then out of the school system when his link is made.
+    PERFORM _v62_fire();
+    PERFORM _v60_leave(P_LATE);
+    PERFORM _v62_fire();
+
+    -- (open) The offices link the parents, as db/08's functions do. A pupil's
+    -- link is open; the club member's, and the boy out of school's, end on
+    -- the eighteenth birthday exactly as before.
+    PERFORM _as(U_OFF);
+    FOR l IN SELECT * FROM (VALUES (U_MUM, P_PUP), (U_DAD, P_PUP), (U_AMUM, P_ADU), (U_MMUM, P_MIN), (U_LMUM, P_LATE)) AS v(g, p) LOOP
+      SELECT ok, reason INTO v_ok, v_reason FROM guardian_link_establish(l.g, l.p, 'parent');
+      PERFORM _assert(v_ok, format('db/62 (link): Hilton''s office could not link a parent (%s)', v_reason));
+      SELECT ok, reason INTO v_ok, v_reason FROM guardian_link_verify(l.g, l.p, 'popia-2026-01');
+      PERFORM _assert(v_ok, format('db/62 (link): Hilton''s office could not verify a parent (%s)', v_reason));
+    END LOOP;
+    PERFORM _as(U_COFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM guardian_link_establish(U_CMUM, P_CLUB, 'parent');
+    PERFORM _assert(v_ok, format('db/62 (link): the club''s office could not link a parent (%s)', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM guardian_link_verify(U_CMUM, P_CLUB, 'popia-2026-01');
+    PERFORM _assert(v_ok, format('db/62 (link): the club''s office could not verify a parent (%s)', v_reason));
+    SELECT string_agg(format('%s:%s', x.k, coalesce((_v62_link(x.p, x.g)).until::text, 'open')), ' ' ORDER BY x.k) INTO v_body
+      FROM (VALUES ('adult', P_ADU, U_AMUM), ('club', P_CLUB, U_CMUM), ('dad', P_PUP, U_DAD), ('late', P_LATE, U_LMUM),
+                   ('minor', P_MIN, U_MMUM), ('pupil', P_PUP, U_MUM)) AS x(k, p, g);
+    PERFORM _assert(v_body = format('adult:open club:%s dad:open late:%s minor:open pupil:open',
+                                    majority_on(_born_of(P_CLUB)), majority_on(_born_of(P_LATE))),
+      format('db/62 (open): the links were written %s', v_body));
+
+    -- (grown) A new link is never made for an adult, at school or not.
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM guardian_link_establish(U_GMUM, P_GROWN, 'parent');
+    PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult' AND _count_guardian_assignments(U_GMUM) = 0
+                    AND _count_subjects(P_GROWN) = 0,
+      format('db/62 (grown): a parent was linked to a pupil of eighteen (%s, %s)', v_ok, v_reason));
+
+    -- Before eighteen: the pupil's mother says yes to health monitoring; his
+    -- father says yes to his name on public pages and his mother says
+    -- nothing; Andile's mother says yes to health monitoring.
+    PERFORM _as(U_MUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_PUP, true, V);
+    PERFORM _assert(v_ok AND _v60_live(P_PUP), format('db/62 (consent): the mother''s yes at seventeen (%s)', v_reason));
+    PERFORM _as(U_DAD);
+    SELECT ok, reason INTO v_ok, v_reason FROM public_name_consent_set(P_PUP, true, VP);
+    PERFORM _assert(v_ok, format('db/62 (consent): the father''s public-name yes at seventeen (%s)', v_reason));
+    PERFORM _as(U_AMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_ADU, true, V);
+    PERFORM _assert(v_ok AND _v60_live(P_ADU), format('db/62 (consent): Andile''s mother''s yes at seventeen (%s)', v_reason));
+
+    -- (eighteen) Today is the pupil's, Andile's and the club member's
+    -- eighteenth birthday.
+    PERFORM _v62_turn_eighteen(P_PUP);
+    PERFORM _v62_turn_eighteen(P_ADU);
+    PERFORM _v62_turn_eighteen(P_CLUB);
+    -- The pupil's link is open on his birthday, and app_can() still grants
+    -- his mother: his record and his roster row.
+    PERFORM _assert((_v62_link(P_PUP, U_MUM)).open AND (_v62_link(P_PUP, U_DAD)).open,
+      'db/62 (eighteen): a pupil''s guardian link is not open on his eighteenth birthday');
+    PERFORM _as(U_MUM);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_PUP;
+    PERFORM _assert(n = 1 AND app_can('player.profile.read', HIL, '1XI', P_PUP, ZERO),
+      format('db/62 (eighteen): app_can() refused a pupil''s mother on his eighteenth birthday (%s rows)', n));
+    -- The club member's ends on the birthday, as it always has.
+    PERFORM _assert((_v62_link(P_CLUB, U_CMUM)).until = current_date,
+      format('db/62 (club): the club member''s link ends %s, not on his birthday', (_v62_link(P_CLUB, U_CMUM)).until));
+    PERFORM _as(U_CMUM);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_CLUB;
+    PERFORM _assert(n = 0 AND NOT app_can('player.profile.read', CLUB, '1XI', P_CLUB, ZERO),
+      'db/62 (club): a club member''s parent still reads him on his eighteenth birthday');
+
+    -- (health) Her pre-18 yes is live on his birthday while he is at school;
+    -- her yes after it is refused; her "no" after it works; and his own
+    -- answer, once given, is the only one that counts.
+    PERFORM _assert(_v60_live(P_PUP), 'db/62 (health): her pre-18 yes lapsed on his birthday while he is at school');
+    PERFORM _as(U_MUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_PUP, true, V || '-b');
+    PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself', format('db/62 (health): her yes after eighteen: %s', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_PUP, false, V);
+    PERFORM _assert(v_ok AND NOT _v60_live(P_PUP), format('db/62 (health): her no after eighteen: %s, live %s', v_reason, _v60_live(P_PUP)));
+    PERFORM _as(U_SELF);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_PUP, true, V);
+    PERFORM _assert(v_ok AND _v60_live(P_PUP), format('db/62 (health): his own yes after her no: %s', v_reason));
+    PERFORM _as(U_MUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_PUP, false, V);
+    PERFORM _assert(v_ok AND _v60_live(P_PUP), format('db/62 (health): her later no outvoted his own yes: %s, live %s', v_reason, _v60_live(P_PUP)));
+
+    -- Option C. (carries) His father's standing pre-18 yes still names him;
+    -- (yes-18) his mother may not newly put his name on, herself or through
+    -- the office's form; (no-18) she may take it off — a refusal, with
+    -- nothing of hers open — and (facts) it counts, and is the latest act,
+    -- so it beats the father's yes.
+    v_facts := public_name_facts(P_PUP);
+    PERFORM _assert(jsonb_array_length(v_facts -> 'consents') = 1
+                    AND v_facts #> '{consents,0,competent}' = 'true'::jsonb AND v_facts #>> '{consents,0,endedOn}' IS NULL,
+      format('db/62 (carries): the father''s pre-18 yes does not carry on at eighteen: %s', v_facts));
+    PERFORM _as(U_MUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM public_name_consent_set(P_PUP, true, VP);
+    PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself',
+      format('db/62 (yes-18): a parent put an adult''s name on public pages (%s, %s)', v_ok, v_reason));
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM public_name_consent_set(P_PUP, true, VP, U_MUM, 'Admission form 2026', sa_today());
+    PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself',
+      format('db/62 (yes-18): the office put an adult''s name on for his parent (%s, %s)', v_ok, v_reason));
+    PERFORM _as(U_MUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM public_name_consent_set(P_PUP, false, VP);
+    PERFORM _assert(v_ok, format('db/62 (no-18): a parent could not take her adult son''s name off while he is at school (%s)', v_reason));
+    v_facts := public_name_facts(P_PUP);
+    SELECT count(*) INTO n FROM jsonb_array_elements(v_facts -> 'consents') x
+     WHERE x ->> 'by' = 'guardian' AND (x ->> 'competent')::boolean
+       AND x ->> 'givenOn' = to_char(sa_today(), 'YYYY-MM-DD') AND x ->> 'endedOn' = to_char(sa_today(), 'YYYY-MM-DD');
+    PERFORM _assert(n = 1 AND jsonb_array_length(v_facts -> 'consents') = 2
+                    AND (SELECT x ->> 'givenOn' FROM jsonb_array_elements(v_facts -> 'consents') x
+                          WHERE (x ->> 'competent')::boolean ORDER BY x ->> 'givenOn' DESC LIMIT 1) = to_char(sa_today(), 'YYYY-MM-DD'),
+      format('db/62 (facts): her no after eighteen is not a competent, latest act beside his father''s yes: %s', v_facts));
+    -- (his) He speaks for himself: his own yes is a competent record, and
+    -- from it his records alone govern (publicName(), unchanged).
+    PERFORM _as(U_SELF);
+    SELECT ok, reason INTO v_ok, v_reason FROM public_name_consent_set(P_PUP, true, VP);
+    v_facts := public_name_facts(P_PUP);
+    PERFORM _assert(v_ok AND EXISTS (SELECT 1 FROM jsonb_array_elements(v_facts -> 'consents') x
+                                      WHERE x ->> 'by' = 'pupil' AND (x ->> 'competent')::boolean AND x ->> 'endedOn' IS NULL),
+      format('db/62 (his): his own yes at eighteen is not a competent, open record (%s): %s', v_reason, v_facts));
+
+    -- (move) Ten days after his birthday, an adult pupil moved from one side
+    -- to another keeps his parent: the move closes a membership and opens
+    -- one, and the link is judged on what the transaction leaves — at school.
+    -- (Judged statement by statement it would end on the moving day, which is
+    -- not his birthday, and nothing would re-open it.)
+    PERFORM _v62_older(P_ADU, 10);
+    PERFORM _v62_move(P_ADU, '2XI');
+    PERFORM _v62_fire();
+    PERFORM _assert((_v62_link(P_ADU, U_AMUM)).open AND _v60_live(P_ADU),
+      format('db/62 (move): moving an adult pupil between sides ended his parent''s link (until %s)', (_v62_link(P_ADU, U_AMUM)).until));
+
+    -- (leaves) An adult who leaves loses his parent that day — her access,
+    -- and the health consent that ran through it; and his public name is no
+    -- longer hers to answer for.
+    PERFORM _v60_leave(P_ADU);
+    PERFORM _v62_fire();
+    PERFORM _assert((_v62_link(P_ADU, U_AMUM)).until = current_date,
+      format('db/62 (leaves): an adult''s link, on the day he left, ends %s', coalesce((_v62_link(P_ADU, U_AMUM)).until::text, 'never')));
+    PERFORM _as(U_AMUM);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_ADU;
+    PERFORM _assert(n = 0 AND NOT app_can('player.profile.read', HIL, '2XI', P_ADU, ZERO),
+      'db/62 (leaves): the parent of an adult who has left still reads him');
+    PERFORM _assert(NOT _v60_live(P_ADU), 'db/62 (leaves): her health consent outlived her link when he left');
+    SELECT ok, reason INTO v_ok, v_reason FROM public_name_consent_set(P_ADU, false, VP);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('db/62 (leaves): her no after he left (%s)', v_reason));
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM public_name_consent_set(P_ADU, false, VP, U_AMUM);
+    PERFORM _assert(NOT v_ok AND v_reason = 'no_verified_link', format('db/62 (leaves): the office''s no for her after he left (%s)', v_reason));
+    -- (never) ...and coming back does not bring it back: it ended on the day
+    -- he left, not on his birthday, and a new one cannot be made for an adult.
+    PERFORM _v60_rejoin(P_ADU);
+    PERFORM _v62_fire();
+    PERFORM _assert((_v62_link(P_ADU, U_AMUM)).until = current_date,
+      format('db/62 (never): an adult''s link ended on his leaving re-opened when he came back (%s)', coalesce((_v62_link(P_ADU, U_AMUM)).until::text, 'open')));
+
+    -- (minor) A minor who leaves keeps his parent until his birthday.
+    PERFORM _v60_leave(P_MIN);
+    PERFORM _v62_fire();
+    PERFORM _assert((_v62_link(P_MIN, U_MMUM)).until = majority_on(_born_of(P_MIN)),
+      format('db/62 (minor): a minor''s link, when he left, ends %s, not on his birthday', coalesce((_v62_link(P_MIN, U_MMUM)).until::text, 'never')));
+    PERFORM _as(U_MMUM);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_MIN;
+    PERFORM _assert(n = 1, 'db/62 (minor): a minor''s parent lost him the day he left school');
+    -- (back) He comes back: open again.
+    PERFORM _v60_rejoin(P_MIN);
+    PERFORM _v62_fire();
+    PERFORM _assert((_v62_link(P_MIN, U_MMUM)).open, 'db/62 (back): a boy re-enrolled did not have his link re-opened');
+    -- He leaves again, and turns eighteen out of school: it ends on the day.
+    PERFORM _v60_leave(P_MIN);
+    PERFORM _v62_fire();
+    PERFORM _v62_turn_eighteen(P_MIN);
+    PERFORM _assert((_v62_link(P_MIN, U_MMUM)).until = current_date,
+      format('db/62 (minor): out of school, his link does not end on his eighteenth birthday (%s)', (_v62_link(P_MIN, U_MMUM)).until));
+    PERFORM _as(U_MMUM);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_MIN;
+    PERFORM _assert(n = 0, 'db/62 (minor): the parent of a boy who left at sixteen still reads him on his eighteenth birthday');
+    -- (back) The boy enrolled after his link was made.
+    PERFORM _assert((_v62_link(P_LATE, U_LMUM)).until = majority_on(_born_of(P_LATE)),
+      'db/62 (back): the late boy''s link, made out of school, does not end on his birthday');
+    PERFORM _v60_rejoin(P_LATE);
+    PERFORM _v62_fire();
+    PERFORM _assert((_v62_link(P_LATE, U_LMUM)).open, 'db/62 (back): a boy enrolled after his link was made did not have it re-opened');
+
+    -- Nothing here left the table holding an adult's open link out of school.
+    PERFORM _assert(_count_open_guardian_links() = 0,
+      'db/62: a guardian link is open-ended for an adult who is not at school');
   END;
 
   PERFORM set_config('app.user_id', '', true);

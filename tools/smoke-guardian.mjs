@@ -18,7 +18,8 @@
  *   a coach cannot become the guardian of a child in their own side
  *   the last verified link of a minor cannot be taken away
  *   withdrawing consent does not blind the parent — it unregisters the child
- *   guardianship ENDS at eighteen, and cannot be established past it
+ *   guardianship ENDS at eighteen (or, for a pupil, on leaving school after
+ *   it — db/62), and cannot be established past it
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-guardian.mjs
@@ -426,14 +427,19 @@ try {
       method: "POST", token: reg, body: { guardianId: ADULT_PARENT, relationship: "parent" } });
     ok("...and can once the date of birth is captured", dated.status === 200 && dated.body?.ok === true);
 
-    const ends = await q(`select s.valid_until, majority_on(p.born) as majority
+    // Since db/62 (SCRBRD-110 §7.4) a pupil's link is open while he is at
+    // school, and ends at the later of his eighteenth birthday and the day he
+    // leaves; tools/smoke-link18.mjs walks the leaving and the birthday. B
+    // Khumalo is in Hilton's U13A, so his is open — and the open link is
+    // asserted together with the reason it may be open.
+    const ends = await q(`select s.valid_until, still_at_school(p.id) as at_school,
+                                 majority_on(p.born) > current_date as minor
                             from assignment_subject s
                             join role_assignment a on a.id = s.assignment_id and a.role = 'guardian'
                             join player p on p.id = s.player_id
                            where s.player_id = $1 and a.person_id = $2`, [NO_DOB, ADULT_PARENT]);
-    ok("...with the link ending on that child's eighteenth birthday",
-       ends.length === 1 && ends[0].valid_until instanceof Date
-       && ends[0].valid_until.getTime() === ends[0].majority.getTime());
+    ok("...with the link open while that child is at school",
+       ends.length === 1 && ends[0].valid_until === null && ends[0].at_school === true && ends[0].minor === true);
 
     // `already_linked` used to be decided by valid_until IS NULL, which no link
     // satisfies now that every one of them carries an end date. Without this the
