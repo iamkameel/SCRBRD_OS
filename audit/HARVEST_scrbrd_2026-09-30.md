@@ -229,3 +229,19 @@ The inventory above over-counts. Checked against the code, most of its "not in O
 | Cricket engine reference | **Skip.** `packages/scoring` supersedes it (4th Edition, parity with SQL). |
 | **Scorecard importer** (photo of a paper scorebook, OCR, review and edit the cells, then import) | **Take, as a new item.** OS has nothing like it. Schools score many matches on paper: away games, lower sides, and the "match elsewhere" loads in SCRBRD-110. Turning a scorebook photo into ball-by-ball or summary events would fill the careers, workload and tables. Needs a design pass (what the OCR produces, how a reviewed import becomes events in the log with a source mark, who may import, and privacy of the stored photos) before any build. |
 | Communications with audience and approval | **Compare, maybe take the approval step.** OS news already scopes by anchor and has `published_at` (db/12). What scrbrd adds is a draft-then-approve step before a post reaches its audience. Worth a small backlog item if Kameel wants a second pair of eyes on posts to pupils. |
+
+---
+
+## Second look (Opus, 2026-09-30, afternoon): PR #2 `codex/connected-player-development`
+
+`main` had not moved (`5ede49f`); the new work is the open PR #2 (13 commits, tip `0a90c71`).
+
+| Item | Verdict |
+|---|---|
+| **Availability reconfirmation** (each answer keeps the fixture's time, venue, format and overs; a change asks again) | **Take: SCRBRD-122.** OS keeps the answer only, so a moved fixture keeps a stale "available". |
+| **League and knockout planner** (`competition-planner.ts`: round robin, double, seeded knockout with byes; placing into windows under blackouts, rest, travel, a daily cap and closures; locks survive regeneration; unscheduled with reasons) | **Take the idea: SCRBRD-123.** OS has competitions and entrants but no generator. Rewrite readably, with tests; do not copy the one-line code. |
+| Ground reservations and closures flowing to fixtures | **Later.** Worth it after 122 and 123. |
+| Parent lift clubs | **Skip.** A safeguarding exposure under the CSA policy; the source itself awaits school policy approval. OS trips (vehicle, driver, clearance) are the safer model. |
+| Skills rubric catalogue | **Nothing new.** It is OS's draft rubric (same scale and gate) in JSON. |
+| Liquid-glass styling, almanac, workspace navigation | **Skip.** OS has its design system and season history. |
+| D1/SQLite with access in application code | **Skip.** The source's own ledger lists the PostgreSQL/RLS move as a blocker. |
