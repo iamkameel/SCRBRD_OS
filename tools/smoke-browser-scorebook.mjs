@@ -34,6 +34,13 @@
  *   F2 A LEAGUE'S FIXTURE: its administrator, who reads no roster of the
  *      school's, is told the card's boys' names by the import, and who wrote
  *      each line of its history.
+ *   R  THE READER (phase 4; the API replays the demo's recorded answer, never
+ *      the provider): off for the school, the card screen is the manual one;
+ *      granted, "Read the pages" on the demo's two synthetic pages fills an
+ *      innings; the cells are tinted by confidence and the doubtful marked
+ *      "check"; a name it could not read, and one on no roster, say so;
+ *      nothing is ticked; focusing a cell outlines its box on its page; a
+ *      cell the person changes loses the reader's tint; ticked, submitted.
  *   G  Nothing under 12px, nothing pressed under 44px, no sideways scroll at
  *      390 wide, in Daylight too; no console error, no browser dialog.
  *
@@ -50,6 +57,7 @@ import { mkdtempSync, writeFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { cellPaths } from "@scrbrd/scoring";
 import { baseCard, TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
@@ -74,7 +82,11 @@ const group = (t) => console.log("\n" + t);
 const apiProc = spawn(process.execPath, ["services/api/server.mjs"], {
   env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(API_PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
          SESSION_SECRET: "browser-scorebook-secret", WEB_ORIGIN: `http://localhost:${WEB_PORT}`,
-         SCOREBOOK_STORE_DIR: STORE, SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" },
+         SCOREBOOK_STORE_DIR: STORE, SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "",
+         // The reader replays the demo's recorded answer (group R): never the
+         // provider, whatever key the environment holds.
+         ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "",
+         SCOREBOOK_READER_REPLAY: fileURLToPath(new URL("./demo/scorebook/reader-response.json", import.meta.url)) },
   stdio: ["ignore", "pipe", "pipe"],
 });
 const apiErr = [];
@@ -223,6 +235,7 @@ try {
 
   // A walk can be run again on the same database: the module starts off.
   await dbq(`delete from feature_grant where key = 'scorebook_import' and school_id = $1`, [HIL]);
+  await dbq(`delete from feature_grant where key = 'scorebook_reader' and school_id = $1`, [HIL]);
   const M = await fixture();
 
   // ── 0 ──────────────────────────────────────────────────────────
@@ -577,6 +590,107 @@ try {
   ok("no console errors (league)", lg.errors.length === 0, lg.errors.join(" | "));
   await lg.ctx.close().catch(() => {});
 
+  // ── R ──────────────────────────────────────────────────────────
+  group("R. The reader (phase 4): read → the cells tinted → a box on the page → ticked → submitted");
+  const MR = await fixture();
+  const rd = await open();
+  const rp = rd.page;
+  ok("the scorer signs in", await signIn(rp, "scorer@example.invalid"));
+  ok("Matches → the fifth fixture → Import from a scorebook", await toFixture(rp, MR) && (await (async () => {
+    await tid(rp, "sb-start").waitFor({ timeout: 6000 }).catch(() => {}); await tap(rp, "sb-start");
+    await tid(rp, "sb-upload").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
+  const demo = (/** @type {string} */ f) => fileURLToPath(new URL(`./demo/scorebook/${f}`, import.meta.url));
+  await rp.setInputFiles('[data-testid="sb-file"]', [demo("page-1.png"), demo("page-2.png")]);
+  await uploaded(rp);
+  ok("the demo's two synthetic pages are added", (await rp.locator('[data-testid="sb-upload-ok"]').count()) === 2);
+  await tap(rp, "sb-next");
+  await rp.waitForTimeout(500);
+  ok("with the reader off for the school, the card screen is the manual one: nothing to press", (await tid(rp, "sb-reader").count()) === 0);
+  const RI = (await call(`/api/matches/${MR}/scorebook`, { token: scorerTok })).body?.imports?.[0]?.id;
+  await dbq(`insert into feature_grant (key, school_id, granted, note) values ('scorebook_reader', $1, true, 'smoke-browser-scorebook')
+             on conflict (key, school_id) do update set granted = true`, [HIL]);
+  // Back to the import, now the platform has granted the reader.
+  const reopen = async () => {
+    // Back to the match, and in again: the import is fetched afresh.
+    await tap(rp, "sb-back");
+    await tid(rp, `sb-open-${RI}`).waitFor({ timeout: 6000 }).catch(() => {});
+    if (!(await tid(rp, `sb-open-${RI}`).count())) return false;
+    await tap(rp, `sb-open-${RI}`);
+    await tid(rp, "sb-root").waitFor({ timeout: 6000 }).catch(() => {});
+    await rp.waitForTimeout(800);
+    if (await tid(rp, "sb-step-card").count()) await tap(rp, "sb-step-card");
+    return true;
+  };
+  ok("the import, opened again", await reopen());
+  await tid(rp, "sb-reader").waitFor({ timeout: 6000 }).catch(() => {});
+  const panelWords = await said(rp, "sb-reader");
+  ok("\"Read the pages\" is offered, and says only the photos are sent, and to whom", /Read the pages/.test(panelWords) && /Only the photos are sent/.test(panelWords) && /Anthropic/.test(panelWords), panelWords);
+  await tid(rp, "sb-read-n").selectOption("0");
+  await tid(rp, "sb-read-side").selectOption("home");
+  await tap(rp, "sb-read-go");
+  await tid(rp, "sb-card-0").waitFor({ timeout: 20000 }).catch(() => {});
+  await rp.waitForTimeout(600);
+  ok("the reader fills the innings, and the screen says every cell is still to check", /The reader filled in Innings 1/.test(await said(rp, "sb-status")), await said(rp, "sb-status"));
+  ok("the figures as the book has them", await tid(rp, "sb-in-0.total").inputValue() === "135" && await tid(rp, "sb-in-0.batting.3.balls").inputValue() === "22");
+  const tints = await rp.evaluate(() => ({
+    check: [...document.querySelectorAll('[data-read="check"]')].map((x) => x.getAttribute("data-testid")),
+    read: document.querySelectorAll('[data-read="read"]').length,
+  }));
+  ok("cells tinted by the reader's confidence: most read, the doubtful ones marked check", tints.read > 100
+     && ["sb-cell-0.batting.3.balls", "sb-cell-0.extras.legByes", "sb-cell-0.bowling.3.wides", "sb-cell-0.didNotBat.2"].every((t) => tints.check.includes(t)), JSON.stringify(tints).slice(0, 300));
+  ok("a doubtful cell says \"check\"", /^Check: the reader was unsure/.test(await said(rp, "sb-reader-0.batting.3.balls")), await said(rp, "sb-reader-0.batting.3.balls"));
+  ok("a name it could not read says so", /The reader could not read this/.test(await said(rp, "sb-reader-0.didNotBat.2")));
+  ok("a name it read that is on no roster is given back to choose, never guessed", /“Moyo T”, which is nobody on the roster/.test(await said(rp, "sb-reader-name-0.batting.5.ref")));
+  ok("our boys it could match are chosen from the roster", await tid(rp, "sb-in-0.batting.0.ref").inputValue() === P[0]);
+  ok("the reader's doubts, in its words", (await rp.locator('[data-testid="sb-reader-doubts"] li').count()) === 3);
+  ok("nothing is ticked: the reader's confidence is never a tick",
+     (await rp.locator('[data-testid^="sb-tick-0."]:checked').count()) === 0 && /^0 of \d+ cells checked/.test(await said(rp, "sb-progress")), await said(rp, "sb-progress"));
+  // Focusing a cell outlines its box on its page.
+  await tid(rp, "sb-in-0.batting.3.balls").focus();
+  await rp.waitForTimeout(500);
+  const boxAt = async () => rp.evaluate(() => {
+    const box = document.querySelector('[data-testid="sb-page-box"]');
+    const img = document.querySelector('[data-testid="sb-page-img"]');
+    if (!box || !img) return null;
+    const b = box.getBoundingClientRect(), i = img.getBoundingClientRect();
+    return { cell: box.getAttribute("data-cell"), x: (b.left - i.left) / i.width, y: (b.top - i.top) / i.height };
+  });
+  const rcBalls = (await dbq(`select read_cells->'0'->'batting.3.balls'->'b' as b from scorebook_import where id = $1`, [RI]))[0]?.b;
+  let at = await boxAt();
+  ok("focusing a read cell outlines where it was read, on its page", at?.cell === "0.batting.3.balls" && (await said(rp, "sb-page-label")) === "Page 1"
+     && Math.abs(at.x - rcBalls[0]) < 0.01 && Math.abs(at.y - rcBalls[1]) < 0.01, JSON.stringify({ at, rcBalls }));
+  await tid(rp, "sb-in-0.bowling.3.wides").focus();
+  await rp.waitForTimeout(500);
+  at = await boxAt();
+  ok("...a bowling cell turns to page 2", at?.cell === "0.bowling.3.wides" && (await said(rp, "sb-page-label")) === "Page 2", JSON.stringify(at));
+  await shot(rp, "9-reader-review");
+  const fRead = await floors(rp, "sb-root");
+  ok("the read card: the same floors", floorsOk(fRead), floorsWhy(fRead));
+
+  // The person finishes it: the boy who has since joined the roster, the smudged name, every cell ticked.
+  const moyo = (await dbq(`insert into player (school_id, full_name, team_code, born) values ($1, 'Tendai Moyo', '1XI', '2009-03-01') returning id`, [HIL]))[0].id;
+  ok("the import, opened again", await reopen());
+  await tid(rp, "sb-card-0").waitFor({ timeout: 6000 }).catch(() => {});
+  ok("the tints are the server's and survive a reload; the names as read were never stored",
+     (await rp.locator('[data-read="check"]').count()) >= 4 && (await tid(rp, "sb-reader-name-0.batting.5.ref").count()) === 0);
+  await pick(rp, "0.batting.5.ref", moyo);
+  await pick(rp, "0.didNotBat.2", "aaaaaaaa-0000-0000-0000-000000000013");
+  await pick(rp, "0.fallOfWickets.4.ref", moyo);
+  await rp.waitForTimeout(300);
+  ok("a cell the person changed is theirs: the reader's tint is gone", (await tid(rp, "sb-cell-0.batting.5.ref").getAttribute("data-read")) === null
+     && (await tid(rp, "sb-cell-0.total").getAttribute("data-read")) === "read");
+  await tickEverything(rp);
+  await rp.waitForTimeout(300);
+  await tap(rp, "sb-submit");
+  await rp.waitForTimeout(1500);
+  ok("every cell ticked by the person, the card submitted", /Submitted/.test(await said(rp, "sb-status")) && (await tid(rp, "sb-root").getAttribute("data-state")) === "submitted", await said(rp, "sb-status"));
+  const rrow = (await dbq(`select state, read_by from scorebook_import where id = $1`, [RI]))[0];
+  ok("(the processing record: the replay, both pages, the scorer)", rrow.state === "submitted" && rrow.read_by?.length === 1 && rrow.read_by[0].pageHashes.length === 2
+     && rrow.read_by[0].provider === "replay");
+  ok("no console errors, no dialog (reader)", rd.errors.length === 0 && rd.dialogs.length === 0, rd.errors.join(" | "));
+  await rd.ctx.close().catch(() => {});
+  await dbq(`delete from feature_grant where key = 'scorebook_reader' and school_id = $1`, [HIL]);
+
   // ── G ──────────────────────────────────────────────────────────
   group("G. A phone's 390 × 844, and Daylight");
   const M4 = await fixture();
@@ -636,6 +750,8 @@ try {
   if (DEBUG) { console.log(e.stack?.split("\n").slice(0, 8).join("\n")); console.log("page errors:", allErrors.flat().slice(0, 6).join(" | ")); }
 } finally {
   await dbq(`delete from feature_grant where key = 'scorebook_import' and school_id = $1`, [HIL]).catch(() => {});
+  await dbq(`delete from feature_grant where key = 'scorebook_reader' and school_id = $1`, [HIL]).catch(() => {});
+  await dbq(`delete from player where school_id = $1 and full_name = 'Tendai Moyo'`, [HIL]).catch(() => {});
   await browser.close().catch(() => {});
   web.close();
   apiProc.kill("SIGTERM");

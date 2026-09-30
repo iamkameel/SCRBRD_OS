@@ -1,7 +1,7 @@
 import { createContext, useContext, useId, useState } from "react";
 import { T, inkOn } from "../design/tokens.js";
 import {
-  END_REASONS, HOW_OUT, blankBatter, blankBowler, blankWicket, cellWords, cleanName, countOf, differenceOf, footnoteWords,
+  END_REASONS, HOW_OUT, READ_CHECK_BELOW, blankBatter, blankBowler, blankWicket, cellWords, cleanName, countOf, differenceOf, footnoteWords,
   getPath, isTypedRef, otherSide, oversOf, rowPaths,
 } from "../lib/scorebook.js";
 
@@ -68,6 +68,32 @@ export function rosterGroups(players, first) {
   return teams.map((t) => ({ team: t, players: players.filter((p) => (p.team ?? "") === t).sort((a, b) => a.name.localeCompare(b.name)) }));
 }
 
+/**
+ * What the reader said of this cell, under it (SCRBRD-120 §6.3): nothing for
+ * a cell it did not fill or the person has since changed; "check" below the
+ * line of confidence; "could not read this" for a cell it left empty because
+ * it could not read it; the name it read that matched nobody on the roster,
+ * and its own note. Words, never a tick: the tick beside the cell is the
+ * person's alone.
+ */
+function ReadNote({ keyPath, read, hint }) {
+  const S = styles();
+  if (!read && !hint) return null;
+  const low = read ? read.c < READ_CHECK_BELOW : false;
+  const words = !read ? null
+    : read.v === null && low ? "The reader could not read this."
+    : low ? `Check: the reader was unsure of this${read.p ? ` (page ${read.p})` : ""}.`
+    : `Read from ${read.p ? `page ${read.p}` : "the pages"}.`;
+  return (
+    <div data-testid={`sb-reader-${keyPath}`} data-confidence={read ? read.c : undefined} data-check={low ? "true" : undefined}>
+      {words && <p style={{ ...S.meta, color: low ? T.semantic.warningText : T.content.tertiary, fontWeight: low ? 600 : 400 }}>{words}</p>}
+      {hint?.read && <p style={{ ...S.meta, color: T.semantic.warningText }} data-testid={`sb-reader-name-${keyPath}`}>
+        The reader read “{hint.read}”, which is nobody on the roster: choose the player.</p>}
+      {hint?.note && <p style={S.meta}>The reader's note: {hint.note}</p>}
+    </div>
+  );
+}
+
 /** A cell: its label, the control, the tick beside it and the refusals under it. */
 function Field({ path, label, wide, children }) {
   const S = styles();
@@ -77,8 +103,15 @@ function Field({ path, label, wide, children }) {
   const errors = ed.refusals[path] ?? [];
   const on = ed.checked[key] === true;
   const missing = ed.attempted && !on;
+  const read = ed.readOf ? ed.readOf(path) : null;
+  const hint = ed.hintOf ? ed.hintOf(path) : null;
+  const low = read ? read.c < READ_CHECK_BELOW : false;
+  // Tinted by the reader's confidence: a bar down the cell's edge, amber
+  // where it is to be checked. Focusing the cell points at its box on the page.
+  const tint = read ? { boxShadow: `inset 4px 0 0 ${low ? T.semantic.warning : T.semantic.info}`, paddingLeft: "10px", borderRadius: T.radius.sm } : {};
   return (
-    <div style={{ gridColumn: wide ? "1 / -1" : undefined, minWidth: 0 }} data-testid={`sb-cell-${key}`}>
+    <div style={{ gridColumn: wide ? "1 / -1" : undefined, minWidth: 0, ...tint }} data-testid={`sb-cell-${key}`}
+      data-read={read ? (low ? "check" : "read") : undefined} onFocusCapture={ed.focusCell ? () => ed.focusCell(path) : undefined}>
       <label htmlFor={id} style={S.label}>{label}</label>
       <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
@@ -91,6 +124,7 @@ function Field({ path, label, wide, children }) {
           <span aria-hidden="true">Checked</span>
         </label>
       </div>
+      <ReadNote keyPath={key} read={read} hint={hint}/>
       {errors.length > 0 && <p id={`${id}-err`} data-testid={`sb-err-${key}`} style={S.alert}>{errors.join(" ")}</p>}
       {missing && <p data-testid={`sb-missing-${key}`} style={{ ...S.alert, color: T.semantic.warning }}>Still to check</p>}
     </div>
