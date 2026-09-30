@@ -152,6 +152,15 @@ try {
   const afterPub = await seen(sarah);
   ok("...and Hilton, an entrant, now reads it", afterPub?.sets?.length === 1 && afterPub.sets[0].status === "published");
   ok("...the scorer still reads nothing", ((await seen(scorer))?.sets?.length ?? 0) === 0);
+  const named = (await seen(league))?.sets?.[0];
+  const leagueUser = (await q(`select id, name from app_user where email = 'league@example.invalid'`))[0];
+  ok("a version names who made and published it, beside the ids (uuids kept)",
+     named?.createdBy === leagueUser.id && named?.createdByName === leagueUser.name
+     && named?.publishedBy === leagueUser.id && named?.publishedByName === leagueUser.name
+     && named?.withdrawnBy === null && named?.withdrawnByName === null, JSON.stringify(named).slice(0, 300));
+  ok("...and each figure who entered it", named?.values?.length > 0 && named.values.every((v) => v.enteredBy === leagueUser.id && v.enteredByName === leagueUser.name));
+  ok("...a reader who may not read that user gets the id and no name (app_user's own policy)",
+     afterPub.sets[0].createdBy === leagueUser.id && [null, leagueUser.name].includes(afterPub.sets[0].createdByName));
 
   // ── C ──────────────────────────────────────────────────────────
   group("C. Published is immutable; a change is a new version");

@@ -19,6 +19,10 @@
  * each reason named in the route's comment. The conditions screen (a Sonnet
  * build over this) words them.
  *
+ * Names beside ids (createdByName and the like) are read as app_user's own
+ * policy allows the reader: a reader who may not read that user gets null, and
+ * the screen says "another administrator". No definer function widens it.
+ *
  * Reads are the tables' own policies (db/61): the catalogue to anyone signed
  * in; published and withdrawn versions to whoever may reach the competition
  * (competition.read), drafts to its conditions managers only; a match's
@@ -56,14 +60,15 @@ const day = (v, code) => {
 const setOut = (s, values) => ({
   id: s.id, competitionId: s.competition_id, version: s.version, title: s.title,
   effectiveFrom: s.effective_from, status: s.status, supersedes: s.supersedes ?? null,
-  createdBy: s.created_by, createdAt: s.created_at,
-  publishedBy: s.published_by ?? null, publishedAt: s.published_at ?? null,
-  withdrawnBy: s.withdrawn_by ?? null, withdrawnAt: s.withdrawn_at ?? null, withdrawnNote: s.withdrawn_note ?? null,
+  createdBy: s.created_by, createdByName: s.created_by_name ?? null, createdAt: s.created_at,
+  publishedBy: s.published_by ?? null, publishedByName: s.published_by_name ?? null, publishedAt: s.published_at ?? null,
+  withdrawnBy: s.withdrawn_by ?? null, withdrawnByName: s.withdrawn_by_name ?? null,
+  withdrawnAt: s.withdrawn_at ?? null, withdrawnNote: s.withdrawn_note ?? null,
   values: values.filter((v) => v.set_id === s.id).map((v) => ({
     key: v.key, ageBand: v.age_band === "" ? null : v.age_band, value: v.value, status: v.status,
     sourceDocument: v.source_document ?? null, sourceClause: v.source_clause ?? null,
     sourceDate: v.source_date ?? null, sourceNote: v.source_note ?? null,
-    enteredBy: v.entered_by, enteredAt: v.entered_at,
+    enteredBy: v.entered_by, enteredByName: v.entered_by_name ?? null, enteredAt: v.entered_at,
   })),
 });
 
@@ -128,9 +133,17 @@ export function playingConditionsRoutes({ pool, secret }) {
       const id = idOf(req);
       return runAsPrincipal(pool, secret, as(req), async (client) => {
         const { rows: sets } = await client.query(
-          `select * from condition_set where competition_id = $1 order by version desc`, [id]);
+          `select s.*, cu.name as created_by_name, pu.name as published_by_name, wu.name as withdrawn_by_name
+             from condition_set s
+             left join app_user cu on cu.id = s.created_by
+             left join app_user pu on pu.id = s.published_by
+             left join app_user wu on wu.id = s.withdrawn_by
+            where s.competition_id = $1 order by s.version desc`, [id]);
         const { rows: values } = sets.length
-          ? await client.query(`select * from condition_value where set_id = any($1::uuid[]) order by key, age_band`, [sets.map((s) => s.id)])
+          ? await client.query(
+              `select v.*, u.name as entered_by_name
+                 from condition_value v left join app_user u on u.id = v.entered_by
+                where v.set_id = any($1::uuid[]) order by v.key, v.age_band`, [sets.map((s) => s.id)])
           : { rows: [] };
         const { rows: m } = await client.query(
           `select competition_conditions_manager($1) as manage, condition_set_for($1, sa_today()) as today`, [id]);

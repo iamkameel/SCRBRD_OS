@@ -76,19 +76,22 @@ function Alert({ words, testid = "pc-error" }) {
   return words ? <p role="alert" data-testid={testid} style={S.alert}>{words}</p> : null;
 }
 
-/** The chips: what a figure stands on. */
+/** The chips: what a figure stands on, and who entered it. */
 function Source({ entered }) {
   const S = styles();
   if (!entered) {
     return <Badge data-testid="pc-chip-default" color={T.semantic.warning}>platform default, unconfirmed</Badge>;
   }
+  const who = entered.enteredBy && entered.enteredBy === profile()?.user?.id ? "you" : entered.enteredByName;
+  const by = who ? <span data-testid="pc-entered-by" style={S.meta}>Entered by {who}</span> : null;
   if (entered.status === "confirmed") {
-    return <span data-testid="pc-source" style={{ ...S.body, fontSize: "13px" }}>{sourceWords(entered)}</span>;
+    return <span style={S.wrap}><span data-testid="pc-source" style={{ ...S.body, fontSize: "13px" }}>{sourceWords(entered)}</span>{by}</span>;
   }
   return (
     <span style={S.wrap}>
       <Badge data-testid="pc-chip-unconfirmed" color={T.semantic.warning}>unconfirmed</Badge>
       {entered.sourceNote && <span style={S.meta}>{entered.sourceNote}</span>}
+      {by}
     </span>
   );
 }
@@ -505,7 +508,7 @@ export function PlayingConditions({ competition }) {
   }
 
   const me = profile()?.user?.id ?? null;
-  const by = (/** @type {string | null} */ id) => (id && id === me ? "you" : "another administrator");
+  const by = (/** @type {string | null} */ id, /** @type {string | null | undefined} */ name) => (id && id === me ? "you" : name || "another administrator");
   const sets = /** @type {any[]} */ (data.sets);
   const inForce = sets.find((s) => s.id === data.inForceToday) ?? null;
   const shownId = (chosen && sets.some((s) => s.id === chosen) ? chosen : null)
@@ -559,9 +562,9 @@ export function PlayingConditions({ competition }) {
                   <Badge color={badge[st]} data-testid="pc-version-standing">{STANDING_WORDS[st]}</Badge>
                 </div>
                 <p style={S.meta}>
-                  {s.status === "draft" ? `Starts ${formatDay(s.effectiveFrom)} once published. Started by ${by(s.createdBy)}, ${formatWhen(s.createdAt)}.`
-                    : `From ${formatDay(s.effectiveFrom)}. Published by ${by(s.publishedBy)}, ${formatWhen(s.publishedAt)}.`}
-                  {s.status === "withdrawn" && ` Withdrawn by ${by(s.withdrawnBy)}, ${formatWhen(s.withdrawnAt)}: “${s.withdrawnNote}”.`}
+                  {s.status === "draft" ? `Starts ${formatDay(s.effectiveFrom)} once published. Started by ${by(s.createdBy, s.createdByName)}, ${formatWhen(s.createdAt)}.`
+                    : `From ${formatDay(s.effectiveFrom)}. Published by ${by(s.publishedBy, s.publishedByName)}, ${formatWhen(s.publishedAt)}.`}
+                  {s.status === "withdrawn" && ` Withdrawn by ${by(s.withdrawnBy, s.withdrawnByName)}, ${formatWhen(s.withdrawnAt)}: “${s.withdrawnNote}”.`}
                 </p>
               </div>
               <button type="button" data-testid={`pc-show-${s.version}`} aria-pressed={selected} aria-label={`${selected ? "Showing" : "Show"} figures of version ${s.version}`} onClick={() => pick(s.id)} style={S.toggle(selected)}>
