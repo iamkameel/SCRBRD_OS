@@ -353,7 +353,11 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true }) 
           A bouncer over head height is a wide.
         </p>
       )}
-      <div data-testid="extra-runs" style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(44px,1fr))`, gap: T.space.xs }}>
+      {/* The no-ball's seven keys (0–6) on one row on a 360px phone: at the
+          usual gap they wrap to two, and with the 4th Edition's line above
+          them the panel rose over the board. Each key keeps its 44px. */}
+      <div data-testid="extra-runs" style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(44px,1fr))`,
+        gap: x.runs.length > 6 ? "2px" : T.space.xs }}>
         {x.runs.map((n) => {
           const likely = n === x.likely;
           return (
