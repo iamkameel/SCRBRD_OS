@@ -4103,6 +4103,7 @@ recorded for clubs (C7 "the same rules as schools") and not built:
 - Premier League coaches hold at least Level 2 (1.2.4; `coaching_accreditation` exists as a clearance kind).
 **Not built, by decision:** 1.2.5 (players of colour per team) and 3.5.4 (foreign players counted as white) are
 transformation quotas, and the transformation-quota rule above applies to them.
+**Tie-breaks (Kameel, 2026-09-30, from the `sundayMatches` review):** `result.tie_break` (`none` | `super_over`) is reserved in the catalogue but the fold cannot play a super over. Phase 3 (match results) must: play a super over as its own innings pair (one over, two wickets, the Laws and the fold as for any innings), and support whatever tie rule the KZN bye-laws name instead (e.g. fewer wickets lost, or shared points). The fixture planner's knockouts (SCRBRD-123) need a winner, so this comes before knockout rounds are published.
 
 ### SCRBRD-115 — K3: a pupil does not read whether a team-mate is out
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** safeguarding (CSA_SAFEGUARDING_CHECK K3; SAFEGUARDING_DSO §6.3)
@@ -4285,6 +4286,15 @@ league (`competition_conditions_manager()` asks `app_can()` at the organiser sch
 one appointed at a school reaches only that school's fixtures, even in his own league. Fine for the pilot's one league.
 Before a second league: a competition-scoped assignment, read by `competition_conditions_manager()`, `scorebook_league_reach()`
 and the conditions and standings policies. Opus.
+
+### SCRBRD-126 — The wicket-keeper: who is keeping, and only he stumps
+**Priority:** P2 · **Domain:** Scoring engine · **Type:** small build (Kameel, 2026-09-30; from the `sundayMatches` review)
+The engine does not know who is keeping. So a stumping can be credited to any fielder (Law 39 says it is always the
+wicket-keeper's), the scorecard cannot mark the keeper with †, and careers cannot count keeper catches and stumpings
+apart. School sides change keeper mid-innings, so: record the keeper at the start of each innings and on every change
+(an event, as the bowler is), have the Laws check refuse `stumped` credited to anyone but the keeper at that ball, show †
+on the scorecard, and let the careers count dismissals as keeper. Opus for the event, the fold and the Laws; Sonnet for
+the pad's keeper picker and the scorecard mark.
 
 ### SCRBRD-121 — News: a second person approves a post before it reaches pupils
 **Priority:** P3 · **Domain:** Communications · **Type:** small build (Kameel, 2026-09-30)
