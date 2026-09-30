@@ -104,6 +104,12 @@ try {
   const far = await api(`/api/grounds/${PA}/parent`, { method: "POST", token: sarah, body: { parentId: WM } });
   ok("a pitch on another school's ground: not permitted, or refused", far.status === 403 || far.body?.error === "parent_invalid", show(far));
   ok("the 1XI coach may not move a ground (403)", (await api(`/api/grounds/${PA}/parent`, { method: "POST", token: coach, body: { parentId: null } })).status === 403);
+  const ends = await api(`/api/grounds/${PA}/ends`, { method: "POST", token: sarah, body: { endA: "Pavilion End", endB: "School End" } });
+  ok("Hilton names pitch A's two ends", ends.status === 200 && ends.body?.endA === "Pavilion End" && ends.body?.endB === "School End", show(ends));
+  ok("...one end alone is refused (ends_invalid)", (await api(`/api/grounds/${PA}/ends`, { method: "POST", token: sarah, body: { endA: "Pavilion End" } })).body?.error === "ends_invalid");
+  ok("...the same name twice too", (await api(`/api/grounds/${PA}/ends`, { method: "POST", token: sarah, body: { endA: "Hill End", endB: "hill end" } })).body?.error === "ends_invalid");
+  ok("...and the 1XI coach names none (403)", (await api(`/api/grounds/${PA}/ends`, { method: "POST", token: coach, body: { endA: "A End", endB: "B End" } })).status === 403);
+  ok("the ground read carries them", (await api("/api/read/grounds", { token: coach })).body?.rows?.find((g) => g.id === PA)?.end_b_name === "School End");
 
   const win = (token, ground, day, competitionId = null) =>
     api(`/api/grounds/${ground}/windows`, { method: "POST", token, body: { startsAt: at(day, "09:00"), endsAt: at(day, "13:00"), competitionId } });

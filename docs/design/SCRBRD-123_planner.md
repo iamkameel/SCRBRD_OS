@@ -271,6 +271,16 @@ has `windowId: null` and the slot of its match. `staleLocks[].reason`: `no_such_
   `parent_invalid` (422: itself, a cycle, another school's ground, too deep, no such ground),
   `not_permitted`. `/api/read/grounds` now carries `parent_id`; `/api/read/matches` carries
   `competition_id`.
+- `POST /api/grounds/:id/ends` `{ endA, endB }` → `{ id, endA, endB }`: the strip's two named ends
+  ("Pavilion End", "School End"), both or neither (`null`/`null` clears). Set on the ground a match names —
+  the pitch where a field has pitches, since two pitches on one field may lie differently. Refusals:
+  `ends_invalid` (one alone, 2–40 characters each, the same name twice), `not_permitted`.
+  `/api/read/grounds` carries `end_a_name`, `end_b_name`; `/api/read/matches` carries `ground_end_a`,
+  `ground_end_b`. (Added on Kameel's say for the bowling ends a later scoring item records; only the ground
+  data now. **No boundary distances**: the scoring model's directions are batter-relative
+  (`placement.mjs`), a boundary is fixed to the ground, and tying the two needs a convention about the ends
+  that belongs to the scoring item — no figures are guessed. The public pages' header, a db/59 definer
+  function, does not carry the ends yet.)
 
 The dispatcher passes a second capture group as `params.sub` (the plan id).
 

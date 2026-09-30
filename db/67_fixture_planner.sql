@@ -13,6 +13,9 @@
 --   ground.parent_id        a pitch on a field: the ground it lies on, at the
 --                           same school, or NULL. No ground lies on itself,
 --                           however far up (ground_parent_guard()).
+--   ground.end_a_name/_b    the strip's two named ends, both or neither (§1b;
+--                           added on Kameel's say, for the bowling ends a
+--                           later scoring item records). No boundary figures.
 --   ground_closure          a span a ground cannot be used, with a short
 --                           reason. The engine closes the ground, the field
 --                           it lies on and every pitch on it.
@@ -134,6 +137,30 @@ REVOKE ALL ON FUNCTION ground_parent_guard() FROM PUBLIC;
 DROP TRIGGER IF EXISTS ground_parent_guard ON ground;
 CREATE TRIGGER ground_parent_guard BEFORE INSERT OR UPDATE OF parent_id, school_id ON ground
   FOR EACH ROW EXECUTE FUNCTION ground_parent_guard();
+
+-- ── 1b · The two ends ──────────────────────────────────────────────
+-- A ground's two named ends ("Pavilion End", "School End"), for the bowling
+-- ends a later scoring item records. Set on the ground a match names
+-- (match.ground_id): the pitch where a field has pitches, else the ground
+-- itself — the ends belong to the strip, and two pitches on one field may lie
+-- differently. Both or neither; not the same name twice. Written under the
+-- ground's own update policy (facility.manage at its school).
+--
+-- NO BOUNDARY DISTANCES. The scoring model's directions are batter-relative
+-- (placement.mjs: cover, mid-wicket …, mirrored for a left-hander), while a
+-- ground's boundary is fixed to the ground, so a distance per direction needs
+-- a convention tying the two to the ends — the scoring item's to decide. No
+-- figures are guessed here.
+ALTER TABLE ground ADD COLUMN IF NOT EXISTS end_a_name text;
+ALTER TABLE ground ADD COLUMN IF NOT EXISTS end_b_name text;
+ALTER TABLE ground DROP CONSTRAINT IF EXISTS ground_ends_named;
+ALTER TABLE ground ADD CONSTRAINT ground_ends_named CHECK (
+  (end_a_name IS NULL AND end_b_name IS NULL)
+  OR (end_a_name IS NOT NULL AND end_b_name IS NOT NULL
+      AND length(btrim(end_a_name)) BETWEEN 2 AND 40 AND length(btrim(end_b_name)) BETWEEN 2 AND 40
+      AND lower(btrim(end_a_name)) <> lower(btrim(end_b_name))));
+COMMENT ON COLUMN ground.end_a_name IS 'SCRBRD-123: one of the two named ends of the strip ("Pavilion End"); both or neither (ground_ends_named).';
+COMMENT ON COLUMN ground.end_b_name IS 'SCRBRD-123: the other named end ("School End"); both or neither (ground_ends_named).';
 
 -- ── 2 · Closures and windows ───────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ground_closure (
@@ -1114,6 +1141,14 @@ BEGIN
       RAISE EXCEPTION 'db/67: a ground was put on another school''s';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
+
+    -- 1b. The ends: both or neither.
+    BEGIN
+      UPDATE ground SET end_a_name = 'Pavilion End' WHERE id = g_pitch;
+      RAISE EXCEPTION 'db/67: a ground was given one end';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    UPDATE ground SET end_a_name = 'Pavilion End', end_b_name = 'School End' WHERE id = g_pitch;
 
     -- 2. A window on the pitch and a closure on the field: the inputs carry
     --    the pitch, its field and the field's closure, so the engine closes

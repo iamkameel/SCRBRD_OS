@@ -9547,6 +9547,7 @@ BEGIN
   -- the function or policy replaced in the database and this file run — and
   -- went red:
   --   (cycle)   ground_parent_guard() without its walk up the tree
+  --   (ends)    ground_ends_named dropped
   --   (window)  ground_window_insert WITH CHECK (true)
   --   (blackout) competition_blackout_add() without the arranger check
   --   (inputs)  planner_inputs() without the manager check
@@ -9615,6 +9616,24 @@ BEGIN
     UPDATE ground SET parent_id = NULL WHERE id = PITCH;
     GET DIAGNOSTICS n = ROW_COUNT;
     PERFORM _assert(n = 0, 'db/67: Hilton''s 2XI coach took a pitch off its field');
+
+    -- (ends) The pitch's two named ends: Hilton names both; one alone is
+    -- refused; the 2XI coach and Westville's office name none.
+    FOREACH who IN ARRAY ARRAY[U_COACH2, U_WES_ADM] LOOP
+      PERFORM _as(who);
+      UPDATE ground SET end_a_name = 'Not Theirs End', end_b_name = 'Nor This End' WHERE id = PITCH;
+      GET DIAGNOSTICS n = ROW_COUNT;
+      PERFORM _assert(n = 0, format('db/67 (ends): %s named Hilton''s ends', who));
+    END LOOP;
+    PERFORM _as(U_SARAH);
+    BEGIN
+      UPDATE ground SET end_a_name = 'Pavilion End' WHERE id = PITCH;
+      PERFORM _assert(false, 'db/67 (ends): a pitch was given one end');
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    UPDATE ground SET end_a_name = 'Pavilion End', end_b_name = 'School End' WHERE id = PITCH;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, 'db/67: Hilton could not name its pitch''s ends');
 
     -- (window) Hilton offers a window on the pitch and closes the field for
     -- the day; Hilton's 2XI coach, the league and Westville's office can do

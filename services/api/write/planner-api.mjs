@@ -743,6 +743,35 @@ export function plannerRoutes({ pool, secret }) {
       });
     }),
 
+    // POST /api/grounds/:id/ends { endA, endB } → { id, endA, endB }
+    //   The strip's two named ends ("Pavilion End", "School End"), both or
+    //   neither (null and null clears them). facility.manage at the ground's
+    //   school (the ground's own policy). refusals: not_permitted, ends_invalid
+    //   (one without the other, 2–40 characters each, the same name twice)
+    ends: handle(async (req) => {
+      const id = idOf(req);
+      const b = req.body || {};
+      /** @param {unknown} v */
+      const name = (v) => {
+        if (v == null || v === "") return null;
+        if (typeof v !== "string") throw err("ends_invalid");
+        return v.trim();
+      };
+      const a = name(b.endA), z = name(b.endB);
+      if ((a == null) !== (z == null)) throw err("ends_invalid", 400, "both ends, or neither");
+      return runAsPrincipal(pool, secret, as(req), async (client) => {
+        try {
+          const { rows } = await client.query(
+            `update ground set end_a_name = $2, end_b_name = $3 where id = $1 returning id, end_a_name, end_b_name`, [id, a, z]);
+          if (!rows.length) throw err("not_permitted", 403);
+          return { id: rows[0].id, endA: rows[0].end_a_name ?? null, endB: rows[0].end_b_name ?? null };
+        } catch (/** @type {any} */ e) {
+          if (e.code === "23514") throw err("ends_invalid", 422, "2 to 40 characters each, and two different names");
+          throw e;
+        }
+      });
+    }),
+
     // POST /api/grounds/:id/parent { parentId: uuid | null } → { id, parentId }
     //   A pitch put on its field (or taken off it). facility.manage at the
     //   ground's school (the ground's own policy). refusals: not_permitted,

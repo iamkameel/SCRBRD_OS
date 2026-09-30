@@ -722,6 +722,7 @@ const PLAYER_ROUTES = [
   [/^\/api\/grounds\/([^/]+)\/closures$/,                       "POST", planner.closureAdd],
   [/^\/api\/ground-closures\/([^/]+)\/remove$/,                 "POST", planner.closureRemove],
   [/^\/api\/grounds\/([^/]+)\/parent$/,                         "POST", planner.parent],
+  [/^\/api\/grounds\/([^/]+)\/ends$/,                           "POST", planner.ends],
   // Making a league (SCRBRD-123, db/67 §8a–8c): the competition, its
   // entrants invited by the organiser and answered by the school, and its
   // first conditions from a starting point. league-api.mjs.
