@@ -3905,6 +3905,25 @@ Not adopted, by design: subjective ratings (timing, power, risk), swing or diffi
 a sensor. Opus: the end and bowling-side events, the fold, SQL parity; Sonnet: the pad toggles, the rope lines, the new
 wheels and filters.
 
+### SCRBRD-130 — Rain: a DLS calculator, and venue par from the grounds' own record
+**Priority:** P2 · **Domain:** Scoring engine / results / conditions · **Type:** Fable design, then build (Kameel,
+2026-09-30: "we need a DLS calculator"; "PAR scores for venues will be derived based on the average score at grounds so
+similar algorithm")
+1. **The rain rule** is a playing condition (the MCC Laws have none): none, DLS Standard Edition, or average run rate.
+   Interruptions are events in the log (stopped, restarted, overs lost). SCRBRD computes and shows the revised target and
+   overs; the scorer records the target the umpires announce (the umpires' figure is the record; a difference from the
+   calculation is kept and shown). The chase board, required rate, "at this rate", result words ("won by 12 runs (DLS)"),
+   `min_overs_per_side` and NRR (revised overs) read the revised figures.
+2. **The DLS Standard Edition resource table** is entered only from the official source Kameel supplies, with permission
+   confirmed (CSA or KZNCU); never typed from memory. The Professional Edition is ICC-licensed software and out of scope.
+3. **Venue par:** the typical first-innings total at a ground for the same format, overs and age group, from completed
+   innings only (rain-shortened ones scaled or left out), with a sample floor below which it says "not enough matches here
+   yet", and always shown with its evidence (innings, seasons). **Par at a point** in an innings is the venue par times the
+   resources used (the same table), for either innings. This is evidence, not the invented absolute par
+   `phases.mjs` refuses; the phases' "par = the other side in the same phase" stays.
+Fable designs (SCRBRD-114 territory: conditions, results, the fold); Opus builds; Sonnet the screens. Sits beside
+SCRBRD-114 phase 3 (db/69–71).
+
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
 2026-09-30)
