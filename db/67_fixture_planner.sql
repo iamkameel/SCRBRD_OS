@@ -53,6 +53,25 @@
 --                           fixture of an entrant side or on one of those
 --                           grounds (start, ground, sides, format — no names).
 --
+-- AND MAKING A LEAGUE (added the same day, Kameel's say, §8a–8c): until this
+-- file a competition existed only by seed.
+--
+--   competition_create()    competition.manage at the organiser (the
+--                           competition's own write capability); its creator
+--                           is thereby its manager. competition_amend(): name
+--                           and season, while it has no fixtures.
+--   competition_entrant.status  invited (by the organiser) → accepted or
+--                           declined (by the school: fixture.update at the
+--                           entrant, and never the competition's own manager).
+--                           Only an accepted entrant is drawn, published, or
+--                           given a fixture in the competition: db/61's
+--                           match_competition_entered() now asks for one.
+--                           Rows before this file are accepted.
+--   condition_set_start()   version 1 of a competition's conditions as a
+--                           draft, from the platform's defaults (every figure
+--                           unconfirmed, with where it came from) or copied
+--                           from a competition the caller may read.
+--
 -- WHO MANAGES A COMPETITION is db/61's competition_conditions_manager():
 -- competition.conditions.manage at the organiser (a platform-wide holder for
 -- a competition with no organising school). SCRBRD-125 will scope it to a
@@ -602,7 +621,7 @@ BEGIN
        AND (w.competition_id IS NULL OR w.competition_id = p_competition)
     UNION
     SELECT m.ground_id FROM match m
-      JOIN competition_entrant e ON e.competition_id = p_competition AND e.team_code IS NOT NULL
+      JOIN competition_entrant e ON e.competition_id = p_competition AND e.team_code IS NOT NULL AND e.status = 'accepted'
        AND ((e.school_id = m.school_id AND e.team_code = m.team_code)
             OR (e.school_id = m.away_school_id AND e.team_code = m.away_team_code))
      WHERE m.ground_id IS NOT NULL AND m.status <> 'abandoned'
@@ -627,7 +646,7 @@ BEGIN
     'entrants', coalesce((SELECT jsonb_agg(jsonb_build_object('id', e.id, 'schoolId', e.school_id, 'teamCode', e.team_code,
                                                               'name', e.display_name, 'divisionId', e.division_id)
                                            ORDER BY e.display_name, e.id)
-                            FROM competition_entrant e WHERE e.competition_id = p_competition), '[]'),
+                            FROM competition_entrant e WHERE e.competition_id = p_competition AND e.status = 'accepted'), '[]'),
     'windows', coalesce((SELECT jsonb_agg(jsonb_build_object('id', w.id, 'groundId', w.ground_id,
                                                              'startsAt', planner_instant(w.starts_at), 'endsAt', planner_instant(w.ends_at),
                                                              'competitionId', w.competition_id)
@@ -659,7 +678,7 @@ BEGIN
                  'matchId', m.id, 'groundId', m.ground_id, 'startsAt', planner_instant(m.starts_at),
                  'sport', m.sport, 'format', m.format, 'overs', m.overs,
                  'entrants', coalesce((SELECT jsonb_agg(e.id ORDER BY e.id) FROM competition_entrant e
-                                        WHERE e.competition_id = p_competition AND e.team_code IS NOT NULL
+                                        WHERE e.competition_id = p_competition AND e.team_code IS NOT NULL AND e.status = 'accepted'
                                           AND ((e.school_id = m.school_id AND e.team_code = m.team_code)
                                                OR (e.school_id = m.away_school_id AND e.team_code = m.away_team_code))), '[]'),
                  'fixtureKey', (SELECT i.fixture_key FROM fixture_plan_item i
@@ -669,7 +688,7 @@ BEGIN
            AND m.starts_at >= v_lo - interval '15 days' AND m.starts_at < v_hi + interval '15 days'
            AND (m.ground_id = ANY (v_tree)
                 OR EXISTS (SELECT 1 FROM competition_entrant e
-                            WHERE e.competition_id = p_competition AND e.team_code IS NOT NULL
+                            WHERE e.competition_id = p_competition AND e.team_code IS NOT NULL AND e.status = 'accepted'
                               AND ((e.school_id = m.school_id AND e.team_code = m.team_code)
                                    OR (e.school_id = m.away_school_id AND e.team_code = m.away_team_code))))) k), '[]'));
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -683,6 +702,338 @@ BEGIN
   RETURN planner_inputs_for(p_competition, p_from, p_to);
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- ── 8a · Making a league: the competition itself ───────────────────
+-- Until this file a competition existed only by seed. Creating one is
+-- competition.manage at its organiser (for a league with no organising
+-- school, a platform-wide holder) — the capability competition's own write
+-- policy has always asked, held by competitionadmin and the owner's key.
+-- Both also hold competition.conditions.manage, so whoever creates a league
+-- is at once its manager (competition_conditions_manager()): its conditions,
+-- its entrants and its planner, with no new role. Never under a support
+-- session. A season is named ("2026"), and must exist at the level.
+CREATE OR REPLACE FUNCTION competition_create(p_organiser uuid, p_name text, p_comp_type text, p_format text,
+                                              p_age_group text, p_gender text, p_level text, p_season text)
+RETURNS TABLE (ok boolean, reason text, detail text, competition_id uuid) AS $$
+DECLARE
+  v_level  text := coalesce(nullif(btrim(p_level), ''), 'school');
+  v_type   text := coalesce(nullif(btrim(p_comp_type), ''), 'league');
+  v_season uuid;
+  v_id     uuid;
+BEGIN
+  IF app_user_id() IS NULL OR NOT app_can('competition.manage', p_organiser, '*'::text,
+       '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::text, NULL::uuid; RETURN;
+  END IF;
+  IF app_support_access_id() IS NOT NULL THEN
+    RETURN QUERY SELECT false, 'support_session', 'a support session does not create a competition', NULL::uuid; RETURN;
+  END IF;
+  IF p_organiser IS NOT NULL AND NOT EXISTS (SELECT 1 FROM school s WHERE s.id = p_organiser) THEN
+    RETURN QUERY SELECT false, 'organiser_invalid', NULL::text, NULL::uuid; RETURN;
+  END IF;
+  IF p_name IS NULL OR length(btrim(p_name)) NOT BETWEEN 3 AND 120 THEN
+    RETURN QUERY SELECT false, 'name_invalid', 'a name of 3 to 120 characters', NULL::uuid; RETURN;
+  END IF;
+  IF v_type NOT IN ('league', 'knockout', 'festival') THEN
+    RETURN QUERY SELECT false, 'comp_type_invalid', 'league, knockout or festival', NULL::uuid; RETURN;
+  END IF;
+  IF v_level NOT IN ('school', 'club', 'provincial', 'national') THEN
+    RETURN QUERY SELECT false, 'level_invalid', 'school, club, provincial or national', NULL::uuid; RETURN;
+  END IF;
+  IF p_format IS NOT NULL AND p_format NOT IN ('T20', 'One-Day', 'One-Day Declaration', 'Two-Day') THEN
+    RETURN QUERY SELECT false, 'format_invalid', 'T20, One-Day, One-Day Declaration or Two-Day', NULL::uuid; RETURN;
+  END IF;
+  IF length(coalesce(p_age_group, '')) > 20 OR length(coalesce(p_gender, '')) > 20 THEN
+    RETURN QUERY SELECT false, 'label_too_long', 'age group and gender are at most 20 characters', NULL::uuid; RETURN;
+  END IF;
+  IF nullif(btrim(p_season), '') IS NOT NULL THEN
+    v_season := season_named(btrim(p_season), v_level);
+    IF v_season IS NULL THEN
+      RETURN QUERY SELECT false, 'season_unknown', format('no %s season is named %s', v_level, btrim(p_season)), NULL::uuid; RETURN;
+    END IF;
+  END IF;
+  INSERT INTO competition (school_id, name, comp_type, format, age_group, gender, level, season_id)
+  VALUES (p_organiser, btrim(p_name), v_type, p_format, nullif(btrim(p_age_group), ''), nullif(btrim(p_gender), ''), v_level, v_season)
+  RETURNING id INTO v_id;
+  RETURN QUERY SELECT true, NULL::text, NULL::text, v_id;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Its name and season, by its manager, while it has no fixtures: once a
+-- match is played under it, what it was called is part of that record.
+CREATE OR REPLACE FUNCTION competition_amend(p_competition uuid, p_name text, p_season text)
+RETURNS TABLE (ok boolean, reason text, detail text) AS $$
+DECLARE
+  c competition%ROWTYPE;
+  v_season uuid;
+BEGIN
+  SELECT * INTO c FROM competition x WHERE x.id = p_competition;
+  IF NOT FOUND OR app_user_id() IS NULL OR NOT competition_conditions_manager(p_competition) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::text; RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM match m WHERE m.competition_id = p_competition)
+     OR EXISTS (SELECT 1 FROM fixture_plan p WHERE p.competition_id = p_competition AND p.published_at IS NOT NULL) THEN
+    RETURN QUERY SELECT false, 'has_fixtures', 'a competition with fixtures keeps its name and season'; RETURN;
+  END IF;
+  IF p_name IS NOT NULL AND length(btrim(p_name)) NOT BETWEEN 3 AND 120 THEN
+    RETURN QUERY SELECT false, 'name_invalid', 'a name of 3 to 120 characters'; RETURN;
+  END IF;
+  IF nullif(btrim(p_season), '') IS NOT NULL THEN
+    v_season := season_named(btrim(p_season), c.level);
+    IF v_season IS NULL THEN
+      RETURN QUERY SELECT false, 'season_unknown', format('no %s season is named %s', c.level, btrim(p_season)); RETURN;
+    END IF;
+  END IF;
+  UPDATE competition SET name = coalesce(btrim(p_name), name), season_id = coalesce(v_season, season_id) WHERE id = p_competition;
+  RETURN QUERY SELECT true, NULL::text, NULL::text;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- ── 8b · Entrants: invited by the organiser, accepted by the school ──
+-- A side is in a league when its school says so. The organiser invites a
+-- school's team; the school accepts or declines; only an accepted entrant
+-- is drawn, published or given a fixture in the competition
+-- (match_competition_entered(), below). Existing entrants were entered by
+-- seed or by hand before this: they are accepted.
+--
+-- WHO ACCEPTS: whoever arranges that side's fixtures — fixture.update at the
+-- entrant's school and team (competition_entrant_arranger(), §4): the
+-- director of sport, the school's administrator, its sports administrator.
+-- Entering a league commits the side to fixtures made in its school's
+-- name, which is exactly what fixture.update already governs; nothing is
+-- widened. And NOT the competition's own manager: a platform-wide
+-- competitionadmin holds fixture.update everywhere, so without this the
+-- organiser could accept on any school's behalf. Never a support session.
+--
+-- TWO LAYERS, as db/60 keeps its records: the application may no longer
+-- INSERT an entrant (only competition_entrant_invite() does), and may UPDATE
+-- only the ladder's columns — never status, school, team or competition.
+ALTER TABLE competition_entrant ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'accepted';
+ALTER TABLE competition_entrant DROP CONSTRAINT IF EXISTS competition_entrant_status_known;
+ALTER TABLE competition_entrant ADD CONSTRAINT competition_entrant_status_known CHECK (status IN ('invited', 'accepted', 'declined'));
+ALTER TABLE competition_entrant ADD COLUMN IF NOT EXISTS invited_by uuid REFERENCES app_user(id);
+ALTER TABLE competition_entrant ADD COLUMN IF NOT EXISTS invited_at timestamptz;
+ALTER TABLE competition_entrant ADD COLUMN IF NOT EXISTS responded_by uuid REFERENCES app_user(id);
+ALTER TABLE competition_entrant ADD COLUMN IF NOT EXISTS responded_at timestamptz;
+COMMENT ON COLUMN competition_entrant.status IS
+  'SCRBRD-123: invited (by the organiser), accepted or declined (by the school: competition_entrant_respond()). Only accepted entrants are drawn, published, or given a fixture in the competition. Rows before db/67 are accepted.';
+
+REVOKE INSERT ON competition_entrant FROM scrbrd_app;
+REVOKE UPDATE ON competition_entrant FROM scrbrd_app;
+GRANT UPDATE (display_name, played, won, lost, drawn, no_result, points, net_run_rate, division_id) ON competition_entrant TO scrbrd_app;
+
+-- May the caller answer this entrant's invitation?
+CREATE OR REPLACE FUNCTION competition_entrant_acceptor(p_entrant uuid) RETURNS boolean AS $$
+  SELECT coalesce((SELECT competition_entrant_arranger(e.id) AND NOT competition_conditions_manager(e.competition_id)
+                     FROM competition_entrant e WHERE e.id = p_entrant), false)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The organiser invites a school's team. The same team again is the same
+-- row: a declined one is invited afresh; an invited or accepted one is
+-- answered as it stands.
+CREATE OR REPLACE FUNCTION competition_entrant_invite(p_competition uuid, p_school uuid, p_team text, p_display_name text)
+RETURNS TABLE (ok boolean, reason text, detail text, entrant_id uuid, status text) AS $$
+DECLARE
+  e competition_entrant%ROWTYPE;
+  v_team text := nullif(btrim(p_team), '');
+  v_name text;
+BEGIN
+  IF app_user_id() IS NULL OR NOT competition_conditions_manager(p_competition) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::text, NULL::uuid, NULL::text; RETURN;
+  END IF;
+  SELECT s.name INTO v_name FROM school s WHERE s.id = p_school;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'school_invalid', NULL::text, NULL::uuid, NULL::text; RETURN; END IF;
+  IF v_team IS NULL OR v_team !~ '^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$' THEN
+    RETURN QUERY SELECT false, 'team_invalid', 'a team code such as 1XI or U15A', NULL::uuid, NULL::text; RETURN;
+  END IF;
+  IF p_display_name IS NOT NULL AND length(btrim(p_display_name)) NOT BETWEEN 2 AND 80 THEN
+    RETURN QUERY SELECT false, 'display_name_invalid', 'a name of 2 to 80 characters', NULL::uuid, NULL::text; RETURN;
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('scrbrd.competition_entrant'), hashtext(p_competition::text));
+  SELECT * INTO e FROM competition_entrant x WHERE x.competition_id = p_competition AND x.school_id = p_school AND x.team_code = v_team;
+  IF FOUND THEN
+    IF e.status = 'declined' THEN
+      UPDATE competition_entrant SET status = 'invited', invited_by = app_user_id(), invited_at = now(),
+                                     responded_by = NULL, responded_at = NULL
+       WHERE id = e.id;
+      RETURN QUERY SELECT true, NULL::text, 'invited again'::text, e.id, 'invited'::text; RETURN;
+    END IF;
+    RETURN QUERY SELECT true, NULL::text, 'already'::text, e.id, e.status; RETURN;
+  END IF;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, status, invited_by, invited_at)
+  VALUES (p_competition, p_school, v_team, coalesce(nullif(btrim(p_display_name), ''), v_name || ' ' || v_team),
+          'invited', app_user_id(), now())
+  RETURNING id INTO e.id;
+  RETURN QUERY SELECT true, NULL::text, NULL::text, e.id, 'invited'::text;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The schools a competition's manager may invite: every school on the
+-- platform, by name and code — what a fixture list already shows of a school
+-- (fixture_side_label()) and nothing more. To anybody else, nothing.
+CREATE OR REPLACE FUNCTION competition_invitable_schools(p_competition uuid)
+RETURNS TABLE (school_id uuid, name text, code text) AS $$
+  SELECT s.id, s.name, s.code FROM school s
+   WHERE app_user_id() IS NOT NULL AND competition_conditions_manager(p_competition)
+     AND s.kind IN ('school', 'club', 'academy')
+   ORDER BY s.name, s.id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The school answers: accepted or declined, once, from invited.
+CREATE OR REPLACE FUNCTION competition_entrant_respond(p_entrant uuid, p_accept boolean)
+RETURNS TABLE (ok boolean, reason text, detail text, status text) AS $$
+DECLARE e competition_entrant%ROWTYPE;
+BEGIN
+  SELECT * INTO e FROM competition_entrant x WHERE x.id = p_entrant;
+  IF NOT FOUND OR app_user_id() IS NULL OR p_accept IS NULL OR NOT competition_entrant_acceptor(p_entrant) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::text, NULL::text; RETURN;
+  END IF;
+  IF app_support_access_id(e.school_id) IS NOT NULL THEN
+    RETURN QUERY SELECT false, 'support_session', 'a support session does not answer for a school', NULL::text; RETURN;
+  END IF;
+  SELECT * INTO e FROM competition_entrant x WHERE x.id = p_entrant FOR UPDATE;
+  IF e.status <> 'invited' THEN RETURN QUERY SELECT false, 'not_invited', e.status, e.status; RETURN; END IF;
+  UPDATE competition_entrant SET status = CASE WHEN p_accept THEN 'accepted' ELSE 'declined' END,
+                                 responded_by = app_user_id(), responded_at = now()
+   WHERE id = p_entrant;
+  RETURN QUERY SELECT true, NULL::text, NULL::text, CASE WHEN p_accept THEN 'accepted' ELSE 'declined' END;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/61's rule, now asking for an ACCEPTED entrant: an invitation not yet
+-- answered, or declined, is not an entry. Everything else as db/61 wrote it.
+CREATE OR REPLACE FUNCTION match_competition_entered() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.competition_id IS DISTINCT FROM OLD.competition_id THEN
+    PERFORM match_conditions_lock(NEW.id);
+    IF EXISTS (SELECT 1 FROM match_conditions c WHERE c.match_id = NEW.id)
+       OR EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
+      RAISE EXCEPTION 'the competition a fixture is played under does not change once it has been scored'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  -- Asked when the competition or a side is named, not on every touch of the
+  -- row: a school that has left a league can still move its old fixture.
+  IF NEW.competition_id IS NOT NULL AND (TG_OP = 'INSERT'
+       OR NEW.competition_id IS DISTINCT FROM OLD.competition_id
+       OR NEW.school_id IS DISTINCT FROM OLD.school_id OR NEW.team_code IS DISTINCT FROM OLD.team_code
+       OR NEW.away_school_id IS DISTINCT FROM OLD.away_school_id OR NEW.away_team_code IS DISTINCT FROM OLD.away_team_code) THEN
+    IF NOT EXISTS (SELECT 1 FROM competition_entrant e
+                    WHERE e.competition_id = NEW.competition_id AND e.school_id = NEW.school_id
+                      AND e.team_code IS NOT DISTINCT FROM NEW.team_code AND e.status = 'accepted') THEN
+      RAISE EXCEPTION 'the home side has not entered that competition (an invitation not accepted is not an entry): play it as a friendly, or enter the side first'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.away_school_id IS NOT NULL AND NOT EXISTS (
+         SELECT 1 FROM competition_entrant e
+          WHERE e.competition_id = NEW.competition_id AND e.school_id = NEW.away_school_id
+            AND e.team_code IS NOT DISTINCT FROM NEW.away_team_code AND e.status = 'accepted') THEN
+      RAISE EXCEPTION 'the away side has not entered that competition (an invitation not accepted is not an entry): play it as a friendly, or enter the side first'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION match_competition_entered() FROM PUBLIC;
+
+-- ── 8c · Conditions from a starting point ──────────────────────────
+-- Version 1 of a competition's conditions, as a DRAFT, pre-filled from one
+-- of two places; publishing stays db/61's condition_set_publish(), unchanged.
+--
+--   defaults     every key the catalogue gives a platform default (not the
+--                reserved ones), the bowling limit per band from the
+--                platform's fast-bowling directive with its rulebook clause's
+--                own words, and the format keys from the competition's
+--                format. Every figure `unconfirmed`, with a note saying
+--                where it came from: the platform is not a league's document,
+--                and the directive says of itself that it follows the ECB's
+--                figures "in the absence of a published CSA schedule. Not
+--                official wording." A league confirms a figure by citing its
+--                own document (condition_value_enter()).
+--   competition  the version in force today of another competition, its
+--                figures, statuses and citations copied, and a note saying
+--                from where. Only from a competition the caller may read
+--                (competition_visible(), or its manager); to anybody else a
+--                competition they cannot see and none at all are the same
+--                refusal.
+CREATE OR REPLACE FUNCTION condition_set_start(p_competition uuid, p_from text, p_source uuid, p_title text, p_effective_from date)
+RETURNS TABLE (ok boolean, reason text, detail text, set_id uuid, version smallint, entered integer) AS $$
+DECLARE
+  c        competition%ROWTYPE;
+  v_src    uuid;
+  v_srcv   smallint;
+  v_srcn   text;
+  v_id     uuid;
+  v_fmt    text;
+  v_n      integer;
+  v_limited boolean;
+BEGIN
+  SELECT * INTO c FROM competition x WHERE x.id = p_competition;
+  IF NOT FOUND OR app_user_id() IS NULL OR NOT competition_conditions_manager(p_competition) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::text, NULL::uuid, NULL::smallint, NULL::integer; RETURN;
+  END IF;
+  IF p_from IS NULL OR p_from NOT IN ('defaults', 'competition') THEN
+    RETURN QUERY SELECT false, 'from_invalid', 'defaults or competition', NULL::uuid, NULL::smallint, NULL::integer; RETURN;
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('scrbrd.condition_set'), hashtext(p_competition::text));
+  IF EXISTS (SELECT 1 FROM condition_set s WHERE s.competition_id = p_competition) THEN
+    RETURN QUERY SELECT false, 'already_started', 'it has a version: make a new version of it', NULL::uuid, NULL::smallint, NULL::integer; RETURN;
+  END IF;
+  IF p_from = 'competition' THEN
+    IF p_source IS NULL OR p_source = p_competition
+       OR NOT (competition_visible(p_source) OR competition_conditions_manager(p_source)) THEN
+      RETURN QUERY SELECT false, 'source_invalid', 'a competition you can read', NULL::uuid, NULL::smallint, NULL::integer; RETURN;
+    END IF;
+    v_src := condition_set_for(p_source, sa_today());
+    IF v_src IS NULL THEN
+      RETURN QUERY SELECT false, 'source_has_no_conditions', 'it has no published version in force today', NULL::uuid, NULL::smallint, NULL::integer; RETURN;
+    END IF;
+    SELECT s.version, x.name INTO v_srcv, v_srcn FROM condition_set s JOIN competition x ON x.id = s.competition_id WHERE s.id = v_src;
+  END IF;
+  IF p_title IS NOT NULL AND length(btrim(p_title)) NOT BETWEEN 3 AND 120 THEN
+    RETURN QUERY SELECT false, 'title_invalid', 'a title of 3 to 120 characters', NULL::uuid, NULL::smallint, NULL::integer; RETURN;
+  END IF;
+
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by)
+  VALUES (p_competition, 1, coalesce(nullif(btrim(p_title), ''), left(c.name, 100) || ' conditions'),
+          coalesce(p_effective_from, sa_today() + 1), app_user_id())
+  RETURNING id INTO v_id;
+
+  IF p_from = 'competition' THEN
+    INSERT INTO condition_value (set_id, key, age_band, value, status, source_document, source_clause, source_date, source_note, entered_by)
+    SELECT v_id, v.key, v.age_band, v.value, v.status, v.source_document, v.source_clause, v.source_date,
+           left(coalesce(v.source_note || ' · ', '') || format('Copied from %s, version %s', v_srcn, v_srcv), 1000), app_user_id()
+      FROM condition_value v WHERE v.set_id = v_src;
+  ELSE
+    -- The catalogue's own defaults (readers named: not a reserved key).
+    INSERT INTO condition_value (set_id, key, age_band, value, status, source_note, entered_by)
+    SELECT v_id, k.key, '', k.platform_default, 'unconfirmed',
+           CASE k.key
+             WHEN 'result.tie_break' THEN 'Platform default: a tie stands, as in the Laws of Cricket (MCC, 4th Edition, Law 16, the result); no super over unless the league says so.'
+             ELSE 'Platform default: what every reader applies when a league sets nothing.'
+           END, app_user_id()
+      FROM playing_condition_key k
+     WHERE k.platform_default IS NOT NULL AND NOT k.by_age_band AND k.readers <> '{}';
+    -- The bowling limit per band, with its rulebook clause's own words.
+    INSERT INTO condition_value (set_id, key, age_band, value, status, source_note, entered_by)
+    SELECT v_id, 'bowling.limit', d.age_band, jsonb_build_object('spell', d.max_overs_per_spell, 'day', d.max_overs_per_day), 'unconfirmed',
+           left(format('Platform fast-bowling directive (rulebook %s): %s', coalesce(d.clause_code, 'unlinked'),
+                       coalesce((SELECT r.source FROM rulebook_clause r WHERE r.code = d.clause_code), 'no clause recorded')), 1000),
+           app_user_id()
+      FROM bowling_directive d WHERE d.age_band <> 'unknown';
+    -- The format keys, from the competition's format.
+    v_fmt := lower(btrim(coalesce(c.format, '')));
+    v_limited := v_fmt IN ('t20', 'one-day', 'one day', '50-over', '50 over');
+    IF v_limited OR v_fmt IN ('one-day declaration', 'one day declaration', 'two-day', 'two day', 'multi-day', 'multi day') THEN
+      INSERT INTO condition_value (set_id, key, age_band, value, status, source_note, entered_by)
+      SELECT v_id, x.key, '', x.value, 'unconfirmed', format('From the competition''s format (%s).', c.format), app_user_id()
+        FROM (VALUES
+          ('format.kind', to_jsonb(CASE WHEN v_limited THEN 'limited' ELSE 'declaration' END)),
+          ('format.overs_per_innings', CASE WHEN v_fmt = 't20' THEN '20'::jsonb WHEN v_limited THEN '50'::jsonb END),
+          ('format.innings_per_side', CASE WHEN v_fmt IN ('two-day', 'two day', 'multi-day', 'multi day') THEN '2'::jsonb ELSE '1'::jsonb END),
+          ('format.free_hit', to_jsonb(v_limited))) AS x(key, value)
+       WHERE x.value IS NOT NULL;
+    END IF;
+  END IF;
+  SELECT count(*) INTO v_n FROM condition_value v WHERE v.set_id = v_id;
+  RETURN QUERY SELECT true, NULL::text, NULL::text, v_id, 1::smallint, v_n;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- ── 9 · Grants, and the pad's guard ───────────────────────────────
 DO $grants$
 DECLARE f text; r text;
@@ -692,7 +1043,10 @@ BEGIN
       'competition_entrant_arranger(uuid)', 'competition_entrant_reader(uuid)',
       'fixture_plan_save(uuid,text,date,date,jsonb,jsonb,jsonb,jsonb,jsonb,uuid)', 'fixture_plan_recompute(uuid,jsonb,jsonb,jsonb)',
       'fixture_plan_publish(uuid)', 'fixture_plan_item_begin(uuid,text)', 'fixture_plan_item_record(uuid,text,uuid)',
-      'planner_inputs(uuid,date,date)', 'planner_instant(timestamptz)'] LOOP
+      'planner_inputs(uuid,date,date)', 'planner_instant(timestamptz)',
+      'competition_create(uuid,text,text,text,text,text,text,text)', 'competition_amend(uuid,text,text)',
+      'competition_entrant_acceptor(uuid)', 'competition_entrant_invite(uuid,uuid,text,text)',
+      'competition_entrant_respond(uuid,boolean)', 'condition_set_start(uuid,text,uuid,text,date)', 'competition_invitable_schools(uuid)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
   END LOOP;
@@ -705,7 +1059,11 @@ BEGIN
           'fixture_plan_save(uuid,text,date,date,jsonb,jsonb,jsonb,jsonb,jsonb,uuid)', 'fixture_plan_recompute(uuid,jsonb,jsonb,jsonb)',
           'fixture_plan_publish(uuid)', 'fixture_plan_item_begin(uuid,text)', 'fixture_plan_item_record(uuid,text,uuid)',
           'fixture_plan_item_refusal(uuid,text)', 'planner_inputs(uuid,date,date)', 'planner_inputs_for(uuid,date,date)',
-          'planner_instant(timestamptz)', 'ground_parent_guard()', 'planner_ground_row_stamp()', 'fixture_plan_guard()'] LOOP
+          'planner_instant(timestamptz)', 'ground_parent_guard()', 'planner_ground_row_stamp()', 'fixture_plan_guard()',
+          'competition_create(uuid,text,text,text,text,text,text,text)', 'competition_amend(uuid,text,text)',
+          'competition_entrant_acceptor(uuid)', 'competition_entrant_invite(uuid,uuid,text,text)',
+          'competition_entrant_respond(uuid,boolean)', 'condition_set_start(uuid,text,uuid,text,date)', 'competition_invitable_schools(uuid)',
+          'match_competition_entered()'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END LOOP;
     END IF;
@@ -773,6 +1131,20 @@ BEGIN
        OR v_in->'windows'->0->>'startsAt' <> '2031-03-01T07:00:00Z' THEN
       RAISE EXCEPTION 'db/67: the inputs for a pitch window read % and %', got, v_in->'windows';
     END IF;
+
+    -- 2b. An invited side has not entered: a fixture for it is refused; once
+    --     it has accepted, it is not.
+    INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, status)
+    VALUES (v_comp, v_school, '1XI', 'db/67 1st XI', 'invited');
+    BEGIN
+      INSERT INTO match (school_id, team_code, opponent, starts_at, format, overs, status, competition_id)
+      VALUES (v_school, '1XI', 'db/67 opponent', '2031-03-01 10:00+02', 'T20', 20, 'scheduled', v_comp);
+      RAISE EXCEPTION 'db/67: an invited side was given a fixture in the competition';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    UPDATE competition_entrant SET status = 'accepted' WHERE competition_id = v_comp;
+    INSERT INTO match (school_id, team_code, opponent, starts_at, format, overs, status, competition_id)
+    VALUES (v_school, '1XI', 'db/67 opponent', '2031-03-01 10:00+02', 'T20', 20, 'scheduled', v_comp);
 
     -- 3. A published plan does not change but to superseded; a superseded never.
     INSERT INTO fixture_plan (id, competition_id, version, format, range_from, range_to, rules, entrants, inputs, plan, created_by)

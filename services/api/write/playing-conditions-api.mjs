@@ -135,6 +135,8 @@ export function playingConditionsRoutes({ pool, secret }) {
           `select distinct c.id, c.name, c.format, c.age_group
              from competition_entrant e join competition c on c.id = e.competition_id
             where e.school_id = $1 and e.team_code is not distinct from $2
+              -- An invitation not accepted is not an entry (db/67).
+              and e.status = 'accepted'
             order by c.name`, [school, team]);
         return { rows: rows.map((r) => ({ id: r.id, name: r.name, format: r.format ?? null, ageGroup: r.age_group ?? null })) };
       });

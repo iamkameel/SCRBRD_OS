@@ -71,6 +71,7 @@ import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { playingConditionsRoutes } from "./write/playing-conditions-api.mjs";
 import { plannerRoutes } from "./write/planner-api.mjs";
+import { leagueRoutes } from "./write/league-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
@@ -418,6 +419,7 @@ const publication = publicationRoutes({ pool, secret: SECRET });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
 // The fixture planner, phase 2 (SCRBRD-123, db/67).
 const planner = plannerRoutes({ pool, secret: SECRET });
+const league = leagueRoutes({ pool, secret: SECRET });
 // The scorebook importer (SCRBRD-120, db/63). Its photos go to the private
 // store (io/object-store.mjs): Supabase Storage when SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are set, a local directory in development, and
@@ -720,6 +722,18 @@ const PLAYER_ROUTES = [
   [/^\/api\/grounds\/([^/]+)\/closures$/,                       "POST", planner.closureAdd],
   [/^\/api\/ground-closures\/([^/]+)\/remove$/,                 "POST", planner.closureRemove],
   [/^\/api\/grounds\/([^/]+)\/parent$/,                         "POST", planner.parent],
+  // Making a league (SCRBRD-123, db/67 §8a–8c): the competition, its
+  // entrants invited by the organiser and answered by the school, and its
+  // first conditions from a starting point. league-api.mjs.
+  [/^\/api\/competitions$/,                                     "POST", league.create],
+  [/^\/api\/competitions\/([^/]+)$/,                            "POST", league.amend],
+  [/^\/api\/competitions\/([^/]+)\/entrants$/,                  "GET",  league.entrants],
+  [/^\/api\/competitions\/([^/]+)\/entrants$/,                  "POST", league.invite],
+  [/^\/api\/competitions\/([^/]+)\/schools$/,                   "GET",  league.schools],
+  [/^\/api\/competition-invitations$/,                          "GET",  league.invitations],
+  [/^\/api\/competition-entrants\/([^/]+)\/accept$/,            "POST", league.accept],
+  [/^\/api\/competition-entrants\/([^/]+)\/decline$/,           "POST", league.decline],
+  [/^\/api\/competitions\/([^/]+)\/playing-conditions\/start$/, "POST", league.startConditions],
   // Importing a paper scorebook (SCRBRD-120, db/63): photos of the book, a
   // card typed and ticked beside them, a second person's confirmation, and
   // then three events per innings in the log. NOT tagged with the module,

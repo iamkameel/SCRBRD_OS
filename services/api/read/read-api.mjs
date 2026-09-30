@@ -587,7 +587,8 @@ export const READ_QUERIES = {
                   d.id as division_id, d.code as division_code, d.name as division_name, d.rank as division_rank
              from competition_entrant e
              left join competition_division d on d.id = e.division_id
-            where ($1::uuid is null or e.competition_id = $1)
+            -- An invitation not accepted is not a place in the ladder (db/67).
+            where ($1::uuid is null or e.competition_id = $1) and e.status = 'accepted'
             order by e.competition_id, d.rank nulls last, e.points desc, e.net_run_rate desc nulls last, e.display_name`,
     params: q => [q?.competitionId || null],
   },

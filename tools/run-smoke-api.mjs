@@ -55,6 +55,11 @@ const WALKS = [
   // database, a lock kept by regenerating, and publishing through the
   // fixture route — twice, making each match once.
   "planner",
+  // Making a league (SCRBRD-123, db/67 §8a–8c): created by the league, four
+  // teams invited and answered by their schools, conditions from the
+  // platform's defaults and published, and the planner over the three that
+  // accepted.
+  "competition",
   // Getting the side there: three capabilities that had nothing to act on.
   "transport",
   // The dashboard's figures, and the scope they are counted over.
