@@ -42,11 +42,11 @@ export function styles() {
     small: { ...btn, fontSize: "13px", padding: "8px 12px" },
     alert: { fontFamily: T.type.body, fontSize: "13px", lineHeight: 1.4, color: T.semantic.criticalText, margin: `${T.space.xs} 0 0` },
     wrap: { display: "flex", flexWrap: "wrap", gap: T.space.sm, alignItems: "center" },
-    grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: T.space.md, alignItems: "start" },
+    grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: T.space.md, alignItems: "start" },
     row: { border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: T.space.md, margin: 0, minWidth: 0,
            display: "flex", flexDirection: "column", gap: T.space.md, background: T.surface.base },
     legend: { fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, color: T.content.primary, padding: `0 ${T.space.xs}` },
-    tick: { display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px", minWidth: "44px", padding: "0 4px", cursor: "pointer",
+    tick: { display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px", minWidth: "44px", padding: "0 4px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
             fontFamily: T.type.body, fontSize: "12px", color: T.content.secondary, boxSizing: "border-box" },
     panel: { display: "flex", flexDirection: "column", gap: T.space.sm, padding: T.space.md, borderRadius: T.radius.md,
              background: T.surface.base, border: `1px solid ${T.line.strong}` },
@@ -78,7 +78,7 @@ function Field({ path, label, wide, children }) {
   const on = ed.checked[key] === true;
   const missing = ed.attempted && !on;
   return (
-    <div style={{ gridColumn: wide ? "span 2" : undefined, minWidth: 0 }} data-testid={`sb-cell-${key}`}>
+    <div style={{ gridColumn: wide ? "1 / -1" : undefined, minWidth: 0 }} data-testid={`sb-cell-${key}`}>
       <label htmlFor={id} style={S.label}>{label}</label>
       <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
@@ -417,7 +417,7 @@ export function CardReader({ card, n, nameOf, sideNames, refusals = [] }) {
         {refusals.map((r, i) => <li key={i}>{cellWords(r.path)}: {r.text}</li>)}</ul>}
       <div style={wrap}>
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "460px" }}>
-          <caption style={{ ...S.label, textAlign: "left" }}>Batting</caption>
+          <caption style={{ ...S.label, display: "table-caption", captionSide: "top", textAlign: "left" }}>Batting</caption>
           <thead><tr><th scope="col" style={th}>Batter</th><th scope="col" style={th}>How out</th>
             <th scope="col" style={thn}>Runs</th><th scope="col" style={thn}>Balls</th><th scope="col" style={thn}>4s</th><th scope="col" style={thn}>6s</th></tr></thead>
           <tbody>{card.batting.map((b, i) => (
@@ -431,7 +431,7 @@ export function CardReader({ card, n, nameOf, sideNames, refusals = [] }) {
       </p>
       <div style={wrap}>
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "460px" }}>
-          <caption style={{ ...S.label, textAlign: "left" }}>Bowling</caption>
+          <caption style={{ ...S.label, display: "table-caption", captionSide: "top", textAlign: "left" }}>Bowling</caption>
           <thead><tr><th scope="col" style={th}>Bowler</th><th scope="col" style={thn}>Overs</th><th scope="col" style={thn}>Maidens</th>
             <th scope="col" style={thn}>Runs</th><th scope="col" style={thn}>Wickets</th><th scope="col" style={thn}>Wides</th><th scope="col" style={thn}>No-balls</th></tr></thead>
           <tbody>{card.bowling.map((b, i) => (

@@ -242,7 +242,15 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // publishes for tomorrow, versions and withdraws; the version in force with
   // its count and sources; a reader sees it read-only with no draft; phone,
   // both themes, the 12px and 44px floors.
-  "browser-playing-conditions-screen"];
+  "browser-playing-conditions-screen",
+  // The scorebook importer's three screens (SCRBRD-120, Match Centre → a played
+  // fixture): a scorer adds pages (a text file and a huge photo refused in
+  // words), types the card beside them and submits it; she cannot confirm; the
+  // director of sport returns it with a note, then confirms; the scorecard says
+  // "From the scorebook"; a book that is out is acknowledged; a person who
+  // worked on the card is told why she cannot confirm; a parent sees no entry
+  // point; phone, Daylight, the 12px and 44px floors.
+  "browser-scorebook"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

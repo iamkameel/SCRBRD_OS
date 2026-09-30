@@ -105,6 +105,10 @@ const SUITES = [
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,
   // its source, "N of M confirmed", a version's standing, a refusal in words.
   ["playing-conditions-screen", "apps/web/test/playing-conditions.test.mjs"],
+  // The scorebook importer's screens (SCRBRD-120): who is offered the entry
+  // point, a refusal in words, a blank that is null and never nought, the ticks
+  // that follow a row, an opposition name that is a typed key and never a player.
+  ["scorebook-screen", "apps/web/test/scorebook.test.mjs"],
   // No Law clause number on any scorer screen: every words table, every
   // refusal helper over every code, and the sheets' literal text (SCRBRD-094).
   ["law-clauses", "apps/web/test/law-clauses.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

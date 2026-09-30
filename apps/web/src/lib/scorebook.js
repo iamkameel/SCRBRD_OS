@@ -165,7 +165,7 @@ export function refusalWords(e, ctx = {}) {
   }
   if (code === "cells_unchecked") {
     const n = Array.isArray(e.detail) ? e.detail.length : null;
-    return n ? `${n} cell${n === 1 ? "" : "s"} still need a tick before the card can be submitted.` : WORDS.cells_unchecked;
+    return n ? `${n} cell${n === 1 ? " still needs" : "s still need"} a tick before the card can be submitted.` : WORDS.cells_unchecked;
   }
   if (code === "import_open") return WORDS.import_open;
   if (!code) return "The server did not answer. Nothing was changed; try again.";

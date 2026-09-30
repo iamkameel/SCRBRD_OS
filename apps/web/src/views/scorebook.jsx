@@ -11,7 +11,7 @@ import { useIsMobile } from "../shell/MobileNav.jsx";
 import {
   CAP_CONFIRM, CAP_WRITE, EDITABLE, FINISHED, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, inningsWord, livePages,
   mayImport, nameOfRef, pruneTyped, refusalWords, refusalsByCell, refusalsOf, rowPaths, settleTyped, setPath, shiftChecked,
-  startedYet, tickProgress, titleOf, uploadPage, cellWords, workedOn,
+  startedYet, tickProgress, titleOf, uploadPage, cellWords, workedOn, getPath,
 } from "../lib/scorebook.js";
 import { CardEditor, CardReader, rosterGroups, styles } from "./scorebookcard.jsx";
 
@@ -236,7 +236,13 @@ function ReviewScreen({ R }) {
   const wide = !useIsMobile(900);
   const { cards, typed, checked } = R.draft;
   const cur = Math.min(R.cur, cards.length - 1);
-  const local = useMemo(() => refusalsOf(cards, typed, R.ours), [cards, typed, R.ours]);
+  // A cell not yet filled in is not "wrong": until the person has tried to
+  // submit, a blank is left to the "Still to check" prompt, not to a refusal.
+  const local = useMemo(() => refusalsOf(cards, typed, R.ours).map((rs, n) => rs.filter((r) => {
+    if (R.attempted || r.code !== "card_shape") return true;
+    const v = getPath(cards[n], r.path);
+    return !(v === null || v === undefined || v === "");
+  })), [cards, typed, R.ours, R.attempted]);
   const progress = tickProgress(cards, checked);
   const scoredLive = (R.d.innings ?? []).filter((i) => i.deliveries > 0 || i.summarised);
   const problems = local.flatMap((rs, n) => rs.map((r) => ({ ...r, n })));
@@ -254,7 +260,7 @@ function ReviewScreen({ R }) {
     setUnreconciled: (/** @type {unknown} */ u) => R.setCell(cur, "unreconciled", u, false),
   } : null;
   return (
-    <div style={{ display: "grid", gap: T.space.lg, gridTemplateColumns: wide ? "minmax(300px, 5fr) minmax(0, 7fr)" : "minmax(0, 1fr)", alignItems: "start" }} data-testid="sb-review">
+    <div style={{ display: "grid", gap: T.space.lg, gridTemplateColumns: wide ? "minmax(280px, 4fr) minmax(0, 8fr)" : "minmax(0, 1fr)", alignItems: "start" }} data-testid="sb-review">
       <PhotoColumn pages={R.d.pages} photos={R.photos} sticky={wide}/>
       <div style={{ display: "flex", flexDirection: "column", gap: T.space.lg, minWidth: 0 }}>
         {R.d.import.state === "returned" && (
@@ -326,7 +332,7 @@ function ConfirmScreen({ R }) {
   const cells = R.d.cells;
   const ticked = cells - (R.d.unchecked?.length ?? 0);
   return (
-    <div style={{ display: "grid", gap: T.space.lg, gridTemplateColumns: wide ? "minmax(300px, 5fr) minmax(0, 7fr)" : "minmax(0, 1fr)", alignItems: "start" }} data-testid="sb-confirm">
+    <div style={{ display: "grid", gap: T.space.lg, gridTemplateColumns: wide ? "minmax(280px, 4fr) minmax(0, 8fr)" : "minmax(0, 1fr)", alignItems: "start" }} data-testid="sb-confirm">
       <PhotoColumn pages={R.d.pages} photos={R.photos} sticky={wide}/>
       <div style={{ display: "flex", flexDirection: "column", gap: T.space.lg, minWidth: 0 }}>
         <CardsRead R={R}/>
