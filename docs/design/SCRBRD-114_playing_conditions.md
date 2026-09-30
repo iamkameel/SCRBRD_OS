@@ -367,7 +367,7 @@ things to the competition, and Kameel decided them for the pilot league:
 |---|---|---|
 | `points.win` / `points.tie` / `points.no_result` / `points.loss` | 4 / 2 / 2 / 0 (no bonus points) | "Pilot league decision, Kameel, 2026-09-30" |
 | `result.tie_break` | `super_over` for a knockout; a league match's tie stands (Law 16) | same |
-| `bowling.limit` by age band | Cricket South Africa's age-group guidelines, as the platform defaults (db/32), now **confirmed** | "CSA age-group guidelines" with the clause codes db/32 cites |
+| `bowling.limit` by age band | the platform defaults (db/08, db/32): **the ECB fast-bowling directives mapped onto the school bands**, which most South African schools apply in the absence of a published CSA schedule (corrected 2026-09-30: these are not CSA figures) | "Pilot league decision, Kameel, 2026-09-30: the ECB fast-bowling directives as SCRBRD maps them" until a CSA or KZN schedule is published |
 
 The competition admin enters these on the conditions screen as the pilot league's first published set (step 3); nothing
 is seeded into production. Assumptions A1, A2, A5 and A6 below are answered by this: one league, the CSA figures, fixed
