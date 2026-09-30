@@ -2050,8 +2050,10 @@ BEGIN
   -- Through the one object the read path is REQUIRED to use for personal
   -- information, and invisibly: the leaked rows were still column-masked, so
   -- each one looked exactly right.
+  -- (It asks for security_invoker=true: a view altered to security_invoker=false
+  -- once read as passing, because the option's NAME was all that was asked.)
   PERFORM _assert(
-    (SELECT bool_and(reloptions::text LIKE '%security_invoker%')
+    (SELECT bool_and(coalesce('security_invoker=true' = ANY (reloptions), false))
        FROM pg_class WHERE relkind = 'v' AND relnamespace = 'public'::regnamespace),
     'a view in public runs as its owner and bypasses row-level security');
 
@@ -8507,13 +8509,21 @@ BEGIN
   -- Each labelled assertion was falsified once — the thing it guards broken
   -- in db/64, the database rebuilt and this file run — and went red:
   --   (career)   player_batting_career's balls_faced coalesced to 0 again
+  --              (db/64's own proof first, when broken in the file)
   --   (bowling)  summary_bowling_line reading a missing wides figure as nought
-  --   (same)     player_batting_since() without its summary branch
-  --   (season)   the season views filing a summary under the day it was imported
-  --   (typed)    summary_batting_line's player_id taken from any ref
+  --   (same)     player_dismissals_since() without its summary branch
+  --              (player_batting_since() without its: (career) first)
+  --   (season)   player_batting_by_season filing a book's match under the
+  --              season it was imported in
+  --   (typed)    summary_batting_line's player_id made up for a typed ref
   --   (dossier)  opposition_squad()'s dot_pct over every ball, book and live
   --   (void)     summary_batting_line over ball_event rather than ball_event_live
-  --   (scope)    summary_batting_line without security_invoker
+  -- (scope) stands on two walls and stays green with either one down: the
+  -- line's own security_invoker, and ball_event_live's, which a view running
+  -- as its owner still reads as its caller. With both down — the line as its
+  -- owner, over ball_event — it went red; with only the first, section 9
+  -- goes red (it now asks for security_invoker=true, not for the option's
+  -- name, which a view set to false had passed).
   DECLARE
     M       uuid := _seed_64();
     I       uuid;
