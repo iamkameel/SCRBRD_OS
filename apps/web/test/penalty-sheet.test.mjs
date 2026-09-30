@@ -51,7 +51,7 @@ const OCT1 = Date.parse("2026-10-01T08:00:00Z");
 const open0 = (x = {}) => inningsStart({ innings: 0, battingTeam: "Hilton", bowlingTeam: "Michaelhouse", teamKey: "HIL", bowlingTeamKey: "MIC",
   squad: SQ_A, bowlingSquad: SQ_B, overs: 2, clientTs: SEP15, ...x });
 const open1 = (x = {}) => inningsStart({ innings: 1, battingTeam: "Michaelhouse", bowlingTeam: "Hilton", teamKey: "MIC", bowlingTeamKey: "HIL",
-  squad: SQ_B, bowlingSquad: SQ_A, overs: 2, ...x });
+  squad: SQ_B, bowlingSquad: SQ_A, overs: 2, clientTs: SEP15, ...x });
 const runs = (n, i = 0) => ball({ innings: i, type: BALL_TYPE.RUN, value: n });
 const start0 = () => [open0(), batters({ innings: 0, striker: "a1", nonStriker: "a2" }), bowler({ innings: 0, bowler: "b1" })];
 const start1 = (x) => [open1(x), batters({ innings: 1, striker: "b1", nonStriker: "b2" }), bowler({ innings: 1, bowler: "a1" })];
