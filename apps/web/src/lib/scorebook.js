@@ -17,31 +17,13 @@
  * No colour and no token in here, so the suite can run it under plain node.
  */
 import { DISMISSAL_LABEL, summaryRefusal, uncheckedCells } from "@scrbrd/scoring";
-import { roleGrants } from "@scrbrd/policy/roles";
 import { ApiError, api, apiBase, getToken } from "./api.js";
 
-export const CAP_WRITE = "scoring.import.write";
-export const CAP_CONFIRM = "scoring.import.confirm";
-
 // ── Who is offered what ─────────────────────────────────────────────────
-
-/**
- * Could one of these assignments hold the capability over this fixture?
- *
- * A LAYOUT HINT, never an answer (the same courtesy session.js couldScore()
- * makes): it decides whether to draw the entry point, and the API refuses a
- * wrong guess. Nothing is ever allowed because this said yes.
- * @param {Array<{role: string, school?: string | null, team?: string | null, fixture?: string | null}>} assignments
- * @param {string} capability
- * @param {{id: string, schoolId?: string | null, homeTeam?: string | null}} m
- */
-export function mayImport(assignments, capability, m) {
-  return (assignments ?? []).some((a) =>
-    roleGrants(a.role, capability)
-    && (a.school == null || a.school === m.schoolId)
-    && (a.team == null || a.team === m.homeTeam)
-    && (a.fixture == null || a.fixture === m.id));
-}
+//
+// Nothing here guesses it from a role. The API answers `may: { write,
+// confirm, read }` with the fixture's imports (and with each import), by the
+// same checks its functions ask, and the screens draw from that alone.
 
 /**
  * Has the fixture begun? A book is imported for a match already played; the API

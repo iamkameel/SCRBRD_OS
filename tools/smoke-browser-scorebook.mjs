@@ -5,9 +5,10 @@
  * against a real API and Postgres. tools/smoke-scorebook.mjs walks the API;
  * this walks the pages a scorer and a director of sport use.
  *
- *   0  THE ENTRY POINT is drawn only when the API lists the fixture's imports:
+ *   0  THE ENTRY POINT is drawn from the API's answer alone (`may`, `module`):
  *      with the module off the scorer sees nothing; with it on, a parent
- *      (no capability at all) sees nothing.
+ *      (no capability at all, a 403) and the principal (who may audit the
+ *      card, and none of write, confirm or read) see nothing.
  *   A  THE SCORER opens an import and adds pages: a text file and a photo far
  *      over the limit are refused in plain words, a JPEG and a PNG are taken;
  *      the pages are shown from the API into memory (never storage, never an
@@ -227,7 +228,7 @@ try {
   ok("the scorer signs in", await signIn(off.page, "scorer@example.invalid"));
   ok("Matches → the played fixture's panel", await toFixture(off.page, M));
   await off.page.waitForTimeout(800);
-  ok("with the module off, the scorer is offered nothing (the API answers module_disabled)", (await tid(off.page, "scorebook-panel").count()) === 0 && (await tid(off.page, "sb-start").count()) === 0);
+  ok("with the module off, the scorer is offered nothing (the API answers module: false)", (await tid(off.page, "scorebook-panel").count()) === 0 && (await tid(off.page, "sb-start").count()) === 0);
   await off.ctx.close().catch(() => {});
   await dbq(`insert into feature_grant (key, school_id, granted, note) values ('scorebook_import', $1, true, 'smoke-browser-scorebook')`, [HIL]);
   const pa = await open();
@@ -237,6 +238,12 @@ try {
   ok("with the module on, a parent sees the fixture and no scorebook entry point", parentSees && (await tid(pa.page, "scorebook-panel").count()) === 0 && (await tid(pa.page, "sb-start").count()) === 0);
   ok("no console errors (parent)", pa.errors.length === 0, pa.errors.join(" | "));
   await pa.ctx.close().catch(() => {});
+  const hd = await open();
+  ok("the principal signs in", await signIn(hd.page, "principal@example.invalid"));
+  const headSees = await toFixture(hd.page, M);
+  await hd.page.waitForTimeout(800);
+  ok("the principal (audit only) sees the fixture and no scorebook entry point", headSees && (await tid(hd.page, "scorebook-panel").count()) === 0);
+  await hd.ctx.close().catch(() => {});
 
   // ── A ──────────────────────────────────────────────────────────
   group("A. The scorer: an import, and its pages");

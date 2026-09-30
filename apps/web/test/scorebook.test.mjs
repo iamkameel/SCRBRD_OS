@@ -1,6 +1,6 @@
 /**
  * The scorebook importer's words and card helpers (SCRBRD-120; lib/scorebook.js):
- * who is offered the entry point, a refusal in plain words, a typed number that
+ * when the entry point is offered, a refusal in plain words, a typed number that
  * is never a nought, the ticks that follow a row when it moves, an opposition
  * name that becomes a `t:<n>` key and never a player, and who counts as having
  * worked on a card. The screens are walked in a browser
@@ -10,9 +10,8 @@
  *   node apps/web/test/scorebook.test.mjs
  */
 import {
-  blankBatter, blankCard, cellWords, cleanName, countOf, differenceOf, dropCardChecked, footnoteWords, getPath, mayImport, oversOf,
+  blankBatter, blankCard, cellWords, cleanName, countOf, differenceOf, dropCardChecked, footnoteWords, getPath, hadPages, livePages, oversOf,
   pruneTyped, refusalWords, refusalsByCell, refusalsOf, rowPaths, setPath, settleTyped, shiftChecked, startedYet, tickProgress, workedOn,
-  CAP_CONFIRM, CAP_WRITE,
 } from "../src/lib/scorebook.js";
 import { ApiError } from "../src/lib/api.js";
 import { baseCard, TYPED } from "../../../packages/scoring/test/scorebook-cards.mjs";
@@ -24,15 +23,16 @@ const HIL = "11111111-1111-1111-1111-111111111111";
 const P = ["01", "02", "03", "04", "05", "11"].map((n) => `aaaaaaaa-0000-0000-0000-0000000000${n}`);
 const m = { id: "m1", schoolId: HIL, homeTeam: "1XI", startsAt: "2020-01-01T10:00:00Z" };
 
-group("Who is offered the entry point (a layout hint; the API decides)");
-ok("a scorer at the school writes", mayImport([{ role: "scorer", school: HIL }], CAP_WRITE, m));
-ok("...but does not confirm", !mayImport([{ role: "scorer", school: HIL }], CAP_CONFIRM, m));
-ok("the director of sport confirms and does not write", mayImport([{ role: "directorofsport", school: HIL }], CAP_CONFIRM, m) && !mayImport([{ role: "directorofsport", school: HIL }], CAP_WRITE, m));
-ok("a parent holds neither", !mayImport([{ role: "guardian", school: HIL, subjects: ["x"] }], CAP_WRITE, m) && !mayImport([{ role: "guardian", school: HIL }], CAP_CONFIRM, m));
-ok("another school's coach holds neither for this fixture", !mayImport([{ role: "coach", school: "22222222-2222-2222-2222-222222222222", team: "1XI" }], CAP_WRITE, m));
-ok("a coach of another team of the school does not write for the 1XI", !mayImport([{ role: "coach", school: HIL, team: "U16B" }], CAP_WRITE, m) && mayImport([{ role: "coach", school: HIL, team: "1XI" }], CAP_WRITE, m));
-ok("nothing is nobody", !mayImport([], CAP_WRITE, m) && !mayImport(undefined, CAP_WRITE, m));
+group("When the offer is made (who may is the API's `may`, not a guess from a role)");
 ok("a fixture already begun is offered; one to come is not", startedYet(m) && !startedYet({ startsAt: new Date(Date.now() + 864e5).toISOString() }) && !startedYet({}));
+
+group("The pages an import shows");
+{
+  const pages = [{ pageNo: 1 }, { pageNo: 2, removedAt: "x", deletedAt: "y" }, { pageNo: 3 }, { pageNo: 4, deletedAt: "z" }];
+  ok("a removed page and a purged one are not shown; the numbers keep their gaps", livePages(pages).map((p) => p.pageNo).join() === "1,3");
+  ok("an import whose only page was removed has had none; one purged had some", !hadPages([{ pageNo: 1, removedAt: "x" }]) && hadPages([{ pageNo: 1, deletedAt: "x" }]));
+  ok("a removed page is said in words", /taken off the import/.test(refusalWords(new ApiError(422, "page_removed", "/x"))));
+}
 
 group("Who has worked on a card (db/63 scorebook_authored())");
 const revs = [{ actorId: "a", action: "create" }, { actorId: "b", action: "save" }, { actorId: "c", action: "return" }, { actorId: "d", action: "confirm" }];

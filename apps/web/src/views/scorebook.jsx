@@ -9,8 +9,8 @@ import { Badge } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { useIsMobile } from "../shell/MobileNav.jsx";
 import {
-  CAP_CONFIRM, CAP_WRITE, EDITABLE, FINISHED, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, hadPages, inningsWord, livePages,
-  mayImport, nameOfRef, pruneTyped, refusalWords, refusalsByCell, refusalsOf, removePage, rowPaths, settleTyped, setPath, shiftChecked,
+  EDITABLE, FINISHED, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, hadPages, inningsWord, livePages,
+  nameOfRef, pruneTyped, refusalWords, refusalsByCell, refusalsOf, removePage, rowPaths, settleTyped, setPath, shiftChecked,
   startedYet, tickProgress, titleOf, uploadPage, cellWords, workedOn, getPath,
 } from "../lib/scorebook.js";
 import { CardEditor, CardReader, rosterGroups, styles } from "./scorebookcard.jsx";
@@ -29,9 +29,10 @@ import { CardEditor, CardReader, rosterGroups, styles } from "./scorebookcard.js
  *            league fixture), a submitted import: the card read-only beside
  *            the pages; confirm, or return with a note. Never edit.
  *
- * Reached from the Match Centre: a fixture's side panel offers it, and only to
- * a person whose role could import for that fixture, and only when the API says
- * the module is on for the school (a 403 from the import list draws nothing).
+ * Reached from the Match Centre: a fixture's side panel offers it, and only
+ * when the API's import list says this person may write, confirm or read an
+ * import of the fixture (`may`) and the module is on for its school (`module`);
+ * a 403 or a module that is off draws nothing.
  *
  * WHAT THIS DECIDES: nothing. Who may import, who may confirm, that two people
  * sign it and what the Laws and the seal say at the commit are the API's; a
@@ -443,9 +444,6 @@ const REVISION_WORDS = { create: "Opened", pages: "Pages added", read: "Read", s
 export function ScorebookImportView({ importId, match, onClose }) {
   const S = styles();
   const me = profile()?.user?.id ?? null;
-  const assignments = profile()?.assignments ?? [];
-  const canWrite = mayImport(assignments, CAP_WRITE, match);
-  const canConfirm = mayImport(assignments, CAP_CONFIRM, match);
   const sides = sidesOf(match);
   const sideNames = { home: sides.home.full, away: sides.away.full };
   const ours = match.awaySchoolId && match.awaySchoolId === match.schoolId ? "both" : "home";
@@ -463,6 +461,9 @@ export function ScorebookImportView({ importId, match, onClose }) {
   const [asking, setAsking] = useState(false);
   const [roster, setRoster] = useState(/** @type {any[]} */ ([]));
   const [blockedOwn, setBlockedOwn] = useState(false);
+  // What the API says this person may do with the import: drawn exactly.
+  const canWrite = d?.may?.write === true;
+  const canConfirm = d?.may?.confirm === true;
 
   /** Adopt what the server holds as the working copy. */
   const adopt = useCallback((/** @type {any} */ p, /** @type {boolean} */ keepDraft) => {
@@ -789,19 +790,16 @@ export function ScorebookImportView({ importId, match, onClose }) {
 /**
  * A fixture's scorebook, in its side panel in the Match Centre.
  *
- * Drawn only for a person whose role could import or confirm for this fixture
- * (a layout hint), and only when the API lists the fixture's imports: it
- * answers 403 where the module is off or the person may not, and then nothing
- * is drawn at all.
+ * Drawn from the API's answer alone: the fixture's imports, what this person
+ * may do with them (`may`: write, confirm, read, by the checks the database
+ * asks) and whether the module is on for the school. A 403 (may do nothing),
+ * a module that is off, or a person who may only audit the card draws nothing.
  * @param {{ match: any, onOpen: (importId: string) => void }} props
  */
 export function ScorebookPanel({ match, onOpen }) {
   const S = styles();
-  const assignments = profile()?.assignments ?? [];
-  const canWrite = mayImport(assignments, CAP_WRITE, match);
-  const canConfirm = mayImport(assignments, CAP_CONFIRM, match);
-  const eligible = signedIn() && match.live === true && (canWrite || canConfirm);
-  const [st, setSt] = useState(/** @type {{status: string, imports?: any[], error?: string}} */ ({ status: "loading" }));
+  const eligible = signedIn() && match.live === true;
+  const [st, setSt] = useState(/** @type {{status: string, imports?: any[], may?: any, error?: string}} */ ({ status: "loading" }));
   const [nonce, setNonce] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -811,7 +809,10 @@ export function ScorebookPanel({ match, onOpen }) {
     (async () => {
       try {
         const r = await api(`/api/matches/${match.id}/scorebook`);
-        if (!dead) setSt({ status: "ready", imports: r.imports ?? [] });
+        if (dead) return;
+        const may = r.may ?? {};
+        setSt(r.module === true && (may.write || may.confirm || may.read)
+          ? { status: "ready", imports: r.imports ?? [], may } : { status: "off" });
       } catch (/** @type {any} */ e) {
         if (dead) return;
         // Off, or not this person's: drawn as nothing. Anything else is said.
@@ -824,6 +825,8 @@ export function ScorebookPanel({ match, onOpen }) {
   if (st.status === "error") {
     return <div style={{ ...S.card, marginTop: T.space.md }} data-testid="scorebook-panel"><p role="alert" style={S.alert}>{st.error}</p></div>;
   }
+  const canWrite = st.may?.write === true;
+  const canConfirm = st.may?.confirm === true;
   const imports = (st.imports ?? []).filter((i) => i.state !== "abandoned");
   const openOne = imports.find((i) => !FINISHED.includes(i.state)) ?? null;
   const offer = canWrite && !openOne && match.status !== "complete" && startedYet(match);

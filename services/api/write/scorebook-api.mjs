@@ -149,6 +149,18 @@ export function scorebookRoutes({ pool, secret, store }) {
     const { rows } = await client.query(`select feature_enabled('scorebook_import', $1, app_user_id()) as on`, [school ?? null]);
     if (rows[0]?.on !== true) throw err("module_disabled", 403);
   };
+  /**
+   * What the caller may do with this match's imports, as the definer
+   * functions will answer it (scorebook_caller_may(): scorebook_may() per
+   * capability, audit.read as the read policy asks it, and the module for the
+   * fixture's school). The screens draw from this and infer nothing.
+   * @param {any} client @param {string} matchId
+   */
+  const callerMay = async (client, matchId) => {
+    const r = (await client.query(`select * from scorebook_caller_may($1)`, [matchId])).rows[0] ?? {};
+    return { write: r.may_write === true, confirm: r.may_confirm === true, read: r.may_read === true,
+             audit: r.may_audit === true, module: r.module === true };
+  };
   /** The latest revision's ticks. @param {any} client @param {string} id */
   const readChecked = async (client, id) => (await client.query(
     `select checked from scorebook_import_revision where import_id = $1 order by version desc limit 1`, [id])).rows[0]?.checked ?? {};
@@ -168,17 +180,25 @@ export function scorebookRoutes({ pool, secret, store }) {
       return { id: r.import_id };
     })),
 
-    // GET /api/matches/:id/scorebook  → { imports: [...], innings: [...] }
+    // GET /api/matches/:id/scorebook
+    //   → { module, may: { write, confirm, read }, imports: [...], innings: [...] }
+    //   A caller who may do none of the three (nor audit the card) is refused,
+    //   403 not_permitted; where the module is off for the fixture's school,
+    //   one who may is told so (module: false) and given no import.
     list: handle(async (req) => as(req.headers?.authorization, async (c) => {
       const { rows: fx } = await c.query(`select school_id from match where id = $1`, [uuid(req.params.id)]);
       if (!fx[0]) throw err("not_permitted", 403);
-      await moduleOn(c, fx[0].school_id);
+      const may = await callerMay(c, req.params.id);
+      if (!may.write && !may.confirm && !may.read && !may.audit) throw err("not_permitted", 403);
+      const mayOut = { write: may.write, confirm: may.confirm, read: may.read };
+      if (!may.module) return { module: false, may: mayOut, imports: [], innings: [] };
       const { rows } = await c.query(
         `select i.id, i.state, i.version, i.created_by, i.created_at, i.submitted_at, i.confirmed_at, i.abandoned_at,
                 (select count(*)::int from scorebook_import_page p
                   where p.import_id = i.id and p.deleted_at is null and p.removed_at is null) as pages
            from scorebook_import i where i.match_id = $1 order by i.created_at`, [uuid(req.params.id)]);
       return {
+        module: true, may: mayOut,
         imports: rows.map((/** @type {any} */ i) => ({ id: i.id, state: i.state, version: i.version, pages: i.pages, createdBy: i.created_by,
                                     createdAt: i.created_at, submittedAt: i.submitted_at, confirmedAt: i.confirmed_at,
                                     abandonedAt: i.abandoned_at })),
@@ -186,10 +206,11 @@ export function scorebookRoutes({ pool, secret, store }) {
       };
     })),
 
-    // GET /api/scorebook/:id  → { import, pages, revisions, innings, refusals, unchecked }
+    // GET /api/scorebook/:id  → { import, may, pages, revisions, innings, refusals, unchecked, cells }
     get: handle(async (req) => as(req.headers?.authorization, async (c) => {
       const i = await readImport(c, req.params.id);
       await moduleOn(c, i.school_id);
+      const may = await callerMay(c, i.match_id);
       const checked = await readChecked(c, i.id);
       const { rows: pages } = await c.query(
         `select page_no, mime, bytes, width, height, sha256, added_by, added_at, removed_at, removed_by, deleted_at
@@ -200,6 +221,7 @@ export function scorebookRoutes({ pool, secret, store }) {
       const ctx = { typed: i.typed, ours: m ? oursOf(m) : null };
       return {
         import: importOut(i, checked),
+        may: { write: may.write, confirm: may.confirm, read: may.read },
         pages: pages.map((/** @type {any} */ p) => ({ pageNo: p.page_no, mime: p.mime, bytes: p.bytes, width: p.width, height: p.height,
                                    sha256: p.sha256, addedBy: p.added_by, addedAt: p.added_at,
                                    removedAt: p.removed_at, removedBy: p.removed_by, deletedAt: p.deleted_at })),

@@ -666,6 +666,31 @@ CREATE OR REPLACE FUNCTION scorebook_may(p_cap text, p_match uuid) RETURNS boole
       FROM match m WHERE m.id = p_match), false)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- What the caller may do with the imports of this match, by the checks the
+-- functions themselves ask (scorebook_may()), so a screen draws exactly what
+-- will be allowed and infers nothing from a role: write (type, add or remove
+-- a page, submit), confirm (sign or return; the two-person rule is still the
+-- functions' to refuse), read (open an import and its pages), and audit (the
+-- card and its history under audit.read, never a page). The module, for the
+-- fixture's own school — told only to a caller who may do one of the four,
+-- so it says nothing about a school to anybody else. Every answer is false
+-- for a match that does not exist or that the caller cannot reach.
+CREATE OR REPLACE FUNCTION scorebook_caller_may(p_match uuid)
+RETURNS TABLE (may_write boolean, may_confirm boolean, may_read boolean, may_audit boolean, module boolean) AS $$
+DECLARE m match%ROWTYPE; w boolean; c boolean; rd boolean; a boolean;
+BEGIN
+  SELECT * INTO m FROM match x WHERE x.id = p_match;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, false, false, false, false; RETURN; END IF;
+  w := scorebook_may('scoring.import.write', p_match);
+  c := scorebook_may('scoring.import.confirm', p_match);
+  rd := scorebook_may('scoring.import.read', p_match);
+  -- As the import's read policy asks it, behind the same support and pad cut.
+  a := scorebook_actor_ok(m.school_id)
+       AND app_can('audit.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+  RETURN QUERY SELECT w, c, rd, a,
+    (w OR c OR rd OR a) AND coalesce(feature_enabled('scorebook_import', m.school_id, app_user_id()), false);
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- Has the caller authored this import's card — opened it, added a page,
 -- saved or submitted it? Then they may not confirm or return it (§4.2).
 CREATE OR REPLACE FUNCTION scorebook_authored(p_import uuid) RETURNS boolean AS $$
@@ -1374,7 +1399,7 @@ DO $grants$
 DECLARE f text; r text;
   app text[] := ARRAY[
     'scorebook_import_open(uuid)', 'scorebook_import_page_add(uuid,text,text,integer,integer,integer,text)',
-    'scorebook_import_page_remove(uuid,integer)',
+    'scorebook_import_page_remove(uuid,integer)', 'scorebook_caller_may(uuid)',
     'scorebook_import_save(uuid,jsonb,jsonb,jsonb,integer)', 'scorebook_import_submit(uuid,integer)',
     'scorebook_import_return(uuid,text)', 'scorebook_import_commit(uuid,uuid[],boolean,text)',
     'scorebook_import_abandon(uuid)', 'scorebook_page_open(uuid,integer)',

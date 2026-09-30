@@ -1605,6 +1605,15 @@ CREATE OR REPLACE FUNCTION _deliveries_63(p_match uuid) RETURNS bigint AS $$
        + (SELECT count(*) FROM milestone_notice n WHERE n.match_id = p_match)
        + (SELECT count(*) FROM public_shot_sectors(p_match))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What scorebook_caller_may() tells the caller, as five letters (w c r a m,
+-- a dash for each no; the module as '.' when it is off for one who may).
+-- Not a definer: it runs as whoever calls it.
+CREATE OR REPLACE FUNCTION _may_63(p_match uuid) RETURNS text AS $$
+  SELECT CASE WHEN c.may_write THEN 'w' ELSE '-' END || CASE WHEN c.may_confirm THEN 'c' ELSE '-' END
+      || CASE WHEN c.may_read THEN 'r' ELSE '-' END || CASE WHEN c.may_audit THEN 'a' ELSE '-' END
+      || CASE WHEN c.module THEN 'm' WHEN c.may_write OR c.may_confirm OR c.may_read OR c.may_audit THEN '.' ELSE '-' END
+    FROM scorebook_caller_may(p_match) c
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _publish_63(p_match uuid) RETURNS void AS $$
   INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
   VALUES (p_match, 'home', '11111111-1111-1111-1111-111111111111', '1XI', true, '88888888-0000-0000-0000-000000000007')
@@ -8294,6 +8303,9 @@ BEGIN
   --   (figures)   innings_score_as_folded() without its summary branch (db/63's proof first)
   --   (purge)     scorebook_import_purge_due() not asking the window
   --   (public)    public_match_log() serving the payload's typed map
+  --   (may)       scorebook_caller_may() answering read from scoring.import.write
+  --               (the confirmer lost it), and without the actor check on audit
+  --               (the support session was told it may audit)
   --   (remove)    scorebook_import_page_remove() asking scorebook_may() for
   --               confirm as well as write (the confirmer went through)
   --   (purge)     scorebook_import_purge_due() without the removed-page branch
@@ -8323,6 +8335,30 @@ BEGIN
     PERFORM _as(U_WESC);
     SELECT * INTO r FROM scorebook_import_open(MW);
     PERFORM _assert(NOT r.ok AND r.reason = 'module_disabled', format('db/63 (module): Westville opened an import (%s)', r.reason));
+    -- (may) what a screen is told, by the functions' own checks: w(rite)
+    -- c(onfirm) r(ead) a(udit) m(odule), a dash for no. Westville's coach may
+    -- write for his own fixture, and is told the module is off there.
+    PERFORM _assert(_may_63(MW) = 'w-r-.', format('db/63 (may): Westville''s coach is told %s for his fixture', _may_63(MW)));
+    PERFORM _assert(_may_63(M) = '-----', format('db/63 (may): Westville''s coach is told %s for Hilton''s', _may_63(M)));
+    FOREACH got IN ARRAY ARRAY[U_SCORER || ':w-r-m', U_SARAH || ':-cram', U_HEAD_M || ':---am', U_PARENT || ':-----',
+                               U_PUPIL || ':-----', U_WATCHER || ':-----'] LOOP
+      PERFORM _as(split_part(got, ':', 1)::uuid);
+      PERFORM _assert(_may_63(M) = split_part(got, ':', 2),
+        format('db/63 (may): %s is told %s, not %s', split_part(got, ':', 1), _may_63(M), split_part(got, ':', 2)));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'directorofsport', 'ticket 6365: what may I do here') s;
+    S_ID := r.id;
+    got := _may_63(M);
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(got = '-----', format('db/63 (may): a support session as the director of sport is told %s', got));
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    got := _may_63(M);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(got = '-----', format('db/63 (may): a pad''s credential is told %s', got));
 
     -- The scorer opens, adds a page, types the card; the owner types a cell too.
     PERFORM _as(U_SCORER);

@@ -133,6 +133,10 @@ try {
   group("A. The module arrives off");
   const off = await api(`/api/matches/${M}/scorebook`, { method: "POST", token: scorer });
   ok("the route refuses: module_disabled", off.status === 403 && off.body?.error === "module_disabled", JSON.stringify(off.body));
+  const offList = await api(`/api/matches/${M}/scorebook`, { token: scorer });
+  ok("the list tells the scorer so (module: false), what he may do, and no import",
+     offList.status === 200 && offList.body?.module === false && offList.body?.may?.write === true && offList.body?.imports?.length === 0,
+     JSON.stringify(offList.body));
   await q(`insert into feature_grant (key, school_id, granted, note) values ('scorebook_import', $1, true, 'smoke-scorebook')`, [HIL]);
   const early = await api(`/api/matches/${await fixture({ days: 3 })}/scorebook`, { method: "POST", token: scorer });
   ok("granted to Hilton: a fixture not yet played takes no import", early.body?.error === "not_yet_played", JSON.stringify(early.body));
@@ -188,6 +192,14 @@ try {
   const wesList = await api(`/api/matches/${M}/scorebook`, { token: wes });
   ok("another school's coach lists none for the match (the fixture is not his)", wesList.status === 403 && !wesList.body?.imports, JSON.stringify(wesList.body));
   ok("the coach lists the one open import, with its pages", (await api(`/api/matches/${M}/scorebook`, { token: coach })).body?.imports?.[0]?.pages === 2);
+  // What each person is told they may do: the functions' own checks (§9.4 2).
+  const mayOf = async (t) => { const r = await api(`/api/matches/${M}/scorebook`, { token: t }); return r.status === 200 ? `${r.body.module}:${["write", "confirm", "read"].filter((k) => r.body.may?.[k]).join("+")}` : r.status; };
+  ok("the scorer is told write and read, the module on", await mayOf(scorer) === "true:write+read", await mayOf(scorer));
+  ok("the director of sport confirm and read", await mayOf(sarah) === "true:confirm+read", await mayOf(sarah));
+  ok("the principal (audit.read) none of the three, and still lists", await mayOf(head) === "true:", await mayOf(head));
+  for (const [who, t] of [["a parent", parent], ["a pupil", pupil]]) ok(`${who} may do nothing: 403`, await mayOf(t) === 403, await mayOf(t));
+  ok("the import says the same to each", (await api(`/api/scorebook/${I}`, { token: sarah })).body?.may?.confirm === true
+     && (await api(`/api/scorebook/${I}`, { token: scorer })).body?.may?.write === true && (await api(`/api/scorebook/${I}`, { token: scorer })).body?.may?.confirm === false);
 
   // A wrong photo, taken off by a writer and by nobody else (§9.4 1).
   const wrong = await api(`/api/scorebook/${I}/pages`, { method: "POST", token: scorer, raw: pngWithMetadata({ salt: 5 }), type: "image/png" });
@@ -438,6 +450,9 @@ try {
   const lcard = [baseCard(P, DNB)];
   await api(`/api/scorebook/${L}/save`, { method: "POST", token: scorer, body: { cards: lcard, typed: TYPED, checked: allTicked(lcard), version: 1 } });
   await api(`/api/scorebook/${L}/submit`, { method: "POST", token: scorer, body: { version: 2 } });
+  ok("the director of sport is not told she may confirm a league's fixture, and the league's administrator is",
+     (await api(`/api/matches/${ML}/scorebook`, { token: sarah })).body?.may?.confirm === false
+     && (await api(`/api/matches/${ML}/scorebook`, { token: league })).body?.may?.confirm === true);
   ok("the director of sport does not confirm a league's fixture", (await api(`/api/scorebook/${L}/confirm`, { method: "POST", token: sarah, body: {} })).status === 403);
   const lc = await api(`/api/scorebook/${L}/confirm`, { method: "POST", token: league, body: {} });
   ok("the league's administrator does", lc.status === 200, JSON.stringify(lc.body));
