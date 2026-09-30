@@ -19,6 +19,9 @@
  * each reason named in the route's comment. The conditions screen (a Sonnet
  * build over this) words them.
  *
+ * Dates are plain YYYY-MM-DD strings (to_char in the query), never a JS Date:
+ * node-postgres would turn a Postgres date into midnight in the server's zone.
+ *
  * Names beside ids (createdByName and the like) are read as app_user's own
  * policy allows the reader: a reader who may not read that user gets null, and
  * the screen says "another administrator". No definer function widens it.
@@ -59,7 +62,7 @@ const day = (v, code) => {
 /** A version, as the screen reads it. @param {any} s @param {any[]} values */
 const setOut = (s, values) => ({
   id: s.id, competitionId: s.competition_id, version: s.version, title: s.title,
-  effectiveFrom: s.effective_from, status: s.status, supersedes: s.supersedes ?? null,
+  effectiveFrom: s.effective_day, status: s.status, supersedes: s.supersedes ?? null,
   createdBy: s.created_by, createdByName: s.created_by_name ?? null, createdAt: s.created_at,
   publishedBy: s.published_by ?? null, publishedByName: s.published_by_name ?? null, publishedAt: s.published_at ?? null,
   withdrawnBy: s.withdrawn_by ?? null, withdrawnByName: s.withdrawn_by_name ?? null,
@@ -67,7 +70,7 @@ const setOut = (s, values) => ({
   values: values.filter((v) => v.set_id === s.id).map((v) => ({
     key: v.key, ageBand: v.age_band === "" ? null : v.age_band, value: v.value, status: v.status,
     sourceDocument: v.source_document ?? null, sourceClause: v.source_clause ?? null,
-    sourceDate: v.source_date ?? null, sourceNote: v.source_note ?? null,
+    sourceDate: v.source_day ?? null, sourceNote: v.source_note ?? null,
     enteredBy: v.entered_by, enteredByName: v.entered_by_name ?? null, enteredAt: v.entered_at,
   })),
 });
@@ -133,7 +136,7 @@ export function playingConditionsRoutes({ pool, secret }) {
       const id = idOf(req);
       return runAsPrincipal(pool, secret, as(req), async (client) => {
         const { rows: sets } = await client.query(
-          `select s.*, cu.name as created_by_name, pu.name as published_by_name, wu.name as withdrawn_by_name
+          `select s.*, to_char(s.effective_from, 'YYYY-MM-DD') as effective_day, cu.name as created_by_name, pu.name as published_by_name, wu.name as withdrawn_by_name
              from condition_set s
              left join app_user cu on cu.id = s.created_by
              left join app_user pu on pu.id = s.published_by
@@ -141,7 +144,7 @@ export function playingConditionsRoutes({ pool, secret }) {
             where s.competition_id = $1 order by s.version desc`, [id]);
         const { rows: values } = sets.length
           ? await client.query(
-              `select v.*, u.name as entered_by_name
+              `select v.*, to_char(v.source_date, 'YYYY-MM-DD') as source_day, u.name as entered_by_name
                  from condition_value v left join app_user u on u.id = v.entered_by
                 where v.set_id = any($1::uuid[]) order by v.key, v.age_band`, [sets.map((s) => s.id)])
           : { rows: [] };
@@ -164,7 +167,7 @@ export function playingConditionsRoutes({ pool, secret }) {
         const { rows: c } = await client.query(`select id, format from competition where id = $1`, [id]);
         if (!c.length) throw err("not_permitted", 403);
         const { rows: s } = await client.query(
-          `select s.id, s.version, s.title, s.effective_from
+          `select s.id, s.version, s.title, to_char(s.effective_from, 'YYYY-MM-DD') as effective_day
              from condition_set s where s.id = condition_set_for($1, coalesce($2::date, sa_today()))`, [id, on]);
         /** @type {Record<string, unknown>} */
         const values = {};
@@ -176,7 +179,7 @@ export function playingConditionsRoutes({ pool, secret }) {
           }
         }
         return { competitionId: id, on: on ?? null,
-                 set: s.length ? { id: s[0].id, version: s[0].version, title: s[0].title, effectiveFrom: s[0].effective_from } : null,
+                 set: s.length ? { id: s[0].id, version: s[0].version, title: s[0].title, effectiveFrom: s[0].effective_day } : null,
                  values, prefill: fixtureFormatFrom(values, c[0].format ?? null) };
       });
     }),

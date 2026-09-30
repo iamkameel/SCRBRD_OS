@@ -72,18 +72,12 @@ const ENUM_WORDS = {
 export const labelOf = (key) => KEY_WORDS[key]?.label ?? key;
 
 /**
- * A date as the API sends it. A Postgres date reaches the browser as the
- * midnight of its day in whatever zone the server runs in ("2026-10-30T00:00:00.000Z"
- * on a UTC server), so twelve hours are added before the day is read: right
- * for a server anywhere from UTC-12 to UTC+12.
+ * A date as the API sends it: a plain "YYYY-MM-DD" (the API casts every date
+ * column in SQL), or nothing. Anything else is not a day.
  * @param {unknown} v @returns {string} "YYYY-MM-DD" or ""
  */
 export function dayOf(v) {
-  if (v == null || v === "") return "";
-  const s = String(v);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const t = Date.parse(s);
-  return Number.isNaN(t) ? "" : new Date(t + 12 * 3600e3).toISOString().slice(0, 10);
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
 }
 
 /** "15 Sep 2026". @param {unknown} v */

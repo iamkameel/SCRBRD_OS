@@ -158,6 +158,12 @@ try {
      named?.createdBy === leagueUser.id && named?.createdByName === leagueUser.name
      && named?.publishedBy === leagueUser.id && named?.publishedByName === leagueUser.name
      && named?.withdrawnBy === null && named?.withdrawnByName === null, JSON.stringify(named).slice(0, 300));
+  const DAY = /^\d{4}-\d{2}-\d{2}$/;
+  ok("dates are plain YYYY-MM-DD, not a timestamp: a version's day and a figure's source date",
+     named?.effectiveFrom === D1 && DAY.test(named.effectiveFrom)
+     && named.values.find((v) => v.key === "bowling.max_overs_per_bowler_innings")?.sourceDate === "2026-09-15"
+     && named.values.find((v) => v.key === "format.free_hit")?.sourceDate === null,
+     JSON.stringify([named?.effectiveFrom, named?.values?.map((v) => v.sourceDate)]));
   ok("...and each figure who entered it", named?.values?.length > 0 && named.values.every((v) => v.enteredBy === leagueUser.id && v.enteredByName === leagueUser.name));
   ok("...a reader who may not read that user gets the id and no name (app_user's own policy)",
      afterPub.sets[0].createdBy === leagueUser.id && [null, leagueUser.name].includes(afterPub.sets[0].createdByName));
@@ -227,6 +233,8 @@ try {
   const pre = await api(`/api/competitions/${LEAGUE}/playing-conditions/preview?on=${dayOf(3)}`, { token: sarah });
   ok("the screen's pre-fill for a fixture on D1+1: version 1, T20 at 20 overs",
      pre.body?.set?.version === 1 && pre.body?.prefill?.format === "T20" && pre.body?.prefill?.overs === 20, JSON.stringify(pre.body));
+  ok("...its dates are plain YYYY-MM-DD, not a timestamp: the day asked, the version's day",
+     pre.body?.on === dayOf(3) && pre.body?.set?.effectiveFrom === D1, JSON.stringify(pre.body?.set));
   const preToday = await api(`/api/competitions/${LEAGUE}/playing-conditions/preview?on=${today}`, { token: sarah });
   ok("...and for a fixture today, no version yet: nothing to pre-fill from the set", preToday.body?.set === null);
 

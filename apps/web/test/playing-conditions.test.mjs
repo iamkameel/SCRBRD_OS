@@ -34,8 +34,7 @@ const E = (key) => CAT.keys.find((k) => k.key === key);
 
 group("A date, as the server sends it");
 ok("a plain day is itself", dayOf("2026-10-01") === "2026-10-01");
-ok("a UTC midnight is its day", dayOf("2026-10-30T00:00:00.000Z") === "2026-10-30");
-ok("a Johannesburg midnight (22:00Z the day before) is the next day", dayOf("2026-10-29T22:00:00.000Z") === "2026-10-30");
+ok("a timestamp is not a day: the API sends plain days, so nothing is guessed from one", dayOf("2026-10-30T00:00:00.000Z") === "" && dayOf(new Date()) === "");
 ok("nothing is nothing", dayOf(null) === "" && formatDay("") === "");
 ok("a day in words", /15.*Sep.*2026/.test(formatDay("2026-09-15")), formatDay("2026-09-15"));
 
@@ -89,7 +88,7 @@ group("What she types, as the API takes it");
   ok("an enum must be chosen", "problem" in valueOfDraft(E("format.kind"), draft("format.kind")) && valueOfDraft(E("format.kind"), draft("format.kind", { text: "timed" })).value === "timed");
   ok("a band's spell and day, blank for no limit", JSON.stringify(valueOfDraft(E("bowling.limit"), draft("bowling.limit", { spell: "6", day: "" }))) === '{"value":{"spell":6,"day":null}}');
   ok("a list in the order picked", JSON.stringify(valueOfDraft(E("table.order"), draft("table.order", { picked: ["nrr", "points"] })).value) === '["nrr","points"]');
-  const back = draftOf(E("bowling.limit"), { value: { spell: 7, day: null }, status: "confirmed", sourceDocument: "Doc", sourceClause: "1", sourceDate: "2026-09-15T00:00:00.000Z" });
+  const back = draftOf(E("bowling.limit"), { value: { spell: 7, day: null }, status: "confirmed", sourceDocument: "Doc", sourceClause: "1", sourceDate: "2026-09-15" });
   ok("an entered figure comes back into the editor as it was", back.spell === "7" && back.day === "" && back.status === "confirmed" && back.document === "Doc" && back.date === "2026-09-15");
 }
 
