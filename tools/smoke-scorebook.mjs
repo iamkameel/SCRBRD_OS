@@ -189,6 +189,30 @@ try {
   ok("another school's coach lists none for the match (the fixture is not his)", wesList.status === 403 && !wesList.body?.imports, JSON.stringify(wesList.body));
   ok("the coach lists the one open import, with its pages", (await api(`/api/matches/${M}/scorebook`, { token: coach })).body?.imports?.[0]?.pages === 2);
 
+  // A wrong photo, taken off by a writer and by nobody else (§9.4 1).
+  const wrong = await api(`/api/scorebook/${I}/pages`, { method: "POST", token: scorer, raw: pngWithMetadata({ salt: 5 }), type: "image/png" });
+  ok("a third page, the wrong one, is added as page 3", wrong.status === 200 && wrong.body?.pageNo === 3, JSON.stringify(wrong.body));
+  for (const [who, t] of [["a parent", parent], ["another school's coach", wes], ["the director of sport (a confirmer)", sarah], ["the principal (audit.read)", head]]) {
+    const r = await api(`/api/scorebook/${I}/pages/3`, { method: "DELETE", token: t });
+    ok(`${who} removes no page (403)`, r.status === 403 && r.body?.error === "not_permitted", `${r.status} ${JSON.stringify(r.body)}`);
+  }
+  ok("signed out: no page removed", (await api(`/api/scorebook/${I}/pages/3`, { method: "DELETE" })).status >= 400);
+  const vBefore = (await q(`select version from scorebook_import where id = $1`, [I]))[0].version;
+  const rm = await api(`/api/scorebook/${I}/pages/3`, { method: "DELETE", token: scorer });
+  ok("the scorer takes page 3 off: one revision on, its photo deleted at once",
+     rm.status === 200 && rm.body?.version === vBefore + 1 && rm.body?.purged?.due === 1 && rm.body?.purged?.deleted === 1, JSON.stringify(rm.body));
+  ok("...the store holds the other two only", readdirSync(join(STORE, HIL, I)).length === 2);
+  const [rmRow] = await q(`select removed_by, removed_at is not null as removed, deleted_at is not null as deleted from scorebook_import_page where import_id = $1 and page_no = 3`, [I]);
+  ok("...and the row stays, saying who removed it and that its photo is gone",
+     rmRow?.removed_by === "88888888-0000-0000-0000-000000000006" && rmRow.removed && rmRow.deleted, JSON.stringify(rmRow));
+  ok("a removed page is not served", (await api(`/api/scorebook/${I}/pages/3`, { token: scorer })).body?.error === "page_removed");
+  ok("...nor removed twice", (await api(`/api/scorebook/${I}/pages/3`, { method: "DELETE", token: scorer })).body?.error === "page_removed");
+  const got3 = await api(`/api/scorebook/${I}`, { token: coach });
+  ok("the import lists page 3 as removed, and the list counts two",
+     got3.body?.pages?.find((p) => p.pageNo === 3)?.removedAt != null
+     && (await api(`/api/matches/${M}/scorebook`, { token: coach })).body?.imports?.[0]?.pages === 2);
+  ok("the revision says so", got3.body?.revisions?.at(-1)?.action === "pages" && got3.body?.revisions?.at(-1)?.note === "page 3 removed");
+
   // ── C ──────────────────────────────────────────────────────────
   group("C. The card");
   const got0 = await api(`/api/scorebook/${I}`, { token: scorer });
@@ -230,6 +254,8 @@ try {
     body: { cards: [card0, chase], typed, checked: {}, version: s3.body.version } })).status === 403);
   const sub = await api(`/api/scorebook/${I}/submit`, { method: "POST", token: scorer, body: { version: s3.body.version } });
   ok("every cell ticked, the cards adding up: submitted", sub.status === 200, JSON.stringify(sub.body));
+  ok("a submitted import's pages stay on it (not_editable)",
+     (await api(`/api/scorebook/${I}/pages/1`, { method: "DELETE", token: scorer })).body?.error === "not_editable");
   ok("the scorer cannot confirm his own (no confirm capability)", (await api(`/api/scorebook/${I}/confirm`, { method: "POST", token: scorer, body: {} })).status === 403);
   // A person holding both halves through two assignments: the owner's key.
   const MU = await fixture({ team: "U16B" });
@@ -493,7 +519,7 @@ try {
   ok("...from the store", !existsSync(join(STORE, HIL, I)) || readdirSync(join(STORE, HIL, I)).length === 0);
   const [prow] = await q(`select pages_purged_at from scorebook_import where id = $1`, [I]);
   const prows = await q(`select deleted_at from scorebook_import_page where import_id = $1`, [I]);
-  ok("...and the rows kept, each saying when", prows.length === 2 && prows.every((r) => r.deleted_at) && !!prow.pages_purged_at);
+  ok("...and the rows kept, each saying when (the removed page's too)", prows.length === 3 && prows.every((r) => r.deleted_at) && !!prow.pages_purged_at);
   ok("a deleted page is not read", (await api(`/api/scorebook/${I}/pages/1`, { token: scorer })).body?.error === "page_deleted");
   const ab = await api(`/api/scorebook/${J}/abandon`, { method: "POST", token: scorer });
   ok("an abandoned import's photos go at once", ab.body?.ok === true && ab.body?.purged?.deleted === 1, JSON.stringify(ab.body));

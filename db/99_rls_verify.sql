@@ -8294,6 +8294,9 @@ BEGIN
   --   (figures)   innings_score_as_folded() without its summary branch (db/63's proof first)
   --   (purge)     scorebook_import_purge_due() not asking the window
   --   (public)    public_match_log() serving the payload's typed map
+  --   (remove)    scorebook_import_page_remove() asking scorebook_may() for
+  --               confirm as well as write (the confirmer went through)
+  --   (purge)     scorebook_import_purge_due() without the removed-page branch
   -- Two stand on two walls and stay green with either one down: (pad) — the
   -- db/50 guard in app_can() and scorebook_actor_ok() — and (door) — the
   -- application role's ball_event insert policy and the door trigger, which
@@ -8302,7 +8305,7 @@ BEGIN
     ids     jsonb := _seed_63();
     M uuid; M2 uuid; M3 uuid; MW uuid;
     I uuid; I2 uuid; I3 uuid;
-    PG uuid;
+    PG uuid; PG2 uuid; PG3 uuid;
     r       record;
     v_ver   integer;
     v_keys  text[];
@@ -8335,6 +8338,62 @@ BEGIN
                                                   repeat('a', 64), 1000, 1600, 1200, 'image/jpeg');
     PERFORM _assert(r.ok AND r.page_no = 1, format('db/63: the page was not recorded (%s)', r.reason));
     PG := r.page_id;
+
+    -- (remove) a wrong photo, taken off by a writer and by nobody else
+    SELECT * INTO r FROM scorebook_import_page_add(I, HIL || '/' || I || '/' || gen_random_uuid() || '.jpg',
+                                                  repeat('c', 64), 1000, 1600, 1200, 'image/jpeg');
+    PERFORM _assert(r.ok AND r.page_no = 2, format('db/63: the second page was not recorded (%s)', r.reason));
+    PG2 := r.page_id;
+    FOREACH got IN ARRAY ARRAY[U_PARENT::text, U_PUPIL::text, U_WESC::text, U_SARAH::text, U_HEAD_M::text] LOOP
+      PERFORM _as(got::uuid);
+      SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+      PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (remove): %s removed a page (%s)', got, r.reason));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'scorer', 'ticket 6364: a wrong page on the import') s;
+    PERFORM _assert(r.ok, 'db/63 (remove): the support session did not begin');
+    S_ID := r.id;
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (remove): a support session as a scorer removed a page (%s)', r.reason));
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (remove): a pad''s credential removed a page (%s)', r.reason));
+    SELECT version INTO v_ver FROM scorebook_import WHERE id = I;
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+    PERFORM _assert(r.ok AND r.version = v_ver + 1, format('db/63 (remove): the scorer could not remove his page (%s)', r.reason));
+    PERFORM _assert((SELECT action || ':' || note || ':' || actor_id FROM scorebook_import_revision WHERE import_id = I AND version = r.version)
+                    = 'pages:page 2 removed:' || U_SCORER, 'db/63 (remove): no revision says who removed the page');
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+    PERFORM _assert(NOT r.ok AND r.reason = 'page_removed', format('db/63 (remove): a page was removed twice (%s)', r.reason));
+    SELECT * INTO r FROM scorebook_page_open(I, 2);
+    PERFORM _assert(NOT r.ok AND r.reason = 'page_removed', format('db/63 (remove): a removed page was opened (%s)', r.reason));
+    -- The same photo may go back on, under a new number: no number is reused.
+    SELECT * INTO r FROM scorebook_import_page_add(I, HIL || '/' || I || '/' || gen_random_uuid() || '.jpg',
+                                                  repeat('c', 64), 1000, 1600, 1200, 'image/jpeg');
+    PERFORM _assert(r.ok AND r.page_no = 3, format('db/63 (remove): a removed photo could not be added again as page 3 (%s %s)', r.reason, r.page_no));
+    PG3 := r.page_id;
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 3);
+    PERFORM _assert(r.ok, format('db/63 (remove): page 3 could not be removed (%s)', r.reason));
+    -- (purge) a removed page's photo is due at once, the import still a draft;
+    -- once gone, the draft is not marked purged
+    PERFORM _assert((SELECT string_agg(p.page_id::text, ',' ORDER BY p.page_id) FROM scorebook_import_purge_due(I) p)
+                    = (SELECT string_agg(x::text, ',' ORDER BY x) FROM unnest(ARRAY[PG2, PG3]) x),
+      'db/63 (purge): a removed page''s photo is not due at once, or a live one is');
+    PERFORM _as(U_PLAT);
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(NULL) p WHERE p.import_id = I) = 2,
+      'db/63 (purge): the platform''s run does not retry a removed page''s photo');
+    PERFORM _as(U_PARENT);
+    PERFORM _assert(NOT scorebook_page_purged(PG2), 'db/63 (purge): a parent marked a removed page''s photo deleted');
+    PERFORM _as(U_SCORER);
+    PERFORM _assert(scorebook_page_purged(PG2) AND scorebook_page_purged(PG3), 'db/63 (purge): a removed page''s photo could not be marked deleted');
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(I)) = 0
+                    AND (SELECT pages_purged_at IS NULL AND state = 'draft' FROM scorebook_import WHERE id = I),
+      'db/63 (purge): a draft whose removed photos are gone is marked purged, or still has photos due');
     SELECT version INTO v_ver FROM scorebook_import WHERE id = I;
     SELECT * INTO r FROM scorebook_import_save(I, jsonb_build_array(CARD), TYPED, '{}'::jsonb, v_ver);
     PERFORM _assert(r.ok, format('db/63: the scorer''s save was refused (%s)', r.reason));
@@ -8350,6 +8409,8 @@ BEGIN
     PERFORM _as(U_SCORER);
     SELECT * INTO r FROM scorebook_import_submit(I, r.version);
     PERFORM _assert(r.ok, format('db/63: the submit was refused (%s)', r.reason));
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 1);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_editable', format('db/63 (remove): a page was removed from a submitted import (%s)', r.reason));
 
     -- (two) the submitter and a revision's author cannot confirm or return
     SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], true);

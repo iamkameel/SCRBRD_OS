@@ -212,6 +212,8 @@ try {
   const jpg = join(FILES, "page-one.jpg"), png = join(FILES, "page-two.png"), txt = join(FILES, "notes.txt"), big = join(FILES, "huge.jpg");
   writeFileSync(jpg, jpegWithMetadata({ salt: 1 }));
   writeFileSync(png, pngWithMetadata({ salt: 2 }));
+  const wrongPng = join(FILES, "wrong-page.png");
+  writeFileSync(wrongPng, pngWithMetadata({ salt: 7 }));
   writeFileSync(txt, "not a photo");
   writeFileSync(big, Buffer.concat([jpegWithMetadata({ salt: 3 }), Buffer.alloc(9 * 1024 * 1024)]));
 
@@ -271,6 +273,25 @@ try {
      && (await p.$eval('[data-testid="sb-page-img"]', (i) => i.naturalWidth)) === 8);
   await tap(p, "sb-zoom-in");
   ok("...zoom widens the page inside its own scrolling box", (await p.$eval('[data-testid="sb-page-img"]', (i) => i.style.width)) === "150%");
+  // A wrong photo, taken off again: asked once in the page, never a dialog.
+  await p.setInputFiles('[data-testid="sb-file"]', wrongPng);
+  await uploaded(p);
+  await tid(p, "sb-thumb-3").waitFor({ timeout: 5000 }).catch(() => {});
+  await tap(p, "sb-thumb-3");
+  ok("a wrong photo goes on as page 3; the writer is offered 'Remove page 3'", (await tid(p, "sb-remove-page-3").count()) === 1);
+  await tap(p, "sb-remove-page-3");
+  ok("...which asks in the page first, saying the photo is deleted and the numbers kept",
+     /Take page 3 off this import\? Its photo is deleted\. The other pages keep their numbers\./.test(await said(p, "sb-remove-page-ask")));
+  await tap(p, "sb-remove-page-no");
+  ok("'Keep it' keeps it", (await tid(p, "sb-remove-page-ask").count()) === 0 && (await tid(p, "sb-thumb-3").count()) === 1);
+  await tap(p, "sb-remove-page-3");
+  await tap(p, "sb-remove-page-yes");
+  await tid(p, "sb-thumb-3").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+  const gone3 = (await dbq(`select removed_at is not null as removed, deleted_at is not null as deleted from scorebook_import_page where import_id = $1 and page_no = 3`, [I.id]))[0];
+  ok("page 3 is taken off: said in words, its thumbnail gone, its row kept, its photo deleted",
+     /Page 3 was taken off the import/.test(await said(p, "sb-status")) && (await tid(p, "sb-thumb-3").count()) === 0
+     && gone3?.removed && gone3?.deleted && readdirSync(join(STORE, HIL, I.id)).length === 2, JSON.stringify(gone3));
+  ok("pages 1 and 2 are still shown", (await tid(p, "sb-thumb-1").count()) === 1 && (await tid(p, "sb-thumb-2").count()) === 1);
   const reads = await dbq(`select fields from access_log where resource = 'scorebook_page' and $1 = any(record_ids)`, [I.id]);
   ok("each page read wrote access_log (page:1, page:2)", reads.length >= 2 && reads.some((r) => r.fields?.[0] === "page:1") && reads.some((r) => r.fields?.[0] === "page:2"), JSON.stringify(reads));
   const stores = await p.evaluate(async () => {

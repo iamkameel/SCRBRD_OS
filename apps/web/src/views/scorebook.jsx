@@ -9,8 +9,8 @@ import { Badge } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { useIsMobile } from "../shell/MobileNav.jsx";
 import {
-  CAP_CONFIRM, CAP_WRITE, EDITABLE, FINISHED, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, inningsWord, livePages,
-  mayImport, nameOfRef, pruneTyped, refusalWords, refusalsByCell, refusalsOf, rowPaths, settleTyped, setPath, shiftChecked,
+  CAP_CONFIRM, CAP_WRITE, EDITABLE, FINISHED, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, hadPages, inningsWord, livePages,
+  mayImport, nameOfRef, pruneTyped, refusalWords, refusalsByCell, refusalsOf, removePage, rowPaths, settleTyped, setPath, shiftChecked,
   startedYet, tickProgress, titleOf, uploadPage, cellWords, workedOn, getPath,
 } from "../lib/scorebook.js";
 import { CardEditor, CardReader, rosterGroups, styles } from "./scorebookcard.jsx";
@@ -84,20 +84,31 @@ function usePageBlobs(importId, pages) {
   return { urls, errors };
 }
 
-/** The pages: thumbnails, and the page shown large, zoomable. */
-function PhotoColumn({ pages, photos, sticky }) {
+/**
+ * The pages: thumbnails, and the page shown large, zoomable. With `onRemove`
+ * (a writer, the import still being typed) the page shown can be taken off
+ * the import, after a question asked in place.
+ * @param {{ pages: any[], photos: {urls: Record<number, string>, errors: Record<number, string>}, sticky?: boolean,
+ *           onRemove?: (pageNo: number) => Promise<boolean>, busy?: boolean }} props
+ */
+function PhotoColumn({ pages, photos, sticky, onRemove, busy }) {
   const S = styles();
   const live = livePages(pages);
   const [sel, setSel] = useState(1);
   const [zoom, setZoom] = useState(1);
+  const [removing, setRemoving] = useState(/** @type {number | null} */ (null));
   const shown = live.find((p) => p.pageNo === sel) ?? live[0] ?? null;
   if (!live.length) {
     return (
       <div style={S.card} data-testid="sb-photos">
         <h3 style={S.h4}>The pages</h3>
-        <p style={S.body} data-testid="sb-no-pages">{pages?.length ? "The photos of this import have been deleted." : "No pages have been added yet."}</p>
+        <p style={S.body} data-testid="sb-no-pages">{hadPages(pages) ? "The photos of this import have been deleted." : "No pages have been added yet."}</p>
       </div>
     );
+  }
+  async function remove(/** @type {number} */ n) {
+    if (!onRemove) return;
+    if (await onRemove(n)) { setRemoving(null); setZoom(1); }
   }
   const url = shown ? photos.urls[shown.pageNo] : null;
   return (
@@ -123,7 +134,21 @@ function PhotoColumn({ pages, photos, sticky }) {
             <button type="button" onClick={() => setZoom((z) => Math.min(4, z + 0.5))} style={S.small} data-testid="sb-zoom-in">Zoom in</button>
             <button type="button" onClick={() => setZoom((z) => Math.max(1, z - 0.5))} style={S.small} data-testid="sb-zoom-out">Zoom out</button>
             <button type="button" onClick={() => setZoom(1)} style={S.small}>Fit to width</button>
+            {onRemove && removing !== shown.pageNo && (
+              <button type="button" data-testid={`sb-remove-page-${shown.pageNo}`} onClick={() => setRemoving(shown.pageNo)} style={S.small}>
+                Remove page {shown.pageNo}
+              </button>
+            )}
           </div>
+          {onRemove && removing === shown.pageNo && (
+            <div style={S.panel} data-testid="sb-remove-page-ask">
+              <p style={{ ...S.body, color: T.content.primary }}>Take page {shown.pageNo} off this import? Its photo is deleted. The other pages keep their numbers.</p>
+              <div style={S.wrap}>
+                <button type="button" data-testid="sb-remove-page-yes" disabled={busy} onClick={() => remove(shown.pageNo)} style={S.danger}>Yes, remove page {shown.pageNo}</button>
+                <button type="button" data-testid="sb-remove-page-no" onClick={() => setRemoving(null)} style={S.secondary}>Keep it</button>
+              </div>
+            </div>
+          )}
           <div role="region" aria-label={`Page ${shown.pageNo} of the scorebook`} tabIndex={0} data-testid="sb-page-view"
             style={{ overflow: "auto", maxHeight: "70vh", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, background: T.surface.base }}>
             {url
@@ -180,7 +205,7 @@ function UploadScreen({ R }) {
           )}
         </div>
       </div>
-      <PhotoColumn pages={R.d.pages} photos={R.photos}/>
+      <PhotoColumn pages={R.d.pages} photos={R.photos} onRemove={R.removePage} busy={R.busy}/>
       <div style={S.wrap}>
         <button type="button" data-testid="sb-next" onClick={() => R.setStep("card")} style={S.primary}>
           {live.length ? "Next: type the card" : "Next: type the card (no pages yet)"}
@@ -261,7 +286,7 @@ function ReviewScreen({ R }) {
   } : null;
   return (
     <div style={{ display: "grid", gap: T.space.lg, gridTemplateColumns: wide ? "minmax(280px, 4fr) minmax(0, 8fr)" : "minmax(0, 1fr)", alignItems: "start" }} data-testid="sb-review">
-      <PhotoColumn pages={R.d.pages} photos={R.photos} sticky={wide}/>
+      <PhotoColumn pages={R.d.pages} photos={R.photos} sticky={wide} onRemove={R.removePage} busy={R.busy}/>
       <div style={{ display: "flex", flexDirection: "column", gap: T.space.lg, minWidth: 0 }}>
         {R.d.import.state === "returned" && (
           <div style={{ ...S.panel, borderColor: T.semantic.warning }} data-testid="sb-returned-note">
@@ -483,6 +508,22 @@ export function ScorebookImportView({ importId, match, onClose }) {
   const rosterMap = useMemo(() => new Map(roster.map((p) => [p.id, p.name])), [roster]);
   const groups = useMemo(() => rosterGroups(roster, [match.homeTeam, match.awayTeamCode].filter(Boolean)), [roster, match.homeTeam, match.awayTeamCode]);
 
+  /**
+   * After pages were added or taken off: the list as the server has it. Each
+   * page added or removed is one revision, so the version moves on by exactly
+   * that. If it moved by more, somebody else saved: keep ours, so the next
+   * save is refused and the latest is loaded rather than overwritten. The
+   * typing in hand is never touched.
+   * @param {number} changed
+   */
+  async function afterPages(changed) {
+    try {
+      const p = await fetchImport();
+      setD(p);
+      setVersion((v) => (p.import.version === v + changed ? p.import.version : v));
+    } catch { /* the list stays as it was */ }
+  }
+
   /** Someone else saved first: their version is loaded, the typing in hand is not kept. */
   async function reloadAfterConflict() {
     try {
@@ -604,16 +645,18 @@ export function ScorebookImportView({ importId, match, onClose }) {
   const R = {
     id: importId, d, draft, version, ours, sideNames, groups, rosterMap, photos, cur, setCur, attempted, busy, step, setStep,
     mayAct, blockedOwn: cantConfirm, worked, confirm: doConfirm, giveBack: doReturn,
-    afterUpload: async (/** @type {number} */ added) => {
+    afterUpload: (/** @type {number} */ added) => afterPages(added),
+    removePage: async (/** @type {number} */ n) => {
+      setBusy(true); setMsg(null);
       try {
-        const p = await fetchImport();
-        setD(p);
-        // Each page added is one revision, so the version moves on by exactly
-        // that. If it moved by more, somebody else saved: keep ours, so the
-        // next save is refused and the latest is loaded rather than overwritten.
-        // The typing in hand is never touched.
-        setVersion((v) => (p.import.version === v + added ? p.import.version : v));
-      } catch { /* the list stays as it was */ }
+        await removePage(importId, n);
+        await afterPages(1);
+        setMsg({ kind: "ok", text: `Page ${n} was taken off the import and its photo deleted.` });
+        return true;
+      } catch (/** @type {any} */ e) {
+        setMsg({ kind: "error", text: refusalWords(e) });
+        return false;
+      } finally { setBusy(false); }
     },
     setCell: (/** @type {number} */ n, /** @type {string} */ path, /** @type {unknown} */ value, tick = true) => edit((x) => ({
       ...x, cards: x.cards.map((c, i) => (i === n ? setPath(c, path, value) : c)),

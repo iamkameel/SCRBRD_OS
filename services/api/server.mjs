@@ -223,7 +223,8 @@ const publicSite = publicPages({
 const CORS = {
   "access-control-allow-origin": ORIGIN,
   "access-control-allow-headers": "content-type, authorization",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  // DELETE: a scorebook page taken off its import (SCRBRD-120).
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
   // The row count and the filename have to be readable by the page that asked
   // for the download, and a cross-origin response exposes no custom header
   // unless it says so.
@@ -988,13 +989,15 @@ const server = createServer(async (req, res) => {
 
     // A scorebook page's photo (SCRBRD-120): up, as its own bytes (never
     // JSON, and larger than any JSON body), and down, proxied — no URL to a
-    // photo ever leaves this process. The module is the definer functions'
+    // photo ever leaves this process; and off the import (DELETE), because
+    // the store's object goes with the row. The module is the definer functions'
     // to ask, per school, as for the import's other routes; they decide who.
     // The purge is the platform's (scorebook_import_purge_due() names nothing
     // due to anybody else): photos go on the clock, switch or none.
     {
       const up = req.method === "POST" && /^\/api\/scorebook\/([0-9a-f-]{36})\/pages$/.exec(path);
       const down = req.method === "GET" && /^\/api\/scorebook\/([0-9a-f-]{36})\/pages\/([1-9]\d?)$/.exec(path);
+      const gone = req.method === "DELETE" && /^\/api\/scorebook\/([0-9a-f-]{36})\/pages\/([1-9]\d?)$/.exec(path);
       if (up) {
         // No token, no 8 MB read: refuse before the body is taken.
         if (!req.headers.authorization) return rawRes(res).status(401).json({ error: "missing_token" });
@@ -1002,6 +1005,7 @@ const server = createServer(async (req, res) => {
         return scorebookFiles.upload({ id: up[1], bytes, authorization: req.headers.authorization }, rawRes(res));
       }
       if (down) return scorebookFiles.read({ id: down[1], pageNo: Number(down[2]), authorization: req.headers.authorization }, rawRes(res));
+      if (gone) return scorebookFiles.remove({ id: gone[1], pageNo: Number(gone[2]), authorization: req.headers.authorization }, rawRes(res));
       if (req.method === "POST" && path === "/api/scorebook/purge") {
         return scorebookFiles.purge({ authorization: req.headers.authorization }, rawRes(res));
       }

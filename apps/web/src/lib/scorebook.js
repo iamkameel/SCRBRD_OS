@@ -18,7 +18,7 @@
  */
 import { DISMISSAL_LABEL, summaryRefusal, uncheckedCells } from "@scrbrd/scoring";
 import { roleGrants } from "@scrbrd/policy/roles";
-import { ApiError, apiBase, getToken } from "./api.js";
+import { ApiError, api, apiBase, getToken } from "./api.js";
 
 export const CAP_WRITE = "scoring.import.write";
 export const CAP_CONFIRM = "scoring.import.confirm";
@@ -114,6 +114,7 @@ const WORDS = {
   store_unconfigured: "Photos cannot be stored on this server yet, so no page was added.",
   no_such_page: "There is no such page.",
   page_deleted: "This photo has been deleted.",
+  page_removed: "This page was taken off the import.",
   page_missing: "This photo is no longer stored.",
   card_shape: "A figure on the card is not one the scorecard can hold. Check the cells marked below.",
   typed_invalid: "A name is empty or longer than 80 characters.",
@@ -456,10 +457,20 @@ export function footnoteWords(u) {
 }
 
 /**
- * The page numbers an import has, shown or not. A purged photo keeps its row.
- * @param {Array<{pageNo: number, deletedAt?: unknown}>} pages
+ * The pages an import shows: not taken off it, their photo not deleted. A
+ * removed or purged page keeps its row (and its number: numbers are never
+ * given to another page, so the list may have gaps).
+ * @param {Array<{pageNo: number, deletedAt?: unknown, removedAt?: unknown}>} pages
  */
-export const livePages = (pages) => (pages ?? []).filter((p) => !p.deletedAt);
+export const livePages = (pages) => (pages ?? []).filter((p) => !p.deletedAt && !p.removedAt);
+
+/**
+ * Were there ever pages on the import that were not taken off it? Then an
+ * import with none showing has had its photos deleted; otherwise it simply
+ * has none yet.
+ * @param {Array<{removedAt?: unknown}>} pages
+ */
+export const hadPages = (pages) => (pages ?? []).some((p) => !p.removedAt);
 
 /** "Hilton College 1XI v Northwood 1XI", from a match's two sides. @param {{home: {full: string}, away: {full: string}}} sides */
 export const titleOf = (sides) => `${sides.home.full} v ${sides.away.full}`;
@@ -497,6 +508,17 @@ export async function uploadPage(importId, file) {
   }
   if (!res.ok) throw await failed(res, path);
   return res.json();
+}
+
+/**
+ * Take a wrong page off an import still being typed. The API records it
+ * removed and deletes its photo; the answer carries the import's new version
+ * (one revision on from the one before, when nobody else saved in between).
+ * @param {string} importId @param {number} pageNo
+ * @returns {Promise<{ok: true, version: number}>}
+ */
+export function removePage(importId, pageNo) {
+  return api(`/api/scorebook/${importId}/pages/${pageNo}`, { method: "DELETE" });
 }
 
 /**

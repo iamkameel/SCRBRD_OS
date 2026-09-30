@@ -31,7 +31,7 @@
 --                             answers as summaryRefusal() (packages/scoring
 --                             summary.mjs) over the same PARITY list, so no
 --                             client can skip the check.
---   the state functions       open, page_add, save, submit, return, commit,
+--   the state functions       open, page_add, page_remove, save, submit, return, commit,
 --                             abandon (§4.3; not the two _read_* of phase 4),
 --                             page_open (every photo read logged in
 --                             access_log), purge_due and page_purged (§5.3).
@@ -441,12 +441,21 @@ CREATE TABLE IF NOT EXISTS scorebook_import_page (
   height      integer CHECK (height BETWEEN 1 AND 20000),
   added_by    uuid NOT NULL REFERENCES app_user(id),
   added_at    timestamptz NOT NULL DEFAULT now(),
+  -- Taken off the import by a writer while it could still be edited (a wrong
+  -- photo): out of the import at once, its photo then deleted like any other
+  -- (deleted_at), and the row kept. Its number is not given to another page.
+  removed_at  timestamptz,
+  removed_by  uuid REFERENCES app_user(id),
   deleted_at  timestamptz,
   UNIQUE (import_id, page_no),
-  UNIQUE (import_id, sha256)
+  CONSTRAINT removed_rows_say_who CHECK ((removed_at IS NULL) = (removed_by IS NULL))
 );
 COMMENT ON TABLE scorebook_import_page IS
   'SCRBRD-120: a photo of a scorebook page, by its key in the private store. The row outlives the photo (deleted_at).';
+-- The same photo twice on one import is refused by its hash; a photo removed
+-- by mistake may be added again.
+CREATE UNIQUE INDEX IF NOT EXISTS scorebook_import_page_once ON scorebook_import_page (import_id, sha256)
+  WHERE removed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS scorebook_import_revision (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -470,8 +479,8 @@ COMMENT ON TABLE scorebook_import_revision IS
 -- The fixture's school, team and match, stamped on every row from the
 -- fixture (or its import), never taken from a caller. An import's identity
 -- does not change; a confirmed or abandoned import changes only to record
--- its photos purged; a page changes only to record its photo deleted; a
--- revision never changes.
+-- its photos purged; a page changes only to record it removed from its
+-- import (once) and its photo deleted; a revision never changes.
 CREATE OR REPLACE FUNCTION scorebook_import_guard() RETURNS trigger AS $$
 DECLARE m match%ROWTYPE; i scorebook_import%ROWTYPE;
 BEGIN
@@ -499,6 +508,12 @@ BEGIN
   END IF;
   IF TG_TABLE_NAME = 'scorebook_import_page' AND OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL
      AND (to_jsonb(NEW) - 'deleted_at') = (to_jsonb(OLD) - 'deleted_at') THEN
+    RETURN NEW;
+  END IF;
+  -- Removed from the import, once, before its photo is deleted.
+  IF TG_TABLE_NAME = 'scorebook_import_page' AND OLD.removed_at IS NULL AND OLD.deleted_at IS NULL
+     AND NEW.removed_at IS NOT NULL AND NEW.removed_by IS NOT NULL
+     AND (to_jsonb(NEW) - 'removed_at' - 'removed_by') = (to_jsonb(OLD) - 'removed_at' - 'removed_by') THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION '% rows do not change', TG_TABLE_NAME USING ERRCODE = 'check_violation';
@@ -745,6 +760,8 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 -- A page's record, once the API has stored its stripped photo under a key
 -- naming this import (<school>/<import>/<uuid>.<ext>). At most twelve live
 -- pages (an assumption, §5.2); a photo already added is refused by its hash.
+-- A page's number is one more than any the import has had, a removed page's
+-- included: numbers are never reused, so "page 3" names one photo for good.
 CREATE OR REPLACE FUNCTION scorebook_import_page_add(
   p_import uuid, p_key text, p_sha256 text, p_bytes integer, p_width integer, p_height integer, p_mime text)
 RETURNS TABLE (ok boolean, reason text, detail text, page_id uuid, page_no smallint) AS $$
@@ -764,10 +781,11 @@ BEGIN
   IF p_key IS NULL OR p_key NOT LIKE i.school_id::text || '/' || i.id::text || '/%' THEN
     RETURN QUERY SELECT false, 'key_invalid', NULL::text, NULL::uuid, NULL::smallint; RETURN;
   END IF;
-  IF (SELECT count(*) FROM scorebook_import_page pg WHERE pg.import_id = p_import AND pg.deleted_at IS NULL) >= 12 THEN
+  IF (SELECT count(*) FROM scorebook_import_page pg
+       WHERE pg.import_id = p_import AND pg.deleted_at IS NULL AND pg.removed_at IS NULL) >= 12 THEN
     RETURN QUERY SELECT false, 'too_many_pages', 'twelve pages at most', NULL::uuid, NULL::smallint; RETURN;
   END IF;
-  IF EXISTS (SELECT 1 FROM scorebook_import_page pg WHERE pg.import_id = p_import AND pg.sha256 = p_sha256) THEN
+  IF EXISTS (SELECT 1 FROM scorebook_import_page pg WHERE pg.import_id = p_import AND pg.sha256 = p_sha256 AND pg.removed_at IS NULL) THEN
     RETURN QUERY SELECT false, 'duplicate_page', NULL::text, NULL::uuid, NULL::smallint; RETURN;
   END IF;
   SELECT coalesce(max(pg.page_no), 0) + 1 INTO v_no FROM scorebook_import_page pg WHERE pg.import_id = p_import;
@@ -776,6 +794,38 @@ BEGIN
   RETURNING id INTO v_id;
   PERFORM scorebook_revise(p_import, 'pages');
   RETURN QUERY SELECT true, NULL::text, NULL::text, v_id, v_no;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A wrong photo taken off the import, by whoever may add one, while the
+-- import can still be edited. The row says so at once (the page is no longer
+-- served, counted or offered), and a 'pages' revision names it, so removing a
+-- page makes an author as adding one does (scorebook_authored()). Its photo is
+-- then deleted as the purge deletes one: scorebook_import_purge_due() names a
+-- removed page until scorebook_page_purged() records its object gone, so a
+-- store that failed to delete it is asked again, by the API straight after
+-- and by the platform's daily run. No page is renumbered.
+CREATE OR REPLACE FUNCTION scorebook_import_page_remove(p_import uuid, p_page_no integer)
+RETURNS TABLE (ok boolean, reason text, detail text, version integer) AS $$
+DECLARE i scorebook_import%ROWTYPE; pg scorebook_import_page%ROWTYPE; v integer;
+BEGIN
+  SELECT * INTO i FROM scorebook_import x WHERE x.id = p_import;
+  IF NOT FOUND OR NOT scorebook_may('scoring.import.write', i.match_id) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::text, NULL::integer; RETURN;
+  END IF;
+  IF NOT feature_enabled('scorebook_import', i.school_id, app_user_id()) THEN
+    RETURN QUERY SELECT false, 'module_disabled', NULL::text, NULL::integer; RETURN;
+  END IF;
+  SELECT * INTO i FROM scorebook_import x WHERE x.id = p_import FOR UPDATE;
+  IF i.state NOT IN ('draft', 'review', 'returned') THEN
+    RETURN QUERY SELECT false, 'not_editable', i.state, NULL::integer; RETURN;
+  END IF;
+  SELECT * INTO pg FROM scorebook_import_page x WHERE x.import_id = p_import AND x.page_no = p_page_no FOR UPDATE;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_page', NULL::text, NULL::integer; RETURN; END IF;
+  IF pg.removed_at IS NOT NULL THEN RETURN QUERY SELECT false, 'page_removed', NULL::text, NULL::integer; RETURN; END IF;
+  IF pg.deleted_at IS NOT NULL THEN RETURN QUERY SELECT false, 'page_deleted', NULL::text, NULL::integer; RETURN; END IF;
+  UPDATE scorebook_import_page SET removed_at = now(), removed_by = app_user_id() WHERE id = pg.id;
+  v := scorebook_revise(p_import, 'pages', NULL, format('page %s removed', pg.page_no));
+  RETURN QUERY SELECT true, NULL::text, NULL::text, v;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The card as the person has typed it so far, with the ticks (§6.3).
@@ -1088,6 +1138,9 @@ BEGIN
   END IF;
   SELECT * INTO pg FROM scorebook_import_page x WHERE x.import_id = p_import AND x.page_no = p_page_no;
   IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_page', NULL::text, NULL::text, NULL::text, NULL::integer; RETURN; END IF;
+  IF pg.removed_at IS NOT NULL THEN
+    RETURN QUERY SELECT false, 'page_removed', NULL::text, NULL::text, NULL::text, NULL::integer; RETURN;
+  END IF;
   IF pg.deleted_at IS NOT NULL THEN
     RETURN QUERY SELECT false, 'page_deleted', NULL::text, NULL::text, NULL::text, NULL::integer; RETURN;
   END IF;
@@ -1105,7 +1158,9 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 
 /**
  * The photos due for deletion (§5.3, D7): every page, not yet deleted, of an
- * import abandoned, or confirmed more than scorebook_page_retention() ago.
+ * import abandoned, or confirmed more than scorebook_page_retention() ago,
+ * and every page a writer removed (scorebook_import_page_remove()), whatever
+ * its import's state.
  * With no import named — the daily run, by the platform (platform.feature.
  * manage, platform-wide) — it first abandons every draft, review or returned
  * import untouched for that long, with a revision saying so; an import
@@ -1135,7 +1190,8 @@ BEGIN
     SELECT pg.id, pg.import_id, pg.object_key
       FROM scorebook_import_page pg JOIN scorebook_import x ON x.id = pg.import_id
      WHERE pg.deleted_at IS NULL AND (p_import IS NULL OR x.id = p_import)
-       AND (x.state = 'abandoned' OR (x.state = 'confirmed' AND x.confirmed_at < now() - scorebook_page_retention()))
+       AND (pg.removed_at IS NOT NULL
+            OR x.state = 'abandoned' OR (x.state = 'confirmed' AND x.confirmed_at < now() - scorebook_page_retention()))
      ORDER BY pg.import_id, pg.page_no;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -1150,11 +1206,15 @@ BEGIN
   SELECT * INTO x FROM scorebook_import y WHERE y.id = pg.import_id FOR UPDATE;
   IF NOT (scorebook_platform_caller() OR scorebook_may('scoring.import.write', x.match_id)
           OR scorebook_may('scoring.import.confirm', x.match_id)) THEN RETURN false; END IF;
-  IF NOT (x.state = 'abandoned' OR (x.state = 'confirmed' AND x.confirmed_at < now() - scorebook_page_retention())) THEN
+  IF NOT (pg.removed_at IS NOT NULL
+          OR x.state = 'abandoned' OR (x.state = 'confirmed' AND x.confirmed_at < now() - scorebook_page_retention())) THEN
     RETURN false;
   END IF;
   UPDATE scorebook_import_page SET deleted_at = now() WHERE id = p_page;
-  IF NOT EXISTS (SELECT 1 FROM scorebook_import_page y WHERE y.import_id = x.id AND y.deleted_at IS NULL) THEN
+  -- An import that can still take pages is not "purged" because the one page
+  -- it had was removed.
+  IF x.state IN ('confirmed', 'abandoned')
+     AND NOT EXISTS (SELECT 1 FROM scorebook_import_page y WHERE y.import_id = x.id AND y.deleted_at IS NULL) THEN
     UPDATE scorebook_import SET pages_purged_at = now() WHERE id = x.id;
   END IF;
   RETURN true;
@@ -1314,6 +1374,7 @@ DO $grants$
 DECLARE f text; r text;
   app text[] := ARRAY[
     'scorebook_import_open(uuid)', 'scorebook_import_page_add(uuid,text,text,integer,integer,integer,text)',
+    'scorebook_import_page_remove(uuid,integer)',
     'scorebook_import_save(uuid,jsonb,jsonb,jsonb,integer)', 'scorebook_import_submit(uuid,integer)',
     'scorebook_import_return(uuid,text)', 'scorebook_import_commit(uuid,uuid[],boolean,text)',
     'scorebook_import_abandon(uuid)', 'scorebook_page_open(uuid,integer)',

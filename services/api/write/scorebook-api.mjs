@@ -175,7 +175,8 @@ export function scorebookRoutes({ pool, secret, store }) {
       await moduleOn(c, fx[0].school_id);
       const { rows } = await c.query(
         `select i.id, i.state, i.version, i.created_by, i.created_at, i.submitted_at, i.confirmed_at, i.abandoned_at,
-                (select count(*)::int from scorebook_import_page p where p.import_id = i.id and p.deleted_at is null) as pages
+                (select count(*)::int from scorebook_import_page p
+                  where p.import_id = i.id and p.deleted_at is null and p.removed_at is null) as pages
            from scorebook_import i where i.match_id = $1 order by i.created_at`, [uuid(req.params.id)]);
       return {
         imports: rows.map((/** @type {any} */ i) => ({ id: i.id, state: i.state, version: i.version, pages: i.pages, createdBy: i.created_by,
@@ -191,7 +192,7 @@ export function scorebookRoutes({ pool, secret, store }) {
       await moduleOn(c, i.school_id);
       const checked = await readChecked(c, i.id);
       const { rows: pages } = await c.query(
-        `select page_no, mime, bytes, width, height, sha256, added_by, added_at, deleted_at
+        `select page_no, mime, bytes, width, height, sha256, added_by, added_at, removed_at, removed_by, deleted_at
            from scorebook_import_page where import_id = $1 order by page_no`, [i.id]);
       const { rows: revisions } = await c.query(
         `select version, action, note, actor_id, at from scorebook_import_revision where import_id = $1 order by version`, [i.id]);
@@ -200,7 +201,8 @@ export function scorebookRoutes({ pool, secret, store }) {
       return {
         import: importOut(i, checked),
         pages: pages.map((/** @type {any} */ p) => ({ pageNo: p.page_no, mime: p.mime, bytes: p.bytes, width: p.width, height: p.height,
-                                   sha256: p.sha256, addedBy: p.added_by, addedAt: p.added_at, deletedAt: p.deleted_at })),
+                                   sha256: p.sha256, addedBy: p.added_by, addedAt: p.added_at,
+                                   removedAt: p.removed_at, removedBy: p.removed_by, deletedAt: p.deleted_at })),
         revisions: revisions.map((/** @type {any} */ r) => ({ version: r.version, action: r.action, note: r.note, actorId: r.actor_id, at: r.at })),
         innings: await inningsState(c, i.match_id),
         refusals: (Array.isArray(i.card) ? i.card : []).map((/** @type {unknown} */ card) => summaryRefusal(card, ctx)),
@@ -429,6 +431,27 @@ export function scorebookFileRoutes({ pool, secret, store }) {
           "content-disposition": `inline; filename="page-${pageNo}.${p.mime === "image/png" ? "png" : "jpg"}"`,
         });
         return res.end(bytes);
+      } catch (/** @type {any} */ e) {
+        return fail(res, e);
+      }
+    },
+
+    /**
+     * DELETE /api/scorebook/:id/pages/:n  → { ok: true, version, purged: {due, deleted, failed} }
+     * A wrong photo taken off an import still being typed. The database
+     * records it removed (scorebook_import_page_remove(): who, and a 'pages'
+     * revision) and commits; then its photo is deleted as the purge deletes
+     * one — the import's due photos, this one among them. A photo the store
+     * would not delete stays due and the platform's daily run asks again.
+     * refusals: not_permitted, module_disabled, not_editable, no_such_page,
+     * page_removed, page_deleted
+     * @param {{ id: string, pageNo: number, authorization: string | undefined }} req @param {RawResponse} res
+     */
+    async remove({ id, pageNo, authorization }, res) {
+      try {
+        const r = await as(authorization, async (c) =>
+          answer((await c.query(`select * from scorebook_import_page_remove($1, $2)`, [uuid(id), pageNo])).rows[0]));
+        return res.json({ ok: true, version: r.version, purged: await purgeDue(as, store, authorization, id) });
       } catch (/** @type {any} */ e) {
         return fail(res, e);
       }
