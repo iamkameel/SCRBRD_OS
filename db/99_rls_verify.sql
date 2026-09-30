@@ -1610,6 +1610,29 @@ CREATE OR REPLACE FUNCTION _publish_63(p_match uuid) RETURNS void AS $$
   VALUES (p_match, 'home', '11111111-1111-1111-1111-111111111111', '1XI', true, '88888888-0000-0000-0000-000000000007')
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/64 (section 42). A Hilton 1XI fixture played four hundred days ago, so
+-- its season is not the one its import is committed in, with the module on;
+-- and two boys of the 1XI whose only record will be the book's.
+CREATE OR REPLACE FUNCTION _seed_64() RETURNS uuid AS $$
+DECLARE m uuid;
+BEGIN
+  INSERT INTO feature_grant (key, school_id, granted, note)
+  VALUES ('scorebook_import', '11111111-1111-1111-1111-111111111111', true, 'verify 064')
+  ON CONFLICT (key, school_id) DO UPDATE SET granted = true;
+  INSERT INTO player (id, school_id, team_code, full_name, born) VALUES
+    ('aaaaaaaa-0000-0000-0000-0000000064a0', '11111111-1111-1111-1111-111111111111', '1XI', 'Verify 064 Batter', '2009-02-01'),
+    ('aaaaaaaa-0000-0000-0000-0000000064b0', '11111111-1111-1111-1111-111111111111', '1XI', 'Verify 064 Bowler', '2009-02-01')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify 064', now() - interval '400 days', 'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO m;
+  RETURN m;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: whether any player row carries a name the scorer typed.
+CREATE OR REPLACE FUNCTION _typed_players_64() RETURNS bigint AS $$
+  SELECT count(*) FROM player WHERE full_name LIKE 'Opp %'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -8469,6 +8492,211 @@ BEGIN
     PERFORM _assert(r.ok, format('db/63: the owner could not submit (%s)', r.reason));
     SELECT * INTO r FROM scorebook_import_commit(I2, '{}'::uuid[], true);
     PERFORM _assert(NOT r.ok AND r.reason = 'cannot_confirm_your_own', format('db/63 (two): the submitter confirmed his own (%s)', r.reason));
+  END;
+
+  -- ── 42. The scorebook importer, phase 2: careers and tables (SCRBRD-120, db/64) ──
+  -- The design's phase 2 "proves" (docs/design/SCRBRD-120_scorebook_importer.md
+  -- §8): a boy's career after an import is the card's line for him, balls
+  -- and boundaries NULL where the card had none; the season view files the
+  -- match under its start day; the opposition's dossier shows his runs and
+  -- no dot percentage; voiding the summary by an approved amendment takes
+  -- him out of every view. The import is the real one: the scorer types two
+  -- cards (our innings and theirs), the director of sport confirms.
+  -- tools/smoke-fold-figures.mjs holds the same readers to the fold itself.
+  --
+  -- Each labelled assertion was falsified once — the thing it guards broken
+  -- in db/64, the database rebuilt and this file run — and went red:
+  --   (career)   player_batting_career's balls_faced coalesced to 0 again
+  --   (bowling)  summary_bowling_line reading a missing wides figure as nought
+  --   (same)     player_batting_since() without its summary branch
+  --   (season)   the season views filing a summary under the day it was imported
+  --   (typed)    summary_batting_line's player_id taken from any ref
+  --   (dossier)  opposition_squad()'s dot_pct over every ball, book and live
+  --   (void)     summary_batting_line over ball_event rather than ball_event_live
+  --   (scope)    summary_batting_line without security_invoker
+  DECLARE
+    M       uuid := _seed_64();
+    I       uuid;
+    M_OPP   uuid;
+    A1      uuid;
+    A2      uuid;
+    r       record;
+    got     text;
+    who     uuid;
+    v_start timestamptz;
+    p2b     record;
+    p2a     record;
+    o1b     record;
+    o1a     record;
+    BK_A    uuid := 'aaaaaaaa-0000-0000-0000-0000000064a0';   -- run out 25; the book has no balls column for him
+    BK_B    uuid := 'aaaaaaaa-0000-0000-0000-0000000064b0';   -- 4-0-30-2; no wides or no-balls on the book
+    P1      uuid := 'aaaaaaaa-0000-0000-0000-000000000001';   -- c t:1 b t:2 34 (40), four fours and a six
+    P2      uuid := 'aaaaaaaa-0000-0000-0000-000000000002';   -- bats in ours; bowls 3.2-0-24-1, a wide, in theirs
+    U_WESC  uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    TYPED   jsonb := '{"t:1":"Opp Fielder One","t:2":"Opp Bowler Two","t:3":"Opp Bowler Three","t:4":"Opp Fielder Four","t:5":"Opp Bowler Five","t:6":"Opp Six","t:7":"Opp Seven","t:8":"Opp Eight","t:9":"Opp Nine"}';
+    -- packages/scoring/test/scorebook-cards.mjs's base card with Hilton's
+    -- boys, the fourth of them BK_A: 127 for 4 in 20.
+    CARD0   jsonb := '{"v":1,"innings":0,"battingSide":"home","batting":[{"order":1,"ref":"aaaaaaaa-0000-0000-0000-000000000001","howOut":"caught","fielderRef":"t:1","bowlerRef":"t:2","runs":34,"balls":40,"fours":4,"sixes":1},{"order":2,"ref":"aaaaaaaa-0000-0000-0000-000000000002","howOut":"bowled","fielderRef":null,"bowlerRef":"t:2","runs":12,"balls":15,"fours":1,"sixes":0},{"order":3,"ref":"aaaaaaaa-0000-0000-0000-000000000003","howOut":"lbw","fielderRef":null,"bowlerRef":"t:3","runs":0,"balls":3,"fours":0,"sixes":0},{"order":4,"ref":"aaaaaaaa-0000-0000-0000-0000000064a0","howOut":"run_out","fielderRef":"t:4","bowlerRef":null,"runs":25,"balls":null,"fours":null,"sixes":null},{"order":5,"ref":"aaaaaaaa-0000-0000-0000-000000000005","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":40,"balls":30,"fours":5,"sixes":1},{"order":6,"ref":"aaaaaaaa-0000-0000-0000-000000000011","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":5,"balls":4,"fours":0,"sixes":0}],"didNotBat":[],"bowling":[{"ref":"t:2","overs":"8","maidens":0,"runs":40,"wickets":2,"wides":3,"noBalls":1},{"ref":"t:3","overs":"8","maidens":1,"runs":45,"wickets":1,"wides":2,"noBalls":2},{"ref":"t:5","overs":"4","maidens":null,"runs":39,"wickets":0,"wides":null,"noBalls":null}],"extras":{"byes":2,"legByes":1,"wides":5,"noBalls":3,"penalty":0},"total":127,"wickets":4,"overs":"20","fallOfWickets":[{"wicket":1,"score":30,"ref":"aaaaaaaa-0000-0000-0000-000000000002","over":"5.1"},{"wicket":2,"score":31,"ref":"aaaaaaaa-0000-0000-0000-000000000003","over":"5.3"},{"wicket":3,"score":60,"ref":"aaaaaaaa-0000-0000-0000-000000000001","over":"10.2"},{"wicket":4,"score":90,"ref":"aaaaaaaa-0000-0000-0000-0000000064a0","over":"15"}],"endReason":"overs","unreconciled":null}';
+    -- Theirs: 56 for 3 in 7.2 when time was called, every batter a typed
+    -- name, our two bowlers by id, BK_A's catch.
+    CARD1   jsonb := '{"v":1,"innings":1,"battingSide":"away","batting":[{"order":1,"ref":"t:6","howOut":"bowled","fielderRef":null,"bowlerRef":"aaaaaaaa-0000-0000-0000-0000000064b0","runs":20,"balls":18,"fours":2,"sixes":0},{"order":2,"ref":"t:7","howOut":"caught","fielderRef":"aaaaaaaa-0000-0000-0000-0000000064a0","bowlerRef":"aaaaaaaa-0000-0000-0000-000000000002","runs":15,"balls":null,"fours":null,"sixes":null},{"order":3,"ref":"t:8","howOut":"lbw","fielderRef":null,"bowlerRef":"aaaaaaaa-0000-0000-0000-0000000064b0","runs":10,"balls":null,"fours":null,"sixes":null},{"order":4,"ref":"t:9","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":8,"balls":null,"fours":null,"sixes":null}],"didNotBat":[],"bowling":[{"ref":"aaaaaaaa-0000-0000-0000-0000000064b0","overs":"4","maidens":null,"runs":30,"wickets":2,"wides":null,"noBalls":null},{"ref":"aaaaaaaa-0000-0000-0000-000000000002","overs":"3.2","maidens":0,"runs":24,"wickets":1,"wides":1,"noBalls":0}],"extras":{"byes":2,"legByes":0,"wides":1,"noBalls":0,"penalty":0},"total":56,"wickets":3,"overs":"7.2","fallOfWickets":[{"wicket":1,"score":20,"ref":"t:6","over":"3.1"},{"wicket":2,"score":38,"ref":"t:7","over":"5"},{"wicket":3,"score":50,"ref":"t:8","over":"6.4"}],"endReason":"time","unreconciled":null}';
+  BEGIN
+    SELECT starts_at INTO v_start FROM match WHERE id = M;
+    M_OPP := _opposition_fixture(opposition_window_days() - 1);
+    -- Before: P2's bowling, as the director reads it; P1 in Westville's
+    -- dossier on Hilton's 1XI, as their coach reads it.
+    PERFORM _as(U_SARAH);
+    SELECT coalesce(max(c.matches), 0) AS matches, coalesce(max(c.runs_conceded), 0) AS runs, coalesce(max(c.legal_balls), 0) AS balls,
+           coalesce(max(c.wides), 0) AS wides, coalesce(max(c.no_balls), 0) AS no_balls, coalesce(max(c.wickets), 0) AS wickets
+      INTO p2b FROM player_bowling_career c WHERE c.player_id = P2;
+    PERFORM _as(U_WESC);
+    SELECT o.innings, o.runs, o.balls, o.dismissals, o.dots, o.dot_pct INTO o1b FROM opposition_squad(M_OPP) o WHERE o.player_id = P1;
+    PERFORM _assert(o1b.innings IS NOT NULL, 'db/64: Westville''s coach reads no dossier on Hilton''s 1XI');
+
+    -- The import: the scorer types both cards, the director of sport confirms.
+    PERFORM _as(U_SCORER);
+    SELECT * INTO r FROM scorebook_import_open(M);
+    PERFORM _assert(r.ok, format('db/64: the scorer could not open an import (%s)', r.reason));
+    I := r.import_id;
+    SELECT * INTO r FROM scorebook_import_save(I, jsonb_build_array(CARD0, CARD1), TYPED, '{}'::jsonb,
+                                               (SELECT version FROM scorebook_import WHERE id = I));
+    PERFORM _assert(r.ok, format('db/64: the save was refused (%s %s)', r.reason, r.detail));
+    SELECT * INTO r FROM scorebook_import_submit(I, r.version);
+    PERFORM _assert(r.ok, format('db/64: the submit was refused (%s %s)', r.reason, r.detail));
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], false);
+    PERFORM _assert(r.ok, format('db/64: the director of sport could not confirm (%s %s)', r.reason, r.detail));
+
+    -- (career) the batter's line is the card's, balls and boundaries NULL
+    SELECT concat_ws(' | ',
+      (SELECT row(i.innings, i.runs, i.balls_faced, i.out, i.ended_at = v_start)::text FROM player_innings i WHERE i.player_id = BK_A),
+      (SELECT row(c.matches, c.runs, c.balls_faced, c.fours, c.sixes, c.last_ball_at = v_start)::text FROM player_batting_career c WHERE c.player_id = BK_A),
+      (SELECT row(c.matches, c.runs, c.balls_faced, c.fours, c.sixes)::text FROM player_batting_since(BK_A, NULL) c),
+      (SELECT d.dismissals::text FROM player_dismissals d WHERE d.player_id = BK_A),
+      (SELECT string_agg(d.dismissal || '=' || d.dismissals, ',') FROM player_dismissal_breakdown d WHERE d.player_id = BK_A),
+      (SELECT row(u.innings_without_balls, u.runs_without_balls, u.innings_without_boundaries, u.bowling_without_extras)::text
+         FROM player_unrecorded_figures u WHERE u.player_id = BK_A))
+      INTO got;
+    PERFORM _assert(got = '(0,25,,t,t) | (1,25,,,,t) | (1,25,,,) | 1 | run_out=1 | (1,25,1,0)',
+      format('db/64 (career): BK_A reads %s, where the card says run out 25, balls, fours and sixes not recorded', got));
+
+    -- (bowling) the bowler's line is the card's, wides and no-balls NULL;
+    -- and P2's recorded figures moved by exactly his row
+    SELECT concat_ws(' | ',
+      (SELECT row(c.matches, c.runs_conceded, c.legal_balls, c.wides, c.no_balls, c.wickets)::text FROM player_bowling_career c WHERE c.player_id = BK_B),
+      (SELECT row(c.matches, c.runs_conceded, c.legal_balls, c.wides, c.no_balls, c.wickets)::text FROM player_bowling_since(BK_B, NULL) c),
+      (SELECT row(f.innings, f.wickets, f.runs_conceded)::text FROM bowler_innings_figures f WHERE f.player_id = BK_B),
+      (SELECT string_agg(w.dismissal || '=' || w.wickets, ',' ORDER BY w.dismissal) FROM player_wicket_breakdown w WHERE w.player_id = BK_B),
+      (SELECT row(u.bowling_without_extras)::text FROM player_unrecorded_figures u WHERE u.player_id = BK_B))
+      INTO got;
+    SELECT c.matches, c.runs_conceded AS runs, c.legal_balls AS balls, c.wides, c.no_balls, c.wickets
+      INTO p2a FROM player_bowling_career c WHERE c.player_id = P2;
+    PERFORM _assert(got = '(1,30,24,,,2) | (1,30,24,,,2) | (1,2,30) | bowled=1,lbw=1 | (1)'
+                    AND p2a.matches = p2b.matches + 1 AND p2a.runs = p2b.runs + 24 AND p2a.balls = p2b.balls + 20
+                    AND p2a.wides = p2b.wides + 1 AND p2a.no_balls = p2b.no_balls AND p2a.wickets = p2b.wickets + 1,
+      format('db/64 (bowling): BK_B reads %s, where the card says 4-0-30-2 with no extras; P2 moved from %s to %s, where the card says 3.2-0-24-1 with a wide',
+             got, p2b, p2a));
+
+    -- (season) filed under the season of the match's start, not of the commit
+    SELECT string_agg(format('%s:%s', f, s = school_season_of(v_start)), ' ' ORDER BY f) INTO got
+      FROM (SELECT 'bat' AS f, b.season AS s FROM player_batting_by_season b WHERE b.player_id = BK_A
+            UNION ALL SELECT 'bowl', w.season FROM player_bowling_by_season w WHERE w.player_id = BK_B
+            UNION ALL SELECT 'out', d.season FROM player_dismissals_by_season d WHERE d.player_id = BK_A
+            UNION ALL SELECT 'unrecorded', u.season FROM player_unrecorded_figures u WHERE u.player_id = BK_A) x;
+    PERFORM _assert(got = 'bat:t bowl:t out:t unrecorded:t' AND school_season_of(v_start) <> school_season_of(now()),
+      format('db/64 (season): the book''s figures are filed %s, the match in %s and the commit in %s',
+             got, school_season_of(v_start), school_season_of(now())));
+
+    -- (same) Σ seasons = lifetime = the windowed functions, as every reader
+    FOREACH who IN ARRAY ARRAY[U_OWNER, U_SARAH, U_SCORER, U_COACH, U_WESC, U_PARENT] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM (SELECT 1 FROM _career_season_drift() UNION ALL SELECT 1 FROM _career_lifetime_drift()) d;
+      PERFORM _assert(n = 0, format('db/64 (same), as %s: %s career figure(s) differ between the seasons, the lifetime views and the functions', who, n));
+    END LOOP;
+
+    -- (typed) a name the scorer typed is nobody: no player row, no line's id
+    PERFORM _as(U_OWNER);
+    SELECT format('%s typed lines, %s of them somebody; %s players named as typed; %s innings rows',
+                  count(*) FILTER (WHERE l.ref LIKE 't:%'),
+                  count(*) FILTER (WHERE (l.ref LIKE 't:%' AND l.player_id IS NOT NULL)
+                                      OR (l.bowler_ref LIKE 't:%' AND l.bowler_id IS NOT NULL)),
+                  _typed_players_64(), (SELECT count(*) FROM player_innings i WHERE i.match_id = M))
+      INTO got FROM summary_batting_line l WHERE l.match_id = M;
+    PERFORM _assert(got = '4 typed lines, 0 of them somebody; 0 players named as typed; 6 innings rows',
+      format('db/64 (typed): %s (expected 4 typed lines, none somebody, no player, our six boys'' innings)', got));
+
+    -- (dossier) Westville's coach reads BK_A's runs and no dot percentage;
+    -- P1's book innings moves his runs, balls and innings, never his dots
+    PERFORM _as(U_WESC);
+    SELECT concat_ws(' | ',
+      (SELECT row(o.innings, o.runs, o.balls, o.dismissals, o.fours, o.sixes, o.dots, o.strike_rate, o.dot_pct)::text
+         FROM opposition_squad(M_OPP) o WHERE o.player_id = BK_A),
+      (SELECT row(o.balls_bowled, o.runs_conceded, o.wickets, o.economy)::text FROM opposition_squad(M_OPP) o WHERE o.player_id = BK_B))
+      INTO got;
+    SELECT o.innings, o.runs, o.balls, o.dismissals, o.dots, o.dot_pct INTO o1a FROM opposition_squad(M_OPP) o WHERE o.player_id = P1;
+    PERFORM _assert(got = '(1,25,,0,,,,,) | (24,30,2,)'
+                    AND o1a.innings = o1b.innings + 1 AND o1a.runs = o1b.runs + 34 AND o1a.balls = o1b.balls + 40
+                    AND o1a.dismissals = o1b.dismissals + 1 AND o1a.dots = o1b.dots AND o1a.dot_pct IS NOT DISTINCT FROM o1b.dot_pct,
+      format('db/64 (dossier): BK_A and BK_B read %s (expected his 25 in one innings and nothing unrecorded counted; 24 balls, 30, 2); P1 from %s to %s',
+             got, o1b, o1a));
+
+    -- (scope) nobody who could not read the match's log reads a book line
+    FOREACH who IN ARRAY ARRAY[U_PARENT, U_WESC, NULL] LOOP
+      PERFORM set_config('app.user_id', coalesce(who::text, ''), true);
+      SELECT (SELECT count(*) FROM summary_batting_line WHERE match_id = M) + (SELECT count(*) FROM summary_bowling_line WHERE match_id = M)
+           + (SELECT count(*) FROM player_batting_career WHERE player_id = BK_A)
+           + (SELECT count(*) FROM player_unrecorded_figures WHERE player_id IN (BK_A, BK_B)) INTO n;
+      PERFORM _assert(n = 0, format('db/64 (scope): %s read %s rows of the book''s figures', coalesce(who::text, 'nobody'), n));
+    END LOOP;
+
+    -- (void) an approved amendment voiding each summary takes both boys out
+    -- of every view, and puts P2 and P1 back where they were
+    PERFORM _as(U_SCORER);
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    VALUES (M, HIL, format('scorebook:%s:0:summary', I), 'The book was another fixture''s.', U_SCORER) RETURNING id INTO A1;
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    VALUES (M, HIL, format('scorebook:%s:1:summary', I), 'The book was another fixture''s.', U_SCORER) RETURNING id INTO A2;
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM scoring_amendment_decide(A1, true, 'Checked against the book.');
+    PERFORM _assert(r.ok, format('db/64: the first void was not approved (%s)', r.reason));
+    SELECT * INTO r FROM scoring_amendment_decide(A2, true, 'Checked against the book.');
+    PERFORM _assert(r.ok, format('db/64: the second void was not approved (%s)', r.reason));
+    SELECT (SELECT count(*) FROM summary_batting_line WHERE match_id = M) + (SELECT count(*) FROM summary_bowling_line WHERE match_id = M)
+         + (SELECT count(*) FROM player_innings WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_batting_career WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_bowling_career WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_dismissals WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_dismissal_breakdown WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_batting_by_season WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_bowling_by_season WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_dismissals_by_season WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM bowler_innings_figures WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_wicket_breakdown WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_unrecorded_figures WHERE player_id IN (BK_A, BK_B))
+         + (SELECT matches FROM player_batting_since(BK_A, NULL)) + (SELECT matches FROM player_bowling_since(BK_B, NULL))
+         + player_dismissals_since(BK_A, NULL)
+      INTO n;
+    SELECT coalesce(max(c.matches), 0) AS matches, coalesce(max(c.runs_conceded), 0) AS runs, coalesce(max(c.legal_balls), 0) AS balls,
+           coalesce(max(c.wides), 0) AS wides, coalesce(max(c.no_balls), 0) AS no_balls, coalesce(max(c.wickets), 0) AS wickets
+      INTO p2a FROM player_bowling_career c WHERE c.player_id = P2;
+    PERFORM _as(U_WESC);
+    SELECT concat_ws(' | ',
+      (SELECT row(o.innings, o.runs, o.balls, o.dots)::text FROM opposition_squad(M_OPP) o WHERE o.player_id = BK_A),
+      (SELECT row(o.balls_bowled, o.runs_conceded, o.wickets)::text FROM opposition_squad(M_OPP) o WHERE o.player_id = BK_B))
+      INTO got;
+    SELECT o.innings, o.runs, o.balls, o.dismissals, o.dots, o.dot_pct INTO o1a FROM opposition_squad(M_OPP) o WHERE o.player_id = P1;
+    PERFORM _assert(n = 0 AND got = '(0,0,0,0) | (0,0,0)'
+                    AND row(p2a.matches, p2a.runs, p2a.balls, p2a.wides, p2a.no_balls, p2a.wickets)::text
+                        IS NOT DISTINCT FROM row(p2b.matches, p2b.runs, p2b.balls, p2b.wides, p2b.no_balls, p2b.wickets)::text
+                    AND row(o1a.innings, o1a.runs, o1a.balls, o1a.dismissals, o1a.dots, o1a.dot_pct)::text
+                        = row(o1b.innings, o1b.runs, o1b.balls, o1b.dismissals, o1b.dots, o1b.dot_pct)::text,
+      format('db/64 (void): after the voids %s rows still read the book, the dossier reads %s, P2 %s (was %s), P1 %s (was %s)',
+             n, got, p2a, p2b, o1a, o1b));
+    FOREACH who IN ARRAY ARRAY[U_OWNER, U_SARAH] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM (SELECT 1 FROM _career_season_drift() UNION ALL SELECT 1 FROM _career_lifetime_drift()) d;
+      PERFORM _assert(n = 0, format('db/64 (same), after the voids, as %s: %s career figure(s) differ', who, n));
+    END LOOP;
   END;
 
   PERFORM set_config('app.user_id', '', true);
