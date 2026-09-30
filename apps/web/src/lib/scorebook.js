@@ -198,7 +198,7 @@ export const HOW_OUT = Object.freeze([
  */
 export function blankCard(innings, battingSide) {
   return {
-    v: 1, innings, battingSide, batting: [], didNotBat: [], bowling: [],
+    v: 1, innings, battingSide, batting: [], "didNotBat": [], bowling: [],
     extras: { byes: null, legByes: null, wides: null, noBalls: null, penalty: null },
     total: null, wickets: null, overs: null, fallOfWickets: [], endReason: null, unreconciled: null,
   };
@@ -212,7 +212,7 @@ export const blankWicket = (wicket) => ({ wicket, score: null, ref: null, over: 
 
 /** A count typed into a box: digits only, four at most; nothing typed is null, not nought. @param {string} s */
 export function countOf(s) {
-  const d = String(s ?? "").replace(/\D/g, "").slice(0, 4);
+  const d = String(s ?? "").replace(/[^0-9]/g, "").slice(0, 4);
   return d === "" ? null : Number(d);
 }
 

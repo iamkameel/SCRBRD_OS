@@ -42,7 +42,7 @@ import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
@@ -205,7 +205,6 @@ try {
   }
   const scorerTok = await devLogin("scorer@example.invalid");
   const coachTok = await devLogin("coach@example.invalid");
-  const sarahTok = await devLogin("sarah@example.invalid");
   const ownerTok = await devLogin("owner@example.invalid");
   const names = Object.fromEntries((await dbq(`select id, full_name from player where id = any($1::uuid[])`, [P])).map((r) => [r.id, r.full_name]));
 
