@@ -3884,6 +3884,27 @@ It is signed-in only, for a role that may already read the match, so names are s
 
 It reuses SCRBRD-106's components where they fit. There is no migration.
 
+### SCRBRD-129 — Wagon wheel v2: bowling ends, in the air, over or round the wicket, and more wheels
+**Priority:** P2 · **Domain:** Scoring engine / analytics · **Type:** build (Kameel, 2026-09-30, from his three wagon-wheel
+specs: "recording different bowling ends is important data. I'm all about the nuanced details.")
+Compared with Kameel's *Wagon-Wheel Loop*, *Complete Data Model* and *Scoring Tool Technical Spec*, most is built
+(point storage, batter-relative, runs ≠ distance, placement-null reasons, shot ≠ location, event-sourced undo, density
+maps). This item closes the gaps:
+1. **Bowling ends.** The ground names its two ends (added to `ground` in db/67). The scorer sets the end for the first
+   over only; the engine alternates by Law thereafter and the scorer corrects after an interruption or a change the
+   umpires make. Every ball carries its end (derived in the fold from the over's end, not typed per ball). Unlocks figures
+   by end, scoring by end, and ground-relative wheels (the point transformed through the end and the batter's hand) with
+   estimated distances from the ground's boundary sizes, always labelled "estimated".
+2. **In the air.** A one-tap aerial toggle on fours, sixes and catches, into the existing `trajectory` field
+   (ground-versus-aerial analysis).
+3. **Over or round the wicket.** Persistent state per bowler, set once and kept until changed, recorded on the ball.
+4. **Fours and sixes drawn to the rope** on every wheel, whatever point was tapped.
+5. **More wheels from existing data:** bowler-conceded wheel, dismissal/catch map, batter-versus-bowler wheel, and
+   filters by bowler, pace or spin, phase, over range and end.
+Not adopted, by design: subjective ratings (timing, power, risk), swing or difficulty indices, launch angle, speed without
+a sensor. Opus: the end and bowling-side events, the fold, SQL parity; Sonnet: the pad toggles, the rope lines, the new
+wheels and filters.
+
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
 2026-09-30)
