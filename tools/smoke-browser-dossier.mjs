@@ -45,6 +45,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { bookCard, writeBookInnings } from "./book-innings.mjs";
 
 const WEB_PORT = port(4329);
 const API_PORT = port(8798);
@@ -183,7 +184,7 @@ const closeDossier = async (page) => {
   await page.waitForTimeout(400);
 };
 
-let soon, later, solo, wrongSide, nets, WINDOW;
+let soon, later, solo, wrongSide, nets, WINDOW, BOOK_BOY;
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -211,6 +212,23 @@ try {
   const kears = await fixture(WES, "1XI", { opponent: "Kearsney 1st XI", days: -10, status: "complete" });
   await balls(kears, WES, 32, { striker: MKHIZE, nonStriker: BOTHA });
   await balls(kears, WES, 10, { striker: BOTHA, nonStriker: MKHIZE });
+
+  // A Westville boy whose only record is a paper scorebook's, with no balls,
+  // fours or sixes (SCRBRD-120 D12, db/64): five fillers of the 2XI beside him
+  // make the card's six batters and are not in the 1XI's squad.
+  BOOK_BOY = "bbbbbbbb-0000-0000-0000-0000000064f1";
+  {
+    const fillers = [2, 3, 4, 5, 6].map((n) => `bbbbbbbb-0000-0000-0000-0000000064f${n}`);
+    await q(`insert into player (id, school_id, team_code, full_name, born)
+             values ($1, $3, '1XI', 'T Bookman', '2009-03-01'),
+                    ($2, $3, '2XI', 'Filler Two', '2009-03-01')`, [BOOK_BOY, fillers[0], WES]);
+    for (const [i, id] of fillers.slice(1).entries())
+      await q(`insert into player (id, school_id, team_code, full_name, born) values ($1, $2, '2XI', $3, '2009-03-01')`,
+        [id, WES, `Filler ${i + 3}`]);
+    const scorerId = (await q(`select id from app_user where email='scorer@example.invalid'`))[0].id;
+    await writeBookInnings(pool, { school: WES, team: "1XI", opponent: "Book XI", daysAgo: 12, scorerUserId: scorerId,
+                                   card: bookCard([BOOK_BOY, ...fillers], [1]), ours: "Westville 1XI" });
+  }
 
   // A pairing BOTH ends of which this coach may read. `matchups` joins
   // `player` for the batter and the bowler, so a Hilton batter against a
@@ -298,7 +316,8 @@ try {
     // never a zero standing in for a withheld one, which is the specific lie
     // this whole mechanism exists to prevent.
     if (withheld && !/—/.test(t)) floorBad.push(`${r.full_name}: withheld but no em dash — ${t}`);
-    else if (withheld && /\b0\.0\b/.test(t)) floorBad.push(`${r.full_name}: withheld but rendered 0.0 — ${t}`);
+    // The strike-rate cell alone (the sixth): a bowler with no overs legitimately reads 0.0 in the overs cell.
+    else if (withheld && /\b0\.0\b/.test((await row.locator("td").nth(5).innerText()))) floorBad.push(`${r.full_name}: withheld but rendered 0.0 — ${t}`);
     else if (!withheld && !new RegExp(String(Number(r.strike_rate).toFixed(1)).replace(".", "\\.")).test(t))
       floorBad.push(`${r.full_name}: served ${r.strike_rate} but the screen does not show it — ${t}`);
     else floorOk++;
@@ -313,9 +332,25 @@ try {
   if (thin.length) {
     const t = await coach.page.locator(`[data-testid="dossier-player-${thin[0].player_id}"]`).innerText();
     ok("...whose row names the evidence rather than a number",
-       /too thin|no log|thin/i.test(t), t.replace(/\s+/g, " "));
+       /too thin|no log|thin|not recorded/i.test(t), t.replace(/\s+/g, " "));
   }
   ok("...and at least one stated", stated.length > 0, `${stated.length} stated`);
+
+  // A boy whose only innings is a scorebook's, without balls: his runs are
+  // counted, his balls are a dash, and the label says the balls were not
+  // recorded, not that there is no log.
+  {
+    const r = served.find((x) => x.player_id === BOOK_BOY);
+    ok("the server served him, with his 34 runs and no balls, not 0", !!r && Number(r.runs) === 34 && r.balls === null && r.strike_rate === null,
+       JSON.stringify(r));
+    const row = coach.page.locator(`[data-testid="dossier-player-${BOOK_BOY}"]`);
+    // Columns: player, role, inns, runs, balls, SR, dot %, batting evidence, overs, wkts, econ, bowling evidence.
+    const cells = (await row.locator("td").allInnerTexts().catch(() => [])).map((c) => c.replace(/\s+/g, " ").trim());
+    const t = cells.join(" | ");
+    ok("the screen draws his 34 runs and an em dash for his balls", cells[3] === "34" && cells[4] === "—", t);
+    ok("...an em dash for the strike rate and the dot %, not 0.0", /^—/.test(cells[5] ?? "") && /^—/.test(cells[6] ?? "") && !/0\.0/.test(`${cells[5]}${cells[6]}`), t);
+    ok("...saying the balls were not recorded, not that there is no log", cells.slice(5, 8).every((c) => /balls not recorded/.test(c)), t);
+  }
 
   // The bowling half grades separately: a boy can be too thin to read with the
   // bat and perfectly readable with the ball, and the two labels are distinct.

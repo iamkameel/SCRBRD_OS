@@ -28,7 +28,7 @@ import {
  * (he has not batted, or bowled) reads 0, which is a fact. `alias` is the
  * left-joined view; `alias.player_id is null` says there was no row.
  */
-const UNRECORDED_ZERO = (alias, col) =>
+const UNRECORDED_ZERO = (/** @type {string} */ alias, /** @type {string} */ col) =>
   `case when ${alias}.player_id is null then 0 else ${alias}.${col} end as ${col},`;
 
 /**

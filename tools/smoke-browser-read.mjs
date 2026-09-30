@@ -32,7 +32,9 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
-import { appUrl, port } from "./db-url.mjs";
+import pg from "pg";
+import { appUrl, ownerUrl, port } from "./db-url.mjs";
+import { bookCard, writeBookInnings } from "./book-innings.mjs";
 
 const WEB_PORT = port(4326);
 const API_PORT = port(8795);
@@ -1857,6 +1859,43 @@ try {
 
     ok("no console errors on either screen", c.errors.length === 0, c.errors.join(" | "));
     await c.ctx.close();
+  }
+
+  // ── A scorebook innings on the career tab (SCRBRD-120 D12, db/64) ──
+  //
+  // A boy whose only record is a paper scorebook's, with no balls, fours or
+  // sixes on the page. The read hands the screen NULL for each; the screen
+  // must say "—", never 0, and must not divide by them (no strike rate). It
+  // says once, small, that the figures include a scorebook. Written last: it
+  // adds a complete match to the school.
+  group("A boy whose only innings is a scorebook's, without balls, on his career tab");
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    try {
+      const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";
+      const players = [PILLAY, ...["01", "02", "03", "04", "11"].map((n) => `aaaaaaaa-0000-0000-0000-0000000000${n}`)];
+      const scorer = (await owner.query(`select id from app_user where email = 'scorer@example.invalid'`)).rows[0].id;
+      await writeBookInnings(owner, { school: "11111111-1111-1111-1111-111111111111", daysAgo: 6, scorerUserId: scorer,
+                                      card: bookCard(players, [1]), ours: "Hilton 1XI" });
+      const c = await open();
+      ok("the coach signs in", await signIn(c.page, /coach@example\.invalid/));
+      ok("the profiles screen opens", await nav(c.page, /Profiles/));
+      await c.page.locator(`[data-testid="roster-player-${PILLAY}"]`).first().click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(800);
+      await c.page.locator("button", { hasText: /^career$/i }).first().click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(1400);
+      const fig = async (k) => (await c.page.locator(`[data-testid="career-${k}"]`).first().innerText({ timeout: 3000 }).catch(() => null))?.trim() ?? null;
+      ok("his 34 runs are counted: an average of 34 over his one dismissal", await fig("batting-avg") === "34");
+      ok("balls faced is an em dash, not 0", await fig("balls-faced") === "—");
+      ok("fours and sixes are em dashes, not 0", await fig("fours") === "—" && await fig("sixes") === "—");
+      ok("the strike rate is an em dash: no ball is recorded to divide by", await fig("strike-rate") === "—");
+      const note = await c.page.locator('[data-testid="career-book-note"]').first().innerText({ timeout: 3000 }).catch(() => "");
+      ok("one short note says the figures include a scorebook, and balls are not recorded", /Includes 1 innings from a scorebook; balls not recorded in 1/.test(note));
+      const passport = await c.page.locator('[data-testid="passport-card"]').first().innerText({ timeout: 3000 }).catch(() => "");
+      ok("the passport's career line is sourced to the match record", /the match record/.test(passport) && !/the ball log/.test(passport));
+      ok("no console errors on the career tab", c.errors.length === 0);
+      await c.ctx.close();
+    } finally { await owner.end().catch(() => {}); }
   }
 
 } catch (e) {

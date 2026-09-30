@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { D, textOn, themed } from "../design/tokens.js";
-import { stat } from "../lib/format.js";
 import { useLive } from "../lib/live.js";
 import { Badge, EmptyState, Modal } from "../ui/primitives.jsx";
 import { Metric, MetricGroup, dash } from "../ui/data.jsx";
@@ -232,7 +231,7 @@ function OppositionDossier({ match, role, onClose }) {
                         <TD>{p.role ?? "—"}</TD>
                         <TD right mono>{p.batting.innings}</TD>
                         <TD right mono tone={D.textPrimary}>{p.batting.runs}</TD>
-                        <TD right mono>{stat(p.batting.balls)}</TD>
+                        <TD right mono>{dash(p.batting.balls)}</TD>
                         <TD right mono>{p.batting.strikeRate == null ? <Withheld evidence={evidence}/> : p.batting.strikeRate.toFixed(1)}</TD>
                         <TD right mono>{p.batting.dotPct == null ? <Withheld evidence={evidence}/> : p.batting.dotPct.toFixed(1)}</TD>
                         <TD><EvidencePill evidence={evidence}/></TD>
@@ -256,8 +255,8 @@ function OppositionDossier({ match, role, onClose }) {
                 Cricket columns only: what the ball log says about how each boy has batted and bowled, across their own
                 fixtures. Nothing about a child's person is here and none of it is available — not a date of birth, not a
                 guardian, not a note, not a fitness state. A figure withheld is withheld because the log is too thin to
-                carry it, and the label beside it says which. An innings taken from a paper scorebook counts towards a
-                boy&rsquo;s runs; where the book gave no balls, the balls are a dash and the strike rate counts only the innings whose balls are recorded.
+                carry it, and the label beside it says which. An innings taken from a paper scorebook counts towards the
+                runs of a boy, and where the book gave no balls, the balls are a dash and the strike rate counts only the innings whose balls are recorded.
                 {" "}This read is on the record: every name above is written to {head.theirLabel ?? "the other school"}&rsquo;s
                 access log against this fixture, with your name on it.
               </div>
