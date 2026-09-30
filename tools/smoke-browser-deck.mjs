@@ -21,11 +21,14 @@
  *     the roadmap's three counts are Settings' own list, the school slide's
  *     numbers came from the server and not the demo;
  *   - every control has a name;
- *   - THE LIVE SLIDES (field, centre, families, safeguard) show the app's own
+ *   - THE LIVE SLIDES (day, field, centre, scorebook, families, safeguard) show the app's own
  *     components in device frames, on demonstration data built in the
  *     browser: each framed component is there (asserted on the components' own
  *     test ids, not on the deck's), the frame is inert, and while they are on
- *     screen the browser makes no request but static files. Even a click sent
+ *     screen the browser makes no request but static files. The day sheet is
+ *     DashboardView's own DaySheet on invented fixtures; the scorebook slide is
+ *     scorebookcard.jsx's CardReader on an invented card, beside a drawn page,
+ *     with the scorecard's "From the scorebook" label. Even a click sent
  *     straight at a control (as a script can, past `inert`) writes nothing;
  *   - the deck's own text is 12px or more and its controls 44px or more, in
  *     both themes, and the live slides fit a phone without a sideways scroll.
@@ -156,7 +159,7 @@ try {
 
   // ── The keyboard ────────────────────────────────────────────────
   group("Every slide, from the keyboard");
-  const order = ["cover", "problem", "wheel", "field", "centre", "platform", "access", "care", "families", "safeguard", "school", "roadmap", "close"];
+  const order = ["cover", "problem", "wheel", "day", "field", "centre", "scorebook", "platform", "access", "care", "families", "safeguard", "school", "roadmap", "close"];
   ok("it opens on the cover", (await slideNow()) === "cover");
   for (let i = 1; i < order.length; i++) {
     await press("ArrowRight", 1100);
@@ -170,12 +173,12 @@ try {
   await press("3", 900);
   ok("a digit goes straight to that slide", (await slideNow()) === "wheel");
   // The digits follow the slide order, one to nine; a tenth slide has no digit.
-  for (const [k, id] of [["1", "cover"], ["2", "problem"], ["4", "field"], ["5", "centre"], ["6", "platform"], ["7", "access"], ["8", "care"], ["9", "families"]]) {
+  for (const [k, id] of [["1", "cover"], ["2", "problem"], ["4", "day"], ["5", "field"], ["6", "centre"], ["7", "scorebook"], ["8", "platform"], ["9", "access"]]) {
     await press(k, 700);
     ok(`the digit ${k} is slide ${k}, ${id}`, (await slideNow()) === id, await slideNow());
   }
   await press("0", 400);
-  ok("0 is not a slide", (await slideNow()) === "families");
+  ok("0 is not a slide", (await slideNow()) === "access");
   await press("3", 700);
   await press("ArrowLeft", 900);
   ok("← goes back one", (await slideNow()) === "problem");
@@ -319,6 +322,60 @@ try {
   await page.waitForTimeout(600);
   ok("a click sent at the send key sends nothing", requests.length === beforeSg, requests.slice(beforeSg).map((r) => `${r.method} ${r.url}`).join(", "));
 
+  group("The coach's day: the real day sheet, on invented fixtures");
+  await goTo("day");
+  const day = '[data-testid="showcase-day"]';
+  ok("a laptop frame at this width, holding the day sheet",
+     (await page.locator(day).getAttribute("data-kind")) === "laptop" && (await count(`${day} [data-testid="day-sheet"]`)) === 1);
+  ok("it is the coach's, and says it is a demonstration", /Coach/.test(await page.locator(`${day} h1`).innerText())
+     && /Demonstration: invented fixtures and players/.test(await page.locator(`${day} [data-testid="day-sheet"]`).innerText()));
+  ok("Now: the live fixture is on the board, from the fold of the demonstration chase",
+     (await count(`${day} [data-testid="day-now"] [data-testid="day-board"]`)) === 1
+     && /Need \d+ off \d+/.test(await page.locator(`${day} [data-testid="day-board"]`).innerText()));
+  const nextTxt = await page.locator(`${day} [data-testid="day-next"]`).innerText();
+  ok("Next fixture: the sides, the ground, the bus and the weather",
+     /Riverside College 1st XI v Ashdown High 1st XI/.test(nextTxt) && /Ashdown High, Top Field/.test(nextTxt) && /Bus 10:45/.test(nextTxt) && /24° partly cloudy/.test(nextTxt), nextTxt);
+  ok("...ready or not, in words: three on record and the ground report not",
+     /Team sheet · on record/.test(await page.locator(`${day} [data-testid="ready-squad"]`).innerText())
+     && /Transport · on record/.test(await page.locator(`${day} [data-testid="ready-transport"]`).innerText())
+     && /Officials · on record/.test(await page.locator(`${day} [data-testid="ready-officials"]`).innerText())
+     && /Ground report · nothing on record/.test(await page.locator(`${day} [data-testid="ready-ground"]`).innerText()));
+  const outTxt = await page.locator(`${day} [data-testid="day-out"]`).innerText();
+  ok("Who is out: two names and when each is back, nothing of the injury",
+     (await count(`${day} [data-testid^="out-"]`)) === 2 && /Z Mahlangu/.test(outTxt) && /Y Coetzee/.test(outTxt) && /back /.test(outTxt) && !/hamstring|fracture|severity/i.test(outTxt), outTxt);
+  ok("This week: the two fixtures and the two sessions",
+     (await count(`${day} [data-testid^="week-fixture-"]`)) === 2 && (await count(`${day} [data-testid^="week-training-"]`)) === 2);
+  ok("Alerts: the two unread ones", (await count(`${day} [data-testid^="alert-"]`)) === 2);
+  ok("the frame is inert", (await inertFrames()).filter((f) => f.id === "showcase-day").every((f) => f.inert && f.events === "none"));
+  const dayIds = await page.evaluate(() => { const all = [...document.querySelectorAll('[data-testid="deck"] [id]')].map((e) => e.id); return all.filter((x, i) => all.indexOf(x) !== i); });
+  ok("no id is drawn twice on the slide", dayIds.length === 0, dayIds.join(", "));
+  const beforeDay = requests.length;
+  await page.locator(`${day} button`, { hasText: /Open scorer/ }).first().dispatchEvent("click");
+  await page.waitForTimeout(500);
+  ok("a click sent at \"Open scorer\" goes nowhere and sends nothing", requests.length === beforeDay && (await slideNow()) === "day", requests.slice(beforeDay).map((r) => `${r.method} ${r.url}`).join(", "));
+
+  group("A paper scorebook, into the record: a drawn page beside the real card reader");
+  await goTo("scorebook");
+  const sb = '[data-testid="showcase-scorebook"]';
+  ok("the page and the card's frame are both there", (await count('[data-testid="deck-scorebook-photo"]')) === 1 && (await count(sb)) === 1);
+  ok("the page is a drawing, named, and no image is fetched for it",
+     (await count('[data-testid="deck-scorebook-photo"] svg[role="img"]')) === 1 && (await count('[data-testid="deck-scorebook-photo"] img')) === 0
+     && /invented/.test(await page.locator('[data-testid="deck-scorebook-photo"] figcaption').innerText()));
+  ok("...with the same total written on it as the card holds", /168/.test(await page.locator('[data-testid="deck-scorebook-photo"] svg').textContent()));
+  ok("the \"Read the pages\" hook is there, idle and empty",
+     (await page.locator('[data-testid="deck-read-hook"]').getAttribute("data-state")) === "idle"
+     && (await page.locator('[data-testid="deck-read-hook"]').evaluate((g) => g.childElementCount)) === 0
+     && (await page.locator('[data-testid="deck-read-hook"]').getAttribute("data-hook")) === "read-the-pages");
+  ok("the card is the app's own CardReader (its test ids)", (await count(`${sb} [data-testid="sb-read-0"]`)) === 1);
+  const totalTxt = await page.locator(`${sb} [data-testid="sb-read-total-0"]`).innerText();
+  ok("the card's total is 168 for 6 in 20 overs", /168 for 6 in 20 overs/.test(totalTxt), totalTxt);
+  ok("the card lists its batters, and the extras it read", /T Mokoena/.test(await page.locator(`${sb} [data-testid="sb-read-0"]`).innerText())
+     && /Extras: byes 2, leg byes 1, wides 5, no-balls 1, penalty 0/.test(await page.locator(`${sb} [data-testid="sb-read-extras-0"]`).innerText()));
+  ok("the scorecard's \"From the scorebook\" label, with the same total",
+     (await page.locator(`${sb} [data-testid="deck-from-scorebook"]`).innerText()).trim() === "From the scorebook"
+     && /168\/6/.test(await page.locator(`${sb} [data-testid="deck-scorecard-head"]`).innerText()));
+  ok("the frame is inert", (await inertFrames()).filter((f) => f.id === "showcase-scorebook").every((f) => f.inert && f.events === "none"));
+
   group("While the live slides were on screen, the browser made no request but static files");
   const web = `http://localhost:${WEB_PORT}/`;
   const stray = requests.slice(windowStart).filter((r) => !(r.method === "GET" && r.url.startsWith(web) && /\/assets\/|\.(js|css|jpg|png|svg|woff2?|map)$/.test(new URL(r.url).pathname)));
@@ -350,7 +407,7 @@ try {
   for (const scheme of ["light", "dark"]) {
     await page.emulateMedia({ colorScheme: scheme });
     await page.waitForTimeout(600);
-    for (const id of ["cover", "wheel", "field", "centre", "families", "safeguard", "roadmap", "close"]) {
+    for (const id of ["cover", "wheel", "day", "field", "centre", "scorebook", "families", "safeguard", "roadmap", "close"]) {
       await goTo(id);
       const a = await audit();
       ok(`${scheme}: ${id} has no deck text under 12px`, a.small.length === 0, a.small.slice(0, 3).join(" · "));
@@ -371,7 +428,7 @@ try {
   group("At phone width the frames stack and scale, and nothing scrolls sideways");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(700);
-  for (const id of ["field", "centre", "families", "safeguard"]) {
+  for (const id of ["day", "field", "centre", "scorebook", "families", "safeguard"]) {
     await goTo(id);
     const m = await page.evaluate(() => {
       const frames = [...document.querySelectorAll('[data-testid="deck"] .deck-dev')].map((f) => { const r = f.getBoundingClientRect(); const fr = f.querySelector(".deck-dev-frame").getBoundingClientRect(); return { kind: f.getAttribute("data-kind"), top: r.top + scrollY, left: fr.left, right: fr.right, w: fr.width }; });
@@ -381,6 +438,13 @@ try {
     ok(`${id}: no sideways scroll`, m.over <= 1, m.over);
     ok(`${id}: frames stack, one under the other`, m.frames.length < 2 || m.frames.every((f, i) => i === 0 || f.top > m.frames[i - 1].top + 50), JSON.stringify(m.frames));
     if (id === "centre") ok("the Match Centre is drawn on a phone frame at this width", m.frames[0]?.kind === "phone", m.frames[0]?.kind);
+    if (id === "day") {
+      ok("the day sheet is drawn on a phone frame at this width", m.frames[0]?.kind === "phone", m.frames[0]?.kind);
+      // The app's grid answers to the window, a frame to its own width: the tiles stack in one column.
+      ok("...and its tiles are one column, not a desktop grid",
+         await page.evaluate(() => { const a = document.querySelector('[data-testid="showcase-day"] [data-testid="day-next"]'), b = document.querySelector('[data-testid="showcase-day"] [data-testid="day-out"]');
+           return !!a && !!b && a.offsetWidth > 300 && b.offsetTop > a.offsetTop; }));
+    }
   }
   await page.setViewportSize({ width: 1380, height: 860 });
   await page.waitForTimeout(500);

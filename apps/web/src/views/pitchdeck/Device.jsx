@@ -31,6 +31,7 @@ const useFit = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 /** Natural screen sizes, and the bezel each kind wears. */
 const KINDS = {
   phone:  { w: 390,  h: 780, bezel: 11, radius: 44, base: 0 },
+  tablet: { w: 640,  h: 600, bezel: 12, radius: 26, base: 0 },
   laptop: { w: 960,  h: 600, bezel: 14, radius: 18, base: 20 },
 };
 
@@ -50,11 +51,13 @@ export function useNarrow(px = 760) {
 }
 
 /**
- * @param {{ kind?: "phone" | "laptop", label: string, caption?: import("react").ReactNode, testid: string,
- *           fade?: boolean, children: import("react").ReactNode }} p
+ * @param {{ kind?: "phone" | "tablet" | "laptop", label: string, caption?: import("react").ReactNode, testid: string,
+ *           fade?: boolean, height?: number, children: import("react").ReactNode }} p
+ *   `height` is the screen's natural height where the kind's own would cut a screen short
+ *   (the day sheet is taller than a laptop's 600); the frame scales to fit either way.
  */
-export function Device({ kind = "phone", label, caption, testid, fade = false, children }) {
-  const k = KINDS[kind];
+export function Device({ kind = "phone", label, caption, testid, fade = false, height, children }) {
+  const k = height ? { ...KINDS[kind], h: height } : KINDS[kind];
   const outerW = k.w + k.bezel * 2, outerH = k.h + k.bezel * 2 + k.base;
   const host = useRef(null), screen = useRef(null);
   const [scale, setScale] = useState(0.6);
@@ -104,7 +107,14 @@ export function Device({ kind = "phone", label, caption, testid, fade = false, c
   );
 }
 
-/** The frame's own styles, from the tokens as they stand now (see css() in PitchDeckView). */
+/**
+ * The frame's own styles, from the tokens as they stand now (see css() in PitchDeckView).
+ *
+ * The Bento rules: the app's grid (design/tokens.js) answers to the WINDOW's
+ * width, but a screen in a frame is the frame's width, so a phone frame is
+ * one column and a wider one is two, whatever the window is. Only the day
+ * sheet draws a Bento today.
+ */
 export const deviceCss = () => `
 .deck-dev{margin:0;width:100%;min-width:0;display:flex;flex-direction:column;align-items:center;gap:10px}
 .deck-dev-fit{position:relative;flex:none}
@@ -116,5 +126,9 @@ export const deviceCss = () => `
 .deck-dev-fade{position:absolute;left:0;right:0;bottom:0;height:120px;background:linear-gradient(180deg,transparent,${T.surface.canvas});pointer-events:none}
 .deck-dev-notch{position:absolute;left:50%;top:6px;width:84px;height:6px;margin-left:-42px;border-radius:3px;background:${T.surface.canvas};opacity:.55}
 .deck-dev-base{position:absolute;left:0;right:0;bottom:0;border-radius:0 0 22px 22px;background:${T.line.strong};border-top:1px solid ${T.line.normal}}
+.deck-dev-frame[data-kind="phone"] .os-bento{gap:${T.space.sm}}
+.deck-dev-frame[data-kind="phone"] .bento-b,.deck-dev-frame[data-kind="phone"] .bento-c,.deck-dev-frame[data-kind="phone"] .bento-d{grid-column:span 12}
+.deck-dev-frame:not([data-kind="phone"]) .bento-b,.deck-dev-frame:not([data-kind="phone"]) .bento-c{grid-column:span 6}
+.deck-dev-frame:not([data-kind="phone"]) .bento-d{grid-column:span 4}
 .deck-dev-cap{font-family:${D.body};font-size:12px;line-height:1.45;color:${D.textSecondary};text-align:center;max-width:46ch}
 `;

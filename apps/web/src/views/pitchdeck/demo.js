@@ -4,6 +4,9 @@ import {
 import { seedRng } from "../../scorer/seed.js";
 import { teamOf } from "../../lib/matchCentre.js";
 import { undoWords } from "../../scorer/prompts.js";
+import { boardFromInnings } from "../../scorer/boardData.js";
+import { boardInsights } from "../../scorer/signals.js";
+import { addDays, dateStr, today } from "../../lib/format.js";
 
 /**
  * THE SHOWCASE'S OWN DATA — built here, in the browser, and never fetched.
@@ -21,8 +24,10 @@ import { undoWords } from "../../scorer/prompts.js";
  * folded by its own replay (deriveMatch), with commentary from its own
  * generator. The people in it are invented: two made-up school sides and
  * made-up initials, nobody's record. The consent rows and the two contact
- * rows are literals in the shape the screens' adapters produce. Nothing here
- * is a child's real data, and nothing here is ever written anywhere.
+ * rows are literals in the shape the screens' adapters produce, and so are
+ * the day sheet's fixtures, injuries and alerts and the scorebook's card.
+ * Nothing here is a child's real data, and nothing here is ever written
+ * anywhere.
  */
 
 export const HOME = "Riverside College 1st XI";
@@ -132,4 +137,104 @@ export const SAFEGUARDING = {
     error: null,
   },
   receipt: { reference: "SG-DEMO-0001", raisedAt: "2026-09-26T10:30:00Z", unheld: false },
+};
+
+// ── The coach's day sheet ──
+// What DashboardView holds after its reads, handed to <DaySheet/> instead: the
+// live fixture is the demonstration chase above (its board is drawn by the same
+// boardFromInnings and boardInsights the view calls), and the rest are
+// invented fixtures, players and alerts, dated from today so "this week" is
+// always this week. The two players named as out are in neither XI above, so
+// nobody in the deck is out and batting at once.
+
+const day = (n) => dateStr(addDays(today, n));
+const ASHDOWN = "Ashdown High 1st XI";
+const HILLVIEW = "Hillview College 1st XI";
+
+/** @param {ReturnType<typeof buildMatch>} d  the demonstration match, for the "Now" tile's board */
+export function buildDaySheet(d) {
+  const props = boardFromInnings(d.chasing, { target: d.target, overs: d.overs });
+  const insight = boardInsights(d.chasing, { target: d.target, overs: d.overs });
+  const next = { id: "deck-next", homeTeam: HOME, awayTeam: ASHDOWN, status: "upcoming", date: day(1), time: "13:00", venue: "Ashdown High, Top Field" };
+  return {
+    role: "coach",
+    live: false,
+    demoNote: "Demonstration: invented fixtures and players",
+    liveMatch: d.match,
+    board: props ? { ...props, team: props.team || d.match.homeTeam, insight: insight.length ? insight : undefined } : null,
+    boardState: { loading: false, error: null },
+    next,
+    busTime: "10:45",
+    weather: { icon: "cloud-sun", tempC: 24, condition: "Partly cloudy", rainChancePct: 20 },
+    // Three of the four ready chips on record; the ground report is not, and the sheet says so.
+    dutyRows: [{ duty: "squad" }, { duty: "transport" }, { duty: "umpire" }],
+    weekMatches: [next, { id: "deck-wk-2", homeTeam: HOME, awayTeam: HILLVIEW, status: "upcoming", date: day(5), time: "09:00", venue: "Main Oval" }],
+    weekTraining: [
+      { id: "deck-tr-1", title: "Nets: batting", date: day(2), time: "15:30" },
+      { id: "deck-tr-2", title: "Fielding and fitness", date: day(4), time: "15:30" },
+    ],
+    out: [
+      { id: "deck-inj-1", name: "Z Mahlangu", rtw: day(9) },
+      { id: "deck-inj-2", name: "Y Coetzee", rtw: day(3) },
+    ],
+    unread: [
+      { id: "deck-al-1", title: "Umpires confirmed for tomorrow", body: "Two umpires are on record for the fixture at Ashdown High." },
+      { id: "deck-al-2", title: "Ground report is still to come", body: "Nothing is on record from Ashdown High's ground yet." },
+    ],
+  };
+}
+
+// ── The paper scorebook ──
+// One innings' card as a person would have typed it from a page: the shape
+// scorebookcard.jsx's CardReader takes, and one the scoring package's own
+// summaryRefusal() passes (the unit suite holds it to that). Our side are ids
+// as the roster would give them; the opposition are typed names, `t:<n>` keys
+// with their spelling in `typed`, never a player.
+
+const pid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const OURS = ["T Mokoena", "A Naidoo", "S van Rensburg", "K Dlamini", "J Pillay", "M Botha", "L Mthembu", "D Govender", "R Steyn", "N Khumalo", "P Adams"];
+const ID_OF = Object.fromEntries(OURS.map((n, i) => [n, pid(i + 1)]));
+const TYPED = Object.fromEntries(AWAY_XI.map((n, i) => [`t:${i + 1}`, n]));
+
+/** The innings as typed from the page (Riverside batting, twenty overs). */
+export const SCOREBOOK_CARD = {
+  v: 1, innings: 0, battingSide: "home",
+  batting: [
+    { order: 1, ref: ID_OF["T Mokoena"],      howOut: "caught",  fielderRef: "t:4", bowlerRef: "t:1", runs: 34, balls: 27, fours: 5, sixes: 1 },
+    { order: 2, ref: ID_OF["A Naidoo"],       howOut: "bowled",  fielderRef: null,  bowlerRef: "t:2", runs: 12, balls: 15, fours: 1, sixes: 0 },
+    { order: 3, ref: ID_OF["S van Rensburg"], howOut: "lbw",     fielderRef: null,  bowlerRef: "t:2", runs: 41, balls: 30, fours: 4, sixes: 2 },
+    { order: 4, ref: ID_OF["K Dlamini"],      howOut: "run_out", fielderRef: "t:7", bowlerRef: null,  runs: 8,  balls: 6,  fours: 1, sixes: 0 },
+    { order: 5, ref: ID_OF["J Pillay"],       howOut: "caught",  fielderRef: "t:3", bowlerRef: "t:5", runs: 27, balls: 16, fours: 2, sixes: 2 },
+    { order: 6, ref: ID_OF["M Botha"],        howOut: "bowled",  fielderRef: null,  bowlerRef: "t:3", runs: 5,  balls: 4,  fours: 1, sixes: 0 },
+    { order: 7, ref: ID_OF["L Mthembu"],      howOut: "not_out", fielderRef: null,  bowlerRef: null,  runs: 22, balls: 12, fours: 1, sixes: 2 },
+    { order: 8, ref: ID_OF["D Govender"],     howOut: "not_out", fielderRef: null,  bowlerRef: null,  runs: 10, balls: 5,  fours: 1, sixes: 0 },
+  ],
+  didNotBat: [ID_OF["R Steyn"], ID_OF["N Khumalo"], ID_OF["P Adams"]],
+  bowling: [
+    { ref: "t:1", overs: "4", maidens: 0, runs: 36, wickets: 1, wides: 1, noBalls: 0 },
+    { ref: "t:2", overs: "4", maidens: 0, runs: 31, wickets: 2, wides: 2, noBalls: 1 },
+    { ref: "t:3", overs: "4", maidens: 1, runs: 27, wickets: 1, wides: 1, noBalls: 0 },
+    { ref: "t:5", overs: "4", maidens: 0, runs: 40, wickets: 1, wides: 1, noBalls: 0 },
+    { ref: "t:6", overs: "4", maidens: 0, runs: 31, wickets: 0, wides: 0, noBalls: 0 },
+  ],
+  extras: { byes: 2, legByes: 1, wides: 5, noBalls: 1, penalty: 0 },
+  total: 168, wickets: 6, overs: "20",
+  fallOfWickets: [
+    { wicket: 1, score: 52,  ref: ID_OF["T Mokoena"],      over: "6.4" },
+    { wicket: 2, score: 77,  ref: ID_OF["A Naidoo"],       over: "10.1" },
+    { wicket: 3, score: 108, ref: ID_OF["S van Rensburg"], over: "14.2" },
+    { wicket: 4, score: 118, ref: ID_OF["K Dlamini"],      over: "15.5" },
+    { wicket: 5, score: 121, ref: ID_OF["M Botha"],        over: "16.3" },
+    { wicket: 6, score: 141, ref: ID_OF["J Pillay"],       over: "18.2" },
+  ],
+  endReason: "overs", unreconciled: null,
+};
+
+const NAME_OF = { ...Object.fromEntries(Object.entries(ID_OF).map(([n, id]) => [id, n])), ...TYPED };
+
+/** What CardReader is handed: the card, its place in the import, the names, the sides; nothing refused. */
+export const SCOREBOOK = {
+  card: SCOREBOOK_CARD, n: 0, typed: TYPED, refusals: [],
+  nameOf: (/** @type {string | null | undefined} */ ref) => (ref ? NAME_OF[ref] ?? "" : ""),
+  sideNames: { home: HOME, away: AWAY },
 };
