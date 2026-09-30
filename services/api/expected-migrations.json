@@ -61,5 +61,6 @@
   "60_workload_consent_count.sql",
   "61_playing_conditions.sql",
   "62_guardian_link_past_eighteen.sql",
-  "63_scorebook_import.sql"
+  "63_scorebook_import.sql",
+  "64_scorebook_careers.sql"
 ]
