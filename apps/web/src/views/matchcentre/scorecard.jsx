@@ -165,6 +165,12 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
               From the scorebook
             </span>
           )}
+          {/* D4: a book whose batting figures differ from its total says so, in a footnote. */}
+          {inn.summarised?.unreconciled && Number.isInteger(inn.summarised.unreconciled.runs) && (
+            <span data-testid="mc-scorebook-footnote" style={{ display: "block", fontFamily: T.type.body, fontSize: "13px", fontWeight: 400, color: T.board.dim }}>
+              The book's batting figures differ from its total by {Math.abs(inn.summarised.unreconciled.runs)}.
+            </span>
+          )}
         </span>
         <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
           <span style={{ ...T.role.figure.lg, color: T.board.figure }}>{inn.runs}/{inn.wickets}</span>

@@ -11,7 +11,7 @@ import { useIsMobile } from "../shell/MobileNav.jsx";
 import {
   CAP_CONFIRM, CAP_WRITE, EDITABLE, FINISHED, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, inningsWord, livePages,
   mayImport, nameOfRef, pruneTyped, refusalWords, refusalsByCell, refusalsOf, rowPaths, settleTyped, setPath, shiftChecked,
-  startedYet, tickProgress, titleOf, uploadPage, cellWords,
+  startedYet, tickProgress, titleOf, uploadPage, cellWords, workedOn,
 } from "../lib/scorebook.js";
 import { CardEditor, CardReader, rosterGroups, styles } from "./scorebookcard.jsx";
 
@@ -157,7 +157,7 @@ function UploadScreen({ R }) {
       }
       setResults([...out]);
     }
-    await R.afterUpload();
+    await R.afterUpload(out.filter((r) => r.ok).length);
     setBusy(false);
   }
   const live = livePages(R.d.pages);
@@ -588,7 +588,7 @@ export function ScorebookImportView({ importId, match, onClose }) {
   const imp = d.import;
   const state = imp.state;
   const editable = EDITABLE.includes(state) && canWrite;
-  const worked = (d.revisions ?? []).some((r) => r.actorId === me) || imp.createdBy === me || imp.submittedBy === me;
+  const worked = workedOn(me, imp, d.revisions);
   const mayAct = state === "submitted" && canConfirm && !worked && !blockedOwn;
   const cantConfirm = state === "submitted" && canConfirm && (worked || blockedOwn);
   const canAbandon = !FINISHED.includes(state) && (editable || (state === "submitted" && (canConfirm || canWrite)));
@@ -598,11 +598,15 @@ export function ScorebookImportView({ importId, match, onClose }) {
   const R = {
     id: importId, d, draft, version, ours, sideNames, groups, rosterMap, photos, cur, setCur, attempted, busy, step, setStep,
     mayAct, blockedOwn: cantConfirm, worked, confirm: doConfirm, giveBack: doReturn,
-    afterUpload: async () => {
+    afterUpload: async (/** @type {number} */ added) => {
       try {
         const p = await fetchImport();
-        // Adding a page moves the version on; the typing in hand is kept.
-        if (dirty) { setD(p); setVersion(p.import.version); } else adopt(p, false);
+        setD(p);
+        // Each page added is one revision, so the version moves on by exactly
+        // that. If it moved by more, somebody else saved: keep ours, so the
+        // next save is refused and the latest is loaded rather than overwritten.
+        // The typing in hand is never touched.
+        setVersion((v) => (p.import.version === v + added ? p.import.version : v));
       } catch { /* the list stays as it was */ }
     },
     setCell: (/** @type {number} */ n, /** @type {string} */ path, /** @type {unknown} */ value, tick = true) => edit((x) => ({

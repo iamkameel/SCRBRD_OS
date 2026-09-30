@@ -75,6 +75,23 @@ export const EDITABLE = Object.freeze(["draft", "review", "returned"]);
 /** States an import can no longer leave. */
 export const FINISHED = Object.freeze(["confirmed", "abandoned"]);
 
+/** The revisions that make a person an author of the card (db/63 scorebook_authored()): a return or a confirm does not. */
+const AUTHOR_ACTIONS = ["create", "pages", "read", "save", "submit"];
+
+/**
+ * Did this person open, type, photograph or submit the import? Then the API
+ * will not let them confirm or return it (cannot_confirm_your_own). Asked so
+ * the screen can say why in place of a button that would only be refused.
+ * @param {string | null} me
+ * @param {{createdBy?: string | null, submittedBy?: string | null}} imp
+ * @param {Array<{actorId?: string | null, action: string}>} revisions
+ */
+export function workedOn(me, imp, revisions) {
+  if (!me) return false;
+  return imp?.createdBy === me || imp?.submittedBy === me
+    || (revisions ?? []).some((r) => r.actorId === me && AUTHOR_ACTIONS.includes(r.action));
+}
+
 // ── A refusal, in plain words ───────────────────────────────────────────
 
 const WORDS = {
