@@ -111,6 +111,10 @@ export const READ_QUERIES = {
                   -- THE AWAY SIDE, when it is a school on SCRBRD. Null for the
                   -- ordinary case, where the opponent text is all there is.
                   m.away_school_id, m.away_team_code,
+                  -- The competition it is played under, or null: a friendly
+                  -- (SCRBRD-114, db/61). Set on every fixture the planner
+                  -- publishes (SCRBRD-123).
+                  m.competition_id,
                   -- BOTH SIDES, NAMED, from either end of the fixture.
                   --
                   -- A shared row is read by two schools and school_id means
@@ -391,7 +395,8 @@ export const READ_QUERIES = {
   },
 
   grounds: {
-    text: `select id, school_id, name, surface
+    // parent_id: the field a pitch lies on (SCRBRD-123, db/67), or null.
+    text: `select id, school_id, name, surface, parent_id
              from ground
             order by name`,
   },

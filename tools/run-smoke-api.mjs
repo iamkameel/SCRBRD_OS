@@ -50,6 +50,11 @@ const WALKS = [
   // the log, a card ticked and checked, two people, the commit's Laws and
   // seal, the match complete, the amendment path, the purge.
   "scorebook",
+  // The fixture planner, phase 2 (SCRBRD-123, db/67): the ground owner's
+  // windows and closures, blackouts, a draft computed on the server from the
+  // database, a lock kept by regenerating, and publishing through the
+  // fixture route — twice, making each match once.
+  "planner",
   // Getting the side there: three capabilities that had nothing to act on.
   "transport",
   // The dashboard's figures, and the scope they are counted over.

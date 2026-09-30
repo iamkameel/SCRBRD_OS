@@ -64,5 +64,6 @@
   "63_scorebook_import.sql",
   "64_scorebook_careers.sql",
   "65_availability_reconfirm.sql",
-  "66_scorebook_reader.sql"
+  "66_scorebook_reader.sql",
+  "67_fixture_planner.sql"
 ]

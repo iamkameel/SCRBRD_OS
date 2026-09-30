@@ -83,6 +83,7 @@
  */
 import { matchDay } from "./edition.mjs";
 import { fixtureFormatFrom } from "./conditions.mjs";
+import { formatKind } from "./format.mjs";
 
 /** @import { PlayConditions } from "./conditions.mjs" */
 
@@ -891,4 +892,69 @@ export function toFixtureDrafts(p, competition) {
     drafts.push({ fixtureId: f.id, body });
   }
   return { drafts, held };
+}
+
+// ── How long a fixture already on the calendar takes (phase 2) ──────
+
+/**
+ * A school side's over rate, in minutes an over: fifteen overs an hour,
+ * which is what a school T20 is timed at (twenty overs in eighty minutes)
+ * with a little over for drinks and a lost ball.
+ */
+export const OVER_MINUTES = 4;
+/** The break between the two innings of a limited-overs match. */
+export const INNINGS_BREAK_MINUTES = 20;
+
+/** The days of a declaration format, by the number in its name. */
+const FORMAT_DAYS = new Map([["two-day", 2], ["two day", 2], ["three-day", 3], ["three day", 3], ["four-day", 4], ["four day", 4],
+                             ["five-day", 5], ["five day", 5], ["multi-day", 2], ["multi day", 2], ["test", 5]]);
+const FIFTY = new Set(["one-day", "one day", "50-over", "50 over", "50 overs"]);
+
+/**
+ * How long a match of this kind is expected to take, for a commitment that
+ * has no end time: `match` records when a fixture starts and never when it
+ * ends. The phase 2 read path (services/api/write/planner-api.mjs) asks this
+ * of every existing fixture it hands plan() as `known`, and takes a draft's
+ * default `durationMinutes` from it.
+ *
+ *   limited overs  (T20, One-Day, any format that is not a declaration, or
+ *                  none stated, which the fixture route stores as T20)
+ *                  → two innings of `overs` at OVER_MINUTES an over, plus
+ *                    INNINGS_BREAK_MINUTES: T20 180 minutes, fifty overs 420.
+ *                    With no overs recorded, fifty for a one-day format and
+ *                    twenty otherwise — the fixture route's own default.
+ *   declaration    (One-Day Declaration, timed, Two-Day, multi-day …)
+ *                  → whole South African days: the number in its name
+ *                    (two to five; multi-day is two, a test five), one when
+ *                    it names none.
+ *   another sport  → one whole day: the planner knows nothing of hockey's
+ *                    length and does not guess one short.
+ *
+ * Generous rather than exact, on purpose: an end a little late costs the
+ * planner a slot; one too early puts a side on two grounds at once.
+ * @param {{ sport?: string | null, format?: string | null, overs?: number | null }} m
+ * @returns {{ minutes: number } | { days: number }}
+ */
+export function fixtureLength({ sport = "cricket", format = null, overs = null }) {
+  if (sport != null && sport !== "cricket") return { days: 1 };
+  const spelled = typeof format === "string" ? format.trim().toLowerCase().replace(/\s+/g, " ") : "";
+  if (formatKind(format) === "declaration") return { days: FORMAT_DAYS.get(spelled) ?? 1 };
+  const n = typeof overs === "number" && Number.isInteger(overs) && overs >= 1 && overs <= 120 ? overs : FIFTY.has(spelled) ? 50 : 20;
+  return { minutes: 2 * n * OVER_MINUTES + INNINGS_BREAK_MINUTES };
+}
+
+/**
+ * When a fixture that has only a start is taken to end: its start plus
+ * fixtureLength()'s minutes, or midnight (SAST) at the end of its last day.
+ * An instant with its offset ("…Z"), as plan() takes `known[].endsAt`.
+ * @param {{ startsAt: string, sport?: string | null, format?: string | null, overs?: number | null }} m
+ * @returns {string}
+ */
+export function knownFixtureEnd(m) {
+  const start = instant(m.startsAt, "a known fixture's startsAt");
+  const len = fixtureLength(m);
+  if ("minutes" in len) return new Date(start + len.minutes * MINUTE).toISOString();
+  let day = /** @type {string} */ (matchDay(start));
+  for (let i = 0; i < len.days; i++) day = nextDay(day);
+  return new Date(saMidnight(day)).toISOString();
 }

@@ -772,6 +772,36 @@ export const TABLES = {
     masked: {},
   },
 
+  // ── SCRBRD-123, phase 2 (db/67): the fixture planner's ground inputs ──
+  // Added after db/09 shipped: emitted into db/67 (TABLES_ADDED_SINCE_09).
+  // Both are the ground owner's, kept under the capability that already
+  // keeps the ground and its condition report: facility.manage at the
+  // ground's school, read under facility.read (the floor bundle, as the
+  // ground itself is). Anchored through the ground, as ground_condition is.
+  // A competition's manager reads them only through planner_inputs() (db/67),
+  // which asks competition_conditions_manager(); db/67 adds the DELETE
+  // policy by hand (a withdrawn window or a reopened ground is removed).
+  ground_window: {
+    // A slot a ground's owner offers for fixtures: to one competition, or
+    // (competition_id NULL) to any. Not a booking: the planner may use it.
+    read:  "facility.read",
+    write: "facility.manage",
+    anchors: {
+      school: "(SELECT g.school_id FROM ground g WHERE g.id = ground_window.ground_id)",
+    },
+    masked: {},
+  },
+  ground_closure: {
+    // A span the ground cannot be used, with a short reason ("reseeding the
+    // square"). A closed field closes every pitch on it (the engine's rule).
+    read:  "facility.read",
+    write: "facility.manage",
+    anchors: {
+      school: "(SELECT g.school_id FROM ground g WHERE g.id = ground_closure.ground_id)",
+    },
+    masked: {},
+  },
+
   match_official: {
     // Who is standing. Read by anyone who can read the fixture: the umpires'
     // names are announced at the toss, printed on the scorecard and known to

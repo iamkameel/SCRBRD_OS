@@ -20,6 +20,8 @@
  *      irrelevant, the ceiling planned fast and checked by an independent
  *      validator, over-limit input refused
  *   F. Drafts: the fixture route's body, and what is held back and why
+ *   G. How long a fixture with no recorded end takes (phase 2's known
+ *      commitments): by format and overs, whole SA days for a declaration
  *
  * The drafts are posted through the real route's validation in
  * services/api/write/planner-drafts.test.mjs.
@@ -29,6 +31,7 @@
 import { deepStrictEqual } from "node:assert";
 import {
   pairings, plan, toFixtureDrafts, PLAN_FORMAT, PLAN_REASON, PLAN_REASON_TEXT, LOCK_STALE, DRAFT_HELD,
+  fixtureLength, knownFixtureEnd, OVER_MINUTES, INNINGS_BREAK_MINUTES,
 } from "../src/planner.mjs";
 
 /** @import { Pairings, PlanWindow, PlanRules, PlanKnown, PlanBlackout, PlanGround, PlanLock, Plan, PlanSide } from "../src/planner.mjs" */
@@ -562,6 +565,38 @@ group("F. Drafts for the fixture route");
   const kd = toFixtureDrafts(kp, { id: COMP, entrants });
   ok("a knockout: the semis are drafts; the final is held until its sides are known",
      kp.placed === 3 && kd.drafts.length === 2 && JSON.stringify(kd.held) === JSON.stringify([{ fixtureId: ko.fixtures[2].id, reason: DRAFT_HELD.AWAITING_WINNER }]));
+}
+
+group("G. How long a fixture with no end takes (phase 2's known commitments)");
+{
+  ok("a T20: two innings of twenty overs at four minutes, and the break: 180 minutes",
+     /** @type {any} */ (fixtureLength({ format: "T20", overs: 20 })).minutes === 180 && 2 * 20 * OVER_MINUTES + INNINGS_BREAK_MINUTES === 180);
+  /** @param {Parameters<typeof fixtureLength>[0]} m */
+  const len = (m) => /** @type {any} */ (fixtureLength(m));
+  ok("fifty overs: 420", len({ format: "One-Day", overs: 50 }).minutes === 420);
+  ok("a one-day format with no overs recorded is fifty", len({ format: "50-over" }).minutes === 420);
+  ok("no format and no overs: the route's own default, twenty", len({}).minutes === 180);
+  ok("the overs recorded decide, not the name", len({ format: "T20", overs: 25 }).minutes === 220);
+  ok("a declaration day is a whole day", len({ format: "One-Day Declaration" }).days === 1);
+  ok("a two-day match is two", len({ format: "Two-Day" }).days === 2 && len({ format: "multi-day" }).days === 2);
+  ok("another sport is a whole day, never guessed short", len({ sport: "hockey", format: null }).days === 1);
+  ok("the end of a T20 at 10:00 SAST is 13:00 SAST",
+     knownFixtureEnd({ startsAt: "2026-10-03T10:00:00+02:00", format: "T20", overs: 20 }) === "2026-10-03T11:00:00.000Z");
+  ok("the end of a two-day match is midnight SAST after its second day",
+     knownFixtureEnd({ startsAt: "2026-10-03T10:00:00+02:00", format: "Two-Day" }) === "2026-10-04T22:00:00.000Z");
+  ok("a match at 00:30 SAST Saturday (Friday in UTC) is Saturday's day",
+     knownFixtureEnd({ startsAt: "2026-10-02T22:30:00Z", format: "One-Day Declaration" }) === "2026-10-03T22:00:00.000Z");
+  refused("a start with no offset is refused", () => knownFixtureEnd({ startsAt: "2026-10-03T10:00:00" }), /offset/);
+  // The derived end is what plan() takes: a side playing a T20 at 10:00 is
+  // free for a 14:00 window with an hour's rest, and not for a 13:30 one.
+  const draw = pairings({ format: PLAN_FORMAT.ROUND_ROBIN, entrants: teams(2) });
+  const known = [{ entrants: ["t01"], startsAt: "2026-10-03T10:00:00+02:00",
+                   endsAt: knownFixtureEnd({ startsAt: "2026-10-03T10:00:00+02:00", format: "T20", overs: 20 }) }];
+  const rules = { durationMinutes: 180, restMinutes: 60, maxPerDay: 2 };
+  const early = plan({ pairings: draw, rules, known, windows: [{ id: "w", groundId: "g", startsAt: "2026-10-03T13:30:00+02:00", endsAt: "2026-10-03T18:00:00+02:00" }] });
+  const late = plan({ pairings: draw, rules, known, windows: [{ id: "w", groundId: "g", startsAt: "2026-10-03T14:00:00+02:00", endsAt: "2026-10-03T18:00:00+02:00" }] });
+  ok("...plan() honours it: 13:30 refused for rest, 14:00 taken",
+     early.placed === 0 && early.fixtures[0].reasons.includes(PLAN_REASON.REST) && late.placed === 1, [early.fixtures[0].reasons, late.placed]);
 }
 
 console.log("\n" + "─".repeat(52));
