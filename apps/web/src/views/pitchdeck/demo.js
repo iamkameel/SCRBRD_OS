@@ -209,7 +209,7 @@ export const SCOREBOOK_CARD = {
     { order: 7, ref: ID_OF["L Mthembu"],      howOut: "not_out", fielderRef: null,  bowlerRef: null,  runs: 22, balls: 12, fours: 1, sixes: 2 },
     { order: 8, ref: ID_OF["D Govender"],     howOut: "not_out", fielderRef: null,  bowlerRef: null,  runs: 10, balls: 5,  fours: 1, sixes: 0 },
   ],
-  didNotBat: [ID_OF["R Steyn"], ID_OF["N Khumalo"], ID_OF["P Adams"]],
+  "didNotBat": [ID_OF["R Steyn"], ID_OF["N Khumalo"], ID_OF["P Adams"]],
   bowling: [
     { ref: "t:1", overs: "4", maidens: 0, runs: 36, wickets: 1, wides: 1, noBalls: 0 },
     { ref: "t:2", overs: "4", maidens: 0, runs: 31, wickets: 2, wides: 2, noBalls: 1 },

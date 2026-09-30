@@ -170,7 +170,8 @@ function FromTheScorebook() {
   );
 }
 
-const frameLabel = { fontFamily: T.type.body, fontSize: "13px", fontWeight: 600, color: T.content.secondary, margin: 0 };
+// A function, not a constant: the tokens are read when it draws, so a theme switch is followed.
+const frameLabel = () => ({ fontFamily: T.type.body, fontSize: "13px", fontWeight: 600, color: T.content.secondary, margin: 0 });
 
 export function ScorebookShowcase() {
   return (
@@ -179,9 +180,9 @@ export function ScorebookShowcase() {
       <Device kind="tablet" testid="showcase-scorebook" fade label="The card typed from the page, checked, and the scorecard it becomes"
         caption="The card, read-only: what the person confirming checks against the page. Nothing is filled in; a figure the book does not give is a dash.">
         <div className="os-page" style={{ padding: T.space.md, display: "grid", gap: T.space.sm, alignContent: "start" }}>
-          <p style={frameLabel}>Once confirmed, the Match Centre shows</p>
+          <p style={frameLabel()}>Once confirmed, the Match Centre shows</p>
           <FromTheScorebook/>
-          <p style={{ ...frameLabel, marginTop: T.space.sm }}>The card, as it is checked</p>
+          <p style={{ ...frameLabel(), marginTop: T.space.sm }}>The card, as it is checked</p>
           <CardReader {...SCOREBOOK}/>
         </div>
       </Device>
