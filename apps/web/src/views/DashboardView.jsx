@@ -104,68 +104,42 @@ function useLiveScore(matchId) {
   return state;
 }
 
-function DashboardView({ role, onNav, onOpenScorer }) {
-  // Read through the choke point: row-scoped and column-masked for this
-  // principal, same as the KPI dashboard this replaces.
-  const { rows: MATCHES, live: matchesAreLive } = useLive("matches", role);
-  const INJURIES = useRows("injuries", role);
-  const NOTIFICATIONS = useRows("notifications", role);
-  const TRAINING = useRows("training", role);
-  const PLAYERS = useRows("players", role);
-  const WEATHER = useWeather(role);
-
+/**
+ * THE DAY SHEET, DRAWN — every figure on it handed in.
+ *
+ * DashboardView reads five resources and the session, and the drawing of the
+ * day used to be inline with those reads. It is split here, at that seam, so
+ * that the pitch deck (views/pitchdeck/Showcase.jsx) can draw this very
+ * screen on invented fixtures without a session or a request. The view is
+ * unchanged in what it reads, what it derives and what it shows: it passes
+ * this component exactly what it used to hold in local variables.
+ *
+ * What is decided in here is only what to DRAW: a section the role's
+ * capabilities do not reach is not drawn (holdsCapability, which answers from
+ * the role alone and reads nothing). Nothing here fetches, and nothing here
+ * is authority: the rows it is given were scoped where they were read.
+ *
+ *   role         whose day sheet this is (its title, and which sections show)
+ *   live         true when the rows came from a server; false draws `demoNote`
+ *   demoNote     what the header says when they did not
+ *   liveMatch    the live fixture, or falsy for no "Now" tile
+ *   board        the props <Board/> takes for it, or null (then boardState speaks)
+ *   boardState   { loading, error } of the read behind `board`
+ *   next         the next fixture, or falsy
+ *   busTime      "HH:MM" of the bus, or null
+ *   weather      { icon, tempC, condition, rainChancePct } for the next fixture, or null
+ *   dutyRows     the next fixture's duty rows ({ duty }), for the four ready chips
+ *   weekMatches, weekTraining   this week's fixtures and sessions
+ *   out          [{ id, name, rtw }]: who is out, resolved to a name
+ *   unread       the unread alerts
+ *   onNav, onOpenScorer         the two buttons' handlers
+ */
+function DaySheet({ role, live = true, demoNote = "Demonstration — no server connected", liveMatch = null, board = null, boardState = {},
+                    next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
+                    onNav, onOpenScorer }) {
   const holds = (capability) => holdsCapability(role, capability);
   const rc = ROLES[role];
-
-  const liveMatch = MATCHES.find((m) => m.status === "live");
-  const liveScore = useLiveScore(liveMatch?.id);
-
-  const upcoming = MATCHES.filter((m) => m.status === "upcoming").sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
-  const next = upcoming[0];
-
-  // The bus for the next fixture — real trips when there is a session,
-  // trip_mark's own read; the demo's seeded `transport` field otherwise
-  // (data/mock.js, the field MatchCentreView already draws its own bus chip
-  // from). No demo trip rows exist to fetch, so useLive("trips") answers []
-  // signed out and this falls back on purpose.
-  const { rows: TRIPS } = useLive("trips", role, 0, next ? { matchId: next.id } : null);
-  const { coverage } = useDutyCoverage(next ? [next.id] : [], role);
-
-  // ── this week: training and fixtures, as a list ──
-  const weekStart = dateStr(today);
-  const weekEnd = dateStr(addDays(today, 6));
-  const weekMatches = upcoming.filter((m) => m.date && m.date >= weekStart && m.date <= weekEnd);
-  const weekTraining = TRAINING.filter((s) => s.date && s.date >= weekStart && s.date <= weekEnd)
-    .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
-
-  // ── who is out: the availability tier alone (packages/policy/src/tables.mjs
-  // — injury.read is medical.status.read; injury_type/severity/phase sit
-  // behind medical.nature.read and are never read here) ──
-  const out = INJURIES.filter((i) => i.restricted);
-
-  const unread = NOTIFICATIONS.filter((n) => !n.read);
-
-  // ── the board for "Now" ──
-  // The whole board, from the fold: batters (the striker lit), the stand, the
-  // bowler, the over as chips — and, this being a spectator screen, the Tier 2
-  // line (§10). The pad draws the same board from the same function.
-  let board = null;
-  if (liveMatch) {
-    const inn = signedIn() ? liveScore.inn : demoInnings(liveMatch, PLAYERS);
-    const target = signedIn() ? liveScore.target : null;
-    const overs = liveMatch.overs || inn?.overs || 20;
-    const props = boardFromInnings(inn, { target, overs });
-    if (props) {
-      const insight = boardInsights(inn, { target, overs });
-      board = { ...props, team: props.team || liveMatch.homeTeam, insight: insight.length ? insight : undefined };
-    }
-  }
-
-  const nextTrip = TRIPS.find((t) => t.matchId === next?.id);
-  const busTime = next ? (signedIn() ? hm(nextTrip?.departAt) : (next.transport?.bus ? next.transport.depart : null)) : null;
-  const dutyRows = next ? (coverage.get(next.id)?.rows ?? []) : [];
   const hasDuty = (key) => dutyRows.some((r) => r.duty === key);
-  const w = next ? WEATHER[next.id] : null;
 
   return (
     <div className="os-page" data-testid="day-sheet">
@@ -176,7 +150,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
         </h1>
         <p style={{ ...T.role.body, color: T.content.secondary }}>
           {new Date().toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-          {!matchesAreLive && " · Demonstration — no server connected"}
+          {!live && ` · ${demoNote}`}
         </p>
       </div>
 
@@ -194,7 +168,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
                 </div>
               </>
             ) : (
-              <EmptyState loading={liveScore.loading} error={liveScore.error} message="The live score is not available yet." icon="scorebook"/>
+              <EmptyState loading={boardState.loading} error={boardState.error} message="The live score is not available yet." icon="scorebook"/>
             )}
           </BentoCard>
         )}
@@ -211,10 +185,10 @@ function DashboardView({ role, onNav, onOpenScorer }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: T.space.xs, marginTop: T.space.sm }}>
                   {next.venue && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="map-pin"/> {next.venue}</div>}
                   {busTime && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="bus"/> Bus {busTime}</div>}
-                  {w && (
+                  {weather && (
                     <div style={{ ...T.role.body, color: T.content.secondary }}>
-                      <Icon name={isIcon(w.icon) ? w.icon : "cloud-sun"}/> {w.tempC}° {String(w.condition ?? "").toLowerCase()}
-                      {w.rainChancePct >= 40 ? ", rain likely" : ""}
+                      <Icon name={isIcon(weather.icon) ? weather.icon : "cloud-sun"}/> {weather.tempC}° {String(weather.condition ?? "").toLowerCase()}
+                      {weather.rainChancePct >= 40 ? ", rain likely" : ""}
                     </div>
                   )}
                 </div>
@@ -248,7 +222,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
               <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>
                 {out.map((i) => (
                   <div key={i.id} data-testid={`out-${i.id}`} style={{ display: "flex", justifyContent: "space-between", gap: T.space.sm }}>
-                    <span style={{ ...T.role.body, color: T.content.primary }}>{PLAYERS.find((p) => p.id === i.player)?.name ?? "—"}</span>
+                    <span style={{ ...T.role.body, color: T.content.primary }}>{i.name}</span>
                     <span style={{ ...T.role.body, color: T.content.secondary }}>{i.rtw ? `back ${humanDate(i.rtw)}` : "—"}</span>
                   </div>
                 ))}
@@ -305,4 +279,72 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   );
 }
 
-export { DashboardView };
+function DashboardView({ role, onNav, onOpenScorer }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal, same as the KPI dashboard this replaces.
+  const { rows: MATCHES, live: matchesAreLive } = useLive("matches", role);
+  const INJURIES = useRows("injuries", role);
+  const NOTIFICATIONS = useRows("notifications", role);
+  const TRAINING = useRows("training", role);
+  const PLAYERS = useRows("players", role);
+  const WEATHER = useWeather(role);
+
+  const liveMatch = MATCHES.find((m) => m.status === "live");
+  const liveScore = useLiveScore(liveMatch?.id);
+
+  const upcoming = MATCHES.filter((m) => m.status === "upcoming").sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  const next = upcoming[0];
+
+  // The bus for the next fixture — real trips when there is a session,
+  // trip_mark's own read; the demo's seeded `transport` field otherwise
+  // (data/mock.js, the field MatchCentreView already draws its own bus chip
+  // from). No demo trip rows exist to fetch, so useLive("trips") answers []
+  // signed out and this falls back on purpose.
+  const { rows: TRIPS } = useLive("trips", role, 0, next ? { matchId: next.id } : null);
+  const { coverage } = useDutyCoverage(next ? [next.id] : [], role);
+
+  // ── this week: training and fixtures, as a list ──
+  const weekStart = dateStr(today);
+  const weekEnd = dateStr(addDays(today, 6));
+  const weekMatches = upcoming.filter((m) => m.date && m.date >= weekStart && m.date <= weekEnd);
+  const weekTraining = TRAINING.filter((s) => s.date && s.date >= weekStart && s.date <= weekEnd)
+    .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+
+  // ── who is out: the availability tier alone (packages/policy/src/tables.mjs
+  // — injury.read is medical.status.read; injury_type/severity/phase sit
+  // behind medical.nature.read and are never read here) ──
+  const out = INJURIES.filter((i) => i.restricted)
+    .map((i) => ({ id: i.id, name: PLAYERS.find((p) => p.id === i.player)?.name ?? "—", rtw: i.rtw }));
+
+  const unread = NOTIFICATIONS.filter((n) => !n.read);
+
+  // ── the board for "Now" ──
+  // The whole board, from the fold: batters (the striker lit), the stand, the
+  // bowler, the over as chips — and, this being a spectator screen, the Tier 2
+  // line (§10). The pad draws the same board from the same function.
+  let board = null;
+  if (liveMatch) {
+    const inn = signedIn() ? liveScore.inn : demoInnings(liveMatch, PLAYERS);
+    const target = signedIn() ? liveScore.target : null;
+    const overs = liveMatch.overs || inn?.overs || 20;
+    const props = boardFromInnings(inn, { target, overs });
+    if (props) {
+      const insight = boardInsights(inn, { target, overs });
+      board = { ...props, team: props.team || liveMatch.homeTeam, insight: insight.length ? insight : undefined };
+    }
+  }
+
+  const nextTrip = TRIPS.find((t) => t.matchId === next?.id);
+  const busTime = next ? (signedIn() ? hm(nextTrip?.departAt) : (next.transport?.bus ? next.transport.depart : null)) : null;
+  const dutyRows = next ? (coverage.get(next.id)?.rows ?? []) : [];
+  const weather = next ? WEATHER[next.id] : null;
+
+  return (
+    <DaySheet role={role} live={matchesAreLive} liveMatch={liveMatch} board={board} boardState={liveScore}
+      next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
+      weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
+      onNav={onNav} onOpenScorer={onOpenScorer}/>
+  );
+}
+
+export { DashboardView, DaySheet };
