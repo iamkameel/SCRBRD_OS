@@ -93,6 +93,36 @@ function Loading({ what }) {
   );
 }
 
+/**
+ * A view change, told to everyone (WCAG 4.1.3, 2.4.3). The shell swaps views
+ * without a page load, so a screen-reader user heard nothing when they chose
+ * one, and keyboard focus stayed on the menu item they chose it from.
+ *
+ * On a CHANGE of `page` — never on the first render, and never on anything
+ * else, so a background refresh of the data cannot move focus — it says
+ * "<title>, page loaded" and moves focus to <main> (the same element the skip
+ * link targets), so the next Tab lands on the page's first control.
+ *
+ * It is rendered inside the views' Suspense, beside the view, so a view whose
+ * chunk is still arriving has not "loaded": React holds this component's
+ * update back until the chunk resolves, and both the words and the focus move
+ * then. It stays outside the error boundary, which is keyed on the page and so
+ * remounts on every change.
+ */
+function ViewChange({ page, title }) {
+  const was = useRef(page);
+  const [said, setSaid] = useState("");
+  useEffect(() => {
+    if (was.current === page) return;
+    was.current = page;
+    setSaid(`${title}, page loaded`);
+    document.getElementById("os-content")?.focus({ preventScroll: true });
+    // `title` follows `page`; only a change of page is a change of view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+  return <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="view-announcer">{said}</div>;
+}
+
 // What a person with no assignments sees: their requests, each with its
 // state, and nothing of the school's. Rows come from the server under the
 // request's own policy (mine, or ones I could answer — and they can answer
@@ -498,12 +528,14 @@ export default function SCRBRD_OS() {
             </div>
           )}
           <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>
-          <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={VIEW_MAP[page] ? page : "dashboard"} style={{flex:1,overflowY:"auto"}}>
+          <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={VIEW_MAP[page] ? page : "dashboard"} style={{flex:1,overflowY:"auto",outline:"none"}}>
             {/* One boundary round the routed view, keyed on the page: a view
                 that throws is replaced by a card in its own place, and the
                 nav, the top bar and this <main> stay. Inside the Suspense so
-                a view whose chunk fails to load is caught too. */}
+                a view whose chunk fails to load is caught too. ViewChange
+                says which view has loaded and moves focus here (above). */}
             <Suspense fallback={<Loading what={VIEW_MAP[page] ? page : "dashboard"}/>}>
+              <ViewChange page={VIEW_MAP[page] ? page : "dashboard"} title={NAV_META[VIEW_MAP[page] ? page : "dashboard"]?.label ?? page}/>
               <ErrorBoundary key={page} name={NAV_META[page]?.label ?? "page"}>
                 {VIEW_MAP[page] || VIEW_MAP.dashboard}
               </ErrorBoundary>

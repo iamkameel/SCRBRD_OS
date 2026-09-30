@@ -293,6 +293,18 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   const[modal,setModal]=useState(null);
   const[modalCtx,setModalCtx]=useState({});
   const[activeTab,setActiveTab]=useState("score");
+  // A change of the pad's view (Score, Cards, Analysis, History) moves focus to
+  // the pad's <main>, so the next Tab lands on the new view's first control
+  // instead of back on the tab key that was pressed. Only a CHANGE of the tab —
+  // a person's choice — does it: never the first render, and never a refresh
+  // of the score or the sync state, which do not touch activeTab.
+  const padMainRef=useRef(null);
+  const tabWas=useRef(activeTab);
+  useEffect(()=>{
+    if(tabWas.current===activeTab)return;
+    tabWas.current=activeTab;
+    padMainRef.current?.focus({preventScroll:true});
+  },[activeTab]);
   const[selSeg,setSelSeg]=useState(null);
   // Hub state — replaces modal-based shot/field flow
   const[hubStage,setHubStage]=useState(0);
@@ -2063,7 +2075,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
               standing. None round the keys (Pad, ScoringPanel), the sheets,
               the outbox or the sync: they hold taps that have not been sent,
               and a boundary that caught there would unmount them. */}
-          <div className="pad-main">
+          <main className="pad-main" id="pad-content" ref={padMainRef} tabIndex={-1} data-testid="pad-main"
+            aria-label={NAV.find(n=>n.id===activeTab)?.label} style={{outline:"none"}}>
           {activeTab==="score"&&uiMode==="focus"&&(
             <Pad inn={inn} basic={basic}
               onCommitDetailed={onCommitDetailed} onWicketCtx={onWicketCtx}
@@ -2203,7 +2216,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
               </ErrorBoundary>
             </div>
           )}
-          </div>
+          </main>
         </div>
 
         {/* The pad's four views: the score, the cards, the analysis, the
