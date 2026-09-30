@@ -49,6 +49,25 @@ import { readResource } from "../read/read-api.mjs";
 export const AI_MODELS = {
   statsMagic: { model: "claude-opus-5", maxTokens: 400 },
   commentary: { model: "claude-opus-5", maxTokens: 120, effort: "low" },
+  // The scorebook reader (SCRBRD-120 phase 4, ai/scorebook-reader.mjs): photos
+  // of a paper scorebook's pages transcribed into one innings' card, a
+  // confidence and a box on every cell. Claude Opus 5.5, not a cheaper tier:
+  // the input is children's handwriting in pencil and biro, photographed on a
+  // phone, and every misread cell is a person's time at the review screen
+  // (every cell is checked by hand anyway, so the model saves typing only as
+  // far as it reads right). It reads dense tables and handwriting at full
+  // resolution (2576 px on the long edge), and at $4 / $20 per million tokens
+  // it is also cheaper per token than the Opus 5 the two features above use.
+  // A page is at most ~4 800 image tokens, so twelve pages and the prompt are
+  // ~60k input tokens, and a T20 innings' card with a confidence and a box on
+  // ~190 cells is ~6–8k output tokens: roughly $0.25–$0.40 per innings read,
+  // an estimate to measure on the pilot's first real books.
+  // Effort `medium` (this model's default, set explicitly): transcription is
+  // perception more than reasoning — more thinking adds little to reading a
+  // table and costs time against the sixty seconds the route allows. Not
+  // Claude Fable: it is not offered under zero data retention, which D8 asks
+  // of the reader's provider.
+  scorebookReader: { model: "claude-opus-5-5", maxTokens: 16000, effort: "medium", timeoutMs: 60_000 },
 };
 
 /** @type {Anthropic | null} */

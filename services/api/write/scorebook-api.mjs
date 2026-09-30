@@ -44,6 +44,7 @@ import {
 } from "@scrbrd/scoring";
 import { EVENT_COLUMNS, matchFoldContext } from "./events-api.mjs";
 import { sanitisePage } from "../io/page-image.mjs";
+import { readPages, readerConfigured, readerGate, cardFromRead, defaultProvider } from "../ai/scorebook-reader.mjs";
 /** @import { RouteDeps, IdHandler, IdRequest, RawResponse } from "../api-types.mjs" */
 /** @import { ObjectStore } from "../io/object-store.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
@@ -114,12 +115,32 @@ const importOut = (i, checked) => ({
   unreconciledAcknowledged: i.unreconciled_acknowledged,
   abandonedBy: i.abandoned_by, abandonedAt: i.abandoned_at,
   appliedKeys: i.applied_keys, pagesPurgedAt: i.pages_purged_at,
+  // Phase 4 (db/66): the processing record — every time pages were sent to
+  // the reader — the reader's per-cell record for the screen, and a read in
+  // progress.
+  readBy: i.read_by ?? [], readCells: i.read_cells ?? {},
+  reading: i.state === "reading" ? { innings: i.reading_innings, since: i.reading_since, by: i.reading_by } : null,
 });
 
 /**
- * @param {RouteDeps & { store: ObjectStore }} deps
+ * The reader as the routes use it (ai/scorebook-reader.mjs): whether this
+ * API has a provider at all, and a read. Injectable, so a test can stand a
+ * fake in; the default reaches the provider this process is configured for
+ * (a key, or in development a recorded replay).
+ * @typedef {{ configured: () => boolean,
+ *             read: (args: { pages: { page_no: number, bytes: Buffer, mime: string }[], hint: { innings: number, ballsPerOver: number } })
+ *               => Promise<any> }} Reader
  */
-export function scorebookRoutes({ pool, secret, store }) {
+/** @type {Reader} */
+export const defaultReader = {
+  configured: () => readerConfigured(),
+  read: (args) => { const p = defaultProvider(); return readPages(args, { send: p.send, provider: p.name }); },
+};
+
+/**
+ * @param {RouteDeps & { store: ObjectStore, reader?: Reader }} deps
+ */
+export function scorebookRoutes({ pool, secret, store, reader = defaultReader }) {
   /** @param {(req: IdRequest) => Promise<unknown>} fn @returns {IdHandler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
@@ -229,9 +250,14 @@ export function scorebookRoutes({ pool, secret, store }) {
         .rows.map((/** @type {any} */ a) => [a.actor_id, a.name]));
       const m = await readMatch(c, i.match_id);
       const ctx = { typed: i.typed, ours: m ? oursOf(m) : null };
+      const readerOn = (await c.query(`select scorebook_reader_may($1) as on`, [i.id])).rows[0]?.on === true;
       return {
         import: importOut(i, checked),
         may: { write: may.write, confirm: may.confirm, read: may.read },
+        // The reader (phase 4): on only for a writer at a school the platform
+        // granted it to; configured when this API has a provider. Both are
+        // needed for "Read the pages"; either missing is the manual screen.
+        reader: { on: readerOn, configured: reader.configured() },
         names: Object.fromEntries(named.map((/** @type {any} */ n) => [n.player_id, n.name])),
         pages: pages.map((/** @type {any} */ p) => ({ pageNo: p.page_no, mime: p.mime, bytes: p.bytes, width: p.width, height: p.height,
                                    sha256: p.sha256, addedBy: p.added_by, addedAt: p.added_at,
@@ -351,6 +377,97 @@ export function scorebookRoutes({ pool, secret, store }) {
       await c.query("release savepoint scorebook_commit");
       return { ok: true, keys };
     })),
+
+    // POST /api/scorebook/:id/read  { innings, battingSide, version }
+    //   → { ok: true, version, innings, hints, uncertainties, pages }
+    //   | { ok: false, reason: off | unconfigured | unavailable | refused | timeout, version? }
+    //   The reader (§6, phase 4), in the amendment route's shape: the
+    //   database decides who and moves the import to `reading`
+    //   (scorebook_import_read_start(), committed on its own, access_log
+    //   written); the page photos are fetched from the store and checked
+    //   against their hashes; the reader is given them and the hint — the
+    //   innings and the balls per over — and nothing else, for at most sixty
+    //   seconds; its card is turned into the card a person checks HERE, after
+    //   it answered (our boys matched to the roster the caller may read, a
+    //   unique fit only; the opposition typed; ids already dropped by the
+    //   adapter); and scorebook_import_read_done() adds it as a `read`
+    //   revision authored by the caller, its cells unticked, and writes the
+    //   processing record. A reader that could not read puts the import back
+    //   where it was, still recording what was sent. `ok: false` is not an
+    //   error: the screen opens the manual path (§6.4).
+    //   `hints` (names as read that matched nobody, the reader's notes) and
+    //   `uncertainties` are for the screen now, and are not stored.
+    //   refusals: not_permitted, module_disabled, not_editable, version_conflict,
+    //   reading, innings_invalid, innings_on_card, card_full, no_pages, side_required
+    read: handle(async (req) => {
+      const id = uuid(req.params.id);
+      const b = req.body ?? {};
+      if (!Number.isInteger(b.innings) || b.innings < 0 || b.innings > 3) throw err("innings_invalid");
+      if (b.battingSide !== "home" && b.battingSide !== "away") throw err("side_required", 422, "which side batted in this innings");
+      if (!Number.isInteger(b.version)) throw err("version_required");
+      const bearer = req.headers?.authorization;
+      const configured = reader.configured();
+      if (!configured) {
+        // Nothing starts: the reader is off for the school, or this API has
+        // no provider. A caller who may not write is told `off`, as a school
+        // without it is: the import is named to nobody.
+        const on = await as(bearer, async (c) => (await c.query(`select scorebook_reader_may($1) as on`, [id])).rows[0]?.on === true);
+        return { ok: false, reason: readerGate({ flag: on, configured }) };
+      }
+      const started = await as(bearer, async (c) =>
+        (await c.query(`select * from scorebook_import_read_start($1, $2, $3)`, [id, b.innings, b.version])).rows[0]);
+      if (started && !started.ok && started.reason === "reader_off") return { ok: false, reason: "off" };
+      const s = answer(started);
+
+      /** @type {{ page_no: number, bytes: Buffer, mime: string }[]} */
+      const pages = [];
+      /** @type {string[]} */
+      const hashes = [];
+      let fetched = true;
+      for (const p of /** @type {any[]} */ (s.pages ?? [])) {
+        const bytes = await store.get(p.key).catch(() => null);
+        if (!bytes || createHash("sha256").update(bytes).digest("hex") !== p.sha256) { fetched = false; break; }
+        pages.push({ page_no: p.pageNo, bytes, mime: p.mime });
+        hashes.push(p.sha256);
+      }
+      /** @type {any} */
+      const result = fetched
+        ? await reader.read({ pages, hint: { innings: b.innings, ballsPerOver: 6 } }).catch(() => ({ ok: false, reason: "unavailable", sent: null }))
+        : { ok: false, reason: "unavailable", sent: null };
+      const sent = result.sent ?? null;
+      const REASONS = ["unavailable", "refused", "timeout"];
+
+      /** Back where it was, the processing record kept. @param {string} reason */
+      const notRead = async (reason) => as(bearer, async (c) => {
+        const why = REASONS.includes(reason) ? reason : "unavailable";
+        const r = answer((await c.query(`select * from scorebook_import_read_done($1, null, null, null, $2, $3, $4, $5)`,
+          [id, sent?.provider ?? null, sent?.model ?? null, sent ? hashes : null, sent ? why : "not_sent"])).rows[0]);
+        return { ok: false, reason: why, version: r.version };
+      });
+      if (!result.ok) return notRead(result.reason);
+      try {
+        return await as(bearer, async (c) => {
+          const i = await readImport(c, id);
+          const m = await readMatch(c, i.match_id);
+          // The roster the caller may read, as the squad sheet reads it: the
+          // reader never saw it, and never sees what is matched to it.
+          const roster = (await c.query(
+            `select id, full_name as name from player_masked where school_id = $1 and full_name is not null`, [i.school_id])).rows;
+          const out = cardFromRead(result.card, { battingSide: b.battingSide, ours: m ? oursOf(m) : "home", roster, typed: i.typed ?? {} });
+          const r = (await c.query(`select * from scorebook_import_read_done($1, $2, $3, $4, $5, $6, $7, 'read')`,
+            [id, JSON.stringify(normaliseCard(out.card)), JSON.stringify(out.typed), JSON.stringify(out.cells),
+             sent.provider, sent.model, hashes])).rows[0];
+          if (!r?.ok) throw err(r?.reason ?? "refused", 422, r?.detail ?? undefined);
+          return { ok: true, version: r.version, innings: b.innings, hints: out.hints,
+                   uncertainties: result.card.uncertainties, pages: result.card.pages };
+        });
+      } catch (/** @type {any} */ e) {
+        // The card could not be kept (a name the database refused, say): the
+        // read is recorded as sent and not read, and the person types it.
+        console.error("scorebook read →", e.code || "", e.message, e.detail || "");
+        return notRead("unavailable");
+      }
+    }),
 
     // POST /api/scorebook/:id/abandon  → { ok: true, purged: {due, deleted, failed} }
     //   refusals: not_permitted, not_abandonable

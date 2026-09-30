@@ -31,12 +31,20 @@
  *   J. The purge: the photos deleted after the window, the rows kept; an
  *      abandoned import's at once
  *   K. The arithmetic's two halves agree over the PARITY list
+ *   L. The reader (phase 4, db/66): off until the platform grants it to the
+ *      school; `unconfigured` on an API with no key; on a second API that
+ *      replays a recorded answer (never the provider), a read of the demo's
+ *      two synthetic pages: our boys matched on the server, the opposition
+ *      typed, no cell ticked, each page sent on access_log, the processing
+ *      record written; an id in a name cell dropped; a refusal back to the
+ *      manual path with the record kept; the card finished, submitted and
+ *      confirmed by a second person
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-scorebook.mjs
  */
 import { spawn } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
@@ -65,16 +73,36 @@ const group = (t) => console.log("\n" + t);
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
   env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
          SESSION_SECRET: "smoke-scorebook-secret", SCOREBOOK_STORE_DIR: STORE,
-         SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" },
+         SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "",
+         // No provider: this server's reader is `unconfigured` (group L), and
+         // no walk ever reaches the real one.
+         ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", SCOREBOOK_READER_REPLAY: "" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 const serverErr = [];
 server.stderr.on("data", (d) => serverErr.push(d.toString()));
+// A second API over the same database and store whose reader replays a
+// recorded answer (services/api/ai/scorebook-reader.mjs, development only):
+// the file is rewritten between reads to stand in for each answer (group L).
+const READER_PORT = port(8899);
+const READER_BASE = `http://127.0.0.1:${READER_PORT}`;
+const REPLAY = join(STORE, "reader-answer.json");
+const DEMO = new URL("./demo/scorebook/", import.meta.url);
+const DEMO_ANSWER = JSON.parse(readFileSync(new URL("reader-response.json", DEMO), "utf8"));
+writeFileSync(REPLAY, JSON.stringify(DEMO_ANSWER));
+const readerServer = spawn(process.execPath, ["services/api/server.mjs"], {
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(READER_PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
+         SESSION_SECRET: "smoke-scorebook-secret", SCOREBOOK_STORE_DIR: STORE,
+         SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "",
+         ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", SCOREBOOK_READER_REPLAY: REPLAY },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+readerServer.stderr.on("data", (d) => serverErr.push(d.toString()));
 const pool = new pg.Pool({ connectionString: DB });
 const q = async (text, params) => (await pool.query(text, params)).rows;
 
-const api = async (path, { method = "GET", token, body, raw, type } = {}) => {
-  const res = await fetch(BASE + path, {
+const api = async (path, { method = "GET", token, body, raw, type, base = BASE } = {}) => {
+  const res = await fetch(base + path, {
     method,
     headers: { "content-type": type ?? "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: raw ?? (body === undefined ? undefined : JSON.stringify(body)),
@@ -574,12 +602,120 @@ try {
   ok(`summaryRefusal() and summary_reconciles() agree on all ${PARITY.length} cards`, agree === PARITY.length);
   ok("ballsOfOvers and scorebook_overs_balls agree", (await q(`select scorebook_overs_balls('47.3') as a, scorebook_overs_balls('3.6') as b`))
     .every((r) => r.a === ballsOfOvers("47.3") && r.b === null));
+
+  // ── L ──────────────────────────────────────────────────────────
+  group("L. The reader (phase 4): off, unconfigured, a read, a refusal");
+  {
+  for (let i = 0; i < 60; i++) {
+    try { const r = await api("/api/health", { base: READER_BASE }); if (r.body?.db === "ok") break; } catch { /* not up */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  ok("an API with no key has no reader; the walk's second API replays", health.body?.reader === "none"
+     && (await api("/api/health", { base: READER_BASE })).body?.reader === "replay", JSON.stringify(health.body));
+  const MR = await fixture({ opponent: "Ferndale High" });
+  const LI = (await api(`/api/matches/${MR}/scorebook`, { method: "POST", token: scorer })).body?.id;
+  const DEMO_PAGES = [readFileSync(new URL("page-1.png", DEMO)), readFileSync(new URL("page-2.png", DEMO))];
+  for (const png of DEMO_PAGES) {
+    const u = await api(`/api/scorebook/${LI}/pages`, { method: "POST", token: scorer, raw: png, type: "image/png" });
+    ok("a demo page is taken", u.status === 200, JSON.stringify(u.body));
+  }
+  const vOf = async () => (await api(`/api/scorebook/${LI}`, { token: scorer })).body?.import?.version;
+  const readL = (t, body, base = READER_BASE) => api(`/api/scorebook/${LI}/read`, { method: "POST", token: t, body, base });
+  let g = await api(`/api/scorebook/${LI}`, { token: scorer, base: READER_BASE });
+  ok("the reader is off for Hilton until the platform grants it", g.body?.reader?.on === false && g.body?.reader?.configured === true, JSON.stringify(g.body?.reader));
+  let rr = await readL(scorer, { innings: 0, battingSide: "home", version: await vOf() });
+  ok("off: the route says so, and nothing moves", rr.status === 200 && rr.body?.ok === false && rr.body?.reason === "off", JSON.stringify(rr.body));
+  await q(`insert into feature_grant (key, school_id, granted, note) values ('scorebook_reader', $1, true, 'smoke-scorebook')`, [HIL]);
+  rr = await readL(scorer, { innings: 0, battingSide: "home", version: await vOf() }, BASE);
+  ok("granted, but this API has no key: unconfigured", rr.body?.ok === false && rr.body?.reason === "unconfigured", JSON.stringify(rr.body));
+  let row = (await q(`select state, read_by from scorebook_import where id = $1`, [LI]))[0];
+  ok("...the import is where it was, and nothing was sent", row.state === "draft" && row.read_by === null, JSON.stringify(row));
+  g = await api(`/api/scorebook/${LI}`, { token: scorer, base: READER_BASE });
+  ok("the scorer is told the reader is on and configured", g.body?.reader?.on === true && g.body?.reader?.configured === true);
+  ok("the director of sport (who does not write) is told it is not on", (await api(`/api/scorebook/${LI}`, { token: sarah, base: READER_BASE })).body?.reader?.on === false);
+  for (const [who, t] of [["the director of sport", sarah], ["a parent", parent], ["another school's coach", wes]]) {
+    const r = await readL(t, { innings: 0, battingSide: "home", version: await vOf() });
+    ok(`${who} cannot have the pages read`, r.status === 403 && r.body?.error === "not_permitted", `${r.status} ${JSON.stringify(r.body)}`);
+  }
+  ok("which side batted is the person's to say", (await readL(scorer, { innings: 0, version: await vOf() })).body?.error === "side_required");
+
+  const beforeSent = (await accessRows(LI)).length;
+  rr = await readL(scorer, { innings: 0, battingSide: "home", version: await vOf() });
+  ok("the scorer presses Read: a card", rr.status === 200 && rr.body?.ok === true && rr.body?.innings === 0, JSON.stringify(rr.body).slice(0, 300));
+  ok("...the boy on no roster is left for the person, his name as read given back (not stored)", rr.body?.hints?.["batting.5.ref"]?.read === "Moyo T");
+  ok("...with the reader's uncertainties and what each page is", rr.body?.uncertainties?.length === 3 && rr.body?.pages?.map((p) => p.kind).join() === "batting,bowling");
+  const sentLog = (await accessRows(LI)).slice(beforeSent);
+  ok("each page sent is on access_log, by the scorer, to the reader", sentLog.length === 2 && sentLog.every((l) => l.person_id === "88888888-0000-0000-0000-000000000006" && l.fields.includes("to:reader")),
+     JSON.stringify(sentLog));
+  g = await api(`/api/scorebook/${LI}`, { token: scorer });
+  const card = g.body?.import?.cards?.[0];
+  ok("our boys matched to the roster on the server", card?.batting?.[0]?.ref === P[0] && card?.batting?.[1]?.ref === P[1] && card?.batting?.[4]?.ref === P[4]
+     && card?.batting?.[6]?.ref === "aaaaaaaa-0000-0000-0000-000000000006", JSON.stringify(card?.batting?.map((b) => b.ref)));
+  ok("the opposition typed, never a player", card?.bowling?.every((b) => /^t:\d+$/.test(b.ref)) && Object.values(g.body.import.typed).includes("Ferreira D"),
+     JSON.stringify(g.body?.import?.typed));
+  ok("the figures as the book has them, the unreadable left empty", card?.total === 135 && card?.batting?.[3]?.balls === 22 && card?.didNotBat?.[2] === null
+     && card?.extras?.legByes === 1 && card?.battingSide === "home");
+  ok("no read cell is ticked: the reader's confidence is never a tick", g.body?.unchecked?.length === g.body?.cells && g.body?.cells > 100, `${g.body?.unchecked?.length}/${g.body?.cells}`);
+  const rc = g.body?.import?.readCells?.["0"];
+  ok("the per-cell record: confidence, page, box, value placed", rc?.["batting.3.balls"]?.c === 0.55 && rc?.["batting.3.balls"]?.p === 1
+     && rc?.["batting.3.balls"]?.b?.length === 4 && rc?.["batting.0.ref"]?.v === P[0]);
+  const pagesL = await q(`select sha256 from scorebook_import_page where import_id = $1 order by sha256`, [LI]);
+  const rb = g.body?.import?.readBy ?? [];
+  ok("the processing record: provider, model, time, every page's hash, who", rb.length === 1 && rb[0].provider === "replay" && rb[0].model === "synthetic-fixture"
+     && rb[0].pageHashes.join() === pagesL.map((p) => p.sha256).join() && rb[0].by === "88888888-0000-0000-0000-000000000006" && rb[0].outcome === "read" && !!rb[0].at,
+     JSON.stringify(rb));
+  ok("the history: a read, by the person who pressed Read", g.body?.revisions?.at(-1)?.action === "read" && g.body.revisions.at(-1).actorId === "88888888-0000-0000-0000-000000000006");
+  const stored = JSON.stringify(await q(`select card, typed, read_cells, read_by from scorebook_import where id = $1`, [LI]));
+  ok("no name the reader could not match is stored (Moyo, the smudged boy)", !/Moyo|Khumalo/.test(stored));
+  ok("reading the same innings again is refused", (await readL(scorer, { innings: 0, battingSide: "home", version: await vOf() })).body?.error === "innings_on_card");
+
+  // An id in a name cell, and a refusal: the file the second API replays, rewritten.
+  const withIds = structuredClone(DEMO_ANSWER);
+  const idCard = JSON.parse(withIds.content[0].text);
+  idCard.batting[0].ref.value = "aaaaaaaa-0000-0000-0000-000000000001";
+  idCard.bowling[1].ref.value = "t:1";
+  withIds.content[0].text = JSON.stringify(idCard);
+  writeFileSync(REPLAY, JSON.stringify(withIds));
+  rr = await readL(scorer, { innings: 1, battingSide: "away", version: await vOf() });
+  g = await api(`/api/scorebook/${LI}`, { token: scorer });
+  const c1 = g.body?.import?.cards?.find((c) => c.innings === 1);
+  ok("an id the reader put in a name cell is dropped before the card is saved", rr.body?.ok === true && c1?.batting?.[0]?.ref === null
+     && /identifier/.test(rr.body?.hints?.["batting.0.ref"]?.note ?? "") && c1?.bowling?.[1]?.ref === null,
+     JSON.stringify({ r: rr.body?.hints?.["batting.0.ref"], b0: c1?.batting?.[0]?.ref, w1: c1?.bowling?.[1]?.ref }));
+  ok("...and no typed name is an id", Object.values(g.body?.import?.typed ?? {}).every((n) => !/[0-9a-f]{8}-|^t:/.test(n)));
+  writeFileSync(REPLAY, JSON.stringify({ ...DEMO_ANSWER, stop_reason: "refusal", content: [] }));
+  const vBefore = await vOf();
+  rr = await readL(scorer, { innings: 2, battingSide: "home", version: vBefore });
+  row = (await q(`select state, read_by from scorebook_import where id = $1`, [LI]))[0];
+  ok("a refusal: the manual path, the import back in review", rr.body?.ok === false && rr.body?.reason === "refused" && row.state === "review", JSON.stringify(rr.body));
+  ok("...and the processing record still says the pages went", row.read_by.length === 3 && row.read_by[2].outcome === "refused" && row.read_by[2].innings === 2);
+  writeFileSync(REPLAY, JSON.stringify(DEMO_ANSWER));
+
+  // The person finishes the card: the two boys the reader could not name
+  // (one joined the roster since), the second innings removed, every cell
+  // ticked; submitted; the director of sport confirms.
+  const [moyo] = await q(`insert into player (school_id, full_name, team_code, born) values ($1, 'Tendai Moyo', '1XI', '2009-03-01') returning id`, [HIL]);
+  const cards = [structuredClone(card)];
+  cards[0].batting[5].ref = moyo.id;
+  cards[0].didNotBat[2] = "aaaaaaaa-0000-0000-0000-000000000013";
+  cards[0].fallOfWickets[4].ref = moyo.id;
+  const typedL = g.body.import.typed;
+  let sv = await api(`/api/scorebook/${LI}/save`, { method: "POST", token: scorer, body: { cards, typed: typedL, checked: allTicked(cards), version: await vOf() } });
+  ok("the card, finished by the person, adds up", sv.status === 200 && sv.body?.refusals?.[0]?.length === 0, JSON.stringify(sv.body?.refusals));
+  const sub = await api(`/api/scorebook/${LI}/submit`, { method: "POST", token: scorer, body: { version: sv.body?.version } });
+  ok("...and is submitted", sub.status === 200, JSON.stringify(sub.body));
+  const conf = await api(`/api/scorebook/${LI}/confirm`, { method: "POST", token: sarah, body: {} });
+  ok("the director of sport confirms the read card: three events", conf.status === 200 && conf.body?.keys?.length === 3, JSON.stringify(conf.body));
+  const lp = (await q(`select read_by from scorebook_import where id = $1`, [LI]))[0];
+  ok("the processing record stays with the confirmed import", lp.read_by.length === 3);
+  }
 } catch (e) {
   fail++; console.log("\n  ✗ threw:", e.stack ?? e.message);
   if (serverErr.length) console.log(serverErr.join("").slice(-1500));
 } finally {
   await pool.end().catch(() => {});
   server.kill();
+  readerServer.kill();
   console.log("\n" + "─".repeat(52));
   console.log(`SCOREBOOK SMOKE: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

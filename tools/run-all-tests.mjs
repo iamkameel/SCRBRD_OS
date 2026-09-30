@@ -157,6 +157,10 @@ const SUITES = [
   // The typecheck strict list only grows, and names nothing that is not there.
   ["ts-scope", "tools/typecheck-scope.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
+  // The scorebook reader (SCRBRD-120 phase 4, D8): the request carries the
+  // page photos and the hint and nothing else, asserted whole; an id in a
+  // name cell is dropped; our boys matched on the server, after the model.
+  ["scorebook-reader", "services/api/ai/scorebook-reader.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
 ];
 
