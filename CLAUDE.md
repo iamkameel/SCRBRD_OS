@@ -19,8 +19,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   2026-09-27: Designated Safeguarding Officers, raising and routing a concern,
   and who may see it, under CSA's Safeguarding Policy) and SCRBRD-114 (added
   2026-09-28: playing conditions per competition, one model read by the pad,
-  the fold, the Laws check and SQL). A new problem joins this list only with
-  Kameel's say.
+  the fold, the Laws check and SQL) and the scorebook importer (added
+  2026-09-30: a photo of a paper scorebook read by OCR, checked by a person,
+  imported as match events marked with their source; who may import, and
+  how photos of children's names are kept). A new problem joins this list
+  only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write
   screens or do searches.

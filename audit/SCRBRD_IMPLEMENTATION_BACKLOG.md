@@ -4205,6 +4205,24 @@ takes `ball_wicket_stands` without the fold's retirement rule), or section 32 sh
 (scoring) to decide and fix.** SCRBRD-115 and SCRBRD-116's walks were run with only that one assertion downgraded to a
 warning, locally, and it is not committed.
 
+### SCRBRD-120 — The scorebook importer: a paper scorebook, photographed, checked and imported
+**Priority:** P2 · **Domain:** Scoring / data entry · **Type:** Fable design pass, then build (Kameel, 2026-09-30)
+Taken from the iamkameel/scrbrd harvest (`audit/HARVEST_scrbrd_2026-09-30.md`), where `scorecard-importer.tsx` did OCR with a
+cell-by-cell review. Schools score many matches on paper: away games, lower sides, festivals. Importing the book would bring
+them into careers, the workload record (SCRBRD-110's paper-scored `match_elsewhere` entries) and the tables (SCRBRD-114).
+**Needs a design first** (on Fable's list, CLAUDE.md). The design must say:
+- what the reader produces: a summary scorecard or ball by ball;
+- how a checked import becomes events in the log, marked with their source, and how it meets the fold, the Laws check and SQL parity;
+- who may import and who confirms;
+- how long the photos are kept, since they carry children's names, and who may see them;
+- what happens when the imported figures disagree with a live-scored innings.
+
+### SCRBRD-121 — News: a second person approves a post before it reaches pupils
+**Priority:** P3 · **Domain:** Communications · **Type:** small build (Kameel, 2026-09-30)
+From the harvest. News today scopes by anchor and publishes at `published_at` (db/12). This adds a draft, then approval, then
+publish step: a post whose audience includes pupils waits for a second holder of the posting capability to approve it, and the
+approval is recorded. Opus for the capability and the policy; Sonnet for the screen.
+
 ### SCRBRD-119 — Safeguarding phase 1: the DSO and the concern record
 **Priority:** P1 · **Domain:** RBAC / Privacy / Safeguarding · **Type:** CSA Safeguarding Policy (SAFEGUARDING_DSO
 §9.1; CSA_SAFEGUARDING_CHECK SG-1 to SG-6, SG-9)
