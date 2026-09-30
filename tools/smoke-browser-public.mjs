@@ -34,7 +34,7 @@ import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildPublicFixture, EXPECTED, HIL } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
-import { ball, BALL_TYPE } from "@scrbrd/scoring";
+import { ball, batters, bowler, inningsStart, BALL_TYPE } from "@scrbrd/scoring";
 
 const PORT = port(8848);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -230,6 +230,8 @@ try {
     };
     const heardAll = [];
     ok("a fresh load says nothing", (await said()) === "");
+    ok("the chase's board has no \"At this rate\": it shows the required rate", /Need \d+ off \d+/.test(await tid(lv.page, "mc-board-sub").innerText().catch(() => ""))
+       && !/At this rate/.test(await tid(lv.page, "mc-board-sub").innerText().catch(() => "")));
     await lv.page.waitForTimeout(6500);
     ok("...and a re-read or two with nothing new says nothing either", (await said()) === "", await said());
 
@@ -254,6 +256,39 @@ try {
     ok("nothing it said names a boy or shows a pseudonym", heardAll.every((s) => leaks(s).length === 0 && !/Batter|Bowler|Fielder/.test(s)), heardAll.join(" | "));
     ok("no console errors (live region)", lv.errors.length === 0, lv.errors.join(" | "));
     await lv.ctx.close();
+  }
+
+  group("8. \"At this rate\", on a first innings still being played");
+  {
+    const GROUND = "ffffffff-0000-0000-0000-000000000001";
+    const liveId = (await q(
+      `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - interval '1 hour', 'cricket', 'T10', 10, 'live') returning id`, [HIL, GROUND]))[0].id;
+    await as(SARAH, `select * from fixture_publish($1, 'home', true)`, [liveId]);
+    const OAKES = "Gareth Oakes";
+    let n = 0;
+    const at = (/** @type {any} */ ev) => ({ ...ev, innings: 0, id: `pub-rate-${++n}`, clientTs: Date.parse("2026-09-30T08:00:00Z") + n * 1000 });
+    const squad = ["erasmus", "botha", "markham"].map((k) => ({ id: ids[k], name: k }));
+    await writeEvents(q, liveId, [
+      at(inningsStart({ battingTeam: "1XI", bowlingTeam: "Kearsney College 1XI", teamKey: "1XI", bowlingTeamKey: "Kearsney College 1XI",
+        squad, bowlingSquad: [{ id: OAKES, name: OAKES }], overs: 10 })),
+      at(batters({ striker: ids.erasmus, nonStriker: ids.botha })), at(bowler({ bowler: OAKES })),
+      at(ball({ type: BALL_TYPE.RUN, value: 4 })), at(ball({ type: BALL_TYPE.RUN, value: 1 })),
+      at(ball({ type: BALL_TYPE.RUN, value: 0 })), at(ball({ type: BALL_TYPE.RUN, value: 2 })),
+    ]);
+    // Worked out here, from the same four balls, not read back from the page.
+    const rate = (/** @type {number} */ runs, /** @type {number} */ balls) => Math.round(runs + (runs / balls) * (10 * 6 - balls));
+    const r = await visit(`/live/${liveId}`, { init: `window.__SCRBRD_LIVE_MS__ = 1000;` });
+    await r.page.waitForSelector('[data-testid="mc-board-sub"]', { timeout: 10000 }).catch(() => {});
+    const sub = () => tid(r.page, "mc-board-sub").innerText().catch(() => "");
+    ok(`7 off 4 balls, ten overs: "At this rate: ${rate(7, 4)}", beside the run rate`, (await sub()) === `CRR 10.50 · At this rate: ${rate(7, 4)}`, await sub());
+    await writeEvents(q, liveId, [at(ball({ type: BALL_TYPE.RUN, value: 6 }))], 7);
+    ok(`a six arrives and the line follows it: 13 off 5 is "At this rate: ${rate(13, 5)}"`,
+       await r.page.waitForFunction((/** @type {string} */ w) => document.querySelector('[data-testid="mc-board-sub"]')?.textContent?.includes(w), `At this rate: ${rate(13, 5)}`,
+         { timeout: 30000, polling: 100 }).then(() => true, () => false), await sub());
+    ok("...and it names nobody", leaks(await sub()).length === 0);
+    ok("no console errors (at this rate)", r.errors.length === 0, r.errors.join(" | "));
+    await r.ctx.close();
   }
 
   group("5. Not published is not found");

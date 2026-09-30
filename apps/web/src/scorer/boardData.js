@@ -1,3 +1,4 @@
+import { formatKind } from "@scrbrd/scoring";
 import { RR, fmtOv } from "./format.js";
 
 /**
@@ -38,12 +39,44 @@ export function chaseLine(inn, target, overs) {
 }
 
 /**
+ * "AT THIS RATE": the total a first innings reaches if it keeps scoring at the
+ * rate it has scored so far, to the end of its overs — runs, plus the runs
+ * per ball so far times the balls still to come, rounded.
+ *
+ *     runs + (runs / balls) × (overs × 6 − balls)
+ *
+ * Plain arithmetic, stated as such: no weight for the wickets that have gone,
+ * for the overs still to come or for the pitch, and no model. It is what the
+ * run rate already on the board comes to, and nothing it claims to know more.
+ *
+ * NULL — the line is left off — when it would say nothing true or nothing
+ * useful: in a second innings (the required rate is on the board), before a
+ * legal ball has been bowled (nothing to rate; a first-ball wide is runs with
+ * no ball), when the format has no over limit (a declaration or timed match),
+ * when the innings has no overs to reckon against, and once the innings is
+ * over (its total is on the board).
+ * @param {any} inn  a folded innings (packages/scoring's replay)
+ * @param {{overs?: number | null, chasing?: boolean, format?: unknown}} [o]
+ *   `overs` the innings' limit (revised, if it was); `chasing` it is the second innings
+ * @returns {number | null}
+ */
+export function atThisRate(inn, { overs = null, chasing = false, format = null } = {}) {
+  if (!inn || chasing) return null;
+  if (formatKind(format) === "declaration") return null;
+  if (!Number.isInteger(overs) || /** @type {number} */ (overs) <= 0) return null;
+  if (!(inn.balls > 0) || inn.complete) return null;
+  const left = /** @type {number} */ (overs) * 6 - inn.balls;
+  if (left <= 0) return null;
+  return Math.round(inn.runs + (inn.runs / inn.balls) * left);
+}
+
+/**
  * Everything the board shows, as Board's props. `inn` is a folded innings
  * (packages/scoring's replay, or the demo's seeded one); `target` and `overs`
  * as the chase line needs them. A part the fold does not have is left out, and
  * Board draws no row for it.
  */
-export function boardFromInnings(inn, { target = null, overs = 20 } = {}) {
+export function boardFromInnings(inn, { target = null, overs = 20, projected = null } = {}) {
   if (!inn) return null;
   const st = inn.batsmen?.find((b) => b.id === inn.striker);
   const ns = inn.batsmen?.find((b) => b.id === inn.nonStriker);
@@ -51,7 +84,11 @@ export function boardFromInnings(inn, { target = null, overs = 20 } = {}) {
   const thisOver = inn.overLog?.find((o) => o.over === Math.floor(inn.balls / 6))?.balls ?? [];
   const crr = RR(inn.runs, inn.balls);
   const chase = chaseLine(inn, target, overs);
-  const rates = [crr !== "—" ? `CRR ${crr}` : null, chase?.rrr ? `RRR ${chase.rrr}` : null].filter(Boolean).join(" · ");
+  // `projected` is atThisRate()'s answer, passed by the screens that show it
+  // (the Match Centre's and the public page's Summary): the pad and the day
+  // sheet do not pass it, and draw the board as before.
+  const rates = [crr !== "—" ? `CRR ${crr}` : null, chase?.rrr ? `RRR ${chase.rrr}` : null,
+    projected != null ? `At this rate: ${projected}` : null].filter(Boolean).join(" · ");
   const sub = chase
     ? [chase.need > 0 ? `Need ${chase.need} off ${chase.balls}` : "Target reached", rates].filter(Boolean).join(" · ")
     : rates || null;

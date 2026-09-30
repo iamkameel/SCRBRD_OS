@@ -2,7 +2,7 @@ import { useState } from "react";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
-import { boardFromInnings } from "../../scorer/boardData.js";
+import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { boardInsights } from "../../scorer/signals.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
@@ -82,7 +82,10 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const chase = innings.length >= 2 && inn === innings[1];
   const target = chase ? targetOf(innings) : null;
   const inOvers = inn.overs ?? overs;
-  const props = boardFromInnings(inn, { target, overs: inOvers });
+  // "At this rate", in a first innings still being played (scorer/boardData.js
+  // says when it is left off); nothing to project once the match is decided.
+  const projected = result || match.status === "complete" ? null : atThisRate(inn, { overs: inOvers, chasing: chase, format: match.format });
+  const props = boardFromInnings(inn, { target, overs: inOvers, projected });
   const side = teamOf(match, inn.battingTeam);
   const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);

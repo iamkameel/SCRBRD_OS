@@ -229,6 +229,15 @@ try {
   ok("a clear status, in place of a frozen board", await tid(revS.page, "mc-revision").count() === 1);
   const revText = await tid(revS.page, "mc-revision").textContent().catch(() => "");
   ok('"Rain delay" and "Overs revised to 14" — the fold\'s own revision, in words', /Rain delay/.test(revText) && /Overs revised to 14/.test(revText), revText);
+  // "At this rate": a first innings still being played shows what its run rate
+  // comes to over its (revised) overs — runs + runs/balls × balls left —
+  // worked out here from the fold, not read back from the screen.
+  const revInn = deriveMatch(revLog).innings[0];
+  const revOvers = revInn.overs ?? 20;
+  const revRate = Math.round(revInn.runs + (revInn.runs / revInn.balls) * (revOvers * 6 - revInn.balls));
+  const revSub = await tid(revS.page, "mc-board-sub").innerText().catch(() => "");
+  ok(`the first innings' board says "At this rate: ${revRate}" (${revInn.runs} off ${revInn.balls}, ${revOvers} overs), beside the run rate`,
+     revSub.includes(`At this rate: ${revRate}`) && /CRR \d/.test(revSub) && revSub.indexOf("CRR") < revSub.indexOf("At this rate"), revSub);
   ok("no console errors (revision)", revS.errors.length === 0, revS.errors.join(" | "));
   await revS.ctx.close();
   // Done with it: taken out of "live" so the later "nothing live" screenshot
@@ -294,7 +303,8 @@ try {
   const total = (await tid(p, "mc-board-total").innerText()).replace(/\s/g, "");
   ok(`the board's total is the fold's (${inn2.runs}/${inn2.wickets})`, total === `${inn2.runs}/${inn2.wickets}`, total);
   ok("...the chase in words", new RegExp(`Need ${inn2.target - inn2.runs} off ${60 - inn2.balls}`).test(await tid(p, "mc-board-sub").innerText()));
-  ok("...the latest lines are the generator's", (await tid(p, "mc-latest").innerText()).includes(expected.filter((c) => c.kind !== "over_end").at(-1).text));
+  ok("...and no \"At this rate\" in a second innings: the required rate is what the chase shows", !/At this rate/.test(await tid(p, "mc-board-sub").innerText()));
+  ok("...the latest lines are the generator's",(await tid(p, "mc-latest").innerText()).includes(expected.filter((c) => c.kind !== "over_end").at(-1).text));
 
   group("Scorecard: the prototype's layout, from the fold");
   await tab(p, "scorecard");
@@ -385,6 +395,7 @@ try {
   ok("best bowling, most boundaries, best strike rate", await tid(p, "ib-best-bowling").count() === 1 && await tid(p, "ib-boundaries").count() === 1
      && await tid(p, "ib-strike-rate").count() === 1);
   ok("the match line says so", /Innings break/.test(await tid(p, "mc-match-line").innerText()));
+  ok("...and a finished innings has no \"At this rate\" on its board", !/At this rate/.test(await tid(p, "mc-board-sub").innerText().catch(() => "")));
   ok("no console errors (desktop)", dos.errors.length === 0, dos.errors.join(" | "));
   await dos.ctx.close();
 

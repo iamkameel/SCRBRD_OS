@@ -87,6 +87,9 @@ const SUITES = [
   // The public page's live region: each new ball in plain words, only what is
   // new, nobody named (lib/announce.js).
   ["announce",          "apps/web/test/announce.test.mjs"],
+  // "At this rate" on the first innings' board: plain arithmetic, left off
+  // when it would say nothing (scorer/boardData.js atThisRate).
+  ["at-this-rate",      "apps/web/test/at-this-rate.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.
