@@ -117,7 +117,7 @@ function SquadView({ role }) {
       {/* The side's next fixture: who has answered, who has not, and who is
           asked again because the fixture moved (SCRBRD-122). A guardian's
           rows are his own child's, by the read's own policy. */}
-      <AvailabilityPanel role={role} team={team} family={role==="guardian"}/>
+      <AvailabilityPanel role={role} team={team}/>
       <div style={{display:"grid",gridTemplateColumns:selected?"1fr 320px":"1fr",gap:"16px"}}>
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>

@@ -23,20 +23,19 @@ import { humanDateTime } from "../lib/format.js";
 import { holdsCapability } from "../rbac/index.js";
 
 const ANSWERS = [["available", "Available"], ["doubtful", "Doubtful"], ["unavailable", "Unavailable"]];
-const STATE = {
+// Read at render, never at import: the tokens follow the theme (design.test).
+const stateOf = (status) => ({
   available:          { label: "Available",          color: D.emerald },
   doubtful:           { label: "Doubtful",           color: D.amber },
   unavailable:        { label: "Unavailable",        color: D.rose },
   needs_reconfirming: { label: "Needs reconfirming", color: D.amber },
-};
-const NO_ANSWER = { label: "No answer", color: D.textMuted };
+}[status] ?? { label: "No answer", color: D.textMuted });
 const word = (s) => (ANSWERS.find(([v]) => v === s)?.[1] ?? s ?? "").toLowerCase();
 
 /**
- * @param {{ role: string, team: string, family?: boolean }} props
- *   family: the reader is a guardian, so the words are about his child
+ * @param {{ role: string, team: string }} props
  */
-export function AvailabilityPanel({ role, team, family = false }) {
+export function AvailabilityPanel({ role, team }) {
   const [picked, setPicked] = useState("");
   const { rows: matches } = useLive("matches", role);
   const upcoming = useMemo(() => (matches ?? [])
@@ -45,11 +44,11 @@ export function AvailabilityPanel({ role, team, family = false }) {
   const match = upcoming.find((m) => m.id === picked) ?? upcoming[0] ?? null;
   if (!holdsCapability(role, "availability.read") || !match) return null;
   // Keyed on the fixture, so another fixture starts from its own answers.
-  return <AvailabilityList key={match.id} role={role} match={match} upcoming={upcoming} onPick={setPicked} family={family}/>;
+  return <AvailabilityList key={match.id} role={role} match={match} upcoming={upcoming} onPick={setPicked}/>;
 }
 
 /** One fixture's answers, read for this caller alone. */
-function AvailabilityList({ role, match, upcoming, onPick, family }) {
+function AvailabilityList({ role, match, upcoming, onPick }) {
   const [nonce, setNonce] = useState(0);
   const [said, setSaid] = useState({ id: null, text: "" });
   const { rows: answers, loading } = useLive("availability", role, nonce, { matchId: match.id });
@@ -71,7 +70,7 @@ function AvailabilityList({ role, match, upcoming, onPick, family }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "12px", flexWrap: "wrap" }}>
         <div>
           <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-            {family ? "Your child's availability" : "Availability"}
+            Availability
           </div>
           <div data-testid="availability-fixture" style={{ fontFamily: D.body, fontSize: "13px", color: D.textPrimary, marginTop: "4px" }}>
             v {match.awayTeam} · {answers[0]?.fixtureWords ?? humanDateTime(match.date, match.time)}
@@ -92,7 +91,7 @@ function AvailabilityList({ role, match, upcoming, onPick, family }) {
       )}
       <div style={{ display: "grid", gap: "8px", marginTop: "12px" }}>
         {answers.map((r) => {
-          const st = r.status ? STATE[r.status] ?? NO_ANSWER : NO_ANSWER;
+          const st = stateOf(r.status);
           return (
             <div key={r.playerId} data-testid={`availability-row-${r.playerId}`} style={{
               display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap",

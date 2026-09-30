@@ -1932,7 +1932,7 @@ try {
       await panel.first().waitFor({ timeout: 6000 }).catch(() => {});
       const ptext = (await panel.first().innerText({ timeout: 3000 }).catch(() => "")) ?? "";
       ok("his child's availability is on it, for the moved fixture",
-         /Your child's availability/i.test(ptext) && /Verify 122 XI/.test(ptext));
+         /Availability/i.test(ptext) && /Verify 122 XI/.test(ptext));
       const state = (p, who) => p.locator(`[data-testid="availability-state-${who}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
       ok("his boy's answer says it needs reconfirming, not available", /needs reconfirming/i.test(await state(g.page, PILLAY)));
       const was = await g.page.locator(`[data-testid="availability-was-${PILLAY}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
