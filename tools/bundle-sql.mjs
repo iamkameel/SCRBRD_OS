@@ -208,12 +208,32 @@ SELECT
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Quarantine has a way out",
   CASE WHEN to_regprocedure('enrol_person(text,text,text,uuid,text,uuid,text)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Enrolment exists",
+  -- A guardian link ends at the later of the child's eighteenth birthday and
+  -- the day he leaves the school system (db/62, SCRBRD-110 §7.4). So: no
+  -- guardian link still reaches an adult who is not at school — an adult out
+  -- of school has an ended link — and a link is open-ended only while the
+  -- child is a minor or still_at_school(). Both were "ends at 18" and "has an
+  -- end date" before db/62; the second's old name is no longer true.
   CASE WHEN to_regprocedure('majority_on(date)') IS NOT NULL
-       THEN 'OK' ELSE 'PROBLEM' END                             AS "Guardianship ends at 18",
-  CASE WHEN (SELECT count(*) FROM assignment_subject s
+        AND to_regprocedure('still_at_school(uuid)') IS NOT NULL
+        AND (SELECT count(*) FROM assignment_subject s
                JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
-              WHERE s.valid_until IS NULL) = 0
-       THEN 'OK — none open-ended' ELSE 'PROBLEM' END            AS "Every guardian link has an end date",
+               JOIN player p ON p.id = s.player_id
+              WHERE (s.valid_until IS NULL OR s.valid_until > current_date)
+                AND NOT coalesce(majority_on(p.born) > current_date, false)
+                AND NOT still_at_school(p.id)) = 0
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Guardianship ends at 18, or on leaving school",
+  CASE WHEN to_regprocedure('still_at_school(uuid)') IS NOT NULL
+        AND (SELECT count(*) FROM assignment_subject s
+               JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+               JOIN player p ON p.id = s.player_id
+              WHERE s.valid_until IS NULL
+                AND NOT coalesce(majority_on(p.born) > current_date, false)
+                AND NOT still_at_school(p.id)) = 0
+       THEN 'OK — ' || (SELECT count(*) FROM assignment_subject s
+                          JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+                         WHERE s.valid_until IS NULL) || ' open, each a minor''s or a pupil''s'
+       ELSE 'PROBLEM' END                                       AS "Open guardian links are minors' or pupils'",
   CASE WHEN to_regprocedure('dob_gaps()') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Data-quality gaps are visible",
   CASE WHEN to_regprocedure('app_is_platform_wide()') IS NOT NULL

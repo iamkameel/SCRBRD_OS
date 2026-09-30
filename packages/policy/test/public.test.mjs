@@ -817,7 +817,20 @@ function publicReadProblems(body) {
 group("§6 step 3 — the signed-out reads name their columns, and none §3 forbids (db/59)");
 {
   const files = readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && Number(f.slice(0, 2)) >= 59 && !/^9[89]_/.test(f)).sort();
-  const fns = files.flatMap((f) => publicFunctions(readFileSync(join(DB, f), "utf8")).map((x) => ({ ...x, file: f })));
+  // db/47's two doors, re-emitted by db/62 for SCRBRD-083 §6.3 (option C)
+  // with their bodies otherwise db/47's. They are not signed-out reads:
+  // public_name_consent_set() is a signed-in write, and public_name_facts()
+  // reads a date of birth to judge competence and an age group and returns
+  // neither — db/99 §25 "facts-clean" holds its output live to its three
+  // keys and no date of birth, and db/62's own proof to the three keys. The
+  // rule here is for the reads db/59 introduced. Named one by one, and each held
+  // to having been db/47's first, so nothing else passes by this door.
+  const REEMITTED_FROM_47 = new Set(["public_name_consent_set", "public_name_facts"]);
+  const in47 = publicFunctions(readFileSync(join(DB, "47_public_data.sql"), "utf8")).map((f) => f.name);
+  ok("the only public_*() functions exempt from the read rule are db/47's own, re-emitted",
+     [...REEMITTED_FROM_47].every((n) => in47.includes(n)), in47.join(" "));
+  const fns = files.flatMap((f) => publicFunctions(readFileSync(join(DB, f), "utf8")).map((x) => ({ ...x, file: f })))
+    .filter((f) => !REEMITTED_FROM_47.has(f.name));
   const names = fns.map((f) => f.name);
   for (const want of ["public_match_header", "public_match_log", "public_match_people", "public_shot_sectors"])
     ok(`db/59 has ${want}()`, names.includes(want), names.join(" "));

@@ -658,6 +658,17 @@ Each phase's `tables.mjs` entries regenerate `db/09`'s successor policies into t
 4. Phase 2 grants or wraps `health_consent_live()` for its restrictive policies.
 5. **Support sessions never read consent records** (narrower than §6.5; kept).
 
+**Phase 0 as built (`db/62`, 2026-09-30, Opus).** `db/62_guardian_link_past_eighteen.sql` is §7.4 items 1–4 and SCRBRD-083 §6.3 (option C) in one file. `db/99` §40 and `tools/smoke-link18.mjs` prove the phase 0 row; §38's assertion (12) is flipped to the new rule. Where it departs from the letter above, and why:
+
+- **Numbering.** `db/62`, not `db/52`. `still_at_school()` is `db/60`'s and is not re-emitted.
+- **The triggers are deferred** (`DEFERRABLE INITIALLY DEFERRED` constraint triggers, as `db/30` does). A move between sides is a close then an open inside `db/08`'s history trigger. Judged row by row, the close would end an adult pupil's link on the moving day, and nothing could re-open it. Deferred, both triggers ask `still_at_school()` of the state the transaction leaves. `db/99` fires them with `SET CONSTRAINTS … IMMEDIATE`.
+- **"Not otherwise ended"** reads as: pending or verified, through a guardian assignment still active and not dated out. Never a second open link beside one.
+- **`decide_role_request()` follows the same rule** (Kameel, 2026-09-30). It is the other door a guardian link comes through (the office granting a request, and `enrol_person()` through it), and `db/62` re-emits it: open while the child is at school, his birthday otherwise, and a guardian for an adult still refused.
+- **An adult who left after his birthday does not get his parent back on re-enrolment** (Kameel, 2026-09-30, kept as built). Only a link ending on his birthday re-opens. One ended on the day he left as an adult stays ended.
+- **Option C** is SCRBRD-083 §6.3 as written. `public_name_consent_set()` takes a guardian's "no" after 18 while he is `still_at_school()` and refuses her "yes" (`adult_consents_for_himself`). `public_name_facts()` counts her post-18 refusal as competent if he was at school on the day. The two functions are re-emitted in `db/62` rather than their own file.
+- **`public.test.mjs` narrowed by name.** Its signed-out-read rule scans every `public_*()` function from `db/59` on. It now names `db/47`'s two re-emitted functions as outside it, since they are a write and the facts read, not signed-out reads. It also asserts they are `db/47`'s own. Their output is still held live by `db/99` §25 "facts-clean".
+- **The paste health table** reads the new rule in two renamed columns. "Guardianship ends at 18, or on leaving school" checks that no link still reaches an adult out of school. "Open guardian links are minors' or pupils'" checks that no link is open-ended without cause.
+
 ---
 
 ## 10 · Decisions, and the questions they opened

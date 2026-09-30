@@ -88,8 +88,9 @@ try {
     `select s.id, s.relationship, s.valid_until from assignment_subject s
        join role_assignment a on a.id = s.assignment_id and a.role = 'guardian'
       where a.person_id = $1 and s.player_id = $2`, [PARENT, P_INJURED]))[0];
+  // Live: open, because R Pillay is at school (db/62), or dated ahead.
   ok("the fixture starts with a live guardian link to build the walk on",
-     linkBefore && new Date(linkBefore.valid_until) > new Date(), JSON.stringify(linkBefore));
+     linkBefore && (linkBefore.valid_until === null || new Date(linkBefore.valid_until) > new Date()), JSON.stringify(linkBefore));
 
   await dropBornConstraint();
   await pool.query(`update player set born = null where id = $1`, [P_INJURED]);
@@ -153,13 +154,17 @@ try {
        join role_assignment a on a.id = s.assignment_id and a.role = 'guardian'
       where a.person_id = $1 and s.player_id = $2`, [PARENT, P_INJURED]))[0].n;
   ok("a new link was recorded rather than the ended one being revived", linkCountAfter === linkCountBefore + 1);
+  // Since db/62 a link made for a pupil at school is open until he leaves
+  // (and ends at the later of that day and his majority); one made for a boy
+  // out of school ends on the new birthday's own majority. R Pillay is at
+  // school, so it is open — and asserted with the reason it may be.
   const newLink = (await q(
-    `select s.valid_until from assignment_subject s
+    `select s.valid_until, still_at_school(s.player_id) as at_school from assignment_subject s
        join role_assignment a on a.id = s.assignment_id and a.role = 'guardian'
       where a.person_id = $1 and s.player_id = $2
       order by s.created_at desc limit 1`, [PARENT, P_INJURED]))[0];
-  ok("...ending on the new birthday's own majority, not left open-ended",
-     new Date(newLink.valid_until) > new Date(), JSON.stringify(newLink));
+  ok("...open while he is at school, not ended and not dated past his majority",
+     newLink.valid_until === null && newLink.at_school === true, JSON.stringify(newLink));
 
   group("an ID number is enough on its own — the same door the roster form uses");
   await dropBornConstraint();

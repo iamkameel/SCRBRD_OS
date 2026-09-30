@@ -486,6 +486,13 @@ INSERT INTO assignment_subject
 -- turned eighteen four months before this seed runs, so his link ends the day
 -- it is created: expired on arrival, which is the honest record of a
 -- relationship that ended before anyone wrote it down.
+--
+-- Since db/62 (SCRBRD-110 §7.4) a link is open while the child is at school,
+-- and db/62's OPEN trigger — deferred to the end of this transaction — sets
+-- every pupil's link that ends on his birthday back to open at COMMIT, just
+-- as it would for a boy enrolled after his link was made. S Naidoo's does
+-- not re-open: it ends on the day it was written, not on his birthday, and a
+-- link is never made for, or re-opened to, someone already grown.
 UPDATE assignment_subject s
    SET valid_until = greatest(majority_on(p.born), s.valid_from)
   FROM role_assignment a, player p
