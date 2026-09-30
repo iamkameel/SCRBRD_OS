@@ -477,6 +477,11 @@ function NewDraft({ competitionId, catalogue, onCreated }) {
   );
 }
 
+// The pieces the league wizard's checklist (views/leaguewizard.jsx, step 3)
+// shares with this screen, so a figure is entered, cited and cleared by the
+// same editor and worded by the same words in both places.
+export { styles, Field, Alert, Source, FigureEditor, FigureActions };
+
 // ── The screen ─────────────────────────────────────────────────────
 
 /** @param {{ competition: { id: string, name?: string } }} props */
