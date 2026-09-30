@@ -4297,6 +4297,18 @@ apart. School sides change keeper mid-innings, so: record the keeper at the star
 on the scorecard, and let the careers count dismissals as keeper. Opus for the event, the fold and the Laws; Sonnet for
 the pad's keeper picker and the scorecard mark.
 
+### SCRBRD-127 — The League Administrator's wizard: create a league, enter schools, set its conditions
+**Priority:** P1 (the pilot cannot create a league without it) · **Domain:** Competitions · **Type:** build with
+SCRBRD-123 phase 2 (Kameel, 2026-09-30)
+Found 2026-09-30: there is no way to create a competition in the app (no create route, no entrant-enrol route, a dead
+"+ New Competition" button; leagues exist only in the seed). A four-step wizard: (1) the league: name, season, age group,
+format, overs; (2) entrants: the organiser invites schools' teams, each school's administrator accepts or declines its
+own; (3) playing conditions as a checklist of every catalogue key with its default and source, "use default" or an own
+value with a citation, shortcuts "start from the MCC Laws and CSA defaults" and "copy from another league", producing
+version 1 as a draft; (4) review and publish with an effective date, then open the fixture planner. Later changes stay on
+the conditions screen as dated versions. Opus: the API and db/67 (with the planner's phase 2); Sonnet: the wizard, with
+the planner screen.
+
 ### SCRBRD-121 — News: a second person approves a post before it reaches pupils
 **Priority:** P3 · **Domain:** Communications · **Type:** small build (Kameel, 2026-09-30)
 From the harvest. News today scopes by anchor and publishes at `published_at` (db/12). This adds a draft, then approval, then
