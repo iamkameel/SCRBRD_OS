@@ -45,6 +45,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join, extname, resolve, sep } from "node:path";
 import pg from "pg";
 import { askStatsMagic, describeDelivery, statsMagicContext, aiConfigured } from "./ai/ai-service.mjs";
+import { readerConfig } from "./ai/scorebook-reader.mjs";
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { isPadAuthorization, padRoute, padPrincipal, padRefusal, padCredentialRoutes } from "./auth/pad-resume.mjs";
@@ -715,6 +716,11 @@ const PLAYER_ROUTES = [
   // Not gated: a school that switched the module off can still give up an
   // import, and its photos go at once.
   [/^\/api\/scorebook\/([0-9a-f-]{36})\/abandon$/,  "POST", scorebook.abandon],
+  // The reader (SCRBRD-120 phase 4, db/66): the page photos to a vision
+  // model to pre-fill the card. Its own switch, `scorebook_reader`, is asked
+  // in the database per school (a platform grant for the school, D8); not
+  // tagged here for the module's reason above.
+  [/^\/api\/scorebook\/([0-9a-f-]{36})\/read$/,     "POST", scorebook.read],
   // Skills owns player_skill and its read; the write was untagged. Same
   // finding as /api/training above.
   [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record, "skills"],
@@ -967,6 +973,10 @@ const server = createServer(async (req, res) => {
       public: PUBLIC_ON ? (publicSite.listening() ? "on" : "on_without_notifications") : "off",
       // Where scorebook photos go (SCRBRD-120): supabase | local | unconfigured.
       pages: pageStore.kind,
+      // The scorebook reader's provider (SCRBRD-120 phase 4): anthropic, a
+      // recorded replay (development only), or none. Whether a school may use
+      // it is its grant, in the database.
+      reader: readerConfig().mode,
     });
   }
 
@@ -1136,6 +1146,7 @@ server.listen(PORT, () => {
   console.log(`SCRBRD API on http://localhost:${PORT}`);
   console.log(`  db:   ${DATABASE_URL.replace(/:[^:@]*@/, ":***@")} (row-level security applies)`);
   console.log(`  ai:   ${aiConfigured() ? "configured" : "NO CREDENTIALS — Stats-Magic and commentary return null"}`);
+  console.log(`  scorebook reader: ${readerConfig().mode}${readerConfig().mode === "replay" ? " (a recorded answer, never a real read)" : ""}`);
   if (CLIENT_DIR) console.log(`  web:  serving the client from ${CLIENT_DIR}`);
   if (!process.env.SESSION_SECRET) console.log("  auth: EPHEMERAL dev secret — tokens die on restart");
   if (DEV && process.env.ALLOW_DEV_LOGIN === "1") console.log("  auth: DEV LOGIN ENABLED — /api/auth/dev-login mints tokens without a code");

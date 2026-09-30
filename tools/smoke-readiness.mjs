@@ -251,6 +251,33 @@ try {
        rowFor(await sheet(m, coach), hurt.id)?.state === "restricted");
   }
 
+  // SCRBRD-122 (db/65): a family's answer is about the fixture as it stood.
+  group("An answer about a fixture that has since moved is no answer");
+  {
+    await declare(m, coach, { playerId: unwilling.id, status: "available" });
+    ok("a willing, fit, picked boy is available and no conflict",
+       rowFor(await sheet(m, coach), unwilling.id)?.state === "available"
+       && rowFor(await sheet(m, coach), unwilling.id)?.conflict === null);
+    ok("the director of sport moves the fixture's start",
+       (await api(`/api/fixtures/${m}`, { method: "POST", token: head, body: {
+         startsAt: new Date(Date.now() + 5 * 86400e3).toISOString() } })).status === 200);
+    const s = await sheet(m, coach);
+    const r = rowFor(s, unwilling.id);
+    ok("his answer asks again rather than reading available", r?.state === "needs_reconfirming");
+    ok("...the family's half says so, and what was said stays on the row",
+       r?.declared_status === "needs_reconfirming" && r?.said_status === "available" && r?.needs_reconfirming === true);
+    // Picked on the strength of a yes to another day is picked without an answer.
+    ok("...and picking him is a conflict again, the same one as silence",
+       r?.conflict === "selected_without_answer");
+    ok("...which sorts to the top with the other conflicts",
+       s.slice(0, s.filter((x) => x.conflict !== null).length).some((x) => x.player_id === unwilling.id));
+    ok("a restriction still outranks it", rowFor(s, hurt.id)?.state === "restricted");
+    await declare(m, coach, { playerId: unwilling.id, status: "available" });
+    const back = rowFor(await sheet(m, coach), unwilling.id);
+    ok("answering again settles it", back?.state === "available" && back?.conflict === null
+       && back?.needs_reconfirming === false);
+  }
+
   group("Only the people picking the side may read it");
   {
     ok("a spectator reads nothing", (await sheet(m, watcher)).length === 0);

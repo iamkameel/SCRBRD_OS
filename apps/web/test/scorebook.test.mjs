@@ -12,6 +12,7 @@
 import {
   blankBatter, blankCard, cellWords, cleanName, countOf, differenceOf, dropCardChecked, footnoteWords, getPath, hadPages, livePages, oversOf,
   pruneTyped, refusalWords, refusalsByCell, refusalsOf, rowPaths, setPath, settleTyped, shiftChecked, startedYet, tickProgress, workedOn,
+  readCellOf, READ_CHECK_BELOW, READER_WORDS,
 } from "../src/lib/scorebook.js";
 import { ApiError } from "../src/lib/api.js";
 import { baseCard, TYPED } from "../../../packages/scoring/test/scorebook-cards.mjs";
@@ -107,6 +108,22 @@ ok("a key used elsewhere is not renamed under the other cell: the new name gets 
 r = settleTyped({ "t:1": "Opp Bowler" }, [withNames()], { name: "  ", current: "t:1", path: "bowling.0.ref", card: 0 });
 ok("an emptied box is no one", r.ref === null);
 ok("a typed name nothing uses any more is dropped before a save", JSON.stringify(pruneTyped({ "t:1": "Kept", "t:2": "Orphan" }, [withNames()])) === JSON.stringify({ "t:1": "Kept" }));
+
+group("The reader's words (SCRBRD-120 phase 4): its record is shown only while the cell is still its");
+{
+  const read = { v: 1, innings: 1, total: 135, batting: [{ runs: 22, ref: null }] };
+  const cells = { 1: { total: { c: 0.98, p: 1, b: [0.6, 0.8, 0.05, 0.04], v: 135 }, "batting.0.runs": { c: 0.55, p: 1, b: null, v: 22 },
+                       "batting.0.ref": { c: 0.3, p: 1, b: null, v: null } } };
+  ok("a cell the reader filled, unchanged, carries its record", readCellOf(cells, read, "total")?.c === 0.98);
+  ok("a cell the person changed is theirs: no record shown", readCellOf(cells, { ...read, total: 136 }, "total") === null);
+  ok("an empty cell the reader could not read keeps its record", readCellOf(cells, read, "batting.0.ref")?.v === null);
+  ok("another innings' record is not this card's", readCellOf(cells, { ...read, innings: 0 }, "total") === null);
+  ok("below the line is 'check'", READ_CHECK_BELOW === 0.8 && readCellOf(cells, read, "batting.0.runs").c < READ_CHECK_BELOW);
+  ok("every reason the reader gives is said in words, each sending the person to type the card",
+     ["off", "unconfigured", "unavailable", "refused", "timeout"].every((k) => /Type the card/.test(READER_WORDS[k])));
+  ok("a read in progress, an innings already on the card: in words",
+     /being read/.test(refusalWords(new ApiError(422, "reading", "/x"))) && /already on the card/.test(refusalWords(new ApiError(422, "innings_on_card", "/x"))));
+}
 
 console.log(`\n${"─".repeat(52)}\nSCOREBOOK SCREEN WORDS: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

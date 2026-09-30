@@ -39,6 +39,10 @@ const SUITES = [
   // arithmetic over the PARITY list db/63 answers too, the fold of a summary
   // (nothing zero-filled, no ball invented), the seal, and the three Laws.
   ["summary", "packages/scoring/test/summary.test.mjs"],
+  // The fixture planner's engine (SCRBRD-123): complete round robins and
+  // seeded knockouts for 2–16, placement under the required rules, locks,
+  // SA-day blackouts, determinism, and an independent check at the ceiling.
+  ["planner", "packages/scoring/test/planner.test.mjs"],
   // A refusal's likely cause, in words beside REFUSAL_TEXT (SCRBRD-100): names
   // from the fold and never an id, no Law clause numbers.
   ["causes",   "packages/scoring/test/causes.test.mjs"],
@@ -139,6 +143,8 @@ const SUITES = [
   // stripped without a decoder, and the private store's two backends.
   ["page-image", "services/api/io/page-image.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
+  // The planner's drafts through the fixture route's own validation (SCRBRD-123).
+  ["planner-drafts", "services/api/write/planner-drafts.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
   // No file under tools/, services/ or packages/ hard-codes the database
   // address outside tools/db-url.mjs, which is what lets a worktree run
@@ -151,6 +157,10 @@ const SUITES = [
   // The typecheck strict list only grows, and names nothing that is not there.
   ["ts-scope", "tools/typecheck-scope.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
+  // The scorebook reader (SCRBRD-120 phase 4, D8): the request carries the
+  // page photos and the hint and nothing else, asserted whole; an id in a
+  // name cell is dropped; our boys matched on the server, after the model.
+  ["scorebook-reader", "services/api/ai/scorebook-reader.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
 ];
 

@@ -4226,6 +4226,21 @@ ground, format, overs). When any of them changes, the answer reads `needs_reconf
 guardian screens say so and ask again. Nothing is deleted: the old answer stays as history. Opus for the migration, the
 staleness rule and its db/99 proof; Sonnet for the squad and guardian screens.
 
+> **Built 2026-09-30 (not yet shipped).** `db/65_availability_reconfirm.sql`: a SNAPSHOT on each answer, not a fixture
+> version — `fixture_starts_at`, `fixture_ground_id`, `fixture_format`, `fixture_overs`, stamped from the match by a
+> trigger on every insert and update (a value in the request is overwritten; existing answers backfilled from the match
+> as it stands). `availability_effective(a, m)` reads `needs_reconfirming` when they differ from the match; a fixture
+> moved back is the fixture the family answered about, so its answer stands again. Opponent, status, competition and
+> sport are not in the snapshot and ask nobody. `match_availability_history` keeps every answer a re-declaration
+> replaces (read as the live row is; written only by its trigger). A future, scheduled fixture's change writes one
+> `notification` per stale answer to whoever gave it and to the boy's live guardians (`recipient_id`, gated on
+> `availability.read` with the boy as person anchor; a pupil's is the system's own, SG-9). Readers changed: the API's
+> `availability` (effective `status`, `said_status`, `was_line`) and `readiness` (`needs_reconfirming` ranks and
+> conflicts as silence); new `availability_history` read. `packages/scoring/src/readiness.mjs` does not read
+> availability and is unchanged. The Squad screen gains an availability panel (a guardian's rows are his child's):
+> "Needs reconfirming", the was-line and a one-tap "Still available". Proofs: db/99 §43, smoke-availability,
+> smoke-readiness, smoke-browser-read.
+
 ### SCRBRD-123 — A league and knockout fixture planner (drafts only)
 **Priority:** P2 · **Domain:** Competitions · **Type:** build, after SCRBRD-122 (Kameel, 2026-09-30)
 From the second harvest (`competition-planner.ts` in `iamkameel/scrbrd` PR #2, ported as an idea, not code). A league
@@ -4237,6 +4252,12 @@ unscheduled with its reason, and a fixture the administrator locks survives rege
 Publishing creates fixtures through the existing fixture route, with `match.competition_id` so db/61's conditions apply.
 Schools approving their own fixtures and cross-school calendars are a later phase. Opus for the algorithm (plain JS in
 `packages/`, with tests) and the publish path; Sonnet for the draft screen.
+
+**Built 2026-09-30 (Opus): the engine, phase 1.** `@scrbrd/scoring/planner` (`packages/scoring/src/planner.mjs`, a
+subpath export kept off the package index): `pairings()`, `plan()` and `toFixtureDrafts()`, with
+`packages/scoring/test/planner.test.mjs` and `services/api/write/planner-drafts.test.mjs` (every draft through the
+fixture route's own handler). No database change, route or screen. Ground hierarchy and closures are planner input
+until a record exists. The API, what phase 2 adds and what was left out: `docs/design/SCRBRD-123_planner.md`.
 
 ### SCRBRD-124 — Parent lift clubs: families offering each other lifts to fixtures
 **Priority:** P2 · **Domain:** Transport / Families / Safeguarding · **Type:** Fable design, then build after SCRBRD-122 and
@@ -4255,6 +4276,7 @@ rules the design must hold, as agreed with Kameel:
 6. **A route to the DSO.** Any concern about a lift raises through `safeguarding_concern_raise()` (db/57).
 7. **The school decides.** A module off by default; the principal switches it on with the school's own lift policy.
 Fable designs (on its list since 2026-09-30); Opus builds the schema, policy and RLS; Sonnet the screens.
+**Designed 2026-09-30:** `docs/design/SCRBRD-124_lift_clubs.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D18 as recommended** (D9 three years; D11's words as drafted). Four phases; the module goes live for a school after phase 2.
 
 ### SCRBRD-125 — Roles scoped to a competition
 **Priority:** P3 (before a second league) · **Domain:** RBAC · **Type:** design + build (found 2026-09-30, SCRBRD-120 §9.4)

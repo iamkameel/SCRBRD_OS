@@ -9,8 +9,8 @@ import { Badge } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { useIsMobile } from "../shell/MobileNav.jsx";
 import {
-  EDITABLE, FINISHED, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, hadPages, inningsWord, livePages,
-  nameOfRef, pruneTyped, refusalWords, refusalsByCell, refusalsOf, removePage, rowPaths, settleTyped, setPath, shiftChecked,
+  EDITABLE, FINISHED, READER_WORDS, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, hadPages, inningsWord, livePages,
+  nameOfRef, pruneTyped, readCellOf, refusalWords, refusalsByCell, refusalsOf, removePage, rowPaths, settleTyped, setPath, shiftChecked,
   startedYet, tickProgress, titleOf, uploadPage, cellWords, workedOn, getPath,
 } from "../lib/scorebook.js";
 import { CardEditor, CardReader, rosterGroups, styles } from "./scorebookcard.jsx";
@@ -89,15 +89,31 @@ function usePageBlobs(importId, pages) {
  * The pages: thumbnails, and the page shown large, zoomable. With `onRemove`
  * (a writer, the import still being typed) the page shown can be taken off
  * the import, after a question asked in place.
+ * With `focus` (a cell the reader filled, focused on the card), the page it
+ * was read from is shown and its box outlined on it (§6.3).
  * @param {{ pages: any[], photos: {urls: Record<number, string>, errors: Record<number, string>}, sticky?: boolean,
- *           onRemove?: (pageNo: number) => Promise<boolean>, busy?: boolean }} props
+ *           onRemove?: (pageNo: number) => Promise<boolean>, busy?: boolean,
+ *           focus?: {page: number, box: number[] | null, key: string, label: string} | null }} props
  */
-function PhotoColumn({ pages, photos, sticky, onRemove, busy }) {
+function PhotoColumn({ pages, photos, sticky, onRemove, busy, focus = null }) {
   const S = styles();
   const live = livePages(pages);
   const [sel, setSel] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [removing, setRemoving] = useState(/** @type {number | null} */ (null));
+  const view = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const focusKey = focus ? `${focus.key}:${focus.page}` : "";
+  useEffect(() => { if (focus?.page) setSel(focus.page); }, [focusKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Bring the box into the page's own view (never the window's: the person
+  // is typing in the card beside it).
+  useEffect(() => {
+    const el = view.current;
+    const b = focus?.box;
+    if (!el || !b) return;
+    const img = el.querySelector("img");
+    if (!img) return;
+    el.scrollTo?.({ top: Math.max(0, b[1] * img.clientHeight - 48), left: Math.max(0, b[0] * img.clientWidth - 48) });
+  }, [focusKey, zoom]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = live.find((p) => p.pageNo === sel) ?? live[0] ?? null;
   if (!live.length) {
     return (
@@ -150,12 +166,29 @@ function PhotoColumn({ pages, photos, sticky, onRemove, busy }) {
               </div>
             </div>
           )}
-          <div role="region" aria-label={`Page ${shown.pageNo} of the scorebook`} tabIndex={0} data-testid="sb-page-view"
+          <div role="region" aria-label={`Page ${shown.pageNo} of the scorebook`} tabIndex={0} data-testid="sb-page-view" ref={view}
             style={{ overflow: "auto", maxHeight: "70vh", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, background: T.surface.base }}>
             {url
-              ? <img src={url} alt={`Photo of scorebook page ${shown.pageNo}`} data-testid="sb-page-img" style={{ width: `${zoom * 100}%`, maxWidth: "none", display: "block" }}/>
+              ? (
+                // The box is placed as fractions of the photo: across, of the
+                // photo's width (the frame's times the zoom); down, of the
+                // frame's height, which is the photo's.
+                <div style={{ position: "relative" }}>
+                  <img src={url} alt={`Photo of scorebook page ${shown.pageNo}`} data-testid="sb-page-img" style={{ width: `${zoom * 100}%`, maxWidth: "none", display: "block" }}/>
+                  {focus?.box && focus.page === shown.pageNo && (
+                    <div aria-hidden="true" data-testid="sb-page-box" data-cell={focus.key}
+                      style={{ position: "absolute", left: `${focus.box[0] * zoom * 100}%`, top: `${focus.box[1] * 100}%`, width: `${focus.box[2] * zoom * 100}%`,
+                               height: `${focus.box[3] * 100}%`, outline: `3px solid ${T.semantic.warning}`, outlineOffset: "2px",
+                               borderRadius: T.radius.xs, pointerEvents: "none" }}/>
+                  )}
+                </div>)
               : <p style={{ ...S.body, padding: T.space.lg }}>{photos.errors[shown.pageNo] ?? "Loading the photo…"}</p>}
           </div>
+          {focus && focus.page === shown.pageNo && (
+            <p role="status" data-testid="sb-page-box-label" style={S.meta}>
+              {focus.box ? `Outlined: where the reader found ${focus.label}.` : `The reader read ${focus.label} from this page.`}
+            </p>
+          )}
         </>
       )}
     </div>
@@ -257,6 +290,72 @@ function AddInnings({ R }) {
   );
 }
 
+/**
+ * Read the pages (SCRBRD-120 phase 4): which innings, and who batted in it —
+ * the person's to say — then the reader fills that innings in for the person
+ * to check. Drawn only where the API says the reader is on for this writer
+ * (`reader.on`: the school has it); where this server has no provider it
+ * says so and the card is typed as ever. Every other path is unchanged.
+ */
+function ReadPanel({ R }) {
+  const S = styles();
+  const taken = new Set(R.draft.cards.map((c) => c.innings));
+  const state = new Map((R.d.innings ?? []).map((i) => [i.innings, i]));
+  const blocked = (/** @type {number} */ i) => { const s = state.get(i); return !!(s?.summarised || s?.deliveries > 0); };
+  const free = [0, 1, 2, 3].filter((n) => !taken.has(n) && !blocked(n));
+  const [n, setN] = useState(free[0] ?? 0);
+  const [side, setSide] = useState(/** @type {"home" | "away"} */ ("home"));
+  if (!R.reader?.on) return null;
+  if (!R.reader.configured) return <p style={S.meta} data-testid="sb-reader-unconfigured">{READER_WORDS.unconfigured}</p>;
+  if (!free.length) return null;
+  const pick = free.includes(n) ? n : free[0];
+  const live = livePages(R.d.pages).length;
+  return (
+    <div style={S.panel} data-testid="sb-reader">
+      <h3 style={S.h4}>Read the pages</h3>
+      <p style={S.body}>The scorebook reader reads the page photos and fills in one innings for you to check against them. Only the photos are sent, to an AI model outside the school (Anthropic’s Claude); nothing from the school’s records goes with them. Every cell still needs your tick.</p>
+      <div style={S.grid}>
+        <div>
+          <label htmlFor="sb-read-n" style={S.label}>Which innings</label>
+          <select id="sb-read-n" data-testid="sb-read-n" value={pick} onChange={(e) => setN(Number(e.target.value))} style={S.input}>
+            {free.map((i) => <option key={i} value={i}>{inningsWord(i)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="sb-read-side" style={S.label}>Who batted</label>
+          <select id="sb-read-side" data-testid="sb-read-side" value={side} onChange={(e) => setSide(/** @type {any} */ (e.target.value))} style={S.input}>
+            <option value="home">{R.sideNames.home}</option>
+            <option value="away">{R.sideNames.away}</option>
+          </select>
+        </div>
+      </div>
+      {R.readingNow
+        ? <p role="status" data-testid="sb-reading" style={{ ...S.body, color: T.content.primary }}>Reading the pages… this can take up to a minute. You can look at the pages meanwhile.</p>
+        : (
+          <div style={S.wrap}>
+            <button type="button" data-testid="sb-read-go" disabled={R.busy || !live} onClick={() => R.read(pick, side)} style={S.primary}>Read the pages</button>
+            {!live && <span style={S.meta}>Add the page photos first.</span>}
+          </div>)}
+    </div>
+  );
+}
+
+/** The reader's own doubts about the innings shown, in its words, beside the card. */
+function ReaderDoubts({ list, n }) {
+  const S = styles();
+  if (!list?.length) return null;
+  return (
+    <div style={{ ...S.panel, borderColor: T.semantic.warning }} data-testid="sb-reader-doubts">
+      <h4 style={S.h4}>What the reader was unsure of</h4>
+      <ul style={{ margin: 0, paddingLeft: "20px", display: "flex", flexDirection: "column", gap: T.space.xs }}>
+        {list.map((u, i) => (
+          <li key={i} style={S.body}>{u.path ? `${cellWords(`${n}.${u.path}`)}: ` : ""}{u.text}{u.page ? ` (page ${u.page})` : ""}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ReviewScreen({ R }) {
   const S = styles();
   const wide = !useIsMobile(900);
@@ -284,10 +383,17 @@ function ReviewScreen({ R }) {
     addRow: (/** @type {string} */ list, /** @type {unknown} */ blank) => R.addRow(cur, list, blank),
     removeRow: (/** @type {string} */ list, /** @type {number} */ i) => R.removeRow(cur, list, i),
     setUnreconciled: (/** @type {unknown} */ u) => R.setCell(cur, "unreconciled", u, false),
+    // What the reader put in a cell, while the cell still holds it (§6.3).
+    readOf: (/** @type {string} */ p) => readCellOf(R.d.import.readCells, cards[cur], p),
+    hintOf: (/** @type {string} */ p) => R.readHints[cards[cur].innings]?.[p] ?? null,
+    focusCell: (/** @type {string} */ p) => {
+      const rc = R.d.import.readCells?.[String(cards[cur].innings)]?.[p];
+      if (rc?.p) R.setFocus({ page: rc.p, box: Array.isArray(rc.b) ? rc.b : null, key: `${cur}.${p}`, label: cellWords(`${cur}.${p}`, { withCard: true }) });
+    },
   } : null;
   return (
     <div style={{ display: "grid", gap: T.space.lg, gridTemplateColumns: wide ? "minmax(280px, 4fr) minmax(0, 8fr)" : "minmax(0, 1fr)", alignItems: "start" }} data-testid="sb-review">
-      <PhotoColumn pages={R.d.pages} photos={R.photos} sticky={wide} onRemove={R.removePage} busy={R.busy}/>
+      <PhotoColumn pages={R.d.pages} photos={R.photos} sticky={wide} onRemove={R.removePage} busy={R.busy} focus={R.focus}/>
       <div style={{ display: "flex", flexDirection: "column", gap: T.space.lg, minWidth: 0 }}>
         {R.d.import.state === "returned" && (
           <div style={{ ...S.panel, borderColor: T.semantic.warning }} data-testid="sb-returned-note">
@@ -304,6 +410,7 @@ function ReviewScreen({ R }) {
             </p>
           </div>
         )}
+        <ReadPanel key={cards.map((c) => c.innings).join()} R={R}/>
         <div style={S.card}>
           <div style={{ ...S.wrap, justifyContent: "space-between" }}>
             <h3 style={S.h3}>The card</h3>
@@ -330,6 +437,7 @@ function ReviewScreen({ R }) {
               </ul>
             </div>
           )}
+          {cur >= 0 && <ReaderDoubts list={R.readDoubts[cards[cur].innings]} n={cur}/>}
           {ctx ? <CardEditor key={cur} ctx={ctx}/> : <p style={S.body} data-testid="sb-empty-card">Add the first innings to begin.</p>}
           {cur >= 0 && (
             <button type="button" data-testid="sb-remove-innings" onClick={() => R.removeInnings(cur)} style={{ ...S.secondary, alignSelf: "flex-start" }}>
@@ -461,6 +569,13 @@ export function ScorebookImportView({ importId, match, onClose }) {
   const [asking, setAsking] = useState(false);
   const [roster, setRoster] = useState(/** @type {any[]} */ ([]));
   const [blockedOwn, setBlockedOwn] = useState(false);
+  // The reader (phase 4): a read in progress, the cell focused on the page,
+  // and what the reader said that is not stored — the names it read that
+  // matched nobody, its notes, its doubts — per innings, for this visit only.
+  const [readingNow, setReadingNow] = useState(false);
+  const [focus, setFocus] = useState(/** @type {any} */ (null));
+  const [readHints, setReadHints] = useState(/** @type {Record<number, Record<string, any>>} */ ({}));
+  const [readDoubts, setReadDoubts] = useState(/** @type {Record<number, any[]>} */ ({}));
   // What the API says this person may do with the import: drawn exactly.
   const canWrite = d?.may?.write === true;
   const canConfirm = d?.may?.confirm === true;
@@ -582,6 +697,36 @@ export function ScorebookImportView({ importId, match, onClose }) {
     } finally { setBusy(false); }
   }
 
+  /**
+   * Have the reader fill one innings. What is typed is saved first (the read
+   * adds to the card the server holds); then the card as the server has it,
+   * the new innings shown. A reader that could not read says so, and the card
+   * is typed as ever (§6.4).
+   * @param {number} innings @param {"home" | "away"} side
+   */
+  async function doRead(innings, side) {
+    setBusy(true); setReadingNow(true); setMsg(null);
+    try {
+      let v = version;
+      if (dirty) { const saved = await save(); if (saved == null) return; v = saved; }
+      const r = await api(`/api/scorebook/${importId}/read`, { method: "POST", body: { innings, battingSide: side, version: v } });
+      const p = await fetchImport();
+      adopt(p, false);
+      if (r.ok) {
+        setReadHints((h) => ({ ...h, [innings]: r.hints ?? {} }));
+        setReadDoubts((u) => ({ ...u, [innings]: r.uncertainties ?? [] }));
+        setCur(Math.max(0, p.import.cards.findIndex((/** @type {any} */ c) => c.innings === innings)));
+        setStep("card");
+        setMsg({ kind: "ok", text: `The reader filled in ${inningsWord(innings)}. Check every cell against the page: the ones marked “check” it was unsure of, and nothing is ticked until you tick it.` });
+      } else {
+        setMsg({ kind: "error", text: READER_WORDS[/** @type {keyof typeof READER_WORDS} */ (r.reason)] ?? READER_WORDS.unavailable });
+      }
+    } catch (/** @type {any} */ e) {
+      if (e?.code === "version_conflict") await reloadAfterConflict();
+      else setMsg({ kind: "error", text: refusalWords(e) });
+    } finally { setBusy(false); setReadingNow(false); }
+  }
+
   async function doConfirm(/** @type {{acknowledgeUnreconciled: boolean, note?: string}} */ body) {
     setBusy(true); setMsg(null);
     try {
@@ -648,6 +793,7 @@ export function ScorebookImportView({ importId, match, onClose }) {
   const R = {
     id: importId, d, draft, version, ours, sideNames, groups, rosterMap, photos, cur, setCur, attempted, busy, step, setStep,
     mayAct, blockedOwn: cantConfirm, worked, confirm: doConfirm, giveBack: doReturn,
+    reader: d.reader ?? null, read: doRead, readingNow, focus, setFocus, readHints, readDoubts,
     afterUpload: (/** @type {number} */ added) => afterPages(added),
     removePage: async (/** @type {number} */ n) => {
       setBusy(true); setMsg(null);
@@ -736,6 +882,20 @@ export function ScorebookImportView({ importId, match, onClose }) {
 
       {!editable && (
         <>
+          {state === "reading" && (
+            <div style={{ ...S.card, marginBottom: T.space.lg }} data-testid="sb-reading-state">
+              <h3 style={S.h4}>The pages are being read</h3>
+              <p style={S.body}>Someone pressed Read on this import. The card fills in when the reader answers, usually within a minute; until then it cannot be changed.</p>
+              <button type="button" data-testid="sb-reading-again" disabled={busy} style={{ ...S.secondary, alignSelf: "flex-start" }}
+                onClick={async () => {
+                  try {
+                    const p = await fetchImport();
+                    adopt(p, false);
+                    if (EDITABLE.includes(p.import.state)) setStep(p.import.cards.length ? "card" : "pages");
+                  } catch (/** @type {any} */ e) { setMsg({ kind: "error", text: refusalWords(e) }); }
+                }}>Look again</button>
+            </div>
+          )}
           {state === "returned" && imp.returnedNote && (
             <div style={{ ...S.card, marginBottom: T.space.lg }} data-testid="sb-returned-note">
               <h3 style={S.h4}>Returned with a note</h3><p style={S.body}>{imp.returnedNote}</p>

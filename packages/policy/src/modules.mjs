@@ -197,6 +197,16 @@ export const FEATURES = {
     kind: "feature", label: "Workload monitoring",
     reads: ["load", "load_weeks"],
   },
+  // SCRBRD-120 phase 4 (db/66, D8): the scorebook reader — photos of a
+  // book's pages sent to a vision model to pre-fill the card. A FEATURE inside
+  // the scorebook_import module, off, and on for a school only through the
+  // platform's grant FOR THAT SCHOOL (the database refuses the platform
+  // default: scorebook_reader_on()), after the information officer's
+  // sign-off. Owns no read: its one route is the importer's.
+  scorebook_reader: {
+    kind: "feature", label: "Scorebook reader",
+    reads: [],
+  },
 };
 
 /**

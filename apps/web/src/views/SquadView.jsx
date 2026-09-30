@@ -9,6 +9,7 @@ import { usePlayersWithCareer, useSkills } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
+import { AvailabilityPanel } from "./availability.jsx";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { ageAtCutoff, compareTeams, isEligible, parseTeam, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 
@@ -113,6 +114,10 @@ function SquadView({ role }) {
           }}>{t}</button>
         ))}
       </div>
+      {/* The side's next fixture: who has answered, who has not, and who is
+          asked again because the fixture moved (SCRBRD-122). A guardian's
+          rows are his own child's, by the read's own policy. */}
+      <AvailabilityPanel role={role} team={team}/>
       <div style={{display:"grid",gridTemplateColumns:selected?"1fr 320px":"1fr",gap:"16px"}}>
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>

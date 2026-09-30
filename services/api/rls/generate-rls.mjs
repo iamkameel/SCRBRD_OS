@@ -775,6 +775,7 @@ export const TABLES_ADDED_SINCE_09 = Object.freeze({
   scorebook_import:          "63_scorebook_import.sql",
   scorebook_import_page:     "63_scorebook_import.sql",
   scorebook_import_revision: "63_scorebook_import.sql",
+  match_availability_history: "65_availability_reconfirm.sql",
 });
 const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
 

@@ -40,6 +40,7 @@ export function startedYet(m, now = Date.now()) {
 /** Where an import stands, in words. */
 export const STATE_WORDS = Object.freeze({
   draft: "Started: add the pages and type the card",
+  reading: "The pages are being read: the card fills in when the reader answers",
   review: "The card is being typed",
   submitted: "Submitted: waiting to be confirmed",
   returned: "Returned with a note: it needs changes",
@@ -49,7 +50,7 @@ export const STATE_WORDS = Object.freeze({
 
 /** A short label for a badge. */
 export const STATE_SHORT = Object.freeze({
-  draft: "Draft", review: "In review", submitted: "Submitted", returned: "Returned", confirmed: "Confirmed", abandoned: "Abandoned",
+  draft: "Draft", reading: "Reading", review: "In review", submitted: "Submitted", returned: "Returned", confirmed: "Confirmed", abandoned: "Abandoned",
 });
 
 /** States in which the writer may still change the import. */
@@ -121,7 +122,43 @@ const WORDS = {
   store_get_failed: "The photo could not be fetched. Try again.",
   store_put_failed: "The photo could not be stored. Nothing was added; try again.",
   store_del_failed: "The photo could not be removed. Try again.",
+  // The reader (phase 4).
+  reading: "The pages are already being read. Wait for the reader to answer, then look again.",
+  innings_on_card: "That innings is already on the card. Remove it from the card first to have it read again.",
+  card_full: "The card already has four innings.",
+  no_pages: "Add the page photos before the reader can read them.",
+  innings_invalid: "Choose which innings to read.",
+  side_required: "Say which side batted in this innings.",
 };
+
+/**
+ * Why the reader did not fill the card (SCRBRD-120 §6.4), in words that send
+ * the person to the manual path, which is always there.
+ */
+export const READER_WORDS = Object.freeze({
+  off: "The scorebook reader is not switched on for this school. Type the card beside the pages.",
+  unconfigured: "The scorebook reader is not available on this server. Type the card beside the pages.",
+  unavailable: "The reader could not read the pages. Type the card beside them.",
+  refused: "The reader would not read these pages. Type the card beside them.",
+  timeout: "The reader took too long to answer. Type the card beside the pages, or try again.",
+});
+
+/** A read cell below this confidence is marked "check" (§6.3, an assumption). */
+export const READ_CHECK_BELOW = 0.8;
+
+/**
+ * What the reader put in one cell, while the cell still holds it: its
+ * confidence, page and box. Once the person changes the cell it is theirs,
+ * and the reader's record is no longer shown for it.
+ * @param {any} readCells  the import's readCells: innings → path → {c, p, b, v}
+ * @param {any} card  @param {string} path  the path within the card
+ * @returns {{c: number, p: number | null, b: number[] | null, v: unknown} | null}
+ */
+export function readCellOf(readCells, card, path) {
+  const rc = readCells?.[String(card?.innings)]?.[path];
+  if (!rc || typeof rc !== "object") return null;
+  return (getPath(card, path) ?? null) === (rc.v ?? null) ? rc : null;
+}
 
 /** The code, read as words when it has none of its own: "some_code" → "some code". @param {string} c */
 const plain = (c) => String(c).replace(/_/g, " ");

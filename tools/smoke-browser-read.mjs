@@ -1898,6 +1898,82 @@ try {
     } finally { await owner.end().catch(() => {}); }
   }
 
+
+  // ── Availability asks again when the fixture moves (SCRBRD-122, db/65) ──
+  //
+  // A fixture the families answered for, then moved an hour: the guardian's
+  // Squad screen says his boy's answer needs reconfirming, with what it was
+  // about, and one tap answers it again; the coach's shows the side, asks
+  // again of the boy whose answer he recorded, and answers from there. The
+  // guardian's notice is in his feed. Written last: it adds a fixture.
+  group("A moved fixture asks the family again, and one tap answers it");
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    try {
+      const HIL = "11111111-1111-1111-1111-111111111111";
+      const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005", WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001";
+      const id = async (email) => (await owner.query(`select id from app_user where email = $1`, [email])).rows[0].id;
+      const parentId = await id("parent@example.invalid"), coachId = await id("coach@example.invalid");
+      // The side's next fixture by some hours, so it is the one each screen opens on.
+      const m = (await owner.query(
+        `insert into match (school_id, team_code, opponent, starts_at, format, overs, status, ground_id)
+         values ($1, '1XI', 'Verify 122 XI', now() + interval '6 hours', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001')
+         returning id`, [HIL])).rows[0].id;
+      await owner.query(
+        `insert into match_availability (match_id, player_id, school_id, status, declared_by)
+         values ($1, $2, $3, 'available', $4), ($1, $5, $3, 'unavailable', $6)`,
+        [m, PILLAY, HIL, parentId, WHITFIELD, coachId]);
+      await owner.query(`update match set starts_at = starts_at - interval '1 hour' where id = $1`, [m]);
+
+      const g = await open();
+      ok("the guardian signs in", await signIn(g.page, /parent@example\.invalid/));
+      ok("the squad screen opens for him", await nav(g.page, /Squad/));
+      const panel = g.page.locator('[data-testid="availability-panel"]');
+      await panel.first().waitFor({ timeout: 6000 }).catch(() => {});
+      const ptext = (await panel.first().innerText({ timeout: 3000 }).catch(() => "")) ?? "";
+      ok("his child's availability is on it, for the moved fixture",
+         /Availability/i.test(ptext) && /Verify 122 XI/.test(ptext));
+      const state = (p, who) => p.locator(`[data-testid="availability-state-${who}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
+      ok("his boy's answer says it needs reconfirming, not available", /needs reconfirming/i.test(await state(g.page, PILLAY)));
+      const was = await g.page.locator(`[data-testid="availability-was-${PILLAY}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
+      ok("...with what it was, and about which fixture",
+         /was available for \w{3} \d{1,2} \w{3} \d\d:\d\d at Gordon Sherwood Oval · T20, 20 overs/.test(was));
+      ok("...and no other child is on it", !/Whitfield|Bekker|Naidoo|Cele/.test(ptext)
+         && await g.page.locator(`[data-testid="availability-row-${WHITFIELD}"]`).count() === 0);
+      await g.page.locator(`[data-testid="availability-again-${PILLAY}"]`).first().click({ timeout: 4000 }).catch(() => {});
+      await g.page.waitForTimeout(1500);
+      ok("one tap answers again: available", /^available$/i.test((await state(g.page, PILLAY)).trim())
+         && await g.page.locator(`[data-testid="availability-was-${PILLAY}"]`).count() === 0);
+      const row = (await owner.query(
+        `select a.declared_by = $3 as by_him, (a.fixture_starts_at = m.starts_at) as current,
+                (select count(*)::int from match_availability_history h where h.match_id = $1 and h.player_id = $2) as kept
+           from match_availability a join match m on m.id = a.match_id where a.match_id = $1 and a.player_id = $2`,
+        [m, PILLAY, parentId])).rows[0];
+      ok("...recorded as his, about the fixture as it stands, the old answer kept",
+         row?.by_him === true && row?.current === true && row?.kept === 1);
+      ok("his notices include the ask, about his boy", await nav(g.page, /Notifications|Alerts/)
+         && /please answer again/i.test(await text(g.page)) && /R Pillay/.test(await text(g.page)));
+      ok("...and no notice names another family's boy", !/Whitfield/.test(await text(g.page)));
+      ok("no scoping refusals or console errors for the guardian", g.refusals.length === 0 && g.errors.length === 0);
+      await g.ctx.close();
+
+      const c = await open();
+      ok("the coach signs in", await signIn(c.page, /coach@example\.invalid/));
+      ok("the squad screen opens", await nav(c.page, /Squad/));
+      await c.page.locator('[data-testid="availability-panel"]').first().waitFor({ timeout: 6000 }).catch(() => {});
+      ok("the boy whose answer he recorded is asked again", /needs reconfirming/i.test(await state(c.page, WHITFIELD)));
+      ok("...the guardian's answer stands", /^available$/i.test((await state(c.page, PILLAY)).trim()));
+      const asking = await c.page.locator('[data-testid="availability-asking"]').first().innerText({ timeout: 3000 }).catch(() => "");
+      ok("...and the panel counts one to answer again", /^1 to answer again$/i.test(asking.trim()));
+      await c.page.locator(`[data-testid="availability-set-${WHITFIELD}-available"]`).first().click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(1500);
+      ok("the coach records a new answer from there", /^available$/i.test((await state(c.page, WHITFIELD)).trim())
+         && await c.page.locator('[data-testid="availability-asking"]').count() === 0);
+      ok("no scoping refusals or console errors for the coach", c.refusals.length === 0 && c.errors.length === 0);
+      await c.ctx.close();
+    } finally { await owner.end().catch(() => {}); }
+  }
+
 } catch (e) {
   ok(`the browser read walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {

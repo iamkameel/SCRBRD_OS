@@ -390,6 +390,8 @@ Phase 1 must be first. Phase 3's invitation path waits on STEP4 Q10's team-sheet
 
 Each with the recommendation the body assumes. Where the answer is the school's policy rather than the platform's, the row says so.
 
+**Decided (Kameel, 2026-09-30): D1–D18 as recommended.** As information officer, D9 is three years after the fixture (declarations a year past expiry), then a logged purge to counts. D11's words stand as drafted: the barred parent reads "the DSO has asked you not to drive at present", and the notice reads "You may not offer lifts at {school}. Contact the DSO." Build order: after SCRBRD-122 and SCRBRD-123.
+
 | # | decision | recommendation |
 |---|---|---|
 | **D1** | One offer per leg; a round trip is two offers made by one form | **Yes.** A boy goes out with one parent and back with another every Saturday; one state machine per leg keeps consent and handover exact |

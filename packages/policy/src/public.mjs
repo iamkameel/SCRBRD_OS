@@ -171,6 +171,8 @@ export const NEVER_PUBLIC = Object.freeze({
   // N2. A family's statement about one Saturday — "unavailable, family" — is
   // "why a boy is not playing", and its status column is the bare word.
   match_availability: "N2",
+  // N2, and the same statement: an answer a re-declaration replaced (db/65).
+  match_availability_history: "N2",
   // N2, and a reading rather than a quotation: a bowler's overs against the
   // directive for his age is an injury-prevention record about his body
   // (player.workload.read, level 2). The overs themselves are on the scorecard.

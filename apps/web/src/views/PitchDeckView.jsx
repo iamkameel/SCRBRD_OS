@@ -19,7 +19,7 @@ import { deviceCss } from "./pitchdeck/Device.jsx";
 // ══════════════════════════════════════════════════════
 //  PITCH DECK
 //
-//  Thirteen slides over one stage. The stage is a three.js field with an
+//  Fifteen slides over one stage. The stage is a three.js field with an
 //  innings drawn on it, fetched on first use (views/pitchdeck/scene.js) so
 //  the library never reaches the entry chunk; when the browser cannot draw in
 //  3D the same wheel is drawn flat in SVG and the deck says nothing about it.
@@ -31,13 +31,14 @@ import { deviceCss } from "./pitchdeck/Device.jsx";
 //  slide that is prose — the problem — is prose, and is labelled as the
 //  argument rather than the evidence.
 //
-//  Four of the slides are not drawn by the deck at all: "field", "centre",
-//  "families" and "safeguard" show the app's own screens, rendered live in
-//  device frames on demonstration data (views/pitchdeck/Showcase.jsx), so the
-//  deck cannot describe a screen the product no longer has. That module is
-//  fetched when the first of them opens.
+//  Six of the slides are not drawn by the deck at all: "day", "field",
+//  "centre", "scorebook", "families" and "safeguard" show the app's own
+//  screens, rendered live in device frames on demonstration data
+//  (views/pitchdeck/Showcase.jsx), so the deck cannot describe a screen the
+//  product no longer has. That module is fetched when the first of them opens.
 //
 //  Keyboard: arrows, Space, PageUp/Down, Home, End, 1-9, F for full screen.
+//  (Only the first nine slides have a digit; the dots reach the rest.)
 // ══════════════════════════════════════════════════════
 
 // ── Facts, computed once from the policy ──
@@ -77,15 +78,17 @@ const DEMO = (() => {
   };
 })();
 
-const VIEW_OF = { cover: "orbit", problem: "low", wheel: "wheel", field: "close", centre: "far", platform: "far", access: "top", care: "low",
+const VIEW_OF = { cover: "orbit", problem: "low", wheel: "wheel", day: "low", field: "close", centre: "far", scorebook: "top", platform: "far", access: "top", care: "low",
                   families: "far", safeguard: "low", school: "close", roadmap: "far", close: "orbit" };
 
 const SLIDES = [
   { id: "cover",    label: "SCRBRD" },
   { id: "problem",  label: "The season, today" },
   { id: "wheel",    label: "Every ball, where it went" },
+  { id: "day",      label: "The coach's day" },
   { id: "field",    label: "On the field" },
   { id: "centre",   label: "The Match Centre" },
+  { id: "scorebook",label: "A paper scorebook" },
   { id: "platform", label: "One switchboard" },
   { id: "access",   label: "Who may see what" },
   { id: "care",     label: "A duty of care, kept" },
@@ -170,12 +173,16 @@ const css = () => `
 .deck-dot::after{content:"";position:absolute;left:-3px;right:-3px;top:-19px;bottom:-19px}
 .deck-show{display:grid;grid-template-columns:minmax(240px,340px) minmax(0,1fr);gap:28px;align-items:center}
 .deck-show-stage{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:22px;align-items:start;justify-items:center}
+.deck-show-stage[data-cols="photo"]{grid-template-columns:minmax(190px,.5fr) minmax(0,1.5fr)}
+.deck-photo{margin:0;width:100%;min-width:0;display:flex;flex-direction:column;align-items:center;gap:10px}
+.deck-photo-frame{width:100%;max-width:290px;padding:7px;box-sizing:border-box;background:#fbf8ee;border-radius:3px;transform:rotate(-2deg);box-shadow:0 14px 34px rgba(0,0,0,.3)}
+.deck-photo-frame svg{display:block;width:100%;height:auto}
 .deck-tabs{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:14px}
 .deck-centre{display:flex;flex-direction:column;align-items:center;min-width:0;width:100%}
 .deck-note{font-family:${D.body};font-size:12px;line-height:1.5;color:${D.textMuted};margin:14px 0 0;max-width:46ch}
 .deck-pointlist{display:grid;gap:8px;margin-top:16px}
 ${deviceCss()}
-@media (max-width:840px){.deck-body{padding:20px 18px 26px}.deck-wheel,.deck-two,.deck-show{grid-template-columns:1fr}.deck-show-stage{grid-template-columns:minmax(0,1fr)}.deck-wheel{min-height:0}}
+@media (max-width:840px){.deck-body{padding:20px 18px 26px}.deck-wheel,.deck-two,.deck-show{grid-template-columns:1fr}.deck-show-stage,.deck-show-stage[data-cols="photo"]{grid-template-columns:minmax(0,1fr)}.deck-wheel{min-height:0}}
 `;
 
 // ══════════════════════════════════════════════════════
@@ -340,6 +347,16 @@ function CareSlide() {
 // them with; what these say is what is true of those components, and each line
 // is one a reader can check against the screen beside it.
 const SHOW = {
+  day: {
+    n: 1, kicker: "The coach's matchday", title: "The day, in the order it happens.",
+    lede: "A coach opens SCRBRD to a day sheet, not a wall of counters: what is live now, the next fixture with its ground, bus and weather, who is out, the week, and any alerts last. This is the real screen, drawn on invented fixtures.",
+    points: [
+      ["Ready or not, in words", "Team sheet, transport, officials and ground report each say \"on record\" or \"nothing on record\". No percentages, and nothing guessed."],
+      ["Who is out, and no more", "Who, and when he is back. What the injury is sits behind a different capability, and this screen never reads it."],
+      ["Only what the role reaches", "A section the role's capabilities do not reach is not drawn at all, rather than drawn empty."],
+    ],
+    note: "The real day sheet, handed invented fixtures, players and alerts, with a demonstration chase on the board. The frame stops at the fold: the week and the alerts follow. Nothing on this slide can be tapped, and nothing on it is saved.",
+  },
   field: {
     n: 2, kicker: "On the field", title: "The scorer's pad, mid-over.",
     lede: "This is the pad a scorer holds, drawn live on a demonstration chase: the score once, on the black board; the state in one line; then the pad asks. Shot, area and outcome in three steps, or the outcome alone under Basic Scoring.",
@@ -357,7 +374,17 @@ const SHOW = {
       ["Choose a tab", "The buttons above the screen pick which of the Match Centre's own tabs is drawn. They change the slide and nothing else."],
       ["One replay", "The scorer's pad, this screen and the public page fold one log with one package, so they cannot disagree."],
     ],
-    note: "The frame shows each tab's contents; the header and tab strip belong to the screen around them, and the day sheet is not shown. A demonstration match with invented players.",
+    note: "The frame shows each tab's contents; the header and tab strip belong to the screen around them. A demonstration match with invented players.",
+  },
+  scorebook: {
+    n: 2, cols: "photo", kicker: "The paper record", title: "A paper scorebook, into the record.",
+    lede: "Every school has seasons of scorebooks nobody can search. Photograph the page, and the card is typed from it or read from the photo, checked cell by cell against the page, and confirmed by a second person. Only then does it count.",
+    points: [
+      ["Checked cell by cell", "Every figure has its own tick. A blank stays blank: the book's silence is never turned into a nought."],
+      ["Confirmed by a second person", "Whoever typed the card cannot confirm it. If the book's batting does not add up to its total, the difference is recorded and shown, not hidden."],
+      ["Then it counts", "A confirmed card is the match's record and goes into each player's career, marked on the scorecard as from the scorebook."],
+    ],
+    note: "An invented page and an invented card: no school's record and no child's name. Nothing on this slide is uploaded, read or saved.",
   },
   families: {
     n: 2, kicker: "For families", title: "A parent decides, and can undo it.",
@@ -397,7 +424,7 @@ function ShowSlide({ id }) {
         </div>
         <p className="deck-note">{c.note}</p>
       </div>
-      <div className="deck-show-stage" style={{ "--n": c.n }}>
+      <div className="deck-show-stage" style={{ "--n": c.n }} data-cols={c.cols}>
         <Suspense fallback={<div className="deck-sub" role="status">Drawing the real screens…</div>}>
           <Showcase id={id}/>
         </Suspense>
