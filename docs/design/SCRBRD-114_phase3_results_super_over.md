@@ -298,6 +298,8 @@ One migration per phase, its proof in db/99, a smoke walk, and `DEPLOYING.md`'s 
 
 ## 9 · Decisions for Kameel
 
+**Decided (Kameel, 2026-09-30): D1–D17 as recommended.** Build order: after the planner and league wizard (db/67) and the wicket-keeper (db/68): 3a results and the table (db/69), 3b the super over (db/70), 3c progression (db/71), then lift clubs.
+
 Each with the recommendation the body assumes and one line of why. The parent's D1–D12 stand; these are this document's.
 
 | # | decision | recommendation |

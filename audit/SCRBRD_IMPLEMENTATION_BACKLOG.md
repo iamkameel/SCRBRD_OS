@@ -3884,6 +3884,20 @@ It is signed-in only, for a role that may already read the match, so names are s
 
 It reuses SCRBRD-106's components where they fit. There is no migration.
 
+### SCRBRD-128 — A placement helper: a second device adds where the ball went
+**Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
+2026-09-30)
+The pad asks one scorer for three taps a ball (shot, where it went, outcome). In a busy over a scorer alone falls behind or
+places from memory, and placement is what suffers first. As broadcast data operators split core scoring from extended
+data, a second person on a second device (a "placement helper", joined to the match like a second scorer but with no
+power to score) adds the shot and the point for each ball the scorer has committed, and later the pitch map's line and
+length (SCRBRD-108). The ball stays one event: the helper's entry is an annotation of a committed ball, never a second
+ball, and the capture profile says which balls it covered. Needs a design pass on the event shape (an annotation event
+keyed to the ball's idempotency key, with the Laws/fold ignoring it for the score), the helper's credential (as the pad's
+resume credential, match-scoped), and what the wagon wheel shows while a ball waits for its point. Also check how the
+wheel draws fours and sixes (to the rope, not where the fielder stopped it). Opus design and engine; Sonnet the helper's
+screen.
+
 ### SCRBRD-108 — A pitch map, entered by hand: line and length per delivery
 **Priority:** P2 · **Domain:** Analytics / coaching · **Type:** feature (Kameel, 2026-09-27; the roadmap's "Pitch Map", up18)
 This is the bowling half of the wagon wheel. The ICC gets it from Hawk-Eye; a school gets it from a person tapping where the ball pitched.
@@ -4103,6 +4117,7 @@ recorded for clubs (C7 "the same rules as schools") and not built:
 - Premier League coaches hold at least Level 2 (1.2.4; `coaching_accreditation` exists as a clearance kind).
 **Not built, by decision:** 1.2.5 (players of colour per team) and 3.5.4 (foreign players counted as white) are
 transformation quotas, and the transformation-quota rule above applies to them.
+**Phase 3 designed (Fable, 2026-09-30):** `docs/design/SCRBRD-114_phase3_results_super_over.md`; D1–D17 decided as recommended (Kameel). db/69 results and table, db/70 the super over, db/71 knockout progression.
 **KZN rules decided (Kameel, 2026-09-30):** KZN schools play the MCC Laws with no further bye-laws, so phase 5's "KZN figures" are the platform defaults. Pilot league: points win 4 / tie 2 / no result 2 / loss 0, no bonus; a knockout tie goes to a super over (a league tie stands); bowling limits are CSA's age-group guidelines, now confirmed. Entered on the conditions screen, not seeded. Recorded in the design's §8.3a. Phase 3 (the points table and a playable super over) is unblocked.
 **Tie-breaks (Kameel, 2026-09-30, from the `sundayMatches` review):** `result.tie_break` (`none` | `super_over`) is reserved in the catalogue but the fold cannot play a super over. Phase 3 (match results) must: play a super over as its own innings pair (one over, two wickets, the Laws and the fold as for any innings), and support whatever tie rule the KZN bye-laws name instead (e.g. fewer wickets lost, or shared points). The fixture planner's knockouts (SCRBRD-123) need a winner, so this comes before knockout rounds are published.
 
