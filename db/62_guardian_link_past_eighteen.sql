@@ -21,7 +21,10 @@
 --      (as before), and STILL REFUSES A NEW LINK FOR AN ADULT
 --      (player_is_an_adult). An existing link carries on; a new one is never
 --      made for a grown child. Otherwise line for line db/08's, with its
---      search_path pinned as db/16 pinned the original.
+--      search_path pinned as db/16 pinned the original. decide_role_request()
+--      (db/08), the other door a guardian link comes through — the office
+--      granting a request, and enrol_person() through it — is re-emitted
+--      with the same rule (Kameel, 2026-09-30).
 --   2. Two triggers on team_membership:
 --        CLOSE — a row gets left_on and he has no other open school
 --          membership: every open guardian link for him gets
@@ -164,6 +167,85 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Its grants are db/08's and CREATE OR REPLACE keeps them.
 
+
+-- ── 1b · Granting a guardian's request (db/08, re-emitted) ─────────
+-- The second door a guardian link comes through: the office granting a
+-- role_request (and enrol_person(), which grants through it). The same rule
+-- has to hold whichever door the link came through (db/08's own comment),
+-- so it too writes the link open while the child is still_at_school(), his
+-- birthday otherwise, and still refuses a guardian for an adult
+-- (player_is_an_adult). Decided by Kameel, 2026-09-30. Otherwise db/08's
+-- function line for line, with its search_path pinned.
+CREATE OR REPLACE FUNCTION decide_role_request(p_request uuid, p_grant boolean, p_note text, p_player uuid DEFAULT NULL, p_team text DEFAULT NULL)
+RETURNS TABLE (ok boolean, reason text, assignment_id uuid) AS $$
+DECLARE r role_request%ROWTYPE; v_asg uuid; v_self uuid; v_player uuid; v_team text; v_born date;
+BEGIN
+  SELECT * INTO r FROM role_request WHERE id = p_request;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_request', NULL::uuid; RETURN; END IF;
+  IF r.state <> 'pending' THEN RETURN QUERY SELECT false, 'already_decided', NULL::uuid; RETURN; END IF;
+  IF NOT (app_can('user.role.assign', r.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                  '00000000-0000-0000-0000-000000000000'::uuid) AND app_may_grant(r.role)) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::uuid; RETURN;
+  END IF;
+  IF NOT p_grant THEN
+    UPDATE role_request SET state = 'declined', decided_by = app_user_id(), decided_at = now(), decided_note = p_note WHERE id = p_request;
+    RETURN QUERY SELECT true, NULL::text, NULL::uuid; RETURN;
+  END IF;
+  v_player := coalesce(p_player, r.player_id);
+  -- A coach is a coach OF A SIDE (assignment_team_scoped): the request names
+  -- one, or the decider does, or it is not granted. Said by name rather than
+  -- left to the constraint, so the office knows what to supply.
+  v_team := coalesce(nullif(btrim(coalesce(p_team, '')), ''), r.team_code);
+  IF r.role IN ('coach', 'assistantcoach', 'teammanager') AND v_team IS NULL THEN
+    RETURN QUERY SELECT false, 'team_required', NULL::uuid; RETURN;
+  END IF;
+  IF v_player IS NOT NULL AND NOT EXISTS (SELECT 1 FROM player p WHERE p.id = v_player AND p.school_id = r.school_id) THEN
+    RETURN QUERY SELECT false, 'player_not_at_that_school', NULL::uuid; RETURN;
+  END IF;
+  IF r.role IN ('guardian', 'selfaccess', 'enquiry') AND v_player IS NULL THEN
+    RETURN QUERY SELECT false, 'player_required', NULL::uuid; RETURN;
+  END IF;
+  -- A guardianship granted here ends at the child's majority, exactly as one
+  -- established by the office does — the same rule has to hold whichever door
+  -- the link came through, or the shorter path becomes the way round it.
+  -- `enquiry` keeps its own window, set by whoever granted it.
+  --
+  -- This sits with the other refusals, BEFORE the assignment is written, and
+  -- that placement is the point: a plpgsql RETURN is not a rollback, so a
+  -- guard downstream of the INSERT would answer false and still leave a live
+  -- guardian assignment on the record with the request still pending — and
+  -- the next attempt would write a second one.
+  IF r.role = 'guardian' THEN
+    SELECT p.born INTO v_born FROM player p WHERE p.id = v_player;
+    IF v_born IS NULL THEN
+      RETURN QUERY SELECT false, 'player_date_of_birth_required', NULL::uuid; RETURN;
+    END IF;
+    IF majority_on(v_born) <= current_date THEN
+      RETURN QUERY SELECT false, 'player_is_an_adult', NULL::uuid; RETURN;
+    END IF;
+  END IF;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES (r.person_id, r.role, r.school_id, v_team) RETURNING id INTO v_asg;
+  IF r.role IN ('guardian', 'enquiry') THEN
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, created_by, valid_until)
+    VALUES (v_asg, v_player, CASE r.role WHEN 'guardian' THEN 'parent' ELSE 'enquiry' END, 'verified', app_user_id(), now(), 'pending', app_user_id(),
+            -- Open while he is at school; his eighteenth birthday otherwise (db/62).
+            CASE WHEN r.role = 'guardian' AND NOT still_at_school(v_player) THEN majority_on(v_born) END);
+  ELSIF r.role = 'selfaccess' THEN
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+    VALUES (v_asg, v_player, 'self', 'verified', app_user_id(), now(), 'granted', 'popia-2026-01', now(), app_user_id());
+  ELSIF r.role = 'player' AND v_player IS NOT NULL THEN
+    -- A pupil holds both: the team role and his own record.
+    UPDATE app_user SET player_id = v_player WHERE id = r.person_id;
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (r.person_id, 'selfaccess', r.school_id) RETURNING id INTO v_self;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+    VALUES (v_self, v_player, 'self', 'verified', app_user_id(), now(), 'granted', 'popia-2026-01', now(), app_user_id());
+  END IF;
+  UPDATE role_request SET state = 'granted', decided_by = app_user_id(), decided_at = now(), decided_note = p_note,
+                          assignment_id = v_asg, player_id = v_player, team_code = v_team WHERE id = p_request;
+  RETURN QUERY SELECT true, NULL::text, v_asg;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Its grants are db/08's and CREATE OR REPLACE keeps them.
 
 -- ── 2 · The link follows the school (§7.4 item 3) ──────────────────
 /**
@@ -512,6 +594,7 @@ DECLARE
 BEGIN
   -- Every function here: SECURITY DEFINER with a pinned search path (db/16).
   FOREACH f IN ARRAY ARRAY['guardian_link_establish(uuid,uuid,text)',
+                           'decide_role_request(uuid,boolean,text,uuid,text)',
                            'guardian_links_close_on_leaving(uuid,date)', 'guardian_links_reopen_at_school(uuid)',
                            'team_membership_closes_guardian_links()', 'team_membership_opens_guardian_links()',
                            'public_name_consent_set(uuid,boolean,text,uuid,text,date)',
@@ -550,8 +633,9 @@ BEGIN
       RAISE EXCEPTION 'db/62: % is executable by a managed host''s API role', f;
     END IF;
   END LOOP;
-  IF NOT has_function_privilege('scrbrd_app', 'guardian_link_establish(uuid,uuid,text)'::regprocedure, 'EXECUTE') THEN
-    RAISE EXCEPTION 'db/62: the application can no longer call guardian_link_establish()';
+  IF NOT has_function_privilege('scrbrd_app', 'guardian_link_establish(uuid,uuid,text)'::regprocedure, 'EXECUTE')
+     OR NOT has_function_privilege('scrbrd_app', 'decide_role_request(uuid,boolean,text,uuid,text)'::regprocedure, 'EXECUTE') THEN
+    RAISE EXCEPTION 'db/62: the application can no longer call guardian_link_establish() or decide_role_request()';
   END IF;
 
   -- guardian_link_establish() still refuses an adult, and writes the open
@@ -559,6 +643,10 @@ BEGIN
   v_def := pg_get_functiondef('guardian_link_establish(uuid,uuid,text)'::regprocedure);
   IF v_def NOT LIKE '%''player_is_an_adult''%' OR v_def NOT LIKE '%still_at_school(p_player)%' THEN
     RAISE EXCEPTION 'db/62: guardian_link_establish() does not refuse an adult and open a pupil''s link';
+  END IF;
+  v_def := pg_get_functiondef('decide_role_request(uuid,boolean,text,uuid,text)'::regprocedure);
+  IF v_def NOT LIKE '%''player_is_an_adult''%' OR v_def NOT LIKE '%still_at_school(v_player)%' THEN
+    RAISE EXCEPTION 'db/62: decide_role_request() does not refuse an adult and open a pupil''s link';
   END IF;
 
   -- The two triggers, on the events §7.4 names, deferred to the end of the

@@ -1431,6 +1431,8 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 --   late   17, 1XI — out of the school system when his link is made, then enrols
 --   grown  18 and four months, 1XI — no link, and none can be made
 --   club   17, at a CLUB (kind 'club') — not the school system
+--   rpupil, rclub, radult — the same three cases through the other door: a
+--          parent's role_request, granted by the office (decide_role_request())
 -- A club, its office, Hilton's office, the pupil's own account, and one
 -- parent each (two for the pupil). Links are made in the section, through
 -- guardian_link_establish() and guardian_link_verify(), as the offices.
@@ -1453,7 +1455,10 @@ BEGIN
       ('minor', 'Mike Minorsixtytwo',   16, 40, 'hil'),
       ('late',  'Liam Latesixtytwo',    17, 40, 'hil'),
       ('grown', 'Gary Grownsixtytwo',   18, 120, 'hil'),
-      ('club',  'Craig Clubsixtytwo',   17, 40, 'club')) AS v(k, nm, age, days, at)
+      ('club',  'Craig Clubsixtytwo',   17, 40, 'club'),
+      ('rpupil', 'Ryan Requestpupil',   17, 40, 'hil'),
+      ('rclub',  'Rory Requestclub',    17, 40, 'club'),
+      ('radult', 'Riaan Requestadult',  18, 120, 'hil')) AS v(k, nm, age, days, at)
   LOOP
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
     VALUES (CASE r.at WHEN 'hil' THEN HIL ELSE CLUB END, '1XI', r.nm, split_part(r.nm, ' ', 2), 620 + s, 'batter',
@@ -1473,6 +1478,9 @@ BEGIN
       ('lmum',    NULL,          'hil',  'guardian'),
       ('gmum',    NULL,          'hil',  'guardian'),
       ('cmum',    NULL,          'club', 'guardian'),
+      ('rmum',    NULL,          'hil',  'guardian'),
+      ('rcmum',   NULL,          'club', 'guardian'),
+      ('ramum',   NULL,          'hil',  'guardian'),
       ('self',    'selfaccess',  'hil',  'player')) AS v(k, role, at, urole)
   LOOP
     INSERT INTO app_user (school_id, email, name, role)
@@ -1491,6 +1499,15 @@ BEGIN
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   VALUES ((ids->>'a_self')::uuid, (ids->>'p_pupil')::uuid, 'self', 'verified', (ids->>'u_office')::uuid, now(),
           'granted', 'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30);
+  -- Three parents who asked through onboarding, each naming the child: the
+  -- office will grant them through decide_role_request(), the other door.
+  FOR r IN SELECT * FROM (VALUES ('rpupil', 'rmum', 'hil'), ('rclub', 'rcmum', 'club'), ('radult', 'ramum', 'hil')) AS v(p, u, at) LOOP
+    INSERT INTO role_request (person_id, role, school_id, player_id, note)
+    VALUES ((ids->>('u_' || r.u))::uuid, 'guardian', CASE r.at WHEN 'hil' THEN HIL ELSE CLUB END,
+            (ids->>('p_' || r.p))::uuid, 'verify db/62: I am his parent')
+    RETURNING id INTO v_a;
+    ids := ids || jsonb_build_object('r_' || r.p, v_a);
+  END LOOP;
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -7906,9 +7923,11 @@ BEGIN
   -- app_can() still grants his parent; a club member's ends on the birthday
   -- as before; a minor who leaves keeps it until his birthday; an adult who
   -- leaves loses it that day; a boy re-enrolled, or enrolled after his link
-  -- was made, has it re-opened; guardian_link_establish() still refuses a new
-  -- link for an adult. (db/10 unchanged is the ledger's and shipped.test's:
-  -- migrate.mjs refuses a changed file, and tools/smoke-link18.mjs compares
+  -- was made, has it re-opened; a new link for an adult is still refused.
+  -- All of it through either door: guardian_link_establish(), and a granted
+  -- role_request (decide_role_request(); Kameel, 2026-09-30). (db/10
+  -- unchanged is the ledger's and shipped.test's: migrate.mjs refuses a
+  -- changed file, and tools/smoke-link18.mjs compares
   -- db/10's hash with db/SHIPPED.sha256 and the ledger.) Then the two
   -- consents on top of it: her health "yes" carries on at eighteen while he
   -- is at school and dies when he leaves; her "yes" after eighteen is refused
@@ -7924,6 +7943,7 @@ BEGIN
   -- some is an earlier section's:
   --   establish writes the birthday for a pupil  → "did not leave a pupil's link open" (guardianship block)
   --   establish's adult refusal taken out        → "a guardian can be linked to a player who has turned eighteen"
+  --   decide_role_request writes the birthday    → (request)
   --   the triggers INITIALLY IMMEDIATE           → db/62's own proof; with that cut too, "no pupil at school has
   --                                                an open guardian link", and (move) in tools/smoke-link18.mjs
   --   the CLOSE doing nothing                    → (leaves)
@@ -7942,6 +7962,7 @@ BEGIN
     ZERO    uuid := '00000000-0000-0000-0000-000000000000';
     CLUB    uuid;
     P_PUP   uuid; P_ADU uuid; P_MIN uuid; P_LATE uuid; P_GROWN uuid; P_CLUB uuid;
+    P_RPUP  uuid; P_RCLUB uuid; P_RADU uuid; U_RMUM uuid; U_RCMUM uuid; U_RAMUM uuid;
     U_OFF   uuid; U_COFF uuid; U_MUM uuid; U_DAD uuid; U_AMUM uuid; U_MMUM uuid;
     U_LMUM  uuid; U_GMUM uuid; U_CMUM uuid; U_SELF uuid;
     V       text := 'health-monitoring-2026-09';
@@ -7957,6 +7978,8 @@ BEGIN
     U_MUM := (ids->>'u_mum')::uuid;    U_DAD := (ids->>'u_dad')::uuid;     U_AMUM := (ids->>'u_amum')::uuid;
     U_MMUM := (ids->>'u_mmum')::uuid;  U_LMUM := (ids->>'u_lmum')::uuid;   U_GMUM := (ids->>'u_gmum')::uuid;
     U_CMUM := (ids->>'u_cmum')::uuid;  U_SELF := (ids->>'u_self')::uuid;
+    P_RPUP := (ids->>'p_rpupil')::uuid; P_RCLUB := (ids->>'p_rclub')::uuid; P_RADU := (ids->>'p_radult')::uuid;
+    U_RMUM := (ids->>'u_rmum')::uuid;  U_RCMUM := (ids->>'u_rcmum')::uuid; U_RAMUM := (ids->>'u_ramum')::uuid;
     -- The seed's memberships were opened in this transaction; what the
     -- application's commit would do to them happens now, before anything
     -- is asked. Liam is then out of the school system when his link is made.
@@ -7993,6 +8016,26 @@ BEGIN
                     AND _count_subjects(P_GROWN) = 0,
       format('db/62 (grown): a parent was linked to a pupil of eighteen (%s, %s)', v_ok, v_reason));
 
+    -- (request) The other door: the office grants a parent's role_request
+    -- (decide_role_request(), and enrol_person() through it). The same rule:
+    -- open for a pupil at school, his birthday for a club member, and never
+    -- a guardian for an adult — refused, leaving nothing behind.
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM decide_role_request((ids->>'r_rpupil')::uuid, true, 'verify db/62');
+    PERFORM _assert(v_ok, format('db/62 (request): Hilton''s office could not grant a parent''s request (%s)', v_reason));
+    PERFORM _as(U_COFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM decide_role_request((ids->>'r_rclub')::uuid, true, 'verify db/62');
+    PERFORM _assert(v_ok, format('db/62 (request): the club''s office could not grant a parent''s request (%s)', v_reason));
+    PERFORM _assert((_v62_link(P_RPUP, U_RMUM)).open
+                    AND (_v62_link(P_RCLUB, U_RCMUM)).until = majority_on(_born_of(P_RCLUB)),
+      format('db/62 (request): a granted request wrote the pupil''s link %s and the club member''s %s',
+             coalesce((_v62_link(P_RPUP, U_RMUM)).until::text, 'open'), coalesce((_v62_link(P_RCLUB, U_RCMUM)).until::text, 'open')));
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM decide_role_request((ids->>'r_radult')::uuid, true, 'verify db/62');
+    PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult' AND _count_guardian_assignments(U_RAMUM) = 0
+                    AND _count_subjects(P_RADU) = 0,
+      format('db/62 (request): a parent''s request for a pupil of eighteen was granted (%s, %s)', v_ok, v_reason));
+
     -- Before eighteen: the pupil's mother says yes to health monitoring; his
     -- father says yes to his name on public pages and his mother says
     -- nothing; Andile's mother says yes to health monitoring.
@@ -8011,6 +8054,8 @@ BEGIN
     PERFORM _v62_turn_eighteen(P_PUP);
     PERFORM _v62_turn_eighteen(P_ADU);
     PERFORM _v62_turn_eighteen(P_CLUB);
+    PERFORM _v62_turn_eighteen(P_RPUP);
+    PERFORM _v62_turn_eighteen(P_RCLUB);
     -- The pupil's link is open on his birthday, and app_can() still grants
     -- his mother: his record and his roster row.
     PERFORM _assert((_v62_link(P_PUP, U_MUM)).open AND (_v62_link(P_PUP, U_DAD)).open,
@@ -8026,6 +8071,16 @@ BEGIN
     SELECT count(*) INTO n FROM player_masked WHERE id = P_CLUB;
     PERFORM _assert(n = 0 AND NOT app_can('player.profile.read', CLUB, '1XI', P_CLUB, ZERO),
       'db/62 (club): a club member''s parent still reads him on his eighteenth birthday');
+    -- (request) ...and the same through the other door: the granted parent of
+    -- the pupil keeps him on his birthday; the club member's does not.
+    PERFORM _as(U_RMUM);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_RPUP;
+    PERFORM _assert(n = 1 AND (_v62_link(P_RPUP, U_RMUM)).open AND app_can('player.profile.read', HIL, '1XI', P_RPUP, ZERO),
+      format('db/62 (request): a granted parent lost her pupil son on his eighteenth birthday (%s rows)', n));
+    PERFORM _as(U_RCMUM);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_RCLUB;
+    PERFORM _assert(n = 0 AND (_v62_link(P_RCLUB, U_RCMUM)).until = current_date,
+      'db/62 (request): a granted club parent still reads him on his eighteenth birthday');
 
     -- (health) Her pre-18 yes is live on his birthday while he is at school;
     -- her yes after it is refused; her "no" after it works; and his own
