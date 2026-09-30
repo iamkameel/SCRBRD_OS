@@ -500,13 +500,15 @@ export function ScorebookImportView({ importId, match, onClose }) {
       try {
         const { rows } = await api("/api/read/players");
         if (!dead) setRoster((rows ?? []).filter((r) => r.school_id === match.schoolId).map((r) => ({ id: r.id, name: r.full_name, team: r.team_code })));
-      } catch { /* the names of our own boys are then shown as "a player" */ }
+      } catch { /* the card's own boys are named by the import (names); the rest of the roster is not offered */ }
     })();
     return () => { dead = true; };
   }, [match.schoolId]);
 
   const photos = usePageBlobs(importId, d?.pages ?? []);
-  const rosterMap = useMemo(() => new Map(roster.map((p) => [p.id, p.name])), [roster]);
+  // The names the API gives for the card's own boys (a confirmer outside the
+  // school cannot read its roster), and the roster's where it can be read.
+  const rosterMap = useMemo(() => new Map([...Object.entries(d?.names ?? {}), ...roster.map((p) => [p.id, p.name])]), [roster, d?.names]);
   const groups = useMemo(() => rosterGroups(roster, [match.homeTeam, match.awayTeamCode].filter(Boolean)), [roster, match.homeTeam, match.awayTeamCode]);
 
   /**

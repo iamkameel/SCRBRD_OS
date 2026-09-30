@@ -31,6 +31,8 @@
  *      carries it.
  *   F  A PERSON WHO WORKED ON THE CARD (the owner's key holds both halves)
  *      is told why she cannot confirm, not given a dead button.
+ *   F2 A LEAGUE'S FIXTURE: its administrator, who reads no roster of the
+ *      school's, is told the card's boys' names by the import.
  *   G  Nothing under 12px, nothing pressed under 44px, no sideways scroll at
  *      390 wide, in Daylight too; no console error, no browser dialog.
  *
@@ -547,6 +549,28 @@ try {
   ok("(the API agrees)", (await call(`/api/scorebook/${o3.body.id}/confirm`, { method: "POST", token: ownerTok, body: {} })).body?.error === "cannot_confirm_your_own");
   ok("no console errors (owner)", ow.errors.length === 0, ow.errors.join(" | "));
   await ow.ctx.close().catch(() => {});
+
+  // ── F2 ─────────────────────────────────────────────────────────
+  group("F2. A league's fixture: the league's administrator is told the boys' names");
+  const ML = (await dbq(
+    `insert into match (school_id, team_code, opponent, starts_at, format, overs, status, competition_id)
+     values ($1, '1XI', 'Northwood Prep', (sa_today() - 2)::timestamp AT TIME ZONE 'Africa/Johannesburg' + interval '10 hours', 'T20', 20, 'scheduled',
+             '99999999-0000-0000-0000-000000000001') returning id`, [HIL]))[0].id;
+  const cardL = [baseCard(P, [])];
+  const oL = await call(`/api/matches/${ML}/scorebook`, { method: "POST", token: scorerTok });
+  const sL = await call(`/api/scorebook/${oL.body.id}/save`, { method: "POST", token: scorerTok, body: { cards: cardL, typed: TYPED, checked: allTicked(cardL), version: 1 } });
+  const subL = await call(`/api/scorebook/${oL.body.id}/submit`, { method: "POST", token: scorerTok, body: { version: sL.body?.version } });
+  ok("(a league fixture's import, submitted by the scorer through the API)", subL.status === 200, JSON.stringify(subL.body));
+  const lg = await open();
+  const k = lg.page;
+  ok("the league's administrator signs in", await signIn(k, "league@example.invalid"));
+  ok("Matches → the league fixture → Review and confirm", await toFixture(k, ML) && (await (async () => { await tid(k, `sb-open-${oL.body.id}`).waitFor({ timeout: 6000 }).catch(() => {}); await tap(k, `sb-open-${oL.body.id}`); await tid(k, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
+  await k.waitForTimeout(800);
+  const readL = await said(k, "sb-read-0");
+  ok("the card names the school's boys to him, though he reads no roster of theirs", readL.includes(names[P[0]]) && readL.includes(names[P[5]]) && !/name not shown/.test(readL), readL.slice(0, 300));
+  ok("he may decide it: Confirm and Return are offered", (await tid(k, "sb-confirm-go").count()) === 1 && (await tid(k, "sb-return-go").count()) === 1);
+  ok("no console errors (league)", lg.errors.length === 0, lg.errors.join(" | "));
+  await lg.ctx.close().catch(() => {});
 
   // ── G ──────────────────────────────────────────────────────────
   group("G. A phone's 390 × 844, and Daylight");

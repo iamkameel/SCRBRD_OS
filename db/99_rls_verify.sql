@@ -1614,6 +1614,14 @@ CREATE OR REPLACE FUNCTION _may_63(p_match uuid) RETURNS text AS $$
       || CASE WHEN c.module THEN 'm' WHEN c.may_write OR c.may_confirm OR c.may_read OR c.may_audit THEN '.' ELSE '-' END
     FROM scorebook_caller_may(p_match) c
 $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+-- The player ids scorebook_import_names() answers the caller, in order; and
+-- the actors scorebook_import_actors() names, as id:name. Not definers.
+CREATE OR REPLACE FUNCTION _owner_name_63(p_player uuid) RETURNS text AS $$
+  SELECT full_name FROM player WHERE id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _names_63(p_import uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(n.player_id::text, ',' ORDER BY n.player_id), '') FROM scorebook_import_names(p_import) n
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _publish_63(p_match uuid) RETURNS void AS $$
   INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
   VALUES (p_match, 'home', '11111111-1111-1111-1111-111111111111', '1XI', true, '88888888-0000-0000-0000-000000000007')
@@ -8306,6 +8314,10 @@ BEGIN
   --   (may)       scorebook_caller_may() answering read from scoring.import.write
   --               (the confirmer lost it), and without the actor check on audit
   --               (the support session was told it may audit)
+  --   (names)     scorebook_import_names() without its player.school_id
+  --               filter (the Westville boy was named), and asking app_can()
+  --               for the read in place of scorebook_may() (the support
+  --               session was given the names)
   --   (remove)    scorebook_import_page_remove() asking scorebook_may() for
   --               confirm as well as write (the confirmer went through)
   --   (purge)     scorebook_import_purge_due() without the removed-page branch
@@ -8486,6 +8498,36 @@ BEGIN
     PERFORM _assert(_reads_63(I) = U_SCORER || ':page:1 ' || U_SARAH || ':page:1',
       format('db/63 (log): the page reads on access_log are %s', _reads_63(I)));
 
+    -- (names) the card's own boys, named to the two who check it, and to
+    -- nobody else: seven on the card (six batted, one did not)
+    got := 'aaaaaaaa-0000-0000-0000-000000000001,aaaaaaaa-0000-0000-0000-000000000002,aaaaaaaa-0000-0000-0000-000000000003,'
+        || 'aaaaaaaa-0000-0000-0000-000000000004,aaaaaaaa-0000-0000-0000-000000000005,aaaaaaaa-0000-0000-0000-000000000011,'
+        || 'aaaaaaaa-0000-0000-0000-000000000012';
+    PERFORM _as(U_SCORER);
+    PERFORM _assert(_names_63(I) = got, format('db/63 (names): the scorer is given %s', _names_63(I)));
+    PERFORM _assert((SELECT n.name FROM scorebook_import_names(I) n WHERE n.player_id = 'aaaaaaaa-0000-0000-0000-000000000012')
+                    = (SELECT _owner_name_63('aaaaaaaa-0000-0000-0000-000000000012')),
+      'db/63 (names): the name is not the boy''s own');
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(_names_63(I) = got, format('db/63 (names): the director of sport is given %s', _names_63(I)));
+    FOREACH got IN ARRAY ARRAY[U_PARENT::text, U_PUPIL::text, U_WESC::text, U_WATCHER::text, U_BURSAR::text, U_HEAD_M::text] LOOP
+      PERFORM _as(got::uuid);
+      PERFORM _assert(_names_63(I) = '', format('db/63 (names): %s is given the card''s names: %s', got, _names_63(I)));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'directorofsport', 'ticket 6366: the names on the card') s;
+    S_ID := r.id;
+    got := _names_63(I);
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(got = '', format('db/63 (names): a support session as the director of sport is given %s', got));
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    got := _names_63(I);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(got = '', format('db/63 (names): a pad''s credential is given %s', got));
+
     -- (support) a support session as the director of sport reads and signs nothing
     PERFORM _as(U_PLAT);
     SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'directorofsport', 'ticket 6363: the import screen will not load') s;
@@ -8579,6 +8621,14 @@ BEGIN
     SELECT * INTO r FROM scorebook_import_open(M3);
     I3 := r.import_id;
     PERFORM scorebook_import_page_add(I3, HIL || '/' || I3 || '/' || gen_random_uuid() || '.png', repeat('b', 64), 10, 8, 4, 'image/png');
+    -- (names) a draft that names another school's child: his name is not given
+    SELECT version INTO v_ver FROM scorebook_import WHERE id = I3;
+    SELECT * INTO r FROM scorebook_import_save(I3,
+      jsonb_build_array(jsonb_set(CARD, '{didNotBat}', '["bbbbbbbb-0000-0000-0000-000000000001", "aaaaaaaa-0000-0000-0000-000000000012"]')),
+      TYPED, '{}'::jsonb, v_ver);
+    PERFORM _assert(r.ok, format('db/63: the draft naming a Westville boy was not saved (%s)', r.reason));
+    PERFORM _assert(_names_63(I3) NOT LIKE '%bbbbbbbb%' AND _names_63(I3) LIKE '%aaaaaaaa-0000-0000-0000-000000000012',
+      format('db/63 (names): another school''s child is named: %s', _names_63(I3)));
     SELECT * INTO r FROM scorebook_import_abandon(I3);
     PERFORM _assert(r.ok, 'db/63: the scorer could not abandon his import');
     PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(I3)) = 1, 'db/63 (purge): an abandoned import''s photo is not due at once');

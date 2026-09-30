@@ -714,6 +714,21 @@ BEGIN
   RETURN i.version + 1;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- Every ref a card list names, row by row: a batter, his fielder and bowler,
+-- a name that did not bat, a bowler, a fall of wicket's batter. A player id
+-- or a typed key t:<n>, as the card has it; whatever is not a list is none.
+CREATE OR REPLACE FUNCTION scorebook_card_refs(p_cards jsonb) RETURNS SETOF text AS $$
+  SELECT x.ref
+    FROM jsonb_array_elements(public_json_array(p_cards)) c,
+         LATERAL (SELECT e->>'ref' AS ref FROM jsonb_array_elements(public_json_array(c->'batting')) e
+                  UNION ALL SELECT e->>'fielderRef' FROM jsonb_array_elements(public_json_array(c->'batting')) e
+                  UNION ALL SELECT e->>'bowlerRef' FROM jsonb_array_elements(public_json_array(c->'batting')) e
+                  UNION ALL SELECT e #>> '{}' FROM jsonb_array_elements(public_json_array(c->'didNotBat')) e
+                  UNION ALL SELECT e->>'ref' FROM jsonb_array_elements(public_json_array(c->'bowling')) e
+                  UNION ALL SELECT e->>'ref' FROM jsonb_array_elements(public_json_array(c->'fallOfWickets')) e) x
+   WHERE x.ref IS NOT NULL
+$$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
+
 -- Why a card list may not be submitted or committed for this match, or NULL:
 -- the arithmetic of each card, one card per innings, and every player id on
 -- it a boy of the importing school (a typed name is never a player row, D6).
@@ -733,13 +748,7 @@ BEGIN
     END IF;
   END LOOP;
   IF EXISTS (
-       SELECT 1 FROM jsonb_array_elements(i.card) c2,
-            LATERAL (SELECT e->>'ref' AS ref FROM jsonb_array_elements(c2->'batting') e
-                     UNION ALL SELECT e->>'fielderRef' FROM jsonb_array_elements(c2->'batting') e
-                     UNION ALL SELECT e->>'bowlerRef' FROM jsonb_array_elements(c2->'batting') e
-                     UNION ALL SELECT e #>> '{}' FROM jsonb_array_elements(c2->'didNotBat') e
-                     UNION ALL SELECT e->>'ref' FROM jsonb_array_elements(c2->'bowling') e
-                     UNION ALL SELECT e->>'ref' FROM jsonb_array_elements(c2->'fallOfWickets') e) x
+       SELECT 1 FROM scorebook_card_refs(i.card) x(ref)
         WHERE public_ref_uuid(x.ref) IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM player p WHERE p.id = public_ref_uuid(x.ref) AND p.school_id = i.school_id)) THEN
     reason := 'not_our_player'; detail := 'every player chosen from the roster is one of the school''s own'; RETURN;
@@ -1245,6 +1254,32 @@ BEGIN
   RETURN true;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- ── 9a · The names on a card, for whoever checks it (§9.4) ─────────
+-- The display name of each of the school's own boys the import's card names,
+-- for a caller who may read the import (scorebook_may('scoring.import.read'):
+-- the typist and the confirmer, as themselves; never a support session or a
+-- pad's credential) with the module on. A confirmer outside the school — a
+-- league's administrator — cannot read the school's roster, and must check
+-- each name against the photo that already shows it (D5). Nothing else: no
+-- other field, no boy the card does not name, no other school's child (a
+-- draft may name one; submit refuses it, not_our_player), no typed name
+-- (the card's own typed map has those).
+CREATE OR REPLACE FUNCTION scorebook_import_names(p_import uuid)
+RETURNS TABLE (player_id uuid, name text) AS $$
+DECLARE i scorebook_import%ROWTYPE;
+BEGIN
+  SELECT * INTO i FROM scorebook_import x WHERE x.id = p_import;
+  IF NOT FOUND OR NOT scorebook_may('scoring.import.read', i.match_id)
+     OR NOT coalesce(feature_enabled('scorebook_import', i.school_id, app_user_id()), false) THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT DISTINCT p.id, p.full_name
+      FROM scorebook_card_refs(i.card) x(ref)
+      JOIN player p ON p.id = public_ref_uuid(x.ref) AND p.school_id = i.school_id
+     ORDER BY p.id;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- ── 10 · The two readers the commit and the score rely on (§2.4) ────
 -- The shape of everything replaced, before it is: checked at the end.
 DROP TABLE IF EXISTS _db63_before;
@@ -1399,7 +1434,7 @@ DO $grants$
 DECLARE f text; r text;
   app text[] := ARRAY[
     'scorebook_import_open(uuid)', 'scorebook_import_page_add(uuid,text,text,integer,integer,integer,text)',
-    'scorebook_import_page_remove(uuid,integer)', 'scorebook_caller_may(uuid)',
+    'scorebook_import_page_remove(uuid,integer)', 'scorebook_caller_may(uuid)', 'scorebook_import_names(uuid)',
     'scorebook_import_save(uuid,jsonb,jsonb,jsonb,integer)', 'scorebook_import_submit(uuid,integer)',
     'scorebook_import_return(uuid,text)', 'scorebook_import_commit(uuid,uuid[],boolean,text)',
     'scorebook_import_abandon(uuid)', 'scorebook_page_open(uuid,integer)',
@@ -1409,6 +1444,7 @@ DECLARE f text; r text;
   internal text[] := ARRAY[
     'scorebook_ours(uuid)', 'scorebook_actor_ok(uuid)', 'scorebook_may(text,uuid)', 'scorebook_authored(uuid)',
     'scorebook_revise(uuid,text,jsonb,text)', 'scorebook_cards_problem(uuid)', 'scorebook_platform_caller()',
+    'scorebook_card_refs(jsonb)',
     'scorebook_import_guard()', 'ball_event_scorebook_door()'];
 BEGIN
   FOREACH f IN ARRAY app LOOP

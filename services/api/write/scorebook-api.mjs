@@ -206,7 +206,11 @@ export function scorebookRoutes({ pool, secret, store }) {
       };
     })),
 
-    // GET /api/scorebook/:id  → { import, may, pages, revisions, innings, refusals, unchecked, cells }
+    // GET /api/scorebook/:id  → { import, may, names, pages, revisions, innings, refusals, unchecked, cells }
+    //   names: { <playerId>: <display name> } for the school's own boys the
+    //   card names, given only to a caller who may read the import
+    //   (scorebook_import_names(): a confirmer outside the school, who cannot
+    //   read its roster, checks them against the photo); {} to anybody else.
     get: handle(async (req) => as(req.headers?.authorization, async (c) => {
       const i = await readImport(c, req.params.id);
       await moduleOn(c, i.school_id);
@@ -217,11 +221,13 @@ export function scorebookRoutes({ pool, secret, store }) {
            from scorebook_import_page where import_id = $1 order by page_no`, [i.id]);
       const { rows: revisions } = await c.query(
         `select version, action, note, actor_id, at from scorebook_import_revision where import_id = $1 order by version`, [i.id]);
+      const { rows: named } = await c.query(`select player_id, name from scorebook_import_names($1)`, [i.id]);
       const m = await readMatch(c, i.match_id);
       const ctx = { typed: i.typed, ours: m ? oursOf(m) : null };
       return {
         import: importOut(i, checked),
         may: { write: may.write, confirm: may.confirm, read: may.read },
+        names: Object.fromEntries(named.map((/** @type {any} */ n) => [n.player_id, n.name])),
         pages: pages.map((/** @type {any} */ p) => ({ pageNo: p.page_no, mime: p.mime, bytes: p.bytes, width: p.width, height: p.height,
                                    sha256: p.sha256, addedBy: p.added_by, addedAt: p.added_at,
                                    removedAt: p.removed_at, removedBy: p.removed_by, deletedAt: p.deleted_at })),

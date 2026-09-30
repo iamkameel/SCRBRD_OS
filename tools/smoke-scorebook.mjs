@@ -185,7 +185,9 @@ try {
   }
   ok("...and none of those reads was logged as a read", (await accessRows(I)).length === before + 2);
   ok("signed out: nothing", (await api(`/api/scorebook/${I}/pages/1`)).status >= 400);
-  ok("the principal reads the card and its history (audit.read)", (await api(`/api/scorebook/${I}`, { token: head })).status === 200);
+  { const hg = await api(`/api/scorebook/${I}`, { token: head });
+    ok("the principal reads the card and its history (audit.read), and is given no name by the import",
+       hg.status === 200 && Object.keys(hg.body?.names ?? { x: 1 }).length === 0, JSON.stringify(hg.body?.names)); }
   for (const [who, t] of [["a parent", parent], ["a pupil", pupil], ["another school's coach", wes]]) {
     ok(`${who} reads no import`, (await api(`/api/scorebook/${I}`, { token: t })).status === 403);
   }
@@ -450,6 +452,18 @@ try {
   const lcard = [baseCard(P, DNB)];
   await api(`/api/scorebook/${L}/save`, { method: "POST", token: scorer, body: { cards: lcard, typed: TYPED, checked: allTicked(lcard), version: 1 } });
   await api(`/api/scorebook/${L}/submit`, { method: "POST", token: scorer, body: { version: 2 } });
+  // The league's administrator reads no roster of the school's: the import
+  // names the card's own boys to him, and nothing more (§9.4 3).
+  ok("the league's administrator reads no roster of the school's", (await api(`/api/read/players`, { token: league })).body?.rows?.some?.((r) => r.id === P[0]) !== true);
+  const lget = await api(`/api/scorebook/${L}`, { token: league });
+  const cardIds = [...new Set(lcard.flatMap((c) => [...c.batting.flatMap((b) => [b.ref, b.fielderRef, b.bowlerRef]), ...c.didNotBat, ...c.bowling.map((b) => b.ref)]))]
+    .filter((r) => /^[0-9a-f-]{36}$/.test(r ?? "")).sort();
+  const realNames = Object.fromEntries((await q(`select id, full_name from player where id = any($1::uuid[])`, [cardIds])).map((r) => [r.id, r.full_name]));
+  ok("...the import names the card's own boys to him, each by his own name, and no other",
+     lget.status === 200 && JSON.stringify(Object.keys(lget.body?.names ?? {}).sort()) === JSON.stringify(cardIds)
+     && cardIds.every((id) => lget.body.names[id] === realNames[id]), JSON.stringify(lget.body?.names));
+  ok("...a name and nothing else", Object.values(lget.body?.names ?? {}).every((v) => typeof v === "string"));
+  ok("another school's coach reads no import, so no name", (await api(`/api/scorebook/${L}`, { token: wes })).status === 403);
   ok("the director of sport is not told she may confirm a league's fixture, and the league's administrator is",
      (await api(`/api/matches/${ML}/scorebook`, { token: sarah })).body?.may?.confirm === false
      && (await api(`/api/matches/${ML}/scorebook`, { token: league })).body?.may?.confirm === true);
