@@ -62,7 +62,10 @@
 -- match in a competition is confirmed by the league (a holder of
 -- competition.conditions.manage over it, as well as the confirm capability
 -- over the match): the school's director of sport confirms a match in no
--- competition (§4.1).
+-- competition (§4.1). Confirm and read come through an assignment at the
+-- fixture's school, or school-less only through the league the match is in
+-- (scorebook_may(), and the tables' RESTRICTIVE reach cut): a league's
+-- administrator reaches nothing of a friendly (§9.4).
 --
 -- THE COMMIT (§4.3), in the amendment route's shape (db/38): the API route
 -- (services/api/write/scorebook-api.mjs) opens a savepoint and calls
@@ -662,15 +665,90 @@ CREATE OR REPLACE FUNCTION scorebook_actor_ok(p_school uuid) RETURNS boolean AS 
   SELECT app_user_id() IS NOT NULL AND NOT app_pad_scoped() AND app_support_access_id(p_school) IS NULL
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- May the caller type (write) or sign (confirm) an import of this match?
--- Confirm, for a match in a competition, is the league's (§4.1).
+-- Is the caller the platform (the key that runs the daily purge, and the
+-- owner's): platform.feature.manage, platform-wide?
+CREATE OR REPLACE FUNCTION scorebook_platform_caller() RETURNS boolean AS $$
+  SELECT app_user_id() IS NOT NULL AND NOT app_pad_scoped()
+     AND app_can('platform.feature.manage', '00000000-0000-0000-0000-000000000000'::uuid, '*'::text,
+                 '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Does the caller hold one of these capabilities over the match through an
+-- assignment AT THE MATCH'S SCHOOL — not a school-less one? app_can()'s own
+-- conditions for one assignment (live, in its dates, not expired, not
+-- suspended, covering the team and the fixture, about nobody in particular,
+-- as scorebook_may() asks it with no person), with its school stated and the
+-- fixture's. Used only to NARROW what app_can() already allows: app_can()
+-- lets a school-less assignment reach every school (NULL on the assignment
+-- widens), which is right for the platform and wrong for a league (below).
+CREATE OR REPLACE FUNCTION scorebook_school_grant(p_caps text[], p_match uuid) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM match m
+      JOIN role_assignment a ON a.person_id = app_user_id() AND a.school_id = m.school_id
+      JOIN role_capability rc ON rc.role = a.role AND rc.capability = ANY (p_caps)
+     WHERE m.id = p_match
+       AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       AND (a.expires_at  IS NULL OR a.expires_at  >  now())
+       AND NOT EXISTS (SELECT 1 FROM duty_suspension s WHERE s.assignment_id = a.id AND s.lifted_at IS NULL)
+       AND (a.team_code IS NULL OR a.team_code = m.team_code)
+       AND (a.fixture_id IS NULL OR a.fixture_id = m.id)
+       AND a.role <> ALL (ARRAY['guardian', 'selfaccess', 'enquiry']::text[])
+       AND NOT EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = a.id))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- May a caller whose reach is not the school's own reach this match at all?
+-- A friendly is the school's (§4.1, D5): a school-less assignment (a league's
+-- administrator) reaches it through nothing. A match in a competition is
+-- also its league's: whoever manages that competition
+-- (competition_conditions_manager(), SCRBRD-114) — which, while assignments
+-- carry no competition, is a school-less competitionadmin for any league and
+-- a school-scoped one for his own school's. The platform's key keeps its
+-- reach.
+CREATE OR REPLACE FUNCTION scorebook_league_reach(p_match uuid) RETURNS boolean AS $$
+  SELECT coalesce((SELECT scorebook_platform_caller()
+                       OR (m.competition_id IS NOT NULL AND competition_conditions_manager(m.competition_id))
+                     FROM match m WHERE m.id = p_match), false)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- May the caller type (write), sign (confirm) or open (read) an import of
+-- this match? Confirm, for a match in a competition, is the league's (§4.1).
+-- Confirm and read come either through an assignment at the match's school
+-- (its director of sport; its scorer and coaches read) or, school-less,
+-- through the league the match is in (scorebook_league_reach()): a league's
+-- administrator reaches nothing of a friendly. Write is the school's roles'
+-- and unchanged.
 CREATE OR REPLACE FUNCTION scorebook_may(p_cap text, p_match uuid) RETURNS boolean AS $$
   SELECT coalesce((
     SELECT scorebook_actor_ok(m.school_id)
        AND app_can(p_cap, m.school_id, m.team_code, NULL::uuid, m.id)
        AND (p_cap <> 'scoring.import.confirm' OR m.competition_id IS NULL OR competition_conditions_manager(m.competition_id))
+       AND (p_cap = 'scoring.import.write' OR scorebook_school_grant(ARRAY[p_cap], m.id) OR scorebook_league_reach(m.id))
       FROM match m WHERE m.id = p_match), false)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The three tables are not read, through a school-less assignment, beyond
+-- the league the match is in (beside the support cut in section 5):
+-- the tables' read policies ask app_can(), which lets a school-less
+-- competitionadmin reach every school's friendly. RESTRICTIVE, so it only
+-- narrows: an assignment at the fixture's school that reads the import (or
+-- audits it), or the league's reach (scorebook_league_reach()).
+CREATE OR REPLACE FUNCTION scorebook_reach(p_match uuid) RETURNS boolean AS $$
+  SELECT scorebook_school_grant(ARRAY['scoring.import.read', 'audit.read'], p_match) OR scorebook_league_reach(p_match)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION scorebook_reach(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scorebook_reach(uuid) TO scrbrd_app;
+DO $reach$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['scorebook_import', 'scorebook_import_page', 'scorebook_import_revision'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_reach', t);
+    EXECUTE format($p$CREATE POLICY %I ON %I AS RESTRICTIVE FOR SELECT USING (scorebook_reach(%I.match_id))$p$,
+                   t || '_reach', t, t);
+  END LOOP;
+END $reach$;
 
 -- What the caller may do with the imports of this match, by the checks the
 -- functions themselves ask (scorebook_may()), so a screen draws exactly what
@@ -692,7 +770,8 @@ BEGIN
   rd := scorebook_may('scoring.import.read', p_match);
   -- As the import's read policy asks it, behind the same support and pad cut.
   a := scorebook_actor_ok(m.school_id)
-       AND app_can('audit.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+       AND app_can('audit.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+       AND scorebook_reach(p_match);
   RETURN QUERY SELECT w, c, rd, a,
     (w OR c OR rd OR a) AND coalesce(feature_enabled('scorebook_import', m.school_id, app_user_id()), false);
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -1189,13 +1268,6 @@ BEGIN
   RETURN QUERY SELECT true, NULL::text, pg.object_key, pg.mime, pg.sha256, pg.bytes;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- Is the caller the platform (the key that runs the daily purge)?
-CREATE OR REPLACE FUNCTION scorebook_platform_caller() RETURNS boolean AS $$
-  SELECT app_user_id() IS NOT NULL AND NOT app_pad_scoped()
-     AND app_can('platform.feature.manage', '00000000-0000-0000-0000-000000000000'::uuid, '*'::text,
-                 '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
 /**
  * The photos due for deletion (§5.3, D7): every page, not yet deleted, of an
  * import abandoned, or confirmed more than scorebook_page_retention() ago,
@@ -1474,12 +1546,12 @@ DECLARE f text; r text;
     'scorebook_import_return(uuid,text)', 'scorebook_import_commit(uuid,uuid[],boolean,text)',
     'scorebook_import_abandon(uuid)', 'scorebook_page_open(uuid,integer)',
     'scorebook_import_purge_due(uuid)', 'scorebook_page_purged(uuid)',
-    'summary_reconciles(jsonb,jsonb,text)', 'scorebook_overs_balls(text)', 'scorebook_balls(jsonb)',
+    'summary_reconciles(jsonb,jsonb,text)', 'scorebook_reach(uuid)', 'scorebook_overs_balls(text)', 'scorebook_balls(jsonb)',
     'scorebook_is_count(jsonb)', 'scorebook_is_ref(jsonb)', 'scorebook_end_reason(text)', 'scorebook_page_retention()'];
   internal text[] := ARRAY[
     'scorebook_ours(uuid)', 'scorebook_actor_ok(uuid)', 'scorebook_may(text,uuid)', 'scorebook_authored(uuid)',
     'scorebook_revise(uuid,text,jsonb,text)', 'scorebook_cards_problem(uuid)', 'scorebook_platform_caller()',
-    'scorebook_card_refs(jsonb)',
+    'scorebook_card_refs(jsonb)', 'scorebook_school_grant(text[],uuid)', 'scorebook_league_reach(uuid)',
     'scorebook_import_guard()', 'ball_event_scorebook_door()'];
 BEGIN
   FOREACH f IN ARRAY app LOOP

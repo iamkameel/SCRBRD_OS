@@ -1578,6 +1578,31 @@ BEGIN
     RETURNING id INTO m;
     ids := ids || jsonb_build_object(r.k, m);
   END LOOP;
+  -- A Hilton 1st XI fixture in the pilot's league (its organiser an external
+  -- body), which the league's administrator confirms.
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, '1XI', 'Verify 063 ml', now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled', '99999999-0000-0000-0000-000000000001')
+  RETURNING id INTO m;
+  ids := ids || jsonb_build_object('ml', m);
+  -- A league run by Westville, and its administrator, appointed at Westville:
+  -- he manages that league and not the pilot's (competition_conditions_manager()).
+  INSERT INTO competition (id, school_id, name, comp_type, format, age_group, gender, level)
+  VALUES ('99999999-0000-0000-0000-0000000063c0', WES, 'Verify 063 Westville League', 'league', 'T20', '1XI', 'boys', 'school')
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO app_user (id, school_id, email, name, role)
+  VALUES ('88888888-0000-0000-0000-0000000063c0', WES, 'verify063.wesleague@example.invalid', 'Verify 063 Westville League Admin', 'competitionadmin')
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  SELECT '88888888-0000-0000-0000-0000000063c0', 'competitionadmin', WES, NULL
+   WHERE NOT EXISTS (SELECT 1 FROM role_assignment WHERE person_id = '88888888-0000-0000-0000-0000000063c0');
+  -- A Hilton fixture in Westville's league (the side entered first).
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name)
+  SELECT '99999999-0000-0000-0000-0000000063c0', HIL, '1XI', 'Hilton 1st XI'
+   WHERE NOT EXISTS (SELECT 1 FROM competition_entrant WHERE competition_id = '99999999-0000-0000-0000-0000000063c0');
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, '1XI', 'Verify 063 mwl', now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled', '99999999-0000-0000-0000-0000000063c0')
+  RETURNING id INTO m;
+  ids := ids || jsonb_build_object('mwl', m);
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -8337,6 +8362,10 @@ BEGIN
   --               session was given the names)
   --   (actors)    scorebook_import_actors() without its pupil filter (the
   --               owner, made a pupil for a moment, was named)
+  --   (league)    scorebook_may() without its school-or-league clause (the
+  --               league's administrator was told he may confirm a friendly),
+  --               and the tables without their RESTRICTIVE reach cut (he read
+  --               the friendly's rows)
   --   (remove)    scorebook_import_page_remove() asking scorebook_may() for
   --               confirm as well as write (the confirmer went through)
   --   (purge)     scorebook_import_purge_due() without the removed-page branch
@@ -8346,8 +8375,9 @@ BEGIN
   -- db/63's own proof falsifies as the owner.
   DECLARE
     ids     jsonb := _seed_63();
-    M uuid; M2 uuid; M3 uuid; MW uuid;
-    I uuid; I2 uuid; I3 uuid;
+    M uuid; M2 uuid; M3 uuid; MW uuid; ML uuid; MWL uuid;
+    I uuid; I2 uuid; I3 uuid; IL uuid;
+    U_WESLG uuid := '88888888-0000-0000-0000-0000000063c0';   -- competitionadmin at Westville: Westville's league
     PG uuid; PG2 uuid; PG3 uuid;
     r       record;
     v_ver   integer;
@@ -8361,6 +8391,7 @@ BEGIN
     CARD    jsonb := '{"v":1,"innings":0,"battingSide":"home","batting":[{"order":1,"ref":"aaaaaaaa-0000-0000-0000-000000000001","howOut":"caught","fielderRef":"t:1","bowlerRef":"t:2","runs":34,"balls":40,"fours":4,"sixes":1},{"order":2,"ref":"aaaaaaaa-0000-0000-0000-000000000002","howOut":"bowled","fielderRef":null,"bowlerRef":"t:2","runs":12,"balls":15,"fours":1,"sixes":0},{"order":3,"ref":"aaaaaaaa-0000-0000-0000-000000000003","howOut":"lbw","fielderRef":null,"bowlerRef":"t:3","runs":0,"balls":3,"fours":0,"sixes":0},{"order":4,"ref":"aaaaaaaa-0000-0000-0000-000000000004","howOut":"run_out","fielderRef":"t:4","bowlerRef":null,"runs":25,"balls":null,"fours":null,"sixes":null},{"order":5,"ref":"aaaaaaaa-0000-0000-0000-000000000005","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":37,"balls":30,"fours":5,"sixes":1},{"order":6,"ref":"aaaaaaaa-0000-0000-0000-000000000011","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":5,"balls":4,"fours":0,"sixes":0}],"didNotBat":["aaaaaaaa-0000-0000-0000-000000000012"],"bowling":[{"ref":"t:2","overs":"8","maidens":0,"runs":40,"wickets":2,"wides":3,"noBalls":1},{"ref":"t:3","overs":"8","maidens":1,"runs":45,"wickets":1,"wides":2,"noBalls":2},{"ref":"t:5","overs":"4","maidens":null,"runs":39,"wickets":0,"wides":null,"noBalls":null}],"extras":{"byes":2,"legByes":1,"wides":5,"noBalls":3,"penalty":0},"total":127,"wickets":4,"overs":"20","fallOfWickets":[{"wicket":1,"score":30,"ref":"aaaaaaaa-0000-0000-0000-000000000002","over":"5.1"},{"wicket":2,"score":31,"ref":"aaaaaaaa-0000-0000-0000-000000000003","over":"5.3"},{"wicket":3,"score":60,"ref":"aaaaaaaa-0000-0000-0000-000000000001","over":"10.2"},{"wicket":4,"score":90,"ref":"aaaaaaaa-0000-0000-0000-000000000004","over":"15"}],"endReason":"overs","unreconciled":{"runs":3,"note":"the book is three short"}}';
   BEGIN
     M := (ids->>'m')::uuid; M2 := (ids->>'m2')::uuid; M3 := (ids->>'m3')::uuid; MW := (ids->>'mw')::uuid;
+    ML := (ids->>'ml')::uuid; MWL := (ids->>'mwl')::uuid;
 
     -- (module) off where the platform has not granted it
     PERFORM _as(U_WESC);
@@ -8600,7 +8631,23 @@ BEGIN
     PERFORM set_config('app.match_id', '', true);
     PERFORM _assert(n = 0 AND NOT r.ok, format('db/63 (pad): a pad''s credential read %s rows, page %s', n, r.ok));
 
-    -- (D4) a difference the book records needs the confirmer's word
+    -- (league) a league's administrator — a school-less competitionadmin —
+    -- reaches nothing of a school's friendly: told nothing, no name, no page,
+    -- no row, no confirm. The platform's key (the owner) keeps its reach.
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert(_may_63(M) = '-----', format('db/63 (league): the league''s administrator is told %s for a friendly', _may_63(M)));
+    PERFORM _assert(_names_63(I) = '' AND _actors_63(I) = '', 'db/63 (league): the league''s administrator is given a friendly''s names');
+    SELECT * INTO r FROM scorebook_page_open(I, 1);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (league): the league''s administrator opened a friendly''s page (%s)', r.reason));
+    SELECT (SELECT count(*) FROM scorebook_import WHERE id = I) + (SELECT count(*) FROM scorebook_import_revision WHERE import_id = I)
+         + (SELECT count(*) FROM scorebook_import_page WHERE import_id = I) INTO n;
+    PERFORM _assert(n = 0, format('db/63 (league): the league''s administrator reads %s rows of a friendly''s import', n));
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (league): the league''s administrator confirmed a friendly (%s)', r.reason));
+    SELECT * INTO r FROM scorebook_import_return(I, 'not his to return');
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (league): the league''s administrator returned a friendly (%s)', r.reason));
+    PERFORM _as(U_OWNER);
+    PERFORM _assert(_may_63(M) = 'wcram', format('db/63 (league): the owner''s key is told %s for a friendly', _may_63(M)));
     PERFORM _as(U_SARAH);
     SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], false);
     PERFORM _assert(NOT r.ok AND r.reason = 'unreconciled_not_acknowledged', format('db/63 (D4): committed unacknowledged (%s)', r.reason));
@@ -8680,6 +8727,32 @@ BEGIN
     SELECT * INTO r FROM scorebook_import_abandon(I3);
     PERFORM _assert(r.ok, 'db/63: the scorer could not abandon his import');
     PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(I3)) = 1, 'db/63 (purge): an abandoned import''s photo is not due at once');
+    -- (league) his own league's match: he is told he may confirm and read,
+    -- is given its names, reads its rows, and confirms it. The director of
+    -- sport still reads it (her school's) and may not confirm it (the league's).
+    SELECT * INTO r FROM scorebook_import_open(ML);
+    PERFORM _assert(r.ok, format('db/63: the scorer could not open the league match''s import (%s)', r.reason));
+    IL := r.import_id;
+    SELECT * INTO r FROM scorebook_import_save(IL, jsonb_build_array(CARD), TYPED, '{}'::jsonb, 1);
+    SELECT * INTO r FROM scorebook_import_submit(IL, r.version);
+    PERFORM _assert(r.ok, format('db/63: the league match''s import was not submitted (%s)', r.reason));
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(_may_63(ML) = '--ram', format('db/63 (league): the director of sport is told %s for a league match', _may_63(ML)));
+    PERFORM _as(U_WESLG);
+    PERFORM _assert(_may_63(ML) = '-----' AND _names_63(IL) = ''
+                    AND (SELECT count(*) FROM scorebook_import WHERE id = IL) = 0,
+      format('db/63 (league): Westville''s league administrator reaches the pilot league''s match (%s)', _may_63(ML)));
+    PERFORM _assert(_may_63(MWL) = '-----',
+      format('db/63 (league): Westville''s league administrator reaches Hilton''s match in his league (%s)', _may_63(MWL)));
+    SELECT * INTO r FROM scorebook_import_commit(IL, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (league): another league''s administrator confirmed (%s)', r.reason));
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert(_may_63(ML) = '-cr-m', format('db/63 (league): the league''s administrator is told %s for his league''s match', _may_63(ML)));
+    PERFORM _assert(length(_names_63(IL)) = 7 * 36 + 6 AND (SELECT count(*) FROM scorebook_import WHERE id = IL) = 1,
+      format('db/63 (league): the league''s administrator is not given his match''s names (%s)', _names_63(IL)));
+    SELECT * INTO r FROM scorebook_import_commit(IL, '{}'::uuid[], true, 'the league''s');
+    PERFORM _assert(r.ok, format('db/63 (league): the league''s administrator could not confirm his league''s match (%s %s)', r.reason, r.detail));
+
     -- A submitter who holds the confirm capability cannot confirm his own.
     PERFORM _as(U_OWNER);
     SELECT * INTO r FROM scorebook_import_open(M2);

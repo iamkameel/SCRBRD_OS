@@ -200,7 +200,9 @@ try {
   ok("the scorer is told write and read, the module on", await mayOf(scorer) === "true:write+read", await mayOf(scorer));
   ok("the director of sport confirm and read", await mayOf(sarah) === "true:confirm+read", await mayOf(sarah));
   ok("the principal (audit.read) none of the three, and still lists", await mayOf(head) === "true:", await mayOf(head));
-  for (const [who, t] of [["a parent", parent], ["a pupil", pupil]]) ok(`${who} may do nothing: 403`, await mayOf(t) === 403, await mayOf(t));
+  for (const [who, t] of [["a parent", parent], ["a pupil", pupil], ["the league's administrator, on a friendly", league]]) ok(`${who} may do nothing: 403`, await mayOf(t) === 403, await mayOf(t));
+  ok("...and the league's administrator reads no friendly's import, and no page of it",
+     (await api(`/api/scorebook/${I}`, { token: league })).status === 403 && (await api(`/api/scorebook/${I}/pages/1`, { token: league })).status === 403);
   ok("the import says the same to each", (await api(`/api/scorebook/${I}`, { token: sarah })).body?.may?.confirm === true
      && (await api(`/api/scorebook/${I}`, { token: scorer })).body?.may?.write === true && (await api(`/api/scorebook/${I}`, { token: scorer })).body?.may?.confirm === false);
 

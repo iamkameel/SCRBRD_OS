@@ -458,7 +458,7 @@ The schema is `db/64_scorebook_careers.sql` (db/99 §42); the fold's side is a n
 
 ### 9.4 · Phase 1 gaps closed (Opus, 2026-09-30)
 
-The screens (Sonnet, over §9.2's contract) found four things the API could not do or say. All four are in `db/63_scorebook_import.sql`, edited in place because it has not shipped (it is not in `db/SHIPPED.sha256`); `db/64` applies after it unchanged. db/99 §41 gains the labels `(remove)`, `(may)`, `(names)` and `(actors)` and a second `(purge)`, each falsified once (the guard broken in db/63, the database rebuilt, red, restored); `tools/smoke-scorebook.mjs` and `tools/smoke-browser-scorebook.mjs` walk each through the API and the screens.
+The screens (Sonnet, over §9.2's contract) found four things the API could not do or say. All four are in `db/63_scorebook_import.sql`, edited in place because it has not shipped (it is not in `db/SHIPPED.sha256`); `db/64` applies after it unchanged. db/99 §41 gains the labels `(remove)`, `(may)`, `(names)`, `(actors)` and `(league)` and a second `(purge)`, each falsified once (the guard broken in db/63, the database rebuilt, red, restored); `tools/smoke-scorebook.mjs` and `tools/smoke-browser-scorebook.mjs` walk each through the API and the screens.
 
 #### 1. A wrong page is taken off
 
@@ -496,9 +496,27 @@ Page numbers are never reused (the next page is one more than any the import has
 
 **Departure: staff names only, enforced.** The actors are the adults who typed, returned, confirmed or abandoned the import — but a school may appoint a pupil as its scorer (SAFEGUARDING_DSO.md's "pupil scorer"). A person with a player record of their own (`app_user.player_id`) or a live `player` or `selfaccess` assignment is left unnamed (`actorName: null`); the revision still carries their id. The rule is the conservative reading of "adults": an eighteen-year-old pupil is left unnamed too.
 
-#### Found, not changed
+#### Found, and fixed: a league's reach stops at its league
 
-The pilot seed's league administrator (`competitionadmin`, an assignment with no school) holds `scoring.import.confirm` and `.read` over **every** school's fixtures, and `scorebook_may('scoring.import.confirm')` refuses him nothing for a match in no competition: he may confirm (and read the photos of) a friendly, which §4.1 gives to the school's director of sport. It predates this section (the same assignment approves amendments anywhere), `scorebook_caller_may()` reports it faithfully, and db/99 does not assert it either way. If a friendly is the school's alone, `scorebook_may()` should refuse `.confirm` and `.read` for a match with no `competition_id` to a holder whose only grant is `competitionadmin`; that is a decision for Kameel (it narrows the role catalogue's reach, which is his).
+The pilot's league administrator (`competitionadmin` on an assignment with no school) held `scoring.import.confirm` and `.read` over every school's fixtures, because `app_can()` lets a school-less assignment reach every school (a NULL on the assignment widens). `scorebook_may()` refused him nothing on a friendly: he could confirm it and read its photos. §4.1 (D5, decided) gives a friendly to the school's director of sport, so this was a bug.
+
+- **`scorebook_school_grant(caps, match)`**: does the caller hold one of the capabilities through an assignment **at the match's school**? These are `app_can()`'s conditions for one assignment (live, in its dates, not expired, not suspended, covering the team and the fixture, about nobody in particular), with the school stated. `app_can()` itself cannot say this, since it answers "some assignment, school-less or not". The helper is used only in an `AND` with `app_can()`, so it can only narrow.
+- **`scorebook_league_reach(match)`**: the platform's key (`scorebook_platform_caller()`: `platform.feature.manage`, platform-wide), or a match in a competition whose conditions the caller manages (`competition_conditions_manager()`, SCRBRD-114).
+- **`scorebook_may()`**: for `.confirm` and `.read` (not `.write`, which only school roles hold), after everything it asked before: a school grant **or** the league's reach. The existing rule stands, so a league fixture's confirm is still the league's. The result:
+  - a school-scoped holder (director of sport, scorer, coach at the school) is unchanged;
+  - a school-less league administrator gets nothing on a friendly, and on a league match gets what the manager of that competition gets;
+  - the owner (superadmin, school-less, holding `platform.feature.manage`) keeps everything he had: write, confirm, read and audit on a friendly and on a league match;
+  - the platform administrator holds none of the three import capabilities, and keeps only the purge.
+- **The tables**: their generated read policies ask `app_can()`. So a RESTRICTIVE `<table>_reach` policy on the import, its pages and its revisions (`scorebook_reach(match)`: a school grant of `.read` or `audit.read`, or the league's reach) keeps a friendly's rows from him too. It sits beside the support cut, hand-written in db/63.
+- **Everything else follows.** `scorebook_caller_may()`, `scorebook_import_names()`, `scorebook_import_actors()`, `scorebook_page_open()`, `return`, `commit`, `abandon`, `purge_due(import)` and `page_purged()` all ask `scorebook_may()`. The audit flag in `scorebook_caller_may()` also asks `scorebook_reach()`.
+
+db/99 §41 `(league)`:
+- The league administrator is told nothing on a friendly, given no name or author, opens no page, reads no row, and can neither confirm nor return it. The owner is still told `wcram`.
+- On his own league's match he is told confirm and read, is given its names and rows, and confirms it. The director of sport reads that match (it is her school's) and may not confirm it (it is the league's).
+- A league run by Westville has its administrator appointed at Westville. He reaches nothing of the pilot league's match, nor of Hilton's match in his own league.
+- Falsified: without the clause in `scorebook_may()` the league administrator was told `-cr-m` on a friendly; without the reach cut he read its 13 rows; with a league reach that let everyone through, red again.
+
+**What the model cannot yet say.** Assignments carry no competition. So "manages that competition" is `app_can()` at the competition's organiser: a school-less `competitionadmin` manages every league, and one appointed at a school manages that school's leagues. The second reaches no other school's fixture at all, not even one in his own league, because `app_can()` scopes him to his school. A league run by one school over several therefore cannot have its other schools' fixtures confirmed by its own administrator. That waits on competition-scoped assignments (db/00's note on `competition_entrant`); nothing here widens towards it.
 
 #### For Kameel, in production
 
