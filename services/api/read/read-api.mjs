@@ -1086,11 +1086,30 @@ export const READ_QUERIES = {
    * returns nothing and this is null, which is correct — they simply see the
    * family's answer.
    */
+  /*
+   * AN ANSWER ABOUT A FIXTURE THAT HAS SINCE MOVED IS NOT AN ANSWER
+   * (SCRBRD-122, db/65). `status` is the EFFECTIVE status from
+   * availability_effective(): null (nobody answered), 'needs_reconfirming'
+   * (an answer whose fixture's time, ground, format or overs changed since),
+   * or the status as given. A client that knows nothing of the new word
+   * still never reads a stale "available" as a yes. `said_status` is the
+   * answer as given; `was_line` says what it was about ("was available for
+   * Sat 3 Oct 09:00 at Gordon Sherwood Oval · T20, 20 overs"), only while
+   * it is asking again. Boys asked again sort straight after the silent
+   * ones: both are the ones to chase.
+   */
   availability: {
     text: `select p.id                as player_id,
                   p.full_name,
                   p.team_code,
-                  a.status,
+                  e.status,
+                  a.status             as said_status,
+                  e.moved              as needs_reconfirming,
+                  (case when e.moved
+                        then 'was ' || a.status || ' for '
+                             || availability_fixture_words(a.fixture_starts_at, a.fixture_ground_id,
+                                                           a.fixture_format, a.fixture_overs)
+                   end)                as was_line,
                   a.reason_kind,
                   a.note,
                   a.declared_at,
@@ -1126,9 +1145,33 @@ export const READ_QUERIES = {
              left join match_availability a
                on a.match_id = m.id and a.player_id = p.id
              left join lateral availability_declarant(p.id, a.declared_by) d on true
+             cross join lateral (select availability_effective(a, m)     as status,
+                                        availability_fixture_moved(a, m) as moved) e
             where m.id = $1
-            order by (a.status is null) desc, p.full_name`,
+            order by (a.status is null) desc, e.moved desc, p.full_name`,
     params: q => [req(q, "matchId")],
+  },
+
+  /**
+   * THE ANSWERS THAT WERE REPLACED (SCRBRD-122, db/65). Nothing is deleted:
+   * a re-declaration keeps the answer it replaces in
+   * match_availability_history, read exactly as the live answer is — a
+   * guardian his own child's, the people picking the side their side's.
+   * `was_stale` says the fixture had moved from under it by then.
+   */
+  availability_history: {
+    text: `select h.player_id, p.full_name, h.status, h.reason_kind, h.note,
+                  h.declared_at, d.name as declared_by_name, coalesce(d.is_self, false) as self_declared,
+                  availability_fixture_words(h.fixture_starts_at, h.fixture_ground_id,
+                                             h.fixture_format, h.fixture_overs) as fixture_words,
+                  h.superseded_at, h.was_stale
+             from match_availability_history h
+             join player p on p.id = h.player_id
+             left join lateral availability_declarant(h.player_id, h.declared_by) d on true
+            where h.match_id = $1
+              and ($2::uuid is null or h.player_id = $2)
+            order by p.full_name, h.superseded_at desc`,
+    params: q => [req(q, "matchId"), q?.playerId || null],
   },
 
   /**
@@ -1154,7 +1197,9 @@ export const READ_QUERIES = {
    * WORST WINS. `state` is the least favourable thing anybody has said, in the
    * order: restricted, unavailable, unanswered, doubtful, available. Silence
    * ranks below a doubtful answer deliberately — a boy who has not replied has
-   * told us nothing, and the nothing is what needs chasing.
+   * told us nothing, and the nothing is what needs chasing. An answer whose
+   * fixture has moved since (SCRBRD-122) is 'needs_reconfirming' and ranks
+   * with silence, conflict included: it told us nothing about this fixture.
    *
    * NOTHING HERE READS player.fitness. That column is written by no route in
    * this product and already disagrees with the injury records it purports to
@@ -1584,7 +1629,12 @@ export const READ_QUERIES = {
                   -- the same reason: app_user is row-scoped, so joining it
                   -- would collapse "he said so himself" into "we could not
                   -- tell".
-                  a.status                    as declared_status,
+                  -- EFFECTIVE, as the availability read gives it (SCRBRD-122,
+                  -- db/65): an answer about a fixture that has since moved is
+                  -- 'needs_reconfirming', never its old status.
+                  e.status                    as declared_status,
+                  a.status                    as said_status,
+                  e.moved                     as needs_reconfirming,
                   a.reason_kind,
                   coalesce(d.is_self, false)  as self_declared,
                   d.name                      as declared_by_name,
@@ -1608,11 +1658,14 @@ export const READ_QUERIES = {
                   (s.player_id is not null)   as selected,
                   s.side                      as selected_side,
                   s.batting_no,
-                  case when c.restricted            then 'restricted'
-                       when a.status = 'unavailable' then 'unavailable'
-                       when a.status is null         then 'unanswered'
-                       when a.status = 'doubtful'    then 'doubtful'
-                       else                               'available'
+                  -- An answer asking again ranks with silence: whatever it
+                  -- said, it said it about another fixture.
+                  case when c.restricted                   then 'restricted'
+                       when e.status = 'unavailable'        then 'unavailable'
+                       when e.status is null                then 'unanswered'
+                       when e.status = 'needs_reconfirming' then 'needs_reconfirming'
+                       when e.status = 'doubtful'           then 'doubtful'
+                       else                                      'available'
                   end                         as state,
                   -- The row a selector needs to see first: somebody is in the
                   -- side who should not be. Derived from two columns of this
@@ -1622,8 +1675,8 @@ export const READ_QUERIES = {
                   -- put us back to flicking between screens.
                   case when s.player_id is null then null
                        when c.restricted             then 'selected_while_restricted'
-                       when a.status = 'unavailable' then 'selected_while_unavailable'
-                       when a.status is null         then 'selected_without_answer'
+                       when e.status = 'unavailable' then 'selected_while_unavailable'
+                       when e.status is null or e.moved then 'selected_without_answer'
                   end                         as conflict
              from match m
              join player p
@@ -1635,15 +1688,17 @@ export const READ_QUERIES = {
              left join clinical c on c.player_id = p.id
              left join match_squad s
                on s.match_id = m.id and s.player_id = p.id and not s.withdrawn
+             cross join lateral (select availability_effective(a, m)     as status,
+                                        availability_fixture_moved(a, m) as moved) e
             where m.id = $1
             -- Conflicts first, then the worst news, then alphabetically.
             order by (case when s.player_id is not null
-                            and (c.restricted or a.status is distinct from 'available')
+                            and (c.restricted or e.status is distinct from 'available')
                            then 0 else 1 end),
                      (case when c.restricted            then 0
-                           when a.status = 'unavailable' then 1
-                           when a.status is null         then 2
-                           when a.status = 'doubtful'    then 3
+                           when e.status = 'unavailable' then 1
+                           when e.status is null or e.moved then 2
+                           when e.status = 'doubtful'    then 3
                            else                               4 end),
                      p.full_name`,
     params: q => [req(q, "matchId")],

@@ -207,6 +207,64 @@ try {
   ok("every unanswered name comes before every answered one",
      firstAnswered === -1 || lastUnanswered === -1 || lastUnanswered < firstAnswered);
 
+  // SCRBRD-122 (db/65). An answer is about the fixture as it stood when it
+  // was given; when the fixture moves, "available" is no longer a yes.
+  group("A moved fixture asks again");
+  {
+    const notices = async (token) =>
+      ((await api("/api/read/notifications", { token })).body?.rows ?? []).filter((n) => n.subject_id === m);
+    ok("the boy's own answer stands before the fixture moves",
+       (await sheet(m, coach)).find((r) => r.player_id === CHILD)?.status === "available");
+    const moved = await api(`/api/fixtures/${m}`, { method: "POST", token: head, body: {
+      startsAt: new Date(Date.now() + 4 * 86400e3).toISOString() } });
+    ok("the director of sport moves the fixture", moved.status === 200);
+    const s6 = await sheet(m, coach);
+    const his = s6.find((r) => r.player_id === CHILD);
+    // Silence is not a yes, and neither is a yes to another day.
+    ok("his answer now reads needs_reconfirming, not available", his?.status === "needs_reconfirming");
+    ok("...what he said is still there", his?.said_status === "available" && his?.needs_reconfirming === true);
+    ok("...with the fixture he said it about",
+       /^was available for \w{3} \d{1,2} \w{3} \d\d:\d\d · T20, 20 overs$/.test(his?.was_line ?? ""));
+    ok("nobody on the sheet is still available", !s6.some((r) => r.status === "available"));
+    const firstAsked = s6.findIndex((r) => r.needs_reconfirming);
+    const lastSilent = s6.map((r) => r.status).lastIndexOf(null);
+    const firstSettled = s6.findIndex((r) => r.status !== null && !r.needs_reconfirming);
+    ok("the ones asked again sort after the silent and before the settled",
+       (lastSilent === -1 || lastSilent < firstAsked) && (firstSettled === -1 || firstAsked < firstSettled));
+
+    const toParent = await notices(parent);
+    ok("his guardian is asked to answer again, about him and nobody else",
+       toParent.length === 1 && toParent[0].subject_person_id === CHILD
+       && /please answer again/.test(toParent[0].title) && toParent[0].body.includes("R Pillay"));
+    const toBoy = await notices(boy);
+    ok("...and so is the boy, who answered for himself, as the system's own notice",
+       toBoy.length === 1 && toBoy[0].kind === "system" && toBoy[0].subject_person_id === CHILD);
+    const toCoach = await notices(coach);
+    ok("the coach is asked about the boys whose answers he recorded, and not about R Pillay",
+       toCoach.length > 0 && !toCoach.some((n) => n.subject_person_id === CHILD));
+    ok("a spectator and another side's coach are told nothing",
+       (await notices(watcher)).length === 0 && (await notices(coach2)).length === 0);
+
+    ok("his guardian answers again",
+       (await declare(m, parent, { playerId: CHILD, status: "available" })).status === 200);
+    const again = (await sheet(m, coach)).find((r) => r.player_id === CHILD);
+    ok("...and the answer is current again",
+       again?.status === "available" && again?.needs_reconfirming === false && again?.was_line === null);
+
+    const hist = async (token) =>
+      (await api(`/api/read/availability_history?matchId=${m}`, { token })).body?.rows ?? [];
+    const mineBefore = (await hist(parent)).filter((r) => r.player_id === CHILD);
+    // Nothing is deleted: the guardian's first answer (replaced by the boy's)
+    // and the boy's (asked again, then replaced by the guardian's).
+    ok("the answers it replaced are kept, newest first",
+       mineBefore.length === 2 && mineBefore[0].status === "available" && mineBefore[0].was_stale === true
+       && mineBefore[1].status === "unavailable" && mineBefore[1].was_stale === false);
+    ok("...and a guardian reads no other boy's earlier answers",
+       (await hist(parent)).every((r) => r.player_id === CHILD));
+    ok("...nor does a spectator read any", (await hist(watcher)).length === 0);
+    ok("the coach reads his side's", (await hist(coach)).some((r) => r.player_id !== CHILD));
+  }
+
 } catch (e) {
   fail++; console.log("\n  ✗ threw:", e.message);
   if (serverErr.length) console.log(serverErr.join("").slice(-1500));
