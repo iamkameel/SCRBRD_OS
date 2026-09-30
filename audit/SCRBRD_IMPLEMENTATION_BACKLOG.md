@@ -4256,6 +4256,14 @@ rules the design must hold, as agreed with Kameel:
 7. **The school decides.** A module off by default; the principal switches it on with the school's own lift policy.
 Fable designs (on its list since 2026-09-30); Opus builds the schema, policy and RLS; Sonnet the screens.
 
+### SCRBRD-125 — Roles scoped to a competition
+**Priority:** P3 (before a second league) · **Domain:** RBAC · **Type:** design + build (found 2026-09-30, SCRBRD-120 §9.4)
+Assignments carry a school, a team and a fixture, but no competition. So a league administrator with no school manages every
+league (`competition_conditions_manager()` asks `app_can()` at the organiser school, which a school-less grant covers), and
+one appointed at a school reaches only that school's fixtures, even in his own league. Fine for the pilot's one league.
+Before a second league: a competition-scoped assignment, read by `competition_conditions_manager()`, `scorebook_league_reach()`
+and the conditions and standings policies. Opus.
+
 ### SCRBRD-121 — News: a second person approves a post before it reaches pupils
 **Priority:** P3 · **Domain:** Communications · **Type:** small build (Kameel, 2026-09-30)
 From the harvest. News today scopes by anchor and publishes at `published_at` (db/12). This adds a draft, then approval, then
