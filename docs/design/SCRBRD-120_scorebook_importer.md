@@ -1,6 +1,6 @@
 # SCRBRD-120 — The scorebook importer: the design
 
-**Status:** decided by Kameel 2026-09-30 (D1–D13 as recommended); phase 1 built 2026-09-30 — §9.2 records it and its API. Every figure that is not already in the repository is an **assumption to be confirmed** and is marked as one.
+**Status:** decided by Kameel 2026-09-30 (D1–D13 as recommended); phase 1 built 2026-09-30 — §9.2 records it and its API; phase 2 (careers and tables) built 2026-09-30 — §9.3. Every figure that is not already in the repository is an **assumption to be confirmed** and is marked as one.
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`, SCRBRD-120; the reviewer's verdict at the end of `audit/HARVEST_scrbrd_2026-09-30.md`; the earlier build's importer (`/home/user/scrbrd/apps/product/components/scrbrd/scorecard-importer.tsx`, `lib/server/scorecard-imports.ts`, `lib/server/scorecard-ocr.ts`, `lib/scorecard-import.ts`), read as a pattern and not as a model.
 **Reader:** the product owner and information officer first, then whoever builds it. Plain words open each section; the schema and the functions follow. A builder reads §1–§7 and builds §8; §9 is the decision record.
 
@@ -417,6 +417,42 @@ After a confirm the match's log carries, per innings, `innings_start` → `innin
 4. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on the API; `GET /api/health` says `"pages": "supabase"`.
 5. Schedule (or run daily) `POST /api/scorebook/purge` with a platform token.
 6. Grant the `scorebook_import` module to the pilot schools when their screens exist.
+
+### 9.3 · Phase 2 as built (Opus, 2026-09-30)
+
+The schema is `db/64_scorebook_careers.sql` (db/99 §42); the fold's side is a new group in `tools/smoke-fold-figures.mjs` (two cards written as the commit writes them, folded, and every career reader held to the fold's line for each of our boys, then voided). No engine change, no screen, no API change: the fold and SQL agreed on the first run.
+
+**What is here.** `summary_batting_line` and `summary_bowling_line` (one row per batting or bowling row of every standing summary, `security_invoker`, over `ball_event_live` and `match`), and the UNION branch in `player_innings`, `player_batting_career`, `player_bowling_career`, `player_dismissals`, `player_dismissal_breakdown`, the three `*_by_season` views, `player_batting_since()`, `player_bowling_since()` and `opposition_squad()` — every column list, type, option, owner and grant unchanged (a before/after snapshot in the file). And one new view, `player_unrecorded_figures`, for the screens (below).
+
+#### Where the build departs from the letter above, and why
+
+1. **Three more readers gain the branch**: `player_dismissals_since()`, `bowler_innings_figures` and `player_wicket_breakdown`. The first is the function db/49 holds `player_dismissals` to (db/99 §27 and the walk compare them); the other two are read beside the careers (the passport's bowling line, `player_milestone`'s five-for, the awards' breakdowns, the walk). Left out, each would have disagreed with the fold and with the view next to it.
+2. **`player_id` is the ref when it is a player id, by its shape**, not `public_ref_uuid()`: that function is not granted to the application role, and the views run as their caller. That the id is one of our own boys is the commit's (`not_our_player` at submit and again at the commit; the door lets nothing else write a summary), not re-asked per row. A typed ref is NULL, so it reaches no career, table or dossier (D6); db/99 §42 `(typed)` holds it.
+3. **A book innings is dated by its match's start**: `player_innings.ended_at`, `last_ball_at`, and the `*_since()` windows use `match.starts_at` for a summary row, because the book has no clock and the day it was imported is not the day it was played (the season views already file by the match, db/44). Live rows keep `server_ts`. The form guide therefore places a book innings on its match day.
+4. **D12 in a sum.** A figure is `NULL` only when nothing behind it was recorded (a boy whose one innings is a book's without a balls column has `balls_faced NULL`); a boy with live innings and a book innings without balls has the recorded count, which is a partial count. `player_unrecorded_figures` (per boy per season: `innings_without_balls`, `runs_without_balls`, `innings_without_boundaries`, `bowling_without_extras`) says how partial, so a strike rate can be taken over the innings whose balls are known. A boy with no record at all still reads 0 from the functions and has no row in the views, as before.
+5. **Every batting row is an innings**, a not-out who never faced included: the book says he batted, and it is the fold's line (`inn.batsmen` holds every row). The live readers give no innings to a batter who neither faced nor was out; the book cannot say which not-out batter that was.
+6. **The dossier's dots are NULL, not 0, for a boy with no live delivery** (§2.7 said the summary "contributes 0 dots"; D12 is the safer reading — a book records no dots). `dots` and `dot_pct` are over the balls he faced live, `dot_pct` floored on those; the strike rate is over the innings whose balls are recorded; `balls`, `fours` and `sixes` are NULL for a boy whose every innings left them unrecorded (0 still for a boy with no innings, as before). `batting_evidence` is over recorded balls; the function's column list is frozen, so it cannot also say "N innings from a book".
+7. **`summary_bowling_line.deliveries`** (legal balls + wides + no-balls) is NULL unless both extras are recorded, and **`bowled_on`** is the match's day in Johannesburg. Nothing reads either yet; phase 3 decides whether legal balls are a floor for the load record when the book gives no extras (otherwise such a spell has no delivery count at all).
+8. **`match_result()` is not here**: SCRBRD-114's phase 3 has not landed (no `match_result()` or `competition_standing` in `db/`). When it lands it needs nothing from this file — it reads `innings_score_as_folded()`, which reads a summary since db/63, and a summary's `innings_end` carries its reason and `confirmed` figures as a pad's does — but its proof list should carry a summarised match (a book chase won by wickets, a book tie, a book innings short of `min_overs_per_side`).
+9. **db/99 §9 now asks for `security_invoker=true`**, not for the option's name: a view altered to `security_invoker=false` passed it. Found falsifying §42 `(scope)`, which stands on two walls (the line's own `security_invoker` and `ball_event_live`'s, which a view running as its owner still reads as its caller).
+
+#### What still reads deliveries alone
+
+- **The ratings read** (`ratingsQuery()`, `services/api/read/read-api.mjs`) is a per-delivery evidence index and takes no book innings. Its comment says it is "row for row what the three functions sum"; that holds only for a boy with no book innings now (`tools/bench-assessment.mjs --check` compares on logs without one). Whether a rating's evidence should take a book's runs over its recorded balls is a later decision.
+- **`milestone_watch()`** (db/51's `innings_runs_off_bat()` and `career_runs_off_bat()`) — §2.7's "never". A live ball after an import does not count the book's runs towards a career-runs notice; db/51's equivalence `career_runs_off_bat() = Σ player_innings.runs` holds only for a boy with no book innings. The `player_milestone` view does list a book fifty or five-for (it reads `player_innings` and `bowler_innings_figures`), as do the rewards (`services/api/rewards/score.mjs`) and the passport's career line, whose source label still says "the ball log".
+- `bowler_over`, `bowler_spell`, the matchups, phases, the worm, shot sectors and every public read: none, as §2.7 (the walk checks the matchups do not move).
+
+#### What the career screens need (not done here: `apps/web` is Sonnet's, and the API change goes with it)
+
+1. **The reads zero-fill.** `career` and `career_by_season` (`read-api.mjs`) `coalesce` `balls_faced`, `fours` and `sixes` to 0. To show D12 on screen, the read must pass NULL through for a player whose figure is unrecorded (`CASE WHEN bat.player_id IS NULL THEN 0 ELSE bat.balls_faced END`) and the screen render it as an em dash; the two go together, because today a screen divides by it.
+2. **Strike rate over recorded balls**: `(runs − runs_without_balls) / balls_faced`, from `player_unrecorded_figures` (summed over seasons for a lifetime). Today `runs / balls_faced` overstates it for a boy with a book innings that has no balls column; the dashboard's `my_strike_rate` (`read-api.mjs`, the summary read) does the same in SQL. The API has no read over `player_unrecorded_figures` yet.
+3. **Boundaries** read "at least N" when `innings_without_boundaries > 0`; **wides and no-balls** in the bowling views may be NULL (the `career` read does not select them today).
+4. **The dossier** (`opposition_squad` read, `select *`): `balls`, `fours`, `sixes` and `dots` may be NULL for a boy whose record is only a book's; `strike_rate` and `dot_pct` NULL render as below the evidence floor does.
+5. **An innings row** (`player_innings`, the form guide): `balls_faced` NULL for a book innings, `ended_at` its match's start. Nothing in `player_innings` marks an innings as the book's; a screen that wants to say "from the scorebook" joins `summary_batting_line` on player, match and innings.
+
+#### For Kameel, in production
+
+1. After `apply-63`: paste `apply-64` then `verify` (rehearsed on a database at db/63, seeded: `ALL RLS LIVE ASSERTIONS PASSED`, and a second paste refuses); then record it in `db/SHIPPED.sha256`. No secret, no flag, no bucket.
 
 ---
 
