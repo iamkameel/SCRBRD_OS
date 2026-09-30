@@ -1,0 +1,52 @@
+name: Keep warm (match hours)
+
+# Render's free plan stops the service after about fifteen minutes without a
+# request, and the next person waits thirty to sixty seconds while it boots.
+# On a Saturday morning that person is the scorer opening the pad, or a parent
+# opening the live page. The pad's outbox keeps every ball safe once scoring
+# has begun, but signing in and claiming the match wait on the boot.
+#
+# So this pings /api/health through school cricket's hours only, not all day:
+#   weekdays  12:00–18:50 SAST (10:00–16:50 UTC)
+#   Saturday  06:00–18:50 SAST (04:00–16:50 UTC)
+# about 170 instance-hours a month, well inside Render's 750. /api/health runs
+# `select 1`, which also keeps a free Supabase project from pausing for want
+# of use. GitHub runs a schedule when it can, sometimes minutes late; every
+# ten minutes leaves room for that inside Render's fifteen.
+#
+# The address is the repository variable SCRBRD_HEALTH_URL (Settings → Secrets
+# and variables → Actions → Variables), e.g. https://scrbrd.onrender.com/api/health.
+# Unset, the job says so and does nothing. Schedules run from the default
+# branch only, so this starts once it is on main.
+
+on:
+  schedule:
+    - cron: '*/10 10-16 * * 1-5'
+    - cron: '*/10 4-16 * * 6'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /api/health
+        env:
+          URL: ${{ vars.SCRBRD_HEALTH_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "::notice::SCRBRD_HEALTH_URL is not set; nothing to ping."
+            exit 0
+          fi
+          # A cold start is the case this exists for, so it may take a minute.
+          code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 120 "$URL" || true)
+          echo "GET /api/health -> $code"
+          if [ "$code" != "200" ]; then
+            echo "::warning::/api/health answered $code, not 200"
+          fi
