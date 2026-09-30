@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
+import { announceArrivals } from "../../lib/announce.js";
 
 /**
  * The spectator board's moments (Kameel's premium-feel checklist, step 3c):
@@ -30,7 +31,7 @@ const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(pre
  * @param {{key: string}[]} items  deriveCommentary's
  * @param {boolean} ready  the first read is in
  */
-function useArrivals(items, ready) {
+export function useArrivals(items, ready) {
   const seen = useRef(null);
   const [arrived, setArrived] = useState({ n: 0, items: [] });
   useEffect(() => {
@@ -41,6 +42,34 @@ function useArrivals(items, ready) {
     if (fresh.length) setArrived((a) => ({ n: a.n + 1, items: fresh }));
   }, [items, ready]);
   return arrived;
+}
+
+/**
+ * What a screen-reader user is told as play arrives (WCAG 4.1.3): the latest
+ * ball or the end of the over, in plain words (lib/announce.js), and nothing at
+ * all for the log as it was on first load. It rides on the same arrivals as the
+ * moments — a line is new only if it was not in the first read — so a reload
+ * and a reconnect replay nothing.
+ *
+ * `n` counts the announcements, so the page can key its live region on it: the
+ * same words twice in a row ("One run", "One run") are two announcements, and
+ * a region whose text did not change would say only the first.
+ * @param {{kind: string, key: string}[]} items  deriveCommentary's
+ * @param {any[]} events  the log it was told from
+ * @param {boolean} ready  the first read is in
+ * @returns {{n: number, text: string}}
+ */
+export function useAnnouncement(items, events, ready) {
+  const arrived = useArrivals(items, ready);
+  const [said, setSaid] = useState({ n: 0, text: "" });
+  useEffect(() => {
+    if (!arrived.n) return;
+    const text = announceArrivals(arrived.items, events ?? []);
+    if (text) setSaid((s) => ({ n: s.n + 1, text }));
+    // Only an arrival announces; `events` is read as it stood with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrived]);
+  return said;
 }
 
 /**

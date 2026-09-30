@@ -73,7 +73,9 @@ function InningsBreakCard({ match, innings, overs }) {
   );
 }
 
-export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns }) {
+// `quietMoments`: the page has a live region of its own (the public page's),
+// so the moment and the over summary are drawn but not announced a second time.
+export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false }) {
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
@@ -90,10 +92,10 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
             insight={insight.length ? insight : undefined}/>
-          <MomentMark moment={moment}/>
+          <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
       )}
-      <OverSummary item={overSummary}/>
+      <OverSummary item={overSummary} announce={!quietMoments}/>
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}
       {latest.length > 0 && (
         <Panel testid="mc-latest">

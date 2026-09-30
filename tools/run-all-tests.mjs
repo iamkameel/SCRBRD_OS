@@ -84,6 +84,9 @@ const SUITES = [
   // The public page (SCRBRD-083): the redacted log made foldable, no
   // pseudonym ever shown as a name.
   ["public-page",       "apps/web/test/public-page.test.mjs"],
+  // The public page's live region: each new ball in plain words, only what is
+  // new, nobody named (lib/announce.js).
+  ["announce",          "apps/web/test/announce.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.

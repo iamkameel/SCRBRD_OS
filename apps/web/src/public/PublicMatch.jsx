@@ -9,7 +9,7 @@ import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
 import { Panel, Quiet, SideName } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
-import { liveRefreshMs, useMoments, useTicker } from "../views/matchcentre/live.js";
+import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { asPublicMatch, foldable, unnamedToPositions } from "./publicLog.js";
 
@@ -267,6 +267,9 @@ export function PublicMatch({ matchId, view }) {
 
   const result = match ? (resultText(match, folded?.result) ?? null) : null;
   const { moment, overSummary } = useMoments(commentary, !data.loading && !!match);
+  // What a screen reader is told as each ball arrives (lib/announce.js): the
+  // newest only, and nothing for the log as it stood on first load.
+  const said = useAnnouncement(commentary, data.events, !data.loading && !!match);
   const bi = boardInnings(played, folded?.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${matchId}:${bi.index}`);
@@ -281,11 +284,20 @@ export function PublicMatch({ matchId, view }) {
   const line = matchLine({ match, competition: null, weather: null, phase });
   const notice = revisionNotice(boardInn);
   const ctx = { match, innings: played, result, commentary, events, demo: false, overs: match.overs || 20,
-    inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns };
+    inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
+    quietMoments: true };   // the region below says it; the moment is drawn, not said twice
 
   return (
     <Frame>
       <div className="os-page" data-testid="public-match" data-match={matchId}>
+        {/* The ball, said (WCAG 4.1.3): "Four runs", "Wicket — bowled", "Wide",
+            "End of over 5: 8 runs…". Empty on first load and on a reconnect;
+            the latest ball or over only, as it arrives. Keyed on the count so
+            the same words twice are two announcements. Nobody is named: the
+            words are what happened to the score (lib/announce.js). */}
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="public-announcer">
+          {said.text && <span key={said.n}>{said.text}</span>}
+        </div>
         {/* A boundary round each main section (ui/ErrorBoundary.jsx): the
             scoreboard header, the notices, and the open tab's panel. One that
             fails to draw is a card in its place, and the rest of a live match
