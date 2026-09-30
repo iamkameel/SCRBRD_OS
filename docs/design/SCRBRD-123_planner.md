@@ -291,3 +291,91 @@ The dispatcher passes a second capture group as `params.sub` (the plan id).
   closure or blackout now breaks shows its reasons in a knockout (it is locked) and none in a round robin
   (its match is a known commitment, not re-checked): phase 3's recheck.
 - **Approvals** (each school its fixtures, the ground owner the slot) are phase 3.
+
+### 5.7 · Making a league (added to phase 2, Kameel, 2026-09-30)
+
+Until this, a competition existed only by seed: no route created one or entered a side, and the web's
+"+ New Competition" had nothing to call. `db/67` §8a–8c and `services/api/write/league-api.mjs` (a new
+module beside `competitions-api.mjs`, which keeps divisions; the names differ so the two are not confused)
+add the league, its entrants and its first conditions. `tools/smoke-competition.mjs` walks it; db/99 §45
+proves it.
+
+**Who.** Creating is `competition.manage` at the organiser — the capability competition's own write policy
+has always asked. Its holders are `competitionadmin` (school-less for a shared league, or at a school for
+that school's) and the owner's key; both also hold `competition.conditions.manage`, so **the creator is the
+competition's manager** (`competition_conditions_manager()`: its conditions, entrants and planner) with no
+new role. A Westville-appointed administrator creates Westville's leagues and no other. **Accepting an
+invitation** is whoever arranges that side's fixtures — `fixture.update` at the entrant's school and team
+(director of sport, school administrator, sports administrator): entering a league commits the side to
+fixtures made in its school's name, which is what `fixture.update` already governs, so nothing is widened —
+**and never the competition's own manager**: a platform-wide `competitionadmin` holds `fixture.update`
+everywhere, and without that exclusion the organiser could accept for any school. Never under a support
+session. The application may no longer INSERT an entrant, nor UPDATE its status, school, team or
+competition (only the ladder's columns): the functions are the only way in.
+
+**Status.** `competition_entrant.status`: `invited` → `accepted` | `declined`, answered once (a declined
+side may be invited afresh). Rows before db/67 are `accepted`. Only accepted entrants are drawn
+(`planner_inputs()`), published, shown on the ladder (`/api/read/league`), offered by the fixture screen
+(`/api/competitions/entered`), or given a fixture in the competition at all: db/61's
+`match_competition_entered()` now asks for an accepted entrant, so the fixture route refuses the rest as
+`invalid_fixture`.
+
+**Conditions from a starting point.** Version 1, a draft; publishing is db/61's `condition_set_publish()`,
+unchanged (effective from tomorrow at the earliest).
+- `defaults`: every catalogue key with a platform default that a reader applies (not the reserved ones);
+  `bowling.limit` per band from the platform's fast-bowling directive, its note quoting the band's rulebook
+  clause — which says of itself that the figures follow the ECB directives "in the absence of a published
+  CSA schedule. Not official wording", so no CSA citation is claimed; the format keys (`format.kind`,
+  `format.overs_per_innings`, `format.innings_per_side`, `format.free_hit`) from the competition's format;
+  `result.tie_break` = `none` noting the Laws of Cricket (MCC, 4th Edition, Law 16). **Every figure
+  `unconfirmed`**, with `sourceNote` saying where it came from; a league confirms one by entering it with its
+  own document, clause and date. No points are invented: the league sets its own.
+- `competition`: the version in force today of another competition, figures, statuses and citations copied,
+  each note ending "Copied from <name>, version N". Only from a competition the caller may read
+  (`competition_visible()`, or its manager); anything else is `source_invalid`, the same words as a
+  competition that is not there.
+
+**The API** (same conventions as §5.5):
+
+- `POST /api/competitions` `{ name, organiserSchoolId?, compType?, format?, ageGroup?, gender?, level?,
+  season? }` → **the competition** `{ id, organiserSchoolId, name, compType, format, ageGroup, gender,
+  level, season, canManage }`. `compType`: league (default) | knockout | festival. `format`: T20 | One-Day |
+  One-Day Declaration | Two-Day. `level`: school (default) | club | provincial | national. `season`: a label
+  such as "2026" that exists at that level. Overs are not a field: they are `format.overs_per_innings`,
+  filled from the format by the defaults. Refusals: `not_permitted`, `support_session`, `organiser_invalid`,
+  `name_invalid` (3–120), `comp_type_invalid`, `level_invalid`, `format_invalid`, `label_too_long`,
+  `season_unknown`.
+- `POST /api/competitions/:id` `{ name?, season? }` → the competition. Refusals: `nothing_to_change`,
+  `not_permitted`, `has_fixtures` (a match or a published plan exists), `name_invalid`, `season_unknown`.
+- `GET /api/competitions/:id/schools` → `{ schools: [{ id, name, code }] }`: whom the manager may invite
+  (every school, club or academy on the platform, by name and code); an empty list to anybody else.
+- `POST /api/competitions/:id/entrants` `{ schoolId, teamCode, displayName? }` → `{ ok, id, status,
+  detail? }` (`detail` "already" or "invited again"; `displayName` defaults to the school's name and the
+  team). Refusals: `not_permitted`, `school_invalid`, `team_invalid` (1XI … 20XI, U9 … U19 with A–F),
+  `display_name_invalid`.
+- `GET /api/competitions/:id/entrants` → `{ canManage, entrants: [{ id, competitionId, schoolId, teamCode,
+  name, status, divisionId, invitedAt, respondedAt }] }`, as the entrant's own policy lets the reader see.
+- `GET /api/competition-invitations` → `{ invitations: [{ …entrant, competitionName, organiserSchoolId }] }`:
+  the invitations the caller may answer.
+- `POST /api/competition-entrants/:id/accept` | `/decline` → `{ ok, status }`. Refusals: `not_permitted`
+  (including the competition's manager), `support_session`, `not_invited` (`detail` the status).
+- `POST /api/competitions/:id/playing-conditions/start` `{ from: "defaults" | "competition",
+  sourceCompetitionId?, title?, effectiveFrom? }` → `{ ok, setId, version: 1, entered }`. `effectiveFrom`
+  defaults to tomorrow, `title` to "<name> conditions". Refusals: `not_permitted`, `from_invalid`,
+  `already_started` (it has a version: `POST /api/condition-sets/:id/new-version`), `source_invalid`,
+  `source_has_no_conditions`, `title_invalid`, `effective_from_invalid`.
+
+**The wizard (Sonnet), step by step, over routes that exist:**
+
+1. **League** — `POST /api/competitions`; the seasons from `/api/read/seasons`.
+2. **Entrants** — `GET …/schools`, `POST …/entrants` per team, `GET …/entrants` for each one's status.
+   Schools answer from their own inbox (`GET /api/competition-invitations`, accept/decline).
+3. **Conditions** — `POST …/playing-conditions/start` (defaults, or copy from a league); then a checklist
+   of every key from `GET /api/playing-conditions/catalogue` (its `platformDefault`, `unit`, `values`,
+   `reserved`) beside the draft's figure from `GET /api/competitions/:id/playing-conditions` (`value`,
+   `status`, `sourceNote`, citation): "use default" keeps the pre-filled figure, "own value" is
+   `POST /api/condition-sets/:setId/values` `{ key, ageBand?, value, status, sourceDocument?,
+   sourceClause?, sourceDate?, sourceNote? }` (confirmed needs document, clause and date), and clearing is
+   `…/values/clear`.
+4. **Review and publish** — `POST /api/condition-sets/:setId` `{ effectiveFrom }` to date it,
+   `POST /api/condition-sets/:setId/publish`; then **open the planner** (§5.5) for the accepted entrants.

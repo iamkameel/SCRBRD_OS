@@ -4325,6 +4325,12 @@ each published fixture made, once). The manager is `competition_conditions_manag
 insert (exported from `fixture-api.mjs`), idempotent, rechecked against the database first (`clash`), and the small
 CRUD. A known fixture's end comes from its format (`knownFixtureEnd()`). `tools/smoke-planner.mjs`. The API contract
 for the Sonnet screen: `docs/design/SCRBRD-123_planner.md` §5.5. **Next:** the screen (Sonnet); phase 3, approvals.
+**Added the same day (Kameel): making a league** (db/67 §8a–8c, `services/api/write/league-api.mjs`,
+`tools/smoke-competition.mjs`): `POST /api/competitions` under `competition.manage` (the creator is its manager);
+entrants invited by the organiser and accepted or declined by the school (`fixture.update` at the entrant, never the
+competition's manager; only accepted entrants are drawn, published, laddered, or given a fixture); version 1 of the
+conditions from the platform's defaults (all unconfirmed, sourced) or copied from a readable competition. Contract for
+the Sonnet league wizard: §5.7.
 
 ### SCRBRD-124 — Parent lift clubs: families offering each other lifts to fixtures
 **Priority:** P2 · **Domain:** Transport / Families / Safeguarding · **Type:** Fable design, then build after SCRBRD-122 and
