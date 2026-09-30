@@ -35,6 +35,10 @@ const SUITES = [
   // pinned against db/99, the readers, the fold under a document, and no
   // document folding exactly as before.
   ["conditions", "packages/scoring/test/conditions.test.mjs"],
+  // An innings from a paper scorebook (SCRBRD-120, phase 1): the card's
+  // arithmetic over the PARITY list db/63 answers too, the fold of a summary
+  // (nothing zero-filled, no ball invented), the seal, and the three Laws.
+  ["summary", "packages/scoring/test/summary.test.mjs"],
   // A refusal's likely cause, in words beside REFUSAL_TEXT (SCRBRD-100): names
   // from the fold and never an id, no Law clause numbers.
   ["causes",   "packages/scoring/test/causes.test.mjs"],
@@ -67,6 +71,9 @@ const SUITES = [
   // (SCRBRD-082/084) — no DOM, no database, just the fold's own shapes.
   ["post-match-report", "apps/web/test/post-match-report.test.mjs"],
   ["season-awards",     "apps/web/test/season-awards.test.mjs"],
+  // A figure a scorebook did not record stays null on the career screens
+  // (SCRBRD-120 D12): the adapter, the strike rate over recorded balls, "at least N".
+  ["unrecorded-figures", "apps/web/test/unrecorded-figures.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The Match Centre's own derivations (redesign step 3c): sides named in
   // full and by code, the match line, the scorecard's parts, the break.
   ["match-centre",      "apps/web/test/match-centre.test.mjs"],
@@ -101,6 +108,10 @@ const SUITES = [
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,
   // its source, "N of M confirmed", a version's standing, a refusal in words.
   ["playing-conditions-screen", "apps/web/test/playing-conditions.test.mjs"],
+  // The scorebook importer's screens (SCRBRD-120): who is offered the entry
+  // point, a refusal in words, a blank that is null and never nought, the ticks
+  // that follow a row, an opposition name that is a typed key and never a player.
+  ["scorebook-screen", "apps/web/test/scorebook.test.mjs"],
   // No Law clause number on any scorer screen: every words table, every
   // refusal helper over every code, and the sheets' literal text (SCRBRD-094).
   ["law-clauses", "apps/web/test/law-clauses.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
@@ -124,6 +135,9 @@ const SUITES = [
   // The signed-out read path (SCRBRD-083): the projection, the router, the shell.
   ["public-api", "services/api/public/public.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
+  // A scorebook page's photo (SCRBRD-120): JPEG or PNG only, its metadata
+  // stripped without a decoder, and the private store's two backends.
+  ["page-image", "services/api/io/page-image.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
   // No file under tools/, services/ or packages/ hard-codes the database

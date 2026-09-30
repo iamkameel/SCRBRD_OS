@@ -480,6 +480,11 @@ export const ADDED_SINCE_01 = {
   // Playing conditions per competition, phase 1 (SCRBRD-114): competitionadmin
   // (and superadmin, whose bundle is every capability).
   "competition.conditions.manage": "61_playing_conditions.sql",
+  // The scorebook importer, phase 1 (SCRBRD-120 §4.1): the typist, the
+  // confirmer, and the read both of them need.
+  "scoring.import.read":         "63_scorebook_import.sql",
+  "scoring.import.write":        "63_scorebook_import.sql",
+  "scoring.import.confirm":      "63_scorebook_import.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
@@ -767,6 +772,9 @@ CREATE POLICY ${table}_update ON ${table}
 export const TABLES_ADDED_SINCE_09 = Object.freeze({
   load_unit:  "60_workload_consent_count.sql",
   load_entry: "60_workload_consent_count.sql",
+  scorebook_import:          "63_scorebook_import.sql",
+  scorebook_import_page:     "63_scorebook_import.sql",
+  scorebook_import_revision: "63_scorebook_import.sql",
 });
 const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
 

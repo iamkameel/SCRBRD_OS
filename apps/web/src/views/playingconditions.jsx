@@ -76,19 +76,22 @@ function Alert({ words, testid = "pc-error" }) {
   return words ? <p role="alert" data-testid={testid} style={S.alert}>{words}</p> : null;
 }
 
-/** The chips: what a figure stands on. */
-function Source({ entered }) {
+/** The chips: what a figure stands on, and who entered it. */
+function Source({ entered, fallback = null }) {
   const S = styles();
   if (!entered) {
-    return <Badge data-testid="pc-chip-default" color={T.semantic.warning}>platform default, unconfirmed</Badge>;
+    return <Badge data-testid="pc-chip-default" color={T.semantic.warning}>platform default, unconfirmed{fallback ? `: ${fallback}` : ""}</Badge>;
   }
+  const who = entered.enteredBy && entered.enteredBy === profile()?.user?.id ? "you" : entered.enteredByName;
+  const by = who ? <span data-testid="pc-entered-by" style={S.meta}>Entered by {who}</span> : null;
   if (entered.status === "confirmed") {
-    return <span data-testid="pc-source" style={{ ...S.body, fontSize: "13px" }}>{sourceWords(entered)}</span>;
+    return <span style={S.wrap}><span data-testid="pc-source" style={{ ...S.body, fontSize: "13px" }}>{sourceWords(entered)}</span>{by}</span>;
   }
   return (
     <span style={S.wrap}>
       <Badge data-testid="pc-chip-unconfirmed" color={T.semantic.warning}>unconfirmed</Badge>
       {entered.sourceNote && <span style={S.meta}>{entered.sourceNote}</span>}
+      {by}
     </span>
   );
 }
@@ -269,7 +272,7 @@ function FigureRow({ entry, entered, applied = true, canEdit, setId, catalogue, 
         <div data-testid="pc-value" style={{ ...S.body, color: T.content.primary }}>{cap(shown)}</div>
       </div>
       <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-        {(applied || entered) ? <Source entered={entered}/> : null}
+        {(applied || entered) ? <Source entered={entered} fallback={applied ? shown : null}/> : null}
       </div>
       <FigureActions entry={entry} band={null} entered={entered} canEdit={canEdit} setId={setId} catalogue={catalogue}
         editing={editing} setEditing={setEditing} onChanged={onChanged}/>
@@ -301,7 +304,7 @@ function BandTable({ entry, values, bands, canEdit, setId, catalogue, onChanged 
             <tbody>
               {bands.map((b) => {
                 const entered = values.find((v) => v.key === entry.key && v.ageBand === b);
-                const shown = entered ? entered.value : bandDefault(b);
+                const shown = entered ? entered.value : bandDefault(entry, b);
                 return [
                   <tr key={b} data-testid={`pc-figure-${entry.key}-${b}`}>
                     <th scope="row" style={{ ...td, fontWeight: 600 }}>{b}</th>
@@ -505,7 +508,7 @@ export function PlayingConditions({ competition }) {
   }
 
   const me = profile()?.user?.id ?? null;
-  const by = (/** @type {string | null} */ id) => (id && id === me ? "you" : "another administrator");
+  const by = (/** @type {string | null} */ id, /** @type {string | null | undefined} */ name) => (id && id === me ? "you" : name || "another administrator");
   const sets = /** @type {any[]} */ (data.sets);
   const inForce = sets.find((s) => s.id === data.inForceToday) ?? null;
   const shownId = (chosen && sets.some((s) => s.id === chosen) ? chosen : null)
@@ -559,9 +562,9 @@ export function PlayingConditions({ competition }) {
                   <Badge color={badge[st]} data-testid="pc-version-standing">{STANDING_WORDS[st]}</Badge>
                 </div>
                 <p style={S.meta}>
-                  {s.status === "draft" ? `Starts ${formatDay(s.effectiveFrom)} once published. Started by ${by(s.createdBy)}, ${formatWhen(s.createdAt)}.`
-                    : `From ${formatDay(s.effectiveFrom)}. Published by ${by(s.publishedBy)}, ${formatWhen(s.publishedAt)}.`}
-                  {s.status === "withdrawn" && ` Withdrawn by ${by(s.withdrawnBy)}, ${formatWhen(s.withdrawnAt)}: “${s.withdrawnNote}”.`}
+                  {s.status === "draft" ? `Starts ${formatDay(s.effectiveFrom)} once published. Started by ${by(s.createdBy, s.createdByName)}, ${formatWhen(s.createdAt)}.`
+                    : `From ${formatDay(s.effectiveFrom)}. Published by ${by(s.publishedBy, s.publishedByName)}, ${formatWhen(s.publishedAt)}.`}
+                  {s.status === "withdrawn" && ` Withdrawn by ${by(s.withdrawnBy, s.withdrawnByName)}, ${formatWhen(s.withdrawnAt)}: “${s.withdrawnNote}”.`}
                 </p>
               </div>
               <button type="button" data-testid={`pc-show-${s.version}`} aria-pressed={selected} aria-label={`${selected ? "Showing" : "Show"} figures of version ${s.version}`} onClick={() => pick(s.id)} style={S.toggle(selected)}>

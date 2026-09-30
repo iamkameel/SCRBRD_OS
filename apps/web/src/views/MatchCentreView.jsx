@@ -20,6 +20,7 @@ import { ReportIncident } from "./discipline.jsx";
 import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
+import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   useTheme();
@@ -43,6 +44,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // the board, the scorecard, the commentary and the rest, in six tabs. It
   // replaced the Scorecard modal (step 3c).
   const [openM,    setOpenM]    = useState(null);
+  // A paper scorebook being imported for a fixture (SCRBRD-120): its own
+  // screens, opened from the fixture's side panel.
+  const [sbOpen,   setSbOpen]   = useState(null);
   // The Post-Match Report (SCRBRD-082) — a fixture's own screen, opened from
   // its card the same way the Scorecard is. Offered only once a match is
   // complete: a live fixture's report would be reporting on a game still
@@ -79,6 +83,12 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // and, from the list itself, the ordinary "Open match" button.
   const openFixture = (m) => { setSelMatch(null); setOpenM(m); };
   const teamResults = (label) => { setOpenM(null); setTeamFilter(label); setFilter("complete"); };
+  if (sbOpen) {
+    return (
+      <ScorebookImportView importId={sbOpen.id} match={sbOpen.match}
+        onClose={()=>{ setSbOpen(null); setMatchesNonce(n=>n+1); }}/>
+    );
+  }
   if (openM) {
     // The row as the list has it now, so a live fixture that has moved on
     // (a result, a new status) is the one the view shows.
@@ -248,6 +258,11 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               <QuarantinePanel matchId={selMatch.id} role={role}/>
               <DrsPanel matchId={selMatch.id} role={role}/>
               <ReportIncident match={selMatch} role={role}/>
+              {/* SCRBRD-120. A played fixture's paper scorebook, typed beside
+                  photos of its pages and confirmed by a second person. Drawn
+                  only when the API lists the fixture's imports (module on,
+                  this person's to see); see views/scorebook.jsx. */}
+              <ScorebookPanel match={selMatch} onOpen={(id)=>setSbOpen({ id, match: selMatch })}/>
               {ground&&pitch&&(
                 <div style={{marginBottom:"12px",background:D.surf2,borderRadius:D.md,padding:"10px 12px",border:`1px solid ${D.teal}22`}}>
                   <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.teal,letterSpacing:"0.08em",marginBottom:"7px"}}>PITCH REPORT</div>

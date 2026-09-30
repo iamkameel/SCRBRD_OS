@@ -1560,6 +1560,138 @@ CREATE OR REPLACE FUNCTION _v62_link(p uuid, mum uuid, OUT open boolean, OUT unt
    ORDER BY s.created_at DESC, s.id LIMIT 1
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/63 (section 41). SCRBRD-120 phase 1: the scorebook importer. Three
+-- Hilton 1st XI fixtures two days ago (the import, the submitter's own, the
+-- abandoned one) and one at Westville, whose school is not granted the
+-- module; the module granted to Hilton. Written as the owner.
+CREATE OR REPLACE FUNCTION _seed_63() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  ids jsonb := '{}'; m uuid; r record;
+BEGIN
+  INSERT INTO feature_grant (key, school_id, granted, note) VALUES ('scorebook_import', HIL, true, 'verify 063')
+  ON CONFLICT (key, school_id) DO UPDATE SET granted = true;
+  FOR r IN SELECT * FROM (VALUES ('m', HIL), ('m2', HIL), ('m3', HIL), ('mw', WES)) AS v(k, s) LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (r.s, '1XI', 'Verify 063 ' || r.k, now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled')
+    RETURNING id INTO m;
+    ids := ids || jsonb_build_object(r.k, m);
+  END LOOP;
+  -- A Hilton 1st XI fixture in the pilot's league (its organiser an external
+  -- body), which the league's administrator confirms.
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, '1XI', 'Verify 063 ml', now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled', '99999999-0000-0000-0000-000000000001')
+  RETURNING id INTO m;
+  ids := ids || jsonb_build_object('ml', m);
+  -- A league run by Westville, and its administrator, appointed at Westville:
+  -- he manages that league and not the pilot's (competition_conditions_manager()).
+  INSERT INTO competition (id, school_id, name, comp_type, format, age_group, gender, level)
+  VALUES ('99999999-0000-0000-0000-0000000063c0', WES, 'Verify 063 Westville League', 'league', 'T20', '1XI', 'boys', 'school')
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO app_user (id, school_id, email, name, role)
+  VALUES ('88888888-0000-0000-0000-0000000063c0', WES, 'verify063.wesleague@example.invalid', 'Verify 063 Westville League Admin', 'competitionadmin')
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  SELECT '88888888-0000-0000-0000-0000000063c0', 'competitionadmin', WES, NULL
+   WHERE NOT EXISTS (SELECT 1 FROM role_assignment WHERE person_id = '88888888-0000-0000-0000-0000000063c0');
+  -- A Hilton fixture in Westville's league (the side entered first).
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name)
+  SELECT '99999999-0000-0000-0000-0000000063c0', HIL, '1XI', 'Hilton 1st XI'
+   WHERE NOT EXISTS (SELECT 1 FROM competition_entrant WHERE competition_id = '99999999-0000-0000-0000-0000000063c0');
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, '1XI', 'Verify 063 mwl', now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled', '99999999-0000-0000-0000-0000000063c0')
+  RETURNING id INTO m;
+  ids := ids || jsonb_build_object('mwl', m);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A confirmed import's photos past the window: confirmed_at a month back,
+-- as the table's owner (a confirmed import does not change, by its guard).
+CREATE OR REPLACE FUNCTION _age_63(p_import uuid) RETURNS void AS $$
+BEGIN
+  ALTER TABLE scorebook_import DISABLE TRIGGER scorebook_import_guard;
+  UPDATE scorebook_import SET confirmed_at = confirmed_at - interval '31 days' WHERE id = p_import;
+  ALTER TABLE scorebook_import ENABLE TRIGGER scorebook_import_guard;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the owner sees of an import's world: its events' keys in order, its
+-- page reads on access_log, and the delivery readers' rows for its match.
+CREATE OR REPLACE FUNCTION _log_63(p_match uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(b.idempotency_key, ',' ORDER BY b.seq), '') FROM ball_event b WHERE b.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _reads_63(p_import uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(l.person_id || ':' || array_to_string(l.fields, ','), ' ' ORDER BY l.person_id, l.fields), '')
+    FROM access_log l WHERE l.resource = 'scorebook_page' AND p_import = ANY (l.record_ids)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _deliveries_63(p_match uuid) RETURNS bigint AS $$
+  SELECT (SELECT count(*) FROM bowler_over o WHERE o.match_id = p_match)
+       + (SELECT count(*) FROM bowler_spell s WHERE s.match_id = p_match)
+       + (SELECT count(*) FROM milestone_notice n WHERE n.match_id = p_match)
+       + (SELECT count(*) FROM public_shot_sectors(p_match))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What scorebook_caller_may() tells the caller, as five letters (w c r a m,
+-- a dash for each no; the module as '.' when it is off for one who may).
+-- Not a definer: it runs as whoever calls it.
+CREATE OR REPLACE FUNCTION _may_63(p_match uuid) RETURNS text AS $$
+  SELECT CASE WHEN c.may_write THEN 'w' ELSE '-' END || CASE WHEN c.may_confirm THEN 'c' ELSE '-' END
+      || CASE WHEN c.may_read THEN 'r' ELSE '-' END || CASE WHEN c.may_audit THEN 'a' ELSE '-' END
+      || CASE WHEN c.module THEN 'm' WHEN c.may_write OR c.may_confirm OR c.may_read OR c.may_audit THEN '.' ELSE '-' END
+    FROM scorebook_caller_may(p_match) c
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+-- The player ids scorebook_import_names() answers the caller, in order; and
+-- the actors scorebook_import_actors() names, as id:name. Not definers.
+CREATE OR REPLACE FUNCTION _owner_name_63(p_player uuid) RETURNS text AS $$
+  SELECT full_name FROM player WHERE id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _names_63(p_import uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(n.player_id::text, ',' ORDER BY n.player_id), '') FROM scorebook_import_names(p_import) n
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _actors_63(p_import uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(a.actor_id || ':' || a.name, ',' ORDER BY a.actor_id), '') FROM scorebook_import_actors(p_import) a
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+-- A person's name, past RLS.
+CREATE OR REPLACE FUNCTION _user_name_63(p_user uuid) RETURNS text AS $$
+  SELECT name FROM app_user WHERE id = p_user
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Make a person a pupil for a moment (a player assignment), or not.
+CREATE OR REPLACE FUNCTION _pupil_63(p_user uuid, p_on boolean) RETURNS void AS $$
+BEGIN
+  IF p_on THEN
+    INSERT INTO role_assignment (person_id, role, school_id, team_code)
+    VALUES (p_user, 'player', '11111111-1111-1111-1111-111111111111', '1XI');
+  ELSE
+    DELETE FROM role_assignment WHERE person_id = p_user AND role = 'player';
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _publish_63(p_match uuid) RETURNS void AS $$
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
+  VALUES (p_match, 'home', '11111111-1111-1111-1111-111111111111', '1XI', true, '88888888-0000-0000-0000-000000000007')
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/64 (section 42). A Hilton 1XI fixture played four hundred days ago, so
+-- its season is not the one its import is committed in, with the module on;
+-- and two boys of the 1XI whose only record will be the book's.
+CREATE OR REPLACE FUNCTION _seed_64() RETURNS uuid AS $$
+DECLARE m uuid;
+BEGIN
+  INSERT INTO feature_grant (key, school_id, granted, note)
+  VALUES ('scorebook_import', '11111111-1111-1111-1111-111111111111', true, 'verify 064')
+  ON CONFLICT (key, school_id) DO UPDATE SET granted = true;
+  INSERT INTO player (id, school_id, team_code, full_name, born) VALUES
+    ('aaaaaaaa-0000-0000-0000-0000000064a0', '11111111-1111-1111-1111-111111111111', '1XI', 'Verify 064 Batter', '2009-02-01'),
+    ('aaaaaaaa-0000-0000-0000-0000000064b0', '11111111-1111-1111-1111-111111111111', '1XI', 'Verify 064 Bowler', '2009-02-01')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify 064', now() - interval '400 days', 'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO m;
+  RETURN m;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: whether any player row carries a name the scorer typed.
+CREATE OR REPLACE FUNCTION _typed_players_64() RETURNS bigint AS $$
+  SELECT count(*) FROM player WHERE full_name LIKE 'Opp %'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -1977,8 +2109,10 @@ BEGIN
   -- Through the one object the read path is REQUIRED to use for personal
   -- information, and invisibly: the leaked rows were still column-masked, so
   -- each one looked exactly right.
+  -- (It asks for security_invoker=true: a view altered to security_invoker=false
+  -- once read as passing, because the option's NAME was all that was asked.)
   PERFORM _assert(
-    (SELECT bool_and(reloptions::text LIKE '%security_invoker%')
+    (SELECT bool_and(coalesce('security_invoker=true' = ANY (reloptions), false))
        FROM pg_class WHERE relkind = 'v' AND relnamespace = 'public'::regnamespace),
     'a view in public runs as its owner and bypasses row-level security');
 
@@ -8201,6 +8335,646 @@ BEGIN
     -- Nothing here left the table holding an adult's open link out of school.
     PERFORM _assert(_count_open_guardian_links() = 0,
       'db/62: a guardian link is open-ended for an adult who is not at school');
+  END;
+
+  -- ── 41. The scorebook importer, phase 1 (SCRBRD-120, db/63) ──────────
+  -- The design's phase 1 "proves" (docs/design/SCRBRD-120_scorebook_importer.md
+  -- §8) that the database alone can show; the JavaScript half is
+  -- packages/scoring/test/summary.test.mjs (the fold, the seal, the Laws), the
+  -- API half tools/smoke-scorebook.mjs (the photos, the commit's Laws and
+  -- seal, the amendment, the parity of the arithmetic).
+  --
+  -- Each labelled assertion was falsified once — the thing it guards broken
+  -- in db/63, the database rebuilt and this file run — and went red:
+  --   (two)       scorebook_authored() not reading the revisions
+  --   (support)   the RESTRICTIVE support cuts dropped from the import and its pages
+  --   (page)      scorebook_import_page_read under audit.read as well
+  --   (log)       scorebook_page_open() without its access_log row
+  --   (figures)   innings_score_as_folded() without its summary branch (db/63's proof first)
+  --   (purge)     scorebook_import_purge_due() not asking the window
+  --   (public)    public_match_log() serving the payload's typed map
+  --   (may)       scorebook_caller_may() answering read from scoring.import.write
+  --               (the confirmer lost it), and without the actor check on audit
+  --               (the support session was told it may audit)
+  --   (names)     scorebook_import_names() without its player.school_id
+  --               filter (the Westville boy was named), and asking app_can()
+  --               for the read in place of scorebook_may() (the support
+  --               session was given the names)
+  --   (actors)    scorebook_import_actors() without its pupil filter (the
+  --               owner, made a pupil for a moment, was named)
+  --   (league)    scorebook_may() without its school-or-league clause (the
+  --               league's administrator was told he may confirm a friendly),
+  --               and the tables without their RESTRICTIVE reach cut (he read
+  --               the friendly's rows)
+  --   (remove)    scorebook_import_page_remove() asking scorebook_may() for
+  --               confirm as well as write (the confirmer went through)
+  --   (purge)     scorebook_import_purge_due() without the removed-page branch
+  -- Two stand on two walls and stay green with either one down: (pad) — the
+  -- db/50 guard in app_can() and scorebook_actor_ok() — and (door) — the
+  -- application role's ball_event insert policy and the door trigger, which
+  -- db/63's own proof falsifies as the owner.
+  DECLARE
+    ids     jsonb := _seed_63();
+    M uuid; M2 uuid; M3 uuid; MW uuid; ML uuid; MWL uuid;
+    I uuid; I2 uuid; I3 uuid; IL uuid;
+    U_WESLG uuid := '88888888-0000-0000-0000-0000000063c0';   -- competitionadmin at Westville: Westville's league
+    PG uuid; PG2 uuid; PG3 uuid;
+    r       record;
+    v_ver   integer;
+    v_keys  text[];
+    got     text;
+    S_ID    uuid;
+    U_WESC  uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    TYPED   jsonb := '{"t:1":"Opp Fielder One","t:2":"Opp Bowler Two","t:3":"Opp Bowler Three","t:4":"Opp Fielder Four","t:5":"Opp Bowler Five"}';
+    -- packages/scoring/test/scorebook-cards.mjs's base card with Hilton's boys,
+    -- the book three runs short and saying so (D4): 127 for 4 in 20.
+    CARD    jsonb := '{"v":1,"innings":0,"battingSide":"home","batting":[{"order":1,"ref":"aaaaaaaa-0000-0000-0000-000000000001","howOut":"caught","fielderRef":"t:1","bowlerRef":"t:2","runs":34,"balls":40,"fours":4,"sixes":1},{"order":2,"ref":"aaaaaaaa-0000-0000-0000-000000000002","howOut":"bowled","fielderRef":null,"bowlerRef":"t:2","runs":12,"balls":15,"fours":1,"sixes":0},{"order":3,"ref":"aaaaaaaa-0000-0000-0000-000000000003","howOut":"lbw","fielderRef":null,"bowlerRef":"t:3","runs":0,"balls":3,"fours":0,"sixes":0},{"order":4,"ref":"aaaaaaaa-0000-0000-0000-000000000004","howOut":"run_out","fielderRef":"t:4","bowlerRef":null,"runs":25,"balls":null,"fours":null,"sixes":null},{"order":5,"ref":"aaaaaaaa-0000-0000-0000-000000000005","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":37,"balls":30,"fours":5,"sixes":1},{"order":6,"ref":"aaaaaaaa-0000-0000-0000-000000000011","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":5,"balls":4,"fours":0,"sixes":0}],"didNotBat":["aaaaaaaa-0000-0000-0000-000000000012"],"bowling":[{"ref":"t:2","overs":"8","maidens":0,"runs":40,"wickets":2,"wides":3,"noBalls":1},{"ref":"t:3","overs":"8","maidens":1,"runs":45,"wickets":1,"wides":2,"noBalls":2},{"ref":"t:5","overs":"4","maidens":null,"runs":39,"wickets":0,"wides":null,"noBalls":null}],"extras":{"byes":2,"legByes":1,"wides":5,"noBalls":3,"penalty":0},"total":127,"wickets":4,"overs":"20","fallOfWickets":[{"wicket":1,"score":30,"ref":"aaaaaaaa-0000-0000-0000-000000000002","over":"5.1"},{"wicket":2,"score":31,"ref":"aaaaaaaa-0000-0000-0000-000000000003","over":"5.3"},{"wicket":3,"score":60,"ref":"aaaaaaaa-0000-0000-0000-000000000001","over":"10.2"},{"wicket":4,"score":90,"ref":"aaaaaaaa-0000-0000-0000-000000000004","over":"15"}],"endReason":"overs","unreconciled":{"runs":3,"note":"the book is three short"}}';
+  BEGIN
+    M := (ids->>'m')::uuid; M2 := (ids->>'m2')::uuid; M3 := (ids->>'m3')::uuid; MW := (ids->>'mw')::uuid;
+    ML := (ids->>'ml')::uuid; MWL := (ids->>'mwl')::uuid;
+
+    -- (module) off where the platform has not granted it
+    PERFORM _as(U_WESC);
+    SELECT * INTO r FROM scorebook_import_open(MW);
+    PERFORM _assert(NOT r.ok AND r.reason = 'module_disabled', format('db/63 (module): Westville opened an import (%s)', r.reason));
+    -- (may) what a screen is told, by the functions' own checks: w(rite)
+    -- c(onfirm) r(ead) a(udit) m(odule), a dash for no. Westville's coach may
+    -- write for his own fixture, and is told the module is off there.
+    PERFORM _assert(_may_63(MW) = 'w-r-.', format('db/63 (may): Westville''s coach is told %s for his fixture', _may_63(MW)));
+    PERFORM _assert(_may_63(M) = '-----', format('db/63 (may): Westville''s coach is told %s for Hilton''s', _may_63(M)));
+    FOREACH got IN ARRAY ARRAY[U_SCORER || ':w-r-m', U_SARAH || ':-cram', U_HEAD_M || ':---am', U_PARENT || ':-----',
+                               U_PUPIL || ':-----', U_WATCHER || ':-----'] LOOP
+      PERFORM _as(split_part(got, ':', 1)::uuid);
+      PERFORM _assert(_may_63(M) = split_part(got, ':', 2),
+        format('db/63 (may): %s is told %s, not %s', split_part(got, ':', 1), _may_63(M), split_part(got, ':', 2)));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'directorofsport', 'ticket 6365: what may I do here') s;
+    S_ID := r.id;
+    got := _may_63(M);
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(got = '-----', format('db/63 (may): a support session as the director of sport is told %s', got));
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    got := _may_63(M);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(got = '-----', format('db/63 (may): a pad''s credential is told %s', got));
+
+    -- The scorer opens, adds a page, types the card; the owner types a cell too.
+    PERFORM _as(U_SCORER);
+    SELECT * INTO r FROM scorebook_import_open(M);
+    PERFORM _assert(r.ok, format('db/63: the scorer could not open an import (%s)', r.reason));
+    I := r.import_id;
+    SELECT * INTO r FROM scorebook_import_open(M);
+    PERFORM _assert(NOT r.ok AND r.reason = 'import_open', 'db/63: a second open import for one match');
+    SELECT * INTO r FROM scorebook_import_page_add(I, HIL || '/' || gen_random_uuid() || '/' || gen_random_uuid() || '.jpg',
+                                                  repeat('a', 64), 1000, 1600, 1200, 'image/jpeg');
+    PERFORM _assert(NOT r.ok AND r.reason = 'key_invalid', 'db/63 (key): a page was recorded under another import''s key');
+    SELECT * INTO r FROM scorebook_import_page_add(I, HIL || '/' || I || '/' || gen_random_uuid() || '.jpg',
+                                                  repeat('a', 64), 1000, 1600, 1200, 'image/jpeg');
+    PERFORM _assert(r.ok AND r.page_no = 1, format('db/63: the page was not recorded (%s)', r.reason));
+    PG := r.page_id;
+
+    -- (remove) a wrong photo, taken off by a writer and by nobody else
+    SELECT * INTO r FROM scorebook_import_page_add(I, HIL || '/' || I || '/' || gen_random_uuid() || '.jpg',
+                                                  repeat('c', 64), 1000, 1600, 1200, 'image/jpeg');
+    PERFORM _assert(r.ok AND r.page_no = 2, format('db/63: the second page was not recorded (%s)', r.reason));
+    PG2 := r.page_id;
+    FOREACH got IN ARRAY ARRAY[U_PARENT::text, U_PUPIL::text, U_WESC::text, U_SARAH::text, U_HEAD_M::text] LOOP
+      PERFORM _as(got::uuid);
+      SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+      PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (remove): %s removed a page (%s)', got, r.reason));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'scorer', 'ticket 6364: a wrong page on the import') s;
+    PERFORM _assert(r.ok, 'db/63 (remove): the support session did not begin');
+    S_ID := r.id;
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (remove): a support session as a scorer removed a page (%s)', r.reason));
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (remove): a pad''s credential removed a page (%s)', r.reason));
+    SELECT version INTO v_ver FROM scorebook_import WHERE id = I;
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+    PERFORM _assert(r.ok AND r.version = v_ver + 1, format('db/63 (remove): the scorer could not remove his page (%s)', r.reason));
+    PERFORM _assert((SELECT action || ':' || note || ':' || actor_id FROM scorebook_import_revision WHERE import_id = I AND version = r.version)
+                    = 'pages:page 2 removed:' || U_SCORER, 'db/63 (remove): no revision says who removed the page');
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 2);
+    PERFORM _assert(NOT r.ok AND r.reason = 'page_removed', format('db/63 (remove): a page was removed twice (%s)', r.reason));
+    SELECT * INTO r FROM scorebook_page_open(I, 2);
+    PERFORM _assert(NOT r.ok AND r.reason = 'page_removed', format('db/63 (remove): a removed page was opened (%s)', r.reason));
+    -- The same photo may go back on, under a new number: no number is reused.
+    SELECT * INTO r FROM scorebook_import_page_add(I, HIL || '/' || I || '/' || gen_random_uuid() || '.jpg',
+                                                  repeat('c', 64), 1000, 1600, 1200, 'image/jpeg');
+    PERFORM _assert(r.ok AND r.page_no = 3, format('db/63 (remove): a removed photo could not be added again as page 3 (%s %s)', r.reason, r.page_no));
+    PG3 := r.page_id;
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 3);
+    PERFORM _assert(r.ok, format('db/63 (remove): page 3 could not be removed (%s)', r.reason));
+    -- (purge) a removed page's photo is due at once, the import still a draft;
+    -- once gone, the draft is not marked purged
+    PERFORM _assert((SELECT string_agg(p.page_id::text, ',' ORDER BY p.page_id) FROM scorebook_import_purge_due(I) p)
+                    = (SELECT string_agg(x::text, ',' ORDER BY x) FROM unnest(ARRAY[PG2, PG3]) x),
+      'db/63 (purge): a removed page''s photo is not due at once, or a live one is');
+    PERFORM _as(U_PLAT);
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(NULL) p WHERE p.import_id = I) = 2,
+      'db/63 (purge): the platform''s run does not retry a removed page''s photo');
+    PERFORM _as(U_PARENT);
+    PERFORM _assert(NOT scorebook_page_purged(PG2), 'db/63 (purge): a parent marked a removed page''s photo deleted');
+    PERFORM _as(U_SCORER);
+    PERFORM _assert(scorebook_page_purged(PG2) AND scorebook_page_purged(PG3), 'db/63 (purge): a removed page''s photo could not be marked deleted');
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(I)) = 0
+                    AND (SELECT pages_purged_at IS NULL AND state = 'draft' FROM scorebook_import WHERE id = I),
+      'db/63 (purge): a draft whose removed photos are gone is marked purged, or still has photos due');
+    SELECT version INTO v_ver FROM scorebook_import WHERE id = I;
+    SELECT * INTO r FROM scorebook_import_save(I, jsonb_build_array(CARD), TYPED, '{}'::jsonb, v_ver);
+    PERFORM _assert(r.ok, format('db/63: the scorer''s save was refused (%s)', r.reason));
+    v_ver := r.version;
+    -- (two) the confirmer cannot save
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM scorebook_import_save(I, jsonb_build_array(CARD), TYPED, '{}'::jsonb, v_ver);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (two): the director of sport saved a card (%s)', r.reason));
+    -- The owner's key holds both halves: typing a cell makes him an author.
+    PERFORM _as(U_OWNER);
+    SELECT * INTO r FROM scorebook_import_save(I, jsonb_build_array(CARD), TYPED, '{}'::jsonb, v_ver);
+    PERFORM _assert(r.ok, format('db/63: the owner''s save was refused (%s)', r.reason));
+    PERFORM _as(U_SCORER);
+    SELECT * INTO r FROM scorebook_import_submit(I, r.version);
+    PERFORM _assert(r.ok, format('db/63: the submit was refused (%s)', r.reason));
+    SELECT * INTO r FROM scorebook_import_page_remove(I, 1);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_editable', format('db/63 (remove): a page was removed from a submitted import (%s)', r.reason));
+
+    -- (two) the submitter and a revision's author cannot confirm or return
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', 'db/63 (two): the scorer confirmed an import');
+    PERFORM _as(U_OWNER);
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'cannot_confirm_your_own', format('db/63 (two): a revision''s author confirmed it (%s)', r.reason));
+    SELECT * INTO r FROM scorebook_import_return(I, 'check the extras line');
+    PERFORM _assert(NOT r.ok AND r.reason = 'cannot_confirm_your_own', 'db/63 (two): a revision''s author returned it');
+
+    -- (zeros) nobody else reads an import, a revision or a page
+    FOREACH got IN ARRAY ARRAY[U_PARENT::text, U_PUPIL::text, U_WESC::text, U_WATCHER::text, U_BURSAR::text] LOOP
+      PERFORM _as(got::uuid);
+      SELECT (SELECT count(*) FROM scorebook_import) + (SELECT count(*) FROM scorebook_import_page)
+           + (SELECT count(*) FROM scorebook_import_revision) INTO n;
+      PERFORM _assert(n = 0, format('db/63 (zeros): %s read %s import rows', got, n));
+      SELECT * INTO r FROM scorebook_page_open(I, 1);
+      PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (zeros): %s opened a page', got));
+    END LOOP;
+    -- (page) the principal audits the card and its history, never a page
+    PERFORM _as(U_HEAD_M);
+    PERFORM _assert((SELECT count(*) FROM scorebook_import WHERE id = I) = 1
+                    AND (SELECT count(*) FROM scorebook_import_revision WHERE import_id = I) >= 4,
+      'db/63 (page): the principal does not read the card and its revisions');
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_page) = 0, 'db/63 (page): the principal reads a page''s row');
+    SELECT * INTO r FROM scorebook_page_open(I, 1);
+    PERFORM _assert(NOT r.ok, 'db/63 (page): the principal opened a page');
+    PERFORM _assert(_reads_63(I) = '', format('db/63 (log): a refused read was logged: %s', _reads_63(I)));
+
+    -- (log) the two roles at the school read the page, and each read is on the record
+    PERFORM _as(U_SCORER);
+    SELECT * INTO r FROM scorebook_page_open(I, 1);
+    PERFORM _assert(r.ok AND r.mime = 'image/jpeg' AND r.sha256 = repeat('a', 64), 'db/63: the scorer could not open his page');
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM scorebook_page_open(I, 1);
+    PERFORM _assert(r.ok, 'db/63: the director of sport could not open the page');
+    PERFORM _assert(_reads_63(I) = U_SCORER || ':page:1 ' || U_SARAH || ':page:1',
+      format('db/63 (log): the page reads on access_log are %s', _reads_63(I)));
+
+    -- (names) the card's own boys, named to the two who check it, and to
+    -- nobody else: seven on the card (six batted, one did not)
+    got := 'aaaaaaaa-0000-0000-0000-000000000001,aaaaaaaa-0000-0000-0000-000000000002,aaaaaaaa-0000-0000-0000-000000000003,'
+        || 'aaaaaaaa-0000-0000-0000-000000000004,aaaaaaaa-0000-0000-0000-000000000005,aaaaaaaa-0000-0000-0000-000000000011,'
+        || 'aaaaaaaa-0000-0000-0000-000000000012';
+    PERFORM _as(U_SCORER);
+    PERFORM _assert(_names_63(I) = got, format('db/63 (names): the scorer is given %s', _names_63(I)));
+    PERFORM _assert((SELECT n.name FROM scorebook_import_names(I) n WHERE n.player_id = 'aaaaaaaa-0000-0000-0000-000000000012')
+                    = (SELECT _owner_name_63('aaaaaaaa-0000-0000-0000-000000000012')),
+      'db/63 (names): the name is not the boy''s own');
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(_names_63(I) = got, format('db/63 (names): the director of sport is given %s', _names_63(I)));
+    FOREACH got IN ARRAY ARRAY[U_PARENT::text, U_PUPIL::text, U_WESC::text, U_WATCHER::text, U_BURSAR::text, U_HEAD_M::text] LOOP
+      PERFORM _as(got::uuid);
+      PERFORM _assert(_names_63(I) = '', format('db/63 (names): %s is given the card''s names: %s', got, _names_63(I)));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'directorofsport', 'ticket 6366: the names on the card') s;
+    S_ID := r.id;
+    got := _names_63(I);
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(got = '', format('db/63 (names): a support session as the director of sport is given %s', got));
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    got := _names_63(I);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(got = '', format('db/63 (names): a pad''s credential is given %s', got));
+
+    -- (actors) the history's authors by name — the scorer and the owner, who
+    -- typed — to the two who check it, and to nobody else; a pupil unnamed
+    got := U_SCORER || ':' || _user_name_63(U_SCORER) || ',' || U_OWNER || ':' || _user_name_63(U_OWNER);
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(_actors_63(I) = got, format('db/63 (actors): the director of sport is given %s', _actors_63(I)));
+    PERFORM _as(U_SCORER);
+    PERFORM _assert(_actors_63(I) = got, format('db/63 (actors): the scorer is given %s', _actors_63(I)));
+    PERFORM _pupil_63(U_OWNER, true);
+    got := _actors_63(I);
+    PERFORM _pupil_63(U_OWNER, false);
+    PERFORM _assert(got = U_SCORER || ':' || _user_name_63(U_SCORER), format('db/63 (actors): a pupil is named: %s', got));
+    FOREACH got IN ARRAY ARRAY[U_PARENT::text, U_PUPIL::text, U_WESC::text, U_WATCHER::text, U_BURSAR::text, U_HEAD_M::text] LOOP
+      PERFORM _as(got::uuid);
+      PERFORM _assert(_actors_63(I) = '', format('db/63 (actors): %s is given the authors: %s', got, _actors_63(I)));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'directorofsport', 'ticket 6367: who typed this') s;
+    S_ID := r.id;
+    got := _actors_63(I);
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(got = '', format('db/63 (actors): a support session as the director of sport is given %s', got));
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    got := _actors_63(I);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(got = '', format('db/63 (actors): a pad''s credential is given %s', got));
+
+    -- (support) a support session as the director of sport reads and signs nothing
+    PERFORM _as(U_PLAT);
+    SELECT s.ok, s.id INTO r FROM support_access_begin(HIL, 'directorofsport', 'ticket 6363: the import screen will not load') s;
+    PERFORM _assert(r.ok, 'db/63 (support): the session did not begin');
+    S_ID := r.id;
+    SELECT (SELECT count(*) FROM scorebook_import) + (SELECT count(*) FROM scorebook_import_page) INTO n;
+    PERFORM _assert(n = 0, format('db/63 (support): a support session read %s import rows', n));
+    SELECT * INTO r FROM scorebook_page_open(I, 1);
+    PERFORM _assert(NOT r.ok, 'db/63 (support): a support session opened a page');
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (support): a support session confirmed (%s)', r.reason));
+    PERFORM support_access_end(S_ID);
+
+    -- (pad) the scorer's pad resume credential for this very match reads nothing
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    SELECT (SELECT count(*) FROM scorebook_import) + (SELECT count(*) FROM scorebook_import_page)
+         + (SELECT count(*) FROM scorebook_import_revision) INTO n;
+    SELECT * INTO r FROM scorebook_page_open(I, 1);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(n = 0 AND NOT r.ok, format('db/63 (pad): a pad''s credential read %s rows, page %s', n, r.ok));
+
+    -- (league) a league's administrator — a school-less competitionadmin —
+    -- reaches nothing of a school's friendly: told nothing, no name, no page,
+    -- no row, no confirm. The platform's key (the owner) keeps its reach.
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert(_may_63(M) = '-----', format('db/63 (league): the league''s administrator is told %s for a friendly', _may_63(M)));
+    PERFORM _assert(_names_63(I) = '' AND _actors_63(I) = '', 'db/63 (league): the league''s administrator is given a friendly''s names');
+    SELECT * INTO r FROM scorebook_page_open(I, 1);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (league): the league''s administrator opened a friendly''s page (%s)', r.reason));
+    SELECT (SELECT count(*) FROM scorebook_import WHERE id = I) + (SELECT count(*) FROM scorebook_import_revision WHERE import_id = I)
+         + (SELECT count(*) FROM scorebook_import_page WHERE import_id = I) INTO n;
+    PERFORM _assert(n = 0, format('db/63 (league): the league''s administrator reads %s rows of a friendly''s import', n));
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (league): the league''s administrator confirmed a friendly (%s)', r.reason));
+    SELECT * INTO r FROM scorebook_import_return(I, 'not his to return');
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (league): the league''s administrator returned a friendly (%s)', r.reason));
+    PERFORM _as(U_OWNER);
+    PERFORM _assert(_may_63(M) = 'wcram', format('db/63 (league): the owner''s key is told %s for a friendly', _may_63(M)));
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], false);
+    PERFORM _assert(NOT r.ok AND r.reason = 'unreconciled_not_acknowledged', format('db/63 (D4): committed unacknowledged (%s)', r.reason));
+    -- The commit: three events per innings under the derived keys
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], true, 'checked against the book');
+    PERFORM _assert(r.ok, format('db/63: the director of sport could not confirm (%s %s)', r.reason, r.detail));
+    v_keys := r.keys;
+    PERFORM _assert(_log_63(M) = format('scorebook:%s:0:start,scorebook:%s:0:summary,scorebook:%s:0:end', I, I, I),
+      format('db/63: the commit wrote %s', _log_63(M)));
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_submitted', 'db/63: a second commit was not refused');
+    -- ...and the keys themselves refuse a second writing, whoever tries
+    PERFORM _assert(_owner_61(format(
+      $q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts, kind, payload)
+         VALUES (%L, %L, 99, 1, 0, %L, 'verify-063', %L, 99, now(), 'innings_start', '{}')$q$,
+      M, HIL, U_SCORER, v_keys[1])) = '23505', 'db/63: an event was written twice under a scorebook key');
+    -- (figures) the summary is the innings, in both readers
+    SELECT format('%s|%s', (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(M, 0::smallint) f),
+                  (SELECT row(l.runs, l.wickets, l.legal_balls)::text FROM match_live_score l WHERE l.match_id = M AND l.innings = 0))
+      INTO got;
+    PERFORM _assert(got = '(127,4,120)|(127,4,120)', format('db/63 (figures): a summarised innings reads %s, the fold 127/4 in 120', got));
+    PERFORM _assert(_deliveries_63(M) = 0, 'db/63: a summarised innings has overs, a spell, a milestone or a shot sector');
+    -- D10: complete, and scoring_claim() refuses
+    PERFORM _as(U_SCORER);
+    SELECT * INTO r FROM scoring_claim(M, 'verify-063-pad');
+    PERFORM _assert(NOT r.ok AND r.reason = 'match_complete', format('db/63: a claim on an imported match (%s)', r.reason));
+    SELECT state, confirmed_by = U_SARAH AS by_her, applied_keys = v_keys AS named INTO r FROM scorebook_import WHERE id = I;
+    PERFORM _assert(r.state = 'confirmed' AND r.by_her AND r.named, 'db/63: the import does not say it was confirmed, by whom, with what');
+    -- (door) the application role writes no summary, whatever it sets
+    PERFORM set_config('scrbrd.scorebook_commit', I::text, true);
+    BEGIN
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts, kind, payload)
+      VALUES (M, HIL, 50, 1, 1, U_SCORER, 'scorebook:' || I, 'verify-063-forged', 50, now(), 'innings_summary',
+              jsonb_build_object('card', CARD, 'source', jsonb_build_object('import', I)));
+      got := 'written';
+    EXCEPTION WHEN check_violation OR insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM set_config('scrbrd.scorebook_commit', '', true);
+    PERFORM _assert(got = 'refused', 'db/63 (door): the application role wrote an innings summary');
+
+    -- (public) the served log carries the card and never a typed name
+    PERFORM _publish_63(M);
+    SELECT string_agg(l.detail::text, ' ') INTO got FROM public_match_log(M, 0) l;
+    PERFORM _assert(got LIKE '%"card"%' AND got NOT LIKE '%Opp %' AND got NOT LIKE '%typed%' AND got NOT LIKE '%three short%'
+                    AND got NOT LIKE '%source%', format('db/63 (public): the public log serves %s', left(got, 300)));
+
+    -- (purge) the photos go after the window; the rows stay
+    PERFORM _as(U_PLAT);
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(NULL) p WHERE p.import_id = I) = 0,
+      'db/63 (purge): a photo was due before the window');
+    PERFORM _age_63(I);
+    PERFORM _as(U_SCORER);
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(NULL)) = 0, 'db/63 (purge): the scorer runs the platform''s purge');
+    PERFORM _as(U_PLAT);
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(NULL) p WHERE p.page_id = PG) = 1,
+      'db/63 (purge): the photo was not due after the window');
+    PERFORM _assert(scorebook_page_purged(PG), 'db/63 (purge): the photo could not be marked deleted');
+    PERFORM _as(U_SCORER);
+    PERFORM _assert((SELECT deleted_at IS NOT NULL FROM scorebook_import_page WHERE id = PG)
+                    AND (SELECT pages_purged_at IS NOT NULL FROM scorebook_import WHERE id = I),
+      'db/63 (purge): the rows do not say the photo is gone');
+    SELECT * INTO r FROM scorebook_page_open(I, 1);
+    PERFORM _assert(NOT r.ok AND r.reason = 'page_deleted', 'db/63 (purge): a deleted photo was opened');
+
+    -- An abandoned import's photos are due at once, to whoever abandoned it.
+    SELECT * INTO r FROM scorebook_import_open(M3);
+    I3 := r.import_id;
+    PERFORM scorebook_import_page_add(I3, HIL || '/' || I3 || '/' || gen_random_uuid() || '.png', repeat('b', 64), 10, 8, 4, 'image/png');
+    -- (names) a draft that names another school's child: his name is not given
+    SELECT version INTO v_ver FROM scorebook_import WHERE id = I3;
+    SELECT * INTO r FROM scorebook_import_save(I3,
+      jsonb_build_array(jsonb_set(CARD, '{didNotBat}', '["bbbbbbbb-0000-0000-0000-000000000001", "aaaaaaaa-0000-0000-0000-000000000012"]')),
+      TYPED, '{}'::jsonb, v_ver);
+    PERFORM _assert(r.ok, format('db/63: the draft naming a Westville boy was not saved (%s)', r.reason));
+    PERFORM _assert(_names_63(I3) NOT LIKE '%bbbbbbbb%' AND _names_63(I3) LIKE '%aaaaaaaa-0000-0000-0000-000000000012',
+      format('db/63 (names): another school''s child is named: %s', _names_63(I3)));
+    SELECT * INTO r FROM scorebook_import_abandon(I3);
+    PERFORM _assert(r.ok, 'db/63: the scorer could not abandon his import');
+    PERFORM _assert((SELECT count(*) FROM scorebook_import_purge_due(I3)) = 1, 'db/63 (purge): an abandoned import''s photo is not due at once');
+    -- (league) his own league's match: he is told he may confirm and read,
+    -- is given its names, reads its rows, and confirms it. The director of
+    -- sport still reads it (her school's) and may not confirm it (the league's).
+    SELECT * INTO r FROM scorebook_import_open(ML);
+    PERFORM _assert(r.ok, format('db/63: the scorer could not open the league match''s import (%s)', r.reason));
+    IL := r.import_id;
+    SELECT * INTO r FROM scorebook_import_save(IL, jsonb_build_array(CARD), TYPED, '{}'::jsonb, 1);
+    SELECT * INTO r FROM scorebook_import_submit(IL, r.version);
+    PERFORM _assert(r.ok, format('db/63: the league match''s import was not submitted (%s)', r.reason));
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(_may_63(ML) = '--ram', format('db/63 (league): the director of sport is told %s for a league match', _may_63(ML)));
+    PERFORM _as(U_WESLG);
+    PERFORM _assert(_may_63(ML) = '-----' AND _names_63(IL) = ''
+                    AND (SELECT count(*) FROM scorebook_import WHERE id = IL) = 0,
+      format('db/63 (league): Westville''s league administrator reaches the pilot league''s match (%s)', _may_63(ML)));
+    PERFORM _assert(_may_63(MWL) = '-----',
+      format('db/63 (league): Westville''s league administrator reaches Hilton''s match in his league (%s)', _may_63(MWL)));
+    SELECT * INTO r FROM scorebook_import_commit(IL, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (league): another league''s administrator confirmed (%s)', r.reason));
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert(_may_63(ML) = '-cr-m', format('db/63 (league): the league''s administrator is told %s for his league''s match', _may_63(ML)));
+    PERFORM _assert(length(_names_63(IL)) = 7 * 36 + 6 AND (SELECT count(*) FROM scorebook_import WHERE id = IL) = 1,
+      format('db/63 (league): the league''s administrator is not given his match''s names (%s)', _names_63(IL)));
+    SELECT * INTO r FROM scorebook_import_commit(IL, '{}'::uuid[], true, 'the league''s');
+    PERFORM _assert(r.ok, format('db/63 (league): the league''s administrator could not confirm his league''s match (%s %s)', r.reason, r.detail));
+
+    -- A submitter who holds the confirm capability cannot confirm his own.
+    PERFORM _as(U_OWNER);
+    SELECT * INTO r FROM scorebook_import_open(M2);
+    I2 := r.import_id;
+    SELECT * INTO r FROM scorebook_import_save(I2, jsonb_build_array(CARD), TYPED, '{}'::jsonb, 1);
+    SELECT * INTO r FROM scorebook_import_submit(I2, r.version);
+    PERFORM _assert(r.ok, format('db/63: the owner could not submit (%s)', r.reason));
+    SELECT * INTO r FROM scorebook_import_commit(I2, '{}'::uuid[], true);
+    PERFORM _assert(NOT r.ok AND r.reason = 'cannot_confirm_your_own', format('db/63 (two): the submitter confirmed his own (%s)', r.reason));
+  END;
+
+  -- ── 42. The scorebook importer, phase 2: careers and tables (SCRBRD-120, db/64) ──
+  -- The design's phase 2 "proves" (docs/design/SCRBRD-120_scorebook_importer.md
+  -- §8): a boy's career after an import is the card's line for him, balls
+  -- and boundaries NULL where the card had none; the season view files the
+  -- match under its start day; the opposition's dossier shows his runs and
+  -- no dot percentage; voiding the summary by an approved amendment takes
+  -- him out of every view. The import is the real one: the scorer types two
+  -- cards (our innings and theirs), the director of sport confirms.
+  -- tools/smoke-fold-figures.mjs holds the same readers to the fold itself.
+  --
+  -- Each labelled assertion was falsified once — the thing it guards broken
+  -- in db/64, the database rebuilt and this file run — and went red:
+  --   (career)   player_batting_career's balls_faced coalesced to 0 again
+  --              (db/64's own proof first, when broken in the file)
+  --   (bowling)  summary_bowling_line reading a missing wides figure as nought
+  --   (same)     player_dismissals_since() without its summary branch
+  --              (player_batting_since() without its: (career) first)
+  --   (season)   player_batting_by_season filing a book's match under the
+  --              season it was imported in
+  --   (typed)    summary_batting_line's player_id made up for a typed ref
+  --   (dossier)  opposition_squad()'s dot_pct over every ball, book and live
+  --   (void)     summary_batting_line over ball_event rather than ball_event_live
+  -- (scope) stands on two walls and stays green with either one down: the
+  -- line's own security_invoker, and ball_event_live's, which a view running
+  -- as its owner still reads as its caller. With both down — the line as its
+  -- owner, over ball_event — it went red; with only the first, section 9
+  -- goes red (it now asks for security_invoker=true, not for the option's
+  -- name, which a view set to false had passed).
+  DECLARE
+    M       uuid := _seed_64();
+    I       uuid;
+    M_OPP   uuid;
+    A1      uuid;
+    A2      uuid;
+    r       record;
+    got     text;
+    who     uuid;
+    v_start timestamptz;
+    p2b     record;
+    p2a     record;
+    o1b     record;
+    o1a     record;
+    BK_A    uuid := 'aaaaaaaa-0000-0000-0000-0000000064a0';   -- run out 25; the book has no balls column for him
+    BK_B    uuid := 'aaaaaaaa-0000-0000-0000-0000000064b0';   -- 4-0-30-2; no wides or no-balls on the book
+    P1      uuid := 'aaaaaaaa-0000-0000-0000-000000000001';   -- c t:1 b t:2 34 (40), four fours and a six
+    P2      uuid := 'aaaaaaaa-0000-0000-0000-000000000002';   -- bats in ours; bowls 3.2-0-24-1, a wide, in theirs
+    U_WESC  uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    TYPED   jsonb := '{"t:1":"Opp Fielder One","t:2":"Opp Bowler Two","t:3":"Opp Bowler Three","t:4":"Opp Fielder Four","t:5":"Opp Bowler Five","t:6":"Opp Six","t:7":"Opp Seven","t:8":"Opp Eight","t:9":"Opp Nine"}';
+    -- packages/scoring/test/scorebook-cards.mjs's base card with Hilton's
+    -- boys, the fourth of them BK_A: 127 for 4 in 20.
+    CARD0   jsonb := '{"v":1,"innings":0,"battingSide":"home","batting":[{"order":1,"ref":"aaaaaaaa-0000-0000-0000-000000000001","howOut":"caught","fielderRef":"t:1","bowlerRef":"t:2","runs":34,"balls":40,"fours":4,"sixes":1},{"order":2,"ref":"aaaaaaaa-0000-0000-0000-000000000002","howOut":"bowled","fielderRef":null,"bowlerRef":"t:2","runs":12,"balls":15,"fours":1,"sixes":0},{"order":3,"ref":"aaaaaaaa-0000-0000-0000-000000000003","howOut":"lbw","fielderRef":null,"bowlerRef":"t:3","runs":0,"balls":3,"fours":0,"sixes":0},{"order":4,"ref":"aaaaaaaa-0000-0000-0000-0000000064a0","howOut":"run_out","fielderRef":"t:4","bowlerRef":null,"runs":25,"balls":null,"fours":null,"sixes":null},{"order":5,"ref":"aaaaaaaa-0000-0000-0000-000000000005","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":40,"balls":30,"fours":5,"sixes":1},{"order":6,"ref":"aaaaaaaa-0000-0000-0000-000000000011","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":5,"balls":4,"fours":0,"sixes":0}],"didNotBat":[],"bowling":[{"ref":"t:2","overs":"8","maidens":0,"runs":40,"wickets":2,"wides":3,"noBalls":1},{"ref":"t:3","overs":"8","maidens":1,"runs":45,"wickets":1,"wides":2,"noBalls":2},{"ref":"t:5","overs":"4","maidens":null,"runs":39,"wickets":0,"wides":null,"noBalls":null}],"extras":{"byes":2,"legByes":1,"wides":5,"noBalls":3,"penalty":0},"total":127,"wickets":4,"overs":"20","fallOfWickets":[{"wicket":1,"score":30,"ref":"aaaaaaaa-0000-0000-0000-000000000002","over":"5.1"},{"wicket":2,"score":31,"ref":"aaaaaaaa-0000-0000-0000-000000000003","over":"5.3"},{"wicket":3,"score":60,"ref":"aaaaaaaa-0000-0000-0000-000000000001","over":"10.2"},{"wicket":4,"score":90,"ref":"aaaaaaaa-0000-0000-0000-0000000064a0","over":"15"}],"endReason":"overs","unreconciled":null}';
+    -- Theirs: 56 for 3 in 7.2 when time was called, every batter a typed
+    -- name, our two bowlers by id, BK_A's catch.
+    CARD1   jsonb := '{"v":1,"innings":1,"battingSide":"away","batting":[{"order":1,"ref":"t:6","howOut":"bowled","fielderRef":null,"bowlerRef":"aaaaaaaa-0000-0000-0000-0000000064b0","runs":20,"balls":18,"fours":2,"sixes":0},{"order":2,"ref":"t:7","howOut":"caught","fielderRef":"aaaaaaaa-0000-0000-0000-0000000064a0","bowlerRef":"aaaaaaaa-0000-0000-0000-000000000002","runs":15,"balls":null,"fours":null,"sixes":null},{"order":3,"ref":"t:8","howOut":"lbw","fielderRef":null,"bowlerRef":"aaaaaaaa-0000-0000-0000-0000000064b0","runs":10,"balls":null,"fours":null,"sixes":null},{"order":4,"ref":"t:9","howOut":"not_out","fielderRef":null,"bowlerRef":null,"runs":8,"balls":null,"fours":null,"sixes":null}],"didNotBat":[],"bowling":[{"ref":"aaaaaaaa-0000-0000-0000-0000000064b0","overs":"4","maidens":null,"runs":30,"wickets":2,"wides":null,"noBalls":null},{"ref":"aaaaaaaa-0000-0000-0000-000000000002","overs":"3.2","maidens":0,"runs":24,"wickets":1,"wides":1,"noBalls":0}],"extras":{"byes":2,"legByes":0,"wides":1,"noBalls":0,"penalty":0},"total":56,"wickets":3,"overs":"7.2","fallOfWickets":[{"wicket":1,"score":20,"ref":"t:6","over":"3.1"},{"wicket":2,"score":38,"ref":"t:7","over":"5"},{"wicket":3,"score":50,"ref":"t:8","over":"6.4"}],"endReason":"time","unreconciled":null}';
+  BEGIN
+    SELECT starts_at INTO v_start FROM match WHERE id = M;
+    M_OPP := _opposition_fixture(opposition_window_days() - 1);
+    -- Before: P2's bowling, as the director reads it; P1 in Westville's
+    -- dossier on Hilton's 1XI, as their coach reads it.
+    PERFORM _as(U_SARAH);
+    SELECT coalesce(max(c.matches), 0) AS matches, coalesce(max(c.runs_conceded), 0) AS runs, coalesce(max(c.legal_balls), 0) AS balls,
+           coalesce(max(c.wides), 0) AS wides, coalesce(max(c.no_balls), 0) AS no_balls, coalesce(max(c.wickets), 0) AS wickets
+      INTO p2b FROM player_bowling_career c WHERE c.player_id = P2;
+    PERFORM _as(U_WESC);
+    SELECT o.innings, o.runs, o.balls, o.dismissals, o.dots, o.dot_pct INTO o1b FROM opposition_squad(M_OPP) o WHERE o.player_id = P1;
+    PERFORM _assert(o1b.innings IS NOT NULL, 'db/64: Westville''s coach reads no dossier on Hilton''s 1XI');
+
+    -- The import: the scorer types both cards, the director of sport confirms.
+    PERFORM _as(U_SCORER);
+    SELECT * INTO r FROM scorebook_import_open(M);
+    PERFORM _assert(r.ok, format('db/64: the scorer could not open an import (%s)', r.reason));
+    I := r.import_id;
+    SELECT * INTO r FROM scorebook_import_save(I, jsonb_build_array(CARD0, CARD1), TYPED, '{}'::jsonb,
+                                               (SELECT version FROM scorebook_import WHERE id = I));
+    PERFORM _assert(r.ok, format('db/64: the save was refused (%s %s)', r.reason, r.detail));
+    SELECT * INTO r FROM scorebook_import_submit(I, r.version);
+    PERFORM _assert(r.ok, format('db/64: the submit was refused (%s %s)', r.reason, r.detail));
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM scorebook_import_commit(I, '{}'::uuid[], false);
+    PERFORM _assert(r.ok, format('db/64: the director of sport could not confirm (%s %s)', r.reason, r.detail));
+
+    -- (career) the batter's line is the card's, balls and boundaries NULL
+    SELECT concat_ws(' | ',
+      (SELECT row(i.innings, i.runs, i.balls_faced, i.out, i.ended_at = v_start)::text FROM player_innings i WHERE i.player_id = BK_A),
+      (SELECT row(c.matches, c.runs, c.balls_faced, c.fours, c.sixes, c.last_ball_at = v_start)::text FROM player_batting_career c WHERE c.player_id = BK_A),
+      (SELECT row(c.matches, c.runs, c.balls_faced, c.fours, c.sixes)::text FROM player_batting_since(BK_A, NULL) c),
+      (SELECT d.dismissals::text FROM player_dismissals d WHERE d.player_id = BK_A),
+      (SELECT string_agg(d.dismissal || '=' || d.dismissals, ',') FROM player_dismissal_breakdown d WHERE d.player_id = BK_A),
+      (SELECT row(u.innings_without_balls, u.runs_without_balls, u.innings_without_boundaries, u.bowling_without_extras)::text
+         FROM player_unrecorded_figures u WHERE u.player_id = BK_A))
+      INTO got;
+    PERFORM _assert(got = '(0,25,,t,t) | (1,25,,,,t) | (1,25,,,) | 1 | run_out=1 | (1,25,1,0)',
+      format('db/64 (career): BK_A reads %s, where the card says run out 25, balls, fours and sixes not recorded', got));
+
+    -- (bowling) the bowler's line is the card's, wides and no-balls NULL;
+    -- and P2's recorded figures moved by exactly his row
+    SELECT concat_ws(' | ',
+      (SELECT row(c.matches, c.runs_conceded, c.legal_balls, c.wides, c.no_balls, c.wickets)::text FROM player_bowling_career c WHERE c.player_id = BK_B),
+      (SELECT row(c.matches, c.runs_conceded, c.legal_balls, c.wides, c.no_balls, c.wickets)::text FROM player_bowling_since(BK_B, NULL) c),
+      (SELECT row(f.innings, f.wickets, f.runs_conceded)::text FROM bowler_innings_figures f WHERE f.player_id = BK_B),
+      (SELECT string_agg(w.dismissal || '=' || w.wickets, ',' ORDER BY w.dismissal) FROM player_wicket_breakdown w WHERE w.player_id = BK_B),
+      (SELECT row(u.bowling_without_extras)::text FROM player_unrecorded_figures u WHERE u.player_id = BK_B))
+      INTO got;
+    SELECT c.matches, c.runs_conceded AS runs, c.legal_balls AS balls, c.wides, c.no_balls, c.wickets
+      INTO p2a FROM player_bowling_career c WHERE c.player_id = P2;
+    PERFORM _assert(got = '(1,30,24,,,2) | (1,30,24,,,2) | (1,2,30) | bowled=1,lbw=1 | (1)'
+                    AND p2a.matches = p2b.matches + 1 AND p2a.runs = p2b.runs + 24 AND p2a.balls = p2b.balls + 20
+                    AND p2a.wides = p2b.wides + 1 AND p2a.no_balls = p2b.no_balls AND p2a.wickets = p2b.wickets + 1,
+      format('db/64 (bowling): BK_B reads %s, where the card says 4-0-30-2 with no extras; P2 moved from %s to %s, where the card says 3.2-0-24-1 with a wide',
+             got, p2b, p2a));
+
+    -- (season) filed under the season of the match's start, not of the commit
+    SELECT string_agg(format('%s:%s', f, s = school_season_of(v_start)), ' ' ORDER BY f) INTO got
+      FROM (SELECT 'bat' AS f, b.season AS s FROM player_batting_by_season b WHERE b.player_id = BK_A
+            UNION ALL SELECT 'bowl', w.season FROM player_bowling_by_season w WHERE w.player_id = BK_B
+            UNION ALL SELECT 'out', d.season FROM player_dismissals_by_season d WHERE d.player_id = BK_A
+            UNION ALL SELECT 'unrecorded', u.season FROM player_unrecorded_figures u WHERE u.player_id = BK_A) x;
+    PERFORM _assert(got = 'bat:t bowl:t out:t unrecorded:t' AND school_season_of(v_start) <> school_season_of(now()),
+      format('db/64 (season): the book''s figures are filed %s, the match in %s and the commit in %s',
+             got, school_season_of(v_start), school_season_of(now())));
+
+    -- (same) Σ seasons = lifetime = the windowed functions, as every reader
+    FOREACH who IN ARRAY ARRAY[U_OWNER, U_SARAH, U_SCORER, U_COACH, U_WESC, U_PARENT] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM (SELECT 1 FROM _career_season_drift() UNION ALL SELECT 1 FROM _career_lifetime_drift()) d;
+      PERFORM _assert(n = 0, format('db/64 (same), as %s: %s career figure(s) differ between the seasons, the lifetime views and the functions', who, n));
+    END LOOP;
+
+    -- (typed) a name the scorer typed is nobody: no player row, no line's id
+    PERFORM _as(U_OWNER);
+    SELECT format('%s typed lines, %s of them somebody; %s players named as typed; %s innings rows',
+                  count(*) FILTER (WHERE l.ref LIKE 't:%'),
+                  count(*) FILTER (WHERE (l.ref LIKE 't:%' AND l.player_id IS NOT NULL)
+                                      OR (l.bowler_ref LIKE 't:%' AND l.bowler_id IS NOT NULL)),
+                  _typed_players_64(), (SELECT count(*) FROM player_innings i WHERE i.match_id = M))
+      INTO got FROM summary_batting_line l WHERE l.match_id = M;
+    PERFORM _assert(got = '4 typed lines, 0 of them somebody; 0 players named as typed; 6 innings rows',
+      format('db/64 (typed): %s (expected 4 typed lines, none somebody, no player, our six boys'' innings)', got));
+
+    -- (dossier) Westville's coach reads BK_A's runs and no dot percentage;
+    -- P1's book innings moves his runs, balls and innings, never his dots
+    PERFORM _as(U_WESC);
+    SELECT concat_ws(' | ',
+      (SELECT row(o.innings, o.runs, o.balls, o.dismissals, o.fours, o.sixes, o.dots, o.strike_rate, o.dot_pct)::text
+         FROM opposition_squad(M_OPP) o WHERE o.player_id = BK_A),
+      (SELECT row(o.balls_bowled, o.runs_conceded, o.wickets, o.economy)::text FROM opposition_squad(M_OPP) o WHERE o.player_id = BK_B))
+      INTO got;
+    SELECT o.innings, o.runs, o.balls, o.dismissals, o.dots, o.dot_pct INTO o1a FROM opposition_squad(M_OPP) o WHERE o.player_id = P1;
+    PERFORM _assert(got = '(1,25,,0,,,,,) | (24,30,2,)'
+                    AND o1a.innings = o1b.innings + 1 AND o1a.runs = o1b.runs + 34 AND o1a.balls = o1b.balls + 40
+                    AND o1a.dismissals = o1b.dismissals + 1 AND o1a.dots = o1b.dots AND o1a.dot_pct IS NOT DISTINCT FROM o1b.dot_pct,
+      format('db/64 (dossier): BK_A and BK_B read %s (expected his 25 in one innings and nothing unrecorded counted; 24 balls, 30, 2); P1 from %s to %s',
+             got, o1b, o1a));
+
+    -- (scope) nobody who could not read the match's log reads a book line
+    FOREACH who IN ARRAY ARRAY[U_PARENT, U_WESC, NULL] LOOP
+      PERFORM set_config('app.user_id', coalesce(who::text, ''), true);
+      SELECT (SELECT count(*) FROM summary_batting_line WHERE match_id = M) + (SELECT count(*) FROM summary_bowling_line WHERE match_id = M)
+           + (SELECT count(*) FROM player_batting_career WHERE player_id = BK_A)
+           + (SELECT count(*) FROM player_unrecorded_figures WHERE player_id IN (BK_A, BK_B)) INTO n;
+      PERFORM _assert(n = 0, format('db/64 (scope): %s read %s rows of the book''s figures', coalesce(who::text, 'nobody'), n));
+    END LOOP;
+
+    -- (void) an approved amendment voiding each summary takes both boys out
+    -- of every view, and puts P2 and P1 back where they were
+    PERFORM _as(U_SCORER);
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    VALUES (M, HIL, format('scorebook:%s:0:summary', I), 'The book was another fixture''s.', U_SCORER) RETURNING id INTO A1;
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    VALUES (M, HIL, format('scorebook:%s:1:summary', I), 'The book was another fixture''s.', U_SCORER) RETURNING id INTO A2;
+    PERFORM _as(U_SARAH);
+    SELECT * INTO r FROM scoring_amendment_decide(A1, true, 'Checked against the book.');
+    PERFORM _assert(r.ok, format('db/64: the first void was not approved (%s)', r.reason));
+    SELECT * INTO r FROM scoring_amendment_decide(A2, true, 'Checked against the book.');
+    PERFORM _assert(r.ok, format('db/64: the second void was not approved (%s)', r.reason));
+    SELECT (SELECT count(*) FROM summary_batting_line WHERE match_id = M) + (SELECT count(*) FROM summary_bowling_line WHERE match_id = M)
+         + (SELECT count(*) FROM player_innings WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_batting_career WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_bowling_career WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_dismissals WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_dismissal_breakdown WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_batting_by_season WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_bowling_by_season WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_dismissals_by_season WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM bowler_innings_figures WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_wicket_breakdown WHERE player_id IN (BK_A, BK_B))
+         + (SELECT count(*) FROM player_unrecorded_figures WHERE player_id IN (BK_A, BK_B))
+         + (SELECT matches FROM player_batting_since(BK_A, NULL)) + (SELECT matches FROM player_bowling_since(BK_B, NULL))
+         + player_dismissals_since(BK_A, NULL)
+      INTO n;
+    SELECT coalesce(max(c.matches), 0) AS matches, coalesce(max(c.runs_conceded), 0) AS runs, coalesce(max(c.legal_balls), 0) AS balls,
+           coalesce(max(c.wides), 0) AS wides, coalesce(max(c.no_balls), 0) AS no_balls, coalesce(max(c.wickets), 0) AS wickets
+      INTO p2a FROM player_bowling_career c WHERE c.player_id = P2;
+    PERFORM _as(U_WESC);
+    SELECT concat_ws(' | ',
+      (SELECT row(o.innings, o.runs, o.balls, o.dots)::text FROM opposition_squad(M_OPP) o WHERE o.player_id = BK_A),
+      (SELECT row(o.balls_bowled, o.runs_conceded, o.wickets)::text FROM opposition_squad(M_OPP) o WHERE o.player_id = BK_B))
+      INTO got;
+    SELECT o.innings, o.runs, o.balls, o.dismissals, o.dots, o.dot_pct INTO o1a FROM opposition_squad(M_OPP) o WHERE o.player_id = P1;
+    PERFORM _assert(n = 0 AND got = '(0,0,0,0) | (0,0,0)'
+                    AND row(p2a.matches, p2a.runs, p2a.balls, p2a.wides, p2a.no_balls, p2a.wickets)::text
+                        IS NOT DISTINCT FROM row(p2b.matches, p2b.runs, p2b.balls, p2b.wides, p2b.no_balls, p2b.wickets)::text
+                    AND row(o1a.innings, o1a.runs, o1a.balls, o1a.dismissals, o1a.dots, o1a.dot_pct)::text
+                        = row(o1b.innings, o1b.runs, o1b.balls, o1b.dismissals, o1b.dots, o1b.dot_pct)::text,
+      format('db/64 (void): after the voids %s rows still read the book, the dossier reads %s, P2 %s (was %s), P1 %s (was %s)',
+             n, got, p2a, p2b, o1a, o1b));
+    FOREACH who IN ARRAY ARRAY[U_OWNER, U_SARAH] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM (SELECT 1 FROM _career_season_drift() UNION ALL SELECT 1 FROM _career_lifetime_drift()) d;
+      PERFORM _assert(n = 0, format('db/64 (same), after the voids, as %s: %s career figure(s) differ', who, n));
+    END LOOP;
   END;
 
   PERFORM set_config('app.user_id', '', true);

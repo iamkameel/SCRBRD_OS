@@ -47,6 +47,13 @@
  *     has fallen or another batter has retired, as the Laws allow — him walking
  *     back in. Not a wicket, so no career may count it as a dismissal.
  *
+ * And an innings from a paper scorebook (SCRBRD-120, db/64): two cards
+ * written as scorebook_import_commit() writes them, folded, and every career
+ * reader above moved by exactly the fold's line for each of our boys — a
+ * figure the book did not record (balls, fours, sixes, wides, no-balls) NULL
+ * for a boy with no other record, never nought; the dossier with his runs and
+ * no dot; the matchups untouched; voided, all of it gone.
+ *
  * And the door itself: a new ball with no type, or a wicket with no
  * method, is refused by the database — and through the API, one event
  * refused and named, the batch written.
@@ -63,9 +70,10 @@ import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import {
   MatchFold, deriveInnings, deriveMatch, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
-  inningsStart, batters, bowler, ball, newEventId, retire, RETIRE_REASON, lawsRefusal,
+  inningsStart, inningsEnd, inningsSummary, batters, bowler, ball, newEventId, retire, RETIRE_REASON, lawsRefusal,
 } from "@scrbrd/scoring";
 import { countsInOver, NOT_IN_OVER } from "@scrbrd/scoring";
+import { baseCard, TYPED as BOOK_TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
 
 const PORT = port(8875);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -639,11 +647,11 @@ function expected(byInnings) {
 function muInit() { return { balls: 0, runs: 0, fours: 0, sixes: 0, dots: 0, dismissals: 0 }; }
 
 // ── What SQL says ────────────────────────────────────────────────
-async function career() {
+async function career(/** @type {string[]} */ players = PLAYERS) {
   /** @type {Map<string, any>} */ const bat = new Map();
   /** @type {Map<string, any>} */ const bowl = new Map();
   /** @type {Map<string, number>} */ const dismissals = new Map();
-  for (const p of PLAYERS) {
+  for (const p of players) {
     const [b] = await q(`select matches, runs, balls_faced, fours, sixes from player_batting_since($1, null)`, [p]);
     bat.set(p, { matches: Number(b?.matches ?? 0), runs: Number(b?.runs ?? 0), balls: Number(b?.balls_faced ?? 0),
                  fours: Number(b?.fours ?? 0), sixes: Number(b?.sixes ?? 0) });
@@ -654,25 +662,25 @@ async function career() {
   }
   const dismissalBy = new Map((await q(
     `select player_id || '|' || coalesce(dismissal, 'null') k, dismissals n from player_dismissal_breakdown where player_id = any($1)`,
-    [PLAYERS])).map((r) => [r.k, Number(r.n)]));
+    [players])).map((r) => [r.k, Number(r.n)]));
   const wicketBy = new Map((await q(
     `select player_id || '|' || coalesce(dismissal, 'null') k, wickets n from player_wicket_breakdown where player_id = any($1)`,
-    [PLAYERS])).map((r) => [r.k, Number(r.n)]));
+    [players])).map((r) => [r.k, Number(r.n)]));
   // The lifetime views, which db/49 made one pass over the log rather than
   // one call of the functions above per player: the same figures, read
   // through the views every career screen reads.
   /** @type {Map<string, any>} */ const batView = new Map();
   /** @type {Map<string, any>} */ const bowlView = new Map();
   /** @type {Map<string, number>} */ const dismissalsView = new Map();
-  for (const r of await q(`select * from player_batting_career where player_id = any($1)`, [PLAYERS])) {
+  for (const r of await q(`select * from player_batting_career where player_id = any($1)`, [players])) {
     batView.set(r.player_id, { matches: Number(r.matches), runs: Number(r.runs), balls: Number(r.balls_faced),
                                fours: Number(r.fours), sixes: Number(r.sixes) });
   }
-  for (const r of await q(`select * from player_bowling_career where player_id = any($1)`, [PLAYERS])) {
+  for (const r of await q(`select * from player_bowling_career where player_id = any($1)`, [players])) {
     bowlView.set(r.player_id, { runs: Number(r.runs_conceded), balls: Number(r.legal_balls), wides: Number(r.wides),
                                 noBalls: Number(r.no_balls), wickets: Number(r.wickets) });
   }
-  for (const r of await q(`select * from player_dismissals where player_id = any($1)`, [PLAYERS])) {
+  for (const r of await q(`select * from player_dismissals where player_id = any($1)`, [players])) {
     dismissalsView.set(r.player_id, Number(r.dismissals));
   }
   return { bat, bowl, dismissals, dismissalBy, wicketBy, batView, bowlView, dismissalsView };
@@ -696,7 +704,8 @@ async function opposition(/** @type {string} */ home, /** @type {string} */ away
     const rows = (await c.query(`select * from opposition_squad($1)`, [m])).rows;
     return new Map(rows.map((r) => [r.player_id, {
       innings: r.innings, balls: r.balls, runs: r.runs, dismissals: r.dismissals, fours: r.fours, sixes: r.sixes, dots: r.dots,
-      ballsBowled: r.balls_bowled, runsConceded: r.runs_conceded, wickets: r.wickets }]));
+      ballsBowled: r.balls_bowled, runsConceded: r.runs_conceded, wickets: r.wickets,
+      strikeRate: r.strike_rate, dotPct: r.dot_pct }]));
   } finally { await c.query("ROLLBACK").catch(() => {}); c.release(); }
 }
 
@@ -1272,6 +1281,220 @@ try {
   for (const f of MU_FIELDS) {
     const bad = fieldDifferences(muWant, muGot, [f]);
     ok(`${f} per batter per bowler`, bad.length === 0, show(bad));
+  }
+
+  group("A summarised innings (SCRBRD-120, db/64): the book's figures are the fold's, in every career reader");
+  {
+    // Two boys whose only record will be the book's, and five of the 1XI
+    // who have one already. A fixture of its own, complete, as the import's
+    // commit leaves it; our innings and theirs, each start → summary → end
+    // as scorebook_import_commit() writes them (db/63), the summary through
+    // the door as the commit alone may (the owner, naming the import).
+    const BOOK_BAT = "aaaaaaaa-0000-0000-0000-0000000064f1";   // run out 25, the book has no balls column for him
+    const BOOK_BOWL = "aaaaaaaa-0000-0000-0000-0000000064f2";  // 4-0-30-2, no wides or no-balls on the book
+    const WATCH = [...PLAYERS, BOOK_BAT, BOOK_BOWL];
+    await q(`insert into player (id, school_id, team_code, full_name, born)
+             values ($1, $3, '1XI', 'Book Batter', '2009-02-01'), ($2, $3, '1XI', 'Book Bowler', '2009-02-01')`, [BOOK_BAT, BOOK_BOWL, HIL]);
+    const SUMM = (await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+                           values ($1, '1XI', 'Book XI', now() - interval '20 days', 'T20', 20, 'complete') returning id`, [HIL]))[0].id;
+    const imp = crypto.randomUUID();
+    const TYPED_BOOK = { ...BOOK_TYPED, "t:6": "Opp Six", "t:7": "Opp Seven", "t:8": "Opp Eight", "t:9": "Opp Nine" };
+    const cards = [
+      baseCard([HIL_1XI[0], HIL_1XI[1], HIL_1XI[2], BOOK_BAT, HIL_1XI[3], HIL_1XI[4]]),
+      { v: 1, innings: 1, battingSide: "away",
+        batting: [
+          { order: 1, ref: "t:6", howOut: "bowled",  fielderRef: null,     bowlerRef: BOOK_BOWL,  runs: 20, balls: 18,   fours: 2,    sixes: 0 },
+          { order: 2, ref: "t:7", howOut: "caught",  fielderRef: BOOK_BAT, bowlerRef: HIL_1XI[1], runs: 15, balls: null, fours: null, sixes: null },
+          { order: 3, ref: "t:8", howOut: "lbw",     fielderRef: null,     bowlerRef: BOOK_BOWL,  runs: 10, balls: null, fours: null, sixes: null },
+          { order: 4, ref: "t:9", howOut: "not_out", fielderRef: null,     bowlerRef: null,       runs: 8,  balls: null, fours: null, sixes: null },
+        ],
+        didNotBat: [],
+        bowling: [
+          { ref: BOOK_BOWL,  overs: "4",   maidens: null, runs: 30, wickets: 2, wides: null, noBalls: null },
+          { ref: HIL_1XI[1], overs: "3.2", maidens: 0,    runs: 24, wickets: 1, wides: 1,    noBalls: 0 },
+        ],
+        extras: { byes: 2, legByes: 0, wides: 1, noBalls: 0, penalty: 0 },
+        total: 56, wickets: 3, overs: "7.2",
+        fallOfWickets: [{ wicket: 1, score: 20, ref: "t:6", over: "3.1" }, { wicket: 2, score: 38, ref: "t:7", over: "5" },
+                        { wicket: 3, score: 50, ref: "t:8", over: "6.4" }],
+        endReason: "time", unreconciled: null },
+    ];
+    const [recon] = await q(`select summary_reconciles($1::jsonb, $3::jsonb, 'home') a, summary_reconciles($2::jsonb, $3::jsonb, 'home') b`,
+      [JSON.stringify(cards[0]), JSON.stringify(cards[1]), JSON.stringify(TYPED_BOOK)]);
+    ok("both cards are cards the commit would take (summary_reconciles(), db/63)", recon.a.length === 0 && recon.b.length === 0,
+       JSON.stringify(recon));
+    const source = { kind: "scorebook", import: imp, checkedBy: scorer, confirmedBy: scorer };
+    /** @type {{ev: any, device: string}[]} */
+    const evs = [];
+    cards.forEach((card, k) => {
+      const sides = k === 0 ? { battingTeam: "Hilton 1XI", bowlingTeam: "Book XI" } : { battingTeam: "Book XI", bowlingTeam: "Hilton 1XI" };
+      const key = (/** @type {string} */ part) => `scorebook:${imp}:${k}:${part}`;
+      evs.push({ ev: { ...inningsStart({ ...sides, overs: 20 }), innings: k, id: key("start"), source }, device: "device-fold-figures" });
+      evs.push({ ev: { ...inningsSummary({ card, typed: TYPED_BOOK, source }), innings: k, id: key("summary") }, device: `scorebook:${imp}` });
+      evs.push({ ev: { ...inningsEnd({ reason: k === 0 ? "overs_complete" : "time",
+                                       confirmed: { runs: card.total, wickets: card.wickets, balls: k === 0 ? 120 : 44 } }),
+                       innings: k, id: key("end"), source }, device: "device-fold-figures" });
+    });
+    /** Rows as the owner, the summary through the commit's door; or a void of each summary. @param {{ev: any, device: string}[]} list */
+    const writeSumm = async (list) => {
+      const c = await pool.connect();
+      try {
+        await c.query("BEGIN");
+        await c.query("SELECT set_config('scrbrd.scorebook_commit', $1, true)", [imp]);
+        let seq = Number((await c.query(`select coalesce(max(seq), 0) n from ball_event where match_id = $1`, [SUMM])).rows[0].n);
+        for (const { ev, device } of list) {
+          const r = toRow(ev);
+          seq++;
+          await c.query(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                                                 client_seq, client_ts, kind, payload)
+                         values ($1, $2, $3, 1, $4, $5, $6, $7, $3, $8, $9, $10)`,
+            [SUMM, HIL, seq, r.innings, scorer, device, ev.id, r.client_ts, r.kind, JSON.stringify(r.payload)]);
+        }
+        await c.query("COMMIT");
+      } catch (err) { await c.query("ROLLBACK").catch(() => {}); throw err; } finally { c.release(); }
+    };
+
+    const carS0 = await career(WATCH);
+    const oppS0 = await opposition(WES, HIL, "coach.wes@example.invalid");
+    const muS0 = coach ? await matchups(coach) : new Map();
+    await writeSumm(evs);
+
+    // The fold, over the rows as the database holds them, as the server reads them.
+    const srows = await q(`select * from ball_event where match_id = $1 order by seq`, [SUMM]);
+    const sfold = new MatchFold(srows.map(fromRow)).view().innings;
+    ok("the fold reads both innings from the book: 127/4 and 56/3", sfold.length === 2 && sfold.every((i) => i.summarised != null)
+       && sfold[0].runs === 127 && sfold[0].wickets === 4 && sfold[1].runs === 56 && sfold[1].wickets === 3,
+       JSON.stringify(sfold.map((i) => [i.runs, i.wickets, i.summarised?.import])));
+
+    // What each reader must say: the fold's line for each of our boys; the
+    // method of a dismissal is the card's, which the fold's line names in words.
+    // A figure the book did not record adds nothing (D12).
+    const plus = (/** @type {number|null} */ a, /** @type {number|null} */ b) => (b == null ? a : (a ?? 0) + b);
+    /** @type {Map<string, any>} */ const wInn = new Map();
+    /** @type {Map<string, any>} */ const wBat = new Map();
+    /** @type {Map<string, any>} */ const wBowl = new Map();
+    /** @type {Map<string, any>} */ const wFig = new Map();
+    /** @type {Map<string, any>} */ const wOpp = new Map();
+    /** @type {Map<string, number>} */ const wOut = new Map();
+    /** @type {Map<string, number>} */ const wOutBy = new Map();
+    /** @type {Map<string, number>} */ const wWktBy = new Map();
+    const oppOf = (/** @type {string} */ p) => at(wOpp, p, () => ({ innings: 0, balls: null, runs: 0, dismissals: 0, fours: null, sixes: null,
+                                                                   dots: 0, ballsBowled: 0, runsConceded: 0, wickets: 0 }));
+    sfold.forEach((inn, no) => {
+      const card = cards[no];
+      for (const b of inn.batsmen) {
+        if (!isId(b.id)) continue;
+        const how = card.batting.find((r) => r.ref === b.id)?.howOut;
+        const out = b.status === "out";
+        wInn.set(`${b.id}|${no}`, { runs: b.runs, balls: b.balls, out });
+        const c = at(wBat, b.id, () => ({ matches: 1, runs: 0, balls: null, fours: null, sixes: null }));
+        c.runs += b.runs; c.balls = plus(c.balls, b.balls); c.fours = plus(c.fours, b.fours); c.sixes = plus(c.sixes, b.sixes);
+        if (out) { bump(wOut, b.id); bump(wOutBy, `${b.id}|${how}`); }
+        const o = oppOf(b.id);
+        o.innings = 1; o.runs += b.runs; o.balls = plus(o.balls, b.balls); o.fours = plus(o.fours, b.fours); o.sixes = plus(o.sixes, b.sixes);
+        if (chargedToBowler(how)) o.dismissals++;
+      }
+      for (const r of card.batting) if (chargedToBowler(r.howOut) && isId(r.bowlerRef)) bump(wWktBy, `${r.bowlerRef}|${r.howOut}`);
+      for (const w of inn.bowlers) {
+        if (!isId(w.id)) continue;
+        const c = at(wBowl, w.id, () => ({ runs: 0, balls: 0, wides: null, noBalls: null, wickets: 0 }));
+        c.runs += w.runs; c.balls += w.balls; c.wides = plus(c.wides, w.wides); c.noBalls = plus(c.noBalls, w.noBalls); c.wickets += w.wickets;
+        wFig.set(`${w.id}|${no}`, { wickets: w.wickets, runs: w.runs });
+        const o = oppOf(w.id); o.ballsBowled += w.balls; o.runsConceded += w.runs; o.wickets += w.wickets;
+      }
+    });
+    ok("...and it holds what this group is about: a batter with no balls, a bowler with no extras, a typed name on each side",
+       wBat.get(BOOK_BAT)?.balls === null && wBowl.get(BOOK_BOWL)?.wides === null
+       && sfold[0].bowlers.some((w) => !isId(w.id)) && sfold[1].batsmen.every((b) => !isId(b.id)));
+
+    // player_innings: every batting row of our boys, figure for figure, NULL included.
+    const sInn = new Map((await q(`select player_id, innings, runs, balls_faced, out from player_innings where match_id = $1`, [SUMM]))
+      .map((r) => [`${r.player_id}|${r.innings}`, { runs: Number(r.runs), balls: r.balls_faced == null ? null : Number(r.balls_faced), out: r.out }]));
+    const innBad = [...new Set([...wInn.keys(), ...sInn.keys()])]
+      .filter((k) => JSON.stringify(wInn.get(k)) !== JSON.stringify(sInn.get(k)))
+      .map((k) => `${k}: fold ${JSON.stringify(wInn.get(k))}, SQL ${JSON.stringify(sInn.get(k))}`);
+    ok(`player_innings is the fold's line for each of our boys, and nobody typed (${wInn.size})`, innBad.length === 0 && wInn.size === 6, show(innBad));
+    const [live] = await q(`select string_agg(format('%s/%s/%s', runs, wickets, legal_balls), ' ' order by innings) s
+                              from match_live_score where match_id = $1`, [SUMM]);
+    ok("match_live_score is the fold's, both innings", live.s === sfold.map((i) => `${i.runs}/${i.wickets}/${i.balls}`).join(" "), live.s);
+
+    // The careers: what moved is the fold's line (a figure not recorded moved nothing)...
+    const carS1 = await career(WATCH);
+    const zeroed = (/** @type {Map<string, any>} */ m) => new Map(WATCH.map((p) => [p, Object.fromEntries(
+      Object.entries(m.get(p) ?? {}).map(([k, v]) => [k, v ?? 0]))]));
+    const BAT_F = ["matches", "runs", "balls", "fours", "sixes"], BOWL_F = ["runs", "balls", "wides", "noBalls", "wickets"];
+    const sBad = [
+      ...fieldDifferences(zeroed(wBat), deltas(carS0.bat, carS1.bat, BAT_F), BAT_F).map((x) => `player_batting_since ${x}`),
+      ...fieldDifferences(zeroed(wBat), deltas(carS0.batView, carS1.batView, BAT_F), BAT_F).map((x) => `player_batting_career ${x}`),
+      ...fieldDifferences(zeroed(wBowl), deltas(carS0.bowl, carS1.bowl, BOWL_F), BOWL_F).map((x) => `player_bowling_since ${x}`),
+      ...fieldDifferences(zeroed(wBowl), deltas(carS0.bowlView, carS1.bowlView, BOWL_F), BOWL_F).map((x) => `player_bowling_career ${x}`),
+      ...differences(wOut, delta(carS0.dismissals, carS1.dismissals)).map((x) => `player_dismissals_since ${x}`),
+      ...differences(wOut, delta(carS0.dismissalsView, carS1.dismissalsView)).map((x) => `player_dismissals ${x}`),
+      ...differences(wOutBy, delta(carS0.dismissalBy, carS1.dismissalBy)).map((x) => `player_dismissal_breakdown ${x}`),
+      ...differences(wWktBy, delta(carS0.wicketBy, carS1.wicketBy)).map((x) => `player_wicket_breakdown ${x}`),
+    ];
+    ok("every career reader moved by the fold's line for each boy, and no other", sBad.length === 0, show(sBad));
+    // ...the two boys with no other record read it exactly, NULL where the book has none...
+    const exact = await q(`select 'bat' f, row(c.matches, c.runs, c.balls_faced, c.fours, c.sixes)::text v from player_batting_career c where c.player_id = $1
+                           union all select 'batfn', row(c.matches, c.runs, c.balls_faced, c.fours, c.sixes)::text from player_batting_since($1, null) c
+                           union all select 'bowl', row(c.runs_conceded, c.legal_balls, c.wides, c.no_balls, c.wickets)::text from player_bowling_career c where c.player_id = $2
+                           union all select 'bowlfn', row(c.runs_conceded, c.legal_balls, c.wides, c.no_balls, c.wickets)::text from player_bowling_since($2, null) c
+                           union all select 'fig', row(f.wickets, f.runs_conceded)::text from bowler_innings_figures f where f.player_id = $2`, [BOOK_BAT, BOOK_BOWL]);
+    const csv = (/** @type {any[]} */ xs) => `(${xs.map((x) => x ?? "").join(",")})`;
+    const wb = wBat.get(BOOK_BAT), ww = wBowl.get(BOOK_BOWL), wf = wFig.get(`${BOOK_BOWL}|1`);
+    const want = { bat: csv([1, wb.runs, wb.balls, wb.fours, wb.sixes]), batfn: csv([1, wb.runs, wb.balls, wb.fours, wb.sixes]),
+                   bowl: csv([ww.runs, ww.balls, ww.wides, ww.noBalls, ww.wickets]), bowlfn: csv([ww.runs, ww.balls, ww.wides, ww.noBalls, ww.wickets]),
+                   fig: csv([wf.wickets, wf.runs]) };
+    const exactBad = exact.filter((r) => want[/** @type {keyof typeof want} */ (r.f)] !== r.v)
+      .map((r) => `${r.f}: fold ${want[/** @type {keyof typeof want} */ (r.f)]}, SQL ${r.v}`);
+    ok(`a boy whose only innings is the book's reads the fold's line exactly: ${want.bat} batting, ${want.bowl} bowling (NULL where unrecorded)`,
+       exact.length === 5 && exactBad.length === 0, show(exactBad));
+    // ...and the views are the functions, before and after.
+    for (const [when, car] of /** @type {[string, any][]} */ ([["before the book", carS0], ["after it", carS1]])) {
+      const bad = [...fieldDifferences(car.bat, car.batView, BAT_F), ...fieldDifferences(car.bowl, car.bowlView, BOWL_F),
+                   ...differences(car.dismissals, car.dismissalsView)];
+      ok(`the three lifetime views are the three functions, ${when}`, bad.length === 0, show(bad));
+    }
+    const sFig = new Map((await q(`select player_id, innings, wickets, runs_conceded from bowler_innings_figures where match_id = $1`, [SUMM]))
+      .map((r) => [`${r.player_id}|${r.innings}`, { wickets: Number(r.wickets), runs: Number(r.runs_conceded) }]));
+    const figB = fieldDifferences(wFig, sFig, ["wickets", "runs"]);
+    ok(`bowler_innings_figures is the fold's for each of our bowlers (${wFig.size})`, figB.length === 0 && sFig.size === wFig.size, show(figB));
+
+    // The opposition's dossier on Hilton, as Westville's coach: the book's
+    // runs, balls where recorded, the bowler's dismissals; no dots, ever.
+    const oppS1 = await opposition(WES, HIL, "coach.wes@example.invalid");
+    const oppSquad = [...HIL_1XI, BOOK_BAT, BOOK_BOWL];
+    const oppGot = deltas(new Map(oppSquad.map((p) => [p, oppS0.get(p)])), new Map(oppSquad.map((p) => [p, oppS1.get(p)])), OPP_FIELDS);
+    const oppBad = OPP_FIELDS.flatMap((f) => fieldDifferences(new Map(oppSquad.map((p) => [p, Object.fromEntries(
+      Object.entries(wOpp.get(p) ?? {}).map(([k, v]) => [k, v ?? 0]))])), oppGot, [f]));
+    ok("opposition_squad(): what moved is the fold's line, and not one dot", oppBad.length === 0, show(oppBad));
+    const bb = oppS1.get(BOOK_BAT);
+    ok("...and the boy whose only innings is the book's: his runs, no balls, no boundaries, no dots, no strike rate, no dot percentage",
+       bb?.runs === 25 && bb.innings === 1 && bb.balls === null && bb.fours === null && bb.sixes === null
+       && bb.dots === null && bb.strikeRate === null && bb.dotPct === null, JSON.stringify(bb));
+    const unmoved = HIL_1XI.filter((p) => String(oppS0.get(p)?.dotPct) !== String(oppS1.get(p)?.dotPct));
+    ok("...and no boy's dot percentage moved for a book innings", unmoved.length === 0, unmoved.join(","));
+    const muS1 = coach ? await matchups(coach) : new Map();
+    ok("the matchups read has nothing from the book", JSON.stringify([...muS0]) === JSON.stringify([...muS1]));
+
+    // Voided by an approved amendment (as scoring_amendment_decide() writes
+    // the void), the book is in no reader: every figure back where it stood.
+    await writeSumm([0, 1].map((k) => ({ ev: { kind: "void", innings: k, id: `ff-void-summary-${k}`, target: `scorebook:${imp}:${k}:summary` },
+                                        device: "amendment" })));
+    const carS2 = await career(WATCH);
+    const back = [
+      ...fieldDifferences(carS0.bat, carS2.bat, BAT_F), ...fieldDifferences(carS0.batView, carS2.batView, BAT_F),
+      ...fieldDifferences(carS0.bowl, carS2.bowl, BOWL_F), ...fieldDifferences(carS0.bowlView, carS2.bowlView, BOWL_F),
+      ...differences(carS0.dismissals, carS2.dismissals), ...differences(carS0.dismissalsView, carS2.dismissalsView),
+      ...differences(carS0.dismissalBy, carS2.dismissalBy), ...differences(carS0.wicketBy, carS2.wicketBy),
+    ];
+    const [left] = await q(`select (select count(*) from player_innings where match_id = $1) + (select count(*) from bowler_innings_figures where match_id = $1)
+                                 + (select count(*) from player_batting_career where player_id = any($2)) + (select count(*) from player_bowling_career where player_id = any($2))
+                                 + (select count(*) from player_unrecorded_figures where player_id = any($2)) n`, [SUMM, [BOOK_BAT, BOOK_BOWL]]);
+    const oppS2 = await opposition(WES, HIL, "coach.wes@example.invalid");
+    const oppBack = OPP_FIELDS.flatMap((f) => fieldDifferences(new Map(oppSquad.map((p) => [p, oppS0.get(p)])), new Map(oppSquad.map((p) => [p, oppS2.get(p)])), [f]));
+    ok("voided, the book is in no career reader and no dossier: every figure is what it was",
+       back.length === 0 && Number(left.n) === 0 && oppBack.length === 0, show([...back, ...oppBack, `${left.n} rows left`]));
   }
 
   group("The door: a new ball with no type, or a wicket with no method, is refused");

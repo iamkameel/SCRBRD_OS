@@ -5,6 +5,7 @@ import { D } from "../design/tokens.js";
 // Hilton's navy: a kit colour, data rather than theme (data/institution.js).
 const HILTON_KIT = "#003366";
 import { SR } from "../scorer/format.js";
+import { stat } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { SeasonHistory } from "./SeasonHistoryView.jsx";
@@ -327,7 +328,7 @@ function LeagueView({ role }) {
                       <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>avg</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",color:D.amber}}>{p.sr}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"13px",color:D.amber}}>{stat(p.sr)}</div>
                       <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>SR</div>
                     </div>
                   </div>

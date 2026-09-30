@@ -65,6 +65,9 @@ const REASON = {
 
 const EVIDENCE = themed(() => ({
   none:         { label: "no log",   tone: D.textMuted },
+  // A boy whose only innings are from a scorebook that has no balls column:
+  // there is a record, but no ball to rate it on (SCRBRD-120 D12).
+  unrecorded:   { label: "balls not recorded", tone: D.textMuted },
   insufficient: { label: "too thin", tone: D.textMuted },
   low:          { label: "thin",     tone: D.amber },
   moderate:     { label: "fair",     tone: D.sky },
@@ -213,7 +216,11 @@ function OppositionDossier({ match, role, onClose }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((p) => (
+                    {rows.map((p) => {
+                      // Innings on the record but no ball recorded in any of them:
+                      // a scorebook's, whose balls column was empty. Not "no log".
+                      const evidence = p.batting.balls == null && p.batting.innings > 0 ? "unrecorded" : p.batting.evidence;
+                      return (
                       <tr key={p.playerId} data-testid={`dossier-player-${p.playerId}`}>
                         <TD tone={D.textPrimary}>
                           {p.name}
@@ -224,16 +231,17 @@ function OppositionDossier({ match, role, onClose }) {
                         <TD>{p.role ?? "—"}</TD>
                         <TD right mono>{p.batting.innings}</TD>
                         <TD right mono tone={D.textPrimary}>{p.batting.runs}</TD>
-                        <TD right mono>{p.batting.balls}</TD>
-                        <TD right mono>{p.batting.strikeRate == null ? <Withheld evidence={p.batting.evidence}/> : p.batting.strikeRate.toFixed(1)}</TD>
-                        <TD right mono>{p.batting.dotPct == null ? <Withheld evidence={p.batting.evidence}/> : p.batting.dotPct.toFixed(1)}</TD>
-                        <TD><EvidencePill evidence={p.batting.evidence}/></TD>
+                        <TD right mono>{dash(p.batting.balls)}</TD>
+                        <TD right mono>{p.batting.strikeRate == null ? <Withheld evidence={evidence}/> : p.batting.strikeRate.toFixed(1)}</TD>
+                        <TD right mono>{p.batting.dotPct == null ? <Withheld evidence={evidence}/> : p.batting.dotPct.toFixed(1)}</TD>
+                        <TD><EvidencePill evidence={evidence}/></TD>
                         <TD right mono>{Math.floor(p.bowling.balls / 6)}.{p.bowling.balls % 6}</TD>
                         <TD right mono tone={p.bowling.wickets ? D.textPrimary : undefined}>{p.bowling.wickets}</TD>
                         <TD right mono>{p.bowling.economy == null ? <Withheld evidence={p.bowling.evidence}/> : p.bowling.economy.toFixed(2)}</TD>
                         <TD><EvidencePill evidence={p.bowling.evidence}/></TD>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -247,7 +255,8 @@ function OppositionDossier({ match, role, onClose }) {
                 Cricket columns only: what the ball log says about how each boy has batted and bowled, across their own
                 fixtures. Nothing about a child's person is here and none of it is available — not a date of birth, not a
                 guardian, not a note, not a fitness state. A figure withheld is withheld because the log is too thin to
-                carry it, and the label beside it says which.
+                carry it, and the label beside it says which. An innings taken from a paper scorebook counts towards the
+                runs of a boy, and where the book gave no balls, the balls are a dash and the strike rate counts only the innings whose balls are recorded.
                 {" "}This read is on the record: every name above is written to {head.theirLabel ?? "the other school"}&rsquo;s
                 access log against this fixture, with your name on it.
               </div>

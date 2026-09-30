@@ -1,6 +1,6 @@
 # SCRBRD-120 — The scorebook importer: the design
 
-**Status:** for Kameel's review, 2026-09-30. Nothing here is built. Every figure that is not already in the repository is an **assumption to be confirmed** and is marked as one.
+**Status:** decided by Kameel 2026-09-30 (D1–D13 as recommended); phase 1 built 2026-09-30 — §9.2 records it and its API; phase 2 (careers and tables) built 2026-09-30 — §9.3. Every figure that is not already in the repository is an **assumption to be confirmed** and is marked as one.
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`, SCRBRD-120; the reviewer's verdict at the end of `audit/HARVEST_scrbrd_2026-09-30.md`; the earlier build's importer (`/home/user/scrbrd/apps/product/components/scrbrd/scorecard-importer.tsx`, `lib/server/scorecard-imports.ts`, `lib/server/scorecard-ocr.ts`, `lib/scorecard-import.ts`), read as a pattern and not as a model.
 **Reader:** the product owner and information officer first, then whoever builds it. Plain words open each section; the schema and the functions follow. A builder reads §1–§7 and builds §8; §9 is the decision record.
 
@@ -347,6 +347,8 @@ Phase 1 must be first and is useful alone. Phases 2 and 3 are independent of eac
 
 Each with the recommendation the body assumes.
 
+**Decided (Kameel, 2026-09-30): D1–D13 as recommended.** The photos are stored in Supabase Storage (Kameel, 2026-09-30): a private bucket in the database's project and region, reached only by the API with the service key, behind the one `object-store.mjs` adapter (a local directory in development and tests).
+
 | # | decision | recommendation |
 |---|---|---|
 | **D1** | The reader produces a summary scorecard per innings, never ball by ball, and ball-by-ball is not a later phase | **Yes.** The book does not know who faced what; a guess in the log is the one thing this platform has never allowed |
@@ -362,6 +364,163 @@ Each with the recommendation the body assumes.
 | **D11** | Retiring a coach's `match_elsewhere` estimate is the confirmer's tick per entry, never automatic, written as a superseding row naming the match | **Yes.** A festival has two matches a day; the log records what a person decided |
 | **D12** | Balls faced, fours and sixes stay null where the book has none; careers count them only where recorded; nothing is zero-filled | **Yes.** SCRBRD-110's rule: nothing that was not recorded is counted |
 | **D13** | The module `scorebook_import` is off by default and granted per school by the platform; the fixture must exist before an import (created through the fixture route as today) | **Yes.** No new bypass for creating a match; the pilot's schools are switched on by Kameel |
+
+### 9.2 · Phase 1 as built (Opus, 2026-09-30)
+
+The schema is `db/63_scorebook_import.sql` (db/99 §41); the engine is `packages/scoring` (`innings_summary`, `inningsSummary()`, the fold, the three Laws rules, `summary.mjs`); the API is `services/api/write/scorebook-api.mjs` over `services/api/io/object-store.mjs` and `io/page-image.mjs`; the walk is `tools/smoke-scorebook.mjs`. No screen and no reader: the upload, review and confirm screens are next (Sonnet), over the contract below.
+
+#### Where the build departs from the letter above, and why
+
+1. **`.write` holders are scorer, coach and assistantcoach** (§4.1). The design said "the roles that hold `scoring.amend.request`" and listed teammanager, but only the scorer holds that capability, and a teammanager may not score at all. The safer reading: whoever may score the match live (`separation.test.mjs` holds it: every `.write` holder holds `scoring.edit`). `.confirm` is directorofsport and competitionadmin (both approve amendments); superadmin holds all three.
+2. **A league's match is confirmed by the league.** "The school's director of sport for a match in no competition" is enforced: for a fixture with a `competition_id`, the confirmer must also hold `competition.conditions.manage` over the competition (its administrator); the director of sport is refused.
+3. **Pages are the stripped original, not a re-encode** (§5.2). The API adds no image library: it accepts only JPEG or PNG by their signature (≤ 8 MB, a side ≤ 12 000 px) and removes every JPEG APPn but APP0, every COM and any trailer after EOI; every PNG chunk but IHDR, PLTE, IDAT, IEND and the display-only tRNS, gAMA, cHRM, sRGB, sBIT, bKGD, pHYs, with each CRC checked. GPS, device, captions and XMP go; a photo whose orientation lived in EXIF shows as the sensor stored it. The page row records `mime`.
+4. **Photos are proxied, never signed** (§5.2's "proxies or signs"): no URL to a photo exists outside the API. `access_log` is written before the photo is fetched, in its own committed transaction.
+5. **The module is asked per school, in the database, not by the dispatcher's per-caller gate.** Every definer function asks `feature_enabled('scorebook_import', <the fixture's school>, …)`, and the two reads ask it too; the dispatcher's gate refuses anybody with an assignment at a school that has not got the module (a director of sport who is a parent at another school), which is the DRS reasoning already recorded in `server.mjs`.
+6. **A saved card moves a draft or a returned import to `review`; adding a page changes no state.** There is no `reading` step in phase 1 (§6.4).
+7. **The card's ending vocabulary** is `all_out | overs | target | declared | time | other`; the commit writes `all_out`, `overs_complete`, `target_reached`, `declared`, `time`, `other` as the innings_end reason. The first three are checked against the figures at the seal; the rest are taken on the book's word. The public page shows no reason for `time` or `other` (not on its closed list).
+8. **A fielder need not be a bowler of the card.** §2.3 said every ref "names a row"; a fielder who did not bowl is on no row. A fielder ref is checked to be a player id or a typed name the import spells, and on the fielding side; a bowler ref must be a bowling row; a fall-of-wicket ref a batting row.
+9. **A summarised innings' `extras`, a batter's balls, fours and sixes, a bowler's maidens, wides and no-balls, and a fall of wicket's score and over are `null` in the fold where the book gives none** (D12). The `Innings` typedefs still say `number` (every pad innings has one); `inn.summarised` is the flag a reader asks first (`replay.mjs`, SUMMARY_NULLS).
+10. **Also refused in a summarised innings: a new `innings_start` and a `revision`** (they would re-open or re-limit the innings its seal was checked against), besides the design's six kinds. Because the commit writes the new import's `innings_start` first, a second import over a standing summary is answered `summarised_innings`; `already_summarised` remains for a summary event met directly.
+11. **Penalty runs credited to a summarised innings from another innings** make its seal refuse (`figures_moved`): the card's total is the innings' own, and `confirmed.runs` is the card's total. Rare, and the answer is in words; it is the one mixed case left for a later phase.
+12. **Denormalised anchors.** `school_id`, `team_code` and `match_id` are stamped on the page and revision rows from their import, so all three tables' policies anchor like the import's.
+13. **`resolve_entries` (§3.2's ticks)** is phase 3: `scorebook_import_commit()` keeps the parameter and refuses a non-empty list (`not_in_this_phase`).
+14. **`summary_reconciles(card, typed, ours)`** takes the typed names and the side as well as the card, so SQL asks the name and side rules summaryRefusal() asks; the two agree over `packages/scoring/test/scorebook-cards.mjs`'s PARITY list (the walk compares them, card by card, against a live database).
+15. **The live path cannot write a summary.** A trigger on `ball_event` refuses `innings_summary`, and any event whose device names a scorebook, unless `scorebook_import_commit()` is writing it for that import as the table's owner.
+
+#### The API (for the screens)
+
+(Amended by §9.4: a page can be removed, the list and the import say what the caller may do, and the import names the card's boys and its history's authors.)
+
+Every route takes `Authorization: Bearer <token>`. Every refusal is `{ error, detail? }`: **403** `not_permitted` (which never says whether the import or match exists) or `module_disabled`; **409** `version_conflict` (`detail`: the current version) or `import_open` (`detail`: the open import's id); **413/415** for a photo; **503** `store_unconfigured` / `store_*_failed`; **422** for the rest. A card is `ScorebookCard` v1 (§1.2; `summary.mjs`), an import holds up to four (one per innings), `typed` maps `t:<n>` to a name (1–80 characters), and `checked` maps a cell path (`cellPaths()`: `0.total`, `1.batting.3.runs`, …) to `true`.
+
+| route | who | body → answer | refusals (422 unless said) |
+|---|---|---|---|
+| `POST /api/matches/:id/scorebook` | `.write` | `{}` → `{ id }` | `module_disabled`, `not_cricket`, `not_yet_played`, `match_abandoned`, `match_complete`, `import_open` (409) |
+| `GET /api/matches/:id/scorebook` | `.read`, `audit.read` | → `{ imports: [{id, state, version, pages, createdBy, createdAt, submittedAt, confirmedAt, abandonedAt}], innings: [InningsState] }` | `module_disabled` |
+| `GET /api/scorebook/:id` | `.read`, `audit.read` (no page rows for audit) | → `{ import, pages, revisions, innings, refusals, unchecked, cells }` | `module_disabled` |
+| `POST /api/scorebook/:id/pages` | `.write` | the photo's bytes, `content-type: image/jpeg` or `image/png`, ≤ 8 MB → `{ pageNo, bytes, width, height, sha256, removed }` | 413 `page_too_large`; 415 `not_an_image`, `image_unreadable`, `image_size`; `not_editable`, `too_many_pages` (12), `duplicate_page`, `key_invalid`; 503 |
+| `GET /api/scorebook/:id/pages/:n` | `.read` only | → the photo's bytes (`cache-control: no-store`, `nosniff`, a sandbox CSP); one `access_log` row per read | `no_such_page`, `page_deleted`, 404 `page_missing` |
+| `POST /api/scorebook/:id/save` | `.write` | `{ cards, typed, checked, version }` → `{ version, refusals, unchecked }` (cards kept to a card's fields) | `not_editable`, `version_conflict` (409), `card_shape`, `typed_invalid`, `version_required` |
+| `POST /api/scorebook/:id/submit` | `.write` | `{ version }` → `{ version }` | `cells_unchecked` (`detail`: the paths), `card_refused` (`detail`: per card, `[{path, code, text}]`), `not_submittable`, `version_conflict`, `no_card`, `innings_twice`, `not_our_player` |
+| `POST /api/scorebook/:id/return` | `.confirm`, never an author | `{ note }` (≥ 10 characters) → `{ ok: true }` | `cannot_confirm_your_own`, `not_submitted`, `note_required` |
+| `POST /api/scorebook/:id/confirm` | `.confirm` (the league's for a league fixture), never an author | `{ acknowledgeUnreconciled?, note? }` → `{ ok: true, keys }` | `cannot_confirm_your_own`, `not_submitted`, `match_complete`, `unreconciled_not_acknowledged`, `laws_refused` (`detail: {law, text, key, innings}`), `seal_refused` (`detail: {seal, text, innings}`), `card_refused`, `not_in_this_phase` |
+| `POST /api/scorebook/:id/abandon` | `.write` or `.confirm` | `{}` → `{ ok: true, purged: {due, deleted, failed} }` | `not_abandonable` |
+| `POST /api/scorebook/purge` | the platform (`platform.feature.manage`, platform-wide) | `{}` → `{ due, deleted, failed }` (anybody else: nothing due) | — |
+
+`InningsState` is `{ innings, battingTeam, deliveries, summarised, complete, runs, wickets, balls }`: "which innings already have deliveries" (§6.3) is `deliveries > 0`. The `import` object is `{ id, matchId, schoolId, teamCode, state, version, cards, typed, checked, createdBy, createdAt, touchedAt, submittedBy, submittedAt, returnedBy, returnedAt, returnedNote, confirmedBy, confirmedAt, confirmNote, unreconciledAcknowledged, abandonedBy, abandonedAt, appliedKeys, pagesPurgedAt }`. The screen runs `summaryRefusal(card, { typed, ours: "home" })` and `uncheckedCells(cards, checked)` from `@scrbrd/scoring` as the person types: the server runs the same two.
+
+After a confirm the match's log carries, per innings, `innings_start` → `innings_summary` → `innings_end` (keys `scorebook:<import>:<innings>:start|summary|end`); the fold gives `inn.summarised = { import, checkedBy, confirmedBy, unreconciled }`, and the public log serves the summary's card with every ref pseudonymised and no typed name, source or note.
+
+#### For Kameel, in production
+
+1. Paste `apply-63` then `verify` (rehearsed on a database at db/62: `ALL RLS LIVE ASSERTIONS PASSED`, and a second paste refuses); then record it in `db/SHIPPED.sha256`.
+2. Confirm the Supabase project's region is where the children's data may live (DEPLOYING.md, "The scorebook importer's photos").
+3. Create the private bucket `scorebook-pages` (public off, no policies).
+4. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on the API; `GET /api/health` says `"pages": "supabase"`.
+5. Schedule (or run daily) `POST /api/scorebook/purge` with a platform token.
+6. Grant the `scorebook_import` module to the pilot schools when their screens exist.
+
+### 9.3 · Phase 2 as built (Opus, 2026-09-30)
+
+The schema is `db/64_scorebook_careers.sql` (db/99 §42); the fold's side is a new group in `tools/smoke-fold-figures.mjs` (two cards written as the commit writes them, folded, and every career reader held to the fold's line for each of our boys, then voided). No engine change, no screen, no API change: the fold and SQL agreed on the first run.
+
+**What is here.** `summary_batting_line` and `summary_bowling_line` (one row per batting or bowling row of every standing summary, `security_invoker`, over `ball_event_live` and `match`), and the UNION branch in `player_innings`, `player_batting_career`, `player_bowling_career`, `player_dismissals`, `player_dismissal_breakdown`, the three `*_by_season` views, `player_batting_since()`, `player_bowling_since()` and `opposition_squad()` — every column list, type, option, owner and grant unchanged (a before/after snapshot in the file). And one new view, `player_unrecorded_figures`, for the screens (below).
+
+#### Where the build departs from the letter above, and why
+
+1. **Three more readers gain the branch**: `player_dismissals_since()`, `bowler_innings_figures` and `player_wicket_breakdown`. The first is the function db/49 holds `player_dismissals` to (db/99 §27 and the walk compare them); the other two are read beside the careers (the passport's bowling line, `player_milestone`'s five-for, the awards' breakdowns, the walk). Left out, each would have disagreed with the fold and with the view next to it.
+2. **`player_id` is the ref when it is a player id, by its shape**, not `public_ref_uuid()`: that function is not granted to the application role, and the views run as their caller. That the id is one of our own boys is the commit's (`not_our_player` at submit and again at the commit; the door lets nothing else write a summary), not re-asked per row. A typed ref is NULL, so it reaches no career, table or dossier (D6); db/99 §42 `(typed)` holds it.
+3. **A book innings is dated by its match's start**: `player_innings.ended_at`, `last_ball_at`, and the `*_since()` windows use `match.starts_at` for a summary row, because the book has no clock and the day it was imported is not the day it was played (the season views already file by the match, db/44). Live rows keep `server_ts`. The form guide therefore places a book innings on its match day.
+4. **D12 in a sum.** A figure is `NULL` only when nothing behind it was recorded (a boy whose one innings is a book's without a balls column has `balls_faced NULL`); a boy with live innings and a book innings without balls has the recorded count, which is a partial count. `player_unrecorded_figures` (per boy per season: `innings_without_balls`, `runs_without_balls`, `innings_without_boundaries`, `bowling_without_extras`) says how partial, so a strike rate can be taken over the innings whose balls are known. A boy with no record at all still reads 0 from the functions and has no row in the views, as before.
+5. **Every batting row is an innings**, a not-out who never faced included: the book says he batted, and it is the fold's line (`inn.batsmen` holds every row). The live readers give no innings to a batter who neither faced nor was out; the book cannot say which not-out batter that was.
+6. **The dossier's dots are NULL, not 0, for a boy with no live delivery** (§2.7 said the summary "contributes 0 dots"; D12 is the safer reading — a book records no dots). `dots` and `dot_pct` are over the balls he faced live, `dot_pct` floored on those; the strike rate is over the innings whose balls are recorded; `balls`, `fours` and `sixes` are NULL for a boy whose every innings left them unrecorded (0 still for a boy with no innings, as before). `batting_evidence` is over recorded balls; the function's column list is frozen, so it cannot also say "N innings from a book".
+7. **`summary_bowling_line.deliveries`** (legal balls + wides + no-balls) is NULL unless both extras are recorded, and **`bowled_on`** is the match's day in Johannesburg. Nothing reads either yet; phase 3 decides whether legal balls are a floor for the load record when the book gives no extras (otherwise such a spell has no delivery count at all).
+8. **`match_result()` is not here**: SCRBRD-114's phase 3 has not landed (no `match_result()` or `competition_standing` in `db/`). When it lands it needs nothing from this file — it reads `innings_score_as_folded()`, which reads a summary since db/63, and a summary's `innings_end` carries its reason and `confirmed` figures as a pad's does — but its proof list should carry a summarised match (a book chase won by wickets, a book tie, a book innings short of `min_overs_per_side`).
+9. **db/99 §9 now asks for `security_invoker=true`**, not for the option's name: a view altered to `security_invoker=false` passed it. Found falsifying §42 `(scope)`, which stands on two walls (the line's own `security_invoker` and `ball_event_live`'s, which a view running as its owner still reads as its caller).
+
+#### What still reads deliveries alone
+
+- **The ratings read** (`ratingsQuery()`, `services/api/read/read-api.mjs`) is a per-delivery evidence index and takes no book innings. Its comment says it is "row for row what the three functions sum"; that holds only for a boy with no book innings now (`tools/bench-assessment.mjs --check` compares on logs without one). Whether a rating's evidence should take a book's runs over its recorded balls is a later decision.
+- **`milestone_watch()`** (db/51's `innings_runs_off_bat()` and `career_runs_off_bat()`) — §2.7's "never". A live ball after an import does not count the book's runs towards a career-runs notice; db/51's equivalence `career_runs_off_bat() = Σ player_innings.runs` holds only for a boy with no book innings. The `player_milestone` view does list a book fifty or five-for (it reads `player_innings` and `bowler_innings_figures`), as do the rewards (`services/api/rewards/score.mjs`) and the passport's career line, whose source label still says "the ball log".
+- `bowler_over`, `bowler_spell`, the matchups, phases, the worm, shot sectors and every public read: none, as §2.7 (the walk checks the matchups do not move).
+
+#### What the career screens need (not done here: `apps/web` is Sonnet's, and the API change goes with it)
+
+1. **The reads zero-fill.** `career` and `career_by_season` (`read-api.mjs`) `coalesce` `balls_faced`, `fours` and `sixes` to 0. To show D12 on screen, the read must pass NULL through for a player whose figure is unrecorded (`CASE WHEN bat.player_id IS NULL THEN 0 ELSE bat.balls_faced END`) and the screen render it as an em dash; the two go together, because today a screen divides by it.
+2. **Strike rate over recorded balls**: `(runs − runs_without_balls) / balls_faced`, from `player_unrecorded_figures` (summed over seasons for a lifetime). Today `runs / balls_faced` overstates it for a boy with a book innings that has no balls column; the dashboard's `my_strike_rate` (`read-api.mjs`, the summary read) does the same in SQL. The API has no read over `player_unrecorded_figures` yet.
+3. **Boundaries** read "at least N" when `innings_without_boundaries > 0`; **wides and no-balls** in the bowling views may be NULL (the `career` read does not select them today).
+4. **The dossier** (`opposition_squad` read, `select *`): `balls`, `fours`, `sixes` and `dots` may be NULL for a boy whose record is only a book's; `strike_rate` and `dot_pct` NULL render as below the evidence floor does.
+5. **An innings row** (`player_innings`, the form guide): `balls_faced` NULL for a book innings, `ended_at` its match's start. Nothing in `player_innings` marks an innings as the book's; a screen that wants to say "from the scorebook" joins `summary_batting_line` on player, match and innings.
+
+#### For Kameel, in production
+
+1. After `apply-63`: paste `apply-64` then `verify` (rehearsed on a database at db/63, seeded: `ALL RLS LIVE ASSERTIONS PASSED`, and a second paste refuses); then record it in `db/SHIPPED.sha256`. No secret, no flag, no bucket.
+
+### 9.4 · Phase 1 gaps closed (Opus, 2026-09-30)
+
+The screens (Sonnet, over §9.2's contract) found four things the API could not do or say. All four are in `db/63_scorebook_import.sql`, edited in place because it has not shipped (it is not in `db/SHIPPED.sha256`); `db/64` applies after it unchanged. db/99 §41 gains the labels `(remove)`, `(may)`, `(names)`, `(actors)` and `(league)` and a second `(purge)`, each falsified once (the guard broken in db/63, the database rebuilt, red, restored); `tools/smoke-scorebook.mjs` and `tools/smoke-browser-scorebook.mjs` walk each through the API and the screens.
+
+#### 1. A wrong page is taken off
+
+`scorebook_import_page_remove(import, page_no)` → `(ok, reason, detail, version)`: the guards of `scorebook_import_page_add()` (`scorebook_may('scoring.import.write')`, which carries the actor check — signed in, not a pad's credential, not a support session — and the module), the import in `draft`, `review` or `returned`. It records `removed_at` and `removed_by` on the page row at once (the guard lets a page row change only to say it was removed, once, and that its photo was deleted), and writes a `pages` revision with the note `page <n> removed`, so removing a page makes its remover an author exactly as adding one does (§4.2). The state does not change.
+
+The photo goes as the purge's go: the row first, committed, then the object. `scorebook_import_purge_due()` now names a removed page whose photo is not yet deleted, **whatever its import's state**, and `scorebook_page_purged()` accepts one; so a store that fails to delete is asked again — by the route straight after (the import's due photos, this one among them) and by the platform's daily run. `pages_purged_at` is set only on a confirmed or abandoned import: a draft whose one page was removed is not "purged".
+
+Page numbers are never reused (the next page is one more than any the import has had, a removed one's included), so "page 3" names one photo for good and the screen shows the gaps. The same photo may go back on after a removal: the hash is unique among the pages **not removed** (a partial unique index in place of §4.3's `UNIQUE (import_id, sha256)`). A removed page counts towards nothing (not the twelve, not the list's count) and is not served (`page_removed`).
+
+| route | who | answer | refusals |
+|---|---|---|---|
+| `DELETE /api/scorebook/:id/pages/:n` | `.write` | `{ ok: true, version, purged: {due, deleted, failed} }` | 403 `not_permitted`, `module_disabled`; `not_editable`, `no_such_page`, `page_removed`, `page_deleted` |
+
+`GET /api/scorebook/:id/pages/:n` also refuses `page_removed`; each page in `GET /api/scorebook/:id` carries `removedAt` and `removedBy`. CORS allows `DELETE`. The screen offers "Remove page N" to the writer beside the page shown, and asks in the page ("Take page N off this import? Its photo is deleted. The other pages keep their numbers."), never a dialog.
+
+#### 2. What the caller may do
+
+`scorebook_caller_may(match)` → `(may_write, may_confirm, may_read, may_audit, module)`: `scorebook_may()` for each of the three capabilities — the very checks the state functions ask — and audit as the import's read policy asks it (`audit.read` at the fixture), behind the same actor check. `module` is `feature_enabled('scorebook_import', <the fixture's school>)`, told only to a caller who may do one of the four; every answer is false for a match that does not exist or that the caller cannot reach.
+
+- `GET /api/matches/:id/scorebook` → `{ module, may: { write, confirm, read }, imports, innings }`. A caller who may do none of the three and may not audit the card is refused **403 `not_permitted`**. Where the module is off, a caller who may is answered `module: false` with no import and no innings (it used to be 403 `module_disabled`; the write routes still refuse that way).
+- `GET /api/scorebook/:id` carries the same `may`, so the import screen draws from it too.
+- The screens infer nothing from assignments any more (`mayImport()` is gone): the Match Centre panel draws only when `module` is true and one of the three is; the import screen offers editing only on `may.write`, confirm and return only on `may.confirm` (the two-person rule stays the functions' to refuse, and the screen's `workedOn()` still says why before it does).
+
+**Departures.** A person who may only audit (the principal) is answered 200 with all three false, as before, and the panel draws nothing for him; `audit` is not in `may` (the screens have no use for it). A person who could read the fixture but may do nothing with its imports used to be answered 200 with an empty list; now 403.
+
+#### 3. The card's boys, named
+
+`scorebook_import_names(import)` → `(player_id, name)`: the `full_name` of each player of **the import's school** whose id **the import's card** names (a batter, his fielder or bowler, a name that did not bat, a bowler, a fall of wicket's batter — `scorebook_card_refs()`, which `scorebook_cards_problem()` now reads too), and only to a caller for whom `scorebook_may('scoring.import.read', match)` holds, with the module on. Nothing else: no other field, no boy the card does not name, no child of another school a draft may name (submit refuses those, `not_our_player`), no typed name (the card's `typed` map has those, and they are not player rows, D6). It is the minimal answer to D5's confirmer outside the school — a league's administrator cannot read the school's roster, and checks each name against the photo that already shows it. Not to an `audit.read` holder who does not hold `.read`, a support session, a pad's credential, a parent, a pupil or another school.
+
+`GET /api/scorebook/:id` carries `names: { <playerId>: <name> }` (`{}` for anybody the function does not answer). The screen names the card's boys from it, the roster (where the person can read it) on top; "A player (name not shown to you)" remains only for a reader who is given neither.
+
+#### 4. The history, named
+
+`scorebook_import_actors(import)` → `(actor_id, name)`: the `app_user.name` of each revision's author, under rule 3 (a caller who may read the import, the module on). Each revision in `GET /api/scorebook/:id` carries `actorName` beside `actorId` (`null` where not given), and the history line reads "Submitted by <name>, <when>".
+
+**Departure: staff names only, enforced.** The actors are the adults who typed, returned, confirmed or abandoned the import — but a school may appoint a pupil as its scorer (SAFEGUARDING_DSO.md's "pupil scorer"). A person with a player record of their own (`app_user.player_id`) or a live `player` or `selfaccess` assignment is left unnamed (`actorName: null`); the revision still carries their id. The rule is the conservative reading of "adults": an eighteen-year-old pupil is left unnamed too.
+
+#### Found, and fixed: a league's reach stops at its league
+
+The pilot's league administrator (`competitionadmin` on an assignment with no school) held `scoring.import.confirm` and `.read` over every school's fixtures, because `app_can()` lets a school-less assignment reach every school (a NULL on the assignment widens). `scorebook_may()` refused him nothing on a friendly: he could confirm it and read its photos. §4.1 (D5, decided) gives a friendly to the school's director of sport, so this was a bug.
+
+- **`scorebook_school_grant(caps, match)`**: does the caller hold one of the capabilities through an assignment **at the match's school**? These are `app_can()`'s conditions for one assignment (live, in its dates, not expired, not suspended, covering the team and the fixture, about nobody in particular), with the school stated. `app_can()` itself cannot say this, since it answers "some assignment, school-less or not". The helper is used only in an `AND` with `app_can()`, so it can only narrow.
+- **`scorebook_league_reach(match)`**: the platform's key (`scorebook_platform_caller()`: `platform.feature.manage`, platform-wide), or a match in a competition whose conditions the caller manages (`competition_conditions_manager()`, SCRBRD-114).
+- **`scorebook_may()`**: for `.confirm` and `.read` (not `.write`, which only school roles hold), after everything it asked before: a school grant **or** the league's reach. The existing rule stands, so a league fixture's confirm is still the league's. The result:
+  - a school-scoped holder (director of sport, scorer, coach at the school) is unchanged;
+  - a school-less league administrator gets nothing on a friendly, and on a league match gets what the manager of that competition gets;
+  - the owner (superadmin, school-less, holding `platform.feature.manage`) keeps everything he had: write, confirm, read and audit on a friendly and on a league match;
+  - the platform administrator holds none of the three import capabilities, and keeps only the purge.
+- **The tables**: their generated read policies ask `app_can()`. So a RESTRICTIVE `<table>_reach` policy on the import, its pages and its revisions (`scorebook_reach(match)`: a school grant of `.read` or `audit.read`, or the league's reach) keeps a friendly's rows from him too. It sits beside the support cut, hand-written in db/63.
+- **Everything else follows.** `scorebook_caller_may()`, `scorebook_import_names()`, `scorebook_import_actors()`, `scorebook_page_open()`, `return`, `commit`, `abandon`, `purge_due(import)` and `page_purged()` all ask `scorebook_may()`. The audit flag in `scorebook_caller_may()` also asks `scorebook_reach()`.
+
+db/99 §41 `(league)`:
+- The league administrator is told nothing on a friendly, given no name or author, opens no page, reads no row, and can neither confirm nor return it. The owner is still told `wcram`.
+- On his own league's match he is told confirm and read, is given its names and rows, and confirms it. The director of sport reads that match (it is her school's) and may not confirm it (it is the league's).
+- A league run by Westville has its administrator appointed at Westville. He reaches nothing of the pilot league's match, nor of Hilton's match in his own league.
+- Falsified: without the clause in `scorebook_may()` the league administrator was told `-cr-m` on a friendly; without the reach cut he read its 13 rows; with a league reach that let everyone through, red again.
+
+**What the model cannot yet say.** Assignments carry no competition. So "manages that competition" is `app_can()` at the competition's organiser: a school-less `competitionadmin` manages every league, and one appointed at a school manages that school's leagues. The second reaches no other school's fixture at all, not even one in his own league, because `app_can()` scopes him to his school. A league run by one school over several therefore cannot have its other schools' fixtures confirmed by its own administrator. That waits on competition-scoped assignments (db/00's note on `competition_entrant`); nothing here widens towards it.
+
+#### For Kameel, in production
+
+Nothing new: §9.2's steps and §9.3's, in that order. `apply-63` now carries these four (rehearsed with `apply-64` after it onto a seeded db/62 database, then the verify bundle).
 
 ---
 

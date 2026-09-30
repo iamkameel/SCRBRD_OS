@@ -160,6 +160,16 @@ export const CAPABILITIES = {
   "scoring.correct":             "Recover a scoring session: release a stuck lease, read the quarantine, enter a DRS review",
   "scoring.amend.request":       "Request a correction to a completed match",
   "scoring.amend.approve":       "Approve a correction to a completed match",
+  // A MATCH SCORED ON PAPER (SCRBRD-120, db/63): photos of the scorebook, a
+  // card typed and checked beside them, and a second person's confirmation
+  // before the card becomes the match's log. The amendment split again (D5):
+  // `write` is the person who reads the book and types the card, `confirm`
+  // the person who signs it and never holds `write` in the same role, and
+  // `read` opens an import — its card, and its photos, which carry the names
+  // and handwriting of two schools' children (every photo read is logged).
+  "scoring.import.read":         "Open a scorebook import: its card and its page photos",
+  "scoring.import.write":        "Import a scorebook: add its pages, type and check the card, submit it",
+  "scoring.import.confirm":      "Confirm or return a submitted scorebook import",
   "officiating.assign":          "Assign match officials",
   "officiating.report":          "File a match official's report",
   // The panel itself, not an appointment to a fixture. An umpire belongs to a
@@ -479,6 +489,10 @@ export const LEVEL = Object.freeze({
   "fixture.read": 0, "fixture.create": 1, "fixture.update": 1, "fixture.cancel": 1,
   "scoring.start": 1, "scoring.edit": 1, "scoring.finalise": 1,
   "scoring.correct": 1, "scoring.amend.request": 1, "scoring.amend.approve": 1,
+  // The log and a child's name in a photo, not a medical or disciplinary
+  // record (SCRBRD-120 §4.1). The photos' own protection is the capability's
+  // narrow holders, the per-read access log and the thirty-day purge.
+  "scoring.import.read": 1, "scoring.import.write": 1, "scoring.import.confirm": 1,
   "officiating.assign": 1, "officiating.report": 1, "officiating.registry.manage": 1,
 
   // ── Health — the three tiers named in the capabilities' own comment ──

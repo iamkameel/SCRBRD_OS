@@ -25,7 +25,7 @@ const CAT = { ageBands: ["U13", "U14", "U15", "U16", "open"], keys: [
   K("format.overs_per_innings", "int", { unit: "overs" }),
   K("format.free_hit", "bool"),
   K("bowling.max_overs_per_bowler_innings", "int", { unit: "overs" }),
-  K("bowling.limit", "object", { unit: "overs", byAgeBand: true }),
+  K("bowling.limit", "object", { unit: "overs", byAgeBand: true, platformDefault: { U13: { spell: 5, day: 10 }, U15: { spell: 6, day: 12 }, open: { spell: null, day: null } } }),
   K("table.order", "list", { part: "table", values: ["points", "wins", "nrr"], platformDefault: ["points", "wins", "nrr"] }),
   K("eligibility.age_on", "date", { part: "sheet" }),
   K("pitch.length_m", "int", { unit: "m", reserved: true, readers: [] }),
@@ -34,8 +34,7 @@ const E = (key) => CAT.keys.find((k) => k.key === key);
 
 group("A date, as the server sends it");
 ok("a plain day is itself", dayOf("2026-10-01") === "2026-10-01");
-ok("a UTC midnight is its day", dayOf("2026-10-30T00:00:00.000Z") === "2026-10-30");
-ok("a Johannesburg midnight (22:00Z the day before) is the next day", dayOf("2026-10-29T22:00:00.000Z") === "2026-10-30");
+ok("a timestamp is not a day: the API sends plain days, so nothing is guessed from one", dayOf("2026-10-30T00:00:00.000Z") === "" && dayOf(new Date()) === "");
 ok("nothing is nothing", dayOf(null) === "" && formatDay("") === "");
 ok("a day in words", /15.*Sep.*2026/.test(formatDay("2026-09-15")), formatDay("2026-09-15"));
 
@@ -50,7 +49,8 @@ ok("...and no limit for null", valueWords(E("bowling.limit"), { spell: null, day
 
 group("Where a figure comes from");
 ok("a citation: document, clause, date", sourceWords({ sourceDocument: "KZNCU Schools Bye-laws", sourceClause: "7.3", sourceDate: "2026-09-15" }) === `KZNCU Schools Bye-laws, clause 7.3, ${formatDay("2026-09-15")}`);
-ok("the platform's default for a band is the directive's", bandDefault("U15").spell === 6 && bandDefault("U15").day === 12 && bandDefault("open").spell === null);
+ok("the platform's default for a band is the one the catalogue carries", bandDefault(E("bowling.limit"), "U15").spell === 6 && bandDefault(E("bowling.limit"), "U15").day === 12 && bandDefault(E("bowling.limit"), "open").spell === null);
+ok("...a band the catalogue does not name has no limit, not a guess; it is worded", bandDefault(E("bowling.limit"), "U99").spell === null && platformDefaultWords(E("bowling.limit"), "U13") === "5 overs a spell, 10 overs a day");
 ok("a default the catalogue carries is worded", platformDefaultWords(E("table.order")) === "Points, then Wins, then Net run rate");
 ok("a default it does not carry is described", platformDefaultWords(E("bowling.max_overs_per_bowler_innings")) === "no cap");
 ok("every applied key has words for today", CAT.keys.filter((k) => !k.reserved).every((k) => KEY_WORDS[k.key]?.label && (KEY_WORDS[k.key].byDefault || k.platformDefault != null)));
@@ -89,7 +89,7 @@ group("What she types, as the API takes it");
   ok("an enum must be chosen", "problem" in valueOfDraft(E("format.kind"), draft("format.kind")) && valueOfDraft(E("format.kind"), draft("format.kind", { text: "timed" })).value === "timed");
   ok("a band's spell and day, blank for no limit", JSON.stringify(valueOfDraft(E("bowling.limit"), draft("bowling.limit", { spell: "6", day: "" }))) === '{"value":{"spell":6,"day":null}}');
   ok("a list in the order picked", JSON.stringify(valueOfDraft(E("table.order"), draft("table.order", { picked: ["nrr", "points"] })).value) === '["nrr","points"]');
-  const back = draftOf(E("bowling.limit"), { value: { spell: 7, day: null }, status: "confirmed", sourceDocument: "Doc", sourceClause: "1", sourceDate: "2026-09-15T00:00:00.000Z" });
+  const back = draftOf(E("bowling.limit"), { value: { spell: 7, day: null }, status: "confirmed", sourceDocument: "Doc", sourceClause: "1", sourceDate: "2026-09-15" });
   ok("an entered figure comes back into the editor as it was", back.spell === "7" && back.day === "" && back.status === "confirmed" && back.document === "Doc" && back.date === "2026-09-15");
 }
 

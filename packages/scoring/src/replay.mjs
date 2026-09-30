@@ -58,7 +58,7 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {string} id
  * @property {string} name
  * @property {number} runs
- * @property {number} balls
+ * @property {number} balls   (see SUMMARY_NULLS)
  * @property {number} fours
  * @property {number} sixes
  * @property {string} status          one of BAT_STATUS: "batting" | "out" | "retired"
@@ -73,9 +73,21 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {number} runs      charged to him: not byes or leg byes
  * @property {number} balls     legal deliveries
  * @property {number} wickets
- * @property {number} wides
+ * @property {number} wides     (see SUMMARY_NULLS)
  * @property {number} noBalls
- * @property {number} maidens   settled after the fold (computeMaidens)
+ * @property {number} maidens   settled after the fold (computeMaidens); a
+ *   scorebook innings has the book's figure
+ */
+
+/*
+ * SUMMARY_NULLS. In an innings from a paper scorebook (inn.summarised set;
+ * SCRBRD-120) a figure the book did not record is null, never nought (D12):
+ * a batter's balls, fours and sixes; a bowler's wides, no-balls and maidens;
+ * any of the four kinds of extras; a fall of wicket's score and over. The
+ * typedefs say `number` because every innings scored on a pad has one, and
+ * the live fold's arithmetic is written against that; a reader that shows a
+ * summarised innings asks inn.summarised first and treats null as "not
+ * recorded", never as 0.
  */
 
 /**
@@ -114,7 +126,7 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {number} balls          legal deliveries
  * @property {{wide: number, noBall: number, bye: number, legBye: number, penalty: number}} extras
  *   `penalty` is every penalty run in this innings' total: those awarded to
- *   the batting side here, and `penaltyCarried`
+ *   the batting side here, and `penaltyCarried`. (See SUMMARY_NULLS.)
  * @property {number} penaltyToFielding  penalty runs awarded in this innings to
  *   the FIELDING side (SCRBRD-094). Not in this innings' total: the match's
  *   fold credits them to that side's own innings — see penaltyCredits()
@@ -124,7 +136,7 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   MatchFold) sets it; deriveInnings() alone knows one innings and says 0
  * @property {Batter[]} batsmen
  * @property {Bowler[]} bowlers
- * @property {{runs: number, wickets: number, batsman: string, overs: string}[]} fow
+ * @property {{runs: number, wickets: number, batsman: string, overs: string}[]} fow  (see SUMMARY_NULLS)
  * @property {{over: number, batter: string | null, dismissal: string}[]} nonBallWickets
  *   the wickets that fell with no delivery (retired out, timed out: SCRBRD-081),
  *   each with the 0-based over the next delivery is in. They are in `wickets`
@@ -183,6 +195,18 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {boolean} penaltyWin    4th Edition, a chase: this innings had
  *   been completed short of its target, and an award of penalty runs to it
  *   then made its total enough (Law 16.7). The result reads "by penalty runs"
+ * @property {Summarised | null} summarised  this innings is known by its figures,
+ *   from a paper scorebook (SCRBRD-120, an innings_summary event), not by its
+ *   deliveries: its ballLog, overLog and partnerships are empty and stay so, and
+ *   every reader of a delivery (a wagon wheel, a worm, a spell) has nothing to
+ *   read. null for every innings scored on a pad
+ */
+
+/**
+ * Where a summarised innings came from (the event's `source`) and the book's
+ * own recorded difference, if it had one (D4).
+ * @typedef {{import: string | null, checkedBy: string | null, confirmedBy: string | null,
+ *   unreconciled: {runs: number, note: string} | null}} Summarised
  */
 
 /**
@@ -368,6 +392,7 @@ function inningsFolder(ctx = {}, carried = 0) {
     // every innings; {} and null when there is none.
     conditions: conditionsOf(ctx),
     conditionsHash: typeof ctx.conditionsHash === "string" ? ctx.conditionsHash : null,
+    summarised: null,
   };
 
   // Name resolution comes from the squads carried on innings_start, so a
@@ -885,11 +910,104 @@ function inningsFolder(ctx = {}, carried = 0) {
         break;
       }
 
+      // An innings known by its figures (SCRBRD-120 §2.3): a paper scorebook,
+      // checked by one person and confirmed by another. The card's figures ARE
+      // the innings' — its total (on top of any penalty runs it opened on, as
+      // for any innings), wickets, legal balls from its overs, extras, each
+      // batter's and bowler's line and the fall of wickets — and nothing is
+      // derived that the book does not give: no ball is logged, no over, no
+      // partnership, no maiden counted (the book's maidens, or none). A figure
+      // the book does not record stays null (D12). The seal after it is
+      // checked against these figures like any seal, so a card whose ending
+      // disagrees with its figures ("all out" with seven down) is refused
+      // there. A card this fold cannot read is ignored, as an unknown kind is.
+      case KIND.INNINGS_SUMMARY: {
+        const c = /** @type {Record<string, any> | null | undefined} */ (ev.card);
+        const balls = ballsOfOvers(c?.overs);
+        if (c == null || typeof c !== "object" || !isCount(c.total) || !isCount(c.wickets) || balls == null) break;
+        const typed = /** @type {Record<string, unknown>} */ (ev.typed != null && typeof ev.typed === "object" ? ev.typed : {});
+        /** @param {unknown} ref @returns {string | null} */
+        const label = (ref) => {
+          if (typeof ref !== "string" || !ref) return null;
+          const t = typed[ref];
+          return typeof t === "string" && t.trim() ? t.trim() : nameOf(ref);
+        };
+        // A figure the book records, or null (SUMMARY_NULLS): typed as the
+        // number the live fold always has, which is the one lie told here.
+        /** @param {unknown} v @returns {number} */
+        const count = (v) => /** @type {number} */ (isCount(v) ? v : null);
+        const x = c.extras != null && typeof c.extras === "object" ? c.extras : {};
+        const carried = inn.penaltyCarried;
+        inn.runs = carried + c.total;
+        inn.wickets = c.wickets;
+        inn.balls = balls;
+        inn.extras = {
+          wide: count(x.wides), noBall: count(x.noBalls), bye: count(x.byes), legBye: count(x.legByes),
+          penalty: isCount(x.penalty) ? x.penalty + carried : count(carried || null),
+        };
+        const rows = (Array.isArray(c.batting) ? c.batting : []).slice()
+          .sort((a, b) => (Number(a?.order) || 0) - (Number(b?.order) || 0));
+        inn.batsmen = rows.filter((b) => typeof b?.ref === "string" && b.ref).map((b) => {
+          const how = String(b.howOut ?? "");
+          const out = how !== CARD_NOT_OUT && how !== CARD_RETIRED_HURT;
+          return {
+            id: b.ref, name: /** @type {string} */ (label(b.ref)),
+            runs: count(b.runs) ?? 0, balls: count(b.balls), fours: count(b.fours), sixes: count(b.sixes),
+            status: how === CARD_RETIRED_HURT ? BAT_STATUS.RETIRED : out ? BAT_STATUS.OUT : BAT_STATUS.NOT_OUT,
+            dismissal: how === CARD_RETIRED_HURT ? "retired hurt"
+              : out ? describeDismissal({ kind: KIND.BALL, dismissal: how, fielder: label(b.fielderRef) }, label(b.bowlerRef))
+              : null,
+          };
+        });
+        inn.bowlers = (Array.isArray(c.bowling) ? c.bowling : []).filter((b) => typeof b?.ref === "string" && b.ref)
+          .map((b) => ({
+            id: b.ref, name: /** @type {string} */ (label(b.ref)),
+            runs: count(b.runs) ?? 0, balls: ballsOfOvers(b.overs) ?? 0, wickets: count(b.wickets) ?? 0,
+            wides: count(b.wides), noBalls: count(b.noBalls), maidens: count(b.maidens),
+          }));
+        inn.fow = (Array.isArray(c.fallOfWickets) ? c.fallOfWickets : []).map((f, k) => ({
+          runs: count(f?.score), wickets: count(f?.wicket) ?? k + 1,
+          batsman: label(f?.ref) ?? "?", overs: /** @type {string} */ (typeof f?.over === "string" && f.over ? f.over : null),
+        }));
+        inn.striker = null; inn.nonStriker = null; inn.bowler = null;
+        const src = /** @type {Record<string, unknown>} */ (ev.source != null && typeof ev.source === "object" ? ev.source : {});
+        const u = c.unreconciled;
+        inn.summarised = {
+          import: typeof src.import === "string" ? src.import : null,
+          checkedBy: typeof src.checkedBy === "string" ? src.checkedBy : null,
+          confirmedBy: typeof src.confirmedBy === "string" ? src.confirmedBy : null,
+          unreconciled: u != null && typeof u === "object" && Number.isInteger(u.runs)
+            ? { runs: u.runs, note: String(u.note ?? "") } : null,
+        };
+        break;
+      }
+
       default: break; // unknown kinds are ignored, never fatal
     }
   };
 
   return { inn, apply };
+}
+
+/** @param {unknown} v  a whole number of nought or more */
+const isCount = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
+
+/** A scorebook card's howOut for a batter still in, and for one who retired hurt (summary.mjs). */
+const CARD_NOT_OUT = "not_out";
+const CARD_RETIRED_HURT = "retired_hurt";
+
+/**
+ * Legal balls in "overs.balls" as a scorebook writes it — "47.3" is 285, six
+ * to the over — or null for anything else: "47.6", "", a number. The one
+ * reading of an overs figure, shared with summary.mjs and, in SQL,
+ * scorebook_overs_balls() (db/63).
+ * @param {unknown} text
+ * @returns {number | null}
+ */
+export function ballsOfOvers(text) {
+  if (typeof text !== "string") return null;
+  const m = /^(\d{1,3})(?:\.([0-5]))?$/.exec(text.trim());
+  return m ? Number(m[1]) * 6 + Number(m[2] ?? 0) : null;
 }
 
 /**
@@ -980,7 +1098,9 @@ function voidedTargets(events) {
 /** What the fold settles once the events are in. Idempotent.
  *  @param {Innings} inn */
 function settleInnings(inn) {
-  computeMaidens(inn);
+  // A scorebook innings has no overs to count maidens in: its bowlers carry
+  // the book's figure, and a count of nothing would overwrite it with nought.
+  if (inn.summarised == null) computeMaidens(inn);
   // A seal that stood has already set both fields and wins: it is what the
   // scorer recorded. Without one — none written yet, or one refused — the
   // innings is still over when the laws say it is, and the reason is derivable

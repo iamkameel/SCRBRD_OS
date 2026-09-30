@@ -53,11 +53,14 @@ export const PARTS = [
   { part: "sheet", title: "Sheet", sub: "Who may be picked" },
 ];
 
-/** What the platform does per age band until a league says: db/08's bowling_directive. */
-const BAND_TODAY = { U13: { spell: 5, day: 10 }, U14: { spell: 6, day: 12 }, U15: { spell: 6, day: 12 }, U16: { spell: 7, day: 18 }, open: { spell: null, day: null } };
-
-/** The platform's own spell and day for a band, as the two halves a table shows. @param {string} band */
-export const bandDefault = (band) => /** @type {Record<string, { spell: number | null, day: number | null }>} */ (BAND_TODAY)[band] ?? { spell: null, day: null };
+/**
+ * The platform's own spell and day for a band, as the two halves a table shows.
+ * They arrive in the catalogue (platformDefault of bowling.limit: db/08's
+ * bowling_directive, read by the API), so this screen holds no copy of them.
+ * @param {{ platformDefault?: any }} entry @param {string} band
+ * @returns {{ spell: number | null, day: number | null }}
+ */
+export const bandDefault = (entry, band) => entry.platformDefault?.[band] ?? { spell: null, day: null };
 
 const ENUM_WORDS = {
   limited: "Limited overs", declaration: "Declaration", timed: "Timed",
@@ -72,18 +75,12 @@ const ENUM_WORDS = {
 export const labelOf = (key) => KEY_WORDS[key]?.label ?? key;
 
 /**
- * A date as the API sends it. A Postgres date reaches the browser as the
- * midnight of its day in whatever zone the server runs in ("2026-10-30T00:00:00.000Z"
- * on a UTC server), so twelve hours are added before the day is read: right
- * for a server anywhere from UTC-12 to UTC+12.
+ * A date as the API sends it: a plain "YYYY-MM-DD" (the API casts every date
+ * column in SQL), or nothing. Anything else is not a day.
  * @param {unknown} v @returns {string} "YYYY-MM-DD" or ""
  */
 export function dayOf(v) {
-  if (v == null || v === "") return "";
-  const s = String(v);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const t = Date.parse(s);
-  return Number.isNaN(t) ? "" : new Date(t + 12 * 3600e3).toISOString().slice(0, 10);
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
 }
 
 /** "15 Sep 2026". @param {unknown} v */
@@ -131,7 +128,7 @@ export const oversCell = (n) => (n == null ? "no limit" : `${n} ${n === 1 ? "ove
  */
 export function platformDefaultWords(entry, band = null) {
   if (entry.key === "bowling.limit") {
-    return band ? valueWords(entry, bandDefault(band)) : "No limit";
+    return band ? valueWords(entry, bandDefault(entry, band)) : "No limit";
   }
   if (entry.platformDefault != null) return valueWords(entry, entry.platformDefault);
   return KEY_WORDS[entry.key]?.byDefault ?? "nothing: not read yet";

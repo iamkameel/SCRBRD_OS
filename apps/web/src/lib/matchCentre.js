@@ -205,8 +205,12 @@ export function didNotBat(inn) {
  */
 export function extrasOf(inn) {
   const e = inn?.extras ?? {};
-  const parts = { NB: e.noBall ?? 0, WD: e.wide ?? 0, B: e.bye ?? 0, LB: e.legBye ?? 0, PEN: e.penalty ?? 0 };
-  return { total: Object.values(parts).reduce((a, b) => a + b, 0), parts };
+  // An innings from a paper scorebook (SCRBRD-120) records only the kinds the
+  // book gave: the rest are null and stay null, never nought (D12).
+  const none = inn?.summarised ? null : 0;
+  const parts = { NB: e.noBall ?? none, WD: e.wide ?? none, B: e.bye ?? none, LB: e.legBye ?? none, PEN: e.penalty ?? none };
+  const given = Object.values(parts).filter((v) => v !== null);
+  return { total: given.length ? given.reduce((a, b) => a + b, 0) : (inn?.summarised ? null : 0), parts };
 }
 
 /**

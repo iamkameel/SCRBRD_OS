@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { KZN_SCHOOLS } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D, inkOn, textOn, themed } from "../design/tokens.js";
-import { fitnessColor, humanDate } from "../lib/format.js";
+import { atLeast, bookNote, fitnessColor, humanDate, stat } from "../lib/format.js";
 import { signedIn } from "../lib/api.js";
 import { can, filterRecord, holdsCapability } from "../rbac/index.js";
 import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
@@ -243,14 +243,23 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     ["High Score",   p.careerTotals?.hs||"—"],
                     ["Fifties",      p.careerTotals?.fifties||0],
                     ["Hundreds",     p.careerTotals?.hundreds||0],
-                    ["Batting Avg",  p.avg],
-                    ["Strike Rate",  p.sr],
+                    ["Batting Avg",  stat(p.avg)],
+                    ["Strike Rate",  stat(p.sr)],
+                    // Live figures only (the demo rows carry none of these). A
+                    // count a scorebook did not record is a dash, never 0, and a
+                    // boundary count is "at least N" when an innings left it out.
+                    ...(p.live?[
+                      ["Balls Faced", stat(p.ballsFaced)],
+                      ["Fours",       atLeast(p.fours,p.inningsWithoutBoundaries>0)],
+                      ["Sixes",       atLeast(p.sixes,p.inningsWithoutBoundaries>0)],
+                    ]:[]),
                   ].map(([l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
                       <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
-                      <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{v}</span>
+                      <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:D.textPrimary}} data-testid={`career-${l.toLowerCase().replace(/ /g,"-")}`}>{v}</span>
                     </div>
                   ))}
+                  {bookNote(p)&&<div data-testid="career-book-note" style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px"}}>{bookNote(p)}</div>}
                 </Card>
                 {/* How he's out, by method (up48). Long-form rows filtered to
                     this player, client-side — the read is the same one shot
@@ -266,8 +275,12 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     {[
                       ["Career Wickets", p.careerTotals?.wktsTotal||"—"],
                       ["Season Wickets", p.wkts],
-                      ["Economy Rate",   p.econ],
+                      ["Economy Rate",   stat(p.econ)],
                       ["Balls Bowled",   p.careerTotals?.balls||"—"],
+                      ...(p.live?[
+                        ["Wides",    atLeast(p.wides,p.bowlingWithoutExtras>0)],
+                        ["No-balls", atLeast(p.noBalls,p.bowlingWithoutExtras>0)],
+                      ]:[]),
                       ["Maidens",        p.careerTotals?.maidens||0],
                       ["Bowl Arm",       `${p.bowlArm||"—"}-arm`],
                       ["Bowl Style",     p.bowlStyle==="F"?"Fast":p.bowlStyle==="S"?"Spin":"Medium"],

@@ -30,7 +30,7 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { newPadKeyPair, padPublicJwk, padProof, padAuthorization } from "@scrbrd/sync";
-import { inningsStart, batters, bowler, ball, BALL_TYPE, newEventId, fromRow, deriveMatch } from "@scrbrd/scoring";
+import { inningsStart, batters, bowler, ball, BALL_TYPE, newEventId, fromRow, deriveMatch, CONDITION } from "@scrbrd/scoring";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const PORT = port(8877);
@@ -107,6 +107,15 @@ try {
   ok("...with the reserved keys marked, and the age bands a limit is given for",
      cat.body?.keys?.find((k) => k.key === "over.max_balls")?.reserved === true && cat.body?.ageBands?.includes("U15")
      && !cat.body?.ageBands?.includes("unknown"));
+  const dflt = (k) => cat.body?.keys?.find((x) => x.key === k)?.platformDefault;
+  ok("a key's platformDefault is what applies when a league sets nothing: the enum and list defaults, and false",
+     dflt("result.tie_break") === "none" && JSON.stringify(dflt("table.order")) === '["points","wins","nrr"]' && dflt("eligibility.bona_fide_scholar") === false);
+  ok("...null only where the reader's own fallback applies (the fixture's format, no cap)", dflt("format.kind") === null && dflt("bowling.max_overs_per_bowler_innings") === null);
+  ok("...every key agrees with conditions.mjs's CONDITION, the fold's truth",
+     cat.body.keys.every((k) => k.key === "bowling.limit" || JSON.stringify(k.platformDefault) === JSON.stringify(CONDITION[k.key]?.platformDefault ?? null)));
+  ok("...and the bowling limit's is the directive, per band: U13 5/10, U16 7/18, open none",
+     JSON.stringify(dflt("bowling.limit")?.U13) === '{"spell":5,"day":10}' && JSON.stringify(dflt("bowling.limit")?.U16) === '{"spell":7,"day":18}'
+     && JSON.stringify(dflt("bowling.limit")?.open) === '{"spell":null,"day":null}' && dflt("bowling.limit")?.unknown === undefined);
   ok("signed out: not read", (await api("/api/playing-conditions/catalogue")).status >= 400);
   let refused = null;
   try { await q(`insert into playing_condition_key (key, part, value_type, readers) values ('quota.black_players', 'sheet', 'int', '{}')`); }
@@ -152,6 +161,21 @@ try {
   const afterPub = await seen(sarah);
   ok("...and Hilton, an entrant, now reads it", afterPub?.sets?.length === 1 && afterPub.sets[0].status === "published");
   ok("...the scorer still reads nothing", ((await seen(scorer))?.sets?.length ?? 0) === 0);
+  const named = (await seen(league))?.sets?.[0];
+  const leagueUser = (await q(`select id, name from app_user where email = 'league@example.invalid'`))[0];
+  ok("a version names who made and published it, beside the ids (uuids kept)",
+     named?.createdBy === leagueUser.id && named?.createdByName === leagueUser.name
+     && named?.publishedBy === leagueUser.id && named?.publishedByName === leagueUser.name
+     && named?.withdrawnBy === null && named?.withdrawnByName === null, JSON.stringify(named).slice(0, 300));
+  const DAY = /^\d{4}-\d{2}-\d{2}$/;
+  ok("dates are plain YYYY-MM-DD, not a timestamp: a version's day and a figure's source date",
+     named?.effectiveFrom === D1 && DAY.test(named.effectiveFrom)
+     && named.values.find((v) => v.key === "bowling.max_overs_per_bowler_innings")?.sourceDate === "2026-09-15"
+     && named.values.find((v) => v.key === "format.free_hit")?.sourceDate === null,
+     JSON.stringify([named?.effectiveFrom, named?.values?.map((v) => v.sourceDate)]));
+  ok("...and each figure who entered it", named?.values?.length > 0 && named.values.every((v) => v.enteredBy === leagueUser.id && v.enteredByName === leagueUser.name));
+  ok("...a reader who may not read that user gets the id and no name (app_user's own policy)",
+     afterPub.sets[0].createdBy === leagueUser.id && [null, leagueUser.name].includes(afterPub.sets[0].createdByName));
 
   // ── C ──────────────────────────────────────────────────────────
   group("C. Published is immutable; a change is a new version");
@@ -218,6 +242,8 @@ try {
   const pre = await api(`/api/competitions/${LEAGUE}/playing-conditions/preview?on=${dayOf(3)}`, { token: sarah });
   ok("the screen's pre-fill for a fixture on D1+1: version 1, T20 at 20 overs",
      pre.body?.set?.version === 1 && pre.body?.prefill?.format === "T20" && pre.body?.prefill?.overs === 20, JSON.stringify(pre.body));
+  ok("...its dates are plain YYYY-MM-DD, not a timestamp: the day asked, the version's day",
+     pre.body?.on === dayOf(3) && pre.body?.set?.effectiveFrom === D1, JSON.stringify(pre.body?.set));
   const preToday = await api(`/api/competitions/${LEAGUE}/playing-conditions/preview?on=${today}`, { token: sarah });
   ok("...and for a fixture today, no version yet: nothing to pre-fill from the set", preToday.body?.set === null);
 

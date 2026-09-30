@@ -19,13 +19,20 @@
  * each reason named in the route's comment. The conditions screen (a Sonnet
  * build over this) words them.
  *
+ * Dates are plain YYYY-MM-DD strings (to_char in the query), never a JS Date:
+ * node-postgres would turn a Postgres date into midnight in the server's zone.
+ *
+ * Names beside ids (createdByName and the like) are read as app_user's own
+ * policy allows the reader: a reader who may not read that user gets null, and
+ * the screen says "another administrator". No definer function widens it.
+ *
  * Reads are the tables' own policies (db/61): the catalogue to anyone signed
  * in; published and withdrawn versions to whoever may reach the competition
  * (competition.read), drafts to its conditions managers only; a match's
  * document and its departures to whoever may read the fixture.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { fixtureFormatFrom } from "@scrbrd/scoring";
+import { CONDITION, fixtureFormatFrom } from "@scrbrd/scoring";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
 
@@ -55,15 +62,16 @@ const day = (v, code) => {
 /** A version, as the screen reads it. @param {any} s @param {any[]} values */
 const setOut = (s, values) => ({
   id: s.id, competitionId: s.competition_id, version: s.version, title: s.title,
-  effectiveFrom: s.effective_from, status: s.status, supersedes: s.supersedes ?? null,
-  createdBy: s.created_by, createdAt: s.created_at,
-  publishedBy: s.published_by ?? null, publishedAt: s.published_at ?? null,
-  withdrawnBy: s.withdrawn_by ?? null, withdrawnAt: s.withdrawn_at ?? null, withdrawnNote: s.withdrawn_note ?? null,
+  effectiveFrom: s.effective_day, status: s.status, supersedes: s.supersedes ?? null,
+  createdBy: s.created_by, createdByName: s.created_by_name ?? null, createdAt: s.created_at,
+  publishedBy: s.published_by ?? null, publishedByName: s.published_by_name ?? null, publishedAt: s.published_at ?? null,
+  withdrawnBy: s.withdrawn_by ?? null, withdrawnByName: s.withdrawn_by_name ?? null,
+  withdrawnAt: s.withdrawn_at ?? null, withdrawnNote: s.withdrawn_note ?? null,
   values: values.filter((v) => v.set_id === s.id).map((v) => ({
     key: v.key, ageBand: v.age_band === "" ? null : v.age_band, value: v.value, status: v.status,
     sourceDocument: v.source_document ?? null, sourceClause: v.source_clause ?? null,
-    sourceDate: v.source_date ?? null, sourceNote: v.source_note ?? null,
-    enteredBy: v.entered_by, enteredAt: v.entered_at,
+    sourceDate: v.source_day ?? null, sourceNote: v.source_note ?? null,
+    enteredBy: v.entered_by, enteredByName: v.entered_by_name ?? null, enteredAt: v.entered_at,
   })),
 });
 
@@ -88,16 +96,27 @@ export function playingConditionsRoutes({ pool, secret }) {
 
   return {
     // GET /api/playing-conditions/catalogue
-    //   → { keys: [{ key, part, type, unit, values, byAgeBand, platformDefault, readers, reserved }] }
+    //   → { keys: [{ key, part, type, unit, values, byAgeBand, platformDefault, readers, reserved, clauseCode }],
+    //       ageBands }
+    //   platformDefault is what applies when a league sets nothing: the table's
+    //   column, else conditions.mjs's CONDITION (the mirror the fold reads; the
+    //   two are pinned equal), else null (the reader's own fallback, e.g. the
+    //   fixture's format). For bowling.limit it is { band: { spell, day } } from
+    //   bowling_directive, read in this request; open carries no limit (nulls).
     catalogue: handle(async (req) => runAsPrincipal(pool, secret, as(req), async (client) => {
       const { rows } = await client.query(
         `select key, part, value_type, unit, enum_values, by_age_band, platform_default, readers, clause_code
            from playing_condition_key order by sort_order, key`);
       const { rows: bands } = await client.query(
-        `select age_band from bowling_directive where age_band <> 'unknown' order by age_band`);
+        `select age_band, max_overs_per_spell, max_overs_per_day from bowling_directive where age_band <> 'unknown' order by age_band`);
+      /** @type {Record<string, {spell: number | null, day: number | null}>} */
+      const perBand = {};
+      for (const b of bands) perBand[b.age_band] = { spell: b.max_overs_per_spell ?? null, day: b.max_overs_per_day ?? null };
+      /** @param {any} r */
+      const defaultOf = (r) => r.key === "bowling.limit" ? perBand : (r.platform_default ?? CONDITION[r.key]?.platformDefault ?? null);
       return {
         keys: rows.map((r) => ({ key: r.key, part: r.part, type: r.value_type, unit: r.unit ?? null, values: r.enum_values ?? null,
-                                 byAgeBand: r.by_age_band, platformDefault: r.platform_default ?? null, readers: r.readers,
+                                 byAgeBand: r.by_age_band, platformDefault: defaultOf(r), readers: r.readers,
                                  reserved: (r.readers ?? []).length === 0, clauseCode: r.clause_code ?? null })),
         ageBands: bands.map((b) => b.age_band),
       };
@@ -128,9 +147,17 @@ export function playingConditionsRoutes({ pool, secret }) {
       const id = idOf(req);
       return runAsPrincipal(pool, secret, as(req), async (client) => {
         const { rows: sets } = await client.query(
-          `select * from condition_set where competition_id = $1 order by version desc`, [id]);
+          `select s.*, to_char(s.effective_from, 'YYYY-MM-DD') as effective_day, cu.name as created_by_name, pu.name as published_by_name, wu.name as withdrawn_by_name
+             from condition_set s
+             left join app_user cu on cu.id = s.created_by
+             left join app_user pu on pu.id = s.published_by
+             left join app_user wu on wu.id = s.withdrawn_by
+            where s.competition_id = $1 order by s.version desc`, [id]);
         const { rows: values } = sets.length
-          ? await client.query(`select * from condition_value where set_id = any($1::uuid[]) order by key, age_band`, [sets.map((s) => s.id)])
+          ? await client.query(
+              `select v.*, to_char(v.source_date, 'YYYY-MM-DD') as source_day, u.name as entered_by_name
+                 from condition_value v left join app_user u on u.id = v.entered_by
+                where v.set_id = any($1::uuid[]) order by v.key, v.age_band`, [sets.map((s) => s.id)])
           : { rows: [] };
         const { rows: m } = await client.query(
           `select competition_conditions_manager($1) as manage, condition_set_for($1, sa_today()) as today`, [id]);
@@ -151,7 +178,7 @@ export function playingConditionsRoutes({ pool, secret }) {
         const { rows: c } = await client.query(`select id, format from competition where id = $1`, [id]);
         if (!c.length) throw err("not_permitted", 403);
         const { rows: s } = await client.query(
-          `select s.id, s.version, s.title, s.effective_from
+          `select s.id, s.version, s.title, to_char(s.effective_from, 'YYYY-MM-DD') as effective_day
              from condition_set s where s.id = condition_set_for($1, coalesce($2::date, sa_today()))`, [id, on]);
         /** @type {Record<string, unknown>} */
         const values = {};
@@ -163,7 +190,7 @@ export function playingConditionsRoutes({ pool, secret }) {
           }
         }
         return { competitionId: id, on: on ?? null,
-                 set: s.length ? { id: s[0].id, version: s[0].version, title: s[0].title, effectiveFrom: s[0].effective_from } : null,
+                 set: s.length ? { id: s[0].id, version: s[0].version, title: s[0].title, effectiveFrom: s[0].effective_day } : null,
                  values, prefill: fixtureFormatFrom(values, c[0].format ?? null) };
       });
     }),

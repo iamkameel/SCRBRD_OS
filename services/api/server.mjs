@@ -78,6 +78,9 @@ import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
+import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
+import { objectStoreFromEnv } from "./io/object-store.mjs";
+import { PAGE_MAX_BYTES } from "./io/page-image.mjs";
 import { publicPages } from "./public/public-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 import { schemaRefusal } from "./schema-guard.mjs";
@@ -220,7 +223,8 @@ const publicSite = publicPages({
 const CORS = {
   "access-control-allow-origin": ORIGIN,
   "access-control-allow-headers": "content-type, authorization",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  // DELETE: a scorebook page taken off its import (SCRBRD-120).
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
   // The row count and the filename have to be readable by the page that asked
   // for the download, and a cross-origin response exposes no custom header
   // unless it says so.
@@ -311,15 +315,17 @@ const rawRes = (res) => ({
 /**
  * The body's exact bytes. A pad resume credential signs their hash, so the
  * bytes are kept rather than only the parse of them.
+ * A scorebook page's photo reads up to its own, larger cap (SCRBRD-120).
  * @param {IncomingMessage} req
+ * @param {number} [cap]  bytes; MAX_BODY for every JSON body
  * @returns {Promise<Buffer>}
  */
-async function readRaw(req) {
+async function readRaw(req, cap = MAX_BODY) {
   const chunks = [];
   let size = 0;
   for await (const c of req) {
     size += c.length;
-    if (size > MAX_BODY) throw Object.assign(new Error("payload_too_large"), { status: 413 });
+    if (size > cap) throw Object.assign(new Error("payload_too_large"), { status: 413 });
     chunks.push(c);
   }
   return Buffer.concat(chunks);
@@ -408,6 +414,13 @@ const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
 const publication = publicationRoutes({ pool, secret: SECRET });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
+// The scorebook importer (SCRBRD-120, db/63). Its photos go to the private
+// store (io/object-store.mjs): Supabase Storage when SUPABASE_URL and
+// SUPABASE_SERVICE_ROLE_KEY are set, a local directory in development, and
+// nothing at all in production without them (uploads answer 503).
+const pageStore = objectStoreFromEnv();
+const scorebook = scorebookRoutes({ pool, secret: SECRET, store: pageStore });
+const scorebookFiles = scorebookFileRoutes({ pool, secret: SECRET, store: pageStore });
 
 /**
  * Development sign-in.
@@ -682,6 +695,26 @@ const PLAYER_ROUTES = [
   [/^\/api\/condition-sets\/([^/]+)\/withdraw$/,                "POST", playing.withdraw],
   [/^\/api\/matches\/([^/]+)\/playing-conditions$/,             "GET",  playing.match],
   [/^\/api\/matches\/([^/]+)\/playing-conditions\/override$/,   "POST", playing.override],
+  // Importing a paper scorebook (SCRBRD-120, db/63): photos of the book, a
+  // card typed and ticked beside them, a second person's confirmation, and
+  // then three events per innings in the log. NOT tagged with the module,
+  // though it is one (off until granted, D13): every definer function behind
+  // these asks feature_enabled() for the fixture's own school, and the two
+  // reads ask it too — strictly stronger than this table's per-caller gate,
+  // which would refuse a director of sport who is also a parent at another
+  // school (the DRS reasoning below). The photos' own two routes and the
+  // purge are dispatched below the table, because a photo is not JSON
+  // (scorebook-api.mjs scorebookFileRoutes).
+  [/^\/api\/matches\/([^/]+)\/scorebook$/,          "POST", scorebook.open],
+  [/^\/api\/matches\/([^/]+)\/scorebook$/,          "GET",  scorebook.list],
+  [/^\/api\/scorebook\/([0-9a-f-]{36})$/,           "GET",  scorebook.get],
+  [/^\/api\/scorebook\/([0-9a-f-]{36})\/save$/,     "POST", scorebook.save],
+  [/^\/api\/scorebook\/([0-9a-f-]{36})\/submit$/,   "POST", scorebook.submit],
+  [/^\/api\/scorebook\/([0-9a-f-]{36})\/return$/,   "POST", scorebook.return],
+  [/^\/api\/scorebook\/([0-9a-f-]{36})\/confirm$/,  "POST", scorebook.confirm],
+  // Not gated: a school that switched the module off can still give up an
+  // import, and its photos go at once.
+  [/^\/api\/scorebook\/([0-9a-f-]{36})\/abandon$/,  "POST", scorebook.abandon],
   // Skills owns player_skill and its read; the write was untagged. Same
   // finding as /api/training above.
   [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record, "skills"],
@@ -932,6 +965,8 @@ const server = createServer(async (req, res) => {
       write: "mounted",
       handover: "mounted",
       public: PUBLIC_ON ? (publicSite.listening() ? "on" : "on_without_notifications") : "off",
+      // Where scorebook photos go (SCRBRD-120): supabase | local | unconfigured.
+      pages: pageStore.kind,
     });
   }
 
@@ -950,6 +985,30 @@ const server = createServer(async (req, res) => {
       // content-type and content-disposition and end with bytes. Handed the
       // shim they would throw on writeHead, which is how this was found.
       if (m) return bulk.template({ params: { id: m[1] } }, rawRes(res));
+    }
+
+    // A scorebook page's photo (SCRBRD-120): up, as its own bytes (never
+    // JSON, and larger than any JSON body), and down, proxied — no URL to a
+    // photo ever leaves this process; and off the import (DELETE), because
+    // the store's object goes with the row. The module is the definer functions'
+    // to ask, per school, as for the import's other routes; they decide who.
+    // The purge is the platform's (scorebook_import_purge_due() names nothing
+    // due to anybody else): photos go on the clock, switch or none.
+    {
+      const up = req.method === "POST" && /^\/api\/scorebook\/([0-9a-f-]{36})\/pages$/.exec(path);
+      const down = req.method === "GET" && /^\/api\/scorebook\/([0-9a-f-]{36})\/pages\/([1-9]\d?)$/.exec(path);
+      const gone = req.method === "DELETE" && /^\/api\/scorebook\/([0-9a-f-]{36})\/pages\/([1-9]\d?)$/.exec(path);
+      if (up) {
+        // No token, no 8 MB read: refuse before the body is taken.
+        if (!req.headers.authorization) return rawRes(res).status(401).json({ error: "missing_token" });
+        const bytes = await readRaw(req, PAGE_MAX_BYTES + 1);
+        return scorebookFiles.upload({ id: up[1], bytes, authorization: req.headers.authorization }, rawRes(res));
+      }
+      if (down) return scorebookFiles.read({ id: down[1], pageNo: Number(down[2]), authorization: req.headers.authorization }, rawRes(res));
+      if (gone) return scorebookFiles.remove({ id: gone[1], pageNo: Number(gone[2]), authorization: req.headers.authorization }, rawRes(res));
+      if (req.method === "POST" && path === "/api/scorebook/purge") {
+        return scorebookFiles.purge({ authorization: req.headers.authorization }, rawRes(res));
+      }
     }
 
     if (req.method === "GET" && path.startsWith("/api/export/")) {

@@ -65,6 +65,9 @@ function asMatch(r) {
     overs: r.overs,
     format: r.format,
     schoolId: r.school_id,
+    // The away side's school, where it is a school on SCRBRD: a fixture between
+    // two of one school's own teams is a scorebook's "both sides ours" (SCRBRD-120).
+    awaySchoolId: r.away_school_id ?? null,
     // Both sides named in full ("Hilton College 1XI"), and each side's short
     // code where this reader's read returns one (school.code) — the Match
     // Centre names a side in full where there is room and by code where not
@@ -949,22 +952,38 @@ function asDobGap(r) {
  * deliveries this reader may see, and a screen that shows a career average
  * should be able to say what it was computed over.
  */
-function asCareer(r) {
-  const runs = Number(r.runs), balls = Number(r.balls_faced);
+export function asCareer(r) {
+  const runs = Number(r.runs);
+  // A figure the scorebook did not record is NULL and stays null here
+  // (SCRBRD-120 D12): 0 is a fact, and a screen that divides by a null-as-zero
+  // overstates a strike rate. Only a player with no batting row reads 0.
+  const opt = (v) => (v == null ? null : Number(v));
+  const balls = opt(r.balls_faced);
   const outs = Number(r.dismissals);
   const conceded = Number(r.runs_conceded), bowled = Number(r.balls_bowled);
   const wkts = Number(r.wickets);
   const round2 = (n) => Math.round(n * 100) / 100;
+  const runsWithoutBalls = Number(r.runs_without_balls ?? 0);
   return {
     id: r.player_id,
     name: r.full_name,
     team: r.team_code,
     school: r.school_id,
     innings: Number(r.bat_matches),
-    runs, ballsFaced: balls, fours: Number(r.fours), sixes: Number(r.sixes),
+    runs, ballsFaced: balls, fours: opt(r.fours), sixes: opt(r.sixes),
+    // How partial the record is (player_unrecorded_figures, summed by the
+    // read): a boundary count is "at least" when an innings did not record one.
+    bookInnings: Number(r.book_innings ?? 0),
+    inningsWithoutBalls: Number(r.innings_without_balls ?? 0),
+    runsWithoutBalls,
+    inningsWithoutBoundaries: Number(r.innings_without_boundaries ?? 0),
+    bowlingWithoutExtras: Number(r.bowling_without_extras ?? 0),
+    wides: opt(r.wides), noBalls: opt(r.no_balls),
     dismissals: outs,
     avg: outs > 0 ? round2(runs / outs) : null,
-    sr: balls > 0 ? round2((runs * 100) / balls) : null,
+    // Over the innings whose balls are recorded: runs less the runs made in
+    // innings with no balls column. Null when no ball is recorded at all.
+    sr: balls > 0 ? round2(((runs - runsWithoutBalls) * 100) / balls) : null,
     wkts,
     ballsBowled: bowled, runsConceded: conceded,
     econ: bowled > 0 ? round2((conceded * 6) / bowled) : null,

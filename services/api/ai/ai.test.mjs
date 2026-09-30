@@ -113,6 +113,19 @@ const flat = (/** @type {unknown} */ params) => JSON.stringify(params);
   ok("a batter who has never been out has no average rather than one of zero",
      /SR 126\.8, no average \(never dismissed\)/.test(neverOut) && !/average 0/.test(neverOut), neverOut);
 
+  // A scorebook's innings (SCRBRD-120 D12): the read passes NULL for a figure
+  // the book did not record, and the line says so rather than "0 balls".
+  const booked = contextFrom({ players: [players[0]], matches: [], career: [{
+    ...career[0], runs: 96, balls_faced: 41, fours: 5, sixes: 3, runs_without_balls: 25, innings_without_boundaries: 1 }] }).context;
+  // (96 − 25) / 41 × 100 = 173.2; runs over balls would say 234.1.
+  ok("a strike rate is over the innings whose balls are recorded, and a boundary count is at least",
+     /96 runs off 41 balls, SR 173\.2,/.test(booked) && !/234\.1/.test(booked) && /at least 5x4 at least 3x6/.test(booked), booked);
+  const noBalls = contextFrom({ players: [players[0]], matches: [], career: [{
+    ...career[0], runs: 34, balls_faced: null, fours: null, sixes: null, runs_without_balls: 34, innings_without_boundaries: 1 }] }).context;
+  ok("a book innings with no balls column: an unrecorded number of balls, no strike rate, no boundaries, never 0",
+     /34 runs off an unrecorded number of balls, no strike rate \(balls not recorded\)/.test(noBalls)
+     && /boundaries not recorded/.test(noBalls) && !/off 0 balls|0x4/.test(noBalls), noBalls);
+
   // THE MASKING. A stats line naming a child is exactly the string that could
   // reach the provider in clear if it were built beside the roster instead of
   // inside it, so this asserts on what WOULD have been sent.

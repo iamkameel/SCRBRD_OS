@@ -136,6 +136,18 @@ export const MODULES = {
     capability: "user.read",
     reads: ["staff"],
   },
+  // SCRBRD-120: a match scored on paper, imported from photos of the book
+  // (D13). OFF until the platform grants it per school, as Kameel switches
+  // the pilot's schools on. Its routes (services/api/write/scorebook-api.mjs)
+  // are gated here and every function behind them asks again in the
+  // database (db/63). No destination yet: the upload, review and confirm
+  // screens come next and name it then. Owns no read resource — its reads
+  // are its own routes.
+  scorebook_import: {
+    kind: "module", label: "Scorebook import",
+    capability: "scoring.import.read",
+    reads: [],
+  },
 };
 
 /**

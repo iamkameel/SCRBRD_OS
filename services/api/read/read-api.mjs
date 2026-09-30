@@ -20,6 +20,32 @@ import {
 /** @import { Pool, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
 
+/**
+ * A career figure the scorebook did not record stays NULL (SCRBRD-120 D12,
+ * db/64): balls faced, fours, sixes, and a bowler's wides and no-balls are
+ * `sum()` without a coalesce in the career views, so NULL means "nothing
+ * behind this figure was recorded". Only a player with NO row in the view
+ * (he has not batted, or bowled) reads 0, which is a fact. `alias` is the
+ * left-joined view; `alias.player_id is null` says there was no row.
+ */
+const UNRECORDED_ZERO = (/** @type {string} */ alias, /** @type {string} */ col) =>
+  `case when ${alias}.player_id is null then 0 else ${alias}.${col} end as ${col},`;
+
+/**
+ * How partial a player's record is, from player_unrecorded_figures joined as
+ * `unrec` (summed over seasons for a lifetime read): the innings with no balls
+ * and the runs in them, so a strike rate can be taken over the innings whose
+ * balls are known; the innings with no fours or sixes, so a boundary count
+ * reads "at least"; the bowling rows with no wides or no-balls. `book_innings`
+ * (from `book`, over summary_batting_line) is how many of his batting innings
+ * came from a scorebook, for the screens' one-line note.
+ */
+const UNRECORDED_COLUMNS = `coalesce(unrec.innings_without_balls, 0)::int      as innings_without_balls,
+                  coalesce(unrec.runs_without_balls, 0)::int         as runs_without_balls,
+                  coalesce(unrec.innings_without_boundaries, 0)::int as innings_without_boundaries,
+                  coalesce(unrec.bowling_without_extras, 0)::int     as bowling_without_extras,
+                  coalesce(book.batting_innings, 0)::int             as book_innings,`;
+
 // The dismissals that are not the bowler's, as a SQL list, from the one set
 // the reducer reads — so a query cannot restate the law differently.
 const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
@@ -659,9 +685,16 @@ export const READ_QUERIES = {
                 left join player_dismissals d on d.player_id = c.player_id
                where c.player_id = (select u.player_id from app_user u
                                      where u.id = app_user_id()))         as my_batting_average,
+             -- Over the innings whose balls were recorded (SCRBRD-120 D12): an
+             -- innings imported from a scorebook that has no balls column adds
+             -- its runs to my_runs but not to this rate, which would else be
+             -- overstated. NULL when no ball is recorded at all.
              (select case when coalesce(c.balls_faced, 0) = 0 then null
-                          else round(100.0 * c.runs / c.balls_faced) end
+                          else round(100.0 * (c.runs - coalesce(uf.runs_without_balls, 0)) / c.balls_faced) end
                 from player_batting_career c
+                left join (select f.player_id, sum(f.runs_without_balls) as runs_without_balls
+                             from player_unrecorded_figures f group by f.player_id) uf
+                       on uf.player_id = c.player_id
                where c.player_id = (select u.player_id from app_user u
                                      where u.id = app_user_id()))         as my_strike_rate`,
   },
@@ -1481,7 +1514,15 @@ export const READ_QUERIES = {
    * named. The gate is passport() in db/08.
    */
   passport: {
-    text: `select family, label, value, on_date, source_school, recorded_by, confidence from passport($1::uuid)`,
+    // passport() (db/08, frozen) labels its career and milestone lines "the
+    // ball log". Since db/64 those lines also count innings imported from a
+    // scorebook (SCRBRD-120), so the source is said as "the match record" for
+    // every boy: true whichever mix he has, and it needs no second read of the
+    // ball log that a guardian's own scope might not let the caller make.
+    text: `select family, label, value, on_date, source_school,
+                  case when recorded_by = 'the ball log' then 'the match record' else recorded_by end as recorded_by,
+                  confidence
+             from passport($1::uuid)`,
     params: q => [req(q, "playerId")],
   },
   /**
@@ -2053,19 +2094,33 @@ export const READ_QUERIES = {
                   p.full_name, p.team_code, p.school_id,
                   coalesce(bat.matches, 0)               as bat_matches,
                   coalesce(bat.runs, 0)                  as runs,
-                  coalesce(bat.balls_faced, 0)           as balls_faced,
-                  coalesce(bat.fours, 0)                 as fours,
-                  coalesce(bat.sixes, 0)                 as sixes,
+                  ${UNRECORDED_ZERO("bat", "balls_faced")}
+                  ${UNRECORDED_ZERO("bat", "fours")}
+                  ${UNRECORDED_ZERO("bat", "sixes")}
                   coalesce(d.dismissals, 0)              as dismissals,
                   coalesce(bowl.matches, 0)              as bowl_matches,
                   coalesce(bowl.runs_conceded, 0)        as runs_conceded,
                   coalesce(bowl.legal_balls, 0)          as balls_bowled,
+                  ${UNRECORDED_ZERO("bowl", "wides")}
+                  ${UNRECORDED_ZERO("bowl", "no_balls")}
                   coalesce(bowl.wickets, 0)              as wickets,
+                  ${UNRECORDED_COLUMNS}
                   coalesce(f.form, '{}')                 as form
              from player p
              left join player_batting_career bat on bat.player_id = p.id
              left join player_dismissals      d   on d.player_id  = p.id
              left join player_bowling_career  bowl on bowl.player_id = p.id
+             left join (select z.player_id,
+                               sum(z.innings_without_balls)      as innings_without_balls,
+                               sum(z.runs_without_balls)         as runs_without_balls,
+                               sum(z.innings_without_boundaries) as innings_without_boundaries,
+                               sum(z.bowling_without_extras)     as bowling_without_extras
+                          from player_unrecorded_figures z group by z.player_id) unrec
+                    on unrec.player_id = p.id
+             left join (select b.player_id, count(*) as batting_innings
+                          from summary_batting_line b where b.player_id is not null
+                         group by b.player_id) book
+                    on book.player_id = p.id
              -- The form guide: the last eight innings, most recent first.
              -- Folded to one row per player BEFORE the join, because it is a
              -- different grain — one row per innings — and joining it raw
@@ -2132,13 +2187,16 @@ export const READ_QUERIES = {
                   season = (select school_season_of(now())) as current_season,
                   coalesce(bat.matches, 0)               as bat_matches,
                   coalesce(bat.runs, 0)                  as runs,
-                  coalesce(bat.balls_faced, 0)           as balls_faced,
-                  coalesce(bat.fours, 0)                 as fours,
-                  coalesce(bat.sixes, 0)                 as sixes,
+                  ${UNRECORDED_ZERO("bat", "balls_faced")}
+                  ${UNRECORDED_ZERO("bat", "fours")}
+                  ${UNRECORDED_ZERO("bat", "sixes")}
                   coalesce(dis.dismissals, 0)            as dismissals,
                   coalesce(bowl.matches, 0)              as bowl_matches,
                   coalesce(bowl.runs_conceded, 0)        as runs_conceded,
                   coalesce(bowl.legal_balls, 0)          as balls_bowled,
+                  ${UNRECORDED_ZERO("bowl", "wides")}
+                  ${UNRECORDED_ZERO("bowl", "no_balls")}
+                  ${UNRECORDED_COLUMNS}
                   coalesce(bowl.wickets, 0)              as wickets
              from (select * from player_batting_by_season    where $1::text is null or season = $1) bat
              -- USING merges the keys, so a player who only bowled in a season
@@ -2148,6 +2206,18 @@ export const READ_QUERIES = {
              full join (select * from player_bowling_by_season    where $1::text is null or season = $1) bowl
                using (player_id, season)
              join player p on p.id = player_id
+             -- Aliased apart from the merged key: a second bare season would
+             -- be ambiguous in the ON clause and in the select list above.
+             left join (select z.player_id as unrec_player, z.season as unrec_season,
+                               z.innings_without_balls, z.runs_without_balls,
+                               z.innings_without_boundaries, z.bowling_without_extras
+                          from player_unrecorded_figures z) unrec
+                    on unrec.unrec_player = p.id and unrec.unrec_season = season
+             left join (select b.player_id as book_player, school_season_of(b.played_at) as book_season,
+                               count(*) as batting_innings
+                          from summary_batting_line b where b.player_id is not null
+                         group by 1, 2) book
+                    on book.book_player = p.id and book.book_season = season
             order by season desc, p.full_name`,
     params: q => [q?.season || null],
   },
