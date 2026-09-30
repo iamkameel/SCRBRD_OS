@@ -153,6 +153,8 @@ try {
   ok("the same photo twice is refused by its hash", (await api(`/api/scorebook/${I}/pages`, { method: "POST", token: scorer, raw: jpg, type: "image/jpeg" })).body?.error === "duplicate_page");
   const svg = await api(`/api/scorebook/${I}/pages`, { method: "POST", token: scorer, raw: Buffer.from("<svg onload=alert(1)/>"), type: "image/png" });
   ok("anything but a JPEG or a PNG is refused, whatever it says it is (415)", svg.status === 415 && svg.body?.error === "not_an_image", JSON.stringify(svg.body));
+  { const anon = await api(`/api/scorebook/${I}/pages`, { method: "POST", raw: pngWithMetadata({ salt: 4 }), type: "image/png" });
+    ok("no token: refused before the photo is read", anon.status === 401 && anon.body?.error === "missing_token", JSON.stringify(anon.body)); }
   ok("a parent adds no page", (await api(`/api/scorebook/${I}/pages`, { method: "POST", token: parent, raw: pngWithMetadata({ salt: 3 }), type: "image/png" })).status === 403);
   const files = readdirSync(join(STORE, HIL, I));
   ok("two objects stored, under the school and the import", files.length === 2 && files.every((f) => /^[0-9a-f-]{36}\.(jpg|png)$/.test(f)), files.join());

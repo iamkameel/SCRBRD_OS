@@ -996,6 +996,8 @@ const server = createServer(async (req, res) => {
       const up = req.method === "POST" && /^\/api\/scorebook\/([0-9a-f-]{36})\/pages$/.exec(path);
       const down = req.method === "GET" && /^\/api\/scorebook\/([0-9a-f-]{36})\/pages\/([1-9]\d?)$/.exec(path);
       if (up) {
+        // No token, no 8 MB read: refuse before the body is taken.
+        if (!req.headers.authorization) return rawRes(res).status(401).json({ error: "missing_token" });
         const bytes = await readRaw(req, PAGE_MAX_BYTES + 1);
         return scorebookFiles.upload({ id: up[1], bytes, authorization: req.headers.authorization }, rawRes(res));
       }
