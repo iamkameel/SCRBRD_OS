@@ -35,6 +35,10 @@ const SUITES = [
   // pinned against db/99, the readers, the fold under a document, and no
   // document folding exactly as before.
   ["conditions", "packages/scoring/test/conditions.test.mjs"],
+  // An innings from a paper scorebook (SCRBRD-120, phase 1): the card's
+  // arithmetic over the PARITY list db/63 answers too, the fold of a summary
+  // (nothing zero-filled, no ball invented), the seal, and the three Laws.
+  ["summary", "packages/scoring/test/summary.test.mjs"],
   // A refusal's likely cause, in words beside REFUSAL_TEXT (SCRBRD-100): names
   // from the fold and never an id, no Law clause numbers.
   ["causes",   "packages/scoring/test/causes.test.mjs"],

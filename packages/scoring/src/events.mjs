@@ -64,6 +64,7 @@ export const KIND = /** @type {const} */ ({
   REVISION:      "revision",      // the umpires cut the overs and/or reset the target (rain)
   VOID:          "void",          // undoes an earlier event that has already synced
   BOWLER_SUSPENDED: "bowler_suspended", // the umpires suspended a bowler (Law 41, SCRBRD-094 item 2)
+  INNINGS_SUMMARY: "innings_summary",   // an innings known by its figures, from a paper scorebook (SCRBRD-120)
 });
 /** @typedef {typeof KIND[keyof typeof KIND]} Kind */
 
@@ -870,9 +871,57 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  */
 
 /**
+ * One innings of a paper scorebook, as a person checked it (SCRBRD-120,
+ * docs/design/SCRBRD-120_scorebook_importer.md §1.2). Every figure the book
+ * does not give is null, never nought (D12). A `ref` is a player id (the
+ * importing school's own boy, chosen by a person) or a typed key `t:<n>`
+ * whose spelling lives only in the event's `typed` map (D6). The shape and
+ * its arithmetic are summary.mjs's.
+ * @typedef {object} ScorebookCard
+ * @property {number} v                       1
+ * @property {number} innings                 0-based, as the log's
+ * @property {string} battingSide             "home" | "away"
+ * @property {ScorebookBatting[]} batting
+ * @property {string[]} didNotBat
+ * @property {ScorebookBowling[]} bowling
+ * @property {{byes: number | null, legByes: number | null, wides: number | null, noBalls: number | null, penalty: number | null}} extras
+ * @property {number} total
+ * @property {number} wickets
+ * @property {string} overs                   "47.3": whole overs and balls, six to the over
+ * @property {{wicket: number, score: number | null, ref: string | null, over: string | null}[]} fallOfWickets
+ * @property {string} endReason               one of CARD_END_REASON's keys (summary.mjs)
+ * @property {{runs: number, note: string} | null} unreconciled  the book's own difference, recorded (D4)
+ */
+/**
+ * @typedef {{order: number, ref: string, howOut: string, fielderRef: string | null, bowlerRef: string | null,
+ *   runs: number, balls: number | null, fours: number | null, sixes: number | null}} ScorebookBatting
+ */
+/**
+ * @typedef {{ref: string, overs: string, maidens: number | null, runs: number, wickets: number,
+ *   wides: number | null, noBalls: number | null}} ScorebookBowling
+ */
+
+/**
+ * Where an event came from when it was not scored on a pad: the import, who
+ * checked the cells and who confirmed them (SCRBRD-120 §2.2). On all three of
+ * an import's events.
+ * @typedef {{kind: "scorebook", import: string, checkedBy: string, confirmedBy: string}} EventSource
+ */
+
+/**
+ * An innings known by its figures, not its deliveries (SCRBRD-120, D2).
+ * Bracketed by an innings_start and an innings_end like any innings; there is
+ * no ball in it and the fold invents none.
+ * @typedef {EventBase & {kind: "innings_summary", card: ScorebookCard,
+ *   typed: Record<string, string>, source: EventSource | null}} InningsSummaryEvent
+ */
+/** @typedef {BaseInput & {card: ScorebookCard, typed?: Record<string, string> | null, source?: EventSource | null}} InningsSummaryInput */
+
+/**
  * Any event a constructor here can build.
  * @typedef {InningsStartEvent | BattersEvent | BowlerEvent | BallEvent | PenaltyEvent
- *   | RetireEvent | VoidEvent | RevisionEvent | InningsEndEvent | BowlerSuspendedEvent} ScoringEvent
+ *   | RetireEvent | VoidEvent | RevisionEvent | InningsEndEvent | BowlerSuspendedEvent
+ *   | InningsSummaryEvent} ScoringEvent
  */
 
 /**
@@ -895,7 +944,8 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *
  * @typedef {Loose<InningsStartEvent> | Loose<BattersEvent> | Loose<BowlerEvent>
  *   | Loose<BallEvent> | Loose<PenaltyEvent> | Loose<RetireEvent> | Loose<VoidEvent>
- *   | Loose<RevisionEvent> | Loose<InningsEndEvent> | Loose<BowlerSuspendedEvent>} LogEvent
+ *   | Loose<RevisionEvent> | Loose<InningsEndEvent> | Loose<BowlerSuspendedEvent>
+ *   | Loose<InningsSummaryEvent>} LogEvent
  */
 
 // ── Constructors ─────────────────────────────────────────
@@ -1570,6 +1620,53 @@ export const inningsEnd = (o) => ({
     ? { runs: o.confirmed.runs ?? null, wickets: o.confirmed.wickets ?? null, balls: o.confirmed.balls ?? null }
     : null,
 });
+
+/**
+ * An innings from a paper scorebook (SCRBRD-120): its card, the spellings of
+ * the names typed into it, and where it came from. The one place in
+ * JavaScript the event's shape is made; scorebook_import_commit() (db/63)
+ * writes the same three payload keys, and tools/smoke-scorebook.mjs compares
+ * the row it wrote with this.
+ *
+ * `typed` keeps only the keys this card names, so a spelling from another
+ * innings' card never rides along. The event is never public as it stands:
+ * public_match_log() (db/63) serves the card alone, and the API pseudonymises
+ * every ref in it (services/api/public/redact.mjs).
+ *
+ * @param {InningsSummaryInput} o
+ * @returns {InningsSummaryEvent}
+ */
+export const inningsSummary = (o) => {
+  /** @type {Record<string, string>} */
+  const typed = {};
+  const named = cardRefs(o.card);
+  for (const [k, v] of Object.entries(o.typed ?? {})) if (named.has(k) && typeof v === "string") typed[k] = v;
+  return {
+    ...base(KIND.INNINGS_SUMMARY, { ...o, innings: o.innings ?? o.card?.innings ?? 0 }),
+    card: o.card,
+    typed,
+    source: o.source ?? null,
+  };
+};
+
+/**
+ * Every ref a card names: its batters, the bowler and fielder of each
+ * dismissal, those who did not bat, its bowlers and its fall of wickets.
+ * @param {unknown} card  a ScorebookCard, or whatever a client sent as one
+ * @returns {Set<string>}
+ */
+export function cardRefs(card) {
+  /** @type {Set<string>} */
+  const out = new Set();
+  const c = /** @type {Record<string, any>} */ (card != null && typeof card === "object" ? card : {});
+  const list = (/** @type {unknown} */ v) => (Array.isArray(v) ? v : []);
+  const add = (/** @type {unknown} */ r) => { if (typeof r === "string" && r) out.add(r); };
+  for (const b of list(c.batting)) { add(b?.ref); add(b?.bowlerRef); add(b?.fielderRef); }
+  for (const r of list(c.didNotBat)) add(r);
+  for (const b of list(c.bowling)) add(b?.ref);
+  for (const f of list(c.fallOfWickets)) add(f?.ref);
+  return out;
+}
 
 /** The three endings the laws derive from a ball log, and so the three a seal
  *  may not simply assert. `declared` and `abandoned` are not in here: nothing in

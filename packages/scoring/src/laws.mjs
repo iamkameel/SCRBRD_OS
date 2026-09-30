@@ -112,6 +112,11 @@ export const REFUSAL = Object.freeze({
   VOID_OF_VOID:           "void_of_void",
   VOID_FOUNDATION:        "void_foundation",        // innings_start is never undone
   VOID_NOT_LATEST:        "void_not_latest",        // undo is last-in, first-out
+  // An innings from a paper scorebook (SCRBRD-120 §2.3, D3): an innings is
+  // scored live or imported, never both, and summarised once.
+  LIVE_INNINGS:           "live_innings",           // a summary for an innings the pad has play in
+  SUMMARISED_INNINGS:     "summarised_innings",     // play on the pad in an innings a book summarised
+  ALREADY_SUMMARISED:     "already_summarised",     // a second summary of one innings
 });
 /** @typedef {typeof REFUSAL[keyof typeof REFUSAL]} Refusal */
 
@@ -162,6 +167,9 @@ export const REFUSAL_TEXT = Object.freeze({
   void_of_void: "an undo cannot itself be undone — record the event again",
   void_foundation: "the start of an innings cannot be undone",
   void_not_latest: "only the latest event can be undone; older ones need an amendment",
+  live_innings: "this innings was scored live; a book cannot replace it",
+  summarised_innings: "this innings was recorded from the scorebook; it cannot be scored on the pad as well",
+  already_summarised: "this innings has already been recorded from the scorebook — an amendment voids that record first",
   // The idempotency conflict is not a Law, but it is held the same way.
   idempotency_conflict: "a different event was already recorded under this event's id",
   // Nor are these: a value the record has no place for (SCRBRD-077,
@@ -182,7 +190,12 @@ export const REFUSAL_TEXT = Object.freeze({
 
 /** Events that happen at the crease and so need the innings to be in play.
  *  @type {ReadonlySet<unknown>}  asked of any event's kind, or of none */
-const PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.RETIRE, KIND.INNINGS_END, KIND.BOWLER_SUSPENDED]);
+const PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.RETIRE, KIND.INNINGS_END, KIND.BOWLER_SUSPENDED,
+                      KIND.INNINGS_SUMMARY]);
+
+/** Play on the pad: the kinds an innings from a scorebook takes none of (SCRBRD-120).
+ *  @type {ReadonlySet<unknown>} */
+const LIVE_PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.PENALTY, KIND.RETIRE, KIND.BOWLER_SUSPENDED]);
 
 /**
  * Why this event may not be added to this match, or null when it may.
@@ -206,6 +219,14 @@ export function lawsRefusal(match, ev) {
   const edition = lawsEdition(match);
 
   if (ev?.kind === KIND.VOID) return voidRefusal(match, ev);
+
+  // An innings recorded from a paper scorebook takes nothing from the pad
+  // (SCRBRD-120, D3): not a ball, a batter, a bowler, a penalty, a
+  // retirement or a suspension (the design's list), and not a new
+  // innings_start or a revision either, which would re-open or re-limit the
+  // innings its seal was checked against. The correction is an amendment
+  // voiding the summary.
+  if (inn?.summarised != null && SUMMARISED_REFUSES.has(ev?.kind)) return REFUSAL.SUMMARISED_INNINGS;
 
   if (PLAY.has(ev?.kind)) {
     // Innings are played one after another. A ball, a new batter, a bowler or
@@ -265,9 +286,47 @@ export function lawsRefusal(match, ev) {
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : null;
     case KIND.BOWLER_SUSPENDED:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : suspensionRefusal(innings, inn, i, ev, edition);
+    case KIND.INNINGS_SUMMARY:
+      return summaryLawRefusal(innings, inn, i, match?.events?.[i]);
     default:
       return null;
   }
+}
+
+/** @type {ReadonlySet<unknown>} */
+const SUMMARISED_REFUSES = new Set([...LIVE_PLAY, KIND.INNINGS_START, KIND.REVISION]);
+
+/**
+ * An innings from a paper scorebook (SCRBRD-120 §2.3, §2.6).
+ *
+ *   - Once: a second summary of an innings is refused while the first still
+ *     counts. An approved amendment voids the first (it drops out of the
+ *     fold, and of ball_event_live), and then a new import is allowed.
+ *   - Never over play: an innings with a delivery, or a batters, bowler,
+ *     penalty, retirement or suspension that still counts, was scored live,
+ *     and a book cannot replace it (D3). An innings_start alone is not play —
+ *     the pad opens both innings before the first ball — and neither is a
+ *     void or a voided event.
+ *   - In its place: opened by an innings_start (the commit writes one just
+ *     before), after the innings before it has ended. "No play once a later
+ *     innings has a delivery" is PLAY's rule above.
+ *
+ * @param {(Innings | null | undefined)[]} innings
+ * @param {Innings | null} inn  innings[i]
+ * @param {number} i
+ * @param {LogEvent[] | undefined} log  this innings' own log, when the caller has it
+ * @returns {Refusal | null}
+ */
+function summaryLawRefusal(innings, inn, i, log) {
+  if (inn?.summarised != null) return REFUSAL.ALREADY_SUMMARISED;
+  const events = log ?? [];
+  const voided = voidedIds(events);
+  const played = (inn?.ballLog?.length ?? 0) > 0
+    || events.some((e) => LIVE_PLAY.has(e.kind) && !(e.id != null && voided.has(e.id)));
+  if (played) return REFUSAL.LIVE_INNINGS;
+  if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
+  if (i > 0 && !innings[i - 1]?.complete) return REFUSAL.PREVIOUS_INNINGS_OPEN;
+  return null;
 }
 
 /**
@@ -685,7 +744,11 @@ function bowledLastOver(inn, bowlerId) {
  * @param {number} i
  */
 function laterPlay(innings, i) {
-  for (let j = i + 1; j < innings.length; j++) if ((innings[j]?.ballLog?.length ?? 0) > 0) return true;
+  // A later innings recorded from a scorebook (SCRBRD-120) has no deliveries
+  // in its log, and was played all the same.
+  for (let j = i + 1; j < innings.length; j++) {
+    if ((innings[j]?.ballLog?.length ?? 0) > 0 || innings[j]?.summarised != null) return true;
+  }
   return false;
 }
 
