@@ -3,7 +3,7 @@
 **Status:** for Kameel's review, 2026-09-30. Nothing here is built. Design within Kameel's decisions of 2026-09-30: the rain rule is a playing condition (the MCC Laws have none); the DLS Standard Edition resource table is entered only from an official source Kameel supplies, with permission confirmed, never from memory; the Professional Edition is out of scope; **the umpires' announced figure is the record** — SCRBRD calculates and shows, the scorer records what the umpires announce, and a difference is kept and shown.
 **Reader:** Kameel first; then Opus, who builds §2–§6 in the phases of §7; then Sonnet for the screens named there.
 **Fits:** `SCRBRD-114_phase3_results_super_over.md` (D1–D17 decided). This design changes two of its rules by a clause each (§5: an abandoned chase with an announced par; NRR's deemed first-innings figures) and slots after 3a as phases R1–R3 (§7).
-**Sources:** the DLS Standard Edition method as the ICC's playing conditions describe it, cited from memory as to *shape* only; **no resource-table value and no G50 value appears in this document, in code, in tests or in a migration.** Formulas use the symbolic `R(b, w)`. Everything school-specific is marked **A** (assumption) and listed in §8.
+**Sources:** the DLS Standard Edition method as the ICC's playing conditions describe it, cited from memory as to *shape* only; **no resource-table value appears in this document, in code, in tests or in a migration, and no G50 value in code, tests or a migration** (§8 records the source's G50 figures and Kameel's choice for schools). Formulas use the symbolic `R(b, w)`. Everything school-specific is marked **A** (assumption) and listed in §8.
 
 ---
 
