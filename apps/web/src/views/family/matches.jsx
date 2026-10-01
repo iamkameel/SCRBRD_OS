@@ -20,6 +20,8 @@ import { MatchView } from "../matchcentre/MatchView.jsx";
 import { Icon } from "../../ui/icons.jsx";
 import { AvailabilityBlock, Back, BusCard, Card, Line, OpenRow, StateChip, TeamSheetLine, Title, WeatherLine, whenOf } from "./parts.jsx";
 import { useFold } from "./useFold.js";
+// SCRBRD-124 (db/70): lifts to this fixture, where a family or a pupil asks for a seat.
+import { FixtureLifts } from "../lifts.jsx";
 
 const now = () => Date.now();
 
@@ -130,6 +132,7 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
         <WeatherLine match={match} role={role}/>
       </header>
       <BusCard match={match} role={role}/>
+      <FixtureLifts match={match}/>
       <Card label={self ? "You" : name} testid="fixture-availability">
         <AvailabilityBlock match={match} child={child} role={role} self={self}/>
       </Card>

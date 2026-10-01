@@ -129,9 +129,21 @@ async function settingsTab(page, id) {
   await page.waitForTimeout(1500);
   return true;
 }
-/** The lifts block on the Squad screen, on this walk's fixture. */
+/**
+ * The lifts block on this walk's fixture. Staff open it on the Squad screen; a
+ * parent's or a pupil's app has no Squad (step 4), so they open the fixture
+ * from Matches and the block is on it (FixtureLifts).
+ */
+async function toFixture(page, matchId) {
+  if (await go(page, "squad")) return true;
+  if (!(await go(page, "fixtures")) && !(await go(page, "mymatches"))) return false;
+  const row = tid(page, `fixture-row-${matchId}`).first();
+  try { await row.waitFor({ timeout: 6000 }); await row.click({ timeout: 6000 }); } catch { return false; }
+  await page.waitForTimeout(1500);
+  return true;
+}
 async function liftsOn(page, matchId) {
-  if (!(await go(page, "squad"))) return false;
+  if (!(await toFixture(page, matchId))) return false;
   const panel = tid(page, "lifts-panel");
   try { await panel.waitFor({ timeout: 6000 }); } catch { return false; }
   const sel = panel.locator("select").first();
@@ -266,13 +278,13 @@ try {
   ok("...and his Squad screen has no lifts block", await tid(co.page, "lifts-panel").count() === 0);
 
   // ── 6b. A pupil of eighteen still at school (Kameel, 2026-10-01) ──
-  group("A pupil of eighteen still at school asks for himself on Squad");
+  group("A pupil of eighteen still at school asks for himself on his fixture");
   const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";
   const [{ born: pillayBorn }] = await q(`select born::text from player where id = $1`, [PILLAY]);
   await q(`update player set born = (current_date - interval '18 years' - interval '30 days')::date where id = $1`, [PILLAY]);
   const boy = await open(); all.push(boy);
   ok("R Pillay, put at eighteen, signs in", await signIn(boy.page, "pillay@example.invalid"));
-  await go(boy.page, "squad");
+  await toFixture(boy.page, m.id);
   const self = tid(boy.page, "lifts-self");
   try { await self.waitFor({ timeout: 6000 }); } catch { /* counted below */ }
   const selfText = await self.innerText().catch(() => "");
@@ -296,18 +308,18 @@ try {
   ok("...and withdraws it", (await q(`select state from lift_seat where offer_id = $1 and player_id = $2`, [out?.id, PILLAY]))[0]?.state === "withdrawn");
   await q(`update player set born = $2::date where id = $1`, [PILLAY, pillayBorn]);
   await go(boy.page, "settings");
-  await go(boy.page, "squad");
+  await toFixture(boy.page, m.id);
   await boy.page.waitForTimeout(1500);
-  ok("at sixteen again, his Squad screen has no lifts block",
+  ok("at sixteen again, his fixture has no lifts block",
      await tid(boy.page, "lifts-self").count() === 0 && await tid(boy.page, "lifts-panel").count() === 0);
 
   // ── 7. The platform takes the module back ─────────────────────────
   group("With the module taken back, no family sees a lifts block");
   await grant(false);
   await go(fam.page, "settings");
-  await go(fam.page, "squad");
+  await toFixture(fam.page, m.id);
   await fam.page.waitForTimeout(1500);
-  ok("Bekker's Squad screen has no lifts block", await tid(fam.page, "lifts-panel").count() === 0);
+  ok("Bekker's fixture has no lifts block", await tid(fam.page, "lifts-panel").count() === 0);
 
   for (const [who, c] of [["principal", head], ["driver", drv], ["family", fam], ["office", off], ["coach", co], ["pupil", boy]]) {
     ok(`the ${who}'s session raised no page errors`, c.errors.length === 0, c.errors.slice(0, 2).join(" · "));

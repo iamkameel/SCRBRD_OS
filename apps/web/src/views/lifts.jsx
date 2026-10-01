@@ -218,6 +218,23 @@ export function LiftsPanel({ role, team }) {
     familySchool={family[0]?.id ?? null} office={office.length > 0}/>;
 }
 
+/**
+ * Lifts on ONE fixture, for the family and pupil apps (step 4 P3, S3): a
+ * parent's or a pupil's menu has no Squad screen, so the fixture they open is
+ * where lifts are asked for. The same blocks as LiftsPanel, for this fixture
+ * only; the server decides what is listed (empty for anybody it is not for).
+ * @param {{ match: any }} props
+ */
+export function FixtureLifts({ match }) {
+  const family = schoolsWhere("transport.lift.arrange");
+  const pupil = !family.length && (profile()?.assignments ?? []).some((a) => roleGrants(a.role, "medical.details.read"));
+  if (!match?.id || match.status !== "upcoming") return null;
+  if (pupil) return <SelfLifts upcoming={[match]}/>;
+  if (!family.length) return null;
+  return <LiftsForFixture key={match.id} match={match} upcoming={[match]} onPick={() => {}}
+    familySchool={family[0]?.id ?? null} office={false}/>;
+}
+
 /** One act, then reload; a refusal said beside the thing it refused. */
 function useAct(reload) {
   const [said, setSaid] = useState({ at: null, text: "" });
