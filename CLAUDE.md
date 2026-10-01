@@ -29,7 +29,9 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   how photos of children's names are kept) and parent lift clubs (added
   2026-09-30, SCRBRD-124: parents driving other families' children to
   fixtures; consent per child and per lift, who may drive, what is shared,
-  handovers, and the route to the DSO). A new problem joins this list
+  handovers, and the route to the DSO) and the immersive Match Centre and ground
+  display (added 2026-10-01, SCRBRD-133: the pavilion screen, its sign-in, the
+  par line, motion, moment cards and the over strip). A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write

@@ -3944,6 +3944,45 @@ SCRBRD-114 phase 3 (db/69–71).
 - **Invitations write no notification** (`competition_entrant_invite`): the organiser cannot write a notice into
   another school, so it needs a definer function (a migration, Opus), as db/65's availability notices are written.
   With it: the "checked" ticks on a league's defaults, kept in the browser today (`saveTicks`), stored on the set.
+
+### SCRBRD-132 — Prototype leftovers: invented data and dead controls (2026-10-01)
+
+The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/PROTOTYPE_LEFTOVERS.md`.
+
+- **Wave A (Sonnet, screens):** in progress. Invented audit entries come down; ground tasks are read from duties; the Equipment copy is removed in favour of the kit register; real school names; the Skills axis is 1–20; Management tabs follow capabilities; Squad availability and profile edits; dead injury buttons hidden; Fields drawing fixed. Management users show all roles, with Add role.
+- **Wave B (Opus, db/77+):**
+  - End a role (in progress, db/77).
+  - The real audit log, under `audit.read`: names masked, reads logged.
+  - Injury routes: medical staff and coaches log; medical staff update, clear and refer.
+  - A season-per-player read.
+  - League invitation notices.
+- **Wave C:** suspend an account, with safeguarding phase 2; the Rulebook summary checked against the 4th Edition.
+
+### SCRBRD-133 — The immersive Match Centre and the ground display (2026-10-01)
+
+Kameel: the app should be "dynamic, data-rich, informative, immersive, interesting and visually stimulating". The build order is confirmed. Fable designs first, in `docs/design/SCRBRD-133_immersive_match_centre.md`; Fable's list gained this topic with Kameel's say.
+
+1. **Ground display mode:** the pavilion screen.
+2. **Par and pressure:** the par line and pressure meter, plus moving worm and runs-per-over charts.
+3. **Moment cards and the over story strip.**
+
+The full proposal is in the doc "SCRBRD: Making It Come Alive".
+
+### SCRBRD-134 — Player pages worth opening (2026-10-01)
+
+- **Form guide:** the last ten innings.
+- **Scoring and dismissals:** scoring zones and dismissal types by phase (later also by bowling end, and against pace or spin).
+- **Development curve:** assessments over seasons.
+- **Career timeline.**
+
+This needs a season-per-player read, shared with SCRBRD-132 Wave B.
+
+### SCRBRD-135 — Season Wrapped and share cards (2026-10-01)
+
+- **Wrapped:** a recap per team and per boy.
+- **Who sees a boy's Wrapped (Kameel):** his family, his coaches and school staff.
+- **Sharing:** he may share it with friends and family. How a share works (a link, its expiry, a parent's say while he is under 18) is settled in its design.
+- **Share cards:** for the school's social media, under PUBLIC_DATA (consent, a monogram, never a photo).
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
 2026-09-30)
