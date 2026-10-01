@@ -93,6 +93,18 @@ const pool = new pg.Pool({ connectionString: DB });
 const dbq = async (text, params) => (await pool.query(text, params)).rows;
 /** The server's rows for this match, in order, as events. */
 const serverEvents = async () => (await dbq(`select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [MATCH])).map(fromRow);
+/**
+ * The server's log once `until` holds, or after `ms` as it stands: the pad
+ * sends from its outbox on its own clock, and a fixed wait lost the race on a
+ * loaded CI runner (the revision arrived, its resumption not yet). The
+ * assertion after it is unchanged; this only stops reading too early.
+ * @param {(events: any[]) => boolean} until
+ */
+const serverWhen = async (until, ms = 15000) => {
+  let ev = await serverEvents();
+  for (let t = 0; t < ms && !until(ev); t += 300) { await page.waitForTimeout(300); ev = await serverEvents(); }
+  return ev;
+};
 
 let coachToken = null;
 /** The result through the API, as the 1XI coach reads it. */
@@ -329,7 +341,7 @@ try {
   ok("...and offers Resume and End innings (rain)", await has("rain-resume") && await has("rain-end"));
   await keep("rain-banner");
   ok("the ball keys are off", (await tid("pad-keys").first().evaluate((el) => /** @type {HTMLFieldSetElement} */ (el).disabled)) === true);
-  const stop = (await serverEvents()).at(-1);
+  const stop = (await serverWhen((ev) => ev.at(-1)?.kind === "play_stopped")).at(-1);
   ok("the server holds the stop: its reason and the note", stop?.kind === "play_stopped" && /** @type {any} */ (stop).reason === "rain"
      && /** @type {any} */ (stop).note === "Covers on at the pavilion end", JSON.stringify(stop));
   await shoot("stopped");
@@ -347,7 +359,7 @@ try {
   ok("...no DLS proposal in a first innings: the umpires announce no target there", !(await has("rain-proposal")));
   await tap("resume-confirm");
   await settle();
-  const tail = (await serverEvents()).slice(-2);
+  const tail = (await serverWhen((ev) => ev.at(-1)?.kind === "play_resumed")).slice(-2);
   ok("the server holds the revision then the resumption", tail[0]?.kind === "revision" && /** @type {any} */ (tail[0]).overs === 16
      && tail[1]?.kind === "play_resumed", JSON.stringify(tail.map((e) => e.kind)));
   ok("the banner is gone and the keys are on", !(await has("rain-banner"))
@@ -368,7 +380,7 @@ try {
   await keep("rain-end-sheet");
   await tap("rain-end-confirm");
   await settle();
-  const seal0 = (await serverEvents()).filter((e) => e.kind === "innings_end" && (e.innings ?? 0) === 0).at(-1);
+  const seal0 = (await serverWhen((ev) => ev.some((e) => e.kind === "innings_end" && (e.innings ?? 0) === 0))).filter((e) => e.kind === "innings_end" && (e.innings ?? 0) === 0).at(-1);
   const c0 = /** @type {any} */ (seal0)?.confirmed;
   ok("the server holds the seal: abandoned, with the figures read back", /** @type {any} */ (seal0)?.reason === "abandoned"
      && c0?.runs === 12 && c0?.wickets === 0 && c0?.balls === 12, JSON.stringify(seal0));
@@ -392,7 +404,7 @@ try {
   await shoot("innings-break");
   await click(/Start 2nd Innings/, 4000);
   await settle();
-  const start1 = (await serverEvents()).filter((e) => e.kind === "innings_start" && e.innings === 1).at(-1);
+  const start1 = (await serverWhen((ev) => ev.some((e) => e.kind === "innings_start" && e.innings === 1))).filter((e) => e.kind === "innings_start" && e.innings === 1).at(-1);
   ok("the chase's innings_start carries the umpires' overs and target", /** @type {any} */ (start1)?.overs === 2
      && /** @type {any} */ (start1)?.target === 30, JSON.stringify(start1));
 
@@ -402,7 +414,7 @@ try {
   await basicPad();
   await singles(5);
   await settle();
-  ok("five singles in the chase reach the server", (await serverEvents()).filter((e) => e.kind === "ball" && e.innings === 1).length === 5);
+  ok("five singles in the chase reach the server", (await serverWhen((ev) => ev.filter((e) => e.kind === "ball" && e.innings === 1).length >= 5)).filter((e) => e.kind === "ball" && e.innings === 1).length === 5);
   await openMenu("pad-play-stopped");
   await tap("stop-confirm");
   await settle();
