@@ -77,7 +77,7 @@ function InningsBreakCard({ match, innings, overs }) {
 // `quietMoments`: the page has a live region of its own (the public page's),
 // so the moment and the over summary are drawn but not announced a second time.
 export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
-                             venueLine = null }) {
+                             venueLine = null, rainLine = null }) {
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
@@ -105,6 +105,16 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
         <p data-testid="mc-venue-par" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>
           {venueLine.words}{venueLine.label ? <span style={{ fontSize: "13px" }}> ({venueLine.label})</span> : null}
         </p>
+      )}
+      {/* SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it. */}
+      {rainLine && (
+        <Panel testid="mc-rain">
+          <CardHead icon="cloud-rain">Rain</CardHead>
+          <p data-testid="mc-rain-calculated" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{rainLine.words}</p>
+          {rainLine.difference && (
+            <p data-testid="mc-rain-difference" style={{ ...T.role.body, color: T.content.primary, margin: `${T.space.xs} 0 0` }}>{rainLine.difference}</p>
+          )}
+        </Panel>
       )}
       <OverSummary item={overSummary} announce={!quietMoments}/>
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}

@@ -153,6 +153,34 @@ function useVenueLine(match, seen) {
 }
 // ── end SCRBRD-130 R3 ──
 
+// ── SCRBRD-130 R2: the rain panel's calculated line (db/75, dls.mjs) ──
+/**
+ * The server's DLS proposal beside the umpires' figure (GET /api/matches/:id/dls),
+ * asked only once rain has touched the log (a stop, or a revision): "SCRBRD
+ * calculates 133 (DLS Standard, table v1)" and "umpires 134 · calculated 133"
+ * when they differ. Information, never a flag (D1). Nothing without a table:
+ * the revision banner already carries the umpires' figures (§4.5).
+ * @param {any} match  @param {any[]} innings  @param {unknown} seen
+ * @returns {{words: string, difference: string | null} | null}
+ */
+function useRainLine(match, innings, seen) {
+  const rained = innings.some((i) => (i?.interruptions?.length ?? 0) > 0 || i?.revised != null || i?.par != null);
+  const [line, setLine] = useState(/** @type {{words: string, difference: string | null} | null} */ (null));
+  useEffect(() => {
+    if (!signedIn() || !match.live || !rained) { setLine(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${match.id}/dls`)
+      .then((d) => {
+        if (cancelled) return;
+        setLine(d?.status === "ok" && d.words ? { words: d.words, difference: d.difference ? d.differenceWords : null } : null);
+      })
+      .catch(() => { if (!cancelled) setLine(null); });
+    return () => { cancelled = true; };
+  }, [match.id, match.live, rained, seen]);
+  return line;
+}
+// ── end SCRBRD-130 R2 ──
+
 /** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
 function TabBar({ tab, setTab }) {
   const refs = useRef({});
@@ -242,6 +270,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   // completed" is not yet true: the line says it is in progress.
   const liveSO = liveSuperOverLine(played, match.status);
   const venueLine = useVenueLine(match, log.events?.length ?? 0);   // SCRBRD-130 R3
+  const rainLine = useRainLine(match, played, log.events?.length ?? 0);   // SCRBRD-130 R2
   const result = liveSO ?? (server && server.outcome !== "in_progress" ? server.text : null)
     ?? resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
   // The result stands once play has decided it: not mid super over, and not
@@ -289,7 +318,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
-    focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine };
+    focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>

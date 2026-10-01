@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { Sheet } from "./ui.jsx";
-import { STOP_REASON, fmtOvers } from "@scrbrd/scoring";
+import { STOP_REASON, differenceWords, fmtOvers } from "@scrbrd/scoring";
 
 /**
  * RAIN ON THE PAD (SCRBRD-130 R1; docs/design/SCRBRD-130_rain_and_par.md §1, §2.5).
@@ -84,16 +84,60 @@ export function stoppedWords(stopped) {
   return `Play stopped (${why}) at ${fmtOvers(stopped.balls)} ov, ${stopped.runs}/${stopped.wickets}${when ? `, ${when}` : ""}`;
 }
 
+// ── SCRBRD-130 R2: the calculator's proposal beside the umpires' figure ──
 /**
- * The calculator's word beside a figure (R2), or what the pad says without one.
- * @param {{proposal?: string | null, offline?: boolean}} p
+ * A function asking the server's calculator (GET /api/matches/:id/dls?<query>),
+ * or null when the pad cannot: offline, a match on this device only, or
+ * events not yet sent (the server would calculate on a log behind the pad's).
+ * @typedef {((query: string) => Promise<any>) | null} Propose
  */
-function Proposal({ proposal, offline }) {
-  const text = offline ? "No DLS calculation offline: enter the umpires' figure."
-    : proposal ?? null;
-  if (!text) return null;
-  return <p data-testid="rain-proposal" style={{ ...body(), fontSize: "13px" }}>{text}</p>;
+/** @type {Record<string, string>} */
+const NO_PROPOSAL = {
+  offline: "No DLS calculation offline: enter the umpires' figure.",
+  unsynced: "No DLS calculation until the pad has synced: enter the umpires' figure.",
+};
+
+/**
+ * The server's proposal for `query`, asked a quarter-second after the figure
+ * it depends on stops changing. Never written to the log (D1).
+ * @param {Propose | undefined} propose  @param {string | null} query  null: nothing to ask yet
+ * @param {string} [why]  why there is no `propose`: "offline" or "unsynced"
+ * @returns {{words: string | null, calculated: number | null, none: string | null}}
+ */
+export function useProposal(propose, query, why = "offline") {
+  const [got, setGot] = useState(/** @type {{words: string | null, calculated: number | null, none: string | null}} */ ({ words: null, calculated: null, none: null }));
+  useEffect(() => {
+    if (!propose) { setGot({ words: null, calculated: null, none: NO_PROPOSAL[why] ?? NO_PROPOSAL.offline }); return undefined; }
+    if (query == null) { setGot({ words: null, calculated: null, none: null }); return undefined; }
+    let off = false;
+    const t = setTimeout(() => {
+      propose(query)
+        .then((r) => { if (!off) setGot({ words: r?.words ?? null, calculated: Number.isInteger(r?.calculated) ? r.calculated : null, none: null }); })
+        .catch(() => { if (!off) setGot({ words: null, calculated: null, none: NO_PROPOSAL.offline }); });
+    }, 250);
+    return () => { off = true; clearTimeout(t); };
+  }, [propose, query, why]);
+  return got;
 }
+
+/**
+ * The calculator's word beside a figure, and — once the scorer has typed the
+ * umpires' figure — the two side by side when they differ. Information only:
+ * it never stops the sheet (D1), and the pad works without it (D6).
+ * @param {{proposal: {words: string | null, calculated: number | null, none: string | null}, typed?: number | null}} p
+ */
+export function Proposal({ proposal, typed = null }) {
+  const text = proposal.none ?? proposal.words;
+  if (!text) return null;
+  const both = typed != null && proposal.calculated != null && typed !== proposal.calculated ? differenceWords(typed, proposal.calculated) : null;
+  return (
+    <div data-testid="rain-proposal" role="status" aria-live="polite" style={{ display: "grid", gap: T.space.xs }}>
+      <p style={{ ...body(), fontSize: "13px" }}>{text}</p>
+      {both && <p data-testid="rain-proposal-difference" style={{ ...body(), fontSize: "13px", color: T.content.primary }}>{both}</p>}
+    </div>
+  );
+}
+// ── end SCRBRD-130 R2 ──
 
 /**
  * "Play stopped": why, and a note for the record.
@@ -161,16 +205,18 @@ export function RainBanner({ stopped, isChase, onResume, onEnd }) {
 
 /**
  * Resume: the overs now, and in the chase the target now.
- * @param {{overs: number, minOvers: number, isChase: boolean, target: number | null, proposal?: string | null, offline?: boolean,
+ * @param {{overs: number, minOvers: number, isChase: boolean, target: number | null, propose?: Propose, why?: string,
  *          onConfirm: (o: {overs: number | null, target: number | null}) => void, onClose: () => void}} p
- *   `overs`: the allotment in force; `minOvers`: the whole overs the over in progress needs (the Law's floor)
+ *   `overs`: the allotment in force; `minOvers`: the whole overs the over in progress needs (the Law's floor);
+ *   `propose`: the server's calculator (R2), asked in the chase for the overs typed
  */
-export function ResumeSheet({ overs, minOvers, isChase, target, proposal = null, offline = false, onConfirm, onClose }) {
+export function ResumeSheet({ overs, minOvers, isChase, target, propose = null, why = "offline", onConfirm, onClose }) {
   useTheme();
   const [ov, setOv] = useState(String(overs));
   const [tg, setTg] = useState("");
   const o = whole(ov), t = tg.trim() === "" ? null : whole(tg);
   const ok = o != null && o >= Math.max(1, minOvers) && (tg.trim() === "" || (t != null && t >= 1));
+  const proposal = useProposal(isChase ? propose : undefined, isChase && o != null && o >= 1 ? `resumeOvers=${o}` : null, why);
   const changed = o !== overs || t != null;
   return (
     <Sheet title="Resume play" onClose={onClose}>
@@ -188,7 +234,7 @@ export function ResumeSheet({ overs, minOvers, isChase, target, proposal = null,
               placeholder="the umpires' figure"/>
           </label>
         )}
-        <Proposal proposal={proposal} offline={offline}/>
+        {isChase && <Proposal proposal={proposal} typed={t}/>}
         <button type="button" data-testid="resume-confirm" disabled={!ok} className="pressBtn os-state" style={primary(ok)}
           onClick={() => ok && onConfirm({ overs: o !== overs ? o : null, target: t })}>
           {!changed ? "Resume play" : t != null ? `Resume: ${o} overs, target ${t}` : `Resume: ${o} overs`}
@@ -200,13 +246,14 @@ export function ResumeSheet({ overs, minOvers, isChase, target, proposal = null,
 
 /**
  * The innings cut short. In the chase, the umpires' par.
- * @param {{isChase: boolean, runs: number, wickets: number, balls: number, proposal?: string | null, offline?: boolean,
+ * @param {{isChase: boolean, runs: number, wickets: number, balls: number, propose?: Propose, why?: string,
  *          onConfirm: (o: {par: number | null}) => void, onClose: () => void}} p
  */
-export function RainEndSheet({ isChase, runs, wickets, balls, proposal = null, offline = false, onConfirm, onClose }) {
+export function RainEndSheet({ isChase, runs, wickets, balls, propose = null, why = "offline", onConfirm, onClose }) {
   useTheme();
   const [par, setPar] = useState("");
   const p = par.trim() === "" ? null : whole(par);
+  const proposal = useProposal(isChase ? propose : undefined, isChase ? "terminate=1" : null, why);
   const ok = par.trim() === "" || p != null;
   return (
     <Sheet title="End the innings (rain)" onClose={onClose}>
@@ -222,7 +269,7 @@ export function RainEndSheet({ isChase, runs, wickets, balls, proposal = null, o
             <span style={{ ...body(), fontSize: "12px" }}>With a par the match is decided on it; with none it is no result.</span>
           </label>
         )}
-        {isChase && <Proposal proposal={proposal} offline={offline}/>}
+        {isChase && <Proposal proposal={proposal} typed={p}/>}
         <button type="button" data-testid="rain-end-confirm" disabled={!ok} className="pressBtn os-state" style={primary(ok)}
           onClick={() => ok && onConfirm({ par: p })}>
           {isChase && p != null ? `End the innings, par ${p}` : "End the innings"}

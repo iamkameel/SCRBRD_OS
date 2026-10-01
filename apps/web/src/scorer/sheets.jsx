@@ -10,6 +10,7 @@ import { Select } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { batterChoices, bowlerChoices, unavailableWords } from "./prompts.js";
 import { KeeperRow } from "./keeperSheet.jsx";
+import { Proposal, useProposal } from "./rainSheet.jsx";
 
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
@@ -1047,7 +1048,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
  * and from nothing when nothing was, so a scorer who presses Start without
  * touching it changes nothing about how the match reads.
  */
-function Innings2Sheet({target,teamName,overs,declared=null,note=null,rain=false,onClose,onStart,title="Innings Break",startLabel="Start 2nd Innings →",lead=null}){
+function Innings2Sheet({target,teamName,overs,declared=null,note=null,rain=false,propose=null,why="offline",onClose,onStart,title="Innings Break",startLabel="Start 2nd Innings →",lead=null}){
   const[profile,setProfile]=useState(declared);
   // ── SCRBRD-130 R1: the umpires' figures for the chase (design §1, §2.2) ──
   // After rain cut the first innings, or when the interval was lost, the
@@ -1063,6 +1064,9 @@ function Innings2Sheet({target,teamName,overs,declared=null,note=null,rain=false
   const ovN=/^\s*\d{1,3}\s*$/.test(ov)?parseInt(ov,10):null, tgN=/^\s*\d{1,4}\s*$/.test(tg)?parseInt(tg,10):null;
   const figuresOk=!umpires||(ovN!=null&&ovN>=1&&tgN!=null&&tgN>=1);
   const shownTarget=umpires&&tgN!=null?tgN:target, shownOvers=umpires&&ovN!=null?ovN:overs;
+  // SCRBRD-130 R2: the server's calculator for the chase's overs as typed,
+  // beside the umpires' target; asked only once the figures are open.
+  const proposal=useProposal(umpires?propose:undefined,umpires&&ovN!=null&&ovN>=1?`chaseOvers=${ovN}`:null,why);
   const rainField={width:"100%",minHeight:"48px",boxSizing:"border-box",padding:"0 14px",borderRadius:D.md,background:D.surf2,
     border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary};
   return (
@@ -1096,6 +1100,7 @@ function Innings2Sheet({target,teamName,overs,declared=null,note=null,rain=false
                 <Lbl>Target</Lbl>
                 <input data-testid="innings2-target-input" inputMode="numeric" value={tg} onChange={e=>setTg(e.target.value)} style={rainField}/>
               </label>
+              <Proposal proposal={proposal} typed={tgN}/>
             </div>
           )}
         </div>

@@ -475,6 +475,16 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         : st.online && st.reason !== "unreachable" ? "syncing" : "waiting" };
   }, [padStatus]);
   const attached = !!padStatus?.attached;
+  // ── SCRBRD-130 R2: the server's DLS calculator, for the rain sheets ──
+  // Asked only of a live, attached pad whose every event has reached the
+  // server (else it would calculate on a log behind this one); otherwise
+  // the sheets say why there is none, and work without it (D6).
+  const dlsWhy = !live || !attached || !signedIn() || padStatus?.online === false || sync.state === "waiting" ? "offline"
+    : sync.state !== "synced" ? "unsynced" : null;
+  const dlsMatchId = live ? resume.cfg.matchId : null;
+  const proposeDls = useMemo(() => (dlsWhy || !dlsMatchId ? null
+    : (/** @type {string} */ q) => api(`/api/matches/${dlsMatchId}/dls?${q}`, { timeoutMs: 6000 })), [dlsWhy, dlsMatchId]);
+  // ── end SCRBRD-130 R2 ──
   // Locked while a handover is waiting on this device (SCORING_HANDOVER_SPEC
   // §4 step 2): the way in is the code, and the log is the one it brings.
   const padLock = live && !attached && (padStatus?.reason === "handover_pending" || padStatus?.reason === "verifying");
@@ -1824,16 +1834,18 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         onClose={()=>setModal(null)}/>
     );
 
-    // ── SCRBRD-130 R1: rain. No DLS proposal on the pad yet: the read
-    // API's calculator is R2's, and offline there is none (D6). ──
+    // ── SCRBRD-130 R1: rain. R2: the server's DLS proposal beside the
+    // umpires' figures, and offline none, said so (D6). ──
     if(modal==="stop")return <StopSheet onConfirm={stopPlay} onClose={()=>setModal(null)}/>;
     if(modal==="resume"&&inn)return (
       <ResumeSheet overs={inn.overs??match?.overs??20} minOvers={Math.ceil((inn.balls??0)/6)}
         isChase={curIn===1} target={curIn===1?(inn.target??null):null}
+        propose={proposeDls} why={dlsWhy??"offline"}
         onConfirm={resumePlay} onClose={()=>setModal(null)}/>
     );
     if(modal==="rainEnd"&&inn)return (
       <RainEndSheet isChase={curIn===1} runs={inn.runs} wickets={inn.wickets} balls={inn.balls}
+        propose={proposeDls} why={dlsWhy??"offline"}
         onConfirm={endInningsRain} onClose={()=>setModal(null)}/>
     );
     if(modal==="keeper")return (
@@ -2005,6 +2017,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           :pendingCredits(innings).map(p=>`${p.words} (penalty runs).`).join(" ")||null}
         // SCRBRD-130 R1: after a rain-affected first innings the umpires' figures open at once.
         rain={(innings[0]?.interruptions?.length??0)>0||innings[0]?.revised!=null}
+        propose={proposeDls} why={dlsWhy??"offline"}
         onClose={()=>setModal(null)}
         onStart={(captureProfile,umpires)=>{
           // SCRBRD-063. The second innings never got its own INNINGS_START —

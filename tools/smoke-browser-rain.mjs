@@ -21,6 +21,20 @@
  *      the server's result is decided on the par, in words "(revised target)";
  *   E  nothing on the page names a Law clause; no console error.
  *
+ * And R2 (db/75), with the SYNTHETIC table only (dls.mjs syntheticTable(),
+ * never a value of the real one — D5):
+ *
+ *   F  the operator's screen, Settings › DLS table: a broken file refused with
+ *      the structural report naming the one break; the synthetic file loaded
+ *      as a draft, its file sha256 and content hash shown; Publish refused
+ *      for a SYNTHETIC title. The walk then publishes it as the owner (no
+ *      route can) so the calculator has a table;
+ *   G  the pad's proposal beside the umpires' figures — the innings break's
+ *      target, the chase's par — the server's words exactly, the two figures
+ *      side by side when they differ; offline, the sheet says there is none;
+ *   H  the Match Centre's rain panel: the calculated line and the difference;
+ *      then the operator withdraws the table from the screen.
+ *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-rain.mjs
  *   RAIN_SHOTS=/some/dir node tools/smoke-browser-rain.mjs   # screenshots, both themes
@@ -28,7 +42,8 @@
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
-import { fromRow } from "@scrbrd/scoring";
+import { fromRow, syntheticTable, SYNTHETIC_TITLE } from "@scrbrd/scoring";   // R2: the tests' table, never the real one
+import { createHash } from "node:crypto";
 import { EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -88,6 +103,12 @@ const apiResult = async () => {
   const r = await fetch(`${API}/api/matches/${MATCH}/result`, { headers: { authorization: `Bearer ${coachToken}` } });
   return r.json().catch(() => ({}));
 };
+/** SCRBRD-130 R2: the calculator's answer through the API, as the coach reads it. */
+const apiDls = async (query = "") => {
+  await apiResult();
+  const r = await fetch(`${API}/api/matches/${MATCH}/dls${query ? `?${query}` : ""}`, { headers: { authorization: `Bearer ${coachToken}` } });
+  return r.json().catch(() => ({}));
+};
 
 const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -118,6 +139,35 @@ const lawNumbers = (s) => /\bLaws? \d|\(Law|\b\d+\.\d+(\.\d+)?\b(?! (overs|ov\b)
 /** Every rain sheet's and the banner's words, as the walk met them. @type {string[]} */
 const rainWords = [];
 const keep = async (id) => { rainWords.push(await said(id)); };
+
+// ── SCRBRD-130 R2: a second reader, signed in by email (the operator, the coach) ──
+/** @param {string} email @returns {Promise<import("playwright-core").Page>} */
+const openAs = async (email) => {
+  const c = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await offline(c);
+  const p = await c.newPage();
+  p.on("pageerror", (e) => errors.push(`pageerror (${email}): ${e.message}`));
+  p.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error (${email}): ${m.text()}`); });
+  await p.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+  await p.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+  const b = p.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+  if (await b.count()) { await b.click({ timeout: 5000 }); await p.waitForTimeout(500); }
+  await p.fill("#login-email", email);
+  await p.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 });
+  await p.waitForTimeout(2200);
+  return p;
+};
+const ptid = (/** @type {import("playwright-core").Page} */ p, /** @type {string} */ id) => p.locator(`[data-testid="${id}"]`);
+const psaid = async (/** @type {import("playwright-core").Page} */ p, /** @type {string} */ id) =>
+  ((await ptid(p, id).first().innerText({ timeout: 2000 }).catch(() => "")) || "").trim();
+/** Wait up to `ms` for a test id's words to match. */
+const waitWords = async (/** @type {import("playwright-core").Page} */ p, /** @type {string} */ id, /** @type {RegExp} */ re, ms = 10000) => {
+  for (let k = 0; k < ms / 250; k++) { if (re.test(await psaid(p, id))) return true; await p.waitForTimeout(250); }
+  return false;
+};
+const SYNTH = syntheticTable({ grain: "ball" });
+const SYNTH_CSV = ["b,w,tenths", ...[...SYNTH.cells].map(([k, v]) => `${k},${v}`)].join("\n");
+// ── end SCRBRD-130 R2 ──
 
 /** The pad's own prompts, answered: a bowler, the next batter, the openers. */
 let batterCounter = 0;
@@ -192,6 +242,47 @@ try {
   await dbq(`insert into match_toss (match_id, school_id, won_by, decision)
              select id, school_id, 'home', 'bat' from match where id = $1 on conflict (match_id) do nothing`, [MATCH]);
 
+  // ── F ────────────────────────────────────────────────────────
+  group("F. The operator's DLS table screen (the synthetic table only)");
+  const ops = await openAs("platform@example.invalid");
+  await ptid(ops, "nav-settings").first().click({ timeout: 6000 });
+  await ops.waitForTimeout(1200);
+  ok("Settings offers the operator the DLS table tab", (await ops.locator("#settings-tab-dls").count()) === 1);
+  await ops.locator("#settings-tab-dls").click({ timeout: 4000 });
+  await ops.waitForTimeout(1200);
+  ok("...whose list is drawn from the server", (await ptid(ops, "dls-tables").count()) === 1);
+  const fillMeta = async () => {
+    await ptid(ops, "dls-title").fill(SYNTHETIC_TITLE);
+    await ptid(ops, "dls-units").selectOption("tenths");
+    await ptid(ops, "dls-publisher").fill("SCRBRD tests");
+    await ptid(ops, "dls-document").fill("the synthetic formula in dls.mjs");
+    await ptid(ops, "dls-edition").fill("2026-10-01");
+    await ptid(ops, "dls-permission").fill("Synthetic: no permission needed; tests only, never published.");
+  };
+  const brokenCsv = SYNTH_CSV.replace(/^150,2,\d+$/m, "150,2,10");
+  await ops.setInputFiles('[data-testid="dls-file"]', { name: "broken.csv", mimeType: "text/csv", buffer: Buffer.from(brokenCsv) });
+  await fillMeta();
+  await ptid(ops, "dls-load").click({ timeout: 4000 });
+  ok("a file broken in one place is refused, the report naming the break",
+     await waitWords(ops, "dls-refused", /structural checks/) && (await ptid(ops, "dls-report").locator('[data-problem="not_rising_in_balls"]').count()) === 1,
+     await psaid(ops, "dls-refused"));
+  await ops.setInputFiles('[data-testid="dls-file"]', { name: "synthetic.csv", mimeType: "text/csv", buffer: Buffer.from(SYNTH_CSV) });
+  const fileSha = createHash("sha256").update(SYNTH_CSV).digest("hex");
+  ok("the chosen file's sha256 is shown, to hold against the one on record", await waitWords(ops, "dls-file-hash", new RegExp(fileSha)));
+  await ptid(ops, "dls-load").click({ timeout: 4000 });
+  ok("the synthetic file loads as a draft, its content hash the one dls.test.mjs pins",
+     await waitWords(ops, "dls-loaded", /3010 cells[\s\S]*0847f8f488da304bddc426b9d0d50febfac43e6461fc7016b365da151b1dfa47/), await psaid(ops, "dls-loaded"));
+  const [loadedRow] = await dbq(`select id, version from dls_resource_table where content_hash = $1 and status = 'draft' order by loaded_at desc limit 1`,
+                                ["0847f8f488da304bddc426b9d0d50febfac43e6461fc7016b365da151b1dfa47"]);
+  ok("...and is listed, a draft", await waitWords(ops, `dls-table-${loadedRow?.version}`, /^draft$/im), await psaid(ops, `dls-table-${loadedRow?.version}`));
+  await ptid(ops, `dls-publish-${loadedRow?.version}`).click({ timeout: 4000 });
+  ok("Publish is refused for the synthetic table, in words",
+     await waitWords(ops, `dls-table-${loadedRow?.version}`, /for tests only and is never published/), await psaid(ops, `dls-table-${loadedRow?.version}`));
+  ok("no cell reached the page", !/\b150,2,\d+\b/.test(await ops.$eval("body", (el) => el.innerText)));
+  // The walk publishes it as the owner — which no route can — so the pad has a calculator.
+  await dbq(`update dls_resource_table set status = 'published', published_by = '88888888-0000-0000-0000-000000000022', published_at = now() where id = $1`,
+            [loadedRow?.id]);
+
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
 
@@ -253,7 +344,7 @@ try {
   await tid("resume-overs").fill("16");
   ok("...16 is taken, and the button says so", (await said("resume-confirm")) === "Resume: 16 overs");
   await keep("resume-sheet");
-  ok("...no DLS calculation is offered on the pad (R2's, server-side)", !(await has("rain-proposal")));
+  ok("...no DLS proposal in a first innings: the umpires announce no target there", !(await has("rain-proposal")));
   await tap("resume-confirm");
   await settle();
   const tail = (await serverEvents()).slice(-2);
@@ -282,14 +373,27 @@ try {
   ok("the server holds the seal: abandoned, with the figures read back", /** @type {any} */ (seal0)?.reason === "abandoned"
      && c0?.runs === 12 && c0?.wickets === 0 && c0?.balls === 12, JSON.stringify(seal0));
   ok("the innings break opens with the umpires' figures to type", await has("innings2-umpires"));
-  await tid("innings2-overs").fill("10");
+  // Two overs for the chase: on the synthetic table the first innings, cut
+  // 20 → 16 at 9 balls (R(111,0) 370 → R(87,0) 290) and ended at 12 balls
+  // (R(84,0) 280 lost), had 400 − 80 − 280 = 40 tenths; the chase's two overs
+  // are R(12,0) = 40 — the equal line, par 12, target 13 (R2 = R1 needs no G50).
+  await tid("innings2-overs").fill("2");
   await tid("innings2-target-input").fill("30");
   ok("...and the break shows them", (await said("innings2-target")) === "30");
+  // ── G (R2): the proposal beside the umpires' target ──
+  const brk = await apiDls("chaseOvers=2");
+  ok(`G. the server proposes 13 for two overs, worked by hand: ${brk?.words}`, brk?.status === "ok" && brk?.calculated === 13 && brk?.line === "equal"
+     && /^SCRBRD calculates 13 \(DLS Standard, table v\d+/.test(brk?.words ?? ""), JSON.stringify(brk));
+  ok("...the break shows the server's words beside the umpires' target", await waitWords(page, "rain-proposal", /SCRBRD calculates/)
+     && (await said("rain-proposal")).startsWith(brk?.words ?? "∅"), await said("rain-proposal"));
+  ok(`...and the two side by side when they differ (${await said("rain-proposal-difference")})`, brk?.calculated === 30
+     ? !(await has("rain-proposal-difference")) : (await said("rain-proposal-difference")) === `umpires 30 · calculated ${brk?.calculated}`);
+  await keep("rain-proposal");
   await shoot("innings-break");
   await click(/Start 2nd Innings/, 4000);
   await settle();
   const start1 = (await serverEvents()).filter((e) => e.kind === "innings_start" && e.innings === 1).at(-1);
-  ok("the chase's innings_start carries the umpires' overs and target", /** @type {any} */ (start1)?.overs === 10
+  ok("the chase's innings_start carries the umpires' overs and target", /** @type {any} */ (start1)?.overs === 2
      && /** @type {any} */ (start1)?.target === 30, JSON.stringify(start1));
 
   // ── D ────────────────────────────────────────────────────────
@@ -302,10 +406,30 @@ try {
   await openMenu("pad-play-stopped");
   await tap("stop-confirm");
   await settle();
+  // ── G (R2): offline, the sheet says there is no proposal and works without one ──
+  await page.context().setOffline(true);
+  await tap("rain-end");
+  ok("G. offline, the chase's end sheet says there is no DLS calculation",
+     await waitWords(page, "rain-proposal", /^No DLS calculation offline: enter the umpires' figure\.$/), await said("rain-proposal"));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  await page.context().setOffline(false);
+  await page.waitForTimeout(1500);
   await tap("rain-end");
   ok("in the chase the end sheet asks the umpires' par", await has("rain-par"));
+  const parDls = await apiDls("terminate=1");
+  // 5/0 off 5 balls of 2 overs, ended: R(7,0) = 23 lost, R2 = 40 − 23 = 17;
+  // par ⌊12 × 17 ÷ 40⌋ = 5.
+  ok(`G. back online, the server's par of 5, worked by hand: ${parDls?.words}`, parDls?.status === "ok" && parDls?.kind === "par"
+     && parDls?.calculated === 5 && /^SCRBRD calculates a par of 5 \(DLS Standard, table v\d+/.test(parDls?.words ?? "")
+     && await waitWords(page, "rain-proposal", /SCRBRD calculates a par/, 15000) && (await said("rain-proposal")).startsWith(parDls?.words ?? "∅"),
+     `${JSON.stringify(parDls)} | ${await said("rain-proposal")}`);
   await tid("rain-par").fill("7");
   ok("...and says what it will do", (await said("rain-end-confirm")) === "End the innings, par 7");
+  await page.waitForTimeout(400);
+  ok(`...the umpires' par beside the calculated one (${await said("rain-proposal-difference")})`, parDls?.calculated === 7
+     ? !(await has("rain-proposal-difference")) : (await said("rain-proposal-difference")) === `umpires 7 · calculated ${parDls?.calculated}`);
+  await keep("rain-proposal");
   await keep("rain-end-sheet");
   await tap("rain-end-confirm");
   // The outbox sends in its own time: wait for the seal, up to 15 seconds.
@@ -319,6 +443,34 @@ try {
   ok(`the server's result is decided on the par: ${res?.result?.text}`, res?.result?.outcome === "home_win"
      && res?.result?.marginKind === "runs" && res?.result?.margin === 2 && /won by 2 runs \(revised target\)$/.test(res?.result?.text ?? ""),
      JSON.stringify(res?.result));
+
+  // ── H ────────────────────────────────────────────────────────
+  group("H. The Match Centre's rain panel; the operator withdraws the table");
+  const after = await apiDls();
+  const coach = await openAs("coach@example.invalid");
+  await coach.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+  await coach.waitForTimeout(1500);
+  await ptid(coach, `mc-open-${MATCH}`).click({ timeout: 6000 }).catch(() => {});
+  await coach.waitForTimeout(1800);
+  ok("the coach opens the fixture", (await ptid(coach, "match-view").count()) === 1);
+  ok(`the rain panel says the server's calculated line (${await psaid(coach, "mc-rain-calculated")})`, after?.status === "ok"
+     && await waitWords(coach, "mc-rain-calculated", /SCRBRD calculates/) && (await psaid(coach, "mc-rain-calculated")) === after?.words,
+     JSON.stringify(after));
+  ok(`...and the difference, when there is one (${await psaid(coach, "mc-rain-difference")})`, after?.difference
+     ? (await psaid(coach, "mc-rain-difference")) === after.differenceWords : (await ptid(coach, "mc-rain-difference").count()) === 0);
+  rainWords.push(await psaid(coach, "mc-rain"));
+  // Away and back: the tab remounts and reads the server's list again (published now).
+  await ops.locator("#settings-tab-me").click({ timeout: 4000 });
+  await ops.waitForTimeout(600);
+  await ops.locator("#settings-tab-dls").click({ timeout: 4000 });
+  ok("the operator's list reads it published", await waitWords(ops, `dls-table-${loadedRow?.version}`, /^published$/im));
+  await ptid(ops, `dls-withdraw-note-${loadedRow?.version}`).fill("The walk is done with the synthetic table");
+  await ptid(ops, `dls-withdraw-${loadedRow?.version}`).click({ timeout: 4000 });
+  ok("the operator withdraws it, saying why; its rows are kept",
+     await waitWords(ops, `dls-table-${loadedRow?.version}`, /^withdrawn$[\s\S]*The walk is done/im)
+     && (await dbq(`select count(*)::int as n from dls_resource where table_id = $1`, [loadedRow?.id]))[0].n === 3010);
+  await coach.context().close();
+  await ops.context().close();
 
   // ── E ────────────────────────────────────────────────────────
   group("E. The words");
