@@ -15,6 +15,8 @@ import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-bir
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
+// SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
+import { LiftDeclarationPanel, LiftPolicyPanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 import { Icon } from "../ui/icons.jsx";
 
@@ -850,6 +852,11 @@ function MeTab({ role }) {
           this person answers for, and his own. Nothing for staff. */}
       <HealthConsentSection role={role} nonce={consentNonce} onChanged={consentChanged}/>
 
+      {/* SCRBRD-124: lift clubs — where she stands, and her yearly
+          declaration. The family's own page until STEP 4's Family exists.
+          Drawn only where the module is live at her son's school. */}
+      <LiftDeclarationPanel/>
+
       <BoundariesSection role={role}/>
       <AlertsSection role={role}/>
       <MyClearancesSection role={role}/>
@@ -1215,6 +1222,10 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
       </div>
 
       <OpenCeiling/>
+
+      {/* SCRBRD-124: the school's lift policy, signed or withdrawn by the
+          principal (the second of the two keys). Drawn for transport.lift.policy. */}
+      <LiftPolicyPanel/>
 
       {canAudit && <AuditSection role={role}/>}
 
