@@ -215,8 +215,14 @@ export function LiftsPanel({ role, team }) {
   const match = upcoming.find((m) => m.id === picked) ?? upcoming[0] ?? null;
   if (pupil && upcoming.length) return <SelfLifts upcoming={upcoming.slice(0, 5)}/>;
   if (!match || (!family.length && !office.length)) return null;
-  return <LiftsForFixture key={match.id} match={match} upcoming={upcoming} onPick={setPicked}
-    familySchool={family[0]?.id ?? null} office={office.length > 0}/>;
+  // On the day (db/76), a parent on the staff drives from here too.
+  return (
+    <>
+      {family.length > 0 && inLiftDay(match.startsAt) && <LiftDayCards match={match}/>}
+      <LiftsForFixture key={match.id} match={match} upcoming={upcoming} onPick={setPicked}
+        familySchool={family[0]?.id ?? null} office={office.length > 0}/>
+    </>
+  );
 }
 
 /**
@@ -324,8 +330,6 @@ function LiftsForFixture({ match, upcoming, onPick, familySchool, office }) {
   const others = offers.filter((o) => !o.mine);
 
   return (
-    <>
-    {familySchool && inLiftDay(match.startsAt) && <LiftDayCards match={match}/>}
     <Card sx={{ padding: "14px 16px", marginBottom: "16px" }} data-testid="lifts-panel">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "12px", flexWrap: "wrap" }}>
         <div>
@@ -359,7 +363,6 @@ function LiftsForFixture({ match, upcoming, onPick, familySchool, office }) {
       )}
       {office && summary.length > 0 && <OfficeCounts rows={summary}/>}
     </Card>
-    </>
   );
 }
 

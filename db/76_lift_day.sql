@@ -655,7 +655,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 /**
  * The office closes a seat in exception (§6.2): transport.lift.oversee at the
- * school, once the meeting time has come, on a confirmed seat nobody has
+ * school, once the lift has left or its meeting time has come, on a confirmed seat nobody has
  * received or resolved — collected late, at the school office, or other. A
  * driver who could not mark, and a boy the car left without, are closed the
  * same way. Not module-gated.
@@ -680,7 +680,7 @@ BEGIN
   END IF;
   IF s.state <> 'confirmed' THEN RETURN QUERY SELECT false, 'not_confirmed'; RETURN; END IF;
   IF s.acknowledged_at IS NOT NULL OR s.resolved_at IS NOT NULL THEN RETURN QUERY SELECT false, 'already_received'; RETURN; END IF;
-  IF o.meet_at > now() THEN RETURN QUERY SELECT false, 'not_yet'; RETURN; END IF;
+  IF o.meet_at > now() AND o.departed_at IS NULL THEN RETURN QUERY SELECT false, 'not_yet'; RETURN; END IF;
   UPDATE lift_seat SET resolved_at = now(), resolved_by = app_user_id(), resolution = p_resolution WHERE id = p_seat;
   PERFORM lift_offer_settle(o.id);
   RETURN QUERY SELECT true, NULL::text;
