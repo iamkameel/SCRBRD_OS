@@ -8,6 +8,10 @@ When building out this project, use subagents. Route each subagent to Fable,
 Opus, Sonnet or Haiku as appropriate for the task's complexity. Tokens are a
 budget: spend the expensive tiers only where they change the outcome.
 
+Not too frugal, though (Kameel, 2026-10-01): where spending more gets the
+pilot's work across the line sooner — several agents in parallel, or a
+higher tier than the table below would pick — propose it and ask Kameel.
+
 ### Fable (`model: "fable"`) — the hardest design problems, sparingly
 
 Brought in 2026-09-27 (Kameel), with cost still a constraint:
