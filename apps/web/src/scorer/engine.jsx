@@ -2106,7 +2106,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
             </h1>
             <div style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.3,color:T.content.secondary,
               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-              {isSuperOver(inn)?`${superOverTitle(inn.superOver)} · ${pairPlace(innings,curIn)} innings`:`Innings ${curIn+1}`} · {inn?.overs??match?.overs}ov{inn?.revised&&<span style={{color:T.semantic.warning}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}
+              {isSuperOver(inn)?`${superOverTitle(inn.superOver)} · ${pairPlace(innings,curIn)} innings`
+                :chaseSlot?`${superOverTitle(innings[curIn-1].superOver)} · second innings`:`Innings ${curIn+1}`} · {inn?.overs??(chaseSlot?innings[curIn-1].overs:match?.overs)}ov{inn?.revised&&<span style={{color:T.semantic.warning}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}
             </div>
           </div>
           {showHandover&&(

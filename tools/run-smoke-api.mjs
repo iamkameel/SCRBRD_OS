@@ -283,6 +283,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Centre's and the public page's result line; 12px, 44px, 390, Daylight.
   "browser-results",
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3b, the screens: a tied cup match scored on the pad,
+  // the Super over button and its sheet, the board's block (target, balls
+  // left, wickets left of two), two wickets ending an innings, a second
+  // super over with the eligibility words, the result as the engine words
+  // it, the scorecard block below the match's innings, and a league tie with
+  // no button and the words why; 390, the 12px and 44px floors. ──
+  "browser-superover",
+  // ── end SCRBRD-114 phase 3b screens ──
   // The playing-conditions screen (SCRBRD-114, Leagues → the competition →
   // Playing conditions): an organiser drafts, cites, is refused in words,
   // publishes for tomorrow, versions and withdraws; the version in force with
