@@ -165,6 +165,29 @@ group("A. career_by_season (SCRBRD-086): the career read's scope, one grain fine
   ok("`career` itself is untouched: no season anywhere in it", !/season/.test(READ_QUERIES.career.text));
 }
 
+group("A. my_children (step 4 G1): the caller's own live guardian links, and the proof runs the same text");
+{
+  const t = READ_QUERIES.my_children.text;
+  ok("narrowed to the caller's own assignments, not merely to what RLS lets him read",
+     /where a\.person_id = app_user_id\(\)/.test(t));
+  ok("...and to guardian ones: a pupil's self link is not a child", /a\.role = 'guardian'/.test(t));
+  ok("a live link only, by app_can()'s clauses: verified, started, not ended",
+     /s\.verification_state = 'verified'/.test(t) && /s\.valid_from <= current_date/.test(t)
+     && /\(s\.valid_until is null or s\.valid_until > current_date\)/.test(t));
+  ok("carries the link's end date (G11) and its consent state", /s\.valid_until/.test(t) && /s\.consent_state/.test(t));
+  ok("takes no parameter a caller could widen it with", !READ_QUERIES.my_children.params && !/\$1/.test(t));
+  ok("reads no masked column of the child: no born, no address, no id number", !/\b(born|address|id_number|phone|email)\b/.test(t));
+  // db/99 §49 runs the read's own text as a temporary view, as each persona.
+  // The two copies are one text, or the proof is about some other query.
+  const { readFileSync } = await import("node:fs");
+  const sql = readFileSync(new URL("../../../db/99_rls_verify.sql", import.meta.url), "utf8");
+  const between = (/** @type {string} */ s) => s.split("my_children:begin")[1]?.split("my_children:end")[0] ?? "";
+  const norm = (/** @type {string} */ s) => s.replace(/\*\/|\/\*|`|--/g, " ").replace(/\s+/g, " ").trim();
+  const src = readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8");
+  ok("db/99 §49 proves this exact read, not a copy that has drifted",
+     norm(between(sql)).length > 100 && norm(between(sql)) === norm(between(src)) && norm(between(src)) === norm(t));
+}
+
 // ── B. Client accessor ──
 group("B. Feature flags: mock vs live per resource");
 {

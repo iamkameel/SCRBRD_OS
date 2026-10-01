@@ -141,6 +141,32 @@ CREATE OR REPLACE FUNCTION _expire_link(p_player uuid) RETURNS void AS $$
    WHERE a.id = s.assignment_id AND a.role = 'guardian' AND s.player_id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- §49 (step 4 G11): give one person's guardian link to one child an end
+-- date, as the office's own functions would write it, so the family app's
+-- read can be seen to carry it. Owner-only, rolled back with everything.
+CREATE OR REPLACE FUNCTION _set_link_end_49(p_player uuid, p_person uuid, p_until date) RETURNS void AS $$
+  UPDATE assignment_subject s SET valid_until = p_until
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.role = 'guardian' AND a.person_id = p_person AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- §49: the same link's verification, as the office's functions would move it.
+CREATE OR REPLACE FUNCTION _set_link_state_49(p_player uuid, p_person uuid, p_state text) RETURNS void AS $$
+  UPDATE assignment_subject s SET verification_state = p_state
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.role = 'guardian' AND a.person_id = p_person AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- §49: one person's live guardian links, as the owner reads them, past RLS —
+-- the truth the family app's read is held to, sorted and comma-joined.
+CREATE OR REPLACE FUNCTION _live_guardian_links_49(p_person uuid) RETURNS text AS $$
+  SELECT string_agg(s.player_id::text, ',' ORDER BY s.player_id::text)
+    FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id
+   WHERE a.person_id = p_person AND a.role = 'guardian' AND a.active
+     AND s.verification_state = 'verified' AND s.valid_from <= current_date
+     AND (s.valid_until IS NULL OR s.valid_until > current_date);
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- Wind a support session's hour hand back to a second ago (SCRBRD-012). The
 -- same claim as _expire_link, about the same rule: the decision functions
 -- read expires_at on every statement, and nothing else has to run.
@@ -10563,6 +10589,159 @@ BEGIN
                     AND NOT has_table_privilege('scrbrd_app', 'competition_points_adjustment', 'UPDATE')
                     AND NOT has_function_privilege('scrbrd_app', 'competition_results_all(uuid)', 'EXECUTE'),
       'db/69 (scope): a new object runs as its owner, or the application may write a decision or an adjustment directly');
+  END;
+
+  -- ── 49. The family app's children: my_children (step 4 phase A, G1/G11) ──
+  -- docs/design/STEP4_parent_pupil.md §5 G1 and §8 phase A. The read is not a
+  -- database object — phase A needs no migration — so this section runs the
+  -- read's own SQL, copied between the my_children markers below and held
+  -- equal to services/api/read/read-api.mjs by read.test.mjs, as a TEMPORARY
+  -- view owned by scrbrd_app: it runs as the caller, under RLS, exactly as
+  -- the API runs it. It returns the caller's own live guardian links and
+  -- nothing else: both of Sarah's children, at two schools, and none of the
+  -- families her director-of-sport assignment lets her read the links of;
+  -- each parent his own child; nothing for a coach, a spectator, the pupil
+  -- (whose self link is not a guardian's), the office (which reads every
+  -- link at its school), a parent whose link has ended, or a parent of a
+  -- different child. valid_until rides along, NULL while the child is at
+  -- school (db/62) and the date otherwise.
+  --
+  -- By here R Pillay's link has been wound back by the expiry assertion
+  -- (_expire_link above), so D Pillay is the parent whose link has ended.
+  --
+  -- Each guard was falsified once — taken out of this copy of the read and
+  -- the file run against the migrated database — and went red at the first
+  -- assertion able to see it (read.test.mjs holds the two copies equal, so a
+  -- guard cannot leave the API's copy and stay in this one):
+  --   `a.person_id = app_user_id()` removed       → (own): Sarah lists the school's families
+  --   `a.role = 'guardian'` removed               → a coach's family app lists his enquiry grant's boy
+  --   the subject's valid_until clause removed    → (live)
+  --   `s.verification_state = 'verified'` removed → (verified)
+  -- (live) and (verified) are asked of Sarah because a plain parent cannot
+  -- show them: RLS on the player already hides a child whose only link is
+  -- dead, and the read's own clauses are the second wall, not the first.
+  DECLARE
+    U_WHIT  uuid := '88888888-0000-0000-0000-000000000010';  -- H Whitfield, parent of James Whitfield
+    U_BEKK  uuid := '88888888-0000-0000-0000-000000000011';  -- A Bekker, parent of T Bekker
+    U_CELE  uuid := '88888888-0000-0000-0000-000000000013';  -- N Cele: verified, consent not yet given
+    P_WHIT  uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+    P_CELE  uuid := 'aaaaaaaa-0000-0000-0000-000000000004';
+    got     text;
+    n       integer;
+    r       record;
+  BEGIN
+    EXECUTE $v49$CREATE TEMP VIEW _v49_my_children AS
+-- my_children:begin
+select s.player_id, p.full_name, p.known_as, p.team_code,
+                  p.school_id, sc.name as school_name, sc.kind as school_kind,
+                  s.relationship, s.verification_state, s.consent_state,
+                  s.valid_from, s.valid_until
+             from role_assignment a
+             join assignment_subject s on s.assignment_id = a.id
+             join player p on p.id = s.player_id
+             left join school sc on sc.id = p.school_id
+            where a.person_id = app_user_id()
+              and a.role = 'guardian'
+              and a.active
+              and (a.valid_from  is null or a.valid_from  <= current_date)
+              and (a.valid_until is null or a.valid_until >  current_date)
+              and (a.expires_at  is null or a.expires_at  >  now())
+              and s.verification_state = 'verified'
+              and s.valid_from <= current_date
+              and (s.valid_until is null or s.valid_until > current_date)
+            order by p.full_name, s.player_id
+-- my_children:end
+$v49$;
+
+    -- (own) Sarah: a director of sport, a coach and a parent at two schools.
+    -- Her two children, each with his own school, and nobody else's — though
+    -- her office assignment reads every Hilton family's link.
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(full_name || '@' || school_kind || '@' || coalesce(school_name, '?'), ',' ORDER BY full_name)
+      INTO got FROM _v49_my_children;
+    PERFORM _assert(got = 'D Mkhize@school@Westville Boys'' High,K Dlamini@school@Hilton College',
+      format('§49 (own): Sarah''s family app lists %s', coalesce(got, 'nothing')));
+    PERFORM _assert((SELECT count(*) FROM assignment_subject) > 2,
+      '§49: the fixture is void — Sarah reads no other family''s link to be kept from');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE valid_until IS NOT NULL OR relationship <> 'parent'
+                                  OR verification_state <> 'verified' OR consent_state <> 'granted'),
+      '§49: Sarah''s links are not the open, verified, consented parent links the seed made');
+
+    -- (G11) The end date rides along, and is the link's own.
+    PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date + 400);
+    SELECT valid_until INTO r FROM _v49_my_children WHERE player_id = P_U16B;
+    PERFORM _assert(r.valid_until = current_date + 400, format('§49 (G11): the link''s end date reads %s', r.valid_until));
+    PERFORM _assert((SELECT valid_until FROM _v49_my_children WHERE player_id = P_WES) IS NULL,
+      '§49 (G11): one link''s end date leaked onto the other child''s');
+
+    -- (live) and (verified): a link that has ended, or that the office has
+    -- not verified, is no link — even for Sarah, whose office assignment
+    -- still reads the boy's own row, so RLS on the player cannot hide it.
+    PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date);
+    PERFORM _assert(EXISTS (SELECT 1 FROM player WHERE id = P_U16B), '§49: the fixture is void — Sarah cannot read K Dlamini as staff');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id = P_U16B),
+      '§49 (live): a link that ended today is still on Sarah''s family app');
+    PERFORM _set_link_end_49(P_U16B, U_SARAH, NULL);
+    PERFORM _set_link_state_49(P_U16B, U_SARAH, 'pending');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id = P_U16B),
+      '§49 (verified): a link the office has not verified is on Sarah''s family app');
+    PERFORM _set_link_state_49(P_U16B, U_SARAH, 'verified');
+    PERFORM _assert(EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id = P_U16B AND valid_until IS NULL),
+      '§49: K Dlamini did not come back once his link was verified and open again');
+
+    -- Each other parent: exactly his own live links, as the owner counts
+    -- them (an earlier section gave H Whitfield a second child of his own),
+    -- and none of Sarah's or each other's.
+    PERFORM _as(U_WHIT);
+    SELECT string_agg(player_id::text, ',' ORDER BY player_id::text) INTO got FROM _v49_my_children;
+    PERFORM _assert(got = _live_guardian_links_49(U_WHIT) AND got LIKE '%' || P_WHIT::text || '%',
+      format('§49: H Whitfield''s family app lists %s, his links are %s', coalesce(got, 'nothing'), _live_guardian_links_49(U_WHIT)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id IN (P_U16B, P_WES, P_OTHER, P_INJURED)),
+      '§49: another family''s child is on H Whitfield''s family app');
+    PERFORM _as(U_BEKK);
+    SELECT string_agg(player_id::text, ',' ORDER BY player_id::text) INTO got FROM _v49_my_children;
+    PERFORM _assert(got = _live_guardian_links_49(U_BEKK) AND got LIKE '%' || P_OTHER::text || '%',
+      format('§49: A Bekker''s family app lists %s, his links are %s', coalesce(got, 'nothing'), _live_guardian_links_49(U_BEKK)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id IN (P_U16B, P_WES, P_WHIT, P_INJURED)),
+      '§49: another family''s child is on A Bekker''s family app');
+    PERFORM _as(U_SARAH);
+    PERFORM _assert((SELECT string_agg(player_id::text, ',' ORDER BY player_id::text) FROM _v49_my_children) = _live_guardian_links_49(U_SARAH),
+      '§49 (own): Sarah''s family app is not exactly her live links');
+
+    -- (pending) A link the school verified but the parent has not consented
+    -- under is a live link (app_can() reads verification, not consent), and
+    -- says which it is.
+    PERFORM _as(U_CELE);
+    SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending';
+    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, or does not say consent is pending');
+    -- A link the school has not verified is no link at all.
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE verification_state <> 'verified'),
+      '§49 (pending): an unverified link is listed');
+
+    -- (ended) The parent whose link has ended — D Pillay, wound back above,
+    -- and V Naidoo, whose son turned eighteen before the seed was written.
+    PERFORM _as(U_PARENT);
+    SELECT count(*) INTO n FROM _v49_my_children;
+    PERFORM _assert(n = 0, format('§49 (ended): D Pillay''s ended link still lists %s child(ren)', n));
+    PERFORM _as(U_NAIDOO);
+    SELECT count(*) INTO n FROM _v49_my_children;
+    PERFORM _assert(n = 0, format('§49 (ended): V Naidoo''s ended link still lists %s child(ren)', n));
+
+    -- Nothing for anybody who is not a guardian: a coach, a spectator, the
+    -- pupil reading his own file (self) and the office, which reads every
+    -- link at its school to work them.
+    PERFORM _as(U_COACH2);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children), '§49: a coach''s family app lists children');
+    PERFORM _as(U_WATCHER);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children), '§49: a spectator''s family app lists children');
+    PERFORM _as(U_SELF);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children), '§49 (self): the pupil''s own self link is listed as a child');
+    PERFORM _as(U_REGISTRAR);
+    PERFORM _assert((SELECT count(*) FROM assignment_subject) >= 6,
+      '§49: the fixture is void — the office reads no families'' links to be kept from');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children), '§49 (office): the office''s family app lists the school''s families');
+
+    EXECUTE 'DROP VIEW _v49_my_children';
   END;
 
   PERFORM set_config('app.user_id', '', true);

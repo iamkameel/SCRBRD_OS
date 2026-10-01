@@ -2430,6 +2430,51 @@ export const READ_QUERIES = {
             order by s.side, s.batting_no nulls last`,
     params: q => [req(q, "matchId")],
   },
+
+  /*
+   * THE CHILDREN THIS CALLER ANSWERS FOR (step 4 G1, G11): one row per live
+   * guardian link of HIS OWN, with the link's state and its end date, for the
+   * family app's child switcher and its Family screen.
+   *
+   * SECURITY INVOKER, like every read here — it runs as the caller, under
+   * RLS — and narrowed on top of that to the caller's own guardian
+   * assignments. The narrowing is the point: assignment_subject's read
+   * policy also lets the school office read every link at its school (it has
+   * to, to work them), so without `a.person_id = app_user_id()` a registrar
+   * opening the family app would be handed the school's families. A coach,
+   * a spectator or another parent gets nothing; a parent who is also staff
+   * gets her own children and nobody else's.
+   *
+   * A LIVE link only, by app_can()'s own clauses (db/23): verified, started,
+   * not ended, through an active assignment. The player join is RLS-scoped
+   * too, so a row comes back only where the caller may read the child.
+   * valid_until is NULL while the child is at school (db/62) and the date
+   * the link ends otherwise; the screen says which (§3.3). No self link, no
+   * other guardian, no reason for anything: what is not hers is not here.
+   *
+   * db/99 §49 runs this same text (between the my_children markers) as each
+   * persona; read.test.mjs holds the two copies equal.
+   */
+  my_children: {
+    text: /* my_children:begin */`select s.player_id, p.full_name, p.known_as, p.team_code,
+                  p.school_id, sc.name as school_name, sc.kind as school_kind,
+                  s.relationship, s.verification_state, s.consent_state,
+                  s.valid_from, s.valid_until
+             from role_assignment a
+             join assignment_subject s on s.assignment_id = a.id
+             join player p on p.id = s.player_id
+             left join school sc on sc.id = p.school_id
+            where a.person_id = app_user_id()
+              and a.role = 'guardian'
+              and a.active
+              and (a.valid_from  is null or a.valid_from  <= current_date)
+              and (a.valid_until is null or a.valid_until >  current_date)
+              and (a.expires_at  is null or a.expires_at  >  now())
+              and s.verification_state = 'verified'
+              and s.valid_from <= current_date
+              and (s.valid_until is null or s.valid_until > current_date)
+            order by p.full_name, s.player_id`/* my_children:end */,
+  },
 };
 
 /**
