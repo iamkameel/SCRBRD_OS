@@ -5,6 +5,12 @@
 **Fits:** `docs/redesign/DESIGN_DIRECTION.md` (§1 the Board, §1a "the pad is for speed, the board is for emotion", §3.6 motion, §10 the three tiers); `docs/policy/PUBLIC_DATA.md` (decided and signed off); `SCRBRD-083_public_pages.md` (the public read path as built; §5 the overlay; Q9 the big screen); `SCRBRD-130_rain_and_par.md` §3.3, §5, §6 (DLS par at a point, venue par at a point, and their fallbacks); `SCRBRD-114_phase3_results_super_over.md` §1, §3.5, §11 (the super over's board and result words, as built in 3a and designed in 3b).
 **Sources:** the code as it stands (`ui/board.jsx`, `scorer/boardData.js`, `views/matchcentre/*`, `public/PublicMatch.jsx`, `lib/announce.js`, `scorer/signals.js`, `packages/scoring/src/commentary.mjs`, `db/08` `broadcast_state()`, `db/59`, `services/api/public/`). Everything else is marked **A** (assumption) and listed in §10. Figures in the sketches are the DESIGN_DIRECTION's own illustrative ones (Hilton 142/3, D Erasmus, K Naidoo); no sketch figure is a claim about any real match.
 
+**Lead's review (Opus, 2026-10-01), before Kameel reads it.** The design holds; the four corrections below are to its facts, not its decisions.
+- **A3 is already true:** the public log route takes `?since=` today (`public-api.mjs`, tested in `public.test.mjs`). G1 has no route work for it.
+- **A10 is a bug, confirmed:** a wicket the free hit saved keeps `type "W"` with `freeHitSaved` set (`replay.mjs`), and `boardBall()` draws any `"W"` as W, so the Board's "this over" shows W for a batter who is not out. It is fixed on its own, before G1, not left to the strip's test.
+- **A11 and A12 are built:** SCRBRD-130 R1–R3 (db/73–75) are in the db/71–76 PR, so `inn.stopped`, `venue_par` and `dlsParAt` exist as §3 and §2.2 read them.
+- **Numbering:** this was written on main. db/99 §50–§55 belong to db/71–76 and §56 to db/77 (End a role). G2's migration and section take the next free numbers when it is built, not db/78 and §50.
+
 ---
 
 ## 0 · In one page
