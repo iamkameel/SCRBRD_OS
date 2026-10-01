@@ -174,6 +174,8 @@ function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFi
 /** `deriveMatch()`'s own result — never a second guess at a winner. */
 function describeResult(result) {
   if (!result) return null;
+  // The fold's own words since SCRBRD-114 phase 3a ("No result", a tie, an award).
+  if (result.text) return result.text;
   if (!result.winner) return `Match tied${result.margin && result.margin !== "tie" ? ` (${result.margin})` : ""}`;
   return `${result.winner} won by ${result.margin}`;
 }

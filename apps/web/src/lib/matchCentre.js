@@ -7,7 +7,7 @@
  * (@scrbrd/scoring's deriveMatch), and a thing the fold does not have is left
  * out rather than guessed.
  */
-import { runsOffBat } from "@scrbrd/scoring";
+import { runsOffBat, resultWords } from "@scrbrd/scoring";
 import { parseTeam, teamLabel } from "@scrbrd/policy/teams";
 import { humanDateTime } from "./format.js";
 
@@ -292,11 +292,25 @@ export function inningsBreak(inn) {
  * "Team X won by 4 wickets", "Match tied"). Never a second guess at a winner
  * or a margin — `deriveMatch()`'s `result` is the only source, exactly as
  * `MatchView` and the post-match report already compose it.
- * @param {any} match  @param {{winner: string | null, margin: string} | null} result
+ * SCRBRD-114 phase 3a: a result with an `outcome` — the fold's (describeResult())
+ * or match_result()'s row (resultFromRow()) — is put in words by
+ * resultWords(), the one rule for both: "No result", "Match drawn",
+ * "Walkover to …", an organiser's award beside play's result. Each side is
+ * named as the Match Centre names it, by home or away where the result
+ * says which, else by the innings' own name. `reasons: false` for the public
+ * page, which never shows an organiser's free text.
+ * @param {any} match  @param {any} result
+ * @param {{reasons?: boolean}} [o]
  * @returns {string | null}
  */
-export function resultText(match, result) {
+export function resultText(match, result, { reasons = true } = {}) {
   if (!result) return null;
+  if (result.outcome) {
+    return resultWords(result, {
+      reasons,
+      nameOf: (key, side) => (side === "home" || side === "away" ? sidesOf(match)[side].full : teamOf(match, key).full),
+    });
+  }
   if (result.winner == null) return result.margin && result.margin !== "tie" ? `Match tied (${result.margin})` : "Match tied";
   return `${teamOf(match, result.winner).full} won by ${result.margin}`;
 }

@@ -163,17 +163,22 @@ group("A. Derived aggregates");
     .map((e) => ({ ...e, innings: 0 }));
   /** @param {number} target  @param {number} runs  @param {boolean} [done] */
   const chase = (target, runs, done = true) => {
+    // Revised to one over and the target: `runs` singles, then dots until the
+    // target is reached or the over is bowled (or, not done, stop there).
     const played = [
       ...open().map((e) => ({ ...e, innings: 1 })),
-      { ...revision({ target }), innings: 1 },
+      { ...revision({ target, overs: 1 }), innings: 1 },
       ...Array.from({ length: runs }, () => ({ ...ball({ type: BALL_TYPE.RUN, value: 1 }), innings: 1 })),
     ];
     if (!done) return played;
-    // A chase that reached the revised target ended on its own and says so. One
-    // that did not was called by the umpires, which is `abandoned` — and the
-    // result still stands on the revised target, which is what is being tested.
+    if (runs < target) played.push(...Array.from({ length: 6 - runs }, () => ({ ...ball({ type: BALL_TYPE.RUN, value: 0 }), innings: 1 })));
+    // A chase that reached the revised target ended on its own; one that did
+    // not had its revised over bowled. Each says so, and the result stands on
+    // the revised target, which is what is being tested. (A chase the umpires
+    // called — sealed `abandoned` — is no result, never a win by the runs it
+    // was short: SCRBRD-114 phase 3a, group P.)
     const inn = deriveInnings(played);
-    return [...played, { ...sealInnings(inn, inn.endReason ?? "abandoned"), innings: 1 }];
+    return [...played, { ...sealInnings(inn), innings: 1 }];
   };
   ok("a chase that reaches the REVISED target wins, though it scored fewer than the first innings",
      deriveMatch([...first, ...chase(4, 4)]).result?.winner === "HIL" || deriveMatch([...first, ...chase(4, 4)]).result?.winner != null);
