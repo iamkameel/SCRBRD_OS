@@ -440,10 +440,10 @@ function SkillsView({ role }) {
                       <div style={{width:"100%",height:"8px",background:D.surf3,borderRadius:"4px",overflow:"hidden"}}>
                         <div className="skill-bar" style={{height:"100%",width:`${(val/SCALE_MAX)*100}%`,background:`linear-gradient(90deg,${SKILL_COLORS[category]||D.indigo},${progressColorForScore(val)})`,borderRadius:"4px"}}/>
                       </div>
-                      <div style={{display:"flex",justifyContent:"space-between",marginTop:"3px"}}>
-                        <span style={{fontFamily:D.mono,fontSize:"8px",color:D.textMuted}}>0</span>
-                        <span style={{fontFamily:D.mono,fontSize:"8px",color:D.textMuted}}>Target: 90</span>
-                        <span style={{fontFamily:D.mono,fontSize:"8px",color:D.textMuted}}>100</span>
+                      {/* The scale ratings are given on, 1 to 20. No target: none is set. */}
+                      <div data-testid="skill-axis" style={{display:"flex",justifyContent:"space-between",marginTop:"3px"}}>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>1</span>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>20</span>
                       </div>
                     </div>
                   ))}
