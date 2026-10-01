@@ -10,6 +10,7 @@
 import { runsOffBat, resultWords } from "@scrbrd/scoring";
 import { parseTeam, teamLabel } from "@scrbrd/policy/teams";
 import { humanDateTime } from "./format.js";
+import { superOverInPlay, superOverTitle } from "./superOver.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -103,6 +104,10 @@ export function teamOf(m, name) {
  */
 export function inningsPhase(innings = [], result = null) {
   const played = innings.filter(Boolean);
+  // A super over in play (SCRBRD-114 phase 3b): "Super over 1", not the
+  // tie's "Result" — the match is level and not yet decided.
+  const so = played.length ? played[played.length - 1].superOver : null;
+  if (so != null) return superOverInPlay(played) ? superOverTitle(so) : "Result";
   if (result) return "Result";
   if (!played.length) return "Not started";
   const last = played[played.length - 1];

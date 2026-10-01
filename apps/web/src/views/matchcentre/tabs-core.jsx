@@ -7,6 +7,7 @@ import { boardInsights } from "../../scorer/signals.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
 import { Highlights, MomentMark, OverSummary } from "./spectator.jsx";
+import { superOverTitle } from "../../lib/superOver.js";
 
 /**
  * The Match Centre's tabs that the public page (SCRBRD-083, src/public/)
@@ -173,12 +174,12 @@ export function CommentaryTab({ match, commentary, demo, innings }) {
           <div key={g.key}>
             {head && (
               <h2 style={{ ...T.role.label, color: T.content.secondary, margin: `${T.space.lg} 0 ${T.space.sm}` }}>
-                {inn ? <><SideName side={teamOf(match, inn.battingTeam)}/> innings</> : `Innings ${g.innings + 1}`}
+                {inn ? <>{inn.superOver != null && `${superOverTitle(inn.superOver)} · `}<SideName side={teamOf(match, inn.battingTeam)}/> innings</> : `Innings ${g.innings + 1}`}
               </h2>
             )}
             <Panel testid="mc-over" style={{ marginBottom: T.space.md }}>
               <div style={{ padding: `${T.space.sm} ${T.space.md}`, background: T.surface.base, display: "grid", gap: "2px" }}>
-                <span style={{ ...T.role.label, color: T.content.primary }}>Over {g.over + 1}</span>
+                <span style={{ ...T.role.label, color: T.content.primary }}>{inn?.superOver != null ? "The over" : `Over ${g.over + 1}`}</span>
                 {g.end && <span data-testid="mc-over-end" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{g.end.text}</span>}
               </div>
               <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>

@@ -3,11 +3,13 @@ import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { deriveMatch } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
-import { boardInnings, inningsPhase, matchLine, oversOf, resultText, revisionNotice, sidesOf, teamOf } from "../lib/matchCentre.js";
+import { boardInnings, inningsPhase, matchLine, resultText, revisionNotice, sidesOf, teamOf } from "../lib/matchCentre.js";
 import { humanDateTime } from "../lib/format.js";
 import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre/tabs-core.jsx";
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
-import { Panel, Quiet, SideName } from "../views/matchcentre/bits.jsx";
+import { HeaderScores } from "../views/matchcentre/scores.jsx";
+import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../lib/superOver.js";
+import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
@@ -252,23 +254,28 @@ export function PublicMatch({ matchId, view }) {
     return m;
   }, [events, match, data.fold, data.people]);
   const played = (folded?.innings ?? []).filter(Boolean);
-  const inningsSel = picked ?? Math.max(0, played.length - 1);
+  // ...of the match's own innings: a super over has its block (SCRBRD-114 phase 3b).
+  const inningsSel = picked ?? Math.max(0, matchInningsOf(played).length - 1);
 
   // The shared generator, named by the page's own labels. `sensitive` is
   // never passed: no health or discipline is said on a public page.
   const commentary = useMemo(() => {
     if (!match) return [];
-    return deriveCommentary(spoken, {
+    const teamName = (_key, name) => teamOf(match, name).full;
+    return superOverCommentary(deriveCommentary(spoken, {
       ctx: data.fold ?? {},
       nameOf: (ref) => data.people[ref] ?? null,
-      teamName: (_key, name) => teamOf(match, name).full,
-    });
-  }, [spoken, match, data.fold, data.people]);
+      teamName,
+    }), folded?.innings ?? [], { teamName });
+  }, [spoken, match, data.fold, data.people, folded]);
 
   // The server's words where it has a result (SCRBRD-114 phase 3a, db/69):
   // sides named, never a boy, never an organiser's reason; the fold's while
   // it has none.
-  const result = match ? ((match.result && match.result.outcome !== "in_progress" ? match.result.text : null)
+  // While a super over is being played the engine's "not completed" is not yet
+  // true (SCRBRD-114 phase 3b): the line says it is in progress.
+  const liveSO = liveSuperOverLine(played, match?.status);
+  const result = match ? (liveSO ?? (match.result && match.result.outcome !== "in_progress" ? match.result.text : null)
     ?? resultText(match, folded?.result, { reasons: false }) ?? null) : null;
   const { moment, overSummary } = useMoments(commentary, !data.loading && !!match);
   // What a screen reader is told as each ball arrives (lib/announce.js): the
@@ -309,26 +316,15 @@ export function PublicMatch({ matchId, view }) {
             wrapped. */}
         <ErrorBoundary name="scoreboard">
         <header style={{ display: "grid", gap: T.space.sm }}>
-          <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !folded?.result ? T.brand.accentText : T.content.secondary,
+          <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !(folded?.result && !liveSO) ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
-            {isLive && !folded?.result && <span className="live-dot" aria-hidden="true"/>}
-            {folded?.result || (match.result && match.result.outcome !== "in_progress") || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {isLive && !(folded?.result && !liveSO) && <span className="live-dot" aria-hidden="true"/>}
+            {(folded?.result && !liveSO) || (match.result && match.result.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
-          {played.length > 0 && (
-            <div data-testid="mc-scores" style={{ display: "grid", gap: "2px" }}>
-              {played.map((inn, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.md, maxWidth: "520px" }}>
-                  <span style={{ ...T.role.body, color: T.content.secondary, minWidth: 0 }}><SideName side={teamOf(match, inn.battingTeam)}/></span>
-                  <span style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, whiteSpace: "nowrap" }}>
-                    {inn.runs}/{inn.wickets} <span style={{ color: T.content.tertiary }}>({oversOf(inn.balls)})</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          {played.length > 0 && <HeaderScores match={match} played={played}/>}
           {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         </header>

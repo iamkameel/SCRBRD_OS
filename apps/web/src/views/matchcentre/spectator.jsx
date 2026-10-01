@@ -6,6 +6,7 @@ import { teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName } from "./bits.jsx";
 import { BEAT_WORD, overSummaryText } from "../../lib/announce.js";
+import { superOverTitle } from "../../lib/superOver.js";
 
 /**
  * The spectator's side of the Match Centre (Kameel's premium-feel checklist):
@@ -102,7 +103,7 @@ export function Highlights({ match, innings, commentary }) {
         <div key={n}>
           {byInnings.length > 1 && innings[n] && (
             <h3 style={{ ...T.role.label, color: T.content.secondary, margin: 0, padding: `${T.space.sm} ${T.space.md}`, background: T.surface.base }}>
-              <SideName side={teamOf(match, innings[n].battingTeam)}/> innings
+              {innings[n].superOver != null && `${superOverTitle(innings[n].superOver)} · `}<SideName side={teamOf(match, innings[n].battingTeam)}/> innings
             </h3>
           )}
           <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
