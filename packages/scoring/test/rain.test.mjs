@@ -158,6 +158,18 @@ group("D. The Laws: each refusal refusing, then the corrected event accepted");
        .every((c) => typeof /** @type {any} */ (REFUSAL_TEXT)[c] === "string" && (() => { try { likelyCause(c, { inn: view().innings[0] }); return true; } catch { return false; } })()));
 }
 
+group("D2. Rain never revises a super over (design §5; db/71 merged)");
+{
+  /** @type {any[]} */
+  const log = [inningsStart({ battingTeam: "1XI", bowlingTeam: "Kearsney", overs: 1, clientTs: T }),
+               { ...inningsStart({ battingTeam: "Kearsney", bowlingTeam: "1XI", overs: 1, target: 7, clientTs: T + 1 }), innings: 1 },
+               { ...inningsStart({ battingTeam: "Kearsney", bowlingTeam: "1XI", overs: 1, superOver: 1, clientTs: T + 2 }), innings: 2 }]
+    .map((e, k) => ({ ...e, id: `so:${k}` }));
+  const v = new MatchFold(log, { startsAt: RAIN_STARTS_AT }).view();
+  ok("a par, a cut or a target in a super over is the super over's refusal, never the rain rule's: super_over_no_revision",
+     [{ par: 5 }, { overs: 0 }, { target: 9 }].every((o) => lawsRefusal(v, { ...revision({ ...o, clientTs: T + 3 }), innings: 2 }) === REFUSAL.SUPER_OVER_NO_REVISION));
+}
+
 group("E. The words, by the frozen method");
 {
   const below = RAIN_LOGS.find((l) => l.name.includes("below par"));

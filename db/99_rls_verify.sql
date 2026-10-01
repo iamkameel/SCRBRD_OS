@@ -2678,6 +2678,7 @@ DECLARE
   BW uuid := 'bbbbbbbb-0000-0000-0000-000000000001';
   c uuid; v1 uuid; ea uuid; eb uuid;
   l1 uuid; l2 uuid; l3 uuid; f1 uuid; f2 uuid; f3 uuid; f4 uuid; f5 uuid; mp uuid; mw uuid; x uuid;
+  so uuid;   -- the super over after a DLS tie (db/71 merged, 2026-10-01)
   T timestamptz := '2026-10-10 10:00+02';
 BEGIN
   INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 073 Rain', 'league', 'T20', 'school') RETURNING id INTO c;
@@ -2759,8 +2760,26 @@ BEGIN
     PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 6, '{}', P2, BW);
     PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 1, '{}', P2, BW);
   END LOOP;
+  -- SO: F1's tie on the umpires' par (15/0 off 9, par 15) under a document
+  -- whose tie goes to a super over (db/71) and whose method is DLS; the
+  -- super over: the visitors 6 off the over, Hilton chasing 7 reach 8.
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES (HIL, '1XI', 'Verify 073 Friendly', T, 'cricket', 'T20', 2, 'complete') RETURNING id INTO so;
+  INSERT INTO match_conditions (match_id, doc, sources, doc_hash)
+  VALUES (so, '{"v": 1, "play": {"format.kind": "limited", "format.innings_per_side": 1, "result.tie_break": "super_over", "target.method": "dls_standard"}, "table": {}, "sheet": {}}', '{}', '');
+  PERFORM _first24_73(so, 2, 25);
+  PERFORM _ev_73(so, 1::smallint, 'ball', 'run', 2, '{}', NULL, NULL, 6);
+  PERFORM _ev_73(so, 1::smallint, 'ball', 'run', 1, '{}', NULL, NULL, 3);
+  PERFORM _ev_73(so, 1::smallint, 'play_stopped', NULL, NULL, '{"reason":"rain"}');
+  PERFORM _ev_73(so, 1::smallint, 'revision', NULL, NULL, '{"overs":null,"target":null,"reason":"rain","par":15}');
+  PERFORM _ev_73(so, 1::smallint, 'innings_end', NULL, NULL, '{"reason":"abandoned","confirmed":{"runs":15,"wickets":0,"balls":9}}');
+  PERFORM _ev_73(so, 2::smallint, 'innings_start', NULL, NULL, '{"battingTeam":"Verify 073 Friendly","bowlingTeam":"1XI","overs":1,"superOver":1}');
+  PERFORM _ev_73(so, 2::smallint, 'ball', 'run', 1, '{}', NULL, NULL, 6);
+  PERFORM _ev_73(so, 2::smallint, 'innings_end', NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":6,"wickets":0,"balls":6}}');
+  PERFORM _ev_73(so, 3::smallint, 'innings_start', NULL, NULL, '{"battingTeam":"1XI","bowlingTeam":"Verify 073 Friendly","overs":1,"target":7,"superOver":1}');
+  PERFORM _ev_73(so, 3::smallint, 'ball', 'run', 4, '{}', NULL, NULL, 2);
+  PERFORM _ev_73(so, 3::smallint, 'innings_end', NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":8,"wickets":0,"balls":2}}');
   RETURN jsonb_build_object('c', c, 'a', ea, 'b', eb, 'l1', l1, 'l2', l2, 'l3', l3,
-                            'f1', f1, 'f2', f2, 'f3', f3, 'f4', f4, 'f5', f5, 'p', mp, 'w', mw);
+                            'f1', f1, 'f2', f2, 'f3', f3, 'f4', f4, 'f5', f5, 'p', mp, 'w', mw, 'so', so);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Past RLS: publish a fixture's home side (the signed-out log reads it).
 CREATE OR REPLACE FUNCTION _publish_73(p_match uuid) RETURNS void AS $$
@@ -12336,354 +12355,6 @@ $v49$;
                        AND tgname IN ('availability_ask_again', 'lift_fixture_moved')) = 2,
       'db/70 (coexist): db/65''s and db/70''s triggers on match are not both in place');
   END;
-
-  -- ── 52. Rain: interruptions, par and the deemed NRR (SCRBRD-130 R1, db/73) ──
-  -- _seed_73(): the league "Verify 073 Rain" (dls_standard) and Hilton
-  -- friendlies under the default method; every figure below worked by hand
-  -- from the log. tools/smoke-fold-figures.mjs holds match_result() and
-  -- innings_stop_as_folded() to the fold over rain-logs.mjs, so the rule and
-  -- the fold cannot part.
-  --
-  -- Each labelled assertion was falsified once — the function replaced in
-  -- the database and this file run — and went red:
-  --   (par)       match_result_compute() reading a terminated chase as no
-  --               result whatever the par (the 3a rule)
-  --   (faced)     result.min_overs_per_side read from the chase's allotment,
-  --               not its overs faced, on a terminated chase
-  --   (method)    revised_target set without the frozen target.method (always
-  --               umpires_revision)
-  --   (deemed)    competition_standing_rows() reading the innings' own figures
-  --               where match_result_compute() deemed others (D8)
-  --   (stopped)   innings_stop_as_folded() not asking whether a seal closed the stop
-  --   (public)    public_match_log() without the two kinds
-  DECLARE
-    ids  jsonb := _seed_73();
-    C    uuid;
-    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
-    got  text;
-    j    jsonb;
-  BEGIN
-    C := (ids->>'c')::uuid;
-
-    -- (par) a chase terminated with the umpires' par is decided on it, as the
-    -- league reads it: L1 14/1 against a par of 18, Hilton by 4 runs; L2, cut
-    -- to an over and a target of 10, 6/0: Hilton by 3; L3, no revision: B by 10 wickets.
-    PERFORM _as(U_WESC);
-    SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
-                      coalesce(r2.decided_by, '-'), coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
-      FROM competition_results(C) r2
-      JOIN (VALUES ('l1', (ids->>'l1')::uuid), ('l2', (ids->>'l2')::uuid), ('l3', (ids->>'l3')::uuid)) AS x(label, m) ON x.m = r2.match_id;
-    PERFORM _assert(got = 'l1=home_win,runs,4,play,home l2=home_win,runs,3,play,home l3=away_win,wickets,10,play,away',
-      format('db/73 (par): the league''s results read %s', got));
-    -- ...and the three outcomes and the no-par no result, on the friendlies:
-    -- level (a tie), above (won by wickets in hand), no par (no result)
-    PERFORM _as(U_SARAH);
-    SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
-                      coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
-      FROM (VALUES ('f1', (ids->>'f1')::uuid), ('f2', (ids->>'f2')::uuid), ('f3', (ids->>'f3')::uuid),
-                   ('f4', (ids->>'f4')::uuid), ('f5', (ids->>'f5')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
-    -- (faced) F4 is F2 under a document asking two overs a side: one over
-    -- faced, so no result, though its allotment was two
-    PERFORM _assert(got = 'f1=tie,-,-,- f2=away_win,wickets,10,away f3=no_result,-,-,- f4=no_result,-,-,- f5=in_progress,-,-,-',
-      format('db/73 (par, faced): the friendlies read %s', got));
-
-    -- (method) the words' suffix: the chase names the method its revised
-    -- target was set under (the league's dls_standard; the friendlies' default,
-    -- the umpires' revision); a chase never revised names none
-    SELECT string_agg(x.label || '=' || coalesce(r2.innings->1->>'revised_target', '-'), ' ' ORDER BY x.label) INTO got
-      FROM (VALUES ('f1', (ids->>'f1')::uuid), ('f3', (ids->>'f3')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
-    PERFORM _as(U_WESC);
-    SELECT got || ' ' || string_agg(x.label || '=' || coalesce(r2.innings->1->>'revised_target', '-'), ' ' ORDER BY x.label) INTO got
-      FROM (VALUES ('l1', (ids->>'l1')::uuid), ('l2', (ids->>'l2')::uuid), ('l3', (ids->>'l3')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
-    PERFORM _assert(got = 'f1=umpires_revision f3=- l1=dls_standard l2=dls_standard l3=-',
-      format('db/73 (method): the revised-target method reads %s', got));
-
-    -- (deemed) net run rate to the ball (D8). Hilton for: L1 deemed 18 off
-    -- the 9 balls the terminated chase faced, L2 deemed 9 (the target 10 less
-    -- one) off the chase's allotted 6, L3 24 off 12 = 51/27; against: 14/9,
-    -- 6/6, 25/7 = 45/22. Westville the mirror. Without D8 Hilton's would read
-    -- 72/36. L3, never revised, carries no deemed figure.
-    SELECT string_agg(s.display_name || '=' || concat_ws('/', s.runs_for, s.balls_for, s.runs_against, s.balls_against) || ',' || s.points,
-                      ' ' ORDER BY s.display_name) INTO got
-      FROM competition_standing s WHERE s.competition_id = C;
-    PERFORM _assert(got = 'Verify 073 Hilton 1st XI=51/27/45/22,8 Verify 073 Westville 1st XI=45/22/51/27,4',
-      format('db/73 (deemed): the table reads %s', got));
-    PERFORM _assert((SELECT s.nrr FROM competition_standing s WHERE s.competition_id = C AND s.display_name = 'Verify 073 Hilton 1st XI')
-                    = 51::numeric * 6 / 27 - 45::numeric * 6 / 22,
-      'db/73 (deemed): Hilton''s net run rate is not 51 × 6 ÷ 27 less 45 × 6 ÷ 22');
-    SELECT r2.innings INTO j FROM match_result((ids->>'l3')::uuid) r2;
-    PERFORM _assert(NOT (j->0 ? 'nrr_runs') AND NOT (j->0 ? 'nrr_balls') AND NOT (j->1 ? 'revised_target'),
-      format('db/73 (deemed): a match never revised carries deemed figures: %s', j));
-
-    -- (stopped) inn.stopped and inn.par: F5's first innings stopped and not
-    -- resumed; F1's terminated chase closed by its seal, its par 15; F3's no par
-    PERFORM _as(U_SARAH);
-    SELECT string_agg(x.label || '=' || concat_ws(',', s.stopped, coalesce(s.par::text, '-')), ' ' ORDER BY x.label) INTO got
-      FROM (VALUES ('f1', (ids->>'f1')::uuid, 1), ('f3', (ids->>'f3')::uuid, 1), ('f5', (ids->>'f5')::uuid, 0)) AS x(label, m, i),
-           LATERAL innings_stop_as_folded(x.m, x.i::smallint) s;
-    PERFORM _assert(got = 'f1=f,15 f3=f,- f5=t,-', format('db/73 (stopped): the stops read %s', got));
-    SELECT r2.innings INTO j FROM match_result((ids->>'f5')::uuid) r2;
-    PERFORM _assert((j->0->>'stopped')::boolean AND j->0->'par' = 'null'::jsonb,
-      format('db/73 (stopped): the result''s innings do not carry the open stop: %s', j));
-
-    -- (public) the signed-out log carries the stop, its reason and time,
-    -- and the umpires' par — never the scorer's note
-    PERFORM _publish_73((ids->>'f1')::uuid);
-    SELECT string_agg(l.kind || ':' || l.detail::text, ' | ' ORDER BY l.seq) INTO got
-      FROM public_match_log((ids->>'f1')::uuid, 0) l WHERE l.kind IN ('play_stopped', 'revision');
-    PERFORM _assert(got = 'play_stopped:{"at": 1791622800000, "reason": "rain"} | revision:{"par": 15, "reason": "rain"}',
-      format('db/73 (public): the signed-out log reads %s', got));
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_match_log((ids->>'f1')::uuid, 0) l WHERE l.detail::text LIKE '%private note%'),
-      'db/73 (public): a stop''s note reached the signed-out log');
-
-    -- (careers) a stop and a resumption change no figure: the same six balls
-    -- with and without them, ball for ball in the career view and in the
-    -- handover's count (the completion gate reads the same)
-    SELECT string_agg(concat_ws('/', p.player_id, p.runs, p.balls_faced, p.out), ' ' ORDER BY p.player_id) INTO got
-      FROM player_innings p WHERE p.match_id = (ids->>'p')::uuid;
-    PERFORM _assert(got IS NOT NULL AND got = (SELECT string_agg(concat_ws('/', p.player_id, p.runs, p.balls_faced, p.out), ' ' ORDER BY p.player_id)
-                                                 FROM player_innings p WHERE p.match_id = (ids->>'w')::uuid),
-      format('db/73 (careers): the career view moved with a stop: %s', got));
-    PERFORM _assert((SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded((ids->>'p')::uuid, 0::smallint) f)
-                    = (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded((ids->>'w')::uuid, 0::smallint) f),
-      'db/73 (careers): the handover''s count moved with a stop');
-  END;
-
-  -- ── 53. Venue par (SCRBRD-130 R3, db/74) ──────────────────────────
-  -- _seed_74(): a Hilton field with a pitch on it, five first innings that
-  -- count and one excluded for each of §6.2's rules; every figure worked by
-  -- hand. The JavaScript half (par at a point, the floor's pin) is
-  -- packages/scoring/test/venue.test.mjs.
-  --
-  -- Each labelled assertion was falsified once — the function replaced in
-  -- the database and this file run — and went red:
-  --   (floor)     venue_par_min_innings() answering 4
-  --   (revised)   the pool not asking for a revision of the overs
-  --   (ended)     the pool taking an innings terminated (abandoned)
-  --   (grain)     the pool not asking the allotment be the grain's overs
-  --   (window)    three seasons back allowed into the window
-  --   (pooled)    ground_root() answering the ground itself (no pooling)
-  --   (guard)     venue_par() not asking facility.read at the ground's school
-  DECLARE
-    ids  jsonb := _seed_74();
-    F    uuid;  P uuid;
-    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
-    got  text;
-    v    record;
-  BEGIN
-    F := (ids->>'f')::uuid; P := (ids->>'p')::uuid;
-    -- (floor) the constant, as venue.test.mjs pins it
-    PERFORM _assert('venue_par.min_innings=' || venue_par_min_innings() = 'venue_par.min_innings=5',
-      format('db/74 (floor): the floor is %s', venue_par_min_innings()));
-    PERFORM _as(U_SARAH);
-    SELECT * INTO v FROM venue_par(F, 20, 'U15', DATE '2026-10-31');
-    -- (revised, ended, grain, window) exactly the five that count: 100, 120,
-    -- 140 (on the pitch), 160 (2024), 150 (the book); the mean 134, median
-    -- 140, range 100–160, seasons 2024–2026, one from a book
-    SELECT string_agg(i->>'runs', ',' ORDER BY (i->>'date')) INTO got FROM jsonb_array_elements(v.innings) i;
-    PERFORM _assert(got = '160,140,100,120,150',
-      format('db/74 (revised, ended, grain, window): the pool reads %s', got));
-    PERFORM _assert(v.n = 5 AND v.sufficient AND v.par = 134 AND v.median = 140 AND v.low = 100 AND v.high = 160
-                    AND v.first_season = 2024 AND v.last_season = 2026 AND v.from_books = 1 AND v.floor = 5,
-      format('db/74: the figure reads n %s par %s median %s range %s–%s seasons %s–%s books %s',
-             v.n, v.par, v.median, v.low, v.high, v.first_season, v.last_season, v.from_books));
-    -- (pooled) the pitch pools with its field, read from either; the
-    -- breakdown names each ground with its own count and mean
-    SELECT string_agg(b->>'name' || '=' || (b->>'n') || '/' || (b->>'mean'), ' ' ORDER BY b->>'name') INTO got FROM jsonb_array_elements(v.breakdown) b;
-    PERFORM _assert(got = 'Verify 074 Field=4/133 Verify 074 Oval B=1/140' AND v.pooled_ground_id = F,
-      format('db/74 (pooled): the breakdown reads %s', got));
-    PERFORM _assert((SELECT w.par FROM venue_par(P, 20, 'U15', DATE '2026-10-31') w) = 134,
-      'db/74 (pooled): the pitch does not read its field''s par');
-    -- the floor: a year on, the 2024 innings ages out — four, insufficient, no par
-    SELECT * INTO v FROM venue_par(F, 20, 'U15', DATE '2027-10-31');
-    PERFORM _assert(v.n = 4 AND NOT v.sufficient AND v.par IS NULL,
-      format('db/74 (floor): four innings read n %s sufficient %s par %s', v.n, v.sufficient, v.par));
-    -- another band, another ground: their own pools
-    PERFORM _assert((SELECT w.n FROM venue_par(F, 20, 'U14', DATE '2026-10-31') w) = 1
-                    AND (SELECT w.n FROM venue_par((ids->>'x')::uuid, 20, 'U15', DATE '2026-10-31') w) = 1
-                    AND (SELECT w.n FROM venue_par(F, 50, 'U15', DATE '2026-10-31') w) = 1,
-      'db/74 (grain): a band, a ground or an allotment pooled with another');
-    -- (guard) a Westville coach reads no Hilton ground's par …
-    PERFORM _as(U_WESC);
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM venue_par(F, 20, 'U15', DATE '2026-10-31')),
-      'db/74 (guard): a reader with no facility.read at the ground''s school read its par');
-    -- … but reads the par of the ground his own fixture is played on, at its
-    -- overs and band, as its board does
-    SELECT * INTO v FROM venue_par_for_match((ids->>'m2')::uuid, DATE '2026-10-31');
-    PERFORM _assert(v.par = 134 AND v.overs = 20 AND v.age_band = 'U15',
-      format('db/74: the visitors'' coach reads his fixture''s ground at par %s, %s overs, %s', v.par, v.overs, v.age_band));
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM venue_par_for_match((ids->>'mx')::uuid, DATE '2026-10-31')),
-      'db/74 (guard): a reader of no fixture read its ground''s par');
-    -- the pool and the figure are the owner's: the application cannot call them
-    PERFORM _assert(NOT has_function_privilege('venue_par_pool(uuid,integer,date)', 'EXECUTE')
-                    AND NOT has_function_privilege('venue_par_compute(uuid,integer,text,date)', 'EXECUTE'),
-      'db/74: the application may read the pool past the readers'' guards');
-  END;
-
-  -- ── 54. The DLS table: loading, publishing, freezing (SCRBRD-130 R2, db/75) ──
-  -- Every cell here is the synthetic generator's (_synth_75), never a value
-  -- of the published table (D5). The JavaScript half — the calculator, its
-  -- six cases worked by hand, the D5 grep — is packages/scoring/test/dls.test.mjs.
-  --
-  -- Each labelled assertion was falsified once — the function replaced in
-  -- the database and this file run — and went red:
-  --   (operator)  dls_operator() answering true for anyone signed in
-  --   (structure) dls_table_problems() without its not_falling_in_wickets check
-  --   (synthetic) dls_table_publish() not refusing a SYNTHETIC title
-  --   (published) dls_resource_guard() letting a published table's cell move
-  --   (withdrawn) dls_table_guard() letting a published table be deleted
-  --   (frozen)    the resolver's block reading a draft table, not a published one
-  --   (platform)  condition_platform_key_guard() letting the key through
-  --   (guard)     dls_table_for_match() not asking match_result_readable()
-  DECLARE
-    ids  jsonb := _seed_75();
-    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
-    BALL uuid; OVR uuid; PUB uuid;
-    got  text;
-    v    record;
-    j    jsonb;
-    v_ok boolean;
-  BEGIN
-    -- (operator) platform.reference.manage, held through no school: a school's
-    -- director loads, publishes, withdraws and lists nothing
-    PERFORM _as(U_SARAH);
-    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 by a director', 901, 'over'), _synth_75('over'));
-    PERFORM _assert(NOT v.ok AND v.reason = 'not_permitted', format('db/75 (operator): a school''s director loaded a table: %s', v.reason));
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_tables()), 'db/75 (operator): a school''s director lists the tables');
-    PERFORM _assert(NOT dls_operator() AND NOT app_can('platform.reference.manage', HIL),
-      'db/75 (operator): a school''s director holds platform.reference.manage');
-
-    -- a platform administrator inside a support session (§ support: U_PLAT's
-    -- is still open here) acts for a school, not for the platform: refused
-    PERFORM _as(U_PLAT);
-    IF app_support_access_id() IS NOT NULL THEN
-      SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 in support', 901, 'over'), _synth_75('over'));
-      PERFORM _assert(NOT v.ok AND v.reason = 'not_permitted', format('db/75 (operator): a support session loaded a table: %s', v.reason));
-    END IF;
-
-    -- the synthetic table loads at both grains, hashed as dls.test.mjs pins it;
-    -- the owner (superadmin) as the operator
-    PERFORM _as(U_OWNER);
-    SELECT * INTO v FROM dls_table_load(_meta_75('SYNTHETIC — tests only', 901, 'ball'), _synth_75('ball'));
-    PERFORM _assert(v.ok AND v.row_count = 3010 AND v.content_hash = '0847f8f488da304bddc426b9d0d50febfac43e6461fc7016b365da151b1dfa47',
-      format('db/75: the synthetic table by the ball loaded %s, %s cells, hash %s', v.reason, v.row_count, v.content_hash));
-    BALL := v.table_id;
-    SELECT * INTO v FROM dls_table_load(_meta_75('SYNTHETIC — tests only', 902, 'over'), _synth_75('over'));
-    PERFORM _assert(v.ok AND v.row_count = 510 AND v.content_hash = '95766fbf157ef9908c29ab997d53807a2bdaa9eedca81ed7367db0a5d8afc564',
-      format('db/75: the synthetic table by the over loaded %s, %s cells, hash %s', v.reason, v.row_count, v.content_hash));
-    OVR := v.table_id;
-    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 again', 902, 'over'), _synth_75('over'));
-    PERFORM _assert(NOT v.ok AND v.reason = 'version_taken', format('db/75: a version loaded twice: %s', v.reason));
-    -- the provenance and the permission are not optional
-    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075', 903, 'over') - 'sourceDocument', _synth_75('over'));
-    PERFORM _assert(NOT v.ok AND v.reason = 'provenance_required', format('db/75: a table with no source loaded: %s', v.reason));
-    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075', 903, 'over') || '{"permissionNote": "yes"}', _synth_75('over'));
-    PERFORM _assert(NOT v.ok AND v.reason = 'permission_note_required', format('db/75: a table with no permission loaded: %s', v.reason));
-
-    -- (structure) each check refuses, alone: one cell moved at a time
-    SELECT string_agg(x.label || '=' || coalesce(array_to_string(r.problems, '+'), r.reason), ' ' ORDER BY x.label) INTO got
-      FROM (VALUES ('a_grain', 'inning', '{}'::jsonb), ('b_missing', 'over', '{"6,3": null}'), ('c_range', 'over', '{"6,0": 19.5}'),
-                   ('d_end', 'over', '{"0,0": 1}'), ('e_start', 'over', '{"300,0": 999}'), ('f_balls', 'over', '{"12,9": 1}'),
-                   ('g_wickets', 'over', '{"6,1": 21}')) AS x(label, grain, patch),
-           LATERAL dls_table_load(_meta_75('Verify 075 broken', 904, x.grain), _synth_75('over', x.patch)) r;
-    PERFORM _assert(got = 'a_grain=grain b_missing=missing_cell c_range=out_of_range d_end=not_zero_at_end e_start=not_full_at_start '
-                       || 'f_balls=not_rising_in_balls g_wickets=not_falling_in_wickets',
-      format('db/75 (structure): the checks read %s', got));
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_tables() t WHERE t.version = 904), 'db/75 (structure): a broken table was kept');
-
-    -- (synthetic) the tests' table is never published
-    SELECT * INTO v FROM dls_table_publish(BALL);
-    PERFORM _assert(NOT v.ok AND v.reason = 'synthetic_title', format('db/75 (synthetic): the synthetic table published: %s', v.reason));
-
-    -- (frozen) a match fixed with no table published names none, for ever
-    j := _freeze_75((ids->>'m0')::uuid);
-    PERFORM _assert(NOT (j->'doc'->'play' ? 'target.dls_table') AND j->'sources'->'target.dls_table'->>'from' = 'platform_default',
-      format('db/75 (frozen): a match fixed with no table published named %s', j->'doc'->'play'->'target.dls_table'));
-
-    -- a table under the test's own title (still the generator's cells) publishes
-    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 rehearsal table', 905, 'over'), _synth_75('over'));
-    PUB := v.table_id;
-    SELECT * INTO v FROM dls_table_publish(PUB);
-    PERFORM _assert(v.ok, format('db/75: the rehearsal table did not publish: %s %s', v.reason, v.detail));
-    SELECT * INTO v FROM dls_table_publish(PUB);
-    PERFORM _assert(NOT v.ok AND v.reason = 'not_draft', format('db/75: a table published twice: %s', v.reason));
-    -- the listing carries provenance and never a cell
-    SELECT string_agg(t.version || ':' || t.status, ' ' ORDER BY t.version) INTO got FROM dls_tables() t WHERE t.version >= 901;
-    PERFORM _assert(got = '901:draft 902:draft 905:published', format('db/75: the operator lists %s', got));
-
-    -- (frozen) a match fixed now names it, from the platform
-    j := _freeze_75((ids->>'m1')::uuid);
-    PERFORM _assert(j->'doc'->'play'->'target.dls_table' = jsonb_build_object('id', PUB, 'version', 905,
-                      'hash', '95766fbf157ef9908c29ab997d53807a2bdaa9eedca81ed7367db0a5d8afc564')
-                    AND j->'sources'->'target.dls_table' = '{"from": "platform", "status": "confirmed"}',
-      format('db/75 (frozen): the document reads %s from %s', j->'doc'->'play'->'target.dls_table', j->'sources'->'target.dls_table'));
-
-    -- (published) a published table never changes: not a cell, not its
-    -- title, not deleted, not a cell added — even by the owner
-    SELECT string_agg(_try_75(x.s), ' ' ORDER BY x.i) INTO got FROM (VALUES
-      (1, format('UPDATE dls_resource SET resource_tenths = resource_tenths WHERE table_id = %L AND balls_remaining = 6', PUB)),
-      (2, format('DELETE FROM dls_resource WHERE table_id = %L AND balls_remaining = 6', PUB)),
-      (3, format('INSERT INTO dls_resource SELECT %L, 1, w, 0 FROM generate_series(0, 9) w', PUB)),
-      (4, format('UPDATE dls_resource_table SET title = %L WHERE id = %L', 'Verify 075 renamed', PUB)),
-      (5, format('UPDATE dls_resource_table SET status = %L WHERE id = %L', 'draft', PUB))) AS x(i, s);
-    PERFORM _assert(got = 'dls_resource_published_immutable dls_resource_published_immutable dls_resource_published_immutable '
-                       || 'dls_table_published_immutable dls_table_published_immutable',
-      format('db/75 (published): writes to a published table read %s', got));
-
-    -- (withdrawn) withdrawal says why, keeps every row, and the match that
-    -- named it still reads it, "since withdrawn"
-    SELECT * INTO v FROM dls_table_withdraw(PUB, 'short');
-    PERFORM _assert(NOT v.ok AND v.reason = 'note_required', format('db/75 (withdrawn): withdrawn without a reason: %s', v.reason));
-    SELECT * INTO v FROM dls_table_withdraw(PUB, 'Verify 075: superseded in the rehearsal');
-    PERFORM _assert(v.ok, format('db/75 (withdrawn): the table did not withdraw: %s', v.reason));
-    PERFORM _assert(_try_75(format('DELETE FROM dls_resource_table WHERE id = %L', PUB)) = 'dls_table_kept'
-                    AND _try_75(format('UPDATE dls_resource_table SET status = %L, withdrawn_note = NULL WHERE id = %L', 'published', PUB))
-                        = 'dls_table_published_immutable',
-      'db/75 (withdrawn): a withdrawn table was deleted or brought back');
-    PERFORM _as(U_SARAH);
-    SELECT * INTO v FROM dls_table_for_match((ids->>'m1')::uuid);
-    PERFORM _assert(v.id = PUB AND v.status = 'withdrawn' AND NOT v.current AND jsonb_array_length(v.cells) = 510,
-      format('db/75 (withdrawn): the fixed match reads table %s, %s, %s cells', v.version, v.status, jsonb_array_length(v.cells)));
-    -- the match fixed with none reads no table now none is published
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match((ids->>'m0')::uuid)),
-      'db/75: a match fixed with no table read a withdrawn one');
-    -- a later version moves no earlier match: M1 still reads the one it was
-    -- fixed under; M0, fixed under none, reads the current one and says so
-    PERFORM _as(U_OWNER);
-    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 rehearsal table, corrected', 906, 'over'), _synth_75('over'));
-    SELECT * INTO v FROM dls_table_publish(v.table_id);
-    PERFORM _as(U_SARAH);
-    SELECT string_agg(x.label || '=' || t.version || ',' || t.status || ',' || t.current, ' ' ORDER BY x.label) INTO got
-      FROM (VALUES ('m0', (ids->>'m0')::uuid), ('m1', (ids->>'m1')::uuid)) AS x(label, m), LATERAL dls_table_for_match(x.m) t;
-    PERFORM _assert(v.ok AND got = 'm0=906,published,true m1=905,withdrawn,false',
-      format('db/75 (frozen): after version 906 the matches read %s', got));
-
-    -- (guard) the cells go only to a reader of the match's result: a
-    -- Westville coach reads nothing of a Hilton friendly's
-    PERFORM _as(U_WESC);
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match((ids->>'m1')::uuid)),
-      'db/75 (guard): a reader of no result read the table''s cells');
-
-    -- (platform) a competition's version or a fixture's departure never names the table
-    got := _try_75(format('INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by) '
-                          'VALUES (%L, %L, %L, %L, %L, %L, %L, %L)', ids->>'v', 'target.dls_table', jsonb_build_object('id', PUB), 'confirmed',
-                          'Verify 075 league rules', '9.9', '2026-10-01', U_OWNER))
-        || ' ' || _try_75(format('INSERT INTO match_condition_override (match_id, key, value, reason, set_by) VALUES (%L, %L, %L, %L, %L)',
-                          ids->>'m2', 'target.dls_table', jsonb_build_object('id', PUB), 'Verify 075: a league''s own table', U_OWNER));
-    PERFORM _assert(got = 'condition_platform_key condition_platform_key', format('db/75 (platform): naming the table read %s', got));
-
-    -- the application reads no table directly, and calls nothing of the owner's
-    BEGIN
-      PERFORM 1 FROM dls_resource LIMIT 1;
-      v_ok := true;
-    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
-    END;
-    PERFORM _assert(NOT v_ok, 'db/75: the application selected a resource cell');
-    PERFORM _assert(NOT has_table_privilege('dls_resource_table', 'SELECT') AND NOT has_table_privilege('dls_resource', 'SELECT')
-                    AND NOT has_function_privilege('dls_table_problems(text,integer,jsonb)', 'EXECUTE')
-                    AND NOT has_function_privilege('dls_canonical_text(uuid)', 'EXECUTE'),
-      'db/75: the application may read a DLS table past the functions');
-  END;
   PERFORM set_config('app.user_id', '', true);
 
   -- ── 50. The super over (SCRBRD-114 phase 3b, db/71) ──
@@ -12953,6 +12624,374 @@ $v49$;
     SELECT * INTO r FROM match_result_decision_withdraw(dec, 'the appeal was itself withdrawn by Westville');
     PERFORM _assert(EXISTS (SELECT 1 FROM progression_conflict WHERE competition_id = C AND match_id = D AND side = 'home'),
       'db/72 (ack): a later change to the result did not flag the played final again');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 52. Rain: interruptions, par and the deemed NRR (SCRBRD-130 R1, db/73) ──
+  -- _seed_73(): the league "Verify 073 Rain" (dls_standard) and Hilton
+  -- friendlies under the default method; every figure below worked by hand
+  -- from the log. tools/smoke-fold-figures.mjs holds match_result() and
+  -- innings_stop_as_folded() to the fold over rain-logs.mjs, so the rule and
+  -- the fold cannot part.
+  --
+  -- Each labelled assertion was falsified once — the function replaced in
+  -- the database and this file run — and went red:
+  --   (par)       match_result_compute() reading a terminated chase as no
+  --               result whatever the par (the 3a rule)
+  --   (faced)     result.min_overs_per_side read from the chase's allotment,
+  --               not its overs faced, on a terminated chase
+  --   (method)    revised_target set without the frozen target.method (always
+  --               umpires_revision)
+  --   (deemed)    competition_standing_rows() reading the innings' own figures
+  --               where match_result_compute() deemed others (D8)
+  --   (stopped)   innings_stop_as_folded() not asking whether a seal closed the stop
+  --   (public)    public_match_log() without the two kinds
+  --   (super over) innings_par_as_folded() reading the match's last par
+  --               whatever the innings (a super over then carried the chase's)
+  DECLARE
+    ids  jsonb := _seed_73();
+    C    uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    got  text;
+    j    jsonb;
+  BEGIN
+    C := (ids->>'c')::uuid;
+
+    -- (par) a chase terminated with the umpires' par is decided on it, as the
+    -- league reads it: L1 14/1 against a par of 18, Hilton by 4 runs; L2, cut
+    -- to an over and a target of 10, 6/0: Hilton by 3; L3, no revision: B by 10 wickets.
+    PERFORM _as(U_WESC);
+    SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
+                      coalesce(r2.decided_by, '-'), coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
+      FROM competition_results(C) r2
+      JOIN (VALUES ('l1', (ids->>'l1')::uuid), ('l2', (ids->>'l2')::uuid), ('l3', (ids->>'l3')::uuid)) AS x(label, m) ON x.m = r2.match_id;
+    PERFORM _assert(got = 'l1=home_win,runs,4,play,home l2=home_win,runs,3,play,home l3=away_win,wickets,10,play,away',
+      format('db/73 (par): the league''s results read %s', got));
+    -- ...and the three outcomes and the no-par no result, on the friendlies:
+    -- level (a tie), above (won by wickets in hand), no par (no result)
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
+                      coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('f1', (ids->>'f1')::uuid), ('f2', (ids->>'f2')::uuid), ('f3', (ids->>'f3')::uuid),
+                   ('f4', (ids->>'f4')::uuid), ('f5', (ids->>'f5')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
+    -- (faced) F4 is F2 under a document asking two overs a side: one over
+    -- faced, so no result, though its allotment was two
+    PERFORM _assert(got = 'f1=tie,-,-,- f2=away_win,wickets,10,away f3=no_result,-,-,- f4=no_result,-,-,- f5=in_progress,-,-,-',
+      format('db/73 (par, faced): the friendlies read %s', got));
+
+    -- (method) the words' suffix: the chase names the method its revised
+    -- target was set under (the league's dls_standard; the friendlies' default,
+    -- the umpires' revision); a chase never revised names none
+    SELECT string_agg(x.label || '=' || coalesce(r2.innings->1->>'revised_target', '-'), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('f1', (ids->>'f1')::uuid), ('f3', (ids->>'f3')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
+    PERFORM _as(U_WESC);
+    SELECT got || ' ' || string_agg(x.label || '=' || coalesce(r2.innings->1->>'revised_target', '-'), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('l1', (ids->>'l1')::uuid), ('l2', (ids->>'l2')::uuid), ('l3', (ids->>'l3')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
+    PERFORM _assert(got = 'f1=umpires_revision f3=- l1=dls_standard l2=dls_standard l3=-',
+      format('db/73 (method): the revised-target method reads %s', got));
+
+    -- (deemed) net run rate to the ball (D8). Hilton for: L1 deemed 18 off
+    -- the 9 balls the terminated chase faced, L2 deemed 9 (the target 10 less
+    -- one) off the chase's allotted 6, L3 24 off 12 = 51/27; against: 14/9,
+    -- 6/6, 25/7 = 45/22. Westville the mirror. Without D8 Hilton's would read
+    -- 72/36. L3, never revised, carries no deemed figure.
+    SELECT string_agg(s.display_name || '=' || concat_ws('/', s.runs_for, s.balls_for, s.runs_against, s.balls_against) || ',' || s.points,
+                      ' ' ORDER BY s.display_name) INTO got
+      FROM competition_standing s WHERE s.competition_id = C;
+    PERFORM _assert(got = 'Verify 073 Hilton 1st XI=51/27/45/22,8 Verify 073 Westville 1st XI=45/22/51/27,4',
+      format('db/73 (deemed): the table reads %s', got));
+    PERFORM _assert((SELECT s.nrr FROM competition_standing s WHERE s.competition_id = C AND s.display_name = 'Verify 073 Hilton 1st XI')
+                    = 51::numeric * 6 / 27 - 45::numeric * 6 / 22,
+      'db/73 (deemed): Hilton''s net run rate is not 51 × 6 ÷ 27 less 45 × 6 ÷ 22');
+    SELECT r2.innings INTO j FROM match_result((ids->>'l3')::uuid) r2;
+    PERFORM _assert(NOT (j->0 ? 'nrr_runs') AND NOT (j->0 ? 'nrr_balls') AND NOT (j->1 ? 'revised_target'),
+      format('db/73 (deemed): a match never revised carries deemed figures: %s', j));
+
+    -- (stopped) inn.stopped and inn.par: F5's first innings stopped and not
+    -- resumed; F1's terminated chase closed by its seal, its par 15; F3's no par
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(x.label || '=' || concat_ws(',', s.stopped, coalesce(s.par::text, '-')), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('f1', (ids->>'f1')::uuid, 1), ('f3', (ids->>'f3')::uuid, 1), ('f5', (ids->>'f5')::uuid, 0)) AS x(label, m, i),
+           LATERAL innings_stop_as_folded(x.m, x.i::smallint) s;
+    PERFORM _assert(got = 'f1=f,15 f3=f,- f5=t,-', format('db/73 (stopped): the stops read %s', got));
+    SELECT r2.innings INTO j FROM match_result((ids->>'f5')::uuid) r2;
+    PERFORM _assert((j->0->>'stopped')::boolean AND j->0->'par' = 'null'::jsonb,
+      format('db/73 (stopped): the result''s innings do not carry the open stop: %s', j));
+
+    -- (public) the signed-out log carries the stop, its reason and time,
+    -- and the umpires' par — never the scorer's note
+    PERFORM _publish_73((ids->>'f1')::uuid);
+    SELECT string_agg(l.kind || ':' || l.detail::text, ' | ' ORDER BY l.seq) INTO got
+      FROM public_match_log((ids->>'f1')::uuid, 0) l WHERE l.kind IN ('play_stopped', 'revision');
+    PERFORM _assert(got = 'play_stopped:{"at": 1791622800000, "reason": "rain"} | revision:{"par": 15, "reason": "rain"}',
+      format('db/73 (public): the signed-out log reads %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_match_log((ids->>'f1')::uuid, 0) l WHERE l.detail::text LIKE '%private note%'),
+      'db/73 (public): a stop''s note reached the signed-out log');
+
+    -- (careers) a stop and a resumption change no figure: the same six balls
+    -- with and without them, ball for ball in the career view and in the
+    -- handover's count (the completion gate reads the same)
+    SELECT string_agg(concat_ws('/', p.player_id, p.runs, p.balls_faced, p.out), ' ' ORDER BY p.player_id) INTO got
+      FROM player_innings p WHERE p.match_id = (ids->>'p')::uuid;
+    PERFORM _assert(got IS NOT NULL AND got = (SELECT string_agg(concat_ws('/', p.player_id, p.runs, p.balls_faced, p.out), ' ' ORDER BY p.player_id)
+                                                 FROM player_innings p WHERE p.match_id = (ids->>'w')::uuid),
+      format('db/73 (careers): the career view moved with a stop: %s', got));
+    PERFORM _assert((SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded((ids->>'p')::uuid, 0::smallint) f)
+                    = (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded((ids->>'w')::uuid, 0::smallint) f),
+      'db/73 (careers): the handover''s count moved with a stop');
+
+    -- (super over) rain never revises a super over (the Laws refuse a
+    -- revision in one: super_over_no_revision, rain.test.mjs): SO's chase is
+    -- level with the umpires' par, a tie (DLS), and its super over decides
+    -- it — Hilton chasing 7 reach 8. The rain blocks read the match's own
+    -- innings alone: the chase says dls_standard and the first innings is
+    -- deemed 15 off the 9 balls faced; neither super-over innings carries a
+    -- par, a stop, a revised target or a deemed figure.
+    PERFORM _as(U_SARAH);
+    SELECT concat_ws(',', r2.outcome, coalesce(r2.decided_by, '-'), coalesce(r2.winner_side, '-'), jsonb_array_length(r2.innings),
+                     coalesce(r2.innings->1->>'revised_target', '-'), coalesce(r2.innings->0->>'nrr_runs', '-'), coalesce(r2.innings->0->>'nrr_balls', '-'),
+                     (SELECT count(*) FROM jsonb_array_elements(r2.innings) y
+                       WHERE y->'super_over' <> 'null'::jsonb
+                         AND (y ? 'revised_target' OR y ? 'nrr_runs' OR y->'par' <> 'null'::jsonb OR (y->>'stopped')::boolean)))
+      INTO got FROM match_result((ids->>'so')::uuid) r2;
+    PERFORM _assert(got = 'tie,super_over,home,4,dls_standard,15,9,0',
+      format('db/73 (super over): a DLS tie and its super over read %s', got));
+  END;
+
+  -- ── 53. Venue par (SCRBRD-130 R3, db/74) ──────────────────────────
+  -- _seed_74(): a Hilton field with a pitch on it, five first innings that
+  -- count and one excluded for each of §6.2's rules; every figure worked by
+  -- hand. The JavaScript half (par at a point, the floor's pin) is
+  -- packages/scoring/test/venue.test.mjs.
+  --
+  -- Each labelled assertion was falsified once — the function replaced in
+  -- the database and this file run — and went red:
+  --   (floor)     venue_par_min_innings() answering 4
+  --   (revised)   the pool not asking for a revision of the overs
+  --   (ended)     the pool taking an innings terminated (abandoned)
+  --   (grain)     the pool not asking the allotment be the grain's overs
+  --   (window)    three seasons back allowed into the window
+  --   (pooled)    ground_root() answering the ground itself (no pooling)
+  --   (guard)     venue_par() not asking facility.read at the ground's school
+  DECLARE
+    ids  jsonb := _seed_74();
+    F    uuid;  P uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    got  text;
+    v    record;
+  BEGIN
+    F := (ids->>'f')::uuid; P := (ids->>'p')::uuid;
+    -- (floor) the constant, as venue.test.mjs pins it
+    PERFORM _assert('venue_par.min_innings=' || venue_par_min_innings() = 'venue_par.min_innings=5',
+      format('db/74 (floor): the floor is %s', venue_par_min_innings()));
+    PERFORM _as(U_SARAH);
+    SELECT * INTO v FROM venue_par(F, 20, 'U15', DATE '2026-10-31');
+    -- (revised, ended, grain, window) exactly the five that count: 100, 120,
+    -- 140 (on the pitch), 160 (2024), 150 (the book); the mean 134, median
+    -- 140, range 100–160, seasons 2024–2026, one from a book
+    SELECT string_agg(i->>'runs', ',' ORDER BY (i->>'date')) INTO got FROM jsonb_array_elements(v.innings) i;
+    PERFORM _assert(got = '160,140,100,120,150',
+      format('db/74 (revised, ended, grain, window): the pool reads %s', got));
+    PERFORM _assert(v.n = 5 AND v.sufficient AND v.par = 134 AND v.median = 140 AND v.low = 100 AND v.high = 160
+                    AND v.first_season = 2024 AND v.last_season = 2026 AND v.from_books = 1 AND v.floor = 5,
+      format('db/74: the figure reads n %s par %s median %s range %s–%s seasons %s–%s books %s',
+             v.n, v.par, v.median, v.low, v.high, v.first_season, v.last_season, v.from_books));
+    -- (pooled) the pitch pools with its field, read from either; the
+    -- breakdown names each ground with its own count and mean
+    SELECT string_agg(b->>'name' || '=' || (b->>'n') || '/' || (b->>'mean'), ' ' ORDER BY b->>'name') INTO got FROM jsonb_array_elements(v.breakdown) b;
+    PERFORM _assert(got = 'Verify 074 Field=4/133 Verify 074 Oval B=1/140' AND v.pooled_ground_id = F,
+      format('db/74 (pooled): the breakdown reads %s', got));
+    PERFORM _assert((SELECT w.par FROM venue_par(P, 20, 'U15', DATE '2026-10-31') w) = 134,
+      'db/74 (pooled): the pitch does not read its field''s par');
+    -- the floor: a year on, the 2024 innings ages out — four, insufficient, no par
+    SELECT * INTO v FROM venue_par(F, 20, 'U15', DATE '2027-10-31');
+    PERFORM _assert(v.n = 4 AND NOT v.sufficient AND v.par IS NULL,
+      format('db/74 (floor): four innings read n %s sufficient %s par %s', v.n, v.sufficient, v.par));
+    -- another band, another ground: their own pools
+    PERFORM _assert((SELECT w.n FROM venue_par(F, 20, 'U14', DATE '2026-10-31') w) = 1
+                    AND (SELECT w.n FROM venue_par((ids->>'x')::uuid, 20, 'U15', DATE '2026-10-31') w) = 1
+                    AND (SELECT w.n FROM venue_par(F, 50, 'U15', DATE '2026-10-31') w) = 1,
+      'db/74 (grain): a band, a ground or an allotment pooled with another');
+    -- (guard) a Westville coach reads no Hilton ground's par …
+    PERFORM _as(U_WESC);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM venue_par(F, 20, 'U15', DATE '2026-10-31')),
+      'db/74 (guard): a reader with no facility.read at the ground''s school read its par');
+    -- … but reads the par of the ground his own fixture is played on, at its
+    -- overs and band, as its board does
+    SELECT * INTO v FROM venue_par_for_match((ids->>'m2')::uuid, DATE '2026-10-31');
+    PERFORM _assert(v.par = 134 AND v.overs = 20 AND v.age_band = 'U15',
+      format('db/74: the visitors'' coach reads his fixture''s ground at par %s, %s overs, %s', v.par, v.overs, v.age_band));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM venue_par_for_match((ids->>'mx')::uuid, DATE '2026-10-31')),
+      'db/74 (guard): a reader of no fixture read its ground''s par');
+    -- the pool and the figure are the owner's: the application cannot call them
+    PERFORM _assert(NOT has_function_privilege('venue_par_pool(uuid,integer,date)', 'EXECUTE')
+                    AND NOT has_function_privilege('venue_par_compute(uuid,integer,text,date)', 'EXECUTE'),
+      'db/74: the application may read the pool past the readers'' guards');
+  END;
+
+  -- ── 54. The DLS table: loading, publishing, freezing (SCRBRD-130 R2, db/75) ──
+  -- Every cell here is the synthetic generator's (_synth_75), never a value
+  -- of the published table (D5). The JavaScript half — the calculator, its
+  -- six cases worked by hand, the D5 grep — is packages/scoring/test/dls.test.mjs.
+  --
+  -- Each labelled assertion was falsified once — the function replaced in
+  -- the database and this file run — and went red:
+  --   (operator)  dls_operator() answering true for anyone signed in
+  --   (structure) dls_table_problems() without its not_falling_in_wickets check
+  --   (synthetic) dls_table_publish() not refusing a SYNTHETIC title
+  --   (published) dls_resource_guard() letting a published table's cell move
+  --   (withdrawn) dls_table_guard() letting a published table be deleted
+  --   (frozen)    the resolver's block reading a draft table, not a published one
+  --   (platform)  condition_platform_key_guard() letting the key through
+  --   (guard)     dls_table_for_match() not asking match_result_readable()
+  DECLARE
+    ids  jsonb := _seed_75();
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    BALL uuid; OVR uuid; PUB uuid;
+    got  text;
+    v    record;
+    j    jsonb;
+    v_ok boolean;
+  BEGIN
+    -- (operator) platform.reference.manage, held through no school: a school's
+    -- director loads, publishes, withdraws and lists nothing
+    PERFORM _as(U_SARAH);
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 by a director', 901, 'over'), _synth_75('over'));
+    PERFORM _assert(NOT v.ok AND v.reason = 'not_permitted', format('db/75 (operator): a school''s director loaded a table: %s', v.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_tables()), 'db/75 (operator): a school''s director lists the tables');
+    PERFORM _assert(NOT dls_operator() AND NOT app_can('platform.reference.manage', HIL),
+      'db/75 (operator): a school''s director holds platform.reference.manage');
+
+    -- a platform administrator inside a support session (§ support: U_PLAT's
+    -- is still open here) acts for a school, not for the platform: refused
+    PERFORM _as(U_PLAT);
+    IF app_support_access_id() IS NOT NULL THEN
+      SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 in support', 901, 'over'), _synth_75('over'));
+      PERFORM _assert(NOT v.ok AND v.reason = 'not_permitted', format('db/75 (operator): a support session loaded a table: %s', v.reason));
+    END IF;
+
+    -- the synthetic table loads at both grains, hashed as dls.test.mjs pins it;
+    -- the owner (superadmin) as the operator
+    PERFORM _as(U_OWNER);
+    SELECT * INTO v FROM dls_table_load(_meta_75('SYNTHETIC — tests only', 901, 'ball'), _synth_75('ball'));
+    PERFORM _assert(v.ok AND v.row_count = 3010 AND v.content_hash = '0847f8f488da304bddc426b9d0d50febfac43e6461fc7016b365da151b1dfa47',
+      format('db/75: the synthetic table by the ball loaded %s, %s cells, hash %s', v.reason, v.row_count, v.content_hash));
+    BALL := v.table_id;
+    SELECT * INTO v FROM dls_table_load(_meta_75('SYNTHETIC — tests only', 902, 'over'), _synth_75('over'));
+    PERFORM _assert(v.ok AND v.row_count = 510 AND v.content_hash = '95766fbf157ef9908c29ab997d53807a2bdaa9eedca81ed7367db0a5d8afc564',
+      format('db/75: the synthetic table by the over loaded %s, %s cells, hash %s', v.reason, v.row_count, v.content_hash));
+    OVR := v.table_id;
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 again', 902, 'over'), _synth_75('over'));
+    PERFORM _assert(NOT v.ok AND v.reason = 'version_taken', format('db/75: a version loaded twice: %s', v.reason));
+    -- the provenance and the permission are not optional
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075', 903, 'over') - 'sourceDocument', _synth_75('over'));
+    PERFORM _assert(NOT v.ok AND v.reason = 'provenance_required', format('db/75: a table with no source loaded: %s', v.reason));
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075', 903, 'over') || '{"permissionNote": "yes"}', _synth_75('over'));
+    PERFORM _assert(NOT v.ok AND v.reason = 'permission_note_required', format('db/75: a table with no permission loaded: %s', v.reason));
+
+    -- (structure) each check refuses, alone: one cell moved at a time
+    SELECT string_agg(x.label || '=' || coalesce(array_to_string(r.problems, '+'), r.reason), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('a_grain', 'inning', '{}'::jsonb), ('b_missing', 'over', '{"6,3": null}'), ('c_range', 'over', '{"6,0": 19.5}'),
+                   ('d_end', 'over', '{"0,0": 1}'), ('e_start', 'over', '{"300,0": 999}'), ('f_balls', 'over', '{"12,9": 1}'),
+                   ('g_wickets', 'over', '{"6,1": 21}')) AS x(label, grain, patch),
+           LATERAL dls_table_load(_meta_75('Verify 075 broken', 904, x.grain), _synth_75('over', x.patch)) r;
+    PERFORM _assert(got = 'a_grain=grain b_missing=missing_cell c_range=out_of_range d_end=not_zero_at_end e_start=not_full_at_start '
+                       || 'f_balls=not_rising_in_balls g_wickets=not_falling_in_wickets',
+      format('db/75 (structure): the checks read %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_tables() t WHERE t.version = 904), 'db/75 (structure): a broken table was kept');
+
+    -- (synthetic) the tests' table is never published
+    SELECT * INTO v FROM dls_table_publish(BALL);
+    PERFORM _assert(NOT v.ok AND v.reason = 'synthetic_title', format('db/75 (synthetic): the synthetic table published: %s', v.reason));
+
+    -- (frozen) a match fixed with no table published names none, for ever
+    j := _freeze_75((ids->>'m0')::uuid);
+    PERFORM _assert(NOT (j->'doc'->'play' ? 'target.dls_table') AND j->'sources'->'target.dls_table'->>'from' = 'platform_default',
+      format('db/75 (frozen): a match fixed with no table published named %s', j->'doc'->'play'->'target.dls_table'));
+
+    -- a table under the test's own title (still the generator's cells) publishes
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 rehearsal table', 905, 'over'), _synth_75('over'));
+    PUB := v.table_id;
+    SELECT * INTO v FROM dls_table_publish(PUB);
+    PERFORM _assert(v.ok, format('db/75: the rehearsal table did not publish: %s %s', v.reason, v.detail));
+    SELECT * INTO v FROM dls_table_publish(PUB);
+    PERFORM _assert(NOT v.ok AND v.reason = 'not_draft', format('db/75: a table published twice: %s', v.reason));
+    -- the listing carries provenance and never a cell
+    SELECT string_agg(t.version || ':' || t.status, ' ' ORDER BY t.version) INTO got FROM dls_tables() t WHERE t.version >= 901;
+    PERFORM _assert(got = '901:draft 902:draft 905:published', format('db/75: the operator lists %s', got));
+
+    -- (frozen) a match fixed now names it, from the platform
+    j := _freeze_75((ids->>'m1')::uuid);
+    PERFORM _assert(j->'doc'->'play'->'target.dls_table' = jsonb_build_object('id', PUB, 'version', 905,
+                      'hash', '95766fbf157ef9908c29ab997d53807a2bdaa9eedca81ed7367db0a5d8afc564')
+                    AND j->'sources'->'target.dls_table' = '{"from": "platform", "status": "confirmed"}',
+      format('db/75 (frozen): the document reads %s from %s', j->'doc'->'play'->'target.dls_table', j->'sources'->'target.dls_table'));
+
+    -- (published) a published table never changes: not a cell, not its
+    -- title, not deleted, not a cell added — even by the owner
+    SELECT string_agg(_try_75(x.s), ' ' ORDER BY x.i) INTO got FROM (VALUES
+      (1, format('UPDATE dls_resource SET resource_tenths = resource_tenths WHERE table_id = %L AND balls_remaining = 6', PUB)),
+      (2, format('DELETE FROM dls_resource WHERE table_id = %L AND balls_remaining = 6', PUB)),
+      (3, format('INSERT INTO dls_resource SELECT %L, 1, w, 0 FROM generate_series(0, 9) w', PUB)),
+      (4, format('UPDATE dls_resource_table SET title = %L WHERE id = %L', 'Verify 075 renamed', PUB)),
+      (5, format('UPDATE dls_resource_table SET status = %L WHERE id = %L', 'draft', PUB))) AS x(i, s);
+    PERFORM _assert(got = 'dls_resource_published_immutable dls_resource_published_immutable dls_resource_published_immutable '
+                       || 'dls_table_published_immutable dls_table_published_immutable',
+      format('db/75 (published): writes to a published table read %s', got));
+
+    -- (withdrawn) withdrawal says why, keeps every row, and the match that
+    -- named it still reads it, "since withdrawn"
+    SELECT * INTO v FROM dls_table_withdraw(PUB, 'short');
+    PERFORM _assert(NOT v.ok AND v.reason = 'note_required', format('db/75 (withdrawn): withdrawn without a reason: %s', v.reason));
+    SELECT * INTO v FROM dls_table_withdraw(PUB, 'Verify 075: superseded in the rehearsal');
+    PERFORM _assert(v.ok, format('db/75 (withdrawn): the table did not withdraw: %s', v.reason));
+    PERFORM _assert(_try_75(format('DELETE FROM dls_resource_table WHERE id = %L', PUB)) = 'dls_table_kept'
+                    AND _try_75(format('UPDATE dls_resource_table SET status = %L, withdrawn_note = NULL WHERE id = %L', 'published', PUB))
+                        = 'dls_table_published_immutable',
+      'db/75 (withdrawn): a withdrawn table was deleted or brought back');
+    PERFORM _as(U_SARAH);
+    SELECT * INTO v FROM dls_table_for_match((ids->>'m1')::uuid);
+    PERFORM _assert(v.id = PUB AND v.status = 'withdrawn' AND NOT v.current AND jsonb_array_length(v.cells) = 510,
+      format('db/75 (withdrawn): the fixed match reads table %s, %s, %s cells', v.version, v.status, jsonb_array_length(v.cells)));
+    -- the match fixed with none reads no table now none is published
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match((ids->>'m0')::uuid)),
+      'db/75: a match fixed with no table read a withdrawn one');
+    -- a later version moves no earlier match: M1 still reads the one it was
+    -- fixed under; M0, fixed under none, reads the current one and says so
+    PERFORM _as(U_OWNER);
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 rehearsal table, corrected', 906, 'over'), _synth_75('over'));
+    SELECT * INTO v FROM dls_table_publish(v.table_id);
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(x.label || '=' || t.version || ',' || t.status || ',' || t.current, ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('m0', (ids->>'m0')::uuid), ('m1', (ids->>'m1')::uuid)) AS x(label, m), LATERAL dls_table_for_match(x.m) t;
+    PERFORM _assert(v.ok AND got = 'm0=906,published,true m1=905,withdrawn,false',
+      format('db/75 (frozen): after version 906 the matches read %s', got));
+
+    -- (guard) the cells go only to a reader of the match's result: a
+    -- Westville coach reads nothing of a Hilton friendly's
+    PERFORM _as(U_WESC);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match((ids->>'m1')::uuid)),
+      'db/75 (guard): a reader of no result read the table''s cells');
+
+    -- (platform) a competition's version or a fixture's departure never names the table
+    got := _try_75(format('INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by) '
+                          'VALUES (%L, %L, %L, %L, %L, %L, %L, %L)', ids->>'v', 'target.dls_table', jsonb_build_object('id', PUB), 'confirmed',
+                          'Verify 075 league rules', '9.9', '2026-10-01', U_OWNER))
+        || ' ' || _try_75(format('INSERT INTO match_condition_override (match_id, key, value, reason, set_by) VALUES (%L, %L, %L, %L, %L)',
+                          ids->>'m2', 'target.dls_table', jsonb_build_object('id', PUB), 'Verify 075: a league''s own table', U_OWNER));
+    PERFORM _assert(got = 'condition_platform_key condition_platform_key', format('db/75 (platform): naming the table read %s', got));
+
+    -- the application reads no table directly, and calls nothing of the owner's
+    BEGIN
+      PERFORM 1 FROM dls_resource LIMIT 1;
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, 'db/75: the application selected a resource cell');
+    PERFORM _assert(NOT has_table_privilege('dls_resource_table', 'SELECT') AND NOT has_table_privilege('dls_resource', 'SELECT')
+                    AND NOT has_function_privilege('dls_table_problems(text,integer,jsonb)', 'EXECUTE')
+                    AND NOT has_function_privilege('dls_canonical_text(uuid)', 'EXECUTE'),
+      'db/75: the application may read a DLS table past the functions');
   END;
   PERFORM set_config('app.user_id', '', true);
 

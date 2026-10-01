@@ -44,7 +44,7 @@
 --                                     open stop in an innings no seal closed
 --                                     (the fold: a standing seal terminates the
 --                                     interruption). See DEPARTURE below.
---   match_result_compute(m)           db/69's, with three marked blocks (§5):
+--   match_result_compute(m)           db/71's, with three marked blocks (§5):
 --                                     each innings' `par` and `stopped`; a
 --                                     chase sealed `abandoned` WITH a par is
 --                                     decided on it (D2), result.min_overs_per_
@@ -58,7 +58,7 @@
 --                                     figures (D8). Signature unchanged.
 --   competition_standing_rows(c)      db/69's, net run rate reading the deemed
 --                                     figures where an innings carries them.
---   public_match_log(m, since)        db/63's, with the two kinds and the
+--   public_match_log(m, since)        db/71's, with the two kinds and the
 --                                     `par` and `at` keys: the stop and resume
 --                                     lines a spectator sees (§5). A stop's
 --                                     free-text note is never selected.
@@ -71,13 +71,16 @@
 -- new facts are innings_stop_as_folded() beside it, the same reader's.
 --
 -- REBASING. This file re-emits three functions whole. §0 refuses to run
--- unless each is still the body this file was written against (db/69's,
--- db/63's): a later file that re-emits one (phase 3b's super over) must be
+-- unless each is still the body this file was written against: db/71's
+-- match_result_compute() and public_match_log() (the super over, merged in
+-- 2026-10-01: the rain blocks read the match's own innings, v_mi, so a
+-- super over is never revised and rain never sets its target), db/69's
+-- competition_standing_rows(). A later file that re-emits one must be
 -- merged into the blocks below and the hash in §0 moved with it, rather
 -- than overwritten by this file without a word.
 --
 -- RLS. Nothing new to read or write: the functions run as their caller over
--- ball_event_live (the rule functions), or are db/69's and db/63's definers
+-- ball_event_live (the rule functions), or are db/69's and db/71's definers
 -- behind their own guards, unchanged.
 
 -- ── 0 · What this file replaces, before it does ───────────────────
@@ -86,9 +89,9 @@ DECLARE
   r record;
 BEGIN
   FOR r IN SELECT * FROM (VALUES
-      ('match_result_compute(uuid)', 'f5a90ff11fde8bc3525f7faf25de0d0d', 'db/69'),
+      ('match_result_compute(uuid)', '69b8c241eaca3666f7387bf13bd2bb5d', 'db/71'),
       ('competition_standing_rows(uuid)', 'e9f604c8385a74cea6da3df82a5de87b', 'db/69'),
-      ('public_match_log(uuid,integer)', 'f76204e917ef0de4b06d676260e290c3', 'db/63')) AS x(fn, h, src)
+      ('public_match_log(uuid,integer)', '640271c3417de516a043653c07195e32', 'db/71')) AS x(fn, h, src)
   LOOP
     IF (SELECT md5(p.prosrc) FROM pg_proc p WHERE p.oid = r.fn::regprocedure) IS DISTINCT FROM r.h THEN
       RAISE EXCEPTION 'db/73: % is not %''s any more; merge this file''s marked blocks into the version now in place and move its hash', r.fn, r.src;
@@ -158,7 +161,7 @@ RETURNS TABLE (stopped boolean, par integer) AS $$
 $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
 GRANT EXECUTE ON FUNCTION innings_stop_as_folded(uuid, smallint) TO scrbrd_app;
 
--- ── 3 · The result: db/69's, with the rain blocks (design §5) ──────
+-- ── 3 · The result: db/71's (db/69's with the super over), with the rain blocks (§5) ──
 -- describeResult() and revisedTargetMethod() (replay.mjs), line for line.
 CREATE OR REPLACE FUNCTION match_result_compute(p_match uuid)
 RETURNS TABLE (match_id uuid, outcome text, margin_kind text, margin integer, decided_by text,
@@ -203,6 +206,15 @@ DECLARE
   r_applied boolean := false;
   r_school uuid;
   r_team   text;
+  -- db/71: the super overs
+  v_m      integer := 0;     -- the match's own innings so far
+  v_mi     jsonb;            -- the match's own innings, in order
+  v_sos    jsonb := '[]';    -- the super overs, as describeResult() lists them
+  v_so_applies boolean := false;
+  v_so_by  text;
+  v_so_n   integer;
+  v_so_settled boolean := false;
+  sa jsonb; sb jsonb; v_st text; v_ws text; v_wk text; v_so_t integer;
 BEGIN
   SELECT * INTO m FROM match x WHERE x.id = p_match;
   IF NOT FOUND THEN RETURN; END IF;
@@ -214,10 +226,13 @@ BEGIN
   v_away := m.opponent;
 
   -- The innings in the order of their numbers (deriveMatch() compacts).
-  FOR i IN SELECT DISTINCT b.innings FROM ball_event_live b WHERE b.match_id = p_match ORDER BY b.innings LOOP
+  -- (db/71) Each innings carries its super over, NULL for the match's own;
+  -- only the match's own are `scheduled` (net run rate reads no other, §6.4).
+  FOR i IN SELECT b.innings, max(b.super_over) AS so FROM ball_event_live b WHERE b.match_id = p_match
+            GROUP BY b.innings ORDER BY b.innings LOOP
     SELECT * INTO s FROM innings_result_state(p_match, i.innings, v_play, v_fourth);
     v_inns := v_inns || jsonb_build_array(jsonb_build_object(
-      'innings', i.innings, 'position', v_n, 'scheduled', v_n < 2 * v_ips,
+      'innings', i.innings, 'position', v_n, 'scheduled', i.so IS NULL AND v_m < 2 * v_ips, 'super_over', i.so,
       'runs', s.runs, 'wickets', s.wickets, 'balls', s.balls, 'overs', s.overs, 'target', s.target,
       'complete', s.complete, 'end_reason', s.end_reason, 'sealed', s.sealed, 'penalty_win', s.penalty_win,
       'key', s.team_key, 'batting_team', s.batting_team, 'squad', s.squad_size, 'revised', s.revised, 'summarised', s.summarised)
@@ -225,13 +240,17 @@ BEGIN
       || jsonb_build_object('par', innings_par_as_folded(p_match, i.innings),
                             'stopped', innings_stop_open(p_match, i.innings) AND NOT coalesce(s.sealed, false)));
     v_n := v_n + 1;
+    IF i.so IS NULL THEN v_m := v_m + 1; END IF;
   END LOOP;
 
   -- Which side bats each innings: by name; else the other of the first other
   -- side named; else home. An innings whose key is not the first's is the
   -- other side's.
-  v_key0 := v_inns->0->>'key';
-  SELECT y.value->>'key' INTO v_other FROM jsonb_array_elements(v_inns) WITH ORDINALITY y(value, n)
+  -- (db/71) Over the match's own innings: a super over's are the same sides.
+  v_mi := coalesce((SELECT jsonb_agg(y.value ORDER BY y.n) FROM jsonb_array_elements(v_inns) WITH ORDINALITY y(value, n)
+                     WHERE y.value->'super_over' = 'null'::jsonb), '[]'::jsonb);
+  v_key0 := v_mi->0->>'key';
+  SELECT y.value->>'key' INTO v_other FROM jsonb_array_elements(v_mi) WITH ORDINALITY y(value, n)
    WHERE y.value->>'key' IS NOT NULL AND NOT result_key_eq(y.value->>'key', v_key0) ORDER BY y.n LIMIT 1;
   v_side0 := coalesce(CASE WHEN result_key_eq(v_key0, v_home) THEN 'home' WHEN result_key_eq(v_key0, v_away) THEN 'away' END,
                       CASE WHEN result_key_eq(v_other, v_home) THEN 'away' WHEN result_key_eq(v_other, v_away) THEN 'home' END,
@@ -240,15 +259,22 @@ BEGIN
            CASE WHEN result_key_eq(y.value->>'key', v_key0) THEN v_side0 WHEN v_side0 = 'home' THEN 'away' ELSE 'home' END) ORDER BY y.n)
     INTO v_inns FROM jsonb_array_elements(v_inns) WITH ORDINALITY y(value, n);
   v_inns := coalesce(v_inns, '[]'::jsonb);
+  -- (db/71) The match's outcome is read from its own innings alone (D7).
+  v_mi := coalesce((SELECT jsonb_agg(y.value ORDER BY y.n) FROM jsonb_array_elements(v_inns) WITH ORDINALITY y(value, n)
+                     WHERE y.value->'super_over' = 'null'::jsonb), '[]'::jsonb);
 
   -- ── SCRBRD-130 R1: a revised chase target (revisedTargetMethod(), D8) ──
   -- One innings a side, the chase carrying a par or a target other than the
   -- first innings plus one: the chase says under which method (the words'
   -- suffix), and the first innings carries its deemed figures for net run
   -- rate — the par, or the last announced target less one, off the chase's
-  -- allotted balls (its balls faced, when it was terminated).
-  IF v_ips = 1 AND jsonb_array_length(v_inns) >= 2 THEN
-    x0 := v_inns->0; x1 := v_inns->1;
+  -- allotted balls (its balls faced, when it was terminated). The match's
+  -- own two innings only (v_mi, db/71): a super over is never revised, and
+  -- rain never sets its target. They lead v_inns (a super over's innings
+  -- number follows the match's), so the positions written are theirs.
+  IF v_ips = 1 AND jsonb_array_length(v_mi) >= 2
+     AND v_inns->0->'super_over' = 'null'::jsonb AND v_inns->1->'super_over' = 'null'::jsonb THEN
+    x0 := v_mi->0; x1 := v_mi->1;
     IF jsonb_typeof(x1->'par') = 'number'
        OR (jsonb_typeof(x1->'target') = 'number' AND (x1->>'target')::integer IS DISTINCT FROM (x0->>'runs')::integer + 1) THEN
       v_method := CASE WHEN v_play->>'target.method' = 'dls_standard' THEN 'dls_standard' ELSE 'umpires_revision' END;
@@ -256,10 +282,11 @@ BEGIN
       v_inns := jsonb_set(v_inns, '{0}', x0 || jsonb_build_object(
         'nrr_runs', coalesce((x1->>'par')::integer, (x1->>'target')::integer - 1),
         'nrr_balls', CASE WHEN x1->>'end_reason' = 'abandoned' THEN (x1->>'balls')::integer ELSE (x1->>'overs')::integer * 6 END));
+      v_mi := jsonb_set(jsonb_set(v_mi, '{1}', v_inns->1), '{0}', v_inns->0);
     END IF;
   END IF;
   -- ── end SCRBRD-130 R1 ──
-  x0 := v_inns->0; x1 := v_inns->1; x2 := v_inns->2; x3 := v_inns->3;
+  x0 := v_mi->0; x1 := v_mi->1; x2 := v_mi->2; x3 := v_mi->3;
 
   IF v_ips = 2 THEN
     -- Two innings a side (D11).
@@ -341,9 +368,51 @@ BEGIN
     p_out := 'abandoned'; p_kind := NULL; p_margin := NULL; p_side := NULL; p_key := NULL;
   END IF;
 
+  -- ── db/71 · the super overs (design §2.2, §3.2, §3.6; D7) ──
+  -- describeResult(), line for line: only where the match's document provides
+  -- one (result.tie_break = super_over, one innings a side) and the match is
+  -- tied. Each pair is won, tied or incomplete (pairState()); the first that
+  -- is not tied settles it — a pair won names who goes through, anything else
+  -- leaves it to nobody until the organiser's award. The match's outcome
+  -- stays the tie the table reads. A super over the document does not
+  -- provide (the write path refuses one, D10) is listed nowhere.
+  IF p_out = 'tie' AND v_play->'result.tie_break' = '"super_over"'::jsonb AND v_ips = 1 THEN
+    v_so_applies := true;
+    FOR v_so_n IN SELECT DISTINCT (y->>'super_over')::integer FROM jsonb_array_elements(v_inns) y
+                   WHERE y->'super_over' <> 'null'::jsonb ORDER BY 1 LOOP
+      SELECT t.y INTO sa FROM jsonb_array_elements(v_inns) WITH ORDINALITY t(y, n)
+       WHERE (t.y->>'super_over')::integer = v_so_n ORDER BY t.n LIMIT 1;
+      SELECT t.y INTO sb FROM jsonb_array_elements(v_inns) WITH ORDINALITY t(y, n)
+       WHERE (t.y->>'super_over')::integer = v_so_n ORDER BY t.n OFFSET 1 LIMIT 1;
+      v_ws := NULL; v_wk := NULL;
+      IF sb IS NULL OR NOT (sa->>'complete')::boolean OR NOT (sb->>'complete')::boolean
+         OR coalesce(sa->>'end_reason', '') = 'abandoned' OR coalesce(sb->>'end_reason', '') = 'abandoned' THEN
+        v_st := 'incomplete';
+      ELSE
+        v_so_t := coalesce((sb->>'target')::integer, (sa->>'runs')::integer + 1);
+        IF (sb->>'runs')::integer >= v_so_t THEN v_st := 'won'; v_ws := sb->>'side'; v_wk := sb->>'key';
+        ELSIF (sb->>'runs')::integer = v_so_t - 1 THEN v_st := 'tied';
+        ELSE v_st := 'won'; v_ws := sa->>'side'; v_wk := sa->>'key';
+        END IF;
+      END IF;
+      v_sos := v_sos || jsonb_build_array(jsonb_build_object(
+        'n', v_so_n, 'first', sa->>'side',
+        'a', jsonb_build_object('runs', (sa->>'runs')::integer, 'wickets', (sa->>'wickets')::integer, 'balls', (sa->>'balls')::integer),
+        'b', CASE WHEN sb IS NOT NULL
+                  THEN jsonb_build_object('runs', (sb->>'runs')::integer, 'wickets', (sb->>'wickets')::integer, 'balls', (sb->>'balls')::integer) END,
+        'state', v_st, 'winner', v_ws, 'winner_key', v_wk));
+      IF NOT v_so_settled THEN
+        IF v_st = 'won' THEN v_so_by := 'super_over'; p_side := v_ws; p_key := v_wk; v_so_settled := true;
+        ELSIF v_st <> 'tied' THEN v_so_settled := true;
+        END IF;
+      END IF;
+    END LOOP;
+  END IF;
+
+
   -- The decision, read last (result.mjs applyDecision()).
   r_out := p_out; r_kind := p_kind; r_margin := p_margin; r_side := p_side; r_key := p_key;
-  r_by := CASE WHEN p_out IN ('home_win', 'away_win', 'tie', 'draw') THEN 'play' END;
+  r_by := CASE WHEN v_so_applies THEN v_so_by WHEN p_out IN ('home_win', 'away_win', 'tie', 'draw') THEN 'play' END;
   SELECT x.* INTO d FROM match_result_decision x WHERE x.match_id = p_match AND x.withdrawn_at IS NULL;
   IF FOUND THEN
     r_dec := jsonb_build_object('id', d.id, 'kind', d.kind, 'side', d.side, 'overrides_play', d.overrides_play,
@@ -351,8 +420,8 @@ BEGIN
     IF d.kind = 'awarded' AND d.overrides_play THEN
       r_out := d.side || '_win'; r_kind := 'awarded'; r_margin := NULL; r_side := d.side; r_key := NULL;
       r_by := 'decision'; r_applied := true;
-    ELSIF p_out IN ('home_win', 'away_win') THEN
-      NULL;   -- play named a winner: it stands, the decision is shown beside it
+    ELSIF p_out IN ('home_win', 'away_win') OR r_by = 'super_over' THEN
+      NULL;   -- play, or (db/71) a super over, named a winner: it stands, the decision is shown beside it
     ELSIF d.kind = 'conceded' THEN
       r_side := CASE d.side WHEN 'home' THEN 'away' ELSE 'home' END;
       r_out := r_side || '_win'; r_kind := 'conceded'; r_margin := NULL; r_key := NULL; r_by := 'decision'; r_applied := true;
@@ -368,7 +437,7 @@ BEGIN
   ELSIF r_side = 'away' THEN r_school := m.away_school_id; r_team := m.away_team_code; END IF;
 
   RETURN QUERY SELECT p_match, r_out, r_kind, r_margin, r_by, r_side, r_school, r_team, r_key,
-    '[]'::jsonb, r_dec, r_applied, p_out, p_side, p_key, p_kind, p_margin, v_inns,
+    v_sos, r_dec, r_applied, p_out, p_side, p_key, p_kind, p_margin, v_inns,
     md5(concat_ws('|', r_out, coalesce(r_kind, '-'), coalesce(r_margin::text, '-'), coalesce(r_by, '-'),
                   coalesce(r_side, '-'), coalesce(r_school::text, '-'), coalesce(r_team, '-')));
 END $$ LANGUAGE plpgsql STABLE SET search_path = pg_catalog, public, pg_temp;
@@ -511,8 +580,8 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 REVOKE ALL ON FUNCTION competition_standing_rows(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION competition_standing_rows(uuid) TO scrbrd_app;
 
--- ── 5 · The public log: db/63's, with the stop and resume lines ────
--- db/63's line for line, but for the two kinds and two keys: `at` (a stop's
+-- ── 5 · The public log: db/71's, with the stop and resume lines ────
+-- db/71's line for line, but for the two kinds and two keys: `at` (a stop's
 -- or resumption's wall-clock time, for "Rain stopped play, 12.3 ov (14:32)")
 -- and `par` (the umpires' announced par). A stop's `reason` rides in the
 -- `reason` key every kind shares, and the API keeps it only where it is one
@@ -536,6 +605,7 @@ RETURNS TABLE (
            'bowlingSquad',   b.payload -> 'bowlingSquad',
            'overs',          b.payload -> 'overs',
            'target',         b.payload -> 'target',
+           'superOver',      b.payload -> 'superOver',   -- db/71: the nth super over
            -- a player the scorer typed, where the column holds no id
            'striker',        b.payload -> 'striker',
            'nonStriker',     b.payload -> 'nonStriker',
