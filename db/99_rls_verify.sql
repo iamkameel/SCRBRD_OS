@@ -2622,6 +2622,153 @@ CREATE OR REPLACE FUNCTION _row_72(p_match uuid, p_side text) RETURNS match_prog
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/72 (section 51) ──────────────────────────────────────────────
 
+-- ┌── db/73 (section 52). SCRBRD-130 R1: rain — interruptions, par, NRR ──
+-- A league Hilton organises, "Verify 073 Rain", Hilton 1XI (A) against
+-- Westville 1XI (B), its version 1 (from 1 October) confirming win 4, tie 2,
+-- no result 2, loss 0 and target.method dls_standard. Every match on
+-- 10 October 2026, each with the document its first event would fix:
+--   L1  A 24/0 (12 balls); B chasing 25 reach 14/1 off 9, rain, terminated;
+--       the umpires' par 18: A by 4 runs (DLS)
+--   L2  A 24/0; B 6/0 off 6, rain; the umpires cut the chase to 1 over and
+--       the target to 10, play resumes and the over is done: A by 3 runs (DLS)
+--   L3  A 24/0; B 25/0 off 7: B by 10 wickets — no revision
+-- and Hilton friendlies under the platform's default method (the umpires'
+-- revision): F1 the chase terminated at 15/0 off 9 level with a par of 15 (a
+-- tie), F2 above a par of 13 (won), F3 terminated with no par (no result),
+-- F4 as F2 under a document asking two overs a side (no result: one over
+-- faced), F5 a first innings stopped at 0.5 and not resumed. P and W are
+-- the same six balls to named boys, W with a stop and a resumption in the
+-- middle (careers). Every name here is invented.
+CREATE OR REPLACE FUNCTION _ev_73(p_match uuid, p_inn smallint, p_kind text, p_bt text, p_v integer, p_payload jsonb,
+                                  p_striker uuid DEFAULT NULL, p_bowler uuid DEFAULT NULL, p_n integer DEFAULT 1)
+RETURNS integer AS $$
+DECLARE v_seq integer; k integer; v_school uuid;
+BEGIN
+  SELECT m.school_id INTO v_school FROM match m WHERE m.id = p_match;
+  FOR k IN 1..p_n LOOP
+    SELECT coalesce(max(b.seq), 0) + 1 INTO v_seq FROM ball_event b WHERE b.match_id = p_match;
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                            client_seq, client_ts, kind, ball_type, value, dismissal, striker_id, bowler_id, payload)
+    VALUES (p_match, v_school, v_seq, 1, p_inn, '88888888-0000-0000-0000-000000000006', 'verify-073',
+            'v73:' || p_match || ':' || v_seq, v_seq, '2026-10-10 10:00+02'::timestamptz + v_seq * interval '20 seconds',
+            p_kind, p_bt, p_v, CASE WHEN p_bt = 'W' THEN 'bowled' END, p_striker, p_bowler, p_payload);
+  END LOOP;
+  RETURN v_seq;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A's 24 off two overs, sealed; then the chase's innings_start.
+CREATE OR REPLACE FUNCTION _first24_73(p_match uuid, p_overs integer, p_target integer) RETURNS void AS $$
+DECLARE lab text; sq jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'V73 P' || g, 'name', 'V73 P' || g)) FROM generate_series(1, 11) g);
+BEGIN
+  SELECT coalesce(m.opponent, 'x') INTO lab FROM match m WHERE m.id = p_match;
+  PERFORM _ev_73(p_match, 0::smallint, 'innings_start', NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', lab, 'squad', sq, 'overs', 2));
+  PERFORM _ev_73(p_match, 0::smallint, 'ball', 'run', 2, '{}', NULL, NULL, 12);
+  PERFORM _ev_73(p_match, 0::smallint, 'innings_end', NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":24,"wickets":0,"balls":12}}');
+  PERFORM _ev_73(p_match, 1::smallint, 'innings_start', NULL, NULL,
+                 jsonb_build_object('battingTeam', lab, 'bowlingTeam', '1XI', 'squad', sq, 'overs', p_overs, 'target', p_target));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _seed_73() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OWNR uuid := '88888888-0000-0000-0000-000000000022';
+  P1 uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  P2 uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
+  BW uuid := 'bbbbbbbb-0000-0000-0000-000000000001';
+  c uuid; v1 uuid; ea uuid; eb uuid;
+  l1 uuid; l2 uuid; l3 uuid; f1 uuid; f2 uuid; f3 uuid; f4 uuid; f5 uuid; mp uuid; mw uuid; x uuid;
+  T timestamptz := '2026-10-10 10:00+02';
+BEGIN
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 073 Rain', 'league', 'T20', 'school') RETURNING id INTO c;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, HIL, '1XI', 'Verify 073 Hilton 1st XI') RETURNING id INTO ea;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, WES, '1XI', 'Verify 073 Westville 1st XI') RETURNING id INTO eb;
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by) VALUES (c, 1, 'Verify 073 v1', '2026-10-01', OWNR) RETURNING id INTO v1;
+  INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by)
+  SELECT v1, y.k, y.v, 'confirmed', 'Verify 073 league rules', '4.1', '2026-10-01', OWNR
+    FROM (VALUES ('points.win', '4'::jsonb), ('points.tie', '2'), ('points.no_result', '2'), ('points.loss', '0'),
+                 ('target.method', '"dls_standard"')) AS y(k, v);
+  UPDATE condition_set SET status = 'published', published_by = OWNR, published_at = '2026-09-30 12:00+02' WHERE id = v1;
+
+  FOREACH x IN ARRAY ARRAY[gen_random_uuid(), gen_random_uuid(), gen_random_uuid()] LOOP
+    INSERT INTO match (id, school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+    VALUES (x, HIL, '1XI', WES, '1XI', 'Westville 1XI', T, 'cricket', 'T20', 2, 'complete', c);
+    IF l1 IS NULL THEN l1 := x; ELSIF l2 IS NULL THEN l2 := x; ELSE l3 := x; END IF;
+  END LOOP;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES (HIL, '1XI', 'Verify 073 Friendly', T, 'cricket', 'T20', 2, 'complete') RETURNING id INTO f1;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES (HIL, '1XI', 'Verify 073 Friendly', T, 'cricket', 'T20', 2, 'complete') RETURNING id INTO f2;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES (HIL, '1XI', 'Verify 073 Friendly', T, 'cricket', 'T20', 2, 'complete') RETURNING id INTO f3;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES (HIL, '1XI', 'Verify 073 Friendly', T, 'cricket', 'T20', 2, 'complete') RETURNING id INTO f4;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES (HIL, '1XI', 'Verify 073 Friendly', T, 'cricket', 'T20', 2, 'live') RETURNING id INTO f5;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES (HIL, '1XI', 'Verify 073 Careers', T, 'cricket', 'T20', 2, 'complete') RETURNING id INTO mp;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES (HIL, '1XI', 'Verify 073 Careers', T, 'cricket', 'T20', 2, 'complete') RETURNING id INTO mw;
+  INSERT INTO match_conditions (match_id, set_id, set_version, doc, sources, doc_hash)
+  SELECT y.m, r.set_id, r.set_version, r.doc, r.sources, ''
+    FROM unnest(ARRAY[l1, l2, l3, f1, f2, f3, f5]) AS y(m), LATERAL match_conditions_compute(y.m) r;
+  INSERT INTO match_conditions (match_id, doc, sources, doc_hash)
+  VALUES (f4, '{"v": 1, "play": {"result.min_overs_per_side": 2, "target.method": "dls_standard"}, "table": {}, "sheet": {}}', '{}', '');
+
+  -- L1: B 14/1 off 9, rain, the par 18, terminated.
+  PERFORM _first24_73(l1, 2, 25);
+  PERFORM _ev_73(l1, 1::smallint, 'ball', 'run', 2, '{}', NULL, NULL, 6);
+  PERFORM _ev_73(l1, 1::smallint, 'ball', 'run', 1, '{}');
+  PERFORM _ev_73(l1, 1::smallint, 'ball', 'W', 0, '{}');
+  PERFORM _ev_73(l1, 1::smallint, 'ball', 'run', 1, '{}');
+  PERFORM _ev_73(l1, 1::smallint, 'play_stopped', NULL, NULL, '{"reason":"rain"}');
+  PERFORM _ev_73(l1, 1::smallint, 'revision', NULL, NULL, '{"overs":null,"target":null,"reason":"rain","par":18}');
+  PERFORM _ev_73(l1, 1::smallint, 'innings_end', NULL, NULL, '{"reason":"abandoned","confirmed":{"runs":14,"wickets":1,"balls":9}}');
+  -- L2: B 6/0 off 6, rain; cut to 1 over, target 10; resumed; the over done.
+  PERFORM _first24_73(l2, 2, 25);
+  PERFORM _ev_73(l2, 1::smallint, 'ball', 'run', 1, '{}', NULL, NULL, 6);
+  PERFORM _ev_73(l2, 1::smallint, 'play_stopped', NULL, NULL, '{"reason":"rain"}');
+  PERFORM _ev_73(l2, 1::smallint, 'revision', NULL, NULL, '{"overs":1,"target":10,"reason":"rain"}');
+  PERFORM _ev_73(l2, 1::smallint, 'play_resumed', NULL, NULL, '{}');
+  PERFORM _ev_73(l2, 1::smallint, 'innings_end', NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":6,"wickets":0,"balls":6}}');
+  -- L3: B 25/0 off 7, no revision.
+  PERFORM _first24_73(l3, 2, 25);
+  PERFORM _ev_73(l3, 1::smallint, 'ball', 'run', 4, '{}', NULL, NULL, 6);
+  PERFORM _ev_73(l3, 1::smallint, 'ball', 'run', 1, '{}');
+  PERFORM _ev_73(l3, 1::smallint, 'innings_end', NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":25,"wickets":0,"balls":7}}');
+  -- F1–F4: 15/0 off 9, rain, then each its own ending.
+  FOREACH x IN ARRAY ARRAY[f1, f2, f3, f4] LOOP
+    PERFORM _first24_73(x, 2, 25);
+    PERFORM _ev_73(x, 1::smallint, 'ball', 'run', 2, '{}', NULL, NULL, 6);
+    PERFORM _ev_73(x, 1::smallint, 'ball', 'run', 1, '{}', NULL, NULL, 3);
+    PERFORM _ev_73(x, 1::smallint, 'play_stopped', NULL, NULL,
+                   CASE WHEN x = f1 THEN '{"reason":"rain","note":"covers on: a private note","at":1791622800000}'::jsonb ELSE '{"reason":"bad_light"}'::jsonb END);
+    IF x <> f3 THEN
+      PERFORM _ev_73(x, 1::smallint, 'revision', NULL, NULL, jsonb_build_object('overs', NULL, 'target', NULL, 'reason', 'rain', 'par', CASE WHEN x = f1 THEN 15 ELSE 13 END));
+    END IF;
+    PERFORM _ev_73(x, 1::smallint, 'innings_end', NULL, NULL, '{"reason":"abandoned","confirmed":{"runs":15,"wickets":0,"balls":9}}');
+  END LOOP;
+  -- F5: a first innings stopped at 0.5, not resumed.
+  PERFORM _ev_73(f5, 0::smallint, 'innings_start', NULL, NULL, '{"battingTeam":"1XI","bowlingTeam":"Verify 073 Friendly","overs":2}');
+  PERFORM _ev_73(f5, 0::smallint, 'ball', 'run', 1, '{}', NULL, NULL, 5);
+  PERFORM _ev_73(f5, 0::smallint, 'play_stopped', NULL, NULL, '{"reason":"wet_ground"}');
+  -- P and W: 1 4 0 2 6 1 to two Hilton boys off a Westville bowler; W stops after the third.
+  FOREACH x IN ARRAY ARRAY[mp, mw] LOOP
+    PERFORM _ev_73(x, 0::smallint, 'innings_start', NULL, NULL, '{"battingTeam":"1XI","bowlingTeam":"Verify 073 Careers","overs":2}');
+    PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 1, '{}', P1, BW);
+    PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 4, '{}', P2, BW);
+    PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 0, '{}', P2, BW);
+    IF x = mw THEN
+      PERFORM _ev_73(x, 0::smallint, 'play_stopped', NULL, NULL, '{"reason":"rain"}');
+      PERFORM _ev_73(x, 0::smallint, 'play_resumed', NULL, NULL, '{}');
+    END IF;
+    PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 2, '{}', P2, BW);
+    PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 6, '{}', P2, BW);
+    PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 1, '{}', P2, BW);
+  END LOOP;
+  RETURN jsonb_build_object('c', c, 'a', ea, 'b', eb, 'l1', l1, 'l2', l2, 'l3', l3,
+                            'f1', f1, 'f2', f2, 'f3', f3, 'f4', f4, 'f5', f5, 'p', mp, 'w', mw);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: publish a fixture's home side (the signed-out log reads it).
+CREATE OR REPLACE FUNCTION _publish_73(p_match uuid) RETURNS void AS $$
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
+  SELECT m.id, 'home', m.school_id, m.team_code, true, '88888888-0000-0000-0000-000000000022' FROM match m WHERE m.id = p_match;
+$$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/73 (section 52) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -12016,6 +12163,118 @@ $v49$;
     PERFORM _assert((SELECT count(*) FROM pg_trigger WHERE tgrelid = 'match'::regclass AND NOT tgisinternal
                        AND tgname IN ('availability_ask_again', 'lift_fixture_moved')) = 2,
       'db/70 (coexist): db/65''s and db/70''s triggers on match are not both in place');
+  END;
+
+  -- ── 52. Rain: interruptions, par and the deemed NRR (SCRBRD-130 R1, db/73) ──
+  -- _seed_73(): the league "Verify 073 Rain" (dls_standard) and Hilton
+  -- friendlies under the default method; every figure below worked by hand
+  -- from the log. tools/smoke-fold-figures.mjs holds match_result() and
+  -- innings_stop_as_folded() to the fold over rain-logs.mjs, so the rule and
+  -- the fold cannot part.
+  --
+  -- Each labelled assertion was falsified once — the function replaced in
+  -- the database and this file run — and went red:
+  --   (par)       match_result_compute() reading a terminated chase as no
+  --               result whatever the par (the 3a rule)
+  --   (faced)     result.min_overs_per_side read from the chase's allotment,
+  --               not its overs faced, on a terminated chase
+  --   (method)    revised_target set without the frozen target.method (always
+  --               umpires_revision)
+  --   (deemed)    competition_standing_rows() reading the innings' own figures
+  --               where match_result_compute() deemed others (D8)
+  --   (stopped)   innings_stop_as_folded() not asking whether a seal closed the stop
+  --   (public)    public_match_log() without the two kinds
+  DECLARE
+    ids  jsonb := _seed_73();
+    C    uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    got  text;
+    j    jsonb;
+  BEGIN
+    C := (ids->>'c')::uuid;
+
+    -- (par) a chase terminated with the umpires' par is decided on it, as the
+    -- league reads it: L1 14/1 against a par of 18, Hilton by 4 runs; L2, cut
+    -- to an over and a target of 10, 6/0: Hilton by 3; L3, no revision: B by 10 wickets.
+    PERFORM _as(U_WESC);
+    SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
+                      coalesce(r2.decided_by, '-'), coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
+      FROM competition_results(C) r2
+      JOIN (VALUES ('l1', (ids->>'l1')::uuid), ('l2', (ids->>'l2')::uuid), ('l3', (ids->>'l3')::uuid)) AS x(label, m) ON x.m = r2.match_id;
+    PERFORM _assert(got = 'l1=home_win,runs,4,play,home l2=home_win,runs,3,play,home l3=away_win,wickets,10,play,away',
+      format('db/73 (par): the league''s results read %s', got));
+    -- ...and the three outcomes and the no-par no result, on the friendlies:
+    -- level (a tie), above (won by wickets in hand), no par (no result)
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
+                      coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('f1', (ids->>'f1')::uuid), ('f2', (ids->>'f2')::uuid), ('f3', (ids->>'f3')::uuid),
+                   ('f4', (ids->>'f4')::uuid), ('f5', (ids->>'f5')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
+    -- (faced) F4 is F2 under a document asking two overs a side: one over
+    -- faced, so no result, though its allotment was two
+    PERFORM _assert(got = 'f1=tie,-,-,- f2=away_win,wickets,10,away f3=no_result,-,-,- f4=no_result,-,-,- f5=in_progress,-,-,-',
+      format('db/73 (par, faced): the friendlies read %s', got));
+
+    -- (method) the words' suffix: the chase names the method its revised
+    -- target was set under (the league's dls_standard; the friendlies' default,
+    -- the umpires' revision); a chase never revised names none
+    SELECT string_agg(x.label || '=' || coalesce(r2.innings->1->>'revised_target', '-'), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('f1', (ids->>'f1')::uuid), ('f3', (ids->>'f3')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
+    PERFORM _as(U_WESC);
+    SELECT got || ' ' || string_agg(x.label || '=' || coalesce(r2.innings->1->>'revised_target', '-'), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('l1', (ids->>'l1')::uuid), ('l2', (ids->>'l2')::uuid), ('l3', (ids->>'l3')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
+    PERFORM _assert(got = 'f1=umpires_revision f3=- l1=dls_standard l2=dls_standard l3=-',
+      format('db/73 (method): the revised-target method reads %s', got));
+
+    -- (deemed) net run rate to the ball (D8). Hilton for: L1 deemed 18 off
+    -- the 9 balls the terminated chase faced, L2 deemed 9 (the target 10 less
+    -- one) off the chase's allotted 6, L3 24 off 12 = 51/27; against: 14/9,
+    -- 6/6, 25/7 = 45/22. Westville the mirror. Without D8 Hilton's would read
+    -- 72/36. L3, never revised, carries no deemed figure.
+    SELECT string_agg(s.display_name || '=' || concat_ws('/', s.runs_for, s.balls_for, s.runs_against, s.balls_against) || ',' || s.points,
+                      ' ' ORDER BY s.display_name) INTO got
+      FROM competition_standing s WHERE s.competition_id = C;
+    PERFORM _assert(got = 'Verify 073 Hilton 1st XI=51/27/45/22,8 Verify 073 Westville 1st XI=45/22/51/27,4',
+      format('db/73 (deemed): the table reads %s', got));
+    PERFORM _assert((SELECT s.nrr FROM competition_standing s WHERE s.competition_id = C AND s.display_name = 'Verify 073 Hilton 1st XI')
+                    = 51::numeric * 6 / 27 - 45::numeric * 6 / 22,
+      'db/73 (deemed): Hilton''s net run rate is not 51 × 6 ÷ 27 less 45 × 6 ÷ 22');
+    SELECT r2.innings INTO j FROM match_result((ids->>'l3')::uuid) r2;
+    PERFORM _assert(NOT (j->0 ? 'nrr_runs') AND NOT (j->0 ? 'nrr_balls') AND NOT (j->1 ? 'revised_target'),
+      format('db/73 (deemed): a match never revised carries deemed figures: %s', j));
+
+    -- (stopped) inn.stopped and inn.par: F5's first innings stopped and not
+    -- resumed; F1's terminated chase closed by its seal, its par 15; F3's no par
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(x.label || '=' || concat_ws(',', s.stopped, coalesce(s.par::text, '-')), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('f1', (ids->>'f1')::uuid, 1), ('f3', (ids->>'f3')::uuid, 1), ('f5', (ids->>'f5')::uuid, 0)) AS x(label, m, i),
+           LATERAL innings_stop_as_folded(x.m, x.i::smallint) s;
+    PERFORM _assert(got = 'f1=f,15 f3=f,- f5=t,-', format('db/73 (stopped): the stops read %s', got));
+    SELECT r2.innings INTO j FROM match_result((ids->>'f5')::uuid) r2;
+    PERFORM _assert((j->0->>'stopped')::boolean AND j->0->'par' = 'null'::jsonb,
+      format('db/73 (stopped): the result''s innings do not carry the open stop: %s', j));
+
+    -- (public) the signed-out log carries the stop, its reason and time,
+    -- and the umpires' par — never the scorer's note
+    PERFORM _publish_73((ids->>'f1')::uuid);
+    SELECT string_agg(l.kind || ':' || l.detail::text, ' | ' ORDER BY l.seq) INTO got
+      FROM public_match_log((ids->>'f1')::uuid, 0) l WHERE l.kind IN ('play_stopped', 'revision');
+    PERFORM _assert(got = 'play_stopped:{"at": 1791622800000, "reason": "rain"} | revision:{"par": 15, "reason": "rain"}',
+      format('db/73 (public): the signed-out log reads %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_match_log((ids->>'f1')::uuid, 0) l WHERE l.detail::text LIKE '%private note%'),
+      'db/73 (public): a stop''s note reached the signed-out log');
+
+    -- (careers) a stop and a resumption change no figure: the same six balls
+    -- with and without them, ball for ball in the career view and in the
+    -- handover's count (the completion gate reads the same)
+    SELECT string_agg(concat_ws('/', p.player_id, p.runs, p.balls_faced, p.out), ' ' ORDER BY p.player_id) INTO got
+      FROM player_innings p WHERE p.match_id = (ids->>'p')::uuid;
+    PERFORM _assert(got IS NOT NULL AND got = (SELECT string_agg(concat_ws('/', p.player_id, p.runs, p.balls_faced, p.out), ' ' ORDER BY p.player_id)
+                                                 FROM player_innings p WHERE p.match_id = (ids->>'w')::uuid),
+      format('db/73 (careers): the career view moved with a stop: %s', got));
+    PERFORM _assert((SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded((ids->>'p')::uuid, 0::smallint) f)
+                    = (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded((ids->>'w')::uuid, 0::smallint) f),
+      'db/73 (careers): the handover''s count moved with a stop');
   END;
   PERFORM set_config('app.user_id', '', true);
 
