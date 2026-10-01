@@ -485,6 +485,12 @@ export const ADDED_SINCE_01 = {
   "scoring.import.read":         "63_scorebook_import.sql",
   "scoring.import.write":        "63_scorebook_import.sql",
   "scoring.import.confirm":      "63_scorebook_import.sql",
+  // ── SCRBRD-124 phase 1: parent lift clubs (db/70) ──
+  "transport.lift.arrange":      "70_lift_clubs.sql",
+  "transport.lift.receive":      "70_lift_clubs.sql",
+  "transport.lift.oversee":      "70_lift_clubs.sql",
+  "transport.lift.policy":       "70_lift_clubs.sql",
+  // ── end SCRBRD-124 ──
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

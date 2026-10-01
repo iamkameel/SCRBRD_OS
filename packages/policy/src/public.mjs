@@ -242,6 +242,18 @@ export const NEVER_PUBLIC = Object.freeze({
   // is a fact about the child's health care — the row's existence is the
   // disclosure — and its giver is N4 besides.
   health_monitoring_consent: "N2",
+
+  // ── db/70, SCRBRD-124 phase 1: parent lift clubs ──
+  // N4. Who travels with whom, when, and with which adult: a child's
+  // movements and his family's arrangements. The row's existence is the
+  // disclosure (that a boy is in a named parent's car on Saturday), so
+  // whole tables.
+  lift_seat: "N4",
+  // N4. The offer names the adult and the time and place she collects
+  // children; the declaration is a parent's car, its registration and which
+  // of her child's contacts is hers.
+  lift_offer: "N4",
+  lift_driver_declaration: "N4",
 });
 
 /**

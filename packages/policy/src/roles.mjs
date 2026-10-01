@@ -159,6 +159,10 @@ const BUNDLES = {
     "player.note.read", "scoring.amend.approve",
     // A child who must never appear on a public page (db/47, C5).
     "player.public.withhold",
+    // SCRBRD-124 (db/70): the school's lift policy, signed or withdrawn — the
+    // second of the two keys (D17). No other lift capability: the head reads
+    // the lift log through audit.read, never the arrangements.
+    "transport.lift.policy",
   ],
   directorofsport: ["recognition.manage", "player.workload.read", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
@@ -204,6 +208,8 @@ const BUNDLES = {
     "medical.status.read", "medical.nature.read",
     "discipline.read", "facility.read", "facility.manage",
     "transport.read", "transport.manage", "invoice.read",
+    // SCRBRD-124: the school's lift counts, its exceptions, a cancel (db/70).
+    "transport.lift.oversee",
     "competition.read", "news.publish.school", "audit.read",
     // The office holds the family file a safeguarding order arrives in (db/47, C5).
     "player.public.withhold",
@@ -215,6 +221,8 @@ const BUNDLES = {
     "broadcast.publish",
     "player.profile.manage", "medical.status.read", "medical.nature.read", "player.age.read",
     "player.roster.read", "facility.read", "facility.manage", "transport.read", "transport.manage",
+    // SCRBRD-124: as the office, because it holds transport.manage (db/70).
+    "transport.lift.oversee",
     "competition.read", "news.publish.team", "news.publish.school",
     "scoring.start", "scoring.edit", "scoring.finalise",
   ],
@@ -253,6 +261,8 @@ const BUNDLES = {
     "player.age.read", "player.roster.read", "player.emergency.read",
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
+    // SCRBRD-124: the side's boys arriving by lift, and "with us" (db/70, §1.6).
+    "transport.lift.receive",
     "scoring.start", "scoring.edit", "scoring.finalise",
     // SCRBRD-120: the lower side's match went into the paper book; he types
     // it in from the photos, and somebody else confirms it.
@@ -269,12 +279,16 @@ const BUNDLES = {
     "player.access.request", "player.access.grant",
     "transport.read", "scoring.start", "scoring.edit", "opposition.read",
     "scoring.import.read", "scoring.import.write",
+    // SCRBRD-124 (db/70, §1.6).
+    "transport.lift.receive",
   ],
   teammanager: [
     "availability.read", "availability.declare",
     ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read", "player.emergency.read",
     "transport.read", "news.publish.team",
+    // SCRBRD-124 (db/70, §1.6).
+    "transport.lift.receive",
   ],
 
   // ── Matchday ──
@@ -383,6 +397,10 @@ const BUNDLES = {
     "medical.status.read", "medical.nature.read", "medical.details.read",
     "player.age.read", "player.identity.read",
     "transport.read", "invoice.read",
+    // SCRBRD-124 (db/70): lifts for her own children only — the assignment
+    // names them. A pupil holds none of the lift capabilities: from eighteen
+    // he asks for his own seat through his self link, which db/70 reads.
+    "transport.lift.arrange",
   ],
 
   // ── Read-only observers ──
@@ -452,7 +470,9 @@ const BUNDLES = {
   // that pair's own sale is measured in.
   sponsorship: ["school.read", "news.read", "user.read",
                 "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
-  transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read"],
+  transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read",
+    // SCRBRD-124 (db/70): oversight of lifts, in counts. A lift is not a trip.
+    "transport.lift.oversee"],
   driver: ["news.read", "transport.read", "transport.drive"],
   facilities: ["fixture.read", "news.read", "facility.read", "facility.manage"],
   media: ["fixture.read", "team.read", "news.read", "player.profile.read", "player.performance.read", "news.publish.school", "news.publish.team"],

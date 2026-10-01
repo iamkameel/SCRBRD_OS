@@ -418,6 +418,8 @@ const HAND_WRITTEN_SINCE_47 = {
   player_never_public: {},
   // db/60: the health-monitoring consent is never public as a whole (N2).
   health_monitoring_consent: {},
+  // db/70: a boy's seat on a parent's lift is never public as a whole (N4).
+  lift_seat: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */
