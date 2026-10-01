@@ -2,14 +2,15 @@ import pkg from "../../package.json";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { NAV_META, ROLES, groupNav } from "../design/roles.js";
 import { useNav } from "../lib/features.js";
-import { D, T } from "../design/tokens.js";
+import { D, T, inkOn } from "../design/tokens.js";
+import { invitationsWords } from "../lib/league.js";
 import { SportSwitcher } from "./MobileNav.jsx";
 import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  SIDEBAR
 // ══════════════════════════════════════════════════════
-function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userName, onSignOut }) {
+function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut }) {
   // The role's destinations, narrowed by the modules this school has on.
   // Narrowed only — useNav() cannot add a destination the role did not hold.
   const nav = useNav(role);
@@ -63,6 +64,11 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userNam
               const m = NAV_META[key];
               const isActive = active===key;
               const isBell = key==="notifications";
+              // League invitations waiting for an answer: the count is the
+              // badge's text, and the button is named with the words, so it is
+              // read as "Competitions, 2 league invitations waiting".
+              const waiting = key==="competitions" ? invites : 0;
+              const name = waiting>0 ? `${m.label}, ${invitationsWords(waiting)}` : collapsed ? m.label : undefined;
               return (
                 <button key={key} onClick={()=>onNav(key)}
                   data-testid={`nav-${key}`}
@@ -71,7 +77,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userNam
                   // nothing else — every entry announces identically, so the only
                   // way to find out where you are is to navigate somewhere.
                   aria-current={isActive?"page":undefined}
-                  aria-label={collapsed?m.label:undefined}
+                  aria-label={name}
                   // os-state is the Material 3 state layer (§20): hover and
                   // press are one mechanism defined against the CONTENT colour,
                   // so every destination behaves identically without each one
@@ -98,6 +104,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userNam
                   <span style={{fontSize:"15px",textAlign:"center",width:collapsed?"100%":"auto",color:isActive?rc.color:T.content.secondary}}><Icon name={m.icon}/></span>
                   {!collapsed&&<span style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:isActive?600:400,color:isActive?T.content.primary:T.content.secondary}}>{m.label}</span>}
                   {isBell&&notifCount>0&&<span data-testid="nav-alerts-badge" style={{marginLeft:"auto",background:T.semantic.critical,color:T.surface.canvas,borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"9px",fontWeight:700}}>{notifCount}</span>}
+                  {waiting>0&&<span data-testid="nav-invites-badge" aria-hidden="true" style={{marginLeft:collapsed?0:"auto",position:collapsed?"absolute":"static",top:"2px",right:"2px",background:T.semantic.warning,color:inkOn(T.semantic.warning),borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"12px",fontWeight:700}}>{waiting}</span>}
                 </button>
               );
             })}

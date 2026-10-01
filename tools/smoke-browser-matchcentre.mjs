@@ -335,6 +335,28 @@ try {
   const fowWant = inn1.fow.map((f) => `${f.runs}/${f.wickets} · ${f.batsman} · ${f.overs}`);
   ok(`the fall of wickets as "${fowWant[2] ?? fowWant[0]}"`, JSON.stringify(fowShown.map((s) => s.trim())) === JSON.stringify(fowWant), fowShown.join(" | "));
 
+  group("SCRBRD-126: the wicket-keeper's † on the card");
+  // G Nel kept for Westville in the first innings, T Bekker for Hilton in
+  // the second (the fixture's keep tokens): each is marked † on his own
+  // side's batting card, and each innings' bowling says who kept in it.
+  ok("the fold has them: G Nel kept in the first innings and stumped one; T Bekker in the second",
+     inn1.keepers.map((k) => `${k.name}:${k.stumpings}`).join() === "G Nel:1" && inn2.keepers.map((k) => k.name).join() === "T Bekker",
+     JSON.stringify([inn1.keepers, inn2.keepers]));
+  const markedRows = async () => (await p.locator('[data-testid="mc-bat-row"], [data-testid="mc-dnb"]')
+    .filter({ has: p.locator('[data-testid="mc-keeper-mark"]') }).allInnerTexts()).map((s) => s.split("\n")[0].trim());
+  const hilMarked = await markedRows();
+  ok(`on Hilton's batting, T Bekker alone is marked † (${hilMarked.join(", ")})`, hilMarked.length === 1 && /^T Bekker/.test(hilMarked[0]));
+  const keptIn1 = (await tid(p, "mc-keepers").innerText().catch(() => "")).trim();
+  ok(`the first innings' bowling says who kept ("${keptIn1}")`, keptIn1 === "Wicket-keeper: G Nel †");
+  ok("...and the stumping's line names him", (await p.locator('[data-testid="mc-dismissal"]', { hasText: /^st G Nel b / }).count()) === 1);
+  await tid(p, "mc-innings-1").click();
+  await p.waitForTimeout(300);
+  const wesMarked = await markedRows();
+  ok(`on Westville's batting, G Nel alone is marked † (${wesMarked.join(", ")})`, wesMarked.length === 1 && /^G Nel/.test(wesMarked[0]));
+  ok("the second innings' bowling says T Bekker kept", (await tid(p, "mc-keepers").innerText().catch(() => "")).trim() === "Wicket-keeper: T Bekker †");
+  await tid(p, "mc-innings-0").click();
+  await p.waitForTimeout(300);
+
   group("A batter's row opens: his 1s to 6s, his wagon wheel, the line of his dismissal");
   await outRow.locator('[data-testid="mc-bat-open"]').click();
   await p.waitForTimeout(500);

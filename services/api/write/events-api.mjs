@@ -209,6 +209,9 @@ const CHECK_REASON = {
   ball_event_point_is_complete: "placement_invalid",
   ball_event_zone_check: "placement_invalid",
   ball_event_capture_profile: "capture_profile_unknown",
+  // db/68's door: what the Laws refuse at commit (Law 39, SCRBRD-126), for a
+  // row that reaches the table another way — a held event released.
+  ball_event_stumped_by_keeper: "stumped_not_keeper",
 };
 
 /**

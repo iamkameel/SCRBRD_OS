@@ -6,7 +6,7 @@ import {
   newEventId, KIND, battingFirst, tossFromRow, firstInningsSides, fromRow,
   CAPTURE_PROFILE, batHandOf,
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
-  lastUndoableIndex, likelyCause,
+  lastUndoableIndex, likelyCause, keeper as keeperEvent, keeperOf,
 } from "@scrbrd/scoring";
 import { lawsEdition } from "@scrbrd/scoring";
 import { ConditionsLine, bowlerCapWords } from "./conditionsLine.jsx";
@@ -44,7 +44,8 @@ import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.j
 import { Icon } from "../ui/icons.jsx";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { hapticTick } from "./haptic.js";
-import { undoWords } from "./prompts.js";
+import { undoWords, entry } from "./prompts.js";
+import { KeeperSheet } from "./keeperSheet.jsx";
 
 /** A moment in words, for the live region: "FOUR. Boundary", "HAT-TRICK BALL. K Naidoo — two in two". */
 const momentWords=(cfg)=>`${cfg.label.replace(/!+$/,"")}${cfg.sub?`. ${cfg.sub}`:""}`;
@@ -1515,6 +1516,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // `reason` only for a change during an over (SCRBRD-080): the sheet asks
   // "Injury or suspended?" then, and the server refuses a change without one.
   const addBowler=(name,reason)=>emit(bowlerEvent({bowler:name,...(reason?{reason}:{})}));
+  // The wicket-keeper (SCRBRD-126): state, as the bowler is. Named in the
+  // bowler sheet (the opening bowler, an over's start) or from the menu at
+  // any point; he keeps from the next ball. The fielding side's squad to
+  // choose from: a demonstration team's players, or the innings' fielding
+  // squad (a real one is {id, name}; what the event carries is the id).
+  const addKeeper=id=>emit(keeperEvent({keeper:id}));
+  const keeperNow=keeperOf(inn);
+  const fieldingChoices=()=>{
+    const team=INT_TEAMS[inn?.bowlingTeamKey];
+    return team?team.players.map(p=>({id:p.id??p.name,name:p.name})):(inn?.bowlingSquad||[]).map(entry);
+  };
   const midOver=isMidOver(inn);
   // The bowler sheet asks the question the server asks when the event
   // arrives — lawsRefusal() over the same two arrays this screen already
@@ -1708,6 +1720,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         onClose={()=>setModal(null)}/>
     );
 
+    if(modal==="keeper")return (
+      <KeeperSheet keeper={keeperNow} choices={fieldingChoices()}
+        onKeeper={id=>{addKeeper(id);setModal(null);}}
+        onClose={()=>setModal(null)}/>
+    );
+
     if(modal==="retire")return (
       <RetireSheet
         innings={innings} events={events} curIn={curIn}
@@ -1745,6 +1763,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           lastBowlerName={lastBowler?.name||null}
           refuses={bowlerRefusal}
           capWordsFor={conditionsInfo?(balls)=>bowlerCapWords(conditionsInfo,balls):null}
+          keeper={keeperNow} keeperChoices={fieldingChoices()} onKeeper={addKeeper}
           onClose={()=>setModal(null)}
           onConfirm={name=>{addBowler(name);setModal(null);}}/>
       );
@@ -1754,9 +1773,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
       // Build fielding squad objects from bowlingTeamKey or bowlingSquad names
       const bowlingTeamKey=inn?.bowlingTeamKey;
       const teamData=INT_TEAMS[bowlingTeamKey];
+      // The keeper on the record is the WK (SCRBRD-126). A real squad is
+      // {id, name}: entry() reads either shape, as the bowler sheet does.
+      const asKeeper=(p)=>keeperNow&&(p.id===keeperNow.id||p.name===keeperNow.name)?{...p,role:"WK"}:p;
       const fieldingSquad=teamData
-        ?teamData.players.filter((_,i)=>i<11)
-        :(inn?.bowlingSquad||[]).map(n=>({name:n,role:"BOWL"}));
+        ?teamData.players.filter((_,i)=>i<11).map(p=>keeperNow&&p.role==="WK"&&p.name!==keeperNow.name?{...p,role:"FIELD"}:asKeeper(p))
+        :(inn?.bowlingSquad||[]).map(p=>asKeeper({...entry(p),role:"BOWL"}));
       return (
         <WicketSheet
           batName={inn?.batsmen.find(b=>b.id===inn.striker)?.name||"Batsman"}
@@ -1764,6 +1786,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           nonStriker={inn?.nonStriker!=null?{id:inn.nonStriker,name:inn.batsmen.find(b=>b.id===inn.nonStriker)?.name??String(inn.nonStriker)}:null}
           fieldingSquad={fieldingSquad}
           edition={lawsEdition({innings,events})}
+          keeper={keeperNow}
           onClose={()=>{setModal(null);setScoringCtx(null);setSelShot(null);resetHub();}}
           onConfirm={(mode,fielder,extra)=>{confirmWicket(mode,fielder,extra);}}/>
       );
@@ -1812,6 +1835,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           // which records it and then asks who finishes the over.
           onSuspended={midOver?()=>setModal("suspend"):null}
           midOver={midOver}
+          keeper={keeperNow} keeperChoices={fieldingChoices()} onKeeper={addKeeper}
           onClose={()=>setModal(null)}
           onConfirm={(name,reason)=>{addBowler(name,reason);setModal(null);}}/>
       );
@@ -2004,6 +2028,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                   onClick={()=>{close();setModal("suspend");}}/>
                 <MenuItem testid="pad-retire-hurt" label="Batter retired hurt" hint="Not out, and not a wicket. He may come back later. Then choose who comes in."
                   onClick={()=>{close();setModal("retire");}}/>
+                {inn&&(
+                  <MenuItem testid="pad-keeper" label="Change keeper"
+                    hint={keeperNow?`${keeperNow.name} is keeping. The gloves can change hands at any time.`:"Who is keeping wicket? A stumping is his alone."}
+                    onClick={()=>{close();setModal("keeper");}}/>
+                )}
                 {suspensions.length>0&&(
                   <MenuItem testid="pad-suspend-report" label="Umpires' report" hint="The suspension, for the school's discipline record"
                     onClick={()=>{close();setModal("suspendReport");}}/>

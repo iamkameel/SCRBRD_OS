@@ -4,6 +4,7 @@ import { api, signedIn } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { formatWhen } from "../lib/playingConditions.js";
 import { entrantWords, leagueRefusal } from "../lib/league.js";
+import { invitationsChanged } from "../lib/invitations.js";
 import { Alert, styles } from "./playingconditions.jsx";
 import { Said, Standing } from "./leagueui.jsx";
 
@@ -55,7 +56,7 @@ export function LeagueInvitations({ role, onAnswered }) {
     try {
       await api(`/api/competition-entrants/${inv.id}/${accept ? "accept" : "decline"}`, { method: "POST", body: {} });
       setSaid(accept ? `${inv.name} ${inv.teamCode} is now in ${inv.competitionName}.` : `${inv.name} ${inv.teamCode} declined ${inv.competitionName}.`);
-      setAsking(null); setNonce((n) => n + 1); onAnswered?.();
+      setAsking(null); setNonce((n) => n + 1); onAnswered?.(); invitationsChanged();
     } catch (/** @type {any} */ e) { setErr(leagueRefusal(e)); }
     finally { setBusy(false); }
   }

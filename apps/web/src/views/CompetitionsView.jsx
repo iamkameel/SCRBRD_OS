@@ -1,9 +1,11 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { D, T, inkOn } from "../design/tokens.js";
 import { Avatar, Badge, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useRows } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
+import { api, signedIn } from "../lib/api.js";
+import { leagueSetupState } from "../lib/league.js";
 import { LeagueInvitations } from "./leagueinvites.jsx";
 
 // The league wizard (SCRBRD-127) and the fixture planner (SCRBRD-123) are opened
@@ -18,6 +20,32 @@ function leagueButton(primary) {
            fontFamily: T.type.body, fontSize: "14px", fontWeight: 600,
            ...(primary ? { border: "none", background: T.content.primary, color: inkOn(T.content.primary) }
                        : { background: "transparent", color: T.content.primary, border: `1px solid ${T.line.strong}` }) };
+}
+
+/**
+ * Where a league's setup stands, for a manager: the two reads the wizard makes
+ * on reopening a league, taken once the league is on show and not before. Null
+ * until they are in, and null if either fails or the API says this person does
+ * not manage this league, so the card is then as it always was (it offers
+ * "Finish setting up"; the wizard words any refusal itself).
+ * @param {string | undefined} id @param {boolean} wanted @param {number} nonce
+ * @returns {ReturnType<typeof leagueSetupState> | null}
+ */
+function useSetupState(id, wanted, nonce) {
+  const [got, setGot] = useState(/** @type {{ id: string, nonce: number, state: ReturnType<typeof leagueSetupState> } | null} */ (null));
+  useEffect(() => {
+    if (!id || !wanted) return;
+    let off = false;
+    Promise.all([api(`/api/competitions/${id}/entrants`), api(`/api/competitions/${id}/playing-conditions`)])
+      .then(([e, p]) => {
+        if (off || e.canManage !== true) return;
+        setGot({ id, nonce, state: leagueSetupState({ entrants: e.entrants.length, sets: p.sets }) });
+      })
+      .catch(() => {});
+    return () => { off = true; };
+  }, [id, wanted, nonce]);
+  // What was read for another league, or before the wizard last changed this one, is not shown.
+  return wanted && got && got.id === id && got.nonce === nonce ? got.state : null;
 }
 
 function CompetitionsView({ role }) {
@@ -39,6 +67,12 @@ function CompetitionsView({ role }) {
     setMode(r?.planner ? { planner: r.planner } : null);
   };
   const canMake = holdsCapability(role,"competition.manage");
+  const canPlan = holdsCapability(role,"competition.conditions.manage");
+  // Read only for a manager looking at a live league, and only when signed in.
+  const setup = useSetupState(comp?.id, !!comp?.live && canMake && signedIn(), nonce);
+  // A complete league has nothing left to finish. Until the reads are in, or if
+  // either fails, the card is as it always was.
+  const showFinish = canMake && setup?.partMade !== false;
   if (mode?.wizard) {
     return (
       <div className="os-page">
@@ -87,10 +121,11 @@ function CompetitionsView({ role }) {
                 <Badge color={comp.active?D.emerald:D.textMuted}>{comp.active?"Active":"Inactive"}</Badge>
                 <Badge color={D.sky}>{comp.type}</Badge>
               </div>
-              {comp.live&&(canMake||holdsCapability(role,"competition.conditions.manage"))&&(
-                <div style={{padding:"12px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",gap:"8px",flexWrap:"wrap"}}>
-                  {canMake&&<button type="button" data-testid="finish-setup" onClick={()=>setMode({wizard:true,competitionId:comp.id})} style={leagueButton(false)}>Finish setting up</button>}
-                  {holdsCapability(role,"competition.conditions.manage")&&<button type="button" data-testid="open-planner" onClick={()=>setMode({planner:{id:comp.id,name:comp.name,format:comp.format}})} style={leagueButton(false)}>Fixture planner</button>}
+              {comp.live&&(showFinish||canPlan)&&(
+                <div style={{padding:"12px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+                  {showFinish&&setup?.partMade&&<span data-testid="league-setup-state" style={{fontFamily:T.type.body,fontSize:"13px",fontWeight:600,color:T.content.primary,padding:"6px 12px",borderRadius:T.radius.pill,border:`1px solid ${T.semantic.warning}`}}>{setup.words}</span>}
+                  {showFinish&&<button type="button" data-testid="finish-setup" onClick={()=>setMode({wizard:true,competitionId:comp.id})} style={leagueButton(false)}>Finish setting up</button>}
+                  {canPlan&&<button type="button" data-testid="open-planner" onClick={()=>setMode({planner:{id:comp.id,name:comp.name,format:comp.format}})} style={leagueButton(false)}>Fixture planner</button>}
                 </div>
               )}
               {comp.table&&(

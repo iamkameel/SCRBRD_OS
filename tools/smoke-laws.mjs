@@ -32,7 +32,7 @@ import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import {
-  deriveInnings, deriveMatch, fromRow, inningsStart, batters, bowler, ball, voidEvent, sealInnings,
+  deriveInnings, deriveMatch, fromRow, inningsStart, batters, bowler, ball, voidEvent, sealInnings, keeper,
   BALL_TYPE, newEventId, REFUSAL, REFUSAL_TEXT, toRow, PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE,
 } from "@scrbrd/scoring";
 
@@ -139,6 +139,17 @@ try {
   ok("the same batter at both ends is refused", refusedAs(twice, REFUSAL.SAME_BATTER_BOTH_ENDS), JSON.stringify(twice));
   const swap = await post(stamp(0, batters({ striker: P[2] })));
   ok("a not-out batter cannot be replaced without leaving", refusedAs(swap, REFUSAL.CREASE_OCCUPIED), JSON.stringify(swap));
+
+  group("The wicket-keeper: a stumping is his (Law 39, SCRBRD-126)");
+  // Michaelhouse field: their keeper is a typed name. Nothing here bowls a
+  // ball, so the innings the groups below read is the one it was.
+  const kept = await post(stamp(0, keeper({ keeper: "M Keeper" })));
+  ok("the fielding side's keeper is recorded", kept?.accepted?.length === 1, JSON.stringify(kept));
+  const rowsBefore = await rowCount();
+  const notHis = await post(stamp(0, ball({ type: BALL_TYPE.WICKET, dismissal: "stumped", fielder: "A Fielder" })));
+  ok("a stumping credited to a fielder who is not keeping is refused, by name, and nothing is written",
+     refusedAs(notHis, REFUSAL.STUMPED_NOT_KEEPER) && (await rowCount()) === rowsBefore, JSON.stringify(notHis));
+  ok("...with words for the person reading it", typeof REFUSAL_TEXT[notHis?.refused?.[0]?.reason] === "string");
 
   group("Undo is last-in, first-out");
   const second = stamp(0, ball({ type: BALL_TYPE.RUN, value: 6 }));

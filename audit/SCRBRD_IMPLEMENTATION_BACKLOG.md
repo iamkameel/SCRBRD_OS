@@ -3925,6 +3925,20 @@ Fable designs (SCRBRD-114 territory: conditions, results, the fold); Opus builds
 SCRBRD-114 phase 3 (db/69–71).
 **Designed 2026-09-30:** `docs/design/SCRBRD-130_rain_and_par.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D14 as recommended** — umpires' figure is the record; `target.method` umpires_revision | dls_standard (no average run rate); table in the database only, from Kameel's source; G50 a cited condition; venue par floor 5, window this season + two, rain-shortened excluded. Phases R1 db/72, R3 db/74, R2 db/73 when the table arrives.
 
+
+### SCRBRD-131 — Small things found while building (2026-10-01)
+
+- **The pad: Enter in the batting-order sheet presses the Wicket key again.** Typing the next batter's name and
+  pressing Enter closes the sheet, focus returns to the Wicket key, and the same keypress lands on it. Found by the
+  SCRBRD-126 agent; its walk steps use the Go button. Fix: don't let the closing keypress reach the key that focus
+  returns to (or return focus elsewhere after a wicket). Sonnet, with a pad walk step that presses Enter.
+- **The notification bell's count is 9px**, under the 12px text floor. The a11y ratchet passes it today. Lift it to
+  12px with the new Competitions badge (same mechanism, `notifCount`).
+- **`resumeStep` and a league with only a withdrawn set** reads "step 4 of 4, Review and publish", where there is
+  nothing to publish. It should open at step 3 (state the conditions again). `lib/league.js`, one line and a test.
+- **Invitations write no notification** (`competition_entrant_invite`): the organiser cannot write a notice into
+  another school, so it needs a definer function (a migration, Opus), as db/65's availability notices are written.
+  With it: the "checked" ticks on a league's defaults, kept in the browser today (`saveTicks`), stored on the set.
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
 2026-09-30)
@@ -4368,6 +4382,21 @@ apart. School sides change keeper mid-innings, so: record the keeper at the star
 (an event, as the bowler is), have the Laws check refuse `stumped` credited to anyone but the keeper at that ball, show †
 on the scorecard, and let the careers count dismissals as keeper. Opus for the event, the fold and the Laws; Sonnet for
 the pad's keeper picker and the scorecard mark.
+**Built 2026-10-01 (Opus): `db/68_wicket_keeper.sql`.**
+- **The event** is a kind of its own, `keeper({keeper})`, state from a point of the innings as `bowler` is (the ref
+  rides in the payload). Not a field on `bowler`: the gloves change on their own clock, mid-over with the same bowler
+  bowling on. Every reader ignores a kind it does not know, so a log with no keeper event folds exactly as before.
+- **The fold** carries `inn.keeper`, `inn.keepers` (catches and stumpings as keeper; wickets that stand) and
+  `keeperId` on each delivery once one is named. A catch is the keeper's when its fielder is his reference or his
+  name; every stumping while he keeps is his.
+- **The Laws** refuse `stumped_not_keeper` (Law 39): a stumping credited to a fielder who is not the keeper at that
+  ball, while one is recorded. None recorded, or no fielder named: as before. db/68's door refuses the same row.
+- **SQL**: `keeper_dismissal` and `player_keeping_career` (matches, innings kept, catches, stumpings), new objects
+  only, security_invoker; held to the fold by smoke-fold-figures and db/99 §46. Catches were counted nowhere before.
+- **Screens**: "Who is keeping wicket?" in the bowler sheet (never blocking it), "Change keeper" in the pad menu,
+  the wicket sheet's stumping credited to the keeper, † on the Match Centre scorecard.
+- **Not yet**: the public page (its log does not carry the keeper — SCRBRD-083 decides), keeping by season, a
+  career screen that reads `player_keeping_career`, and a scorebook card's keeper (a card has no †).
 
 ### SCRBRD-127 — The League Administrator's wizard: create a league, enter schools, set its conditions
 **Priority:** P1 (the pilot cannot create a league without it) · **Domain:** Competitions · **Type:** build with

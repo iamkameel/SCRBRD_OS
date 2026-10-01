@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { T } from "../../design/tokens.js";
-import { didNotBat, dismissalKey, extrasOf, fowLines, oversOf, runCounts, teamOf } from "../../lib/matchCentre.js";
+import { didNotBat, dismissalKey, extrasOf, fowLines, keepersOfSide, oversOf, runCounts, teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName, Quiet } from "./bits.jsx";
 
@@ -80,15 +80,20 @@ function howOut(b) {
   return "not out";
 }
 
+/** The wicket-keeper's mark beside his name (SCRBRD-126), as a printed card has it. */
+function KeeperMark() {
+  return <span data-testid="mc-keeper-mark" aria-label="wicket-keeper" title="Wicket-keeper" style={{ color: T.content.secondary }}>†</span>;
+}
+
 /** A batter's row, which opens for a signed-in reader. */
-function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel }) {
+function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kept = false }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
   const opens = !!onToggle;
   const nameCell = (
     <span style={{ minWidth: 0, width: "100%", display: "grid", gap: "2px", textAlign: "left" }}>
       <span style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, display: "flex", alignItems: "center", gap: T.space.xs }}>
-        {b.name}{b.status === "batting" && <span aria-label="not out" style={{ color: T.content.secondary }}>*</span>}
+        {b.name}{kept && <KeeperMark/>}{b.status === "batting" && <span aria-label="not out" style={{ color: T.content.secondary }}>*</span>}
         {opens && <Icon name="chevron-down" style={{ marginLeft: "auto", color: T.content.tertiary, transform: open ? "rotate(180deg)" : "none" }}/>}
       </span>
       <span data-testid="mc-dismissal" style={{ fontFamily: T.type.body, fontSize: "13px", lineHeight: 1.35, color: T.content.secondary }}>{howOut(b)}</span>
@@ -148,6 +153,9 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
   const ex = extrasOf(inn);
   const fow = fowLines(inn);
   const dnb = didNotBat(inn);
+  // Who kept wicket for this side when it fielded, and in this innings (SCRBRD-126).
+  const kept = keepersOfSide(innings, inningsSel);
+  const keepers = inn.keepers ?? [];
   const innEvents = (events ?? []).filter((e) => (e.innings ?? 0) === inningsSel);
   const byKey = new Map((commentary ?? []).map((c) => [c.key, c]));
   return (
@@ -186,13 +194,13 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
           <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
             onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
             commentaryLine={b.status === "out" ? byKey.get(dismissalKey(inn, b.id, innEvents) ?? "")?.text ?? null : null}
-            profile={profileOf(b.id)} Wheel={Wheel}/>
+            profile={profileOf(b.id)} Wheel={Wheel} kept={kept.has(b.id)}/>
         ))}
         {dnb.map((p) => (
           <div key={p.id} role="row" data-testid="mc-dnb" style={{ display: "grid", gridTemplateColumns: COLS, gap: T.space.xs, alignItems: "center",
             padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px", borderBottom: `1px solid ${T.line.subtle}` }}>
             <span role="rowheader" style={{ display: "grid", gap: "2px" }}>
-              <span style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary }}>{p.name}</span>
+              <span style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary }}>{p.name}{kept.has(p.id) && <KeeperMark/>}</span>
               <span style={{ fontFamily: T.type.body, fontSize: "13px", color: T.content.secondary }}>Did not bat</span>
             </span>
             <Figs values={["–", "–", "–", "–", "–"]} strong={-1}/>
@@ -233,6 +241,14 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
               </p>
             );
           })}
+          {/* Who kept wicket in this innings (SCRBRD-126), in the order each took the gloves. */}
+          {keepers.length > 0 && (
+            <p data-testid="mc-keepers" style={{ fontFamily: T.type.body, fontSize: "13px", color: T.content.secondary, margin: 0, padding: `${T.space.xs} ${T.space.md}` }}>
+              {keepers.length === 1 ? "Wicket-keeper" : "Wicket-keepers"}: {keepers.map((k, i) => (
+                <span key={k.id}>{i > 0 && ", "}{k.name} <KeeperMark/></span>
+              ))}
+            </p>
+          )}
         </div>
       )}
 

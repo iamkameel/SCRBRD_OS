@@ -33,6 +33,13 @@
  *      exist and there is none for the side that declined.
  *   E  COME BACK LATER. A league left after step 1 is reopened from the
  *      Competitions screen at the step it had reached.
+ *      A league's card says where its setup stands (a league with no sides,
+ *      or with sides and no conditions, says "Setting up: step N of 4" and
+ *      keeps "Finish setting up"; a complete league has neither), and a failed
+ *      read leaves a card as it was. The navigation badges Competitions with
+ *      the invitations waiting (two, one, none once answered, none for the
+ *      organiser, none when the read fails), named in words, on a laptop and a
+ *      phone.
  *   F  Nothing is set under 12px, nothing pressed is under 44px, at a desktop,
  *      at 390 wide with no sideways scroll, and in Daylight.
  *
@@ -55,6 +62,7 @@ const API_PORT = port(8897);
 const API = `http://127.0.0.1:${API_PORT}`;
 const DEBUG = !!process.env.BROWSER_LEAGUE_DEBUG;
 const DIST = process.env.LEAGUE_DIST || "apps/web/dist";
+const HIL = "11111111-1111-1111-1111-111111111111";
 const WM = "ffffffff-0000-0000-0000-000000000002";
 const OVAL = "ffffffff-0000-0000-0000-000000000001";
 const LEAGUE_NAME = "Walk Schools League";
@@ -138,6 +146,8 @@ async function signIn(page, email) {
   await page.waitForTimeout(2000);
   return (await page.locator("nav button").count()) > 0;
 }
+/** Every read the page has asked for has come back (and a moment for what it did with it). */
+const settled = async (page) => { await page.waitForLoadState("networkidle").catch(() => {}); await page.waitForTimeout(500); };
 async function nav(page, label) {
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
@@ -196,7 +206,7 @@ try {
   group("A. The league administrator's wizard");
   const org = await open();
   ok("the league administrator signs in", await signIn(org.page, "league@example.invalid"));
-  ok("Competitions opens", await nav(org.page, /^Competitions$/));
+  ok("Competitions opens", await nav(org.page, /^Competitions\d*$/));
   ok("\"+ New Competition\" is offered to a holder of competition.manage", await has(org.page, "new-competition"));
   await tap(org.page, "new-competition");
   ok("the wizard opens at step 1 of 4", await has(org.page, "lw-root") && /Step 1 of 4: The league/.test(await said(org.page, "lw-root")), await said(org.page, "lw-heading"));
@@ -244,7 +254,7 @@ try {
   group("B. The schools answer");
   const hil = await open();
   ok("Hilton's director of sport signs in", await signIn(hil.page, "sarah@example.invalid"));
-  ok("Competitions opens", await nav(hil.page, /^Competitions$/));
+  ok("Competitions opens", await nav(hil.page, /^Competitions\d*$/));
   ok("...without \"+ New Competition\" (no competition.manage)", !(await has(hil.page, "new-competition")));
   ok("\"Invitations to leagues\" shows the two Hilton sides, and only those",
      (await tid(hil.page, "invitation").count()) === 2 && (await hil.page.locator('[data-testid="invitation"]', { hasText: /Westville/ }).count()) === 0, await said(hil.page, "invitations"));
@@ -252,15 +262,25 @@ try {
   await shot(hil.page, "3-invitations");
   const fInv = await floors(hil.page, "invitations");
   ok("the invitations: 12px and 44px", floorsOk(fInv), floorsWhy(fInv));
+  // The navigation says so without opening Competitions (the API writes no notification yet).
+  await settled(hil.page);
+  ok("the navigation badges Competitions with the count, in words a screen reader hears",
+     (await said(hil.page, "nav-invites-badge")) === "2" && (await tid(hil.page, "nav-competitions").getAttribute("aria-label")) === "Competitions, 2 league invitations waiting",
+     `${await said(hil.page, "nav-invites-badge")} | ${await tid(hil.page, "nav-competitions").getAttribute("aria-label")}`);
+  ok("...the badge's own text is 12px at the least", (await tid(hil.page, "nav-invites-badge").evaluate((n) => parseFloat(getComputedStyle(n).fontSize))) >= 12);
   await tap(hil.page, "invitation-accept");
   await tap(hil.page, "invitation-accept");
   ok("Hilton accepts both; the page says so", (await tid(hil.page, "invitation").count()) === 0 && /is now in Walk Schools League/.test(await said(hil.page, "invitations-status")), await said(hil.page, "invitations-status"));
+  await settled(hil.page);
+  ok("...and the badge goes with them", !(await has(hil.page, "nav-invites-badge")) && (await tid(hil.page, "nav-competitions").getAttribute("aria-label")) === null);
   await hil.ctx.close().catch(() => {});
 
   const wes = await open();
   ok("Westville's administrator signs in", await signIn(wes.page, "registrar.wes@example.invalid"));
-  ok("Competitions opens", await nav(wes.page, /^Competitions$/));
+  ok("Competitions opens", await nav(wes.page, /^Competitions\d*$/));
   ok("two invitations, both Westville's", (await tid(wes.page, "invitation").count()) === 2);
+  await settled(wes.page);
+  ok("Westville's navigation badges the two", (await said(wes.page, "nav-invites-badge")) === "2" && (await tid(wes.page, "nav-competitions").getAttribute("aria-label")) === "Competitions, 2 league invitations waiting");
   const w1 = wes.page.locator('[data-testid="invitation"]', { hasText: /1XI/ });
   const w2 = wes.page.locator('[data-testid="invitation"]', { hasText: /2XI/ });
   await w1.locator('[data-testid="invitation-accept"]').click(); await wes.page.waitForTimeout(700);
@@ -268,6 +288,8 @@ try {
   ok("declining asks once, in the page, first", await has(wes.page, "invitation-decline-confirm") && (await wes.page.locator("button", { hasText: /Decline the invitation/ }).count()) === 1);
   await tap(wes.page, "invitation-decline-yes"); await wes.page.waitForTimeout(700);
   ok("Westville accepts its 1st XI and declines its 2nd XI", /declined Walk Schools League/.test(await said(wes.page, "invitations-status")) && (await tid(wes.page, "invitation").count()) === 0, await said(wes.page, "invitations-status"));
+  await settled(wes.page);
+  ok("...and none once both are answered", !(await has(wes.page, "nav-invites-badge")));
   const answers = await dbq(`select team_code, school_id, status from competition_entrant where competition_id = $1 order by school_id, team_code`, [C]);
   ok("the database agrees: three accepted, one declined",
      answers.filter((a) => a.status === "accepted").length === 3 && answers.filter((a) => a.status === "declined").length === 1, JSON.stringify(answers));
@@ -516,15 +538,34 @@ try {
   await hil2.page.locator("button", { hasText: new RegExp(LEAGUE_NAME) }).first().click().catch(() => {});
   await hil2.page.waitForTimeout(600);
   ok("a director of sport is offered no planner tab", !(await has(hil2.page, "league-tab-planner")));
-  await nav(hil2.page, /^Competitions$/);
+  await nav(hil2.page, /^Competitions\d*$/);
   ok("...nor a \"Fixture planner\" or \"Finish setting up\" on Competitions", !(await has(hil2.page, "open-planner")) && !(await has(hil2.page, "finish-setup")));
   await hil2.ctx.close().catch(() => {});
 
   // ── E ──────────────────────────────────────────────────────────
   group("E. Save and come back later");
+  // A third league made through the API, with one side invited and no conditions
+  // yet: it waits for Hilton and is part-made at step 3.
+  const orgToken = await devLogin("league@example.invalid");
+  const three = await call("/api/competitions", { method: "POST", token: orgToken, body: { name: "Walk Cup Three", format: "T20", ageGroup: "1XI", gender: "boys", season: "2026" } });
+  const threeInvite = await call(`/api/competitions/${three.body?.id}/entrants`, { method: "POST", token: orgToken, body: { schoolId: HIL, teamCode: "1XI" } });
+  ok("a third league is made with one side invited (through the API)", three.status === 200 && threeInvite.status === 200, `${three.status} ${threeInvite.status}`);
   const again1 = await open();
   ok("the league administrator signs in again", await signIn(again1.page, "league@example.invalid"));
-  await nav(again1.page, /^Competitions$/);
+  await nav(again1.page, /^Competitions\d*$/);
+  await settled(again1.page);
+  ok("the organiser is never shown an invitation badge: the API lists none for her", !(await has(again1.page, "nav-invites-badge")));
+  // Part-made and complete, from what the wizard itself reads.
+  await again1.page.locator("button", { hasText: new RegExp(LEAGUE_NAME) }).first().click();
+  await again1.page.waitForTimeout(400);
+  const doneGone = await again1.page.waitForSelector('[data-testid="finish-setup"]', { state: "detached", timeout: 6000 }).then(() => true, () => false);
+  ok("a complete league (sides and published conditions) offers no \"Finish setting up\"", doneGone);
+  ok("...says nothing is left to set up", !(await has(again1.page, "league-setup-state")));
+  ok("...and keeps its \"Fixture planner\"", await has(again1.page, "open-planner"));
+  await again1.page.locator("button", { hasText: /Walk Cup Three/ }).first().click();
+  await again1.page.waitForTimeout(400);
+  await tid(again1.page, "league-setup-state").first().waitFor({ timeout: 6000 }).catch(() => {});
+  ok("a league with sides but no conditions says so: step 3", (await said(again1.page, "league-setup-state")) === "Setting up: step 3 of 4, Playing conditions" && await has(again1.page, "finish-setup"), await said(again1.page, "league-setup-state"));
   await tap(again1.page, "new-competition");
   await fill(again1.page, "lw-name", "Walk Cup Two");
   await tap(again1.page, "lw-league-next");
@@ -534,6 +575,11 @@ try {
   ok("leaving after step 1 goes back to Competitions", !(await has(again1.page, "lw-root")) && (await again1.page.locator("button", { hasText: /Walk Cup Two/ }).count()) >= 1);
   await again1.page.locator("button", { hasText: /Walk Cup Two/ }).first().click();
   await again1.page.waitForTimeout(500);
+  await tid(again1.page, "league-setup-state").first().waitFor({ timeout: 6000 }).catch(() => {});
+  ok("a league with no sides says so: step 2, in the wizard's own words, and keeps \"Finish setting up\"",
+     (await said(again1.page, "league-setup-state")) === "Setting up: step 2 of 4, Entrants" && await has(again1.page, "finish-setup"), await said(again1.page, "league-setup-state"));
+  const fMark = await floors(again1.page, "league-setup-state");
+  ok("...the marker is 12px at the least", floorsOk(fMark), floorsWhy(fMark));
   await tap(again1.page, "finish-setup");
   await again1.page.waitForTimeout(1500);
   ok("\"Finish setting up\" reopens it at step 2, the first not done", /Step 2 of 4: Entrants/.test(await said(again1.page, "lw-root")), (await said(again1.page, "lw-root")).slice(0, 200));
@@ -551,11 +597,60 @@ try {
   ok("no console errors (come back)", again1.errors.length === 0, again1.errors.join(" | "));
   await again1.ctx.close().catch(() => {});
 
+  // A read that fails leaves the card as it was: the league still offers "Finish setting up".
+  const failing = await open();
+  await failing.ctx.route(/\/api\/competitions\/[^/]+\/entrants$/, (r) => r.abort());
+  ok("the organiser signs in (entrants reads will fail)", await signIn(failing.page, "league@example.invalid"));
+  await nav(failing.page, /^Competitions\d*$/);
+  for (const name of [LEAGUE_NAME, "Walk Cup Three"]) {
+    await failing.page.locator("button", { hasText: new RegExp(name) }).first().click();
+    await settled(failing.page);
+    ok(`when the reads fail, ${name} is as it was: "Finish setting up", no marker, no broken card`,
+       (await has(failing.page, "finish-setup")) && !(await has(failing.page, "league-setup-state")) && (await has(failing.page, "open-planner")));
+  }
+  ok("no console errors (a failed read)", failing.errors.length === 0, failing.errors.join(" | "));
+  await failing.ctx.close().catch(() => {});
+
+  // One waiting invitation, in the singular; nothing when the read fails; a phone.
+  const hil3 = await open();
+  ok("Hilton's director of sport signs in again", await signIn(hil3.page, "sarah@example.invalid"));
+  await settled(hil3.page);
+  ok("one invitation is \"1 league invitation waiting\", badged without opening Competitions",
+     (await said(hil3.page, "nav-invites-badge")) === "1" && (await tid(hil3.page, "nav-competitions").getAttribute("aria-label")) === "Competitions, 1 league invitation waiting"
+     && !(await has(hil3.page, "invitations")), await tid(hil3.page, "nav-competitions").getAttribute("aria-label"));
+  await nav(hil3.page, /^Competitions\d*$/);
+  ok("...and Competitions shows that invitation, from Walk Cup Three", /Walk Cup Three/.test(await said(hil3.page, "invitation")));
+  await hil3.ctx.close().catch(() => {});
+
+  const hil4 = await open();
+  await hil4.ctx.route(/\/api\/competition-invitations$/, (r) => r.abort());
+  ok("Hilton signs in (invitation reads will fail)", await signIn(hil4.page, "sarah@example.invalid"));
+  await settled(hil4.page);
+  ok("a failed read badges nothing", !(await has(hil4.page, "nav-invites-badge")) && (await tid(hil4.page, "nav-competitions").getAttribute("aria-label")) === null);
+  ok("no console errors (a failed invitations read)", hil4.errors.length === 0, hil4.errors.join(" | "));
+  await hil4.ctx.close().catch(() => {});
+
+  const hil5 = await open("floodlit", { width: 390, height: 844 });
+  ok("Hilton signs in on a phone", await signIn(hil5.page, "sarah@example.invalid"));
+  await settled(hil5.page);
+  const onBar = await has(hil5.page, "mnav-competitions");
+  const holder = tid(hil5.page, onBar ? "mnav-competitions" : "mnav-more");
+  ok("on a phone the bar says so, in words, on the button that leads to Competitions",
+     (await holder.getAttribute("aria-label")) === (onBar ? "Competitions, 1 league invitation waiting" : "More, 1 league invitation waiting"), await holder.getAttribute("aria-label"));
+  ok("...with a badge of 12px at the least", (await tid(hil5.page, "mnav-invites-badge").first().evaluate((n) => parseFloat(getComputedStyle(n).fontSize))) >= 12);
+  if (!onBar) {
+    await tap(hil5.page, "mnav-more");
+    ok("...and the drawer's Competitions says so too", (await tid(hil5.page, "drawer-competitions").getAttribute("aria-label")) === "Competitions, 1 league invitation waiting");
+  }
+  ok("no sideways scroll with the badge", (await hil5.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 0);
+  ok("no console errors (phone, badge)", hil5.errors.length === 0, hil5.errors.join(" | "));
+  await hil5.ctx.close().catch(() => {});
+
   // ── F ──────────────────────────────────────────────────────────
   group("F. Phone width and Daylight");
   const ph = await open();
   ok("the organiser signs in on a phone", await signIn(ph.page, "league@example.invalid"));
-  await nav(ph.page, /^Competitions$/);
+  await nav(ph.page, /^Competitions\d*$/);
   await ph.page.setViewportSize({ width: 390, height: 844 });
   await ph.page.waitForTimeout(1200);
   const hasNew = await has(ph.page, "new-competition");
@@ -580,7 +675,7 @@ try {
 
   const day = await open("daylight");
   ok("the organiser signs in again", await signIn(day.page, "league@example.invalid"));
-  await nav(day.page, /^Competitions$/);
+  await nav(day.page, /^Competitions\d*$/);
   await day.page.locator("button", { hasText: new RegExp(LEAGUE_NAME) }).first().click().catch(() => {});
   await tap(day.page, "open-planner").catch(() => {});
   await day.page.waitForTimeout(1500);
@@ -588,6 +683,8 @@ try {
   const fDay = await floors(day.page, "pl-root");
   ok("in Daylight the planner is light, with the same floors", theme === "daylight" && /rgb\((2[0-9]{2}|1[89][0-9]), /.test(fDay.bg) && floorsOk(fDay), `${theme} ${fDay.bg} ${floorsWhy(fDay)}`);
   await tap(day.page, "pl-back");
+  // The wizard, from a league still part-made (the walk's league is complete by now).
+  await day.page.locator("button", { hasText: /Walk Cup Two/ }).first().click();
   await tap(day.page, "finish-setup");
   await day.page.waitForTimeout(1200);
   const fDayW = await floors(day.page, "lw-root");

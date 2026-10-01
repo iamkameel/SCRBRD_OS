@@ -15,6 +15,7 @@ import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
 import { useLive, useRows } from "./lib/live.js";
+import { useWaitingInvitations } from "./lib/invitations.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
@@ -394,6 +395,9 @@ export default function SCRBRD_OS() {
   // about data the reader may not have.
   const notifications = useRows("notifications", role);
   const unreadCount = notifications.filter(n=>!n.read).length;
+  // Invitations to leagues waiting for this person's answer. The API writes no
+  // notification for one yet, so the navigation says so (lib/invitations.js).
+  const invitesWaiting = useWaitingInvitations(`${appState}:${role}:${page}`);
 
   // The scorer's chunk, requested before anyone asks for it — see the note
   // at the top of this file. Fire-and-forget: a failure here is a slow
@@ -514,7 +518,7 @@ export default function SCRBRD_OS() {
             navigation entry on every single page change — and the nav is up to
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
-        {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} userName={userName} onSignOut={handleSignOut}/>}
+        {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can
               be reached without a session — the demo entry, a restored
@@ -542,7 +546,7 @@ export default function SCRBRD_OS() {
             </Suspense>
           </main>
         </div>
-        {isMobile&&<MobileNav role={role} active={page} onNav={setPage} notifCount={unreadCount} userName={userName} onSignOut={handleSignOut}/>}
+        {isMobile&&<MobileNav role={role} active={page} onNav={setPage} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
       </div>
     </>
   );
