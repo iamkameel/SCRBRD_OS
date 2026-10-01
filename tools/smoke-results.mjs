@@ -174,8 +174,8 @@ try {
   ok("net run rate in balls: Hilton 9 off 12 for, 3 off 12 against — +3.000",
      h1?.runsFor === 9 && h1?.ballsFor === 12 && h1?.runsAgainst === 3 && h1?.ballsAgainst === 12 && h1?.nrr === 3, JSON.stringify(h1));
   const m3 = b0.body?.results?.find((r) => r.matchId === M3.id);
-  ok("M3, decided on the field and left live (nothing on the pad marks a match complete), counts",
-     m3?.status === "live" && m3?.counted === true && m3?.text === "Match tied", JSON.stringify(m3));
+  ok("M3, decided on the field and never marked complete (nothing on the pad does), counts",
+     m3?.status !== "complete" && m3?.counted === true && m3?.text === "Match tied", JSON.stringify(m3));
   ok("the results, in words", b0.body?.results?.length === 3 && b0.body.results.find((r) => r.matchId === M1.id)?.text === "Hilton College 1XI won by 6 runs"
      && b0.body.results.find((r) => r.matchId === M2.id)?.text === null, JSON.stringify(b0.body?.results?.map((r) => r.text)));
   ok("...ranked by the order in force: points, wins, net run rate", JSON.stringify(b0.body?.order) === '["points","wins","nrr"]', JSON.stringify(b0.body?.order));

@@ -86,9 +86,10 @@ export function buildLog(plans, ctx = {}) {
   return byInnings.flat().map((e, k) => ({ ...e, clientTs: T0 + k * 1000, id: `result-log:${k}` }));
 }
 
-/** Penalty steps a plan can carry after its seal: appended to that innings. @param {LogEvent[]} log @param {number} i @param {Step[]} steps */
+/** Penalty steps, and runs off the bat, a plan can carry after its seal: appended to that innings. @param {LogEvent[]} log @param {number} i @param {Step[]} steps */
 function after(log, i, steps) {
-  const extra = steps.map((s) => (typeof s === "object" && "pen" in s
+  const extra = steps.map((s) => (typeof s === "number" ? ball({ type: BALL_TYPE.RUN, value: s })
+    : typeof s === "object" && "pen" in s
     ? penalty({ runs: s.pen, toBattingTeam: s.toBat, reason: s.toBat ? "helmet_struck" : "time_wasting" }) : null))
     .filter((e) => e != null).map((e) => ({ ...e, innings: i }));
   const all = [...log.map(({ clientTs: _c, id: _i, ...e }) => e), ...extra];
@@ -159,6 +160,13 @@ export const RESULT_LOGS = [
     log: after(buildLog([{ bat: H, bowl: A, steps: [4, 4, 1, 0, 0, 0], overs: 1 },
                          { bat: A, bowl: H, steps: [1, 1, 1, 1, 1, 1], overs: 1, target: 10 }]), 1, [{ pen: 5, toBat: true }]),
     expect: { outcome: "away_win", marginKind: "penalty_runs", marginValue: null, winnerSide: "away", decidedBy: "play", text: "Kearsney won by penalty runs" } },
+  // Laws 41.17.2 and 16.6.1 (4th Edition): a chase reached and sealed, then
+  // five to the fielding side lifting the target past it, is reopened; play
+  // resumes and the chase falls short.
+  { name: "a chase reached, sealed, reopened by five to the fielding side (4th Edition)", status: "complete", play: null, decision: null,
+    log: after(buildLog([{ bat: H, bowl: A, steps: [4, 4, 1, 0, 0, 0], overs: 1 },
+                         { bat: A, bowl: H, steps: [4, 4, 2], overs: 1, target: 10 }]), 1, [{ pen: 5, toBat: false }, 1, 1, 0]),
+    expect: { outcome: "home_win", marginKind: "runs", marginValue: 2, winnerSide: "home", decidedBy: "play", text: "Hilton 1XI won by 2 runs" } },
   { name: "five to the fielding side in the chase raises the target", status: "complete", play: null, decision: null,
     log: buildLog([{ bat: H, bowl: A, steps: [4, 4, 1, 0, 1, 0], overs: 1 },
                    { bat: A, bowl: H, steps: [{ pen: 5, toBat: false }, 6, 6, 1, 1, 0, 0], overs: 1, target: 11 }]),
