@@ -3925,6 +3925,20 @@ Fable designs (SCRBRD-114 territory: conditions, results, the fold); Opus builds
 SCRBRD-114 phase 3 (db/69–71).
 **Designed 2026-09-30:** `docs/design/SCRBRD-130_rain_and_par.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D14 as recommended** — umpires' figure is the record; `target.method` umpires_revision | dls_standard (no average run rate); table in the database only, from Kameel's source; G50 a cited condition; venue par floor 5, window this season + two, rain-shortened excluded. Phases R1 db/72, R3 db/74, R2 db/73 when the table arrives.
 
+
+### SCRBRD-131 — Small things found while building (2026-10-01)
+
+- **The pad: Enter in the batting-order sheet presses the Wicket key again.** Typing the next batter's name and
+  pressing Enter closes the sheet, focus returns to the Wicket key, and the same keypress lands on it. Found by the
+  SCRBRD-126 agent; its walk steps use the Go button. Fix: don't let the closing keypress reach the key that focus
+  returns to (or return focus elsewhere after a wicket). Sonnet, with a pad walk step that presses Enter.
+- **The notification bell's count is 9px**, under the 12px text floor. The a11y ratchet passes it today. Lift it to
+  12px with the new Competitions badge (same mechanism, `notifCount`).
+- **`resumeStep` and a league with only a withdrawn set** reads "step 4 of 4, Review and publish", where there is
+  nothing to publish. It should open at step 3 (state the conditions again). `lib/league.js`, one line and a test.
+- **Invitations write no notification** (`competition_entrant_invite`): the organiser cannot write a notice into
+  another school, so it needs a definer function (a migration, Opus), as db/65's availability notices are written.
+  With it: the "checked" ticks on a league's defaults, kept in the browser today (`saveTicks`), stored on the set.
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
 2026-09-30)
