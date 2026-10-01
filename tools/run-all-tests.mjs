@@ -37,6 +37,9 @@ const SUITES = [
   // innings a side read right, decisions, and the words.
   ["result",   "packages/scoring/test/result.test.mjs"],
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3b (db/71): the super over — the marker, the fold's
+  // two-wicket end and pair-scoped credits, the Laws' structure ──
+  ["superover", "packages/scoring/test/super-over.test.mjs"],
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],

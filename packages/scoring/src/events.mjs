@@ -766,6 +766,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   twelfthMan: string | null,
  *   overs: number, target: number | null,
  *   captureProfile?: string,
+ *   superOver?: number,
  * }} InningsStartEvent
  */
 /**
@@ -776,6 +777,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   twelfthMan?: string | null,
  *   overs?: number, target?: number | null,
  *   captureProfile?: string | null,
+ *   superOver?: number | null,
  * }} InningsStartInput
  */
 
@@ -1055,7 +1057,43 @@ export const inningsStart = (o) => ({
   overs: o.overs ?? 20,
   target: o.target ?? null,
   ...(o.captureProfile != null ? { captureProfile: checkedProfile(o.captureProfile) } : {}),
+  // ── SCRBRD-114 phase 3b: the super over (design §3.1, D1) ──
+  ...(o.superOver != null ? { superOver: checkedSuperOver(o.superOver) } : {}),
 });
+
+/*
+ * THE SUPER OVER (SCRBRD-114 phase 3b; docs/design/SCRBRD-114_phase3_results_
+ * super_over.md §3.1, D1). A super over is two more innings in the same log,
+ * at the next indexes after the match's own (2 and 3 for a one-innings-a-side
+ * match; 4 and 5 for the second super over), each opened by an innings_start
+ * carrying `superOver: n` — the nth super over, from 1. Nothing else on the
+ * wire is new: its balls, batters, bowler and seal are the events they are in
+ * any innings.
+ *
+ * OMITTED, not null, on every match innings, as `captureProfile` is: an
+ * innings_start built today is byte for byte what it was. toRow() carries the
+ * key in the row's payload (it has no column) and fromRow() reads it back;
+ * db/71 derives ball_event_live.super_over from the same row.
+ */
+
+/**
+ * A super over's number as the fold and SQL read it: a whole number from 1,
+ * else null (a match innings). db/71's innings_super_over() is the same rule.
+ * @param {unknown} v
+ * @returns {number | null}
+ */
+export const superOverNumber = (v) => (Number.isInteger(v) && /** @type {number} */ (v) >= 1 ? /** @type {number} */ (v) : null);
+
+/**
+ * Reject a super-over number the model does not define, on the device, as
+ * checkedProfile() does a capture profile.
+ * @param {unknown} n
+ */
+const checkedSuperOver = (n) => {
+  const v = superOverNumber(n);
+  if (v == null) throw new TypeError(`a super over is numbered from 1 — got ${JSON.stringify(n)}`);
+  return v;
+};
 
 /**
  * The openers, a new batter, a change of ends — or a batter walking back in.

@@ -26,7 +26,7 @@
  */
 import { runAsPrincipal, who } from "../auth/auth-db.mjs";
 import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
-         PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE, CONDITION } from "@scrbrd/scoring";
+         PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE, CONDITION, KIND, conditionsOf } from "@scrbrd/scoring";
 /** @import { Pool, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest, RouteDeps, DressedError } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs): pg's
 // carry a SQLSTATE `code` (and `table`, `constraint`, `detail`), this
@@ -149,6 +149,27 @@ export async function matchFoldContext(client, matchId) {
  * @property {string | null} conditionsTitle
  * @property {number | null} conditionsVersion
  */
+
+// ── SCRBRD-114 phase 3b: a super over the match does not provide (D10) ──
+/**
+ * Does this match's document provide a super over? An innings_start that
+ * carries the marker (`superOver`, present at all) is refused —
+ * `super_over_not_provided` — unless the play part the fold was told says
+ * `result.tie_break` = `super_over` and `format.kind` = `limited` (design
+ * §3.5). The one place a condition refuses an event, outside laws.mjs, and
+ * it refuses an innings, never a delivery: the alternative is a public page
+ * naming a "super over winner" in a league whose rules have none. A match
+ * with no document provides none. An older pad cannot send the key, so
+ * nothing already scored is touched.
+ * @param {{conditions?: unknown} | null | undefined} ctx  the fold's context (matchFoldContext())
+ * @param {Record<string, any>} ev  the event as it will be stored
+ * @returns {"super_over_not_provided" | null}
+ */
+export function superOverRefusal(ctx, ev) {
+  if (ev?.kind !== KIND.INNINGS_START || ev.superOver === undefined || ev.superOver === null) return null;
+  const c = conditionsOf(ctx);
+  return c["result.tie_break"] === "super_over" && c["format.kind"] === "limited" ? null : "super_over_not_provided";
+}
 
 /**
  * Fix the match's playing conditions before its first event is written
@@ -475,7 +496,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       //    Nothing is dropped: every event lands in exactly one bucket.
       if (!fold) fold = await loadFold();
       const candidate = fromRow({ ...cols, idempotency_key: ev.idempotencyKey });
-      const why = lawsRefusal(fold.view(), candidate);
+      const why = lawsRefusal(fold.view(), candidate) ?? superOverRefusal(fold.ctx, candidate);
       if (why) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: why }); return; }
 
       // 4. allocate the authoritative seq and insert (RLS WITH CHECK is the final guard)
@@ -965,6 +986,7 @@ export function quarantineRoutes({ pool, secret }) {
         const ctx = await matchFoldContext(client, q[0].match_id);
         const why = released
           ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < /** @type {number} */ (out.seq)).map(fromRow), ctx).view(), fromRow(released))
+            ?? superOverRefusal(ctx, fromRow(released))
           // The approver cannot read the log they would be adding to. Nothing
           // can be judged, so nothing is written.
           : "log_unreadable";

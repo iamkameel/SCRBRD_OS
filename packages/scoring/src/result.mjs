@@ -17,7 +17,9 @@
  *                walkover | awarded | null
  *   marginValue  runs, wickets in hand, or runs with an innings; else null
  *   decidedBy    play | super_over | decision | null — who settled who goes
- *                through (super_over is phase 3b's; nothing here sets it)
+ *                through. super_over (phase 3b): a tied match whose document
+ *                provides one, settled by the first super over won; null for
+ *                such a tie nothing has settled yet
  *   winnerSide   home | away | null
  *
  * A DECISION (match_result_decision, db/69) is read last: play first, then
@@ -74,6 +76,8 @@ export const DECISION_KIND = Object.freeze({ CONCEDED: "conceded", WALKOVER: "wa
  * @property {string | null} playMarginKind
  * @property {number | null} playMarginValue
  * @property {string | null} text  the result in words (resultWords())
+ * @property {import("./replay.mjs").SuperOver[]} [superOvers]  the match's super overs, where
+ *   its document provides one and the match is tied (SCRBRD-114 phase 3b); else []
  */
 
 /** @type {ReadonlySet<string>} */
@@ -126,9 +130,13 @@ export function marginString(outcome, kind, value) {
  * @param {(side: string | null) => string | null} [nameOfSide]  for `winner` when a decision names the side
  */
 export function applyDecision(play, decision, nameOfSide = () => null) {
+  // A super over (phase 3b) comes with its own: super_over when one was won,
+  // null for a tie none has settled. Otherwise play's, as before.
+  const own = /** @type {{decidedBy?: string | null}} */ (play).decidedBy;
   const base = {
     ...play,
-    decidedBy: hasWinner(play.outcome) || play.outcome === OUTCOME.TIE || play.outcome === OUTCOME.DRAW ? DECIDED_BY.PLAY : null,
+    decidedBy: own !== undefined ? own
+      : hasWinner(play.outcome) || play.outcome === OUTCOME.TIE || play.outcome === OUTCOME.DRAW ? DECIDED_BY.PLAY : null,
     playOutcome: play.outcome, decision: decision ?? null, decisionApplied: false,
     // What play said, kept beside an award that overrides it, so the words
     // say both ("Northwood won by 3 wickets; awarded to Kearsney …").
@@ -142,7 +150,9 @@ export function applyDecision(play, decision, nameOfSide = () => null) {
     winner: nameOfSide(side), decidedBy: DECIDED_BY.DECISION, decisionApplied: true,
   });
   if (d.kind === DECISION_KIND.AWARDED && d.overridesPlay === true) return decided(sideWin(d.side), MARGIN_KIND.AWARDED, d.side);
-  if (hasWinner(play.outcome)) return base;
+  // Play first, the super over second (design §2.5): either naming a winner
+  // stands, and the decision is shown beside it.
+  if (hasWinner(play.outcome) || base.decidedBy === DECIDED_BY.SUPER_OVER) return base;
   if (d.kind === DECISION_KIND.CONCEDED) return decided(sideWin(otherSide(d.side)), MARGIN_KIND.CONCEDED, otherSide(d.side));
   if (d.kind === DECISION_KIND.WALKOVER) return decided(sideWin(d.side), MARGIN_KIND.WALKOVER, d.side);
   if (d.kind === DECISION_KIND.AWARDED) {
@@ -165,9 +175,11 @@ export function applyDecision(play, decision, nameOfSide = () => null) {
  *   "No result" · "Match abandoned" · "Kearsney conceded; awarded to
  *   Northwood" · "Walkover to Northwood" · "Match tied; awarded to Northwood
  *   by the organiser: <reason>" · "Northwood won by 3 wickets; awarded to
- *   Kearsney by the organiser: <reason>"
+ *   Kearsney by the organiser: <reason>" · "Match tied; Northwood won the
+ *   super over" · "Match tied; two super overs tied; Northwood won the third"
+ *   · "Match tied; the super over was not completed" (phase 3b, §2.4)
  *
- * @param {Pick<MatchResult, "outcome" | "marginKind" | "marginValue" | "winnerSide" | "winnerKey" | "playOutcome" | "decision" | "decisionApplied"> & {winner?: string | null, playWinnerKey?: string | null, playWinnerSide?: string | null, playMarginKind?: string | null, playMarginValue?: number | null}} r
+ * @param {Pick<MatchResult, "outcome" | "marginKind" | "marginValue" | "winnerSide" | "winnerKey" | "playOutcome" | "decision" | "decisionApplied"> & {winner?: string | null, playWinnerKey?: string | null, playWinnerSide?: string | null, playMarginKind?: string | null, playMarginValue?: number | null, superOvers?: import("./replay.mjs").SuperOver[]}} r
  * @param {{nameOf?: (key: string | null, side: string | null) => string, reasons?: boolean}} [o]
  * @returns {string | null}
  */
@@ -186,7 +198,7 @@ export function resultWords(r, { nameOf = (key, side) => key ?? side ?? "—", r
       return `${nameOf(key ?? null, side ?? null)} won by ${marginString(o, kind, value)}`;
     }
     switch (o) {
-      case OUTCOME.TIE: return "Match tied";
+      case OUTCOME.TIE: return `Match tied${superOverWords(r.superOvers ?? [], nameOf)}`;
       case OUTCOME.DRAW: return "Match drawn";
       case OUTCOME.NO_RESULT: return "No result";
       case OUTCOME.ABANDONED: return "Match abandoned";
@@ -203,6 +215,36 @@ export function resultWords(r, { nameOf = (key, side) => key ?? side ?? "—", r
       return before ? `${before}; awarded to ${to} by the organiser${reason}` : `Awarded to ${to} by the organiser${reason}`;
     }
   }
+}
+
+/** "two", "three" … for the words; a figure past ten. @param {number} n */
+const numberWord = (n) => ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] ?? String(n);
+/** "first", "second" … @param {number} n */
+const ordinalWord = (n) => ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"][n] ?? `${n}th`;
+
+/**
+ * What the super overs add to "Match tied" (SCRBRD-114 phase 3b, §2.4): who
+ * won, how many tied before, or that one was not completed. Nothing where
+ * none was played. The super over's own figures are the scorecard's.
+ * @param {import("./replay.mjs").SuperOver[]} pairs
+ * @param {(key: string | null, side: string | null) => string} nameOf
+ */
+export function superOverWords(pairs, nameOf) {
+  if (!pairs.length) return "";
+  let tied = 0;
+  for (const p of pairs) {
+    if (p.state === "won") {
+      const who = nameOf(p.winnerKey ?? null, p.winner ?? null);
+      return tied === 0 ? `; ${who} won the super over`
+        : `; ${tied === 1 ? "the first super over" : `${numberWord(tied)} super overs`} tied; ${who} won the ${ordinalWord(tied + 1)}`;
+    }
+    if (p.state !== "tied") {
+      return tied === 0 ? "; the super over was not completed"
+        : `; ${tied === 1 ? "the first super over" : `${numberWord(tied)} super overs`} tied; the ${ordinalWord(tied + 1)} was not completed`;
+    }
+    tied++;
+  }
+  return tied === 1 ? "; the super over tied" : `; ${numberWord(tied)} super overs tied`;
 }
 
 /**
@@ -226,6 +268,10 @@ export function resultFromRow(row) {
     playWinnerKey: row.play_winner_key ?? null, playWinnerSide: row.play_winner_side ?? null,
     playMarginKind: row.play_margin_kind ?? null, playMarginValue: row.play_margin == null ? null : Number(row.play_margin),
     text: null,
+    // Phase 3b: the super overs, as describeResult() lists them.
+    superOvers: (Array.isArray(row.super_overs) ? row.super_overs : []).map((/** @type {any} */ p) => ({
+      n: p.n, first: p.first ?? null, a: p.a ?? null, b: p.b ?? null, state: p.state,
+      winner: p.winner ?? null, winnerKey: p.winner_key ?? null })),
   };
   return { ...r, margin: marginString(r.outcome, r.marginKind, r.marginValue) };
 }
