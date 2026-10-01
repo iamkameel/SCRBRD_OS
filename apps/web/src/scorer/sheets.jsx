@@ -9,6 +9,7 @@ import { Badge, Btn, CaptureProfilePicker, Lbl, Sep, Sheet } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { batterChoices, bowlerChoices, unavailableWords } from "./prompts.js";
+import { KeeperRow } from "./keeperSheet.jsx";
 
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
@@ -699,7 +700,7 @@ function CustomBatEntry({onSend}){
 /* ═══════════════════════════════════════════════════════
    WICKET SHEET
 ═══════════════════════════════════════════════════════ */
-function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,onClose,onConfirm}){
+function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,keeper=null,onClose,onConfirm}){
   const[mode,setMode]=useState(DISMISSAL.BOWLED);
   // An obstruction that stopped a catch (4th Edition, from 1 October 2026;
   // SCRBRD-113): no runs count, and the fielding captain chooses whether the
@@ -734,8 +735,10 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   const asksEnd=isRunOut&&runs>0;
   const needsFielder=mode===DISMISSAL.CAUGHT||mode===DISMISSAL.RUN_OUT;
   const isStumped=mode===DISMISSAL.STUMPED;
-  // Find WK from fielding squad
-  const wkName=(fieldingSquad||[]).find(p=>p.role==="WK")?.name||null;
+  // The keeper on the record (SCRBRD-126): a stumping is his, and the
+  // server refuses one credited to anyone else while one is recorded. With
+  // none recorded, a squad's WK as before.
+  const wkName=keeper?.name||(fieldingSquad||[]).find(p=>p.role==="WK")?.name||null;
   // Auto-assign WK for stumped
   const displayFielder=isStumped?wkName||fielder:fielder;
   const filteredFielders=(fieldingSquad||[])
@@ -831,15 +834,15 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
         <div style={{marginBottom:"12px",padding:"10px 13px",borderRadius:D.md,
           background:D.violet+"0e",border:"1px solid "+D.violet+"33"}}>
           <Lbl sx={{marginBottom:"4px",color:D.violetText}}>Wicketkeeper</Lbl>
-          <div style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,fontWeight:500}}>
+          <div data-testid="wicket-keeper" style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,fontWeight:500}}>
             {wkName||"—"}
-            {wkName&&<span style={{color:D.textMuted,fontSize:"12px",marginLeft:"6px"}}>(auto-assigned)</span>}
+            {wkName&&<span style={{color:D.textMuted,fontSize:"12px",marginLeft:"6px"}}>{keeper?"(keeping wicket)":"(auto-assigned)"}</span>}
           </div>
         </div>
       )}
       {needsFielder&&fieldingSquad&&fieldingSquad.length>0&&(
         <div style={{marginBottom:"12px"}}>
-          <Lbl sx={{marginBottom:"8px"}}>{mode==="Caught"?"Caught by":"Run out by"}</Lbl>
+          <Lbl sx={{marginBottom:"8px"}}>{mode===DISMISSAL.CAUGHT?"Caught by":"Run out by"}</Lbl>
           <input value={fielterFilter} onChange={e=>setFielderFilter(e.target.value)} aria-label="Search fielders"
             placeholder="Search fielder…"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,
@@ -865,7 +868,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
       )}
       {needsFielder&&(!fieldingSquad||!fieldingSquad.length)&&(
         <div style={{marginBottom:"12px"}}>
-          <Lbl sx={{marginBottom:"7px"}}>{mode==="Caught"?"Caught by":"Run out by"}</Lbl>
+          <Lbl sx={{marginBottom:"7px"}}>{mode===DISMISSAL.CAUGHT?"Caught by":"Run out by"}</Lbl>
           <input value={fielder} onChange={e=>setFielder(e.target.value)} placeholder="Fielder name (optional)" aria-label="Fielder name, optional"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,
               color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"11px 14px"}}/>
@@ -890,7 +893,8 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
  * injured or suspended bowler, so the sheet asks which before it offers
  * anyone, and passes it on: onConfirm(id, reason).
  */
-function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false,capWordsFor=null}){
+function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false,capWordsFor=null,
+  keeper=null,keeperChoices=[],onKeeper=null}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
   const[reason,setReason]=useState(null);
@@ -925,6 +929,10 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
   return (
     <Sheet title={midOver?"Change of Bowler":ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"8px"}}>
+        {/* Who is keeping (SCRBRD-126): asked with the opening bowler and at
+            each over's start, never in the way of the bowler. A change
+            mid-over is the pad menu's "Change keeper". */}
+        {!midOver&&<KeeperRow keeper={keeper} choices={keeperChoices} onKeeper={onKeeper}/>}
         {midOver&&(
           <div data-testid="bowler-change-reason" style={{marginBottom:"14px"}}>
             <Lbl sx={{marginBottom:"7px",color:D.amber}}>Injury or suspended?</Lbl>

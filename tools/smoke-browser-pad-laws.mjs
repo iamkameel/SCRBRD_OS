@@ -23,6 +23,10 @@
  *               is his.
  *   SCRBRD-069  A run out after a completed run asks which end; the survivor
  *               is placed from it and the new batter takes the empty end.
+ *   SCRBRD-126  The opening bowler's sheet asks who is keeping wicket; the
+ *               wicket sheet credits a stumping to him; "Change keeper" in
+ *               the pad menu hands the gloves on mid-over; the server's rows,
+ *               its fold and db/68's player_keeping_career agree.
  *
  * And what every one of those reaches beyond the board: the career read
  * (/read/career, the SQL views db/40 brought into line with the fold). Every
@@ -443,11 +447,25 @@ try {
   // side bowls from its own squad, picked from the sheet's list — not typed,
   // which would make him a name SCRBRD holds no row for. (A squad button's
   // text is "James WhitfieldBOWL" to a text match: no word boundary.)
+  // SCRBRD-126: the opening bowler's sheet asks who is keeping wicket. The
+  // home side fields, so the keeper is one of its squad, by id.
+  /** @type {{id: string | null, name: string}[]} */ const keepers = [];
   for (let i = 0, n = 0; i < 10; i++) {
     const body = await text();
     if (DEBUG) console.log(`[debug] second innings, pass ${i}:\n` + body.slice(0, 300));
     const squadBowler = page.locator("button:not([disabled])", { hasText: /BOWL$/ });
     if (/Opening Bowler/i.test(body) && await squadBowler.count()) {
+      if (!keepers.length) {
+        ok("SCRBRD-126: the opening bowler's sheet asks who is keeping wicket",
+           (await tid("keeper-current").innerText().catch(() => "")).trim() === "Who is keeping wicket?" && await tid("keeper-choice").count() === 0);
+        await tap("keeper-open");
+        const pick = tid("keeper-choice").nth(2);
+        keepers.push({ id: await pick.getAttribute("data-id"), name: (await pick.innerText()).trim() });
+        await pick.click({ timeout: 3000 });
+        await page.waitForTimeout(500);
+        ok(`...and names him beside the bowler, marked † (${keepers[0].name})`,
+           (await tid("keeper-current").innerText().catch(() => "")).trim() === `${keepers[0].name} †` && await tid("keeper-choice").count() === 0);
+      }
       await squadBowler.first().click({ timeout: 3000 });
       await page.waitForTimeout(600);
       continue;
@@ -490,6 +508,63 @@ try {
   ok(`...two byes off a no-ball are not his: +${moved(careerEnd, careerByes, homeBowler, "runs_conceded")} conceded (the card says ${card3?.runs})`,
      card3?.runs === 3 && moved(careerEnd, careerByes, homeBowler, "runs_conceded") === 1
      && nb3.inn.extras.bye === nb2.inn.extras.bye + 2 && nb3.inn.runs === nb2.inn.runs + 3);
+
+  // ── SCRBRD-126 ───────────────────────────────────────────────
+  group("SCRBRD-126: the wicket-keeper — a stumping is his, and the gloves change hands mid-over");
+  /** The next batter in, typed: Michaelhouse has no roster. */
+  const nextBatter = async (/** @type {string} */ name) => {
+    const field = page.locator('input[aria-label="Player name"]');
+    if (await field.count()) { await field.fill(name); await field.press("Enter"); await page.waitForTimeout(500); }
+  };
+  const K1 = keepers[0] ?? { id: null, name: "" };
+  ok(`the server has the keeper, by id, before the first ball (${K1.id})`,
+     nb3.rows.some((r) => r.kind === "keeper" && r.payload?.keeper === K1.id) && nb3.inn.keeper === K1.id && /^[0-9a-f-]{36}$/.test(K1.id ?? ""));
+  ok("...a row of its own: no ball, no bowler, nothing moved", nb3.rows.filter((r) => r.kind === "keeper").every((r) => r.ball_type == null && r.value == null && r.bowler_id == null));
+  await click(/Wicket/, 2500);
+  await tap("wicket-mode-stumped");
+  ok(`the wicket sheet credits a stumping to the keeper (${K1.name})`,
+     (await tid("wicket-keeper").innerText().catch(() => "")).includes(`${K1.name}`) && /keeping wicket/.test(await tid("wicket-keeper").innerText()));
+  await tap("wicket-confirm");
+  await page.waitForTimeout(600);
+  await nextBatter("Batter 9");
+  const st1 = await agree("after the stumping", 1);
+  const st1Row = st1.rows.filter((r) => r.kind === "ball" && r.ball_type === "W").at(-1);
+  ok("the server stored the stumping, credited to him", st1Row?.dismissal === "stumped" && st1Row?.payload?.fielder === K1.name,
+     JSON.stringify(st1Row && { dismissal: st1Row.dismissal, fielder: st1Row.payload?.fielder }));
+  ok("...and its fold gives it to him", st1.inn.keepers.find((k) => k.id === K1.id)?.stumpings === 1, JSON.stringify(st1.inn.keepers));
+  ok("the over is under way", st1.inn.balls % 6 !== 0);
+  await tap("pad-menu");
+  await tap("pad-keeper");
+  ok(`"Change keeper" opens, saying who is keeping (${K1.name})`,
+     await tid("keeper-sheet").count() === 1 && (await tid("keeper-sheet-now").innerText()).startsWith(`${K1.name} is keeping wicket.`));
+  ok("...the keeper now marked † among the squad",
+     (await tid("keeper-choice").filter({ hasText: "†" }).allInnerTexts()).map((s) => s.trim()).join() === `${K1.name} †`);
+  const pick2 = tid("keeper-choice").nth(3);
+  keepers.push({ id: await pick2.getAttribute("data-id"), name: (await pick2.innerText()).trim() });
+  const K2 = keepers[1];
+  await pick2.click({ timeout: 3000 });
+  await page.waitForTimeout(500);
+  ok("...and closes on the choice", await tid("keeper-sheet").count() === 0);
+  const ch2 = await agree("after the gloves changed hands", 1);
+  ok(`the server has the change mid-over (${K2.name}): the bowler bowls on, no change of bowler`,
+     ch2.inn.keeper === K2.id && ch2.inn.bowler === st1.inn.bowler && ch2.inn.bowlerChanges.length === st1.inn.bowlerChanges.length
+     && ch2.inn.balls === st1.inn.balls);
+  await makeReady();
+  await click(/Wicket/, 2500);
+  await tap("wicket-mode-stumped");
+  ok(`the next stumping is the new keeper's (${K2.name})`, (await tid("wicket-keeper").innerText().catch(() => "")).includes(K2.name));
+  await tap("wicket-confirm");
+  await page.waitForTimeout(600);
+  await nextBatter("Batter 10");
+  const st2 = await agree("after the second stumping", 1);
+  ok("...on the server, and in its fold: one stumping each",
+     st2.rows.filter((r) => r.kind === "ball" && r.dismissal === "stumped").at(-1)?.payload?.fielder === K2.name
+     && st2.inn.keepers.map((k) => `${k.id}:${k.stumpings}`).join() === `${K1.id}:1,${K2.id}:1`, JSON.stringify(st2.inn.keepers));
+  const kc = await dbq(`select player_id, matches::int, innings_kept::int, catches::int, stumpings::int from player_keeping_career
+                         where player_id = any($1)`, [[K1.id, K2.id]]);
+  const line = (/** @type {string | null} */ id) => { const r = kc.find((x) => x.player_id === id); return r ? `${r.matches}/${r.innings_kept}/${r.catches}/${r.stumpings}` : "none"; };
+  ok(`db/68's player_keeping_career agrees: each kept once and stumped one (${line(K1.id)}, ${line(K2.id)})`,
+     line(K1.id) === "1/1/0/1" && line(K2.id) === "1/1/0/1");
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {

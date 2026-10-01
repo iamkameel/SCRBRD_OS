@@ -6,12 +6,12 @@
  * commentary generator. Pure: no DOM, no database.
  */
 import {
-  inningsStart, batters, bowler, ball, penalty, retire, deriveInnings, deriveMatch, deriveCommentary, BALL_TYPE,
+  inningsStart, batters, bowler, ball, penalty, retire, deriveInnings, deriveMatch, deriveCommentary, BALL_TYPE, keeper,
 } from "@scrbrd/scoring";
 import {
   nameCode, sideName, sidesOf, sideOfTeam, teamOf, inningsPhase, ageGroupOf, matchLine, nameBook, fowLines,
   didNotBat, extrasOf, runCounts, dismissalKey, inningsBreak, commentaryByOver, oversOf, boardInnings,
-  resultText, revisionNotice, upcomingAndRecent, nextFixtureOf, deliveryOptions,
+  resultText, revisionNotice, upcomingAndRecent, nextFixtureOf, deliveryOptions, keepersOfSide,
 } from "../src/lib/matchCentre.js";
 
 let pass = 0, fail = 0;
@@ -129,6 +129,22 @@ ok("every real delivery, oldest first", opts.length > 0 && opts.every((o, i) => 
 ok("no milestone or over-end line among them", opts.every((o) => !/#/.test(o.key)));
 ok("the target key is the raw event id, with no e: prefix", opts[0].targetKey === opts[0].key.slice(2));
 ok("a wicket's dismissal is not among the deliveries of an innings never played", deliveryOptions(commentary100, 9).length === 0);
+
+group("SCRBRD-126: the wicket-keeper's mark");
+{
+  const TS = Date.parse("2026-09-15T08:00:00Z");
+  const A = [{ id: "a1", name: "A One" }, { id: "a2", name: "A Two" }], B = [{ id: "b1", name: "B One" }, { id: "b2", name: "B Two" }];
+  const kevs = [
+    inningsStart({ innings: 0, battingTeam: "Aside", bowlingTeam: "Bside", squad: A, bowlingSquad: B, overs: 2, clientTs: TS }),
+    keeper({ innings: 0, keeper: "b2", clientTs: TS }),
+    inningsStart({ innings: 1, battingTeam: "Bside", bowlingTeam: "Aside", squad: B, bowlingSquad: A, overs: 2, clientTs: TS }),
+    keeper({ innings: 1, keeper: "a1", clientTs: TS }), keeper({ innings: 1, keeper: "a2", clientTs: TS }),
+  ];
+  const kinns = deriveMatch(kevs).innings;
+  ok("the side batting in the first innings kept with a1 and a2 when it fielded", [...keepersOfSide(kinns, 0)].join() === "a1,a2");
+  ok("the side batting second kept with b2", [...keepersOfSide(kinns, 1)].join() === "b2");
+  ok("no keeper recorded: nobody marked", keepersOfSide(deriveMatch(evs).innings, 0).size === 0 && keepersOfSide([], 0).size === 0);
+}
 
 console.log(`\n${"─".repeat(52)}\nMATCH CENTRE SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

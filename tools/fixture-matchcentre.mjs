@@ -24,7 +24,7 @@
  * uses, and the seeded scorer is the author of every event.
  */
 import {
-  inningsStart, batters, bowler, ball, penalty, voidEvent, sealInnings, shortRunning,
+  inningsStart, batters, bowler, ball, penalty, voidEvent, sealInnings, shortRunning, keeper,
   deriveInnings, placementFromTap, toRow, BALL_TYPE, KIND,
 } from "@scrbrd/scoring";
 
@@ -53,6 +53,7 @@ const KEARSNEY = ["F Kearsley", "G Oakes", "H Bramwell", "I Tatham", "J Wood"];
  *   "ro:1:ns:bowler_end"  the non-striker run out after one run, at that end
  *   "pen:bat:helmet_struck" / "pen:field:time_wasting"  five penalty runs
  *   "sr"            deliberate short running: the ball, then the award
+ *   "keep:<ref>"    the wicket-keeper from here on (SCRBRD-126)
  *   "undo"          the scorer undoes the last event (a void)
  */
 function scoreInnings({ innings, idp, start, openers, order, attack, tokens }) {
@@ -87,6 +88,7 @@ function scoreInnings({ innings, idp, start, openers, order, attack, tokens }) {
       dismissed: rest[1] === "ns" ? inn.nonStriker : inn.striker, outAt: rest[2], fielder: rest[3] ?? null }));
     else if (head === "pen") add(penalty({ runs: 5, toBattingTeam: rest[0] === "bat", reason: rest[1] }));
     else if (head === "sr") for (const e of shortRunning({ shot: "cut" })) add(e);
+    else if (head === "keep") add(keeper({ keeper: rest[0] }));
     else if (head === "undo") {
       const last = [...log].reverse().find((e) => e.kind !== KIND.VOID && e.kind !== KIND.INNINGS_START);
       add(voidEvent({ target: last.id }));
@@ -156,6 +158,7 @@ export async function buildMatchCentreFixture(q) {
       squad: squadOf(HIL_XI), bowlingSquad: squadOf(WES_XI), overs: 10, captureProfile: "full" },
     openers: [H[0], H[1]], order: H.slice(2), attack: [W[7], W[8], W[9], W[10]],
     tokens: [
+      `keep:${W[3]}`,                                                                               // G Nel keeps (SCRBRD-126)
       "1:flick:30:0.6", "4:drive:270:1", "0:fwd_def", "wd", "1", "6:loft:150:1", "0",                  // over 1
       "4:pull:80:1", "2", "undo", "1", "nb1", "4:cut:300:1", "0", "W:caught:C Botha:pull",          // over 2: a void; a free hit
       "1", "0", "4:drive:250:1", "b2", "lb1", "pen:bat:helmet_struck", "1",                          // over 3: the helmet
@@ -184,6 +187,7 @@ export async function buildMatchCentreFixture(q) {
       squad: squadOf(WES_XI), bowlingSquad: squadOf(HIL_XI), overs: 10, target: sealed.runs + 1, captureProfile: "full" },
     openers: [W[0], W[1]], order: W.slice(2), attack: [H[7], H[8], H[9], H[10]],
     tokens: [
+      `keep:${H[4]}`,                                                                               // T Bekker keeps (SCRBRD-126)
       "0", "1", "4:drive:260:1", "0", "wd", "1", "2",
       "W:bowled", "1", "0", "4:pull:70:1", "6:loft:160:1", "0",
       "1", "1", "2", "W:caught:P Govender", "0", "1",

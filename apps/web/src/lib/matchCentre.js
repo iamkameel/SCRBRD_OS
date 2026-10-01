@@ -200,6 +200,27 @@ export function didNotBat(inn) {
 }
 
 /**
+ * Who kept wicket for the side batting in innings `i` (SCRBRD-126): every
+ * keeper of an innings that side fielded in, by reference. The scorecard
+ * marks each † beside his name, as a printed card does. Empty when no
+ * keeper was recorded — every match before SCRBRD-126, and a public page,
+ * whose log does not carry the keeper.
+ * @param {any[]} innings  the match's folded innings
+ * @param {number} i
+ * @returns {Set<string>}
+ */
+export function keepersOfSide(innings, i) {
+  const inn = innings?.[i];
+  /** @type {Set<string>} */ const out = new Set();
+  if (!inn) return out;
+  const side = inn.teamKey ?? inn.battingTeam;
+  for (const x of innings) {
+    if (x && side != null && (x.bowlingTeamKey ?? x.bowlingTeam) === side) for (const k of x.keepers ?? []) out.add(k.id);
+  }
+  return out;
+}
+
+/**
  * Extras broken out as the card has them: NB · WD · B · LB · PEN.
  * @param {any} inn
  */
