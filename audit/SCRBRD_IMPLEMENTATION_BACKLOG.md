@@ -4173,6 +4173,20 @@ recorded for clubs (C7 "the same rules as schools") and not built:
 **Not built, by decision:** 1.2.5 (players of colour per team) and 3.5.4 (foreign players counted as white) are
 transformation quotas, and the transformation-quota rule above applies to them.
 **Phase 3 designed (Fable, 2026-09-30):** `docs/design/SCRBRD-114_phase3_results_super_over.md`; D1–D17 decided as recommended (Kameel). db/69 results and table, db/70 the super over, db/71 knockout progression.
+**Phase 3a built (Opus, 2026-10-01): results and the table, `db/69_results_and_table.sql`, db/99 §47.** The fold's
+`describeResult()` fixed (a chase sealed `abandoned` is no result; two innings a side has a draw and an innings win)
+and exported, with `text` and `decidedBy`; `result.mjs` holds the outcomes, the decision layer and the words.
+`match_result()` is the same rule in SQL, held to the fold over 27 logs (`result-logs.mjs`) and every generated
+innings in `smoke-fold-figures`. `match_result_decision` (conceded, walkover, awarded; one standing; withdrawn with a
+note), `competition_points_adjustment` (the over-rate kind enforced), `competition_standing` (computed on every read
+from each match's own frozen table figures; the typed ladder where points are unconfirmed; net run rate in balls;
+shared ranks), `match_conditions_refix_table()`, the amendment's audit line with `result_hash` before and after,
+`public_match_result()` and `public_competition_standing()`. The League screen's ladder reads the view; Competitions
+draws the table with the decision, adjustment and table-figures sheets; the Match Centre and the public page say the
+server's result. Walks: `smoke-results` (API), `smoke-browser-results`. Departures and why: design §10.2. **For
+Kameel (§10.4):** nothing marks a pad-scored match complete (the table counts a match decided on the field anyway; a
+no result needs the status); One-Day Declaration documents frozen between db/61 and db/69 read as two innings a side
+(the query is in §10.4). **Next:** 3b the super over, 3c progression, each the next free migration number (db/70 is now SCRBRD-124's lift clubs, so the design's db/70 and db/71 move up).
 **KZN rules decided (Kameel, 2026-09-30):** KZN schools play the MCC Laws with no further bye-laws, so phase 5's "KZN figures" are the platform defaults. Pilot league: points win 4 / tie 2 / no result 2 / loss 0, no bonus; a knockout tie goes to a super over (a league tie stands); bowling limits are the platform's defaults, which are the ECB fast-bowling directives mapped onto school bands (corrected 2026-09-30: not CSA figures; db/32 says so), cited as the pilot league's decision until a CSA or KZN schedule is published. Entered on the conditions screen, not seeded. Recorded in the design's §8.3a. Phase 3 (the points table and a playable super over) is unblocked.
 **Tie-breaks (Kameel, 2026-09-30, from the `sundayMatches` review):** `result.tie_break` (`none` | `super_over`) is reserved in the catalogue but the fold cannot play a super over. Phase 3 (match results) must: play a super over as its own innings pair (one over, two wickets, the Laws and the fold as for any innings), and support whatever tie rule the KZN bye-laws name instead (e.g. fewer wickets lost, or shared points). The fixture planner's knockouts (SCRBRD-123) need a winner, so this comes before knockout rounds are published.
 
