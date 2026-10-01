@@ -54,7 +54,7 @@
 -- payload as the wicket sheet wrote him (a name). So "as keeper" is new,
 -- in new objects, and no existing view or function changes: every view and
 -- function that reads ball_event is snapshotted before and asserted
--- identical after, definition and shape (§0, §5).
+-- identical after, definition and shape (§0, and the proof in §6).
 --
 -- NOT HERE. A scorebook innings knows no keeper: a card has no †, so an
 -- imported innings adds nothing as keeper (and the fold's inn.keepers is
