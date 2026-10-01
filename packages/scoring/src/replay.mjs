@@ -660,9 +660,13 @@ function inningsFolder(ctx = {}, carried = 0) {
       // is. He is on the record of who kept from the first time he is named,
       // and his dismissals are counted at the wicket (the BALL case).
       case KIND.KEEPER: {
-        const id = ev.keeper ?? null;
+        // A reference is a non-empty string; anything else names nobody.
+        // His name is the squads' when it is a string, else his reference
+        // (db/68's keeper_at() reads both the same way).
+        const id = typeof ev.keeper === "string" && ev.keeper !== "" ? ev.keeper : null;
+        const nm = nameOf(id);
         inn.keeper = id;
-        keeperName = nameOf(id);
+        keeperName = id == null ? null : typeof nm === "string" ? nm : id;
         if (id != null) {
           // Named again (the gloves back after a spell without them): the
           // same line, under his name as the squads give it now.

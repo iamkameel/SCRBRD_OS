@@ -251,5 +251,56 @@ group("D. The words: the refusal, its cause, the commentary");
      !plain.some((l) => l.kind === COMMENTARY_KIND.KEEPER) && plain.some((l) => /caught by K Gloves/.test(l.text)) && !plain.some((l) => /behind/.test(l.text)));
 }
 
+// ── E. db/99 §46's log ─────────────────────────────────────────
+// The fixture _seed_68() writes, folded here: §46 asserts SQL reads these
+// figures, so SQL and the fold agree on it by these two files together
+// (and on generated logs by tools/smoke-fold-figures.mjs).
+group("E. db/99 §46's log: what the fold says SQL must read");
+{
+  const K1 = "aaaaaaaa-0000-0000-0000-000000000002", K2 = "aaaaaaaa-0000-0000-0000-000000000001";
+  const F1 = "aaaaaaaa-0000-0000-0000-000000000005", BW = "aaaaaaaa-0000-0000-0000-000000000003";
+  const B2 = "aaaaaaaa-0000-0000-0000-000000000004";
+  const squad = [{ id: K1, name: "V68 Two" }, { id: K2, name: "V68 One" }, { id: F1, name: "V68 Five" }];
+  /** @type {[number, string, Record<string, unknown>][]} */
+  const rows = [
+    [1, "innings_start", { battingTeam: "Verify 068", bowlingTeam: "Hilton 1XI", squad: [], bowlingSquad: squad }],
+    [2, "keeper", { keeper: K1 }],
+    [3, "ball", { type: "W", value: 0, dismissal: "caught", fielder: "V68 Two", striker: "Opp A" }],
+    [4, "ball", { type: "Nb", value: 1, striker: "Opp B" }],
+    [5, "ball", { type: "W", value: 0, dismissal: "stumped", striker: "Opp B" }],
+    [6, "keeper", { keeper: K2 }],
+    [7, "ball", { type: "W", value: 0, dismissal: "stumped", striker: "Opp B" }],
+    [8, "ball", { type: "W", value: 0, dismissal: "caught", fielder: K2, striker: "Opp C" }],
+    [9, "ball", { type: "W", value: 0, dismissal: "caught", fielder: "V68 Two", striker: "Opp D" }],
+    [10, "ball", { type: "W", value: 1, dismissal: "run_out", fielder: "V68 One", striker: "Opp E" }],
+    [11, "keeper", { keeper: F1 }],
+    [12, "void", { target: "v68:11" }],
+    [13, "ball", { type: "W", value: 0, dismissal: "stumped", fielder: "V68 One", striker: "Opp F" }],
+  ];
+  // As the database holds them: the bowler on each delivery (…03 the first
+  // over, …04 the second).
+  const log = rows.map(([seq, kind, p]) => /** @type {import("../src/events.mjs").LogEvent} */ (/** @type {unknown} */ ({
+    kind, innings: 0, seq, id: `v68:${seq}`, clientTs: SEP15, ...(kind === "ball" ? { bowler: seq === 13 ? B2 : BW } : {}), ...p })));
+  // The fold places the bowler from `bowler` events, which SQL's figures
+  // do not read (they read the bowler stamped on each delivery): the pad
+  // records both, so they are added here where the pad would have them.
+  const bowlerEv = (/** @type {string} */ id, /** @type {string} */ b) => bowler({ innings: 0, id, clientTs: SEP15, bowler: b });
+  const withBowler = [log[0], log[1], bowlerEv("v68:b1", BW), ...log.slice(2, 12), bowlerEv("v68:b2", B2), log[12]];
+  const inn = deriveInnings(withBowler);
+  const byId = Object.fromEntries(inn.keepers.map((k) => [k.id, [1, 1, k.catches, k.stumpings].join(",")]));
+  ok("§46: …02 kept, one catch; …01 kept, one catch and two stumpings; …05 never kept (undone)",
+     byId[K1] === "1,1,1,0" && byId[K2] === "1,1,1,2" && !(F1 in byId), byId);
+  const seqOf = new Map(inn.ballLog.map((b) => [b, b.seq]));
+  const keeperWickets = inn.ballLog.filter((b) => b.type === "W" && !b.freeHitSaved && b.keeperId != null
+    && (b.dismissal === "stumped" || (b.dismissal === "caught" && isKeeperRef(b.keeperId, inn.keepers.find((k) => k.id === b.keeperId)?.name, b.fielder))))
+    .map((b) => `${seqOf.get(b)}:${b.keeperId === K1 ? "k1" : "k2"}:${b.dismissal}`).join(" ");
+  ok("§46: the keeper's dismissals, ball by ball", keeperWickets === "3:k1:caught 7:k2:stumped 8:k2:caught 13:k2:stumped", keeperWickets);
+  const bw = inn.bowlers.find((b) => b.id === BW);
+  const overs = inn.overLog.map((o) => `${o.over}/${o.balls.filter((b) => b.type !== "Nb" && b.type !== "Wd").length}/${o.balls.length}`).join(",");
+  ok("§46: every other figure — (3,6,7), …03's innings (4,3), overs 0/6/7,1/1/1",
+     inn.runs === 3 && inn.wickets === 6 && inn.balls === 7 && bw?.wickets === 4 && bw?.runs === 3 && overs === "0/6/7,1/1/1",
+     { runs: inn.runs, wickets: inn.wickets, balls: inn.balls, bw, overs });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

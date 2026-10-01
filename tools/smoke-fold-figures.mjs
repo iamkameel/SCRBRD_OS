@@ -16,6 +16,8 @@
  *   bowler_innings_figures      wickets, runs conceded   per bowler per innings
  *   player_wicket_breakdown     wickets by method                     per bowler
  *   opposition_squad()          every batting and bowling column, both ways round
+ *   keeper_dismissal            the keeper's catches and stumpings, per innings and keeper
+ *   player_keeping_career       matches and innings kept, catches, stumpings  per keeper
  *   scoring_verify_takeover()   the runs, wickets and balls it expects
  *   /api/read/matchups          balls, runs, fours, sixes, dots, dismissals, as a coach
  *
@@ -47,6 +49,14 @@
  *     has fallen or another batter has retired, as the Laws allow — him walking
  *     back in. Not a wicket, so no career may count it as a dismissal.
  *
+ * And the wicket-keeper (SCRBRD-126, db/68): keepers named at the start of
+ * most generated innings, the gloves changing hands now and then (mid-over
+ * too, and once in a while named and undone), catches credited to the
+ * keeper by his id or his name and to other fielders, stumpings by the
+ * keeper named or by nobody; and an innings written out (keeperEdge). What
+ * the fold credits each keeper with is what keeper_dismissal and
+ * player_keeping_career say, and every stumping is one the Laws take.
+ *
  * And an innings from a paper scorebook (SCRBRD-120, db/64): two cards
  * written as scorebook_import_commit() writes them, folded, and every career
  * reader above moved by exactly the fold's line for each of our boys — a
@@ -72,7 +82,7 @@ import {
   MatchFold, deriveInnings, deriveMatch, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
   inningsStart, inningsEnd, inningsSummary, batters, bowler, ball, newEventId, retire, RETIRE_REASON, lawsRefusal,
 } from "@scrbrd/scoring";
-import { countsInOver, NOT_IN_OVER } from "@scrbrd/scoring";
+import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef } from "@scrbrd/scoring";
 import { baseCard, TYPED as BOOK_TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
 
 const PORT = port(8875);
@@ -93,6 +103,13 @@ const PLAYERS = [...HIL_1XI, ...WES_1XI, ...OTHERS];
 // toRow() carries it in the payload.
 const TYPED = ["T Typed-Batter", "U Unlisted"];
 const TYPED_BOWLER = "Z Typed-Bowler";
+// Who keeps (SCRBRD-126): three of our boys and a typed name, named on the
+// fielding squad so a catch can be credited to a keeper by his name.
+const TYPED_KEEPER = "Y Typed-Keeper";
+const KEEPERS = ["aaaaaaaa-0000-0000-0000-000000000004", "aaaaaaaa-0000-0000-0000-000000000005",
+                 "bbbbbbbb-0000-0000-0000-000000000002", TYPED_KEEPER];
+const KEEPER_SQUAD = KEEPERS.map((id, k) => ({ id, name: id === TYPED_KEEPER ? TYPED_KEEPER : `Keeper ${k + 1}` }));
+const OTHER_FIELDER = "X Other-Fielder";
 // db/43's door: a BEFORE INSERT trigger raising 23514 under these two names.
 const DOOR = "ball_event_names_its_delivery";
 const DOORS = ["ball_event_ball_has_type", "ball_event_wicket_has_method"];
@@ -133,8 +150,13 @@ const rnd5 = () => (s5 = (s5 * 1103515245 + 12345) % 2147483648) / 2147483648;
 let s6 = 1717;
 const rnd6 = () => (s6 = (s6 * 1103515245 + 12345) % 2147483648) / 2147483648;
 const NOT_IN_OVER_LIST = [...NOT_IN_OVER];
+// The wicket-keeper (SCRBRD-126, db/68) draws on a seventh: keeper rows
+// change no other figure, so every innings is otherwise the one it was.
+let s7 = 6868;
+const rnd7 = () => (s7 = (s7 * 1103515245 + 12345) % 2147483648) / 2147483648;
 const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0,
-              consentReturns: 0, notInOver: 0 };
+              consentReturns: 0, notInOver: 0, keepers: 0, keeperChanges: 0, keeperMidOver: 0, keeperUndone: 0,
+              catchByRef: 0, catchByName: 0, catchOther: 0, stumpByRef: 0, stumpByName: 0, stumpNobody: 0 };
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -150,7 +172,9 @@ let eventNo = 0;
  * `start` is carried on the innings_start: the sides and a target.
  * `ctx` is the fold's context — a declaration match's format (SCRBRD-113) —
  * so each delivery is stamped with the crease the match's own fold has.
- * @param {number} no @param {number} overs @param {{order?: string[], bowling?: string[], start?: Record<string, any>, ctx?: Record<string, any>}} [o]
+ * `keepers`: name keepers (keep()) and credit catches and stumpings
+ * (SCRBRD-126) on the seventh stream.
+ * @param {number} no @param {number} overs @param {{order?: string[], bowling?: string[], start?: Record<string, any>, ctx?: Record<string, any>, keepers?: boolean}} [o]
  */
 function builder(no, overs, o = {}) {
   /** @type {any[]} */
@@ -162,6 +186,10 @@ function builder(no, overs, o = {}) {
   const push = (e) => { const x = { id: `ff-${++eventNo}`, innings: no, ...e }; ev.push(x); return x; };
   const now = () => deriveInnings(ev, o.ctx ?? {});
   /** @type {Set<string>} */ const suspended = new Set();
+  // A keeper to name before the next delivery (SCRBRD-126), and whether the
+  // scorer then undoes it: applied inside deliver(), just before the ball,
+  // so the event an undo takes is still the ball.
+  /** @type {{id: string, undo: boolean} | null} */ let pendingKeeper = null;
   // Retired hurt as the pad records it; and the one who just went off, whom
   // the pad's batting-order sheet does not offer back to the end he left.
   // (The Laws say that now — fill() asks them — but `justRetired` still
@@ -203,6 +231,8 @@ function builder(no, overs, o = {}) {
     },
     /** The umpires' revised target. */
     revise(/** @type {number} */ target) { push({ kind: "revision", target, reason: "rain" }); },
+    /** The keeper from the next delivery on (SCRBRD-126); `undo`: named, then undone. */
+    keep(/** @type {string} */ id, undo = false) { pendingKeeper = { id, undo }; },
     /** A delivery, stamped with who was on strike and bowling, as the pad stamps it. */
     deliver(/** @type {any} */ e) {
       if (now().bowler == null) {
@@ -210,8 +240,33 @@ function builder(no, overs, o = {}) {
         if (who == null) return null;
         push({ kind: "bowler", bowler: who });
       }
+      if (pendingKeeper) {
+        const before = now();
+        const k = push({ kind: "keeper", keeper: pendingKeeper.id });
+        if (pendingKeeper.undo) { push({ kind: "void", target: k.id }); gen.keeperUndone++; }
+        else {
+          if (before.keeper == null) gen.keepers++; else gen.keeperChanges++;
+          if (before.balls % 6 > 0) gen.keeperMidOver++;
+        }
+        pendingKeeper = null;
+      }
       const at = now();
-      return push({ kind: "ball", striker: at.striker, nonStriker: at.nonStriker, bowler: at.bowler, ...e });
+      // Who took it (SCRBRD-126): a catch or a stumping, when the log names
+      // nobody, is credited on the seventh stream — the keeper by his id or
+      // his name, another fielder, or nobody; a stumping never another
+      // fielder while a keeper is recorded (the Laws refuse it, Law 39).
+      let fielder = {};
+      const how = e.type === "W" ? normaliseDismissal(e.dismissal) : null;
+      if (o.keepers && (how === "caught" || how === "stumped") && e.fielder === undefined) {
+        const k = keeperOf(at);
+        const r7 = rnd7();
+        if (k == null) fielder = r7 < 0.5 ? { fielder: OTHER_FIELDER } : {};
+        else if (r7 < 0.35) { fielder = { fielder: k.id }; if (how === "caught") gen.catchByRef++; else gen.stumpByRef++; }
+        else if (r7 < 0.6) { fielder = { fielder: k.name }; if (how === "caught") gen.catchByName++; else gen.stumpByName++; }
+        else if (how === "caught" && r7 < 0.85) { fielder = { fielder: OTHER_FIELDER }; gen.catchOther++; }
+        else if (how === "stumped") gen.stumpNobody++;
+      }
+      return push({ kind: "ball", striker: at.striker, nonStriker: at.nonStriker, bowler: at.bowler, ...e, ...fielder });
     },
     /**
      * The umpires suspend the bowler on, mid-over (SCRBRD-094 item 2), and
@@ -377,10 +432,16 @@ function builder(no, overs, o = {}) {
  * @param {Record<string, any>} [start] @param {boolean} [awardFirst]
  */
 function generated(no, overs, legacy = false, start = undefined, awardFirst = false) {
-  const b = builder(no, overs, start ? { start } : {});
+  // The fielding squad names the keepers (SCRBRD-126); nothing else reads it.
+  const b = builder(no, overs, { ...(start ? { start: { ...start, bowlingSquad: KEEPER_SQUAD } } : {}), keepers: true });
   if (awardFirst) b.award(false);
+  // Most innings name a keeper with the first bowler, as the pad asks.
+  if (rnd7() < 0.85) b.keep(KEEPERS[Math.floor(rnd7() * KEEPERS.length)]);
   let guard = 0;
   while (guard++ < 3000) {
+    // The gloves change hands now and then — and once in a while the scorer
+    // names a keeper and undoes it.
+    if (rnd7() < 0.03) b.keep(KEEPERS[Math.floor(rnd7() * KEEPERS.length)], rnd7() < 0.2);
     const st = b.now();
     if (st.balls >= overs * 6 || st.wickets >= 10) break;
     if (st.striker == null || st.nonStriker == null) {
@@ -532,6 +593,36 @@ function refusedRowsEdge(/** @type {number} */ no) {
   return b.ev;
 }
 
+/**
+ * The wicket-keeper, written out (SCRBRD-126, db/68): Keeper 1 keeps and
+ * catches one (by his name); a no-ball, and a stumping the free hit saves;
+ * the gloves go to Keeper 2 mid-over; he stumps one (nobody named) and
+ * catches one (by his id) and stumps another (by his name); Keeper 1
+ * catches one more (not as keeper now); a catch by another fielder. Keeper
+ * 1: one catch; Keeper 2: one catch, two stumpings.
+ */
+function keeperEdge(/** @type {number} */ no) {
+  const b = builder(no, 20, { order: [P1, P2, P3, HIL_1XI[3], HIL_1XI[4], ...OTHERS], bowling: [WES_1XI[0], WES_1XI[1]],
+                              start: { battingTeam: "Keeper Edge XI", bowlingTeam: "Gloves XI", bowlingSquad: KEEPER_SQUAD } });
+  const [K1, K2] = KEEPER_SQUAD;
+  b.keep(K1.id);
+  const W = (/** @type {string} */ dismissal, /** @type {string | undefined} */ fielder) => {
+    b.deliver({ type: "W", value: 0, dismissal, ...(fielder === undefined ? {} : { fielder }) });
+    b.fill();
+  };
+  b.deliver({ type: "run", value: 1 });
+  W("caught", K1.name);
+  b.deliver({ type: "Nb", value: 0 });
+  b.deliver({ type: "W", value: 0, dismissal: "stumped" });          // saved: the free hit
+  b.keep(K2.id);                                                       // mid-over
+  W("stumped");
+  W("caught", K2.id);
+  W("stumped", K2.name);
+  W("caught", K1.name);
+  W("caught", OTHER_FIELDER);
+  return b.ev;
+}
+
 // ── Expectations, from the fold ──────────────────────────────────
 /** @param {Map<string, any>} m @param {string} k @param {() => any} init */
 const at = (m, k, init) => { if (!m.has(k)) m.set(k, init()); return m.get(k); };
@@ -551,6 +642,8 @@ function expected(byInnings) {
     /** @type {Map<string, number>} */ wicketBy: new Map(),
     /** @type {Map<string, any>} */ opp: new Map(),
     /** @type {Map<string, any>} */ matchups: new Map(),
+    /** @type {Map<string, {matches: number, innings: number, catches: number, stumpings: number}>} */ keeping: new Map(),
+    /** @type {Map<string, number>} */ keeperDis: new Map(),
     totals: { runs: 0, wickets: 0, balls: 0 },
     cases: { nsRunOut: 0, nsBeforeFacing: 0, typedOut: 0, nbBoundaryOffBat: 0, nbByesToRope: 0, nbByesRun: 0, nbLegByesRun: 0,
              nbLegByesToRope: 0, nbByesOnFreeHit: 0, wideFour: 0, byeFour: 0,
@@ -561,6 +654,14 @@ function expected(byInnings) {
   /** @type {Set<string>} */ const battedIn = new Set();
   /** @type {Set<string>} */ const facedIn = new Set();
   for (const [no, inn] of byInnings) {
+    // The keepers (SCRBRD-126): his line in inn.keepers, per innings.
+    for (const k of inn.keepers) {
+      if (k.catches) e.keeperDis.set(`${no}|${k.id}|caught`, k.catches);
+      if (k.stumpings) e.keeperDis.set(`${no}|${k.id}|stumped`, k.stumpings);
+      if (!isId(k.id)) continue;
+      const c = at(e.keeping, k.id, () => ({ matches: 1, innings: 0, catches: 0, stumpings: 0 }));
+      c.innings++; c.catches += k.catches; c.stumpings += k.stumpings;
+    }
     e.live.set(no, { runs: inn.runs, wickets: inn.wickets, balls: inn.balls });
     e.totals.runs += inn.runs; e.totals.wickets += inn.wickets; e.totals.balls += inn.balls;
     e.cases.voids += inn.voided;
@@ -683,7 +784,13 @@ async function career(/** @type {string[]} */ players = PLAYERS) {
   for (const r of await q(`select * from player_dismissals where player_id = any($1)`, [players])) {
     dismissalsView.set(r.player_id, Number(r.dismissals));
   }
-  return { bat, bowl, dismissals, dismissalBy, wicketBy, batView, bowlView, dismissalsView };
+  // The keeping (SCRBRD-126, db/68).
+  /** @type {Map<string, any>} */ const keeping = new Map();
+  for (const r of await q(`select * from player_keeping_career where player_id = any($1)`, [players])) {
+    keeping.set(r.player_id, { matches: Number(r.matches), innings: Number(r.innings_kept), catches: Number(r.catches),
+                               stumpings: Number(r.stumpings) });
+  }
+  return { bat, bowl, dismissals, dismissalBy, wicketBy, batView, bowlView, dismissalsView, keeping };
 }
 
 /** opposition_squad() for a fixture against the other school, a day inside the window (db/46), as a coach of this one. */
@@ -914,6 +1021,10 @@ try {
   const refusedNo = no;
   edgeInnings.push({ no, what: "rows the Laws refuse: a retire marked W with the method bowled, a penalty row carrying a value" });
   logs.push(refusedRowsEdge(no));
+  no++;
+  const keeperNo = no;
+  edgeInnings.push({ no, what: "the wicket-keeper: named, his catch by name, a free hit's saved stumping, the gloves changed mid-over" });
+  logs.push(keeperEdge(no));
   const lifted = await writeLogs(logs, scorer);
   console.log(lifted ? "  (the door lifted for the legacy rows, and put back)" : "  (no door to lift: the code before db/43)");
 
@@ -1191,6 +1302,59 @@ try {
     .map((r) => [`${r.player_id}|${r.innings}`, { wickets: Number(r.wickets), runs: Number(r.runs_conceded) }]));
   const figBad = fieldDifferences(e.figures, figs, ["wickets", "runs"]);
   ok(`every bowler's wickets and runs conceded in every innings (${e.figures.size} spells)`, figBad.length === 0, show(figBad));
+
+  group("The wicket-keeper: keeper_dismissal and player_keeping_career are the fold (SCRBRD-126, db/68)");
+  {
+    const keeperRows = rows.filter((r) => r.kind === "keeper");
+    const kept = [...byInnings.values()].reduce((n, inn) => n + inn.keepers.length, 0);
+    console.log(`  ${keeperRows.length} keeper rows (${gen.keepers} named first, ${gen.keeperChanges} changes, ${gen.keeperMidOver} mid-over, ` +
+                `${gen.keeperUndone} undone); catches credited by id ${gen.catchByRef}, by name ${gen.catchByName}, to another ${gen.catchOther}; ` +
+                `stumpings by id ${gen.stumpByRef}, by name ${gen.stumpByName}, by nobody ${gen.stumpNobody}`);
+    ok(`...not vacuous: keepers named (${gen.keepers}), changed (${gen.keeperChanges}, ${gen.keeperMidOver} mid-over), undone (${gen.keeperUndone})`,
+       gen.keepers >= 10 && gen.keeperChanges >= 5 && gen.keeperMidOver >= 3 && gen.keeperUndone >= 1 && kept >= gen.keepers);
+    // The generator's own draws, few (a wicket by a bowler's method is one
+    // ball in twenty); the written-out innings has each case for certain.
+    ok(`...catches credited to the keeper by id (${gen.catchByRef}) and by name (${gen.catchByName}), and to another (${gen.catchOther})`,
+       gen.catchByRef >= 1 && gen.catchByName >= 1 && gen.catchOther >= 1);
+    ok(`...stumpings by the keeper by id (${gen.stumpByRef}) and by name (${gen.stumpByName})`,
+       gen.stumpByRef >= 1 && gen.stumpByName >= 1);
+    ok("...and a typed keeper with a dismissal", [...e.keeperDis.keys()].some((k) => k.includes(TYPED_KEEPER)));
+    // Every stumping in these logs is one the Laws take (Law 39): credited
+    // to the keeper at that ball, or to nobody, or made with no keeper on
+    // the record — the rule laws.mjs applies, asked of the fold at each
+    // one's own point in its log. (The whole-match Laws would refuse many of
+    // these balls for other reasons: the generator plays on past a chase
+    // won.) db/68's door, which asks the same of every row, let each in.
+    /** @type {string[]} */ const lawless = [];
+    let judged = 0, withKeeper = 0, nobody = 0;
+    for (const log of logs) {
+      for (let k = 0; k < log.length; k++) {
+        const x = log[k];
+        if (x.kind !== "ball" || x.type !== "W" || normaliseDismissal(x.dismissal) !== "stumped") continue;
+        judged++;
+        const keeper = keeperOf(deriveInnings(log.slice(0, k)));
+        if (keeper) withKeeper++;
+        if (keeper && !x.fielder) nobody++;
+        if (keeper && x.fielder && !isKeeperRef(keeper.id, keeper.name, x.fielder)) lawless.push(`${x.id}: ${x.fielder} while ${keeper.id} kept`);
+      }
+    }
+    ok(`every stumping (${judged}; ${withKeeper} with a keeper recorded, ${nobody} naming nobody) is the keeper's`,
+       lawless.length === 0 && withKeeper >= 5 && nobody >= 1, show(lawless));
+    const wantEdge = byInnings.get(keeperNo)?.keepers.map((/** @type {any} */ k) => `${k.name}:${k.catches}/${k.stumpings}`).join(" ");
+    ok("the written-out case: Keeper 1 one catch, Keeper 2 one catch and two stumpings", wantEdge === "Keeper 1:1/0 Keeper 2:1/2", wantEdge);
+    const gotDis = new Map((await q(`select innings, keeper_ref, dismissal, count(*)::int n from keeper_dismissal where match_id = $1
+                                      group by innings, keeper_ref, dismissal`, [MATCH]))
+      .map((r) => [`${r.innings}|${r.keeper_ref}|${r.dismissal}`, r.n]));
+    const disBad = differences(e.keeperDis, gotDis);
+    ok(`keeper_dismissal: every keeper's catches and stumpings in every innings (${e.keeperDis.size})`, disBad.length === 0 && e.keeperDis.size >= 10,
+       show(disBad));
+    const keepD = deltas(car0.keeping, car1.keeping, ["matches", "innings", "catches", "stumpings"]);
+    const wantKeep = new Map(PLAYERS.map((p) => [p, e.keeping.get(p) ?? {}]));
+    for (const f of ["matches", "innings", "catches", "stumpings"]) {
+      const bad = fieldDifferences(wantKeep, keepD, [f]);
+      ok(`player_keeping_career ${f}, per keeper`, bad.length === 0, show(bad));
+    }
+  }
 
   group("The opposition's figures, both ways round");
   const oppH1 = await opposition(HIL, WES, "coach@example.invalid");

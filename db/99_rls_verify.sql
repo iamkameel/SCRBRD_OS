@@ -1820,6 +1820,68 @@ CREATE OR REPLACE FUNCTION _any_match_67(p_label text) RETURNS boolean AS $$
   SELECT EXISTS (SELECT 1 FROM match WHERE opponent = p_label)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/68 (section 46). Two Hilton 1XI fixtures with the same deliveries, the
+-- opposition batting (typed names), Hilton's …03 bowling the first over and
+-- …04 the second. In the first the
+-- keepers are named: …02 keeps, and mid-over hands the gloves to …01; a
+-- keeper row naming …05 is undone. The squad names them "V68 Two", "V68
+-- One" and "V68 Five". The second has no keeper row: the log as it was
+-- before SCRBRD-126. packages/scoring/test/keeper.test.mjs (group E)
+-- folds this same log and holds the fold to the figures §46 reads.
+--   seq 1 start · 2 keeper …02 · 3 caught "V68 Two" (his, by name) · 4 a
+--   no-ball · 5 stumped (saved by the free hit) · 6 keeper …01, mid-over ·
+--   7 stumped, nobody named (…01's) · 8 caught by …01's id (his) · 9 caught
+--   "V68 Two" (not as keeper) · 10 run out "V68 One" (no keeper's) · 11
+--   keeper …05 · 12 the void of 11 · 13 stumped "V68 One" (…01's).
+-- Written as the owner, one row per statement, as the write path writes.
+CREATE OR REPLACE FUNCTION _seed_68() RETURNS jsonb AS $$
+DECLARE m uuid; mp uuid; r record; k text;
+  K1 text := 'aaaaaaaa-0000-0000-0000-000000000002';
+  K2 text := 'aaaaaaaa-0000-0000-0000-000000000001';
+  F1 text := 'aaaaaaaa-0000-0000-0000-000000000005';
+  BW uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
+  B2 uuid := 'aaaaaaaa-0000-0000-0000-000000000004';   -- bowls the second over
+  squad jsonb := jsonb_build_array(jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000002', 'name', 'V68 Two'),
+                                   jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000001', 'name', 'V68 One'),
+                                   jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000005', 'name', 'V68 Five'));
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify 068 keepers', now() - interval '3 days', 'cricket', 'T20', 20, 'complete')
+  RETURNING id INTO m;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify 068 plain', now() - interval '3 days', 'cricket', 'T20', 20, 'complete')
+  RETURNING id INTO mp;
+  FOR r IN
+    SELECT mm, x.*
+      FROM unnest(ARRAY[m, mp]) AS mm
+     CROSS JOIN (VALUES
+       (1,  'innings_start', NULL, NULL::int, NULL, jsonb_build_object('battingTeam', 'Verify 068', 'bowlingTeam', 'Hilton 1XI', 'squad', '[]'::jsonb, 'bowlingSquad', squad)),
+       (2,  'keeper', NULL, NULL, NULL, jsonb_build_object('keeper', K1)),
+       (3,  'ball', 'W', 0, 'caught',  '{"fielder":"V68 Two","striker":"Opp A"}'::jsonb),
+       (4,  'ball', 'Nb', 1, NULL,     '{"striker":"Opp B"}'::jsonb),
+       (5,  'ball', 'W', 0, 'stumped', '{"striker":"Opp B"}'::jsonb),
+       (6,  'keeper', NULL, NULL, NULL, jsonb_build_object('keeper', K2)),
+       (7,  'ball', 'W', 0, 'stumped', '{"striker":"Opp B"}'::jsonb),
+       (8,  'ball', 'W', 0, 'caught',  jsonb_build_object('fielder', K2, 'striker', 'Opp C')),
+       (9,  'ball', 'W', 0, 'caught',  '{"fielder":"V68 Two","striker":"Opp D"}'::jsonb),
+       (10, 'ball', 'W', 1, 'run_out', '{"fielder":"V68 One","striker":"Opp E"}'::jsonb),
+       (11, 'keeper', NULL, NULL, NULL, jsonb_build_object('keeper', F1)),
+       (12, 'void', NULL, NULL, NULL, '{}'::jsonb),
+       (13, 'ball', 'W', 0, 'stumped', '{"fielder":"V68 One","striker":"Opp F"}'::jsonb)
+     ) AS x(seq, kind, bt, v, dis, payload)
+     WHERE mm = m OR x.kind NOT IN ('keeper', 'void')
+     ORDER BY mm, x.seq
+  LOOP
+    k := 'v68:' || r.mm || ':' || r.seq;
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                            client_seq, client_ts, kind, ball_type, value, bowler_id, dismissal, payload)
+    VALUES (r.mm, '11111111-1111-1111-1111-111111111111', r.seq, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-068',
+            k, r.seq, '2026-09-15 10:00+02', r.kind, r.bt, r.v, CASE WHEN r.kind = 'ball' AND r.seq = 13 THEN B2 WHEN r.kind = 'ball' THEN BW END, r.dis,
+            CASE WHEN r.kind = 'void' THEN jsonb_build_object('target', 'v68:' || r.mm || ':11') ELSE r.payload END);
+  END LOOP;
+  RETURN jsonb_build_object('m', m, 'plain', mp);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -9916,6 +9978,100 @@ BEGIN
     PERFORM _assert(r.ok AND r.entered = 1, format('db/67: the league could not copy the Hilton cup (%s)', r.reason));
     PERFORM _assert((SELECT v.status || '|' || v.source_document || '|' || v.source_clause FROM condition_value v WHERE v.set_id = r.set_id)
                     = 'confirmed|Verify 067 Cup Rules|4.2', 'db/67 (copy): the cited figure was not copied with its citation');
+  END;
+
+  -- ── 46. The wicket-keeper: his dismissals, and a stumping only his (SCRBRD-126, db/68) ──
+  -- A keeper named, and changed mid-over, in a Hilton fixture (_seed_68());
+  -- its twin has the same deliveries and no keeper row. The keeper's catches
+  -- and stumpings are the fold's for that log (keeper.test.mjs, group E,
+  -- folds the same events: …02 one catch; …01 one catch, two stumpings — a
+  -- stumping a free hit saved is nobody's, a catch by …02 after he gave the
+  -- gloves up is not as keeper, an undone keeper row never kept); every
+  -- other figure of the log is its twin's; the door refuses a stumping
+  -- credited to a fielder who was not keeping, while one is recorded, and
+  -- takes it in the twin, which records none; and the two new views are
+  -- read as their reader — Westville's coach sees nothing of Hilton's
+  -- keeping. tools/smoke-fold-figures.mjs holds the same views to the fold
+  -- over generated logs.
+  --
+  -- Each labelled assertion was falsified once — the function, view or
+  -- trigger replaced in the database and this file run — and went red:
+  --   (stands)  keeper_dismissal without ball_wicket_stands()
+  --   (name)    keeper_is_fielder() without the name: by reference only (the
+  --             door, which asks it, refused _seed_68()'s stumping by name first)
+  --   (void)    keeper_at() over ball_event rather than ball_event_live (the
+  --             door first: the undone keeper row was keeping at seq 13)
+  --   (door)    the trigger ball_event_stumped_by_keeper dropped
+  --   (scope)   keeper_dismissal and player_keeping_career as their owner
+  --             (section 9 first: no view in public may run as its owner)
+  DECLARE
+    ids    jsonb := _seed_68();
+    M      uuid;
+    MP     uuid;
+    K1     uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
+    K2     uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+    F1     uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    got    text;
+  BEGIN
+    M := (ids->>'m')::uuid;
+    MP := (ids->>'plain')::uuid;
+    PERFORM _as(U_SARAH);
+    -- (stands) (name) (void) the keeper's dismissals, ball by ball
+    SELECT string_agg(d.seq || ':' || CASE d.player_id WHEN K1 THEN 'k1' WHEN K2 THEN 'k2' WHEN F1 THEN 'f1' ELSE '?' END
+                      || ':' || d.dismissal, ' ' ORDER BY d.seq)
+      INTO got FROM keeper_dismissal d WHERE d.match_id = M;
+    PERFORM _assert(got = '3:k1:caught 7:k2:stumped 8:k2:caught 13:k2:stumped',
+      format('db/68 (stands/name/void): the keeper''s dismissals read %s, where the fold says 3:k1:caught 7:k2:stumped 8:k2:caught 13:k2:stumped', got));
+    -- the careers: this fixture's keeping, for each of the three
+    SELECT string_agg(CASE c.player_id WHEN K1 THEN 'k1' WHEN K2 THEN 'k2' ELSE 'f1' END || '='
+                      || row(c.matches, c.innings_kept, c.catches, c.stumpings)::text, ' ' ORDER BY c.player_id = K2, c.player_id = F1)
+      INTO got FROM player_keeping_career c WHERE c.player_id IN (K1, K2, F1);
+    PERFORM _assert(got = 'k1=(1,1,1,0) k2=(1,1,1,2)',
+      format('db/68: player_keeping_career reads %s, where the fold says k1=(1,1,1,0) k2=(1,1,1,2)', got));
+    -- old logs: the twin has no keeper's dismissal, and every figure the
+    -- live score, the handover's count and the bowler's innings keep is the same
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM keeper_dismissal WHERE match_id = MP), 'db/68: a log with no keeper row has keeper dismissals');
+    SELECT concat_ws(' | ',
+      (SELECT row(l.runs, l.wickets, l.legal_balls)::text FROM match_live_score l WHERE l.match_id = M),
+      (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(M, 0::smallint) f),
+      (SELECT row(b.wickets, b.runs_conceded)::text FROM bowler_innings_figures b WHERE b.match_id = M AND b.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+      (SELECT string_agg(o.over_no || '/' || o.legal_balls || '/' || o.deliveries, ',' ORDER BY o.over_no) FROM bowler_over o WHERE o.match_id = M))
+      INTO got;
+    PERFORM _assert(got = concat_ws(' | ',
+      (SELECT row(l.runs, l.wickets, l.legal_balls)::text FROM match_live_score l WHERE l.match_id = MP),
+      (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(MP, 0::smallint) f),
+      (SELECT row(b.wickets, b.runs_conceded)::text FROM bowler_innings_figures b WHERE b.match_id = MP AND b.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+      (SELECT string_agg(o.over_no || '/' || o.legal_balls || '/' || o.deliveries, ',' ORDER BY o.over_no) FROM bowler_over o WHERE o.match_id = MP))
+      AND got = '(3,6,7) | (3,6,7) | (4,3) | 0/6/7,1/1/1',
+      format('db/68: the log with keeper rows reads %s; its twin without them is the same, and the fold says (3,6,7) | (3,6,7) | (4,3) | 0/6/7,1/1/1', got));
+
+    -- (door) a stumping credited to a fielder not keeping is refused while
+    -- one is recorded (Law 39); the same row in the twin, which records
+    -- none, is taken as it always was
+    PERFORM _assert(_owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+        idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+        VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-068',
+                'v68:door', 30, now(), 'ball', 'W', 0, 'stumped', '{"fielder":"V68 Five"}')$q$, M)) = '23514'
+                    AND _owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+        idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+        VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-068',
+                'v68:door:plain', 30, now(), 'ball', 'W', 0, 'stumped', '{"fielder":"V68 Five"}')$q$, MP)) = 'ok',
+      'db/68 (door): a stumping by a fielder who was not keeping was taken while a keeper was recorded, or refused in a log with none');
+
+    -- (scope) Westville's coach reads nothing of Hilton's keeping
+    PERFORM _as(U_WESC);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM keeper_dismissal WHERE match_id IN (M, MP))
+                    AND NOT EXISTS (SELECT 1 FROM player_keeping_career WHERE player_id IN (K1, K2)),
+      'db/68 (scope): Westville''s coach reads Hilton''s keeping');
+    -- the new objects: views as their reader, the application role's to
+    -- read, functions as their caller
+    PERFORM _assert((SELECT bool_and(coalesce('security_invoker=true' = ANY (c.reloptions), false)
+                                     AND has_table_privilege('scrbrd_app', c.oid, 'SELECT'))
+                       FROM pg_class c WHERE c.oid IN ('keeper_dismissal'::regclass, 'player_keeping_career'::regclass))
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.proname IN ('keeper_at', 'keeper_is_fielder', 'ball_event_stumped_by_keeper')
+                                       AND p.prosecdef),
+      'db/68 (scope): a new view runs as its owner or is not the application role''s to read, or a new function runs as its owner');
   END;
 
   PERFORM set_config('app.user_id', '', true);
