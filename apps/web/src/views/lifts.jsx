@@ -81,8 +81,9 @@ const REFUSAL = {
   one_to_one_not_allowed: "The school's policy does not allow one boy alone with a driver who is not his parent. Accept two together, or none.",
   awaiting_driver: "The fixture has moved. The driver must confirm she still offers the lift first.",
   awaiting_guardian: "The family has not yet said yes to the lift as it now stands.",
-  not_yet_eighteen: "A parent asks for a seat until he is eighteen.",
-  adult_consents_for_himself: "He is eighteen: he asks for his own seat now. You may still withdraw it.",
+  adult_consents_for_himself: "He is eighteen: a parent may withdraw his seat, but not ask for one.",
+  consent_not_granted: "The school has not recorded your consent to the processing of your child's information, which lift clubs need. Ask the school office.",
+  pupil_excluded: "Lift clubs are arranged between parents. Pupils take no part in them.",
   driver_own_child: "Your own son rides with you; he needs no seat.",
   not_on_side: "He is not in this side.",
   offer_not_open: "This lift is not taking requests.",
@@ -97,7 +98,6 @@ const REFUSAL = {
   no_declaration: "Make your yearly driver's declaration first (Settings → Me).",
   declaration_expired: "Your driver's declaration has expired. Make a new one in Settings → Me.",
   clearance_required: "The school's policy asks drivers for the three CSA clearances, and the office has not recorded all three.",
-  pupil_never_drives: "Pupils do not drive lifts.",
   declaration_incomplete: "Every statement must be ticked.",
   contact_required: "Choose the number the families should ring you on.",
   registration: "That registration is not one we can read: letters, numbers and spaces.",
@@ -607,7 +607,7 @@ function LiftDeclarationForSchool({ school }) {
           <div style={{ ...body(), whiteSpace: "pre-wrap", padding: "8px 0" }} data-testid="lift-policy-text">{policy.body}</div>
         </details>
       )}
-      {standing.reason !== "pupil_never_drives" && standing.reason !== "module_off" && standing.reason !== "no_policy" && (
+      {!["pupil_excluded", "consent_not_granted", "module_off", "no_policy"].includes(standing.reason) && (
         <details data-testid="lift-declare-form" open={!d}>
           <summary style={{ ...body(), cursor: "pointer", minHeight: "44px", display: "flex", alignItems: "center", fontWeight: 600 }}>
             {d ? "Declare again (a new car, or a new year)" : "Make your yearly driver's declaration"}

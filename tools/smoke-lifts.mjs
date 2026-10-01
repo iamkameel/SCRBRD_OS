@@ -6,8 +6,9 @@
  * declaration, the offer (a round trip, made as one), the request, the
  * acceptance, the fixture moving under it, the driver standing behind it and
  * the family saying yes again. With the seed's own invented families: H
- * Whitfield drives, A Bekker and N Cele ask for their sons, R Pillay (sixteen)
- * may not ask for himself, the 1XI coach and the office see what §5.1 gives
+ * Whitfield drives, A Bekker asks for her son, N Cele — whose consent to
+ * processing the seed leaves pending — is refused until the office records it
+ * and then asks, R Pillay (a pupil) takes no part, the 1XI coach and the office see what §5.1 gives
  * them and nothing more, and the owner's key sees nothing. db/99 §48 is the
  * fuller proof under the application role; this holds the routes to it:
  *
@@ -125,7 +126,7 @@ try {
   r = await api("/api/lifts/declaration", { method: "POST", token: boy,
     body: { schoolId: HIL, vehicle: "white Polo", registration: "NP 1", seats: 3, licenceHeld: true, insured: true,
             roadworthy: true, belts: true, codeAcknowledged: true } });
-  ok("a pupil never drives (D8)", r.status === 422 && r.body.error === "pupil_never_drives");
+  ok("a pupil takes no part (Kameel, 2026-10-01)", r.status === 422 && r.body.error === "pupil_excluded");
 
   group("A round trip is one act (D1)");
   const before = (await q(`select count(*)::int n from lift_offer where match_id = $1`, [m.id]))[0].n;
@@ -162,11 +163,23 @@ try {
   r = await api(`/api/lifts/${OUT}/seats`, { method: "POST", token: bekker, body: { playerId: BEKKER } });
   const S_BEKKER = r.body?.seatId;
   ok("she asks for her own", r.status === 200 && Boolean(S_BEKKER));
+  // Consent to processing, granted, before any lift (Kameel, 2026-10-01).
+  r = await api(`/api/lifts/${OUT}/seats`, { method: "POST", token: cele, body: { playerId: CELE } });
+  ok("Cele's mother, her consent to processing not recorded, is refused", r.status === 422 && r.body.error === "consent_not_granted");
+  r = await api(`/api/lifts/standing?schoolId=${HIL}`, { token: cele });
+  ok("...and her standing line says why, in plain words",
+     r.body.reason === "consent_not_granted" && /consent to the processing/.test(r.body.words ?? ""));
+  const [celeMum] = await q(`select id from app_user where email = 'parent.cele@example.invalid'`);
+  r = await api(`/api/players/${CELE}/guardians/consent`, { method: "POST", token: office,
+    body: { guardianId: celeMum.id, consentVersion: "popia-2026-01" } });
+  ok("the office records her consent", r.status === 200);
   r = await api(`/api/lifts/${OUT}/seats`, { method: "POST", token: cele, body: { playerId: CELE } });
   const S_CELE = r.body?.seatId;
-  ok("Cele's mother asks for hers", r.status === 200 && Boolean(S_CELE));
+  ok("...and now she asks for her son", r.status === 200 && Boolean(S_CELE));
   r = await api(`/api/lifts/${OUT}/seats`, { method: "POST", token: boy, body: { playerId: PILLAY } });
-  ok("a pupil of sixteen may not ask for himself", r.status === 422 && r.body.error === "not_yet_eighteen");
+  ok("a pupil may not ask for himself", r.status === 422 && r.body.error === "pupil_excluded");
+  r = await api(`/api/lifts/standing?schoolId=${HIL}`, { token: boy });
+  ok("...and is told pupils take no part", r.body.reason === "pupil_excluded");
   r = await api(`/api/lifts/${BACK}/seats`, { method: "POST", token: bekker, body: { playerId: BEKKER } });
   const S_BACK = r.body?.seatId;
   r = await api(`/api/lifts/${OUT}/seats`, { method: "POST", token: bekker, body: { playerId: BEKKER } });
