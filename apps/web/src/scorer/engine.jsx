@@ -550,7 +550,6 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // ── The super over (SCRBRD-114 phase 3b) ────────────────
   // May one start now, and if not, why: asked of the engine and of the
   // match's own playing conditions (lib/superOver.js), never guessed here.
-  // `pairNo` says which innings of a super over this is, for the words.
   const matchConditions=conditionsOf(scoringCtxRef.current);
   const offer=useMemo(
     ()=>superOverOffer({innings,events,conditions:matchConditions}),
