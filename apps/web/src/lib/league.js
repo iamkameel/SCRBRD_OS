@@ -155,6 +155,39 @@ export function resumeStep({ entrants, sets }) {
   return 4;
 }
 
+/**
+ * Whether a league is part-made, from the two reads the wizard makes: it has no
+ * entrants, or none of its playing-conditions sets is published (the API's
+ * words for a set are draft, published and withdrawn). A part-made league says
+ * where it stands, in the wizard's own words: `step` is where "Finish setting
+ * up" opens, `words` is "Setting up: step 2 of 4, Entrants". A complete league
+ * has no words, because it has nothing to say.
+ * @param {{ entrants: number | unknown[], sets: { status: string }[] }} have
+ * @returns {{ partMade: boolean, step: 1 | 2 | 3 | 4, words: string }}
+ */
+export function leagueSetupState({ entrants, sets }) {
+  const n = Array.isArray(entrants) ? entrants.length : entrants;
+  const step = resumeStep({ entrants: n, sets });
+  const partMade = n === 0 || !sets.some((s) => s.status === "published");
+  return { partMade, step, words: partMade ? `Setting up: step ${step} of 4, ${WIZARD_STEPS[step - 1].title}` : "" };
+}
+
+// ── Invitations waiting (the shell's badge) ───────────────────────
+
+/**
+ * How many of the invitations the API listed are still waiting for an answer.
+ * The API lists only those, but a row that says otherwise is not counted.
+ * @param {unknown} rows
+ */
+export function invitationsWaiting(rows) {
+  return Array.isArray(rows) ? rows.filter((r) => r && (r.status ?? "invited") === "invited").length : 0;
+}
+
+/** "1 league invitation waiting", "3 league invitations waiting", or "" for none. @param {number} n */
+export function invitationsWords(n) {
+  return n > 0 ? `${n} league invitation${n === 1 ? "" : "s"} waiting` : "";
+}
+
 // ── Checklist rows (wizard, step 3) ───────────────────────────────
 
 const STARTED = /^(Platform default|Platform fast-bowling directive|From the competition's format)/;

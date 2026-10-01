@@ -10,7 +10,7 @@
  */
 import {
   LEAGUE_FORMATS, RULE_FIELDS, addDays, bracketRounds, checklistCounts, entrantCounts, entrantSummary, entrantWords, figureKind,
-  formOfRules, instantOf, leagueRefusal, outcomeWords, planGroups, refusedWords, resumeStep, rulesOfForm, saDay, saTime, saToday,
+  formOfRules, instantOf, invitationsWaiting, invitationsWords, leagueRefusal, leagueSetupState, outcomeWords, planGroups, refusedWords, resumeStep, rulesOfForm, saDay, saTime, saToday,
   sideWords, slotId, slotWords, startOfDay, toggledLocks,
 } from "../src/lib/league.js";
 
@@ -43,6 +43,23 @@ ok("no entrants: step 2", resumeStep({ entrants: 0, sets: [] }) === 2);
 ok("entrants and no conditions: step 3", resumeStep({ entrants: 4, sets: [] }) === 3);
 ok("a draft open: step 3", resumeStep({ entrants: 4, sets: [{ status: "draft" }] }) === 3);
 ok("published: step 4", resumeStep({ entrants: 4, sets: [{ status: "published" }] }) === 4);
+
+group("A part-made league says so");
+const S = leagueSetupState;
+ok("no entrants: part-made, step 2, in the wizard's words", JSON.stringify(S({ entrants: 0, sets: [] })) === '{"partMade":true,"step":2,"words":"Setting up: step 2 of 4, Entrants"}', JSON.stringify(S({ entrants: 0, sets: [] })));
+ok("entrants and no conditions: part-made at step 3", S({ entrants: 4, sets: [] }).partMade && S({ entrants: 4, sets: [] }).words === "Setting up: step 3 of 4, Playing conditions");
+ok("a draft only: part-made at step 3", S({ entrants: 2, sets: [{ status: "draft" }] }).partMade && S({ entrants: 2, sets: [{ status: "draft" }] }).step === 3);
+ok("only a withdrawn set is not a published one: part-made at step 4", S({ entrants: 2, sets: [{ status: "withdrawn" }] }).partMade && S({ entrants: 2, sets: [{ status: "withdrawn" }] }).words === "Setting up: step 4 of 4, Review and publish");
+ok("entrants and a published set: complete, nothing to say", JSON.stringify(S({ entrants: 4, sets: [{ status: "published" }] })) === '{"partMade":false,"step":4,"words":""}');
+ok("...even with a newer draft beside it", !S({ entrants: 4, sets: [{ status: "published" }, { status: "draft" }] }).partMade);
+ok("a published set with no entrants is still part-made", S({ entrants: 0, sets: [{ status: "published" }] }).partMade && S({ entrants: 0, sets: [{ status: "published" }] }).step === 2);
+ok("a list of entrants counts as its length", S({ entrants: [], sets: [] }).partMade && !S({ entrants: [{ status: "declined" }], sets: [{ status: "published" }] }).partMade);
+
+group("Invitations waiting");
+ok("rows still waiting are counted, and a missing status is the API's own 'invited'", invitationsWaiting([{ status: "invited" }, {}, { status: "accepted" }]) === 2);
+ok("nothing, or not a list, is none", invitationsWaiting([]) === 0 && invitationsWaiting(undefined) === 0 && invitationsWaiting(null) === 0);
+ok("the words, singular and plural", invitationsWords(1) === "1 league invitation waiting" && invitationsWords(3) === "3 league invitations waiting");
+ok("no words for none", invitationsWords(0) === "");
 
 group("A checklist row");
 ok("nothing entered is none", figureKind(undefined) === "none");
