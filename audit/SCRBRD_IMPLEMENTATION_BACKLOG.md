@@ -4368,6 +4368,21 @@ apart. School sides change keeper mid-innings, so: record the keeper at the star
 (an event, as the bowler is), have the Laws check refuse `stumped` credited to anyone but the keeper at that ball, show †
 on the scorecard, and let the careers count dismissals as keeper. Opus for the event, the fold and the Laws; Sonnet for
 the pad's keeper picker and the scorecard mark.
+**Built 2026-10-01 (Opus): `db/68_wicket_keeper.sql`.**
+- **The event** is a kind of its own, `keeper({keeper})`, state from a point of the innings as `bowler` is (the ref
+  rides in the payload). Not a field on `bowler`: the gloves change on their own clock, mid-over with the same bowler
+  bowling on. Every reader ignores a kind it does not know, so a log with no keeper event folds exactly as before.
+- **The fold** carries `inn.keeper`, `inn.keepers` (catches and stumpings as keeper; wickets that stand) and
+  `keeperId` on each delivery once one is named. A catch is the keeper's when its fielder is his reference or his
+  name; every stumping while he keeps is his.
+- **The Laws** refuse `stumped_not_keeper` (Law 39): a stumping credited to a fielder who is not the keeper at that
+  ball, while one is recorded. None recorded, or no fielder named: as before. db/68's door refuses the same row.
+- **SQL**: `keeper_dismissal` and `player_keeping_career` (matches, innings kept, catches, stumpings), new objects
+  only, security_invoker; held to the fold by smoke-fold-figures and db/99 §46. Catches were counted nowhere before.
+- **Screens**: "Who is keeping wicket?" in the bowler sheet (never blocking it), "Change keeper" in the pad menu,
+  the wicket sheet's stumping credited to the keeper, † on the Match Centre scorecard.
+- **Not yet**: the public page (its log does not carry the keeper — SCRBRD-083 decides), keeping by season, a
+  career screen that reads `player_keeping_career`, and a scorebook card's keeper (a card has no †).
 
 ### SCRBRD-127 — The League Administrator's wizard: create a league, enter schools, set its conditions
 **Priority:** P1 (the pilot cannot create a league without it) · **Domain:** Competitions · **Type:** build with
