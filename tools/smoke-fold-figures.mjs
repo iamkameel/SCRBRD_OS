@@ -1684,7 +1684,7 @@ try {
   // match_result() held to the fold — the outcome, the margin, who won and
   // who decided, and each innings' figures, ending, overs and target — and
   // both to what the design says the log is.
-  group(`The result (SCRBRD-114 phase 3a, db/69): match_result() is describeResult(), over ${RESULT_LOGS.length} logs`);
+  group(`The result (SCRBRD-114 phase 3a, db/69; the super over, 3b, db/71): match_result() is describeResult(), over ${RESULT_LOGS.length} logs`);
   for (const x of RESULT_LOGS) {
     const [{ id: rm }] = await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
                                   values ($1, $2, $3, $4, 'T20', 20, $5) returning id`,
@@ -1729,8 +1729,17 @@ try {
       : { outcome: f.outcome, marginKind: f.marginKind, margin: f.marginValue, decidedBy: f.decidedBy, winnerSide: f.winnerSide, playOutcome: f.playOutcome };
     const said = { outcome: sql.outcome, marginKind: sql.margin_kind, margin: sql.margin, decidedBy: sql.decided_by,
                    winnerSide: sql.winner_side, playOutcome: sql.play_outcome };
-    const inn = folded.innings.map((i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.endReason, i.penaltyWin].join("/"));
-    const sinn = (sql.innings ?? []).map((/** @type {any} */ i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.end_reason, i.penalty_win].join("/"));
+    // Phase 3b (db/71): each innings' super over beside its figures, and each pair as both list it.
+    const inn = folded.innings.map((i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.endReason, i.penaltyWin, i.superOver].join("/"));
+    const sinn = (sql.innings ?? []).map((/** @type {any} */ i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.end_reason, i.penalty_win, i.super_over].join("/"));
+    const figs = (/** @type {any} */ x) => (x == null ? null : [x.runs, x.wickets, x.balls]);
+    const pairs = (f?.superOvers ?? []).map((p) => JSON.stringify([p.n, p.first, figs(p.a), figs(p.b), p.state, p.winner, p.winnerKey]));
+    const spairs = (sql.super_overs ?? []).map((/** @type {any} */ p) => JSON.stringify([p.n, p.first, figs(p.a), figs(p.b), p.state, p.winner, p.winner_key]));
+    ok(`${x.name}: the super overs are the fold's`, JSON.stringify(pairs) === JSON.stringify(spairs), JSON.stringify({ sql: spairs, fold: pairs }));
+    const liveSo = await q(`select innings, max(super_over) as so from ball_event_live where match_id = $1 group by innings order by innings`, [rm]);
+    ok(`...and ball_event_live.super_over is inn.superOver`,
+       JSON.stringify(liveSo.map((/** @type {any} */ r) => r.so)) === JSON.stringify(folded.innings.map((i) => i.superOver)),
+       JSON.stringify({ sql: liveSo, fold: folded.innings.map((i) => i.superOver) }));
     ok(`${x.name}: match_result() is the fold's`, JSON.stringify(said) === JSON.stringify(fold) && JSON.stringify(sinn) === JSON.stringify(inn),
        JSON.stringify({ sql: said, fold, sqlInnings: sinn, foldInnings: inn }));
     ok(`...and is what the design says it is`,
