@@ -8,6 +8,20 @@ import { useLive, useNotes, useRatings, useSkills } from "../lib/live.js";
 import { recordAssessment, writeNote, NOTE_ADJUSTMENT_LIMIT } from "../lib/development.js";
 import { TREE, DISCIPLINES, ANCHOR_POINTS, anchorFor, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
 import { Icon } from "../ui/icons.jsx";
+import { signedIn } from "../lib/api.js";
+
+/** A refusal from the assessment or note routes, in words; the code only when there are none. */
+const WRITE_WORDS = {
+  missing_token: "You are not signed in, so nothing was saved.",
+  not_permitted: "You may not record an assessment for this player.",
+  nothing_to_record: "Move at least one rating before saving.",
+};
+function writeWords(e) {
+  const code = String(e?.code || e?.message || "").split(" ")[0];
+  if (WRITE_WORDS[code]) return WRITE_WORDS[code];
+  if (/^bad_score:/.test(code)) return "A rating is outside 1 to 20.";
+  return e?.message || "Could not save just now.";
+}
 
 /**
  * The anchor sentence for a value, and whether anybody has approved it.
@@ -99,7 +113,10 @@ function SkillsView({ role }) {
   const assessed = PLAYERS.filter(p => SKILLS_MATRIX[p.id]);
   const selPlayer = PLAYERS.find(p => p.id === selId) ?? assessed[0] ?? PLAYERS[0];
   const skills = selPlayer ? SKILLS_MATRIX[selPlayer.id] : null;
-  const canEdit = holdsCapability(role,"player.development.write");
+  // Writing needs a session: the demo (nobody signed in, a role picked to look
+  // around) reads the seeded matrix and offers no write it cannot make — the
+  // save would reach the API with no token and fail (missing_token).
+  const canEdit = signedIn() && holdsCapability(role,"player.development.write");
   const cats = skills ? Object.keys(skills) : [];
   // Technical / mental / physical — the craft, the head, the body.
   const SKILL_COLORS = { technical:D.sky, mental:D.violet, tactical:D.amber, physical:D.emerald };
@@ -332,7 +349,7 @@ function SkillsView({ role }) {
                     }
                     await recordAssessment(selPlayer.id, scores);
                     setAssessing(false); setDraft({}); setNonce(n=>n+1);
-                  } catch(e){ setWriteError(e.message||"could not save"); }
+                  } catch(e){ setWriteError(writeWords(e)); }
                   finally { setBusy(false); }
                 }}>{busy?"Saving…":`Save ${Object.keys(draft).length} rating${Object.keys(draft).length===1?"":"s"}`}</Btn>
                 <button onClick={()=>{setAssessing(false);setDraft({});}} className="pressBtn"
@@ -384,7 +401,7 @@ function SkillsView({ role }) {
                   try {
                     await writeNote(selPlayer.id,{body:noteText,aboutDiscipline:noteDisc||null,adjustment:noteAdj});
                     setNoting(false); setNoteText(""); setNoteDisc(""); setNoteAdj(""); setNonce(n=>n+1);
-                  } catch(e){ setWriteError(e.message||"could not save"); }
+                  } catch(e){ setWriteError(writeWords(e)); }
                   finally { setBusy(false); }
                 }}>{busy?"Saving…":"Save note"}</Btn>
                 <button onClick={()=>{setNoting(false);setNoteText("");}} className="pressBtn"
@@ -430,7 +447,6 @@ function SkillsView({ role }) {
                       </div>
                     </div>
                   ))}
-                  {canEdit&&<Btn size="sm" variant="ghost" onClick={()=>{}}>Update Scores</Btn>}
                 </Card>
                 <div>
                   <Card sx={{padding:"14px",marginBottom:"12px"}}>
