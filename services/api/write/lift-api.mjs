@@ -1,8 +1,8 @@
 /**
- * SCRBRD — parent lift clubs, phase 1: the arrangement (SCRBRD-124).
+ * SCRBRD — parent lift clubs, phases 1 and 2: the arrangement and the day (SCRBRD-124).
  *
  * The design is docs/design/SCRBRD-124_lift_clubs.md; the schema and every
- * rule of who may do what are db/70_lift_clubs.sql. Parents offer seats in
+ * rule of who may do what are db/70_lift_clubs.sql and db/76_lift_day.sql. Parents offer seats in
  * their own cars to their own son's fixtures; other parents ask for a seat for
  * theirs; a seat is confirmed only while the boy's guardian and the driver
  * have both said yes to the lift as it now stands.
@@ -33,6 +33,7 @@ const err = (/** @type {string} */ code, status = 422, /** @type {unknown} */ de
 const STATUS = {
   not_signed_in: 401, not_permitted: 403, module_disabled: 403,
   version_conflict: 409, already_on_a_lift: 409, already_offered: 409, seats_full: 409,
+  already_departed: 409, already_arrived: 409, already_marked: 409, already_received: 409,
 };
 
 /** @param {ApiResponse} res @param {CaughtError & { detail?: unknown }} e */
@@ -236,6 +237,95 @@ export function liftRoutes({ pool, secret }) {
     // POST /api/lift-seats/:id/reconfirm — a family says yes to the lift as it now stands.
     reconfirm: handle(async (client, req) => {
       await call(client, `select * from lift_seat_reconfirm($1)`, [id(req.params.id)]);
+      return { ok: true };
+    }),
+
+    // ── Phase 2: the day (db/76) ──────────────────────────────────────
+    // None of these is module-gated: a lift on the road is seen through,
+    // whatever the switch says (db/76's header).
+
+    // POST /api/lifts/:id/mark { event: departed | arrived } — the driver.
+    mark: handle(async (client, req) => {
+      await call(client, `select * from lift_mark($1, $2)`, [id(req.params.id), text(req.body?.event)]);
+      return { ok: true };
+    }),
+
+    // POST /api/lift-seats/:id/mark { event: boarded | handed_over | not_collected } — the driver.
+    seatMark: handle(async (client, req) => {
+      await call(client, `select * from lift_seat_mark($1, $2)`, [id(req.params.id), text(req.body?.event)]);
+      return { ok: true };
+    }),
+
+    // POST /api/lift-seats/:id/receive — "with us" (the side's staff, the way
+    // there) or "collected" (his guardian, or he at eighteen, the way home).
+    receive: handle(async (client, req) => {
+      await call(client, `select * from lift_receive($1)`, [id(req.params.id)]);
+      return { ok: true };
+    }),
+
+    // POST /api/lift-seats/:id/resolve { resolution } — the office closes a seat in exception.
+    resolve: handle(async (client, req) => {
+      await call(client, `select * from lift_resolve($1, $2)`, [id(req.params.id), text(req.body?.resolution)]);
+      return { ok: true };
+    }),
+
+    // GET /api/matches/:id/lifts/day — the caller's day cards on a fixture
+    // (the driver's, with names, logged; the family's own). [] off the day.
+    day: handle(async (client, req) => {
+      const { rows: [r] } = await client.query(`select lift_my_day($1) as d`, [id(req.params.id)]);
+      return { rows: r?.d ?? [] };
+    }),
+
+    // GET /api/matches/:id/lifts/expected — the coach's head count for the way there; logged.
+    expected: handle(async (client, req) => {
+      const { rows } = await client.query(`select * from lift_expected($1)`, [id(req.params.id)]);
+      return { rows: rows.map((/** @type {any} */ r) => ({
+        seatId: r.seat_id, offerId: r.offer_id, playerId: r.player_id, name: r.full_name, driverName: r.driver_name,
+        meetAt: r.meet_at, departedAt: r.departed_at, arrivedAt: r.arrived_at, boardedAt: r.boarded_at,
+        handedOverAt: r.handed_over_at, handoverKind: r.handover_kind, acknowledgedAt: r.acknowledged_at,
+        resolvedAt: r.resolved_at, status: r.status, notLeft: r.not_left })) };
+    }),
+
+    // GET /api/lifts/exceptions?schoolId=[&matchId=] — the office's exceptions, by name; logged.
+    exceptions: handle(async (client, req) => {
+      const match = text(req.query?.matchId);
+      const { rows } = await client.query(`select * from lift_exceptions($1, $2)`, [id(req.query?.schoolId), match ? id(match) : null]);
+      return { rows: rows.map((/** @type {any} */ r) => ({
+        offerId: r.offer_id, seatId: r.seat_id, matchId: r.match_id, leg: r.leg, kind: r.kind, playerId: r.player_id,
+        name: r.full_name, driverName: r.driver_name, meetAt: r.meet_at, since: r.since })) };
+    }),
+
+    // GET /api/lifts/mine — the boy of eighteen at school: his own lifts, no number.
+    mine: handle(async (client) => {
+      const { rows } = await client.query(`select * from my_lifts()`);
+      return { rows: rows.map((/** @type {any} */ r) => ({
+        seatId: r.seat_id, offerId: r.offer_id, matchId: r.match_id, leg: r.leg, driverName: r.driver_name,
+        meetPlace: r.meet_place, meetAt: r.meet_at, vehicle: r.vehicle, status: r.status, departedAt: r.departed_at,
+        handedOverAt: r.handed_over_at, mayReceive: r.may_receive })) };
+    }),
+
+    // POST /api/lifts/watch — the platform's key, on a schedule: §6.1 and §6.2's alerts, once per seat.
+    watch: handle(async (client) => {
+      const r = await call(client, `select * from lift_missed_watch()`, []);
+      return { notLeft: r.not_left, notReceived: r.not_received };
+    }),
+
+    // GET /api/lifts/purge?schoolId= — the office's due list (§5.3): ids, days, counts; no name.
+    purgeDue: handle(async (client, req) => {
+      const { rows } = await client.query(`select * from lift_purge_due($1)`, [id(req.query?.schoolId)]);
+      return { rows: rows.map((/** @type {any} */ r) => ({ kind: r.kind, id: r.id, matchId: r.match_id, day: r.day,
+                                                            leg: r.leg, seats: r.seats })) };
+    }),
+
+    // POST /api/lifts/:id/purge — one lift that is due, and its seats; a row of counts remains.
+    purge: handle(async (client, req) => {
+      await call(client, `select * from lift_purge($1)`, [id(req.params.id)]);
+      return { ok: true };
+    }),
+
+    // POST /api/lift-declarations/:id/purge — one declaration that is due.
+    purgeDeclaration: handle(async (client, req) => {
+      await call(client, `select * from lift_purge_declaration($1)`, [id(req.params.id)]);
       return { ok: true };
     }),
   };

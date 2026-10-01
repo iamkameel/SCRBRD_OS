@@ -896,6 +896,20 @@ const LIFT_ROUTES = [
   [/^\/api\/lift-seats\/([0-9a-f-]{36})\/decline$/,     "POST", lifts.decline, "lift_club"],
   [/^\/api\/lift-seats\/([0-9a-f-]{36})\/withdraw$/,    "POST", lifts.withdraw],
   [/^\/api\/lift-seats\/([0-9a-f-]{36})\/reconfirm$/,   "POST", lifts.reconfirm, "lift_club"],
+  // Phase 2, the day (db/76): never module-gated — a lift on the road is
+  // seen through, and the platform's watch belongs to no school.
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/mark$/,             "POST", lifts.mark],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/mark$/,        "POST", lifts.seatMark],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/receive$/,     "POST", lifts.receive],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/resolve$/,     "POST", lifts.resolve],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/day$/,     "GET",  lifts.day],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/expected$/, "GET", lifts.expected],
+  [/^\/api\/lifts\/exceptions$/,                      "GET",  lifts.exceptions],
+  [/^\/api\/lifts\/mine$/,                            "GET",  lifts.mine],
+  [/^\/api\/lifts\/watch$/,                           "POST", lifts.watch],
+  [/^\/api\/lifts\/purge$/,                           "GET",  lifts.purgeDue],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/purge$/,            "POST", lifts.purge],
+  [/^\/api\/lift-declarations\/([0-9a-f-]{36})\/purge$/, "POST", lifts.purgeDeclaration],
 ];
 // ── end SCRBRD-124 ──
 

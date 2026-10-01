@@ -13436,8 +13436,6 @@ $v49$;
     PERFORM _as(U_OFF);
     SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_cancel(O_OUT);
     PERFORM _assert(NOT v_ok AND v_reason = 'on_the_road', format('db/76 (road): the office cancelled a lift with a boy in it: %s', v_reason));
-    PERFORM _assert(_v76_force_end(O_OUT) AND _v76_force_unseat(S_LOU_OUT) AND (_v76_offer(O_OUT)).state = 'open',
-      'db/76 (road): the row guard let a lift on the road, or a boy in the car, be ended past the functions');
     -- (road-move) the start delayed on the day: the lift on the road keeps
     -- its version; the way home, not yet under way, waits on its driver
     PERFORM _v76_fixture(MT, interval '30 minutes');
@@ -13445,6 +13443,11 @@ $v49$;
                     AND (_v76_offer(O_BACK)).version = 2 AND _v76_status(S_OLE_BACK) = 'awaiting_driver',
       format('db/76 (road): the start moved: the way there is version %s (%s), the way home %s (%s)',
              (_v76_offer(O_OUT)).version, _v76_status(S_LOU_OUT), (_v76_offer(O_BACK)).version, _v76_status(S_OLE_BACK)));
+    -- ...and a lift waiting on its driver does not leave until she stands behind it
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_mark(O_BACK, 'departed');
+    PERFORM _assert(NOT v_ok AND v_reason = 'awaiting_driver' AND (_v76_offer(O_BACK)).departed_at IS NULL,
+      format('db/76 (road): a lift waiting on its driver after the fixture moved was marked as left: %s', v_reason));
     -- (road-link) Lou's mother's link revoked: in the car he keeps his seat;
     -- his seat home, which her link gave, is void — and Max, the one child
     -- left on the way home (Ole is eighteen), falls back, not being on the road
@@ -13454,6 +13457,9 @@ $v49$;
                     AND (_v76_seat(S_MAX_BACK)).state = 'requested' AND (_v76_seat(S_OLE_BACK)).state = 'confirmed',
       format('db/76 (road): with his mother''s link ended Lou''s seats read %s and %s; Max %s, Ole %s',
              (_v76_seat(S_LOU_OUT)).state, (_v76_seat(S_LOU_BACK)).state, (_v76_seat(S_MAX_BACK)).state, (_v76_seat(S_OLE_BACK)).state));
+    -- (road-guard) and past the functions, the row guard refuses the same
+    PERFORM _assert(_v76_force_end(O_OUT) AND _v76_force_unseat(S_LOU_OUT) AND (_v76_offer(O_OUT)).state = 'open',
+      'db/76 (road): the row guard let a lift on the road, or a boy in the car, be ended past the functions');
 
     -- (depart) the car leaves: it takes no more requests; Ned's request,
     -- never accepted, is declined and his mother told
