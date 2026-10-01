@@ -71,5 +71,6 @@
   "70_lift_clubs.sql",
   "71_super_over.sql",
   "72_knockout_progression.sql",
-  "73_rain_interruptions.sql"
+  "73_rain_interruptions.sql",
+  "74_venue_par.sql"
 ]

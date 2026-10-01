@@ -74,6 +74,8 @@ import { plannerRoutes } from "./write/planner-api.mjs";
 import { leagueRoutes } from "./write/league-api.mjs";
 // SCRBRD-114 phase 3a (db/69): match results and the league table.
 import { resultsRoutes } from "./write/results-api.mjs";
+// SCRBRD-130 (db/73–75): the rain rule's reads — venue par, the DLS proposal.
+import { rainRoutes } from "./read/rain-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
@@ -426,6 +428,8 @@ const planner = plannerRoutes({ pool, secret: SECRET });
 const league = leagueRoutes({ pool, secret: SECRET });
 // SCRBRD-114 phase 3a (db/69): match results and the league table.
 const results = resultsRoutes({ pool, secret: SECRET });
+// SCRBRD-130: the rain rule's reads.
+const rain = rainRoutes({ pool, secret: SECRET });
 // The scorebook importer (SCRBRD-120, db/63). Its photos go to the private
 // store (io/object-store.mjs): Supabase Storage when SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are set, a local directory in development, and
@@ -757,6 +761,9 @@ const PLAYER_ROUTES = [
   [/^\/api\/competitions\/([^/]+)\/adjustments$/,              "POST", results.adjust],
   [/^\/api\/points-adjustments\/([^/]+)\/withdraw$/,           "POST", results.withdrawAdjustment],
   [/^\/api\/matches\/([^/]+)\/playing-conditions\/refix-table$/, "POST", results.refixTable],
+  // ── SCRBRD-130 R3 (db/74): venue par, at a ground and at a match ──
+  [/^\/api\/grounds\/([^/]+)\/venue-par$/,                     "GET",  rain.groundVenuePar],
+  [/^\/api\/matches\/([^/]+)\/venue-par$/,                     "GET",  rain.matchVenuePar],
   // ── end SCRBRD-114 phase 3a ──
   // ── SCRBRD-114 phase 3c (db/72): knockout progression ──
   // Where each knockout side came from, and the organiser clearing a flag a

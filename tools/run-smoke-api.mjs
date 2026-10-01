@@ -64,6 +64,11 @@ const WALKS = [
   // re-resolves the unplayed final and flags the played one; the organiser
   // clears the flag with a note.
   "progression",
+  // ── SCRBRD-130 R1/R3 (db/73, db/74): rain on the real write path — the
+  // server refusing play while stopped, a revision behind the balls, a par
+  // without a target; a chase decided on the umpires' par; venue par at a
+  // ground and at a point in a live innings. ──
+  "rain",
   // The scorebook importer (SCRBRD-120, db/63): photos stripped and read on
   // the log, a card ticked and checked, two people, the commit's Laws and
   // seal, the match complete, the amendment path, the purge.

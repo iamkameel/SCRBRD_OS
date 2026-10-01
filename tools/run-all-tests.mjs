@@ -43,6 +43,9 @@ const SUITES = [
   // ── SCRBRD-130 R1 (db/73): rain — stops, resumptions, par, the words ──
   ["rain",     "packages/scoring/test/rain.test.mjs"],
   // ── end SCRBRD-130 R1 ──
+  // ── SCRBRD-130 R3 (db/74): venue par — the floor pinned with SQL, par at a point ──
+  ["venue",    "packages/scoring/test/venue.test.mjs"],
+  // ── end SCRBRD-130 R3 ──
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],

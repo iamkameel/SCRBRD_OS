@@ -347,7 +347,17 @@ const REVISION_LABEL = Object.freeze({
  * @returns {{label: string, text: string} | null}
  */
 export function revisionNotice(inn) {
+  // ── SCRBRD-130 R1: play stopped now, and the umpires' par, from the fold ──
+  if (inn?.stopped) {
+    const s = inn.stopped;
+    const why = { rain: "Rain", bad_light: "Bad light", wet_ground: "A wet ground" }[s.reason] ?? "Play stopped";
+    return { label: "Play stopped", text: `${why === "Play stopped" ? "Play stopped" : `${why} stopped play`} at ${Math.floor(s.balls / 6)}.${s.balls % 6} ov, ${s.runs}/${s.wickets}` };
+  }
   const r = inn?.revised;
+  if (r && r.overs == null && r.target == null && r.par != null) {
+    return { label: REVISION_LABEL[String(r.reason ?? "").toLowerCase()] ?? "Play interrupted", text: `Par score announced: ${r.par}` };
+  }
+  // ── end SCRBRD-130 R1 ──
   if (!r || (r.overs == null && r.target == null)) return null;
   const text = r.overs != null && r.target != null ? `Overs revised to ${r.overs}; target ${r.target}`
     : r.overs != null ? `Overs revised to ${r.overs}`

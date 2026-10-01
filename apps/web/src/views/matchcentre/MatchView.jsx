@@ -131,6 +131,28 @@ function useServerResult(match, seen) {
   return result;
 }
 
+// ── SCRBRD-130 R3: venue par on the board (db/74) ──
+/**
+ * "A typical side here would be 61/3 by now" — the server's par at the point
+ * the innings has reached, at this ground (GET /api/matches/:id/venue-par),
+ * with how it was reckoned; or "No venue par here yet (2 of 5)". Null signed
+ * out, for a demonstration fixture, a match with no ground, or once it is over.
+ * @param {any} match  @param {unknown} seen  what the log has grown to
+ */
+function useVenueLine(match, seen) {
+  const [line, setLine] = useState(/** @type {{words: string, label: string | null} | null} */ (null));
+  useEffect(() => {
+    if (!signedIn() || !match.live || match.status === "complete") { setLine(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${match.id}/venue-par`)
+      .then((d) => { if (!cancelled) setLine(d?.words ? { words: d.words, label: d.parAt?.label ?? null } : null); })
+      .catch(() => { if (!cancelled) setLine(null); });
+    return () => { cancelled = true; };
+  }, [match.id, match.live, match.status, seen]);
+  return line;
+}
+// ── end SCRBRD-130 R3 ──
+
 /** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
 function TabBar({ tab, setTab }) {
   const refs = useRef({});
@@ -219,6 +241,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   // While a super over is being played the engine's "the super over was not
   // completed" is not yet true: the line says it is in progress.
   const liveSO = liveSuperOverLine(played, match.status);
+  const venueLine = useVenueLine(match, log.events?.length ?? 0);   // SCRBRD-130 R3
   const result = liveSO ?? (server && server.outcome !== "in_progress" ? server.text : null)
     ?? resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
   // The result stands once play has decided it: not mid super over, and not
@@ -266,7 +289,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
-    focus: focus?.length ? new Set(focus) : null, focusLabel };
+    focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>

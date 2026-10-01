@@ -76,7 +76,8 @@ function InningsBreakCard({ match, innings, overs }) {
 
 // `quietMoments`: the page has a live region of its own (the public page's),
 // so the moment and the over summary are drawn but not announced a second time.
-export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false }) {
+export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
+                             venueLine = null }) {
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
@@ -98,6 +99,12 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
             insight={insight.length ? insight : undefined}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
+      )}
+      {/* SCRBRD-130 R3: venue par at this point, the server's; the signed-in page passes it. */}
+      {venueLine && (
+        <p data-testid="mc-venue-par" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>
+          {venueLine.words}{venueLine.label ? <span style={{ fontSize: "13px" }}> ({venueLine.label})</span> : null}
+        </p>
       )}
       <OverSummary item={overSummary} announce={!quietMoments}/>
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}

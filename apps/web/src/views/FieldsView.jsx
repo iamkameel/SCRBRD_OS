@@ -7,6 +7,7 @@ import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { Icon } from "../ui/icons.jsx";
 import { GroundOffers } from "./groundoffers.jsx";
+import { VenueParCard } from "./venuePar.jsx";   // SCRBRD-130 R3
 
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
@@ -255,6 +256,8 @@ function FieldsView({ role }) {
               above is the part that is real. */}
           {tab==="offers"&&canEdit&&selGround.live&&<GroundOffers ground={selGround} role={role}/>}
 
+          {/* SCRBRD-130 R3: par at this ground, from its own record (db/74). */}
+          {tab==="overview"&&selGround?.live&&<VenueParCard groundId={selGround.id}/>}
           {tab==="overview"&&(() => {
             const surface = [["Type",selGround.surfaceType],["Outfield Grade",selGround.outfieldGrade],
                              ["Mow Height",selGround.outfieldMowHeight],["Drainage",selGround.drainage]]

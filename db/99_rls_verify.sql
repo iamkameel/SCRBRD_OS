@@ -2769,6 +2769,118 @@ CREATE OR REPLACE FUNCTION _publish_73(p_match uuid) RETURNS void AS $$
 $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/73 (section 52) ──────────────────────────────────────────────
 
+-- ┌── db/74 (section 53). SCRBRD-130 R3: venue par ───────────────────────
+-- At Hilton a field, "Verify 074 Field" (F), with a pitch on it, "Verify 074
+-- Oval B" (P), and a ground of its own, "Verify 074 Other" (X). Twenty-over
+-- U15 first innings (Hilton U15A batting first), each a friendly, every one
+-- dated explicitly and the match complete:
+--   counted   F 2026-10-01 100 · F 2026-10-02 120 (its chase made 200: a
+--             second innings) · P 2025-10-03 140 · F 2024-10-04 160 ·
+--             F 2026-10-05 150 all out in 18.4, from a scorebook
+--   excluded  F 2026-10-06 90, the innings cut from 25 to 20 by the umpires ·
+--             F 2026-10-07 40, terminated by rain · F 2026-10-08 250 in a
+--             50-over match · F 2023-10-09 300, a fourth season back ·
+--             F 2026-10-10 60 by the U14A · X 2026-10-11 200 at another ground
+-- So at F (or P) for 20 overs, U15, on 31 October 2026: n 5, par
+-- round(670 ÷ 5) = 134, median 140, range 100–160, seasons 2024–2026, one
+-- from a book; F's own four mean 132.5 → 133, P's one 140. A year on
+-- (31 October 2027) the 2024 innings ages out: 4, insufficient. M2 (the
+-- 120) is played against Westville's 1XI, whose coach reads its par (the
+-- band is the home side's code: U15).
+CREATE OR REPLACE FUNCTION _inn_74(p_match uuid, p_inn smallint, p_bat text, p_bowl text, p_overs integer, p_runs integer, p_balls integer,
+                                   p_extra jsonb DEFAULT NULL) RETURNS void AS $$
+DECLARE v_school uuid; v_seq integer;
+  sq jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'V74 ' || p_bat || ' ' || g, 'name', 'V74 ' || p_bat || ' ' || g)) FROM generate_series(1, 11) g);
+BEGIN
+  SELECT m.school_id INTO v_school FROM match m WHERE m.id = p_match;
+  SELECT coalesce(max(b.seq), 0) INTO v_seq FROM ball_event b WHERE b.match_id = p_match;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, payload)
+  VALUES (p_match, v_school, v_seq + 1, 1, p_inn, '88888888-0000-0000-0000-000000000006', 'verify-074', 'v74:' || p_match || ':' || (v_seq + 1),
+          v_seq + 1, '2026-10-01 10:00+02', 'innings_start',
+          jsonb_build_object('battingTeam', p_bat, 'bowlingTeam', p_bowl, 'squad', sq, 'overs', p_overs) || coalesce(p_extra, '{}'::jsonb));
+  -- p_balls legal balls carrying p_runs: sixes, what is left over, then dots.
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, ball_type, value, payload)
+  SELECT p_match, v_school, v_seq + 1 + g, 1, p_inn, '88888888-0000-0000-0000-000000000006', 'verify-074',
+         'v74:' || p_match || ':' || (v_seq + 1 + g), v_seq + 1 + g, '2026-10-01 10:00+02', 'ball', 'run',
+         CASE WHEN g <= p_runs / 6 THEN 6 WHEN g = p_runs / 6 + 1 THEN p_runs % 6 ELSE 0 END, '{}'::jsonb
+    FROM generate_series(1, p_balls) g;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _seed_74() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  f uuid; p uuid; x uuid; m uuid; m2 uuid; mx uuid; imp uuid := gen_random_uuid(); v_seq integer;
+  r record;
+BEGIN
+  INSERT INTO ground (school_id, name) VALUES (HIL, 'Verify 074 Field') RETURNING id INTO f;
+  INSERT INTO ground (school_id, name, parent_id) VALUES (HIL, 'Verify 074 Oval B', f) RETURNING id INTO p;
+  INSERT INTO ground (school_id, name) VALUES (HIL, 'Verify 074 Other') RETURNING id INTO x;
+  FOR r IN SELECT * FROM (VALUES
+      ('2026-10-01', f, 'U15A', 20, 100, 120, 'plain'),
+      ('2026-10-02', f, 'U15A', 20, 120, 120, 'chase'),
+      ('2025-10-03', p, 'U15A', 20, 140, 120, 'plain'),
+      ('2024-10-04', f, 'U15A', 20, 160, 120, 'plain'),
+      ('2026-10-05', f, 'U15A', 20, 150, 112, 'book'),
+      ('2026-10-06', f, 'U15A', 25,  90, 120, 'revised'),
+      ('2026-10-07', f, 'U15A', 20,  40,  30, 'terminated'),
+      ('2026-10-08', f, 'U15A', 50, 250, 300, 'plain'),
+      ('2023-10-09', f, 'U15A', 20, 300, 120, 'plain'),
+      ('2026-10-10', f, 'U14A', 20,  60, 120, 'plain'),
+      ('2026-10-11', x, 'U15A', 20, 200, 120, 'plain')) AS y(d, g, team, overs, runs, balls, how)
+  LOOP
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+    VALUES (HIL, r.team, CASE WHEN r.how = 'chase' THEN WES END, CASE WHEN r.how = 'chase' THEN '1XI' END, 'Verify 074 Visitors',
+            (r.d || ' 10:00+02')::timestamptz, 'cricket', CASE WHEN r.overs = 50 THEN 'One-Day' ELSE 'T20' END,
+            CASE WHEN r.how = 'revised' THEN 25 ELSE r.overs END, 'complete', r.g)
+    RETURNING id INTO m;
+    IF r.how = 'chase' THEN m2 := m; END IF;
+    IF r.g = x THEN mx := m; END IF;
+    IF r.how = 'book' THEN
+      -- A scorebook's innings: the commit's door (db/63) as the owner, its import named.
+      PERFORM _inn_74(m, 0::smallint, r.team, 'Verify 074 Visitors', 20, 0, 0);
+      PERFORM set_config('scrbrd.scorebook_commit', imp::text, true);
+      SELECT coalesce(max(b.seq), 0) + 1 INTO v_seq FROM ball_event b WHERE b.match_id = m;
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                              client_seq, client_ts, kind, payload)
+      VALUES (m, HIL, v_seq, 1, 0, '88888888-0000-0000-0000-000000000006', 'scorebook:' || imp, 'v74:' || m || ':book',
+              v_seq, '2026-10-05 10:00+02', 'innings_summary',
+              jsonb_build_object('card', jsonb_build_object('v', 1, 'innings', 0, 'battingSide', 'home', 'batting', '[]'::jsonb,
+                                   'didNotBat', '[]'::jsonb, 'bowling', '[]'::jsonb, 'fallOfWickets', '[]'::jsonb, 'unreconciled', NULL,
+                                   'extras', jsonb_build_object('byes', NULL, 'legByes', NULL, 'wides', NULL, 'noBalls', NULL, 'penalty', NULL),
+                                   'total', 150, 'wickets', 10, 'overs', '18.4', 'endReason', 'all_out'),
+                                 'typed', '{}'::jsonb, 'source', jsonb_build_object('kind', 'scorebook', 'import', imp)));
+      PERFORM set_config('scrbrd.scorebook_commit', '', true);
+    ELSE
+      PERFORM _inn_74(m, 0::smallint, r.team, 'Verify 074 Visitors', r.overs, r.runs, r.balls);
+    END IF;
+    IF r.how = 'revised' THEN
+      -- The umpires cut the innings from 25 to 20: its allotment is then the
+      -- grain's, and only the revision excludes it.
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                              client_seq, client_ts, kind, payload)
+      VALUES (m, HIL, 1000, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-074', 'v74:' || m || ':rev', 1000,
+              '2026-10-06 10:00+02', 'revision', '{"overs": 20, "reason": "rain"}');
+    END IF;
+    IF r.how = 'terminated' THEN
+      SELECT coalesce(max(b.seq), 0) INTO v_seq FROM ball_event b WHERE b.match_id = m;
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                              client_seq, client_ts, kind, payload)
+      VALUES (m, HIL, v_seq + 1, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-074', 'v74:' || m || ':stop', v_seq + 1,
+              '2026-10-07 10:00+02', 'play_stopped', '{"reason": "rain"}'),
+             (m, HIL, v_seq + 2, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-074', 'v74:' || m || ':seal', v_seq + 2,
+              '2026-10-07 10:00+02', 'innings_end', '{"reason": "abandoned", "confirmed": {"runs": 40, "wickets": 0, "balls": 30}}');
+    END IF;
+    IF r.how = 'chase' THEN
+      PERFORM _inn_74(m, 1::smallint, 'Verify 074 Visitors', r.team, 20, 200, 120, '{"target": 121}');
+    END IF;
+  END LOOP;
+  RETURN jsonb_build_object('f', f, 'p', p, 'x', x, 'm2', m2, 'mx', mx);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/74 (section 53) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -12275,6 +12387,77 @@ $v49$;
     PERFORM _assert((SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded((ids->>'p')::uuid, 0::smallint) f)
                     = (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded((ids->>'w')::uuid, 0::smallint) f),
       'db/73 (careers): the handover''s count moved with a stop');
+  END;
+
+  -- ── 53. Venue par (SCRBRD-130 R3, db/74) ──────────────────────────
+  -- _seed_74(): a Hilton field with a pitch on it, five first innings that
+  -- count and one excluded for each of §6.2's rules; every figure worked by
+  -- hand. The JavaScript half (par at a point, the floor's pin) is
+  -- packages/scoring/test/venue.test.mjs.
+  --
+  -- Each labelled assertion was falsified once — the function replaced in
+  -- the database and this file run — and went red:
+  --   (floor)     venue_par_min_innings() answering 4
+  --   (revised)   the pool not asking for a revision of the overs
+  --   (ended)     the pool taking an innings terminated (abandoned)
+  --   (grain)     the pool not asking the allotment be the grain's overs
+  --   (window)    three seasons back allowed into the window
+  --   (pooled)    ground_root() answering the ground itself (no pooling)
+  --   (guard)     venue_par() not asking facility.read at the ground's school
+  DECLARE
+    ids  jsonb := _seed_74();
+    F    uuid;  P uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    got  text;
+    v    record;
+  BEGIN
+    F := (ids->>'f')::uuid; P := (ids->>'p')::uuid;
+    -- (floor) the constant, as venue.test.mjs pins it
+    PERFORM _assert('venue_par.min_innings=' || venue_par_min_innings() = 'venue_par.min_innings=5',
+      format('db/74 (floor): the floor is %s', venue_par_min_innings()));
+    PERFORM _as(U_SARAH);
+    SELECT * INTO v FROM venue_par(F, 20, 'U15', DATE '2026-10-31');
+    -- (revised, ended, grain, window) exactly the five that count: 100, 120,
+    -- 140 (on the pitch), 160 (2024), 150 (the book); the mean 134, median
+    -- 140, range 100–160, seasons 2024–2026, one from a book
+    SELECT string_agg(i->>'runs', ',' ORDER BY (i->>'date')) INTO got FROM jsonb_array_elements(v.innings) i;
+    PERFORM _assert(got = '160,140,100,120,150',
+      format('db/74 (revised, ended, grain, window): the pool reads %s', got));
+    PERFORM _assert(v.n = 5 AND v.sufficient AND v.par = 134 AND v.median = 140 AND v.low = 100 AND v.high = 160
+                    AND v.first_season = 2024 AND v.last_season = 2026 AND v.from_books = 1 AND v.floor = 5,
+      format('db/74: the figure reads n %s par %s median %s range %s–%s seasons %s–%s books %s',
+             v.n, v.par, v.median, v.low, v.high, v.first_season, v.last_season, v.from_books));
+    -- (pooled) the pitch pools with its field, read from either; the
+    -- breakdown names each ground with its own count and mean
+    SELECT string_agg(b->>'name' || '=' || (b->>'n') || '/' || (b->>'mean'), ' ' ORDER BY b->>'name') INTO got FROM jsonb_array_elements(v.breakdown) b;
+    PERFORM _assert(got = 'Verify 074 Field=4/133 Verify 074 Oval B=1/140' AND v.pooled_ground_id = F,
+      format('db/74 (pooled): the breakdown reads %s', got));
+    PERFORM _assert((SELECT w.par FROM venue_par(P, 20, 'U15', DATE '2026-10-31') w) = 134,
+      'db/74 (pooled): the pitch does not read its field''s par');
+    -- the floor: a year on, the 2024 innings ages out — four, insufficient, no par
+    SELECT * INTO v FROM venue_par(F, 20, 'U15', DATE '2027-10-31');
+    PERFORM _assert(v.n = 4 AND NOT v.sufficient AND v.par IS NULL,
+      format('db/74 (floor): four innings read n %s sufficient %s par %s', v.n, v.sufficient, v.par));
+    -- another band, another ground: their own pools
+    PERFORM _assert((SELECT w.n FROM venue_par(F, 20, 'U14', DATE '2026-10-31') w) = 1
+                    AND (SELECT w.n FROM venue_par((ids->>'x')::uuid, 20, 'U15', DATE '2026-10-31') w) = 1
+                    AND (SELECT w.n FROM venue_par(F, 50, 'U15', DATE '2026-10-31') w) = 1,
+      'db/74 (grain): a band, a ground or an allotment pooled with another');
+    -- (guard) a Westville coach reads no Hilton ground's par …
+    PERFORM _as(U_WESC);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM venue_par(F, 20, 'U15', DATE '2026-10-31')),
+      'db/74 (guard): a reader with no facility.read at the ground''s school read its par');
+    -- … but reads the par of the ground his own fixture is played on, at its
+    -- overs and band, as its board does
+    SELECT * INTO v FROM venue_par_for_match((ids->>'m2')::uuid, DATE '2026-10-31');
+    PERFORM _assert(v.par = 134 AND v.overs = 20 AND v.age_band = 'U15',
+      format('db/74: the visitors'' coach reads his fixture''s ground at par %s, %s overs, %s', v.par, v.overs, v.age_band));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM venue_par_for_match((ids->>'mx')::uuid, DATE '2026-10-31')),
+      'db/74 (guard): a reader of no fixture read its ground''s par');
+    -- the pool and the figure are the owner's: the application cannot call them
+    PERFORM _assert(NOT has_function_privilege('venue_par_pool(uuid,integer,date)', 'EXECUTE')
+                    AND NOT has_function_privilege('venue_par_compute(uuid,integer,text,date)', 'EXECUTE'),
+      'db/74: the application may read the pool past the readers'' guards');
   END;
   PERFORM set_config('app.user_id', '', true);
 
