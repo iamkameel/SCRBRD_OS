@@ -3,6 +3,7 @@ import { NAV_META, groupNav } from "../design/roles.js";
 import { useNav, useSports, sportBadge } from "../lib/features.js";
 import { D, T, inkOn, themed } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
+import { invitationsWords } from "../lib/league.js";
 
 // ══════════════════════════════════════════════════════
 //  MAIN APP
@@ -76,7 +77,7 @@ function SportSwitcher() {
   );
 }
 
-function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
+function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onSignOut }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const { sports } = useSports();
   // Same list the sidebar draws, from the same place. Two components computing
@@ -86,10 +87,18 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
   const primary = nav.slice(0, 4);
   const rest = nav.slice(4);
   const moreActive = rest.includes(active);
+  // League invitations waiting: on Competitions itself where it is one of the
+  // four on the bar, otherwise on "More" and on its place in the drawer. The
+  // count is the badge's text; the button is named with the words.
+  const inviteBadge = (/** @type {number} */ n) => (
+    <span data-testid="mnav-invites-badge" aria-hidden="true" style={{position:"absolute",top:"2px",right:"calc(50% - 20px)",background:T.semantic.warning,color:inkOn(T.semantic.warning),borderRadius:D.pill,padding:"0 5px",fontFamily:D.mono,fontSize:"12px",fontWeight:700,minWidth:"16px"}}>{n}</span>
+  );
   const Item = ({ k, isMore }) => {
     const m = isMore ? { icon:"menu", label:"More" } : NAV_META[k];
     const isActive = isMore ? moreActive : active===k;
     const isBell = k==="notifications";
+    const waiting = isMore ? (rest.includes("competitions") ? invites : 0) : (k==="competitions" ? invites : 0);
+    const name = waiting>0 ? `${m.label}, ${invitationsWords(waiting)}` : isBell&&notifCount>0 ? `${m.label}, ${notifCount} unread` : m.label;
     return (
       <button onClick={()=>{ isMore ? setMoreOpen(true) : (setMoreOpen(false), onNav(k)); }} className="pressBtn"
         data-testid={isMore?"mnav-more":`mnav-${k}`}
@@ -98,13 +107,14 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
         // The 8px uppercase label under each icon is decorative reinforcement.
         // Naming the button outright means it is announced once, properly,
         // rather than as an emoji followed by a shouted abbreviation.
-        aria-label={isBell&&notifCount>0?`${m.label}, ${notifCount} unread`:m.label}
+        aria-label={name}
         style={{
         flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",padding:"7px 2px",
         background:isActive?D.indigo+"16":"transparent",border:"none",borderRadius:D.md,cursor:"pointer",position:"relative",minHeight:"52px",justifyContent:"center"}}>
         <span aria-hidden="true" style={{fontSize:"17px",lineHeight:1,color:isActive?D.textPrimary:D.textSecondary}}><Icon name={m.icon}/></span>
         <span aria-hidden="true" style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
         {isBell&&notifCount>0&&<span style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:inkOn(D.rose),borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"13px"}}>{notifCount}</span>}
+        {waiting>0&&inviteBadge(waiting)}
       </button>
     );
   };
@@ -135,14 +145,17 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:"8px"}}>
                   {g.items.map(k=>{
                     const m = NAV_META[k]; const isActive = active===k;
+                    const waiting = k==="competitions" ? invites : 0;
                     return (
                       <button key={k} onClick={()=>{setMoreOpen(false);onNav(k);}} className="pressBtn"
-                        data-testid={`drawer-${k}`} aria-current={isActive?"page":undefined} style={{
-                        display:"flex",flexDirection:"column",alignItems:"center",gap:"6px",padding:"13px 6px",
+                        data-testid={`drawer-${k}`} aria-current={isActive?"page":undefined}
+                        aria-label={waiting>0?`${m.label}, ${invitationsWords(waiting)}`:undefined} style={{
+                        position:"relative",display:"flex",flexDirection:"column",alignItems:"center",gap:"6px",padding:"13px 6px",
                         background:isActive?D.indigo+"16":D.surf2,border:`1px solid ${isActive?D.indigo+"33":D.border}`,
                         borderRadius:D.lg,cursor:"pointer"}}>
                         <span style={{fontSize:"18px",color:isActive?D.textPrimary:D.textSecondary}}><Icon name={m.icon}/></span>
                         <span style={{fontFamily:D.body,fontSize:"10px",fontWeight:isActive?600:400,color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
+                        {waiting>0&&inviteBadge(waiting)}
                       </button>
                     );
                   })}
