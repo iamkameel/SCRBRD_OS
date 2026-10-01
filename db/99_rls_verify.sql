@@ -10299,11 +10299,13 @@ BEGIN
   --   (decider)     match_result_decider() asking fixture.update for a league match
   --   (support)     match_result_decide() and the re-fix without the support check
   --   (audit)       scoring_amendment_decide() without its audit line
-  --   (refix)       match_conditions_refix_table() writing set_id from the version named
-  --   (scope)       competition_standing as its owner
+  --   (refix)       match_conditions_refix_table() not keeping the part it replaced
+  --   (scope)       competition_standing as its owner; competition_standing_rows()
+  --                 not asking whether its reader may see the competition
   --   (away)        match_result() run as its caller (the visitors' coach reads
   --                 no innings of the home school's log: no result)
-  --   (public)      public_competition_standing() not asking for a publication
+  --   (public)      public_competition_standing() and the rows beneath it not
+  --                 asking for a publication (two layers: either alone holds)
   DECLARE
     ids    jsonb := _seed_69();
     C      uuid;  C2 uuid;  V1 uuid;  V2 uuid;
@@ -10376,6 +10378,10 @@ BEGIN
     -- (scope) a reader who holds no competition.read reads none of it
     PERFORM _as(U_SCOUT);
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM competition_standing s WHERE s.competition_id IN (C, C2))
+                    -- the rows function is the application's to call: it asks
+                    -- for the competition itself, not only through the view
+                    AND NOT EXISTS (SELECT 1 FROM competition_standing_rows(C))
+                    AND NOT EXISTS (SELECT 1 FROM competition_standing_rows(C2))
                     AND NOT EXISTS (SELECT 1 FROM competition_results(C))
                     AND NOT EXISTS (SELECT 1 FROM competition_points_adjustment a WHERE a.competition_id = C),
       'db/69 (scope): a reader with no competition.read reads the league''s table or results');

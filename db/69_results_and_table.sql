@@ -804,9 +804,13 @@ RETURNS TABLE (match_id uuid, starts_at timestamptz, status text,
          r.outcome, r.margin_kind, r.margin, r.decided_by, r.winner_side, r.winner_key,
          r.play_outcome, r.play_winner_side, r.play_winner_key, r.play_margin_kind, r.play_margin,
          r.decision, r.decision_applied,
-         -- Played (§6.2): complete or abandoned and not in progress; or won
-         -- by a decision (a walkover needs no status changed to count).
+         -- Played (§6.2): complete or abandoned and not in progress; or
+         -- decided on the field — a win, a tie, a draw — whatever the
+         -- fixture's status says, because nothing on the pad marks a match
+         -- complete and a league's table must not wait on a click nobody is
+         -- offered (§10); or won by a decision (a walkover changes no status).
          (m.status IN ('complete', 'abandoned') AND r.outcome <> 'in_progress')
+           OR r.play_outcome IN ('home_win', 'away_win', 'tie', 'draw')
            OR (r.decided_by = 'decision' AND r.outcome IN ('home_win', 'away_win')),
          -- Net run rate (§6.4): play's result only — a win or a tie.
          r.play_outcome IN ('home_win', 'away_win', 'tie'),

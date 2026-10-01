@@ -151,7 +151,8 @@ try {
   ok("M3: 3 each: every event taken", s3.accepted === 20, JSON.stringify(s3));
   const docs = await q(`select match_id, doc->'table'->>'points.win' w from match_conditions where match_id = any($1)`, [[M1.id, M3.id]]);
   ok("the first event fixed each match's document, under version 1 (a win is 4)", docs.length === 2 && docs.every((d) => d.w === "4"), JSON.stringify(docs));
-  await q(`update match set status = 'complete' where id = any($1)`, [[M1.id, M3.id]]);
+  // M1 is marked complete; M3 is left as the pad leaves a match, live.
+  await q(`update match set status = 'complete' where id = $1`, [M1.id]);
   const r1 = await api(`/api/matches/${M1.id}/result`, { token: sarah });
   ok("GET /result: Hilton won by 6 runs, in words, the side by its label", r1.status === 200
      && r1.body?.result?.outcome === "home_win" && r1.body.result.text === "Hilton College 1XI won by 6 runs"
@@ -172,6 +173,9 @@ try {
   const h1 = b0.body?.rows?.[0];
   ok("net run rate in balls: Hilton 9 off 12 for, 3 off 12 against — +3.000",
      h1?.runsFor === 9 && h1?.ballsFor === 12 && h1?.runsAgainst === 3 && h1?.ballsAgainst === 12 && h1?.nrr === 3, JSON.stringify(h1));
+  const m3 = b0.body?.results?.find((r) => r.matchId === M3.id);
+  ok("M3, decided on the field and left live (nothing on the pad marks a match complete), counts",
+     m3?.status === "live" && m3?.counted === true && m3?.text === "Match tied", JSON.stringify(m3));
   ok("the results, in words", b0.body?.results?.length === 3 && b0.body.results.find((r) => r.matchId === M1.id)?.text === "Hilton College 1XI won by 6 runs"
      && b0.body.results.find((r) => r.matchId === M2.id)?.text === null, JSON.stringify(b0.body?.results?.map((r) => r.text)));
   ok("...ranked by the order in force: points, wins, net run rate", JSON.stringify(b0.body?.order) === '["points","wins","nrr"]', JSON.stringify(b0.body?.order));
