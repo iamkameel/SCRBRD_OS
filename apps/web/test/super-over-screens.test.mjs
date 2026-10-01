@@ -90,6 +90,14 @@ group("A. The pad's offer: the button, or the words why not");
   const abandoned = offerOf([FIRST14, LEVEL14, so(1, A, [6, 1, 1, 0, 0, 0]), so(1, H, [1, 2], { target: 9, seal: "abandoned" })], CUP);
   ok("a super over sealed abandoned (the light went): no button and no words — the result line and the organiser say it", abandoned.offer.state === "none", abandoned.offer);
 
+  const two = offerOf([FIRST14, LEVEL14], { ...CUP, "format.innings_per_side": 2 }, { ...CUP, "format.innings_per_side": 2 });
+  ok("two innings a side: the first two are not a pair, so there is nothing to offer and nothing to say (D11)", two.offer.state === "none" && two.offer.words === null, two.offer);
+  // The offer defers to the Laws: folded under a document that says two innings a side, the Laws refuse a super over at innings 2.
+  const deferred = pad(buildLog([FIRST14, LEVEL14], { conditions: { ...CUP, "format.innings_per_side": 2 } }), { ...CUP, "format.innings_per_side": 2 });
+  const asked = superOverOffer({ innings: deferred.innings, events: deferred.events, conditions: CUP });
+  ok("the offer defers to the Laws' answer when the conditions it was given say yes: refused, with the engine's words",
+     asked.state === "refused" && asked.refusal === "super_over_number" && asked.words === `Match tied. ${REFUSAL_TEXT.super_over_number[0].toUpperCase()}${REFUSAL_TEXT.super_over_number.slice(1)}.`, asked);
+
   // The Laws' answer, not ours: the probe is the engine's.
   const probe = (p, n, at) => lawsRefusal({ innings: p.innings, events: p.events },
     { ...superOverFirstStart({ ...p.offer, state: "available", n }), innings: at });
@@ -116,8 +124,9 @@ group("B. The pair's flow: the two innings_starts");
   ok("the chase: the other side, the same marker, one more than the first (6+1+1 = 8, so 9)", chase.battingTeam === H && chase.superOver === 1 && chase.target === firstInn.runs + 1 && chase.overs === 1, chase);
   ok("...squads swapped", chase.squad[0].id.startsWith(H) && chase.bowlingSquad[0].id.startsWith(A));
   ok("the Laws take the chase's start", lawsRefusal({ innings: played.innings, events: played.events }, { ...chase, innings: 3 }) === null);
+  const both = pad(buildLog([FIRST14, LEVEL14, so(1, A, [6, 1, "W", 1, 0, 0]), so(1, H, [4, 4, 1], { target: 9 })], { conditions: CUP }), CUP).innings;
   ok("...pairPlace: first, second, and none for a match innings",
-     pairPlace(played.innings, 2) === "first" && pairPlace([...played.innings, chase && { ...firstInn, superOver: 1 }], 3) === "second" && pairPlace(played.innings, 0) === null);
+     pairPlace(both, 2) === "first" && pairPlace(both, 3) === "second" && pairPlace(both, 0) === null && pairPlace(both, 1) === null);
 }
 
 group("C. The board's block: target, balls left, wickets left of two");
@@ -142,6 +151,8 @@ group("C. The board's block: target, balls left, wickets left of two");
   ok("the board draws it: the sub line carries the block, whatever overs the caller holds", board.sub === "Super over 1 · Need 4 off 4 · 2 wickets left of 2", board.sub);
   const board1 = boardFromInnings(a, { target: null, overs: 20 });
   ok("...a first innings: balls left and wickets left of two", board1.sub === "Super over 1 · 3 balls left · 1 wicket left of 2", board1.sub);
+  const near = superOverBlock({ ...a, balls: 5 });
+  ok("one ball left is said in the singular", near.ballsLeft === "1 ball left", near);
   const plain = boardFromInnings(mid.innings[0], { target: null, overs: 1 });
   ok("a match innings' board is as it was: no super over words", !/uper over|of 2/.test(plain.sub ?? ""), plain.sub);
 }
@@ -153,6 +164,8 @@ group("D. The eligibility words: a batter out, and the bowler, of an earlier sup
   const noteA = eligibilityNotes(p.innings, 4, { battingKey: A, bowlingKey: H });
   ok("the batter who was out is named, in words and not a refusal", noteA.batters.size === 1 && [...noteA.batters.values()][0] === "Out in super over 1: may not bat in this one", [...noteA.batters.entries()]);
   ok("...the bowler of the earlier one is named", [...noteA.bowlers.values()].every((w) => w === "Bowled super over 1: may not bowl in this one") && noteA.bowlers.size >= 1, [...noteA.bowlers.entries()]);
+  const named = p.innings.map((x, i) => (i === 2 ? { ...x, bowlers: [...x.bowlers, { id: "listed only", name: "Listed Only", balls: 0 }] } : x));
+  ok("a bowler listed but who bowled no ball is not named", !eligibilityNotes(named, 4, { battingKey: A, bowlingKey: H }).bowlers.has("listed only"));
   const none = eligibilityNotes(p.innings, 2, { battingKey: A, bowlingKey: H });
   ok("before any super over: nothing to say", none.batters.size === 0 && none.bowlers.size === 0);
   const other = eligibilityNotes(p.innings, 4, { battingKey: "Nobody", bowlingKey: "Nobody" });
@@ -172,10 +185,15 @@ group("E. The commentary's words");
   const overEnds = said.filter((i) => i.kind === "over_end" && innings[i.innings].superOver != null);
   ok("the over's end reads the super over", overEnds.length >= 1 && overEnds.every((i) => /^End of the super over:/.test(i.text)), overEnds.map((i) => i.text));
   ok("...a match innings' over ends are untouched", said.filter((i) => i.kind === "over_end" && innings[i.innings].superOver == null).every((i) => /^End of over 1:/.test(i.text)));
-  ok("no career-milestone line in a super over", !said.some((i) => i.kind === "milestone" && innings[i.innings].superOver != null));
   const named = superOverCommentary(items, innings, { teamName: (_k, name) => `${name} High` });
   ok("the side is named as the screen names it", named.filter((i) => i.kind === "innings_start")[2].text.startsWith("Super over 1. Kearsney High to bat first"));
-  ok("the engine's items are not mutated", items.find((i) => i.innings === 2 && i.kind === "innings_start").text.startsWith("Kearsney") === true || !/Super over/.test(items.find((i) => i.innings === 2 && i.kind === "innings_start").text));
+  const before = JSON.stringify(items);
+  superOverCommentary(items, innings, { teamName: (_k, name) => name });
+  ok("the engine's items are not mutated", JSON.stringify(items) === before);
+  const crafted = [{ innings: 0, over: 0, ball: 1, kind: "milestone", text: "Fifty for X.", key: "m0" }, { innings: 2, over: 0, ball: 2, kind: "milestone", text: "A hat-trick for Y.", key: "m2" },
+                   { innings: 2, over: 0, ball: 2, kind: "ball", text: "One run.", key: "b2" }];
+  const kept = superOverCommentary(crafted, innings);
+  ok("a career-milestone line is dropped in a super over and kept in the match's own innings", JSON.stringify(kept.map((i) => i.key)) === JSON.stringify(["m0", "b2"]), kept.map((i) => i.key));
 }
 
 group("F. The pairs, the chase, the live line");

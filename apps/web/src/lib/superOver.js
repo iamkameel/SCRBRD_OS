@@ -155,6 +155,9 @@ export function superOverOffer({ innings, events = [], conditions = null }) {
   if (pairState(first, last).state !== PAIR_STATE.TIED) return none;
 
   const c = conditions ?? {};
+  // Two innings a side: the match's first two innings are not a pair, and a
+  // tie there is a tie (D11) — nothing to offer, nothing to say.
+  if (c["format.innings_per_side"] === 2) return none;
   const n = (superOversOf(innings).at(-1)?.n ?? 0) + 1;
   const at = lastAt + 1;
   if (!(c["result.tie_break"] === "super_over" && c["format.kind"] === "limited")) {
