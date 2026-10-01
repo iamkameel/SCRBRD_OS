@@ -2,7 +2,7 @@ import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { pctDays, severityColor, today, withheld } from "../lib/format.js";
 import { can, holdsCapability } from "../rbac/index.js";
-import { Avatar, Badge, Btn, Card, Input, KPICard, Modal, ProgressBar, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Card, KPICard, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
@@ -12,7 +12,6 @@ function InjuryView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const PLAYERS = useRows("players", role);
-  const [addModal, setAddModal] = useState(false);
   const [sel, setSel] = useState(null);
   const canEdit = can(role,"injuries","update").allowed;
   const injV = useRows("injuries", role);
@@ -23,8 +22,12 @@ function InjuryView({ role }) {
 
   return (
     <div className="os-page">
-      <SectionHeader title="Injury Management" sub="Tracker, return-to-play & rehab status" color={D.rose}
-        actions={canEdit&&<Btn size="sm" onClick={()=>setAddModal(true)}>+ Log Injury</Btn>}/>
+      <SectionHeader title="Injury Management" sub="Tracker, return-to-play & rehab status" color={D.rose}/>
+
+      {/* There is no route to log or update an injury yet, so no control for it
+          is drawn: Update Progress, Clear for Training, Refer to Physio and the
+          Log Injury form were buttons that did nothing. Reading stays as it is. */}
+      {canEdit&&<p data-testid="injury-writes-coming" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:"0 0 16px"}}>Recording and updating injuries is coming.</p>}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"24px"}}>
         <KPICard label="Active Injuries" value={injV.filter(i=>i.restricted).length}  icon="bandage" color={D.rose}/>
@@ -115,36 +118,11 @@ function InjuryView({ role }) {
                 <p style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>{sel.notes}</p>
               </div>
 
-              {canEdit&&(
-                <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-                  <Btn size="sm" variant="success" onClick={()=>{}}>Update Progress</Btn>
-                  <Btn size="sm" variant="ghost" onClick={()=>{}}>Clear for Training</Btn>
-                  <Btn size="sm" variant="ghost" onClick={()=>{}}>Refer to Physio</Btn>
-                </div>
-              )}
             </Card>
           );
         })()}
       </div>
 
-      {addModal&&(
-        <Modal title="Log Injury" onClose={()=>setAddModal(false)}>
-          <Select label="Player" value="" onChange={()=>{}} options={PLAYERS.map(p=>({value:p.id,label:`${p.name} (${p.team})`}))}/>
-          <Input label="Injury Type" value="" onChange={()=>{}} placeholder="e.g. Hamstring Strain"/>
-          <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
-            <Select label="Severity" value="mild" onChange={()=>{}} options={["mild","moderate","severe"]}/>
-            <Select label="Phase" value="Initial" onChange={()=>{}} options={["Immobilisation","Reconditioning","Strengthening","Return to bowl","Return to bat","Cleared"]}/>
-            <Input label="Date Injured" value="" onChange={()=>{}} type="date"/>
-            <Input label="Est. Return to Play" value="" onChange={()=>{}} type="date"/>
-            <Input label="Physio" value="" onChange={()=>{}} placeholder="Dr Smith"/>
-          </div>
-          <Input label="Clinical Notes" value="" onChange={()=>{}} placeholder="Describe the injury and treatment plan..."/>
-          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
-            <Btn variant="ghost" onClick={()=>setAddModal(false)}>Cancel</Btn>
-            <Btn style={{background:D.rose+"18",border:`1px solid ${D.rose}33`,color:D.roseText}} onClick={()=>setAddModal(false)}>Log Injury</Btn>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }
