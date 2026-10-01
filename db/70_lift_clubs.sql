@@ -75,7 +75,9 @@
 --   the school, never by anybody holding a platform-wide assignment (the
 --   owner's key, a platform administrator), and never by a pupil — plus
 --   db/50's pad guard. The functions apply the same (lift_uncut()), so a
---   pupil is refused on every one of them.
+--   pupil is refused on every one of them — but the seat doors, which let
+--   the boy himself through at eighteen and at school (lift_uncut_for(),
+--   decision 5).
 --   A seat row carries player_id and nothing else about the boy: names reach
 --   a driver only through lift_passengers(), and numbers only through
 --   lift_contacts() inside the day window, both written to access_log.
@@ -232,10 +234,12 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 
 /**
  * The cuts, for the functions as the tables' policies apply them: no support
- * session at the school, no platform-wide assignment, no pupil (Kameel,
- * 2026-10-01: pupils take no part in lift clubs at all), and no pad
- * credential. The owner's key holds all four capabilities and acts on none.
- * Every door below asks this, so a pupil is refused on every one of them.
+ * session at the school, no platform-wide assignment, and no pad credential.
+ * The owner's key holds all four capabilities and acts on none.
+ * lift_uncut() adds "no pupil" (Kameel, 2026-10-01: pupils take no part) and
+ * every door asks it, but the doors on one boy's own seat, which ask
+ * lift_uncut_for() and let the boy himself through at eighteen and at school
+ * (decision 5).
  */
 CREATE OR REPLACE FUNCTION lift_cuts_ok(p_school uuid) RETURNS boolean AS $$
   SELECT app_user_id() IS NOT NULL
@@ -768,10 +772,12 @@ CREATE OR REPLACE FUNCTION lift_leg_words(p_leg text) RETURNS text AS $$
 $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 
 /**
- * One notice to one adult about one lift. Never to a pupil: a lift notice is
- * an adult's (rule 4, SG-9) — the boy reads his own lift on his Home. Gated on
- * transport.lift.arrange at the side, with the boy as the person anchor when
- * it is about him, so only an adult who could read his seat reads it.
+ * One notice to one person about one lift. Never to a pupil (rule 4, SG-9)
+ * but the boy himself, eighteen and at school, about his own seat (decision
+ * 5): to him as the system's notice behind transport.read. To an adult,
+ * gated on transport.lift.arrange at the side, with the boy as the person
+ * anchor when it is about him, so only an adult who could read his seat
+ * reads it.
  */
 CREATE OR REPLACE FUNCTION lift_notify(p_offer uuid, p_to uuid, p_about uuid, p_title text, p_body text)
 RETURNS void AS $$
@@ -937,7 +943,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- ── 8 · Who may drive (rule 2, D8, D4) ─────────────────────────────
 /**
  * Why this person may not drive at this school today, as one word; NULL when
- * she may. In order: the two keys; a pupil takes no part (no live self link,
+ * she may. In order: the two keys; a pupil never drives (no live self link,
  * no pupil's account, at any age); a live guardian link to a child at the
  * school, its processing consent granted; a live, unexpired declaration;
  * and, when the school's policy
@@ -1758,7 +1764,9 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
  *   to a guardian   whose boy's seat on it is confirmed: the driver's name,
  *                   the number she named on her declaration, the car and
  *                   its registration.
- * Never to a pupil (rule 4). Outside the window, or for anybody else: NULL,
+ *   to the boy      himself, eighteen and at school, whose own seat on it
+ *                   is confirmed: the same as a guardian (decision 5).
+ * Never to any other pupil (rule 4). Outside the window, or for anybody else: NULL,
  * and nothing logged. Every answer is on access_log as
  * ('lift_contacts', [offer], '{phone,emergency}').
  */

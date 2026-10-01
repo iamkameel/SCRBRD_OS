@@ -363,8 +363,10 @@ refuses to exist when `NODE_ENV=production`.
 parents offer seats in their own cars to their own son's fixtures, other
 parents ask for a seat for theirs, and a seat is confirmed only while the
 boy's guardian and the driver have both said yes to the lift as it now
-stands. It needs no secret. The day's marks (left, boy in, handed over,
-received) are phase 2 and are **not** in this file.
+stands. A pupil takes no part, except that a pupil of eighteen still at
+school may ask for, withdraw and read his own seat. It needs no secret. The
+day's marks (left, boy in, handed over, received) are phase 2 and are
+**not** in this file.
 
 **Do not grant it to a school yet.** The module `lift_club` arrives **off**
 for every school, and the design puts it live only after phase 2: an
