@@ -2219,10 +2219,16 @@ CREATE OR REPLACE FUNCTION _v70_grant(p_school uuid, p_on boolean) RETURNS void 
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- db/70's link triggers are deferred, as db/62's are; fire them here.
+-- Each by name, and only those that exist, so a falsification that drops one
+-- reads as the assertion it breaks rather than as an error here.
 CREATE OR REPLACE FUNCTION _v70_fire() RETURNS void AS $$
+DECLARE t text;
 BEGIN
-  SET CONSTRAINTS lift_link_changed, lift_guardian_changed, lift_team_changed IMMEDIATE;
-  SET CONSTRAINTS lift_link_changed, lift_guardian_changed, lift_team_changed DEFERRED;
+  FOR t IN SELECT tgname FROM pg_trigger
+            WHERE tgname IN ('lift_link_changed', 'lift_guardian_changed', 'lift_team_changed') AND tgconstraint <> 0 LOOP
+    EXECUTE format('SET CONSTRAINTS %I IMMEDIATE', t);
+    EXECUTE format('SET CONSTRAINTS %I DEFERRED', t);
+  END LOOP;
 END $$ LANGUAGE plpgsql;
 
 -- An offer and a seat as they are, past RLS.
@@ -2281,6 +2287,22 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v70_fixture(p uuid, p_by interval, p_status text DEFAULT NULL) RETURNS void AS $$
   UPDATE match SET starts_at = starts_at + p_by, status = coalesce(p_status, status) WHERE id = p;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An older brother at school, linked as his younger brother's guardian (p_on),
+-- or that assignment ended (not p_on).
+CREATE OR REPLACE FUNCTION _v70_brother(p_person uuid, p_player uuid, p_on boolean) RETURNS void AS $$
+DECLARE v_a uuid;
+BEGIN
+  IF p_on THEN
+    INSERT INTO role_assignment (person_id, role, school_id)
+    VALUES (p_person, 'guardian', (SELECT school_id FROM player WHERE id = p_player)) RETURNING id INTO v_a;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, valid_from)
+    VALUES (v_a, p_player, 'sibling', 'verified', p_person, now(), 'granted', 'popia-2026-01', now(), current_date - 1);
+  ELSE
+    UPDATE role_assignment SET active = false, revoked_at = now()
+     WHERE person_id = p_person AND role = 'guardian' AND active;
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/70 (section 48) ──────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -10930,9 +10952,48 @@ $v49$;
   -- lift row or notice; the policy withdrawn. _seed_70() builds its own world.
   -- tools/smoke-lifts.mjs walks the same through the API.
   --
-  -- Each labelled assertion was falsified once — the guard broken in db/70,
-  -- the database rebuilt and this file run — and went red (the list is in
-  -- the commit that added this section and in the design's "as built").
+  -- Each labelled assertion was falsified once — the guard broken (as the
+  -- owner, inside this file's own transaction, before the section ran) — and
+  -- went red, and was green again restored. 55 breaks:
+  --   (keys)      lift_module_live() without the policy; lift_policy_sign()
+  --               without the platform's grant; with fixture.read for the
+  --               policy capability (the office signed)
+  --   (declare)   the roadworthy check dropped; the contact not required to be
+  --               a child of hers; the registration not normalised
+  --   (pupil)     lift_driver_declare() and lift_driver_standing() each
+  --               without the pupil refusal
+  --   (offer)     the out leg's meeting time unchecked; seats past the
+  --               declaration; lift_offer_one_live dropped
+  --   (zero)      lift_seat_not_platform dropped (the owner's key read six
+  --               rows: (rls)); lift_uncut() without the platform clause (the
+  --               owner signed: (keys)); the declaration's pad guard dropped;
+  --               lift_offer_read widened to any guardian at the school
+  --   (cut)       lift_offer_not_pupil dropped (Ed, linked to his brother,
+  --               read three rows)
+  --   (request)   seventeen as eighteen (Dan asked: (zero)); a guardian of an
+  --               adult as of a minor ((eighteen)); the driver's own son; the
+  --               side check
+  --   (dup)       the pre-check (the index alone answers with no other offer)
+  --   (names)     a requester let in; the log dropped; the coach on the way home
+  --   (full), (one), (accept)  the seat count; the lone passenger; the driver test
+  --   (summary)   oversee swapped for fixture.read (the coach read the counts)
+  --   (numbers)   the window; confirmed swapped for any guardian at the school;
+  --               the log dropped
+  --   (move)      the version not bumped; the status without driver_version;
+  --               reaffirm asking no family; a request, a reconfirm and a stale
+  --               reaffirm each let through while waiting on the driver
+  --   (edit)      the edit not carrying the driver's yes
+  --   (withdraw)  a guardian of an adult refused her "no"; a stranger let in
+  --   (link)      lift_links_settle() without its seats, without its offers;
+  --               lift_team_changed dropped; lift_link_changed dropped
+  --   (clear)     the clearance requirement skipped
+  --   (void)      the abandoned branch; the driver not told
+  --   (side)      the side test widened to any child at the school
+  --   (policy)    the withdrawal not cancelling offers
+  --   (privacy)   a driver_phone column; the driver's name in a notice body
+  --   (write)     INSERT granted, and an INSERT policy, each alone held (two
+  --               layers, as db/57); both together went red
+  --   (coexist)   db/65's availability_ask_again dropped
   DECLARE
     ids      jsonb := _seed_70();
     M        uuid; MV uuid; MT uuid;
@@ -10969,6 +11030,9 @@ $v49$;
     U_OFFICE := (ids->>'u_office')::uuid; U_TCO := (ids->>'u_tco')::uuid; U_HEAD := (ids->>'u_head')::uuid;
     C_JONO := (ids->>'c_jono')::uuid; C_BEN := (ids->>'c_ben')::uuid;
     v_start := (ids->>'m_start')::timestamptz;
+    -- The seed's own deferred events fire now, as its commit would: so each
+    -- link step below is judged by the trigger it is about, and no other.
+    PERFORM _v70_fire();
 
     -- (keys) the platform's grant AND the principal's signed policy (D17)
     PERFORM _as(U_HEAD);
@@ -11097,6 +11161,13 @@ $v49$;
     SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_BACK, P_ED);
     PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself',
       format('db/70 (eighteen): Ed''s mother asked for him at eighteen: %s %s', v_ok, v_reason));
+    PERFORM _as(U_FMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_FINN);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_on_side',
+      format('db/70 (request): Finn, of the U14A, was asked onto the U15A''s lift: %s %s', v_ok, v_reason));
+    PERFORM _as(U_CMUM);
+    SELECT ok INTO v_ok FROM lift_seat_accept(ARRAY[S_CARL]);
+    PERFORM _assert(NOT v_ok AND (_v70_seat(S_CARL)).state = 'requested', 'db/70 (accept): a family accepted its own request');
     PERFORM _as(U_DMUM);
     SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_JONO);
     PERFORM _assert(NOT v_ok AND v_reason = 'driver_own_child', format('db/70 (request): the driver seated her own son: %s', v_reason));
@@ -11119,7 +11190,7 @@ $v49$;
     SELECT count(*) INTO k FROM lift_seat WHERE offer_id = O_OUT;
     PERFORM _assert(k = 3 AND NOT EXISTS (SELECT 1 FROM player WHERE id IN (P_BEN, P_CARL, P_ED)),
       format('db/70 (rls): the driver reads %s seat(s), or a passenger''s name by SQL', k));
-    FOREACH who IN ARRAY ARRAY[U_ED, U_COACH70, U_OFFICE] LOOP
+    FOREACH who IN ARRAY ARRAY[U_ED, U_COACH70, U_OFFICE, U_OWNER, U_PLAT] LOOP
       PERFORM _as(who);
       SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat) + (SELECT count(*) FROM lift_seat_live) INTO k;
       PERFORM _assert(k = 0, format('db/70 (rls): %s reads %s offer or seat row(s)', who, k));
@@ -11127,6 +11198,17 @@ $v49$;
     PERFORM _as(U_OFFICE);
     SELECT count(*) INTO k FROM lift_driver_declaration;
     PERFORM _assert(k = 2, format('db/70 (rls): the office reads %s declaration(s), expected the two', k));
+    -- (cut) a pupil who is also a verified guardian — Ed, eighteen, linked to
+    -- his younger brother Dan — still reads no lift row and never drives (D8,
+    -- rule 4): the RESTRICTIVE pupil cut, not the absence of a link, is what
+    -- keeps him out
+    PERFORM _v70_brother(U_ED, P_DAN, true);
+    PERFORM _as(U_ED);
+    SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat) + (SELECT count(*) FROM lift_driver_declaration) INTO k;
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'back', 1, 'ground', v_start + interval '6 hours', NULL);
+    PERFORM _assert(k = 0 AND NOT v_ok AND v_reason = 'pupil_never_drives',
+      format('db/70 (cut): Ed, a pupil linked as his brother''s guardian, reads %s lift row(s) and offers: %s %s', k, v_ok, v_reason));
+    PERFORM _v70_brother(U_ED, P_DAN, false);
 
     -- (names) to the driver, logged; nothing to a family not yet confirmed
     PERFORM _as(U_DMUM);
@@ -11135,8 +11217,9 @@ $v49$;
                     AND _v70_logged('lift_passengers', O_OUT, U_DMUM) = 1,
       format('db/70 (names): the driver reads %s, logged %s time(s)', got, _v70_logged('lift_passengers', O_OUT, U_DMUM)));
     PERFORM _as(U_BMUM);
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM lift_passengers(O_OUT)) AND _v70_logged('lift_passengers', O_OUT, U_BMUM) = 0,
-      'db/70 (names): a family whose seat is only asked for read the other passengers, or was logged reading nothing');
+    SELECT count(*) INTO k FROM lift_passengers(O_OUT);
+    PERFORM _assert(k = 0 AND _v70_logged('lift_passengers', O_OUT, U_BMUM) = 0,
+      format('db/70 (names): a family whose seat is only asked for read %s other passenger(s), or was let in', k));
 
     -- (full) the seats are the seats
     PERFORM _as(U_DMUM);
@@ -11149,9 +11232,6 @@ $v49$;
     SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_ED]);
     PERFORM _assert(NOT v_ok AND v_reason = 'seats_full' AND _v70_status(S_CARL) = 'confirmed' AND _v70_status(S_ED) = 'requested',
       format('db/70 (full): a third into two seats: %s %s', v_ok, v_reason));
-    PERFORM _as(U_CMUM);
-    SELECT ok INTO v_ok FROM lift_seat_accept(ARRAY[S_CARL]);
-    PERFORM _assert(NOT v_ok, 'db/70 (accept): a family accepted its own request');
 
     -- (one) the school's policy refuses a lone passenger (D5): judged on the
     -- count an acceptance leaves, so two may be taken together
@@ -11195,8 +11275,9 @@ $v49$;
 
     -- (numbers) on the day only, to the driver and a confirmed family; logged
     PERFORM _as(U_DMUM);
-    PERFORM _assert(lift_contacts(O_OUT) IS NULL AND _v70_logged('lift_contacts', O_OUT) = 0,
-      'db/70 (numbers): the driver read numbers ten days before the lift');
+    j := lift_contacts(O_OUT);
+    PERFORM _assert(j IS NULL AND _v70_logged('lift_contacts', O_OUT) = 0,
+      format('db/70 (numbers): the driver read numbers ten days before the lift: %s', j));
     SELECT offer_id INTO O_T FROM lift_offer_create(MT, 'out', 2, 'school',
                                                     ((current_date + 1)::timestamp + time '08:00') AT TIME ZONE 'Africa/Johannesburg', NULL);
     PERFORM _as(U_BMUM);
@@ -11373,7 +11454,6 @@ $v49$;
                        AND tgname IN ('availability_ask_again', 'lift_fixture_moved')) = 2,
       'db/70 (coexist): db/65''s and db/70''s triggers on match are not both in place');
   END;
-
   PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
