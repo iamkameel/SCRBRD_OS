@@ -529,6 +529,49 @@ export const TABLES = {
     masked: {},
   },
 
+  // ── SCRBRD-114 phase 3a (db/69): match results and the table ─────────
+  // Added after db/09 shipped: emitted into db/69 (TABLES_ADDED_SINCE_09).
+  // Neither is written through these policies: db/69 REVOKEs INSERT, UPDATE
+  // and DELETE from the application, and the only doors are its definer
+  // functions (match_result_decide(), competition_points_adjust() and their
+  // withdrawals), which ask the capability named here at the organiser.
+  match_result_decision: {
+    // A decision taken off the field (design §2.5): a side conceded, a side
+    // did not arrive, the organiser awarded a match play could not settle.
+    // Read as the fixture is read — both schools, at either scope — and by
+    // whoever can reach the match's competition, as its result is (A1:
+    // results are public once published; the reason is not, and no public
+    // read selects it). Written under competition.manage at the organiser,
+    // or for a friendly the home school's fixture.update (db/69 decides).
+    read:  "fixture.read",
+    write: "competition.manage",
+    anchors: {
+      school:  "(match_school(match_result_decision.match_id))",
+      team:    "(match_team(match_result_decision.match_id))",
+      fixture: "match_id",
+    },
+    readAnchors: [
+      { school:  "(SELECT m.away_school_id FROM match m WHERE m.id = match_result_decision.match_id)",
+        team:    "(SELECT m.away_team_code FROM match m WHERE m.id = match_result_decision.match_id)",
+        fixture: "match_id" },
+    ],
+    visibleWhen: "competition_visible(match_competition_of(match_result_decision.match_id))",
+    masked: {},
+  },
+  competition_points_adjustment: {
+    // Points entered, never computed (parent design §5.4): an over-rate
+    // penalty the umpires calculated, a conduct deduction, a correction.
+    // Read by whoever can reach the competition, as its ladder is; written
+    // under competition.conditions.manage at the organiser (§7.1), through
+    // db/69's functions alone. Never deleted: withdrawn with a note.
+    read:  "competition.read",
+    write: "competition.conditions.manage",
+    anchors: { school: "(competition_organiser(competition_points_adjustment.competition_id))" },
+    visibleWhen: "competition_visible(competition_points_adjustment.competition_id)",
+    masked: {},
+  },
+  // ── end SCRBRD-114 phase 3a ──────────────────────────────────────────
+
   equipment: {
     // The school's kit: what it has, how many, in what state. Read by
     // whoever reads a side, kept by whoever manages one.

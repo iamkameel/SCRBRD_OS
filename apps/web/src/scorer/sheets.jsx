@@ -690,7 +690,10 @@ function CustomBatEntry({onSend}){
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="Player name…" aria-label="Player name"
           style={{flex:1,minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
             color:D.textPrimary,fontSize:"14px",fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
-          onKeyDown={e=>{if(e.key==="Enter"&&name.trim())onSend(name.trim());}}/>
+          onKeyDown={e=>{if(e.key==="Enter"&&name.trim()){
+            // The sheet closes on this keydown and focus goes back to the key that opened it
+            // (the Wicket key, after a wicket): the rest of this key press would press it.
+            e.preventDefault();onSend(name.trim());}}}/>
         <Btn variant="live" disabled={!name.trim()} onClick={()=>name.trim()&&onSend(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px",minHeight:"44px"}}>Go</Btn>
       </div>
     </div>

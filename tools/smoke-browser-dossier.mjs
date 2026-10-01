@@ -160,7 +160,8 @@ async function signIn(page, email) {
   await page.locator('input[type="email"]').first().fill(email);
   await click(page, /^Sign In$/, 5000);
   await page.waitForTimeout(2200);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
+  return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 
 async function nav(page, label) {
@@ -468,9 +469,17 @@ try {
   {
     const parent = await open();
     ok("the guardian signs in", await signIn(parent.page, "parent@example.invalid"));
-    ok("Match Centre opens for them", await nav(parent.page, /Match Centre/));
+    // Step 4: a parent's Matches are her own app's (P2), her child's side's
+    // fixtures, each opening its fixture screen (P3).
+    ok("her Matches open", await nav(parent.page, /^Matches$/));
+    const rows = await parent.page.locator('[data-testid^="fixture-row-"]').count();
+    ok("...with her child's fixtures on them", rows > 0, `${rows} rows`);
     const any = await parent.page.locator('[data-testid^="dossier-open-"]').count();
     ok("no fixture offers them a dossier button", any === 0, `${any} buttons`);
+    await parent.page.locator('[data-testid^="fixture-row-"]').first().click({ timeout: 4000 }).catch(() => {});
+    await parent.page.waitForTimeout(1200);
+    ok("...nor does a fixture's own screen", await parent.page.locator('[data-testid="fixture-detail"]').count() === 1
+       && await parent.page.locator('[data-testid^="dossier-open-"]').count() === 0);
     await parent.ctx.close();
   }
 

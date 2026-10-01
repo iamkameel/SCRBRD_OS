@@ -10,6 +10,8 @@ import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
 import { AvailabilityPanel } from "./availability.jsx";
+// SCRBRD-124 (db/70): lifts on the side's fixture.
+import { LiftsPanel } from "./lifts.jsx";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { ageAtCutoff, compareTeams, isEligible, parseTeam, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 
@@ -118,6 +120,10 @@ function SquadView({ role }) {
           asked again because the fixture moved (SCRBRD-122). A guardian's
           rows are his own child's, by the read's own policy. */}
       <AvailabilityPanel role={role} team={team}/>
+      {/* Lifts to the same fixture (SCRBRD-124): the offers on the side, a
+          seat asked for, the driver's own card, the office's counts. Nothing
+          where the module is not live. */}
+      <LiftsPanel role={role} team={team}/>
       <div style={{display:"grid",gridTemplateColumns:selected?"1fr 320px":"1fr",gap:"16px"}}>
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>

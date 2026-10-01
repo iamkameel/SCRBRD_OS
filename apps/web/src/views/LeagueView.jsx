@@ -471,6 +471,8 @@ function LiveLadder({ rows, comp }) {
       <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
         <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{comp.name}</div>
         <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{rows.length} teams · {comp.format} · {comp.season ?? ""}{comp.divisions?` · ${comp.divisions} division${comp.divisions>1?"s":""}`:""}</div>
+        {/* SCRBRD-114 phase 3a: computed from results under confirmed points, or the schools' own figures. */}
+        {rows[0]?.basis&&<div data-testid="ladder-basis" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginTop:"4px"}}>{rows[0].basis==="computed"?"Worked out from the results, under the league's confirmed points.":"As the schools entered it: the league's points are not confirmed yet."}</div>}
       </div>
       {groups.map(g=>(
         <div key={g.key} data-testid={`ladder-${g.key}`}>
@@ -478,16 +480,16 @@ function LiveLadder({ rows, comp }) {
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead><tr>
-                {["#","Team","P","W","L","D","NR","Pts","NRR"].map(h=>(
+                {["#","Team","P","W","L","T","D","NR","Pts","NRR"].map(h=>(
                   <th key={h} style={{padding:"8px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Team"?"left":"center"}}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
                 {g.rows.map((t,i)=>(
                   <tr key={t.id} style={{borderTop:`1px solid ${D.border}`}}>
-                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:i===0?D.amber:D.textMuted}}>{i+1}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:(t.rank??i+1)===1?D.amber:D.textMuted}}>{t.rank??i+1}</td>
                     <td style={{padding:"9px 12px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{t.name}</td>
-                    {[t.played,t.wins,t.losses,t.draws,t.noResult].map((v,j)=>(
+                    {[t.played,t.wins,t.losses,t.ties??0,t.draws,t.noResult].map((v,j)=>(
                       <td key={j} style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{v}</td>
                     ))}
                     <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{t.points}</td>

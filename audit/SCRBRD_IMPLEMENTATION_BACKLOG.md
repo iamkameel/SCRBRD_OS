@@ -3928,14 +3928,19 @@ SCRBRD-114 phase 3 (db/69–71).
 
 ### SCRBRD-131 — Small things found while building (2026-10-01)
 
-- **The pad: Enter in the batting-order sheet presses the Wicket key again.** Typing the next batter's name and
+- **DONE (2026-10-01).** **The pad: Enter in the batting-order sheet presses the Wicket key again.** Typing the next batter's name and
   pressing Enter closes the sheet, focus returns to the Wicket key, and the same keypress lands on it. Found by the
   SCRBRD-126 agent; its walk steps use the Go button. Fix: don't let the closing keypress reach the key that focus
   returns to (or return focus elsewhere after a wicket). Sonnet, with a pad walk step that presses Enter.
-- **The notification bell's count is 9px**, under the 12px text floor. The a11y ratchet passes it today. Lift it to
+  Done: `CustomBatEntry` calls preventDefault on the Enter that sends the batter in; `smoke-browser-pad-laws` presses Enter
+  after a wicket and asserts no second wicket sheet and no second wicket (it goes red with the preventDefault removed).
+- **DONE (2026-10-01).** **The notification bell's count is 9px**, under the 12px text floor. The a11y ratchet passes it today. Lift it to
   12px with the new Competitions badge (same mechanism, `notifCount`).
-- **`resumeStep` and a league with only a withdrawn set** reads "step 4 of 4, Review and publish", where there is
+  Done: 12px in `Sidebar.jsx` and `MobileNav.jsx` (the latter also gets `mnav-alerts-badge`); `smoke-a11y` asserts it, and its
+  shell ceilings drop by one.
+- **DONE (2026-10-01).** **`resumeStep` and a league with only a withdrawn set** reads "step 4 of 4, Review and publish", where there is
   nothing to publish. It should open at step 3 (state the conditions again). `lib/league.js`, one line and a test.
+  Done: no published set (or a draft) opens at step 3; tests in `apps/web/test/league.test.mjs`.
 - **Invitations write no notification** (`competition_entrant_invite`): the organiser cannot write a notice into
   another school, so it needs a definer function (a migration, Opus), as db/65's availability notices are written.
   With it: the "checked" ticks on a league's defaults, kept in the browser today (`saveTicks`), stored on the set.
@@ -4173,6 +4178,20 @@ recorded for clubs (C7 "the same rules as schools") and not built:
 **Not built, by decision:** 1.2.5 (players of colour per team) and 3.5.4 (foreign players counted as white) are
 transformation quotas, and the transformation-quota rule above applies to them.
 **Phase 3 designed (Fable, 2026-09-30):** `docs/design/SCRBRD-114_phase3_results_super_over.md`; D1–D17 decided as recommended (Kameel). db/69 results and table, db/70 the super over, db/71 knockout progression.
+**Phase 3a built (Opus, 2026-10-01): results and the table, `db/69_results_and_table.sql`, db/99 §47.** The fold's
+`describeResult()` fixed (a chase sealed `abandoned` is no result; two innings a side has a draw and an innings win)
+and exported, with `text` and `decidedBy`; `result.mjs` holds the outcomes, the decision layer and the words.
+`match_result()` is the same rule in SQL, held to the fold over 27 logs (`result-logs.mjs`) and every generated
+innings in `smoke-fold-figures`. `match_result_decision` (conceded, walkover, awarded; one standing; withdrawn with a
+note), `competition_points_adjustment` (the over-rate kind enforced), `competition_standing` (computed on every read
+from each match's own frozen table figures; the typed ladder where points are unconfirmed; net run rate in balls;
+shared ranks), `match_conditions_refix_table()`, the amendment's audit line with `result_hash` before and after,
+`public_match_result()` and `public_competition_standing()`. The League screen's ladder reads the view; Competitions
+draws the table with the decision, adjustment and table-figures sheets; the Match Centre and the public page say the
+server's result. Walks: `smoke-results` (API), `smoke-browser-results`. Departures and why: design §10.2. **For
+Kameel (§10.4):** nothing marks a pad-scored match complete (the table counts a match decided on the field anyway; a
+no result needs the status); One-Day Declaration documents frozen between db/61 and db/69 read as two innings a side
+(the query is in §10.4). **Next:** 3b the super over, 3c progression, each the next free migration number (db/70 is now SCRBRD-124's lift clubs, so the design's db/70 and db/71 move up).
 **KZN rules decided (Kameel, 2026-09-30):** KZN schools play the MCC Laws with no further bye-laws, so phase 5's "KZN figures" are the platform defaults. Pilot league: points win 4 / tie 2 / no result 2 / loss 0, no bonus; a knockout tie goes to a super over (a league tie stands); bowling limits are the platform's defaults, which are the ECB fast-bowling directives mapped onto school bands (corrected 2026-09-30: not CSA figures; db/32 says so), cited as the pilot league's decision until a CSA or KZN schedule is published. Entered on the conditions screen, not seeded. Recorded in the design's §8.3a. Phase 3 (the points table and a playable super over) is unblocked.
 **Tie-breaks (Kameel, 2026-09-30, from the `sundayMatches` review):** `result.tie_break` (`none` | `super_over`) is reserved in the catalogue but the fold cannot play a super over. Phase 3 (match results) must: play a super over as its own innings pair (one over, two wickets, the Laws and the fold as for any innings), and support whatever tie rule the KZN bye-laws name instead (e.g. fewer wickets lost, or shared points). The fixture planner's knockouts (SCRBRD-123) need a winner, so this comes before knockout rounds are published.
 
@@ -4365,6 +4384,23 @@ rules the design must hold, as agreed with Kameel:
 7. **The school decides.** A module off by default; the principal switches it on with the school's own lift policy.
 Fable designs (on its list since 2026-09-30); Opus builds the schema, policy and RLS; Sonnet the screens.
 **Designed 2026-09-30:** `docs/design/SCRBRD-124_lift_clubs.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D18 as recommended** (D9 three years; D11's words as drafted). Four phases; the module goes live for a school after phase 2.
+<!-- ── SCRBRD-124 phase 1, as built ── -->
+**Phase 1 built 2026-10-01 (Opus): `db/70_lift_clubs.sql`, the arrangement.** Five tables (not the bar), hand-written,
+SELECT only for the application, the RESTRICTIVE cuts and the pad guard; `transport.lift.arrange/.receive/.oversee/.policy`;
+the `lift_club` module **off for every school** (live only after phase 2, and then only with the principal's signed policy);
+§1.4's functions down to `lift_contacts()` plus `lift_offers_for()`, `my_lift_standing()`, `lift_summary()`; the fixture
+trigger beside db/65's; the link triggers; `services/api/write/lift-api.mjs`; the screens (policy on Settings → School,
+standing and declaration on Settings → Me, the Lifts block, offer form, driver's card and office counts on the Squad
+screen until STEP 4's P3 and Family exist). Proof: db/99 §48 (82 guards broken and seen red; five single layers shown
+to hold alone), `smoke-lifts` (73), `smoke-browser-lifts` (51). **Decided by Kameel 2026-10-01 and built in:** the
+driver's number stays a pointer to her own child's emergency contact; lifts need processing consent *granted*; a lone
+passenger left by a withdrawal falls back to not confirmed under a policy refusing one-to-one; pupils take no part —
+**except** (follow-up, same day) a pupil of eighteen still at school, who may ask for, withdraw and read his own seat
+only (`lift_seat.consent_by = 'self'`; his guardian may also ask while db/62's link is live; a simple "Ask for a seat"
+on Squad). One-to-one counts children only (under eighteen or unknown birth date): an adult alone is seated, and keeps
+no child company — Opus's reading, for Kameel to confirm. Departures are in the design's "As built". **Next: phase 2, the day** (marks, receive,
+resolve, `my_lifts()`, the watch, the purge), then phase 3.
+<!-- ── end SCRBRD-124 phase 1 ── -->
 
 ### SCRBRD-125 — Roles scoped to a competition
 **Priority:** P3 (before a second league) · **Domain:** RBAC · **Type:** design + build (found 2026-09-30, SCRBRD-120 §9.4)
@@ -4475,6 +4511,19 @@ for a school with no DSO. The card says "not yet appointed" instead.
 **Go-live:** the pilot's principal appoints a DSO. The union tenant for KwaZulu-Natal exists (one per province is now a
 unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information officer has §9.7's note. Paste
 `apply-57`, then `apply-58`, then `verify`, then add both to `db/SHIPPED.sha256`.
+
+### Redesign step 4 — the parent's app and the pupil's app (phase A built)
+**Priority:** P1 · **Domain:** Families / Privacy · **Type:** design (Fable, `docs/design/STEP4_parent_pupil.md`,
+decided by Kameel 2026-09-27), built by Opus
+**Phase A built 2026-10-01 (Opus), no migration.** The persona menus (G12: Home · Matches · Notices · Family for a
+guardian and nothing else; Home · Matches · Passport · Me for a player with his own record), P1–P6 with P7a, P7b and
+the passport and scouting consents reachable from P7d, S1 (no check-in), S2, S3 with the Wheel tab, S4 (no "My body"),
+the Match Centre's family mode (G13), the `my_children` read (G1, G11) and the tenant words (G15). Proof: db/99 §49;
+`smoke-browser-read`'s guardian group extended; new `smoke-browser-pupil` (K3 flipped: no team-mate's injury, fitness
+or return date reaches the pupil); `apps/web/test/family.test.mjs`. As built, departures and the falsifications:
+the design's §10. **Open:** phases B (consents read and public-name route, G2/G3), C (milestone card, innings story),
+D (photo consent record), E (SCRBRD-110's cards), F (invoices, if Q1 says yes); Q10's narrow team-sheet read; the
+scorecard's row expansion for another child (§10 departure 11).
 
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at

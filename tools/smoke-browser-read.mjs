@@ -104,14 +104,43 @@ const click = async (page, re, ms = 4000) => {
   return true;
 };
 
-/** Sign in through the UI, as the pilot login offers each seeded account. */
+/**
+ * Sign in through the UI, as the pilot login offers each seeded account.
+ * Landed means a shell: the staff one (its Match Centre or Dashboard), or a
+ * parent's or a pupil's app (step 4), whose header is the persona bar.
+ */
 async function signIn(page, who) {
   await click(page, /Get Started|Log In/, 5000);
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
   await page.waitForTimeout(2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return /Match Centre|Dashboard/i.test(await text(page))
+      || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
+}
+
+/**
+ * The §3.2 and §3.5 floors over what is on screen: text set under 12px, and a
+ * control under 44px tall. The main area and the persona header, at
+ * whatever viewport the page has.
+ */
+async function floors(page) {
+  return page.evaluate(() => {
+    const small = [], tiny = [];
+    for (const root of document.querySelectorAll('[data-testid="os-main"], [data-testid="persona-bar"], [data-testid="mnav"]')) {
+      for (const n of [root, ...root.querySelectorAll("*")]) {
+        if (n.closest(".sr-only")) continue;
+        const cs = getComputedStyle(n);
+        const own = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+        if (own && parseFloat(cs.fontSize) < 12) small.push(`${n.tagName} ${cs.fontSize} "${n.textContent.trim().slice(0, 30)}"`);
+        if (/^(BUTTON|SELECT|TEXTAREA)$/.test(n.tagName) || (n.tagName === "INPUT" && !["checkbox", "radio"].includes(n.type))) {
+          const r = n.getBoundingClientRect();
+          if (r.height && r.height < 44) tiny.push(`${n.tagName} ${Math.round(r.height)}px "${(n.textContent || n.id).trim().slice(0, 30)}"`);
+        }
+      }
+    }
+    return { small, tiny };
+  });
 }
 
 async function nav(page, label) {
@@ -163,21 +192,81 @@ try {
   // ── The guardian ────────────────────────────────────────────────
   // The sharpest case in the seed: one assignment, one child. Anything wider
   // than a single name on this screen is a leak.
-  group("A guardian sees one child");
+  //
+  // Redesign step 4, phase A: the parent's app is Home · Matches · Notices ·
+  // Family (docs/design/STEP4_parent_pupil.md §2.1, §8). Each guard below was
+  // broken once and seen red (the design's "as built" lists them).
+  group("A guardian sees one child (step 4: the family app)");
+  const OTHERS = /Bekker|Naidoo|Cele|Whitfield|Mkhize|Dlamini|Botha|Khumalo|Mahlangu|Sithole/;
+  const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";
   const parent = await open();
+  const ptid = (id) => parent.page.locator(`[data-testid="${id}"]`);
   ok("the guardian signs in", await signIn(parent.page, /Parent|Guardian/));
-  ok("the squad screen opens for them", await nav(parent.page, /Squad/));
-  const pSquad = await text(parent.page);
-  if (DEBUG) console.log("[debug] guardian squad:\n" + pSquad.slice(0, 700));
-  ok("their own child is on it", /Pillay/.test(pSquad));
-  ok("...and no other child is", !/Bekker|Naidoo|Cele|Whitfield/.test(pSquad));
+  ok("...and lands on the family's Home, not the staff dashboard", await ptid("os-main").getAttribute("data-page") === "children");
+  const rail = await parent.page.$$eval('[data-testid^="nav-"]:not([data-testid^="nav-group-"])', (els) => els.map((e) => e.getAttribute("data-testid")));
+  ok("the rail is Home · Matches · Notices · Family, and the header Settings and a concern",
+     rail.join() === "nav-children,nav-fixtures,nav-notices,nav-family,nav-settings,nav-safeguarding", rail.join());
+  const home = await ptid("family-home-body").innerText({ timeout: 6000 }).catch(() => "");
+  if (DEBUG) console.log("[debug] guardian home:\n" + home.slice(0, 700));
+  ok("Home is about her child", /R Pillay/.test(home) && await ptid("family-home-body").getAttribute("data-child") === PILLAY);
+  ok("...and names no other child", !OTHERS.test(home), home.match(OTHERS)?.[0]);
+  ok("...with one child, no switcher", await ptid("child-switcher").count() === 0);
+  ok("the next fixture comes first", await ptid("next-fixture").count() === 1
+     && (await parent.page.locator('[data-testid="family-home-body"] section').first().getAttribute("data-testid")) === "next-fixture");
+  ok("the Family screen opens", await nav(parent.page, /^Family$/));
+  const fam = await ptid("family-file").innerText({ timeout: 6000 }).catch(() => "");
+  ok("...with her child's card and no other child's", /R Pillay/.test(fam) && !OTHERS.test(fam)
+     && await parent.page.locator('[data-testid^="family-child-"]').count() === 1);
+  // G11: the link's own end date, from her own link — open while he is at
+  // school (db/62), so the line says so rather than naming a birthday.
+  ok("...saying how long her link lasts, from the link itself",
+     /stays open while R Pillay is at the school/.test(await ptid(`family-link-end-${PILLAY}`).innerText().catch(() => "")));
+  ok("her Matches show her child's side", await nav(parent.page, /^Matches$/)
+     && /Matches · R Pillay/.test(await ptid("matches-title").innerText().catch(() => "")));
 
-  // The passport: the family names a school from Settings, and takes it
-  // back. The gate itself is walked at the API (tools/smoke-passport.mjs);
-  // this is the screen doing exactly what the family asked, nothing more.
-  ok("the settings screen opens for them", await nav(parent.page, /Settings/));
-  ok("...with a passport tab", await click(parent.page, /Passport/));
-  await parent.page.waitForTimeout(800);
+  // ── P7a: who to ring, changed and removed ──
+  ok("Family opens again", await nav(parent.page, /^Family$/));
+  await ptid(`family-open-ring-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+  await parent.page.waitForTimeout(1200);
+  const ring = await ptid("who-to-ring").innerText({ timeout: 4000 }).catch(() => "");
+  ok("who to ring lists his two numbers in order", /1\. D Pillay/.test(ring) && /2\. S Pillay/.test(ring));
+  ok("...and says, from the policy, who else can see them", /Who else can see these: .*Coach/.test(ring));
+  const owner = new pg.Pool({ connectionString: ownerUrl() });
+  const second = (await owner.query(
+    `select id from emergency_contact where player_id = $1 and priority = 2 and active`, [PILLAY])).rows[0]?.id;
+  await ptid(`contact-edit-${second}`).click({ timeout: 4000 }).catch(() => {});
+  await ptid("contact-phone").fill("+27 31 000 0099").catch(() => {});
+  await ptid("contact-save").click({ timeout: 4000 }).catch(() => {});
+  await parent.page.waitForTimeout(1500);
+  const changed = (await owner.query(
+    `select id, phone, active from emergency_contact where player_id = $1 and priority = 2 order by created_at`, [PILLAY])).rows;
+  ok("she changes the second number: a new row, the old one kept and retired",
+     changed.length === 2 && changed[0].id === second && changed[0].active === false
+     && changed[1].phone === "+27 31 000 0099" && changed[1].active === true, JSON.stringify(changed));
+  ok("...and the screen shows the new number", /\+27 31 000 0099/.test(await ptid("who-to-ring").innerText().catch(() => "")));
+  await ptid(`contact-retire-${changed[1]?.id}`).click({ timeout: 4000 }).catch(() => {});
+  await parent.page.waitForTimeout(1500);
+  ok("she removes it: retired in the database, gone from the screen",
+     (await owner.query(`select active from emergency_contact where id = $1`, [changed[1]?.id])).rows[0]?.active === false
+     && !/\+27 31 000 0099/.test(await ptid("who-to-ring").innerText().catch(() => "")));
+
+  // ── P7b: his record, the ID number behind a tap ──
+  await ptid(`family-open-record-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+  await parent.page.waitForTimeout(1500);
+  const rec = await ptid("their-record").innerText({ timeout: 4000 }).catch(() => "");
+  ok("his record: his name and date of birth, on her own screen", /R Pillay/.test(rec) && /1 Dec 2009/.test(rec), rec.slice(0, 200));
+  ok("...the ID number is not on the screen until she asks", await ptid("record-id").count() === 0 && await ptid("record-id-show").count() === 1);
+  await ptid("record-id-show").click({ timeout: 4000 }).catch(() => {});
+  ok("...and is, once she taps Show", await ptid("record-id").count() === 1);
+
+  // The passport: the family names a school from the child's Consents (P7d,
+  // the Settings screen's own PassportTab, as it is), and takes it back. The
+  // gate itself is walked at the API (tools/smoke-passport.mjs); this is the
+  // screen doing exactly what the family asked, nothing more.
+  await ptid(`family-open-consents-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+  await parent.page.waitForTimeout(1500);
+  ok("Consents opens the passport and scouting consents as they are",
+     await ptid("passport-tab").count() === 1 && await ptid("scouting-consent-section").count() === 1);
   ok("no school is named yet", /No school has been named/.test(await text(parent.page)));
   await parent.page.selectOption('select[aria-label="Which player"]', { index: 1 });
   const wesOption = await parent.page.$eval('select[aria-label="Which school"]', (el) => [...el.options].find((o) => /Westville/.test(o.text))?.value);
@@ -190,7 +279,122 @@ try {
   ok("they take it back", await click(parent.page, /^Withdraw$/));
   await parent.page.waitForTimeout(1500);
   ok("...and the row says withdrawn", /withdrawn/i.test(await text(parent.page)));
+
+  // ── P3: a declaration, from the fixture, lands where the coach reads it ──
+  // A fixture with an explicit date, far enough ahead to be "coming up"
+  // whenever this runs, and after the Laws' 4th-Edition change.
+  const DECL = (await owner.query(
+    `insert into match (school_id, team_code, opponent, starts_at, format, overs, status, ground_id)
+     values ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify Step4 XI', '2027-03-06 09:00+02', 'T20', 20, 'scheduled',
+             'ffffffff-0000-0000-0000-000000000001') returning id`)).rows[0].id;
+  await owner.query(
+    `insert into trip (match_id, school_id, depart_at, pickup)
+     values ($1, '11111111-1111-1111-1111-111111111111', '2027-03-06 07:15+02', 'the Chapel car park')`, [DECL]).catch(() => {});
+  ok("Matches opens", await nav(parent.page, /^Matches$/));
+  await ptid(`fixture-row-${DECL}`).click({ timeout: 6000 }).catch(() => {});
+  await parent.page.waitForTimeout(1500);
+  ok("the fixture opens: where, when and the bus", /Verify Step4 XI/.test(await ptid("fixture-title").innerText().catch(() => ""))
+     && /Leaves 07:15 · the Chapel car park/.test(await ptid("bus-card").innerText().catch(() => "")));
+  ok("...his answer is not given yet", /No answer yet/.test(await ptid(`availability-state-${PILLAY}`).innerText().catch(() => "")));
+  await ptid(`availability-set-${PILLAY}-unavailable`).click({ timeout: 4000 }).catch(() => {});
+  await parent.page.selectOption(`[data-testid="availability-reason-${PILLAY}"]`, "travel").catch(() => {});
+  await ptid(`availability-note-${PILLAY}`).fill("Away for a family wedding").catch(() => {});
+  await ptid(`availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+  await parent.page.waitForTimeout(1500);
+  ok("she tells the coach: unavailable, said by her", /Unavailable/.test(await ptid(`availability-state-${PILLAY}`).innerText().catch(() => ""))
+     && /said by you/.test(await ptid(`availability-by-${PILLAY}`).innerText().catch(() => "")));
+  const said = (await owner.query(
+    `select a.status, a.reason_kind, a.note, u.email from match_availability a join app_user u on u.id = a.declared_by
+      where a.match_id = $1 and a.player_id = $2`, [DECL, PILLAY])).rows[0];
+  ok("...the row the coach reads, declared by the parent, with her reason and note",
+     said?.status === "unavailable" && said?.reason_kind === "travel" && said?.note === "Away for a family wedding"
+     && said?.email === "parent@example.invalid", JSON.stringify(said));
+
+  // ── P5: notices, newest first, saying which child each is about ──
+  ok("Notices opens", await nav(parent.page, /^Notices$/));
+  const notes = await ptid("family-notices").innerText({ timeout: 4000 }).catch(() => "");
+  ok("...with her notices, the one about her child saying so", /Injury recorded/i.test(notes) && /About R Pillay/i.test(notes));
+  ok("...and none naming another family's child", !OTHERS.test(notes), notes.match(OTHERS)?.[0]);
   ok("the guardian's session raised no scoping refusals", parent.refusals.length === 0);
+  ok("...and no page errors", parent.errors.length === 0, parent.errors.join(" | "));
+
+  // The coach's Squad: the same row, "said by" the parent, by name.
+  {
+    const c = await open();
+    ok("the coach signs in", await signIn(c.page, /coach@example\.invalid/));
+    ok("...his squad screen opens", await nav(c.page, /Squad/));
+    await c.page.locator('[data-testid="availability-panel"]').first().waitFor({ timeout: 6000 }).catch(() => {});
+    await c.page.selectOption('select[aria-label="Which fixture"]', DECL).catch(() => {});
+    await c.page.waitForTimeout(1500);
+    const row = await c.page.locator(`[data-testid="availability-row-${PILLAY}"]`).first().innerText({ timeout: 4000 }).catch(() => "");
+    ok("...and shows her declaration as the parent's: unavailable, said by D Pillay", /Unavailable/i.test(row) && /Said by D Pillay/i.test(row), row);
+    await c.ctx.close();
+  }
+
+  // ── The bar on a phone: four items, no drawer ──
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    const errs = []; page.on("pageerror", (e) => errs.push(e.message));
+    await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+    await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await signIn(page, /parent@example\.invalid/);
+    const bar = await page.$$eval('[data-testid^="mnav-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
+    ok("on a phone the bar is the four, in order", bar.join() === "mnav-children,mnav-fixtures,mnav-notices,mnav-family", bar.join());
+    ok("...with no More and no drawer", await page.locator('[data-testid="mnav-more"]').count() === 0
+       && await page.locator('[data-testid="drawer"]').count() === 0);
+    ok("...and the way out in the header", await page.locator('[data-testid="persona-signout"]').count() === 1);
+    const f = await floors(page);
+    ok(`Home at phone width: nothing read under 12px (${f.small.length})`, f.small.length === 0, f.small.slice(0, 4).join(" · "));
+    ok(`...nothing tapped under 44px (${f.tiny.length})`, f.tiny.length === 0, f.tiny.slice(0, 4).join(" · "));
+    await page.locator('[data-testid="persona-signout"]').click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    ok("...which signs her out", await page.locator('[data-testid="os-main"]').count() === 0);
+    ok("no page errors on the phone", errs.length === 0, errs.join(" | "));
+    await ctx.close();
+  }
+
+  // ── §3.1: the two-school guardian — one child per Home ──
+  // Sarah is a director of sport and a coach at Hilton, and the guardian of
+  // K Dlamini (Hilton U16B) and D Mkhize (Westville): db/98's two-school
+  // guardian. She keeps the staff menu and gains the family's Home and Family.
+  {
+    const s = await open();
+    const st = (id) => s.page.locator(`[data-testid="${id}"]`);
+    ok("the two-school guardian signs in", await signIn(s.page, /sarah@example\.invalid/));
+    ok("...her staff menu carries the family's Home and Family",
+       await st("nav-children").count() === 1 && await st("nav-family").count() === 1 && await st("nav-dashboard").count() === 1);
+    await st("nav-children").click({ timeout: 6000 }).catch(() => {});
+    await s.page.waitForTimeout(2000);
+    ok("the child switcher shows her two children",
+       await s.page.locator('[data-testid^="child-chip-"]').count() === 2
+       && /K Dlamini/.test(await st("child-switcher").innerText().catch(() => "")) && /D Mkhize/.test(await st("child-switcher").innerText().catch(() => "")));
+    const KD = "aaaaaaaa-0000-0000-0000-000000000006", DM = "bbbbbbbb-0000-0000-0000-000000000001";
+    const SCHOOL_OTHERS = /Pillay|Bekker|Naidoo|Cele|Whitfield|Botha|Khumalo|Mahlangu|Sithole/;
+    for (const [id, name, other, school] of [[KD, "K Dlamini", "D Mkhize", "Hilton College"], [DM, "D Mkhize", "K Dlamini", "Westville Boys' High"]]) {
+      await st(`child-chip-${id}`).click({ timeout: 4000 }).catch(() => {});
+      await s.page.waitForTimeout(1800);
+      const body = await st("family-home-body").innerText({ timeout: 4000 }).catch(() => "");
+      ok(`${name}'s Home names ${name}, at ${school}`, await st("family-home-body").getAttribute("data-child") === id
+         && body.includes(name) && body.includes(school), body.slice(0, 160));
+      ok(`...and not ${other}, nor any child her staff role reads`, !body.includes(other) && !SCHOOL_OTHERS.test(body),
+         body.match(SCHOOL_OTHERS)?.[0] ?? other);
+      ok(`...the chip for ${name} is the lit one`, await st(`child-chip-${id}`).getAttribute("aria-pressed") === "true");
+    }
+    ok("D Mkhize has no fixture: the card says so, plainly", /No fixture is arranged for D Mkhize yet/.test(await st("next-fixture").innerText().catch(() => "")));
+    // Remembered on the device, as the theme is (§3.1) — the choice, never
+    // the child's record: an id in this browser's own storage.
+    ok("the chosen child is remembered on this device",
+       await s.page.evaluate(() => { try { return localStorage.getItem("scrbrd.family.child"); } catch { return null; } }) === DM);
+    await st("nav-family").click({ timeout: 6000 }).catch(() => {});
+    await s.page.waitForTimeout(1800);
+    ok("her Family is both children, a card each, and nobody else",
+       await s.page.locator('[data-testid^="family-child-"]').count() === 2 && !SCHOOL_OTHERS.test(await st("family-file").innerText().catch(() => "")));
+    ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
+    await s.ctx.close();
+  }
+  await owner.end().catch(() => {});
 
   // ── A notification is not permission ────────────────────────────
   group("The notification feed is not a way around RLS");
@@ -313,9 +517,12 @@ try {
     // offline demo list carries a "Player" too, and clicking that one would
     // sign in against mock data and prove nothing.
     if (await signIn(boy.page, /pillay@example\.invalid/)) {
-      await nav(boy.page, /Skills/);
+      // His ratings are on his Me screen now (step 4 S4), the pupil's own
+      // file; the coach's Skills screen is not his.
+      ok("his own file opens", await nav(boy.page, /^Me$/));
       const t = await text(boy.page);
-      ok("no development notes reach the pupil's screen", !/DEVELOPMENT NOTES/.test(t));
+      ok("...with his ratings' place on it", /MY RATINGS/i.test(t));
+      ok("no development notes reach the pupil's screen", !/DEVELOPMENT NOTES/i.test(t));
       ok("...and none of their text either", !/Kearsney|Captaincy sits well/.test(t));
     } else {
       ok("a pupil can sign in", false);
@@ -924,13 +1131,12 @@ try {
       { who: /watcher@example\.invalid/, role: "spectator",
         sees:   ["day-next", "day-week", "day-alerts"],
         cannot: ["day-out"] },
-      // A pupil: fixture.read and team.read, and since db/55 (K3, CSA p52)
-      // no medical.status.read — who is out on his side is his team-mates'
-      // health, not his to read. His own injury is on Injuries, through
-      // selfaccess.
-      { who: /pillay@example\.invalid/, role: "player",
-        sees:   ["day-next", "day-week", "day-alerts"],
-        cannot: ["day-out"] },
+      // A pupil (step 4): not the day sheet at all — his own Home, with his
+      // next fixture first. Since db/55 (K3, CSA p52) no medical.status.read,
+      // so who is out on his side is not on it; his own injury is on Me.
+      { who: /pillay@example\.invalid/, role: "player", sheet: "pupil-home",
+        sees:   ["next-fixture"],
+        cannot: ["day-out", "day-sheet"] },
       // The bursar holds none of fixture.read, team.read or
       // medical.status.read — invoices and sponsorship are not on this
       // sheet. Alerts alone, and it should be the only section.
@@ -944,7 +1150,7 @@ try {
       await signIn(c.page, e.who);
       const toDash = c.page.locator('[data-testid="nav-dashboard"]');
       if (await toDash.count()) { await toDash.click({ timeout: 6000 }); await c.page.waitForTimeout(1200); }
-      ok(`${e.role}: the day sheet is drawn at all`, await c.page.locator('[data-testid="day-sheet"]').count() === 1);
+      ok(`${e.role}: ${e.sheet ? "his own Home" : "the day sheet"} is drawn at all`, await c.page.locator(`[data-testid="${e.sheet ?? "day-sheet"}"]`).count() === 1);
       for (const testid of e.sees) {
         ok(`${e.role}: ...and shows ${testid}, which they hold`, await c.page.locator(`[data-testid="${testid}"]`).count() === 1);
       }
@@ -1925,21 +2131,25 @@ try {
         [m, PILLAY, HIL, parentId, WHITFIELD, coachId]);
       await owner.query(`update match set starts_at = starts_at - interval '1 hour' where id = $1`, [m]);
 
+      // The family app (step 4): his fixture's own screen (P3), where the
+      // answer is given beside the bus time, asks again.
       const g = await open();
       ok("the guardian signs in", await signIn(g.page, /parent@example\.invalid/));
-      ok("the squad screen opens for him", await nav(g.page, /Squad/));
-      const panel = g.page.locator('[data-testid="availability-panel"]');
-      await panel.first().waitFor({ timeout: 6000 }).catch(() => {});
-      const ptext = (await panel.first().innerText({ timeout: 3000 }).catch(() => "")) ?? "";
-      ok("his child's availability is on it, for the moved fixture",
-         /Availability/i.test(ptext) && /Verify 122 XI/.test(ptext));
+      ok("his Matches open", await nav(g.page, /^Matches$/));
+      ok("...with the moved fixture coming up, his boy's answer on its row reading needs reconfirming",
+         /Needs reconfirming/i.test(await g.page.locator(`[data-testid="fixture-chip-${m}"]`).first().innerText({ timeout: 6000 }).catch(() => "")));
+      await g.page.locator(`[data-testid="fixture-row-${m}"]`).first().click({ timeout: 4000 }).catch(() => {});
+      await g.page.waitForTimeout(1500);
+      const ptext = await g.page.locator('[data-testid="fixture-availability"]').first().innerText({ timeout: 4000 }).catch(() => "");
+      ok("the fixture opens, for the moved fixture", /Verify 122 XI/.test(await g.page.locator('[data-testid="fixture-title"]').innerText().catch(() => "")));
       const state = (p, who) => p.locator(`[data-testid="availability-state-${who}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
       ok("his boy's answer says it needs reconfirming, not available", /needs reconfirming/i.test(await state(g.page, PILLAY)));
       const was = await g.page.locator(`[data-testid="availability-was-${PILLAY}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
       ok("...with what it was, and about which fixture",
          /was available for \w{3} \d{1,2} \w{3} \d\d:\d\d at Gordon Sherwood Oval · T20, 20 overs/.test(was));
       ok("...and no other child is on it", !/Whitfield|Bekker|Naidoo|Cele/.test(ptext)
-         && await g.page.locator(`[data-testid="availability-row-${WHITFIELD}"]`).count() === 0);
+         && await g.page.locator(`[data-testid="availability-row-${WHITFIELD}"]`).count() === 0
+         && await g.page.locator(`[data-testid="availability-state-${WHITFIELD}"]`).count() === 0);
       await g.page.locator(`[data-testid="availability-again-${PILLAY}"]`).first().click({ timeout: 4000 }).catch(() => {});
       await g.page.waitForTimeout(1500);
       ok("one tap answers again: available", /^available$/i.test((await state(g.page, PILLAY)).trim())
@@ -1951,7 +2161,7 @@ try {
         [m, PILLAY, parentId])).rows[0];
       ok("...recorded as his, about the fixture as it stands, the old answer kept",
          row?.by_him === true && row?.current === true && row?.kept === 1);
-      ok("his notices include the ask, about his boy", await nav(g.page, /Notifications|Alerts/)
+      ok("his notices include the ask, about his boy", await nav(g.page, /^Notices$/)
          && /please answer again/i.test(await text(g.page)) && /R Pillay/.test(await text(g.page)));
       ok("...and no notice names another family's boy", !/Whitfield/.test(await text(g.page)));
       ok("no scoping refusals or console errors for the guardian", g.refusals.length === 0 && g.errors.length === 0);

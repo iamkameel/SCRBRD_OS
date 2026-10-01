@@ -141,6 +141,32 @@ CREATE OR REPLACE FUNCTION _expire_link(p_player uuid) RETURNS void AS $$
    WHERE a.id = s.assignment_id AND a.role = 'guardian' AND s.player_id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- §49 (step 4 G11): give one person's guardian link to one child an end
+-- date, as the office's own functions would write it, so the family app's
+-- read can be seen to carry it. Owner-only, rolled back with everything.
+CREATE OR REPLACE FUNCTION _set_link_end_49(p_player uuid, p_person uuid, p_until date) RETURNS void AS $$
+  UPDATE assignment_subject s SET valid_until = p_until
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.role = 'guardian' AND a.person_id = p_person AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- §49: the same link's verification, as the office's functions would move it.
+CREATE OR REPLACE FUNCTION _set_link_state_49(p_player uuid, p_person uuid, p_state text) RETURNS void AS $$
+  UPDATE assignment_subject s SET verification_state = p_state
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.role = 'guardian' AND a.person_id = p_person AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- §49: one person's live guardian links, as the owner reads them, past RLS —
+-- the truth the family app's read is held to, sorted and comma-joined.
+CREATE OR REPLACE FUNCTION _live_guardian_links_49(p_person uuid) RETURNS text AS $$
+  SELECT string_agg(s.player_id::text, ',' ORDER BY s.player_id::text)
+    FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id
+   WHERE a.person_id = p_person AND a.role = 'guardian' AND a.active
+     AND s.verification_state = 'verified' AND s.valid_from <= current_date
+     AND (s.valid_until IS NULL OR s.valid_until > current_date);
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- Wind a support session's hour hand back to a second ago (SCRBRD-012). The
 -- same claim as _expire_link, about the same rule: the decision functions
 -- read expires_at on every statement, and nothing else has to run.
@@ -1881,6 +1907,446 @@ BEGIN
   END LOOP;
   RETURN jsonb_build_object('m', m, 'plain', mp);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- ── SCRBRD-114 phase 3a (db/69, section 47): results and the table ──
+-- A league Hilton organises, "Verify 069 League", with four sides: Hilton
+-- 1XI (A) and 2XI (C), Westville 1XI (B) and 2XI (D). Version 1 of its
+-- conditions (in force from 28 September) confirms the pilot's four figures
+-- — win 4, tie 2, no result 2, loss 0 — and over-rate penalties in points;
+-- version 2 (from 8 October) makes a win 5. Seven matches, each with the
+-- document its first event would fix, dated explicitly (3 October 2026, the
+-- 4th Edition; M7 on 10 October):
+--   M1 A v B   A 60/0 (20 ov); B 61/0 in 14.3 overs (87 balls): B by 10 wkts
+--   M2 C v D   C 100 all out in 17 overs (102 balls, squad of three); D 50/0 (20): C by 50 runs
+--   M3 A v D   revised to 12 overs: A 46 all out in 8 (48 balls); D 47/0 off 38 balls with two wides: D by 10 wkts
+--   M4 C v B   B (away) bats first 60/0; C 60/0: tie
+--   M5 C v D   C 30/0; D 0/0 off 6, sealed abandoned: no result
+--   M6 A v B   abandoned before a ball
+--   M7 D v A   (10 October, version 2) D 30/0; A 0/0: D by 30 runs
+-- and a Hilton 1XI friendly, F (6 off an over; the visitors 0), and a second
+-- league organised by Westville, "Verify 069 Typed", with no conditions and a
+-- ladder the schools typed. An amendment to void M1's last single (B's
+-- winning run) waits, filed by the scorer.
+CREATE OR REPLACE FUNCTION _ev_69(p_match uuid, p_inn smallint, p_kind text, p_bt text, p_v integer, p_dis text, p_payload jsonb, p_n integer DEFAULT 1)
+RETURNS integer AS $$
+DECLARE v_seq integer; k integer; v_school uuid;
+BEGIN
+  SELECT m.school_id INTO v_school FROM match m WHERE m.id = p_match;
+  FOR k IN 1..p_n LOOP
+    SELECT coalesce(max(b.seq), 0) + 1 INTO v_seq FROM ball_event b WHERE b.match_id = p_match;
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                            client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+    VALUES (p_match, v_school, v_seq, 1, p_inn, '88888888-0000-0000-0000-000000000006', 'verify-069',
+            'v69:' || p_match || ':' || v_seq, v_seq, '2026-10-03 10:00+02'::timestamptz + v_seq * interval '20 seconds',
+            p_kind, p_bt, p_v, p_dis, p_payload);
+  END LOOP;
+  RETURN v_seq;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _seed_69() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OWNR uuid := '88888888-0000-0000-0000-000000000022';
+  c uuid; c2 uuid; v1 uuid; v2 uuid; ea uuid; eb uuid; ec uuid; ed uuid; e2a uuid; e2b uuid; e2c uuid;
+  m1 uuid; m2 uuid; m3 uuid; m4 uuid; m5 uuid; m6 uuid; m7 uuid; f uuid;
+  sq11 jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'V69 P' || g, 'name', 'V69 P' || g)) FROM generate_series(1, 11) g);
+  sq3 jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'V69 Q' || g, 'name', 'V69 Q' || g)) FROM generate_series(1, 3) g);
+  lab text; k text; last_b1 integer; amend uuid;
+  -- an innings_start payload
+  st jsonb;
+BEGIN
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 069 League', 'league', 'T20', 'school') RETURNING id INTO c;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, HIL, '1XI', 'Verify 069 Hilton 1st XI') RETURNING id INTO ea;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, WES, '1XI', 'Verify 069 Westville 1st XI') RETURNING id INTO eb;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, HIL, '2XI', 'Verify 069 Hilton 2nd XI') RETURNING id INTO ec;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, WES, '2XI', 'Verify 069 Westville 2nd XI') RETURNING id INTO ed;
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by) VALUES (c, 1, 'Verify 069 v1', '2026-09-28', OWNR) RETURNING id INTO v1;
+  INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by)
+  SELECT v1, x.k, x.v, 'confirmed', 'Pilot league decision, Kameel', '8.3a', '2026-09-30', OWNR
+    FROM (VALUES ('points.win', '4'::jsonb), ('points.tie', '2'), ('points.no_result', '2'), ('points.loss', '0'),
+                 ('over_rate.kind', '"points"')) AS x(k, v);
+  UPDATE condition_set SET status = 'published', published_by = OWNR, published_at = '2026-09-27 12:00+02' WHERE id = v1;
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by, supersedes) VALUES (c, 2, 'Verify 069 v2', '2026-10-08', OWNR, v1) RETURNING id INTO v2;
+  INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by)
+  SELECT v2, x.k, x.v, 'confirmed', 'Pilot league decision, Kameel', '8.3a', '2026-10-01', OWNR
+    FROM (VALUES ('points.win', '5'::jsonb), ('points.tie', '2'), ('points.no_result', '2'), ('points.loss', '0'),
+                 ('over_rate.kind', '"points"')) AS x(k, v);
+  UPDATE condition_set SET status = 'published', published_by = OWNR, published_at = '2026-10-01 12:00+02' WHERE id = v2;
+
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '1XI', WES, '1XI', 'x', '2026-10-03 10:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m1;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '2XI', WES, '2XI', 'x', '2026-10-03 10:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m2;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '1XI', WES, '2XI', 'x', '2026-10-03 13:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m3;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '2XI', WES, '1XI', 'x', '2026-10-03 13:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m4;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '2XI', WES, '2XI', 'x', '2026-10-03 15:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m5;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '1XI', WES, '1XI', 'x', '2026-10-03 15:00+02', 'cricket', 'T20', 20, 'abandoned', c) RETURNING id INTO m6;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (WES, '2XI', HIL, '1XI', 'x', '2026-10-10 10:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m7;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '1XI', 'Verify 069 Friendly', '2026-10-03 10:00+02', 'cricket', 'T20', 20, 'complete') RETURNING id INTO f;
+  -- Each match's document, as its first event fixes it.
+  INSERT INTO match_conditions (match_id, set_id, set_version, doc, sources, doc_hash)
+  SELECT x.m, r.set_id, r.set_version, r.doc, r.sources, ''
+    FROM unnest(ARRAY[m1, m2, m3, m4, m5, m6, m7, f]) AS x(m), LATERAL match_conditions_compute(x.m) r;
+
+  -- M1: A 60/0, sealed; B chases 61: 26 dots, 61 singles.
+  SELECT opponent INTO lab FROM match WHERE id = m1;
+  PERFORM _ev_69(m1, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', lab, 'squad', sq11, 'overs', 20));
+  PERFORM _ev_69(m1, 0::smallint, 'ball', 'run', 1, NULL, '{}', 60);
+  PERFORM _ev_69(m1, 0::smallint, 'ball', 'run', 0, NULL, '{}', 60);
+  PERFORM _ev_69(m1, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":60,"wickets":0,"balls":120}}');
+  PERFORM _ev_69(m1, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '1XI', 'squad', sq11, 'overs', 20, 'target', 61));
+  PERFORM _ev_69(m1, 1::smallint, 'ball', 'run', 0, NULL, '{}', 26);
+  last_b1 := _ev_69(m1, 1::smallint, 'ball', 'run', 1, NULL, '{}', 61);
+  PERFORM _ev_69(m1, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":61,"wickets":0,"balls":87}}');
+  INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+  VALUES (m1, HIL, 'v69:' || m1 || ':' || last_b1, 'Verify 069: the winning single was a dead ball', '88888888-0000-0000-0000-000000000006')
+  RETURNING id INTO amend;
+
+  -- M2: C 100 all out off 102 (a squad of three); D 50/0 off 120.
+  SELECT opponent INTO lab FROM match WHERE id = m2;
+  PERFORM _ev_69(m2, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', lab, 'squad', sq3, 'overs', 20));
+  PERFORM _ev_69(m2, 0::smallint, 'ball', 'run', 1, NULL, '{}', 100);
+  PERFORM _ev_69(m2, 0::smallint, 'ball', 'W', 0, 'bowled', '{}', 2);
+  PERFORM _ev_69(m2, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"all_out","confirmed":{"runs":100,"wickets":2,"balls":102}}');
+  PERFORM _ev_69(m2, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '2XI', 'squad', sq11, 'overs', 20, 'target', 101));
+  PERFORM _ev_69(m2, 1::smallint, 'ball', 'run', 1, NULL, '{}', 50);
+  PERFORM _ev_69(m2, 1::smallint, 'ball', 'run', 0, NULL, '{}', 70);
+  PERFORM _ev_69(m2, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":50,"wickets":0,"balls":120}}');
+
+  -- M3: revised to 12 overs. A 46 all out off 48; D 47/0 off 38, two wides.
+  SELECT opponent INTO lab FROM match WHERE id = m3;
+  PERFORM _ev_69(m3, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', lab, 'squad', sq3, 'overs', 20));
+  PERFORM _ev_69(m3, 0::smallint, 'revision', NULL, NULL, NULL, '{"overs":12,"reason":"rain"}');
+  PERFORM _ev_69(m3, 0::smallint, 'ball', 'run', 1, NULL, '{}', 46);
+  PERFORM _ev_69(m3, 0::smallint, 'ball', 'W', 0, 'bowled', '{}', 2);
+  PERFORM _ev_69(m3, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"all_out","confirmed":{"runs":46,"wickets":2,"balls":48}}');
+  PERFORM _ev_69(m3, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '1XI', 'squad', sq11, 'overs', 20, 'target', 47));
+  PERFORM _ev_69(m3, 1::smallint, 'revision', NULL, NULL, NULL, '{"overs":12,"target":47,"reason":"rain"}');
+  PERFORM _ev_69(m3, 1::smallint, 'ball', 'Wd', 0, NULL, '{}', 2);
+  PERFORM _ev_69(m3, 1::smallint, 'ball', 'run', 2, NULL, '{}', 7);
+  PERFORM _ev_69(m3, 1::smallint, 'ball', 'run', 1, NULL, '{}', 31);
+  PERFORM _ev_69(m3, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":47,"wickets":0,"balls":38}}');
+
+  -- M4: B, the visitors, bat first 60/0; C 60/0: a tie.
+  SELECT opponent INTO lab FROM match WHERE id = m4;
+  PERFORM _ev_69(m4, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '2XI', 'squad', sq11, 'overs', 20));
+  PERFORM _ev_69(m4, 0::smallint, 'ball', 'run', 1, NULL, '{}', 60);
+  PERFORM _ev_69(m4, 0::smallint, 'ball', 'run', 0, NULL, '{}', 60);
+  PERFORM _ev_69(m4, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":60,"wickets":0,"balls":120}}');
+  PERFORM _ev_69(m4, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', lab, 'squad', sq11, 'overs', 20, 'target', 61));
+  PERFORM _ev_69(m4, 1::smallint, 'ball', 'run', 1, NULL, '{}', 60);
+  PERFORM _ev_69(m4, 1::smallint, 'ball', 'run', 0, NULL, '{}', 60);
+  PERFORM _ev_69(m4, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":60,"wickets":0,"balls":120}}');
+
+  -- M5: C 30/0; the chase called off after an over: no result.
+  SELECT opponent INTO lab FROM match WHERE id = m5;
+  PERFORM _ev_69(m5, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', lab, 'squad', sq11, 'overs', 20));
+  PERFORM _ev_69(m5, 0::smallint, 'ball', 'run', 1, NULL, '{}', 30);
+  PERFORM _ev_69(m5, 0::smallint, 'ball', 'run', 0, NULL, '{}', 90);
+  PERFORM _ev_69(m5, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":30,"wickets":0,"balls":120}}');
+  PERFORM _ev_69(m5, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '2XI', 'squad', sq11, 'overs', 20, 'target', 31));
+  PERFORM _ev_69(m5, 1::smallint, 'ball', 'run', 0, NULL, '{}', 6);
+  PERFORM _ev_69(m5, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"abandoned","confirmed":{"runs":0,"wickets":0,"balls":6}}');
+
+  -- M7 (10 October): D 30/0; A 0/0.
+  SELECT opponent INTO lab FROM match WHERE id = m7;
+  PERFORM _ev_69(m7, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', lab, 'squad', sq11, 'overs', 20));
+  PERFORM _ev_69(m7, 0::smallint, 'ball', 'run', 1, NULL, '{}', 30);
+  PERFORM _ev_69(m7, 0::smallint, 'ball', 'run', 0, NULL, '{}', 90);
+  PERFORM _ev_69(m7, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":30,"wickets":0,"balls":120}}');
+  PERFORM _ev_69(m7, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '2XI', 'squad', sq11, 'overs', 20, 'target', 31));
+  PERFORM _ev_69(m7, 1::smallint, 'ball', 'run', 0, NULL, '{}', 120);
+  PERFORM _ev_69(m7, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":0,"wickets":0,"balls":120}}');
+
+  -- F: Hilton 6 off an over; the visitors 0 off theirs.
+  PERFORM _ev_69(f, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', 'Verify 069 Friendly', 'squad', sq11, 'overs', 1));
+  PERFORM _ev_69(f, 0::smallint, 'ball', 'run', 1, NULL, '{}', 6);
+  PERFORM _ev_69(f, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', 'Verify 069 Friendly', 'bowlingTeam', '1XI', 'squad', sq11, 'overs', 1, 'target', 7));
+  PERFORM _ev_69(f, 1::smallint, 'ball', 'run', 0, NULL, '{}', 6);
+
+  -- The typed ladder: a Westville league with no conditions, three sides,
+  -- two of them level on everything.
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (WES, 'Verify 069 Typed', 'league', 'T20', 'school') RETURNING id INTO c2;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points, net_run_rate)
+  VALUES (c2, WES, '1XI', 'Verify 069 Typed One', 2, 1, 1, 0, 0, 4, 0.500) RETURNING id INTO e2a;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points, net_run_rate)
+  VALUES (c2, HIL, '1XI', 'Verify 069 Typed Two', 2, 1, 1, 0, 0, 4, 0.500) RETURNING id INTO e2b;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points, net_run_rate)
+  VALUES (c2, WES, '2XI', 'Verify 069 Typed Three', 2, 0, 2, 0, 0, 0, -1.000) RETURNING id INTO e2c;
+
+  RETURN jsonb_build_object('c', c, 'c2', c2, 'v1', v1, 'v2', v2, 'a', ea, 'b', eb, 'cc', ec, 'd', ed,
+    'm1', m1, 'm2', m2, 'm3', m3, 'm4', m4, 'm5', m5, 'm6', m6, 'm7', m7, 'f', f, 'amend', amend, 'last_b1', 'v69:' || m1 || ':' || last_b1);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: a competition's table as "code=played,won,lost,tied,nr,points,rank" by
+-- entrant (A, B, C, D), and the run figures "rf/bf/ra/ba".
+CREATE OR REPLACE FUNCTION _table_69(p_comp uuid, p_ids jsonb) RETURNS text AS $$
+  SELECT string_agg(x.code || '=' || concat_ws(',', s.played, s.won, s.lost, s.tied, s.no_result, s.points, s.rank), ' ' ORDER BY x.code)
+    FROM (VALUES ('A', (p_ids->>'a')::uuid), ('B', (p_ids->>'b')::uuid), ('C', (p_ids->>'cc')::uuid), ('D', (p_ids->>'d')::uuid)) AS x(code, e)
+    JOIN competition_standing_rows(p_comp) s ON s.entrant_id = x.e
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: a match's frozen document, for the re-fix's assertions.
+CREATE OR REPLACE FUNCTION _doc_69(p_match uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object('doc', c.doc, 'before', c.table_doc_before, 'by', c.table_refixed_by, 'reason', c.table_refixed_reason,
+                            'set', c.set_id, 'sources', c.sources)
+    FROM match_conditions c WHERE c.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: the amendment's audit line.
+CREATE OR REPLACE FUNCTION _audit_69(p_match uuid) RETURNS jsonb AS $$
+  SELECT a.detail FROM scoring_audit a WHERE a.match_id = p_match AND a.event = 'amendment_approved' ORDER BY a.id DESC LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: publish one side of a fixture, and a competition's page.
+CREATE OR REPLACE FUNCTION _publish_69(p_match uuid, p_comp uuid) RETURNS void AS $$
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
+  SELECT m.id, 'home', m.school_id, m.team_code, true, '88888888-0000-0000-0000-000000000022' FROM match m WHERE m.id = p_match;
+  INSERT INTO competition_publication (competition_id, published, set_by)
+  VALUES (p_comp, true, '88888888-0000-0000-0000-000000000022');
+$$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- ┌── db/70 (section 48). SCRBRD-124 phase 1: parent lift clubs ─────────
+-- A world of its own, so nothing an earlier section revoked or moved can
+-- decide what this one proves: at Hilton a U15A side with five boys and
+-- their families — Jono (the driver's son), Ben (two guardians), Carl, Dan
+-- (seventeen, an account of his own), Ed (eighteen and at school, an account
+-- of his own; both hold the side's player assignment, as every pupil does) —
+-- a U14A boy (Finn) whose mother has no child on the side, a
+-- Westville U15A boy and his mother, the side's coach, the office, the
+-- transport coordinator and a principal. Three fixtures, each with an
+-- explicit day: the U15A v Westville's U15A ten days ahead (M), one twelve
+-- days ahead that will be called off (MV), and two tomorrow (MT at ten, MA
+-- at two), inside the day window for numbers. Written as the owner, as a seed would. Every name
+-- here is invented.
+CREATE OR REPLACE FUNCTION _seed_70() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  GROUND uuid := 'ffffffff-0000-0000-0000-000000000001';
+  ids    jsonb := '{}';
+  r      record;
+  v_u uuid; v_a uuid; v_p uuid; v_m uuid;
+  s      int := 0;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('jono', 'Jono Liftseventy', 15,  10, 'hil', 'U15A'),
+      ('ben',  'Ben Liftseventy',  15,  20, 'hil', 'U15A'),
+      ('carl', 'Carl Liftseventy', 15,  30, 'hil', 'U15A'),
+      ('dan',  'Dan Liftseventy',  17,  40, 'hil', 'U15A'),
+      ('ed',   'Ed Liftseventy',   18,  40, 'hil', 'U15A'),
+      ('finn', 'Finn Liftseventy', 14,  10, 'hil', 'U14A'),
+      ('wes',  'Wes Liftseventy',  15,  10, 'wes', 'U15A'),
+      ('pat',  'Pat Liftseventy',  15,  50, 'hil', 'U15A')) AS v(k, nm, age, days, at, team)
+  LOOP
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (CASE r.at WHEN 'hil' THEN HIL ELSE WES END, r.team, r.nm, split_part(r.nm, ' ', 2), 700 + s, 'batter',
+            (current_date - make_interval(years => r.age) - make_interval(days => r.days))::date)
+    RETURNING id INTO v_p;
+    s := s + 1;
+    ids := ids || jsonb_build_object('p_' || r.k, v_p);
+  END LOOP;
+
+  FOR r IN SELECT * FROM (VALUES
+      ('office', 'schooladmin',          'hil', NULL,   'schooladmin', NULL),
+      ('tco',    'transportcoordinator', 'hil', NULL,   'transportcoordinator', NULL),
+      ('head',   'principal',            'hil', NULL,   'principal', NULL),
+      ('coach',  'coach',                'hil', 'U15A', 'coach', NULL),
+      ('dmum',   'guardian',             'hil', NULL,   'guardian', 'jono'),
+      ('bmum',   'guardian',             'hil', NULL,   'guardian', 'ben'),
+      ('bdad',   'guardian',             'hil', NULL,   'guardian', 'ben'),
+      ('cmum',   'guardian',             'hil', NULL,   'guardian', 'carl'),
+      ('dnmum',  'guardian',             'hil', NULL,   'guardian', 'dan'),
+      ('emum',   'guardian',             'hil', NULL,   'guardian', 'ed'),
+      ('fmum',   'guardian',             'hil', NULL,   'guardian', 'finn'),
+      ('wmum',   'guardian',             'wes', NULL,   'guardian', 'wes'),
+      ('pmum',   'guardian',             'hil', NULL,   'guardian', 'pat'),
+      ('dan',    'selfaccess',           'hil', NULL,   'player',   'dan'),
+      ('ed',     'selfaccess',           'hil', NULL,   'player',   'ed')) AS v(k, role, at, team, urole, child)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role, player_id)
+    VALUES (CASE r.at WHEN 'hil' THEN HIL ELSE WES END, 'v70.' || r.k || '@example.invalid', 'V70 ' || initcap(r.k), r.urole,
+            CASE WHEN r.role = 'selfaccess' THEN (ids->>('p_' || r.child))::uuid END)
+    RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+    INSERT INTO role_assignment (person_id, role, school_id, team_code)
+    VALUES (v_u, r.role, CASE r.at WHEN 'hil' THEN HIL ELSE WES END, r.team)
+    RETURNING id INTO v_a;
+    ids := ids || jsonb_build_object('a_' || r.k, v_a);
+    IF r.child IS NOT NULL THEN
+      INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                      consent_state, consent_version, consent_at, created_by, valid_from)
+      VALUES (v_a, (ids->>('p_' || r.child))::uuid, CASE r.role WHEN 'selfaccess' THEN 'self' ELSE 'parent' END,
+              'verified', (ids->>'u_office')::uuid, now(), 'granted', 'popia-2026-01', now(),
+              (ids->>'u_office')::uuid, current_date - 30);
+    END IF;
+  END LOOP;
+
+  -- Dan and Ed are pupils of the side, as every pupil is.
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  SELECT (ids->>k)::uuid, 'player', HIL, 'U15A' FROM unnest(ARRAY['u_dan', 'u_ed']) k;
+
+  -- Pat's mother's link is verified and her consent to processing is not yet
+  -- recorded: lifts wait on it (Kameel, 2026-10-01).
+  UPDATE assignment_subject SET consent_state = 'pending', consent_version = NULL, consent_at = NULL
+   WHERE assignment_id = (ids->>'a_pmum')::uuid;
+
+  -- Who to ring. The driver's own number is on her son's card; it is the one
+  -- she names on her declaration.
+  INSERT INTO emergency_contact (player_id, priority, name, relationship, phone)
+  VALUES ((ids->>'p_jono')::uuid, 1, 'D Liftseventy', 'mother', '+27 82 070 0001') RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('c_jono', v_a);
+  INSERT INTO emergency_contact (player_id, priority, name, relationship, phone)
+  VALUES ((ids->>'p_ben')::uuid, 1, 'B Liftseventy', 'mother', '+27 82 070 0002') RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('c_ben', v_a);
+  INSERT INTO emergency_contact (player_id, priority, name, relationship, phone)
+  VALUES ((ids->>'p_carl')::uuid, 1, 'C Liftseventy', 'mother', '+27 82 070 0003');
+
+  -- The fixtures, each on an explicit day at an explicit hour, Johannesburg time.
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id, away_school_id, away_team_code)
+  VALUES (HIL, 'U15A', 'Verify 070', ((current_date + 10)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled', GROUND, WES, 'U15A')
+  RETURNING id INTO v_m;
+  ids := ids || jsonb_build_object('m', v_m, 'm_start', (SELECT starts_at FROM match WHERE id = v_m));
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, 'U15A', 'Verify 070 off', ((current_date + 12)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled', GROUND)
+  RETURNING id INTO v_m;
+  ids := ids || jsonb_build_object('mv', v_m, 'mv_start', (SELECT starts_at FROM match WHERE id = v_m));
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, 'U15A', 'Verify 070 tomorrow', ((current_date + 1)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled', GROUND)
+  RETURNING id INTO v_m;
+  ids := ids || jsonb_build_object('mt', v_m);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, 'U15A', 'Verify 070 afternoon', ((current_date + 1)::timestamp + time '14:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled', GROUND)
+  RETURNING id INTO v_m;
+  ids := ids || jsonb_build_object('ma', v_m, 'ma_start', (SELECT starts_at FROM match WHERE id = v_m));
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The platform's key, for one school: granted or taken back.
+CREATE OR REPLACE FUNCTION _v70_grant(p_school uuid, p_on boolean) RETURNS void AS $$
+  INSERT INTO feature_grant (key, school_id, granted, note) VALUES ('lift_club', p_school, p_on, 'verify db/70')
+  ON CONFLICT (key, school_id) DO UPDATE SET granted = excluded.granted
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/70's link triggers are deferred, as db/62's are; fire them here.
+-- Each by name, and only those that exist, so a falsification that drops one
+-- reads as the assertion it breaks rather than as an error here.
+CREATE OR REPLACE FUNCTION _v70_fire() RETURNS void AS $$
+DECLARE t text;
+BEGIN
+  FOR t IN SELECT tgname FROM pg_trigger
+            WHERE tgname IN ('lift_link_changed', 'lift_guardian_changed', 'lift_team_changed') AND tgconstraint <> 0 LOOP
+    EXECUTE format('SET CONSTRAINTS %I IMMEDIATE', t);
+    EXECUTE format('SET CONSTRAINTS %I DEFERRED', t);
+  END LOOP;
+END $$ LANGUAGE plpgsql;
+
+-- An offer and a seat as they are, past RLS.
+CREATE OR REPLACE FUNCTION _v70_offer(p uuid) RETURNS lift_offer AS $$ SELECT * FROM lift_offer WHERE id = p $$
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v70_seat(p uuid) RETURNS lift_seat AS $$ SELECT * FROM lift_seat WHERE id = p $$
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A seat's derived status, past RLS.
+CREATE OR REPLACE FUNCTION _v70_status(p uuid) RETURNS text AS $$ SELECT lift_seat_status(s) FROM lift_seat s WHERE s.id = p $$
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The lift notices about a fixture: "recipient:title-word" for each, sorted, past RLS.
+CREATE OR REPLACE FUNCTION _v70_notices(p_match uuid, p_title text DEFAULT NULL) RETURNS text AS $$
+  SELECT coalesce(string_agg(n.recipient_id::text, ' ' ORDER BY n.recipient_id::text), '')
+    FROM notification n WHERE n.kind = 'lift' AND n.subject_id = p_match AND (p_title IS NULL OR n.title = p_title)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v70_notice_count(p_to uuid, p_title text DEFAULT NULL) RETURNS bigint AS $$
+  SELECT count(*) FROM notification n WHERE n.kind = 'lift' AND n.recipient_id = p_to AND (p_title IS NULL OR n.title = p_title)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The lift notices: kind 'lift', and the 'system' ones a boy of eighteen at
+-- school is sent about a lift (SG-9).
+CREATE OR REPLACE FUNCTION _v70_is_lift_notice(n notification) RETURNS boolean AS $$
+  SELECT n.kind = 'lift'
+      OR (n.kind = 'system' AND n.subject_kind = 'match' AND n.subject_id IN (SELECT match_id FROM lift_offer))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Lift notices whose body names a person: any player's full name or any account's name.
+CREATE OR REPLACE FUNCTION _v70_named_notices() RETURNS bigint AS $$
+  SELECT count(*) FROM notification n
+   WHERE _v70_is_lift_notice(n)
+     AND (EXISTS (SELECT 1 FROM player p WHERE position(p.full_name IN n.body) > 0)
+          OR EXISTS (SELECT 1 FROM app_user u WHERE length(u.name) > 3 AND position(u.name IN n.body) > 0))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Lift notices addressed to a pupil — but the boy of eighteen's own, as
+-- 'system', about himself through his own self link.
+CREATE OR REPLACE FUNCTION _v70_pupil_notices() RETURNS bigint AS $$
+  SELECT count(*) FROM notification n
+   WHERE _v70_is_lift_notice(n) AND lift_is_pupil(n.recipient_id)
+     AND NOT (n.kind = 'system' AND NOT lift_is_minor(n.subject_person_id)
+              AND EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+                           WHERE a.person_id = n.recipient_id AND a.role = 'selfaccess'
+                             AND g.relationship = 'self' AND g.player_id = n.subject_person_id))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Every lift notice to one person, of either kind, past RLS.
+CREATE OR REPLACE FUNCTION _v70_lift_notices_to(p_to uuid) RETURNS bigint AS $$
+  SELECT count(*) FROM notification n WHERE n.recipient_id = p_to AND _v70_is_lift_notice(n)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The access log's rows for a lift read, past RLS.
+CREATE OR REPLACE FUNCTION _v70_logged(p_resource text, p_offer uuid, p_person uuid DEFAULT NULL) RETURNS bigint AS $$
+  SELECT count(*) FROM access_log l
+   WHERE l.resource = p_resource AND p_offer = ANY (l.record_ids) AND (p_person IS NULL OR l.person_id = p_person)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The three CSA checks for a person at a school, current.
+CREATE OR REPLACE FUNCTION _v70_clear(p_person uuid, p_school uuid) RETURNS void AS $$
+  INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+  SELECT p_person, p_school, k, 'V70-' || k, current_date - 30, current_date + 600
+    FROM unnest(ARRAY['police_clearance', 'child_protection', 'sexual_offences_register']) k
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A boy moved to another side, as the move route makes it (db/08's history trigger).
+CREATE OR REPLACE FUNCTION _v70_move(p uuid, team text) RETURNS void AS $$
+  UPDATE player SET team_code = team WHERE id = p;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A guardian's link to a boy revoked by the office, today.
+CREATE OR REPLACE FUNCTION _v70_end_link(p uuid, mum uuid) RETURNS void AS $$
+  UPDATE assignment_subject s SET verification_state = 'revoked', valid_until = greatest(current_date, s.valid_from)
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = mum AND s.player_id = p AND s.valid_until IS NULL;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A fixture moved, or called off, as the fixture route does it.
+CREATE OR REPLACE FUNCTION _v70_fixture(p uuid, p_by interval, p_status text DEFAULT NULL) RETURNS void AS $$
+  UPDATE match SET starts_at = starts_at + p_by, status = coalesce(p_status, status) WHERE id = p;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy's live seats, past RLS.
+CREATE OR REPLACE FUNCTION _v70_seats_of(p uuid) RETURNS SETOF lift_seat AS $$
+  SELECT * FROM lift_seat WHERE player_id = p AND state IN ('requested', 'invited', 'confirmed')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The office records a guardian's consent to processing, as its route does.
+CREATE OR REPLACE FUNCTION _v70_consent(p uuid, mum uuid) RETURNS void AS $$
+  UPDATE assignment_subject s SET consent_state = 'granted', consent_version = 'popia-2026-01', consent_at = now()
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = mum AND s.player_id = p;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An older brother at school, linked as his younger brother's guardian (p_on),
+-- or that assignment ended (not p_on).
+CREATE OR REPLACE FUNCTION _v70_brother(p_person uuid, p_player uuid, p_on boolean) RETURNS void AS $$
+DECLARE v_a uuid;
+BEGIN
+  IF p_on THEN
+    INSERT INTO role_assignment (person_id, role, school_id)
+    VALUES (p_person, 'guardian', (SELECT school_id FROM player WHERE id = p_player)) RETURNING id INTO v_a;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, valid_from)
+    VALUES (v_a, p_player, 'sibling', 'verified', p_person, now(), 'granted', 'popia-2026-01', now(), current_date - 1);
+  ELSE
+    UPDATE role_assignment SET active = false, revoked_at = now()
+     WHERE person_id = p_person AND role = 'guardian' AND active;
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/70 (section 48) ──────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -6213,8 +6679,12 @@ BEGIN
     -- caller read an entrant side's fixtures — asked only by the policy on
     -- competition_blackout, which carries the pad guard, so a credential
     -- reads no blackout whatever it answers.
+    -- match_result_readable (db/69, SCRBRD-114 phase 3a): yes or no, may the
+    -- caller read a match's result — the fixture's reader at either side, or
+    -- the competition's; a credential reads its own match's result, which its
+    -- log already says, and a result names sides, never a boy.
     PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
+                             || 'match_playing_conditions,match_result_readable,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
@@ -10074,6 +10544,1199 @@ BEGIN
       'db/68 (scope): a new view runs as its owner or is not the application role''s to read, or a new function runs as its owner');
   END;
 
+  -- ── 47. Match results and the table (SCRBRD-114 phase 3a, db/69) ──
+  -- _seed_69(): a Hilton league of four sides, seven matches under the
+  -- documents their first events fix (version 1, win 4 / tie 2 / no result
+  -- 2 / loss 0, confirmed; version 2 from 8 October, win 5), a friendly, a
+  -- typed ladder, and an amendment waiting. Every figure below was worked by
+  -- hand from the log, ball by ball; tools/smoke-fold-figures.mjs holds
+  -- match_result() to the fold over result-logs.mjs, so the rule and the
+  -- fold cannot part.
+  --
+  -- Each labelled assertion was falsified once — the function, trigger,
+  -- index or view replaced in the database and this file run — and went red:
+  --   (abandoned)   match_result() reading a chase sealed abandoned as any other
+  --   (rates)       an all-out innings charged its balls, not its allotted overs
+  --   (fallback)    an abandoned match taking points.abandoned with no fallback
+  --   (precedence)  a concession applied over play's winner
+  --   (needs-play)  the decision trigger's no-ball check removed
+  --   (one)         the one-standing index dropped (and the function's own check)
+  --   (decider)     match_result_decider() asking fixture.update for a league match
+  --   (support)     match_result_decide() and the re-fix without the support check
+  --   (audit)       scoring_amendment_decide() without its audit line
+  --   (refix)       match_conditions_refix_table() not keeping the part it replaced
+  --   (scope)       competition_standing as its owner; competition_standing_rows()
+  --                 not asking whether its reader may see the competition
+  --   (away)        match_result() run as its caller (the visitors' coach reads
+  --                 no innings of the home school's log: no result)
+  --   (public)      public_competition_standing() and the rows beneath it not
+  --                 asking for a publication (two layers: either alone holds)
+  DECLARE
+    ids    jsonb := _seed_69();
+    C      uuid;  C2 uuid;  V1 uuid;  V2 uuid;
+    EA     uuid;  ED uuid;
+    M1 uuid; M2 uuid; M3 uuid; M5 uuid; M6 uuid; F uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    T0     text;  -- the table as first read
+    got    text;
+    h1     text;  h2 text;
+    v_id   uuid;  v_id2 uuid;
+    r      record;
+    j      jsonb;
+  BEGIN
+    C := (ids->>'c')::uuid; C2 := (ids->>'c2')::uuid; V1 := (ids->>'v1')::uuid; V2 := (ids->>'v2')::uuid;
+    EA := (ids->>'a')::uuid; ED := (ids->>'d')::uuid;
+    M1 := (ids->>'m1')::uuid; M2 := (ids->>'m2')::uuid; M3 := (ids->>'m3')::uuid;
+    M5 := (ids->>'m5')::uuid; M6 := (ids->>'m6')::uuid; F := (ids->>'f')::uuid;
+
+    -- §results. Each match's result, as its league reads it (abandoned): M5's
+    -- chase sealed abandoned is no result, not a win by the 31 runs it was
+    -- short; M4, the visitors batting first, a tie; M6 abandoned before a ball.
+    PERFORM _as(U_LEAGUE);
+    SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
+                      coalesce(r2.decided_by, '-'), coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
+      FROM competition_results(C) r2
+      JOIN (VALUES ('m1', (ids->>'m1')::uuid), ('m2', (ids->>'m2')::uuid), ('m3', (ids->>'m3')::uuid), ('m4', (ids->>'m4')::uuid),
+                   ('m5', (ids->>'m5')::uuid), ('m6', (ids->>'m6')::uuid), ('m7', (ids->>'m7')::uuid)) AS x(label, m) ON x.m = r2.match_id;
+    PERFORM _assert(got = 'm1=away_win,wickets,10,play,away m2=home_win,runs,50,play,home m3=away_win,wickets,10,play,away '
+                       || 'm4=tie,-,-,play,- m5=no_result,-,-,-,- m6=abandoned,-,-,-,- m7=home_win,runs,30,play,home',
+      format('db/69 (abandoned): the league''s results read %s', got));
+    PERFORM _as(U_SARAH);
+    SELECT concat_ws(',', r2.outcome, r2.margin_kind, r2.margin, r2.decided_by, r2.winner_side, r2.winner_school_id = HIL)
+      INTO got FROM match_result(F) r2;
+    PERFORM _assert(got = 'home_win,runs,6,play,home,t', format('db/69: the friendly reads %s', got));
+
+    -- §table. Computed (every counted match's figures confirmed), points from
+    -- each match's own document — M7, played after version 2 took effect,
+    -- gives D 5 for its win where M3, the week before, gave 4 — and M6,
+    -- abandoned, 2 each from points.no_result, the set stating no
+    -- points.abandoned (fallback). Read by Westville's coach, a participant.
+    PERFORM _as(U_WESC);
+    T0 := _table_69(C, ids);
+    PERFORM _assert(T0 = 'A=4,0,3,0,1,2,4 B=3,1,0,1,1,8,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,11,1',
+      format('db/69 (fallback): the table reads %s', T0));
+    -- (away) the visitors' coach reads the result of the match his side
+    -- played, whoever's log it is; and, a participant, every result in it
+    SELECT string_agg(concat_ws(',', r2.outcome, r2.margin_kind, r2.margin), ' ' ORDER BY x.n) INTO got
+      FROM (VALUES (1, M1), (2, M2)) AS x(n, m), LATERAL match_result(x.m) r2;
+    PERFORM _assert(got = 'away_win,wickets,10 home_win,runs,50',
+      format('db/69 (away): Westville''s coach reads %s for M1 and M2', got));
+    SELECT string_agg(concat_ws('/', s.runs_for, s.balls_for, s.runs_against, s.balls_against), ' ' ORDER BY s.display_name),
+           bool_and(s.basis = 'computed'), count(*)
+      INTO got, v_ok, n FROM competition_standing s WHERE s.competition_id = C;
+    -- (rates) §6.4 to the ball: B's chase in 14.3 overs is charged 87; C all
+    -- out in 17 overs of 20 is charged 120; A all out in 8 of a match revised
+    -- to 12 is charged 72; D's two wides are two runs and no balls; M5 (no
+    -- result) and M6 (abandoned) add nothing.
+    PERFORM _assert(got = '106/312/138/245 160/240/110/240 121/207/120/240 127/278/146/312' AND v_ok AND n = 4,
+      format('db/69 (rates): the run figures read %s (computed: %s, rows: %s)', got, v_ok, n));
+    PERFORM _assert((SELECT s.nrr FROM competition_standing s WHERE s.competition_id = C AND s.display_name = 'Verify 069 Westville 1st XI')
+                    = 121::numeric * 6 / 207 - 120::numeric * 6 / 240
+                    AND (SELECT s.nrr FROM competition_standing s WHERE s.competition_id = C AND s.display_name = 'Verify 069 Hilton 2nd XI') = 1.25,
+      'db/69 (rates): net run rate is not runs × 6 ÷ balls, for less against');
+    -- the typed ladder: no confirmed points, the schools' own figures; two
+    -- sides level on every key share a rank
+    SELECT string_agg(s.display_name || '=' || s.basis || ',' || s.points || ',' || s.rank, ' ' ORDER BY s.display_name) INTO got
+      FROM competition_standing s WHERE s.competition_id = C2;
+    PERFORM _assert(got = 'Verify 069 Typed One=entered,4,1 Verify 069 Typed Three=entered,0,3 Verify 069 Typed Two=entered,4,1',
+      format('db/69: the typed ladder reads %s', got));
+    -- (scope) a reader who holds no competition.read reads none of it
+    PERFORM _as(U_SCOUT);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM competition_standing s WHERE s.competition_id IN (C, C2))
+                    -- the rows function is the application's to call: it asks
+                    -- for the competition itself, not only through the view
+                    AND NOT EXISTS (SELECT 1 FROM competition_standing_rows(C))
+                    AND NOT EXISTS (SELECT 1 FROM competition_standing_rows(C2))
+                    AND NOT EXISTS (SELECT 1 FROM competition_results(C))
+                    AND NOT EXISTS (SELECT 1 FROM competition_points_adjustment a WHERE a.competition_id = C),
+      'db/69 (scope): a reader with no competition.read reads the league''s table or results');
+
+    -- §adjustments: entered by the league, never by a school; withdrawn with
+    -- a note, the table restored; an over-rate penalty in points only where
+    -- the competition's over_rate.kind says points.
+    PERFORM _as(U_SARAH);
+    SELECT a.reason INTO got FROM competition_points_adjust(C, ED, NULL, 'conduct', -2, 'umpires'' report: dissent at the toss') a;
+    PERFORM _assert(got = 'not_permitted', format('db/69: a school adjusted the league''s table (%s)', got));
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert((SELECT a.reason FROM competition_points_adjust(C, ED, NULL, 'conduct', -2, 'short') a) = 'reason_required',
+      'db/69: an adjustment was entered with no reason');
+    SELECT a.ok, a.adjustment_id INTO v_ok, v_id FROM competition_points_adjust(C, ED, M3, 'conduct', -2, 'umpires'' report: conduct at M3') a;
+    PERFORM _assert(v_ok AND _table_69(C, ids) LIKE '%D=4,2,1,0,1,9.0,1',
+      format('db/69: the adjustment did not land: %s', _table_69(C, ids)));
+    SELECT a.ok, a.adjustment_id INTO v_ok, v_id2 FROM competition_points_adjust(C, EA, M1, 'over_rate', -1, 'over rate: two overs short at M1') a;
+    PERFORM _assert(v_ok, 'db/69: an over-rate penalty in points was refused where the league counts them in points');
+    PERFORM _assert((SELECT a.reason FROM competition_points_adjust(C2, (SELECT e.id FROM competition_entrant e WHERE e.competition_id = C2 LIMIT 1),
+                                                                    NULL, 'over_rate', -1, 'over rate: one over short') a) = 'over_rate_not_points',
+      'db/69: an over-rate penalty was taken by a league that has none');
+    -- (each write its own statement: a STABLE read sees its statement's snapshot)
+    PERFORM _assert((SELECT w.reason FROM competition_points_adjustment_withdraw(v_id, 'short') w) = 'note_required',
+      'db/69: an adjustment was withdrawn with no note');
+    PERFORM _assert((SELECT w.ok FROM competition_points_adjustment_withdraw(v_id, 'entered against the wrong side') w),
+      'db/69: the conduct adjustment could not be withdrawn');
+    PERFORM _assert((SELECT w.ok FROM competition_points_adjustment_withdraw(v_id2, 'the umpires withdrew the report') w),
+      'db/69: the over-rate adjustment could not be withdrawn');
+    PERFORM _assert(_table_69(C, ids) = T0, format('db/69: withdrawing the adjustments did not restore the table: %s', _table_69(C, ids)));
+    PERFORM _assert((SELECT count(*) FROM competition_points_adjustment a WHERE a.competition_id = C) = 2,
+      'db/69: a withdrawn adjustment was deleted');
+    BEGIN
+      DELETE FROM competition_points_adjustment WHERE id = v_id;
+      PERFORM _assert(false, 'db/69: the league deleted an adjustment');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- §decisions (D8): a league match's under competition.manage at the
+    -- organiser (decider) — not the home school's director of sport —
+    -- a friendly's under the home school's fixture.update.
+    PERFORM _as(U_SARAH);
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M5, 'conceded', 'away', 'Westville could not field eleven') d) = 'not_permitted',
+      'db/69 (decider): a school decided a league match''s result');
+    PERFORM _as(U_LEAGUE);
+    -- (needs-play) no ball bowled: a walkover or a concession, never an award
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M6, 'awarded', 'home', 'the higher placed side goes through') d) = 'needs_play',
+      'db/69 (needs-play): an award was made on a match with no ball bowled');
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M2, 'conceded', 'home', 'Hilton conceded the match', true) d) = 'override_not_award'
+                    AND (SELECT d.reason FROM match_result_decide(M2, 'forfeit', 'home', 'Hilton conceded the match') d) = 'kind_invalid'
+                    AND (SELECT d.reason FROM match_result_decide(M2, 'conceded', 'both', 'Hilton conceded the match') d) = 'side_invalid'
+                    AND (SELECT d.reason FROM match_result_decide(M2, 'conceded', 'home', 'short') d) = 'reason_required',
+      'db/69: a malformed decision was not refused by name');
+    SELECT d.ok, d.decision_id INTO v_ok, v_id FROM match_result_decide(M6, 'walkover', 'home', 'Westville did not arrive at the ground') d;
+    PERFORM _assert(v_ok AND _table_69(C, ids) = 'A=4,1,3,0,0,4,4 B=3,1,1,1,0,6,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,11,1',
+      format('db/69: a walkover is not a win and a loss in the table: %s', _table_69(C, ids)));
+    -- (one) a second standing decision is refused
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M6, 'conceded', 'away', 'Westville conceded by letter') d) = 'already_decided',
+      'db/69 (one): a second standing decision was taken');
+    PERFORM _assert((SELECT w.reason FROM match_result_decision_withdraw(v_id, 'short') w) = 'note_required',
+      'db/69: a decision was withdrawn with no note');
+    PERFORM _assert((SELECT w.ok FROM match_result_decision_withdraw(v_id, 'Westville were on the field; the walkover was wrong') w),
+      'db/69: the walkover could not be withdrawn');
+    PERFORM _assert(_table_69(C, ids) = T0, format('db/69: withdrawing the walkover did not restore play''s answer: %s', _table_69(C, ids)));
+    -- (precedence) play < decision < an award overriding play. A concession
+    -- on a match play decided changes nothing — the result, its hash, the
+    -- table; an award overriding play makes D the winner of M2.
+    SELECT r2.result_hash INTO h1 FROM match_result(M2) r2;
+    SELECT d.decision_id INTO v_id FROM match_result_decide(M2, 'conceded', 'home', 'entered against the wrong fixture') d;
+    SELECT r2.result_hash, r2.outcome || ',' || r2.decided_by || ',' || r2.decision_applied INTO h2, got FROM match_result(M2) r2;
+    PERFORM _assert(h2 = h1 AND got = 'home_win,play,false' AND _table_69(C, ids) = T0,
+      format('db/69 (precedence): a concession moved a result play had decided: %s', got));
+    PERFORM match_result_decision_withdraw(v_id, 'entered against the wrong fixture');
+    SELECT d.decision_id INTO v_id FROM match_result_decide(M2, 'awarded', 'away', 'protest upheld: an unregistered player', true) d;
+    SELECT r2.result_hash, concat_ws(',', r2.outcome, r2.margin_kind, r2.decided_by, r2.play_outcome) INTO h2, got FROM match_result(M2) r2;
+    PERFORM _assert(h2 <> h1 AND got = 'away_win,awarded,decision,home_win'
+                    AND _table_69(C, ids) = 'A=4,0,3,0,1,2,4 B=3,1,0,1,1,8,2 C=3,0,1,1,1,4,3 D=4,3,0,0,1,15,1',
+      format('db/69 (precedence): the award reads %s and the table %s', got, _table_69(C, ids)));
+    -- the decision is read by a participant, as its result is
+    PERFORM _as(U_WESC);
+    PERFORM _assert((SELECT count(*) FROM match_result_decision x WHERE x.match_id = M2) = 2,
+      'db/69: a participant cannot read the league''s decisions');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM match_result_decision x WHERE x.match_id = M2),
+      'db/69 (scope): nobody signed in reads a decision');
+    PERFORM _as(U_LEAGUE);
+    PERFORM match_result_decision_withdraw(v_id, 'the protest was overturned on appeal');
+    SELECT r2.result_hash INTO h2 FROM match_result(M2) r2;
+    PERFORM _assert(h2 = h1 AND _table_69(C, ids) = T0, 'db/69: withdrawing the award did not restore play''s result and its hash');
+    BEGIN
+      UPDATE match_result_decision SET reason = 'rewritten afterwards' WHERE id = v_id;
+      PERFORM _assert(false, 'db/69: the league rewrote a decision');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    -- a friendly: the home school decides, the visitors do not
+    PERFORM _as(U_SARAH);
+    SELECT d.ok, d.decision_id INTO v_ok, v_id FROM match_result_decide(F, 'awarded', 'away', 'the visitors'' protest upheld by both schools', true) d;
+    PERFORM _assert(v_ok AND (SELECT r2.outcome FROM match_result(F) r2) = 'away_win', 'db/69: the home school could not decide its friendly');
+    PERFORM _as(U_WES_ADM);
+    PERFORM _assert((SELECT w.reason FROM match_result_decision_withdraw(v_id, 'Westville would like it back') w) = 'not_permitted',
+      'db/69 (decider): a school decided another school''s friendly');
+    PERFORM _as(U_SARAH);
+    PERFORM match_result_decision_withdraw(v_id, 'agreed in error; play stands');
+    -- (support) a support session decides nothing and re-fixes nothing
+    PERFORM _as(U_PLAT);
+    SELECT ok, reason, id INTO v_ok, v_reason, S_ID FROM support_access_begin(HIL, 'competitionadmin', 'ticket 6901: a league''s table');
+    PERFORM _assert(v_ok, format('db/69 (support): the session was not issued (%s)', v_reason));
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M5, 'conceded', 'away', 'Westville could not field eleven') d) = 'support_session'
+                    AND (SELECT x.reason FROM match_conditions_refix_table(M3, V2, 'support re-fixing the league') x) = 'support_session'
+                    AND (SELECT a.reason FROM competition_points_adjust(C, ED, NULL, 'conduct', -2, 'support entering a penalty') a) = 'support_session',
+      'db/69 (support): a support session decided, re-fixed or adjusted');
+    PERFORM support_access_end(S_ID);
+
+    -- §re-fix (parent §3.4): M3's table part from version 2, with a reason;
+    -- the part it replaced kept beside it; play, the version it was fixed
+    -- under and the sheet as they were; D's win now worth 5.
+    PERFORM _as(U_LEAGUE);
+    j := _doc_69(M3);
+    PERFORM _assert((SELECT x.reason FROM match_conditions_refix_table(M3, V2, 'short') x) = 'reason_required'
+                    AND (SELECT x.reason FROM match_conditions_refix_table(M3, gen_random_uuid(), 'version 2 corrected the win') x) = 'set_invalid'
+                    AND (SELECT x.reason FROM match_conditions_refix_table(F, V2, 'version 2 corrected the win') x) = 'not_permitted',
+      'db/69 (refix): a re-fix with no reason, an unknown version or of a friendly was not refused');
+    PERFORM _as(U_SARAH);
+    PERFORM _assert((SELECT x.reason FROM match_conditions_refix_table(M3, V2, 'version 2 corrected the win') x) = 'not_permitted',
+      'db/69: a school re-fixed a league match''s table figures');
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert((SELECT x.ok FROM match_conditions_refix_table(M3, V2, 'version 2 corrected the win to five points') x),
+      'db/69: the league could not re-fix M3');
+    PERFORM _assert(_doc_69(M3)->'doc'->'play' = j->'doc'->'play' AND _doc_69(M3)->'doc'->'sheet' = j->'doc'->'sheet'
+                    AND _doc_69(M3)->>'set' = V1::text
+                    AND _doc_69(M3)->'before' = j->'doc'->'table'
+                    AND _doc_69(M3)->'doc'->'table'->'points.win' = '5'::jsonb
+                    AND _doc_69(M3)->>'by' = U_LEAGUE::text AND _doc_69(M3)->>'reason' = 'version 2 corrected the win to five points',
+      format('db/69 (refix): the re-fix reads %s', _doc_69(M3)));
+    PERFORM _assert(_table_69(C, ids) = 'A=4,0,3,0,1,2,4 B=3,1,0,1,1,8,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,12,1'
+                    AND (SELECT string_agg(s.conditions_adjusted::text, ',' ORDER BY s.display_name) FROM competition_standing s WHERE s.competition_id = C) = '1,0,0,1',
+      format('db/69: the re-fix did not reach the table, or the table does not say which sides it touched: %s', _table_69(C, ids)));
+
+    -- §correction (design §2.6): an approved amendment that voids B's winning
+    -- single makes M1 no result; the table follows on the next read, and the
+    -- audit names the result before and after.
+    SELECT r2.result_hash INTO h1 FROM match_result(M1) r2;
+    PERFORM _as(U_SARAH);
+    PERFORM _assert((SELECT a.ok FROM scoring_amendment_decide((ids->>'amend')::uuid, true, 'the single was a dead ball') a),
+      'db/69: the amendment could not be approved');
+    SELECT r2.result_hash, r2.outcome INTO h2, got FROM match_result(M1) r2;
+    j := _audit_69(M1);
+    -- (audit)
+    PERFORM _assert(got = 'no_result' AND h2 <> h1
+                    AND j->>'outcome_before' = 'away_win' AND j->>'result_hash_before' = h1
+                    AND j->>'outcome_after' = 'no_result' AND j->>'result_hash_after' = h2 AND (j->>'result_changed')::boolean,
+      format('db/69 (audit): M1 reads %s after the amendment, and the audit line %s', got, j));
+    PERFORM _as(U_WESC);
+    PERFORM _assert(_table_69(C, ids) = 'A=4,0,2,0,2,4,4 B=3,0,0,1,2,6,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,12,1'
+                    AND (SELECT concat_ws('/', s.runs_for, s.balls_for, s.runs_against, s.balls_against) FROM competition_standing s
+                          WHERE s.competition_id = C AND s.display_name = 'Verify 069 Hilton 1st XI') = '46/192/77/158',
+      format('db/69: the amended result did not flip the table: %s', _table_69(C, ids)));
+
+    -- (public) signed out: a published competition's table, sides and
+    -- figures, no reason; an unpublished one nothing; a served fixture's
+    -- result as structure, an unserved one nothing.
+    PERFORM _publish_69(M2, C);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT string_agg(concat_ws(',', p.rank, p.side, p.points, p.basis), ' ' ORDER BY p.rank) INTO got FROM public_competition_standing(C) p;
+    PERFORM _assert(got = '1,Verify 069 Westville 2nd XI,12,computed 2,Verify 069 Hilton 2nd XI,8,computed 3,Verify 069 Westville 1st XI,6,computed 4,Verify 069 Hilton 1st XI,4,computed'
+                    AND NOT EXISTS (SELECT 1 FROM public_competition_standing(C2))
+                    AND (SELECT concat_ws(',', p.outcome, p.margin_kind, p.margin, p.winner_side) FROM public_match_result(M2) p) = 'home_win,runs,50,home'
+                    AND NOT EXISTS (SELECT 1 FROM public_match_result(M1))
+                    AND pg_get_function_result('public_match_result(uuid)'::regprocedure) !~ 'reason'
+                    AND pg_get_function_result('public_competition_standing(uuid)'::regprocedure) !~ 'reason',
+      format('db/69 (public): the signed-out table reads %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM competition_standing) AND NOT EXISTS (SELECT 1 FROM match_result(M2)),
+      'db/69 (public): nobody signed in read the table or a result past the public reads');
+
+    -- The new objects: the view as its reader, the rule as its caller, the
+    -- tables closed to the application's writes.
+    PERFORM _assert(coalesce((SELECT 'security_invoker=true' = ANY (c.reloptions) FROM pg_class c WHERE c.oid = 'competition_standing'::regclass), false)
+                    AND NOT has_function_privilege('scrbrd_app', 'match_result_compute(uuid)', 'EXECUTE')
+                    AND NOT has_table_privilege('scrbrd_app', 'match_result_decision', 'INSERT')
+                    AND NOT has_table_privilege('scrbrd_app', 'competition_points_adjustment', 'UPDATE')
+                    AND NOT has_function_privilege('scrbrd_app', 'competition_results_all(uuid)', 'EXECUTE'),
+      'db/69 (scope): a new object runs as its owner, or the application may write a decision or an adjustment directly');
+  END;
+
+  -- ── 49. The family app's children: my_children (step 4 phase A, G1/G11) ──
+  -- docs/design/STEP4_parent_pupil.md §5 G1 and §8 phase A. The read is not a
+  -- database object — phase A needs no migration — so this section runs the
+  -- read's own SQL, copied between the my_children markers below and held
+  -- equal to services/api/read/read-api.mjs by read.test.mjs, as a TEMPORARY
+  -- view owned by scrbrd_app: it runs as the caller, under RLS, exactly as
+  -- the API runs it. It returns the caller's own live guardian links and
+  -- nothing else: both of Sarah's children, at two schools, and none of the
+  -- families her director-of-sport assignment lets her read the links of;
+  -- each parent his own child; nothing for a coach, a spectator, the pupil
+  -- (whose self link is not a guardian's), the office (which reads every
+  -- link at its school), a parent whose link has ended, or a parent of a
+  -- different child. valid_until rides along, NULL while the child is at
+  -- school (db/62) and the date otherwise.
+  --
+  -- By here R Pillay's link has been wound back by the expiry assertion
+  -- (_expire_link above), so D Pillay is the parent whose link has ended.
+  --
+  -- Each guard was falsified once — taken out of this copy of the read and
+  -- the file run against the migrated database — and went red at the first
+  -- assertion able to see it (read.test.mjs holds the two copies equal, so a
+  -- guard cannot leave the API's copy and stay in this one):
+  --   `a.person_id = app_user_id()` removed       → (own): Sarah lists the school's families
+  --   `a.role = 'guardian'` removed               → a coach's family app lists his enquiry grant's boy
+  --   the subject's valid_until clause removed    → (live)
+  --   `s.verification_state = 'verified'` removed → (verified)
+  -- (live) and (verified) are asked of Sarah because a plain parent cannot
+  -- show them: RLS on the player already hides a child whose only link is
+  -- dead, and the read's own clauses are the second wall, not the first.
+  DECLARE
+    U_WHIT  uuid := '88888888-0000-0000-0000-000000000010';  -- H Whitfield, parent of James Whitfield
+    U_BEKK  uuid := '88888888-0000-0000-0000-000000000011';  -- A Bekker, parent of T Bekker
+    U_CELE  uuid := '88888888-0000-0000-0000-000000000013';  -- N Cele: verified, consent not yet given
+    P_WHIT  uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+    P_CELE  uuid := 'aaaaaaaa-0000-0000-0000-000000000004';
+    got     text;
+    n       integer;
+    r       record;
+  BEGIN
+    EXECUTE $v49$CREATE TEMP VIEW _v49_my_children AS
+-- my_children:begin
+select s.player_id, p.full_name, p.known_as, p.team_code,
+                  p.school_id, sc.name as school_name, sc.kind as school_kind,
+                  s.relationship, s.verification_state, s.consent_state,
+                  s.valid_from, s.valid_until
+             from role_assignment a
+             join assignment_subject s on s.assignment_id = a.id
+             join player p on p.id = s.player_id
+             left join school sc on sc.id = p.school_id
+            where a.person_id = app_user_id()
+              and a.role = 'guardian'
+              and a.active
+              and (a.valid_from  is null or a.valid_from  <= current_date)
+              and (a.valid_until is null or a.valid_until >  current_date)
+              and (a.expires_at  is null or a.expires_at  >  now())
+              and s.verification_state = 'verified'
+              and s.valid_from <= current_date
+              and (s.valid_until is null or s.valid_until > current_date)
+            order by p.full_name, s.player_id
+-- my_children:end
+$v49$;
+
+    -- (own) Sarah: a director of sport, a coach and a parent at two schools.
+    -- Her two children, each with his own school, and nobody else's — though
+    -- her office assignment reads every Hilton family's link.
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(full_name || '@' || school_kind || '@' || coalesce(school_name, '?'), ',' ORDER BY full_name)
+      INTO got FROM _v49_my_children;
+    PERFORM _assert(got = 'D Mkhize@school@Westville Boys'' High,K Dlamini@school@Hilton College',
+      format('§49 (own): Sarah''s family app lists %s', coalesce(got, 'nothing')));
+    PERFORM _assert((SELECT count(*) FROM assignment_subject) > 2,
+      '§49: the fixture is void — Sarah reads no other family''s link to be kept from');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE valid_until IS NOT NULL OR relationship <> 'parent'
+                                  OR verification_state <> 'verified' OR consent_state <> 'granted'),
+      '§49: Sarah''s links are not the open, verified, consented parent links the seed made');
+
+    -- (G11) The end date rides along, and is the link's own.
+    PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date + 400);
+    SELECT valid_until INTO r FROM _v49_my_children WHERE player_id = P_U16B;
+    PERFORM _assert(r.valid_until = current_date + 400, format('§49 (G11): the link''s end date reads %s', r.valid_until));
+    PERFORM _assert((SELECT valid_until FROM _v49_my_children WHERE player_id = P_WES) IS NULL,
+      '§49 (G11): one link''s end date leaked onto the other child''s');
+
+    -- (live) and (verified): a link that has ended, or that the office has
+    -- not verified, is no link — even for Sarah, whose office assignment
+    -- still reads the boy's own row, so RLS on the player cannot hide it.
+    PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date);
+    PERFORM _assert(EXISTS (SELECT 1 FROM player WHERE id = P_U16B), '§49: the fixture is void — Sarah cannot read K Dlamini as staff');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id = P_U16B),
+      '§49 (live): a link that ended today is still on Sarah''s family app');
+    PERFORM _set_link_end_49(P_U16B, U_SARAH, NULL);
+    PERFORM _set_link_state_49(P_U16B, U_SARAH, 'pending');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id = P_U16B),
+      '§49 (verified): a link the office has not verified is on Sarah''s family app');
+    PERFORM _set_link_state_49(P_U16B, U_SARAH, 'verified');
+    PERFORM _assert(EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id = P_U16B AND valid_until IS NULL),
+      '§49: K Dlamini did not come back once his link was verified and open again');
+
+    -- Each other parent: exactly his own live links, as the owner counts
+    -- them (an earlier section gave H Whitfield a second child of his own),
+    -- and none of Sarah's or each other's.
+    PERFORM _as(U_WHIT);
+    SELECT string_agg(player_id::text, ',' ORDER BY player_id::text) INTO got FROM _v49_my_children;
+    PERFORM _assert(got = _live_guardian_links_49(U_WHIT) AND got LIKE '%' || P_WHIT::text || '%',
+      format('§49: H Whitfield''s family app lists %s, his links are %s', coalesce(got, 'nothing'), _live_guardian_links_49(U_WHIT)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id IN (P_U16B, P_WES, P_OTHER, P_INJURED)),
+      '§49: another family''s child is on H Whitfield''s family app');
+    PERFORM _as(U_BEKK);
+    SELECT string_agg(player_id::text, ',' ORDER BY player_id::text) INTO got FROM _v49_my_children;
+    PERFORM _assert(got = _live_guardian_links_49(U_BEKK) AND got LIKE '%' || P_OTHER::text || '%',
+      format('§49: A Bekker''s family app lists %s, his links are %s', coalesce(got, 'nothing'), _live_guardian_links_49(U_BEKK)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id IN (P_U16B, P_WES, P_WHIT, P_INJURED)),
+      '§49: another family''s child is on A Bekker''s family app');
+    PERFORM _as(U_SARAH);
+    PERFORM _assert((SELECT string_agg(player_id::text, ',' ORDER BY player_id::text) FROM _v49_my_children) = _live_guardian_links_49(U_SARAH),
+      '§49 (own): Sarah''s family app is not exactly her live links');
+
+    -- (pending) A link the school verified but the parent has not consented
+    -- under is a live link (app_can() reads verification, not consent), and
+    -- says which it is.
+    PERFORM _as(U_CELE);
+    SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending';
+    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, or does not say consent is pending');
+    -- A link the school has not verified is no link at all.
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE verification_state <> 'verified'),
+      '§49 (pending): an unverified link is listed');
+
+    -- (ended) The parent whose link has ended — D Pillay, wound back above,
+    -- and V Naidoo, whose son turned eighteen before the seed was written.
+    PERFORM _as(U_PARENT);
+    SELECT count(*) INTO n FROM _v49_my_children;
+    PERFORM _assert(n = 0, format('§49 (ended): D Pillay''s ended link still lists %s child(ren)', n));
+    PERFORM _as(U_NAIDOO);
+    SELECT count(*) INTO n FROM _v49_my_children;
+    PERFORM _assert(n = 0, format('§49 (ended): V Naidoo''s ended link still lists %s child(ren)', n));
+
+    -- Nothing for anybody who is not a guardian: a coach, a spectator, the
+    -- pupil reading his own file (self) and the office, which reads every
+    -- link at its school to work them.
+    PERFORM _as(U_COACH2);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children), '§49: a coach''s family app lists children');
+    PERFORM _as(U_WATCHER);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children), '§49: a spectator''s family app lists children');
+    PERFORM _as(U_SELF);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children), '§49 (self): the pupil''s own self link is listed as a child');
+    PERFORM _as(U_REGISTRAR);
+    PERFORM _assert((SELECT count(*) FROM assignment_subject) >= 6,
+      '§49: the fixture is void — the office reads no families'' links to be kept from');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children), '§49 (office): the office''s family app lists the school''s families');
+
+    EXECUTE 'DROP VIEW _v49_my_children';
+  END;
+
+  -- ── 48. Parent lift clubs, phase 1: the arrangement (SCRBRD-124, db/70) ──
+  -- docs/design/SCRBRD-124_lift_clubs.md §8's phase 1 row, with principals:
+  -- the school's two keys; who may offer and who may ask, and the zeros —
+  -- a parent at another school, a parent with no child on the side, a pupil
+  -- under eighteen, a coach, the office, a support session, the owner's key
+  -- and a pad credential neither offer nor ask and read no offer; consent per
+  -- boy per lift, by version; the lone passenger; clearance; a fixture moved
+  -- and called off; links that end; names and numbers only through the two
+  -- logged doors, numbers only on the day; no name, number or address in any
+  -- lift row or notice; the policy withdrawn. _seed_70() builds its own world.
+  -- With Kameel's decisions of 2026-10-01: a lift needs the family's consent
+  -- to processing GRANTED (Pat's mother, pending, then granted); a withdrawal
+  -- or a voided seat that leaves one boy alone under a policy refusing it
+  -- takes his seat back to requested, and one allowing it does not; and no
+  -- pupil drives, offers, or acts for anybody — Ed, eighteen, not for his
+  -- brother through a guardian link. With Kameel's follow-up (2026-10-01):
+  -- Ed, eighteen and at school, asks a seat for himself, is seated, reads his
+  -- own seat and the lift it is on (the driver's name and number once it is
+  -- confirmed, logged) and withdraws it; his mother asks and withdraws for him
+  -- too; at seventeen, or gone from school, he is refused, and his own seat
+  -- is void when he leaves; the one-to-one rule counts children only.
+  -- tools/smoke-lifts.mjs walks the same through the API.
+  --
+  -- Each labelled assertion was falsified once — the guard broken (as the
+  -- owner, inside this file's own transaction, before the section ran) — and
+  -- went red, and was green again restored. 82 breaks, and five single
+  -- layers that held alone as designed (marked "held"):
+  --   (keys)      lift_module_live() without the policy; lift_policy_sign()
+  --               without the platform's grant; with fixture.read for the
+  --               policy capability (the office signed)
+  --   (declare)   the roadworthy check dropped; the contact not required to be
+  --               a child of hers; the registration not normalised
+  --   (pupil)     lift_driver_declare() without its pupil refusal;
+  --               my_lift_standing() without its pupil answer;
+  --               lift_seat_accept() without its driver test (Ed accepted);
+  --               the pupil clause off lift_uncut() (held: every door has its
+  --               own), off lift_passengers() (held), off both (Ed, linked to
+  --               his brother, read three names: (adult-brother))
+  --   (offer)     the out leg's meeting time unchecked; seats past the
+  --               declaration; lift_offer_one_live dropped
+  --   (zero)      lift_seat_not_platform dropped (the owner's key read six
+  --               rows: (rls)); lift_uncut() without the platform clause (the
+  --               owner signed: (keys)); the declaration's pad guard dropped;
+  --               lift_offer_read widened to any guardian at the school
+  --   (cut)       lift_offer_not_pupil dropped (Ed, linked to his brother,
+  --               read three rows); lift_policy_not_pupil dropped
+  --   (adult)     Kameel's follow-up: the request's not_yet_eighteen word
+  --               dropped, and lift_acting_for() calling every pupil 'self'
+  --               (Dan, seventeen: (pupil)); lift_adult_at_school() without
+  --               the age (Dan read offers: (zero)) and without
+  --               still_at_school() ((adult-left)); lift_uncut_for() without
+  --               its exception (Ed read nothing); the request's
+  --               pupil_excluded for another boy dropped (refused, wrong
+  --               word: (cut)), and with lift_uncut_for()'s pupil clause and
+  --               lift_acting_for()'s pupil return also gone (a seat for his
+  --               brother: (cut)); lift_offers_for() listing a pupil's guardian
+  --               links (held: each boy listed must pass lift_uncut_for()),
+  --               and with that check dropped too ((cut)); the driver's name
+  --               shown before his seat is confirmed ((zero)); lift_contacts()
+  --               without its self branch, and without "confirmed" for him;
+  --               lift_notify_family() not telling him; lift_notify() closed
+  --               to him; lift_notify() open to any pupil with
+  --               lift_self_accounts() not asking his age (Dan was told);
+  --               lift_seat_consent_live() taking a self seat on trust
+  --               ((adult-17)); withdraw without 'self'; the guardian of an
+  --               adult refused; the one-to-one count of every passenger (Ed
+  --               alone refused), of the confirmed of any age (Dan beside Ed
+  --               confirmed); the fallback counting Ed (Dan stayed
+  --               confirmed); lift_self_settle() not voiding, and not called
+  --               from the team trigger ((adult-left))
+  --   (consent)   the link test back to "not withdrawn" (Pat's pending mother
+  --               read the offers: (zero)); the declaration without its
+  --               granted test; the standing line without its consent word
+  --   (lone)      the fallback dropped from a withdrawal; dropped from a
+  --               voided seat; taken whatever the policy (Dan, allowed,
+  --               fell back); the family not told; the boy's name put in
+  --               the notice ((privacy))
+  --   (request)   the driver's own son; the side check
+  --   (dup)       the pre-check (the index alone answers with no other offer)
+  --   (names)     a requester let in; the log dropped; the coach on the way home
+  --   (full), (one), (accept)  the seat count; the lone passenger; the driver test
+  --   (summary)   oversee swapped for fixture.read (the coach read the counts)
+  --   (numbers)   the window; confirmed swapped for any guardian at the school;
+  --               the log dropped
+  --   (move)      the version not bumped; the status without driver_version;
+  --               reaffirm asking no family; a request, a reconfirm and a stale
+  --               reaffirm each let through while waiting on the driver
+  --   (edit)      the edit not carrying the driver's yes
+  --   (withdraw)  a stranger let in
+  --   (link)      lift_links_settle() without its seats, without its offers;
+  --               lift_team_changed dropped (first red at (adult-left),
+  --               which it also carries); lift_link_changed dropped
+  --   (clear)     the clearance requirement skipped
+  --   (void)      the abandoned branch; the driver not told
+  --   (side)      the side test widened to any child at the school
+  --   (policy)    the withdrawal not cancelling offers
+  --   (privacy)   a driver_phone column; the driver's name in a notice body
+  --   (write)     INSERT granted, and an INSERT policy, each alone held (two
+  --               layers, as db/57); both together went red
+  --   (coexist)   db/65's availability_ask_again dropped
+  DECLARE
+    ids      jsonb := _seed_70();
+    M        uuid; MV uuid; MT uuid; MA uuid; O_MA uuid; S_ED uuid; S_MD uuid; S_MP uuid;
+    P_JONO   uuid; P_BEN uuid; P_CARL uuid; P_DAN uuid; P_ED uuid; P_FINN uuid; P_WES70 uuid;
+    U_DMUM   uuid; U_BMUM uuid; U_BDAD uuid; U_CMUM uuid; U_DNMUM uuid; U_EMUM uuid; U_FMUM uuid; U_WMUM uuid;
+    U_PMUM   uuid; P_PAT uuid; S_PAT uuid; S_VP uuid;
+    U_DAN    uuid; U_ED uuid; U_COACH70 uuid; U_OFFICE uuid; U_TCO uuid; U_HEAD uuid;
+    C_JONO   uuid; C_BEN uuid;
+    O_OUT    uuid; O_BACK uuid; O_TWO uuid; O_T uuid; O_V uuid; O_LATE uuid;
+    S_BEN    uuid; S_CARL uuid; S_BACK_BEN uuid; S_BACK_CARL uuid; S_T uuid; S_VD uuid;
+    v_ok     boolean;
+    v_reason text;
+    v_id     uuid;
+    v_other  uuid;
+    v_ver    integer;
+    v_start  timestamptz;
+    j        jsonb;
+    got      text;
+    want     text;
+    k        bigint;
+    who      uuid;
+    BODY     text := 'Lifts to fixtures are arranged between families. The school facilitates and does not operate '
+                  || 'lifts: it does not inspect or insure cars. A driver undertakes that she holds a licence, that '
+                  || 'the car is insured and roadworthy, and that every boy wears a belt. If a boy is not collected, '
+                  || 'stay with him and ring the school office. A concern goes to the DSO.';
+  BEGIN
+    M := (ids->>'m')::uuid; MV := (ids->>'mv')::uuid; MT := (ids->>'mt')::uuid; MA := (ids->>'ma')::uuid;
+    P_JONO := (ids->>'p_jono')::uuid; P_BEN := (ids->>'p_ben')::uuid; P_CARL := (ids->>'p_carl')::uuid;
+    P_DAN := (ids->>'p_dan')::uuid; P_ED := (ids->>'p_ed')::uuid; P_FINN := (ids->>'p_finn')::uuid;
+    P_WES70 := (ids->>'p_wes')::uuid;
+    U_DMUM := (ids->>'u_dmum')::uuid; U_BMUM := (ids->>'u_bmum')::uuid; U_BDAD := (ids->>'u_bdad')::uuid;
+    U_CMUM := (ids->>'u_cmum')::uuid; U_DNMUM := (ids->>'u_dnmum')::uuid; U_EMUM := (ids->>'u_emum')::uuid;
+    U_FMUM := (ids->>'u_fmum')::uuid; U_WMUM := (ids->>'u_wmum')::uuid;
+    U_DAN := (ids->>'u_dan')::uuid; U_ED := (ids->>'u_ed')::uuid; U_COACH70 := (ids->>'u_coach')::uuid;
+    U_PMUM := (ids->>'u_pmum')::uuid; P_PAT := (ids->>'p_pat')::uuid;
+    U_OFFICE := (ids->>'u_office')::uuid; U_TCO := (ids->>'u_tco')::uuid; U_HEAD := (ids->>'u_head')::uuid;
+    C_JONO := (ids->>'c_jono')::uuid; C_BEN := (ids->>'c_ben')::uuid;
+    v_start := (ids->>'m_start')::timestamptz;
+    -- The seed's own deferred events fire now, as its commit would: so each
+    -- link step below is judged by the trigger it is about, and no other.
+    PERFORM _v70_fire();
+
+    -- (keys) the platform's grant AND the principal's signed policy (D17)
+    PERFORM _as(U_HEAD);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_policy_sign(HIL, BODY, false, true, 'the Chapel car park');
+    PERFORM _assert(NOT v_ok AND v_reason = 'module_disabled' AND NOT lift_module_live(HIL),
+      format('db/70 (keys): the principal signed a policy before the platform granted the module: %s %s', v_ok, v_reason));
+    PERFORM _v70_grant(HIL, true);
+    PERFORM _assert(NOT lift_module_live(HIL), 'db/70 (keys): the platform''s grant alone switched lift clubs on');
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_driver_declare(HIL, 'silver Toyota Fortuner', 'ND 123 456', 4,
+                                                                  true, true, true, true, true, C_JONO);
+    PERFORM _assert(NOT v_ok AND v_reason = 'module_disabled',
+      format('db/70 (keys): a parent declared with no policy signed: %s %s', v_ok, v_reason));
+    FOREACH who IN ARRAY ARRAY[U_OFFICE, U_DMUM, U_OWNER] LOOP
+      PERFORM _as(who);
+      SELECT ok, reason INTO v_ok, v_reason FROM lift_policy_sign(HIL, BODY, false, true, NULL);
+      PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+        format('db/70 (keys): %s signed the school''s lift policy: %s %s', who, v_ok, v_reason));
+    END LOOP;
+    PERFORM _as(U_HEAD);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_policy_sign(HIL, 'Too short to be a policy.', false, true, NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'policy_too_short', format('db/70 (keys): a two-line policy was taken: %s', v_reason));
+    SELECT ok, reason, version INTO v_ok, v_reason, v_ver FROM lift_policy_sign(HIL, BODY, false, true, 'the Chapel car park');
+    PERFORM _assert(v_ok AND v_ver = 1 AND lift_module_live(HIL),
+      format('db/70 (keys): the principal''s signature left lift clubs %s (%s, version %s)', lift_module_live(HIL), v_reason, v_ver));
+    PERFORM _assert(NOT lift_module_live(WES), 'db/70 (keys): Westville, which the platform has not granted, is live');
+
+    -- (declare) the yearly declaration: the four facts, the code, the car, her number
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_driver_declare(HIL, 'silver Toyota Fortuner', 'ND 123 456', 4,
+                                                                  true, true, false, true, true, C_JONO);
+    PERFORM _assert(NOT v_ok AND v_reason = 'declaration_incomplete', format('db/70 (declare): a car not roadworthy was declared: %s', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_driver_declare(HIL, 'silver Toyota Fortuner', 'ND 123 456', 4,
+                                                                  true, true, true, true, true, C_BEN);
+    PERFORM _assert(NOT v_ok AND v_reason = 'contact_required',
+      format('db/70 (declare): a driver named another family''s number as hers: %s', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_driver_declare(HIL, 'silver Toyota Fortuner', 'nd 123-456', 4,
+                                                                  true, true, true, true, true, C_JONO);
+    PERFORM _assert(v_ok AND (SELECT registration FROM lift_driver_declaration WHERE person_id = U_DMUM AND withdrawn_at IS NULL) = 'ND 123 456'
+                    AND (SELECT may_drive FROM my_lift_standing(HIL)),
+      format('db/70 (declare): the driver''s declaration: %s %s', v_ok, v_reason));
+    -- (pupil) a pupil never drives, at eighteen too (decisions 4 and 5)
+    PERFORM _as(U_ED);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_driver_declare(HIL, 'white Polo', 'NP 1', 4, true, true, true, true, true, NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'pupil_excluded' AND (SELECT reason FROM my_lift_standing(HIL)) = 'pupil_excluded'
+                    AND (SELECT words FROM my_lift_standing(HIL)) LIKE '%A pupil does not drive%',
+      format('db/70 (pupil): a pupil of eighteen declared to drive: %s %s', v_ok, v_reason));
+    -- (consent) a family whose consent to processing is not granted neither
+    -- drives nor asks, and is told why in plain words (decision 2)
+    PERFORM _as(U_PMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_driver_declare(HIL, 'grey Polo', 'NP 77', 2, true, true, true, true, true, NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'consent_not_granted'
+                    AND (SELECT reason FROM my_lift_standing(HIL)) = 'consent_not_granted'
+                    AND (SELECT words FROM my_lift_standing(HIL)) LIKE '%consent to the processing%',
+      format('db/70 (consent): a guardian whose consent is pending declared to drive: %s %s', v_ok, v_reason));
+    PERFORM _as(U_WMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_driver_declare(HIL, 'blue Hilux', 'NU 77', 4, true, true, true, true, true, NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'no_child_at_school',
+      format('db/70 (declare): a parent at another school declared at Hilton: %s', v_reason));
+    PERFORM _as(U_BMUM);
+    SELECT ok INTO v_ok FROM lift_driver_declare(HIL, 'red Corolla', 'NU 88', 1, true, true, true, true, true, C_BEN);
+    PERFORM _assert(v_ok, 'db/70 (declare): a second parent could not declare');
+
+    -- (offer) the driver offers both legs of her own son's fixture (D1, D2)
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'out', 2, 'school', v_start + interval '30 minutes', NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'meet_after_start', format('db/70 (offer): an out leg meeting after the start: %s', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'out', 5, 'school', v_start - interval '105 minutes', NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'more_seats_than_declared', format('db/70 (offer): five seats in a car declared with four: %s', v_reason));
+    SELECT ok, reason, offer_id INTO v_ok, v_reason, O_OUT FROM lift_offer_create(M, 'out', 2, 'school', v_start - interval '105 minutes', 'leaving sharp');
+    SELECT ok, reason, offer_id INTO v_ok, v_reason, O_BACK FROM lift_offer_create(M, 'back', 2, 'ground', v_start + interval '5 hours', NULL);
+    PERFORM _assert(O_OUT IS NOT NULL AND O_BACK IS NOT NULL
+                    AND (_v70_offer(O_OUT)).team_code = 'U15A' AND (_v70_offer(O_OUT)).fixture_starts_at = v_start,
+      format('db/70 (offer): the driver''s two legs: %s %s %s', O_OUT, O_BACK, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'out', 2, 'ground', v_start - interval '60 minutes', NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'already_offered', format('db/70 (offer): a second out leg by the same driver: %s', v_reason));
+
+    -- (zero) nobody else offers, asks, or reads an offer — but Ed, eighteen
+    -- and at school, reads the offers on his own side as a boy who may ask:
+    -- no driver's name, and himself the only boy on it (decision 5)
+    FOREACH who IN ARRAY ARRAY[U_WMUM, U_FMUM, U_DAN, U_ED, U_PMUM, U_COACH70, U_OFFICE, U_TCO, U_HEAD, U_OWNER, U_PLAT] LOOP
+      PERFORM _as(who);
+      SELECT ok INTO v_ok FROM lift_offer_create(M, 'back', 1, 'ground', v_start + interval '6 hours', NULL);
+      PERFORM _assert(NOT v_ok, format('db/70 (zero): %s offered a lift on the U15A''s fixture', who));
+      SELECT ok INTO v_ok FROM lift_seat_request(O_OUT, P_DAN);
+      PERFORM _assert(NOT v_ok, format('db/70 (zero): %s asked for a seat for Dan', who));
+      SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat)
+           + (SELECT count(*) FROM lift_offers_for(M) f
+               WHERE who IS DISTINCT FROM U_ED OR f.driver_name IS NOT NULL
+                  OR f.my_children <> jsonb_build_array(jsonb_build_object('playerId', P_ED, 'name', 'Ed Liftseventy', 'how', 'self'))) INTO k;
+      PERFORM _assert(k = 0, format('db/70 (zero): %s reads %s lift row(s)', who, k));
+      -- The coach is the out leg's receiver (§1.6), asked below.
+      CONTINUE WHEN who = U_COACH70;
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM lift_passengers(O_OUT)) AND lift_contacts(O_OUT) IS NULL,
+        format('db/70 (zero): %s reads the lift''s passengers or numbers', who));
+    END LOOP;
+    -- ...nor a support session at the school (as the transport coordinator,
+    -- who holds oversee), nor a pad credential
+    PERFORM _as(U_PLAT);
+    SELECT ok, reason, id INTO v_ok, v_reason, v_id FROM support_access_begin(HIL, 'transportcoordinator', 'ticket v70: a family''s lift');
+    PERFORM _assert(v_ok, format('db/70 (zero): no support session to test with: %s', v_reason));
+    SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_driver_declaration) + (SELECT count(*) FROM lift_summary(M)) INTO k;
+    PERFORM _assert(k = 0, format('db/70 (zero): a support session at Hilton reads %s lift row(s)', k));
+    PERFORM support_access_end(v_id);
+    PERFORM _as(U_DMUM);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_driver_declaration) + (SELECT count(*) FROM lift_offers_for(M)) INTO k;
+    SELECT ok INTO v_ok FROM lift_offer_create(MV, 'out', 1, 'school', (ids->>'mv_start')::timestamptz - interval '1 hour', NULL);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(k = 0 AND NOT v_ok, format('db/70 (zero): the driver''s pad credential reads %s lift row(s) or offers (%s)', k, v_ok));
+
+    -- (rls) the family on the side reads the offers; the driver reads hers
+    PERFORM _as(U_BMUM);
+    SELECT count(*) INTO k FROM lift_offer WHERE match_id = M;
+    SELECT string_agg(leg || ':' || driver_name || ':' || seats_left, ' ' ORDER BY leg) INTO got FROM lift_offers_for(M);
+    PERFORM _assert(k = 2 AND got = 'back:V70 Dmum:2 out:V70 Dmum:2',
+      format('db/70 (rls): Ben''s mother reads %s offer row(s) and the offers %s', k, got));
+
+    -- (request) consent is his own guardian's, per boy, per lift (rule 1)
+    SELECT ok, reason, seat_id INTO v_ok, v_reason, S_BEN FROM lift_seat_request(O_OUT, P_BEN);
+    PERFORM _assert(v_ok, format('db/70 (request): Ben''s mother could not ask: %s', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_CARL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('db/70 (request): Ben''s mother asked for a team-mate: %s %s', v_ok, v_reason));
+    PERFORM _as(U_CMUM);
+    SELECT ok, seat_id INTO v_ok, S_CARL FROM lift_seat_request(O_OUT, P_CARL);
+    PERFORM _assert(v_ok, 'db/70 (request): Carl''s mother could not ask');
+    -- (pupil) a pupil under eighteen does not ask, even for himself (Ed, at
+    -- eighteen, is (adult) below)
+    PERFORM _as(U_DAN);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_BACK, P_DAN);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen' AND NOT EXISTS (SELECT 1 FROM _v70_seats_of(P_DAN)),
+      format('db/70 (pupil): Dan, seventeen, asked for himself: %s %s', v_ok, v_reason));
+    -- (consent) Pat's mother, pending, is refused and reads no offer; the
+    -- office records her consent, and she asks
+    PERFORM _as(U_PMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_PAT);
+    SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_offers_for(M)) INTO k;
+    PERFORM _assert(NOT v_ok AND v_reason = 'consent_not_granted' AND k = 0,
+      format('db/70 (consent): a guardian whose consent is pending asked (%s %s) or read %s offer row(s)', v_ok, v_reason, k));
+    PERFORM _v70_consent(P_PAT, U_PMUM);
+    PERFORM _v70_fire();
+    SELECT ok, reason, seat_id INTO v_ok, v_reason, S_PAT FROM lift_seat_request(O_OUT, P_PAT);
+    PERFORM _assert(v_ok AND (_v70_seat(S_PAT)).guardian_link_id IS NOT NULL AND (SELECT may_drive IS NOT NULL FROM my_lift_standing(HIL))
+                    AND (SELECT reason FROM my_lift_standing(HIL)) = 'no_declaration',
+      format('db/70 (consent): with her consent granted, Pat''s mother could not ask: %s %s', v_ok, v_reason));
+    -- (pupil) a pupil withdraws, accepts and reconfirms nothing either
+    PERFORM _as(U_ED);
+    SELECT ok INTO v_ok FROM lift_seat_withdraw(S_PAT);
+    PERFORM _assert(NOT v_ok AND (SELECT ok FROM lift_seat_reconfirm(S_PAT)) IS NOT TRUE
+                    AND (SELECT ok FROM lift_seat_accept(ARRAY[S_PAT])) IS NOT TRUE,
+      'db/70 (pupil): a pupil acted on another family''s seat');
+    PERFORM _as(U_FMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_FINN);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_on_side',
+      format('db/70 (request): Finn, of the U14A, was asked onto the U15A''s lift: %s %s', v_ok, v_reason));
+    PERFORM _as(U_CMUM);
+    SELECT ok INTO v_ok FROM lift_seat_accept(ARRAY[S_CARL]);
+    PERFORM _assert(NOT v_ok AND (_v70_seat(S_CARL)).state = 'requested', 'db/70 (accept): a family accepted its own request');
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_JONO);
+    PERFORM _assert(NOT v_ok AND v_reason = 'driver_own_child', format('db/70 (request): the driver seated her own son: %s', v_reason));
+    -- (dup) one live seat per boy per fixture per leg
+    PERFORM _as(U_BMUM);
+    SELECT ok, offer_id INTO v_ok, O_TWO FROM lift_offer_create(M, 'out', 1, 'ground', v_start - interval '45 minutes', NULL);
+    PERFORM _as(U_CMUM);
+    SELECT ok, reason, other_offer INTO v_ok, v_reason, v_other FROM lift_seat_request(O_TWO, P_CARL);
+    PERFORM _assert(O_TWO IS NOT NULL AND NOT v_ok AND v_reason = 'already_on_a_lift' AND v_other = O_OUT,
+      format('db/70 (dup): Carl asked onto a second out leg: %s %s %s', v_ok, v_reason, v_other));
+    -- the driver is told, by notice, naming nobody
+    PERFORM _assert(_v70_notice_count(U_DMUM, 'A seat has been asked for') = 3,
+      format('db/70 (request): the driver has %s request notice(s), expected 3', _v70_notice_count(U_DMUM, 'A seat has been asked for')));
+
+    -- (seat-rls) a family reads its own seat; the driver her seats and no names
+    PERFORM _as(U_BMUM);
+    SELECT string_agg(player_id::text, ' ') INTO got FROM lift_seat;
+    PERFORM _assert(got = P_BEN::text, format('db/70 (rls): Ben''s mother reads the seats of %s', got));
+    PERFORM _as(U_DMUM);
+    SELECT count(*) INTO k FROM lift_seat WHERE offer_id = O_OUT;
+    PERFORM _assert(k = 3 AND NOT EXISTS (SELECT 1 FROM player WHERE id IN (P_BEN, P_CARL, P_ED)),
+      format('db/70 (rls): the driver reads %s seat(s), or a passenger''s name by SQL', k));
+    FOREACH who IN ARRAY ARRAY[U_ED, U_COACH70, U_OFFICE, U_OWNER, U_PLAT] LOOP
+      PERFORM _as(who);
+      SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat) + (SELECT count(*) FROM lift_seat_live) INTO k;
+      PERFORM _assert(k = 0, format('db/70 (rls): %s reads %s offer or seat row(s)', who, k));
+    END LOOP;
+    PERFORM _as(U_OFFICE);
+    SELECT count(*) INTO k FROM lift_driver_declaration;
+    PERFORM _assert(k = 2, format('db/70 (rls): the office reads %s declaration(s), expected the two', k));
+    -- (cut) a pupil who is also a verified guardian — Ed, eighteen, linked to
+    -- his younger brother Dan — still reads no lift row, never drives, and
+    -- sees no boy but himself on the offers (D8, rule 4): the RESTRICTIVE
+    -- pupil cut, not the absence of a link, is what keeps him out
+    PERFORM _v70_brother(U_ED, P_DAN, true);
+    PERFORM _as(U_ED);
+    SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat) + (SELECT count(*) FROM lift_driver_declaration)
+         + (SELECT count(*) FROM lift_policy)
+         + (SELECT count(*) FROM lift_offers_for(M) f, jsonb_array_elements(f.my_children) c WHERE c->>'playerId' <> P_ED::text) INTO k;
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'back', 1, 'ground', v_start + interval '6 hours', NULL);
+    PERFORM _assert(k = 0 AND NOT v_ok AND v_reason = 'pupil_excluded',
+      format('db/70 (cut): Ed, a pupil linked as his brother''s guardian, reads %s lift row(s) and offers: %s %s', k, v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_DAN);
+    PERFORM _assert(NOT v_ok AND v_reason = 'pupil_excluded' AND NOT EXISTS (SELECT 1 FROM _v70_seats_of(P_DAN)),
+      format('db/70 (cut): Ed asked a seat for his brother through his guardian link: %s %s', v_ok, v_reason));
+    PERFORM _v70_brother(U_ED, P_DAN, false);
+
+    -- (names) to the driver, logged; nothing to a family not yet confirmed
+    PERFORM _as(U_DMUM);
+    SELECT string_agg(full_name || ':' || status, ' ' ORDER BY full_name) INTO got FROM lift_passengers(O_OUT);
+    PERFORM _assert(got = 'Ben Liftseventy:requested Carl Liftseventy:requested Pat Liftseventy:requested'
+                    AND _v70_logged('lift_passengers', O_OUT, U_DMUM) = 1,
+      format('db/70 (names): the driver reads %s, logged %s time(s)', got, _v70_logged('lift_passengers', O_OUT, U_DMUM)));
+    PERFORM _as(U_BMUM);
+    SELECT count(*) INTO k FROM lift_passengers(O_OUT);
+    PERFORM _assert(k = 0 AND _v70_logged('lift_passengers', O_OUT, U_BMUM) = 0,
+      format('db/70 (names): a family whose seat is only asked for read %s other passenger(s), or was let in', k));
+
+    -- (full) the seats are the seats
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_BEN, S_CARL, S_PAT]);
+    PERFORM _assert(NOT v_ok AND v_reason = 'seats_full', format('db/70 (full): three accepted into two seats: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_BEN]);
+    PERFORM _assert(v_ok AND _v70_status(S_BEN) = 'confirmed',
+      format('db/70 (accept): a lone passenger, which the policy allows, was refused: %s %s', v_reason, _v70_status(S_BEN)));
+    SELECT ok INTO v_ok FROM lift_seat_accept(ARRAY[S_CARL]);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_PAT]);
+    PERFORM _assert(NOT v_ok AND v_reason = 'seats_full' AND _v70_status(S_CARL) = 'confirmed' AND _v70_status(S_PAT) = 'requested',
+      format('db/70 (full): a third into two seats: %s %s', v_ok, v_reason));
+
+    -- (one) the school's policy refuses a lone passenger (D5): judged on the
+    -- count an acceptance leaves, so two may be taken together
+    PERFORM _as(U_HEAD);
+    SELECT ok, version INTO v_ok, v_ver FROM lift_policy_sign(HIL, BODY, false, false, 'the Chapel car park');
+    PERFORM _assert(v_ok AND v_ver = 2 AND (_v70_offer(O_OUT)).state = 'open',
+      'db/70 (one): re-signing the policy did not take, or touched an open offer');
+    PERFORM _as(U_BMUM);
+    SELECT seat_id INTO S_BACK_BEN FROM lift_seat_request(O_BACK, P_BEN);
+    PERFORM _as(U_CMUM);
+    SELECT seat_id INTO S_BACK_CARL FROM lift_seat_request(O_BACK, P_CARL);
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_BACK_BEN]);
+    PERFORM _assert(NOT v_ok AND v_reason = 'one_to_one_not_allowed',
+      format('db/70 (one): a lone passenger under a policy refusing one: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_BACK_BEN, S_BACK_CARL]);
+    PERFORM _assert(v_ok AND _v70_status(S_BACK_BEN) = 'confirmed' AND _v70_status(S_BACK_CARL) = 'confirmed',
+      format('db/70 (one): two together under that policy: %s %s', v_ok, v_reason));
+
+    -- (names) a confirmed family reads the other confirmed boys, logged; not the asked-for one
+    PERFORM _as(U_BMUM);
+    SELECT string_agg(full_name, ' ' ORDER BY full_name) INTO got FROM lift_passengers(O_OUT);
+    PERFORM _assert(got = 'Ben Liftseventy Carl Liftseventy' AND _v70_logged('lift_passengers', O_OUT, U_BMUM) = 1,
+      format('db/70 (names): Ben''s confirmed mother reads %s', got));
+    -- the coach, for the side's out leg (§1.6): confirmed names, logged; nothing of the way home
+    PERFORM _as(U_COACH70);
+    SELECT string_agg(full_name, ' ' ORDER BY full_name) INTO got FROM lift_passengers(O_OUT);
+    PERFORM _assert(got = 'Ben Liftseventy Carl Liftseventy' AND NOT EXISTS (SELECT 1 FROM lift_passengers(O_BACK))
+                    AND _v70_logged('lift_passengers', O_OUT, U_COACH70) = 1,
+      format('db/70 (names): the side''s coach reads %s of the way out', got));
+
+    -- (summary) the office's counts, and no name; nothing for anybody else
+    PERFORM _as(U_OFFICE);
+    SELECT string_agg(format('%s:%s/%s/%s/%s/%s', leg, offers, seats_offered, confirmed, requested, awaiting), ' ' ORDER BY leg) INTO got
+      FROM lift_summary(M);
+    PERFORM _assert(got = 'back:1/2/2/0/0 out:2/3/2/1/0', format('db/70 (summary): the office reads %s', got));
+    FOREACH who IN ARRAY ARRAY[U_COACH70, U_BMUM, U_DMUM, U_HEAD, U_OWNER] LOOP
+      PERFORM _as(who);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM lift_summary(M)), format('db/70 (summary): %s reads the office''s counts', who));
+    END LOOP;
+
+    -- (numbers) on the day only, to the driver and a confirmed family; logged
+    PERFORM _as(U_DMUM);
+    j := lift_contacts(O_OUT);
+    PERFORM _assert(j IS NULL AND _v70_logged('lift_contacts', O_OUT) = 0,
+      format('db/70 (numbers): the driver read numbers ten days before the lift: %s', j));
+    SELECT offer_id INTO O_T FROM lift_offer_create(MT, 'out', 2, 'school',
+                                                    ((current_date + 1)::timestamp + time '08:00') AT TIME ZONE 'Africa/Johannesburg', NULL);
+    PERFORM _as(U_BMUM);
+    SELECT seat_id INTO S_T FROM lift_seat_request(O_T, P_BEN);
+    PERFORM _as(U_CMUM);
+    SELECT seat_id INTO v_id FROM lift_seat_request(O_T, P_CARL);
+    PERFORM _as(U_DMUM);
+    SELECT ok INTO v_ok FROM lift_seat_accept(ARRAY[S_T, v_id]);
+    j := lift_contacts(O_T);
+    PERFORM _assert(v_ok AND j->>'as' = 'driver'
+                    AND (SELECT string_agg(p->>'name' || '/' || (p->'contacts'->0->>'phone'), ' ' ORDER BY p->>'name')
+                           FROM jsonb_array_elements(j->'passengers') p) = 'Ben Liftseventy/+27 82 070 0002 Carl Liftseventy/+27 82 070 0003'
+                    AND j->'passengers'->0->>'guardian' = 'V70 Bmum',
+      format('db/70 (numbers): the driver reads, on the day, %s', j));
+    PERFORM _as(U_BMUM);
+    j := lift_contacts(O_T);
+    PERFORM _assert(j->>'as' = 'guardian' AND j->'driver'->>'phone' = '+27 82 070 0001'
+                    AND j->'driver'->>'registration' = 'ND 123 456' AND j->'driver'->>'name' = 'V70 Dmum',
+      format('db/70 (numbers): Ben''s mother reads, on the day, %s', j));
+    PERFORM _assert(_v70_logged('lift_contacts', O_T, U_DMUM) = 1 AND _v70_logged('lift_contacts', O_T, U_BMUM) = 1,
+      'db/70 (numbers): a read of the numbers was not on the access log');
+    FOREACH who IN ARRAY ARRAY[U_FMUM, U_COACH70, U_OFFICE, U_ED] LOOP
+      PERFORM _as(who);
+      PERFORM _assert(lift_contacts(O_T) IS NULL, format('db/70 (numbers): %s read the day''s numbers', who));
+    END LOOP;
+
+    -- (move) the fixture moves a day: every lift on it waits on its driver,
+    -- then on each family, then is confirmed again (§1.5)
+    PERFORM _v70_fixture(M, interval '1 day');
+    PERFORM _assert((_v70_offer(O_OUT)).version = 2 AND (_v70_offer(O_OUT)).driver_version = 1
+                    AND (_v70_offer(O_OUT)).fixture_changed_at IS NOT NULL,
+      format('db/70 (move): the out leg after the move is version %s, the driver behind %s',
+             (_v70_offer(O_OUT)).version, (_v70_offer(O_OUT)).driver_version));
+    SELECT string_agg(_v70_status(x), ' ') INTO got FROM unnest(ARRAY[S_BEN, S_CARL, S_PAT, S_BACK_BEN]) x;
+    PERFORM _assert(got = 'awaiting_driver awaiting_driver awaiting_driver awaiting_driver',
+      format('db/70 (move): after the move the seats read %s', got));
+    PERFORM _assert(_v70_notice_count(U_DMUM, 'A fixture has moved: do you still offer the lift?') = 2
+                    AND _v70_notice_count(U_BMUM, 'A lift has changed: please confirm again') = 0,
+      'db/70 (move): the driver was not asked about both legs, or a family was asked before she answered');
+    PERFORM _as(U_CMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_reconfirm(S_CARL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'awaiting_driver', format('db/70 (move): a family said yes before the driver: %s', v_reason));
+    PERFORM _as(U_DNMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_DAN);
+    PERFORM _assert(NOT v_ok AND v_reason = 'awaiting_driver', format('db/70 (move): a new request on a lift waiting on its driver: %s', v_reason));
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_reaffirm(O_OUT, 1);
+    PERFORM _assert(NOT v_ok AND v_reason = 'version_conflict', format('db/70 (move): a reaffirm against a stale version: %s', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_reaffirm(O_OUT, 2);
+    SELECT string_agg(_v70_status(x), ' ') INTO got FROM unnest(ARRAY[S_BEN, S_CARL, S_PAT]) x;
+    PERFORM _assert(v_ok AND got = 'awaiting_guardian awaiting_guardian awaiting_guardian'
+                    AND _v70_notice_count(U_BMUM, 'A lift has changed: please confirm again') = 1
+                    AND _v70_notice_count(U_BDAD, 'A lift has changed: please confirm again') = 1,
+      format('db/70 (move): after the driver stood behind it: %s %s, seats %s', v_ok, v_reason, got));
+    PERFORM _as(U_BMUM);
+    SELECT ok INTO v_ok FROM lift_seat_reconfirm(S_BEN);
+    PERFORM _assert(v_ok AND _v70_status(S_BEN) = 'confirmed' AND _v70_status(S_CARL) = 'awaiting_guardian',
+      format('db/70 (move): after Ben''s mother said yes again, Ben %s and Carl %s', _v70_status(S_BEN), _v70_status(S_CARL)));
+    -- an edit is a new lift too: version up, every family asked again
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason, version INTO v_ok, v_reason, v_ver FROM lift_offer_update(O_BACK, 2, 'school',
+                                                                               v_start + interval '1 day 5 hours', 'by the scoreboard', 2);
+    PERFORM _assert(v_ok AND v_ver = 3 AND _v70_status(S_BACK_BEN) = 'awaiting_guardian' AND _v70_status(S_BACK_CARL) = 'awaiting_guardian',
+      format('db/70 (edit): after the driver''s edit: %s %s %s, Ben %s', v_ok, v_reason, v_ver, _v70_status(S_BACK_BEN)));
+
+    -- (withdraw) a "no" from either guardian ends the seat (D13)
+    PERFORM _as(U_BDAD);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_withdraw(S_BEN);
+    PERFORM _assert(v_ok AND (_v70_seat(S_BEN)).state = 'withdrawn' AND (_v70_seat(S_BEN)).ended_by = U_BDAD,
+      format('db/70 (withdraw): Ben''s father''s no: %s %s', v_ok, v_reason));
+    -- (lone) that left Carl alone on the way there, under a policy refusing
+    -- one-to-one (version 2): his seat is not confirmed any more, and his
+    -- family and the driver are told, naming nobody (decision 3)
+    PERFORM _assert((_v70_seat(S_CARL)).state = 'requested' AND (_v70_seat(S_CARL)).driver_ok_version IS NULL
+                    AND _v70_status(S_CARL) <> 'confirmed'
+                    AND _v70_notice_count(U_CMUM, 'A seat on a lift is no longer confirmed') = 1
+                    AND _v70_notice_count(U_DMUM, 'One boy is left on your lift') = 1,
+      format('db/70 (lone): after Ben was withdrawn Carl''s seat is %s (%s), his mother told %s time(s), the driver %s',
+             (_v70_seat(S_CARL)).state, _v70_status(S_CARL), _v70_notice_count(U_CMUM, 'A seat on a lift is no longer confirmed'),
+             _v70_notice_count(U_DMUM, 'One boy is left on your lift')));
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_CARL]);
+    PERFORM _assert(NOT v_ok AND v_reason IN ('one_to_one_not_allowed', 'awaiting_guardian'),
+      format('db/70 (lone): the driver confirmed Carl alone again: %s %s', v_ok, v_reason));
+    PERFORM _as(U_FMUM);
+    SELECT ok INTO v_ok FROM lift_seat_withdraw(S_CARL);
+    PERFORM _assert(NOT v_ok, 'db/70 (withdraw): a parent withdrew somebody else''s son');
+
+    -- (link) a link that ends voids the seats it consented to (§6.4)
+    PERFORM _v70_end_link(P_CARL, U_CMUM);
+    PERFORM _v70_fire();
+    PERFORM _assert((_v70_seat(S_CARL)).state = 'void' AND (_v70_seat(S_BACK_CARL)).state = 'void'
+                    AND (_v70_offer(O_OUT)).state = 'open',
+      format('db/70 (link): with Carl''s mother''s link ended, his seats are %s and %s',
+             (_v70_seat(S_CARL)).state, (_v70_seat(S_BACK_CARL)).state));
+    -- (lone) and Ben, left alone on the way home by Carl's voided seat, falls
+    -- back too; both his parents are told, and the driver again
+    PERFORM _assert((_v70_seat(S_BACK_BEN)).state = 'requested'
+                    AND _v70_notice_count(U_BMUM, 'A seat on a lift is no longer confirmed') >= 1
+                    AND _v70_notice_count(U_BDAD, 'A seat on a lift is no longer confirmed') >= 1
+                    AND _v70_notice_count(U_DMUM, 'One boy is left on your lift') >= 2,
+      format('db/70 (lone): with Carl''s seat voided, Ben''s seat on the way home is %s', (_v70_seat(S_BACK_BEN)).state));
+
+    -- (clear) a policy requiring clearance: missing refuses, three current allow (D4)
+    PERFORM _as(U_HEAD);
+    SELECT ok INTO v_ok FROM lift_policy_sign(HIL, BODY, true, true, NULL);
+    PERFORM _as(U_BMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'back', 1, 'ground', v_start + interval '1 day 6 hours', NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'clearance_required' AND (SELECT reason FROM my_lift_standing(HIL)) = 'clearance_required',
+      format('db/70 (clear): a driver with no clearance recorded offered under a policy requiring it: %s %s', v_ok, v_reason));
+    PERFORM _v70_clear(U_BMUM, HIL);
+    SELECT ok, reason, offer_id INTO v_ok, v_reason, O_LATE FROM lift_offer_create(M, 'back', 1, 'ground', v_start + interval '1 day 6 hours', NULL);
+    PERFORM _assert(v_ok, format('db/70 (clear): a driver with the three checks current was refused: %s', v_reason));
+    PERFORM _v70_clear(U_DMUM, HIL);
+
+    -- (void) the fixture called off: every lift and seat on it void; one
+    -- notice to each adult, none to a pupil
+    PERFORM _as(U_BMUM);
+    SELECT offer_id INTO O_V FROM lift_offer_create(MV, 'out', 1, 'school', (ids->>'mv_start')::timestamptz - interval '1 hour', NULL);
+    PERFORM _as(U_DMUM);
+    SELECT offer_id INTO v_id FROM lift_offer_create(MV, 'out', 3, 'school', (ids->>'mv_start')::timestamptz - interval '2 hours', NULL);
+    PERFORM _as(U_DNMUM);
+    SELECT seat_id INTO S_VD FROM lift_seat_request(v_id, P_DAN);
+    PERFORM _as(U_PMUM);
+    SELECT seat_id INTO S_VP FROM lift_seat_request(v_id, P_PAT);
+    PERFORM _as(U_DMUM);
+    SELECT ok INTO v_ok FROM lift_seat_accept(ARRAY[S_VD, S_VP]);
+    PERFORM _assert(v_ok AND O_V IS NOT NULL, 'db/70 (void): the lifts to the fixture that is called off could not be arranged');
+    -- (lone) under a policy that allows one-to-one (version 3), a withdrawal
+    -- that leaves Dan alone leaves his seat confirmed
+    PERFORM _as(U_PMUM);
+    SELECT ok INTO v_ok FROM lift_seat_withdraw(S_VP);
+    PERFORM _assert(v_ok AND (_v70_seat(S_VD)).state = 'confirmed' AND _v70_status(S_VD) = 'confirmed'
+                    AND _v70_notice_count(U_DNMUM, 'A seat on a lift is no longer confirmed') = 0,
+      format('db/70 (lone): under a policy allowing it, Dan alone is %s', _v70_status(S_VD)));
+    PERFORM _v70_fixture(MV, interval '0', 'abandoned');
+    PERFORM _assert((_v70_offer(O_V)).state = 'void' AND (_v70_offer(v_id)).state = 'void' AND (_v70_offer(v_id)).cancel_kind = 'fixture'
+                    AND (_v70_seat(S_VD)).state = 'void' AND (_v70_seat(S_VP)).state = 'withdrawn',
+      format('db/70 (void): after the fixture was called off the lifts are %s and %s', (_v70_offer(O_V)).state, (_v70_offer(v_id)).state));
+    PERFORM _assert(_v70_notices(MV, 'A lift is no longer available') || ' ' || _v70_notices(MV, 'A fixture is off')
+                      = U_DNMUM::text
+                        || ' ' || (SELECT string_agg(x::text, ' ' ORDER BY x::text) FROM unnest(ARRAY[U_BMUM, U_DMUM]) x),
+      format('db/70 (void): the called-off fixture told %s / %s; expected Dan''s family and the two drivers once each',
+             _v70_notices(MV, 'A lift is no longer available'), _v70_notices(MV, 'A fixture is off')));
+
+    -- (adult) Kameel's follow-up (2026-10-01): a pupil of eighteen still at
+    -- school asks a seat for himself — his own say, through his own self
+    -- link — reads his own seat and the lift it is on, and withdraws it; his
+    -- mother, by db/62's link past eighteen, may ask and withdraw for him too.
+    -- Under a policy refusing one-to-one (version 4): the rule counts
+    -- children, so an adult alone is seated and keeps no child company.
+    PERFORM _as(U_HEAD);
+    SELECT ok, version INTO v_ok, v_ver FROM lift_policy_sign(HIL, BODY, true, false, NULL);
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason, offer_id INTO v_ok, v_reason, O_MA
+      FROM lift_offer_create(MA, 'out', 3, 'school', (ids->>'ma_start')::timestamptz - interval '1 hour', NULL);
+    PERFORM _assert(v_ok AND v_ver = 4, format('db/70 (adult): no lift to test with: %s %s, policy version %s', v_ok, v_reason, v_ver));
+    PERFORM _as(U_ED);
+    SELECT string_agg(coalesce(f.driver_name, '-') || ':' || f.meet_place || ':' || f.seats_left || ':' || f.my_children::text, ' ')
+      INTO got FROM lift_offers_for(MA) f;
+    want := '-:At school:3:' || jsonb_build_array(jsonb_build_object('playerId', P_ED, 'name', 'Ed Liftseventy', 'how', 'self'))::text;
+    PERFORM _assert(got = want, format('db/70 (adult): Ed, eighteen and at school, reads the lift as %s', got));
+    SELECT ok, reason, seat_id INTO v_ok, v_reason, S_ED FROM lift_seat_request(O_MA, P_ED);
+    PERFORM _assert(v_ok AND (_v70_seat(S_ED)).consent_by = 'self' AND (_v70_seat(S_ED)).guardian_link_id IS NULL
+                    AND (_v70_seat(S_ED)).requested_by = U_ED AND _v70_status(S_ED) = 'requested',
+      format('db/70 (adult): Ed, eighteen and at school, could not ask for himself: %s %s', v_ok, v_reason));
+    -- (adult-brother) ...and for nobody else: not for his brother, through a guardian link
+    PERFORM _v70_brother(U_ED, P_DAN, true);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_MA, P_DAN);
+    PERFORM _assert(NOT v_ok AND v_reason = 'pupil_excluded' AND NOT EXISTS (SELECT 1 FROM _v70_seats_of(P_DAN)),
+      format('db/70 (adult-brother): Ed, eighteen, asked a seat for his brother: %s %s', v_ok, v_reason));
+    PERFORM _v70_brother(U_ED, P_DAN, false);
+    PERFORM _v70_fire();
+    -- (adult-read) his own seat and nothing else: no lift table, no passenger
+    -- list, no counts, and no name or number while his seat is only asked for
+    PERFORM _as(U_ED);
+    SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat) + (SELECT count(*) FROM lift_seat_live)
+         + (SELECT count(*) FROM lift_driver_declaration) + (SELECT count(*) FROM lift_policy)
+         + (SELECT count(*) FROM lift_passengers(O_MA)) + (SELECT count(*) FROM lift_summary(MA)) INTO k;
+    SELECT string_agg(coalesce(f.driver_name, '-') || ':' || (f.my_seats->0->>'status'), ' ') INTO got FROM lift_offers_for(MA) f;
+    PERFORM _assert(k = 0 AND got = '-:requested' AND lift_contacts(O_MA) IS NULL AND _v70_logged('lift_contacts', O_MA) = 0,
+      format('db/70 (adult-read): Ed reads %s lift row(s), and his seat as %s', k, got));
+    -- (one-adult) the driver confirms Ed alone: an adult is not a lone child
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_ED]);
+    PERFORM _assert(v_ok AND _v70_status(S_ED) = 'confirmed',
+      format('db/70 (one-adult): Ed alone, eighteen, was refused under a policy refusing one-to-one: %s %s', v_ok, v_reason));
+    -- ...and keeps no child company: Dan with only Ed beside him is still one-to-one
+    PERFORM _as(U_DNMUM);
+    SELECT seat_id INTO S_MD FROM lift_seat_request(O_MA, P_DAN);
+    PERFORM _as(U_PMUM);
+    SELECT seat_id INTO S_MP FROM lift_seat_request(O_MA, P_PAT);
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_MD]);
+    PERFORM _assert(NOT v_ok AND v_reason = 'one_to_one_not_allowed' AND S_MP IS NOT NULL,
+      format('db/70 (one-adult): Dan, seventeen, was confirmed with only Ed, an adult, beside him: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_MD, S_MP]);
+    PERFORM _assert(v_ok AND _v70_status(S_MD) = 'confirmed' AND _v70_status(S_MP) = 'confirmed',
+      format('db/70 (one-adult): Dan and Pat together beside Ed: %s %s', v_ok, v_reason));
+    -- (adult-read) confirmed, Ed reads the driver's name and her number, as a
+    -- guardian would, logged; still no passenger list and no counts
+    PERFORM _as(U_ED);
+    SELECT string_agg(coalesce(f.driver_name, '-') || ':' || (f.my_seats->0->>'status'), ' ') INTO got FROM lift_offers_for(MA) f;
+    j := lift_contacts(O_MA);
+    PERFORM _assert(got = 'V70 Dmum:confirmed' AND j->>'as' = 'guardian' AND j->'driver'->>'phone' = '+27 82 070 0001'
+                    AND j->'driver'->>'name' = 'V70 Dmum' AND j->'passengers' IS NULL
+                    AND _v70_logged('lift_contacts', O_MA, U_ED) = 1
+                    AND NOT EXISTS (SELECT 1 FROM lift_passengers(O_MA)) AND NOT EXISTS (SELECT 1 FROM lift_summary(MA)),
+      format('db/70 (adult-read): Ed, confirmed, reads %s and %s, logged %s time(s)', got, j, _v70_logged('lift_contacts', O_MA, U_ED)));
+    -- (adult-brother) linked again as Dan's guardian, with Dan confirmed beside
+    -- him, Ed reads no passenger list and cannot withdraw his brother's seat
+    PERFORM _v70_brother(U_ED, P_DAN, true);
+    PERFORM _as(U_ED);
+    SELECT count(*) INTO k FROM lift_passengers(O_MA);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_withdraw(S_MD);
+    PERFORM _assert(k = 0 AND _v70_logged('lift_passengers', O_MA, U_ED) = 0 AND NOT v_ok AND _v70_status(S_MD) = 'confirmed',
+      format('db/70 (adult-brother): Ed, linked to Dan, read %s passenger(s) or withdrew his seat (%s %s)', k, v_ok, v_reason));
+    PERFORM _v70_brother(U_ED, P_DAN, false);
+    PERFORM _v70_fire();
+    PERFORM _as(U_ED);
+    -- (adult-notice) he is told his seat is confirmed, as is his mother, naming
+    -- nobody; he reads his own notice, and no team-mate reads it
+    SELECT count(*) INTO k FROM notification n
+     WHERE n.title = 'A seat on a lift is confirmed' AND n.subject_person_id = P_ED AND n.kind = 'system';
+    PERFORM _assert(k = 1 AND _v70_notice_count(U_EMUM, 'A seat on a lift is confirmed') = 1,
+      format('db/70 (adult-notice): Ed reads %s notice(s) that his seat is confirmed; his mother has %s',
+             k, _v70_notice_count(U_EMUM, 'A seat on a lift is confirmed')));
+    PERFORM _as(U_DAN);
+    SELECT count(*) INTO k FROM notification n WHERE n.subject_person_id = P_ED;
+    PERFORM _assert(k = 0 AND _v70_lift_notices_to(U_DAN) = 0,
+      format('db/70 (adult-notice): Dan, seventeen, reads %s notice(s) about Ed, and has %s lift notice(s)', k, _v70_lift_notices_to(U_DAN)));
+    -- (lone-adult) Pat withdrawn leaves Dan the only child: he falls back,
+    -- his family told; Ed, an adult, stays confirmed
+    PERFORM _as(U_PMUM);
+    SELECT ok INTO v_ok FROM lift_seat_withdraw(S_MP);
+    PERFORM _assert(v_ok AND (_v70_seat(S_MD)).state = 'requested' AND _v70_status(S_ED) = 'confirmed'
+                    AND _v70_notice_count(U_DNMUM, 'A seat on a lift is no longer confirmed') = 1
+                    AND _v70_lift_notices_to(U_DAN) = 0,
+      format('db/70 (lone-adult): with Pat withdrawn, Dan beside Ed is %s and Ed %s', (_v70_seat(S_MD)).state, _v70_status(S_ED)));
+    -- (adult) Ed withdraws his own seat
+    PERFORM _as(U_ED);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_withdraw(S_ED);
+    PERFORM _assert(v_ok AND (_v70_seat(S_ED)).state = 'withdrawn' AND (_v70_seat(S_ED)).ended_by = U_ED,
+      format('db/70 (adult): Ed could not withdraw his own seat: %s %s', v_ok, v_reason));
+    -- (guardian-adult) his mother asks for him and withdraws it, her granted link the consent
+    PERFORM _as(U_EMUM);
+    SELECT ok, reason, seat_id INTO v_ok, v_reason, S_ED FROM lift_seat_request(O_MA, P_ED);
+    PERFORM _assert(v_ok AND (_v70_seat(S_ED)).consent_by = 'guardian' AND (_v70_seat(S_ED)).guardian_link_id IS NOT NULL,
+      format('db/70 (guardian-adult): Ed''s mother could not ask for him at eighteen: %s %s', v_ok, v_reason));
+    SELECT ok INTO v_ok FROM lift_seat_withdraw(S_ED);
+    PERFORM _assert(v_ok AND (_v70_seat(S_ED)).state = 'withdrawn' AND (_v70_seat(S_ED)).ended_by = U_EMUM,
+      'db/70 (guardian-adult): Ed''s mother could not withdraw his seat');
+    -- (adult-17) at seventeen (his date of birth put right) he is refused,
+    -- reads no lift, and the seat he had asked for himself stands on no yes:
+    -- the driver cannot confirm it
+    PERFORM _as(U_ED);
+    SELECT ok, seat_id INTO v_ok, S_ED FROM lift_seat_request(O_MA, P_ED);
+    PERFORM _set_born(P_ED, (current_date - make_interval(years => 17) - make_interval(days => 40))::date);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_MA, P_ED);
+    SELECT count(*) INTO k FROM lift_offers_for(MA);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen' AND k = 0 AND lift_contacts(O_MA) IS NULL
+                    AND _v70_status(S_ED) = 'awaiting_guardian',
+      format('db/70 (adult-17): Ed at seventeen asked (%s %s), read %s offer(s), his seat %s', v_ok, v_reason, k, _v70_status(S_ED)));
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_ED]);
+    PERFORM _assert(NOT v_ok AND v_reason = 'awaiting_guardian',
+      format('db/70 (adult-17): the driver confirmed Ed''s own seat at seventeen: %s %s', v_ok, v_reason));
+    PERFORM _set_born(P_ED, (current_date - make_interval(years => 18) - make_interval(days => 40))::date);
+    -- (adult-left) at eighteen and gone from school: refused, reads no lift,
+    -- and the seat he had asked for himself is void
+    PERFORM _as(U_ED);
+    PERFORM _assert(_v70_status(S_ED) = 'requested', format('db/70 (adult-left): Ed''s own seat at eighteen again reads %s', _v70_status(S_ED)));
+    PERFORM _v60_leave(P_ED);
+    PERFORM _v70_fire();
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_MA, P_ED);
+    SELECT count(*) INTO k FROM lift_offers_for(MA);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_at_school' AND k = 0 AND (_v70_seat(S_ED)).state = 'void',
+      format('db/70 (adult-left): Ed, gone from school, asked (%s %s), read %s offer(s), his seat %s',
+             v_ok, v_reason, k, (_v70_seat(S_ED)).state));
+    PERFORM _v60_rejoin(P_ED);
+    PERFORM _v70_fire();
+
+    -- (link) the driver's son leaves the side: her lifts on it are cancelled
+    -- link_ended, and she cannot offer on it (D2)
+    PERFORM _v70_move(P_JONO, 'U14A');
+    PERFORM _v70_fire();
+    PERFORM _assert((_v70_offer(O_OUT)).state = 'cancelled' AND (_v70_offer(O_OUT)).cancel_kind = 'link_ended'
+                    AND (_v70_offer(O_T)).cancel_kind = 'link_ended' AND (_v70_seat(S_T)).state = 'cancelled'
+                    AND (_v70_offer(O_TWO)).state = 'open',
+      format('db/70 (link): with her son moved off the side, her lift is %s (%s)', (_v70_offer(O_OUT)).state, (_v70_offer(O_OUT)).cancel_kind));
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'out', 2, 'school', v_start + interval '1 day' - interval '2 hours', NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'no_child_on_side',
+      format('db/70 (side): a driver with no son on the side offered: %s %s', v_ok, v_reason));
+    PERFORM _assert(_v70_notice_count(U_BMUM, 'A lift is no longer available') >= 1,
+      'db/70 (link): the family on a lift cancelled when its driver''s son left the side was not told');
+
+    -- (withdraw-policy) the principal withdraws: every open offer cancelled, and off
+    PERFORM _as(U_HEAD);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_policy_withdraw(HIL);
+    PERFORM _assert(v_ok AND NOT lift_module_live(HIL)
+                    AND (_v70_offer(O_TWO)).cancel_kind = 'policy_withdrawn' AND (_v70_offer(O_LATE)).cancel_kind = 'policy_withdrawn'
+                    AND NOT EXISTS (SELECT 1 FROM lift_offer o WHERE o.school_id = HIL AND o.state IN ('open', 'closed')),
+      format('db/70 (policy): withdrawing the policy left lifts open: %s %s', v_ok, v_reason));
+    PERFORM _as(U_BMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'back', 1, 'ground', v_start + interval '1 day 7 hours', NULL);
+    PERFORM _assert(NOT v_ok AND v_reason IN ('module_disabled', 'no_policy'),
+      format('db/70 (policy): an offer after the policy was withdrawn: %s', v_reason));
+
+    -- (privacy) no lift row holds a number, address or name; no notice names
+    -- a person or reaches a pupil but the boy of eighteen about his own seat;
+    -- the application writes no lift row
+    SELECT string_agg(table_name || '.' || column_name, ' ') INTO got FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name LIKE 'lift\_%'
+       AND column_name ~ '(phone|address|name|email|id_number|mobile|location|latitude|longitude)';
+    PERFORM _assert(got IS NULL, format('db/70 (privacy): lift rows carry %s', got));
+    PERFORM _assert(_v70_named_notices() = 0 AND _v70_pupil_notices() = 0,
+      format('db/70 (privacy): %s lift notice(s) name a person and %s reach a pupil', _v70_named_notices(), _v70_pupil_notices()));
+    PERFORM _as(U_DMUM);
+    BEGIN
+      INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
+      VALUES (HIL, M, 'U15A', 'out', U_DMUM, (SELECT id FROM lift_driver_declaration LIMIT 1), 1, 'school', now(), now());
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, 'db/70 (write): a parent wrote a lift row past the functions');
+    BEGIN
+      UPDATE lift_seat SET state = 'confirmed' WHERE player_id = P_JONO;
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, 'db/70 (write): a parent rewrote a seat past the functions');
+    -- (coexist) SCRBRD-122's trigger and this file's both stand on match
+    PERFORM _assert((SELECT count(*) FROM pg_trigger WHERE tgrelid = 'match'::regclass AND NOT tgisinternal
+                       AND tgname IN ('availability_ask_again', 'lift_fixture_moved')) = 2,
+      'db/70 (coexist): db/65''s and db/70''s triggers on match are not both in place');
+  END;
   PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

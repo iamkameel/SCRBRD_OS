@@ -37,6 +37,8 @@ const ok = (label, cond, detail = "") => {
 
 const SECRET = "test-secret-0123456789abcdef0123456789abcdef";
 const M1 = "77777777-0000-0000-0000-0000000000a1";
+/** A published competition (SCRBRD-114 phase 3a). */
+const C_PUB = "99999999-0000-0000-0000-0000000000a1";
 const M2 = "77777777-0000-0000-0000-0000000000a2";
 const ON = "2026-09-28";
 
@@ -302,6 +304,14 @@ const fakePool = {
         away_published: true, scores: [{ innings: 0, runs: 25, wickets: 2, balls: 12 }], served_on: ON }] : [] };
       // The match's frozen playing conditions (SCRBRD-114, db/61): this one has none.
       if (/public_match_conditions/.test(text)) return { rows: [] };
+      // The result (SCRBRD-114 phase 3a, db/69), as structure, and a published competition's table.
+      if (/public_match_result/.test(text)) return { rows: served ? [{ outcome: "home_win", margin_kind: "runs", margin: 12, decided_by: "play",
+        winner_side: "home", play_outcome: "home_win", play_winner_side: "home", play_margin_kind: "runs", play_margin: 12,
+        decision_applied: false, decision_kind: null, decision_side: null, decision_overrides_play: null }] : [] };
+      if (/public_competition_standing/.test(text)) return { rows: params[0] === C_PUB ? [
+        { rank: 1, division: null, side: "Hilton College 1XI", played: 2, won: 2, lost: 0, tied: 0, drawn: 0, no_result: 0, points: "8", nrr: "1.250", basis: "computed" },
+        { rank: 2, division: null, side: "Westville Boys' High 1XI", played: 2, won: 0, lost: 2, tied: 0, drawn: 0, no_result: 0, points: "0", nrr: "-1.250", basis: "computed" },
+      ] : [] };
       if (/public_match_people/.test(text)) return { rows: served ? PEOPLE : [] };
       if (/public_match_log/.test(text)) return { rows: served ? ROWS : [] };
       if (/public_shot_sectors/.test(text)) return { rows: served ? [{ innings: 0, sector: 9, shots: 1, runs: 4 }] : [] };
@@ -342,6 +352,20 @@ const on = await serve({});
   const h = await on.get(`/api/public/matches/${M1}`);
   ok("the header answers 200, team level", h.status === 200 && JSON.parse(h.body).match.homeLabel === "Hilton College 1XI");
   ok("...and carries no day, no player", !/servedOn|served_on/.test(h.body) && leaks(h.body).length === 0, leaks(h.body));
+  // SCRBRD-114 phase 3a: the result as the server reads it, in words, sides named, no reason.
+  const hr = JSON.parse(h.body).match.result;
+  ok("the header carries the result, in words, the side by its label", hr?.outcome === "home_win" && hr?.text === "Hilton College 1XI won by 12 runs", hr);
+  ok("...and no reason a decision gave", !/reason/i.test(h.body));
+  const st = await on.get(`/api/public/competitions/${C_PUB}/standings`);
+  const sj = st.status === 200 ? JSON.parse(st.body) : null;
+  ok("a published competition's table answers 200, team level: sides, figures, ranks",
+     st.status === 200 && st.headers["cache-control"] === "public, max-age=30" && sj?.rows?.length === 2
+     && sj.rows[0].side === "Hilton College 1XI" && sj.rows[0].points === 8 && sj.rows[1].nrr === -1.25, st.body);
+  ok("...and nothing else: no reason, no player", !/reason|adjust/i.test(st.body) && leaks(st.body).length === 0);
+  const st404 = await on.get(`/api/public/competitions/99999999-0000-0000-0000-0000000000ff/standings`);
+  const stBad = await on.get(`/api/public/competitions/not-a-uuid/standings`);
+  ok("an unpublished competition, and an id that is not one, are the one not found",
+     st404.status === 404 && stBad.status === 404 && st404.body === stBad.body);
   const l = await on.get(`/api/public/matches/${M1}/log`);
   ok("the log answers 200 with the projection", l.status === 200 && JSON.parse(l.body).events.length === out.events.length);
   ok("...and leaks nothing", leaks(l.body).length === 0, leaks(l.body));

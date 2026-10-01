@@ -93,6 +93,10 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
   const inviteBadge = (/** @type {number} */ n) => (
     <span data-testid="mnav-invites-badge" aria-hidden="true" style={{position:"absolute",top:"2px",right:"calc(50% - 20px)",background:T.semantic.warning,color:inkOn(T.semantic.warning),borderRadius:D.pill,padding:"0 5px",fontFamily:D.mono,fontSize:"12px",fontWeight:700,minWidth:"16px"}}>{n}</span>
   );
+  // A persona's bar (step 4 §2.0) is four short words and no More, so its
+  // labels can meet the 12px floor (§3.2); a staff bar of five keeps its
+  // small caps until the drawer is redrawn.
+  const roomy = rest.length === 0;
   const Item = ({ k, isMore }) => {
     const m = isMore ? { icon:"menu", label:"More" } : NAV_META[k];
     const isActive = isMore ? moreActive : active===k;
@@ -112,8 +116,8 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
         flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",padding:"7px 2px",
         background:isActive?D.indigo+"16":"transparent",border:"none",borderRadius:D.md,cursor:"pointer",position:"relative",minHeight:"52px",justifyContent:"center"}}>
         <span aria-hidden="true" style={{fontSize:"17px",lineHeight:1,color:isActive?D.textPrimary:D.textSecondary}}><Icon name={m.icon}/></span>
-        <span aria-hidden="true" style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
-        {isBell&&notifCount>0&&<span style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:inkOn(D.rose),borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"13px"}}>{notifCount}</span>}
+        <span aria-hidden="true" style={{fontFamily:roomy?D.body:D.head,fontSize:roomy?"12px":"8px",fontWeight:700,letterSpacing:roomy?"0.02em":"0.08em",textTransform:roomy?"none":"uppercase",whiteSpace:"nowrap",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
+        {isBell&&notifCount>0&&<span data-testid="mnav-alerts-badge" style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:inkOn(D.rose),borderRadius:D.pill,padding:"0 5px",fontFamily:D.mono,fontSize:"12px",fontWeight:700,minWidth:"16px"}}>{notifCount}</span>}
         {waiting>0&&inviteBadge(waiting)}
       </button>
     );

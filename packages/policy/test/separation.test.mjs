@@ -313,6 +313,42 @@ group("WL  Workload and wellness: his staff and him, never a team-mate");
      !TEAM_SCOPED_ROLES.includes("fitness") && !SUBJECT_SCOPED_ROLES.includes("fitness"));
 }
 
+// ── LIFT · Families arrange, the school facilitates (SCRBRD-124, db/70) ──
+// docs/design/SCRBRD-124_lift_clubs.md §2.1, as confirmed against this file.
+// The four jobs are four pairs of hands: the family arranging for its own
+// children; the side's staff receiving; the office overseeing in counts; the
+// principal signing the policy. A pupil holds none (D8: he never drives;
+// from eighteen he asks for his own seat through his self link). The DSO
+// gains nothing (§2.1: the history and the bar come through safeguarding.*).
+// A bus driver gains nothing: a lift is not a trip. Falsified by adding
+// transport.lift.arrange to `selfaccess` and transport.lift.oversee to
+// `principal`: both go red below.
+group("LIFT  Families arrange lifts; the school facilitates and does not operate them");
+{
+  const LIFT = ALL_CAPABILITIES.filter((c) => c.startsWith("transport.lift."));
+  ok("the four lift capabilities exist",
+     ["transport.lift.arrange", "transport.lift.receive", "transport.lift.oversee", "transport.lift.policy"]
+       .every((c) => LIFT.includes(c)) && LIFT.length === 4, LIFT.join(" "));
+  const without = (/** @type {string} */ c) => holders(c).filter((r) => r !== "superadmin").sort().join(",");
+  ok("arrange is the guardian's alone", without("transport.lift.arrange") === "guardian", without("transport.lift.arrange"));
+  ok("receive is the side's staff's", without("transport.lift.receive") === "assistantcoach,coach,teammanager",
+     without("transport.lift.receive"));
+  ok("oversee is held by exactly the roles that hold transport.manage",
+     without("transport.lift.oversee") === holders("transport.manage").filter((r) => r !== "superadmin").sort().join(","),
+     without("transport.lift.oversee"));
+  ok("policy is the principal's alone", without("transport.lift.policy") === "principal", without("transport.lift.policy"));
+  const pupils = ["player", "selfaccess", "enquiry", "spectator"];
+  ok("no pupil, enquiry or observer holds any lift capability",
+     pupils.every((r) => reach(r, LIFT).length === 0), pupils.map((r) => `${r}: ${reach(r, LIFT).join(",")}`).join(" · "));
+  ok("the DSO and the bus driver gain nothing", reach("dso", LIFT).length === 0 && reach("driver", LIFT).length === 0);
+  ok("no role but the owner's key both arranges and oversees (the family is not the office)",
+     ROLES.filter((r) => r !== "superadmin" && caps(r).includes("transport.lift.arrange") && caps(r).includes("transport.lift.oversee")).length === 0);
+  ok("the principal signs and does not oversee: switching lifts on is not reading them",
+     !caps("principal").includes("transport.lift.oversee") && !caps("principal").includes("transport.lift.arrange"));
+  ok("arrange reaches a child only through the guardian link: guardian is subject-scoped",
+     SUBJECT_SCOPED_ROLES.includes("guardian"));
+}
+
 group("§11.4  Administering a school is not conducting a safeguarding case");
 ok("schooladmin sees that a disciplinary record exists and cannot write one",
    caps("schooladmin").includes("discipline.read") && !caps("schooladmin").includes("discipline.write"));

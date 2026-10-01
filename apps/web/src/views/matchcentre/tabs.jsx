@@ -26,10 +26,15 @@ export { SummaryTab, CommentaryTab, PartnershipsTab };
 
 // ── Analytics ───────────────────────────────────────────
 
-export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs }) {
+export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs, focus = null }) {
   const [wheelOf, setWheelOf] = useState(null);
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-analytics-empty">Nothing has been scored yet.</Quiet>;
+  // Family mode (step 4 G13): a per-player wheel is offered for the reader's
+  // own child (or the pupil himself) only — another child's row is one this
+  // reader may not open (§2.1 P4), so it is not offered. The whole innings
+  // stays, as every spectator has it.
+  const offered = inn.batsmen.filter((b) => b.balls > 0 && (!focus || focus.has(b.id)));
   const legal = inn.ballLog.filter((b) => b.type !== "Wd" && b.type !== "Nb");
   const dots = legal.filter((b) => (b.type ?? "run") === "run" && b.value === 0).length;
   const bnds = legal.filter((b) => (b.type ?? "run") === "run" && (b.value === 4 || b.value === 6)).length;
@@ -60,7 +65,7 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs 
       </div>
       <H>Shot placement</H>
       <div role="group" aria-label="Whose shots" style={{ display: "flex", gap: T.space.xs, flexWrap: "wrap", marginBottom: T.space.sm }}>
-        {[{ id: null, name: "Whole innings" }, ...inn.batsmen.filter((b) => b.balls > 0)].map((b) => {
+        {[{ id: null, name: "Whole innings" }, ...offered].map((b) => {
           const on = wheelOf === (b.id ?? null);
           return (
             <button key={b.id ?? "all"} type="button" aria-pressed={on} onClick={() => setWheelOf(b.id ?? null)} className="pressBtn os-state"
@@ -87,7 +92,7 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs 
           <WagonAnalysisPanel
             balls={inn.ballLog}
             handOf={(strikerId) => batHandOf(inn, strikerId)}
-            batters={inn.batsmen.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
+            batters={offered.map((b) => ({ id: b.id, name: b.name }))}
             bowlers={inn.bowlers.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
           />
         </ErrorBoundary>

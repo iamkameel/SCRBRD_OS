@@ -31,6 +31,12 @@ const SUITES = [
   // The wicket-keeper (SCRBRD-126): the event, the keeper at each ball, his
   // catches and stumpings, a stumping only his (Law 39), the words.
   ["keeper",   "packages/scoring/test/keeper.test.mjs"],
+  // ── SCRBRD-114 phase 3a (db/69): a match's result ──
+  // describeResult() over the design's logs (result-logs.mjs, which
+  // smoke-fold-figures holds match_result() to): the abandoned seal and two
+  // innings a side read right, decisions, and the words.
+  ["result",   "packages/scoring/test/result.test.mjs"],
+  // ── end SCRBRD-114 phase 3a ──
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],
@@ -77,6 +83,8 @@ const SUITES = [
   // Pure derivations behind the Post-Match Report and Season Awards screens
   // (SCRBRD-082/084) — no DOM, no database, just the fold's own shapes.
   ["post-match-report", "apps/web/test/post-match-report.test.mjs"],
+  // SCRBRD-114 phase 3a: the league table's words and choices (lib/standings.js).
+  ["standings", "apps/web/test/standings.test.mjs"],
   ["season-awards",     "apps/web/test/season-awards.test.mjs"],
   // A figure a scorebook did not record stays null on the career screens
   // (SCRBRD-120 D12): the adapter, the strike rate over recorded balls, "at least N".
@@ -121,6 +129,10 @@ const SUITES = [
   // before a batter is offered, the fold after it and his return (SCRBRD-071).
   ["retire-sheet", "apps/web/test/retire-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["ways-out", "apps/web/test/ways-out.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Redesign step 4, phase A: the family and pupil apps' helpers — one child
+  // per screen, a method and never a name, the tenant's words (G15) — and
+  // the Match Centre's family mode (G13).
+  ["family", "apps/web/test/family.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,
   // its source, "N of M confirmed", a version's standing, a refusal in words.
   ["playing-conditions-screen", "apps/web/test/playing-conditions.test.mjs"],

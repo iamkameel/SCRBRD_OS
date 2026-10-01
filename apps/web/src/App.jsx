@@ -19,6 +19,8 @@ import { useWaitingInvitations } from "./lib/invitations.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
+import { PersonaBar } from "./shell/PersonaBar.jsx";
+import { personaOf } from "./lib/features.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut } from "./lib/session.js";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
@@ -81,6 +83,16 @@ const SkillsView        = view(() => import("./views/SkillsView.jsx"),        "S
 const SquadView         = view(() => import("./views/SquadView.jsx"),         "SquadView");
 const StaffView         = view(() => import("./views/StaffView.jsx"),         "StaffView");
 const TrainingView      = view(() => import("./views/TrainingView.jsx"),      "TrainingView");
+// Redesign step 4, phase A: the family app and the pupil's app — two small
+// applications inside the same shell, each with its own four destinations.
+const FamilyHome        = view(() => import("./views/family/family.jsx"),     "FamilyHome");
+const FamilyMatches     = view(() => import("./views/family/family.jsx"),     "FamilyMatches");
+const FamilyNotices     = view(() => import("./views/family/family.jsx"),     "FamilyNotices");
+const FamilyFile        = view(() => import("./views/family/family.jsx"),     "FamilyFile");
+const PupilHome         = view(() => import("./views/family/pupil.jsx"),      "PupilHome");
+const PupilMatches      = view(() => import("./views/family/pupil.jsx"),      "PupilMatches");
+const PupilPassport     = view(() => import("./views/family/pupil.jsx"),      "PupilPassport");
+const PupilMe           = view(() => import("./views/family/pupil.jsx"),      "PupilMe");
 const loadScorer = () => import("./scorer/index.jsx");
 const ScorerApp  = lazy(loadScorer);
 
@@ -507,7 +519,25 @@ export default function SCRBRD_OS() {
     management:   <ManagementView    role={role} users={users} setUsers={setUsersTracked}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,
+    // The family app (step 4 P1–P7) and the pupil's (S1–S4).
+    children:     <FamilyHome        role={role} onNav={setPage}/>,
+    fixtures:     <FamilyMatches     role={role}/>,
+    notices:      <FamilyNotices     role={role}/>,
+    family:       <FamilyFile        role={role}/>,
+    myhome:       <PupilHome         role={role}/>,
+    mymatches:    <PupilMatches      role={role}/>,
+    passport:     <PupilPassport     role={role}/>,
+    me:           <PupilMe           role={role} onNav={setPage}/>,
   };
+  // The persona apps' own header (step 4 §2.0) for a signed-in parent or
+  // pupil; the demonstration keeps the staff top bar, whose role switcher is
+  // the only way to leave a persona there.
+  const persona = personaOf(role);
+  const personaHeader = persona && signedIn();
+  // A persona that lands on a page it has no view for opens its own Home,
+  // never the staff dashboard.
+  const home = persona ? (ROLES[role]?.nav?.[0] ?? "dashboard") : "dashboard";
+  const shown = VIEW_MAP[page] ? page : home;
 
   return (
     <>
@@ -518,7 +548,7 @@ export default function SCRBRD_OS() {
             navigation entry on every single page change — and the nav is up to
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
-        {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
+        {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can
               be reached without a session — the demo entry, a restored
@@ -531,17 +561,19 @@ export default function SCRBRD_OS() {
               <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"11px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
             </div>
           )}
-          <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>
-          <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={VIEW_MAP[page] ? page : "dashboard"} style={{flex:1,overflowY:"auto",outline:"none"}}>
+          {personaHeader
+            ? <PersonaBar active={page} onNav={setPage} onSignOut={handleSignOut} userName={userName}/>
+            : <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>}
+          <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={shown} data-persona={persona ?? undefined} style={{flex:1,overflowY:"auto",outline:"none"}}>
             {/* One boundary round the routed view, keyed on the page: a view
                 that throws is replaced by a card in its own place, and the
                 nav, the top bar and this <main> stay. Inside the Suspense so
                 a view whose chunk fails to load is caught too. ViewChange
                 says which view has loaded and moves focus here (above). */}
-            <Suspense fallback={<Loading what={VIEW_MAP[page] ? page : "dashboard"}/>}>
-              <ViewChange page={VIEW_MAP[page] ? page : "dashboard"} title={NAV_META[VIEW_MAP[page] ? page : "dashboard"]?.label ?? page}/>
+            <Suspense fallback={<Loading what={shown}/>}>
+              <ViewChange page={shown} title={NAV_META[shown]?.label ?? page}/>
               <ErrorBoundary key={page} name={NAV_META[page]?.label ?? "page"}>
-                {VIEW_MAP[page] || VIEW_MAP.dashboard}
+                {VIEW_MAP[shown] || VIEW_MAP.dashboard}
               </ErrorBoundary>
             </Suspense>
           </main>

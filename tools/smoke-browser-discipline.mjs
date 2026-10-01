@@ -122,7 +122,8 @@ async function signIn(page, email) {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
   await page.waitForTimeout(2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
+  return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 async function nav(page, id) {
   const l = tid(page, `nav-${id}`).first();
@@ -352,16 +353,26 @@ try {
   }
 
   // ── 4. The pupil, and a coach ────────────────────────────────────
-  group("The pupil sees no Conduct tab — staff only, by product decision");
+  // The staff Conduct tab stays staff-only (rbac/conduct.js). The pupil's
+  // OWN record is his to read on his Me screen — on request, behind a tap,
+  // never on Home (step 4 §9 Q6, decided by Kameel 2026-09-27) — so the app
+  // asks for it only when he does.
+  group("The pupil: no Conduct tab, and his own record only on Me, when he asks (§9 Q6)");
   {
     const s = await open();
     ok("the pupil signs in", await signIn(s.page, "pillay@example.invalid"));
-    ok("...opens his own profile", await openProfile(s.page, P_SELF));
-    ok("no Conduct tab is drawn for him", await conductTab(s.page).count() === 0);
-    ok("...though the rest of his profile is", await tid(s.page, "profile-tab-overview").count() === 1);
-    ok("his matter's account is nowhere on the page", !(await text(s.page)).includes(ACCOUNT));
-    ok("he is not offered an incident report on a fixture", await toMatch(s.page, M_STOOD) && await tid(s.page, "incident-panel").count() === 0);
-    ok("the app never asked for his record", s.reads.length === 0, s.reads.join(" "));
+    ok("...to his own app, which offers no profiles screen and no Conduct tab",
+       await tid(s.page, "nav-profiles").count() === 0 && await conductTab(s.page).count() === 0);
+    ok("his matter's account is not on his Home", !(await text(s.page)).includes(ACCOUNT));
+    ok("...and the app has not asked for his record", s.reads.length === 0, s.reads.join(" "));
+    ok("his Me opens", await nav(s.page, "me"));
+    ok("...where his conduct record is behind a tap, unread", await tid(s.page, "me-conduct-show").count() === 1
+       && !(await text(s.page)).includes(ACCOUNT) && s.reads.length === 0, s.reads.join(" "));
+    await tid(s.page, "me-conduct-show").click({ timeout: 4000 }).catch(() => {});
+    await s.page.waitForTimeout(1500);
+    ok("he asks: the record is read once, and his own matter is there", s.reads.length === 1
+       && (await tid(s.page, "me-conduct").innerText().catch(() => "")).includes(ACCOUNT), s.reads.join(" "));
+    ok("he is not offered an incident report on a fixture", await tid(s.page, "incident-panel").count() === 0);
     ok("no console errors", s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
   }

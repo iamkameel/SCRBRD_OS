@@ -85,23 +85,37 @@ function KeeperMark() {
   return <span data-testid="mc-keeper-mark" aria-label="wicket-keeper" title="Wicket-keeper" style={{ color: T.content.secondary }}>†</span>;
 }
 
+/**
+ * Family mode (step 4 G13): the reader's own child's row — or the pupil's own
+ * — is lit, with a rule down its edge and a word beside the name, never a
+ * colour alone (§3.7). Nothing about any other row changes.
+ */
+function FocusTag({ label }) {
+  return (
+    <span data-testid="mc-focus-tag" style={{ ...T.role.label, fontSize: "12px", color: T.content.primary, border: `1px solid ${T.line.strong}`,
+      borderRadius: T.radius.pill, padding: "1px 8px", whiteSpace: "nowrap" }}>{label}</span>
+  );
+}
+const focusEdge = (lit) => (lit ? { borderLeft: `4px solid ${T.brand.accentText}` } : {});
+
 /** A batter's row, which opens for a signed-in reader. */
-function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kept = false }) {
+function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kept = false, lit = false, litLabel = null }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
   const opens = !!onToggle;
   const nameCell = (
     <span style={{ minWidth: 0, width: "100%", display: "grid", gap: "2px", textAlign: "left" }}>
-      <span style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, display: "flex", alignItems: "center", gap: T.space.xs }}>
+      <span style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap" }}>
         {b.name}{kept && <KeeperMark/>}{b.status === "batting" && <span aria-label="not out" style={{ color: T.content.secondary }}>*</span>}
+        {lit && litLabel && <FocusTag label={litLabel}/>}
         {opens && <Icon name="chevron-down" style={{ marginLeft: "auto", color: T.content.tertiary, transform: open ? "rotate(180deg)" : "none" }}/>}
       </span>
       <span data-testid="mc-dismissal" style={{ fontFamily: T.type.body, fontSize: "13px", lineHeight: 1.35, color: T.content.secondary }}>{howOut(b)}</span>
     </span>
   );
   return (
-    <div role="rowgroup" data-testid="mc-bat-row" data-not-out={notOut ? "true" : undefined}
-      style={{ borderBottom: `1px solid ${T.line.subtle}`, background: notOut ? T.surface.interactive : "transparent" }}>
+    <div role="rowgroup" data-testid="mc-bat-row" data-not-out={notOut ? "true" : undefined} data-focus={lit ? "true" : undefined}
+      style={{ borderBottom: `1px solid ${T.line.subtle}`, background: notOut || lit ? T.surface.interactive : "transparent", ...focusEdge(lit) }}>
       <div role="row" style={{ display: "grid", gridTemplateColumns: COLS, gap: T.space.xs, alignItems: "center",
         padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px" }}>
         {opens ? (
@@ -145,7 +159,7 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kep
   );
 }
 
-export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null }) {
+export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null, focus = null, focusLabel = null }) {
   const [openId, setOpenId] = useState(null);
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-scorecard-empty">Nothing has been scored yet.</Quiet>;
@@ -194,7 +208,7 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
           <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
             onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
             commentaryLine={b.status === "out" ? byKey.get(dismissalKey(inn, b.id, innEvents) ?? "")?.text ?? null : null}
-            profile={profileOf(b.id)} Wheel={Wheel} kept={kept.has(b.id)}/>
+            profile={profileOf(b.id)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
         ))}
         {dnb.map((p) => (
           <div key={p.id} role="row" data-testid="mc-dnb" style={{ display: "grid", gridTemplateColumns: COLS, gap: T.space.xs, alignItems: "center",
@@ -227,9 +241,14 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
         <div role="table" aria-label="Bowling" data-testid="mc-bowling" style={{ border: `1px solid ${T.line.normal}`, marginTop: T.space.lg, borderRadius: T.radius.lg, overflow: "hidden" }}>
           <HeadRow cols={BOWL_COLS} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
           {inn.bowlers.map((bw) => (
-            <div key={bw.id} role="row" style={{ display: "grid", gridTemplateColumns: BOWL_COLS, gap: T.space.xs, alignItems: "center",
-              padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px", borderBottom: `1px solid ${T.line.subtle}` }}>
-              <span role="rowheader" style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, minWidth: 0 }}>{bw.name}</span>
+            <div key={bw.id} role="row" data-focus={focus?.has(bw.id) ? "true" : undefined}
+              style={{ display: "grid", gridTemplateColumns: BOWL_COLS, gap: T.space.xs, alignItems: "center",
+              padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px", borderBottom: `1px solid ${T.line.subtle}`,
+              ...(focus?.has(bw.id) ? { background: T.surface.interactive, ...focusEdge(true) } : {}) }}>
+              <span role="rowheader" style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, minWidth: 0,
+                display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap" }}>
+                {bw.name}{focus?.has(bw.id) && focusLabel && <FocusTag label={focusLabel}/>}
+              </span>
               <Figs values={[oversOf(bw.balls), bw.maidens, bw.runs, bw.wickets, econ(bw.runs, bw.balls)]} strong={3}/>
             </div>
           ))}

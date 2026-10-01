@@ -10,7 +10,7 @@ import { Icon } from "../ui/icons.jsx";
 // ══════════════════════════════════════════════════════
 //  SIDEBAR
 // ══════════════════════════════════════════════════════
-function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut }) {
+function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut, persona = null }) {
   // The role's destinations, narrowed by the modules this school has on.
   // Narrowed only — useNav() cannot add a destination the role did not hold.
   const nav = useNav(role);
@@ -45,8 +45,10 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
           every other application puts it and where it costs the navigation
           nothing. */}
 
-      {/* Sport switcher — ScrbrdOS multi-sport shell */}
-      {!collapsed&&<SportSwitcher/>}
+      {/* Sport switcher — ScrbrdOS multi-sport shell. Not on a family's or a
+          pupil's rail (step 4 §2.0): their app is four destinations about
+          one child, and a choice of sport is the school's, not theirs. */}
+      {!collapsed&&!persona&&<SportSwitcher/>}
 
       {/* Nav — one landmark, one group per section. A heading names each
           section for sighted readers; role="group" + aria-labelledby names it
@@ -103,7 +105,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
                 }}>
                   <span style={{fontSize:"15px",textAlign:"center",width:collapsed?"100%":"auto",color:isActive?rc.color:T.content.secondary}}><Icon name={m.icon}/></span>
                   {!collapsed&&<span style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:isActive?600:400,color:isActive?T.content.primary:T.content.secondary}}>{m.label}</span>}
-                  {isBell&&notifCount>0&&<span data-testid="nav-alerts-badge" style={{marginLeft:"auto",background:T.semantic.critical,color:T.surface.canvas,borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"9px",fontWeight:700}}>{notifCount}</span>}
+                  {isBell&&notifCount>0&&<span data-testid="nav-alerts-badge" style={{marginLeft:"auto",background:T.semantic.critical,color:T.surface.canvas,borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"12px",fontWeight:700}}>{notifCount}</span>}
                   {waiting>0&&<span data-testid="nav-invites-badge" aria-hidden="true" style={{marginLeft:collapsed?0:"auto",position:collapsed?"absolute":"static",top:"2px",right:"2px",background:T.semantic.warning,color:inkOn(T.semantic.warning),borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"12px",fontWeight:700}}>{waiting}</span>}
                 </button>
               );

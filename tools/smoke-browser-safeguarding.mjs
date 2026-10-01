@@ -104,7 +104,8 @@ async function signIn(page, email) {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
   await page.waitForTimeout(2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
+  return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 async function toSafeguarding(page) {
   const l = tid(page, "nav-safeguarding").first();

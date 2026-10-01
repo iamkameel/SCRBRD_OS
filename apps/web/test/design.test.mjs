@@ -629,7 +629,7 @@ group("Role identity");
 // model had never heard of, while fourteen roles that DO carry permissions had
 // no identity at all. Signing in as a director of sport gave ROLES[undefined]
 // and an empty shell.
-const { ROLE_IDENTITY, ROLES, ROLE_FAMILIES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, canonicalRole, groupNav, navForRoles } = await import(join(SRC, "design/roles.js"));
+const { ROLE_IDENTITY, ROLES, ROLE_FAMILIES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, NAV_META, PERSONA_NAV, PERSONA_ONLY, canonicalRole, groupNav, navForRoles, personaFor } = await import(join(SRC, "design/roles.js"));
 const { ROLES: POLICY_ROLES, roleGrants } = await import("@scrbrd/policy/roles");
 
 ok("every policy role has a visual identity",
@@ -806,9 +806,42 @@ ok("...and `also` names only real policy roles",
 // come through self-access, and the persona still shows them.
 ok("the player role holds no development read across the side", !roleGrants("player", "player.development.read"));
 ok("...so on its own it is not offered the skills screen", !navForRoles(["player"]).includes("skills"));
-ok("...and with self-access it is", navForRoles(["player", "selfaccess"]).includes("skills") && ROLES.player.nav.includes("skills"));
+// Step 4 (G12): with self-access he is the pupil persona, whose app is four
+// destinations. His ratings are on Me — his own file, through selfaccess —
+// not on a coach's Skills screen.
+ok("...and with self-access he is the pupil persona, whose Me is his own file",
+   personaFor(["player", "selfaccess"]) === "pupil" && ROLES.player.nav.includes("me")
+   && !navForRoles(["player", "selfaccess"]).includes("skills") && roleGrants("selfaccess", NAV_CAPABILITY.me));
 ok("a coach who is also a parent gets both menus",
    navForRoles(["coach", "guardian"]).includes("skills") && navForRoles(["guardian"]).length < navForRoles(["coach", "guardian"]).length);
+
+group("The persona apps: four destinations each, never wider than the map (step 4 G12)");
+// §2.0: the parent's bar is Home · Matches · Notices · Family and the pupil's
+// Home · Matches · Passport · Me, four items and no drawer.
+const label = (keys) => keys.map((k) => NAV_META[k]?.label).join(" · ");
+ok(`the parent's bar is ${label(ROLES.guardian.nav)}`,
+   label(ROLES.guardian.nav) === "Home · Matches · Notices · Family" && ROLES.guardian.nav.length === 4);
+ok(`the pupil's bar is ${label(ROLES.player.nav)}`,
+   label(ROLES.player.nav) === "Home · Matches · Passport · Me" && ROLES.player.nav.length === 4);
+ok("each persona's bar is a group of its own, so the rail draws one section and no empty heading",
+   groupNav(ROLES.guardian.nav).length === 1 && groupNav(ROLES.player.nav).length === 1);
+// A persona is the SET of roles held, never one badge.
+ok("a guardian, twice over (two schools), is the family persona", personaFor(["guardian", "guardian"]) === "family");
+ok("a player without his own record is not the pupil persona", personaFor(["player"]) === null);
+ok("a parent who is also staff is not a persona: she keeps the staff menu",
+   personaFor(["directorofsport", "coach", "guardian"]) === null && navForRoles(["directorofsport", "coach", "guardian"]).includes("dashboard"));
+ok("...and gains the family's Home and Family beside it, and only those",
+   ["children", "family"].every((k) => navForRoles(["coach", "guardian"]).includes(k))
+   && !navForRoles(["coach", "guardian"]).some((k) => PERSONA_ONLY.has(k) && !["children", "family"].includes(k)));
+// A persona destination is never offered on capability alone: a coach holds
+// fixture.read and player.profile.read and is offered no family screen.
+const staffWith = POLICY_ROLES.filter((r) => !personaFor([r, ...(ROLE_IDENTITY[r]?.also ?? [])]) && r !== "guardian");
+ok(`no staff role is offered a persona's destination by capability alone (${staffWith.length} roles)`,
+   staffWith.every((r) => !navForRoles([r]).some((k) => PERSONA_ONLY.has(k))),
+   staffWith.filter((r) => navForRoles([r]).some((k) => PERSONA_ONLY.has(k))).join(", "));
+ok("every persona destination names a capability its persona's roles hold",
+   Object.values(PERSONA_NAV).every((p) => p.bar.every((k) => typeof NAV_CAPABILITY[k] === "string"
+     && p.roles.some((r) => roleGrants(r, NAV_CAPABILITY[k])))));
 // The concrete case: a scorer holds no medical capability and must not be
 // offered the injuries screen, whatever a hand-written list once said.
 ok("a scorer is not offered injuries", !ROLES.scorer.nav.includes("injuries"));

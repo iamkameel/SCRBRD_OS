@@ -265,7 +265,11 @@ export function PublicMatch({ matchId, view }) {
     });
   }, [spoken, match, data.fold, data.people]);
 
-  const result = match ? (resultText(match, folded?.result) ?? null) : null;
+  // The server's words where it has a result (SCRBRD-114 phase 3a, db/69):
+  // sides named, never a boy, never an organiser's reason; the fold's while
+  // it has none.
+  const result = match ? ((match.result && match.result.outcome !== "in_progress" ? match.result.text : null)
+    ?? resultText(match, folded?.result, { reasons: false }) ?? null) : null;
   const { moment, overSummary } = useMoments(commentary, !data.loading && !!match);
   // What a screen reader is told as each ball arrives (lib/announce.js): the
   // newest only, and nothing for the log as it stood on first load.
@@ -308,7 +312,7 @@ export function PublicMatch({ matchId, view }) {
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !folded?.result ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
             {isLive && !folded?.result && <span className="live-dot" aria-hidden="true"/>}
-            {folded?.result || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {folded?.result || (match.result && match.result.outcome !== "in_progress") || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}

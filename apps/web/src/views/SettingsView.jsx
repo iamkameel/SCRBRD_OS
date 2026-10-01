@@ -15,6 +15,8 @@ import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-bir
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
+// SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
+import { LiftDeclarationPanel, LiftPolicyPanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 import { Icon } from "../ui/icons.jsx";
 
@@ -850,6 +852,11 @@ function MeTab({ role }) {
           this person answers for, and his own. Nothing for staff. */}
       <HealthConsentSection role={role} nonce={consentNonce} onChanged={consentChanged}/>
 
+      {/* SCRBRD-124: lift clubs — where she stands, and her yearly
+          declaration. The family's own page until STEP 4's Family exists.
+          Drawn only where the module is live at her son's school. */}
+      <LiftDeclarationPanel/>
+
       <BoundariesSection role={role}/>
       <AlertsSection role={role}/>
       <MyClearancesSection role={role}/>
@@ -1057,14 +1064,19 @@ function ScoutingConsentSection({ role, players }) {
   );
 }
 
-function PassportTab({ role }) {
+// `only` (step 4 P7d): the family app opens this on ONE child's Family card,
+// and narrows the players offered and the grants listed to that child. The
+// server decides as it always has; this only keeps a child's card about him.
+function PassportTab({ role, only = null }) {
   const [nudge, setNudge] = useState(0);
   const [schools, setSchools] = useState([]);
   const [playerId, setPlayerId] = useState("");
   const [schoolId, setSchoolId] = useState("");
   const [said, setSaid] = useState("");
-  const players = useRows("players", role);
-  const rows = useLive("passport_consents", role, nudge).rows;
+  const allPlayers = useRows("players", role);
+  const onlyIds = only ? new Set(only.map((c) => c.id)) : null;
+  const players = onlyIds ? allPlayers.filter((p) => onlyIds.has(p.id)) : allPlayers;
+  const rows = useLive("passport_consents", role, nudge).rows.filter((r) => !onlyIds || onlyIds.has(r.playerId));
   useEffect(() => { let off = false; api("/api/schools").then((r) => { if (!off && r?.rows) setSchools(r.rows); }).catch(() => {}); return () => { off = true; }; }, []);
   const grant = async () => {
     setSaid("");
@@ -1210,6 +1222,10 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
       </div>
 
       <OpenCeiling/>
+
+      {/* SCRBRD-124: the school's lift policy, signed or withdrawn by the
+          principal (the second of the two keys). Drawn for transport.lift.policy. */}
+      <LiftPolicyPanel/>
 
       {canAudit && <AuditSection role={role}/>}
 
@@ -1405,4 +1421,6 @@ function RoadmapTab() {
   );
 }
 
-export { SettingsView };
+// PassportTab (with ScoutingConsentSection inside it) is reached from the
+// family app's Consents (step 4 P7d) as well as from here.
+export { PassportTab, SettingsView };

@@ -95,6 +95,23 @@ ok("...4 wickets, the fold's own words", resultText(live, { winner: "Westville B
    === "Westville Boys' High 1XI won by 4 wickets");
 ok("a tie", resultText(live, { winner: null, margin: "tie" }) === "Match tied");
 ok("no result yet", resultText(live, null) === null);
+// SCRBRD-114 phase 3a: the outcome shape, the fold's or match_result()'s.
+ok("a fold's win, named by side as the Match Centre names it",
+   resultText(live, { outcome: "away_win", marginKind: "wickets", marginValue: 4, winnerSide: "away", winnerKey: "Westville Boys' High 1XI",
+                      playOutcome: "away_win", decision: null, decisionApplied: false }) === "Westville Boys' High 1XI won by 4 wickets");
+ok("...told no sides, by the innings' own name",
+   resultText(live, { outcome: "win", marginKind: "runs", marginValue: 1, winnerSide: null, winnerKey: "1XI",
+                      playOutcome: "win", decision: null, decisionApplied: false }) === "Hilton College 1XI won by 1 run");
+ok("a no result is \"No result\", never \"Match tied (no result)\"",
+   resultText(live, { outcome: "no_result", winner: null, margin: "no result", playOutcome: "no_result", decision: null, decisionApplied: false }) === "No result");
+const walk = { outcome: "home_win", marginKind: "walkover", winnerSide: "home", playOutcome: "in_progress", decisionApplied: true,
+               decision: { kind: "walkover", side: "home", reason: "Westville did not arrive" } };
+ok("a walkover", resultText(live, walk) === "Walkover to Hilton College 1XI");
+const award = { outcome: "tie", winnerSide: "away", playOutcome: "tie", decisionApplied: true,
+                decision: { kind: "awarded", side: "away", reason: "the higher seed goes through" } };
+ok("an award beside a tie, with the reason signed in and without it on the public page",
+   resultText(live, award) === "Match tied; awarded to Westville Boys' High 1XI by the organiser: the higher seed goes through"
+   && resultText(live, award, { reasons: false }) === "Match tied; awarded to Westville Boys' High 1XI by the organiser");
 
 group("SCRBRD-100: a rain delay or interruption");
 ok("overs and target both revised", JSON.stringify(revisionNotice({ revised: { overs: 42, target: 180, reason: "rain" } }))

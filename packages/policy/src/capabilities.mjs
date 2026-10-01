@@ -284,6 +284,17 @@ export const CAPABILITIES = {
   "transport.read":              "See transport arrangements",
   "transport.manage":            "Plan trips, vehicles and drivers",
   "transport.drive":             "Operate an assigned trip",
+  // ── SCRBRD-124: parent lift clubs (db/70) ──
+  // Not a trip: a family's car, arranged between families, which the school
+  // facilitates and does not operate. Four capabilities, because the four
+  // jobs never belong to one person: the family arranging (its own children
+  // only, by the guardian link), the side's staff receiving at the ground,
+  // the office overseeing in counts, and the principal signing the policy.
+  "transport.lift.arrange":      "Offer lifts to and ask seats for one's own children's fixtures",
+  "transport.lift.receive":      "Receive the side's boys arriving by lift, and see who is expected",
+  "transport.lift.oversee":      "See the school's lift counts and exceptions, and cancel a lift",
+  "transport.lift.policy":       "Sign or withdraw the school's lift policy",
+  // ── end SCRBRD-124 ──
   "facility.read":               "See grounds and bookings",
   "facility.manage":             "Manage grounds and bookings",
 
@@ -528,6 +539,12 @@ export const LEVEL = Object.freeze({
 
   // ── Operations ──
   "transport.read": 1, "transport.manage": 1, "transport.drive": 1,
+  // SCRBRD-124 (db/70): arranging reaches other children's names on the day
+  // and adults' numbers, and overseeing reaches the exceptions by name — both
+  // Restricted Personal. Receiving is the coach's head count; the policy is
+  // the school's own text.
+  "transport.lift.arrange": 2, "transport.lift.oversee": 2,
+  "transport.lift.receive": 1, "transport.lift.policy": 1,
   "facility.read": 0, "facility.manage": 1,
 
   // ── Money ──

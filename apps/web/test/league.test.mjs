@@ -43,13 +43,16 @@ ok("no entrants: step 2", resumeStep({ entrants: 0, sets: [] }) === 2);
 ok("entrants and no conditions: step 3", resumeStep({ entrants: 4, sets: [] }) === 3);
 ok("a draft open: step 3", resumeStep({ entrants: 4, sets: [{ status: "draft" }] }) === 3);
 ok("published: step 4", resumeStep({ entrants: 4, sets: [{ status: "published" }] }) === 4);
+ok("only a withdrawn set, nothing to publish: step 3, the conditions stated again (SCRBRD-131)", resumeStep({ entrants: 4, sets: [{ status: "withdrawn" }] }) === 3);
+ok("...a withdrawn set beside a published one is still step 4", resumeStep({ entrants: 4, sets: [{ status: "withdrawn" }, { status: "published" }] }) === 4);
+ok("...and a withdrawn set beside a draft is step 3", resumeStep({ entrants: 4, sets: [{ status: "withdrawn" }, { status: "draft" }] }) === 3);
 
 group("A part-made league says so");
 const S = leagueSetupState;
 ok("no entrants: part-made, step 2, in the wizard's words", JSON.stringify(S({ entrants: 0, sets: [] })) === '{"partMade":true,"step":2,"words":"Setting up: step 2 of 4, Entrants"}', JSON.stringify(S({ entrants: 0, sets: [] })));
 ok("entrants and no conditions: part-made at step 3", S({ entrants: 4, sets: [] }).partMade && S({ entrants: 4, sets: [] }).words === "Setting up: step 3 of 4, Playing conditions");
 ok("a draft only: part-made at step 3", S({ entrants: 2, sets: [{ status: "draft" }] }).partMade && S({ entrants: 2, sets: [{ status: "draft" }] }).step === 3);
-ok("only a withdrawn set is not a published one: part-made at step 4", S({ entrants: 2, sets: [{ status: "withdrawn" }] }).partMade && S({ entrants: 2, sets: [{ status: "withdrawn" }] }).words === "Setting up: step 4 of 4, Review and publish");
+ok("only a withdrawn set is not a published one: part-made at step 3, the conditions again", S({ entrants: 2, sets: [{ status: "withdrawn" }] }).partMade && S({ entrants: 2, sets: [{ status: "withdrawn" }] }).words === "Setting up: step 3 of 4, Playing conditions");
 ok("entrants and a published set: complete, nothing to say", JSON.stringify(S({ entrants: 4, sets: [{ status: "published" }] })) === '{"partMade":false,"step":4,"words":""}');
 ok("...even with a newer draft beside it", !S({ entrants: 4, sets: [{ status: "published" }, { status: "draft" }] }).partMade);
 ok("a published set with no entrants is still part-made", S({ entrants: 0, sets: [{ status: "published" }] }).partMade && S({ entrants: 0, sets: [{ status: "published" }] }).step === 2);

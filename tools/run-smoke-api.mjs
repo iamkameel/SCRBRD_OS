@@ -46,6 +46,12 @@ const WALKS = [
   // citations, the fixture's competition, the document fixed on the first
   // event (live and on the pad's credential), the handover's hash.
   "playing-conditions",
+  // ── SCRBRD-114 phase 3a (db/69): match results and the league table ──
+  // Two matches scored on the real write path, the result in words, the
+  // table computed under the league's figures, a walkover, adjustments, a
+  // re-fix, an amendment that flips a result, and the signed-out reads.
+  "results",
+  // ── end SCRBRD-114 phase 3a ──
   // The scorebook importer (SCRBRD-120, db/63): photos stripped and read on
   // the log, a card ticked and checked, two people, the commit's Laws and
   // seal, the match complete, the amendment path, the purge.
@@ -177,6 +183,11 @@ const WALKS = [
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
   "public",
+  // Parent lift clubs, phase 1 (SCRBRD-124, db/70): the school's two keys, a
+  // driver's declaration, a round trip made as one act, consent per boy per
+  // lift by version, the fixture moving under it, names and numbers through
+  // the logged doors only, and a family's "no" never switched off.
+  "lifts",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
@@ -197,6 +208,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Redesign step 3c / SCRBRD-098: the Match Centre's six tabs, the
   // scorecard's layout and the shared commentary, on a real scored match.
   "browser-matchcentre",
+  // SCRBRD-124 phase 1 (db/70): the principal's lift policy, a parent's
+  // declaration, a round trip offered, a seat asked for and accepted, the
+  // office's counts, and no lifts block where the module is not live.
+  "browser-lifts",
   // SCRBRD-068/069/080/081: the pad's four new Laws questions.
   "browser-pad-laws",
   // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
@@ -238,6 +253,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Safeguarding, phase 1 (db/57): a parent raises a concern and keeps a
   // reference; the DSO finds it in her inbox; a coach sees nothing of it.
   "browser-safeguarding",
+  // Redesign step 4, phase A: the pupil's app — his Home, his own answer, his
+  // passport and his own file; no team-mate's injury, fitness or return date
+  // (K3, db/55); 12px and 44px at phone width.
+  "browser-pupil",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
   "browser-public",
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
@@ -247,6 +266,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // league pre-filled from its conditions; the pad's words; the bowled after
   // a no-ball standing where the league says no free hit.
   "browser-playing-conditions",
+  // ── SCRBRD-114 phase 3a (db/69): the table, the decision and adjustment
+  // sheets as the organiser uses them, the participant's read, the Match
+  // Centre's and the public page's result line; 12px, 44px, 390, Daylight.
+  "browser-results",
+  // ── end SCRBRD-114 phase 3a ──
   // The playing-conditions screen (SCRBRD-114, Leagues → the competition →
   // Playing conditions): an organiser drafts, cites, is refused in words,
   // publishes for tomorrow, versions and withdraws; the version in force with

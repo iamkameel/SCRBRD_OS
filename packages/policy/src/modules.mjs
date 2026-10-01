@@ -148,6 +148,20 @@ export const MODULES = {
     capability: "scoring.import.read",
     reads: [],
   },
+  // ── SCRBRD-124: parent lift clubs (db/70) ──
+  // OFF until the platform grants it per school (D17's first key); live at a
+  // school only while its principal's signed lift policy stands (the second,
+  // asked in the database: lift_module_live()). Goes live for a school after
+  // phase 2. No destination of its own: its screens sit on the fixture (the
+  // Squad screen), on Settings and on the family's own page. Owns no read
+  // resource — no lift table is a read-api resource; the functions are the
+  // only doors (§5.4).
+  lift_club: {
+    kind: "module", label: "Lift club",
+    capability: "transport.lift.arrange",
+    reads: [],
+  },
+  // ── end SCRBRD-124 ──
 };
 
 /**

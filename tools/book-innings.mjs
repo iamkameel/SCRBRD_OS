@@ -28,15 +28,17 @@ export function bookCard(players, blank = []) {
 /**
  * Write one complete match with one summarised innings.
  * @param {import("pg").Pool} pool  connected as the schema owner
- * @param {{ school: string, team?: string, opponent?: string, daysAgo: number, card: any, scorerUserId: string,
- *           typed?: Record<string, string>, ours?: string }} o
+ * @param {{ school: string, team?: string, opponent?: string, daysAgo?: number, startsAt?: string, card: any, scorerUserId: string,
+ *           typed?: Record<string, string>, ours?: string, squad?: { id: string, name: string }[] }} o
+ *   `startsAt`, an explicit instant, wins over `daysAgo` (a walk's fixture takes a date, never the clock);
+ *   `squad`, the batting side as innings_start carries it ({ id, name }), names the card's rows.
  * @returns {Promise<string>} the match id
  */
-export async function writeBookInnings(pool, { school, team = "1XI", opponent = "Book XI", daysAgo, card, scorerUserId, typed = TYPED, ours = "Book side" }) {
+export async function writeBookInnings(pool, { school, team = "1XI", opponent = "Book XI", daysAgo = 0, startsAt = null, card, scorerUserId, typed = TYPED, ours = "Book side", squad = undefined }) {
   const imp = crypto.randomUUID();
   const source = { kind: "scorebook", import: imp, checkedBy: scorerUserId, confirmedBy: scorerUserId };
   const evs = [
-    { ev: { ...inningsStart({ battingTeam: ours, bowlingTeam: opponent, overs: 20 }), innings: 0, id: `scorebook:${imp}:0:start`, source }, device: "device-book" },
+    { ev: { ...inningsStart({ battingTeam: ours, bowlingTeam: opponent, overs: 20, ...(squad ? { squad } : {}) }), innings: 0, id: `scorebook:${imp}:0:start`, source }, device: "device-book" },
     { ev: { ...inningsSummary({ card, typed, source }), innings: 0, id: `scorebook:${imp}:0:summary` }, device: `scorebook:${imp}` },
     { ev: { ...inningsEnd({ reason: "overs_complete", confirmed: { runs: card.total, wickets: card.wickets, balls: 120 } }),
             innings: 0, id: `scorebook:${imp}:0:end`, source }, device: "device-book" },
@@ -47,8 +49,8 @@ export async function writeBookInnings(pool, { school, team = "1XI", opponent = 
     await c.query("SELECT set_config('scrbrd.scorebook_commit', $1, true)", [imp]);
     const match = (await c.query(
       `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
-       values ($1, $2, $3, now() - ($4 || ' days')::interval, 'T20', 20, 'complete') returning id`,
-      [school, team, opponent, String(daysAgo)])).rows[0].id;
+       values ($1, $2, $3, coalesce($5::timestamptz, now() - ($4 || ' days')::interval), 'T20', 20, 'complete') returning id`,
+      [school, team, opponent, String(daysAgo), startsAt])).rows[0].id;
     let seq = 0;
     for (const { ev, device } of evs) {
       const r = toRow(ev);

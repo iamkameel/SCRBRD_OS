@@ -39,6 +39,9 @@ import { countsInOver, FACES_NEXT } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { conditionsOf, freeHit, oversPerInnings } from "./conditions.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
+import { OUTCOME, MARGIN_KIND, applyDecision, hasWinner, marginString, otherSide, resultWords } from "./result.mjs";
+
+/** @import { MatchResult } from "./result.mjs" */
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
 /** @typedef {import("./events.mjs").Loose<import("./events.mjs").BallEvent>} LoggedBall */
@@ -250,6 +253,11 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   (conditions.mjs: the format's free hit, the innings_start's overs)
  * @property {string | null} [conditionsHash]  that document's hash
  *   (match_conditions.doc_hash), stamped on every innings as inn.conditionsHash
+ * @property {string | null} [status]  match.status, read by deriveMatch()'s result alone
+ *   (describeResult(), ResultOptions); nothing an innings folds reads it
+ * @property {{home?: string | null, away?: string | null} | null} [sides]  the result's sides
+ * @property {{home?: string | null, away?: string | null} | null} [names]  the result's names
+ * @property {import("./result.mjs").ResultDecision | null} [decision]  the result's decision
  */
 
 /**
@@ -1503,7 +1511,9 @@ export function deriveMatch(events = [], ctx = {}) {
   const indices = [...byInnings.keys()].sort((a, b) => a - b);
   // `indices` are byInnings' own keys, and foldMatch folds each.
   const innings = indices.map((i) => /** @type {Innings} */ (folded.get(i)));
-  return { innings, current: innings.length ? innings.length - 1 : 0, result: describeResult(innings) };
+  return { innings, current: innings.length ? innings.length - 1 : 0,
+           result: describeResult(innings, { conditions: conditionsOf(ctx), status: ctx.status ?? null, sides: ctx.sides ?? null,
+                                             names: ctx.names ?? null, decision: ctx.decision ?? null }) };
 }
 
 /**
@@ -1641,31 +1651,148 @@ export class MatchFold {
 }
 
 /**
- * @typedef {{winner: string | null | undefined, margin: string}} MatchResult
- *   `winner` is a battingTeam (null on a tie); `margin` reads "3 wickets", "12 runs", "tie"
- *   or — 4th Edition, Law 16.7 — "penalty runs"
+ * What a result is told beside the innings (SCRBRD-114 phase 3a, design §2):
+ * all optional, and a caller that tells it nothing gets what the fold always
+ * gave — a win, a tie, or nothing yet — less the two misreadings §2.2 names.
+ * @typedef {object} ResultOptions
+ * @property {Readonly<Record<string, unknown>> | null} [conditions]  the match's play
+ *   conditions (FoldContext.conditions): `format.innings_per_side` (2: two innings a side)
+ *   and `result.min_overs_per_side`
+ * @property {string | null} [status]  match.status: a `complete` match whose chase never
+ *   finished is a no result (a draw, two innings a side); an `abandoned` one with no
+ *   result is abandoned
+ * @property {{home?: string | null, away?: string | null} | null} [sides]  each side's key as
+ *   innings_start writes it (the pad: the fixture's team code, else "Home"; the opponent):
+ *   told them, a win is home_win or away_win, as match_result() says
+ * @property {{home?: string | null, away?: string | null} | null} [names]  each side's name
+ *   for the words; else the innings' battingTeam
+ * @property {import("./result.mjs").ResultDecision | null} [decision]  the standing
+ *   match_result_decision (db/69)
  */
 
-/** @param {Innings[]} innings  @returns {MatchResult | null} */
-function describeResult(innings) {
-  if (innings.length < 2) return null;
-  const [a, b] = innings;
-  if (!b.complete) return null;
-  // The chase is judged against the TARGET, which is one more than the first
-  // innings unless the umpires revised it. Comparing the two totals was right
-  // only while those were the same number; in a rain-cut chase of 90 to beat
-  // a 150, 100 is a win, not a loss by fifty.
-  const target = b.target ?? a.runs + 1;
-  // Law 16.7 (4th Edition, SCRBRD-113): the chase's innings was completed
-  // short, and an award of penalty runs then made it enough.
-  if (b.runs >= target && b.penaltyWin) return { winner: b.battingTeam, margin: "penalty runs" };
-  if (b.runs >= target) {
-    const wktsLeft = Math.min(10, (b.squad?.length || 11) - 1) - b.wickets;
-    return { winner: b.battingTeam, margin: `${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"}` };
-  }
-  const short = target - 1 - b.runs;
-  if (short > 0) return { winner: a.battingTeam, margin: `${short} run${short === 1 ? "" : "s"}` };
-  return { winner: null, margin: "tie" };
+/**
+ * The result of a match, from its innings (SCRBRD-114 phase 3a; design §2.2).
+ * match_result() (db/69) is the same rule in SQL; tools/smoke-fold-figures.mjs
+ * holds the two together over its logs.
+ *
+ * ONE INNINGS A SIDE (a limited-overs match, and every match whose document
+ * says nothing — every match before db/61): the second innings is the chase.
+ *   - not complete: in progress, or a no result once the match is `complete`;
+ *   - sealed `abandoned`: a no result — the umpires called it, and it is never
+ *     a win by the runs it was short (the old misreading, fixed);
+ *   - the target reached (the revised one, else one more than the first
+ *     innings): a win by wickets in hand, or by penalty runs (Law 16.7);
+ *   - short, with the chase's allotted overs fewer than
+ *     `result.min_overs_per_side` and its overs bowled: a no result;
+ *   - short: a win by the runs short; level: a tie.
+ * TWO INNINGS A SIDE (`format.innings_per_side` = 2, D11): an innings win once
+ * the side batting twice is all out behind the other's single innings; a
+ * fourth innings decided as a chase when it reaches its target or is all out;
+ * otherwise a draw once the match is `complete` (the fourth innings not
+ * completed, or not reached). The second innings is NOT a chase here: a side
+ * passing the other's first innings has won nothing yet (the old misreading,
+ * which read innings 0 and 1 alone, fixed).
+ * An `abandoned` match with no result is abandoned. A decision is read last
+ * (result.mjs applyDecision()).
+ *
+ * Null while nothing is decided — the shape every caller already reads.
+ *
+ * @param {(Innings | null | undefined)[]} innings  by innings number, or compacted (deriveMatch's)
+ * @param {ResultOptions} [o]
+ * @returns {MatchResult | null}
+ */
+export function describeResult(innings, o = {}) {
+  const list = /** @type {Innings[]} */ ((innings ?? []).filter((x) => x != null));
+  const conditions = o.conditions ?? {};
+  const done = o.status === "complete";
+  const keyOf = (/** @type {Innings} */ x) => x.teamKey ?? x.battingTeam ?? null;
+  const eq = (/** @type {unknown} */ a, /** @type {unknown} */ b) =>
+    a != null && b != null && String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  // Which side bats each innings: by name, as the fixture wrote it; the first
+  // innings' side failing that is the other of the first other side named,
+  // and failing both the home side. match_result_sides() in SQL, one rule.
+  const told = o.sides != null && (o.sides.home != null || o.sides.away != null);
+  const byName = (/** @type {string | null} */ k) =>
+    (!told ? null : eq(k, o.sides?.home) ? "home" : eq(k, o.sides?.away) ? "away" : null);
+  const key0 = list.length ? keyOf(list[0]) : null;
+  const firstOther = list.find((x) => keyOf(x) != null && !eq(keyOf(x), key0));
+  const side0 = !told ? null : byName(key0) ?? otherSide(byName(firstOther ? keyOf(firstOther) : null)) ?? "home";
+  /** @param {Innings} x @returns {string | null} */
+  const sideOf = (x) => (side0 == null ? null : eq(keyOf(x), key0) ? side0 : otherSide(side0));
+
+  /** @param {Innings} x @param {string} kind @param {number | null} value */
+  const win = (x, kind, value) => {
+    const side = sideOf(x);
+    return { outcome: side === "home" ? OUTCOME.HOME_WIN : side === "away" ? OUTCOME.AWAY_WIN : OUTCOME.WIN,
+             marginKind: kind, marginValue: value, winnerSide: side, winnerKey: keyOf(x), winner: x.battingTeam };
+  };
+  /** @param {string} outcome */
+  const none = (outcome) => ({ outcome, marginKind: null, marginValue: null, winnerSide: null, winnerKey: null, winner: null });
+  /** Wickets in hand: the squad less one, at most ten, less those down. @param {Innings} x */
+  const inHand = (x) => Math.min(10, (x.squad?.length || 11) - 1) - x.wickets;
+  /** @param {Innings} x */
+  const reached = (x) => (x.penaltyWin ? win(x, MARGIN_KIND.PENALTY_RUNS, null) : win(x, MARGIN_KIND.WICKETS, inHand(x)));
+  /** @param {Innings[]} xs @param {string | null} key @param {boolean} same */
+  const runsOf = (xs, key, same) => xs.filter((x) => eq(keyOf(x), key) === same).reduce((n, x) => n + x.runs, 0);
+
+  const play = (() => {
+    if (conditions["format.innings_per_side"] === 2) {
+      const [i0, i1, i2, i3] = list;
+      if (i0?.complete && i1?.complete && i2?.complete && i2.endReason === INNINGS_END_REASON.ALL_OUT) {
+        const twice = keyOf(i2);
+        const three = [i0, i1, i2];
+        const once = three.find((x) => !eq(keyOf(x), twice));
+        const lead = runsOf(three, twice, false) - runsOf(three, twice, true);
+        if (once && lead > 0) return win(once, MARGIN_KIND.INNINGS, lead);
+      }
+      if (i3?.complete && i3.endReason !== INNINGS_END_REASON.ABANDONED) {
+        const chasing = keyOf(i3);
+        const three = [i0, i1, i2];
+        const other = three.find((x) => !eq(keyOf(x), chasing));
+        const target = i3.target ?? runsOf(three, chasing, false) - runsOf(three, chasing, true) + 1;
+        if (i3.runs >= target) return reached(i3);
+        if (i3.endReason === INNINGS_END_REASON.ALL_OUT && other) {
+          const short = target - 1 - i3.runs;
+          return short > 0 ? win(other, MARGIN_KIND.RUNS, short) : none(OUTCOME.TIE);
+        }
+      }
+      return none(done ? OUTCOME.DRAW : OUTCOME.IN_PROGRESS);
+    }
+    const [a, b] = list;
+    if (!a || !b || !b.complete) return none(done ? OUTCOME.NO_RESULT : OUTCOME.IN_PROGRESS);
+    if (b.endReason === INNINGS_END_REASON.ABANDONED) return none(OUTCOME.NO_RESULT);
+    // The chase is judged against the TARGET, which is one more than the first
+    // innings unless the umpires revised it. Comparing the two totals was right
+    // only while those were the same number; in a rain-cut chase of 90 to beat
+    // a 150, 100 is a win, not a loss by fifty.
+    const target = b.target ?? a.runs + 1;
+    // Reached is a win, whatever result.min_overs_per_side says; Law 16.7
+    // (4th Edition, SCRBRD-113): a chase completed short, an award of penalty
+    // runs then making it enough, is a win "by penalty runs".
+    if (b.runs >= target) return reached(b);
+    const least = conditions["result.min_overs_per_side"];
+    if (typeof least === "number" && Number.isInteger(least) && least > 0 && b.overs < least
+        && b.endReason === INNINGS_END_REASON.OVERS) return none(OUTCOME.NO_RESULT);
+    const short = target - 1 - b.runs;
+    return short > 0 ? win(a, MARGIN_KIND.RUNS, short) : none(OUTCOME.TIE);
+  })();
+  const decided = hasWinner(play.outcome) || play.outcome === OUTCOME.TIE || play.outcome === OUTCOME.DRAW;
+  const played = o.status === "abandoned" && !decided ? none(OUTCOME.ABANDONED) : play;
+
+  /** @param {string | null} side @returns {string | null} */
+  const nameOfSide = (side) => (side !== "home" && side !== "away" ? null : o.names?.[side] ?? o.sides?.[side] ?? side);
+  const r = applyDecision(played, o.decision, nameOfSide);
+  if (r.outcome === OUTCOME.IN_PROGRESS && !r.decisionApplied) return null;
+  /** A side named by an innings' key: its name for the words, else its battingTeam. @param {string} key */
+  const keyName = (key) => {
+    const x = list.find((y) => eq(keyOf(y), key));
+    const side = x ? sideOf(x) : null;
+    return (side === "home" || side === "away" ? o.names?.[side] : null) ?? x?.battingTeam ?? key;
+  };
+  /** @type {MatchResult} */
+  const out = { ...r, margin: marginString(r.outcome, r.marginKind, r.marginValue), text: null };
+  out.text = resultWords(out, { nameOf: (key, side) => (key != null ? keyName(key) : nameOfSide(side) ?? "—") });
+  return out;
 }
 
 // ── Compatibility with the server's minimal replay ───────

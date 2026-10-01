@@ -15,7 +15,7 @@
 export const KEY_WORDS = {
   "format.kind":                          { label: "Format", byDefault: "as the match's own format says" },
   "format.overs_per_innings":             { label: "Overs an innings", byDefault: "the match's own overs, else 20" },
-  "format.innings_per_side":              { label: "Innings a side", byDefault: "1; 2 for a declaration or timed match" },
+  "format.innings_per_side":              { label: "Innings a side", byDefault: "1; 2 for a two-day or longer match" },
   "format.free_hit":                      { label: "Free hit after a no-ball", byDefault: "as the match's format decides" },
   "bowling.max_overs_per_bowler_innings": { label: "Overs a bowler, an innings", byDefault: "no cap", none: "No cap", hint: "T20 leagues commonly use 4." },
   "bowling.limit":                        { label: "Bowling limit, by age band", byDefault: "the platform's junior bowling directive", none: "No limit" },

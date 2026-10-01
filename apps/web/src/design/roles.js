@@ -237,6 +237,22 @@ const NAV_CAPABILITY = {
   modules:       "school.feature.manage",
   rulebook:      null,
   pitchdeck:     "platform.tenant.manage",
+  // ── The two persona apps (redesign step 4, docs/design/STEP4_parent_pupil.md
+  // §2.0). Each is still checked against a capability its role holds, so a
+  // persona's bar can only ever be NARROWER than this map. Which persona a
+  // person gets is PERSONA_NAV below; none of these is offered to staff on
+  // capability alone.
+  // The parent's: Home (one child), Matches, Notices, Family.
+  children:      "player.profile.read",
+  fixtures:      "fixture.read",
+  notices:       "news.read",
+  family:        "player.profile.read",
+  // The pupil's: Home, Matches, Passport, Me. "Me" is his own file, which
+  // only `selfaccess` reaches: a `player` alone holds no player.pii.read.
+  myhome:        "fixture.read",
+  mymatches:     "fixture.read",
+  passport:      "player.performance.read",
+  me:            "player.pii.read",
 };
 
 /* ── Grouping ───────────────────────────────────────────────────────
@@ -258,6 +274,11 @@ const NAV_GROUPS = [
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
   { key:"operate", label:"Operate",    items:["logistics","fields","sponsors","readiness"] },
   { key:"admin",   label:"Administer", items:["management","modules","pitchdeck"] },
+  // The persona apps' destinations (step 4). Drawn as the one section of a
+  // persona's own rail, and — the family's Home and Family only — as a
+  // section of the staff menu of somebody who is also a parent.
+  { key:"family",  label:"Family",     items:["children","fixtures","notices","family"] },
+  { key:"pupil",   label:"Yours",      items:["myhome","mymatches","passport","me"] },
   { key:"you",     label:"You",        items:["notifications","safeguarding","settings","rulebook"] },
 ];
 
@@ -277,12 +298,55 @@ const groupNav = (keys) =>
   NAV_GROUPS.map((g) => ({ key: g.key, label: g.label, items: g.items.filter((k) => keys.includes(k)) }))
             .filter((g) => g.items.length > 0);
 
+/* ── The persona menus (G12, step 4 §2.0) ───────────────────────────
+   A parent and a pupil are not a staff application with the staff parts
+   removed. Each gets a fixed bar of four, drawn here and still checked
+   against capabilities (a destination whose read the roles cannot make is
+   left out), so a persona's menu is only ever narrower than the capability
+   map, never wider. Four items and no "More": Settings, raising a concern
+   and signing out sit behind the person's name at the top (§2.0).
+
+   A persona is decided by the SET of roles a person holds, never by one
+   badge: only somebody who is a guardian and nothing else is the family
+   persona, and only somebody who is a player with his own record and
+   nothing else is the pupil. A coach who is also a parent keeps the staff
+   menu and gains the family's Home and Family beside it (`alongside`); a
+   `player` with no `selfaccess` is not the pupil persona (he has no file).
+
+   Presentation only, like everything in this file: each screen's reads are
+   re-authorised server-side, and a wrong answer here draws the wrong menu,
+   never the wrong data. */
+const PERSONA_NAV = {
+  family: { roles:["guardian"], needs:["guardian"],
+            bar:["children","fixtures","notices","family"], alongside:["children","family"] },
+  pupil:  { roles:["player","selfaccess"], needs:["player","selfaccess"],
+            bar:["myhome","mymatches","passport","me"], alongside:[] },
+};
+/** Destinations that belong to a persona's app and never to a staff menu on capability alone. */
+const PERSONA_ONLY = new Set(Object.values(PERSONA_NAV).flatMap((p) => p.bar));
+/** Screens a persona reaches from its header rather than its bar (§2.0). */
+const PERSONA_ASIDE = ["settings", "safeguarding"];
+
+/** "family", "pupil", or null for everybody else — from the SET of roles held. */
+const personaFor = (roles) => {
+  const held = [...new Set(roles ?? [])];
+  if (!held.length) return null;
+  const hit = Object.entries(PERSONA_NAV).find(([, p]) =>
+    held.every((r) => p.roles.includes(r)) && p.needs.every((r) => held.includes(r)));
+  return hit ? hit[0] : null;
+};
+
 /** The destinations a SET of roles reaches: what any of them holds. */
-const navForRoles = (roles) =>
-  NAV_ORDER.filter((k) => {
-    const cap = NAV_CAPABILITY[k];
-    return cap === null || roles.some((r) => roleGrants(r, cap));
-  });
+const navForRoles = (roles) => {
+  const held = [...new Set(roles)];
+  const holds = (k) => { const cap = NAV_CAPABILITY[k]; return cap === null || held.some((r) => roleGrants(r, cap)); };
+  const persona = personaFor(held);
+  if (persona) return PERSONA_NAV[persona].bar.filter(holds);
+  const beside = new Set(Object.values(PERSONA_NAV)
+    .filter((p) => p.needs.every((r) => held.includes(r)))
+    .flatMap((p) => p.alongside));
+  return NAV_ORDER.filter((k) => (!PERSONA_ONLY.has(k) || beside.has(k)) && holds(k));
+};
 
 /** A persona's destinations: its role, plus the roles it always comes with. */
 const navFor = (role) => navForRoles([role, ...(ROLE_IDENTITY[role]?.also ?? [])]);
@@ -346,6 +410,16 @@ const NAV_META = {
   modules:      { icon:"sliders-horizontal", label:"Modules"      },
   rulebook:     { icon:"book-open", label:"Rulebook"     },
   pitchdeck:    { icon:"presentation", label:"Pitch Deck"   },
+  // The persona apps (step 4 §2.0, Q11): the same four words at a school and
+  // a club; the nouns inside the screens come from lib/words.js (G15).
+  children:     { icon:"house", label:"Home"         },
+  fixtures:     { icon:"stumps", label:"Matches"      },
+  notices:      { icon:"bell", label:"Notices"      },
+  family:       { icon:"users-round", label:"Family"       },
+  myhome:       { icon:"house", label:"Home"         },
+  mymatches:    { icon:"stumps", label:"Matches"      },
+  passport:     { icon:"award", label:"Passport"     },
+  me:           { icon:"id-card", label:"Me"           },
 };
 
-export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, personaFor };

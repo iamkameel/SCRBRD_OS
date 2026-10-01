@@ -72,6 +72,8 @@ import { competitionRoutes } from "./write/competitions-api.mjs";
 import { playingConditionsRoutes } from "./write/playing-conditions-api.mjs";
 import { plannerRoutes } from "./write/planner-api.mjs";
 import { leagueRoutes } from "./write/league-api.mjs";
+// SCRBRD-114 phase 3a (db/69): match results and the league table.
+import { resultsRoutes } from "./write/results-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
@@ -82,6 +84,8 @@ import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
+// SCRBRD-124 phase 1: parent lift clubs (db/70).
+import { liftRoutes } from "./write/lift-api.mjs";
 import { objectStoreFromEnv } from "./io/object-store.mjs";
 import { PAGE_MAX_BYTES } from "./io/page-image.mjs";
 import { publicPages } from "./public/public-api.mjs";
@@ -420,6 +424,8 @@ const playing = playingConditionsRoutes({ pool, secret: SECRET });
 // The fixture planner, phase 2 (SCRBRD-123, db/67).
 const planner = plannerRoutes({ pool, secret: SECRET });
 const league = leagueRoutes({ pool, secret: SECRET });
+// SCRBRD-114 phase 3a (db/69): match results and the league table.
+const results = resultsRoutes({ pool, secret: SECRET });
 // The scorebook importer (SCRBRD-120, db/63). Its photos go to the private
 // store (io/object-store.mjs): Supabase Storage when SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are set, a local directory in development, and
@@ -427,6 +433,8 @@ const league = leagueRoutes({ pool, secret: SECRET });
 const pageStore = objectStoreFromEnv();
 const scorebook = scorebookRoutes({ pool, secret: SECRET, store: pageStore });
 const scorebookFiles = scorebookFileRoutes({ pool, secret: SECRET, store: pageStore });
+// SCRBRD-124 phase 1: parent lift clubs (db/70).
+const lifts = liftRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -735,6 +743,21 @@ const PLAYER_ROUTES = [
   [/^\/api\/competition-entrants\/([^/]+)\/accept$/,            "POST", league.accept],
   [/^\/api\/competition-entrants\/([^/]+)\/decline$/,           "POST", league.decline],
   [/^\/api\/competitions\/([^/]+)\/playing-conditions\/start$/, "POST", league.startConditions],
+  // ── SCRBRD-114 phase 3a (db/69): match results and the league table ──
+  // A result read from the log as its reader may read it; a decision taken
+  // off the field (competition.manage at the organiser, a friendly's
+  // fixture.update); the table computed on every read; points adjustments
+  // and a played match's table figures (competition.conditions.manage). Not
+  // module-gated, like the fixture: every decision is a db/69 definer
+  // function's (results-api.mjs).
+  [/^\/api\/matches\/([^/]+)\/result$/,                        "GET",  results.result],
+  [/^\/api\/matches\/([^/]+)\/result-decision$/,               "POST", results.decide],
+  [/^\/api\/result-decisions\/([^/]+)\/withdraw$/,             "POST", results.withdrawDecision],
+  [/^\/api\/competitions\/([^/]+)\/standings$/,                "GET",  results.standings],
+  [/^\/api\/competitions\/([^/]+)\/adjustments$/,              "POST", results.adjust],
+  [/^\/api\/points-adjustments\/([^/]+)\/withdraw$/,           "POST", results.withdrawAdjustment],
+  [/^\/api\/matches\/([^/]+)\/playing-conditions\/refix-table$/, "POST", results.refixTable],
+  // ── end SCRBRD-114 phase 3a ──
   // Importing a paper scorebook (SCRBRD-120, db/63): photos of the book, a
   // card typed and ticked beside them, a second person's confirmation, and
   // then three events per innings in the log. NOT tagged with the module,
@@ -821,6 +844,41 @@ const SAFEGUARDING_ROUTES = [
   [/^\/api\/safeguarding\/shares\/([^/]+)\/revoke$/,     "POST", safeguarding.shareRevoke],
   [/^\/api\/safeguarding\/appointments\/([^/]+)\/end$/,  "POST", safeguarding.endAppointment],
 ];
+
+// ── SCRBRD-124 phase 1: parent lift clubs (db/70) ─────────────────────
+/**
+ * Every route calls one SECURITY DEFINER function under the caller's identity
+ * (services/api/write/lift-api.mjs); db/70 decides who and logs every read of
+ * a name or a number. Tagged `lift_club` where the route makes or reads an
+ * arrangement; NOT tagged where it ends one — a family's "no", a cancel, a
+ * declaration or the policy withdrawn — because switching the module off must
+ * never stop anybody stopping. Ids are UUIDs in the pattern, so the fixed
+ * paths (/policy, /declaration) cannot be read as an id.
+ * @type {Route[]}
+ */
+const LIFT_ROUTES = [
+  [/^\/api\/lifts\/standing$/,                          "GET",  lifts.standing, "lift_club"],
+  [/^\/api\/lifts\/policy$/,                            "GET",  lifts.policy],
+  [/^\/api\/lifts\/policy$/,                            "POST", lifts.signPolicy, "lift_club"],
+  [/^\/api\/lifts\/policy\/withdraw$/,                  "POST", lifts.withdrawPolicy],
+  [/^\/api\/lifts\/declaration$/,                       "POST", lifts.declare, "lift_club"],
+  [/^\/api\/lifts\/declaration\/withdraw$/,             "POST", lifts.withdrawDeclaration],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts$/,          "GET",  lifts.offers, "lift_club"],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts$/,          "POST", lifts.offer, "lift_club"],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/summary$/, "GET",  lifts.summary, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})$/,                   "POST", lifts.update, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/reaffirm$/,         "POST", lifts.reaffirm, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/close$/,            "POST", lifts.close, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/cancel$/,           "POST", lifts.cancel],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/passengers$/,       "GET",  lifts.passengers, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/contacts$/,         "GET",  lifts.contacts, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/seats$/,            "POST", lifts.request, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/accept$/,           "POST", lifts.accept, "lift_club"],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/decline$/,     "POST", lifts.decline, "lift_club"],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/withdraw$/,    "POST", lifts.withdraw],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/reconfirm$/,   "POST", lifts.reconfirm, "lift_club"],
+];
+// ── end SCRBRD-124 ──
 
 /** @type {Route[]} */
 const SCOUT_ROUTES = [
@@ -1079,7 +1137,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES]) {
+    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES, ...LIFT_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
       // The write side of the module gate, in the one place every write route

@@ -1,6 +1,6 @@
 # Step 4 — Parent and pupil screens: the design
 
-**Status:** for Kameel's review, 2026-09-27. Nothing here is built.
+**Status:** decided 2026-09-27 (§9). **Phase A built 2026-10-01 (Opus)** — see §10, "As built". Phases B–F are not built.
 **Source:** `docs/redesign/DESIGN_DIRECTION.md` §6 and §8 (step 4), `docs/policy/PUBLIC_DATA.md`, `docs/design/SCRBRD-110_workload.md`, the backlog items SCRBRD-083, 092, 099, 100, 102–107 and 110, and the policy package (`packages/policy/src/{roles,capabilities,tables}.mjs`).
 **Reader:** the product owner first, then the Opus agent who builds the policy and data parts (§5, §8) and the Sonnet agent who builds the screens over reads that already exist. Plain words come first in each section; the detail follows.
 
@@ -648,6 +648,119 @@ Each with the recommendation the design assumes.
 | **Q12** | **Photos.** This design draws the SCRBRD-092 consent card (phase D) and no photo anywhere. Confirm no photo feature — upload, view, moderation — is part of step 4. | **Confirm.** The consent record first; the feature is its own design with storage and moderation. |
 
 ---
+
+## 10 · As built — phase A (Opus, 2026-10-01)
+
+Phase A of §8, over reads that already existed, with **no migration**. Kameel chose Opus for the whole phase because
+every screen shows minors' data.
+
+### What was built
+
+| Item | Where |
+|---|---|
+| **G12** persona menus | `design/roles.js`: `PERSONA_NAV`, `personaFor()`, `navForRoles()`. A person who holds `guardian` and nothing else gets **Home · Matches · Notices · Family** (`children`, `fixtures`, `notices`, `family`); one who holds `player` and `selfaccess` and nothing else gets **Home · Matches · Passport · Me** (`myhome`, `mymatches`, `passport`, `me`). Four items, no drawer; each still checked against a capability its roles hold. The persona is decided by the **set** of roles held (`lib/features.js` `personaOf()`), never one badge. |
+| The persona header | `shell/PersonaBar.jsx`: the person's name (→ Settings), raise a concern (→ Safeguarding), sign out. `nav-settings` and `nav-safeguarding` are destinations; the rail drops the sport switcher. |
+| **P1** Home, one child | `views/family/family.jsx` `FamilyHome`, cards in `views/family/cards.jsx`: next fixture (when, where, home or away, bus, weather, her child's answer with "said by", Change → P3, the team-sheet line); the board only while his side is live; the last match in words; this season and his latest milestone; unread notices about him or nobody. |
+| **P2** Matches | `views/family/matches.jsx` `ChildMatches`: coming up (his answer per row), played (the result and his line, folded per match — G7 accepted, cached). |
+| **P3** Fixture | `FixtureDetail`: the match line, the ground with a map search, the umpires (umpiring duties only — a scorer can be a pupil), weather, the bus card, the declaration (three 56px keys, the table's own `reason_kind` list, a 280-character note, "Tell the coach"; one tap "Still available" when the fixture moved, SCRBRD-122), the team-sheet line. |
+| **P4** Match, family mode (**G13**) | `MatchView` takes `focus`/`focusLabel`: her child's rows lit on the scorecard (batting and bowling, a 4px edge and a word — "Your child", "You"), and the Analytics tab offers a per-player wheel for him only. Nothing else in the Match Centre changed (the result line is the results agent's). |
+| **P5** Notices | `FamilyNotices`: notifications and posts, newest first, "New" on unread, "About R Pillay" when a notice names one of her children. |
+| **P6** Family | `FamilyFile`, one `ChildFileCard` per child (`views/family/childfile.jsx`, each panel its own component, for the lift-club card to sit beside): school · side · link verified; the guardianship line from the link (G11); rows to Who to ring, the record, Health, Consents. |
+| **P7a** Who to ring | `WhoToRing`: the contacts in order, add, change (a new row at the place; the old kept and retired) and remove; "who else can see these" derived from the roles holding `player.emergency.read`, not prose. |
+| **P7b** The record | `TheirRecord`: name, known-as, date of birth, address, home town, height, weight; the ID number behind **Show**. Read only when opened. |
+| **P7d** Consents | the Settings screen's own `PassportTab` and `ScoutingConsentSection`, as they are, narrowed to the one child (`only`). |
+| **S1** Home | `views/family/pupil.jsx` `PupilHome`: the same cards in his words ("You're in the side · batting 4", "You:"), training, notices. No check-in card. |
+| **S2** Matches | `ChildMatches` with `self`; his fixture's team sheet lists his side by name and place (`SideSheet`). |
+| **S3** Passport | `PupilPassport`: the board (caps, runs, wickets; average, strike rate, economy; his cap line), tabs Season (with the form guide), Career (with how he is out and how he takes wickets), **Wheel** (SCRBRD-102 had landed: `CareerWagonWheel`), Honours (milestones, honours and caps, passport lines). |
+| **S4** Me | `PupilMe`: his health at every tier with the physio's notes on a tap, his ratings, his record behind **Show**, his conduct record behind **Show** (§9 Q6). No "My body". |
+| **G1/G11** `my_children` | `services/api/read/read-api.mjs`: the caller's own live guardian links (verified, started, not ended, active assignment), with school name and kind, relationship, verification, consent and `valid_until`. |
+| **G15** words | `lib/words.js` `tenantWords()`: place, member, guardian and the sport's nouns from `school.kind` and `sport`. |
+| §3.1 the switcher | `ChildSwitcher`: chips, one lit, hidden with one child, on Home and Matches; the choice remembered on the device (`localStorage`), otherwise the child with the nearest fixture. Every card is handed one child and narrows its rows to him. |
+
+### Proof
+
+- **db/99 §49** runs the read's own SQL (held equal to the API's copy by `read.test.mjs`) as a temporary view, as each
+  persona: Sarah's two children at two schools and no family her office role reads; each parent exactly his own live
+  links; a consent-pending link listed and saying so; nothing for an ended link, a coach, a spectator, the pupil's self
+  link or the office; the end date carried.
+- **`smoke-browser-read`**'s guardian group (extended) and the moved-fixture group (now through P3); **new
+  `smoke-browser-pupil`** in `BROWSER_WALKS`; `apps/web/test/family.test.mjs`; the design test's persona group.
+- The walks that signed the parent or the pupil into staff screens now follow them into their apps: consent,
+  discipline (the pupil's conduct record on Me, read only when he asks), dossier, scorebook, safeguarding; the DRS
+  walk's "reader who cannot record" is a spectator now (the family app carries no review panel).
+
+### The guards, each broken once and seen red
+
+| Guard (§8 phase A, and added) | Broken by | Went red at |
+|---|---|---|
+| `my_children` is the caller's own | `a.person_id = app_user_id()` removed | db/99 §49 (own): Sarah lists the school's families |
+| …guardian links only | `a.role = 'guardian'` removed | §49: a coach's family app lists his enquiry grant's boy |
+| …live links only | the subject's `valid_until` clause removed | §49 (live) |
+| …verified links only | `verification_state = 'verified'` removed | §49 (verified) |
+| §49 proves the API's own text | the API copy changed | `read.test.mjs`: the two copies differ |
+| The bar is four, no drawer | `settings` added to the family bar | design test: "the parent's bar is Home · Matches · Notices · Family · Settings" |
+| A persona destination is never a staff menu's by capability | the `PERSONA_ONLY` exclusion removed | design test (a coach gains family screens) |
+| A persona is the set of roles, not one badge | the `every()` clause removed | design test: "a coach who is also a parent gets both menus" |
+| Home names one child (§3.1) | Home's title names every child | read walk: Sarah's Home names D Mkhize on K Dlamini's |
+| The switcher, two chips | the switcher taken off Home | read walk: "the child switcher shows her two children" |
+| …hidden with one child | `< 2` dropped | `family.test`: "one child: no switcher" |
+| A Home's notices are this child's or nobody's | the subject filter removed | `family.test` |
+| His line names nobody | the dismissal line passed through | `family.test` |
+| Declaration lands, with its reason | `reasonKind` not sent | read walk: the row's reason is null |
+| Contacts retired | removal posted to the wrong id | read walk: "she removes it" |
+| The ID number behind a tap | shown from the start | read walk |
+| 12px floor on the persona bar | the bar's labels back to 8px | read walk: 4 texts under 12px at phone width |
+| G13: his row lit | `lit={false}` | `family.test`; pupil walk |
+| G13: the wheel offered for him only | the focus filter removed | `family.test` |
+| The pupil's Home names no team-mate | the team-sheet line lists the side | pupil walk |
+| Passport is his figures | a team-mate's career row | pupil walk: "his 34 runs" |
+| His own physio's notes | the notes control removed | pupil walk |
+| Conduct read only when he asks (Q6) | shown from the start | pupil walk: the read went before he asked |
+| **K3 flipped** (db/55) | `player` given `medical.status.read` back in the database | pupil walk: a team-mate's injury row and fitness reach him |
+
+### Departures, and why
+
+1. **Separate keys** for the persona destinations (`children`, `myhome`…) rather than reusing `dashboard`/`matches`:
+   the views are different screens, and the App needs no persona test to pick one.
+2. **A parent who is also staff** (Sarah) keeps the staff menu and gains the family's Home and Family beside it — the
+   only way the two-school guardian of the seed can reach the switcher; Notices stays the staff Alerts for her.
+3. **Raise a concern** sits in the persona header beside Settings and Sign out: since db/57 it is everyone's, and four
+   items left no room on the bar.
+4. **P1's board names only her child.** The design's sketch showed the other batter; §3.1 says nothing on the screen
+   names another child, and the full board is one tap away in P4 (§9 Q4 keeps names there).
+5. **His line names nobody**: the method ("34 off 40, caught"), never the fold's "c Bekker b Naidoo". Catches are not
+   counted: the fold has no per-fielder tally to read.
+6. **G1 carries no sport and no "has his own account"**: there is no sport on a player, and whether a self link exists
+   is another person's assignment, which a security-invoker read cannot see — P7e's (phase B) and a definer helper's.
+7. **The guardianship line follows db/62**: open while the child is at school, so it says that, and only names a date
+   when the link has one.
+8. **"Declared by the parent"** is the coach's existing "Said by D Pillay": `availability_declarant()` returns a name
+   and whether it was the boy himself, not a relationship; saying "parent" would need a migration.
+9. **P7d keeps Settings' Passport tab too** for a guardian (Settings is still reachable): "move" would have touched a
+   screen the consent walk relies on; it is reachable from both.
+10. **A fixture still marked scheduled after its day** lists under Played, not Coming up.
+11. **The scorecard's row expansion is unchanged**: any reader can still open any batter's run counts and match wheel
+    there (it was so before, for every signed-in reader). G13 was kept to the lighting and the Analytics offer, as
+    asked, so as not to collide with the results work. Worth a decision (§11 below).
+12. **Q6 is built**: the pupil reads his own conduct record on Me behind a tap. The earlier "staff-only for now"
+    product decision still governs the Conduct **tab** (rbac/conduct.js); the roadmap's up51 says both.
+13. **The phone bar's labels are 12px** for a four-item persona bar (they are 8px on the staff bar of five).
+
+### For Kameel (§11)
+
+- **What a parent now sees that she did not:** her child's Home (the next fixture, bus, weather, his answer and who
+  gave it, the team-sheet line, the last match in words, the season); she can **declare** him from the fixture with a
+  reason and a note (no family screen could before, though `guardian` held `availability.declare`); she can **change
+  and remove** his emergency contacts (the route existed, no screen); his record with the date of birth and the **ID
+  number behind a tap**; the guardianship line; the Match Centre with his rows lit.
+- **What a pupil now sees that he did not:** his passport on a board, his seasons, form, wheel and honours; his own
+  injury **with the physio's notes**; his ratings; his record with his ID behind a tap; and **his own disciplinary
+  record, on request** (Q6 — new on any screen); his side's team sheet on his fixture.
+- **What they no longer reach from the menu:** the staff screens a role's capabilities used to offer them — Squad,
+  Profiles, Injuries, Calendar, Competitions, Leagues, Officials, Logistics, Fields, Readiness, Training, Skills, the
+  Newsfeed screen and **the Rulebook**. The reads are unchanged; the screens still open if reached. The parent's
+  posts are in Notices; the pupil's notices and the latest three posts for his side and school are on his Home.
+- **Decide:** whether a parent (or pupil) may open another child's row on the scorecard (departure 11).
 
 ## Appendix A · Existing things this design relies on, by name
 

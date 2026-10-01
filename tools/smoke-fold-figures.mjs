@@ -84,6 +84,8 @@ import {
 } from "@scrbrd/scoring";
 import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef } from "@scrbrd/scoring";
 import { baseCard, TYPED as BOOK_TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
+// SCRBRD-114 phase 3a: the logs a result is proved on (result.test.mjs folds the same).
+import { RESULT_LOGS, RESULT_SIDES, RESULT_NAMES, RESULT_STARTS_AT } from "../packages/scoring/test/result-logs.mjs";
 
 const PORT = port(8875);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -1140,6 +1142,20 @@ try {
     return !r || Number(r.runs) !== f.runs || Number(r.wickets) !== f.wickets || Number(r.legal_balls) !== f.balls;
   }).map(([n, f]) => `innings ${n}: fold ${f.runs}/${f.wickets} off ${f.balls}, SQL ${live.get(n)?.runs}/${live.get(n)?.wickets} off ${live.get(n)?.legal_balls}`);
   ok(`runs, wickets and legal balls agree in every innings (${e.live.size})`, liveBad.length === 0, show(liveBad));
+  // SCRBRD-114 phase 3a (db/69): what a result is read from — each innings'
+  // ending (a seal that stands, or the Laws' own), its overs and target after
+  // revisions and awards, and the 4th Edition's penalty-runs win — is the
+  // fold's, over every generated innings.
+  const stateBad = [];
+  for (const [n, f] of byInnings) {
+    const [s] = await q(`select * from innings_result_state($1, $2::smallint, '{}'::jsonb, $3)`, [MATCH, n, f.lawsEdition === 4]);
+    const a = [f.runs, f.wickets, f.balls, f.overs, f.target, f.complete, f.endReason, f.penaltyWin].join("/");
+    const b = [s.runs, s.wickets, s.balls, s.overs, s.target, s.complete, s.end_reason, s.penalty_win].join("/");
+    if (a !== b) stateBad.push(`innings ${n}: fold ${a}, SQL ${b}`);
+  }
+  const ended = [...byInnings.values()].filter((f) => f.complete);
+  ok(`each innings' ending, overs and target agree (${byInnings.size}; ${ended.length} over, ${ended.filter((f) => f.sealed).length} sealed): `
+     + "innings_result_state() is the fold (db/69)", stateBad.length === 0 && ended.length > 0, show(stateBad));
 
   const refused = byInnings.get(refusedNo);
   const refusedLive = live.get(refusedNo);
@@ -1659,6 +1675,68 @@ try {
     const oppBack = OPP_FIELDS.flatMap((f) => fieldDifferences(new Map(oppSquad.map((p) => [p, oppS0.get(p)])), new Map(oppSquad.map((p) => [p, oppS2.get(p)])), [f]));
     ok("voided, the book is in no career reader and no dossier: every figure is what it was",
        back.length === 0 && Number(left.n) === 0 && oppBack.length === 0, show([...back, ...oppBack, `${left.n} rows left`]));
+  }
+
+  // ── SCRBRD-114 phase 3a (db/69): a match's result, both ways ──────────
+  // Every log of result-logs.mjs written as toRow() writes it (a scorebook
+  // card through the commit's door), its frozen play part and its decision
+  // beside it; folded from the rows read back, as the server folds; and SQL's
+  // match_result() held to the fold — the outcome, the margin, who won and
+  // who decided, and each innings' figures, ending, overs and target — and
+  // both to what the design says the log is.
+  group(`The result (SCRBRD-114 phase 3a, db/69): match_result() is describeResult(), over ${RESULT_LOGS.length} logs`);
+  for (const x of RESULT_LOGS) {
+    const [{ id: rm }] = await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+                                  values ($1, $2, $3, $4, 'T20', 20, $5) returning id`,
+      [HIL, RESULT_SIDES.home, RESULT_SIDES.away, RESULT_STARTS_AT, x.status]);
+    if (x.play) {
+      await q(`insert into match_conditions (match_id, doc, sources, doc_hash) values ($1, $2, '{}', '')`,
+        [rm, JSON.stringify({ v: 1, play: x.play, table: {}, sheet: {} })]);
+    }
+    const imp = crypto.randomUUID();
+    const c = await pool.connect();
+    try {
+      await c.query("BEGIN");
+      await c.query("SELECT set_config('scrbrd.scorebook_commit', $1, true)", [imp]);
+      let seq = 0;
+      for (const ev of x.log) {
+        const book = ev.kind === "innings_summary";
+        const r = toRow(book ? { ...ev, source: { kind: "scorebook", import: imp } } : ev);
+        seq++;
+        await c.query(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                                               client_seq, client_ts, kind, ball_type, value, striker_id, non_striker_id, bowler_id,
+                                               dismissed_id, dismissal, payload)
+                       values ($1, $2, $3, 1, $4, $5, $6, $7, $3, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+          [rm, HIL, seq, r.innings, scorer, book ? `scorebook:${imp}` : "device-fold-figures", `${rm}:${ev.id}`, r.client_ts, r.kind,
+           r.ball_type, r.value, r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal ?? null, JSON.stringify(r.payload)]);
+      }
+      if (x.decision) {
+        await c.query(`insert into match_result_decision (match_id, kind, side, reason, overrides_play, decided_by) values ($1, $2, $3, $4, $5, $6)`,
+          [rm, x.decision.kind, x.decision.side, x.decision.reason, x.decision.overridesPlay === true, scorer]);
+      }
+      await c.query("COMMIT");
+    } catch (err) { await c.query("ROLLBACK").catch(() => {}); throw err; } finally { c.release(); }
+
+    const back = await q(`select * from ball_event where match_id = $1 order by seq`, [rm]);
+    const folded = deriveMatch(back.map(fromRow), {
+      startsAt: RESULT_STARTS_AT, conditions: x.play ?? undefined, status: x.status,
+      sides: RESULT_SIDES, names: RESULT_NAMES, decision: x.decision,
+    });
+    const [sql] = await q(`select * from match_result_compute($1)`, [rm]);
+    const f = folded.result;
+    const fold = f == null
+      ? { outcome: "in_progress", marginKind: null, margin: null, decidedBy: null, winnerSide: null, playOutcome: "in_progress" }
+      : { outcome: f.outcome, marginKind: f.marginKind, margin: f.marginValue, decidedBy: f.decidedBy, winnerSide: f.winnerSide, playOutcome: f.playOutcome };
+    const said = { outcome: sql.outcome, marginKind: sql.margin_kind, margin: sql.margin, decidedBy: sql.decided_by,
+                   winnerSide: sql.winner_side, playOutcome: sql.play_outcome };
+    const inn = folded.innings.map((i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.endReason, i.penaltyWin].join("/"));
+    const sinn = (sql.innings ?? []).map((/** @type {any} */ i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.end_reason, i.penalty_win].join("/"));
+    ok(`${x.name}: match_result() is the fold's`, JSON.stringify(said) === JSON.stringify(fold) && JSON.stringify(sinn) === JSON.stringify(inn),
+       JSON.stringify({ sql: said, fold, sqlInnings: sinn, foldInnings: inn }));
+    ok(`...and is what the design says it is`,
+       sql.outcome === x.expect.outcome && sql.margin_kind === x.expect.marginKind && sql.margin === x.expect.marginValue
+       && sql.decided_by === x.expect.decidedBy && sql.winner_side === x.expect.winnerSide,
+       JSON.stringify({ sql: said, expect: x.expect }));
   }
 
   group("The door: a new ball with no type, or a wicket with no method, is refused");

@@ -151,7 +151,8 @@ export function entrantSummary(entrants) {
  */
 export function resumeStep({ entrants, sets }) {
   if (entrants === 0) return 2;
-  if (!sets.length || sets.some((s) => s.status === "draft")) return 3;
+  // Nothing to publish is not step 4: no set, a draft, or only a withdrawn one all open at the conditions.
+  if (!sets.some((s) => s.status === "published") || sets.some((s) => s.status === "draft")) return 3;
   return 4;
 }
 

@@ -108,6 +108,27 @@ function useMatchLog(match, players) {
   };
 }
 
+/**
+ * The result as the server reads it (SCRBRD-114 phase 3a, db/69): play from
+ * the log, the match's status, and a decision taken off the field — a
+ * concession, a walkover, an organiser's award — which no fold of the log can
+ * see. Re-read when the log moves. Null while signed out, for a demonstration
+ * fixture, or when the server could not say.
+ * @param {any} match  @param {unknown} seen  what the log has grown to
+ */
+function useServerResult(match, seen) {
+  const [result, setResult] = useState(/** @type {any} */ (null));
+  useEffect(() => {
+    if (!signedIn() || !match.live) { setResult(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${match.id}/result`)
+      .then((d) => { if (!cancelled) setResult(d?.result ?? null); })
+      .catch(() => { if (!cancelled) setResult(null); });
+    return () => { cancelled = true; };
+  }, [match.id, match.live, match.status, seen]);
+  return result;
+}
+
 /** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
 function TabBar({ tab, setTab }) {
   const refs = useRef({});
@@ -143,7 +164,15 @@ function TabBar({ tab, setTab }) {
   );
 }
 
-function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults }) {
+/**
+ * `focus` is FAMILY MODE (step 4 G13): the player ids this reader is here for
+ * — a parent's child, a pupil himself. Their rows are lit on the scorecard
+ * with `focusLabel` beside the name ("Your child", "You"), and the Analytics
+ * tab offers a per-player wheel for them only, because another child's row is
+ * not one this reader may open (§2.1 P4). Everything else is the Match Centre
+ * as every signed-in reader has it.
+ */
+function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches" }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
@@ -178,7 +207,11 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.events, PLAYERS, match.id]);
 
-  const result = resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
+  // The server's words where it has a result (SCRBRD-114 phase 3a: a no
+  // result, a draw, a decision beside play); the fold's while it has none.
+  const server = useServerResult(match, log.events?.length ?? 0);
+  const result = (server && server.outcome !== "in_progress" ? server.text : null)
+    ?? resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
 
   // The result, in one clear moment (SCRBRD-100 item 3): a synthetic line,
   // added only once the fold has actually decided the match, so it arrives
@@ -219,7 +252,8 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
 
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
-    moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel };
+    moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
+    focus: focus?.length ? new Set(focus) : null, focusLabel };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>
@@ -228,7 +262,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           style={{ minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
             background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer",
             color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
-          <Icon name="chevron-left"/> All matches
+          <Icon name="chevron-left"/> {backLabel}
         </button>
         <span style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
         {!log.demo && played.length > 0 && (
@@ -259,7 +293,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !log.result ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
             {isLive && !log.result && <span className="live-dot" aria-hidden="true"/>}
-            {log.result || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {log.result || (server && server.outcome !== "in_progress") || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           {log.demo && <span style={{ ...T.role.label, color: T.content.tertiary }}>Demonstration</span>}
         </div>
