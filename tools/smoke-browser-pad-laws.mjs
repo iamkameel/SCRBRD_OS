@@ -511,15 +511,24 @@ try {
 
   // ── SCRBRD-126 ───────────────────────────────────────────────
   group("SCRBRD-126: the wicket-keeper — a stumping is his, and the gloves change hands mid-over");
-  /** The next batter in, typed: Michaelhouse has no roster. */
+  /** The next batter in, typed: Michaelhouse has no roster. Sent with Go,
+   *  not Enter: the sheet closes on the keydown and focus goes back to the
+   *  Wicket key, which the rest of the key press would then press. */
   const nextBatter = async (/** @type {string} */ name) => {
     const field = page.locator('input[aria-label="Player name"]');
-    if (await field.count()) { await field.fill(name); await field.press("Enter"); await page.waitForTimeout(500); }
+    if (!(await field.count())) return;
+    await field.fill(name);
+    await page.locator("button:not([disabled])", { hasText: /^Go$/ }).first().click({ timeout: 3000 });
+    await page.waitForTimeout(500);
   };
   const K1 = keepers[0] ?? { id: null, name: "" };
   ok(`the server has the keeper, by id, before the first ball (${K1.id})`,
      nb3.rows.some((r) => r.kind === "keeper" && r.payload?.keeper === K1.id) && nb3.inn.keeper === K1.id && /^[0-9a-f-]{36}$/.test(K1.id ?? ""));
   ok("...a row of its own: no ball, no bowler, nothing moved", nb3.rows.filter((r) => r.kind === "keeper").every((r) => r.ball_type == null && r.value == null && r.bowler_id == null));
+  // The ball after a no-ball is a free hit, which a stumping does not stand
+  // on: a single first.
+  await click(/^1$/);
+  await page.waitForTimeout(400);
   await click(/Wicket/, 2500);
   await tap("wicket-mode-stumped");
   ok(`the wicket sheet credits a stumping to the keeper (${K1.name})`,
@@ -533,6 +542,7 @@ try {
      JSON.stringify(st1Row && { dismissal: st1Row.dismissal, fielder: st1Row.payload?.fielder }));
   ok("...and its fold gives it to him", st1.inn.keepers.find((k) => k.id === K1.id)?.stumpings === 1, JSON.stringify(st1.inn.keepers));
   ok("the over is under way", st1.inn.balls % 6 !== 0);
+  await makeReady();
   await tap("pad-menu");
   await tap("pad-keeper");
   ok(`"Change keeper" opens, saying who is keeping (${K1.name})`,
