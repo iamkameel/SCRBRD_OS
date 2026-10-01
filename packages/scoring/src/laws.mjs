@@ -56,6 +56,7 @@ import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_
   PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason,
   SUSPENSION_REASONS, SUSPENSION_SCOPE } from "./events.mjs";
 import { WITHDRAWN_PENALTY_REASONS } from "./events.mjs";
+import { INNINGS_END_REASON } from "./events.mjs";   // SCRBRD-130 R1
 import { FACES_NEXT, FACES_NEXT_VALUES, NOT_IN_OVER, suspensionScope, normaliseDismissal } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { retirementDismissal, isMidOver, isKeeperRef, keeperOf, pairState, PAIR_STATE } from "./replay.mjs";
@@ -132,6 +133,14 @@ export const REFUSAL = Object.freeze({
   SUPER_OVER_NUMBER:      "super_over_number",      // not the next number, or at a match innings' index
   SUPER_OVER_AFTER_MATCH_INNINGS: "super_over_after_match_innings", // a further innings with no super-over marker
   SUPER_OVER_NO_REVISION: "super_over_no_revision", // a super over is not shortened
+  // ── SCRBRD-130 R1: interruptions (design §2.4). None reads a condition. ──
+  PLAY_STOPPED:           "play_stopped",           // play in an innings while play is stopped
+  PLAY_ALREADY_STOPPED:   "play_already_stopped",   // a stop while one is open
+  PLAY_NOT_STOPPED:       "play_not_stopped",       // a resumption with no stop open
+  STOP_OUTSIDE_INNINGS:   "stop_outside_innings",   // a stop or resumption in an innings not open
+  REVISION_BELOW_BOWLED:  "revision_below_bowled",  // overs fewer than the whole overs the over in progress needs
+  PAR_WITHOUT_TARGET:     "par_without_target",     // a par for an innings with no target
+  // ── end SCRBRD-130 R1 ──
 });
 /** @typedef {typeof REFUSAL[keyof typeof REFUSAL]} Refusal */
 
@@ -195,6 +204,13 @@ export const REFUSAL_TEXT = Object.freeze({
   // Not a Law: the match's playing conditions provide no super over (D10,
   // services/api/write/events-api.mjs), refused at the write path.
   super_over_not_provided: "this match's playing conditions provide no super over — a tie stands",
+  // SCRBRD-130 R1: interruptions.
+  play_stopped: "play was stopped — resume play first, or end the innings for rain",
+  play_already_stopped: "play was already stopped",
+  play_not_stopped: "play had not been stopped",
+  stop_outside_innings: "that innings was not in play — not started, or already over",
+  revision_below_bowled: "the revised overs were fewer than the overs already bowled, counting the over in progress",
+  par_without_target: "a par score is for a chase — this innings had no target",
   // The idempotency conflict is not a Law, but it is held the same way.
   idempotency_conflict: "a different event was already recorded under this event's id",
   // Nor are these: a value the record has no place for (SCRBRD-077,
@@ -254,6 +270,17 @@ export function lawsRefusal(match, ev) {
   // voiding the summary.
   if (inn?.summarised != null && SUMMARISED_REFUSES.has(ev?.kind)) return REFUSAL.SUMMARISED_INNINGS;
 
+  // ── SCRBRD-130 R1: interruptions (design §2.4) ──
+  if (ev?.kind === KIND.PLAY_STOPPED || ev?.kind === KIND.PLAY_RESUMED) return interruptionRefusal(inn, ev.kind);
+  if (inn?.stopped != null) {
+    // Nothing is bowled, nobody retires, no bowler comes on and no penalty
+    // is awarded while play is stopped; the innings closes only as a
+    // termination (sealed `abandoned`, the umpires' call).
+    if (STOPPED_REFUSES.has(ev?.kind)) return REFUSAL.PLAY_STOPPED;
+    if (ev?.kind === KIND.INNINGS_END && ev.reason !== INNINGS_END_REASON.ABANDONED) return REFUSAL.PLAY_STOPPED;
+  }
+  // ── end SCRBRD-130 R1 ──
+
   if (PLAY.has(ev?.kind)) {
     // Innings are played one after another. A ball, a new batter, a bowler or
     // a seal for an innings that play has already moved on from would be
@@ -310,7 +337,9 @@ export function lawsRefusal(match, ev) {
     // ── SCRBRD-114 phase 3b: a super over is not shortened (§3.2) ──
     case KIND.REVISION:
       if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
-      return inn.superOver != null ? REFUSAL.SUPER_OVER_NO_REVISION : null;
+      // Rain never revises a super over (SCRBRD-130 §5): refused before the
+      // rain rule's own checks (revisionRefusal(), SCRBRD-130 R1).
+      return inn.superOver != null ? REFUSAL.SUPER_OVER_NO_REVISION : revisionRefusal(inn, ev);
     case KIND.INNINGS_END:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : null;
     // ── SCRBRD-114 phase 3b: where an innings may open (§3.3) ──
@@ -334,6 +363,44 @@ export function lawsRefusal(match, ev) {
 
 /** @type {ReadonlySet<unknown>} */
 const SUMMARISED_REFUSES = new Set([...LIVE_PLAY, KIND.INNINGS_START, KIND.REVISION]);
+
+// ── SCRBRD-130 R1: interruptions (design §2.4) ──
+/** Play an open stop refuses: a ball (a wicket with it), a retirement, a bowler, a penalty.
+ *  @type {ReadonlySet<unknown>} */
+const STOPPED_REFUSES = new Set([KIND.BALL, KIND.RETIRE, KIND.BOWLER, KIND.PENALTY]);
+
+/**
+ * A stop or a resumption. The innings must be open — started, and neither
+ * sealed nor over by the Laws (a delay between innings is not a stop: the
+ * chase's innings_start carries the umpires' figures); then a stop needs none
+ * open and a resumption needs one.
+ * @param {Innings | null} inn  @param {string} kind
+ * @returns {Refusal | null}
+ */
+function interruptionRefusal(inn, kind) {
+  if (inn?.battingTeam == null || inn.sealed) return REFUSAL.STOP_OUTSIDE_INNINGS;
+  if (kind === KIND.PLAY_STOPPED) {
+    if (inn.complete) return REFUSAL.STOP_OUTSIDE_INNINGS;
+    return inn.stopped != null ? REFUSAL.PLAY_ALREADY_STOPPED : null;
+  }
+  return inn.stopped == null ? REFUSAL.PLAY_NOT_STOPPED : null;
+}
+
+/**
+ * The umpires' revision. Its overs may not be fewer than the whole overs the
+ * over in progress needs (`overs < ceil(balls / 6)`): an innings is not cut
+ * behind the balls already bowled. A raise is not refused (D3). A par is a
+ * chase's figure: an innings with no target — the revision's own, or the one
+ * standing — takes none. A super over's revision is the super over's rule.
+ * @param {Innings} inn  @param {Loose<import("./events.mjs").RevisionEvent>} ev
+ * @returns {Refusal | null}
+ */
+function revisionRefusal(inn, ev) {
+  if (typeof ev.overs === "number" && ev.overs < Math.ceil((inn.balls ?? 0) / 6)) return REFUSAL.REVISION_BELOW_BOWLED;
+  if (ev.par != null && (ev.target ?? inn.target) == null) return REFUSAL.PAR_WITHOUT_TARGET;
+  return null;
+}
+// ── end SCRBRD-130 R1 ──
 
 /**
  * An innings from a paper scorebook (SCRBRD-120 §2.3, §2.6).

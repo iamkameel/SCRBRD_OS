@@ -44,6 +44,7 @@ import {
   BALL_TYPE, DISMISSALS, INNINGS_END_REASON, NB_RUNS_VALUES, NB_TYPES, RUN_OUT_ENDS,
   FACES_NEXT_VALUES, NOT_IN_OVER, PENALTY_REASONS, RETIRE_REASON, CARD_END_REASON, CARD_HOW_OUT,
   superOverNumber,
+  STOP_REASONS,
 } from "@scrbrd/scoring";
 
 /**
@@ -70,13 +71,17 @@ export const PUBLIC_EVENT_FIELDS = Object.freeze({
   penalty:       Object.freeze(["runs", "toBattingTeam", "reason"]),
   retire:        Object.freeze(["batter", "reason", "type", "dismissal"]),
   innings_end:   Object.freeze(["reason", "confirmed"]),
-  revision:      Object.freeze(["overs", "target", "reason"]),
+  revision:      Object.freeze(["overs", "target", "reason", "par"]),
   void:          Object.freeze(["target"]),
   // An innings from a paper scorebook (SCRBRD-120, db/63): its card, every
   // figure checked and every ref pseudonymised (publicCard()). The typed
   // names, who checked and who confirmed, and a reviewer's note never reach
   // this projection: db/63 does not select them.
   innings_summary: Object.freeze(["card"]),
+  // SCRBRD-130 R1 (db/73): rain. Why play stopped (a code from STOP_REASONS)
+  // and when; never the scorer's note, which db/73 does not select.
+  play_stopped:  Object.freeze(["reason", "at"]),
+  play_resumed:  Object.freeze(["at"]),
 });
 
 /** The fields every public event carries. */
@@ -301,6 +306,9 @@ function keep(kind, f, src, { who, squadOf, secret, matchId }) {
     case "overs": case "runs": case "value":
       return int(v) ?? undefined;
     case "superOver":      return superOverNumber(v) ?? undefined;
+    // SCRBRD-130 R1: the umpires' par; a stop's or resumption's time (epoch ms).
+    case "par": case "at":
+      return int(v) ?? undefined;
     case "toBattingTeam": case "freeHit":
       return typeof v === "boolean" ? v : undefined;
     case "captainConsent":
@@ -322,6 +330,7 @@ function keep(kind, f, src, { who, squadOf, secret, matchId }) {
       if (kind === "penalty") return oneOf(v, PENALTY_REASONS) ?? null;
       if (kind === "innings_end") return oneOf(v, END_REASONS) ?? null;
       if (kind === "revision") return typeof v === "string" && REVISION_REASONS.has(v.toLowerCase()) ? v : undefined;
+      if (kind === "play_stopped") return oneOf(v, STOP_REASONS) ?? undefined;   // SCRBRD-130 R1
       if (kind === "retire") {
         // A dismissal (retired out, timed out) keeps its reason; anything
         // else is "not out", whatever was recorded — "hurt" is N2.

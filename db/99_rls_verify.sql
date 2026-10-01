@@ -8766,6 +8766,9 @@ BEGIN
       || 'bowling.limit|play|object|overs|-|band|-|sql,pad; '
       || 'result.min_overs_per_side|play|int|overs|-|-|-|pad,sql; '
       || 'result.tie_break|play|enum|-|none,super_over|-|"none"|fold,table; '
+      -- SCRBRD-130 R1 (db/73)
+      || 'target.method|play|enum|-|umpires_revision,dls_standard|-|"umpires_revision"|fold,sql; '
+      || 'target.g50|play|int|runs|-|-|-|pad; '
       || 'points.win|table|int|points|-|-|-|table; '
       || 'points.tie|table|int|points|-|-|-|table; '
       || 'points.draw|table|int|points|-|-|-|table; '
@@ -8786,7 +8789,6 @@ BEGIN
       || 'pitch.length_m|play|int|m|-|-|-|-; '
       || 'ball.weight_g|play|int|g|-|-|-|-; '
       || 'fielding.powerplay|play|object|-|-|-|-|-; '
-      || 'target.method|play|enum|-|umpires_revision|-|"umpires_revision"|-; '
       || 'bowling.rest_overs_between_spells|play|int|overs|-|-|-|-; '
       || 'eligibility.max_overage_players|sheet|int|-|-|-|-|-';
   BEGIN

@@ -78,7 +78,16 @@ export const DECISION_KIND = Object.freeze({ CONCEDED: "conceded", WALKOVER: "wa
  * @property {string | null} text  the result in words (resultWords())
  * @property {import("./replay.mjs").SuperOver[]} [superOvers]  the match's super overs, where
  *   its document provides one and the match is tied (SCRBRD-114 phase 3b); else []
+ * @property {"dls_standard" | "umpires_revision" | null} [revisedTarget]  SCRBRD-130 R1: the
+ *   method the chase's revised target (or par) was set under, for the words' suffix
+ *   ("(DLS)", "(revised target)"); null or absent when the chase faced no revision
  */
+
+// ── SCRBRD-130 R1: the suffix a revised chase's result carries (design §5) ──
+/** @param {string | null | undefined} method */
+export const revisedTargetSuffix = (method) =>
+  (method === "dls_standard" ? " (DLS)" : method === "umpires_revision" ? " (revised target)" : "");
+// ── end SCRBRD-130 R1 ──
 
 /** @type {ReadonlySet<string>} */
 const WIN_OUTCOMES = new Set([OUTCOME.HOME_WIN, OUTCOME.AWAY_WIN, OUTCOME.WIN]);
@@ -179,7 +188,7 @@ export function applyDecision(play, decision, nameOfSide = () => null) {
  *   super over" · "Match tied; two super overs tied; Northwood won the third"
  *   · "Match tied; the super over was not completed" (phase 3b, §2.4)
  *
- * @param {Pick<MatchResult, "outcome" | "marginKind" | "marginValue" | "winnerSide" | "winnerKey" | "playOutcome" | "decision" | "decisionApplied"> & {winner?: string | null, playWinnerKey?: string | null, playWinnerSide?: string | null, playMarginKind?: string | null, playMarginValue?: number | null, superOvers?: import("./replay.mjs").SuperOver[]}} r
+ * @param {Pick<MatchResult, "outcome" | "marginKind" | "marginValue" | "winnerSide" | "winnerKey" | "playOutcome" | "decision" | "decisionApplied"> & {winner?: string | null, playWinnerKey?: string | null, playWinnerSide?: string | null, playMarginKind?: string | null, playMarginValue?: number | null, superOvers?: import("./replay.mjs").SuperOver[], revisedTarget?: string | null}} r
  * @param {{nameOf?: (key: string | null, side: string | null) => string, reasons?: boolean}} [o]
  * @returns {string | null}
  */
@@ -187,6 +196,8 @@ export function resultWords(r, { nameOf = (key, side) => key ?? side ?? "—", r
   if (!r) return null;
   const d = r.decisionApplied ? r.decision : null;
   const reason = d?.reason && reasons ? `: ${String(d.reason).trim()}` : "";
+  // SCRBRD-130 R1: "(DLS)" or "(revised target)" after what play decided.
+  const rain = revisedTargetSuffix(r.revisedTarget);
   /** The words play alone gives. */
   const playWords = () => {
     const o = r.playOutcome ?? r.outcome;
@@ -195,10 +206,11 @@ export function resultWords(r, { nameOf = (key, side) => key ?? side ?? "—", r
       const side = r.playWinnerSide !== undefined ? r.playWinnerSide : r.winnerSide;
       const kind = r.playMarginKind !== undefined ? r.playMarginKind : r.marginKind;
       const value = r.playMarginValue !== undefined ? r.playMarginValue : r.marginValue;
-      return `${nameOf(key ?? null, side ?? null)} won by ${marginString(o, kind, value)}`;
+      return `${nameOf(key ?? null, side ?? null)} won by ${marginString(o, kind, value)}${rain}`;
     }
     switch (o) {
-      case OUTCOME.TIE: return `Match tied${superOverWords(r.superOvers ?? [], nameOf)}`;
+      // A DLS tie is a tie (design §5): "Match tied (DLS); Northwood won the super over".
+      case OUTCOME.TIE: return `Match tied${rain}${superOverWords(r.superOvers ?? [], nameOf)}`;
       case OUTCOME.DRAW: return "Match drawn";
       case OUTCOME.NO_RESULT: return "No result";
       case OUTCOME.ABANDONED: return "Match abandoned";
@@ -272,6 +284,10 @@ export function resultFromRow(row) {
     superOvers: (Array.isArray(row.super_overs) ? row.super_overs : []).map((/** @type {any} */ p) => ({
       n: p.n, first: p.first ?? null, a: p.a ?? null, b: p.b ?? null, state: p.state,
       winner: p.winner ?? null, winnerKey: p.winner_key ?? null })),
+    // SCRBRD-130 R1: the chase's entry carries the method its revised target
+    // was set under (match_result_compute(), db/73), as revisedTargetMethod().
+    revisedTarget: /** @type {"dls_standard" | "umpires_revision" | null} */ (
+      (Array.isArray(row.innings) ? row.innings : []).find((/** @type {any} */ i) => i?.revised_target != null)?.revised_target ?? null),
   };
   return { ...r, margin: marginString(r.outcome, r.marginKind, r.marginValue) };
 }

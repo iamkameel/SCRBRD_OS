@@ -48,8 +48,9 @@ export const CONDITION_PART = Object.freeze({ PLAY: "play", TABLE: "table", SHEE
  */
 export const CONDITION_DENY_PREFIXES = Object.freeze(["quota.", "transformation.", "race."]);
 
-/** The shape every key has: dotted lower-case words (db/61's CHECK). */
-const KEY_SHAPE = /^[a-z_]+(\.[a-z_]+)+$/;
+/** The shape every key has: dotted lower-case words, a digit allowed after a
+ *  word's first character (db/61's CHECK, widened by db/73 for `target.g50`). */
+const KEY_SHAPE = /^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)+$/;
 
 /**
  * May this string be a condition key at all? The catalogue is written by
@@ -96,6 +97,11 @@ export const CONDITION = Object.freeze({
   "bowling.limit":                        key({ part: "play", type: "object", unit: "overs", byAgeBand: true, readers: ["sql", "pad"], sort: 60 }),
   "result.min_overs_per_side":            key({ part: "play", type: "int", unit: "overs", readers: ["pad", "sql"], sort: 70 }),
   "result.tie_break":                     key({ part: "play", type: "enum", values: ["none", "super_over"], platformDefault: "none", readers: ["fold", "table"], sort: 80 }),
+  // SCRBRD-130 R1 (D4, D7): how a rain-revised target was set, and the DLS
+  // Standard Edition's G50 — a competition's figure with its source, never a
+  // platform default (Kameel, 2026-10-01); the calculator says so without it.
+  "target.method":                        key({ part: "play", type: "enum", values: ["umpires_revision", "dls_standard"], platformDefault: "umpires_revision", readers: ["fold", "sql"], sort: 90 }),
+  "target.g50":                           key({ part: "play", type: "int", unit: "runs", readers: ["pad"], sort: 91 }),
   "points.win":                           key({ part: "table", type: "int", unit: "points", readers: ["table"], sort: 100 }),
   "points.tie":                           key({ part: "table", type: "int", unit: "points", readers: ["table"], sort: 101 }),
   "points.draw":                          key({ part: "table", type: "int", unit: "points", readers: ["table"], sort: 102 }),
@@ -117,7 +123,6 @@ export const CONDITION = Object.freeze({
   "pitch.length_m":                       key({ part: "play", type: "int", unit: "m", sort: 903 }),
   "ball.weight_g":                        key({ part: "play", type: "int", unit: "g", sort: 904 }),
   "fielding.powerplay":                   key({ part: "play", type: "object", sort: 905 }),
-  "target.method":                        key({ part: "play", type: "enum", values: ["umpires_revision"], platformDefault: "umpires_revision", sort: 906 }),
   "bowling.rest_overs_between_spells":    key({ part: "play", type: "int", unit: "overs", sort: 907 }),
   "eligibility.max_overage_players":      key({ part: "sheet", type: "int", sort: 908 }),
 });

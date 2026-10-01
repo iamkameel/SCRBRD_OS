@@ -155,9 +155,12 @@ ok("PUBLIC_EVENT_FIELDS is exactly the reviewed list", JSON.stringify(PUBLIC_EVE
   penalty: ["runs", "toBattingTeam", "reason"],
   retire: ["batter", "reason", "type", "dismissal"],
   innings_end: ["reason", "confirmed"],
-  revision: ["overs", "target", "reason"],
+  revision: ["overs", "target", "reason", "par"],
   void: ["target"],
   innings_summary: ["card"],
+  // SCRBRD-130 R1 (db/73): rain — the reason code and the time, never the note.
+  play_stopped: ["reason", "at"],
+  play_resumed: ["at"],
 }), PUBLIC_EVENT_FIELDS);
 ok("db/59 returns exactly the kinds the allowlist lists", JSON.stringify([...KINDS_SQL].sort()) === JSON.stringify(Object.keys(PUBLIC_EVENT_FIELDS).sort()), KINDS_SQL);
 const COLUMN_FIELDS = new Set(["type", "value", "dismissal", "striker", "nonStriker", "bowler", "dismissed"]);
