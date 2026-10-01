@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { pctDays, severityColor, today, withheld } from "../lib/format.js";
-import { can, holdsCapability } from "../rbac/index.js";
+import { holdsCapability } from "../rbac/index.js";
 import { Avatar, Badge, Card, KPICard, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
 
@@ -13,7 +13,6 @@ function InjuryView({ role }) {
   // principal. Importing the raw constant here would bypass both.
   const PLAYERS = useRows("players", role);
   const [sel, setSel] = useState(null);
-  const canEdit = can(role,"injuries","update").allowed;
   const injV = useRows("injuries", role);
   // A pupil reaches this screen through his own record (selfaccess) and reads
   // his own injuries only; the side's fitness count is the team-mates' health
@@ -27,7 +26,7 @@ function InjuryView({ role }) {
       {/* There is no route to log or update an injury yet, so no control for it
           is drawn: Update Progress, Clear for Training, Refer to Physio and the
           Log Injury form were buttons that did nothing. Reading stays as it is. */}
-      {canEdit&&<p data-testid="injury-writes-coming" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:"0 0 16px"}}>Recording and updating injuries is coming.</p>}
+      <p data-testid="injury-writes-coming" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:"0 0 16px"}}>Recording and updating injuries is coming.</p>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"24px"}}>
         <KPICard label="Active Injuries" value={injV.filter(i=>i.restricted).length}  icon="bandage" color={D.rose}/>
