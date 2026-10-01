@@ -229,6 +229,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // declaration, a round trip offered, a seat asked for and accepted, the
   // office's counts, and no lifts block where the module is not live.
   "browser-lifts",
+  // Wave A of the prototype clean-up (1 October 2026): the kit register
+  // alone on Logistics, no dead injury controls, the Skills axis, school
+  // search from the platform's list, Profiles' school name from the read,
+  // Squad's Set Availability and Edit Profile, and a still pitch drawing.
+  "browser-cleanup",
   // SCRBRD-068/069/080/081: the pad's four new Laws questions.
   "browser-pad-laws",
   // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
