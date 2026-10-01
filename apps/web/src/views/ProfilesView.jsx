@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { KZN_SCHOOLS } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D, inkOn, textOn, themed } from "../design/tokens.js";
 import { atLeast, bookNote, fitnessColor, humanDate, stat } from "../lib/format.js";
@@ -92,7 +91,9 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
     const rCol = p.role==="BAT"?D.sky:p.role==="BOWL"?D.violet:p.role==="ALL"?D.emerald:D.amber;
     // "conduct" is staff-only by product decision; see rbac/conduct.js.
     const tabs = ["overview","career","form","vs opponents","development",...(readsConduct(role)?["conduct"]:[])];
-    const schoolInfo = p.school==="HIL"?"Hilton College":KZN_SCHOOLS.find(s=>s.abbr===p.school)?.name||p.school;
+    // The read's own school name, or nothing: never a lookup in a sample list
+    // and never a guess at which school a boy belongs to.
+    const schoolInfo = p.schoolName ?? null;
 
     return (
       <div style={{flex:1,overflowY:"auto"}}>
@@ -112,7 +113,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               </div>
               <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
                 <Badge color={rCol}>{p.role==="BAT"?"Batter":p.role==="BOWL"?"Bowler":p.role==="ALL"?"Allrounder":"WK Batter"}</Badge>
-                <Badge color={D.sky}>{schoolInfo} · {p.team}</Badge>
+                <Badge color={D.sky}>{[schoolInfo, p.team].filter(Boolean).join(" · ")}</Badge>
                 {seesFitness&&<Badge color={p.fitness==="fit"?D.emerald:p.fitness==="injured"?D.rose:D.orange}>{p.fitness}</Badge>}
                 {p.batHand&&<Badge color={D.textMuted}>{p.batHand}HB · {p.bowlArm}{p.bowlArm?"A":""} {p.bowlStyle==="F"?"Fast":p.bowlStyle==="S"?"Spin":"Medium"}</Badge>}
               </div>
@@ -436,7 +437,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   // ── Coach Profile Panel ──
   const CoachProfile = ({c}) => {
     const tabs = ["overview","career","sessions"];
-    const coachPlayers = PLAYERS.filter(p=>p.team===c.team && p.school==="HIL");
+    const coachPlayers = PLAYERS.filter(p=>p.team===c.team && (!c.school || p.school===c.school));
     return (
       <div style={{flex:1,overflowY:"auto"}}>
         <div style={{background:`linear-gradient(135deg,${D.emerald}18,${D.surf1} 60%)`,padding:"24px",borderBottom:`1px solid ${D.border}`}}>
@@ -556,7 +557,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   // a live row — school as an id, sides the school actually fields — never
   // matched, so the live roster listed nobody for anyone. The reader's own
   // school is the one they see most of, so it comes first.
-  const schoolLabel = (p) => p.schoolName ?? KZN_SCHOOLS.find(s=>s.abbr===p.school)?.name ?? (p.school==="HIL"?"Hilton College":p.school);
+  const schoolLabel = (p) => p.schoolName ?? "";
   const bySchool = PLAYERS.reduce((acc,p)=>{ (acc[p.school] ??= { label: schoolLabel(p), players: [] }).players.push(p); return acc; }, {});
   const schoolGroups = Object.entries(bySchool).sort((a,b)=>b[1].players.length-a[1].players.length)
     .map(([id,g])=>({ id, label:g.label, teams:[...new Set(g.players.map(p=>p.team).filter(Boolean))].sort(), players:g.players }));
@@ -583,7 +584,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
               {schoolGroups.map((g,gi)=>(
                 <div key={g.id} data-testid={`roster-school-${gi}`}>
-                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:gi?"10px":"4px",textTransform:"uppercase"}}>{g.label}</div>
+                  {g.label&&<div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:gi?"10px":"4px",textTransform:"uppercase"}}>{g.label}</div>}
                   {g.teams.map(team=>(
                     <div key={team}>
                       <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,padding:"3px 8px"}}>{team}</div>
