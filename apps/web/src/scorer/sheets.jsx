@@ -513,7 +513,7 @@ const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?
  * 25.4.3). A tap asks the scorer to confirm the captain agreed; only the
  * confirm sends, as onSend(id, {captainConsent: true}).
  */
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[],resumableWithConsent=[]}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[],resumableWithConsent=[],noteFor=null,footer=null}){
   const[timedOut,setTimedOut]=useState(false);
   const[consentFor,setConsentFor]=useState(/** @type {string|null} */(null));
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
@@ -634,8 +634,12 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
                   color:first?D.textPrimary:D.textSecondary}}>
                   {p.pos}
                 </div>
-                <span style={{fontFamily:D.body,fontSize:"15px",fontWeight:first?600:400,
-                  color:first?D.textPrimary:D.textSecondary,flex:1}}>{p.name}</span>
+                <span style={{flex:1,minWidth:0,display:"grid",gap:"2px"}}>
+                  <span style={{fontFamily:D.body,fontSize:"15px",fontWeight:first?600:400,
+                    color:first?D.textPrimary:D.textSecondary}}>{p.name}</span>
+                  {/* A super over (SCRBRD-114 phase 3b, D4): who was out in an earlier one — words, never a refusal. */}
+                  {noteFor&&noteFor(p.id)&&<span data-testid="batter-superover-note" style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:600,color:T.semantic.warningText}}>{noteFor(p.id)}</span>}
+                </span>
                 {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"12px"}}>{ri.role}</Badge>}
                 {first&&<Badge color={D.emerald} sx={{fontSize:"12px",marginLeft:"2px"}}>Next</Badge>}
               </button>
@@ -676,6 +680,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
         )}
         <Sep sx={{marginBottom:"12px"}}/>
         <CustomBatEntry onSend={send}/>
+        {footer&&<p data-testid="batting-footer" style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.secondary,margin:"12px 0 0"}}>{footer}</p>}
       </div>
     </Sheet>
   );
@@ -897,7 +902,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
  * anyone, and passes it on: onConfirm(id, reason).
  */
 function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false,capWordsFor=null,
-  keeper=null,keeperChoices=[],onKeeper=null}){
+  keeper=null,keeperChoices=[],onKeeper=null,noteFor=null,footer=null}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
   const[reason,setReason]=useState(null);
@@ -990,6 +995,8 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
                   <span style={{fontFamily:D.body,fontSize:"15px",fontWeight:p.figures?600:500,
                     color:dis?D.textMuted:D.textPrimary}}>{p.name}</span>
                   {p.likely&&<span data-testid="bowler-likely" style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:T.content.secondary}}>Likely next · bowled the over before last</span>}
+                  {/* A super over (SCRBRD-114 phase 3b, D4): the bowler of an earlier one — words, and he can still be chosen. */}
+                  {noteFor&&noteFor(p.id)&&<span data-testid="bowler-superover-note" style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:T.semantic.warningText}}>{noteFor(p.id)}</span>}
                   {whyNot&&<span data-testid="bowler-unavailable" style={{fontFamily:D.body,fontSize:"12px",color:D.roseText}}>{whyNot}</span>}
                   {/* The competition's innings cap (SCRBRD-114): words, and
                       the choice stays open — the umpires decide (D1). */}
@@ -1013,6 +1020,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
             </div>
           )}
         </div>
+        {footer&&<p data-testid="bowling-footer" style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.secondary,margin:"0 0 12px"}}>{footer}</p>}
         {/* Manual entry fallback */}
         <Sep sx={{marginBottom:"12px"}}/>
         <Lbl sx={{marginBottom:"7px",color:D.textMuted}}>Or Type Name</Lbl>
@@ -1039,23 +1047,25 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
  * and from nothing when nothing was, so a scorer who presses Start without
  * touching it changes nothing about how the match reads.
  */
-function Innings2Sheet({target,teamName,overs,declared=null,note=null,onClose,onStart}){
+function Innings2Sheet({target,teamName,overs,declared=null,note=null,onClose,onStart,title="Innings Break",startLabel="Start 2nd Innings →",lead=null}){
   const[profile,setProfile]=useState(declared);
   return (
-    <Sheet title="Innings Break" accent={D.indigo} onClose={onClose}>
+    <Sheet title={title} accent={D.indigo} onClose={onClose}>
       <div style={{textAlign:"center",padding:"20px 0 24px"}}>
+        {/* A super over's chase says which it is (SCRBRD-114 phase 3b). */}
+        {lead&&<div data-testid="innings2-lead" style={{fontFamily:T.type.body,fontSize:"15px",lineHeight:1.4,color:T.content.primary,margin:"0 0 12px"}}>{lead}</div>}
         <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:"8px"}}>{teamName} need</div>
         <div style={{fontFamily:D.mono,fontSize:"clamp(56px,12vw,80px)",fontWeight:500,
           background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",
           lineHeight:1,letterSpacing:"-0.02em",marginBottom:"6px"}}>{target}</div>
-        <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:note?"12px":"24px"}}>runs to win in {overs} overs</div>
+        <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:note?"12px":"24px"}}>runs to win in {overs} {overs===1?"over":"overs"}</div>
         {/* Five penalty runs awarded to this side while it fielded, before it
             had batted: its innings opens on them (SCRBRD-094). */}
         {note&&<div data-testid="innings2-penalty-note" style={{fontFamily:T.type.body,fontSize:"15px",lineHeight:1.4,color:T.content.primary,marginBottom:"20px"}}>{note}</div>}
         <div style={{textAlign:"left",maxWidth:"360px",margin:"0 auto 20px"}}>
           <CaptureProfilePicker value={profile} onChange={setProfile}/>
         </div>
-        <Btn variant="primary" size="lg" sx={{borderRadius:D.md,minWidth:"220px"}} onClick={()=>onStart(profile)}>Start 2nd Innings →</Btn>
+        <Btn variant="primary" size="lg" sx={{borderRadius:D.md,minWidth:"220px"}} onClick={()=>onStart(profile)} data-testid="innings2-start">{startLabel}</Btn>
       </div>
     </Sheet>
   );
@@ -1098,7 +1108,7 @@ const END_REASON_TEXT = Object.freeze({
   [INNINGS_END_REASON.ABANDONED]: "Abandoned",
 });
 
-function InningsReviewSheet({inn,inningsNo,onConfirm,onFixLastBall,onClose}){
+function InningsReviewSheet({inn,inningsNo,label=null,onConfirm,onFixLastBall,onClose}){
   const notOut=(inn?.batsmen||[]).filter(b=>b.status==="batting");
   // Only bowlers who actually bowled. A name with no balls against it is a
   // squad entry, not a spell, and reading one back as "0-0 off 0" invites the
@@ -1111,7 +1121,7 @@ function InningsReviewSheet({inn,inningsNo,onConfirm,onFixLastBall,onClose}){
     padding:"7px 0",borderBottom:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"13px"};
 
   return (
-    <Sheet title={`Innings ${inningsNo} — check before closing`} accent={D.amber} onClose={onClose}>
+    <Sheet title={`${label??`Innings ${inningsNo}`} — check before closing`} accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"10px"}} data-testid="innings-review">
         <div style={{textAlign:"center",marginBottom:"18px"}}>
           <div style={{fontFamily:D.mono,fontSize:"clamp(44px,10vw,64px)",fontWeight:500,

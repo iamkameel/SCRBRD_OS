@@ -8,7 +8,13 @@ import {
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
   lastUndoableIndex, likelyCause, keeper as keeperEvent, keeperOf,
 } from "@scrbrd/scoring";
-import { lawsEdition } from "@scrbrd/scoring";
+import { lawsEdition, conditionsOf, describeResult } from "@scrbrd/scoring";
+import {
+  chaseOf, eligibilityNotes, isSuperOver, pairPlace, superOverChaseStart, superOverFirstStart, superOverInPlay,
+  superOverOffer, superOversOf, superOverTitle, NOT_RECORDED_WORDS, UMPIRES_DECIDE_WORDS,
+} from "../lib/superOver.js";
+import { SuperOverOffer, SuperOverSheet } from "./superOverSheet.jsx";
+import { resumeAt } from "./superOverFlow.js";
 import { ConditionsLine, bowlerCapWords } from "./conditionsLine.jsx";
 import { D, T, inkOn } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -17,7 +23,7 @@ import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
-import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, inningsInPlay, withOrphans } from "@scrbrd/sync";
+import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, withOrphans } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
 import { awardEvent, awardRefusal, foldPad, pendingCredits, projectPad } from "./penalty.js";
 import { crease, deliveryEvents, noBallEvent } from "./delivery.js";
@@ -514,20 +520,24 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
    * step 2: scoring stays locked until the takeover): what it would record is
    * a second log over the one it is about to be handed.
    */
-  const emit = (...evs) => {
+  // `emitAt` names the innings: a super over opens one that the pad has no
+  // log for yet (SCRBRD-114 phase 3b), and the pad's log grows to it.
+  const emitAt = (at, ...evs) => {
     if (padLockRef.current) return;
     setEvents(prev => {
       const cp = [...prev];
+      while (cp.length <= at) cp.push([]);
       const stamped = evs.map(e => ({
         ...e,
-        innings: curIn,
+        innings: at,
         id: e.id ?? newEventId(deviceIdRef.current, matchIdRef.current ?? "local"),
       }));
       for (const e of stamped) mintedRef.current.add(e.id);
-      cp[curIn] = [...cp[curIn], ...stamped];
+      cp[at] = [...(cp[at] ?? []), ...stamped];
       return cp;
     });
   };
+  const emit = (...evs) => emitAt(curIn, ...evs);
 
   /** What the innings WOULD be with these extra events — used to decide what
    *  happens next (over ended? innings ended?) without duplicating the rules.
@@ -536,6 +546,26 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   const project = (...evs) => projectPad(events, curIn, evs, scoringCtxRef.current);
 
   const inn=innings[curIn];
+
+  // ── The super over (SCRBRD-114 phase 3b) ────────────────
+  // May one start now, and if not, why: asked of the engine and of the
+  // match's own playing conditions (lib/superOver.js), never guessed here.
+  // `pairNo` says which innings of a super over this is, for the words.
+  const matchConditions=conditionsOf(scoringCtxRef.current);
+  const offer=useMemo(
+    ()=>superOverOffer({innings,events,conditions:matchConditions}),
+    // The conditions arrive with ctxVersion; the fold with the log.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [innings,events,ctxVersion],
+  );
+  const soNotes=useMemo(
+    ()=>isSuperOver(inn)
+      ?eligibilityNotes(innings,curIn,{battingKey:inn.teamKey??inn.battingTeam,bowlingKey:inn.bowlingTeamKey??inn.bowlingTeam})
+      :null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [innings,curIn],
+  );
+  const soNoteWords=soNotes&&(soNotes.batters.size||soNotes.bowlers.size)?UMPIRES_DECIDE_WORDS:null;
 
   // ── Durability ──────────────────────────────────────────
   // A phone locks, a battery dies, a browser reloads the tab. On a ground with
@@ -604,7 +634,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           const log = padLogFrom(server);
           eventsRef.current = log;
           setEvents(log);
-          setCurIn(inningsInPlay(log));
+          setCurIn(resumeAt(log, scoringCtxRef.current));
           setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
         } else {
           // A fixture nobody has scored yet (or none this pad can ask about,
@@ -664,7 +694,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     if (!took) return false;
     for (const evs of log) for (const e of evs ?? []) if (e?.id) serverKnownRef.current.add(e.id);
     eventsRef.current = log;
-    setCurIn(inningsInPlay(log));
+    setCurIn(resumeAt(log, scoringCtxRef.current));
     return true;
   };
 
@@ -764,7 +794,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // all. The engine refuses the clear itself if anything is left. What was on
   // the server is saved with the log (serverHas), so reopening the finished
   // match queues none of it again; everything after it would be new.
-  const matchOver = innings[1]?.sealed === true;
+  // A tied match whose conditions provide a super over is not over at the
+  // second innings' seal: the pair is still to come, or in play.
+  const matchOver = innings[1]?.sealed === true && offer.state !== "available" && !superOverInPlay(innings);
   useEffect(() => {
     const ps = syncRef.current, engine = ps?.engine, st = padStatus;
     if (!engine || !st || engine.cleared || !hydratedRef.current) return;
@@ -838,6 +870,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
       teamKey:inn.teamKey, bowlingTeamKey:inn.bowlingTeamKey,
       squad:inn.squad, bowlingSquad:inn.bowlingSquad, twelfthMan:inn.twelfthMan,
       overs:inn.overs, target:inn.target, captureProfile,
+      // A super over's marker stays on the innings_start that re-declares it
+      // (SCRBRD-114 phase 3b): without it the Laws read a third match innings.
+      superOver:inn.superOver??undefined,
     }));
   };
 
@@ -955,6 +990,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // a missing batter or bowler popped a sheet with no reason given, and no
   // innings at all returned false and did nothing.
   const readiness=scoringReadiness(inn);
+  // The place a super over's chase will take: its first innings is sealed and
+  // the second is not yet opened (SCRBRD-114 phase 3b).
+  const chaseSlot=!inn&&curIn>0&&isSuperOver(innings[curIn-1])&&pairPlace(innings,curIn-1)==="first"&&innings[curIn-1].sealed===true;
 
   // The fix for each reason is the sheet that already existed for it. Only an
   // innings with nobody batting had none: a fixture resumed with no toss or
@@ -965,6 +1003,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   const fixBlock=(b)=>{
     switch(b?.code){
       case SCORING_BLOCK.NO_INNINGS:
+        if(chaseSlot){setModal("superOverChase");return;}
         if(curIn===1){setModal("innings2");return;}
         if(!match?.team1)return;
         if(!tossRef.current){setModal("toss");return;}
@@ -1167,8 +1206,25 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     if(!inn?.complete)return;
     emit(sealInnings(inn));
     setModal(null);
-    if(curIn===0){setCurIn(1);setModal("innings2");}
+    // A super over's first innings is followed by its chase; its second ends
+    // the pair (SCRBRD-114 phase 3b). The match's own: the break, then the result.
+    if(isSuperOver(inn)&&pairPlace(innings,curIn)==="first"){setCurIn(curIn+1);setModal("superOverChase");}
+    else if(!isSuperOver(inn)&&curIn===0){setCurIn(1);setModal("innings2");}
     else setScreen("result");
+  };
+
+  // The button on the result screen and on the pad: open the first innings of
+  // the pair the offer describes, and ask for its openers. The offer was
+  // judged by the Laws and the match's conditions before the button was drawn;
+  // the server judges the same event again.
+  const startSuperOver=({swap})=>{
+    if(offer.state!=="available"||padLockRef.current)return;
+    const last=innings[offer.at-1];
+    emitAt(offer.at,superOverFirstStart(offer,{swap,captureProfile:last?.declaredProfile??undefined}));
+    resetHub();
+    setCurIn(offer.at);
+    setScreen("match");
+    setModal("opener");
   };
 
   // ── Undo ────────────────────────────────────────────────
@@ -1396,7 +1452,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
 
     setSelSeg(null);setSelShot(null);setScoringCtx(null);setHubStage(0);setHubShot(null);
     scoreKeyRef.current++;
-    const mile=detectMilestone(ev,before);
+    // No career-milestone words in a super over (SCRBRD-114 phase 3b, §4): two
+    // wickets would call themselves "two in two", a hat-trick ball, as it ended.
+    const mile=isSuperOver(before)?null:detectMilestone(ev,before);
     const showBallOverlay=type==="run"&&(value===4||value===6);
     const queue=[];
     if(showBallOverlay)queue.push(buildEventCfg(value,null));
@@ -1491,7 +1549,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
       const wicketCfg={...buildEventCfg("W",null),noBlur:true};
       // The method rides along only when the wicket stood (a free hit can
       // save the batter), so a hat-trick ball is never called off a not-out.
-      const mile=detectMilestone({type:"W",value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{})},before);
+      const mile=isSuperOver(before)?null:detectMilestone({type:"W",value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{})},before);
       milestoneQRef.current=(mile?[mile]:[]).map(m=>({...buildEventCfg(null,m),noBlur:true}));
       playMoment(wicketCfg);
     }
@@ -1742,6 +1800,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         header={canDeclare?<CaptureProfilePicker value={inn.declaredProfile} onChange={declareCapture}/>:null}
         onTimedOut={canTimeOut?recordTimedOut:null}
         resumable={resumeChoices({innings,events},curIn)}
+        noteFor={soNotes?id=>soNotes.batters.get(id)??null:null} footer={isSuperOver(inn)?(soNoteWords??NOT_RECORDED_WORDS):null}
         onSend={name=>{
           const hasStriker=!!(inn?.striker);
           const hasNonStriker=!!(inn?.nonStriker);
@@ -1763,6 +1822,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           lastBowlerName={lastBowler?.name||null}
           refuses={bowlerRefusal}
           capWordsFor={conditionsInfo?(balls)=>bowlerCapWords(conditionsInfo,balls):null}
+          noteFor={soNotes?id=>soNotes.bowlers.get(id)??null:null} footer={soNoteWords}
           keeper={keeperNow} keeperChoices={fieldingChoices()} onKeeper={addKeeper}
           onClose={()=>setModal(null)}
           onConfirm={name=>{addBowler(name);setModal(null);}}/>
@@ -1803,6 +1863,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           onTimedOut={canTimeOut?recordTimedOut:null}
           resumable={resumeChoices({innings,events},curIn)}
           resumableWithConsent={consentChoices({innings,events},curIn)}
+          noteFor={soNotes?id=>soNotes.batters.get(id)??null:null} footer={soNoteWords}
           onSend={(name,opts)=>{
             // To the END THAT IS EMPTY. This sent every new batter to the
             // striker's end, which is right only when the striker was out
@@ -1841,9 +1902,35 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
       );
     }
 
+    if(modal==="superOver"&&offer.state==="available")return (
+      <SuperOverSheet offer={offer} onStart={startSuperOver} onClose={()=>setModal(null)}
+        notes={offer.n>1?[`${offer.standard.team} and ${offer.other.team} have played ${offer.n-1} ${offer.n-1===1?"super over":"super overs"} already.`]:[]}/>
+    );
+
+    if(modal==="superOverChase"){
+      const first=innings[curIn-1];
+      if(!first)return null;
+      return (
+        <Innings2Sheet
+          title={superOverTitle(first.superOver)}
+          lead={`${first.battingTeam} made ${first.runs} for ${first.wickets}.`}
+          target={first.runs+1}
+          teamName={first.bowlingTeam}
+          overs={first.overs??1}
+          declared={first.declaredProfile??null}
+          startLabel="Start the chase →"
+          onClose={()=>setModal(null)}
+          onStart={(captureProfile)=>{
+            emitAt(curIn,superOverChaseStart(first,{captureProfile:captureProfile??undefined}));
+            setModal("opener");
+          }}/>
+      );
+    }
+
     if(modal==="inningsReview")return (
       <InningsReviewSheet
         inn={inn} inningsNo={curIn+1}
+        label={isSuperOver(inn)?`${superOverTitle(inn.superOver)}, ${pairPlace(innings,curIn)} innings`:null}
         onConfirm={closeInnings}
         onFixLastBall={()=>{undoLastBall();setModal(null);}}
         onClose={()=>setModal(null)}/>
@@ -1915,10 +2002,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
 
   /* ── Result ── */
   if(screen==="result"){
+    // The result as the engine words it (describeResult → resultWords): a
+    // win by runs or wickets, a tie, and — SCRBRD-114 phase 3b — a tie
+    // settled by a super over, with the pair's lines under the match's own.
+    // The hand-made version below is for a pad with nothing to fold.
+    const res=describeResult(innings,{conditions:matchConditions});
     const i1=innings[0],i2=innings[1];
     const win1=i1&&i2&&i1.runs>i2.runs,tie=i1&&i2&&i1.runs===i2.runs;
     const winner=tie?"Match Tied":win1?i1.battingTeam:i2?.battingTeam;
     const margin=win1?`by ${i1.runs-(i2?.runs||0)} runs`:i2?`by ${10-i2.wickets} wickets`:"";
+    const said=res?.text??null;
+    const pairs=superOversOf(innings);
     return (
       <div style={{minHeight:"100vh",background:D.base,padding:"24px",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <GS/>
@@ -1926,14 +2020,32 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         {renderModal()}
         <div style={{width:"100%",maxWidth:"920px"}}>
           <Glass style={{padding:"36px",textAlign:"center",marginBottom:"28px"}}>
-            <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.2em",textTransform:"uppercase",marginBottom:"12px"}}>Match Complete</div>
-            <div style={{fontFamily:D.mono,fontSize:"clamp(28px,5vw,48px)",fontWeight:500,background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",marginBottom:"6px"}}>{winner}</div>
-            {!tie&&<div style={{color:D.emerald,fontSize:"16px",fontFamily:D.body,fontWeight:500}}>{margin}</div>}
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.2em",textTransform:"uppercase",marginBottom:"12px"}}>
+              {offer.state==="available"?"Match tied":"Match Complete"}
+            </div>
+            {said
+              ?<div data-testid="pad-result" style={{fontFamily:D.mono,fontSize:"clamp(22px,4vw,34px)",fontWeight:500,lineHeight:1.25,color:D.textPrimary,marginBottom:"6px"}}>{said}</div>
+              :<>
+                <div style={{fontFamily:D.mono,fontSize:"clamp(28px,5vw,48px)",fontWeight:500,background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",marginBottom:"6px"}}>{winner}</div>
+                {!tie&&<div style={{color:D.emerald,fontSize:"16px",fontFamily:D.body,fontWeight:500}}>{margin}</div>}
+              </>}
           </Glass>
+          {/* A tied match: the button where a super over may start, the
+              engine's words where it may not (the tie stands). */}
+          {offer.state!=="none"&&<div style={{marginBottom:"28px"}}><SuperOverOffer offer={offer} onStart={()=>setModal("superOver")}/></div>}
           {suspensions.length>0&&<ReportOffer count={suspensions.length} onOpen={()=>setModal("suspendReport")}/>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px",marginBottom:"28px"}}>
             {[0,1].map(ii=>innings[ii]&&<ErrorBoundary key={ii} name="scorecard"><ScorecardPanel innings={innings} idx={ii}/></ErrorBoundary>)}
           </div>
+          {/* Each super over under the match's innings, never mixed into them. */}
+          {pairs.map(p=>(
+            <section key={p.n} data-testid={`pad-superover-card-${p.n}`} aria-label={superOverTitle(p.n)} style={{marginBottom:"28px"}}>
+              <h2 style={{...T.role.label,color:T.content.secondary,margin:`0 0 ${T.space.sm}`}}>{superOverTitle(p.n)}</h2>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px"}}>
+                {p.at.map(ii=><ErrorBoundary key={ii} name="super over scorecard"><ScorecardPanel innings={innings} idx={ii}/></ErrorBoundary>)}
+              </div>
+            </section>
+          ))}
           <div style={{textAlign:"center"}}>
             <Btn variant="primary" size="lg" onClick={()=>{setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setSelSeg(null);}}>
               New Match
@@ -1948,7 +2060,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
 
   /* ── MATCH SCREEN ── */
   const NAV=[{id:"score",icon:"bat",label:"Score"},{id:"cards",icon:"scorebook",label:"Cards"},{id:"analysis",icon:"chart-column",label:"Analysis"},{id:"history",icon:"scroll-text",label:"History"}];
-  const target2=curIn===1?(inn?.target??((innings[0]?.runs||0)+1)):null;
+  const target2=chaseOf(innings,curIn)?.target??null;
   const pendingPenalty=pendingCredits(innings);
   // Handover: offered to whoever holds the token, and to whoever's own claim
   // was refused because one is already pending (to take it) — anyone else
@@ -1994,7 +2106,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
             </h1>
             <div style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.3,color:T.content.secondary,
               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-              Innings {curIn+1} · {inn?.overs??match?.overs}ov{inn?.revised&&<span style={{color:T.semantic.warning}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}
+              {isSuperOver(inn)?`${superOverTitle(inn.superOver)} · ${pairPlace(innings,curIn)} innings`:`Innings ${curIn+1}`} · {inn?.overs??match?.overs}ov{inn?.revised&&<span style={{color:T.semantic.warning}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}
             </div>
           </div>
           {showHandover&&(
@@ -2018,7 +2130,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                   onClick={()=>{setUiMode(m=>m==="pro"?"focus":"pro");setActiveTab("score");close();}}/>
               </MenuSection>
               <MenuSection title="This innings">
-                <MenuItem testid="revise-innings" label="Revise overs or target" hint="Rain, or the umpires' decision"
+                <MenuItem testid="revise-innings" label="Revise overs or target"
+                  hint={isSuperOver(inn)?"A super over is not shortened. If it cannot be finished, it is left incomplete.":"Rain, or the umpires' decision"}
+                  disabled={isSuperOver(inn)}
                   onClick={()=>{close();setModal("revise");}}/>
                 <MenuItem testid="pad-penalty" label="Penalty runs" hint="Five runs the umpires award to either side"
                   onClick={()=>{close();setModal("penalty");}}/>
@@ -2071,6 +2185,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                 version, the free hit, the innings cap, and the bowler on
                 against it. Words only: nothing is refused (D1). */}
             {conditionsInfo&&<ConditionsLine info={conditionsInfo} inn={inn}/>}
+            {/* A sealed, level match (SCRBRD-114 phase 3b): the Super over
+                button where the conditions provide one, the engine's words
+                where they do not. Here as well as on the result screen, so a
+                pad reloaded after the seal still finds it. */}
+            {!modal&&offer.state!=="none"&&<SuperOverOffer offer={offer} onStart={()=>setModal("superOver")}/>}
             {/* Five penalty runs awarded to a side that has not batted, whose
                 innings is not in the log yet: it opens on them (SCRBRD-094). */}
             {pendingPenalty.map(p=>(
@@ -2162,6 +2281,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
             </div>
           )}
           {activeTab==="cards"&&(
+            <>
             <div className="sc-grid-2">
               <div><Lbl sx={{marginBottom:"10px"}}>1st Innings</Lbl><ErrorBoundary name="first innings scorecard"><ScorecardPanel innings={innings} idx={0}/></ErrorBoundary></div>
               <div>
@@ -2172,6 +2292,16 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                 }
               </div>
             </div>
+            {/* The super overs, under the match's innings and never mixed into them. */}
+            {superOversOf(innings).map(p=>(
+              <section key={p.n} data-testid={`pad-superover-card-${p.n}`} aria-label={superOverTitle(p.n)} style={{marginTop:"24px"}}>
+                <Lbl sx={{marginBottom:"10px"}}>{superOverTitle(p.n)}</Lbl>
+                <div className="sc-grid-2">
+                  {p.at.map(ii=><div key={ii}><ErrorBoundary name="super over scorecard"><ScorecardPanel innings={innings} idx={ii}/></ErrorBoundary></div>)}
+                </div>
+              </section>
+            ))}
+            </>
           )}
           {activeTab==="analysis"&&<ErrorBoundary name="analysis"><AnalysisDashboard inn={inn} match={match} curIn={curIn} innings={innings}/></ErrorBoundary>}
           {activeTab==="history"&&(

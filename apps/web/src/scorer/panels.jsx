@@ -12,6 +12,7 @@ import { buildNarratives, buildSignals } from "./signals.js";
 import { ALL_SHOTS_FLAT, fetchAICommentary } from "./shots.js";
 import { Badge, BallDot, Card, Lbl, SignalBar } from "./ui.jsx";
 import { Icon } from "../ui/icons.jsx";
+import { isSuperOver, pairPlace, superOverCommentary, superOverTitle } from "../lib/superOver.js";
 
 
 /* ═══════════════════════════════════════════════════════
@@ -336,7 +337,7 @@ function ScorecardPanel({innings,idx}){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
       <div style={{background:`linear-gradient(135deg,${D.surf1},${D.surf2})`,borderRadius:D.lg,padding:"16px 18px",border:`1px solid ${D.border}`}}>
-        <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textMuted,marginBottom:"3px"}}>{i.battingTeam} · Innings {idx+1}</div>
+        <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textMuted,marginBottom:"3px"}}>{i.battingTeam} · {isSuperOver(i)?`${superOverTitle(i.superOver)}, ${pairPlace(innings,idx)} innings`:`Innings ${idx+1}`}</div>
         <div style={{fontFamily:D.mono,fontSize:"38px",fontWeight:500,color:D.textPrimary,lineHeight:1,letterSpacing:"-0.02em"}}>
           {i.runs}<span style={{color:D.textMuted,fontSize:"26px",fontWeight:400}}>/{i.wickets}</span>
         </div>
@@ -491,7 +492,8 @@ function CommentaryCard({inn,innings,events}){
     const nameOf=nameBook(innings??[inn]);
     // Folded under the rules the pad's own fold was (the Edition, the free
     // hit: SCRBRD-113), so the words and the scorecard agree.
-    return deriveCommentary(logs,{nameOf:(ref)=>nameOf(ref),sensitive:true,ctx:rulesOf(innings)});
+    // A super over's lines are worded by lib/superOver.js (SCRBRD-114 phase 3b).
+    return superOverCommentary(deriveCommentary(logs,{nameOf:(ref)=>nameOf(ref),sensitive:true,ctx:rulesOf(innings)}),innings??[]);
   // The fold is derived from `events`; the names come with it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[events]);
