@@ -4,6 +4,9 @@
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md` SCRBRD-136/137/138; ADR 0003; `docs/design/STEP4_parent_pupil.md` (the pupil app as built); `docs/design/SAFEGUARDING_DSO.md` and `docs/policy/CSA_SAFEGUARDING_CHECK.md` (SG-9, K3, db/57); `docs/design/SCRBRD-110_workload.md` and ADR 0002; `docs/design/SCRBRD-133_immersive_match_centre.md` §2–3; `packages/scoring/src/conditions.mjs`; `tools/smoke-matchups.mjs`; the beta-2 prototype's `CaptainCockpitView.tsx` and `CaptainTacticalCockpit.tsx`.
 **Reader:** the product owner first, then the Opus agent who builds the gate and the channel, and the Sonnet agent who builds the screens. Plain words come first in each section. Names in the sketches are the seed's illustrative ones (Hilton, Kearsney, D Erasmus, R Pillay, K Naidoo), never a real child's.
 
+
+**Lead's review (Opus, 2026-10-01), before Kameel reads it.** Checked against the branch: `capWords()` is in `conditions.mjs`; `db/57` refuses a `recipient_id` naming a pupil; the `player` bundle holds `fixture.read`, `team.read`, `news.read`, `competition.read`, `player.profile.read` and `player.performance.read` and nothing medical, so phase A widens no read and needs no migration, as §0 says; `coach` holds `news.publish.team` (A3). Two notes for the build, not for the decisions: the public shot words Kameel decided today (SCRBRD-139) make C5's "his batters' innings in words" read as the Match Centre's already do; and the plan's writer-side filter (§5.2) should reuse one list with SG-10's, not a second copy.
+
 ---
 
 ## 0 · In one page
