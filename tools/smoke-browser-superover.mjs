@@ -291,6 +291,7 @@ try {
   await page.waitForTimeout(600);
   ok("the result screen words it as the engine does: Match tied", (await said("pad-result")) === "Match tied", await said("pad-result"));
   ok("the Super over button is offered", (await said("pad-superover-start")) === "Super over");
+  ok("...and the screen does not call the match complete: it is not yet decided", /not yet decided/i.test(await text()) && !/match complete/i.test(await text()));
   const offerWords = await said("pad-superover-words");
   ok("...with the match's conditions in words: they provide a super over, and who bats first",
      /^Match tied\. This match's playing conditions provide a super over: .+ bat first\.$/.test(offerWords), offerWords);
@@ -514,6 +515,7 @@ try {
   await page.waitForTimeout(600);
   ok("the result screen words a tie as the engine does", (await said("pad-result")) === "Match tied", await said("pad-result"));
   ok("...with no Super over button", !(await has("pad-superover-start")) && !(await has("pad-superover-offer")));
+  ok("...and it is complete: a tie stands", /match complete/i.test(await text()) && !/not yet decided/i.test(await text()));
   const why = await said("pad-superover-why");
   ok("...and the engine's own words why: this match's conditions provide none, a tie stands",
      why === `Match tied. ${upper(REFUSAL_TEXT.super_over_not_provided)}.`, why);

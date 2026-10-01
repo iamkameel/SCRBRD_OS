@@ -2020,7 +2020,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         <div style={{width:"100%",maxWidth:"920px"}}>
           <Glass style={{padding:"36px",textAlign:"center",marginBottom:"28px"}}>
             <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.2em",textTransform:"uppercase",marginBottom:"12px"}}>
-              {offer.state==="available"?"Match tied":"Match Complete"}
+              {offer.state==="available"?"Not yet decided":"Match Complete"}
             </div>
             {said
               ?<div data-testid="pad-result" style={{fontFamily:D.mono,fontSize:"clamp(22px,4vw,34px)",fontWeight:500,lineHeight:1.25,color:D.textPrimary,marginBottom:"6px"}}>{said}</div>
