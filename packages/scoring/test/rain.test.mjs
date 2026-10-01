@@ -18,7 +18,7 @@
 import {
   deriveMatch, deriveInnings, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT, likelyCause,
   inningsStart, batters, bowler, ball, penalty, retire, revision, playStopped, playResumed, sealInnings,
-  toRow, fromRow, resultFromRow, resultWords, revisedTargetMethod, KIND, BALL_TYPE, STOP_REASONS,
+  toRow, fromRow, resultFromRow, resultWords, revisedTargetMethod, KIND, BALL_TYPE, STOP_REASONS, deriveCommentary,
 } from "../src/index.mjs";
 import { RAIN_LOGS, RAIN_SIDES, RAIN_NAMES, RAIN_STARTS_AT, rainLog } from "./rain-logs.mjs";
 
@@ -187,6 +187,24 @@ for (const x of RAIN_LOGS) {
   const b = new MatchFold(x.log, { startsAt: RAIN_STARTS_AT }).view().innings;
   const s = (/** @type {any[]} */ l) => JSON.stringify(l.map((i) => [i.stopped, i.par, i.interruptions]));
   ok(`${x.name}: the same stops`, s(a) === s(b));
+}
+
+group("G. The commentary: the stop, the resumption, the par, the weather's ending, the result's suffix");
+{
+  const texts = (/** @type {any} */ x) => deriveCommentary(x.log, { ctx: { startsAt: RAIN_STARTS_AT, conditions: x.play ?? undefined } }).map((l) => l.text);
+  const first = texts(RAIN_LOGS[0]);
+  ok("a stop at 2.0 is told with the position and the score", first.includes("Rain stops play at 2.0, 1XI 12/0."), first.filter((t) => /stops|resumes/.test(t)));
+  ok("...the resumption with the new allotment", first.includes("Play resumes: the innings is now 4 overs."));
+  const below = texts(RAIN_LOGS.find((l) => l.name.includes("below par")));
+  ok("the par is told, the weather ends the innings, and the result carries (DLS)",
+     below.some((t) => t.includes("the umpires announce a par score of 18"))
+     && below.some((t) => t.startsWith("Rain ends the innings at 14/1, after 1.3 overs."))
+     && below.some((t) => t.endsWith("1XI win by 4 runs (DLS).")), below.slice(-3));
+  const none = texts(RAIN_LOGS.find((l) => l.name.includes("with no par")));
+  ok("a chase terminated with no par says no result, never a tie",
+     none.some((t) => t.startsWith("Bad light ends the innings") && t.endsWith("No result.")) && !none.some((t) => t.includes("tied")), none.slice(-2));
+  const mid = texts(RAIN_LOGS.find((l) => l.name.startsWith("two interruptions")));
+  ok("a resumption under the same allotment is just that", mid.includes("Play resumes.") && mid.includes("A wet ground stops play at 2.0, 1XI 12/0."));
 }
 
 console.log(`\n${"─".repeat(52)}\nRAIN SUITE: ${pass} passed, ${fail} failed`);

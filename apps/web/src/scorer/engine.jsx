@@ -15,6 +15,9 @@ import {
 } from "../lib/superOver.js";
 import { SuperOverOffer, SuperOverSheet } from "./superOverSheet.jsx";
 import { resumeAt } from "./superOverFlow.js";
+// SCRBRD-130 R1: rain — play stopped and resumed, the innings cut short.
+import { playStopped as playStoppedEvent, playResumed as playResumedEvent, INNINGS_END_REASON } from "@scrbrd/scoring";
+import { StopSheet, RainBanner, ResumeSheet, RainEndSheet } from "./rainSheet.jsx";
 import { ConditionsLine, bowlerCapWords } from "./conditionsLine.jsx";
 import { D, T, inkOn } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -1022,6 +1025,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
       // The umpires suspended the bowler on (SCRBRD-094 item 2): the sheet
       // that asks who finishes the over, offering only who the Laws take.
       case SCORING_BLOCK.BOWLER_SUSPENDED: setModal("suspendReplace");return;
+      // SCRBRD-130 R1: play is stopped; the fix is the Resume sheet.
+      case SCORING_BLOCK.PLAY_STOPPED: setModal("resume");return;
       default: return; // innings closed: nothing to fix, only to say
     }
   };
@@ -1665,6 +1670,48 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     setModal(null);
   };
 
+  // ── SCRBRD-130 R1: rain (design §2.5) ──
+  // Play stopped is one tap: the position is the log's. Resume writes the
+  // umpires' revision only when a figure changed, then the resumption. The
+  // innings cut short writes, in the chase, the umpires' par, then the seal,
+  // abandoned — figures read back from this innings, as every seal. Each is
+  // asked of the Laws first, as the server asks it.
+  const stopped=inn?.stopped??null;
+  const asks=(ev)=>padLock||lawsRefusal({innings,events},{...ev,innings:curIn})!=null;
+  const stopPlay=({reason,note})=>{
+    const ev=playStoppedEvent({innings:curIn,reason,note});
+    if(asks(ev))return;
+    emit(ev);
+    setModal(null);
+  };
+  const resumePlay=({overs,target})=>{
+    const evs=[];
+    if(overs!=null||target!=null){
+      const rev=revisionEvent({innings:curIn,overs,target,reason:"rain"});
+      if(asks(rev))return;
+      evs.push(rev);
+    }
+    evs.push(playResumedEvent({innings:curIn}));
+    emit(...evs);
+    setModal(null);
+  };
+  const endInningsRain=({par})=>{
+    if(!inn)return;
+    const evs=[];
+    if(par!=null){
+      const rev=revisionEvent({innings:curIn,par,reason:"rain"});
+      if(asks(rev))return;
+      evs.push(rev);
+    }
+    const seal=sealInnings(inn,INNINGS_END_REASON.ABANDONED);
+    if(asks(seal))return;
+    emit(...evs,seal);
+    setModal(null);
+    if(curIn===0){setCurIn(1);setModal("innings2");}
+    else setScreen("result");
+  };
+  // ── end SCRBRD-130 R1 ──
+
   const getSquad=()=>{
     if(!inn)return[];
     return inn.squad||[];
@@ -1777,6 +1824,18 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         onClose={()=>setModal(null)}/>
     );
 
+    // ── SCRBRD-130 R1: rain. No DLS proposal on the pad yet: the read
+    // API's calculator is R2's, and offline there is none (D6). ──
+    if(modal==="stop")return <StopSheet onConfirm={stopPlay} onClose={()=>setModal(null)}/>;
+    if(modal==="resume"&&inn)return (
+      <ResumeSheet overs={inn.overs??match?.overs??20} minOvers={Math.ceil((inn.balls??0)/6)}
+        isChase={curIn===1} target={curIn===1?(inn.target??null):null}
+        onConfirm={resumePlay} onClose={()=>setModal(null)}/>
+    );
+    if(modal==="rainEnd"&&inn)return (
+      <RainEndSheet isChase={curIn===1} runs={inn.runs} wickets={inn.wickets} balls={inn.balls}
+        onConfirm={endInningsRain} onClose={()=>setModal(null)}/>
+    );
     if(modal==="keeper")return (
       <KeeperSheet keeper={keeperNow} choices={fieldingChoices()}
         onKeeper={id=>{addKeeper(id);setModal(null);}}
@@ -1944,8 +2003,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         note={innings[1]?.penaltyCarried>0
           ?`${innings[1].battingTeam} start their innings on ${innings[1].penaltyCarried} (penalty runs).`
           :pendingCredits(innings).map(p=>`${p.words} (penalty runs).`).join(" ")||null}
+        // SCRBRD-130 R1: after a rain-affected first innings the umpires' figures open at once.
+        rain={(innings[0]?.interruptions?.length??0)>0||innings[0]?.revised!=null}
         onClose={()=>setModal(null)}
-        onStart={(captureProfile)=>{
+        onStart={(captureProfile,umpires)=>{
           // SCRBRD-063. The second innings never got its own INNINGS_START —
           // nothing set inn.target, so inningsOverReason() could never return
           // target_reached, and a chase that reached its target just kept
@@ -1974,8 +2035,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
             squad: innings[1]?.squad?.length ? innings[1].squad : (innings[0]?.bowlingSquad ?? []),
             bowlingSquad: innings[1]?.bowlingSquad?.length ? innings[1].bowlingSquad : (innings[0]?.squad ?? []),
             twelfthMan: innings[1]?.twelfthMan ?? null,
-            overs: innings[1]?.overs || match?.overs || 20,
-            target: (innings[0]?.runs || 0) + 1,
+            // SCRBRD-130 R1: the umpires' figures when the break gave them.
+            overs: umpires?.overs ?? (innings[1]?.overs || match?.overs || 20),
+            target: umpires?.target ?? ((innings[0]?.runs || 0) + 1),
             // What the break chose (SCRBRD-039). Left off when nothing was
             // chosen: absence keeps whatever innings[1] already declared.
             captureProfile: captureProfile ?? undefined,
@@ -2130,6 +2192,15 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                   onClick={()=>{setUiMode(m=>m==="pro"?"focus":"pro");setActiveTab("score");close();}}/>
               </MenuSection>
               <MenuSection title="This innings">
+                {/* SCRBRD-130 R1: rain stops play; the pad waits for Resume. */}
+                {inn&&!inn.complete&&!stopped&&!isSuperOver(inn)&&(
+                  <MenuItem testid="pad-play-stopped" label="Play stopped" hint="Rain, bad light or a wet ground. No ball until play resumes."
+                    onClick={()=>{close();setModal("stop");}}/>
+                )}
+                {stopped&&(
+                  <MenuItem testid="pad-play-resume" label="Resume play" hint="With the umpires' overs, and in the chase their target."
+                    onClick={()=>{close();setModal("resume");}}/>
+                )}
                 <MenuItem testid="revise-innings" label="Revise overs or target"
                   hint={isSuperOver(inn)?"A super over is not shortened. If it cannot be finished, it is left incomplete.":"Rain, or the umpires' decision"}
                   disabled={isSuperOver(inn)}
@@ -2208,7 +2279,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
               onRetry={()=>syncRef.current?.attach("open")}
               onScoreHere={()=>syncRef.current?.attach("open")}
               onTakeOver={()=>setModal("handover")}/>}
-            {activeTab==="score"&&!modal&&<ScoringBlocked readiness={readiness} onFix={fixBlock}
+            {/* SCRBRD-130 R1: while play is stopped, the banner says where and
+                offers the two ways on; it replaces the blocked panel's words. */}
+            {activeTab==="score"&&!modal&&stopped&&<RainBanner stopped={stopped} isChase={curIn===1}
+              onResume={()=>setModal("resume")} onEnd={()=>setModal("rainEnd")}/>}
+            {activeTab==="score"&&!modal&&!stopped&&<ScoringBlocked readiness={readiness} onFix={fixBlock}
               cause={readiness.ready?null:likelyCause(readiness.blocked[0]?.code,{inn})}/>}
             {/* After the match, a suspension's report is offered here — never
                 during play, where nothing may stand between a tap and the
@@ -2226,10 +2301,16 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           <main className="pad-main" id="pad-content" ref={padMainRef} tabIndex={-1} data-testid="pad-main"
             aria-label={NAV.find(n=>n.id===activeTab)?.label} style={{outline:"none"}}>
           {activeTab==="score"&&uiMode==="focus"&&(
-            <Pad inn={inn} basic={basic}
-              onCommitDetailed={onCommitDetailed} onWicketCtx={onWicketCtx}
-              onWide={recordWide} onNoBall={recordNoBall} onUndo={undoLastBall}
-              guard={guardReady} undoWhat={undoWhat}/>
+            // SCRBRD-130 R1: the one place the pad greys out — the Law refuses
+            // the ball while play is stopped (a disabled fieldset turns off
+            // every key in it at once).
+            <fieldset disabled={!!stopped} data-testid="pad-keys" aria-disabled={!!stopped || undefined}
+              style={{border:0,padding:0,margin:0,minWidth:0,opacity:stopped?0.45:1}}>
+              <Pad inn={inn} basic={basic}
+                onCommitDetailed={onCommitDetailed} onWicketCtx={onWicketCtx}
+                onWide={recordWide} onNoBall={recordNoBall} onUndo={undoLastBall}
+                guard={guardReady} undoWhat={undoWhat}/>
+            </fieldset>
           )}
           {activeTab==="score"&&uiMode!=="focus"&&(
             <div className="pro-score-grid">

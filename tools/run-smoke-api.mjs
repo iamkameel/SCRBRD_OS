@@ -238,6 +238,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // a short run, a credit the next innings opens on, a target raised
   // mid-chase, a refusal said in place — held to the API's live score.
   "browser-penalty",
+  // ── SCRBRD-130 R1 (db/73): rain on the pad — play stopped and the keys
+  // off, resumed at fewer overs, the first innings cut short and the
+  // umpires' figures for the chase, the chase cut short with their par and
+  // the server's result decided on it. ──
+  "browser-rain",
   // SCRBRD-094 item 2: a bowler suspended mid-over — the reason in words,
   // the replacement only from the bowlers the Laws take, the suspended man
   // and the replacement refused after, split-over figures on the scorecard,

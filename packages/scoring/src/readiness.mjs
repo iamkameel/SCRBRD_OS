@@ -31,6 +31,7 @@ export const SCORING_BLOCK = Object.freeze({
   OPENING_BOWLER: "opening_bowler",  // nobody has bowled yet and nobody is named to
   NEXT_BOWLER:    "next_bowler",     // the over ended and replay cleared the bowler
   BOWLER_SUSPENDED: "bowler_suspended", // the umpires suspended the bowler on; another must be named (SCRBRD-094)
+  PLAY_STOPPED:   "play_stopped",    // play is stopped (rain, bad light): no ball until it resumes (SCRBRD-130 R1)
 });
 /** @typedef {typeof SCORING_BLOCK[keyof typeof SCORING_BLOCK]} ScoringBlock */
 
@@ -54,6 +55,7 @@ export const SCORING_BLOCK_TEXT = Object.freeze({
   [SCORING_BLOCK.OPENING_BOWLER]: { says: "the opening bowler has not been chosen", fix: "Choose the opening bowler" },
   [SCORING_BLOCK.NEXT_BOWLER]:    { says: "nobody is bowling the next over", fix: "Choose the bowler" },
   [SCORING_BLOCK.BOWLER_SUSPENDED]: { says: "the umpires suspended the bowler — another bowler finishes the over", fix: "Choose who finishes the over" },
+  [SCORING_BLOCK.PLAY_STOPPED]:   { says: "play is stopped", fix: "Resume play" },
 });
 
 /**
@@ -84,6 +86,9 @@ export function scoringReadiness(inn) {
   // it is the only reason given.
   if (inn.sealed) return { ready: false, blocked: [reason(SCORING_BLOCK.INNINGS_CLOSED)] };
   if (inn.complete) return { ready: false, blocked: [reason(SCORING_BLOCK.INNINGS_OVER, { endReason: inn.endReason ?? null })] };
+  // SCRBRD-130 R1: play stopped. Nothing is bowled until it resumes (the
+  // Laws refuse a ball with the same code), so it is the only reason given.
+  if (inn.stopped != null) return { ready: false, blocked: [reason(SCORING_BLOCK.PLAY_STOPPED)] };
 
   /** @type {Blocked[]} */
   const blocked = [];
