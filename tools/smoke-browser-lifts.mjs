@@ -112,7 +112,8 @@ async function signIn(page, email) {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
   await page.waitForTimeout(2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  // Staff land on the Dashboard; a parent or a pupil lands in their own app (step 4).
+  return /Match Centre|Dashboard/i.test(await text(page)) || (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, nav) {
   const l = tid(page, `nav-${nav}`).first();
