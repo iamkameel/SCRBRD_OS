@@ -3927,7 +3927,8 @@ SCRBRD-114 phase 3 (db/69–71).
 **Source and permission (Kameel, 2026-09-30 / 2026-10-01):** the ICC playing conditions' section 06 (D-L Standard Edition),
 transcribed to a CSV held outside the repository (sha256 in the design's §8); permission granted by the school (Kameel)
 for the pilot; G50 for schools 200, as the league's `target.g50`, never a platform default.
-**BUILT (2026-10-01, Opus) — as R1 `db/73`, R3 `db/74`, R2 `db/75`** (3b and 3c took db/71–72); db/99 §52–§54, each guard
+**BUILT (2026-10-01, Opus) — as R1 `db/73`, R3 `db/74`, R2 `db/75`** (3b and 3c took db/71–72; db/73's re-emits are merged
+over db/71's bodies, and rain never revises a super over: §52 (super over), `rain.test.mjs` D2); db/99 §52–§54, each guard
 broken once and seen red. Design §9 records what was built and thirteen departures. R1: `play_stopped`/`play_resumed`,
 `revision.par`, the six refusals, the par clause and overs faced in `describeResult()`/`match_result_compute()`, the
 words' suffix, the deemed NRR (D8), the pad's Stop/Resume/End-innings sheets and banner, the board's revised line, the

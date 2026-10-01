@@ -322,7 +322,9 @@ Built by Opus in the order D14 set, one migration a phase, each proof broken onc
 12. *The walks publish the synthetic table as the owner, directly* (`smoke-rain`, `smoke-browser-rain`), because no route can — that is the point of the synthetic-title refusal — and withdraw it again at the end.
 13. *The loader reads two CSV shapes*: long rows `b,w,R` or wide rows `b,R0,…,R9`, per cent to one decimal or tenths; any other shape is refused (`csv_shape`) rather than guessed.
 
-**Proofs falsified** (each broken once, red, restored): §52 (par), (faced), (method), (deemed), (stopped), (public); §53 (floor), (revised), (ended), (grain), (window), (pooled), (guard); §54 (operator), (structure), (synthetic), (published), (withdrawn), (frozen), (platform), (guard); the JavaScript Laws' six refusals and the fold's par clause and overs-faced rule.
+**With the super over (db/71, merged 2026-10-01).** `db/73` re-emits `match_result_compute()` and `public_match_log()` over db/71's bodies (its §0 guards hold db/71's hashes). The revised-target and deemed-NRR block reads the match's own innings only (`v_mi`), so a super over carries no par, stop, revised target or deemed figure; the Laws refuse any revision in a super over first (`super_over_no_revision`), before the rain rule's own checks. A DLS tie is a tie: "Match tied (DLS); Northwood won the super over". §52 (super over) proves the pair in SQL, `rain.test.mjs` D2 in the Laws.
+
+**Proofs falsified** (each broken once, red, restored): §52 (par), (faced), (method), (deemed), (stopped), (public), (super over); §53 (floor), (revised), (ended), (grain), (window), (pooled), (guard); §54 (operator), (structure), (synthetic), (published), (withdrawn), (frozen), (platform), (guard); the JavaScript Laws' six refusals, the super over's revision refusal ahead of them, and the fold's par clause and overs-faced rule.
 
 ## Appendix A · Existing things this design relies on, by name
 
