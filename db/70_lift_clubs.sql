@@ -130,10 +130,9 @@
 --     says who.
 --   - The driver's own children are counted present, never seated: she asks
 --     no seat for them on her own lift (driver_own_child).
---   - A guardian of a boy of eighteen still at school may withdraw his seat
---     and never make one (adult_consents_for_himself, db/62's word). With
---     pupils out (decision 4), nobody makes one for him: a boy of eighteen
---     still at school is not seated by lift clubs.
+--   - A boy of eighteen still at school: see decision 5. His guardian, while
+--     db/62's past-eighteen link is live, may ask and withdraw for him as for
+--     any child; the seat records who consented (lift_seat.consent_by).
 --
 -- KAMEEL'S DECISIONS (2026-10-01), built here before the file shipped
 --
@@ -155,6 +154,29 @@
 --      every function (pupil_excluded where a word is shown) and reads no lift
 --      table, including asking a seat for a brother through a guardian link.
 --      This supersedes D8's "from eighteen at school he asks for himself".
+--   5. The narrow exception (2026-10-01, follow-up): a pupil eighteen or over
+--      by date of birth AND still at the school (db/60's still_at_school, the
+--      test db/62 uses) may ask a seat for HIMSELF on an offer for his own
+--      side and fixture (consent_by 'self', no guardian link), withdraw it,
+--      confirm it again, and read his own seat and the offer it is on: the
+--      meet place and time, and once his seat is confirmed the driver's name
+--      and her contact through lift_contacts(), logged as a guardian's read
+--      is. Nothing else: a pupil under eighteen (or of unknown birth date)
+--      is refused (not_yet_eighteen), one who has left (not_at_school); no
+--      pupil acts for anyone else — an eighteen-year-old asking for his
+--      brother through a guardian link is still pupil_excluded — and no
+--      pupil drives, declares, offers, reads a lift table, a passenger list
+--      or the office's counts. Notices about his seat go to him (kind
+--      'system', behind transport.read, as SG-9 requires of a pupil) and to
+--      his live guardians, naming nobody. A seat on his own say stands while
+--      he is eighteen, at school and his self link live; when he leaves school
+--      or the link ends it is void, as a guardian's seat is when her link
+--      ends (lift_self_settle(), from the same triggers).
+--      ONE-TO-ONE, as read here: CSA's rule protects children, so the count
+--      is of CHILDREN — passengers under eighteen or of unknown birth date.
+--      An adult passenger alone with the driver is not refused and never
+--      falls back; and an adult does not make a lone child "not alone", so
+--      a child with only an adult beside him still counts as one-to-one.
 --
 -- search_path is pinned on every function below (db/16). Every function the
 -- application calls is granted to scrbrd_app and taken back from PUBLIC and a
@@ -215,12 +237,15 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
  * credential. The owner's key holds all four capabilities and acts on none.
  * Every door below asks this, so a pupil is refused on every one of them.
  */
-CREATE OR REPLACE FUNCTION lift_uncut(p_school uuid) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION lift_cuts_ok(p_school uuid) RETURNS boolean AS $$
   SELECT app_user_id() IS NOT NULL
      AND app_support_access_id(p_school) IS NULL
      AND NOT app_is_platform_wide()
-     AND NOT lift_is_pupil(app_user_id())
      AND NOT coalesce(app_pad_scoped(), false)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION lift_uncut(p_school uuid) RETURNS boolean AS $$
+  SELECT lift_cuts_ok(p_school) AND NOT lift_is_pupil(app_user_id())
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 /**
@@ -291,6 +316,52 @@ CREATE OR REPLACE FUNCTION lift_link_is_live(p_link uuid) RETURNS boolean AS $$
        AND g.valid_from <= current_date
        AND (g.valid_until IS NULL OR g.valid_until > current_date)
        AND g.consent_state = 'granted')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * A minor, for the one-to-one rule: under eighteen by his date of birth, or
+ * with no date of birth recorded (an unknown age is not an adult's).
+ */
+CREATE OR REPLACE FUNCTION lift_is_minor(p_player uuid) RETURNS boolean AS $$
+  SELECT coalesce((SELECT majority_on(p.born) > sa_today() FROM player p WHERE p.id = p_player), true)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * Kameel's follow-up (2026-10-01): the one exception to "pupils take no
+ * part". A boy eighteen or over by his date of birth and still at school —
+ * still_at_school(), the test db/62 uses for the guardian link past eighteen —
+ * may be seated. Here: is he that boy, now?
+ */
+CREATE OR REPLACE FUNCTION lift_adult_at_school(p_player uuid) RETURNS boolean AS $$
+  SELECT NOT lift_is_minor(p_player) AND still_at_school(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * ...and is this person that boy himself, through his own live self link
+ * (verified, in date, consent granted — his own say)? Only ever about his own
+ * player row: an adult pupil acts for nobody else.
+ */
+CREATE OR REPLACE FUNCTION lift_adult_self(p_person uuid, p_player uuid) RETURNS boolean AS $$
+  SELECT p_person IS NOT NULL AND p_player IS NOT NULL
+     AND EXISTS (SELECT 1 FROM lift_live_link(p_person, p_player, 'selfaccess'))
+     AND lift_adult_at_school(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * The cuts for a door that acts on one boy's seat: the base three, and no
+ * pupil — unless the caller is that boy himself, eighteen and at school.
+ */
+CREATE OR REPLACE FUNCTION lift_uncut_for(p_school uuid, p_player uuid) RETURNS boolean AS $$
+  SELECT lift_cuts_ok(p_school)
+     AND (NOT lift_is_pupil(app_user_id()) OR lift_adult_self(app_user_id(), p_player))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/** The boy's own accounts, while he is eighteen and at school: his notices go to them. */
+CREATE OR REPLACE FUNCTION lift_self_accounts(p_player uuid) RETURNS SETOF uuid AS $$
+  SELECT DISTINCT a.person_id
+    FROM role_assignment a
+    JOIN assignment_subject g ON g.assignment_id = a.id AND g.player_id = p_player AND g.relationship = 'self'
+   WHERE a.role = 'selfaccess' AND lift_adult_self(a.person_id, p_player)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 /** The adults a boy's lift notices go to: his live guardians, never a pupil. */
@@ -440,10 +511,12 @@ CREATE TABLE IF NOT EXISTS lift_seat (
   team_code              text NOT NULL,
   leg                    text NOT NULL,
   player_id              uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
-  -- The live verified link, consent granted, whose holder consented. Never
-  -- NULL: a pupil asks for no seat, at any age (Kameel, 2026-10-01).
-  guardian_assignment_id uuid NOT NULL,
-  guardian_link_id       uuid NOT NULL,
+  -- Who consented: 'guardian' — the live verified link, consent granted,
+  -- named below; or 'self' — the boy himself, eighteen and still at school
+  -- (Kameel's follow-up, 2026-10-01), and then no link.
+  consent_by             text NOT NULL DEFAULT 'guardian' CHECK (consent_by IN ('guardian', 'self')),
+  guardian_assignment_id uuid,
+  guardian_link_id       uuid,
   requested_by           uuid NOT NULL REFERENCES app_user(id),
   -- Rule 1: confirmed only while both equal the offer's version.
   guardian_ok_version    integer,
@@ -465,6 +538,8 @@ CREATE TABLE IF NOT EXISTS lift_seat (
   created_at             timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (guardian_assignment_id, player_id, guardian_link_id)
     REFERENCES assignment_subject (assignment_id, player_id, id) ON DELETE CASCADE,
+  CONSTRAINT lift_seat_consent_whole CHECK ((consent_by = 'guardian') = (guardian_link_id IS NOT NULL)
+                                           AND (guardian_assignment_id IS NULL) = (guardian_link_id IS NULL)),
   CONSTRAINT lift_seat_end_whole CHECK ((state IN ('declined', 'withdrawn', 'cancelled', 'void')) = (ended_at IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS lift_seat_offer_idx ON lift_seat (offer_id);
@@ -650,12 +725,21 @@ SELECT pad_scope_guard_install('lift_policy'::regclass), pad_scope_guard_install
  * else the state word (requested, invited, declined, withdrawn, cancelled,
  * void, done).
  */
+/**
+ * The yes behind a seat still stands: the guardian's link live; or, for his
+ * own say, the boy still eighteen and at school with his own self link live.
+ */
+CREATE OR REPLACE FUNCTION lift_seat_consent_live(s lift_seat) RETURNS boolean AS $$
+  SELECT CASE s.consent_by WHEN 'self' THEN EXISTS (SELECT 1 FROM lift_self_accounts(s.player_id))
+              ELSE lift_link_is_live(s.guardian_link_id) END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 CREATE OR REPLACE FUNCTION lift_seat_status(s lift_seat) RETURNS text AS $$
   SELECT CASE
     WHEN s.state NOT IN ('requested', 'invited', 'confirmed') THEN s.state
     WHEN o.driver_version < o.version THEN 'awaiting_driver'
     WHEN s.state IN ('confirmed', 'invited') AND s.driver_ok_version IS DISTINCT FROM o.version THEN 'awaiting_driver'
-    WHEN NOT lift_link_is_live(s.guardian_link_id) THEN 'awaiting_guardian'
+    WHEN NOT lift_seat_consent_live(s) THEN 'awaiting_guardian'
     WHEN s.state IN ('confirmed', 'requested') AND s.guardian_ok_version IS DISTINCT FROM o.version THEN 'awaiting_guardian'
     ELSE s.state
   END
@@ -665,7 +749,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- The screens' seat, with its status: the caller's own rows only (security
 -- invoker), so it discloses nothing lift_seat does not.
 CREATE OR REPLACE VIEW lift_seat_live WITH (security_invoker = true) AS
-  SELECT s.id, s.offer_id, s.school_id, s.match_id, s.team_code, s.leg, s.player_id, s.requested_by,
+  SELECT s.id, s.offer_id, s.school_id, s.match_id, s.team_code, s.leg, s.player_id, s.requested_by, s.consent_by,
          s.guardian_ok_version, s.driver_ok_version, s.state, s.ended_at, s.created_at,
          lift_seat_status(s) AS status
     FROM lift_seat s;
@@ -693,21 +777,26 @@ CREATE OR REPLACE FUNCTION lift_notify(p_offer uuid, p_to uuid, p_about uuid, p_
 RETURNS void AS $$
 DECLARE o lift_offer%ROWTYPE;
 BEGIN
-  IF p_to IS NULL OR lift_is_pupil(p_to) THEN RETURN; END IF;
+  -- Never to a pupil — except the boy himself, eighteen and at school, about
+  -- his own seat; then as the system's own notice (SG-9, db/57), readable
+  -- through his side's transport.read with himself as the anchor.
+  IF p_to IS NULL OR (lift_is_pupil(p_to) AND NOT lift_adult_self(p_to, p_about)) THEN RETURN; END IF;
   SELECT * INTO o FROM lift_offer WHERE id = p_offer;
   IF NOT FOUND THEN RETURN; END IF;
   INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
                             required_capability, is_public, subject_kind, subject_id, subject_person_id, recipient_id)
-  VALUES (o.school_id, o.team_code, 'team', 'lift', 'medium', p_title, p_body,
-          'transport.lift.arrange', false, 'match', o.match_id, p_about, p_to);
+  VALUES (o.school_id, o.team_code, 'team',
+          CASE WHEN lift_is_pupil(p_to) THEN 'system' ELSE 'lift' END, 'medium', p_title, p_body,
+          CASE WHEN lift_is_pupil(p_to) THEN 'transport.read' ELSE 'transport.lift.arrange' END,
+          false, 'match', o.match_id, p_about, p_to);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
-/** The same notice to every live guardian of a boy. */
+/** The same notice to every live guardian of a boy, and to him while he is eighteen and at school. */
 CREATE OR REPLACE FUNCTION lift_notify_family(p_offer uuid, p_player uuid, p_title text, p_body text)
 RETURNS void AS $$
 DECLARE r uuid;
 BEGIN
-  FOR r IN SELECT lift_guardians_of(p_player) LOOP
+  FOR r IN SELECT lift_guardians_of(p_player) UNION SELECT lift_self_accounts(p_player) LOOP
     PERFORM lift_notify(p_offer, r, p_player, p_title, p_body);
   END LOOP;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -895,7 +984,8 @@ CREATE OR REPLACE FUNCTION lift_standing_words(p_word text, p_school uuid) RETUR
     WHEN p_word IS NULL THEN NULL
     WHEN p_word = 'module_off' THEN 'Lift clubs are not switched on at ' || s.name || '.'
     WHEN p_word = 'no_policy' THEN s.name || ' has not published a lift policy, so lift clubs are paused.'
-    WHEN p_word = 'pupil_excluded' THEN 'Lift clubs are arranged between parents. Pupils take no part in them, at any age.'
+    WHEN p_word = 'pupil_excluded' THEN 'Lift clubs are arranged between parents. A pupil does not drive or offer lifts; '
+                                        || 'a pupil of eighteen still at school may ask for a seat for himself on his own fixtures.'
     WHEN p_word = 'consent_not_granted' THEN 'The school has not recorded your consent to the processing of your child''s information, and lift clubs need it. Ask the school office to record it; then you may offer lifts and ask for seats.'
     WHEN p_word = 'no_child_at_school' THEN 'Only a parent or guardian with a child at ' || s.name || ' may offer lifts there.'
     WHEN p_word = 'no_declaration' THEN 'Before offering a lift, read the school''s lift policy and make your yearly driver''s declaration.'
@@ -1245,11 +1335,12 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 /**
  * How the caller may act for a boy on a lift: 'guardian' (a live link,
- * consent granted, the boy under eighteen), 'guardian_adult' (the same, the
- * boy eighteen and still at school: she may only withdraw), 'consent_pending'
- * (a live verified link whose consent is not granted: nothing), or NULL. With
- * the link that gives it. No 'self': a pupil takes no part (Kameel,
- * 2026-10-01), and every caller of this has refused one already. Internal.
+ * consent granted, the boy under eighteen); 'guardian_adult' (the same, the
+ * boy eighteen and still at school — db/62's link past eighteen: she may ask
+ * and withdraw, Kameel's follow-up); 'consent_pending' (a live verified link
+ * whose consent is not granted: nothing); for a pupil, only ever about his
+ * own row: 'self' (eighteen and at school), 'self_minor', 'self_away'; or
+ * NULL. With the link that gives it. Internal.
  */
 CREATE OR REPLACE FUNCTION lift_acting_for(p_player uuid, OUT how text, OUT assignment_id uuid, OUT link_id uuid) AS $$
 DECLARE
@@ -1259,6 +1350,15 @@ DECLARE
 BEGIN
   SELECT p.born INTO v_born FROM player p WHERE p.id = p_player;
   v_adult := v_born IS NOT NULL AND majority_on(v_born) <= sa_today();
+  -- A pupil acts only as himself, on his own seat (Kameel's follow-up): 'self'
+  -- when he is eighteen and at school, 'self_minor' under eighteen,
+  -- 'self_away' when he has left school; never as anybody's guardian.
+  IF lift_is_pupil(v_me) THEN
+    IF EXISTS (SELECT 1 FROM lift_live_link(v_me, p_player, 'selfaccess')) THEN
+      how := CASE WHEN NOT v_adult THEN 'self_minor' WHEN NOT still_at_school(p_player) THEN 'self_away' ELSE 'self' END;
+    END IF;
+    RETURN;
+  END IF;
   SELECT l.assignment_id, l.link_id INTO assignment_id, link_id FROM lift_live_link(v_me, p_player, 'guardian') l;
   IF link_id IS NOT NULL THEN
     how := CASE WHEN v_adult THEN 'guardian_adult' ELSE 'guardian' END;
@@ -1277,7 +1377,8 @@ END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pu
 /**
  * The open offers on a fixture, as a family reads them: for each side where
  * the caller has a child (by a live link, consent granted) and the module is
- * live — never for a pupil (lift_uncut()) — the driver's NAME, the leg, the meeting point in the school's words,
+ * live — for a pupil, only himself, eighteen and at school, on his own side,
+ * with no driver's name until his seat is confirmed — the driver's NAME, the leg, the meeting point in the school's words,
  * the time, the seats and how many are left, the note, and the caller's own
  * children's seats on it — never the other passengers (D6). The caller's own
  * offers are always there, whatever the side. Nothing for anybody else.
@@ -1290,6 +1391,7 @@ RETURNS TABLE (offer_id uuid, school_id uuid, team_code text, leg text, driver_n
 #variable_conflict use_column
 DECLARE
   v_me uuid := app_user_id();
+  v_pupil boolean := lift_is_pupil(app_user_id());
   m    match%ROWTYPE;
   sd   record;
   kids jsonb;
@@ -1301,18 +1403,35 @@ BEGIN
               FROM (VALUES (1, m.school_id, m.team_code), (2, m.away_school_id, m.away_team_code)) x(i, s, t)
              WHERE x.s IS NOT NULL AND x.t IS NOT NULL
              ORDER BY x.i LOOP
-    CONTINUE WHEN NOT lift_uncut(sd.school_id);
-    -- The caller's own boys on this side, and how she may act for each.
-    SELECT coalesce(jsonb_agg(jsonb_build_object('playerId', p.id, 'name', p.full_name, 'how', a.how) ORDER BY p.full_name), '[]')
-      INTO kids
-      FROM player p CROSS JOIN LATERAL lift_acting_for(p.id) a
-     WHERE p.school_id = sd.school_id AND p.team_code = sd.team_code AND a.how IN ('guardian', 'guardian_adult')
-       AND (a.how <> 'guardian' OR app_can('transport.lift.arrange', sd.school_id, sd.team_code, p.id, p_match));
+    IF v_pupil THEN
+      -- The boy himself, eighteen and at school, on his own side only.
+      SELECT coalesce(jsonb_agg(jsonb_build_object('playerId', p.id, 'name', p.full_name, 'how', 'self')), '[]')
+        INTO kids
+        FROM player p
+       WHERE p.school_id = sd.school_id AND p.team_code = sd.team_code AND lift_adult_self(v_me, p.id);
+      CONTINUE WHEN jsonb_array_length(kids) = 0
+                 OR EXISTS (SELECT 1 FROM jsonb_array_elements(kids) k
+                             WHERE NOT lift_uncut_for(sd.school_id, (k->>'playerId')::uuid));
+    ELSE
+      CONTINUE WHEN NOT lift_uncut(sd.school_id);
+      -- The caller's own boys on this side, and how she may act for each.
+      SELECT coalesce(jsonb_agg(jsonb_build_object('playerId', p.id, 'name', p.full_name, 'how', a.how) ORDER BY p.full_name), '[]')
+        INTO kids
+        FROM player p CROSS JOIN LATERAL lift_acting_for(p.id) a
+       WHERE p.school_id = sd.school_id AND p.team_code = sd.team_code AND a.how IN ('guardian', 'guardian_adult')
+         AND (a.how <> 'guardian' OR app_can('transport.lift.arrange', sd.school_id, sd.team_code, p.id, p_match));
+    END IF;
     CONTINUE WHEN (jsonb_array_length(kids) = 0 OR NOT lift_module_live(sd.school_id))
               AND NOT EXISTS (SELECT 1 FROM lift_offer o WHERE o.match_id = p_match AND o.school_id = sd.school_id
                                  AND o.driver_id = v_me);
     RETURN QUERY
-      SELECT o.id, o.school_id, o.team_code, o.leg, u.name, o.driver_id = v_me,
+      SELECT o.id, o.school_id, o.team_code, o.leg,
+             -- The boy himself reads the driver's name once his own seat on it is confirmed.
+             CASE WHEN v_pupil AND NOT EXISTS (
+                    SELECT 1 FROM lift_seat s WHERE s.offer_id = o.id AND lift_seat_status(s) = 'confirmed'
+                       AND s.player_id IN (SELECT (k->>'playerId')::uuid FROM jsonb_array_elements(kids) k))
+                  THEN NULL ELSE u.name END,
+             o.driver_id = v_me,
              o.meet_kind,
              CASE o.meet_kind WHEN 'ground' THEN 'At the ground'
                   ELSE coalesce('At school: ' || (lift_policy_live(o.school_id)).meet_note, 'At school') END,
@@ -1340,8 +1459,8 @@ END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pu
  * The lone passenger (D5, Kameel 2026-10-01). When a seat leaves a lift — a
  * withdrawal, or a seat voided because the link that consented ended — and
  * the school's policy refuses one boy alone with a driver who is not his
- * parent, a lift left with exactly one confirmed boy is not confirmed any
- * more: his seat falls back to requested, the driver's yes taken off it, so
+ * parent, a lift left with exactly one confirmed child (an adult pupil does
+ * not count, either way) is not confirmed any more: his seat falls back to requested, the driver's yes taken off it, so
  * it is confirmed again only by an acceptance that leaves two (or by a
  * policy that allows one). His family and the driver are each told, naming
  * nobody. Nobody is reassigned (D18). A policy that allows one-to-one leaves
@@ -1359,9 +1478,10 @@ BEGIN
   IF NOT FOUND OR o.state NOT IN ('open', 'closed') THEN RETURN false; END IF;
   pol := lift_policy_live(o.school_id);
   IF pol.id IS NULL OR pol.allow_one_to_one THEN RETURN false; END IF;
-  SELECT count(*) INTO n FROM lift_seat WHERE offer_id = p_offer AND state = 'confirmed';
+  -- Children only: an adult passenger is not a lone child, and does not keep one company.
+  SELECT count(*) INTO n FROM lift_seat ls WHERE ls.offer_id = p_offer AND ls.state = 'confirmed' AND lift_is_minor(ls.player_id);
   IF n <> 1 THEN RETURN false; END IF;
-  SELECT * INTO s FROM lift_seat WHERE offer_id = p_offer AND state = 'confirmed' FOR UPDATE;
+  SELECT * INTO s FROM lift_seat ls WHERE ls.offer_id = p_offer AND ls.state = 'confirmed' AND lift_is_minor(ls.player_id) FOR UPDATE;
   UPDATE lift_seat SET state = 'requested', driver_ok_version = NULL WHERE id = s.id;
   v_words := lift_offer_words(p_offer);
   PERFORM lift_notify_family(p_offer, s.player_id, 'A seat on a lift is no longer confirmed',
@@ -1375,9 +1495,11 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 /**
  * A seat for one boy: asked by his live verified guardian, her consent to
- * processing granted, while he is under eighteen. Never by a pupil — not for
- * himself at any age, and not for a brother through a guardian link (Kameel,
- * 2026-10-01). He is in the
+ * processing granted — past his eighteenth birthday too while db/62 keeps her
+ * link open at school — or by the boy himself when he is eighteen and still at
+ * school, through his own self link (Kameel's follow-up, 2026-10-01). Never by
+ * any other pupil, and never by a pupil for anybody else — not for a brother
+ * through a guardian link. He is in the
  * offer's side; the offer is open, its driver behind it, its fixture ahead;
  * he is on no other live lift for that leg (lift_seat_one_live); he is not
  * the driver's own (she counts him present). The driver is told a seat was
@@ -1395,16 +1517,20 @@ DECLARE
   v_other uuid;
 BEGIN
   IF v_me IS NULL THEN RETURN QUERY SELECT false, 'not_signed_in', NULL::uuid, NULL::uuid; RETURN; END IF;
-  IF lift_is_pupil(v_me) THEN RETURN QUERY SELECT false, 'pupil_excluded', NULL::uuid, NULL::uuid; RETURN; END IF;
+  SELECT * INTO a FROM lift_acting_for(p_player);
+  -- A pupil: only the boy himself, eighteen and at school, for his own seat.
+  IF lift_is_pupil(v_me) THEN
+    IF a.how = 'self_minor' THEN RETURN QUERY SELECT false, 'not_yet_eighteen', NULL::uuid, NULL::uuid; RETURN; END IF;
+    IF a.how = 'self_away' THEN RETURN QUERY SELECT false, 'not_at_school', NULL::uuid, NULL::uuid; RETURN; END IF;
+    IF a.how IS DISTINCT FROM 'self' THEN RETURN QUERY SELECT false, 'pupil_excluded', NULL::uuid, NULL::uuid; RETURN; END IF;
+  END IF;
   SELECT * INTO o FROM lift_offer WHERE id = p_offer;
-  IF NOT FOUND OR NOT lift_uncut(o.school_id) THEN
+  IF NOT FOUND OR NOT lift_uncut_for(o.school_id, p_player) THEN
     RETURN QUERY SELECT false, 'not_permitted', NULL::uuid, NULL::uuid; RETURN;
   END IF;
-  SELECT * INTO a FROM lift_acting_for(p_player);
-  IF a.how IS NULL THEN RETURN QUERY SELECT false, 'not_permitted', NULL::uuid, NULL::uuid; RETURN; END IF;
+  IF a.how IS NULL OR a.how IN ('self_minor', 'self_away') THEN RETURN QUERY SELECT false, 'not_permitted', NULL::uuid, NULL::uuid; RETURN; END IF;
   IF a.how = 'consent_pending' THEN RETURN QUERY SELECT false, 'consent_not_granted', NULL::uuid, NULL::uuid; RETURN; END IF;
-  IF a.how = 'guardian_adult' THEN RETURN QUERY SELECT false, 'adult_consents_for_himself', NULL::uuid, NULL::uuid; RETURN; END IF;
-  IF a.how = 'guardian' AND NOT app_can('transport.lift.arrange', o.school_id, o.team_code, p_player, o.match_id) THEN
+  IF a.how IN ('guardian', 'guardian_adult') AND NOT app_can('transport.lift.arrange', o.school_id, o.team_code, p_player, o.match_id) THEN
     RETURN QUERY SELECT false, 'not_permitted', NULL::uuid, NULL::uuid; RETURN;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM player p WHERE p.id = p_player AND p.school_id = o.school_id AND p.team_code = o.team_code) THEN
@@ -1425,9 +1551,10 @@ BEGIN
      AND s.state IN ('requested', 'invited', 'confirmed');
   IF v_other IS NOT NULL THEN RETURN QUERY SELECT false, 'already_on_a_lift', NULL::uuid, v_other; RETURN; END IF;
   BEGIN
-    INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id,
+    INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by,
                            guardian_assignment_id, guardian_link_id, requested_by, guardian_ok_version, state)
     VALUES (p_offer, o.school_id, o.match_id, o.team_code, o.leg, p_player,
+            CASE WHEN a.how = 'self' THEN 'self' ELSE 'guardian' END,
             a.assignment_id, a.link_id, v_me, o.version, 'requested')
     RETURNING id INTO v_id;
   EXCEPTION WHEN unique_violation THEN
@@ -1458,6 +1585,8 @@ DECLARE
   v_have  integer;
   v_add   integer;
   v_one   boolean;
+  v_minors integer;
+  v_new_minors integer;
   v_words text;
 BEGIN
   IF p_seats IS NULL OR cardinality(p_seats) = 0 THEN RETURN QUERY SELECT false, 'no_seats', 0; RETURN; END IF;
@@ -1475,15 +1604,20 @@ BEGIN
   FOR s IN SELECT * FROM lift_seat WHERE id = ANY (p_seats) FOR UPDATE LOOP
     IF s.state <> 'requested' THEN RETURN QUERY SELECT false, 'not_a_request', 0; RETURN; END IF;
     IF s.guardian_ok_version IS DISTINCT FROM o.version
-       OR (s.guardian_link_id IS NOT NULL AND NOT lift_link_is_live(s.guardian_link_id)) THEN
+       OR NOT lift_seat_consent_live(s) THEN
       RETURN QUERY SELECT false, 'awaiting_guardian', 0; RETURN;
     END IF;
   END LOOP;
   SELECT count(*) INTO v_have FROM lift_seat WHERE offer_id = o.id AND state = 'confirmed';
   v_add := cardinality(p_seats);
+  -- D5 counts CHILDREN (Kameel's follow-up: CSA's one-adult-one-unrelated-
+  -- child rule is about children). An adult passenger is never a lone child,
+  -- and his presence does not make a lone child less alone.
+  SELECT count(*) INTO v_minors FROM lift_seat ls WHERE ls.offer_id = o.id AND ls.state = 'confirmed' AND lift_is_minor(ls.player_id);
+  SELECT count(*) INTO v_new_minors FROM lift_seat ls WHERE ls.id = ANY (p_seats) AND lift_is_minor(ls.player_id);
   IF v_have + v_add > o.seats THEN RETURN QUERY SELECT false, 'seats_full', v_have; RETURN; END IF;
   pol := lift_policy_live(o.school_id);
-  IF NOT coalesce(pol.allow_one_to_one, true) AND v_have + v_add = 1 THEN
+  IF NOT coalesce(pol.allow_one_to_one, true) AND v_new_minors > 0 AND v_minors + v_new_minors = 1 THEN
     RETURN QUERY SELECT false, 'one_to_one_not_allowed', v_have; RETURN;
   END IF;
   UPDATE lift_seat SET state = 'confirmed', driver_ok_version = o.version WHERE id = ANY (p_seats);
@@ -1513,7 +1647,8 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 /**
  * A "no": any live verified guardian of the boy — of a boy of eighteen still
- * at school too — any time before he is in the car (D13: a withdrawal by
+ * at school too — or the boy himself while he is eighteen and at school, any
+ * time before he is in the car (D13: a withdrawal by
  * either guardian ends the seat). If it leaves one boy alone with a driver
  * not his parent under a policy refusing that, his seat falls back
  * (lift_lone_fallback()). Never
@@ -1525,9 +1660,9 @@ CREATE OR REPLACE FUNCTION lift_seat_withdraw(p_seat uuid) RETURNS TABLE (ok boo
 DECLARE s lift_seat%ROWTYPE; a record;
 BEGIN
   SELECT * INTO s FROM lift_seat WHERE id = p_seat FOR UPDATE;
-  IF NOT FOUND OR NOT lift_uncut(s.school_id) THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
+  IF NOT FOUND OR NOT lift_uncut_for(s.school_id, s.player_id) THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
   SELECT * INTO a FROM lift_acting_for(s.player_id);
-  IF a.how IS NULL OR a.how NOT IN ('guardian', 'guardian_adult') THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
+  IF a.how IS NULL OR a.how NOT IN ('guardian', 'guardian_adult', 'self') THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
   IF s.state NOT IN ('requested', 'invited', 'confirmed') THEN RETURN QUERY SELECT false, 'seat_ended'; RETURN; END IF;
   IF s.boarded_at IS NOT NULL THEN RETURN QUERY SELECT false, 'already_boarded'; RETURN; END IF;
   UPDATE lift_seat SET state = 'withdrawn', ended_at = now(), ended_by = app_user_id() WHERE id = p_seat;
@@ -1548,12 +1683,11 @@ CREATE OR REPLACE FUNCTION lift_seat_reconfirm(p_seat uuid) RETURNS TABLE (ok bo
 DECLARE s lift_seat%ROWTYPE; o lift_offer%ROWTYPE; a record;
 BEGIN
   SELECT * INTO s FROM lift_seat WHERE id = p_seat FOR UPDATE;
-  IF NOT FOUND OR NOT lift_uncut(s.school_id) THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
+  IF NOT FOUND OR NOT lift_uncut_for(s.school_id, s.player_id) THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
   SELECT * INTO a FROM lift_acting_for(s.player_id);
-  IF a.how IS NULL THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
+  IF a.how IS NULL OR a.how IN ('self_minor', 'self_away') THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
   IF a.how = 'consent_pending' THEN RETURN QUERY SELECT false, 'consent_not_granted'; RETURN; END IF;
-  IF a.how = 'guardian_adult' THEN RETURN QUERY SELECT false, 'adult_consents_for_himself'; RETURN; END IF;
-  IF a.how = 'guardian' AND NOT app_can('transport.lift.arrange', s.school_id, s.team_code, s.player_id, s.match_id) THEN
+  IF a.how IN ('guardian', 'guardian_adult') AND NOT app_can('transport.lift.arrange', s.school_id, s.team_code, s.player_id, s.match_id) THEN
     RETURN QUERY SELECT false, 'not_permitted'; RETURN;
   END IF;
   SELECT * INTO o FROM lift_offer WHERE id = s.offer_id;
@@ -1563,6 +1697,7 @@ BEGIN
   END IF;
   IF o.driver_version < o.version THEN RETURN QUERY SELECT false, 'awaiting_driver'; RETURN; END IF;
   UPDATE lift_seat SET guardian_ok_version = o.version,
+                       consent_by = CASE WHEN a.how = 'self' THEN 'self' ELSE 'guardian' END,
                        guardian_assignment_id = a.assignment_id, guardian_link_id = a.link_id
    WHERE id = p_seat;
   RETURN QUERY SELECT true, NULL::text;
@@ -1636,7 +1771,12 @@ DECLARE
   v_out  jsonb;
 BEGIN
   SELECT * INTO o FROM lift_offer WHERE id = p_offer;
-  IF NOT FOUND OR v_me IS NULL OR NOT lift_uncut(o.school_id) OR lift_is_pupil(v_me) THEN RETURN NULL; END IF;
+  IF NOT FOUND OR v_me IS NULL OR NOT lift_cuts_ok(o.school_id) THEN RETURN NULL; END IF;
+  -- A pupil reads only the driver of his own confirmed seat, eighteen and at school.
+  IF lift_is_pupil(v_me) AND NOT EXISTS (SELECT 1 FROM lift_seat s WHERE s.offer_id = o.id
+                                            AND lift_seat_status(s) = 'confirmed' AND lift_adult_self(v_me, s.player_id)) THEN
+    RETURN NULL;
+  END IF;
   IF o.state NOT IN ('open', 'closed', 'done') THEN RETURN NULL; END IF;
   v_day := (o.meet_at AT TIME ZONE 'Africa/Johannesburg')::date;
   IF sa_today() NOT BETWEEN v_day - 1 AND v_day + 1 THEN RETURN NULL; END IF;
@@ -1656,7 +1796,8 @@ BEGIN
      WHERE s.offer_id = o.id AND lift_seat_status(s) = 'confirmed';
   ELSIF EXISTS (SELECT 1 FROM lift_seat s
                  WHERE s.offer_id = o.id AND lift_seat_status(s) = 'confirmed'
-                   AND EXISTS (SELECT 1 FROM lift_live_link(v_me, s.player_id, 'guardian'))) THEN
+                   AND (EXISTS (SELECT 1 FROM lift_live_link(v_me, s.player_id, 'guardian'))
+                        OR lift_adult_self(v_me, s.player_id))) THEN
     -- Her live declaration if she has made a new one since, else the offer's.
     SELECT * INTO d FROM lift_driver_declaration
      WHERE person_id = o.driver_id AND school_id = o.school_id AND withdrawn_at IS NULL;
@@ -1784,16 +1925,40 @@ BEGIN
   END LOOP;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+/**
+ * The boy's own say, settled the same way (Kameel's follow-up): a live seat
+ * he asked for himself, once he is no longer eighteen-and-at-school through a
+ * live self link of his own — he left school, or his self link ended — is
+ * void, and the driver told a seat was withdrawn. Internal.
+ */
+CREATE OR REPLACE FUNCTION lift_self_settle(p_player uuid) RETURNS void AS $$
+DECLARE s record;
+BEGIN
+  IF p_player IS NULL OR EXISTS (SELECT 1 FROM lift_self_accounts(p_player)) THEN RETURN; END IF;
+  FOR s IN SELECT ls.id, ls.offer_id FROM lift_seat ls
+            WHERE ls.player_id = p_player AND ls.consent_by = 'self'
+              AND ls.state IN ('requested', 'invited', 'confirmed') LOOP
+    UPDATE lift_seat SET state = 'void', ended_at = now() WHERE id = s.id;
+    PERFORM lift_notify(s.offer_id, (SELECT x.driver_id FROM lift_offer x WHERE x.id = s.offer_id), NULL,
+      'A seat was withdrawn', lift_offer_words(s.offer_id) || ': a seat is no longer confirmed and has been withdrawn.');
+    PERFORM lift_lone_fallback(s.offer_id);
+  END LOOP;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 CREATE OR REPLACE FUNCTION lift_link_changed() RETURNS trigger AS $$
 BEGIN
   IF TG_TABLE_NAME = 'assignment_subject' THEN
     PERFORM lift_links_settle((SELECT a.person_id FROM role_assignment a WHERE a.id = NEW.assignment_id));
+    IF NEW.relationship = 'self' THEN PERFORM lift_self_settle(NEW.player_id); END IF;
   ELSIF TG_TABLE_NAME = 'role_assignment' THEN
     PERFORM lift_links_settle(NEW.person_id);
+    PERFORM lift_self_settle(g.player_id) FROM assignment_subject g
+     WHERE g.assignment_id = NEW.id AND g.relationship = 'self' AND NEW.role = 'selfaccess';
   ELSIF TG_TABLE_NAME = 'team_membership' THEN
     PERFORM lift_links_settle(a.person_id)
        FROM (SELECT DISTINCT ra.person_id FROM assignment_subject g JOIN role_assignment ra ON ra.id = g.assignment_id
               WHERE g.player_id = NEW.player_id AND ra.role = 'guardian') a;
+    PERFORM lift_self_settle(NEW.player_id);
   END IF;
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -1809,7 +1974,7 @@ DROP TRIGGER IF EXISTS lift_guardian_changed ON role_assignment;
 CREATE CONSTRAINT TRIGGER lift_guardian_changed
   AFTER UPDATE OF active, valid_from, valid_until, expires_at ON role_assignment
   DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW WHEN (NEW.role = 'guardian')
+  FOR EACH ROW WHEN (NEW.role IN ('guardian', 'selfaccess'))
   EXECUTE FUNCTION lift_link_changed();
 DROP TRIGGER IF EXISTS lift_team_changed ON team_membership;
 CREATE CONSTRAINT TRIGGER lift_team_changed
@@ -1842,7 +2007,9 @@ DECLARE f text; r text;
     'lift_driver_eligible(uuid,uuid)', 'lift_standing_words(text,uuid)', 'lift_meet_refusal(text,timestamp with time zone,timestamp with time zone)',
     'lift_is_driver(lift_offer)', 'lift_ask_families(uuid)', 'lift_acting_for(uuid)',
     'lift_family_at(uuid,uuid,text)', 'lift_lone_fallback(uuid)',
-    'lift_fixture_moved()', 'lift_links_settle(uuid)', 'lift_link_changed()'];
+    'lift_cuts_ok(uuid)', 'lift_is_minor(uuid)', 'lift_adult_at_school(uuid)', 'lift_adult_self(uuid,uuid)',
+    'lift_uncut_for(uuid,uuid)', 'lift_self_accounts(uuid)', 'lift_seat_consent_live(lift_seat)',
+    'lift_fixture_moved()', 'lift_links_settle(uuid)', 'lift_self_settle(uuid)', 'lift_link_changed()'];
 BEGIN
   FOREACH f IN ARRAY app LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);

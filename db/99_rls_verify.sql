@@ -2114,12 +2114,13 @@ $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, 
 -- decide what this one proves: at Hilton a U15A side with five boys and
 -- their families — Jono (the driver's son), Ben (two guardians), Carl, Dan
 -- (seventeen, an account of his own), Ed (eighteen and at school, an account
--- of his own) — a U14A boy (Finn) whose mother has no child on the side, a
+-- of his own; both hold the side's player assignment, as every pupil does) —
+-- a U14A boy (Finn) whose mother has no child on the side, a
 -- Westville U15A boy and his mother, the side's coach, the office, the
 -- transport coordinator and a principal. Three fixtures, each with an
 -- explicit day: the U15A v Westville's U15A ten days ahead (M), one twelve
--- days ahead that will be called off (MV), and one tomorrow (MT), inside the
--- day window for numbers. Written as the owner, as a seed would. Every name
+-- days ahead that will be called off (MV), and two tomorrow (MT at ten, MA
+-- at two), inside the day window for numbers. Written as the owner, as a seed would. Every name
 -- here is invented.
 CREATE OR REPLACE FUNCTION _seed_70() RETURNS jsonb AS $$
 DECLARE
@@ -2184,6 +2185,10 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Dan and Ed are pupils of the side, as every pupil is.
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  SELECT (ids->>k)::uuid, 'player', HIL, 'U15A' FROM unnest(ARRAY['u_dan', 'u_ed']) k;
+
   -- Pat's mother's link is verified and her consent to processing is not yet
   -- recorded: lifts wait on it (Kameel, 2026-10-01).
   UPDATE assignment_subject SET consent_state = 'pending', consent_version = NULL, consent_at = NULL
@@ -2216,6 +2221,11 @@ BEGIN
           'cricket', 'T20', 20, 'scheduled', GROUND)
   RETURNING id INTO v_m;
   ids := ids || jsonb_build_object('mt', v_m);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, 'U15A', 'Verify 070 afternoon', ((current_date + 1)::timestamp + time '14:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled', GROUND)
+  RETURNING id INTO v_m;
+  ids := ids || jsonb_build_object('ma', v_m, 'ma_start', (SELECT starts_at FROM match WHERE id = v_m));
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -2255,16 +2265,32 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v70_notice_count(p_to uuid, p_title text DEFAULT NULL) RETURNS bigint AS $$
   SELECT count(*) FROM notification n WHERE n.kind = 'lift' AND n.recipient_id = p_to AND (p_title IS NULL OR n.title = p_title)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The lift notices: kind 'lift', and the 'system' ones a boy of eighteen at
+-- school is sent about a lift (SG-9).
+CREATE OR REPLACE FUNCTION _v70_is_lift_notice(n notification) RETURNS boolean AS $$
+  SELECT n.kind = 'lift'
+      OR (n.kind = 'system' AND n.subject_kind = 'match' AND n.subject_id IN (SELECT match_id FROM lift_offer))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Lift notices whose body names a person: any player's full name or any account's name.
 CREATE OR REPLACE FUNCTION _v70_named_notices() RETURNS bigint AS $$
   SELECT count(*) FROM notification n
-   WHERE n.kind = 'lift'
+   WHERE _v70_is_lift_notice(n)
      AND (EXISTS (SELECT 1 FROM player p WHERE position(p.full_name IN n.body) > 0)
           OR EXISTS (SELECT 1 FROM app_user u WHERE length(u.name) > 3 AND position(u.name IN n.body) > 0))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- Lift notices addressed to a pupil.
+-- Lift notices addressed to a pupil — but the boy of eighteen's own, as
+-- 'system', about himself through his own self link.
 CREATE OR REPLACE FUNCTION _v70_pupil_notices() RETURNS bigint AS $$
-  SELECT count(*) FROM notification n WHERE n.kind = 'lift' AND person_is_pupil(n.recipient_id)
+  SELECT count(*) FROM notification n
+   WHERE _v70_is_lift_notice(n) AND lift_is_pupil(n.recipient_id)
+     AND NOT (n.kind = 'system' AND NOT lift_is_minor(n.subject_person_id)
+              AND EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+                           WHERE a.person_id = n.recipient_id AND a.role = 'selfaccess'
+                             AND g.relationship = 'self' AND g.player_id = n.subject_person_id))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Every lift notice to one person, of either kind, past RLS.
+CREATE OR REPLACE FUNCTION _v70_lift_notices_to(p_to uuid) RETURNS bigint AS $$
+  SELECT count(*) FROM notification n WHERE n.recipient_id = p_to AND _v70_is_lift_notice(n)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The access log's rows for a lift read, past RLS.
@@ -10971,23 +10997,30 @@ $v49$;
   -- to processing GRANTED (Pat's mother, pending, then granted); a withdrawal
   -- or a voided seat that leaves one boy alone under a policy refusing it
   -- takes his seat back to requested, and one allowing it does not; and no
-  -- pupil takes any part — Ed, eighteen, not for himself and not for his
-  -- brother through a guardian link.
+  -- pupil drives, offers, or acts for anybody — Ed, eighteen, not for his
+  -- brother through a guardian link. With Kameel's follow-up (2026-10-01):
+  -- Ed, eighteen and at school, asks a seat for himself, is seated, reads his
+  -- own seat and the lift it is on (the driver's name and number once it is
+  -- confirmed, logged) and withdraws it; his mother asks and withdraws for him
+  -- too; at seventeen, or gone from school, he is refused, and his own seat
+  -- is void when he leaves; the one-to-one rule counts children only.
   -- tools/smoke-lifts.mjs walks the same through the API.
   --
   -- Each labelled assertion was falsified once — the guard broken (as the
   -- owner, inside this file's own transaction, before the section ran) — and
-  -- went red, and was green again restored. 65 breaks:
+  -- went red, and was green again restored. 82 breaks, and five single
+  -- layers that held alone as designed (marked "held"):
   --   (keys)      lift_module_live() without the policy; lift_policy_sign()
   --               without the platform's grant; with fixture.read for the
   --               policy capability (the office signed)
   --   (declare)   the roadworthy check dropped; the contact not required to be
   --               a child of hers; the registration not normalised
   --   (pupil)     lift_driver_declare() without its pupil refusal;
-  --               my_lift_standing() without its pupil answer; the pupil
-  --               clause off lift_uncut() (Ed, as a brother, read offers:
-  --               (cut)); lift_seat_request() without its pupil refusal;
-  --               lift_seat_accept() without its driver test (Ed accepted)
+  --               my_lift_standing() without its pupil answer;
+  --               lift_seat_accept() without its driver test (Ed accepted);
+  --               the pupil clause off lift_uncut() (held: every door has its
+  --               own), off lift_passengers() (held), off both (Ed, linked to
+  --               his brother, read three names: (adult-brother))
   --   (offer)     the out leg's meeting time unchecked; seats past the
   --               declaration; lift_offer_one_live dropped
   --   (zero)      lift_seat_not_platform dropped (the owner's key read six
@@ -10995,9 +11028,31 @@ $v49$;
   --               owner signed: (keys)); the declaration's pad guard dropped;
   --               lift_offer_read widened to any guardian at the school
   --   (cut)       lift_offer_not_pupil dropped (Ed, linked to his brother,
-  --               read three rows); lift_policy_not_pupil dropped; the
-  --               request's pupil refusal kept only for his own seat (a seat
-  --               for his brother reached the second layer, lift_uncut())
+  --               read three rows); lift_policy_not_pupil dropped
+  --   (adult)     Kameel's follow-up: the request's not_yet_eighteen word
+  --               dropped, and lift_acting_for() calling every pupil 'self'
+  --               (Dan, seventeen: (pupil)); lift_adult_at_school() without
+  --               the age (Dan read offers: (zero)) and without
+  --               still_at_school() ((adult-left)); lift_uncut_for() without
+  --               its exception (Ed read nothing); the request's
+  --               pupil_excluded for another boy dropped (refused, wrong
+  --               word: (cut)), and with lift_uncut_for()'s pupil clause and
+  --               lift_acting_for()'s pupil return also gone (a seat for his
+  --               brother: (cut)); lift_offers_for() listing a pupil's guardian
+  --               links (held: each boy listed must pass lift_uncut_for()),
+  --               and with that check dropped too ((cut)); the driver's name
+  --               shown before his seat is confirmed ((zero)); lift_contacts()
+  --               without its self branch, and without "confirmed" for him;
+  --               lift_notify_family() not telling him; lift_notify() closed
+  --               to him; lift_notify() open to any pupil with
+  --               lift_self_accounts() not asking his age (Dan was told);
+  --               lift_seat_consent_live() taking a self seat on trust
+  --               ((adult-17)); withdraw without 'self'; the guardian of an
+  --               adult refused; the one-to-one count of every passenger (Ed
+  --               alone refused), of the confirmed of any age (Dan beside Ed
+  --               confirmed); the fallback counting Ed (Dan stayed
+  --               confirmed); lift_self_settle() not voiding, and not called
+  --               from the team trigger ((adult-left))
   --   (consent)   the link test back to "not withdrawn" (Pat's pending mother
   --               read the offers: (zero)); the declaration without its
   --               granted test; the standing line without its consent word
@@ -11005,8 +11060,7 @@ $v49$;
   --               voided seat; taken whatever the policy (Dan, allowed,
   --               fell back); the family not told; the boy's name put in
   --               the notice ((privacy))
-  --   (request)   a guardian of an adult as of a minor ((eighteen)); the
-  --               driver's own son; the side check
+  --   (request)   the driver's own son; the side check
   --   (dup)       the pre-check (the index alone answers with no other offer)
   --   (names)     a requester let in; the log dropped; the coach on the way home
   --   (full), (one), (accept)  the seat count; the lone passenger; the driver test
@@ -11019,7 +11073,8 @@ $v49$;
   --   (edit)      the edit not carrying the driver's yes
   --   (withdraw)  a stranger let in
   --   (link)      lift_links_settle() without its seats, without its offers;
-  --               lift_team_changed dropped; lift_link_changed dropped
+  --               lift_team_changed dropped (first red at (adult-left),
+  --               which it also carries); lift_link_changed dropped
   --   (clear)     the clearance requirement skipped
   --   (void)      the abandoned branch; the driver not told
   --   (side)      the side test widened to any child at the school
@@ -11030,7 +11085,7 @@ $v49$;
   --   (coexist)   db/65's availability_ask_again dropped
   DECLARE
     ids      jsonb := _seed_70();
-    M        uuid; MV uuid; MT uuid;
+    M        uuid; MV uuid; MT uuid; MA uuid; O_MA uuid; S_ED uuid; S_MD uuid; S_MP uuid;
     P_JONO   uuid; P_BEN uuid; P_CARL uuid; P_DAN uuid; P_ED uuid; P_FINN uuid; P_WES70 uuid;
     U_DMUM   uuid; U_BMUM uuid; U_BDAD uuid; U_CMUM uuid; U_DNMUM uuid; U_EMUM uuid; U_FMUM uuid; U_WMUM uuid;
     U_PMUM   uuid; P_PAT uuid; S_PAT uuid; S_VP uuid;
@@ -11054,7 +11109,7 @@ $v49$;
                   || 'the car is insured and roadworthy, and that every boy wears a belt. If a boy is not collected, '
                   || 'stay with him and ring the school office. A concern goes to the DSO.';
   BEGIN
-    M := (ids->>'m')::uuid; MV := (ids->>'mv')::uuid; MT := (ids->>'mt')::uuid;
+    M := (ids->>'m')::uuid; MV := (ids->>'mv')::uuid; MT := (ids->>'mt')::uuid; MA := (ids->>'ma')::uuid;
     P_JONO := (ids->>'p_jono')::uuid; P_BEN := (ids->>'p_ben')::uuid; P_CARL := (ids->>'p_carl')::uuid;
     P_DAN := (ids->>'p_dan')::uuid; P_ED := (ids->>'p_ed')::uuid; P_FINN := (ids->>'p_finn')::uuid;
     P_WES70 := (ids->>'p_wes')::uuid;
@@ -11110,11 +11165,11 @@ $v49$;
     PERFORM _assert(v_ok AND (SELECT registration FROM lift_driver_declaration WHERE person_id = U_DMUM AND withdrawn_at IS NULL) = 'ND 123 456'
                     AND (SELECT may_drive FROM my_lift_standing(HIL)),
       format('db/70 (declare): the driver''s declaration: %s %s', v_ok, v_reason));
-    -- (pupil) a pupil takes no part, at eighteen too (decision 4)
+    -- (pupil) a pupil never drives, at eighteen too (decisions 4 and 5)
     PERFORM _as(U_ED);
     SELECT ok, reason INTO v_ok, v_reason FROM lift_driver_declare(HIL, 'white Polo', 'NP 1', 4, true, true, true, true, true, NULL);
     PERFORM _assert(NOT v_ok AND v_reason = 'pupil_excluded' AND (SELECT reason FROM my_lift_standing(HIL)) = 'pupil_excluded'
-                    AND (SELECT words FROM my_lift_standing(HIL)) LIKE '%Pupils take no part%',
+                    AND (SELECT words FROM my_lift_standing(HIL)) LIKE '%A pupil does not drive%',
       format('db/70 (pupil): a pupil of eighteen declared to drive: %s %s', v_ok, v_reason));
     -- (consent) a family whose consent to processing is not granted neither
     -- drives nor asks, and is told why in plain words (decision 2)
@@ -11146,14 +11201,19 @@ $v49$;
     SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'out', 2, 'ground', v_start - interval '60 minutes', NULL);
     PERFORM _assert(NOT v_ok AND v_reason = 'already_offered', format('db/70 (offer): a second out leg by the same driver: %s', v_reason));
 
-    -- (zero) nobody else offers, asks, or reads an offer
+    -- (zero) nobody else offers, asks, or reads an offer — but Ed, eighteen
+    -- and at school, reads the offers on his own side as a boy who may ask:
+    -- no driver's name, and himself the only boy on it (decision 5)
     FOREACH who IN ARRAY ARRAY[U_WMUM, U_FMUM, U_DAN, U_ED, U_PMUM, U_COACH70, U_OFFICE, U_TCO, U_HEAD, U_OWNER, U_PLAT] LOOP
       PERFORM _as(who);
       SELECT ok INTO v_ok FROM lift_offer_create(M, 'back', 1, 'ground', v_start + interval '6 hours', NULL);
       PERFORM _assert(NOT v_ok, format('db/70 (zero): %s offered a lift on the U15A''s fixture', who));
       SELECT ok INTO v_ok FROM lift_seat_request(O_OUT, P_DAN);
       PERFORM _assert(NOT v_ok, format('db/70 (zero): %s asked for a seat for Dan', who));
-      SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat) + (SELECT count(*) FROM lift_offers_for(M)) INTO k;
+      SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat)
+           + (SELECT count(*) FROM lift_offers_for(M) f
+               WHERE who IS DISTINCT FROM U_ED OR f.driver_name IS NOT NULL
+                  OR f.my_children <> jsonb_build_array(jsonb_build_object('playerId', P_ED, 'name', 'Ed Liftseventy', 'how', 'self'))) INTO k;
       PERFORM _assert(k = 0, format('db/70 (zero): %s reads %s lift row(s)', who, k));
       -- The coach is the out leg's receiver (§1.6), asked below.
       CONTINUE WHEN who = U_COACH70;
@@ -11193,14 +11253,11 @@ $v49$;
     PERFORM _as(U_CMUM);
     SELECT ok, seat_id INTO v_ok, S_CARL FROM lift_seat_request(O_OUT, P_CARL);
     PERFORM _assert(v_ok, 'db/70 (request): Carl''s mother could not ask');
-    -- (pupil) no pupil asks for himself: not at seventeen, not at eighteen
-    PERFORM _as(U_ED);
-    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_OUT, P_ED);
-    PERFORM _assert(NOT v_ok AND v_reason = 'pupil_excluded',
-      format('db/70 (pupil): Ed, eighteen and at school, asked for himself: %s %s', v_ok, v_reason));
+    -- (pupil) a pupil under eighteen does not ask, even for himself (Ed, at
+    -- eighteen, is (adult) below)
     PERFORM _as(U_DAN);
     SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_BACK, P_DAN);
-    PERFORM _assert(NOT v_ok AND v_reason = 'pupil_excluded',
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen' AND NOT EXISTS (SELECT 1 FROM _v70_seats_of(P_DAN)),
       format('db/70 (pupil): Dan, seventeen, asked for himself: %s %s', v_ok, v_reason));
     -- (consent) Pat's mother, pending, is refused and reads no offer; the
     -- office records her consent, and she asks
@@ -11215,10 +11272,6 @@ $v49$;
     PERFORM _assert(v_ok AND (_v70_seat(S_PAT)).guardian_link_id IS NOT NULL AND (SELECT may_drive IS NOT NULL FROM my_lift_standing(HIL))
                     AND (SELECT reason FROM my_lift_standing(HIL)) = 'no_declaration',
       format('db/70 (consent): with her consent granted, Pat''s mother could not ask: %s %s', v_ok, v_reason));
-    PERFORM _as(U_EMUM);
-    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_BACK, P_ED);
-    PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself',
-      format('db/70 (eighteen): Ed''s mother asked for him at eighteen: %s %s', v_ok, v_reason));
     -- (pupil) a pupil withdraws, accepts and reconfirms nothing either
     PERFORM _as(U_ED);
     SELECT ok INTO v_ok FROM lift_seat_withdraw(S_PAT);
@@ -11263,13 +11316,14 @@ $v49$;
     SELECT count(*) INTO k FROM lift_driver_declaration;
     PERFORM _assert(k = 2, format('db/70 (rls): the office reads %s declaration(s), expected the two', k));
     -- (cut) a pupil who is also a verified guardian — Ed, eighteen, linked to
-    -- his younger brother Dan — still reads no lift row and never drives (D8,
-    -- rule 4): the RESTRICTIVE pupil cut, not the absence of a link, is what
-    -- keeps him out
+    -- his younger brother Dan — still reads no lift row, never drives, and
+    -- sees no boy but himself on the offers (D8, rule 4): the RESTRICTIVE
+    -- pupil cut, not the absence of a link, is what keeps him out
     PERFORM _v70_brother(U_ED, P_DAN, true);
     PERFORM _as(U_ED);
     SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat) + (SELECT count(*) FROM lift_driver_declaration)
-         + (SELECT count(*) FROM lift_policy) + (SELECT count(*) FROM lift_offers_for(M)) INTO k;
+         + (SELECT count(*) FROM lift_policy)
+         + (SELECT count(*) FROM lift_offers_for(M) f, jsonb_array_elements(f.my_children) c WHERE c->>'playerId' <> P_ED::text) INTO k;
     SELECT ok, reason INTO v_ok, v_reason FROM lift_offer_create(M, 'back', 1, 'ground', v_start + interval '6 hours', NULL);
     PERFORM _assert(k = 0 AND NOT v_ok AND v_reason = 'pupil_excluded',
       format('db/70 (cut): Ed, a pupil linked as his brother''s guardian, reads %s lift row(s) and offers: %s %s', k, v_ok, v_reason));
@@ -11491,6 +11545,143 @@ $v49$;
       format('db/70 (void): the called-off fixture told %s / %s; expected Dan''s family and the two drivers once each',
              _v70_notices(MV, 'A lift is no longer available'), _v70_notices(MV, 'A fixture is off')));
 
+    -- (adult) Kameel's follow-up (2026-10-01): a pupil of eighteen still at
+    -- school asks a seat for himself — his own say, through his own self
+    -- link — reads his own seat and the lift it is on, and withdraws it; his
+    -- mother, by db/62's link past eighteen, may ask and withdraw for him too.
+    -- Under a policy refusing one-to-one (version 4): the rule counts
+    -- children, so an adult alone is seated and keeps no child company.
+    PERFORM _as(U_HEAD);
+    SELECT ok, version INTO v_ok, v_ver FROM lift_policy_sign(HIL, BODY, true, false, NULL);
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason, offer_id INTO v_ok, v_reason, O_MA
+      FROM lift_offer_create(MA, 'out', 3, 'school', (ids->>'ma_start')::timestamptz - interval '1 hour', NULL);
+    PERFORM _assert(v_ok AND v_ver = 4, format('db/70 (adult): no lift to test with: %s %s, policy version %s', v_ok, v_reason, v_ver));
+    PERFORM _as(U_ED);
+    SELECT string_agg(coalesce(f.driver_name, '-') || ':' || f.meet_place || ':' || f.seats_left || ':' || f.my_children::text, ' ')
+      INTO got FROM lift_offers_for(MA) f;
+    want := '-:At school:3:' || jsonb_build_array(jsonb_build_object('playerId', P_ED, 'name', 'Ed Liftseventy', 'how', 'self'))::text;
+    PERFORM _assert(got = want, format('db/70 (adult): Ed, eighteen and at school, reads the lift as %s', got));
+    SELECT ok, reason, seat_id INTO v_ok, v_reason, S_ED FROM lift_seat_request(O_MA, P_ED);
+    PERFORM _assert(v_ok AND (_v70_seat(S_ED)).consent_by = 'self' AND (_v70_seat(S_ED)).guardian_link_id IS NULL
+                    AND (_v70_seat(S_ED)).requested_by = U_ED AND _v70_status(S_ED) = 'requested',
+      format('db/70 (adult): Ed, eighteen and at school, could not ask for himself: %s %s', v_ok, v_reason));
+    -- (adult-brother) ...and for nobody else: not for his brother, through a guardian link
+    PERFORM _v70_brother(U_ED, P_DAN, true);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_MA, P_DAN);
+    PERFORM _assert(NOT v_ok AND v_reason = 'pupil_excluded' AND NOT EXISTS (SELECT 1 FROM _v70_seats_of(P_DAN)),
+      format('db/70 (adult-brother): Ed, eighteen, asked a seat for his brother: %s %s', v_ok, v_reason));
+    PERFORM _v70_brother(U_ED, P_DAN, false);
+    PERFORM _v70_fire();
+    -- (adult-read) his own seat and nothing else: no lift table, no passenger
+    -- list, no counts, and no name or number while his seat is only asked for
+    PERFORM _as(U_ED);
+    SELECT (SELECT count(*) FROM lift_offer) + (SELECT count(*) FROM lift_seat) + (SELECT count(*) FROM lift_seat_live)
+         + (SELECT count(*) FROM lift_driver_declaration) + (SELECT count(*) FROM lift_policy)
+         + (SELECT count(*) FROM lift_passengers(O_MA)) + (SELECT count(*) FROM lift_summary(MA)) INTO k;
+    SELECT string_agg(coalesce(f.driver_name, '-') || ':' || (f.my_seats->0->>'status'), ' ') INTO got FROM lift_offers_for(MA) f;
+    PERFORM _assert(k = 0 AND got = '-:requested' AND lift_contacts(O_MA) IS NULL AND _v70_logged('lift_contacts', O_MA) = 0,
+      format('db/70 (adult-read): Ed reads %s lift row(s), and his seat as %s', k, got));
+    -- (one-adult) the driver confirms Ed alone: an adult is not a lone child
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_ED]);
+    PERFORM _assert(v_ok AND _v70_status(S_ED) = 'confirmed',
+      format('db/70 (one-adult): Ed alone, eighteen, was refused under a policy refusing one-to-one: %s %s', v_ok, v_reason));
+    -- ...and keeps no child company: Dan with only Ed beside him is still one-to-one
+    PERFORM _as(U_DNMUM);
+    SELECT seat_id INTO S_MD FROM lift_seat_request(O_MA, P_DAN);
+    PERFORM _as(U_PMUM);
+    SELECT seat_id INTO S_MP FROM lift_seat_request(O_MA, P_PAT);
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_MD]);
+    PERFORM _assert(NOT v_ok AND v_reason = 'one_to_one_not_allowed' AND S_MP IS NOT NULL,
+      format('db/70 (one-adult): Dan, seventeen, was confirmed with only Ed, an adult, beside him: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_MD, S_MP]);
+    PERFORM _assert(v_ok AND _v70_status(S_MD) = 'confirmed' AND _v70_status(S_MP) = 'confirmed',
+      format('db/70 (one-adult): Dan and Pat together beside Ed: %s %s', v_ok, v_reason));
+    -- (adult-read) confirmed, Ed reads the driver's name and her number, as a
+    -- guardian would, logged; still no passenger list and no counts
+    PERFORM _as(U_ED);
+    SELECT string_agg(coalesce(f.driver_name, '-') || ':' || (f.my_seats->0->>'status'), ' ') INTO got FROM lift_offers_for(MA) f;
+    j := lift_contacts(O_MA);
+    PERFORM _assert(got = 'V70 Dmum:confirmed' AND j->>'as' = 'guardian' AND j->'driver'->>'phone' = '+27 82 070 0001'
+                    AND j->'driver'->>'name' = 'V70 Dmum' AND j->'passengers' IS NULL
+                    AND _v70_logged('lift_contacts', O_MA, U_ED) = 1
+                    AND NOT EXISTS (SELECT 1 FROM lift_passengers(O_MA)) AND NOT EXISTS (SELECT 1 FROM lift_summary(MA)),
+      format('db/70 (adult-read): Ed, confirmed, reads %s and %s, logged %s time(s)', got, j, _v70_logged('lift_contacts', O_MA, U_ED)));
+    -- (adult-brother) linked again as Dan's guardian, with Dan confirmed beside
+    -- him, Ed reads no passenger list and cannot withdraw his brother's seat
+    PERFORM _v70_brother(U_ED, P_DAN, true);
+    PERFORM _as(U_ED);
+    SELECT count(*) INTO k FROM lift_passengers(O_MA);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_withdraw(S_MD);
+    PERFORM _assert(k = 0 AND _v70_logged('lift_passengers', O_MA, U_ED) = 0 AND NOT v_ok AND _v70_status(S_MD) = 'confirmed',
+      format('db/70 (adult-brother): Ed, linked to Dan, read %s passenger(s) or withdrew his seat (%s %s)', k, v_ok, v_reason));
+    PERFORM _v70_brother(U_ED, P_DAN, false);
+    PERFORM _v70_fire();
+    PERFORM _as(U_ED);
+    -- (adult-notice) he is told his seat is confirmed, as is his mother, naming
+    -- nobody; he reads his own notice, and no team-mate reads it
+    SELECT count(*) INTO k FROM notification n
+     WHERE n.title = 'A seat on a lift is confirmed' AND n.subject_person_id = P_ED AND n.kind = 'system';
+    PERFORM _assert(k = 1 AND _v70_notice_count(U_EMUM, 'A seat on a lift is confirmed') = 1,
+      format('db/70 (adult-notice): Ed reads %s notice(s) that his seat is confirmed; his mother has %s',
+             k, _v70_notice_count(U_EMUM, 'A seat on a lift is confirmed')));
+    PERFORM _as(U_DAN);
+    SELECT count(*) INTO k FROM notification n WHERE n.subject_person_id = P_ED;
+    PERFORM _assert(k = 0 AND _v70_lift_notices_to(U_DAN) = 0,
+      format('db/70 (adult-notice): Dan, seventeen, reads %s notice(s) about Ed, and has %s lift notice(s)', k, _v70_lift_notices_to(U_DAN)));
+    -- (lone-adult) Pat withdrawn leaves Dan the only child: he falls back,
+    -- his family told; Ed, an adult, stays confirmed
+    PERFORM _as(U_PMUM);
+    SELECT ok INTO v_ok FROM lift_seat_withdraw(S_MP);
+    PERFORM _assert(v_ok AND (_v70_seat(S_MD)).state = 'requested' AND _v70_status(S_ED) = 'confirmed'
+                    AND _v70_notice_count(U_DNMUM, 'A seat on a lift is no longer confirmed') = 1
+                    AND _v70_lift_notices_to(U_DAN) = 0,
+      format('db/70 (lone-adult): with Pat withdrawn, Dan beside Ed is %s and Ed %s', (_v70_seat(S_MD)).state, _v70_status(S_ED)));
+    -- (adult) Ed withdraws his own seat
+    PERFORM _as(U_ED);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_withdraw(S_ED);
+    PERFORM _assert(v_ok AND (_v70_seat(S_ED)).state = 'withdrawn' AND (_v70_seat(S_ED)).ended_by = U_ED,
+      format('db/70 (adult): Ed could not withdraw his own seat: %s %s', v_ok, v_reason));
+    -- (guardian-adult) his mother asks for him and withdraws it, her granted link the consent
+    PERFORM _as(U_EMUM);
+    SELECT ok, reason, seat_id INTO v_ok, v_reason, S_ED FROM lift_seat_request(O_MA, P_ED);
+    PERFORM _assert(v_ok AND (_v70_seat(S_ED)).consent_by = 'guardian' AND (_v70_seat(S_ED)).guardian_link_id IS NOT NULL,
+      format('db/70 (guardian-adult): Ed''s mother could not ask for him at eighteen: %s %s', v_ok, v_reason));
+    SELECT ok INTO v_ok FROM lift_seat_withdraw(S_ED);
+    PERFORM _assert(v_ok AND (_v70_seat(S_ED)).state = 'withdrawn' AND (_v70_seat(S_ED)).ended_by = U_EMUM,
+      'db/70 (guardian-adult): Ed''s mother could not withdraw his seat');
+    -- (adult-17) at seventeen (his date of birth put right) he is refused,
+    -- reads no lift, and the seat he had asked for himself stands on no yes:
+    -- the driver cannot confirm it
+    PERFORM _as(U_ED);
+    SELECT ok, seat_id INTO v_ok, S_ED FROM lift_seat_request(O_MA, P_ED);
+    PERFORM _set_born(P_ED, (current_date - make_interval(years => 17) - make_interval(days => 40))::date);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_MA, P_ED);
+    SELECT count(*) INTO k FROM lift_offers_for(MA);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen' AND k = 0 AND lift_contacts(O_MA) IS NULL
+                    AND _v70_status(S_ED) = 'awaiting_guardian',
+      format('db/70 (adult-17): Ed at seventeen asked (%s %s), read %s offer(s), his seat %s', v_ok, v_reason, k, _v70_status(S_ED)));
+    PERFORM _as(U_DMUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_ED]);
+    PERFORM _assert(NOT v_ok AND v_reason = 'awaiting_guardian',
+      format('db/70 (adult-17): the driver confirmed Ed''s own seat at seventeen: %s %s', v_ok, v_reason));
+    PERFORM _set_born(P_ED, (current_date - make_interval(years => 18) - make_interval(days => 40))::date);
+    -- (adult-left) at eighteen and gone from school: refused, reads no lift,
+    -- and the seat he had asked for himself is void
+    PERFORM _as(U_ED);
+    PERFORM _assert(_v70_status(S_ED) = 'requested', format('db/70 (adult-left): Ed''s own seat at eighteen again reads %s', _v70_status(S_ED)));
+    PERFORM _v60_leave(P_ED);
+    PERFORM _v70_fire();
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_MA, P_ED);
+    SELECT count(*) INTO k FROM lift_offers_for(MA);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_at_school' AND k = 0 AND (_v70_seat(S_ED)).state = 'void',
+      format('db/70 (adult-left): Ed, gone from school, asked (%s %s), read %s offer(s), his seat %s',
+             v_ok, v_reason, k, (_v70_seat(S_ED)).state));
+    PERFORM _v60_rejoin(P_ED);
+    PERFORM _v70_fire();
+
     -- (link) the driver's son leaves the side: her lifts on it are cancelled
     -- link_ended, and she cannot offer on it (D2)
     PERFORM _v70_move(P_JONO, 'U14A');
@@ -11519,7 +11710,8 @@ $v49$;
       format('db/70 (policy): an offer after the policy was withdrawn: %s', v_reason));
 
     -- (privacy) no lift row holds a number, address or name; no notice names
-    -- a person or reaches a pupil; the application writes no lift row
+    -- a person or reaches a pupil but the boy of eighteen about his own seat;
+    -- the application writes no lift row
     SELECT string_agg(table_name || '.' || column_name, ' ') INTO got FROM information_schema.columns
      WHERE table_schema = 'public' AND table_name LIKE 'lift\_%'
        AND column_name ~ '(phone|address|name|email|id_number|mobile|location|latitude|longitude)';
