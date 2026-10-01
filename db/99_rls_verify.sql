@@ -1882,6 +1882,207 @@ BEGIN
   RETURN jsonb_build_object('m', m, 'plain', mp);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- ── SCRBRD-114 phase 3a (db/69, section 47): results and the table ──
+-- A league Hilton organises, "Verify 069 League", with four sides: Hilton
+-- 1XI (A) and 2XI (C), Westville 1XI (B) and 2XI (D). Version 1 of its
+-- conditions (in force from 28 September) confirms the pilot's four figures
+-- — win 4, tie 2, no result 2, loss 0 — and over-rate penalties in points;
+-- version 2 (from 8 October) makes a win 5. Seven matches, each with the
+-- document its first event would fix, dated explicitly (3 October 2026, the
+-- 4th Edition; M7 on 10 October):
+--   M1 A v B   A 60/0 (20 ov); B 61/0 in 14.3 overs (87 balls): B by 10 wkts
+--   M2 C v D   C 100 all out in 17 overs (102 balls, squad of three); D 50/0 (20): C by 50 runs
+--   M3 A v D   revised to 12 overs: A 46 all out in 8 (48 balls); D 47/0 off 38 balls with two wides: D by 10 wkts
+--   M4 C v B   B (away) bats first 60/0; C 60/0: tie
+--   M5 C v D   C 30/0; D 0/0 off 6, sealed abandoned: no result
+--   M6 A v B   abandoned before a ball
+--   M7 D v A   (10 October, version 2) D 30/0; A 0/0: D by 30 runs
+-- and a Hilton 1XI friendly, F (6 off an over; the visitors 0), and a second
+-- league organised by Westville, "Verify 069 Typed", with no conditions and a
+-- ladder the schools typed. An amendment to void M1's last single (B's
+-- winning run) waits, filed by the scorer.
+CREATE OR REPLACE FUNCTION _ev_69(p_match uuid, p_inn smallint, p_kind text, p_bt text, p_v integer, p_dis text, p_payload jsonb, p_n integer DEFAULT 1)
+RETURNS integer AS $$
+DECLARE v_seq integer; k integer; v_school uuid;
+BEGIN
+  SELECT m.school_id INTO v_school FROM match m WHERE m.id = p_match;
+  FOR k IN 1..p_n LOOP
+    SELECT coalesce(max(b.seq), 0) + 1 INTO v_seq FROM ball_event b WHERE b.match_id = p_match;
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                            client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+    VALUES (p_match, v_school, v_seq, 1, p_inn, '88888888-0000-0000-0000-000000000006', 'verify-069',
+            'v69:' || p_match || ':' || v_seq, v_seq, '2026-10-03 10:00+02'::timestamptz + v_seq * interval '20 seconds',
+            p_kind, p_bt, p_v, p_dis, p_payload);
+  END LOOP;
+  RETURN v_seq;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _seed_69() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OWNR uuid := '88888888-0000-0000-0000-000000000022';
+  c uuid; c2 uuid; v1 uuid; v2 uuid; ea uuid; eb uuid; ec uuid; ed uuid; e2a uuid; e2b uuid; e2c uuid;
+  m1 uuid; m2 uuid; m3 uuid; m4 uuid; m5 uuid; m6 uuid; m7 uuid; f uuid;
+  sq11 jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'V69 P' || g, 'name', 'V69 P' || g)) FROM generate_series(1, 11) g);
+  sq3 jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'V69 Q' || g, 'name', 'V69 Q' || g)) FROM generate_series(1, 3) g);
+  lab text; k text; last_b1 integer; amend uuid;
+  -- an innings_start payload
+  st jsonb;
+BEGIN
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 069 League', 'league', 'T20', 'school') RETURNING id INTO c;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, HIL, '1XI', 'Verify 069 Hilton 1st XI') RETURNING id INTO ea;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, WES, '1XI', 'Verify 069 Westville 1st XI') RETURNING id INTO eb;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, HIL, '2XI', 'Verify 069 Hilton 2nd XI') RETURNING id INTO ec;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES (c, WES, '2XI', 'Verify 069 Westville 2nd XI') RETURNING id INTO ed;
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by) VALUES (c, 1, 'Verify 069 v1', '2026-09-28', OWNR) RETURNING id INTO v1;
+  INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by)
+  SELECT v1, x.k, x.v, 'confirmed', 'Pilot league decision, Kameel', '8.3a', '2026-09-30', OWNR
+    FROM (VALUES ('points.win', '4'::jsonb), ('points.tie', '2'), ('points.no_result', '2'), ('points.loss', '0'),
+                 ('over_rate.kind', '"points"')) AS x(k, v);
+  UPDATE condition_set SET status = 'published', published_by = OWNR, published_at = '2026-09-27 12:00+02' WHERE id = v1;
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by, supersedes) VALUES (c, 2, 'Verify 069 v2', '2026-10-08', OWNR, v1) RETURNING id INTO v2;
+  INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by)
+  SELECT v2, x.k, x.v, 'confirmed', 'Pilot league decision, Kameel', '8.3a', '2026-10-01', OWNR
+    FROM (VALUES ('points.win', '5'::jsonb), ('points.tie', '2'), ('points.no_result', '2'), ('points.loss', '0'),
+                 ('over_rate.kind', '"points"')) AS x(k, v);
+  UPDATE condition_set SET status = 'published', published_by = OWNR, published_at = '2026-10-01 12:00+02' WHERE id = v2;
+
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '1XI', WES, '1XI', 'x', '2026-10-03 10:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m1;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '2XI', WES, '2XI', 'x', '2026-10-03 10:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m2;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '1XI', WES, '2XI', 'x', '2026-10-03 13:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m3;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '2XI', WES, '1XI', 'x', '2026-10-03 13:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m4;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '2XI', WES, '2XI', 'x', '2026-10-03 15:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m5;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (HIL, '1XI', WES, '1XI', 'x', '2026-10-03 15:00+02', 'cricket', 'T20', 20, 'abandoned', c) RETURNING id INTO m6;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id) VALUES
+    (WES, '2XI', HIL, '1XI', 'x', '2026-10-10 10:00+02', 'cricket', 'T20', 20, 'complete', c) RETURNING id INTO m7;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '1XI', 'Verify 069 Friendly', '2026-10-03 10:00+02', 'cricket', 'T20', 20, 'complete') RETURNING id INTO f;
+  -- Each match's document, as its first event fixes it.
+  INSERT INTO match_conditions (match_id, set_id, set_version, doc, sources, doc_hash)
+  SELECT x.m, r.set_id, r.set_version, r.doc, r.sources, ''
+    FROM unnest(ARRAY[m1, m2, m3, m4, m5, m6, m7, f]) AS x(m), LATERAL match_conditions_compute(x.m) r;
+
+  -- M1: A 60/0, sealed; B chases 61: 26 dots, 61 singles.
+  SELECT opponent INTO lab FROM match WHERE id = m1;
+  PERFORM _ev_69(m1, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', lab, 'squad', sq11, 'overs', 20));
+  PERFORM _ev_69(m1, 0::smallint, 'ball', 'run', 1, NULL, '{}', 60);
+  PERFORM _ev_69(m1, 0::smallint, 'ball', 'run', 0, NULL, '{}', 60);
+  PERFORM _ev_69(m1, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":60,"wickets":0,"balls":120}}');
+  PERFORM _ev_69(m1, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '1XI', 'squad', sq11, 'overs', 20, 'target', 61));
+  PERFORM _ev_69(m1, 1::smallint, 'ball', 'run', 0, NULL, '{}', 26);
+  last_b1 := _ev_69(m1, 1::smallint, 'ball', 'run', 1, NULL, '{}', 61);
+  PERFORM _ev_69(m1, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":61,"wickets":0,"balls":87}}');
+  INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+  VALUES (m1, HIL, 'v69:' || m1 || ':' || last_b1, 'Verify 069: the winning single was a dead ball', '88888888-0000-0000-0000-000000000006')
+  RETURNING id INTO amend;
+
+  -- M2: C 100 all out off 102 (a squad of three); D 50/0 off 120.
+  SELECT opponent INTO lab FROM match WHERE id = m2;
+  PERFORM _ev_69(m2, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', lab, 'squad', sq3, 'overs', 20));
+  PERFORM _ev_69(m2, 0::smallint, 'ball', 'run', 1, NULL, '{}', 100);
+  PERFORM _ev_69(m2, 0::smallint, 'ball', 'W', 0, 'bowled', '{}', 2);
+  PERFORM _ev_69(m2, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"all_out","confirmed":{"runs":100,"wickets":2,"balls":102}}');
+  PERFORM _ev_69(m2, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '2XI', 'squad', sq11, 'overs', 20, 'target', 101));
+  PERFORM _ev_69(m2, 1::smallint, 'ball', 'run', 1, NULL, '{}', 50);
+  PERFORM _ev_69(m2, 1::smallint, 'ball', 'run', 0, NULL, '{}', 70);
+  PERFORM _ev_69(m2, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":50,"wickets":0,"balls":120}}');
+
+  -- M3: revised to 12 overs. A 46 all out off 48; D 47/0 off 38, two wides.
+  SELECT opponent INTO lab FROM match WHERE id = m3;
+  PERFORM _ev_69(m3, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', lab, 'squad', sq3, 'overs', 20));
+  PERFORM _ev_69(m3, 0::smallint, 'revision', NULL, NULL, NULL, '{"overs":12,"reason":"rain"}');
+  PERFORM _ev_69(m3, 0::smallint, 'ball', 'run', 1, NULL, '{}', 46);
+  PERFORM _ev_69(m3, 0::smallint, 'ball', 'W', 0, 'bowled', '{}', 2);
+  PERFORM _ev_69(m3, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"all_out","confirmed":{"runs":46,"wickets":2,"balls":48}}');
+  PERFORM _ev_69(m3, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '1XI', 'squad', sq11, 'overs', 20, 'target', 47));
+  PERFORM _ev_69(m3, 1::smallint, 'revision', NULL, NULL, NULL, '{"overs":12,"target":47,"reason":"rain"}');
+  PERFORM _ev_69(m3, 1::smallint, 'ball', 'Wd', 0, NULL, '{}', 2);
+  PERFORM _ev_69(m3, 1::smallint, 'ball', 'run', 2, NULL, '{}', 7);
+  PERFORM _ev_69(m3, 1::smallint, 'ball', 'run', 1, NULL, '{}', 31);
+  PERFORM _ev_69(m3, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":47,"wickets":0,"balls":38}}');
+
+  -- M4: B, the visitors, bat first 60/0; C 60/0: a tie.
+  SELECT opponent INTO lab FROM match WHERE id = m4;
+  PERFORM _ev_69(m4, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '2XI', 'squad', sq11, 'overs', 20));
+  PERFORM _ev_69(m4, 0::smallint, 'ball', 'run', 1, NULL, '{}', 60);
+  PERFORM _ev_69(m4, 0::smallint, 'ball', 'run', 0, NULL, '{}', 60);
+  PERFORM _ev_69(m4, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":60,"wickets":0,"balls":120}}');
+  PERFORM _ev_69(m4, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', lab, 'squad', sq11, 'overs', 20, 'target', 61));
+  PERFORM _ev_69(m4, 1::smallint, 'ball', 'run', 1, NULL, '{}', 60);
+  PERFORM _ev_69(m4, 1::smallint, 'ball', 'run', 0, NULL, '{}', 60);
+  PERFORM _ev_69(m4, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":60,"wickets":0,"balls":120}}');
+
+  -- M5: C 30/0; the chase called off after an over: no result.
+  SELECT opponent INTO lab FROM match WHERE id = m5;
+  PERFORM _ev_69(m5, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', lab, 'squad', sq11, 'overs', 20));
+  PERFORM _ev_69(m5, 0::smallint, 'ball', 'run', 1, NULL, '{}', 30);
+  PERFORM _ev_69(m5, 0::smallint, 'ball', 'run', 0, NULL, '{}', 90);
+  PERFORM _ev_69(m5, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":30,"wickets":0,"balls":120}}');
+  PERFORM _ev_69(m5, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '2XI', 'squad', sq11, 'overs', 20, 'target', 31));
+  PERFORM _ev_69(m5, 1::smallint, 'ball', 'run', 0, NULL, '{}', 6);
+  PERFORM _ev_69(m5, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"abandoned","confirmed":{"runs":0,"wickets":0,"balls":6}}');
+
+  -- M7 (10 October): D 30/0; A 0/0.
+  SELECT opponent INTO lab FROM match WHERE id = m7;
+  PERFORM _ev_69(m7, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', lab, 'squad', sq11, 'overs', 20));
+  PERFORM _ev_69(m7, 0::smallint, 'ball', 'run', 1, NULL, '{}', 30);
+  PERFORM _ev_69(m7, 0::smallint, 'ball', 'run', 0, NULL, '{}', 90);
+  PERFORM _ev_69(m7, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":30,"wickets":0,"balls":120}}');
+  PERFORM _ev_69(m7, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', lab, 'bowlingTeam', '2XI', 'squad', sq11, 'overs', 20, 'target', 31));
+  PERFORM _ev_69(m7, 1::smallint, 'ball', 'run', 0, NULL, '{}', 120);
+  PERFORM _ev_69(m7, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":0,"wickets":0,"balls":120}}');
+
+  -- F: Hilton 6 off an over; the visitors 0 off theirs.
+  PERFORM _ev_69(f, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', 'Verify 069 Friendly', 'squad', sq11, 'overs', 1));
+  PERFORM _ev_69(f, 0::smallint, 'ball', 'run', 1, NULL, '{}', 6);
+  PERFORM _ev_69(f, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', 'Verify 069 Friendly', 'bowlingTeam', '1XI', 'squad', sq11, 'overs', 1, 'target', 7));
+  PERFORM _ev_69(f, 1::smallint, 'ball', 'run', 0, NULL, '{}', 6);
+
+  -- The typed ladder: a Westville league with no conditions, three sides,
+  -- two of them level on everything.
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (WES, 'Verify 069 Typed', 'league', 'T20', 'school') RETURNING id INTO c2;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points, net_run_rate)
+  VALUES (c2, WES, '1XI', 'Verify 069 Typed One', 2, 1, 1, 0, 0, 4, 0.500) RETURNING id INTO e2a;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points, net_run_rate)
+  VALUES (c2, HIL, '1XI', 'Verify 069 Typed Two', 2, 1, 1, 0, 0, 4, 0.500) RETURNING id INTO e2b;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points, net_run_rate)
+  VALUES (c2, WES, '2XI', 'Verify 069 Typed Three', 2, 0, 2, 0, 0, 0, -1.000) RETURNING id INTO e2c;
+
+  RETURN jsonb_build_object('c', c, 'c2', c2, 'v1', v1, 'v2', v2, 'a', ea, 'b', eb, 'cc', ec, 'd', ed,
+    'm1', m1, 'm2', m2, 'm3', m3, 'm4', m4, 'm5', m5, 'm6', m6, 'm7', m7, 'f', f, 'amend', amend, 'last_b1', 'v69:' || m1 || ':' || last_b1);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: a competition's table as "code=played,won,lost,tied,nr,points,rank" by
+-- entrant (A, B, C, D), and the run figures "rf/bf/ra/ba".
+CREATE OR REPLACE FUNCTION _table_69(p_comp uuid, p_ids jsonb) RETURNS text AS $$
+  SELECT string_agg(x.code || '=' || concat_ws(',', s.played, s.won, s.lost, s.tied, s.no_result, s.points, s.rank), ' ' ORDER BY x.code)
+    FROM (VALUES ('A', (p_ids->>'a')::uuid), ('B', (p_ids->>'b')::uuid), ('C', (p_ids->>'cc')::uuid), ('D', (p_ids->>'d')::uuid)) AS x(code, e)
+    JOIN competition_standing_rows(p_comp) s ON s.entrant_id = x.e
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: a match's frozen document, for the re-fix's assertions.
+CREATE OR REPLACE FUNCTION _doc_69(p_match uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object('doc', c.doc, 'before', c.table_doc_before, 'by', c.table_refixed_by, 'reason', c.table_refixed_reason,
+                            'set', c.set_id, 'sources', c.sources)
+    FROM match_conditions c WHERE c.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: the amendment's audit line.
+CREATE OR REPLACE FUNCTION _audit_69(p_match uuid) RETURNS jsonb AS $$
+  SELECT a.detail FROM scoring_audit a WHERE a.match_id = p_match AND a.event = 'amendment_approved' ORDER BY a.id DESC LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Past RLS: publish one side of a fixture, and a competition's page.
+CREATE OR REPLACE FUNCTION _publish_69(p_match uuid, p_comp uuid) RETURNS void AS $$
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
+  SELECT m.id, 'home', m.school_id, m.team_code, true, '88888888-0000-0000-0000-000000000022' FROM match m WHERE m.id = p_match;
+  INSERT INTO competition_publication (competition_id, published, set_by)
+  VALUES (p_comp, true, '88888888-0000-0000-0000-000000000022');
+$$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -10072,6 +10273,278 @@ BEGIN
                     AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.proname IN ('keeper_at', 'keeper_is_fielder', 'ball_event_stumped_by_keeper')
                                        AND p.prosecdef),
       'db/68 (scope): a new view runs as its owner or is not the application role''s to read, or a new function runs as its owner');
+  END;
+
+  -- ── 47. Match results and the table (SCRBRD-114 phase 3a, db/69) ──
+  -- _seed_69(): a Hilton league of four sides, seven matches under the
+  -- documents their first events fix (version 1, win 4 / tie 2 / no result
+  -- 2 / loss 0, confirmed; version 2 from 8 October, win 5), a friendly, a
+  -- typed ladder, and an amendment waiting. Every figure below was worked by
+  -- hand from the log, ball by ball; tools/smoke-fold-figures.mjs holds
+  -- match_result() to the fold over result-logs.mjs, so the rule and the
+  -- fold cannot part.
+  --
+  -- Each labelled assertion was falsified once — the function, trigger,
+  -- index or view replaced in the database and this file run — and went red:
+  --   (abandoned)   match_result() reading a chase sealed abandoned as any other
+  --   (rates)       an all-out innings charged its balls, not its allotted overs
+  --   (fallback)    an abandoned match taking points.abandoned with no fallback
+  --   (precedence)  a concession applied over play's winner
+  --   (needs-play)  the decision trigger's no-ball check removed
+  --   (one)         the one-standing index dropped (and the function's own check)
+  --   (decider)     match_result_decider() asking fixture.update for a league match
+  --   (support)     match_result_decide() and the re-fix without the support check
+  --   (audit)       scoring_amendment_decide() without its audit line
+  --   (refix)       match_conditions_refix_table() writing set_id from the version named
+  --   (scope)       competition_standing as its owner
+  --   (public)      public_competition_standing() not asking for a publication
+  DECLARE
+    ids    jsonb := _seed_69();
+    C      uuid;  C2 uuid;  V1 uuid;  V2 uuid;
+    EA     uuid;  ED uuid;
+    M1 uuid; M2 uuid; M3 uuid; M5 uuid; M6 uuid; F uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    T0     text;  -- the table as first read
+    got    text;
+    h1     text;  h2 text;
+    v_id   uuid;  v_id2 uuid;
+    r      record;
+    j      jsonb;
+  BEGIN
+    C := (ids->>'c')::uuid; C2 := (ids->>'c2')::uuid; V1 := (ids->>'v1')::uuid; V2 := (ids->>'v2')::uuid;
+    EA := (ids->>'a')::uuid; ED := (ids->>'d')::uuid;
+    M1 := (ids->>'m1')::uuid; M2 := (ids->>'m2')::uuid; M3 := (ids->>'m3')::uuid;
+    M5 := (ids->>'m5')::uuid; M6 := (ids->>'m6')::uuid; F := (ids->>'f')::uuid;
+
+    -- §results. Each match's result, as its league reads it (abandoned): M5's
+    -- chase sealed abandoned is no result, not a win by the 31 runs it was
+    -- short; M4, the visitors batting first, a tie; M6 abandoned before a ball.
+    PERFORM _as(U_LEAGUE);
+    SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
+                      coalesce(r2.decided_by, '-'), coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
+      FROM competition_results(C) r2
+      JOIN (VALUES ('m1', (ids->>'m1')::uuid), ('m2', (ids->>'m2')::uuid), ('m3', (ids->>'m3')::uuid), ('m4', (ids->>'m4')::uuid),
+                   ('m5', (ids->>'m5')::uuid), ('m6', (ids->>'m6')::uuid), ('m7', (ids->>'m7')::uuid)) AS x(label, m) ON x.m = r2.match_id;
+    PERFORM _assert(got = 'm1=away_win,wickets,10,play,away m2=home_win,runs,50,play,home m3=away_win,wickets,10,play,away '
+                       || 'm4=tie,-,-,play,- m5=no_result,-,-,-,- m6=abandoned,-,-,-,- m7=home_win,runs,30,play,home',
+      format('db/69 (abandoned): the league''s results read %s', got));
+    PERFORM _as(U_SARAH);
+    SELECT concat_ws(',', r2.outcome, r2.margin_kind, r2.margin, r2.decided_by, r2.winner_side, r2.winner_school_id = HIL)
+      INTO got FROM match_result(F) r2;
+    PERFORM _assert(got = 'home_win,runs,6,play,home,t', format('db/69: the friendly reads %s', got));
+
+    -- §table. Computed (every counted match's figures confirmed), points from
+    -- each match's own document — M7, played after version 2 took effect,
+    -- gives D 5 for its win where M3, the week before, gave 4 — and M6,
+    -- abandoned, 2 each from points.no_result, the set stating no
+    -- points.abandoned (fallback). Read by Westville's coach, a participant.
+    PERFORM _as(U_WESC);
+    T0 := _table_69(C, ids);
+    PERFORM _assert(T0 = 'A=4,0,3,0,1,2,4 B=3,1,0,1,1,8,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,11,1',
+      format('db/69 (fallback): the table reads %s', T0));
+    SELECT string_agg(concat_ws('/', s.runs_for, s.balls_for, s.runs_against, s.balls_against), ' ' ORDER BY s.display_name),
+           bool_and(s.basis = 'computed'), count(*)
+      INTO got, v_ok, n FROM competition_standing s WHERE s.competition_id = C;
+    -- (rates) §6.4 to the ball: B's chase in 14.3 overs is charged 87; C all
+    -- out in 17 overs of 20 is charged 120; A all out in 8 of a match revised
+    -- to 12 is charged 72; D's two wides are two runs and no balls; M5 (no
+    -- result) and M6 (abandoned) add nothing.
+    PERFORM _assert(got = '106/312/138/245 160/240/110/240 121/207/120/240 127/278/146/312' AND v_ok AND n = 4,
+      format('db/69 (rates): the run figures read %s (computed: %s, rows: %s)', got, v_ok, n));
+    PERFORM _assert((SELECT s.nrr FROM competition_standing s WHERE s.competition_id = C AND s.display_name = 'Verify 069 Westville 1st XI')
+                    = 121::numeric * 6 / 207 - 120::numeric * 6 / 240
+                    AND (SELECT s.nrr FROM competition_standing s WHERE s.competition_id = C AND s.display_name = 'Verify 069 Hilton 2nd XI') = 1.25,
+      'db/69 (rates): net run rate is not runs × 6 ÷ balls, for less against');
+    -- the typed ladder: no confirmed points, the schools' own figures; two
+    -- sides level on every key share a rank
+    SELECT string_agg(s.display_name || '=' || s.basis || ',' || s.points || ',' || s.rank, ' ' ORDER BY s.display_name) INTO got
+      FROM competition_standing s WHERE s.competition_id = C2;
+    PERFORM _assert(got = 'Verify 069 Typed One=entered,4,1 Verify 069 Typed Three=entered,0,3 Verify 069 Typed Two=entered,4,1',
+      format('db/69: the typed ladder reads %s', got));
+    -- (scope) a reader who holds no competition.read reads none of it
+    PERFORM _as(U_SCOUT);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM competition_standing s WHERE s.competition_id IN (C, C2))
+                    AND NOT EXISTS (SELECT 1 FROM competition_results(C))
+                    AND NOT EXISTS (SELECT 1 FROM competition_points_adjustment a WHERE a.competition_id = C),
+      'db/69 (scope): a reader with no competition.read reads the league''s table or results');
+
+    -- §adjustments: entered by the league, never by a school; withdrawn with
+    -- a note, the table restored; an over-rate penalty in points only where
+    -- the competition's over_rate.kind says points.
+    PERFORM _as(U_SARAH);
+    SELECT a.reason INTO got FROM competition_points_adjust(C, ED, NULL, 'conduct', -2, 'umpires'' report: dissent at the toss') a;
+    PERFORM _assert(got = 'not_permitted', format('db/69: a school adjusted the league''s table (%s)', got));
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert((SELECT a.reason FROM competition_points_adjust(C, ED, NULL, 'conduct', -2, 'short') a) = 'reason_required',
+      'db/69: an adjustment was entered with no reason');
+    SELECT a.ok, a.adjustment_id INTO v_ok, v_id FROM competition_points_adjust(C, ED, M3, 'conduct', -2, 'umpires'' report: conduct at M3') a;
+    PERFORM _assert(v_ok AND _table_69(C, ids) LIKE '%D=4,2,1,0,1,9.0,1',
+      format('db/69: the adjustment did not land: %s', _table_69(C, ids)));
+    SELECT a.ok, a.adjustment_id INTO v_ok, v_id2 FROM competition_points_adjust(C, EA, M1, 'over_rate', -1, 'over rate: two overs short at M1') a;
+    PERFORM _assert(v_ok, 'db/69: an over-rate penalty in points was refused where the league counts them in points');
+    PERFORM _assert((SELECT a.reason FROM competition_points_adjust(C2, (SELECT e.id FROM competition_entrant e WHERE e.competition_id = C2 LIMIT 1),
+                                                                    NULL, 'over_rate', -1, 'over rate: one over short') a) = 'over_rate_not_points',
+      'db/69: an over-rate penalty was taken by a league that has none');
+    -- (each write its own statement: a STABLE read sees its statement's snapshot)
+    PERFORM _assert((SELECT w.reason FROM competition_points_adjustment_withdraw(v_id, 'short') w) = 'note_required',
+      'db/69: an adjustment was withdrawn with no note');
+    PERFORM _assert((SELECT w.ok FROM competition_points_adjustment_withdraw(v_id, 'entered against the wrong side') w),
+      'db/69: the conduct adjustment could not be withdrawn');
+    PERFORM _assert((SELECT w.ok FROM competition_points_adjustment_withdraw(v_id2, 'the umpires withdrew the report') w),
+      'db/69: the over-rate adjustment could not be withdrawn');
+    PERFORM _assert(_table_69(C, ids) = T0, format('db/69: withdrawing the adjustments did not restore the table: %s', _table_69(C, ids)));
+    PERFORM _assert((SELECT count(*) FROM competition_points_adjustment a WHERE a.competition_id = C) = 2,
+      'db/69: a withdrawn adjustment was deleted');
+    BEGIN
+      DELETE FROM competition_points_adjustment WHERE id = v_id;
+      PERFORM _assert(false, 'db/69: the league deleted an adjustment');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- §decisions (D8): a league match's under competition.manage at the
+    -- organiser (decider) — not the home school's director of sport —
+    -- a friendly's under the home school's fixture.update.
+    PERFORM _as(U_SARAH);
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M5, 'conceded', 'away', 'Westville could not field eleven') d) = 'not_permitted',
+      'db/69 (decider): a school decided a league match''s result');
+    PERFORM _as(U_LEAGUE);
+    -- (needs-play) no ball bowled: a walkover or a concession, never an award
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M6, 'awarded', 'home', 'the higher placed side goes through') d) = 'needs_play',
+      'db/69 (needs-play): an award was made on a match with no ball bowled');
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M2, 'conceded', 'home', 'Hilton conceded the match', true) d) = 'override_not_award'
+                    AND (SELECT d.reason FROM match_result_decide(M2, 'forfeit', 'home', 'Hilton conceded the match') d) = 'kind_invalid'
+                    AND (SELECT d.reason FROM match_result_decide(M2, 'conceded', 'both', 'Hilton conceded the match') d) = 'side_invalid'
+                    AND (SELECT d.reason FROM match_result_decide(M2, 'conceded', 'home', 'short') d) = 'reason_required',
+      'db/69: a malformed decision was not refused by name');
+    SELECT d.ok, d.decision_id INTO v_ok, v_id FROM match_result_decide(M6, 'walkover', 'home', 'Westville did not arrive at the ground') d;
+    PERFORM _assert(v_ok AND _table_69(C, ids) = 'A=4,1,3,0,0,4,4 B=3,1,1,1,0,6,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,11,1',
+      format('db/69: a walkover is not a win and a loss in the table: %s', _table_69(C, ids)));
+    -- (one) a second standing decision is refused
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M6, 'conceded', 'away', 'Westville conceded by letter') d) = 'already_decided',
+      'db/69 (one): a second standing decision was taken');
+    PERFORM _assert((SELECT w.reason FROM match_result_decision_withdraw(v_id, 'short') w) = 'note_required',
+      'db/69: a decision was withdrawn with no note');
+    PERFORM _assert((SELECT w.ok FROM match_result_decision_withdraw(v_id, 'Westville were on the field; the walkover was wrong') w),
+      'db/69: the walkover could not be withdrawn');
+    PERFORM _assert(_table_69(C, ids) = T0, format('db/69: withdrawing the walkover did not restore play''s answer: %s', _table_69(C, ids)));
+    -- (precedence) play < decision < an award overriding play. A concession
+    -- on a match play decided changes nothing — the result, its hash, the
+    -- table; an award overriding play makes D the winner of M2.
+    SELECT r2.result_hash INTO h1 FROM match_result(M2) r2;
+    SELECT d.decision_id INTO v_id FROM match_result_decide(M2, 'conceded', 'home', 'entered against the wrong fixture') d;
+    SELECT r2.result_hash, r2.outcome || ',' || r2.decided_by || ',' || r2.decision_applied INTO h2, got FROM match_result(M2) r2;
+    PERFORM _assert(h2 = h1 AND got = 'home_win,play,false' AND _table_69(C, ids) = T0,
+      format('db/69 (precedence): a concession moved a result play had decided: %s', got));
+    PERFORM match_result_decision_withdraw(v_id, 'entered against the wrong fixture');
+    SELECT d.decision_id INTO v_id FROM match_result_decide(M2, 'awarded', 'away', 'protest upheld: an unregistered player', true) d;
+    SELECT r2.result_hash, concat_ws(',', r2.outcome, r2.margin_kind, r2.decided_by, r2.play_outcome) INTO h2, got FROM match_result(M2) r2;
+    PERFORM _assert(h2 <> h1 AND got = 'away_win,awarded,decision,home_win'
+                    AND _table_69(C, ids) = 'A=4,0,3,0,1,2,4 B=3,1,0,1,1,8,2 C=3,0,1,1,1,4,3 D=4,3,0,0,1,15,1',
+      format('db/69 (precedence): the award reads %s and the table %s', got, _table_69(C, ids)));
+    -- the decision is read by a participant, as its result is
+    PERFORM _as(U_WESC);
+    PERFORM _assert((SELECT count(*) FROM match_result_decision x WHERE x.match_id = M2) = 2,
+      'db/69: a participant cannot read the league''s decisions');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM match_result_decision x WHERE x.match_id = M2),
+      'db/69 (scope): nobody signed in reads a decision');
+    PERFORM _as(U_LEAGUE);
+    PERFORM match_result_decision_withdraw(v_id, 'the protest was overturned on appeal');
+    SELECT r2.result_hash INTO h2 FROM match_result(M2) r2;
+    PERFORM _assert(h2 = h1 AND _table_69(C, ids) = T0, 'db/69: withdrawing the award did not restore play''s result and its hash');
+    BEGIN
+      UPDATE match_result_decision SET reason = 'rewritten afterwards' WHERE id = v_id;
+      PERFORM _assert(false, 'db/69: the league rewrote a decision');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    -- a friendly: the home school decides, the visitors do not
+    PERFORM _as(U_SARAH);
+    SELECT d.ok, d.decision_id INTO v_ok, v_id FROM match_result_decide(F, 'awarded', 'away', 'the visitors'' protest upheld by both schools', true) d;
+    PERFORM _assert(v_ok AND (SELECT r2.outcome FROM match_result(F) r2) = 'away_win', 'db/69: the home school could not decide its friendly');
+    PERFORM _as(U_WES_ADM);
+    PERFORM _assert((SELECT w.reason FROM match_result_decision_withdraw(v_id, 'Westville would like it back') w) = 'not_permitted',
+      'db/69 (decider): a school decided another school''s friendly');
+    PERFORM _as(U_SARAH);
+    PERFORM match_result_decision_withdraw(v_id, 'agreed in error; play stands');
+    -- (support) a support session decides nothing and re-fixes nothing
+    PERFORM _as(U_PLAT);
+    SELECT ok, reason, id INTO v_ok, v_reason, S_ID FROM support_access_begin(HIL, 'competitionadmin', 'ticket 6901: a league''s table');
+    PERFORM _assert(v_ok, format('db/69 (support): the session was not issued (%s)', v_reason));
+    PERFORM _assert((SELECT d.reason FROM match_result_decide(M5, 'conceded', 'away', 'Westville could not field eleven') d) = 'support_session'
+                    AND (SELECT x.reason FROM match_conditions_refix_table(M3, V2, 'support re-fixing the league') x) = 'support_session'
+                    AND (SELECT a.reason FROM competition_points_adjust(C, ED, NULL, 'conduct', -2, 'support entering a penalty') a) = 'support_session',
+      'db/69 (support): a support session decided, re-fixed or adjusted');
+    PERFORM support_access_end(S_ID);
+
+    -- §re-fix (parent §3.4): M3's table part from version 2, with a reason;
+    -- the part it replaced kept beside it; play, the version it was fixed
+    -- under and the sheet as they were; D's win now worth 5.
+    PERFORM _as(U_LEAGUE);
+    j := _doc_69(M3);
+    PERFORM _assert((SELECT x.reason FROM match_conditions_refix_table(M3, V2, 'short') x) = 'reason_required'
+                    AND (SELECT x.reason FROM match_conditions_refix_table(M3, gen_random_uuid(), 'version 2 corrected the win') x) = 'set_invalid'
+                    AND (SELECT x.reason FROM match_conditions_refix_table(F, V2, 'version 2 corrected the win') x) = 'not_permitted',
+      'db/69 (refix): a re-fix with no reason, an unknown version or of a friendly was not refused');
+    PERFORM _as(U_SARAH);
+    PERFORM _assert((SELECT x.reason FROM match_conditions_refix_table(M3, V2, 'version 2 corrected the win') x) = 'not_permitted',
+      'db/69: a school re-fixed a league match''s table figures');
+    PERFORM _as(U_LEAGUE);
+    PERFORM _assert((SELECT x.ok FROM match_conditions_refix_table(M3, V2, 'version 2 corrected the win to five points') x),
+      'db/69: the league could not re-fix M3');
+    PERFORM _assert(_doc_69(M3)->'doc'->'play' = j->'doc'->'play' AND _doc_69(M3)->'doc'->'sheet' = j->'doc'->'sheet'
+                    AND _doc_69(M3)->>'set' = V1::text
+                    AND _doc_69(M3)->'before' = j->'doc'->'table'
+                    AND _doc_69(M3)->'doc'->'table'->'points.win' = '5'::jsonb
+                    AND _doc_69(M3)->>'by' = U_LEAGUE::text AND _doc_69(M3)->>'reason' = 'version 2 corrected the win to five points',
+      format('db/69 (refix): the re-fix reads %s', _doc_69(M3)));
+    PERFORM _assert(_table_69(C, ids) = 'A=4,0,3,0,1,2,4 B=3,1,0,1,1,8,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,12,1'
+                    AND (SELECT string_agg(s.conditions_adjusted::text, ',' ORDER BY s.display_name) FROM competition_standing s WHERE s.competition_id = C) = '1,0,0,1',
+      format('db/69: the re-fix did not reach the table, or the table does not say which sides it touched: %s', _table_69(C, ids)));
+
+    -- §correction (design §2.6): an approved amendment that voids B's winning
+    -- single makes M1 no result; the table follows on the next read, and the
+    -- audit names the result before and after.
+    SELECT r2.result_hash INTO h1 FROM match_result(M1) r2;
+    PERFORM _as(U_SARAH);
+    PERFORM _assert((SELECT a.ok FROM scoring_amendment_decide((ids->>'amend')::uuid, true, 'the single was a dead ball') a),
+      'db/69: the amendment could not be approved');
+    SELECT r2.result_hash, r2.outcome INTO h2, got FROM match_result(M1) r2;
+    j := _audit_69(M1);
+    -- (audit)
+    PERFORM _assert(got = 'no_result' AND h2 <> h1
+                    AND j->>'outcome_before' = 'away_win' AND j->>'result_hash_before' = h1
+                    AND j->>'outcome_after' = 'no_result' AND j->>'result_hash_after' = h2 AND (j->>'result_changed')::boolean,
+      format('db/69 (audit): M1 reads %s after the amendment, and the audit line %s', got, j));
+    PERFORM _as(U_WESC);
+    PERFORM _assert(_table_69(C, ids) = 'A=4,0,2,0,2,4,4 B=3,0,0,1,2,6,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,12,1'
+                    AND (SELECT concat_ws('/', s.runs_for, s.balls_for, s.runs_against, s.balls_against) FROM competition_standing s
+                          WHERE s.competition_id = C AND s.display_name = 'Verify 069 Hilton 1st XI') = '46/192/77/158',
+      format('db/69: the amended result did not flip the table: %s', _table_69(C, ids)));
+
+    -- (public) signed out: a published competition's table, sides and
+    -- figures, no reason; an unpublished one nothing; a served fixture's
+    -- result as structure, an unserved one nothing.
+    PERFORM _publish_69(M2, C);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT string_agg(concat_ws(',', p.rank, p.side, p.points, p.basis), ' ' ORDER BY p.rank) INTO got FROM public_competition_standing(C) p;
+    PERFORM _assert(got = '1,Verify 069 Westville 2nd XI,12,computed 2,Verify 069 Hilton 2nd XI,8,computed 3,Verify 069 Westville 1st XI,6,computed 4,Verify 069 Hilton 1st XI,4,computed'
+                    AND NOT EXISTS (SELECT 1 FROM public_competition_standing(C2))
+                    AND (SELECT concat_ws(',', p.outcome, p.margin_kind, p.margin, p.winner_side) FROM public_match_result(M2) p) = 'home_win,runs,50,home'
+                    AND NOT EXISTS (SELECT 1 FROM public_match_result(M1))
+                    AND pg_get_function_result('public_match_result(uuid)'::regprocedure) !~ 'reason'
+                    AND pg_get_function_result('public_competition_standing(uuid)'::regprocedure) !~ 'reason',
+      format('db/69 (public): the signed-out table reads %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM competition_standing) AND NOT EXISTS (SELECT 1 FROM match_result(M2)),
+      'db/69 (public): nobody signed in read the table or a result past the public reads');
+
+    -- The new objects: the view as its reader, the rule as its caller, the
+    -- tables closed to the application's writes.
+    PERFORM _assert(coalesce((SELECT 'security_invoker=true' = ANY (c.reloptions) FROM pg_class c WHERE c.oid = 'competition_standing'::regclass), false)
+                    AND NOT (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = 'match_result(uuid)'::regprocedure)
+                    AND NOT has_table_privilege('scrbrd_app', 'match_result_decision', 'INSERT')
+                    AND NOT has_table_privilege('scrbrd_app', 'competition_points_adjustment', 'UPDATE')
+                    AND NOT has_function_privilege('scrbrd_app', 'competition_results_all(uuid)', 'EXECUTE'),
+      'db/69 (scope): a new object runs as its owner, or the application may write a decision or an adjustment directly');
   END;
 
   PERFORM set_config('app.user_id', '', true);

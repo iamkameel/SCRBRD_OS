@@ -66,5 +66,6 @@
   "65_availability_reconfirm.sql",
   "66_scorebook_reader.sql",
   "67_fixture_planner.sql",
-  "68_wicket_keeper.sql"
+  "68_wicket_keeper.sql",
+  "69_results_and_table.sql"
 ]

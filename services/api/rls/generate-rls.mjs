@@ -779,6 +779,10 @@ export const TABLES_ADDED_SINCE_09 = Object.freeze({
   // The fixture planner's ground inputs (SCRBRD-123 phase 2).
   ground_window:  "67_fixture_planner.sql",
   ground_closure: "67_fixture_planner.sql",
+  // ── SCRBRD-114 phase 3a: match results and the table ──
+  match_result_decision:         "69_results_and_table.sql",
+  competition_points_adjustment: "69_results_and_table.sql",
+  // ── end SCRBRD-114 phase 3a ──
 });
 const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
 
