@@ -22,7 +22,7 @@ import { humanDate, stat } from "../../lib/format.js";
 import { ownRecordId } from "../../lib/family.js";
 import { CareerWagonWheel, DismissalMethodCard } from "../ProfilesView.jsx";
 import { Action, Card, Line, Page, Title } from "./parts.jsx";
-import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard, TrainingCard } from "./cards.jsx";
+import { LastMatchCard, LiveCard, NewsCard, NextFixtureCard, NoticesCard, SeasonCard, TrainingCard } from "./cards.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { Health, TheirRecord } from "./childfile.jsx";
 
@@ -71,6 +71,7 @@ export function PupilHome({ role }) {
       <SeasonCard child={me} role={role} self/>
       <TrainingCard child={me} role={role} now={now}/>
       <NoticesCard child={me} role={role}/>
+      <NewsCard child={me} role={role}/>
     </Page>
   );
 }

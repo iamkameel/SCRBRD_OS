@@ -143,6 +143,27 @@ export function NoticesCard({ child, role, onOpen }) {
   );
 }
 
+/**
+ * What the coach and the school posted (S1, §1.2 job 6): the newest three
+ * posts the reader's news read returns, his side's and his school's. A post
+ * not yet sent is its author's alone and is not drawn.
+ */
+export function NewsCard({ child, role }) {
+  const { rows } = useLive("news", role);
+  const posts = rows.filter((p) => !p.draft && (p.scope !== "team" || p.audience === child.team)).slice(0, 3);
+  if (!posts.length) return null;
+  return (
+    <Card label="Posted" testid="news-card">
+      {posts.map((p) => (
+        <div key={p.id} style={{ display: "grid", gap: "2px" }}>
+          <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>{p.title}</span>
+          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{[p.audience, humanDate(String(p.at ?? "").slice(0, 10))].filter(Boolean).join(" · ")}</span>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 /** The next training session for his side (S1), from the noticeboard read. Not drawn without one. */
 export function TrainingCard({ child, role, now }) {
   const { rows, disabled } = useLive("training", role);

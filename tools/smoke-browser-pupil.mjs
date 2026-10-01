@@ -193,6 +193,7 @@ try {
   ok("his own answer: not given yet", /No answer yet/.test(await inner(s.page, `availability-state-${PILLAY}`)));
   ok("no team-mate's answer, reason or name is on his Home",
      !/Whitfield|Bekker|Naidoo|funeral|family/i.test(home) && await tid(s.page, `availability-state-${WHITFIELD}`).count() === 0, home.slice(0, 300));
+  ok("what the coach and the school posted is on his Home (§1.2 job 6)", await tid(s.page, "news-card").count() === 1);
   const fh = await floors(s.page);
   ok(`Home at phone width: nothing read under 12px (${fh.small.length})`, fh.small.length === 0, fh.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fh.tiny.length})`, fh.tiny.length === 0, fh.tiny.slice(0, 4).join(" · "));

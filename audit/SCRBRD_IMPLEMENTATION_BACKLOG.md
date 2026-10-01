@@ -4490,6 +4490,19 @@ for a school with no DSO. The card says "not yet appointed" instead.
 unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information officer has §9.7's note. Paste
 `apply-57`, then `apply-58`, then `verify`, then add both to `db/SHIPPED.sha256`.
 
+### Redesign step 4 — the parent's app and the pupil's app (phase A built)
+**Priority:** P1 · **Domain:** Families / Privacy · **Type:** design (Fable, `docs/design/STEP4_parent_pupil.md`,
+decided by Kameel 2026-09-27), built by Opus
+**Phase A built 2026-10-01 (Opus), no migration.** The persona menus (G12: Home · Matches · Notices · Family for a
+guardian and nothing else; Home · Matches · Passport · Me for a player with his own record), P1–P6 with P7a, P7b and
+the passport and scouting consents reachable from P7d, S1 (no check-in), S2, S3 with the Wheel tab, S4 (no "My body"),
+the Match Centre's family mode (G13), the `my_children` read (G1, G11) and the tenant words (G15). Proof: db/99 §49;
+`smoke-browser-read`'s guardian group extended; new `smoke-browser-pupil` (K3 flipped: no team-mate's injury, fitness
+or return date reaches the pupil); `apps/web/test/family.test.mjs`. As built, departures and the falsifications:
+the design's §10. **Open:** phases B (consents read and public-name route, G2/G3), C (milestone card, innings story),
+D (photo consent record), E (SCRBRD-110's cards), F (invoices, if Q1 says yes); Q10's narrow team-sheet read; the
+scorecard's row expansion for another child (§10 departure 11).
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
