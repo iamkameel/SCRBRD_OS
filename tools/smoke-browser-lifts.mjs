@@ -16,6 +16,10 @@
  *      seats left — and asks for a seat for her son, and only her son.
  *   5. The driver accepts him from her card; his mother sees "Confirmed".
  *   6. The office sees counts and no names; the coach sees no lifts block.
+ *      R Pillay, put at eighteen and still at school, sees a simple block on
+ *      his own fixture — the place and time, no driver's name yet, one "Ask
+ *      for a seat", for himself — asks and withdraws; at sixteen again, none
+ *      (Kameel's follow-up, 2026-10-01).
  *   7. With the platform's grant taken back, no family sees a lifts block.
  *   8. On the lift screens nothing read is under 12px and nothing pressed is
  *      under 44px.
@@ -261,6 +265,42 @@ try {
   await go(co.page, "squad");
   ok("...and his Squad screen has no lifts block", await tid(co.page, "lifts-panel").count() === 0);
 
+  // ── 6b. A pupil of eighteen still at school (Kameel, 2026-10-01) ──
+  group("A pupil of eighteen still at school asks for himself on Squad");
+  const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";
+  const [{ born: pillayBorn }] = await q(`select born::text from player where id = $1`, [PILLAY]);
+  await q(`update player set born = (current_date - interval '18 years' - interval '30 days')::date where id = $1`, [PILLAY]);
+  const boy = await open(); all.push(boy);
+  ok("R Pillay, put at eighteen, signs in", await signIn(boy.page, "pillay@example.invalid"));
+  await go(boy.page, "squad");
+  const self = tid(boy.page, "lifts-self");
+  try { await self.waitFor({ timeout: 6000 }); } catch { /* counted below */ }
+  const selfText = await self.innerText().catch(() => "");
+  ok("...and sees a simple lifts block on his own fixture", await self.count() === 1, selfText);
+  ok("...with the place and time, no driver's name yet, and nobody else's son",
+     /Chapel car park/.test(selfText) && /named once your seat is confirmed/.test(selfText)
+     && !/H Whitfield|T Bekker|Cele/.test(selfText), selfText);
+  const ask = boy.page.locator(`[data-testid="lift-ask-${out?.id}-${PILLAY}"]`);
+  ok("...one 'Ask for a seat', for himself", await ask.count() === 1
+     && await self.locator('[data-testid^="lift-ask-"]').count() === 2);
+  await ask.click();
+  await boy.page.waitForTimeout(1500);
+  ok("he asks, and his seat reads as waiting for the driver",
+     /waiting for the driver/i.test(await tid(boy.page, `lift-offer-${out?.id}`).innerText()));
+  const [ps] = await q(`select consent_by from lift_seat where offer_id = $1 and player_id = $2 and state = 'requested'`, [out?.id, PILLAY]);
+  ok("...a seat on his own say", ps?.consent_by === "self");
+  const bf = await floors(boy.page, "lifts-self");
+  ok("the pupil's block keeps the floors", bf.small.length === 0 && bf.tiny.length === 0, [...bf.small, ...bf.tiny].join(" · "));
+  await tid(boy.page, `lift-withdraw-${out?.id}-${PILLAY}`).click();
+  await boy.page.waitForTimeout(1500);
+  ok("...and withdraws it", (await q(`select state from lift_seat where offer_id = $1 and player_id = $2`, [out?.id, PILLAY]))[0]?.state === "withdrawn");
+  await q(`update player set born = $2::date where id = $1`, [PILLAY, pillayBorn]);
+  await go(boy.page, "settings");
+  await go(boy.page, "squad");
+  await boy.page.waitForTimeout(1500);
+  ok("at sixteen again, his Squad screen has no lifts block",
+     await tid(boy.page, "lifts-self").count() === 0 && await tid(boy.page, "lifts-panel").count() === 0);
+
   // ── 7. The platform takes the module back ─────────────────────────
   group("With the module taken back, no family sees a lifts block");
   await grant(false);
@@ -269,7 +309,7 @@ try {
   await fam.page.waitForTimeout(1500);
   ok("Bekker's Squad screen has no lifts block", await tid(fam.page, "lifts-panel").count() === 0);
 
-  for (const [who, c] of [["principal", head], ["driver", drv], ["family", fam], ["office", off], ["coach", co]]) {
+  for (const [who, c] of [["principal", head], ["driver", drv], ["family", fam], ["office", off], ["coach", co], ["pupil", boy]]) {
     ok(`the ${who}'s session raised no page errors`, c.errors.length === 0, c.errors.slice(0, 2).join(" · "));
   }
 } catch (e) {

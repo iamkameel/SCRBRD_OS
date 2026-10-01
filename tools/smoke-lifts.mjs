@@ -8,8 +8,10 @@
  * the family saying yes again. With the seed's own invented families: H
  * Whitfield drives, A Bekker asks for her son, N Cele — whose consent to
  * processing the seed leaves pending — is refused until the office records it
- * and then asks, R Pillay (a pupil) takes no part, the 1XI coach and the office see what §5.1 gives
- * them and nothing more, and the owner's key sees nothing. db/99 §48 is the
+ * and then asks, R Pillay (a pupil) drives nothing and at sixteen asks nothing — then, put at
+ * eighteen and still at school, asks for himself, reads his own seat and withdraws it (Kameel's
+ * follow-up, 2026-10-01) — the 1XI coach and the office see what §5.1 gives them and nothing
+ * more, and the owner's key sees nothing. db/99 §48 is the
  * fuller proof under the application role; this holds the routes to it:
  *
  *   1. TWO KEYS. Nothing until the platform grants the module AND the
@@ -34,7 +36,7 @@ const HIL = "11111111-1111-1111-1111-111111111111";
 const JAMES = "aaaaaaaa-0000-0000-0000-000000000001";   // James Whitfield, 1XI: the driver's son
 const BEKKER = "aaaaaaaa-0000-0000-0000-000000000002";  // T Bekker, 1XI
 const CELE = "aaaaaaaa-0000-0000-0000-000000000004";    // M Cele, 1XI
-const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";  // R Pillay, 1XI, sixteen, his own account
+const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";  // R Pillay, 1XI, sixteen, his own account (put at eighteen below)
 
 let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -126,7 +128,7 @@ try {
   r = await api("/api/lifts/declaration", { method: "POST", token: boy,
     body: { schoolId: HIL, vehicle: "white Polo", registration: "NP 1", seats: 3, licenceHeld: true, insured: true,
             roadworthy: true, belts: true, codeAcknowledged: true } });
-  ok("a pupil takes no part (Kameel, 2026-10-01)", r.status === 422 && r.body.error === "pupil_excluded");
+  ok("a pupil does not drive (Kameel, 2026-10-01)", r.status === 422 && r.body.error === "pupil_excluded");
 
   group("A round trip is one act (D1)");
   const before = (await q(`select count(*)::int n from lift_offer where match_id = $1`, [m.id]))[0].n;
@@ -177,9 +179,9 @@ try {
   const S_CELE = r.body?.seatId;
   ok("...and now she asks for her son", r.status === 200 && Boolean(S_CELE));
   r = await api(`/api/lifts/${OUT}/seats`, { method: "POST", token: boy, body: { playerId: PILLAY } });
-  ok("a pupil may not ask for himself", r.status === 422 && r.body.error === "pupil_excluded");
+  ok("a pupil of sixteen may not ask for himself", r.status === 422 && r.body.error === "not_yet_eighteen");
   r = await api(`/api/lifts/standing?schoolId=${HIL}`, { token: boy });
-  ok("...and is told pupils take no part", r.body.reason === "pupil_excluded");
+  ok("...and is told a pupil does not drive", r.body.reason === "pupil_excluded" && /does not drive/.test(r.body.words ?? ""));
   r = await api(`/api/lifts/${BACK}/seats`, { method: "POST", token: bekker, body: { playerId: BEKKER } });
   const S_BACK = r.body?.seatId;
   r = await api(`/api/lifts/${OUT}/seats`, { method: "POST", token: bekker, body: { playerId: BEKKER } });
@@ -260,9 +262,66 @@ try {
   await grant(true);
   ok("...and the seat is withdrawn", (await q(`select state from lift_seat where id = $1`, [S_BACK]))[0]?.state === "withdrawn");
 
+  group("A pupil of eighteen still at school asks for himself (Kameel's follow-up, 2026-10-01)");
+  const [{ born: pillayBorn }] = await q(`select born::text from player where id = $1`, [PILLAY]);
+  await q(`update player set born = (current_date - interval '18 years' - interval '30 days')::date where id = $1`, [PILLAY]);
+  // Tomorrow at two, Johannesburg time: inside the day window for numbers.
+  const [m2] = await q(
+    `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+     values ($1, '1XI', 'Smoke Lifts 18', ((current_date + 1)::timestamp + time '14:00') at time zone 'Africa/Johannesburg', 'T20', 20, 'scheduled')
+     returning id, starts_at`, [HIL]);
+  r = await api(`/api/matches/${m2.id}/lifts`, { method: "POST", token: driver, body: { legs: [
+    { leg: "out", seats: 2, meetKind: "school", meetAt: new Date(new Date(m2.starts_at).getTime() - 60 * 60_000).toISOString() }] } });
+  const ADULT_OUT = r.body?.offers?.[0]?.id;
+  ok("the driver offers a lift to it", r.status === 200 && Boolean(ADULT_OUT));
+  r = await api(`/api/matches/${m2.id}/lifts`, { token: boy });
+  let mine = r.body?.rows?.[0];
+  ok("Pillay, eighteen, reads the lift on his own side: place and time, no driver's name yet, himself the only boy",
+     r.status === 200 && r.body.rows.length === 1 && mine?.driverName == null && Boolean(mine?.meetAt)
+     && mine?.myChildren?.length === 1 && mine.myChildren[0].playerId === PILLAY && mine.myChildren[0].how === "self");
+  r = await api(`/api/lifts/${ADULT_OUT}/seats`, { method: "POST", token: boy, body: { playerId: CELE } });
+  ok("...he may not ask for anybody else", r.status === 422 && r.body.error === "pupil_excluded");
+  r = await api(`/api/lifts/${ADULT_OUT}/seats`, { method: "POST", token: boy, body: { playerId: PILLAY } });
+  const S_PILLAY = r.body?.seatId;
+  ok("...he asks for himself", r.status === 200 && Boolean(S_PILLAY));
+  const [seatRow] = await q(`select consent_by, guardian_link_id, requested_by = (select id from app_user where email = 'pillay@example.invalid') as his
+                               from lift_seat where id = $1`, [S_PILLAY]);
+  ok("...and the seat names him as the one who consented", seatRow?.consent_by === "self" && seatRow.guardian_link_id === null && seatRow.his === true);
+  r = await api(`/api/lifts/${ADULT_OUT}/passengers`, { token: boy });
+  ok("...he reads no passenger list", r.status === 200 && r.body.rows.length === 0);
+  r = await api(`/api/matches/${m2.id}/lifts/summary`, { token: boy });
+  ok("...and no counts", r.status === 200 && r.body.rows.length === 0);
+  r = await api(`/api/lifts/${ADULT_OUT}/contacts`, { token: boy });
+  ok("...and no number while his seat is only asked for", r.status === 200 && r.body.contacts === null);
+  r = await api(`/api/lifts/${ADULT_OUT}/accept`, { method: "POST", token: driver, body: { seatIds: [S_PILLAY] } });
+  ok("the driver confirms him", r.status === 200 && r.body.confirmed === 1);
+  r = await api(`/api/matches/${m2.id}/lifts`, { token: boy });
+  mine = r.body?.rows?.[0];
+  ok("confirmed, he reads the driver's name and his seat", mine?.driverName === "H Whitfield" && mine.mySeats?.[0]?.status === "confirmed");
+  const [driverCard] = await q(`select phone from emergency_contact where id = $1`, [jamesCard.id]);
+  r = await api(`/api/lifts/${ADULT_OUT}/contacts`, { token: boy });
+  ok("...and, on the day, her number as a guardian would", r.status === 200 && r.body.contacts?.as === "guardian"
+     && r.body.contacts.driver?.phone === driverCard.phone && r.body.contacts.passengers === undefined);
+  const [{ n: boyReads }] = await q(`select count(*)::int n from access_log where resource = 'lift_contacts' and $1 = any(record_ids)
+                                       and person_id = (select id from app_user where email = 'pillay@example.invalid')`, [ADULT_OUT]);
+  ok("...logged the same way", boyReads === 1);
+  const [told] = await q(`select count(*) filter (where kind = 'system')::int sys, count(*)::int n,
+                                 count(*) filter (where position('Pillay' in body) > 0 or position('Whitfield' in body) > 0)::int named
+                            from notification where subject_id = $1 and subject_person_id = $2
+                             and recipient_id = (select id from app_user where email = 'pillay@example.invalid')`, [m2.id, PILLAY]);
+  ok("...told his seat is confirmed, as the system's notice, naming nobody", told.sys === 1 && told.n === 1 && told.named === 0);
+  r = await api(`/api/lift-seats/${S_PILLAY}/withdraw`, { method: "POST", token: boy });
+  ok("he withdraws his own seat", r.status === 200
+     && (await q(`select state from lift_seat where id = $1`, [S_PILLAY]))[0]?.state === "withdrawn");
+  await q(`update player set born = $2::date where id = $1`, [PILLAY, pillayBorn]);
+  r = await api(`/api/lifts/${ADULT_OUT}/seats`, { method: "POST", token: boy, body: { playerId: PILLAY } });
+  ok("at sixteen again, he is refused", r.status === 422 && r.body.error === "not_yet_eighteen");
+  r = await api(`/api/matches/${m2.id}/lifts`, { token: boy });
+  ok("...and reads no lift", r.status === 200 && r.body.rows.length === 0);
+
   group("The principal withdraws the policy: every open lift is cancelled");
   r = await api("/api/lifts/policy/withdraw", { method: "POST", token: head, body: { schoolId: HIL } });
-  ok("withdrawn", r.status === 200 && r.body.cancelled === 2);
+  ok("withdrawn", r.status === 200 && r.body.cancelled === 3);
   const states = await q(`select state, cancel_kind from lift_offer where match_id = $1 order by leg`, [m.id]);
   ok("...both legs cancelled 'policy_withdrawn'",
      states.length === 2 && states.every((x) => x.state === "cancelled" && x.cancel_kind === "policy_withdrawn"));

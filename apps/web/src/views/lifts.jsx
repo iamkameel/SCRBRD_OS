@@ -9,7 +9,11 @@
  *                          or confirmed again, in words; the driver's own card
  *                          with her requests to accept or decline; the offer
  *                          form (a round trip is two offers made by one form);
- *                          and, for the office, the counts.
+ *                          and, for the office, the counts. For a pupil of
+ *                          eighteen still at school (Kameel's follow-up,
+ *                          2026-10-01), a simple "Ask for a seat" for himself
+ *                          on his own fixtures; the server decides who that
+ *                          is, and for anybody else the list is empty.
  *   LiftPolicyPanel        Settings → School: the principal signs the
  *                          school's lift policy, or withdraws it.
  *   LiftDeclarationPanel   Settings → Me (the family's own page until STEP 4's
@@ -81,9 +85,10 @@ const REFUSAL = {
   one_to_one_not_allowed: "The school's policy does not allow one boy alone with a driver who is not his parent. Accept two together, or none.",
   awaiting_driver: "The fixture has moved. The driver must confirm she still offers the lift first.",
   awaiting_guardian: "The family has not yet said yes to the lift as it now stands.",
-  adult_consents_for_himself: "He is eighteen: a parent may withdraw his seat, but not ask for one.",
   consent_not_granted: "The school has not recorded your consent to the processing of your child's information, which lift clubs need. Ask the school office.",
-  pupil_excluded: "Lift clubs are arranged between parents. Pupils take no part in them.",
+  pupil_excluded: "Lift clubs are arranged between parents. A pupil does not drive or offer lifts, or ask for anybody but himself.",
+  not_yet_eighteen: "A pupil under eighteen does not ask for a seat himself: his parent asks for him.",
+  not_at_school: "Only a pupil still at the school may ask for a seat himself.",
   driver_own_child: "Your own son rides with you; he needs no seat.",
   not_on_side: "He is not in this side.",
   offer_not_open: "This lift is not taking requests.",
@@ -194,37 +199,28 @@ function useStanding(schoolId, nonce = 0) {
 export function LiftsPanel({ role, team }) {
   const family = schoolsWhere("transport.lift.arrange");
   const office = schoolsWhere("transport.lift.oversee");
+  // A pupil — he arranges, receives and oversees no lift, and reads his own
+  // file (selfaccess's medical.details.read, which no coach holds): his own
+  // seat only, if the server lists him on any lift — at eighteen and still at
+  // school. Presentation, not an authorization answer: the list is the
+  // server's, and it is empty for anybody else.
+  const pupil = !family.length && !office.length && !schoolsWhere("transport.lift.receive").length
+    && (profile()?.assignments ?? []).some((a) => roleGrants(a.role, "medical.details.read"));
   const [picked, setPicked] = useState("");
   const { rows: matches } = useLive("matches", role);
   const upcoming = useMemo(() => (matches ?? [])
     .filter((m) => m.homeTeam === team && m.status === "upcoming" && m.startsAt && new Date(m.startsAt) > new Date())
     .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt))), [matches, team]);
   const match = upcoming.find((m) => m.id === picked) ?? upcoming[0] ?? null;
+  if (pupil && upcoming.length) return <SelfLifts upcoming={upcoming.slice(0, 5)}/>;
   if (!match || (!family.length && !office.length)) return null;
   return <LiftsForFixture key={match.id} match={match} upcoming={upcoming} onPick={setPicked}
     familySchool={family[0]?.id ?? null} office={office.length > 0}/>;
 }
 
-function LiftsForFixture({ match, upcoming, onPick, familySchool, office }) {
-  const [nonce, setNonce] = useState(0);
-  const [offers, setOffers] = useState([]);
-  const [summary, setSummary] = useState([]);
+/** One act, then reload; a refusal said beside the thing it refused. */
+function useAct(reload) {
   const [said, setSaid] = useState({ at: null, text: "" });
-  const standing = useStanding(familySchool, nonce);
-  const reload = () => setNonce((n) => n + 1);
-
-  useEffect(() => {
-    let gone = false;
-    if (familySchool) {
-      api(`/api/matches/${match.id}/lifts`).then((r) => { if (!gone) setOffers(r.rows ?? []); }).catch(() => { if (!gone) setOffers([]); });
-    }
-    if (office) {
-      api(`/api/matches/${match.id}/lifts/summary`).then((r) => { if (!gone) setSummary(r.rows ?? []); }).catch(() => { if (!gone) setSummary([]); });
-    }
-    return () => { gone = true; };
-  }, [match.id, familySchool, office, nonce]);
-
-  /** One act, then reload; a refusal said beside the thing it refused. */
   const act = async (at, path, payload) => {
     setSaid({ at, text: "" });
     try {
@@ -237,6 +233,67 @@ function LiftsForFixture({ match, upcoming, onPick, familySchool, office }) {
       return false;
     }
   };
+  return { act, said };
+}
+
+/**
+ * A pupil's own lifts (Kameel's follow-up, 2026-10-01): a boy of eighteen
+ * still at school asks a seat for himself on his own fixtures, withdraws it,
+ * and once it is confirmed reads who drives. Under eighteen, gone from
+ * school, or the module off, the server lists nothing and nothing is shown.
+ */
+function SelfLifts({ upcoming }) {
+  const [nonce, setNonce] = useState(0);
+  const [byMatch, setByMatch] = useState({});
+  const { act, said } = useAct(() => setNonce((n) => n + 1));
+  const ids = upcoming.map((m) => m.id).join(",");
+  useEffect(() => {
+    let gone = false;
+    Promise.all(upcoming.map((m) => api(`/api/matches/${m.id}/lifts`)
+      .then((r) => [m.id, (r.rows ?? []).filter((o) => (o.myChildren ?? []).some((c) => c.how === "self"))])
+      .catch(() => [m.id, []])))
+      .then((pairs) => { if (!gone) setByMatch(Object.fromEntries(pairs)); });
+    return () => { gone = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `ids` is the list's identity
+  }, [ids, nonce]);
+  const shown = upcoming.filter((m) => (byMatch[m.id] ?? []).length > 0);
+  if (!shown.length) return null;
+  return (
+    <Card sx={{ padding: "14px 16px", marginBottom: "16px" }} data-testid="lifts-self">
+      <div style={label()}>Lifts</div>
+      <p style={{ ...muted(), margin: "4px 0 0" }}>
+        Arranged between families; the school facilitates and does not operate lifts. At eighteen you may ask for a seat for yourself.
+      </p>
+      {shown.map((m) => (
+        <div key={m.id} style={{ marginTop: "12px" }}>
+          <div style={{ ...body(), fontWeight: 600 }}>v {m.awayTeam} · {humanDateTime(m.date, m.time)}</div>
+          <div style={{ display: "grid", gap: "8px", marginTop: "8px" }}>
+            {byMatch[m.id].map((o) => <OfferRow key={o.id} o={o} act={act} said={said}/>)}
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+function LiftsForFixture({ match, upcoming, onPick, familySchool, office }) {
+  const [nonce, setNonce] = useState(0);
+  const [offers, setOffers] = useState([]);
+  const [summary, setSummary] = useState([]);
+  const standing = useStanding(familySchool, nonce);
+  const reload = () => setNonce((n) => n + 1);
+  const { act, said } = useAct(reload);
+
+  useEffect(() => {
+    let gone = false;
+    if (familySchool) {
+      api(`/api/matches/${match.id}/lifts`).then((r) => { if (!gone) setOffers(r.rows ?? []); }).catch(() => { if (!gone) setOffers([]); });
+    }
+    if (office) {
+      api(`/api/matches/${match.id}/lifts/summary`).then((r) => { if (!gone) setSummary(r.rows ?? []); }).catch(() => { if (!gone) setSummary([]); });
+    }
+    return () => { gone = true; };
+  }, [match.id, familySchool, office, nonce]);
 
   const familyLive = Boolean(standing?.moduleLive);
   if (!familyLive && !(office && summary.length)) return null;
@@ -290,7 +347,9 @@ function OfferRow({ o, act, said }) {
       border: `1px solid ${o.awaitingDriver ? D.amber + "55" : D.border}` }}>
       <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
         <Badge color={D.sky}>{legWord}</Badge>
-        <span style={{ ...body(), fontWeight: 600 }} data-testid={`lift-driver-${o.id}`}>{o.driverName}</span>
+        {o.driverName
+          ? <span style={{ ...body(), fontWeight: 600 }} data-testid={`lift-driver-${o.id}`}>{o.driverName}</span>
+          : <span style={muted()} data-testid={`lift-driver-${o.id}`}>The driver is named once your seat is confirmed</span>}
         <span style={muted()}>{o.meetPlace} · {saClock(o.meetAt)}</span>
         <span style={muted()} data-testid={`lift-seats-${o.id}`}>{o.seatsLeft} of {o.seats} seats left</span>
         {o.state === "closed" && <Badge color={D.textMuted}>Full list</Badge>}
@@ -305,7 +364,7 @@ function OfferRow({ o, act, said }) {
           <div key={c.playerId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px",
             flexWrap: "wrap", marginTop: "8px", paddingTop: "8px", borderTop: `1px solid ${D.border}` }}>
             <div style={{ minWidth: 0 }}>
-              <span style={{ ...body(), fontWeight: 600 }}>{c.name}</span>
+              <span style={{ ...body(), fontWeight: 600 }}>{c.how === "self" ? "Your seat" : c.name}</span>
               {seat && <span style={{ marginLeft: "8px" }}><Badge color={seatColor(seat.status)} data-testid={`lift-status-${o.id}-${c.playerId}`}>{SEAT_WORDS[seat.status] ?? seat.status}</Badge></span>}
               {lone && c.how === "guardian" && (
                 <div style={muted()}>{c.name} would be the only other boy in the car.</div>
@@ -313,13 +372,13 @@ function OfferRow({ o, act, said }) {
               {said.at === `${o.id}:${c.playerId}` && said.text && <div role="alert" style={alert()}>{said.text}</div>}
             </div>
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              {!live && c.how !== "guardian_adult" && o.state === "open" && !o.awaitingDriver && (
+              {!live && o.state === "open" && !o.awaitingDriver && (
                 <Btn data-testid={`lift-ask-${o.id}-${c.playerId}`}
                   onClick={() => act(`${o.id}:${c.playerId}`, `/api/lifts/${o.id}/seats`, { playerId: c.playerId })}>
                   Ask for a seat
                 </Btn>
               )}
-              {live && seat.status === "awaiting_guardian" && c.how !== "guardian_adult" && (
+              {live && seat.status === "awaiting_guardian" && (
                 <Btn data-testid={`lift-reconfirm-${o.id}-${c.playerId}`}
                   onClick={() => act(`${o.id}:${c.playerId}`, `/api/lift-seats/${seat.seatId}/reconfirm`)}>
                   Confirm again
