@@ -3998,6 +3998,46 @@ This needs a season-per-player read, shared with SCRBRD-132 Wave B.
 - **Who sees a boy's Wrapped (Kameel):** his family, his coaches and school staff.
 - **Sharing:** he may share it with friends and family. How a share works (a link, its expiry, a parent's say while he is under 18) is settled in its design.
 - **Share cards:** for the school's social media, under PUBLIC_DATA (consent, a monogram, never a photo).
+
+### SCRBRD-136 — The coach's match-day cockpit (2026-10-01)
+
+Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `CoachCockpitView.tsx` and the rest). Every figure there is typed into the code. This rebuilds the useful half on reads that exist, and leaves out what no read can prove.
+
+- **Match command:** the live state from the fold (score, partnership, current and required rate, the last twelve balls, the bowlers' spells).
+- **Overs left:** each bowler's overs against the frozen `bowling.max_overs_per_bowler_innings`, with no reason given.
+- **The batters in against our bowlers:** the matchups read, and against bowling like his.
+- **Where he scores, by shot:** the wagon wheel filtered by the shot the pad already records (Shot, Area, Outcome; the `shot_points` read carries `shot`).
+- **Phase splits:** powerplay, middle and death, from the log.
+- **Who's out and the XI:** availability and the squad read. Workload only as SCRBRD-110 allows a coach.
+- **Not carried over:**
+  - win probability and a 0–100 pressure index (SCRBRD-133 D4 says par gap and rate trend instead);
+  - ball speed, the pitch landing map (SCRBRD-108), false shots;
+  - "threat levels".
+- **Who builds:** Sonnet, screens over existing reads, then Opus reviews. No migration unless a read is missing.
+
+### SCRBRD-137 — An intelligence feed of real signals (2026-10-01)
+
+beta-2's Intelligence drawer has five fixed cards, among them "+18% win equity", "workload risk 86%" and a pitch rating. Here each card is a rule over data we hold, and it shows its evidence and its count.
+
+- **Example rules:**
+  - a bus with fewer seats than confirmed travellers;
+  - a bowler one over from his limit;
+  - a picked boy marked unavailable;
+  - a lift exception (db/76);
+  - a matchup with enough balls behind it to mean something.
+- **Each rule's reader:** each rule names the capability that may see it. Nothing medical beyond what the reader already holds, and nothing about another school's children outside the opposition window.
+- **Who builds:** Opus writes the rule list with sources and gates, then Sonnet builds the drawer.
+
+### SCRBRD-138 — The captain's view (2026-10-01)
+
+Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same screen for whoever holds the captaincy honour (`recognition`, kind `captain`), never a role. A captain is a pupil reading his team-mates' data, so what he may see is the design's question.
+
+- **beta-2's version (`CaptainCockpitView.tsx`)** shows every pupil a team-mate's "Physio restricted". It also has an inbox of coach directives, which is a one-to-one channel from an adult to a child.
+- **Fable's design answers:**
+  - what he sees (match glance, overs left per bowler, the field);
+  - what he never sees (health, workload reasons, another boy's assessment);
+  - whether a coach may send him anything, under the CSA safeguarding policy;
+  - how the honour switches it on and off.
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
 2026-09-30)
