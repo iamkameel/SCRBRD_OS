@@ -213,7 +213,8 @@ const openScorer = async (matchId) => {
 async function floors(roots) {
   return page.evaluate((sel) => {
     const small = [], tiny = [];
-    for (const root of document.querySelectorAll(sel)) {
+    const found = document.querySelectorAll(sel);
+    for (const root of found) {
       for (const n of [root, ...root.querySelectorAll("*")]) {
         if (n.closest(".sr-only")) continue;
         const cs = getComputedStyle(n);
@@ -225,7 +226,7 @@ async function floors(roots) {
         }
       }
     }
-    return { small, tiny };
+    return { small, tiny, roots: found.length };
   }, roots);
 }
 const shoot = async (name) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, `${name}.png`) }); };
@@ -276,6 +277,10 @@ try {
   ok("the cup fixture offers the scorer", await openScorer(M.id));
   await fillCrease();
   ok("the pad is ready", !(await has("scoring-blocked")), await said("scoring-blocked"));
+  await tap("pad-menu");
+  ok("a match innings may be revised for rain: the menu item is live", (await tid("revise-innings").getAttribute("aria-disabled")) === null);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
   await balls([1, 1, 1, 1, 1, 1]);            // the first innings: six
   await closeInnings();
   await tap("innings2-start");                // the chase of 7
@@ -292,7 +297,7 @@ try {
   const first = await dbq(`select payload->>'battingTeam' bat from ball_event where match_id = $1 and kind = 'innings_start' and innings = 1`, [M.id]);
   ok("...the side that batted second, by the standard order", offerWords.includes(`${first[0].bat} bat first`), offerWords);
   let f = await floors('[data-testid="pad-superover-offer"]');
-  ok("12px and 44px on the strip", !f.small.length && !f.tiny.length, JSON.stringify(f));
+  ok("12px and 44px on the strip", f.roots > 0 && !f.small.length && !f.tiny.length, JSON.stringify(f));
   const r0 = await get(`/api/matches/${M.id}/result`);
   ok("the server agrees: a tie nobody has decided", r0.body?.result?.outcome === "tie" && r0.body.result.decidedBy === null, JSON.stringify(r0.body?.result));
   await shoot("1-offer");
@@ -313,7 +318,7 @@ try {
   ok("what the pad does not record is said, once", /does not record the ends, the interval, fielding restrictions or nominated batters/.test(await said("superover-not-recorded")));
   ok("no eligibility words for the first", !(await has("superover-eligibility")));
   f = await floors('[data-testid="superover-sheet"]');
-  ok("12px and 44px on the sheet", !f.small.length && !f.tiny.length, JSON.stringify(f));
+  ok("12px and 44px on the sheet", f.roots > 0 && !f.small.length && !f.tiny.length, JSON.stringify(f));
   await shoot("2-sheet");
   await tap("superover-confirm");
   await fillCrease();
@@ -325,6 +330,11 @@ try {
   // ── C ────────────────────────────────────────────────────────
   group("C. The first innings of the pair: the board's block, and two wickets end it");
   ok("the header says which innings this is", /Super over 1 · first innings · 1ov/.test(await said("pad-titlebar")), (await said("pad-titlebar")).slice(0, 120));
+  await tap("pad-menu");
+  ok("a super over is not shortened: Revise is shut, with the reason beside it",
+     (await tid("revise-innings").getAttribute("aria-disabled")) === "true" && /A super over is not shortened/.test(await said("revise-innings")), await said("revise-innings"));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
   ok("the board: 6 balls left, 2 wickets left of 2", (await boardSub()) === "Super over 1 · 6 balls left · 2 wickets left of 2", await boardSub());
   await balls([4, 1]);
   ok("after two balls: 4 left", (await boardSub()) === "Super over 1 · 4 balls left · 2 wickets left of 2", await boardSub());
@@ -480,7 +490,7 @@ try {
   const soTotal = await page.locator('[data-testid="mc-superover-1"] [data-testid="mc-total"]').innerText();
   ok("the pair's second innings can be read: 6/1 in Super over 1", /6\/1/.test(soTotal), soTotal);
   f = await floors('[data-testid="mc-superover-1"], [data-testid="mc-superover-2"], [data-testid="mc-superover-score-1"]');
-  ok("12px and 44px on the block", !f.small.length && !f.tiny.length, JSON.stringify(f));
+  ok("12px and 44px on the block", f.roots > 0 && !f.small.length && !f.tiny.length, JSON.stringify(f));
   await shoot("7-scorecard-block");
   await tap("mc-tab-summary");
   ok("the Summary's board carries the block", /^Super over 2 · /.test(await said("mc-board-sub")), await said("mc-board-sub"));
@@ -508,7 +518,7 @@ try {
   ok("...and the engine's own words why: this match's conditions provide none, a tie stands",
      why === `Match tied. ${upper(REFUSAL_TEXT.super_over_not_provided)}.`, why);
   f = await floors('[data-testid="pad-superover-why"]');
-  ok("12px and 44px on the words", !f.small.length && !f.tiny.length, JSON.stringify(f));
+  ok("12px and 44px on the words", f.roots > 0 && !f.small.length && !f.tiny.length, JSON.stringify(f));
   await shoot("8-league");
   const gStarts = (await serverRows(G.id)).filter((r) => r.kind === "innings_start").length;
   ok("nothing was sent for a super over: two innings_starts", gStarts === 2, String(gStarts));
@@ -541,7 +551,8 @@ try {
      psc.toggles === 2 && psc.ownTotals === 1 && JSON.stringify(psc.blocks) === JSON.stringify(["mc-superover-1", "mc-superover-2"]) && psc.below && psc.scores === 2, JSON.stringify(psc));
   const pf = await pub.evaluate(() => {
     const small = [], tiny = [];
-    for (const root of document.querySelectorAll('[data-testid="mc-superover-1"], [data-testid="mc-superover-score-1"]')) {
+    const found = document.querySelectorAll('[data-testid="mc-superover-1"], [data-testid="mc-superover-score-1"]');
+    for (const root of found) {
       for (const n of [root, ...root.querySelectorAll("*")]) {
         const cs = getComputedStyle(n);
         const own = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
@@ -549,9 +560,9 @@ try {
         if (n.tagName === "BUTTON" && n.getBoundingClientRect().height < 44) tiny.push(`${Math.round(n.getBoundingClientRect().height)}px`);
       }
     }
-    return { small, tiny };
+    return { small, tiny, roots: found.length };
   });
-  ok("12px and 44px on the public block", !pf.small.length && !pf.tiny.length, JSON.stringify(pf));
+  ok("12px and 44px on the public block", pf.roots === 2 && !pf.small.length && !pf.tiny.length, JSON.stringify(pf));
   await ptid("mc-tab-commentary").click({ timeout: 4000 });
   await pub.waitForTimeout(500);
   const pc = await pub.$eval("body", (el) => el.innerText);

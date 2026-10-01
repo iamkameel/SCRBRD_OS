@@ -25,6 +25,7 @@ import {
   superOverCommentary, superOverFirstStart, superOverOffer, superOversOf, SUPER_OVER_OVERS,
 } from "../src/lib/superOver.js";
 import { boardFromInnings } from "../src/scorer/boardData.js";
+import { inningsPhase } from "../src/lib/matchCentre.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${typeof d === "string" ? d : JSON.stringify(d)}` : ""); } };
@@ -210,6 +211,20 @@ group("F. The pairs, the chase, the live line");
   const lost = pad(buildLog([FIRST14, LEVEL14, so(1, A, [6, 1, 1, 0, 0, 0]), so(1, H, [1, 2], { target: 9, seal: "abandoned" })], { conditions: CUP }), CUP);
   ok("...nor when the light went (sealed abandoned): the engine's words stand", liveSuperOverLine(lost.innings, "live") === null);
   ok("a match with no super over: no live line", liveSuperOverLine(pad(buildLog([FIRST14, LEVEL14], { conditions: CUP }), CUP).innings, "live") === null);
+}
+
+group("G. The match line's phase");
+{
+  const phaseOf = (plans) => {
+    const log = buildLog(plans, { conditions: CUP });
+    const m = deriveMatch(log, { startsAt: RESULT_STARTS_AT, conditions: CUP });
+    return inningsPhase(m.innings, m.result);
+  };
+  ok("a super over being played names itself, in place of the tie's Result",
+     phaseOf([FIRST14, LEVEL14, so(1, A, [6, 1, 1, 0, 0, 0]), so(1, H, [1, 2], { target: 9, seal: false })]) === "Super over 1");
+  ok("...the second as well", phaseOf([FIRST14, LEVEL14, so(1, A, [4, 1, 1, 1, 0, 0]), so(1, H, [4, 1, 1, 0, 0, 1], { target: 8 }), so(2, H, [1, 1, 1], { seal: false })]) === "Super over 2");
+  ok("decided, it is the Result", phaseOf([FIRST14, LEVEL14, so(1, A, [6, 1, "W", 1, 0, 0]), so(1, H, [4, 4, 1], { target: 9 })]) === "Result");
+  ok("a tie before any super over: the Result, as it was", phaseOf([FIRST14, LEVEL14]) === "Result");
 }
 
 console.log(`\n${"─".repeat(52)}\nSUPER OVER SCREENS: ${pass} passed, ${fail} failed`);
