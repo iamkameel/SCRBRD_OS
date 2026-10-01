@@ -73,9 +73,9 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 const TYPE_FLOOR_CEILING = {
   landing:     5,
   login:       13,
-  dashboard:   18,
-  matchcentre: 18,
-  matchview:   18,
+  dashboard:   17,
+  matchcentre: 17,
+  matchview:   17,
   pad:         0,
   // Step 3b: the pad again, after an over is recorded, so the chips on the
   // board are on screen and counted. 0, like the pad.
@@ -106,9 +106,9 @@ const TYPE_FLOOR_CEILING = {
   // screens these two primitives share inherits it, and Career — the one
   // screen this walk had already found sub-floor instances on — drops
   // straight to the 18-item shell, matching Analytics.
-  analytics:   18,
-  career:      18,
-};                   // 108 in all
+  analytics:   17,
+  career:      17,
+};                   // 103 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
  * Things tapped under 44px, on the pad (§3.5, §3.8: "no tappable element
@@ -524,6 +524,13 @@ async function walk(theme) {
     await page.waitForTimeout(1600);
     ok("signed in", /Dashboard|Match Centre/i.test(await page.$eval("body", (e) => e.innerText)));
     await measure(page, theme, "dashboard");
+    // SCRBRD-131: the bell's count was 9px, under the floor, and the ratchet let it by.
+    const bell = page.locator('[data-testid="nav-alerts-badge"]');
+    ok("the notification bell shows its unread count", (await bell.count()) === 1);
+    if (await bell.count()) {
+      const size = await bell.evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
+      ok(`...in 12px at the least (${size}px)`, size >= 12);
+    }
 
     unnamed = await unnamedControls();
     ok("every control in the shell has a name", unnamed.length === 0, unnamed.slice(0, 5).join(", "));

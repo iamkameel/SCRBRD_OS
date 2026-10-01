@@ -105,7 +105,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
                 }}>
                   <span style={{fontSize:"15px",textAlign:"center",width:collapsed?"100%":"auto",color:isActive?rc.color:T.content.secondary}}><Icon name={m.icon}/></span>
                   {!collapsed&&<span style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:isActive?600:400,color:isActive?T.content.primary:T.content.secondary}}>{m.label}</span>}
-                  {isBell&&notifCount>0&&<span data-testid="nav-alerts-badge" style={{marginLeft:"auto",background:T.semantic.critical,color:T.surface.canvas,borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"9px",fontWeight:700}}>{notifCount}</span>}
+                  {isBell&&notifCount>0&&<span data-testid="nav-alerts-badge" style={{marginLeft:"auto",background:T.semantic.critical,color:T.surface.canvas,borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"12px",fontWeight:700}}>{notifCount}</span>}
                   {waiting>0&&<span data-testid="nav-invites-badge" aria-hidden="true" style={{marginLeft:collapsed?0:"auto",position:collapsed?"absolute":"static",top:"2px",right:"2px",background:T.semantic.warning,color:inkOn(T.semantic.warning),borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"12px",fontWeight:700}}>{waiting}</span>}
                 </button>
               );

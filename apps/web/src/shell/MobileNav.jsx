@@ -117,7 +117,7 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
         background:isActive?D.indigo+"16":"transparent",border:"none",borderRadius:D.md,cursor:"pointer",position:"relative",minHeight:"52px",justifyContent:"center"}}>
         <span aria-hidden="true" style={{fontSize:"17px",lineHeight:1,color:isActive?D.textPrimary:D.textSecondary}}><Icon name={m.icon}/></span>
         <span aria-hidden="true" style={{fontFamily:roomy?D.body:D.head,fontSize:roomy?"12px":"8px",fontWeight:700,letterSpacing:roomy?"0.02em":"0.08em",textTransform:roomy?"none":"uppercase",whiteSpace:"nowrap",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
-        {isBell&&notifCount>0&&<span style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:inkOn(D.rose),borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"13px"}}>{notifCount}</span>}
+        {isBell&&notifCount>0&&<span data-testid="mnav-alerts-badge" style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:inkOn(D.rose),borderRadius:D.pill,padding:"0 5px",fontFamily:D.mono,fontSize:"12px",fontWeight:700,minWidth:"16px"}}>{notifCount}</span>}
         {waiting>0&&inviteBadge(waiting)}
       </button>
     );
