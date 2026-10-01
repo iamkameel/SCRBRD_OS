@@ -265,7 +265,11 @@ export function PublicMatch({ matchId, view }) {
     });
   }, [spoken, match, data.fold, data.people]);
 
-  const result = match ? (resultText(match, folded?.result) ?? null) : null;
+  // The server's words where it has a result (SCRBRD-114 phase 3a, db/69):
+  // sides named, never a boy, never an organiser's reason; the fold's while
+  // it has none.
+  const result = match ? ((match.result && match.result.outcome !== "in_progress" ? match.result.text : null)
+    ?? resultText(match, folded?.result, { reasons: false }) ?? null) : null;
   const { moment, overSummary } = useMoments(commentary, !data.loading && !!match);
   // What a screen reader is told as each ball arrives (lib/announce.js): the
   // newest only, and nothing for the log as it stood on first load.

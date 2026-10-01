@@ -202,7 +202,11 @@ function asLadderRow(r) {
            competition: r.competition_id,
            name: r.display_name, school: r.school_id, team: r.team_code,
            played: r.played, wins: r.won, losses: r.lost, draws: r.drawn,
-           noResult: r.no_result, points: r.points, nrr: r.net_run_rate,
+           noResult: r.no_result, points: r.points == null ? null : Number(r.points),
+           nrr: r.net_run_rate == null ? null : Number(r.net_run_rate),
+           // SCRBRD-114 phase 3a: the table is computed (db/69) where the
+           // league's points are confirmed, else typed; its rank, shared on a tie.
+           ties: r.tied ?? 0, basis: r.basis ?? null, rank: r.rank ?? null,
            division: r.division_id ? { id: r.division_id, code: r.division_code, name: r.division_name, rank: r.division_rank } : null,
            live: true };
 }

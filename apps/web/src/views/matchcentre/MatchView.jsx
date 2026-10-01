@@ -108,6 +108,27 @@ function useMatchLog(match, players) {
   };
 }
 
+/**
+ * The result as the server reads it (SCRBRD-114 phase 3a, db/69): play from
+ * the log, the match's status, and a decision taken off the field — a
+ * concession, a walkover, an organiser's award — which no fold of the log can
+ * see. Re-read when the log moves. Null while signed out, for a demonstration
+ * fixture, or when the server could not say.
+ * @param {any} match  @param {unknown} seen  what the log has grown to
+ */
+function useServerResult(match, seen) {
+  const [result, setResult] = useState(/** @type {any} */ (null));
+  useEffect(() => {
+    if (!signedIn() || !match.live) { setResult(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${match.id}/result`)
+      .then((d) => { if (!cancelled) setResult(d?.result ?? null); })
+      .catch(() => { if (!cancelled) setResult(null); });
+    return () => { cancelled = true; };
+  }, [match.id, match.live, match.status, seen]);
+  return result;
+}
+
 /** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
 function TabBar({ tab, setTab }) {
   const refs = useRef({});
@@ -178,7 +199,11 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.events, PLAYERS, match.id]);
 
-  const result = resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
+  // The server's words where it has a result (SCRBRD-114 phase 3a: a no
+  // result, a draw, a decision beside play); the fold's while it has none.
+  const server = useServerResult(match, log.events?.length ?? 0);
+  const result = (server && server.outcome !== "in_progress" ? server.text : null)
+    ?? resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
 
   // The result, in one clear moment (SCRBRD-100 item 3): a synthetic line,
   // added only once the fold has actually decided the match, so it arrives

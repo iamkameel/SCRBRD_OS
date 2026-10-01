@@ -13,6 +13,9 @@ import { LeagueInvitations } from "./leagueinvites.jsx";
 // asked for, not with the list of competitions.
 const LeagueWizard = lazy(() => import("./leaguewizard.jsx").then((m) => ({ default: m.LeagueWizard })));
 const FixturePlanner = lazy(() => import("./planner.jsx").then((m) => ({ default: m.FixturePlanner })));
+// SCRBRD-114 phase 3a: a league's table, its results and the organiser's
+// decisions and adjustments, from the server's competition_standing (db/69).
+const Standings = lazy(() => import("./standings.jsx").then((m) => ({ default: m.Standings })));
 
 /** A 44px button in the wizard's style, for the competitions screen's league actions. */
 function leagueButton(primary) {
@@ -128,7 +131,9 @@ function CompetitionsView({ role }) {
                   {canPlan&&<button type="button" data-testid="open-planner" onClick={()=>setMode({planner:{id:comp.id,name:comp.name,format:comp.format}})} style={leagueButton(false)}>Fixture planner</button>}
                 </div>
               )}
-              {comp.table&&(
+              {/* The demonstration's own table; a competition on the server draws
+                  its table from competition_standing below (SCRBRD-114 phase 3a). */}
+              {!comp.live&&comp.table&&(
                 <div>
                   <div style={{padding:"10px 16px",background:D.surf2,display:"grid",gridTemplateColumns:"var(--g-league,2fr 1fr 1fr 1fr 1fr 1fr 1fr)",gap:"8px"}}>
                     {["Team","P","W","L","NR","Pts","NRR"].map(h=>(
@@ -163,6 +168,11 @@ function CompetitionsView({ role }) {
                 </div>
               )}
             </Card>
+            {comp.live&&(
+              <Suspense fallback={<div role="status" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"16px"}}>Loading the table…</div>}>
+                <Standings competition={{id:comp.id,name:comp.name}}/>
+              </Suspense>
+            )}
             {/* Fixtures for this comp */}
             <SectionHeader title="Fixtures" color={D.amber}/>
             <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
