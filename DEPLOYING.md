@@ -387,6 +387,33 @@ policy's withdrawal are never switched off. The paste is
 proof).
 <!-- ── end SCRBRD-124 ── -->
 
+<!-- ── SCRBRD-114 phases 3b and 3c: the super over (db/71), knockout progression (db/72) ── -->
+#### The super over and knockout progression (SCRBRD-114, db/71 and db/72)
+
+`db/71_super_over.sql` lets a tied match whose playing conditions say
+`result.tie_break = super_over` be settled by a super over, and keeps every
+career, milestone, dossier and wheel from counting one. It re-emits the
+career readers over a new view, `ball_event_career`, adds a last column
+(`super_over`) to `ball_event_live` and `match_live_score`, and drops and
+re-creates `public_match_result()` with one more column. Nothing is
+backfilled: no match has a super over until a pad sends one, and an older
+pad cannot. One behaviour changes for every school at once: **a tied cup
+match is not marked complete** while nothing has settled who goes through
+(`super_over_pending` from the fixture route); a league's tie, under the
+platform default `none`, is unaffected.
+
+`db/72_knockout_progression.sql` adds `match_progression`: publishing a
+knockout plan makes a later round's fixture from the earlier results'
+winners, and a later correction re-resolves an unplayed fixture's side or
+flags a played one for the organiser.
+
+Paste in order, each once: `node tools/bundle-sql.mjs --apply 71`, then
+`--apply 72`, then the verify bundle (§50 and §51 are their proofs). Both
+before the API that reads them: the API's routes for the result, the live
+score, the public page and the planner's publish call `db/71` and `db/72`
+by name.
+<!-- ── end SCRBRD-114 phases 3b and 3c ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

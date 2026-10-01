@@ -6957,8 +6957,12 @@ BEGIN
     -- caller read a match's result — the fixture's reader at either side, or
     -- the competition's; a credential reads its own match's result, which its
     -- log already says, and a result names sides, never a boy.
+    -- progression_check (db/72, SCRBRD-114 phase 3c): asks no capability;
+    -- 'fixture.read' is the capability its notices require of their reader.
+    -- Not the application's to call (only db/72's triggers call it), so no
+    -- credential reaches it.
     PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,match_result_readable,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
+                             || 'match_playing_conditions,match_result_readable,pad_resume_issue,pad_resume_reclaim,progression_check,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
