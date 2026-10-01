@@ -88,6 +88,10 @@ const SUITES = [
   ["post-match-report", "apps/web/test/post-match-report.test.mjs"],
   // SCRBRD-114 phase 3a: the league table's words and choices (lib/standings.js).
   ["standings", "apps/web/test/standings.test.mjs"],
+  // SCRBRD-114 phase 3b, the screens: the pad's Super over offer and the
+  // engine's words for why not, the pair's two innings_starts, the board's
+  // block, the eligibility words, the commentary's words.
+  ["super-over-screens", "apps/web/test/super-over-screens.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["season-awards",     "apps/web/test/season-awards.test.mjs"],
   // A figure a scorebook did not record stays null on the career screens
   // (SCRBRD-120 D12): the adapter, the strike rate over recorded balls, "at least N".

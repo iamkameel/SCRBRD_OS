@@ -1,5 +1,6 @@
 import { formatKind } from "@scrbrd/scoring";
 import { RR, fmtOv } from "./format.js";
+import { superOverBlock } from "../lib/superOver.js";
 
 /**
  * What the board shows, from the fold — pure, and light enough for any screen
@@ -84,12 +85,17 @@ export function boardFromInnings(inn, { target = null, overs = 20, projected = n
   const thisOver = inn.overLog?.find((o) => o.over === Math.floor(inn.balls / 6))?.balls ?? [];
   const crr = RR(inn.runs, inn.balls);
   const chase = chaseLine(inn, target, overs);
+  // A super over (SCRBRD-114 phase 3b, §4): its own block in place of the
+  // rates — "Super over 1 · Need 4 off 4 · 2 wickets left of 2" — read from
+  // the innings' own limits (one over, two wickets), whatever the caller's
+  // overs and target: a match's are not a super over's.
+  const block = superOverBlock(inn, { target });
   // `projected` is atThisRate()'s answer, passed by the screens that show it
   // (the Match Centre's and the public page's Summary): the pad and the day
   // sheet do not pass it, and draw the board as before.
   const rates = [crr !== "—" ? `CRR ${crr}` : null, chase?.rrr ? `RRR ${chase.rrr}` : null,
     projected != null ? `At this rate: ${projected}` : null].filter(Boolean).join(" · ");
-  const sub = chase
+  const sub = block ? block.line : chase
     ? [chase.need > 0 ? `Need ${chase.need} off ${chase.balls}` : "Target reached", rates].filter(Boolean).join(" · ")
     : rates || null;
   // The stand in progress — the fold's `curPartner`: runs with the extras in,
