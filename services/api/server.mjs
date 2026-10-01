@@ -758,6 +758,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/points-adjustments\/([^/]+)\/withdraw$/,           "POST", results.withdrawAdjustment],
   [/^\/api\/matches\/([^/]+)\/playing-conditions\/refix-table$/, "POST", results.refixTable],
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3c (db/72): knockout progression ──
+  // Where each knockout side came from, and the organiser clearing a flag a
+  // corrected result raised (competition.manage at the organiser).
+  [/^\/api\/competitions\/([^/]+)\/progression$/,             "GET",  results.progression],
+  [/^\/api\/matches\/([^/]+)\/progression\/clear$/,          "POST", results.clearProgression],
+  // ── end SCRBRD-114 phase 3c ──
   // Importing a paper scorebook (SCRBRD-120, db/63): photos of the book, a
   // card typed and ticked beside them, a second person's confirmation, and
   // then three events per innings in the log. NOT tagged with the module,

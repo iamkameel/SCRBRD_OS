@@ -2556,6 +2556,72 @@ CREATE OR REPLACE FUNCTION _load_71(p_player uuid, p_on date) RETURNS integer AS
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/71 (section 50) ──────────────────────────────────────────────
 
+-- ┌── SCRBRD-114 phase 3c (db/72, section 51): knockout progression ────
+-- A Hilton cup, "Verify 072 Cup", four entrants: Hilton 1XI and 2XI,
+-- Westville 1XI and 2XI. Two semi-finals on 3 October 2026, each one over a
+-- side, complete:
+--   U1  Hilton 1XI 14; Westville 1XI 10 chasing 15 — Hilton 1XI by 4 runs
+--   U2  Hilton 2XI 6;  Westville 2XI 7 chasing 7  — Westville 2XI by 9 wickets
+--       (its last ball the winning single: seq 15)
+--   U3  Hilton 1XI v Westville 2XI, never played: no winner
+-- and the final, D: Hilton 1XI v Westville 2XI on 10 October, made as the
+-- planner's publish makes it, its two rows recorded in §51.
+CREATE OR REPLACE FUNCTION _seed_72() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  c uuid; u1 uuid; u2 uuid; u3 uuid; d uuid; v integer;
+BEGIN
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 072 Cup', 'knockout', 'T20', 'school') RETURNING id INTO c;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES
+    (c, HIL, '1XI', 'Verify 072 Hilton 1st XI'), (c, WES, '1XI', 'Verify 072 Westville 1st XI'),
+    (c, HIL, '2XI', 'Verify 072 Hilton 2nd XI'), (c, WES, '2XI', 'Verify 072 Westville 2nd XI');
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, '1XI', WES, '1XI', 'x', '2026-10-03 10:00+02', 'cricket', 'T20', 1, 'complete', c) RETURNING id INTO u1;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, '2XI', WES, '2XI', 'x', '2026-10-03 13:00+02', 'cricket', 'T20', 1, 'complete', c) RETURNING id INTO u2;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, '1XI', WES, '2XI', 'x', '2026-10-03 15:00+02', 'cricket', 'T20', 1, 'scheduled', c) RETURNING id INTO u3;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, '1XI', WES, '2XI', 'x', '2026-10-10 10:00+02', 'cricket', 'T20', 1, 'scheduled', c) RETURNING id INTO d;
+  -- U1: Hilton 1XI 14; Westville 1XI 10 chasing 15.
+  PERFORM _ev_71(u1, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', 'Westville 1XI', 'overs', 1));
+  FOREACH v IN ARRAY ARRAY[4, 1, 0, 2, 6, 1] LOOP PERFORM _ev_71(u1, 0::smallint, 'ball', 'run', v, NULL, NULL); END LOOP;
+  PERFORM _ev_71(u1, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":14,"wickets":0,"balls":6}}');
+  PERFORM _ev_71(u1, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', 'Westville 1XI', 'bowlingTeam', '1XI', 'overs', 1, 'target', 15));
+  FOREACH v IN ARRAY ARRAY[4, 4, 1, 1, 0, 0] LOOP PERFORM _ev_71(u1, 1::smallint, 'ball', 'run', v, NULL, NULL); END LOOP;
+  PERFORM _ev_71(u1, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":10,"wickets":0,"balls":6}}');
+  -- U2: Hilton 2XI 6; Westville 2XI 7 chasing 7, the single at seq 15 reaching it.
+  PERFORM _ev_71(u2, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '2XI', 'bowlingTeam', 'Westville 2XI', 'overs', 1));
+  FOREACH v IN ARRAY ARRAY[1, 1, 1, 1, 1, 1] LOOP PERFORM _ev_71(u2, 0::smallint, 'ball', 'run', v, NULL, NULL); END LOOP;
+  PERFORM _ev_71(u2, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":6,"wickets":0,"balls":6}}');
+  PERFORM _ev_71(u2, 1::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', 'Westville 2XI', 'bowlingTeam', '2XI', 'overs', 1, 'target', 7));
+  FOREACH v IN ARRAY ARRAY[6, 0, 0, 0, 0, 1] LOOP PERFORM _ev_71(u2, 1::smallint, 'ball', 'run', v, NULL, NULL); END LOOP;
+  RETURN jsonb_build_object('c', c, 'u1', u1, 'u2', u2, 'u3', u3, 'd', d);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- An approved correction, as scoring_amendment_decide() writes one: a void
+-- of the event at p_seq, appended to the log.
+CREATE OR REPLACE FUNCTION _void_72(p_match uuid, p_seq integer) RETURNS void AS $$
+  SELECT _ev_71(p_match, (SELECT b.innings FROM ball_event b WHERE b.match_id = p_match AND b.seq = p_seq), 'void', NULL, NULL, NULL,
+                jsonb_build_object('target', 'v71:' || p_match || ':' || p_seq));
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's two sides, and the knockout notices about it, as the owner reads them.
+CREATE OR REPLACE FUNCTION _sides_72(p_match uuid) RETURNS text AS $$
+  SELECT CASE m.school_id WHEN '11111111-1111-1111-1111-111111111111' THEN 'HIL' ELSE 'WES' END || ' ' || m.team_code || ' v '
+      || CASE m.away_school_id WHEN '11111111-1111-1111-1111-111111111111' THEN 'HIL' ELSE 'WES' END || ' ' || m.away_team_code
+    FROM match m WHERE m.id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _notices_72(p_match uuid) RETURNS integer AS $$
+  SELECT count(*)::integer FROM notification n WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.kind = 'fixture'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A row, as the owner reads it.
+CREATE OR REPLACE FUNCTION _row_72(p_match uuid, p_side text) RETURNS match_progression AS $$
+  SELECT * FROM match_progression p WHERE p.match_id = p_match AND p.side = p_side
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/72 (section 51) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -12093,6 +12159,127 @@ $v49$;
                     AND NOT has_function_privilege('scrbrd_app', 'match_completion_refusal(uuid)', 'EXECUTE')
                     AND NOT has_function_privilege('scrbrd_app', 'innings_super_over_of(uuid,smallint)', 'EXECUTE'),
       'db/71 (scope): ball_event_career runs as its owner, or the application may call the gate''s functions');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 51. Knockout progression (SCRBRD-114 phase 3c, db/72) ──
+  -- _seed_72(): a Hilton cup, two semi-finals played (Hilton 1XI and
+  -- Westville 2XI through), one never played, and the final between the
+  -- two winners. The organiser (the owner here: every capability) records
+  -- where each side came from, as the planner's publish does; then the
+  -- semi-finals' results are corrected by each path that can change one —
+  -- a decision, its withdrawal, a void appended to the log — before and
+  -- after the final has a ball.
+  --
+  -- Each labelled assertion was falsified once — the function, trigger or
+  -- view replaced in the database and this file run — and went red:
+  --   (record)     match_progression_record() not checking the side is the winner
+  --   (school)     match_progression_record() not asking the organiser's capability
+  --   (reresolve)  progression_check() not amending an unplayed fixture's side
+  --   (await)      progression_check() not flagging a side whose winner is gone
+  --   (played)     progression_check() rewriting a played fixture
+  --   (decision)   the decision trigger dropped
+  --   (log)        the event trigger dropped
+  --   (note)       progression_clear() taking a note under ten characters
+  --   (clearer)    progression_clear() not asking the organiser's capability
+  --   (ack)        progression_clear() not taking the result as it now is: an
+  --                unrelated event flags the cleared side again
+  --   (scope)      progression_conflict as its owner
+  DECLARE
+    ids    jsonb := _seed_72();
+    C uuid; U1 uuid; U2 uuid; U3 uuid; D uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    r      record;
+    v_ok   boolean;
+    got    text;
+    h1     text;
+    dec    uuid;
+  BEGIN
+    C := (ids->>'c')::uuid; U1 := (ids->>'u1')::uuid; U2 := (ids->>'u2')::uuid; U3 := (ids->>'u3')::uuid; D := (ids->>'d')::uuid;
+
+    -- (school) a school records no row, and writes none past the doors
+    PERFORM _as(U_WES_ADM);
+    SELECT * INTO r FROM match_progression_record(D, 'home', U1, 'winner', 'ko:r1:m1');
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/72 (school): a school recorded where a side came from: %s', r.reason));
+    BEGIN
+      INSERT INTO match_progression (match_id, side, from_match_id, competition_id, created_by) VALUES (D, 'home', U1, C, U_WES_ADM);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, 'db/72 (school): the application wrote a progression row past the functions');
+
+    -- (record) the organiser records each side, from its winner, with the hash
+    PERFORM _as(U_OWNER);
+    SELECT * INTO r FROM match_progression_record(D, 'away', U1, 'winner', 'ko:r1:m1');
+    PERFORM _assert(NOT r.ok AND r.reason = 'side_mismatch', format('db/72 (record): a side that is not the winner was recorded: %s', coalesce(r.reason, 'ok')));
+    SELECT * INTO r FROM match_progression_record(D, 'home', U3, 'winner', 'ko:r1:m3');
+    PERFORM _assert(NOT r.ok AND r.reason = 'no_winner', format('db/72 (record): a side was recorded from a match with no winner: %s', coalesce(r.reason, 'ok')));
+    SELECT * INTO r FROM match_progression_record(D, 'home', U1, 'winner', 'ko:r1:m1');
+    PERFORM _assert(r.ok, format('db/72 (record): the home side was not recorded: %s', r.reason));
+    SELECT * INTO r FROM match_progression_record(D, 'away', U2, 'winner', 'ko:r1:m2');
+    PERFORM _assert(r.ok, format('db/72 (record): the away side was not recorded: %s', r.reason));
+    SELECT result_hash INTO h1 FROM match_result(U1);
+    PERFORM _assert((_row_72(D, 'home')).resolved_result_hash = h1 AND (_row_72(D, 'home')).resolved_school_id = HIL,
+      'db/72 (record): the row does not hold the result it was resolved from');
+    SELECT * INTO r FROM match_progression_record(D, 'home', U1, 'winner', 'ko:r1:m1');
+    PERFORM _assert(r.ok AND r.detail = 'already', 'db/72 (record): a second publish of the same side was not idempotent');
+
+    -- (reresolve) (decision) an award overriding U1's play: the unplayed final's
+    -- home side becomes Westville 1XI, the row the new hash, both schools told
+    SELECT * INTO r FROM match_result_decide(U1, 'awarded', 'away', 'protest upheld: an ineligible player in the Hilton side', true);
+    PERFORM _assert(r.ok, format('db/72: the organiser''s award on U1 was refused: %s', r.reason));
+    dec := r.decision_id;
+    PERFORM _assert(_sides_72(D) = 'WES 1XI v WES 2XI', format('db/72 (reresolve): the final reads %s after U1 was awarded to Westville', _sides_72(D)));
+    PERFORM _assert((_row_72(D, 'home')).resolved_result_hash = (SELECT result_hash FROM match_result(U1))
+                    AND (_row_72(D, 'home')).resolved_school_id = WES AND (_row_72(D, 'home')).conflict_at IS NULL,
+      'db/72 (reresolve): the row was not re-resolved to the new result');
+    PERFORM _assert(_notices_72(D) = 3, format('db/72 (reresolve): %s knockout notice(s), not three (both schools, the organiser)', _notices_72(D)));
+    SELECT * INTO r FROM match_result_decision_withdraw(dec, 'entered against the wrong semi-final');
+    PERFORM _assert(r.ok AND _sides_72(D) = 'HIL 1XI v WES 2XI', format('db/72 (decision): withdrawing the award left the final as %s', _sides_72(D)));
+
+    -- (await) (log) a void appended to U2's log takes its winning run away: no
+    -- winner; the final keeps its side, flagged; the run again resolves it
+    PERFORM _void_72(U2, 15);
+    PERFORM _assert((_row_72(D, 'away')).resolved_school_id IS NULL AND (_row_72(D, 'away')).conflict_note LIKE 'awaiting a winner of %'
+                    AND _sides_72(D) = 'HIL 1XI v WES 2XI',
+      format('db/72 (await): with no winner of U2 the away row reads %s, the final %s', (_row_72(D, 'away')).conflict_note, _sides_72(D)));
+    PERFORM _ev_71(U2, 1::smallint, 'ball', 'run', 1, NULL, NULL);
+    PERFORM _assert((_row_72(D, 'away')).resolved_school_id = WES AND (_row_72(D, 'away')).conflict_at IS NULL,
+      'db/72 (log): the winning run again did not resolve the away side again');
+
+    -- (played) the final has begun: a correction to U1 now only flags it
+    PERFORM _ev_71(D, 0::smallint, 'innings_start', NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', 'Westville 2XI', 'overs', 1));
+    SELECT * INTO r FROM match_result_decide(U1, 'awarded', 'away', 'protest upheld after the final began, on appeal', true);
+    dec := r.decision_id;
+    PERFORM _assert(_sides_72(D) = 'HIL 1XI v WES 2XI'
+                    AND (_row_72(D, 'home')).conflict_note LIKE 'the result of % changed after this match was played',
+      format('db/72 (played): the played final reads %s, its flag %s', _sides_72(D), (_row_72(D, 'home')).conflict_note));
+
+    -- (scope) the flag on the bracket: the participants read it, nobody else
+    PERFORM _as(U_WESC);
+    SELECT count(*)::int INTO n FROM progression_conflict WHERE competition_id = C;
+    PERFORM _assert(n = 1, format('db/72 (scope): Westville''s coach reads %s flag(s) on the cup''s bracket', n));
+    PERFORM _as(U_SCOUT);
+    SELECT count(*)::int INTO n FROM progression_conflict WHERE competition_id = C;
+    PERFORM _assert(n = 0, format('db/72 (scope): a scout with no reach reads %s flag(s)', n));
+
+    -- (clearer) (note) cleared by the organiser alone, with a note
+    PERFORM _as(U_WES_ADM);
+    SELECT * INTO r FROM progression_clear(D, 'home', 'Westville accept the result stands as played');
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/72 (clearer): a school cleared a flag: %s', coalesce(r.reason, 'ok')));
+    PERFORM _as(U_OWNER);
+    SELECT * INTO r FROM progression_clear(D, 'home', 'ok');
+    PERFORM _assert(NOT r.ok AND r.reason = 'note_required', format('db/72 (note): a flag cleared with "ok": %s', coalesce(r.reason, 'ok')));
+    SELECT * INTO r FROM progression_clear(D, 'home', 'the final stands as played; Hilton 1XI keep the place');
+    PERFORM _assert(r.ok, format('db/72 (note): the organiser could not clear the flag: %s', r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM progression_conflict WHERE competition_id = C), 'db/72: a cleared flag still stands');
+    -- (ack) an event that changes nothing does not raise it again; a change does
+    PERFORM _ev_71(U1, 1::smallint, 'batters', NULL, NULL, NULL, '{"striker":"W1","nonStriker":"W2"}');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM progression_conflict WHERE competition_id = C),
+      'db/72 (ack): an event that changed no result flagged the cleared side again');
+    SELECT * INTO r FROM match_result_decision_withdraw(dec, 'the appeal was itself withdrawn by Westville');
+    PERFORM _assert(EXISTS (SELECT 1 FROM progression_conflict WHERE competition_id = C AND match_id = D AND side = 'home'),
+      'db/72 (ack): a later change to the result did not flag the played final again');
   END;
   PERFORM set_config('app.user_id', '', true);
 

@@ -282,13 +282,43 @@ export function computePlan({ inputs, format, rules, locks, entrants }) {
 }
 
 /**
- * The drafts toFixtureDrafts() makes of a plan, each with the published
- * conditions in force on its own day, and what it holds back.
- * @param {Db} client @param {any} row  a fixture_plan row @param {string | null} competitionFormat
+ * KNOCKOUT PROGRESSION (SCRBRD-114 phase 3c, design §5): each earlier
+ * fixture a `{ winnerOf }` side names, whose match publishing made and whose
+ * result names a winner — by play, a super over, or the organiser's decision
+ * (match_result(), db/69, db/71) — as the entrant that won it. A winner that
+ * is not one of the plan's entrants resolves nothing (the draft stays held).
+ * @param {Db} client @param {any} row  a fixture_plan row @param {Map<string, any>} items  fixture_plan_item by fixture id
+ * @returns {Promise<Record<string, string>>}
  */
-async function draftsOf(client, row, competitionFormat) {
+async function resolvedOf(client, row, items) {
+  /** @type {Plan} */ const p = row.plan;
+  const named = new Set(p.fixtures.flatMap((f) => [f.home, f.away]).flatMap((s) => ("winnerOf" in s ? [s.winnerOf] : [])));
+  /** @type {Record<string, string>} */ const out = {};
+  for (const key of named) {
+    const item = items.get(key);
+    if (!item) continue;
+    const { rows } = await client.query(`select winner_school_id, winner_team_code from match_result($1)`, [item.match_id]);
+    const w = rows[0];
+    if (!w?.winner_school_id) continue;
+    const e = row.entrants.find((/** @type {any} */ x) => x.schoolId === w.winner_school_id
+      && String(x.teamCode ?? "").trim() === String(w.winner_team_code ?? "").trim());
+    if (e) out[key] = e.id;
+  }
+  return out;
+}
+
+/**
+ * The drafts toFixtureDrafts() makes of a plan, each with the published
+ * conditions in force on its own day, and what it holds back. A knockout
+ * side whose earlier fixture has a winner is that winner (resolvedOf()), and
+ * its draft says where it came from (`progression`).
+ * @param {Db} client @param {any} row  a fixture_plan row @param {string | null} competitionFormat
+ * @param {Map<string, any>} [items]  fixture_plan_item by fixture id
+ */
+async function draftsOf(client, row, competitionFormat, items = new Map()) {
   /** @type {Plan} */ const p = row.plan;
   const entrants = row.entrants.map((/** @type {any} */ e) => ({ id: e.id, schoolId: e.schoolId, teamCode: e.teamCode ?? null }));
+  const resolved = await resolvedOf(client, row, items);
   const days = [...new Set(p.fixtures.filter((f) => f.startsAt).map((f) => /** @type {string} */ (matchDay(f.startsAt))))];
   const conditions = await conditionsOn(client, row.competition_id, days);
   /** @type {Map<string, any>} */ const drafts = new Map();
@@ -296,8 +326,8 @@ async function draftsOf(client, row, competitionFormat) {
   for (const f of p.fixtures) {
     const day = f.startsAt ? /** @type {string} */ (matchDay(f.startsAt)) : null;
     const one = toFixtureDrafts({ ...p, fixtures: [f] },
-                                { id: row.competition_id, format: competitionFormat, conditions: day ? conditions.get(day) ?? {} : {}, entrants });
-    for (const d of one.drafts) drafts.set(d.fixtureId, d.body);
+                                { id: row.competition_id, format: competitionFormat, conditions: day ? conditions.get(day) ?? {} : {}, entrants, resolved });
+    for (const d of one.drafts) drafts.set(d.fixtureId, { body: d.body, progression: d.progression });
     for (const h of one.held) held.set(h.fixtureId, h.reason);
   }
   return { drafts, held };
@@ -553,7 +583,7 @@ export function plannerRoutes({ pool, secret }) {
         const now = new Map(computed.fixtures.map((f) => [f.id, f]));
         const stale = new Map(computed.staleLocks.map((l) => [l.fixtureId, l.reason]));
         const { rows: comp } = await client.query(`select format from competition where id = $1`, [id]);
-        const { drafts, held } = await draftsOf(client, row, comp[0]?.format ?? null);
+        const { drafts, held } = await draftsOf(client, row, comp[0]?.format ?? null, items);
         return { row, first: pub.first === true, items, now, stale, drafts, held };
       });
 
@@ -575,7 +605,8 @@ export function plannerRoutes({ pool, secret }) {
           const reasons = (again?.reasons ?? []).map((/** @type {keyof typeof PLAN_REASON_TEXT} */ code) => ({ code, text: PLAN_REASON_TEXT[code] }));
           results.push({ ...base, outcome: "refused", error: "clash", detail: "The slot no longer fits: regenerate the plan.", reasons }); continue;
         }
-        const body = prepared.drafts.get(f.id);
+        const draft = prepared.drafts.get(f.id);
+        const body = draft.body;
         // 2. One fixture, one transaction: the lock, the route's insert, the item.
         try {
           const r = await runAsPrincipal(pool, secret, as(req), async (client) => {
@@ -585,6 +616,15 @@ export function plannerRoutes({ pool, secret }) {
             const m = await insertFixture(client, fixtureInsertParams(body));
             const { rows: rec } = await client.query(`select * from fixture_plan_item_record($1, $2, $3)`, [planId, f.id, m.id]);
             answer(rec[0]);
+            // Where each knockout side came from, and the result it came
+            // from (SCRBRD-114 phase 3c, db/72): in the same transaction, so
+            // a fixture is never made without its row.
+            for (const pr of draft.progression ?? []) {
+              const from = prepared.items.get(pr.fromFixture)?.match_id;
+              const { rows: pg } = await client.query(`select * from match_progression_record($1, $2, $3, 'winner', $4)`,
+                [m.id, pr.side, from, pr.fromFixture]);
+              answer(pg[0]);
+            }
             return { outcome: "created", matchId: m.id, startsAt: m.startsAt, sharedWithOpponent: m.sharedWithOpponent };
           });
           results.push({ ...base, ...r });

@@ -130,6 +130,38 @@ group("B. The harness is the route's validation, and it can refuse");
   ok("the draft never sends `opponent` (the trigger stamps it)", !("opponent" in d.body));
 }
 
+group("C. A knockout's later round is posted once the earlier result names a winner (SCRBRD-114 phase 3c)");
+{
+  const four = entrants.slice(0, 4);
+  const draw = pairings({ format: PLAN_FORMAT.KNOCKOUT, entrants: four });
+  const windows = ["2026-10-03", "2026-10-10"].flatMap((d, i) => [
+    { id: `k${i}a`, groundId: ground(1), startsAt: at(d, "09:00"), endsAt: at(d, "13:00") },
+    { id: `k${i}b`, groundId: ground(2), startsAt: at(d, "09:00"), endsAt: at(d, "13:00") },
+  ]);
+  const p = plan({ pairings: draw, windows, rules: { durationMinutes: 180, preparationMinutes: 30 } });
+  const final = /** @type {any} */ (p.fixtures.find((f) => "winnerOf" in f.home || "winnerOf" in f.away));
+  ok("(the final names the semi-finals' winners, and is placed)", final && final.windowId != null, final);
+  const before = toFixtureDrafts(p, { id: COMP, format: "T20", entrants });
+  ok("no result yet: the final is held, awaiting_winner", before.held.some((h) => h.fixtureId === final.id && h.reason === "awaiting_winner")
+     && !before.drafts.some((d) => d.fixtureId === final.id), before.held);
+  // One semi-final has a winner, the other not yet: still held.
+  const semiA = final.home.winnerOf, semiB = final.away.winnerOf;
+  const sideOf = (/** @type {string} */ id) => /** @type {any} */ (p.fixtures.find((f) => f.id === id)).home.entrant;
+  const half = toFixtureDrafts(p, { id: COMP, format: "T20", entrants, resolved: { [semiA]: sideOf(semiA) } });
+  ok("one semi-final decided: still held", half.held.some((h) => h.fixtureId === final.id && h.reason === "awaiting_winner"), half.held);
+  // Both decided: posted, with the winners as its sides, and where each came from.
+  const both = toFixtureDrafts(p, { id: COMP, format: "T20", entrants, resolved: { [semiA]: sideOf(semiA), [semiB]: sideOf(semiB) } });
+  const d = both.drafts.find((x) => x.fixtureId === final.id);
+  const homeE = /** @type {any} */ (entrants.find((e) => e.id === sideOf(semiA))), awayE = /** @type {any} */ (entrants.find((e) => e.id === sideOf(semiB)));
+  ok("both decided: the final is a draft, the winners its sides", d && d.body.schoolId === homeE.schoolId && d.body.awaySchoolId === awayE.schoolId, d);
+  ok("...and it says where each side came from", JSON.stringify(d?.progression) === JSON.stringify([{ side: "home", fromFixture: semiA }, { side: "away", fromFixture: semiB }]), d?.progression);
+  const inserts = /** @type {any[][]} */ ([]);
+  const r = await post(fixtureRoutes({ pool: fakePool(inserts), secret: SECRET }), /** @type {any} */ (d).body);
+  ok("...and the fixture route accepts it as it stands", r.status === 200 && r.body?.id && inserts.length === 1, r);
+  const plain = both.drafts.filter((x) => x.fixtureId !== final.id);
+  ok("a fixture of entrants alone carries no progression", plain.length === 2 && plain.every((x) => x.progression.length === 0), plain.map((x) => x.progression));
+}
+
 console.log("\n" + "─".repeat(52));
 console.log(`PLANNER DRAFTS: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

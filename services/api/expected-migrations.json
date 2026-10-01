@@ -69,5 +69,6 @@
   "68_wicket_keeper.sql",
   "69_results_and_table.sql",
   "70_lift_clubs.sql",
-  "71_super_over.sql"
+  "71_super_over.sql",
+  "72_knockout_progression.sql"
 ]

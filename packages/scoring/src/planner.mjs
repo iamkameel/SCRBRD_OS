@@ -866,19 +866,30 @@ export const DRAFT_HELD = Object.freeze({
  * @param {string | null} [competition.format]          competition.format ("T20", "50-over" …)
  * @param {PlayConditions | null} [competition.conditions] the set in force, if any
  * @param {{ id: string, schoolId: string, teamCode: string | null }[]} competition.entrants
- * @returns {{ drafts: { fixtureId: string, body: FixtureBody }[],
+ * @param {Readonly<Record<string, string>> | null} [competition.resolved]  KNOCKOUT
+ *   PROGRESSION (SCRBRD-114 phase 3c, design §5): an earlier fixture's id →
+ *   the entrant that won it, for each whose match has a result with a winner.
+ *   A side `{ winnerOf }` found here is that entrant, and the draft lists it in
+ *   `progression` so that publishing records where the side came from
+ *   (match_progression, db/72); one not found holds the draft back
+ *   (awaiting_winner), as before.
+ * @returns {{ drafts: { fixtureId: string, body: FixtureBody, progression: { side: "home" | "away", fromFixture: string }[] }[],
  *             held: { fixtureId: string, reason: typeof DRAFT_HELD[keyof typeof DRAFT_HELD] }[] }}
  */
 export function toFixtureDrafts(p, competition) {
   const entrants = new Map(competition.entrants.map((e) => [e.id, e]));
+  const resolved = competition.resolved ?? {};
+  /** A side as an entrant: its own, or the winner of the fixture it names, once known. @param {PlanSide} s */
+  const entrantOf = (s) => ("entrant" in s ? s.entrant : Object.hasOwn(resolved, s.winnerOf) ? resolved[s.winnerOf] : null);
   const { format, overs } = fixtureFormatFrom(competition.conditions ?? {}, competition.format ?? null);
 
-  /** @type {{ fixtureId: string, body: FixtureBody }[]} */ const drafts = [];
+  /** @type {{ fixtureId: string, body: FixtureBody, progression: { side: "home" | "away", fromFixture: string }[] }[]} */ const drafts = [];
   /** @type {{ fixtureId: string, reason: typeof DRAFT_HELD[keyof typeof DRAFT_HELD] }[]} */ const held = [];
   for (const f of p.fixtures) {
     if (f.windowId == null || f.startsAt == null || f.groundId == null) { held.push({ fixtureId: f.id, reason: DRAFT_HELD.UNSCHEDULED }); continue; }
-    if (!("entrant" in f.home) || !("entrant" in f.away)) { held.push({ fixtureId: f.id, reason: DRAFT_HELD.AWAITING_WINNER }); continue; }
-    const home = entrants.get(f.home.entrant), away = entrants.get(f.away.entrant);
+    const homeId = entrantOf(f.home), awayId = entrantOf(f.away);
+    if (homeId == null || awayId == null) { held.push({ fixtureId: f.id, reason: DRAFT_HELD.AWAITING_WINNER }); continue; }
+    const home = entrants.get(homeId), away = entrants.get(awayId);
     if (!home || !away) refuse(`fixture ${f.id} names an entrant the competition does not list`);
     if (!home.teamCode?.trim() || !away.teamCode?.trim()) { held.push({ fixtureId: f.id, reason: DRAFT_HELD.NO_TEAM_CODE }); continue; }
     /** @type {FixtureBody} */
@@ -889,7 +900,11 @@ export function toFixtureDrafts(p, competition) {
     };
     if (format != null) body.format = format;
     if (overs != null) body.overs = overs;
-    drafts.push({ fixtureId: f.id, body });
+    /** @type {{ side: "home" | "away", fromFixture: string }[]} */
+    const progression = [];
+    if ("winnerOf" in f.home) progression.push({ side: "home", fromFixture: f.home.winnerOf });
+    if ("winnerOf" in f.away) progression.push({ side: "away", fromFixture: f.away.winnerOf });
+    drafts.push({ fixtureId: f.id, body, progression });
   }
   return { drafts, held };
 }

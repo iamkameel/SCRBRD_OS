@@ -58,6 +58,12 @@ const WALKS = [
   // pair scored; the result, the live score, careers and the bowler's day;
   // completion once settled; the signed-out log and header.
   "superover",
+  // ── SCRBRD-114 phase 3c (db/72): knockout progression ──
+  // A cup drawn by the planner and published; the semi-finals played; the
+  // final made from their winners with a row for each side; a correction
+  // re-resolves the unplayed final and flags the played one; the organiser
+  // clears the flag with a note.
+  "progression",
   // The scorebook importer (SCRBRD-120, db/63): photos stripped and read on
   // the log, a card ticked and checked, two people, the commit's Laws and
   // seal, the match complete, the amendment path, the purge.
