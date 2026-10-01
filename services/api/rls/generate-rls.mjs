@@ -491,6 +491,8 @@ export const ADDED_SINCE_01 = {
   "transport.lift.oversee":      "70_lift_clubs.sql",
   "transport.lift.policy":       "70_lift_clubs.sql",
   // ── end SCRBRD-124 ──
+  // ── SCRBRD-130 R2: the DLS resource table (db/75) ──
+  "platform.reference.manage":   "75_dls_table.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

@@ -232,6 +232,9 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   order, the open one included (its `oversAtResume` undefined until it closes)
  * @property {number | null} par     SCRBRD-130 R1: the last par the umpires announced
  *   (`revision.par`), or null
+ * @property {number | null} startOvers  SCRBRD-130 R2: the allotment its innings_start gave it
+ * @property {{balls: number, wickets: number, from: number, to: number}[]} overCuts  SCRBRD-130 R2:
+ *   the umpires' changes to the allotment made with no stop open, each at its position
  */
 
 /**
@@ -455,6 +458,10 @@ function inningsFolder(ctx = {}, carried = 0) {
     // SCRBRD-130 R1: rain. Positions and allotments only; no resource is
     // computed here (dls.mjs does that at read time, design §2.3).
     stopped: null, interruptions: [], par: null,
+    // SCRBRD-130 R2: the allotment the innings started with, and the umpires'
+    // cuts of it made with no stop open (the revision sheet), each at its
+    // position — what the calculator reads beside the interruptions.
+    startOvers: null, overCuts: [],
   };
 
   // Name resolution comes from the squads carried on innings_start, so a
@@ -652,6 +659,7 @@ function inningsFolder(ctx = {}, carried = 0) {
           superOver: superOverNumber(ev.superOver),
         });
         targetTyped = false;
+        inn.startOvers = inn.overs;   // SCRBRD-130 R2: the allotment it starts with
         if (ctx.flagFor) inn.teamFlag = ctx.flagFor(inn.teamKey) ?? "🏏";
         // THE DECLARED CAPTURE PROFILE. SCRBRD-039. Three rules, each one a
         // way a declaration could otherwise rewrite what the evidence means:
@@ -864,6 +872,10 @@ function inningsFolder(ctx = {}, carried = 0) {
       // sixty balls and a reset target decides the match — from this event,
       // not from anything stored beside the log.
       case KIND.REVISION:
+        // SCRBRD-130 R2: a cut (or a raise) with no stop open, at this position.
+        if (ev.overs != null && inn.stopped == null && ev.overs !== inn.overs) {
+          inn.overCuts = [...inn.overCuts, { balls: inn.balls, wickets: inn.wickets, from: inn.overs ?? 20, to: ev.overs }];
+        }
         if (ev.overs != null) inn.overs = ev.overs;
         if (ev.target != null) { inn.target = ev.target; targetTyped = true; }
         inn.revised = { overs: ev.overs ?? null, target: ev.target ?? null, reason: ev.reason ?? null,

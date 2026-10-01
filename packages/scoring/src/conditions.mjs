@@ -102,6 +102,9 @@ export const CONDITION = Object.freeze({
   // platform default (Kameel, 2026-10-01); the calculator says so without it.
   "target.method":                        key({ part: "play", type: "enum", values: ["umpires_revision", "dls_standard"], platformDefault: "umpires_revision", readers: ["fold", "sql"], sort: 90 }),
   "target.g50":                           key({ part: "play", type: "int", unit: "runs", readers: ["pad"], sort: 91 }),
+  // SCRBRD-130 R2 (§4.4): the published DLS table in force when the match was
+  // fixed, {id, version, hash} — the platform's, never a competition's.
+  "target.dls_table":                     key({ part: "play", type: "object", readers: ["pad", "sql"], sort: 92 }),
   "points.win":                           key({ part: "table", type: "int", unit: "points", readers: ["table"], sort: 100 }),
   "points.tie":                           key({ part: "table", type: "int", unit: "points", readers: ["table"], sort: 101 }),
   "points.draw":                          key({ part: "table", type: "int", unit: "points", readers: ["table"], sort: 102 }),

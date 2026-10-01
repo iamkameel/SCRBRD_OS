@@ -56,6 +56,8 @@ export const CATALOGUE =
   // SCRBRD-130 R1 (db/73): the method's values, and G50 with no default.
   + 'target.method|play|enum|-|umpires_revision,dls_standard|-|"umpires_revision"|fold,sql; '
   + 'target.g50|play|int|runs|-|-|-|pad; '
+  // SCRBRD-130 R2 (db/75): the frozen table reference, the platform's.
+  + 'target.dls_table|play|object|-|-|-|-|pad,sql; '
   + 'points.win|table|int|points|-|-|-|table; '
   + 'points.tie|table|int|points|-|-|-|table; '
   + 'points.draw|table|int|points|-|-|-|table; '
@@ -117,8 +119,8 @@ group("A. The catalogue: one list, in both languages");
 {
   ok("catalogueString() is the pinned string db/99 §39 compares with", catalogueString() === CATALOGUE, catalogueString());
   const keys = Object.keys(CONDITION);
-  // 31 from db/61; SCRBRD-130 adds target.g50 (db/73).
-  ok(`${keys.length} keys, every part one of play, table, sheet`, keys.length === 32
+  // 31 from db/61; SCRBRD-130 adds target.g50 (db/73) and target.dls_table (db/75).
+  ok(`${keys.length} keys, every part one of play, table, sheet`, keys.length === 33
      && Object.values(CONDITION).every((c) => ["play", "table", "sheet"].includes(c.part)));
   ok("the phase 1 readers' keys are in it: free hit, overs, innings cap",
      ["format.free_hit", "format.overs_per_innings", "bowling.max_overs_per_bowler_innings"].every((k) => CONDITION[k]?.part === "play"));
@@ -130,7 +132,7 @@ group("A. The catalogue: one list, in both languages");
   // db/61 writes the catalogue by migration, and each later file that adds
   // a key (SCRBRD-130: db/73) inserts it the same way: every key here is
   // inserted there, and none there is missing here.
-  const listed = ["61_playing_conditions.sql", "73_rain_interruptions.sql"].flatMap((f) => {
+  const listed = ["61_playing_conditions.sql", "73_rain_interruptions.sql", "75_dls_table.sql"].flatMap((f) => {
     const sql = readFileSync(new URL(`../../../db/${f}`, import.meta.url), "utf8");
     const insert = sql.slice(sql.indexOf("INSERT INTO playing_condition_key"), sql.indexOf("ON CONFLICT (key)", sql.indexOf("INSERT INTO playing_condition_key")));
     return [...insert.matchAll(/^\s*\('([a-z0-9_.]+)'/gm)].map((m) => m[1]);

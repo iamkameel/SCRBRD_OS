@@ -72,5 +72,6 @@
   "71_super_over.sql",
   "72_knockout_progression.sql",
   "73_rain_interruptions.sql",
-  "74_venue_par.sql"
+  "74_venue_par.sql",
+  "75_dls_table.sql"
 ]

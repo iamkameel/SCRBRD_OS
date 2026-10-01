@@ -26,6 +26,7 @@ import { spawn } from "node:child_process";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { inningsStart, batters, bowler, ball, revision, playStopped, playResumed, sealInnings, deriveInnings, BALL_TYPE } from "@scrbrd/scoring";
+import { syntheticTable, SYNTHETIC_TITLE } from "@scrbrd/scoring";   // SCRBRD-130 R2: the tests' table, never the real one
 
 const PORT = port(8913);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -189,6 +190,80 @@ try {
   // Par 17 (the five innings and M's 12); 17 × 6 ÷ 12 = 8.5 → 9; the side is 1 down.
   ok(`par at a point, by the proportion of overs (${at.body?.words})`, at.status === 200 && at.body?.parAt?.runs === 9
      && at.body.parAt.wickets === 1 && at.body.parAt.method === "proportion" && at.body.words === "A typical side here would be 9/1 by now", show(at));
+
+  // ── D ──────────────────────────────────────────────────────────
+  // SCRBRD-130 R2 (db/75). SYNTHETIC ONLY: the table below is syntheticTable()
+  // — round(b × (10 − w) ÷ 3) tenths — and every figure is worked from it.
+  group("D. The DLS table and the calculator: synthetic only");
+  const ops = await login("platform@example.invalid");
+  ok("the platform's operator signs in", !!ops);
+  const none = await api(`/api/matches/${M}/dls?terminate=1`, { token: sarah });
+  ok(`before any table: ${none.body?.words}`, none.status === 200 && none.body?.status === "no_table"
+     && none.body.words === "No DLS table loaded; enter the umpires' figures", show(none));
+  const synthetic = syntheticTable({ grain: "ball" });
+  const csv = ["b,w,tenths", ...[...synthetic.cells].map(([k, v]) => `${k},${v}`)].join("\n");
+  const meta = { title: SYNTHETIC_TITLE, grain: "ball", maxBalls: 300, units: "tenths", sourcePublisher: "SCRBRD tests",
+                 sourceDocument: "the synthetic formula in dls.mjs", sourceEditionDate: "2026-10-01",
+                 permissionNote: "Synthetic: no permission needed; tests only, never published." };
+  const school = await api(`/api/admin/dls-tables`, { method: "POST", token: sarah, body: { ...meta, csv } });
+  ok("a school's director of sport may not load a table", school.status === 403, show(school));
+  const noRead = await api(`/api/admin/dls-tables`, { token: sarah });
+  ok("...nor list them", noRead.status === 403, show(noRead));
+  const brokenCsv = csv.replace(/^150,2,\d+$/m, "150,2,10");
+  const broken = await api(`/api/admin/dls-tables`, { method: "POST", token: ops, body: { ...meta, csv: brokenCsv } });
+  ok("a table broken in one place is refused, the structural report naming it", broken.status === 422 && broken.body?.error === "structure"
+     && broken.body.detail?.problems?.includes("not_rising_in_balls"), show(broken));
+  const thin = await api(`/api/admin/dls-tables`, { method: "POST", token: ops, body: { ...meta, permissionNote: "ok", csv } });
+  ok("a permission note that says nothing is refused", thin.status === 422 && thin.body?.error === "permission_note_required", show(thin));
+  const loaded = await api(`/api/admin/dls-tables`, { method: "POST", token: ops, body: { ...meta, csv } });
+  ok("the synthetic table loads as a draft, its hash the one dls.test.mjs pins", loaded.status === 200 && loaded.body?.rowCount === 3010
+     && loaded.body.contentHash === "0847f8f488da304bddc426b9d0d50febfac43e6461fc7016b365da151b1dfa47", show(loaded));
+  const pub = await api(`/api/admin/dls-tables/${loaded.body?.id}/publish`, { method: "POST", token: ops, body: {} });
+  ok("...and is never published: synthetic_title", pub.status === 422 && pub.body?.error === "synthetic_title", show(pub));
+  const listed = await api(`/api/admin/dls-tables`, { token: ops });
+  ok("the operator's list carries provenance and no cell", listed.status === 200 && listed.body?.tables?.[0]?.permissionNote
+     && !JSON.stringify(listed.body).includes("cells") && JSON.stringify(listed.body).length < 4000, show(listed));
+  // The walk publishes it as the owner — which no route can — to prove the calculator end to end.
+  await q(`update dls_resource_table set status = 'published', published_by = $2, published_at = now() where id = $1`, [loaded.body?.id, scorerId]);
+  // A match fixed after it: its document names the table. Hilton 24 off 2 overs; the
+  // chase, set 25, reaches 6/0 off 6, rain.
+  const [{ id: D }] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+                               values ($1, '1XI', 'Rain DLS Visitors', $2, 'cricket', 'T20', 2, 'live') returning id`, [HIL, STARTS]);
+  const pd = await pad(scorer, D);
+  await pd.send([inningsStart({ battingTeam: "1XI", bowlingTeam: "Rain DLS Visitors", squad: XI, bowlingSquad: VIS, overs: 2 }),
+                 batters({ striker: XI[0].id, nonStriker: XI[1].id }), bowler({ bowler: VIS[0].id }),
+                 ...Array.from({ length: 6 }, () => ball({ type: BALL_TYPE.RUN, value: 2 })), bowler({ bowler: VIS[1].id }),
+                 ...Array.from({ length: 6 }, () => ball({ type: BALL_TYPE.RUN, value: 2 }))]);
+  await pd.send([sealInnings(pd.inn(0))]);
+  const [{ doc }] = await q(`select doc from match_conditions where match_id = $1`, [D]);
+  ok("the match's document froze the table: {id, version, hash}", doc?.play?.["target.dls_table"]?.id === loaded.body?.id
+     && doc.play["target.dls_table"].hash === loaded.body?.contentHash, JSON.stringify(doc?.play?.["target.dls_table"]));
+  const start = await api(`/api/matches/${D}/dls?chaseOvers=1`, { token: sarah });
+  // A chase of one over: R₂ = R(6,0) = 20 against R₁ = R(12,0) = 40: ⌊24 × 20 ÷ 40⌋ = 12 → 13.
+  ok(`the chase's start sheet: ${start.body?.words}`, start.body?.status === "ok" && start.body.calculated === 13 && start.body.case === "4"
+     && start.body.words === "SCRBRD calculates 13 (DLS Standard, table v1)", show(start));
+  await pd.send([{ ...inningsStart({ battingTeam: "Rain DLS Visitors", bowlingTeam: "1XI", squad: VIS, bowlingSquad: XI, overs: 2, target: 25 }), innings: 1 },
+                 { ...batters({ striker: VIS[0].id, nonStriker: VIS[1].id }), innings: 1 }, { ...bowler({ bowler: XI[2].id }), innings: 1 },
+                 ...Array.from({ length: 6 }, () => ({ ...ball({ type: BALL_TYPE.RUN, value: 1 }), innings: 1 })),
+                 { ...playStopped({ reason: "rain" }), innings: 1 }]);
+  // Resumed at 1 over: loss = R(6,0) − R(0,0) = 20; R₂ = 20: ⌊24 × 20 ÷ 40⌋ = 12 → 13.
+  const resume = await api(`/api/matches/${D}/dls?resumeOvers=1`, { token: sarah });
+  ok(`the Resume sheet's proposal at 1 over: ${resume.body?.calculated}`, resume.body?.calculated === 13 && resume.body.case === "5"
+     && resume.body.kind === "target", show(resume));
+  // Terminated here: the same loss, the par 12.
+  const end = await api(`/api/matches/${D}/dls?terminate=1`, { token: sarah });
+  ok(`the end sheet's proposal: ${end.body?.words}`, end.body?.calculated === 12 && end.body.kind === "par" && end.body.case === "6", show(end));
+  await pd.send([{ ...revision({ par: 13 }), innings: 1 }, { ...sealInnings(pd.inn(1), "abandoned"), innings: 1 }]);
+  const after = await api(`/api/matches/${D}/dls`, { token: sarah });
+  ok(`the umpires' 13 beside the calculated 12, kept and shown: ${after.body?.differenceWords}`, after.body?.announced === 13
+     && after.body.calculated === 12 && after.body.difference === 1 && after.body.differenceWords === "umpires 13 · calculated 12", show(after));
+  ok("no answer carries a cell", ![none, start, resume, end, after].some((r) => /cells|tenths|resource_tenths/.test(JSON.stringify(r.body))));
+  const logged = await q(`select count(*)::int as n from ball_event where match_id = $1 and (payload ? 'calculated' or payload ? 'case' or payload ? 'table_id' or payload::text like '%SCRBRD calculates%' or payload::text like '%dls_standard%')`, [D]);
+  ok("the proposal never enters the log", logged[0].n === 0);
+  const wd = await api(`/api/admin/dls-tables/${loaded.body?.id}/withdraw`, { method: "POST", token: ops, body: { note: "replaced by the next version" } });
+  const still = await api(`/api/matches/${D}/dls`, { token: sarah });
+  ok("withdrawn, its rows kept: the match still reads it, and says so", wd.status === 200 && still.body?.calculated === 12
+     && /table since withdrawn/.test(still.body?.words ?? ""), show(still));
 } catch (e) {
   ok("the walk ran to the end", false, e?.stack ?? String(e));
 } finally {

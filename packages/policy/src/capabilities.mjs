@@ -376,6 +376,14 @@ export const CAPABILITIES = {
   // standing in a comparison that spans schools, which is the one thing the
   // figure is for.
   "platform.reward.manage":      "Set the coefficients of the rewards algorithm",
+  // ── SCRBRD-130 R2 (db/75) ──
+  // Load, publish and withdraw a reference table the platform holds for every
+  // school — the DLS Standard Edition's resources — from an official source,
+  // with its provenance and the permission to use it. Reference data that must
+  // NOT be a migration (no number of it may enter the repository, D5), so a
+  // person loads it, and the platform's alone: a school that could load its
+  // own table could set its own targets.
+  "platform.reference.manage":   "Load and publish the platform's reference tables (the DLS resource table)",
   // Turn a module off for this school, or for one person at it.
   //
   // ONE DIRECTION ONLY, and the constraint is structural rather than written
@@ -429,6 +437,8 @@ export const PLATFORM_ONLY = Object.freeze([
   "scouting.accredit",
   // Same test applied: "what is the growth coefficient" has no tenant in it.
   "platform.reward.manage",
+  // SCRBRD-130 R2: "which DLS table is in force" has no tenant in it either.
+  "platform.reference.manage",
 ]);
 
 export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
@@ -575,6 +585,8 @@ export const LEVEL = Object.freeze({
   "scouting.accredit": 1,
   "platform.support.impersonate": 3,
   "platform.feature.manage": 1, "platform.reward.manage": 1,
+  // SCRBRD-130 R2: a published table and its provenance; no person in it.
+  "platform.reference.manage": 1,
   "school.feature.manage": 1,
 });
 

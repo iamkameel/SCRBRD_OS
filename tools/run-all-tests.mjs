@@ -46,6 +46,10 @@ const SUITES = [
   // ── SCRBRD-130 R3 (db/74): venue par — the floor pinned with SQL, par at a point ──
   ["venue",    "packages/scoring/test/venue.test.mjs"],
   // ── end SCRBRD-130 R3 ──
+  // ── SCRBRD-130 R2 (db/75): the DLS Standard Edition calculator, on the
+  // synthetic table only; the structural checks; the D5 grep ──
+  ["dls",      "packages/scoring/test/dls.test.mjs"],
+  // ── end SCRBRD-130 R2 ──
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],

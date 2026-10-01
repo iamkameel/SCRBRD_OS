@@ -764,6 +764,12 @@ const PLAYER_ROUTES = [
   // ── SCRBRD-130 R3 (db/74): venue par, at a ground and at a match ──
   [/^\/api\/grounds\/([^/]+)\/venue-par$/,                     "GET",  rain.groundVenuePar],
   [/^\/api\/matches\/([^/]+)\/venue-par$/,                     "GET",  rain.matchVenuePar],
+  // ── SCRBRD-130 R2 (db/75): the DLS proposal; the operator's table routes ──
+  [/^\/api\/matches\/([^/]+)\/dls$/,                           "GET",  rain.matchDls],
+  [/^\/api\/admin\/dls-tables$/,                               "GET",  rain.dlsTables],
+  [/^\/api\/admin\/dls-tables$/,                               "POST", rain.dlsLoad],
+  [/^\/api\/admin\/dls-tables\/([^/]+)\/publish$/,             "POST", rain.dlsPublish],
+  [/^\/api\/admin\/dls-tables\/([^/]+)\/withdraw$/,            "POST", rain.dlsWithdraw],
   // ── end SCRBRD-114 phase 3a ──
   // ── SCRBRD-114 phase 3c (db/72): knockout progression ──
   // Where each knockout side came from, and the organiser clearing a flag a

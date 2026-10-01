@@ -2881,6 +2881,64 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/74 (section 53) ──────────────────────────────────────────────
 
+-- ┌── db/75 (section 54). SCRBRD-130 R2: the DLS table ─────────────────
+-- D5: no resource value is ever written here. The cells are the design's
+-- synthetic generator, dls.mjs syntheticTable() for a 300-ball innings,
+-- round(1000 × b × (10 − w) ÷ 3000) half up, computed — never listed. A
+-- patch {"b,w": tenths} changes a cell, {"b,w": null} drops it.
+CREATE OR REPLACE FUNCTION _synth_75(p_grain text, p_patch jsonb DEFAULT '{}') RETURNS jsonb AS $$
+  SELECT jsonb_agg(jsonb_build_array(b, w, coalesce(p_patch -> (b || ',' || w), to_jsonb((2000 * b * (10 - w) + 3000) / 6000)))
+                   ORDER BY b, w)
+    FROM generate_series(0, 300, CASE p_grain WHEN 'over' THEN 6 ELSE 1 END) b, generate_series(0, 9) w
+   WHERE p_patch -> (b || ',' || w) IS DISTINCT FROM 'null'::jsonb
+$$ LANGUAGE sql IMMUTABLE;
+
+-- A table's provenance for the loader, under a title and version of the test's.
+CREATE OR REPLACE FUNCTION _meta_75(p_title text, p_version integer, p_grain text) RETURNS jsonb AS $$
+  SELECT jsonb_build_object('title', p_title, 'version', p_version, 'grain', p_grain, 'maxBalls', 300,
+                            'sourcePublisher', 'Verify 075', 'sourceDocument', 'Verify 075 generator', 'sourceEditionDate', '2026-10-01',
+                            'permissionNote', 'Verify 075: synthetic, rolled back, nobody''s permission needed')
+$$ LANGUAGE sql IMMUTABLE;
+
+-- Past RLS and the grants, as the owner: run one statement and answer 'ok'
+-- or the constraint that refused it.
+CREATE OR REPLACE FUNCTION _try_75(p_sql text) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN coalesce(nullif(v_con, ''), SQLSTATE);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Fix a match: freeze its document from the resolver, as db/61's fixing does.
+CREATE OR REPLACE FUNCTION _freeze_75(p_match uuid) RETURNS jsonb AS $$
+  INSERT INTO match_conditions (match_id, set_id, set_version, doc, sources, doc_hash)
+  SELECT p_match, r.set_id, r.set_version, r.doc, r.sources, '' FROM match_conditions_compute(p_match) r
+  RETURNING jsonb_build_object('doc', doc, 'sources', sources);
+$$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Three Hilton friendlies, unfixed (m0, m1, m2), and a draft version of a
+-- league's conditions (v) to try to name the table in.
+CREATE OR REPLACE FUNCTION _seed_75() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OWNR uuid := '88888888-0000-0000-0000-000000000022';
+  c uuid; v uuid; m0 uuid; m1 uuid; m2 uuid;
+BEGIN
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 075 League', 'league', 'T20', 'school') RETURNING id INTO c;
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by) VALUES (c, 1, 'Verify 075 v1', '2026-10-01', OWNR) RETURNING id INTO v;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', 'Verify 075 Friendly', '2026-10-20 10:00+02', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m0;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', 'Verify 075 Friendly', '2026-10-21 10:00+02', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m1;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', 'Verify 075 Friendly', '2026-10-22 10:00+02', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m2;
+  RETURN jsonb_build_object('c', c, 'v', v, 'm0', m0, 'm1', m1, 'm2', m2);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/75 (section 54) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -9028,6 +9086,8 @@ BEGIN
       -- SCRBRD-130 R1 (db/73)
       || 'target.method|play|enum|-|umpires_revision,dls_standard|-|"umpires_revision"|fold,sql; '
       || 'target.g50|play|int|runs|-|-|-|pad; '
+      -- SCRBRD-130 R2 (db/75)
+      || 'target.dls_table|play|object|-|-|-|-|pad,sql; '
       || 'points.win|table|int|points|-|-|-|table; '
       || 'points.tie|table|int|points|-|-|-|table; '
       || 'points.draw|table|int|points|-|-|-|table; '
@@ -12458,6 +12518,171 @@ $v49$;
     PERFORM _assert(NOT has_function_privilege('venue_par_pool(uuid,integer,date)', 'EXECUTE')
                     AND NOT has_function_privilege('venue_par_compute(uuid,integer,text,date)', 'EXECUTE'),
       'db/74: the application may read the pool past the readers'' guards');
+  END;
+
+  -- ── 54. The DLS table: loading, publishing, freezing (SCRBRD-130 R2, db/75) ──
+  -- Every cell here is the synthetic generator's (_synth_75), never a value
+  -- of the published table (D5). The JavaScript half — the calculator, its
+  -- six cases worked by hand, the D5 grep — is packages/scoring/test/dls.test.mjs.
+  --
+  -- Each labelled assertion was falsified once — the function replaced in
+  -- the database and this file run — and went red:
+  --   (operator)  dls_operator() answering true for anyone signed in
+  --   (structure) dls_table_problems() without its not_falling_in_wickets check
+  --   (synthetic) dls_table_publish() not refusing a SYNTHETIC title
+  --   (published) dls_resource_guard() letting a published table's cell move
+  --   (withdrawn) dls_table_guard() letting a published table be deleted
+  --   (frozen)    the resolver's block reading a draft table, not a published one
+  --   (platform)  condition_platform_key_guard() letting the key through
+  --   (guard)     dls_table_for_match() not asking match_result_readable()
+  DECLARE
+    ids  jsonb := _seed_75();
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    BALL uuid; OVR uuid; PUB uuid;
+    got  text;
+    v    record;
+    j    jsonb;
+    v_ok boolean;
+  BEGIN
+    -- (operator) platform.reference.manage, held through no school: a school's
+    -- director loads, publishes, withdraws and lists nothing
+    PERFORM _as(U_SARAH);
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 by a director', 901, 'over'), _synth_75('over'));
+    PERFORM _assert(NOT v.ok AND v.reason = 'not_permitted', format('db/75 (operator): a school''s director loaded a table: %s', v.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_tables()), 'db/75 (operator): a school''s director lists the tables');
+    PERFORM _assert(NOT dls_operator() AND NOT app_can('platform.reference.manage', HIL),
+      'db/75 (operator): a school''s director holds platform.reference.manage');
+
+    -- a platform administrator inside a support session (§ support: U_PLAT's
+    -- is still open here) acts for a school, not for the platform: refused
+    PERFORM _as(U_PLAT);
+    IF app_support_access_id() IS NOT NULL THEN
+      SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 in support', 901, 'over'), _synth_75('over'));
+      PERFORM _assert(NOT v.ok AND v.reason = 'not_permitted', format('db/75 (operator): a support session loaded a table: %s', v.reason));
+    END IF;
+
+    -- the synthetic table loads at both grains, hashed as dls.test.mjs pins it;
+    -- the owner (superadmin) as the operator
+    PERFORM _as(U_OWNER);
+    SELECT * INTO v FROM dls_table_load(_meta_75('SYNTHETIC — tests only', 901, 'ball'), _synth_75('ball'));
+    PERFORM _assert(v.ok AND v.row_count = 3010 AND v.content_hash = '0847f8f488da304bddc426b9d0d50febfac43e6461fc7016b365da151b1dfa47',
+      format('db/75: the synthetic table by the ball loaded %s, %s cells, hash %s', v.reason, v.row_count, v.content_hash));
+    BALL := v.table_id;
+    SELECT * INTO v FROM dls_table_load(_meta_75('SYNTHETIC — tests only', 902, 'over'), _synth_75('over'));
+    PERFORM _assert(v.ok AND v.row_count = 510 AND v.content_hash = '95766fbf157ef9908c29ab997d53807a2bdaa9eedca81ed7367db0a5d8afc564',
+      format('db/75: the synthetic table by the over loaded %s, %s cells, hash %s', v.reason, v.row_count, v.content_hash));
+    OVR := v.table_id;
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 again', 902, 'over'), _synth_75('over'));
+    PERFORM _assert(NOT v.ok AND v.reason = 'version_taken', format('db/75: a version loaded twice: %s', v.reason));
+    -- the provenance and the permission are not optional
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075', 903, 'over') - 'sourceDocument', _synth_75('over'));
+    PERFORM _assert(NOT v.ok AND v.reason = 'provenance_required', format('db/75: a table with no source loaded: %s', v.reason));
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075', 903, 'over') || '{"permissionNote": "yes"}', _synth_75('over'));
+    PERFORM _assert(NOT v.ok AND v.reason = 'permission_note_required', format('db/75: a table with no permission loaded: %s', v.reason));
+
+    -- (structure) each check refuses, alone: one cell moved at a time
+    SELECT string_agg(x.label || '=' || coalesce(array_to_string(r.problems, '+'), r.reason), ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('a_grain', 'inning', '{}'::jsonb), ('b_missing', 'over', '{"6,3": null}'), ('c_range', 'over', '{"6,0": 19.5}'),
+                   ('d_end', 'over', '{"0,0": 1}'), ('e_start', 'over', '{"300,0": 999}'), ('f_balls', 'over', '{"12,9": 1}'),
+                   ('g_wickets', 'over', '{"6,1": 21}')) AS x(label, grain, patch),
+           LATERAL dls_table_load(_meta_75('Verify 075 broken', 904, x.grain), _synth_75('over', x.patch)) r;
+    PERFORM _assert(got = 'a_grain=grain b_missing=missing_cell c_range=out_of_range d_end=not_zero_at_end e_start=not_full_at_start '
+                       || 'f_balls=not_rising_in_balls g_wickets=not_falling_in_wickets',
+      format('db/75 (structure): the checks read %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_tables() t WHERE t.version = 904), 'db/75 (structure): a broken table was kept');
+
+    -- (synthetic) the tests' table is never published
+    SELECT * INTO v FROM dls_table_publish(BALL);
+    PERFORM _assert(NOT v.ok AND v.reason = 'synthetic_title', format('db/75 (synthetic): the synthetic table published: %s', v.reason));
+
+    -- (frozen) a match fixed with no table published names none, for ever
+    j := _freeze_75((ids->>'m0')::uuid);
+    PERFORM _assert(NOT (j->'doc'->'play' ? 'target.dls_table') AND j->'sources'->'target.dls_table'->>'from' = 'platform_default',
+      format('db/75 (frozen): a match fixed with no table published named %s', j->'doc'->'play'->'target.dls_table'));
+
+    -- a table under the test's own title (still the generator's cells) publishes
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 rehearsal table', 905, 'over'), _synth_75('over'));
+    PUB := v.table_id;
+    SELECT * INTO v FROM dls_table_publish(PUB);
+    PERFORM _assert(v.ok, format('db/75: the rehearsal table did not publish: %s %s', v.reason, v.detail));
+    SELECT * INTO v FROM dls_table_publish(PUB);
+    PERFORM _assert(NOT v.ok AND v.reason = 'not_draft', format('db/75: a table published twice: %s', v.reason));
+    -- the listing carries provenance and never a cell
+    SELECT string_agg(t.version || ':' || t.status, ' ' ORDER BY t.version) INTO got FROM dls_tables() t WHERE t.version >= 901;
+    PERFORM _assert(got = '901:draft 902:draft 905:published', format('db/75: the operator lists %s', got));
+
+    -- (frozen) a match fixed now names it, from the platform
+    j := _freeze_75((ids->>'m1')::uuid);
+    PERFORM _assert(j->'doc'->'play'->'target.dls_table' = jsonb_build_object('id', PUB, 'version', 905,
+                      'hash', '95766fbf157ef9908c29ab997d53807a2bdaa9eedca81ed7367db0a5d8afc564')
+                    AND j->'sources'->'target.dls_table' = '{"from": "platform", "status": "confirmed"}',
+      format('db/75 (frozen): the document reads %s from %s', j->'doc'->'play'->'target.dls_table', j->'sources'->'target.dls_table'));
+
+    -- (published) a published table never changes: not a cell, not its
+    -- title, not deleted, not a cell added — even by the owner
+    SELECT string_agg(_try_75(x.s), ' ' ORDER BY x.i) INTO got FROM (VALUES
+      (1, format('UPDATE dls_resource SET resource_tenths = resource_tenths WHERE table_id = %L AND balls_remaining = 6', PUB)),
+      (2, format('DELETE FROM dls_resource WHERE table_id = %L AND balls_remaining = 6', PUB)),
+      (3, format('INSERT INTO dls_resource SELECT %L, 1, w, 0 FROM generate_series(0, 9) w', PUB)),
+      (4, format('UPDATE dls_resource_table SET title = %L WHERE id = %L', 'Verify 075 renamed', PUB)),
+      (5, format('UPDATE dls_resource_table SET status = %L WHERE id = %L', 'draft', PUB))) AS x(i, s);
+    PERFORM _assert(got = 'dls_resource_published_immutable dls_resource_published_immutable dls_resource_published_immutable '
+                       || 'dls_table_published_immutable dls_table_published_immutable',
+      format('db/75 (published): writes to a published table read %s', got));
+
+    -- (withdrawn) withdrawal says why, keeps every row, and the match that
+    -- named it still reads it, "since withdrawn"
+    SELECT * INTO v FROM dls_table_withdraw(PUB, 'short');
+    PERFORM _assert(NOT v.ok AND v.reason = 'note_required', format('db/75 (withdrawn): withdrawn without a reason: %s', v.reason));
+    SELECT * INTO v FROM dls_table_withdraw(PUB, 'Verify 075: superseded in the rehearsal');
+    PERFORM _assert(v.ok, format('db/75 (withdrawn): the table did not withdraw: %s', v.reason));
+    PERFORM _assert(_try_75(format('DELETE FROM dls_resource_table WHERE id = %L', PUB)) = 'dls_table_kept'
+                    AND _try_75(format('UPDATE dls_resource_table SET status = %L, withdrawn_note = NULL WHERE id = %L', 'published', PUB))
+                        = 'dls_table_published_immutable',
+      'db/75 (withdrawn): a withdrawn table was deleted or brought back');
+    PERFORM _as(U_SARAH);
+    SELECT * INTO v FROM dls_table_for_match((ids->>'m1')::uuid);
+    PERFORM _assert(v.id = PUB AND v.status = 'withdrawn' AND NOT v.current AND jsonb_array_length(v.cells) = 510,
+      format('db/75 (withdrawn): the fixed match reads table %s, %s, %s cells', v.version, v.status, jsonb_array_length(v.cells)));
+    -- the match fixed with none reads no table now none is published
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match((ids->>'m0')::uuid)),
+      'db/75: a match fixed with no table read a withdrawn one');
+    -- a later version moves no earlier match: M1 still reads the one it was
+    -- fixed under; M0, fixed under none, reads the current one and says so
+    PERFORM _as(U_OWNER);
+    SELECT * INTO v FROM dls_table_load(_meta_75('Verify 075 rehearsal table, corrected', 906, 'over'), _synth_75('over'));
+    SELECT * INTO v FROM dls_table_publish(v.table_id);
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(x.label || '=' || t.version || ',' || t.status || ',' || t.current, ' ' ORDER BY x.label) INTO got
+      FROM (VALUES ('m0', (ids->>'m0')::uuid), ('m1', (ids->>'m1')::uuid)) AS x(label, m), LATERAL dls_table_for_match(x.m) t;
+    PERFORM _assert(v.ok AND got = 'm0=906,published,true m1=905,withdrawn,false',
+      format('db/75 (frozen): after version 906 the matches read %s', got));
+
+    -- (guard) the cells go only to a reader of the match's result: a
+    -- Westville coach reads nothing of a Hilton friendly's
+    PERFORM _as(U_WESC);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match((ids->>'m1')::uuid)),
+      'db/75 (guard): a reader of no result read the table''s cells');
+
+    -- (platform) a competition's version or a fixture's departure never names the table
+    got := _try_75(format('INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by) '
+                          'VALUES (%L, %L, %L, %L, %L, %L, %L, %L)', ids->>'v', 'target.dls_table', jsonb_build_object('id', PUB), 'confirmed',
+                          'Verify 075 league rules', '9.9', '2026-10-01', U_OWNER))
+        || ' ' || _try_75(format('INSERT INTO match_condition_override (match_id, key, value, reason, set_by) VALUES (%L, %L, %L, %L, %L)',
+                          ids->>'m2', 'target.dls_table', jsonb_build_object('id', PUB), 'Verify 075: a league''s own table', U_OWNER));
+    PERFORM _assert(got = 'condition_platform_key condition_platform_key', format('db/75 (platform): naming the table read %s', got));
+
+    -- the application reads no table directly, and calls nothing of the owner's
+    BEGIN
+      PERFORM 1 FROM dls_resource LIMIT 1;
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, 'db/75: the application selected a resource cell');
+    PERFORM _assert(NOT has_table_privilege('dls_resource_table', 'SELECT') AND NOT has_table_privilege('dls_resource', 'SELECT')
+                    AND NOT has_function_privilege('dls_table_problems(text,integer,jsonb)', 'EXECUTE')
+                    AND NOT has_function_privilege('dls_canonical_text(uuid)', 'EXECUTE'),
+      'db/75: the application may read a DLS table past the functions');
   END;
   PERFORM set_config('app.user_id', '', true);
 
