@@ -46,7 +46,7 @@ function GlobalSearch({ role, onNav, onClose }) {
   const results = q.length < 2 ? [] : [
     ...ALL_PLAYERS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())).slice(0,4).map(p=>({
       type:"player", icon:ROLES.player?.icon ?? "bat",
-      label:p.name, sub:`${p.role} · ${p.team} · ${p.school}`,
+      label:p.name, sub:[p.role, p.team, p.schoolName].filter(Boolean).join(" · "),
       action:()=>{ onNav("profiles"); onClose(); },
     })),
     ...ALL_STAFF.filter(s=>s.name.toLowerCase().includes(q.toLowerCase())).slice(0,3).map(s=>({
@@ -54,9 +54,9 @@ function GlobalSearch({ role, onNav, onClose }) {
       label:s.name, sub:[s.role, s.school].filter(Boolean).join(" · "),
       action:()=>{ onNav("staff"); onClose(); },
     })),
-    ...ALL_MATCHES.filter(m=>(m.home+m.away+m.venue).toLowerCase().includes(q.toLowerCase())).slice(0,3).map(m=>({
+    ...ALL_MATCHES.filter(m=>`${m.homeTeam ?? ""} ${m.awayTeam ?? ""} ${m.venue ?? ""}`.toLowerCase().includes(q.toLowerCase())).slice(0,3).map(m=>({
       type:"match", icon:"stumps",
-      label:`${m.home} vs ${m.away}`, sub:`${m.date} · ${m.format} · ${m.status}`,
+      label:`${m.homeTeam} vs ${m.awayTeam}`, sub:[m.date, m.format, m.status].filter(Boolean).join(" · "),
       action:()=>{ onNav("matches"); onClose(); },
     })),
     ...ALL_COMPS.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(c=>({
