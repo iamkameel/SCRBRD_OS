@@ -1,6 +1,5 @@
 
 import { useState } from "react";
-import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, KPICard, SectionHeader, Select } from "../ui/primitives.jsx";
@@ -48,30 +47,7 @@ function LogisticsView({ role }) {
   const VEHICLES = useRows("vehicles", role);
   const TRIPS    = useRows("trips", role);
   const [manifest,  setManifest]  = useState(null);
-  const canEdit = holdsCapability(role,"transport.manage")||holdsCapability(role,"transport.drive");
 
-  const EQUIPMENT_INVENTORY = [
-    { id:"eq1",  name:"Match Balls (Dukes)",      category:"Cricket",   qty:24, condition:"Good",      location:"Equipment Room A", lastAudit:"2025-02-01" },
-    { id:"eq2",  name:"Practice Balls (White)",    category:"Cricket",   qty:48, condition:"Mixed",     location:"Equipment Room A", lastAudit:"2025-02-01" },
-    { id:"eq3",  name:"Batting Helmets (Adult)",   category:"Protective",qty:12, condition:"Good",      location:"Equipment Room A", lastAudit:"2025-01-15" },
-    { id:"eq4",  name:"Batting Helmets (Junior)",  category:"Protective",qty:8,  condition:"Fair",      location:"Equipment Room A", lastAudit:"2025-01-15" },
-    { id:"eq5",  name:"Batting Pads (Full sets)",  category:"Protective",qty:18, condition:"Good",      location:"Equipment Room A", lastAudit:"2025-01-15" },
-    { id:"eq6",  name:"Thigh Guards",              category:"Protective",qty:10, condition:"Good",      location:"Equipment Room A", lastAudit:"2025-01-15" },
-    { id:"eq7",  name:"Wicket-Keeper Gloves",      category:"Protective",qty:4,  condition:"Good",      location:"Equipment Room A", lastAudit:"2025-01-15" },
-    { id:"eq8",  name:"Batting Gloves (pairs)",    category:"Protective",qty:22, condition:"Mixed",     location:"Equipment Room A", lastAudit:"2025-01-15" },
-    { id:"eq9",  name:"Stumps (Full sets)",        category:"Cricket",   qty:6,  condition:"Excellent", location:"Equipment Room B", lastAudit:"2025-01-10" },
-    { id:"eq10", name:"Boundary Rope (80m)",       category:"Ground",    qty:3,  condition:"Good",      location:"Equipment Room B", lastAudit:"2025-01-10" },
-    { id:"eq11", name:"Sight Screens",             category:"Ground",    qty:4,  condition:"Good",      location:"No.1 Ground",      lastAudit:"2025-01-10" },
-    { id:"eq12", name:"Pitch Covers",              category:"Ground",    qty:2,  condition:"Good",      location:"No.1 Ground",      lastAudit:"2025-01-10" },
-    { id:"eq13", name:"Bowling Machines",          category:"Training",  qty:2,  condition:"Excellent", location:"Net Shed",         lastAudit:"2025-01-20" },
-    { id:"eq14", name:"Fielding Cradle",           category:"Training",  qty:1,  condition:"Good",      location:"Net Shed",         lastAudit:"2025-01-20" },
-    { id:"eq15", name:"Coaching Cones (sets)",     category:"Training",  qty:8,  condition:"Good",      location:"Coaching Store",   lastAudit:"2025-01-20" },
-    { id:"eq16", name:"First Aid Kits",            category:"Safety",    qty:4,  condition:"Stocked",   location:"Medical Room",     lastAudit:"2025-03-01" },
-    { id:"eq17", name:"AED Defibrillator",         category:"Safety",    qty:1,  condition:"Certified", location:"Medical Room",     lastAudit:"2025-02-15" },
-    { id:"eq18", name:"Ice Packs (reusable)",      category:"Safety",    qty:20, condition:"Good",      location:"Medical Room",     lastAudit:"2025-02-15" },
-  ];
-
-  const catColor = c => c==="Cricket"?D.sky:c==="Protective"?D.rose:c==="Ground"?D.teal:c==="Training"?D.violet:D.amber;
   const condColor = c => c==="Excellent"||c==="Stocked"||c==="Certified"?D.emerald:c==="Good"?D.sky:c==="Mixed"||c==="Fair"?D.amber:D.rose;
 
   // Fixtures with a trip arranged, joined on the fixture rather than read off
@@ -81,15 +57,15 @@ function LogisticsView({ role }) {
 
   return (
     <div className="os-page">
-      <SectionHeader title="Logistics" sub="Transport, equipment inventory and ground scheduling" color={D.orange}/>
+      <SectionHeader title="Logistics" sub="Transport, the kit register and ground scheduling" color={D.orange}/>
 
       <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap"}}>
         {["transport","equipment","grounds"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
-            padding:"6px 18px", borderRadius:D.pill, cursor:"pointer", textTransform:"capitalize",
+            padding:"6px 18px", minHeight:"44px", borderRadius:D.pill, cursor:"pointer", textTransform:"capitalize",
             border:`1px solid ${tab===t?D.orange+"55":D.border}`,
             background:tab===t?D.orange+"14":"transparent",
-            fontFamily:D.body, fontSize:"11px", fontWeight:tab===t?600:400,
+            fontFamily:D.body, fontSize:"12px", fontWeight:tab===t?600:400,
             color:tab===t?D.orange:D.textMuted,
           }}>{t}</button>
         ))}
@@ -190,7 +166,6 @@ function LogisticsView({ role }) {
                           <Btn size="sm" variant="ghost" onClick={()=>setManifest(isManifest?null:m)}>
                             {isManifest?"Close Manifest":<><Icon name="clipboard-list"/> Manifest</>}
                           </Btn>
-                          {canEdit&&<Btn size="sm" variant="ghost">Edit</Btn>}
                         </div>
                       </div>
                     )}
@@ -246,44 +221,13 @@ function LogisticsView({ role }) {
         </div>
       )}
 
-      {/* ── EQUIPMENT ── */}
+      {/* ── EQUIPMENT ──
+          One register. The kit register below is the school's real one (the
+          roadmap's Officials & Kit Registers); a second, fixed inventory used
+          to be drawn above it and never changed. */}
       {tab==="equipment"&&(
         <div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"20px"}}>
-            <KPICard label="Total Line Items"  value={EQUIPMENT_INVENTORY.length} icon="package" color={D.sky}/>
-            <KPICard label="Needs Attention"   value={EQUIPMENT_INVENTORY.filter(e=>e.condition==="Fair"||e.condition==="Mixed").length} icon="triangle-alert" color={D.amber}/>
-            <KPICard label="Match Balls"       value={EQUIPMENT_INVENTORY.find(e=>e.id==="eq1")?.qty||0} icon="ball" color={D.indigo}/>
-            <KPICard label="Safety Items"      value={EQUIPMENT_INVENTORY.filter(e=>e.category==="Safety").length} icon="hard-hat" color={D.rose}/>
-          </div>
           <KitRegister role={role}/>
-          <Card>
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead>
-                  <tr style={{background:D.surf2}}>
-                    {["Item","Category","Qty","Condition","Location","Last Audit","Action"].map(h=>(
-                      <th key={h} style={{padding:"10px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {EQUIPMENT_INVENTORY.map((eq,i)=>(
-                    <tr key={eq.id} style={{borderTop:`1px solid ${D.border}`,background:i%2===0?"transparent":D.surf2+"33"}}>
-                      <td style={{padding:"10px 12px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>{eq.name}</td>
-                      <td style={{padding:"10px 12px"}}><Badge color={catColor(eq.category)}>{eq.category}</Badge></td>
-                      <td style={{padding:"10px 12px",fontFamily:D.mono,fontSize:"13px",fontWeight:600,color:D.textPrimary,textAlign:"center"}}>{eq.qty}</td>
-                      <td style={{padding:"10px 12px"}}><Badge color={condColor(eq.condition)}>{eq.condition}</Badge></td>
-                      <td style={{padding:"10px 12px",fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{eq.location}</td>
-                      <td style={{padding:"10px 12px",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{eq.lastAudit}</td>
-                      <td style={{padding:"10px 12px"}}>
-                        {canEdit&&<button style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>Edit</button>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
         </div>
       )}
 
@@ -351,7 +295,15 @@ function KitRegister({ role }) {
   const [pick, setPick] = useState({});
   const [said, setSaid] = useState("");
   const canKeep = schoolsWhere("team.manage").length > 0;
-  if (!live || KIT.length === 0) return null;
+  // Nothing invented in its place: signed out there is no register to show,
+  // and a school that has entered no kit has none to list.
+  if (!live || KIT.length === 0) return (
+    <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="kit-register-empty">
+      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
+        {live ? "No kit is on the register yet." : "Sign in to see the kit register."}
+      </div>
+    </Card>
+  );
   const act = async (path) => {
     setSaid("");
     try { await api(path, { method: "POST", body: {} }); setNonce(n=>n+1); }
