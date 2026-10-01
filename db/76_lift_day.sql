@@ -90,6 +90,18 @@
 --     2026-10-01, decisions 4 and 5): a pupil under eighteen reads no lift,
 --     his own included. The design's S1 line for every pupil is superseded.
 --
+-- WHO IS TOLD (Kameel, 2026-10-01: "this isn't an airline with assigned
+-- seats"): an ordinary notice about a seat — confirmed, declined, cancelled,
+-- withdrawn, fallen back, asked to confirm again — goes to the parent who
+-- asked for it (the guardian link the seat names) and the driver where she
+-- is a party, to no other guardian; his own seat at eighteen tells him only.
+-- db/70's lift_notify_family() is re-emitted below (§2a) to say so, and
+-- lift_seat_withdraw() to tell the asker when another withdrew. The day's
+-- safety alerts go to every live guardian (lift_alert_family()): not
+-- collected; not marked in the car when the lift left; the lift not marked
+-- as leaving; handed over and not acknowledged; one boy left in a car under
+-- way.
+--
 -- KAMEEL'S DECISIONS (2026-10-01) honoured here: consent GRANTED (every
 -- family act goes through db/70's lift_acting_for()); the lone passenger
 -- (a car on the road is not unconfirmed — the driver and his family are told
@@ -200,6 +212,58 @@ BEGIN
   UPDATE lift_seat SET state = 'done' WHERE offer_id = p_offer AND state = 'confirmed';
   UPDATE lift_seat SET state = 'cancelled', ended_at = now() WHERE offer_id = p_offer AND state IN ('requested', 'invited');
   RETURN true;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+
+-- ── 2a · Who is told: the asker, and on the day every parent ───────
+-- SCRBRD-124 (Kameel, 2026-10-01): "this isn't an airline with assigned
+-- seats". The ordinary notices about a seat — confirmed, declined,
+-- cancelled, withdrawn, fallen back, asked to confirm again — go to the
+-- parent who asked for it (the guardian link the seat names) and, where she
+-- is a party, the driver; to no other guardian of the boy. A seat he asked
+-- for himself, at eighteen and still at school, tells him only. The day's
+-- safety alerts — not collected, not marked in the car when the lift left,
+-- the lift not marked as leaving, handed over and not acknowledged, one boy
+-- left in a car under way — go to every live guardian of the boy (and him at
+-- eighteen), as db/70's lift_notify_family() did: lift_alert_family().
+
+/** The person whose ask a seat carries: its guardian link's holder while that link is live; NULL for his own seat. Internal. */
+CREATE OR REPLACE FUNCTION lift_seat_asker(p_seat uuid) RETURNS uuid AS $$
+  SELECT a.person_id FROM lift_seat s JOIN role_assignment a ON a.id = s.guardian_assignment_id
+   WHERE s.id = p_seat AND s.consent_by = 'guardian' AND lift_link_is_live(s.guardian_link_id)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/** A day's safety alert: every live guardian of the boy, and him at eighteen and at school (db/70's lift_notify_family(), renamed). */
+CREATE OR REPLACE FUNCTION lift_alert_family(p_offer uuid, p_player uuid, p_title text, p_body text)
+RETURNS void AS $$
+DECLARE r uuid;
+BEGIN
+  FOR r IN SELECT lift_guardians_of(p_player) UNION SELECT lift_self_accounts(p_player) LOOP
+    PERFORM lift_notify(p_offer, r, p_player, p_title, p_body);
+  END LOOP;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * db/70's lift_notify_family(), re-emitted (SCRBRD-124, Kameel, 2026-10-01):
+ * an ordinary notice about a boy's seat on a lift goes to the asker of his
+ * latest seat on it — the guardian whose live link the seat names, or he
+ * himself for a seat on his own say — and to nobody else. Every db/70 caller
+ * (accept, decline, the lift changed, cancelled or void, fallen back) takes
+ * this path unchanged.
+ */
+CREATE OR REPLACE FUNCTION lift_notify_family(p_offer uuid, p_player uuid, p_title text, p_body text)
+RETURNS void AS $$
+DECLARE s lift_seat%ROWTYPE; r uuid;
+BEGIN
+  SELECT * INTO s FROM lift_seat WHERE offer_id = p_offer AND player_id = p_player ORDER BY created_at DESC, id LIMIT 1;
+  IF NOT FOUND THEN RETURN; END IF;
+  IF s.consent_by = 'self' THEN
+    FOR r IN SELECT lift_self_accounts(p_player) LOOP
+      PERFORM lift_notify(p_offer, r, p_player, p_title, p_body);
+    END LOOP;
+  ELSE
+    PERFORM lift_notify(p_offer, lift_seat_asker(s.id), p_player, p_title, p_body);
+  END IF;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
@@ -318,7 +382,7 @@ BEGIN
   SELECT * INTO s FROM lift_seat ls WHERE ls.offer_id = p_offer AND ls.state = 'confirmed' AND lift_is_minor(ls.player_id) FOR UPDATE;
   v_words := lift_offer_words(p_offer);
   IF lift_on_the_road(p_offer) THEN
-    PERFORM lift_notify_family(p_offer, s.player_id, 'One boy is left on a lift',
+    PERFORM lift_alert_family(p_offer, s.player_id, 'One boy is left on a lift',
       v_words || ' now has one boy on it, which the school''s lift policy does not allow. The lift is under way, so '
         || 'his seat stands: ring the driver now and agree what happens.');
     PERFORM lift_notify(p_offer, o.driver_id, NULL, 'One boy is left on your lift',
@@ -370,6 +434,34 @@ BEGIN
       'A seat was withdrawn', lift_offer_words(s.offer_id) || ': a seat is no longer confirmed and has been withdrawn.');
     PERFORM lift_lone_fallback(s.offer_id);
   END LOOP;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * db/70's lift_seat_withdraw(), re-emitted (SCRBRD-124, Kameel, 2026-10-01):
+ * a withdrawal is an ordinary seat notice, so when anybody but the asker
+ * withdraws (the boy's other guardian, D13; or his guardian, his own seat at
+ * eighteen) the asker is told. Nothing else changed.
+ */
+CREATE OR REPLACE FUNCTION lift_seat_withdraw(p_seat uuid) RETURNS TABLE (ok boolean, reason text) AS $$
+#variable_conflict use_column
+DECLARE s lift_seat%ROWTYPE; a record; v_asker uuid;
+BEGIN
+  SELECT * INTO s FROM lift_seat WHERE id = p_seat FOR UPDATE;
+  IF NOT FOUND OR NOT lift_uncut_for(s.school_id, s.player_id) THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
+  SELECT * INTO a FROM lift_acting_for(s.player_id);
+  IF a.how IS NULL OR a.how NOT IN ('guardian', 'guardian_adult', 'self') THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
+  IF s.state NOT IN ('requested', 'invited', 'confirmed') THEN RETURN QUERY SELECT false, 'seat_ended'; RETURN; END IF;
+  IF s.boarded_at IS NOT NULL THEN RETURN QUERY SELECT false, 'already_boarded'; RETURN; END IF;
+  v_asker := CASE WHEN s.consent_by = 'self' THEN (SELECT x FROM lift_self_accounts(s.player_id) x LIMIT 1) ELSE lift_seat_asker(s.id) END;
+  UPDATE lift_seat SET state = 'withdrawn', ended_at = now(), ended_by = app_user_id() WHERE id = p_seat;
+  PERFORM lift_notify(s.offer_id, (SELECT o.driver_id FROM lift_offer o WHERE o.id = s.offer_id), NULL,
+    'A seat was withdrawn', lift_offer_words(s.offer_id) || ': a family has withdrawn a seat.');
+  IF v_asker IS DISTINCT FROM app_user_id() THEN
+    PERFORM lift_notify_family(s.offer_id, s.player_id, 'A seat you asked for was withdrawn',
+      lift_offer_words(s.offer_id) || ': the seat you asked for was withdrawn by another of his family.');
+  END IF;
+  PERFORM lift_lone_fallback(s.offer_id);
+  RETURN QUERY SELECT true, NULL::text;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 /** db/70's lift_offer_update(): refused on the road (on_the_road). */
@@ -526,7 +618,7 @@ BEGIN
     END LOOP;
     FOR s IN SELECT ls.player_id FROM lift_seat ls
               WHERE ls.offer_id = o.id AND ls.state = 'confirmed' AND ls.boarded_at IS NULL LOOP
-      PERFORM lift_notify_family(o.id, s.player_id, 'A lift has left: he was not marked in the car',
+      PERFORM lift_alert_family(o.id, s.player_id, 'A lift has left: he was not marked in the car',
         v_words || ' has left, and his seat was not marked "in the car". If he is not with the driver, '
           || 'ring her now: her number is on the fixture.');
     END LOOP;
@@ -587,7 +679,7 @@ BEGIN
    WHERE id = p_seat;
   IF p_event = 'not_collected' THEN
     v_words := lift_offer_words(o.id);
-    PERFORM lift_notify_family(o.id, s.player_id, 'He was not collected from his lift',
+    PERFORM lift_alert_family(o.id, s.player_id, 'He was not collected from his lift',
       v_words || ': the driver could not hand him over at ' || lift_clock(now()) || '. She is staying with him. '
         || 'Ring her now: her number is on the fixture. Confirm on the fixture when you have him.');
     FOR r IN SELECT lift_staff(o.school_id, NULL, 'transport.lift.oversee') LOOP
@@ -942,7 +1034,7 @@ BEGIN
               FOR UPDATE OF ls SKIP LOCKED LOOP
     UPDATE lift_seat SET missed_alerted_at = now() WHERE id = s.id;
     n_left := n_left + 1;
-    PERFORM lift_notify_family(s.offer_id, s.player_id, 'A lift has not been marked as leaving',
+    PERFORM lift_alert_family(s.offer_id, s.player_id, 'A lift has not been marked as leaving',
       lift_offer_words(s.offer_id) || ' has not been marked as leaving. Ring the driver: her number is on the fixture.');
     IF NOT s.offer_id = ANY (v_told) THEN
       v_told := v_told || s.offer_id;
@@ -960,7 +1052,7 @@ BEGIN
               FOR UPDATE OF ls SKIP LOCKED LOOP
     UPDATE lift_seat SET missed_alerted_at = now() WHERE id = s.id;
     n_recv := n_recv + 1;
-    PERFORM lift_notify_family(s.offer_id, s.player_id, 'Please confirm you have him',
+    PERFORM lift_alert_family(s.offer_id, s.player_id, 'Please confirm you have him',
       lift_offer_words(s.offer_id) || ': the driver says she handed him over at ' || lift_clock(s.handed_over_at)
         || CASE s.leg WHEN 'back' THEN '. Confirm on the fixture that you have him.'
                       ELSE '. The coach has not yet said he is with the side.' END);
@@ -1080,7 +1172,8 @@ DECLARE f text; r text;
     'lift_staff(uuid,text,text)', 'lift_notify_staff(uuid,uuid,uuid,text,text,text)',
     'lift_clock(timestamp with time zone)', 'lift_offer_settle(uuid)', 'lift_road_guard()',
     'lift_seat_marks(lift_seat)', 'lift_day_status(lift_seat)', 'lift_fixture_day(uuid)', 'lift_declaration_end(lift_driver_declaration)',
-    'lift_purger(uuid)', 'lift_exception_rows(uuid,uuid)'];
+    'lift_purger(uuid)', 'lift_exception_rows(uuid,uuid)', 'lift_seat_asker(uuid)',
+    'lift_alert_family(uuid,uuid,text,text)', 'lift_notify_family(uuid,uuid,text,text)'];
 BEGIN
   FOREACH f IN ARRAY app LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);

@@ -3009,6 +3009,7 @@ BEGIN
       ('lmum',   'guardian',             'hil', NULL,   'guardian', 'lou'),
       ('ldad',   'guardian',             'hil', NULL,   'guardian', 'lou'),
       ('mmum',   'guardian',             'hil', NULL,   'guardian', 'max'),
+      ('mdad',   'guardian',             'hil', NULL,   'guardian', 'max'),
       ('nmum',   'guardian',             'hil', NULL,   'guardian', 'ned'),
       ('pmum',   'guardian',             'hil', NULL,   'guardian', 'pip'),
       ('omum',   'guardian',             'hil', NULL,   'guardian', 'ole'),
@@ -3100,6 +3101,11 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v76_told(p_to uuid, p_title text) RETURNS bigint AS $$
   SELECT count(*) FROM notification n
    WHERE n.recipient_id = p_to AND n.title = p_title AND n.kind IN ('lift', 'system') AND n.subject_kind = 'match'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- ...on one fixture.
+CREATE OR REPLACE FUNCTION _v76_told_on(p_to uuid, p_title text, p_match uuid) RETURNS bigint AS $$
+  SELECT count(*) FROM notification n
+   WHERE n.recipient_id = p_to AND n.title = p_title AND n.kind IN ('lift', 'system') AND n.subject_id = p_match
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- ...and to anybody, by title, about one boy.
 CREATE OR REPLACE FUNCTION _v76_told_about(p_about uuid, p_title text) RETURNS bigint AS $$
@@ -12320,7 +12326,9 @@ $v49$;
     SELECT string_agg(_v70_status(x), ' ') INTO got FROM unnest(ARRAY[S_BEN, S_CARL, S_PAT]) x;
     PERFORM _assert(v_ok AND got = 'awaiting_guardian awaiting_guardian awaiting_guardian'
                     AND _v70_notice_count(U_BMUM, 'A lift has changed: please confirm again') = 1
-                    AND _v70_notice_count(U_BDAD, 'A lift has changed: please confirm again') = 1,
+                    -- Asked of the parent who asked for the seat only, not Ben's
+                    -- father (Kameel, 2026-10-01; db/76 re-emits the notice path).
+                    AND _v70_notice_count(U_BDAD, 'A lift has changed: please confirm again') = 0,
       format('db/70 (move): after the driver stood behind it: %s %s, seats %s', v_ok, v_reason, got));
     PERFORM _as(U_BMUM);
     SELECT ok INTO v_ok FROM lift_seat_reconfirm(S_BEN);
@@ -12364,10 +12372,11 @@ $v49$;
       format('db/70 (link): with Carl''s mother''s link ended, his seats are %s and %s',
              (_v70_seat(S_CARL)).state, (_v70_seat(S_BACK_CARL)).state));
     -- (lone) and Ben, left alone on the way home by Carl's voided seat, falls
-    -- back too; both his parents are told, and the driver again
+    -- back too; the parent who asked for the seat is told — not his father
+    -- (Kameel, 2026-10-01: the asker only; db/76) — and the driver again
     PERFORM _assert((_v70_seat(S_BACK_BEN)).state = 'requested'
                     AND _v70_notice_count(U_BMUM, 'A seat on a lift is no longer confirmed') >= 1
-                    AND _v70_notice_count(U_BDAD, 'A seat on a lift is no longer confirmed') >= 1
+                    AND _v70_notice_count(U_BDAD, 'A seat on a lift is no longer confirmed') = 0
                     AND _v70_notice_count(U_DMUM, 'One boy is left on your lift') >= 2,
       format('db/70 (lone): with Carl''s seat voided, Ben''s seat on the way home is %s', (_v70_seat(S_BACK_BEN)).state));
 
@@ -12488,11 +12497,12 @@ $v49$;
     PERFORM _v70_brother(U_ED, P_DAN, false);
     PERFORM _v70_fire();
     PERFORM _as(U_ED);
-    -- (adult-notice) he is told his seat is confirmed, as is his mother, naming
-    -- nobody; he reads his own notice, and no team-mate reads it
+    -- (adult-notice) he is told his seat is confirmed, naming nobody — he
+    -- asked for it, so he alone (Kameel, 2026-10-01: the asker only; db/76),
+    -- not his mother; he reads his own notice, and no team-mate reads it
     SELECT count(*) INTO k FROM notification n
      WHERE n.title = 'A seat on a lift is confirmed' AND n.subject_person_id = P_ED AND n.kind = 'system';
-    PERFORM _assert(k = 1 AND _v70_notice_count(U_EMUM, 'A seat on a lift is confirmed') = 1,
+    PERFORM _assert(k = 1 AND _v70_notice_count(U_EMUM, 'A seat on a lift is confirmed') = 0,
       format('db/70 (adult-notice): Ed reads %s notice(s) that his seat is confirmed; his mother has %s',
              k, _v70_notice_count(U_EMUM, 'A seat on a lift is confirmed')));
     PERFORM _as(U_DAN);
@@ -13265,7 +13275,7 @@ $v49$;
   --
   -- Each labelled assertion was falsified once — the guard broken (as the
   -- owner, inside this file's own transaction, before the section ran) —
-  -- and went red, and was green again restored. 60 breaks: 55 red at their
+  -- and went red, and was green again restored. 65 breaks: 60 red at their
   -- own assertion, four red at a second layer (marked "layer"), one single
   -- layer that held alone as designed (marked "held"):
   --   (zero)       lift_mark()'s and lift_seat_mark()'s driver test
@@ -13305,12 +13315,19 @@ $v49$;
   --                any side (the U17B's coach told)
   --   (purge)      oversee swapped for news.read; before the date; no row of
   --                counts; due at two years; a declaration before its year
+  --   (told)       Kameel, 2026-10-01 ("this isn't an airline with assigned
+  --                seats"): an ordinary notice to every guardian (Lou's father
+  --                and Max's told of seats they did not ask for); a seat on his
+  --                own say told to nobody (Ole); the withdrawal not told to
+  --                the asker; the day's alerts to the asker only (Lou's father,
+  --                in the car alone, not told: (road)); not collected sent as
+  --                an ordinary notice (Max's father not told)
   --   (privacy)    the boy's name in the not-collected notice
   DECLARE
     ids      jsonb := _seed_76();
     MT uuid; MU uuid; MW uuid; MX uuid; MF uuid; MP uuid; MQ uuid;
     P_KAI uuid; P_LOU uuid; P_MAX uuid; P_NED uuid; P_PIP uuid; P_OLE uuid; P_TOM uuid; P_REX uuid;
-    U_DMUM uuid; U_LMUM uuid; U_LDAD uuid; U_MMUM uuid; U_NMUM uuid; U_PMUM uuid; U_OMUM uuid; U_TMUM uuid;
+    U_DMUM uuid; U_LMUM uuid; U_LDAD uuid; U_MMUM uuid; U_MDAD uuid; S_MAX_F uuid; U_NMUM uuid; U_PMUM uuid; U_OMUM uuid; U_TMUM uuid;
     U_RMUM uuid; U_WMUM uuid; U_OLE uuid; U_TOM uuid; U_CO uuid; U_BCO uuid; U_OFF uuid; U_TCO uuid; U_HD uuid;
     C_KAI uuid;
     O_OUT uuid; O_BACK uuid; O_W uuid; O_X uuid; O_F uuid; O_U uuid; O_P uuid; O_Q uuid;
@@ -13338,7 +13355,7 @@ $v49$;
     P_NED := (ids->>'p_ned')::uuid; P_PIP := (ids->>'p_pip')::uuid; P_OLE := (ids->>'p_ole')::uuid;
     P_TOM := (ids->>'p_tom')::uuid; P_REX := (ids->>'p_rex')::uuid;
     U_DMUM := (ids->>'u_dmum')::uuid; U_LMUM := (ids->>'u_lmum')::uuid; U_LDAD := (ids->>'u_ldad')::uuid;
-    U_MMUM := (ids->>'u_mmum')::uuid; U_NMUM := (ids->>'u_nmum')::uuid; U_PMUM := (ids->>'u_pmum')::uuid;
+    U_MMUM := (ids->>'u_mmum')::uuid; U_MDAD := (ids->>'u_mdad')::uuid; U_NMUM := (ids->>'u_nmum')::uuid; U_PMUM := (ids->>'u_pmum')::uuid;
     U_OMUM := (ids->>'u_omum')::uuid; U_TMUM := (ids->>'u_tmum')::uuid; U_RMUM := (ids->>'u_rmum')::uuid;
     U_WMUM := (ids->>'u_wmum')::uuid; U_OLE := (ids->>'u_ole')::uuid; U_TOM := (ids->>'u_tom')::uuid;
     U_CO := (ids->>'u_coach')::uuid; U_BCO := (ids->>'u_bcoach')::uuid; U_OFF := (ids->>'u_office')::uuid;
@@ -13397,6 +13414,28 @@ $v49$;
     PERFORM _assert(v_ok, 'db/76 (setup): the evening''s lift was not accepted');
     SELECT ok INTO v_ok FROM lift_seat_accept(ARRAY[S_LOU_U, S_MAX_U]);
     PERFORM _assert(v_ok, 'db/76 (setup): the noon lift was not accepted');
+    -- (told) "this isn't an airline with assigned seats" (Kameel, 2026-10-01):
+    -- a confirmed seat is told to the parent who asked for it and no other
+    -- guardian — Lou's mother for the morning, his father for the evening,
+    -- Max's mother and never his father; Ole's own seat to Ole, not his mother
+    PERFORM _assert(_v76_told_on(U_LMUM, 'A seat on a lift is confirmed', MT) = 2 AND _v76_told_on(U_LDAD, 'A seat on a lift is confirmed', MT) = 0
+                    AND _v76_told_on(U_LDAD, 'A seat on a lift is confirmed', MX) = 1 AND _v76_told_on(U_LMUM, 'A seat on a lift is confirmed', MX) = 0
+                    AND _v76_told(U_MMUM, 'A seat on a lift is confirmed') = 4 AND _v76_told(U_MDAD, 'A seat on a lift is confirmed') = 0
+                    AND _v76_told(U_OLE, 'A seat on a lift is confirmed') = 1 AND _v76_told(U_OMUM, 'A seat on a lift is confirmed') = 0,
+      format('db/76 (told): confirmed: Lou''s mother %s/%s, his father %s/%s; Max''s mother %s, father %s; Ole %s, his mother %s',
+             _v76_told_on(U_LMUM, 'A seat on a lift is confirmed', MT), _v76_told_on(U_LMUM, 'A seat on a lift is confirmed', MX),
+             _v76_told_on(U_LDAD, 'A seat on a lift is confirmed', MT), _v76_told_on(U_LDAD, 'A seat on a lift is confirmed', MX),
+             _v76_told(U_MMUM, 'A seat on a lift is confirmed'), _v76_told(U_MDAD, 'A seat on a lift is confirmed'),
+             _v76_told(U_OLE, 'A seat on a lift is confirmed'), _v76_told(U_OMUM, 'A seat on a lift is confirmed')));
+    -- ...and a seat withdrawn by his other parent is told to the one who asked
+    PERFORM _as(U_MMUM);
+    SELECT seat_id INTO S_MAX_F FROM lift_seat_request(O_F, P_MAX);
+    PERFORM _as(U_MDAD);
+    SELECT ok INTO v_ok FROM lift_seat_withdraw(S_MAX_F);
+    PERFORM _assert(v_ok AND _v76_told(U_MMUM, 'A seat you asked for was withdrawn') = 1
+                    AND _v76_told(U_MDAD, 'A seat you asked for was withdrawn') = 0,
+      format('db/76 (told): Max''s father withdrew his mother''s seat (%s); she was told %s, he %s', v_ok,
+             _v76_told(U_MMUM, 'A seat you asked for was withdrawn'), _v76_told(U_MDAD, 'A seat you asked for was withdrawn')));
     PERFORM _assert(_v76_status(S_NED_OUT) = 'requested' AND _v76_status(S_LOU_OUT) = 'confirmed'
                     AND _v76_status(S_OLE_BACK) = 'confirmed' AND _v76_status(S_TOM_W) = 'confirmed',
       format('db/76 (setup): seats read %s %s %s %s', _v76_status(S_NED_OUT), _v76_status(S_LOU_OUT),
@@ -13497,6 +13536,10 @@ $v49$;
                     AND (_v76_seat(S_MAX_BACK)).state = 'requested' AND (_v76_seat(S_OLE_BACK)).state = 'confirmed',
       format('db/76 (road): with his mother''s link ended Lou''s seats read %s and %s; Max %s, Ole %s',
              (_v76_seat(S_LOU_OUT)).state, (_v76_seat(S_LOU_BACK)).state, (_v76_seat(S_MAX_BACK)).state, (_v76_seat(S_OLE_BACK)).state));
+    PERFORM _assert(_v76_told(U_MMUM, 'A seat on a lift is no longer confirmed') = 1
+                    AND _v76_told(U_MDAD, 'A seat on a lift is no longer confirmed') = 0,
+      format('db/76 (told): Max fell back: his mother told %s, his father %s',
+             _v76_told(U_MMUM, 'A seat on a lift is no longer confirmed'), _v76_told(U_MDAD, 'A seat on a lift is no longer confirmed')));
     -- (road-guard) and past the functions, the row guard refuses the same
     PERFORM _assert(_v76_force_end(O_OUT) AND _v76_force_unseat(S_LOU_OUT) AND (_v76_offer(O_OUT)).state = 'open',
       'db/76 (road): the row guard let a lift on the road, or a boy in the car, be ended past the functions');
@@ -13629,14 +13672,15 @@ $v49$;
     SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_mark(S_MAX_BACK, 'not_collected');
     PERFORM _assert(v_ok AND (_v76_seat(S_MAX_BACK)).handover_kind = 'not_collected'
                     AND _v76_told(U_MMUM, 'He was not collected from his lift') = 1
+                    AND _v76_told(U_MDAD, 'He was not collected from his lift') = 1
                     AND _v76_told(U_OFF, 'A boy was not collected from a lift') = 1
                     AND _v76_told(U_TCO, 'A boy was not collected from a lift') = 1
                     AND _v76_told_about(P_MAX, 'A boy was not collected from a lift')
                         = _v76_overseers(HIL)
                     AND _v76_told(U_CO, 'A boy on a lift was not handed over') = 0
                     AND _v76_told(U_HD, 'A boy was not collected from a lift') = 0,
-      format('db/76 (not-collected): Max: %s %s; mother %s, office %s, coordinator %s, coach %s, principal %s', v_ok, v_reason,
-             _v76_told(U_MMUM, 'He was not collected from his lift'), _v76_told(U_OFF, 'A boy was not collected from a lift'),
+      format('db/76 (not-collected): Max: %s %s; mother %s, father %s, office %s, coordinator %s, coach %s, principal %s', v_ok, v_reason,
+             _v76_told(U_MMUM, 'He was not collected from his lift'), _v76_told(U_MDAD, 'He was not collected from his lift'), _v76_told(U_OFF, 'A boy was not collected from a lift'),
              _v76_told(U_TCO, 'A boy was not collected from a lift'), _v76_told(U_CO, 'A boy on a lift was not handed over'),
              _v76_told(U_HD, 'A boy was not collected from a lift')));
     -- ...and the office reads that notice, the principal does not

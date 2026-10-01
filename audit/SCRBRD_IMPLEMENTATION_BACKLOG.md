@@ -4472,7 +4472,7 @@ passenger left by a withdrawal falls back to not confirmed under a policy refusi
 **except** (follow-up, same day) a pupil of eighteen still at school, who may ask for, withdraw and read his own seat
 only (`lift_seat.consent_by = 'self'`; his guardian may also ask while db/62's link is live; a simple "Ask for a seat"
 on Squad). One-to-one counts children only (under eighteen or unknown birth date): an adult alone is seated, and keeps
-no child company — Opus's reading, for Kameel to confirm. Departures are in the design's "As built".
+no child company — Opus's reading, **confirmed by Kameel 2026-10-01**, as is the void of his own seat when he leaves school. Departures are in the design's "As built".
 <!-- ── end SCRBRD-124 phase 1 ── -->
 <!-- ── SCRBRD-124 phase 2, as built ── -->
 **Phase 2 built 2026-10-01 (Opus): `db/76_lift_day.sql`, the day.** The driver's marks (left, in the car, handed over, not
@@ -4483,7 +4483,10 @@ school; `lift_missed_watch()` for the platform's key (`POST /api/lifts/watch`, o
 `lift_purge_log`. A lift on the road is seen through: no cancel, fixture move, link ended or withdrawal unconfirms a boy in
 the car. Twelve routes, none module-gated; the day cards on the fixture and the family Home, the coach's and the office's
 cards on Squad, the pupil's line on his Home, the purge list on Settings → School. **The module stays off by default; it may
-now be granted per school.** Proof: db/99 §55 (60 breaks, each seen red or, once, held alone), `smoke-lifts` (118),
+now be granted per school.** **Who is told (Kameel, 2026-10-01, "this isn't an airline with assigned seats"):** ordinary seat notices
+(confirmed, declined, cancelled, withdrawn, fallen back) to the parent who asked and the driver, no other guardian; his own
+seat at eighteen, him only; the day's safety alerts (not collected, not in the car when it left, not left, not received,
+alone in a car under way) to every live guardian. Proof: db/99 §55 (65 breaks, each seen red or, once, held alone), `smoke-lifts` (118),
 `smoke-browser-lifts` (74). For Kameel: one alert per seat (D14) means a late lift's seat is not alerted again at handover;
 an under-eighteen pupil sees nothing of his own lift; the watch needs a scheduler. **Next: phase 3** (the DSO's bar and
 history, invitations).
