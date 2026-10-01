@@ -99,8 +99,14 @@ function PlayerAnswer({ role, match, upcoming, onPick, player }) {
         v {match.awayTeam} · {humanDateTime(match.date, match.time)}
       </div>
       {upcoming.length > 1 && (
-        <Select label="Fixture" aria-label="Which fixture" value={match.id} onChange={onPick}
-          options={upcoming.map((m) => ({ value: m.id, label: `v ${m.awayTeam} · ${humanDateTime(m.date, m.time)}` }))}/>
+        <label style={{ display: "grid", gap: "4px", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted }}>
+          Fixture
+          <select aria-label="Which fixture" value={match.id} onChange={(e) => onPick(e.target.value)}
+            style={{ minHeight: "44px", padding: "9px 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
+              color: D.textPrimary, fontFamily: D.body, fontSize: "14px", boxSizing: "border-box", width: "100%" }}>
+            {upcoming.map((m) => <option key={m.id} value={m.id}>{`v ${m.awayTeam} · ${humanDateTime(m.date, m.time)}`}</option>)}
+          </select>
+        </label>
       )}
       {mayRead && <div><Badge color={st.color} data-testid="set-availability-state">{st.label}</Badge></div>}
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>

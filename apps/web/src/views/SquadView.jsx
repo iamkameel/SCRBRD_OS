@@ -134,7 +134,7 @@ function SquadView({ role }) {
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>
             {players.map(p=>(
-              <Card key={p.id} onClick={()=>{setSelected(p);setAct(null);}} sx={{
+              <Card key={p.id} data-testid={`squad-card-${p.id}`} onClick={()=>{setSelected(p);setAct(null);}} sx={{
                 padding:"14px",cursor:"pointer",
                 border:`1px solid ${selected?.id===p.id?D.sky+"55":seesFitness&&p.fitness==="injured"?D.rose+"22":D.border}`,
                 background:selected?.id===p.id?D.sky+"08":seesFitness&&p.fitness==="injured"?D.rose+"05":D.surf1,
@@ -222,7 +222,14 @@ function SquadView({ role }) {
               <div>
                 <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
                 <div style={{display:"flex",justifyContent:"center"}}>
-                  <RadarChart data={SKILLS_MATRIX[selected.id].batting} color={D.sky} size={140}/>
+                  {/* One axis per category the ratings carry, the mean of its
+                      1-20 ratings on the chart's 0-100 scale. Naming a
+                      "batting" group that no rating has crashed this panel for
+                      any player who had been assessed. */}
+                  <RadarChart color={D.sky} size={140} data={Object.fromEntries(Object.entries(SKILLS_MATRIX[selected.id])
+                    .filter(([,vals])=>vals&&Object.keys(vals).length)
+                    .map(([cat,vals])=>[cat.charAt(0).toUpperCase()+cat.slice(1),
+                      Math.round(5*Object.values(vals).reduce((a,b)=>a+b,0)/Object.values(vals).length)]))}/>
                 </div>
               </div>
             )}
