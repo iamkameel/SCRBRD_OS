@@ -4386,10 +4386,11 @@ the `lift_club` module **off for every school** (live only after phase 2, and th
 §1.4's functions down to `lift_contacts()` plus `lift_offers_for()`, `my_lift_standing()`, `lift_summary()`; the fixture
 trigger beside db/65's; the link triggers; `services/api/write/lift-api.mjs`; the screens (policy on Settings → School,
 standing and declaration on Settings → Me, the Lifts block, offer form, driver's card and office counts on the Squad
-screen until STEP 4's P3 and Family exist). Proof: db/99 §48 (55 guards broken and seen red), `smoke-lifts` (53),
-`smoke-browser-lifts` (41). Departures and five questions for Kameel (the driver's number as a pointer to her own child's
-emergency contact, since no adult phone exists; pending processing consent; a lone passenger left by a withdrawal; a pupil
-who is also a guardian; who is told) are in the design's "As built". **Next: phase 2, the day** (marks, receive,
+screen until STEP 4's P3 and Family exist). Proof: db/99 §48 (65 guards broken and seen red), `smoke-lifts` (57),
+`smoke-browser-lifts` (41). **Decided by Kameel 2026-10-01 and built in:** the driver's number stays a pointer to her own
+child's emergency contact; lifts need processing consent *granted*; a lone passenger left by a withdrawal falls back to
+not confirmed under a policy refusing one-to-one; pupils take no part at all (superseding D8's self-request). Departures
+are in the design's "As built". **Next: phase 2, the day** (marks, receive,
 resolve, `my_lifts()`, the watch, the purge), then phase 3.
 <!-- ── end SCRBRD-124 phase 1 ── -->
 
