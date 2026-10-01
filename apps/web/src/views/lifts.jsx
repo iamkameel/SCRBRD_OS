@@ -35,6 +35,7 @@ import { useLive } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { humanDateTime } from "../lib/format.js";
+import { roleGrants } from "@scrbrd/policy/roles";
 
 const TZ = "Africa/Johannesburg";
 
@@ -555,9 +556,12 @@ export function LiftDeclarationPanel() {
   return <>{schools.map((s) => <LiftDeclarationForSchool key={s.id} school={s}/>)}</>;
 }
 
-/** Her children at the school, from her own guardian assignments. */
+/**
+ * Her children at the school: the subjects of her assignments there that
+ * arrange lifts — by capability, never by a role's name (§21.1).
+ */
 const childrenAt = (schoolId) => [...new Set((profile()?.assignments ?? [])
-  .filter((a) => a.role === "guardian" && a.school === schoolId).flatMap((a) => a.subjects ?? []))];
+  .filter((a) => a.school === schoolId && roleGrants(a.role, "transport.lift.arrange")).flatMap((a) => a.subjects ?? []))];
 
 function LiftDeclarationForSchool({ school }) {
   const [nonce, setNonce] = useState(0);
