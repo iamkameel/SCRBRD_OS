@@ -389,3 +389,26 @@ unchanged (effective from tomorrow at the earliest).
    `…/values/clear`.
 4. **Review and publish** — `POST /api/condition-sets/:setId` `{ effectiveFrom }` to date it,
    `POST /api/condition-sets/:setId/publish`; then **open the planner** (§5.5) for the accepted entrants.
+
+**As built: two follow-ups to the screens (web only, no new route).**
+
+- *A part-made league says so.* On Competitions, a manager's live league (the condition "Finish setting
+  up" already used: `competition.manage`) reads, once it is on show, the two reads the wizard makes on
+  reopening: `GET …/entrants` and `GET …/playing-conditions`. `leagueSetupState({ entrants, sets })`
+  (`lib/league.js`) calls the league **part-made** when it has no entrants, or none of its sets has status
+  `published` (the database's words are `draft`, `published`, `withdrawn`). A part-made card shows
+  "Setting up: step N of 4, <the step's title>", N being `resumeStep`'s (so a league with no sides says step 2,
+  with sides and no conditions step 3), and keeps "Finish setting up". A complete league shows neither the
+  marker nor "Finish setting up"; "Fixture planner" is unchanged. Until the reads are in, if either fails, or
+  if the API says the reader does not manage that league (`canManage` false), the card is exactly as it was
+  before: it offers "Finish setting up" and no marker. Entrants count whatever their status, as `resumeStep`
+  does, so a league whose only sides declined is not called part-made.
+- *Waiting invitations are findable.* The API writes no notification for an invitation (that needs a later
+  migration). Until then the shell counts `GET /api/competition-invitations` rows still `invited`
+  (`useWaitingInvitations`, `lib/invitations.js`; no role is consulted, because the API already lists the
+  organiser none) and badges **Competitions** in the sidebar, and on a phone on its place in the bar or on
+  "More" and in the drawer. The count is the badge's text (12px); the button is named "Competitions, 2 league
+  invitations waiting" ("1 league invitation waiting" in the singular). Nothing is shown for none, for a
+  failed read, or when signed out. It is read again on a change of page, and at once when the invitations panel
+  answers one. The existing badge mechanism was the bell's alone (`notifCount`); it is now one prop wider
+  (`invites`), not a second mechanism. The dashboard line the brief held in reserve was therefore not needed.
