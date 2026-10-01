@@ -512,7 +512,7 @@ try {
   // ── SCRBRD-126 ───────────────────────────────────────────────
   group("SCRBRD-126: the wicket-keeper — a stumping is his, and the gloves change hands mid-over");
   /** The next batter in, typed: Michaelhouse has no roster. Sent with Go,
-   *  not Enter: the sheet closes on the keydown and focus goes back to the
+   *  not Enter, from before SCRBRD-131: the sheet closes on the keydown and focus goes back to the
    *  Wicket key, which the rest of the key press would then press. */
   const nextBatter = async (/** @type {string} */ name) => {
     const field = page.locator('input[aria-label="Player name"]');
@@ -575,6 +575,27 @@ try {
   const line = (/** @type {string | null} */ id) => { const r = kc.find((x) => x.player_id === id); return r ? `${r.matches}/${r.innings_kept}/${r.catches}/${r.stumpings}` : "none"; };
   ok(`db/68's player_keeping_career agrees: each kept once and stumped one (${line(K1.id)}, ${line(K2.id)})`,
      line(K1.id) === "1/1/0/1" && line(K2.id) === "1/1/0/1");
+
+  // ── SCRBRD-131 item 1 ────────────────────────────────────────
+  group("SCRBRD-131: Enter in the batting-order sheet sends the batter in, and presses nothing after");
+  // The sheet closes on the keydown and focus goes back to the Wicket key, so
+  // the rest of the same key press used to press it: a second wicket sheet.
+  await makeReady();
+  const wBefore = (await dbq(`select count(*)::int as n from ball_event where match_id = $1 and kind = 'ball' and ball_type = 'W'`, [MATCH]))[0].n;
+  await click(/Wicket/, 2500);
+  await tap("wicket-confirm");
+  await page.waitForTimeout(600);
+  const enterField = page.locator('input[aria-label="Player name"]');
+  ok("a wicket opens the batting-order sheet, asking for the next batter", await enterField.count() === 1);
+  await enterField.fill("Batter 11");
+  await enterField.press("Enter");
+  await page.waitForTimeout(900);
+  ok("Enter sent the batter in: the sheet is closed", await enterField.count() === 0 && !/Batting Order/.test(await text()));
+  ok("...and the closing Enter did not press the Wicket key again: no second wicket sheet", await tid("wicket-confirm").count() === 0 && await tid("wicket-mode-stumped").count() === 0);
+  const en = await agree("after the wicket and Enter", 1);
+  const wAfter = (await dbq(`select count(*)::int as n from ball_event where match_id = $1 and kind = 'ball' and ball_type = 'W'`, [MATCH]))[0].n;
+  ok(`...and one wicket was recorded, not two (${wBefore} -> ${wAfter})`, wAfter === wBefore + 1 && en.inn.wickets === st2.inn.wickets + 1,
+     `${wBefore} -> ${wAfter}; fold ${st2.inn.wickets} -> ${en.inn.wickets}`);
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
