@@ -64,11 +64,15 @@ const startKey = (m) => m.startsAt ? String(m.startsAt) : `${m.date ?? ""}T${m.t
 export function fixturesOf(matches, child, now) {
   const mine = (matches ?? []).filter((m) => isTheirs(m, child));
   const t = (m) => Date.parse(m.startsAt ?? `${m.date}T${m.time ?? "00:00"}Z`);
+  // A fixture still marked scheduled whose day has gone by is not "coming
+  // up": it was played and not yet closed, or not played. It is listed with
+  // the played ones, where its scorecard (or the lack of one) says which.
+  const gone = (m) => m.status === "upcoming" && t(m) < now - 6 * 3600e3;
   return {
     live: mine.filter((m) => m.status === "live"),
-    upcoming: mine.filter((m) => m.status === "upcoming" && !(t(m) < now - 6 * 3600e3))
+    upcoming: mine.filter((m) => m.status === "upcoming" && !gone(m))
                   .sort((a, b) => startKey(a).localeCompare(startKey(b))),
-    played: mine.filter((m) => m.status === "complete").sort((a, b) => startKey(b).localeCompare(startKey(a))),
+    played: mine.filter((m) => m.status === "complete" || gone(m)).sort((a, b) => startKey(b).localeCompare(startKey(a))),
   };
 }
 

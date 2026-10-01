@@ -134,7 +134,8 @@ async function signIn(page, who) {
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
   await page.waitForTimeout(2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
+  return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 async function toMatchCentre(page) {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
@@ -257,13 +258,18 @@ try {
 
   group("A reader who cannot record one sees the reviews but not the form");
   {
+    // A spectator (fixture.read, never scoring.correct) on the Match Centre.
+    // This was a parent until step 4 gave parents their own app (Home ·
+    // Matches · Notices · Family), whose fixture screens carry no review
+    // panel; the reader the guard is about is anyone who reads the fixture
+    // and may not record a review, and a spectator is the plainest one.
     const parent = await open();
-    ok("a parent signs in — fixture.read only, never scoring.correct",
-       await signIn(parent.page, /parent@example\.invalid|Parent/));
+    ok("a spectator signs in — fixture.read only, never scoring.correct",
+       await signIn(parent.page, /watcher@example\.invalid/));
     await toMatchCentre(parent.page);
     await selectMatch(parent.page, MATCH);
     ok("the panel is offered to her too — the decision was announced", await panel(parent.page).count() === 1);
-    const parentText = await panel(parent.page).innerText();
+    const parentText = await panel(parent.page).innerText().catch(() => "");
     ok("she sees the recorded review", /1 recorded/.test(parentText));
     ok("...but is not offered the recording form", !/RECORD A REVIEW/.test(parentText));
     await parent.ctx.close().catch(() => {});

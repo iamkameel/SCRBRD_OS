@@ -75,7 +75,7 @@ group("His side's fixtures, at either end of a shared one");
   ok("upcoming: his side's, soonest first, at home and away", f.upcoming.map((m) => m.id).join() === "m1,m3", f.upcoming.map((m) => m.id));
   ok("...another side of his school's is not his", !isTheirs(M[1], ROHAN));
   ok("...nor a fixture whose day long passed while still marked upcoming", !f.upcoming.some((m) => m.id === "m6"));
-  ok("played: latest first", f.played.map((m) => m.id).join() === "m4,m5");
+  ok("played: latest first — the passed, unclosed one among them", f.played.map((m) => m.id).join() === "m4,m5,m6", f.played.map((m) => m.id));
   ok("the opponent of an away fixture is the home side, named", opponentOf(M[2], ROHAN) === "Westville Boys' High 1XI", opponentOf(M[2], ROHAN));
   ok("the child the app opens on: the one remembered on this device", chooseChild([ROHAN, ANIKA], M, ANIKA.id, NOW) === ANIKA);
   ok("...else the one with the nearest fixture", chooseChild([ANIKA, ROHAN], M, null, NOW) === ROHAN);

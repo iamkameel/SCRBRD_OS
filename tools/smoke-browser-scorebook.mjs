@@ -174,7 +174,9 @@ async function nav(page, label) {
 /** Matches → the fixture's card, opened to its side panel. */
 async function toFixture(page, id) {
   if (!(await nav(page, /^Matches$|^Match Centre$/))) return false;
-  const card = tid(page, `match-card-${id}`);
+  // The Match Centre's card for staff; a parent's own Matches (step 4 P2)
+  // list a played fixture as a row that opens the match.
+  const card = tid(page, `match-card-${id}`).or(tid(page, `played-row-${id}`));
   await card.waitFor({ timeout: 8000 }).catch(() => {});
   if (!(await card.count())) return false;
   await card.click();

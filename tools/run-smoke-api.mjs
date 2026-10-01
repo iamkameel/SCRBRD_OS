@@ -244,6 +244,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Safeguarding, phase 1 (db/57): a parent raises a concern and keeps a
   // reference; the DSO finds it in her inbox; a coach sees nothing of it.
   "browser-safeguarding",
+  // Redesign step 4, phase A: the pupil's app — his Home, his own answer, his
+  // passport and his own file; no team-mate's injury, fitness or return date
+  // (K3, db/55); 12px and 44px at phone width.
+  "browser-pupil",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
   "browser-public",
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
