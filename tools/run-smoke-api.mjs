@@ -183,6 +183,11 @@ const WALKS = [
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
   "public",
+  // Parent lift clubs, phase 1 (SCRBRD-124, db/70): the school's two keys, a
+  // driver's declaration, a round trip made as one act, consent per boy per
+  // lift by version, the fixture moving under it, names and numbers through
+  // the logged doors only, and a family's "no" never switched off.
+  "lifts",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

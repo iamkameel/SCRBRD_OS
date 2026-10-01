@@ -84,6 +84,8 @@ import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
+// SCRBRD-124 phase 1: parent lift clubs (db/70).
+import { liftRoutes } from "./write/lift-api.mjs";
 import { objectStoreFromEnv } from "./io/object-store.mjs";
 import { PAGE_MAX_BYTES } from "./io/page-image.mjs";
 import { publicPages } from "./public/public-api.mjs";
@@ -431,6 +433,8 @@ const results = resultsRoutes({ pool, secret: SECRET });
 const pageStore = objectStoreFromEnv();
 const scorebook = scorebookRoutes({ pool, secret: SECRET, store: pageStore });
 const scorebookFiles = scorebookFileRoutes({ pool, secret: SECRET, store: pageStore });
+// SCRBRD-124 phase 1: parent lift clubs (db/70).
+const lifts = liftRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -841,6 +845,41 @@ const SAFEGUARDING_ROUTES = [
   [/^\/api\/safeguarding\/appointments\/([^/]+)\/end$/,  "POST", safeguarding.endAppointment],
 ];
 
+// ── SCRBRD-124 phase 1: parent lift clubs (db/70) ─────────────────────
+/**
+ * Every route calls one SECURITY DEFINER function under the caller's identity
+ * (services/api/write/lift-api.mjs); db/70 decides who and logs every read of
+ * a name or a number. Tagged `lift_club` where the route makes or reads an
+ * arrangement; NOT tagged where it ends one — a family's "no", a cancel, a
+ * declaration or the policy withdrawn — because switching the module off must
+ * never stop anybody stopping. Ids are UUIDs in the pattern, so the fixed
+ * paths (/policy, /declaration) cannot be read as an id.
+ * @type {Route[]}
+ */
+const LIFT_ROUTES = [
+  [/^\/api\/lifts\/standing$/,                          "GET",  lifts.standing, "lift_club"],
+  [/^\/api\/lifts\/policy$/,                            "GET",  lifts.policy],
+  [/^\/api\/lifts\/policy$/,                            "POST", lifts.signPolicy, "lift_club"],
+  [/^\/api\/lifts\/policy\/withdraw$/,                  "POST", lifts.withdrawPolicy],
+  [/^\/api\/lifts\/declaration$/,                       "POST", lifts.declare, "lift_club"],
+  [/^\/api\/lifts\/declaration\/withdraw$/,             "POST", lifts.withdrawDeclaration],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts$/,          "GET",  lifts.offers, "lift_club"],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts$/,          "POST", lifts.offer, "lift_club"],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/summary$/, "GET",  lifts.summary, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})$/,                   "POST", lifts.update, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/reaffirm$/,         "POST", lifts.reaffirm, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/close$/,            "POST", lifts.close, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/cancel$/,           "POST", lifts.cancel],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/passengers$/,       "GET",  lifts.passengers, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/contacts$/,         "GET",  lifts.contacts, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/seats$/,            "POST", lifts.request, "lift_club"],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/accept$/,           "POST", lifts.accept, "lift_club"],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/decline$/,     "POST", lifts.decline, "lift_club"],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/withdraw$/,    "POST", lifts.withdraw],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/reconfirm$/,   "POST", lifts.reconfirm, "lift_club"],
+];
+// ── end SCRBRD-124 ──
+
 /** @type {Route[]} */
 const SCOUT_ROUTES = [
   [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation, "scouting"],
@@ -1098,7 +1137,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES]) {
+    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES, ...LIFT_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
       // The write side of the module gate, in the one place every write route
