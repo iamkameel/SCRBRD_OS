@@ -1542,7 +1542,8 @@ export const READ_QUERIES = {
                   (r.state = 'pending'
                    and app_can('user.role.assign', r.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
                                '00000000-0000-0000-0000-000000000000'::uuid)
-                   and app_may_grant(r.role)) as decidable
+                   -- The role question at the request's school (db/77), as the grant asks it.
+                   and app_may_grant_at(r.role, r.school_id)) as decidable
              from role_request r
              join app_user u on u.id = r.person_id
              -- The school's name from the public list: a stranger with no

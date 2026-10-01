@@ -4,6 +4,7 @@ import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, areaWords, ballAngl
 import { FieldLabels, MIRROR_NOTE, fieldSentence } from "./fieldLabels.jsx";
 import { CHIP_VALUES, filterBalls, isPlaced, wagonAnalysis } from "./wagonAnalysis.mjs";
 import { Card } from "./ui.jsx";
+import { isOut } from "./format.js";
 
 /**
  * SCRBRD-102 — the wagon-wheel analysis panel.
@@ -174,7 +175,7 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
                 const where = areaWords(b, handOf(b.strikerId));
                 return (
                   <g key={`wl${i}`} data-spoke={key} data-colour={col}>
-                    <title>{`${b.type === "W" ? "Wicket" : `${b.value || 0} run${b.value === 1 ? "" : "s"}`}${where ? ` — ${where}` : ""}`}</title>
+                    <title>{`${isOut(b) ? "Wicket" : `${b.value || 0} run${b.value === 1 ? "" : "s"}`}${where ? ` — ${where}` : ""}`}</title>
                     <line x1={CX} y1={CY} x2={ex} y2={ey} stroke={T.field.casing} strokeWidth={w + 1.6} strokeDasharray={synthetic ? "2 2" : undefined} opacity={op} strokeLinecap="round"/>
                     <line x1={CX} y1={CY} x2={ex} y2={ey} stroke={col} strokeWidth={w} strokeDasharray={synthetic ? "2 2" : undefined} opacity={op} strokeLinecap="round"/>
                   </g>

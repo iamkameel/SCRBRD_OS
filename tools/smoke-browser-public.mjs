@@ -22,6 +22,10 @@
  *   6. The rate limit answers 429.
  *   7. The page asks for nothing but /api/public/ and its own bundle, with no
  *      Authorization header; no console errors.
+ *   8. The shot and where it went (SCRBRD-139, db/78): the Commentary tab
+ *      reads "The bowler to D Erasmus, driven through cover for four"; an
+ *      unconsented boy's placed ball names the place and not him; and no
+ *      response the page received carried a coordinate.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-public.mjs
@@ -82,12 +86,28 @@ async function visit(/** @type {string} */ path, { width = 1280, init = null } =
   if (init) await page.addInitScript(init);
   const errors = [];
   const requests = [];
+  /** Every /api/public/ body the page received (SCRBRD-139: no coordinate in any). */
+  const bodies = /** @type {Promise<{url: string, body: string}>[]} */ ([]);
+  page.on("response", (r) => {
+    if (new URL(r.url()).pathname.startsWith("/api/public/")) bodies.push(r.text().then((body) => ({ url: r.url(), body }), () => ({ url: r.url(), body: "" })));
+  });
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error: ${m.text()}`); });
   page.on("request", (r) => requests.push({ url: r.url(), auth: r.headers().authorization ?? null }));
   const res = await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
-  return { ctx, page, res, errors, requests };
+  return { ctx, page, res, errors, requests, bodies };
 }
+/**
+ * The placement keys no public answer may carry (PUBLIC_DATA L7 as amended):
+ * what the pad records of where a ball went, and db/78's `place`.
+ */
+const COORDINATES = ["theta", "radius", "seg", "zone", "place", "placement", "placementSource", "placementNull", "closePosition",
+  "captureProfile", "contact", "trajectory", "bowlerApproach"];
+/** Every key anywhere in a JSON value. @param {unknown} v @returns {string[]} */
+const keysIn = (v) => (Array.isArray(v) ? v.flatMap(keysIn)
+  : v != null && typeof v === "object" ? Object.entries(v).flatMap(([k, x]) => [k, ...keysIn(x)]) : []);
+/** @param {string} body */
+const coordinatesIn = (body) => { try { return [...new Set(keysIn(JSON.parse(body)).filter((k) => COORDINATES.includes(k)))]; } catch { return []; } };
 const tid = (/** @type {any} */ page, /** @type {string} */ id) => page.locator(`[data-testid="${id}"]`);
 const tab = async (/** @type {any} */ page, /** @type {string} */ id) => { await tid(page, `mc-tab-${id}`).click({ timeout: 4000 }); await page.waitForTimeout(400); };
 const text = (/** @type {any} */ page) => page.$eval("body", (/** @type {any} */ el) => el.innerText);
@@ -159,6 +179,11 @@ try {
   body = await text(v.page);
   ok("...naming D Erasmus, and nobody the rule does not name", /D Erasmus/.test(body) && leaks(body).length === 0, leaks(body).join(","));
   ok("...and never a pseudonym as a name", !/\b[0-9a-f]{12}\b/.test(body));
+  // SCRBRD-139: the shot and where it went, named by the rule.
+  ok("...naming the shot and where it went: \"The bowler to D Erasmus, driven through cover for four.\"",
+     lines.some((t) => t.includes("The bowler to D Erasmus, driven through cover for four.")), lines.slice(-8).join(" | "));
+  ok("...and an unconsented boy's placed two names the place, never him",
+     lines.some((t) => /The bowler to the striker, to deep mid-wicket, (two runs|they come back for two)\./.test(t)), lines.join(" | ").slice(0, 600));
   await tab(v.page, "partnerships");
   body = await text(v.page);
   ok("Partnerships: pairs by label", await v.page.locator('[data-testid="mc-partnership"]').count() > 0 && leaks(body).length === 0, leaks(body).join(","));
@@ -177,6 +202,11 @@ try {
   ok("the page asked for nothing but its shell, its bundle and /api/public/", v.requests.every((r) => allowed(r.url)),
      v.requests.map((r) => r.url).filter((u) => !allowed(u)).join(" "));
   ok("...and sent no Authorization header, ever", v.requests.every((r) => r.auth == null));
+  const got = await Promise.all(v.bodies);
+  const carrying = got.map((b) => ({ url: b.url, keys: coordinatesIn(b.body) })).filter((b) => b.keys.length);
+  ok(`no coordinate in any of the ${got.length} /api/public/ responses the page received`,
+     got.length >= 3 && got.some((b) => /"area":"cover"/.test(b.body)) && carrying.length === 0,
+     carrying.map((b) => `${b.url}: ${b.keys.join(",")}`).join(" | ") || `${got.length} bodies`);
   ok("no console errors", v.errors.length === 0, v.errors.join(" | "));
   await v.ctx.close();
 

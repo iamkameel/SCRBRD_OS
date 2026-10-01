@@ -12,12 +12,26 @@
  *                                       policy: fixture.read at that side),
  *                                       and whether he may change it
  *   POST /api/matches/:id/publication   { side: "home" | "away", published: bool }
+ *
+ * NEVER SERVED STALE AFTER IT ANSWERS. The public pages' cache is dropped by
+ * db/59's notification, which arrives on its own connection whenever the
+ * listening backend gets to it — under load, after this route has answered
+ * and after the publisher's next request has been served from the old entry.
+ * So once fixture_publish() has committed, `onChange` (public-api.mjs's
+ * changed(), wired in server.mjs) drops this fixture's entry before the
+ * answer is written: the next public read anywhere in this process reads the
+ * new state. The notification still drops it too, and is what reaches every
+ * other API instance and every change made outside this route.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 /** @import { RouteDeps, IdHandler } from "../api-types.mjs" */
 
-/** @param {RouteDeps} deps @returns {Record<string, IdHandler>} */
-export function publicationRoutes({ pool, secret }) {
+/**
+ * @param {RouteDeps & {onChange?: (note: {k: string, id: string}) => void}} deps
+ *   `onChange`: what a committed change is told to, before the answer
+ * @returns {Record<string, IdHandler>}
+ */
+export function publicationRoutes({ pool, secret, onChange }) {
   return {
     read: async (req, res) => {
       try {
@@ -51,6 +65,9 @@ export function publicationRoutes({ pool, secret }) {
           const status = r?.reason === "not_permitted" ? 403 : r?.reason === "no_such_fixture" ? 404 : 422;
           return res.status(status).json({ error: r?.reason ?? "refused" });
         }
+        // Committed (runAsPrincipal has returned): drop the public entry now,
+        // not when the notification gets here.
+        onChange?.({ k: "match", id: String(req.params.id).toLowerCase() });
         res.json({ ok: true, side, published });
       } catch (/** @type {any} */ e) {
         if (e.code === "22P02") return res.status(404).json({ error: "no_such_fixture" });

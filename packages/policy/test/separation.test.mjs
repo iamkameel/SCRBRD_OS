@@ -459,7 +459,7 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
   // now derived from mayGrantRole() instead of a hand-written role literal.
   // This is a ratchet, not a pass: it may fall, never rise, so a new one
   // fails here rather than in review.
-  const GATE_CEILING = 12;
+  const GATE_CEILING = 10;
   /** @type {(dir: string) => string[]} */
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);

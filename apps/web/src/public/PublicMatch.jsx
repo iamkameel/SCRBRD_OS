@@ -26,14 +26,18 @@ import { asPublicMatch, foldable, unnamedToPositions } from "./publicLog.js";
  *   /api/public/matches/:id/log    the event log with the rule already
  *                                  applied on the server: pseudonyms for
  *                                  every player, squads labelled by
- *                                  publicName(), reasons and placement gone
+ *                                  publicName(), reasons gone, and where a
+ *                                  ball went a word ("cover"), never a
+ *                                  coordinate (SCRBRD-139, L7 as amended)
  *   /api/public/matches/:id/shots  the team's scoring sectors (L7)
  *
  * and folds the log with the same @scrbrd/scoring the signed-in Match Centre
  * uses, drawing it with the same tabs (tabs-core.jsx, scorecard.jsx). What
  * changes in public mode: labels in place of names; the commentary says a
- * role for a boy it has no name for, and never says a health or discipline
- * matter (`sensitive` is never passed); Analytics is the team's only (no
+ * role for a boy it has no name for, names the shot and where it went from
+ * the server's word ("driven through cover for four", the signed-in line),
+ * and never says a health or discipline matter (`sensitive` is never
+ * passed); Analytics is the team's only (no
  * batter's wheel, no matchup — the log has no placement to draw one from);
  * Match details is the header's (no official, no weather, no pitch report);
  * nothing opens a profile.

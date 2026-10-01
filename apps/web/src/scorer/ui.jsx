@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import { D, T, clr, inkOn, textOn } from "../design/tokens.js";
+import { isOut } from "./format.js";
 
 /* ═══════════════════════════════════════════════════════
    DESIGN SYSTEM
@@ -132,7 +133,7 @@ const Badge = ({ children, color, sx, ...rest }) => (
 
 const BallDot = ({ ball, size=28 }) => {
   const m = b => {
-    if(b.type==="W")  return {bg:D.rose,   fg:inkOn(D.rose),   tx:"W"};
+    if(isOut(b))      return {bg:D.rose,   fg:inkOn(D.rose),   tx:"W"};
     if(b.type==="Wd") return {bg:D.orange,  fg:inkOn(D.orange), tx:"Wd"};
     if(b.type==="Nb") return {bg:D.amber,   fg:inkOn(D.amber),  tx:"NB"};
     if(b.type==="Pen")return {bg:D.violet,  fg:inkOn(D.violet), tx:`+${b.value}`};

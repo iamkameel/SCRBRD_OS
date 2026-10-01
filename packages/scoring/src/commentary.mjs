@@ -46,13 +46,23 @@
  * intent. A shot and where it went are named only when the scorer recorded
  * them (words.mjs); an id the vocabulary does not know says nothing rather
  * than itself. No line uses a pronoun for a player.
+ *
+ * A PUBLIC PAGE'S BALL (SCRBRD-139, Kameel 2026-10-01: "name the shot and
+ * where it went"). A signed-out browser never holds a coordinate
+ * (PUBLIC_DATA L7). The server turns each ball's placement into the word
+ * this module would say for it — ballAreas(), the same fold, the same hand
+ * and the same areaOf() as the line itself — and sends `area`, that word,
+ * in place of theta, radius and seg. areaOf() reads `area` only when the
+ * ball carries no placement of its own and only when it is one of
+ * AREA_WORDS, so the public line and the signed-in line for the same ball
+ * are one string (commentary.test.mjs K).
  */
 
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
   penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers, isKeeperRef, keeperOf } from "./replay.mjs";
 import { countsInOver } from "./events.mjs";
-import { positionName, sectorOf, batHandOf } from "./placement.mjs";
+import { positionName, sectorOf, batHandOf, SECTORS } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
 import { revisedTargetSuffix } from "./result.mjs";   // SCRBRD-130 R1
 
@@ -167,21 +177,81 @@ const choose = (key, slot, options) => options[seedOf(`${key}|${slot}`) % option
  * read through the hand of the batter who faced the ball (sectorOf): his
  * cover drive is "through cover", not "through mid-wicket". A point's theta
  * is batter-relative already.
- * @param {{theta?: number | null, radius?: number | null, placementSource?: string | null, seg?: number | null}} b
+ * @param {{theta?: number | null, radius?: number | null, placementSource?: string | null, seg?: number | null, area?: string | null}} b
  * @param {string} [batHand]  "R" | "L", the striker's
  * @returns {string | null}
  */
 function areaOf(b, batHand = "R") {
-  if (b.placementSource === "point" && b.theta != null && b.radius != null) {
-    const p = positionName(b.theta, b.radius);
-    if (p == null || p === "at feet") return null;
-    if (p === "keeper") return "the keeper";
-    const slip = /^slip (\d)$/.exec(p);
-    if (slip) return `${ordinal(Number(slip[1]))} slip`;
-    return p;
-  }
+  if (b.placementSource === "point" && b.theta != null && b.radius != null) return pointWord(b.theta, b.radius);
   const s = sectorOf(b, batHand);
-  return s == null ? null : SECTOR_WORDS[s];
+  if (s != null) return SECTOR_WORDS[s];
+  // A public page's ball: the word the server made from the placement it
+  // kept (ballAreas()), and only a word this function could have said.
+  return b.theta == null && b.seg == null && typeof b.area === "string" && AREA_WORDS.has(b.area) ? b.area : null;
+}
+
+/**
+ * A captured point, as a line names it: its fielding position, the keeper
+ * and the slips said as a commentator says them, nothing for "at feet".
+ * @param {number} theta  @param {number} radius
+ * @returns {string | null}
+ */
+function pointWord(theta, radius) {
+  const p = positionName(theta, radius);
+  if (p == null || p === "at feet") return null;
+  if (p === "keeper") return "the keeper";
+  const slip = /^slip (\d)$/.exec(p);
+  if (slip) return `${ordinal(Number(slip[1]))} slip`;
+  return p;
+}
+
+/**
+ * Every word areaOf() can say: the twelve sectors' and every point's, found
+ * by asking pointWord() at each whole degree (a stored theta is one) in each
+ * depth band. Derived, never typed, so a name added to placement.mjs is a
+ * word here at once. The public projection keeps an `area` only if it is
+ * one of these, and so does areaOf().
+ * @type {ReadonlySet<string>}
+ */
+export const AREA_WORDS = Object.freeze(new Set([
+  ...SECTORS.map((x) => x.label),
+  // at feet (0.01), the catching ring (0.05), silly, short, the ring, the deep
+  ...Array.from({ length: 360 }, (_, t) => [0.01, 0.05, 0.1, 0.2, 0.3, 0.6, 1].map((r) => pointWord(t, r))).flat(),
+].filter((w) => w != null)));
+
+/**
+ * Where each ball of a log went, as its line will say it: the word
+ * areaOf() gives for the ball, read through the hand of the batter the fold
+ * has on strike at that ball (a sector-era seg is the screen's, mirrored for
+ * a left-hander, so the word needs the fold, not just the ball). The same
+ * walk as deriveCommentary()'s — the match's Edition, each innings' foldSteps
+ * — so the word is the one the signed-in line says.
+ *
+ * The public projection (services/api/public/redact.mjs) calls this on the
+ * server over the log with its placements, sends the word as `area`, and
+ * drops the placement: no coordinate reaches a browser (PUBLIC_DATA L7).
+ *
+ * @param {LogEvent[]} events  the match's flat log, placements included
+ * @param {{ctx?: import("./replay.mjs").FoldContext}} [o]  the fixture's fold context
+ * @returns {Map<LogEvent, string>}  each ball with a word, by the event object
+ */
+export function ballAreas(events = [], { ctx = {} } = {}) {
+  /** @type {Map<LogEvent, string>} */
+  const out = new Map();
+  const { byInnings, numbers, match, credits } = matchWalk(events, ctx);
+  for (const n of numbers) {
+    const evs = /** @type {LogEvent[]} */ (byInnings.get(n));
+    const steps = foldSteps(evs, { carried: credits.carried.get(n) ?? 0, ctx: withMatchEdition(ctx, match.innings) });
+    for (let step = steps.next(); !step.done; step = steps.next()) {
+      const { ev, inn } = step.value;
+      if (ev.kind !== KIND.BALL) continue;
+      const entry = inn.ballLog[inn.ballLog.length - 1];
+      if (!entry) continue;
+      const area = areaOf(entry, batHandOf(inn, entry.strikerId ?? ev.striker ?? null));
+      if (area != null) out.set(ev, area);
+    }
+  }
+  return out;
 }
 
 /**
@@ -198,7 +268,7 @@ function toArea(area, prep) {
  * The shot and where it went, as recorded: "driven through cover", "pulled",
  * "to mid-wicket". Empty when the scorer recorded neither. A no-stroke shot
  * (beaten, padded away) is not sent anywhere.
- * @param {{shot?: string | null, theta?: number | null, radius?: number | null, placementSource?: string | null, seg?: number | null}} b
+ * @param {{shot?: string | null, theta?: number | null, radius?: number | null, placementSource?: string | null, seg?: number | null, area?: string | null}} b
  * @param {"to" | "through" | "over"} prep
  * @param {string} [batHand]  the striker's, for a sector-era ball (areaOf)
  */
@@ -282,6 +352,23 @@ function withMatchEdition(ctx, innings) {
 }
 
 /**
+ * What every walk of a match starts from: its log by innings, and the
+ * match's fold — every innings' figures with the penalty runs to a fielding
+ * side credited, and the result. deriveCommentary() and ballAreas() fold it
+ * once more, event by event; these are what their lines say at the end.
+ * @param {LogEvent[] | LogEvent[][]} events  @param {import("./replay.mjs").FoldContext} foldCtx
+ */
+function matchWalk(events, foldCtx) {
+  const byInnings = byInningsOf(events);
+  const numbers = [...byInnings.keys()];
+  const flat = [...byInnings].flatMap(([i, evs]) => evs.map((e) => ((e.innings ?? 0) === i ? e : { ...e, innings: i })));
+  const match = deriveMatch(flat, foldCtx);
+  /** @type {Map<number, Innings>} */
+  const final = new Map(numbers.map((n, j) => [n, match.innings[j]]));
+  return { byInnings, numbers, match, final, credits: penaltyCredits(final) };
+}
+
+/**
  * The commentary of a match, in the order it happened.
  *
  * @param {LogEvent[] | LogEvent[][]} events  the match's log (flat, or by innings)
@@ -302,17 +389,8 @@ export function deriveCommentary(events = [], options = {}) {
     return n != null && String(n).trim() !== "" ? String(n) : (name ?? key ?? "the batting side");
   };
 
-  const byInnings = byInningsOf(events);
-  const numbers = [...byInnings.keys()];
-  // The match's fold: every innings' figures with the penalty runs to a
-  // fielding side credited, and the result. Folded once more below, event by
-  // event, for the lines; these are what the lines say at the end.
-  const flat = [...byInnings].flatMap(([i, evs]) => evs.map((e) => ((e.innings ?? 0) === i ? e : { ...e, innings: i })));
   const foldCtx = options.ctx ?? {};
-  const match = deriveMatch(flat, foldCtx);
-  /** @type {Map<number, Innings>} */
-  const final = new Map(numbers.map((n, j) => [n, match.innings[j]]));
-  const credits = penaltyCredits(final);
+  const { byInnings, numbers, match, final, credits } = matchWalk(events, foldCtx);
 
   /** @type {CommentaryItem[]} */
   const out = [];
@@ -879,8 +957,11 @@ function deliveryLine(ev, entry, c) {
     default: {
       if (v === 4 || v === 6) {
         const p = shotPhrase(entry, v === 6 ? "over" : "through", hand);
-        const word = v === 6 ? choose(key, "six", ["six", "six runs", "that's six"]) : choose(key, "four", ["four", "four runs", "that's four"]);
-        return { kind: v === 6 ? COMMENTARY_KIND.SIX : COMMENTARY_KIND.FOUR, text: `${line(join(word, p))}.` };
+        // With the shot or the place, the stroke first: "driven through cover
+        // for four" (Kameel, 2026-10-01), as a no-ball struck for four reads.
+        const word = p ? `${p} for ${words(v)}`
+          : v === 6 ? choose(key, "six", ["six", "six runs", "that's six"]) : choose(key, "four", ["four", "four runs", "that's four"]);
+        return { kind: v === 6 ? COMMENTARY_KIND.SIX : COMMENTARY_KIND.FOUR, text: `${line(word)}.` };
       }
       const runs = v === 0 ? choose(key, "dot", ["no run", "dot ball"])
         : v === 1 ? choose(key, "one", ["one run", "a single", "they take one"])

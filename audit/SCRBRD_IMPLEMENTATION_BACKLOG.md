@@ -3966,7 +3966,13 @@ The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/
 
 - **Wave A (Sonnet, screens):** in progress. Invented audit entries come down; ground tasks are read from duties; the Equipment copy is removed in favour of the kit register; real school names; the Skills axis is 1–20; Management tabs follow capabilities; Squad availability and profile edits; dead injury buttons hidden; Fields drawing fixed. Management users show all roles, with Add role.
 - **Wave B (Opus, db/77+):**
-  - End a role (in progress, db/77).
+  - **C1 · End a role. BUILT (2026-10-01, Opus): db/77.** `role_assignment_end(assignment, reason)` withdraws one
+    assignment (never deleted), writes the audit row `role_assignment_ending` (the reason, at least ten characters; the
+    office and `audit.read` read it, the person does not) and a `system` notice without the reason. Who may: whoever may
+    grant that role AT THAT SCHOOL (`app_may_grant_at()`, which now gates every grant too). Never: the owner's key, a
+    superadmin's roles from below, your own last key, your own DSO appointment, a support hour; a guardian role keeps
+    the guardian link's rules. `POST /api/assignments/:id/end`; `EndRoleButton` in `apps/web/src/views/endrole.jsx`
+    for the lead to wire in. db/99 §56, `smoke-end-role`, `end-role.test`. `docs/design/SCRBRD-132_end_a_role.md`.
   - The real audit log, under `audit.read`: names masked, reads logged.
   - Injury routes: medical staff and coaches log; medical staff update, clear and refer.
   - A season-per-player read.
@@ -4038,6 +4044,13 @@ Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same scree
   - what he never sees (health, workload reasons, another boy's assessment);
   - whether a coach may send him anything, under the CSA safeguarding policy;
   - how the honour switches it on and off.
+
+### SCRBRD-139 — Public commentary names the shot and where it went (2026-10-01)
+
+Kameel, 2026-10-01: *"I want the public page to name the shot and where it went ('driven through the covers for four')."* Decided; it amends SCRBRD-083's rule L7 (`docs/policy/PUBLIC_DATA.md` §5b): the shot and where a ball went may be named in public commentary as words; drawings stay team-level; no coordinate ever reaches a browser or the public cache; names still by L2 and L6.
+
+- **Built (2026-10-01):** `db/78_public_shot_words.sql` gives `public_match_log()` a ball's `shot` and `place` (theta, radius, seg, its source) for the API alone; `services/api/public/redact.mjs` makes the word for where it went with `ballAreas()` (packages/scoring, the commentary's own fold and `areaOf()`), sends `shot` and `area`, and drops `place`. The page's commentary then reads as the signed-in Match Centre's, string for string. A four or six with a shot or a place now reads "driven through cover for four" on both. db/99 §57, `public.test.mjs`, `commentary.test.mjs` K, `tools/smoke-public.mjs` §7 and `tools/smoke-browser-public.mjs` prove it.
+- **Not changed:** a line's choice among equal words ("a single", "they take one") is seeded by the event's id, which the public page holds as its pseudonym, so those can differ between the two pages for the same ball. The shot and place phrases have no such choice.
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
 2026-09-30)

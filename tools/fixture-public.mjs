@@ -21,7 +21,10 @@
  *
  *   PUB   Hilton 1XI v Westville 1XI, live, both on SCRBRD: Hilton's innings
  *         with a wicket to a typed fielder, a bowler changed for an injury, a
- *         batter retired hurt, a penalty, a void; Westville's begun.
+ *         batter retired hurt, a penalty, a void; Westville's begun. Its
+ *         first ball is D Erasmus's cover drive for four, placed as a point
+ *         (SCRBRD-139: the page names the shot and where it went); the
+ *         unconsented boy's two to deep mid-wicket has a place and no shot.
  *   PUB2  Hilton 1XI v Kearsney College 1XI (not on SCRBRD, typed names), a
  *         finished first innings with Daniel Erasmus in it again — for "no
  *         pseudonym is shared between two matches" and for a finished page's
@@ -114,7 +117,9 @@ export async function buildPublicFixture(q) {
       squad: HILTON, bowlingSquad: WESTVILLE, overs: 10, twelfthMan: "Twelfth Mansfield", captureProfile: "full" })),
     H(batters({ striker: E.erasmus, nonStriker: E.markham })),
     H(bowler({ bowler: E.visser })),
-    H(ball({ type: BALL_TYPE.RUN, value: 4, shot: "drive", ...placementFromTap({ angle: 270, radius: 1 }) })),
+    // SCRBRD-139: the page says "D Erasmus, driven through cover for four"
+    // (Kameel's words), and no coordinate of it reaches the browser.
+    H(ball({ type: BALL_TYPE.RUN, value: 4, shot: "drive", ...placementFromTap({ angle: 235, radius: 0.35 }) })),
     H(ball({ type: BALL_TYPE.RUN, value: 1, ...placementFromTap({ angle: 60, radius: 0.5 }) })),
     H(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: TYPED_FIELDER, shot: "pull" })),
     H(batters({ striker: E.ndaba })),

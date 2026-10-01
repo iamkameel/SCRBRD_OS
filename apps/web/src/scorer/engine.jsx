@@ -41,7 +41,7 @@ import { SyncBanner } from "./syncBanner.jsx";
 import { TossSheet } from "./toss.jsx";
 import { areaWords } from "./field.js";
 import { deliveryOf } from "./delivery.js";
-import { fmtOv } from "./format.js";
+import { fmtOv, isOut } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
@@ -2418,7 +2418,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                         <BallDot ball={b} size={24}/>
                         <div style={{flex:1}}>
                           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>
-                            {b.type==="W"?"WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal)+(b.outAt?` at the ${b.outAt==="bowler_end"?"bowler's":"striker's"} end`:"")+(b.value?`, ${b.value} run${b.value!==1?"s":""}`:""):
+                            {b.type==="W"&&b.freeHitSaved?`Free hit: not out (${DISMISSAL_LABEL[b.dismissal]??b.dismissal} does not count)${b.value?`, ${b.value} run${b.value!==1?"s":""}`:""}`:
+                             b.type==="W"?"WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal)+(b.outAt?` at the ${b.outAt==="bowler_end"?"bowler's":"striker's"} end`:"")+(b.value?`, ${b.value} run${b.value!==1?"s":""}`:""):
                              b.type==="Wd"?"Wide ball":
                              b.type==="Nb"?`No Ball (${b.nbType?.replace("_"," ")||""}), ${b.value||0}+1 runs${b.nbRuns?` (${b.nbRuns==="leg_byes"?"leg byes":"byes"})`:""}`:
                              b.type==="Pen"?`Penalty ${b.value} runs to ${b.to} team — ${b.reason}`:
@@ -2448,7 +2449,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                 <div style={{padding:"16px",display:"flex",flexWrap:"wrap",gap:"12px"}}>
                   {(inn?.overLog||[]).map((ov,oi)=>{
                     const ovRuns=ov.balls.reduce((s,b)=>s+(b.value||0),0);
-                    const hasWkt=ov.balls.some(b=>b.type==="W");
+                    const hasWkt=ov.balls.some(isOut);
                     const hasBnd=ov.balls.some(b=>b.value===4||b.value===6);
                     return (
                       <div key={oi} style={{minWidth:"130px",background:D.surf2,borderRadius:D.md,padding:"10px 12px",

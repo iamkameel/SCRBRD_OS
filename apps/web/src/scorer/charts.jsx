@@ -2,7 +2,7 @@ import { useState } from "react";
 import { D, T, textOn } from "../design/tokens.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, areaWords, ballAngle, frameOf, lineKey, toXY, wagEnd } from "./field.js";
 import { FieldLabels, MIRROR_NOTE, fieldSentence } from "./fieldLabels.jsx";
-import { RR, SR } from "./format.js";
+import { RR, SR, isOut } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
@@ -28,7 +28,7 @@ function WormChart({innings,curIn,match}){
       runs+=(b.value||0);
       const ball=i+1;
       pts.push({ball,runs});
-      if(b.type==="W"){
+      if(isOut(b)){
         const bat=inn.batsmen.find(x=>x.id===b.striker);
         wkts.push({ball,runs,n:wkts.length+1,name:bat?bat.name:(DISMISSAL_LABEL[b.dismissal]||b.dismissal||"Wicket"),mode:DISMISSAL_LABEL[b.dismissal]||b.dismissal||""});
       }
@@ -110,7 +110,7 @@ function ManhattanChart({inn,match}){
     const ov=inn.overLog.find(o=>o.over===i);
     if(!ov)return{over:i,runs:0,wickets:0,complete:false};
     const runs=ov.balls.reduce((s,b)=>s+(b.value||0),0);
-    const wickets=ov.balls.filter(b=>b.type==="W").length;
+    const wickets=ov.balls.filter(isOut).length;
     const complete=ov.balls.filter(b=>b.type!=="Wd"&&b.type!=="Nb").length===6;
     return{over:i,runs,wickets,complete};
   });
@@ -355,7 +355,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
               // Each spoke on a casing: the chip colours were chosen for the
               // black board (T.field.casing, design.test.mjs).
               return(<g key={`l${i}`} data-spoke={key} data-colour={col}>
-                <title>{`${b.type==="W"?"Wicket":`${b.value||0} run${b.value===1?"":"s"}`}${where?` — ${where}`:""}${over}`}</title>
+                <title>{`${isOut(b)?"Wicket":`${b.value||0} run${b.value===1?"":"s"}`}${where?` — ${where}`:""}${over}`}</title>
                 <line x1={CX} y1={CY} x2={ex} y2={ey} stroke={T.field.casing} strokeWidth={w+1.6}
                   strokeDasharray={synthetic?"2 2":undefined} opacity={op} strokeLinecap="round"/>
                 <line x1={CX} y1={CY} x2={ex} y2={ey} stroke={col} strokeWidth={w}

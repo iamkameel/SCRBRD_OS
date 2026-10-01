@@ -37,6 +37,28 @@ const ENROL_STATUS = {
   email_belongs_to_another_school: 409,
 };
 
+// Ending a role (db/77, role_assignment_end()). Each refusal, its status and
+// the sentence the office reads. The words are the screen's: EndRoleButton
+// (apps/web/src/views/endrole.jsx) shows `detail` as it comes. None of them
+// repeats the reason the office gave.
+/** @type {Record<string, [number, string]>} */
+export const END_ROLE_REFUSALS = {
+  not_signed_in:      [401, "Sign in again to end a role."],
+  reason_required:    [422, "Say why this role is ending, in at least ten characters. It goes on the school's record, not to the person."],
+  reason_too_long:    [422, "Keep the reason under 2,000 characters."],
+  no_such_assignment: [404, "That role is not on the record."],
+  not_permitted:      [403, "You cannot end this role. Only somebody who may appoint it at this school can end it — and a parent's role, only somebody who manages guardian links."],
+  already_ended:      [409, "This role has already ended."],
+  owners_key:         [403, "The owner's key is not ended from a screen."],
+  superadmin_only:    [403, "This person holds the owner's key. Only another holder of it may end their roles."],
+  last_admin:         [409, "This is your last role that can appoint people here. Ask someone else to end it, so the school is never left without anyone who can."],
+  own_dso:            [403, "You cannot end your own safeguarding appointment. The principal or the provincial DSO ends it."],
+  dso_blocked:        [409, "This appointment cannot be ended from here. Ask the provincial DSO."],
+  support_session:    [409, "This is a support session. End it from the support screen, which closes its record too."],
+  last_verified_link: [409, "This is the last verified parent or guardian of a child under eighteen. Link and verify the new guardian first, then end this role."],
+  refused:            [409, "The database refused to end this role."],
+};
+
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function requestRoutes({ pool, secret }) {
   /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
@@ -132,6 +154,32 @@ export function requestRoutes({ pool, secret }) {
         }
       });
     }),
+
+    // POST /api/assignments/:id/end { reason }
+    //
+    // Ending one role: role_assignment_end() (db/77) decides everything —
+    // who may (whoever may grant it there), who may not (the owner's key, a
+    // superadmin's roles from below, your own last key, your own DSO
+    // appointment, a minor's last verified guardian) — and answers with a
+    // code, which this turns into a status and the office's words. The row
+    // is withdrawn, never deleted; the person is told, without the reason.
+    endAssignment: async (req, res) => {
+      const id = String(req.params?.id ?? "");
+      if (!UUID.test(id)) return res.status(404).json({ error: "no_such_assignment", detail: END_ROLE_REFUSALS.no_such_assignment[1] });
+      const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
+      try {
+        const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
+          (await client.query(`select * from role_assignment_end($1, $2)`, [id, reason])).rows[0]);
+        if (r?.ok) return res.json({ id, ended: true });
+        const code = r?.reason || "refused";
+        const [status, words] = END_ROLE_REFUSALS[code] ?? END_ROLE_REFUSALS.refused;
+        return res.status(status).json({ error: code, detail: words });
+      } catch (/** @type {any} */ e) {
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        return res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error"),
+                                          ...(status === 403 ? { detail: END_ROLE_REFUSALS.not_permitted[1] } : {}) });
+      }
+    },
 
     // POST /api/requests/:id/decide { grant: boolean, note?, playerId?, teamCode? }
     decide: handle(async (req) => {

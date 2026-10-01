@@ -146,10 +146,17 @@ const SUITES = [
   // before a batter is offered, the fold after it and his return (SCRBRD-071).
   ["retire-sheet", "apps/web/test/retire-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["ways-out", "apps/web/test/ways-out.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Management's people list: every person with every role they hold, the
+  // filters across all of them, nothing that writes signed out, the role
+  // picker offering what GRANTABLE_ROLES gives the caller, refusals in words.
+  ["people", "apps/web/test/people.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Redesign step 4, phase A: the family and pupil apps' helpers — one child
   // per screen, a method and never a name, the tenant's words (G15) — and
   // the Match Centre's family mode (G13).
   ["family", "apps/web/test/family.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Ending a role (SCRBRD-132 C1, db/77): EndRoleButton asks for the reason,
+  // posts, shows refusals in the route's words; every code db/77 answers has them.
+  ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,
   // its source, "N of M confirmed", a version's standing, a refusal in words.
   ["playing-conditions-screen", "apps/web/test/playing-conditions.test.mjs"],

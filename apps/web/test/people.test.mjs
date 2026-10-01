@@ -1,0 +1,163 @@
+/**
+ * Management's people list: every person with every role they hold.
+ *
+ * The pure half (lib/people.js) is checked over hand-built rows with the day
+ * named, never the clock. The drawn half is rendered signed-out — the
+ * demonstration — where the screen reads the seeded directory and must offer
+ * nothing that writes; and the enrolment form is rendered for two callers to
+ * show the role picker offers what GRANTABLE_ROLES gives each and no more.
+ * The browser walk (tools/smoke-browser-management.mjs) proves the same
+ * against a real server and database.
+ *
+ *   node --import ./tools/register-jsx.mjs apps/web/test/people.test.mjs
+ */
+import { createElement as h } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
+import { liveRoles, matchesPerson, peopleWithRoles, roleState } from "../src/lib/people.js";
+import { PeoplePanel } from "../src/views/people.jsx";
+import { ManagementView } from "../src/views/ManagementView.jsx";
+import { ENROL_MESSAGE, EnrolModal, enrolWords, grantableFor } from "../src/views/enrol.jsx";
+
+let pass = 0, fail = 0;
+const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 240)}` : ""); } };
+const group = (t) => console.log("\n" + t);
+
+const TODAY = "2026-10-01";
+
+group("A role's state on a named day");
+{
+  const live = { active: true };
+  ok("an active appointment with no dates is live", roleState(live, TODAY) === "live");
+  ok("withdrawn is ended", roleState({ active: false }, TODAY) === "ended");
+  ok("dated out on the day is ended (the policy's t >= until)", roleState({ active: true, validUntil: TODAY }, TODAY) === "ended");
+  ok("dated out tomorrow is still live", roleState({ active: true, validUntil: "2026-10-02" }, TODAY) === "live");
+  ok("dated out last term is ended", roleState({ active: true, validUntil: "2026-06-30" }, TODAY) === "ended");
+  ok("not yet started is upcoming, not live", roleState({ active: true, validFrom: "2026-11-01" }, TODAY) === "upcoming");
+  ok("paused by the office is paused, not live and not ended", roleState({ active: true, suspended: true }, TODAY) === "paused");
+  ok("withdrawn beats paused", roleState({ active: false, suspended: true }, TODAY) === "ended");
+}
+
+const users = [
+  { id: "u1", name: "Sarah Mokoena", email: "sarah@example.invalid", role: "coach", school: "s1", status: "active", player: null },
+  { id: "u2", name: "T Ndlovu", email: "u14coach@example.invalid", role: "coach", school: "s1", status: "active", player: null },
+  { id: "u3", name: "T Ndlovu", email: "registrar.wes@example.invalid", role: "schooladmin", school: "s2", status: "active", player: null },
+  { id: "u4", name: "R Pillay", email: "pillay@example.invalid", role: "player", school: "s1", status: "active", player: "p5" },
+  { id: "u5", name: "Quiet Person", email: "quiet@example.invalid", role: "spectator", school: "s1", status: "inactive", player: null },
+];
+const asg = (id, personId, role, extra = {}) => ({ id, personId, role, team: null, active: true, validFrom: null, validUntil: null, suspended: false, revokedAt: null, ...extra });
+const assignments = [
+  asg("a1", "u1", "coach", { team: "U16B" }),
+  asg("a2", "u1", "directorofsport"),
+  asg("a3", "u1", "guardian", { active: false, revokedAt: "2026-03-12T08:00:00Z" }),
+  asg("a4", "u1", "assistantcoach", { team: "1XI", validUntil: "2026-06-30" }),
+  asg("a5", "u2", "coach", { team: "U14A" }),
+  asg("a6", "u3", "schooladmin"),
+  asg("a7", "u4", "player", { team: "1XI" }),
+  asg("a8", "u4", "selfaccess"),
+];
+
+group("Each person, with every role they hold");
+{
+  const people = peopleWithRoles(users, assignments, TODAY);
+  const sarah = people.find((p) => p.id === "u1");
+  ok("one entry per account", people.length === users.length);
+  ok("Sarah holds four appointments, all shown", sarah.roles.length === 4, sarah.roles.map((r) => r.role).join(","));
+  ok("...the live ones first, the ended last", sarah.roles.map((r) => r.state).join(",") === "live,live,ended,ended", sarah.roles.map((r) => r.state).join(","));
+  ok("...a coach of U16B keeps her side", sarah.roles.find((r) => r.role === "coach").team === "U16B");
+  ok("...the withdrawn one says the day it was withdrawn", sarah.roles.find((r) => r.role === "guardian").endedOn === "2026-03-12");
+  ok("...the dated-out one says the day it was dated out", sarah.roles.find((r) => r.role === "assistantcoach").endedOn === "2026-06-30");
+  ok("two accounts of one name stay two (by id, not name)", people.filter((p) => p.name === "T Ndlovu").length === 2
+     && people.find((p) => p.id === "u2").roles[0].role === "coach" && people.find((p) => p.id === "u3").roles[0].role === "schooladmin");
+  ok("a pupil holds the team role and his own record", people.find((p) => p.id === "u4").roles.map((r) => r.role).sort().join() === "player,selfaccess");
+  ok("an account the assignments say nothing about keeps the role it was opened with, live",
+     JSON.stringify(people.find((p) => p.id === "u5").roles.map((r) => [r.role, r.state])) === '[["spectator","live"]]');
+  ok("with no assignments read at all, every account still shows one role",
+     peopleWithRoles(users, [], TODAY).every((p) => p.roles.length === 1));
+  ok("liveRoles leaves out the ended", liveRoles(sarah).length === 2);
+}
+
+group("The filters look across all of a person's roles");
+{
+  const people = peopleWithRoles(users, assignments, TODAY);
+  const label = (r) => ({ directorofsport: "Director of Sport", assistantcoach: "Assistant Coach" }[r] ?? r);
+  const who = (f) => people.filter((p) => matchesPerson(p, f, { label })).map((p) => p.id).join(",");
+  ok("by a second role, not just the first", who({ role: "directorofsport" }) === "u1");
+  ok("by a role that has ended", who({ role: "guardian" }) === "u1");
+  ok("by status", who({ status: "inactive" }) === "u5");
+  ok("search finds the words on screen, not the code", who({ q: "director of sport" }) === "u1");
+  ok("search finds a side", who({ q: "u14a" }) === "u2");
+  ok("search finds an email", who({ q: "pillay@" }) === "u4");
+  ok("filters combine", who({ role: "coach", status: "active", q: "u16b" }) === "u1");
+  ok("nothing matches nothing", who({ q: "zzzz" }) === "");
+}
+
+group("Signed out: the seeded directory, and nothing that writes");
+{
+  const out = renderToStaticMarkup(h(PeoplePanel, { role: "superadmin", players: [], onDirectoryChanged: () => {} }));
+  const rows = (out.match(/data-testid="person-row-/g) ?? []).length;
+  ok("the seeded people are listed", rows >= 10, rows);
+  ok("...each with a role chip", (out.match(/data-testid="role-chip"/g) ?? []).length >= rows);
+  ok("no Add user", !/Add user/.test(out));
+  ok("no Add role", !/Add role|Add a role/.test(out));
+  ok("the plain line is there, word for word", /Suspending an account is coming\./.test(out));
+  ok("no End role signed out (db/77 is a write)", !/data-testid="end-role"/.test(out));
+  ok("it says it is the demonstration", /demonstration directory/.test(out));
+  ok("no Edit, Promote, Suspend or Delete", !/>(Edit|Promote|Suspend|Delete|Restore)</.test(out));
+}
+
+group("The role picker offers what the caller may grant, and no more");
+{
+  const picks = (role) => {
+    const out = renderToStaticMarkup(h(EnrolModal, { role, players: [], onClose: () => {}, onEnrolled: () => {} }));
+    const sel = /data-testid="enrol-role"[^>]*>(.*?)<\/select>/s.exec(out)?.[1] ?? "";
+    return [...sel.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]).filter(Boolean);
+  };
+  const office = picks("schooladmin");
+  ok("the school office is offered exactly its grant list", JSON.stringify([...office].sort()) === JSON.stringify([...GRANTABLE_ROLES.schooladmin].sort()), office.join(","));
+  ok("...and not the clinical or commercial roles it is kept from",
+     !office.some((r) => ["medical", "finance", "sponsorship", "principal", "directorofsport", "superadmin", "platformadmin"].includes(r)));
+  const head = picks("principal");
+  ok("the principal is offered the clinical ones the office is not", head.includes("medical") && head.includes("finance"));
+  ok("a role with no grant list is offered nothing", picks("coach").length === 0 && grantableFor("coach").length === 0);
+}
+
+group("A refusal is said in words");
+{
+  ok("a known code has its sentence", enrolWords("not_permitted") === ENROL_MESSAGE.not_permitted && /may not/.test(enrolWords("not_permitted")));
+  const unknown = enrolWords("check_violation");
+  ok("an unknown code is still a sentence, and not the code", /not saved/.test(unknown) && !/check_violation/.test(unknown), unknown);
+  ok("no message is a bare code", Object.values(ENROL_MESSAGE).every((m) => /\s/.test(m) && /[.]$/.test(m)));
+}
+
+group("The tabs a person has are the capabilities they hold");
+{
+  const tabsOf = (role) => {
+    const out = renderToStaticMarkup(h(ManagementView, { role, onDirectoryChanged: () => {} }));
+    return { out, tabs: [...out.matchAll(/data-testid="mgmt-tab-([a-z]+)"/g)].map((m) => m[1]) };
+  };
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  ok("a groundskeeper has Ground tasks and nothing else", eq(tabsOf("facilities").tabs, ["grounds"]), tabsOf("facilities").tabs);
+  ok("a coach has the squad (team.manage) and nothing else", eq(tabsOf("coach").tabs, ["squad"]), tabsOf("coach").tabs);
+  ok("a principal — who may assign roles and read the audit — has Users and Audit log, not the coach's squad",
+     eq(tabsOf("principal").tabs, ["users", "audit"]), tabsOf("principal").tabs);
+  ok("a director of sport has the Users tab her capability earns, and is on it", eq(tabsOf("directorofsport").tabs, ["users", "squad", "fixtures", "broadcast", "audit", "grounds"]) && /data-testid="people-panel"/.test(tabsOf("directorofsport").out), tabsOf("directorofsport").tabs);
+  ok("a school admin has every tab but Broadcast, which she does not hold", eq(tabsOf("schooladmin").tabs, ["users", "squad", "fixtures", "audit", "grounds"]), tabsOf("schooladmin").tabs);
+  ok("reading the people (user.read) is not the audit log (audit.read): a bursar has neither tab", eq(tabsOf("finance").tabs, []), tabsOf("finance").tabs);
+  ok("a role with none of these is told so, and drawn no tab", eq(tabsOf("spectator").tabs, []) && /Nothing on this screen is yours to manage/.test(tabsOf("spectator").out));
+  ok("the screen opens on the first tab a person has — a groundskeeper is not shown the directory", !/people-panel/.test(tabsOf("facilities").out));
+  // The audit log: holders of audit.read, and a plain line. The demo directory
+  // (the Users tab) legitimately names Hendricks and Khumalo, so what is
+  // checked is the invented ENTRIES, on the tab that used to carry them.
+  const audit = tabsOf("dso");
+  ok("a holder of audit.read and nothing else has the Audit log tab, opened on it", eq(audit.tabs, ["audit"]), audit.tabs);
+  ok("...which says one plain line", /The audit log is coming\./.test(audit.out));
+  const invented = /Updated fixture|Added training session|role changed|scorecard submitted|Medical clearance|New user created|Coaching Asst|Pretorius/;
+  ok("none of the invented audit entries is anywhere", ["superadmin", "directorofsport", "facilities", "schooladmin", "dso"].every((r) => !invented.test(tabsOf(r).out)));
+  const gk = tabsOf("facilities").out;
+  ok("...nor the invented ground tasks, on the groundskeeper's own tab", !/Irrigation|Roll and mark|Outfield mowing|Mzimba|Hadebe|Prepare Main Oval/.test(gk) && /data-testid="ground-duties/.test(gk), gk.slice(0, 200));
+  ok("...whose duties are the fixtures at the grounds, and no fake New Task button", /Fixtures at your grounds/.test(gk) && !/New Task/.test(gk));
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);
