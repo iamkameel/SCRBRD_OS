@@ -6,12 +6,13 @@ import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
 import { SegmentedControl } from "../ui/data.jsx";
 import { usePlayersWithCareer, useSkills } from "../lib/live.js";
-import { api } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
-import { AvailabilityPanel } from "./availability.jsx";
+import { AvailabilityPanel, PlayerAvailability } from "./availability.jsx";
+import { EditProfile, mayEditProfile } from "./playeredit.jsx";
 // SCRBRD-124 (db/70): lifts on the side's fixture.
-import { LiftsPanel } from "./lifts.jsx";
+import { LiftDayStaff, LiftsPanel } from "./lifts.jsx";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { ageAtCutoff, compareTeams, isEligible, parseTeam, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 
@@ -44,6 +45,8 @@ function SquadView({ role }) {
   const SKILLS_MATRIX = useSkills(role);
   const [team, setTeam]           = useState("1XI");
   const [selected, setSelected]   = useState(null);
+  // Which of the player panel's two actions is open: "edit" | "availability".
+  const [act, setAct]             = useState(null);
   const [addModal, setAddModal]   = useState(false);
   const [np, setNp] = useState({ fullName:"", teamCode:"1XI", playingRole:"batter",
     battingStyle:"R", bowlingArm:"", bowlingStyle:"", squadNo:"", born:"", idNumber:"" });
@@ -124,11 +127,14 @@ function SquadView({ role }) {
           seat asked for, the driver's own card, the office's counts. Nothing
           where the module is not live. */}
       <LiftsPanel role={role} team={team}/>
+      {/* The day (SCRBRD-124 phase 2, db/76): the office's lift exceptions,
+          by name, to resolve; the coach's expected list with "with us". */}
+      <LiftDayStaff role={role} team={team}/>
       <div style={{display:"grid",gridTemplateColumns:selected?"1fr 320px":"1fr",gap:"16px"}}>
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>
             {players.map(p=>(
-              <Card key={p.id} onClick={()=>setSelected(p)} sx={{
+              <Card key={p.id} data-testid={`squad-card-${p.id}`} onClick={()=>{setSelected(p);setAct(null);}} sx={{
                 padding:"14px",cursor:"pointer",
                 border:`1px solid ${selected?.id===p.id?D.sky+"55":seesFitness&&p.fitness==="injured"?D.rose+"22":D.border}`,
                 background:selected?.id===p.id?D.sky+"08":seesFitness&&p.fitness==="injured"?D.rose+"05":D.surf1,
@@ -216,17 +222,45 @@ function SquadView({ role }) {
               <div>
                 <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
                 <div style={{display:"flex",justifyContent:"center"}}>
-                  <RadarChart data={SKILLS_MATRIX[selected.id].batting} color={D.sky} size={140}/>
+                  {/* One axis per category the ratings carry, the mean of its
+                      1-20 ratings on the chart's 0-100 scale. Naming a
+                      "batting" group that no rating has crashed this panel for
+                      any player who had been assessed. */}
+                  <RadarChart color={D.sky} size={140} data={Object.fromEntries(Object.entries(SKILLS_MATRIX[selected.id])
+                    .filter(([,vals])=>vals&&Object.keys(vals).length)
+                    .map(([cat,vals])=>[cat.charAt(0).toUpperCase()+cat.slice(1),
+                      Math.round(5*Object.values(vals).reduce((a,b)=>a+b,0)/Object.values(vals).length)]))}/>
                 </div>
               </div>
             )}
-            {canEdit&&(
-              <div style={{display:"flex",gap:"6px",marginTop:"14px"}}>
-                <Btn size="sm" variant="ghost" onClick={()=>{}}>Edit Profile</Btn>
-                <Btn size="sm" variant="ghost" onClick={()=>{}}>Log Injury</Btn>
-                <Btn size="sm" variant="ghost" onClick={()=>{}}>Set Availability</Btn>
-              </div>
-            )}
+            {/* Each action is drawn only for a person who can do it, and never in
+                a demonstration, which offers no writes. Edit Profile offers what
+                existing routes can change (side, a missing birthday, who to
+                ring); Set Availability answers for him on the side's next
+                fixture through the route the panel above uses. */}
+            {signedIn()&&(()=>{
+              const mayAvail = holdsCapability(role,"availability.declare");
+              const mayEdit  = mayEditProfile(role);
+              if (!mayAvail && !mayEdit) return null;
+              const tab = (id, text, testid) => (
+                <button key={id} type="button" className="pressBtn" data-testid={testid} aria-pressed={act===id}
+                  onClick={()=>setAct(a=>a===id?null:id)} style={{
+                    minHeight:"44px",padding:"8px 14px",borderRadius:D.pill,cursor:"pointer",
+                    border:`1px solid ${act===id?D.sky+"77":D.border}`,background:act===id?D.sky+"14":"transparent",
+                    color:D.textPrimary,fontFamily:D.head,fontSize:"12px",fontWeight:700}}>{text}</button>
+              );
+              return (
+                <div style={{marginTop:"14px"}}>
+                  <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                    {mayEdit&&tab("edit","Edit Profile","player-edit-profile")}
+                    {mayAvail&&tab("availability","Set Availability","player-set-availability")}
+                  </div>
+                  {act==="edit"&&mayEdit&&<EditProfile role={role} player={selected} teams={teams}
+                    onMoved={(to)=>{ setRosterNonce(x=>x+1); setTeam(to); setSelected(null); setAct(null); }}/>}
+                  {act==="availability"&&mayAvail&&<div style={{marginTop:"12px"}}><PlayerAvailability role={role} team={selected.team} player={selected}/></div>}
+                </div>
+              );
+            })()}
           </Card>
         )}
       </div>

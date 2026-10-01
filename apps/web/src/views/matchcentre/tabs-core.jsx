@@ -7,6 +7,7 @@ import { boardInsights } from "../../scorer/signals.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
 import { Highlights, MomentMark, OverSummary } from "./spectator.jsx";
+import { superOverTitle } from "../../lib/superOver.js";
 
 /**
  * The Match Centre's tabs that the public page (SCRBRD-083, src/public/)
@@ -75,7 +76,8 @@ function InningsBreakCard({ match, innings, overs }) {
 
 // `quietMoments`: the page has a live region of its own (the public page's),
 // so the moment and the over summary are drawn but not announced a second time.
-export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false }) {
+export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
+                             venueLine = null, rainLine = null }) {
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
@@ -97,6 +99,22 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
             insight={insight.length ? insight : undefined}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
+      )}
+      {/* SCRBRD-130 R3: venue par at this point, the server's; the signed-in page passes it. */}
+      {venueLine && (
+        <p data-testid="mc-venue-par" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>
+          {venueLine.words}{venueLine.label ? <span style={{ fontSize: "13px" }}> ({venueLine.label})</span> : null}
+        </p>
+      )}
+      {/* SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it. */}
+      {rainLine && (
+        <Panel testid="mc-rain">
+          <CardHead icon="cloud-rain">Rain</CardHead>
+          <p data-testid="mc-rain-calculated" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{rainLine.words}</p>
+          {rainLine.difference && (
+            <p data-testid="mc-rain-difference" style={{ ...T.role.body, color: T.content.primary, margin: `${T.space.xs} 0 0` }}>{rainLine.difference}</p>
+          )}
+        </Panel>
       )}
       <OverSummary item={overSummary} announce={!quietMoments}/>
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}
@@ -173,12 +191,12 @@ export function CommentaryTab({ match, commentary, demo, innings }) {
           <div key={g.key}>
             {head && (
               <h2 style={{ ...T.role.label, color: T.content.secondary, margin: `${T.space.lg} 0 ${T.space.sm}` }}>
-                {inn ? <><SideName side={teamOf(match, inn.battingTeam)}/> innings</> : `Innings ${g.innings + 1}`}
+                {inn ? <>{inn.superOver != null && `${superOverTitle(inn.superOver)} · `}<SideName side={teamOf(match, inn.battingTeam)}/> innings</> : `Innings ${g.innings + 1}`}
               </h2>
             )}
             <Panel testid="mc-over" style={{ marginBottom: T.space.md }}>
               <div style={{ padding: `${T.space.sm} ${T.space.md}`, background: T.surface.base, display: "grid", gap: "2px" }}>
-                <span style={{ ...T.role.label, color: T.content.primary }}>Over {g.over + 1}</span>
+                <span style={{ ...T.role.label, color: T.content.primary }}>{inn?.superOver != null ? "The over" : `Over ${g.over + 1}`}</span>
                 {g.end && <span data-testid="mc-over-end" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{g.end.text}</span>}
               </div>
               <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>

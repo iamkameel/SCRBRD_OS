@@ -160,15 +160,19 @@ export function MenuSection({ title, children }) {
  * One item. `checked` makes it a switch (role="switch"), for a way of scoring
  * that is on or off; without it, an action that opens a sheet.
  */
-export function MenuItem({ label, hint, checked, onClick, testid }) {
+export function MenuItem({ label, hint, checked, onClick, testid, disabled = false }) {
   const isSwitch = typeof checked === "boolean";
+  // `disabled` (SCRBRD-114 phase 3b): an action the Laws refuse in this
+  // innings (a super over is not shortened). It stays in the menu with its
+  // reason in the hint, rather than vanishing without a word.
   return (
-    <button type="button" data-testid={testid} onClick={onClick} className="pressBtn os-state"
+    <button type="button" data-testid={testid} onClick={disabled ? undefined : onClick} className="pressBtn os-state"
+      aria-disabled={disabled || undefined}
       role={isSwitch ? "switch" : undefined} aria-checked={isSwitch ? checked : undefined}
       style={{ width: "100%", minHeight: "48px", padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md,
-        cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: T.space.md,
+        cursor: disabled ? "not-allowed" : "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: T.space.md,
         background: T.surface.base, border: `1px solid ${isSwitch && checked ? T.content.primary : T.line.normal}`,
-        color: T.content.primary }}>
+        color: disabled ? T.content.secondary : T.content.primary }}>
       <span style={{ flex: 1, minWidth: 0, display: "grid", gap: "2px" }}>
         <span style={{ fontFamily: T.type.body, fontSize: "16px", fontWeight: 600 }}>{label}</span>
         {hint && <span style={{ fontFamily: T.type.body, fontSize: "13px", lineHeight: 1.35, color: T.content.secondary }}>{hint}</span>}

@@ -3,6 +3,7 @@ import { T } from "../../design/tokens.js";
 import { didNotBat, dismissalKey, extrasOf, fowLines, keepersOfSide, oversOf, runCounts, teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName, Quiet } from "./bits.jsx";
+import { isSuperOver, superOverTitle, superOversOf } from "../../lib/superOver.js";
 
 /**
  * THE SCORECARD (DESIGN_DIRECTION §10 item 7, the prototype's p7–p9): an
@@ -23,13 +24,18 @@ import { SideName, Quiet } from "./bits.jsx";
  * profile screens or the scorer's charts into its entry.
  */
 
-/** Which innings the tab shows: one button per side, as the prototype has it. */
+/**
+ * Which innings the tab shows: one button per side, as the prototype has it.
+ * The match's own innings only — a super over (SCRBRD-114 phase 3b) sits in
+ * its own block below them and is never mixed in.
+ */
 export function InningsToggle({ match, innings, inningsSel, setInningsSel }) {
-  if (innings.length < 2) return null;
+  const shown = innings.map((inn, i) => [inn, i]).filter(([inn]) => inn && !isSuperOver(inn));
+  if (shown.length < 2) return null;
   return (
     <div role="group" aria-label="Innings" data-testid="mc-innings-toggle"
       style={{ display: "flex", gap: T.space.xs, marginBottom: T.space.md, flexWrap: "wrap" }}>
-      {innings.map((inn, i) => {
+      {shown.map(([inn, i]) => {
         const on = i === inningsSel;
         return (
           <button key={i} type="button" aria-pressed={on} onClick={() => setInningsSel(i)} data-testid={`mc-innings-${i}`}
@@ -159,10 +165,15 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kep
   );
 }
 
-export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null, focus = null, focusLabel = null }) {
+/**
+ * One innings' card: its head, batting, extras, total, bowling and fall of
+ * wickets. `idx` is its place in the match's list of innings (the log's
+ * innings number): the scorecard of a match innings, or of a super over's.
+ */
+function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, Wheel, focus, focusLabel }) {
   const [openId, setOpenId] = useState(null);
-  const inn = innings[inningsSel];
-  if (!inn) return <Quiet testid="mc-scorecard-empty">Nothing has been scored yet.</Quiet>;
+  const inningsSel = idx;
+  const inn = innings[idx];
   const side = teamOf(match, inn.battingTeam);
   const ex = extrasOf(inn);
   const fow = fowLines(inn);
@@ -173,9 +184,7 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
   const innEvents = (events ?? []).filter((e) => (e.innings ?? 0) === inningsSel);
   const byKey = new Map((commentary ?? []).map((c) => [c.key, c]));
   return (
-    <section data-testid="mc-scorecard" aria-label="Scorecard">
-      <InningsToggle match={match} innings={innings} inningsSel={inningsSel} setInningsSel={(i) => { setInningsSel(i); setOpenId(null); }}/>
-
+    <div>
       <div data-testid="mc-innings-head" data-from-scorebook={inn.summarised ? "true" : undefined} style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md,
         padding: `${T.space.md} ${T.space.lg}`, background: T.board.face, color: T.board.figure, borderRadius: `${T.radius.lg} ${T.radius.lg} 0 0` }}>
         <span style={{ ...T.role.title.md, color: T.board.figure, minWidth: 0 }}>
@@ -285,6 +294,68 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
           </ol>
         </div>
       )}
+    </div>
+  );
+}
+
+/** How a super over stands, in words: who won it, that it was level, or that it is not finished. */
+function pairWords(match, p) {
+  if (p.state === "won") return `${teamOf(match, p.winner.battingTeam).full} won`;
+  if (p.state === "tied") return "Level";
+  return p.innings.some((x) => x.endReason === "abandoned") ? "Not completed" : "In progress";
+}
+
+/**
+ * A super over (SCRBRD-114 phase 3b, §4), below the match's innings and
+ * never mixed into their figures: its two lines at a glance, who won it, and
+ * the card of either innings of the pair.
+ */
+function SuperOverBlock({ pair, ...rest }) {
+  const { match, innings } = rest;
+  const [which, setWhich] = useState(0);
+  const at = pair.at[Math.min(which, pair.at.length - 1)];
+  return (
+    <section data-testid={`mc-superover-${pair.n}`} aria-label={superOverTitle(pair.n)} style={{ marginTop: T.space.xl }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.md, flexWrap: "wrap",
+        padding: `${T.space.md} ${T.space.lg}`, background: T.board.face, color: T.board.figure, borderRadius: `${T.radius.lg} ${T.radius.lg} 0 0` }}>
+        <h3 data-testid="mc-superover-title" style={{ ...T.role.title.md, color: T.board.figure, margin: 0 }}>{superOverTitle(pair.n)}</h3>
+        <span data-testid="mc-superover-state" style={{ fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, color: T.board.figure }}>{pairWords(match, pair)}</span>
+      </div>
+      <div role="group" aria-label={`${superOverTitle(pair.n)}: innings`} style={{ display: "grid", gap: T.space.xs, padding: T.space.sm,
+        border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
+        {pair.at.map((i, k) => {
+          const x = innings[i];
+          const on = k === which;
+          return (
+            <button key={i} type="button" aria-pressed={on} onClick={() => setWhich(k)} data-testid={`mc-superover-${pair.n}-innings-${k}`}
+              className="pressBtn os-state"
+              style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.md, minHeight: "44px",
+                padding: `${T.space.xs} ${T.space.md}`, cursor: "pointer", borderRadius: T.radius.md, textAlign: "left",
+                border: `${on ? 2 : 1}px solid ${on ? T.content.primary : T.line.normal}`, background: on ? T.surface.raised : "transparent",
+                color: T.content.primary, fontFamily: T.type.body, fontSize: "15px", fontWeight: on ? 600 : 500 }}>
+              <span style={{ minWidth: 0 }}><SideName side={teamOf(match, x.battingTeam)}/> · {k === 0 ? "bat first" : "chase"}</span>
+              <span style={{ ...T.role.figure.sm, whiteSpace: "nowrap" }}>{x.runs}/{x.wickets} <span style={{ color: T.content.secondary }}>({oversOf(x.balls)})</span></span>
+            </button>
+          );
+        })}
+      </div>
+      <InningsBody {...rest} idx={at} key={at}/>
+    </section>
+  );
+}
+
+export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null, focus = null, focusLabel = null }) {
+  // The innings the toggle is on is one of the match's own, always: a super
+  // over has its block below.
+  const sel = innings[inningsSel] && !isSuperOver(innings[inningsSel]) ? inningsSel : Math.max(0, innings.findIndex((x) => x && !isSuperOver(x)));
+  const inn = innings[sel];
+  if (!inn) return <Quiet testid="mc-scorecard-empty">Nothing has been scored yet.</Quiet>;
+  const body = { match, innings, commentary, events, opens, profileOf, Wheel, focus, focusLabel };
+  return (
+    <section data-testid="mc-scorecard" aria-label="Scorecard">
+      <InningsToggle match={match} innings={innings} inningsSel={sel} setInningsSel={setInningsSel}/>
+      <InningsBody {...body} idx={sel} key={sel}/>
+      {superOversOf(innings).map((p) => <SuperOverBlock key={p.n} pair={p} {...body}/>)}
     </section>
   );
 }

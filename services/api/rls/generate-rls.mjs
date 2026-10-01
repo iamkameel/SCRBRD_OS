@@ -491,6 +491,8 @@ export const ADDED_SINCE_01 = {
   "transport.lift.oversee":      "70_lift_clubs.sql",
   "transport.lift.policy":       "70_lift_clubs.sql",
   // ── end SCRBRD-124 ──
+  // ── SCRBRD-130 R2: the DLS resource table (db/75) ──
+  "platform.reference.manage":   "75_dls_table.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
@@ -789,6 +791,8 @@ export const TABLES_ADDED_SINCE_09 = Object.freeze({
   match_result_decision:         "69_results_and_table.sql",
   competition_points_adjustment: "69_results_and_table.sql",
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3c: knockout progression ──
+  match_progression:             "72_knockout_progression.sql",
 });
 const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
 

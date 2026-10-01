@@ -358,9 +358,13 @@ export function describeEvent(ev, inn, find) {
         + (why ? `, for ${penaltyReasonWords(why)}` : "");
     }
     case "revision": {
-      const parts = [ev.overs != null ? `${ev.overs} overs` : null, ev.target != null ? `target ${ev.target}` : null].filter(Boolean);
+      const parts = [ev.overs != null ? `${ev.overs} overs` : null, ev.target != null ? `target ${ev.target}` : null,
+                     ev.par != null ? `par ${ev.par}` : null].filter(Boolean);   // par: SCRBRD-130 R1
       return `Revision — ${parts.length ? parts.join(", ") : "no change"}`;
     }
+    // SCRBRD-130 R1: rain.
+    case "play_stopped": return `Play stopped — ${String(ev.reason ?? "rain").replace(/_/g, " ")}`;
+    case "play_resumed": return "Play resumed";
     case "innings_end": return `End of the innings${ev.reason ? ` (${String(ev.reason).replace(/_/g, " ")})` : ""}`;
     case "innings_start": return `Start of the innings — ${ev.battingTeam ?? "?"} batting`;
     case "void": {

@@ -83,9 +83,12 @@ import {
   inningsStart, inningsEnd, inningsSummary, batters, bowler, ball, newEventId, retire, RETIRE_REASON, lawsRefusal,
 } from "@scrbrd/scoring";
 import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef } from "@scrbrd/scoring";
+import { resultFromRow } from "@scrbrd/scoring";   // SCRBRD-130 R1
 import { baseCard, TYPED as BOOK_TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
 // SCRBRD-114 phase 3a: the logs a result is proved on (result.test.mjs folds the same).
 import { RESULT_LOGS, RESULT_SIDES, RESULT_NAMES, RESULT_STARTS_AT } from "../packages/scoring/test/result-logs.mjs";
+// SCRBRD-130 R1: the logs rain is proved on (rain.test.mjs folds the same).
+import { RAIN_LOGS, RAIN_SIDES, RAIN_NAMES, RAIN_STARTS_AT } from "../packages/scoring/test/rain-logs.mjs";
 
 const PORT = port(8875);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -1684,7 +1687,7 @@ try {
   // match_result() held to the fold — the outcome, the margin, who won and
   // who decided, and each innings' figures, ending, overs and target — and
   // both to what the design says the log is.
-  group(`The result (SCRBRD-114 phase 3a, db/69): match_result() is describeResult(), over ${RESULT_LOGS.length} logs`);
+  group(`The result (SCRBRD-114 phase 3a, db/69; the super over, 3b, db/71): match_result() is describeResult(), over ${RESULT_LOGS.length} logs`);
   for (const x of RESULT_LOGS) {
     const [{ id: rm }] = await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
                                   values ($1, $2, $3, $4, 'T20', 20, $5) returning id`,
@@ -1729,8 +1732,17 @@ try {
       : { outcome: f.outcome, marginKind: f.marginKind, margin: f.marginValue, decidedBy: f.decidedBy, winnerSide: f.winnerSide, playOutcome: f.playOutcome };
     const said = { outcome: sql.outcome, marginKind: sql.margin_kind, margin: sql.margin, decidedBy: sql.decided_by,
                    winnerSide: sql.winner_side, playOutcome: sql.play_outcome };
-    const inn = folded.innings.map((i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.endReason, i.penaltyWin].join("/"));
-    const sinn = (sql.innings ?? []).map((/** @type {any} */ i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.end_reason, i.penalty_win].join("/"));
+    // Phase 3b (db/71): each innings' super over beside its figures, and each pair as both list it.
+    const inn = folded.innings.map((i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.endReason, i.penaltyWin, i.superOver].join("/"));
+    const sinn = (sql.innings ?? []).map((/** @type {any} */ i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.end_reason, i.penalty_win, i.super_over].join("/"));
+    const figs = (/** @type {any} */ x) => (x == null ? null : [x.runs, x.wickets, x.balls]);
+    const pairs = (f?.superOvers ?? []).map((p) => JSON.stringify([p.n, p.first, figs(p.a), figs(p.b), p.state, p.winner, p.winnerKey]));
+    const spairs = (sql.super_overs ?? []).map((/** @type {any} */ p) => JSON.stringify([p.n, p.first, figs(p.a), figs(p.b), p.state, p.winner, p.winner_key]));
+    ok(`${x.name}: the super overs are the fold's`, JSON.stringify(pairs) === JSON.stringify(spairs), JSON.stringify({ sql: spairs, fold: pairs }));
+    const liveSo = await q(`select innings, max(super_over) as so from ball_event_live where match_id = $1 group by innings order by innings`, [rm]);
+    ok(`...and ball_event_live.super_over is inn.superOver`,
+       JSON.stringify(liveSo.map((/** @type {any} */ r) => r.so)) === JSON.stringify(folded.innings.map((i) => i.superOver)),
+       JSON.stringify({ sql: liveSo, fold: folded.innings.map((i) => i.superOver) }));
     ok(`${x.name}: match_result() is the fold's`, JSON.stringify(said) === JSON.stringify(fold) && JSON.stringify(sinn) === JSON.stringify(inn),
        JSON.stringify({ sql: said, fold, sqlInnings: sinn, foldInnings: inn }));
     ok(`...and is what the design says it is`,
@@ -1738,6 +1750,61 @@ try {
        && sql.decided_by === x.expect.decidedBy && sql.winner_side === x.expect.winnerSide,
        JSON.stringify({ sql: said, expect: x.expect }));
   }
+
+  // ── SCRBRD-130 R1 (db/73): rain, both ways ──────────────────────────
+  // Every log of rain-logs.mjs written as toRow() writes it, its frozen play
+  // part beside it, folded from the rows read back; SQL's match_result() held
+  // to describeResult() (outcome, margin, who won, each innings' figures and
+  // end) and to the design; innings_stop_as_folded() and the result's
+  // innings entries held to the fold's inn.stopped and inn.par; and the
+  // chase's revised-target method to revisedTargetMethod().
+  group(`Rain (SCRBRD-130 R1, db/73): stops, par and the result, both ways, over ${RAIN_LOGS.length} logs`);
+  for (const x of RAIN_LOGS) {
+    const [{ id: rm }] = await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+                                  values ($1, $2, $3, $4, 'T20', 20, $5) returning id`,
+      [HIL, RAIN_SIDES.home, RAIN_SIDES.away, RAIN_STARTS_AT, x.status]);
+    if (x.play) {
+      await q(`insert into match_conditions (match_id, doc, sources, doc_hash) values ($1, $2, '{}', '')`,
+        [rm, JSON.stringify({ v: 1, play: x.play, table: {}, sheet: {} })]);
+    }
+    let seq = 0;
+    for (const ev of x.log) {
+      const r = toRow(ev);
+      seq++;
+      await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                                       client_seq, client_ts, kind, ball_type, value, striker_id, non_striker_id, bowler_id,
+                                       dismissed_id, dismissal, payload)
+               values ($1, $2, $3, 1, $4, $5, 'device-rain', $6, $3, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        [rm, HIL, seq, r.innings, scorer, `${rm}:${ev.id}`, r.client_ts, r.kind,
+         r.ball_type, r.value, r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal ?? null, JSON.stringify(r.payload)]);
+    }
+    const back = await q(`select * from ball_event where match_id = $1 order by seq`, [rm]);
+    const folded = deriveMatch(back.map(fromRow), {
+      startsAt: RAIN_STARTS_AT, conditions: x.play ?? undefined, status: x.status, sides: RAIN_SIDES, names: RAIN_NAMES,
+    });
+    const [sql] = await q(`select * from match_result_compute($1)`, [rm]);
+    const f = folded.result;
+    const fold = f == null
+      ? { outcome: "in_progress", marginKind: null, margin: null, winnerSide: null, revisedTarget: null }
+      : { outcome: f.outcome, marginKind: f.marginKind, margin: f.marginValue, winnerSide: f.winnerSide, revisedTarget: f.revisedTarget ?? null };
+    const said = { outcome: sql.outcome, marginKind: sql.margin_kind, margin: sql.margin, winnerSide: sql.winner_side,
+                   revisedTarget: resultFromRow(sql)?.revisedTarget ?? null };
+    const inn = folded.innings.map((i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.endReason, i.par, i.stopped != null].join("/"));
+    const sinn = (sql.innings ?? []).map((/** @type {any} */ i) => [i.runs, i.wickets, i.balls, i.overs, i.target, i.complete, i.end_reason, i.par, i.stopped].join("/"));
+    ok(`${x.name}: match_result() is the fold's`, JSON.stringify(said) === JSON.stringify(fold) && JSON.stringify(sinn) === JSON.stringify(inn),
+       JSON.stringify({ sql: said, fold, sqlInnings: sinn, foldInnings: inn }));
+    ok("...and is what the design says it is", sql.outcome === x.expect.outcome && sql.margin_kind === x.expect.marginKind
+       && sql.margin === x.expect.marginValue && sql.winner_side === x.expect.winnerSide, JSON.stringify({ sql: said, expect: x.expect }));
+    const stops = [];
+    for (let i = 0; i < folded.innings.length; i++) {
+      const [s] = await q(`select * from innings_stop_as_folded($1, $2::smallint)`, [rm, i]);
+      stops.push({ stopped: s.stopped, par: s.par });
+    }
+    const want = x.innings.map((i) => ({ stopped: i.stopped, par: i.par }));
+    ok("...innings_stop_as_folded() is inn.stopped and inn.par, as the design gives them", JSON.stringify(stops) === JSON.stringify(want),
+       JSON.stringify({ sql: stops, want }));
+  }
+  // ── end SCRBRD-130 R1 ──
 
   group("The door: a new ball with no type, or a wicket with no method, is refused");
   const M_DOOR = (await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)

@@ -15,7 +15,9 @@ import { Icon } from "../../ui/icons.jsx";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
 import { ScorecardTab } from "./scorecard.jsx";
-import { Quiet, SideName } from "./bits.jsx";
+import { HeaderScores } from "./scores.jsx";
+import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../../lib/superOver.js";
+import { Quiet } from "./bits.jsx";
 import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "./live.js";
 import { BigScreen } from "./spectator.jsx";
@@ -129,6 +131,56 @@ function useServerResult(match, seen) {
   return result;
 }
 
+// ── SCRBRD-130 R3: venue par on the board (db/74) ──
+/**
+ * "A typical side here would be 61/3 by now" — the server's par at the point
+ * the innings has reached, at this ground (GET /api/matches/:id/venue-par),
+ * with how it was reckoned; or "No venue par here yet (2 of 5)". Null signed
+ * out, for a demonstration fixture, a match with no ground, or once it is over.
+ * @param {any} match  @param {unknown} seen  what the log has grown to
+ */
+function useVenueLine(match, seen) {
+  const [line, setLine] = useState(/** @type {{words: string, label: string | null} | null} */ (null));
+  useEffect(() => {
+    if (!signedIn() || !match.live || match.status === "complete") { setLine(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${match.id}/venue-par`)
+      .then((d) => { if (!cancelled) setLine(d?.words ? { words: d.words, label: d.parAt?.label ?? null } : null); })
+      .catch(() => { if (!cancelled) setLine(null); });
+    return () => { cancelled = true; };
+  }, [match.id, match.live, match.status, seen]);
+  return line;
+}
+// ── end SCRBRD-130 R3 ──
+
+// ── SCRBRD-130 R2: the rain panel's calculated line (db/75, dls.mjs) ──
+/**
+ * The server's DLS proposal beside the umpires' figure (GET /api/matches/:id/dls),
+ * asked only once rain has touched the log (a stop, or a revision): "SCRBRD
+ * calculates 133 (DLS Standard, table v1)" and "umpires 134 · calculated 133"
+ * when they differ. Information, never a flag (D1). Nothing without a table:
+ * the revision banner already carries the umpires' figures (§4.5).
+ * @param {any} match  @param {any[]} innings  @param {unknown} seen
+ * @returns {{words: string, difference: string | null} | null}
+ */
+function useRainLine(match, innings, seen) {
+  const rained = innings.some((i) => (i?.interruptions?.length ?? 0) > 0 || i?.revised != null || i?.par != null);
+  const [line, setLine] = useState(/** @type {{words: string, difference: string | null} | null} */ (null));
+  useEffect(() => {
+    if (!signedIn() || !match.live || !rained) { setLine(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${match.id}/dls`)
+      .then((d) => {
+        if (cancelled) return;
+        setLine(d?.status === "ok" && d.words ? { words: d.words, difference: d.difference ? d.differenceWords : null } : null);
+      })
+      .catch(() => { if (!cancelled) setLine(null); });
+    return () => { cancelled = true; };
+  }, [match.id, match.live, rained, seen]);
+  return line;
+}
+// ── end SCRBRD-130 R2 ──
+
 /** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
 function TabBar({ tab, setTab }) {
   const refs = useRef({});
@@ -184,7 +236,9 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   // The innings the Scorecard, Partnerships and Analytics tabs are on: the
   // one in play, until the reader picks another.
   const [picked, setPicked] = useState(null);
-  const inningsSel = picked ?? Math.max(0, played.length - 1);
+  // ...of the match's own innings: a super over has its block on the
+  // Scorecard and the board on the Summary, and no place in the toggles.
+  const inningsSel = picked ?? Math.max(0, matchInningsOf(played).length - 1);
 
   const sides = sidesOf(match);
   const comp = COMPETITIONS.find((c) => c.id === match.competition);
@@ -198,11 +252,13 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const commentary = useMemo(() => {
     if (!log.events) return [];
     const nameOf = nameBook(played, PLAYERS);
-    return deriveCommentary(log.events, {
+    const teamName = (_key, name) => teamOf(match, name).full;
+    // A super over's lines are worded by lib/superOver.js (SCRBRD-114 phase 3b).
+    return superOverCommentary(deriveCommentary(log.events, {
       ctx: log.fold,
       nameOf: (ref) => nameOf(ref),
-      teamName: (_key, name) => teamOf(match, name).full,
-    });
+      teamName,
+    }), log.innings, { teamName });
     // `played` is derived from log.events; PLAYERS is the roster read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.events, PLAYERS, match.id]);
@@ -210,8 +266,17 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   // The server's words where it has a result (SCRBRD-114 phase 3a: a no
   // result, a draw, a decision beside play); the fold's while it has none.
   const server = useServerResult(match, log.events?.length ?? 0);
-  const result = (server && server.outcome !== "in_progress" ? server.text : null)
+  // While a super over is being played the engine's "the super over was not
+  // completed" is not yet true: the line says it is in progress.
+  const liveSO = liveSuperOverLine(played, match.status);
+  const venueLine = useVenueLine(match, log.events?.length ?? 0);   // SCRBRD-130 R3
+  const rainLine = useRainLine(match, played, log.events?.length ?? 0);   // SCRBRD-130 R2
+  const result = liveSO ?? (server && server.outcome !== "in_progress" ? server.text : null)
     ?? resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
+  // The result stands once play has decided it: not mid super over, and not
+  // a cup tie nobody has yet settled.
+  const settled = !!log.result && !liveSO
+    && !(log.result.outcome === "tie" && log.result.decidedBy === null && log.fold?.conditions?.["result.tie_break"] === "super_over");
 
   // The result, in one clear moment (SCRBRD-100 item 3): a synthetic line,
   // added only once the fold has actually decided the match, so it arrives
@@ -219,10 +284,10 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   // does — a reload never replays it. Its key is stable per match, so it can
   // only ever fire once.
   const momentsFeed = useMemo(() => {
-    if (!log.result || !commentary.length) return commentary;
+    if (!settled || !commentary.length) return commentary;
     return [...commentary, { innings: Math.max(0, played.length - 1), over: 0, ball: 0, kind: "result", text: result, key: `result:${match.id}` }];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commentary, log.result, result, match.id]);
+  }, [commentary, settled, result, match.id]);
 
   // The spectator's moments: only what arrives while the page is open, so a
   // reload replays nothing. And the board's run count, ticking up to a new
@@ -253,7 +318,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
-    focus: focus?.length ? new Set(focus) : null, focusLabel };
+    focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>
@@ -290,30 +355,17 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           {/* The log decides the match before anyone finalises it (match.status
               moves only through scoring.finalise), so a result the fold has
               reached is the header's word: it never says Live over a result. */}
-          <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !log.result ? T.brand.accentText : T.content.secondary,
+          <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !(log.result && !liveSO) ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
-            {isLive && !log.result && <span className="live-dot" aria-hidden="true"/>}
-            {log.result || (server && server.outcome !== "in_progress") || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {isLive && !(log.result && !liveSO) && <span className="live-dot" aria-hidden="true"/>}
+            {(log.result && !liveSO) || (server && server.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           {log.demo && <span style={{ ...T.role.label, color: T.content.tertiary }}>Demonstration</span>}
         </div>
         <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
           {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
         </h1>
-        {played.length > 0 && (
-          <div data-testid="mc-scores" style={{ display: "grid", gap: "2px" }}>
-            {played.map((inn, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.md, maxWidth: "520px" }}>
-                <span style={{ ...T.role.body, color: T.content.secondary, minWidth: 0 }}>
-                  <SideName side={teamOf(match, inn.battingTeam)}/>
-                </span>
-                <span style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, whiteSpace: "nowrap" }}>
-                  {inn.runs}/{inn.wickets} <span style={{ color: T.content.tertiary }}>({oversShort(inn.balls)})</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        {played.length > 0 && <HeaderScores match={match} played={played}/>}
         {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
       </header>
@@ -359,8 +411,5 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     </div>
   );
 }
-
-/** "17.5", or "20" for whole overs. @param {number} balls */
-const oversShort = (balls) => (balls % 6 === 0 ? String(balls / 6) : `${Math.floor(balls / 6)}.${balls % 6}`);
 
 export { MatchView };

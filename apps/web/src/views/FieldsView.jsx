@@ -7,6 +7,17 @@ import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { Icon } from "../ui/icons.jsx";
 import { GroundOffers } from "./groundoffers.jsx";
+import { VenueParCard } from "./venuePar.jsx";   // SCRBRD-130 R3
+
+// The cracks on a strip's drawing are decoration, fixed by the strip's number:
+// the same strip draws the same cracks every time. They used to be
+// random numbers drawn in render, so the drawing shifted on every re-render and
+// looked like new information each time. Not a measurement; the report's
+// words ("Minor", "Moderate") are.
+const crackJitter = (seed, i) => {
+  const x = Math.sin(seed * 12.9898 + i * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
 
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
@@ -69,11 +80,11 @@ function FieldsView({ role }) {
               </g>
             ))}
             {/* Cracks simulation */}
-            {cracksLevel>=1&&[30,70,110,150].map(y=>(
-              <line key={y} x1={10+Math.random()*10} y1={y} x2={30+Math.random()*20} y2={y+8} stroke={T.strip.crack} strokeWidth={0.8} opacity={0.6}/>
+            {cracksLevel>=1&&[30,70,110,150].map((y,i)=>(
+              <line key={y} data-testid="pitch-crack" x1={10+crackJitter(Number(p.num)||0,i*4)*10} y1={y} x2={30+crackJitter(Number(p.num)||0,i*4+1)*20} y2={y+8} stroke={T.strip.crack} strokeWidth={0.8} opacity={0.6}/>
             ))}
-            {cracksLevel>=2&&[50,90,130,160].map(y=>(
-              <line key={y} x1={40+Math.random()*10} y1={y} x2={60+Math.random()*10} y2={y+10} stroke={T.strip.crackDeep} strokeWidth={1.2} opacity={0.7}/>
+            {cracksLevel>=2&&[50,90,130,160].map((y,i)=>(
+              <line key={y} data-testid="pitch-crack" x1={40+crackJitter(Number(p.num)||0,i*4+2)*10} y1={y} x2={60+crackJitter(Number(p.num)||0,i*4+3)*10} y2={y+10} stroke={T.strip.crackDeep} strokeWidth={1.2} opacity={0.7}/>
             ))}
             {/* Grass coverage */}
             {p.grass&&!p.grass.includes("N/A")&&(
@@ -255,6 +266,8 @@ function FieldsView({ role }) {
               above is the part that is real. */}
           {tab==="offers"&&canEdit&&selGround.live&&<GroundOffers ground={selGround} role={role}/>}
 
+          {/* SCRBRD-130 R3: par at this ground, from its own record (db/74). */}
+          {tab==="overview"&&selGround?.live&&<VenueParCard groundId={selGround.id}/>}
           {tab==="overview"&&(() => {
             const surface = [["Type",selGround.surfaceType],["Outfield Grade",selGround.outfieldGrade],
                              ["Mow Height",selGround.outfieldMowHeight],["Drainage",selGround.drainage]]

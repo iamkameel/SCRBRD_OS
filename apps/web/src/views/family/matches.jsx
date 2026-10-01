@@ -132,7 +132,7 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
         <WeatherLine match={match} role={role}/>
       </header>
       <BusCard match={match} role={role}/>
-      <FixtureLifts match={match}/>
+      <FixtureLifts match={match} child={child}/>
       <Card label={self ? "You" : name} testid="fixture-availability">
         <AvailabilityBlock match={match} child={child} role={role} self={self}/>
       </Card>

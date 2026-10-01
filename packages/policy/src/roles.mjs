@@ -110,6 +110,8 @@ const BUNDLES = {
     "platform.health.read", "platform.tenant.manage", "platform.support.impersonate",
     "platform.feature.manage",
     "platform.reward.manage",
+    // SCRBRD-130 R2 (db/75): the DLS resource table, from the official source.
+    "platform.reference.manage",
     // The recovery path needs a key. Without user.role.assign the platform
     // account can see a school that has locked itself out and do nothing about
     // it — see GRANTABLE_ROLES at the foot of this file for why that matters

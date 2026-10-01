@@ -66,6 +66,9 @@ export const KIND = /** @type {const} */ ({
   BOWLER_SUSPENDED: "bowler_suspended", // the umpires suspended a bowler (Law 41, SCRBRD-094 item 2)
   INNINGS_SUMMARY: "innings_summary",   // an innings known by its figures, from a paper scorebook (SCRBRD-120)
   KEEPER: "keeper",               // the fielding side's wicket-keeper, from this point of the innings (SCRBRD-126)
+  // ── SCRBRD-130 R1: rain (interruptions) ──
+  PLAY_STOPPED: "play_stopped",   // play stopped (rain, bad light, a wet ground) after the last ball bowled
+  PLAY_RESUMED: "play_resumed",   // play resumed; the umpires' revision, if any, comes just before it
 });
 /** @typedef {typeof KIND[keyof typeof KIND]} Kind */
 
@@ -327,6 +330,19 @@ export const INNINGS_END_REASON = {
   DECLARED:  "declared",
   ABANDONED: "abandoned",
 };
+
+// ── SCRBRD-130 R1: why play stopped (docs/design/SCRBRD-130_rain_and_par.md §2.2) ──
+/** Why play stopped: a closed list; the public log keeps only these. */
+export const STOP_REASON = /** @type {const} */ ({
+  RAIN: "rain", BAD_LIGHT: "bad_light", WET_GROUND: "wet_ground", OTHER: "other",
+});
+/** @type {ReadonlySet<string>} */
+export const STOP_REASONS = new Set(Object.values(STOP_REASON));
+/** The words for a stop's reason ("Rain stopped play", "Play stopped (bad light)"). */
+export const STOP_REASON_WORDS = Object.freeze({
+  rain: "rain", bad_light: "bad light", wet_ground: "a wet ground", other: "an interruption",
+});
+// ── end SCRBRD-130 R1 ──
 
 /*
  * WHY FIVE PENALTY RUNS WERE AWARDED — a closed list (SCRBRD-094).
@@ -766,6 +782,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   twelfthMan: string | null,
  *   overs: number, target: number | null,
  *   captureProfile?: string,
+ *   superOver?: number,
  * }} InningsStartEvent
  */
 /**
@@ -776,6 +793,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   twelfthMan?: string | null,
  *   overs?: number, target?: number | null,
  *   captureProfile?: string | null,
+ *   superOver?: number | null,
  * }} InningsStartInput
  */
 
@@ -862,8 +880,23 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  */
 /** @typedef {BaseInput & {target: string, reason?: string}} VoidInput */
 
-/** @typedef {EventBase & {kind: "revision", overs: number | null, target: number | null, reason: string}} RevisionEvent */
-/** @typedef {BaseInput & {overs?: number | null, target?: number | null, reason?: string}} RevisionInput */
+/**
+ * `par` (SCRBRD-130 R1): the umpires' announced par score when a chase cannot
+ * resume. Omitted, not null, when absent: every revision before it is the
+ * same bytes.
+ * @typedef {EventBase & {kind: "revision", overs: number | null, target: number | null, reason: string, par?: number}} RevisionEvent
+ */
+/** @typedef {BaseInput & {overs?: number | null, target?: number | null, reason?: string, par?: number | null}} RevisionInput */
+
+/**
+ * Play stopped (SCRBRD-130 R1, design §2.2): written after the last ball
+ * bowled, so the position is read from the log, never typed. `note` and `at`
+ * (a wall-clock time for the public words, epoch ms) are omitted when absent.
+ * @typedef {EventBase & {kind: "play_stopped", reason: string, note?: string, at?: number}} PlayStoppedEvent
+ */
+/** @typedef {BaseInput & {reason?: string, note?: string | null, at?: number | null}} PlayStoppedInput */
+/** @typedef {EventBase & {kind: "play_resumed", at?: number}} PlayResumedEvent */
+/** @typedef {BaseInput & {at?: number | null}} PlayResumedInput */
 
 /**
  * The figures a seal was confirmed against. See sealRefusal() in replay.mjs.
@@ -928,7 +961,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  * Any event a constructor here can build.
  * @typedef {InningsStartEvent | BattersEvent | BowlerEvent | BallEvent | PenaltyEvent
  *   | RetireEvent | VoidEvent | RevisionEvent | InningsEndEvent | BowlerSuspendedEvent
- *   | InningsSummaryEvent | KeeperEvent} ScoringEvent
+ *   | InningsSummaryEvent | KeeperEvent | PlayStoppedEvent | PlayResumedEvent} ScoringEvent
  */
 
 /**
@@ -952,7 +985,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  * @typedef {Loose<InningsStartEvent> | Loose<BattersEvent> | Loose<BowlerEvent>
  *   | Loose<BallEvent> | Loose<PenaltyEvent> | Loose<RetireEvent> | Loose<VoidEvent>
  *   | Loose<RevisionEvent> | Loose<InningsEndEvent> | Loose<BowlerSuspendedEvent>
- *   | Loose<InningsSummaryEvent> | Loose<KeeperEvent>} LogEvent
+ *   | Loose<InningsSummaryEvent> | Loose<KeeperEvent> | Loose<PlayStoppedEvent> | Loose<PlayResumedEvent>} LogEvent
  */
 
 // ── Constructors ─────────────────────────────────────────
@@ -1055,7 +1088,43 @@ export const inningsStart = (o) => ({
   overs: o.overs ?? 20,
   target: o.target ?? null,
   ...(o.captureProfile != null ? { captureProfile: checkedProfile(o.captureProfile) } : {}),
+  // ── SCRBRD-114 phase 3b: the super over (design §3.1, D1) ──
+  ...(o.superOver != null ? { superOver: checkedSuperOver(o.superOver) } : {}),
 });
+
+/*
+ * THE SUPER OVER (SCRBRD-114 phase 3b; docs/design/SCRBRD-114_phase3_results_
+ * super_over.md §3.1, D1). A super over is two more innings in the same log,
+ * at the next indexes after the match's own (2 and 3 for a one-innings-a-side
+ * match; 4 and 5 for the second super over), each opened by an innings_start
+ * carrying `superOver: n` — the nth super over, from 1. Nothing else on the
+ * wire is new: its balls, batters, bowler and seal are the events they are in
+ * any innings.
+ *
+ * OMITTED, not null, on every match innings, as `captureProfile` is: an
+ * innings_start built today is byte for byte what it was. toRow() carries the
+ * key in the row's payload (it has no column) and fromRow() reads it back;
+ * db/71 derives ball_event_live.super_over from the same row.
+ */
+
+/**
+ * A super over's number as the fold and SQL read it: a whole number from 1,
+ * else null (a match innings). db/71's innings_super_over() is the same rule.
+ * @param {unknown} v
+ * @returns {number | null}
+ */
+export const superOverNumber = (v) => (Number.isInteger(v) && /** @type {number} */ (v) >= 1 ? /** @type {number} */ (v) : null);
+
+/**
+ * Reject a super-over number the model does not define, on the device, as
+ * checkedProfile() does a capture profile.
+ * @param {unknown} n
+ */
+const checkedSuperOver = (n) => {
+  const v = superOverNumber(n);
+  if (v == null) throw new TypeError(`a super over is numbered from 1 — got ${JSON.stringify(n)}`);
+  return v;
+};
 
 /**
  * The openers, a new batter, a change of ends — or a batter walking back in.
@@ -1634,7 +1703,36 @@ export const revision = (o) => ({
   overs: o.overs ?? null,
   target: o.target ?? null,
   reason: o.reason ?? "rain",
+  // SCRBRD-130 R1: the umpires' par at a termination, only when given.
+  ...(o.par != null ? { par: o.par } : {}),
 });
+
+// ── SCRBRD-130 R1: interruptions (design §2.2) ──
+/**
+ * Play stopped: the scorer's one tap. The over, ball, runs and wickets at the
+ * stop are the fold's at this point in the log. `reason` defaults to rain,
+ * the reason the sheet leads with.
+ * @param {PlayStoppedInput} o
+ * @returns {PlayStoppedEvent}
+ */
+export const playStopped = (o) => ({
+  ...base(KIND.PLAY_STOPPED, o),
+  reason: o.reason ?? STOP_REASON.RAIN,
+  ...(o.note != null && String(o.note).trim() !== "" ? { note: String(o.note).trim() } : {}),
+  ...(o.at != null ? { at: o.at } : {}),
+});
+
+/**
+ * Play resumed. The umpires' new allotment (and, in the chase, target) is the
+ * `revision` the Resume sheet writes just before it, only when a figure changed.
+ * @param {PlayResumedInput} o
+ * @returns {PlayResumedEvent}
+ */
+export const playResumed = (o) => ({
+  ...base(KIND.PLAY_RESUMED, o),
+  ...(o.at != null ? { at: o.at } : {}),
+});
+// ── end SCRBRD-130 R1 ──
 
 /**
  * The seal on an innings. SCRBRD-038.

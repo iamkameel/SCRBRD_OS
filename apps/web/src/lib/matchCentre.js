@@ -10,6 +10,7 @@
 import { runsOffBat, resultWords } from "@scrbrd/scoring";
 import { parseTeam, teamLabel } from "@scrbrd/policy/teams";
 import { humanDateTime } from "./format.js";
+import { superOverInPlay, superOverTitle } from "./superOver.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -103,6 +104,10 @@ export function teamOf(m, name) {
  */
 export function inningsPhase(innings = [], result = null) {
   const played = innings.filter(Boolean);
+  // A super over in play (SCRBRD-114 phase 3b): "Super over 1", not the
+  // tie's "Result" — the match is level and not yet decided.
+  const so = played.length ? played[played.length - 1].superOver : null;
+  if (so != null) return superOverInPlay(played) ? superOverTitle(so) : "Result";
   if (result) return "Result";
   if (!played.length) return "Not started";
   const last = played[played.length - 1];
@@ -342,7 +347,17 @@ const REVISION_LABEL = Object.freeze({
  * @returns {{label: string, text: string} | null}
  */
 export function revisionNotice(inn) {
+  // ── SCRBRD-130 R1: play stopped now, and the umpires' par, from the fold ──
+  if (inn?.stopped) {
+    const s = inn.stopped;
+    const why = { rain: "Rain", bad_light: "Bad light", wet_ground: "A wet ground" }[s.reason] ?? "Play stopped";
+    return { label: "Play stopped", text: `${why === "Play stopped" ? "Play stopped" : `${why} stopped play`} at ${Math.floor(s.balls / 6)}.${s.balls % 6} ov, ${s.runs}/${s.wickets}` };
+  }
   const r = inn?.revised;
+  if (r && r.overs == null && r.target == null && r.par != null) {
+    return { label: REVISION_LABEL[String(r.reason ?? "").toLowerCase()] ?? "Play interrupted", text: `Par score announced: ${r.par}` };
+  }
+  // ── end SCRBRD-130 R1 ──
   if (!r || (r.overs == null && r.target == null)) return null;
   const text = r.overs != null && r.target != null ? `Overs revised to ${r.overs}; target ${r.target}`
     : r.overs != null ? `Overs revised to ${r.overs}`

@@ -74,6 +74,8 @@ import { plannerRoutes } from "./write/planner-api.mjs";
 import { leagueRoutes } from "./write/league-api.mjs";
 // SCRBRD-114 phase 3a (db/69): match results and the league table.
 import { resultsRoutes } from "./write/results-api.mjs";
+// SCRBRD-130 (db/73–75): the rain rule's reads — venue par, the DLS proposal.
+import { rainRoutes } from "./read/rain-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
@@ -426,6 +428,8 @@ const planner = plannerRoutes({ pool, secret: SECRET });
 const league = leagueRoutes({ pool, secret: SECRET });
 // SCRBRD-114 phase 3a (db/69): match results and the league table.
 const results = resultsRoutes({ pool, secret: SECRET });
+// SCRBRD-130: the rain rule's reads.
+const rain = rainRoutes({ pool, secret: SECRET });
 // The scorebook importer (SCRBRD-120, db/63). Its photos go to the private
 // store (io/object-store.mjs): Supabase Storage when SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are set, a local directory in development, and
@@ -757,7 +761,22 @@ const PLAYER_ROUTES = [
   [/^\/api\/competitions\/([^/]+)\/adjustments$/,              "POST", results.adjust],
   [/^\/api\/points-adjustments\/([^/]+)\/withdraw$/,           "POST", results.withdrawAdjustment],
   [/^\/api\/matches\/([^/]+)\/playing-conditions\/refix-table$/, "POST", results.refixTable],
+  // ── SCRBRD-130 R3 (db/74): venue par, at a ground and at a match ──
+  [/^\/api\/grounds\/([^/]+)\/venue-par$/,                     "GET",  rain.groundVenuePar],
+  [/^\/api\/matches\/([^/]+)\/venue-par$/,                     "GET",  rain.matchVenuePar],
+  // ── SCRBRD-130 R2 (db/75): the DLS proposal; the operator's table routes ──
+  [/^\/api\/matches\/([^/]+)\/dls$/,                           "GET",  rain.matchDls],
+  [/^\/api\/admin\/dls-tables$/,                               "GET",  rain.dlsTables],
+  [/^\/api\/admin\/dls-tables$/,                               "POST", rain.dlsLoad],
+  [/^\/api\/admin\/dls-tables\/([^/]+)\/publish$/,             "POST", rain.dlsPublish],
+  [/^\/api\/admin\/dls-tables\/([^/]+)\/withdraw$/,            "POST", rain.dlsWithdraw],
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3c (db/72): knockout progression ──
+  // Where each knockout side came from, and the organiser clearing a flag a
+  // corrected result raised (competition.manage at the organiser).
+  [/^\/api\/competitions\/([^/]+)\/progression$/,             "GET",  results.progression],
+  [/^\/api\/matches\/([^/]+)\/progression\/clear$/,          "POST", results.clearProgression],
+  // ── end SCRBRD-114 phase 3c ──
   // Importing a paper scorebook (SCRBRD-120, db/63): photos of the book, a
   // card typed and ticked beside them, a second person's confirmation, and
   // then three events per innings in the log. NOT tagged with the module,
@@ -877,6 +896,20 @@ const LIFT_ROUTES = [
   [/^\/api\/lift-seats\/([0-9a-f-]{36})\/decline$/,     "POST", lifts.decline, "lift_club"],
   [/^\/api\/lift-seats\/([0-9a-f-]{36})\/withdraw$/,    "POST", lifts.withdraw],
   [/^\/api\/lift-seats\/([0-9a-f-]{36})\/reconfirm$/,   "POST", lifts.reconfirm, "lift_club"],
+  // Phase 2, the day (db/76): never module-gated — a lift on the road is
+  // seen through, and the platform's watch belongs to no school.
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/mark$/,             "POST", lifts.mark],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/mark$/,        "POST", lifts.seatMark],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/receive$/,     "POST", lifts.receive],
+  [/^\/api\/lift-seats\/([0-9a-f-]{36})\/resolve$/,     "POST", lifts.resolve],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/day$/,     "GET",  lifts.day],
+  [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/expected$/, "GET", lifts.expected],
+  [/^\/api\/lifts\/exceptions$/,                      "GET",  lifts.exceptions],
+  [/^\/api\/lifts\/mine$/,                            "GET",  lifts.mine],
+  [/^\/api\/lifts\/watch$/,                           "POST", lifts.watch],
+  [/^\/api\/lifts\/purge$/,                           "GET",  lifts.purgeDue],
+  [/^\/api\/lifts\/([0-9a-f-]{36})\/purge$/,            "POST", lifts.purge],
+  [/^\/api\/lift-declarations\/([0-9a-f-]{36})\/purge$/, "POST", lifts.purgeDeclaration],
 ];
 // ── end SCRBRD-124 ──
 

@@ -152,6 +152,8 @@ export function undoWords(ev, inn) {
       return ev.reason === "out" ? `${n} retired out` : `${n} retired hurt`;
     }
     case "revision": return "the revised overs or target";
+    case "play_stopped": return "play stopped";      // SCRBRD-130 R1
+    case "play_resumed": return "play resumed";      // SCRBRD-130 R1
     case "innings_end": return "closing the innings";
     default: return "the last entry";
   }

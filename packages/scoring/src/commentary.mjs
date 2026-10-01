@@ -54,6 +54,7 @@ import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, 
 import { countsInOver } from "./events.mjs";
 import { positionName, sectorOf, batHandOf } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
+import { revisedTargetSuffix } from "./result.mjs";   // SCRBRD-130 R1
 
 /** @import { LogEvent } from "./events.mjs" */
 /** @import { Innings, BallLogEntry } from "./replay.mjs" */
@@ -80,6 +81,7 @@ export const COMMENTARY_KIND = Object.freeze({
   RETIRE: "retire",
   REVISION: "revision",
   INNINGS_END: "innings_end",
+  INTERRUPTION: "interruption",     // play stopped, or resumed (SCRBRD-130 R1)
 });
 
 /**
@@ -346,6 +348,8 @@ export function deriveCommentary(events = [], options = {}) {
     // had the gloves before either.
     /** @type {{at: number, balls: number, from: string | null} | null} */ let lastKeeper = null;
     let batTeam = "";
+    // SCRBRD-130 R1: the stops and resumptions already told in this innings.
+    let stopsTold = 0, resumesTold = 0;
 
     /**
      * @param {string} baseKey  @param {number} over  @param {number} ball
@@ -647,9 +651,33 @@ export function deriveCommentary(events = [], options = {}) {
           const said = ev.overs != null && ev.target != null ? `the innings is now ${ev.overs} overs, and the target ${ev.target}`
             : ev.overs != null ? `the innings is now ${ev.overs} overs`
               : ev.target != null ? `the target is now ${ev.target}` : "";
-          if (said) push(key, pos.over, pos.ball, COMMENTARY_KIND.REVISION, `Revision${r ? ` ${r}` : ""}: ${said}.`);
+          // SCRBRD-130 R1: the umpires' par at a termination.
+          const par = typeof ev.par === "number" ? `the umpires announce a par score of ${ev.par}` : "";
+          const all = [said, par].filter(Boolean).join("; ");
+          if (all) push(key, pos.over, pos.ball, COMMENTARY_KIND.REVISION, `Revision${r ? ` ${r}` : ""}: ${all}.`);
           break;
         }
+
+        // ── SCRBRD-130 R1: a stop and a resumption, as the fold took them ──
+        case KIND.PLAY_STOPPED: {
+          if (inn.interruptions.length <= stopsTold || inn.stopped == null) break;
+          stopsTold = inn.interruptions.length;
+          const pos = afterLast();
+          const what = STOP_WORDS[String(inn.stopped.reason)] ?? STOP_WORDS.other;
+          push(key, pos.over, pos.ball, COMMENTARY_KIND.INTERRUPTION,
+            `${what} stops play at ${fmtOvers(inn.stopped.balls)}, ${batTeam} ${inn.stopped.runs}/${inn.stopped.wickets}.`);
+          break;
+        }
+        case KIND.PLAY_RESUMED: {
+          const last = inn.interruptions[inn.interruptions.length - 1];
+          if (inn.stopped != null || last == null || last.oversAtResume == null || resumesTold >= inn.interruptions.length) break;
+          resumesTold = inn.interruptions.length;
+          const pos = afterLast();
+          push(key, pos.over, pos.ball, COMMENTARY_KIND.INTERRUPTION, last.oversAtResume !== last.oversAtStop
+            ? `Play resumes: the innings is now ${last.oversAtResume} overs.` : "Play resumes.");
+          break;
+        }
+        // ── end SCRBRD-130 R1 ──
 
         default: break; // innings_end is told once the innings is done, below
       }
@@ -674,7 +702,15 @@ export function deriveCommentary(events = [], options = {}) {
         parts.push(`${T} reach the target of ${done.target}, with ${left} ${plural(left, "ball")} to spare.`); break;
       }
       case INNINGS_END_REASON.DECLARED: parts.push(`${T} declare on ${r}/${w}.`); break;
-      case INNINGS_END_REASON.ABANDONED: parts.push(`The innings is abandoned at ${r}/${w}, after ${oversText(done.balls)} overs.`); break;
+      case INNINGS_END_REASON.ABANDONED: {
+        // SCRBRD-130 R1: an innings terminated while play was stopped is the
+        // weather's ending, read from the stop before the seal (D2).
+        const ended = done.interruptions?.[done.interruptions.length - 1];
+        parts.push(ended != null && ended.oversAtResume === null
+          ? `${STOP_WORDS[String(ended.reason)] ?? STOP_WORDS.other} ends the innings at ${r}/${w}, after ${oversText(done.balls)} overs.`
+          : `The innings is abandoned at ${r}/${w}, after ${oversText(done.balls)} overs.`);
+        break;
+      }
       default: parts.push(`End of the innings: ${T} ${r}/${w}.`);
     }
     if (j === 0 && numbers.length === 1) {
@@ -682,16 +718,23 @@ export function deriveCommentary(events = [], options = {}) {
     }
     if (j === 1 && match.result) {
       const res = match.result;
-      if (res.winner == null) parts.push("The match is tied.");
+      // SCRBRD-130 R1: "(DLS)" or "(revised target)" where the chase's target
+      // was revised; a terminated chase with no par is no result, not a tie.
+      const rain = revisedTargetSuffix(res.revisedTarget);
+      if (res.outcome === "no_result") parts.push("No result.");
+      else if (res.winner == null) parts.push(`The match is tied${rain}.`);
       else {
         const inns = [...final.values()].find((x) => x.battingTeam === res.winner);
-        parts.push(`${side(inns?.teamKey, res.winner)} win by ${res.margin}.`);
+        parts.push(`${side(inns?.teamKey, res.winner)} win by ${res.margin}${rain}.`);
       }
     }
     push(`i${n}:end`, pos.over, pos.ball, COMMENTARY_KIND.INNINGS_END, parts.join(" "));
   });
   return out;
 }
+
+/** @type {Readonly<Record<string, string>>}  SCRBRD-130 R1: what stopped play, to begin a line */
+const STOP_WORDS = Object.freeze({ rain: "Rain", bad_light: "Bad light", wet_ground: "A wet ground", other: "An interruption" });
 
 /** @type {Readonly<Record<string, string>>}  the revision sheet's reasons (sheets.jsx RevisionSheet) */
 const REVISION_REASON_WORDS = Object.freeze({

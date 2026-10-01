@@ -38,6 +38,13 @@
  *   - a late capture-profile declaration (the fold ignores it; SCRBRD-039);
  *   - how many innings a format has, and whether a player is in the squad
  *     (opposition players are typed names SCRBRD holds no row for);
+ *   - whether a super over belongs in this match (SCRBRD-114 phase 3b):
+ *     the write path asks the match's document (super_over_not_provided,
+ *     D10). Here only its STRUCTURE: after a tie, numbered in order, never
+ *     revised. How many innings the match itself has is read from the
+ *     document the fold was told (format.innings_per_side) — the shape of
+ *     the log, not a rule of the competition; with none, nothing is refused
+ *     for it;
  *   - a competition's playing conditions (SCRBRD-114, conditions.mjs): a
  *     bowler past a league's innings cap, a spell past its limit. The
  *     innings still ends at its innings_start's overs, as before. Decided
@@ -49,9 +56,11 @@ import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_
   PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason,
   SUSPENSION_REASONS, SUSPENSION_SCOPE } from "./events.mjs";
 import { WITHDRAWN_PENALTY_REASONS } from "./events.mjs";
+import { INNINGS_END_REASON } from "./events.mjs";   // SCRBRD-130 R1
 import { FACES_NEXT, FACES_NEXT_VALUES, NOT_IN_OVER, suspensionScope, normaliseDismissal } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
-import { retirementDismissal, isMidOver, isKeeperRef, keeperOf } from "./replay.mjs";
+import { retirementDismissal, isMidOver, isKeeperRef, keeperOf, pairState, PAIR_STATE } from "./replay.mjs";
+import { superOverNumber } from "./events.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
 
@@ -119,6 +128,19 @@ export const REFUSAL = Object.freeze({
   LIVE_INNINGS:           "live_innings",           // a summary for an innings the pad has play in
   SUMMARISED_INNINGS:     "summarised_innings",     // play on the pad in an innings a book summarised
   ALREADY_SUMMARISED:     "already_summarised",     // a second summary of one innings
+  // The super over (SCRBRD-114 phase 3b, design §3.3): its structure only.
+  SUPER_OVER_NOT_TIED:    "super_over_not_tied",    // the pair before it was not tied
+  SUPER_OVER_NUMBER:      "super_over_number",      // not the next number, or at a match innings' index
+  SUPER_OVER_AFTER_MATCH_INNINGS: "super_over_after_match_innings", // a further innings with no super-over marker
+  SUPER_OVER_NO_REVISION: "super_over_no_revision", // a super over is not shortened
+  // ── SCRBRD-130 R1: interruptions (design §2.4). None reads a condition. ──
+  PLAY_STOPPED:           "play_stopped",           // play in an innings while play is stopped
+  PLAY_ALREADY_STOPPED:   "play_already_stopped",   // a stop while one is open
+  PLAY_NOT_STOPPED:       "play_not_stopped",       // a resumption with no stop open
+  STOP_OUTSIDE_INNINGS:   "stop_outside_innings",   // a stop or resumption in an innings not open
+  REVISION_BELOW_BOWLED:  "revision_below_bowled",  // overs fewer than the whole overs the over in progress needs
+  PAR_WITHOUT_TARGET:     "par_without_target",     // a par for an innings with no target
+  // ── end SCRBRD-130 R1 ──
 });
 /** @typedef {typeof REFUSAL[keyof typeof REFUSAL]} Refusal */
 
@@ -174,6 +196,21 @@ export const REFUSAL_TEXT = Object.freeze({
   live_innings: "this innings was scored live; a book cannot replace it",
   summarised_innings: "this innings was recorded from the scorebook; it cannot be scored on the pad as well",
   already_summarised: "this innings has already been recorded from the scorebook — an amendment voids that record first",
+  // The super over (SCRBRD-114 phase 3b).
+  super_over_not_tied: "a super over is played only after a tie — the match, or the super over before it, was not tied",
+  super_over_number: "the super over was not numbered as the next one, or was opened in place of one of the match's own innings",
+  super_over_after_match_innings: "the match's innings were all played; a further innings is a super over, and this one was not marked as one",
+  super_over_no_revision: "a super over is not shortened; if it cannot be finished, it is left incomplete",
+  // Not a Law: the match's playing conditions provide no super over (D10,
+  // services/api/write/events-api.mjs), refused at the write path.
+  super_over_not_provided: "this match's playing conditions provide no super over — a tie stands",
+  // SCRBRD-130 R1: interruptions.
+  play_stopped: "play was stopped — resume play first, or end the innings for rain",
+  play_already_stopped: "play was already stopped",
+  play_not_stopped: "play had not been stopped",
+  stop_outside_innings: "that innings was not in play — not started, or already over",
+  revision_below_bowled: "the revised overs were fewer than the overs already bowled, counting the over in progress",
+  par_without_target: "a par score is for a chase — this innings had no target",
   // The idempotency conflict is not a Law, but it is held the same way.
   idempotency_conflict: "a different event was already recorded under this event's id",
   // Nor are these: a value the record has no place for (SCRBRD-077,
@@ -233,6 +270,17 @@ export function lawsRefusal(match, ev) {
   // voiding the summary.
   if (inn?.summarised != null && SUMMARISED_REFUSES.has(ev?.kind)) return REFUSAL.SUMMARISED_INNINGS;
 
+  // ── SCRBRD-130 R1: interruptions (design §2.4) ──
+  if (ev?.kind === KIND.PLAY_STOPPED || ev?.kind === KIND.PLAY_RESUMED) return interruptionRefusal(inn, ev.kind);
+  if (inn?.stopped != null) {
+    // Nothing is bowled, nobody retires, no bowler comes on and no penalty
+    // is awarded while play is stopped; the innings closes only as a
+    // termination (sealed `abandoned`, the umpires' call).
+    if (STOPPED_REFUSES.has(ev?.kind)) return REFUSAL.PLAY_STOPPED;
+    if (ev?.kind === KIND.INNINGS_END && ev.reason !== INNINGS_END_REASON.ABANDONED) return REFUSAL.PLAY_STOPPED;
+  }
+  // ── end SCRBRD-130 R1 ──
+
   if (PLAY.has(ev?.kind)) {
     // Innings are played one after another. A ball, a new batter, a bowler or
     // a seal for an innings that play has already moved on from would be
@@ -286,9 +334,17 @@ export function lawsRefusal(match, ev) {
     // and a later innings_start would overwrite the revised overs anyway.
     case KIND.PENALTY:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : penaltyRefusal(innings, match?.events?.[i], ev, edition);
+    // ── SCRBRD-114 phase 3b: a super over is not shortened (§3.2) ──
     case KIND.REVISION:
+      if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
+      // Rain never revises a super over (SCRBRD-130 §5): refused before the
+      // rain rule's own checks (revisionRefusal(), SCRBRD-130 R1).
+      return inn.superOver != null ? REFUSAL.SUPER_OVER_NO_REVISION : revisionRefusal(inn, ev);
     case KIND.INNINGS_END:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : null;
+    // ── SCRBRD-114 phase 3b: where an innings may open (§3.3) ──
+    case KIND.INNINGS_START:
+      return superOverStartRefusal(innings, i, ev);
     case KIND.BOWLER_SUSPENDED:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : suspensionRefusal(innings, inn, i, ev, edition);
     // The wicket-keeper (SCRBRD-126): named at the start of an innings and on
@@ -307,6 +363,44 @@ export function lawsRefusal(match, ev) {
 
 /** @type {ReadonlySet<unknown>} */
 const SUMMARISED_REFUSES = new Set([...LIVE_PLAY, KIND.INNINGS_START, KIND.REVISION]);
+
+// ── SCRBRD-130 R1: interruptions (design §2.4) ──
+/** Play an open stop refuses: a ball (a wicket with it), a retirement, a bowler, a penalty.
+ *  @type {ReadonlySet<unknown>} */
+const STOPPED_REFUSES = new Set([KIND.BALL, KIND.RETIRE, KIND.BOWLER, KIND.PENALTY]);
+
+/**
+ * A stop or a resumption. The innings must be open — started, and neither
+ * sealed nor over by the Laws (a delay between innings is not a stop: the
+ * chase's innings_start carries the umpires' figures); then a stop needs none
+ * open and a resumption needs one.
+ * @param {Innings | null} inn  @param {string} kind
+ * @returns {Refusal | null}
+ */
+function interruptionRefusal(inn, kind) {
+  if (inn?.battingTeam == null || inn.sealed) return REFUSAL.STOP_OUTSIDE_INNINGS;
+  if (kind === KIND.PLAY_STOPPED) {
+    if (inn.complete) return REFUSAL.STOP_OUTSIDE_INNINGS;
+    return inn.stopped != null ? REFUSAL.PLAY_ALREADY_STOPPED : null;
+  }
+  return inn.stopped == null ? REFUSAL.PLAY_NOT_STOPPED : null;
+}
+
+/**
+ * The umpires' revision. Its overs may not be fewer than the whole overs the
+ * over in progress needs (`overs < ceil(balls / 6)`): an innings is not cut
+ * behind the balls already bowled. A raise is not refused (D3). A par is a
+ * chase's figure: an innings with no target — the revision's own, or the one
+ * standing — takes none. A super over's revision is the super over's rule.
+ * @param {Innings} inn  @param {Loose<import("./events.mjs").RevisionEvent>} ev
+ * @returns {Refusal | null}
+ */
+function revisionRefusal(inn, ev) {
+  if (typeof ev.overs === "number" && ev.overs < Math.ceil((inn.balls ?? 0) / 6)) return REFUSAL.REVISION_BELOW_BOWLED;
+  if (ev.par != null && (ev.target ?? inn.target) == null) return REFUSAL.PAR_WITHOUT_TARGET;
+  return null;
+}
+// ── end SCRBRD-130 R1 ──
 
 /**
  * An innings from a paper scorebook (SCRBRD-120 §2.3, §2.6).
@@ -455,7 +549,7 @@ function penaltyRefusal(innings, log, ev, edition) {
     const prev = events[lastUndoableIndex(events)];
     return prev?.kind === KIND.BALL && (prev.value ?? 0) === 0 ? null : REFUSAL.SHORT_RUN_UNMATCHED;
   }
-  if (toFielding && innings[1]?.complete && edition === LAWS_EDITION.THIRD) return REFUSAL.MATCH_DECIDED;
+  if (toFielding && decided(innings, innings[ev.innings ?? 0], ev.innings ?? 0) && edition === LAWS_EDITION.THIRD) return REFUSAL.MATCH_DECIDED;
   return null;
 }
 
@@ -471,8 +565,9 @@ function penaltyRefusal(innings, log, ev, edition) {
 function ballRefusal(innings, inn, i, ev, edition) {
   // The chase is over: the result is decided. The AntiGravity rule
   // (recordBallAction: "the match is complete"), and the reason a phone that
-  // was offline for the winning run cannot keep adding balls after it.
-  if (innings[1]?.complete) return REFUSAL.MATCH_DECIDED;
+  // was offline for the winning run cannot keep adding balls after it. In a
+  // super over, its own pair's chase (decided(), phase 3b).
+  if (decided(innings, inn, i)) return REFUSAL.MATCH_DECIDED;
   // An innings begins when the one before it has ended — by the laws, or by a
   // seal the scorer confirmed (a declaration, an abandonment).
   if (i > 0 && !innings[i - 1]?.complete) return REFUSAL.PREVIOUS_INNINGS_OPEN;
@@ -762,6 +857,82 @@ function bowledLastOver(inn, bowlerId) {
     if (b.bowlerId === bowlerId) return true;
   }
   return false;
+}
+
+// ── SCRBRD-114 phase 3b: the super over's structure (design §3.3) ──
+
+/**
+ * How many innings the match itself has: two a side's four, else two — or
+ * null when the fold was told no document (a match before db/61, the pad
+ * without one), and the log's shape is not known.
+ * @param {(Innings | null | undefined)[]} innings
+ * @returns {number | null}
+ */
+function scheduledInnings(innings) {
+  const c = innings.find((x) => x?.conditions != null)?.conditions ?? {};
+  const ips = c["format.innings_per_side"];
+  return ips === 2 ? 4 : ips === 1 ? 2 : null;
+}
+
+/**
+ * Is the chase this innings belongs to over? MATCH_DECIDED, redefined
+ * (§3.3): a match innings as always — the second innings complete; a super
+ * over's innings once its own pair's second innings is complete (won, tied
+ * or left incomplete: a tie is followed by the NEXT pair, never more balls
+ * in this one), or at once where the pair before it was not tied. A ball
+ * in a match innings once a super over has play is
+ * LATER_INNINGS_STARTED, as for any earlier innings.
+ * @param {(Innings | null | undefined)[]} innings
+ * @param {Innings | null | undefined} inn  innings[i]
+ * @param {number} i
+ */
+function decided(innings, inn, i) {
+  if (inn?.superOver == null) return innings[1]?.complete === true;
+  const first = innings[i - 1]?.superOver === inn.superOver ? i - 1 : i;
+  // A super over opened where the pair before it was not tied (an
+  // innings_start the Laws would have refused, written from elsewhere):
+  // the match was decided before it began.
+  if (pairState(innings[first - 2], innings[first - 1]).state !== PAIR_STATE.TIED) return true;
+  return innings[first + 1]?.superOver === inn.superOver && innings[first + 1]?.complete === true;
+}
+
+/**
+ * An innings_start: a super over's marker in its place, and none past the
+ * match's own innings (§3.3). Each reads the fold and the log alone.
+ *
+ *   SUPER_OVER_NUMBER  the marker is not a whole number from 1; or the
+ *     innings is one of the match's own (an index below the scheduled
+ *     innings); or the number is not the one its place gives — the pair
+ *     after the match's is 1, the next 2 … — or the second innings of a
+ *     pair whose first carries another number.
+ *   SUPER_OVER_NOT_TIED  the pair before it — the match's own, or the
+ *     previous super over — is not complete and level: not both complete,
+ *     not level, won, or left incomplete. Two innings a side never has one
+ *     (D11).
+ *   SUPER_OVER_AFTER_MATCH_INNINGS  no marker, at or past the scheduled
+ *     innings: a third innings in a one-innings match.
+ *
+ * Both innings of a pair may be opened before the first ball, as the pad
+ * opens the match's own (summaryLawRefusal()): the second is not refused for
+ * its first being in play.
+ * @param {(Innings | null | undefined)[]} innings
+ * @param {number} i
+ * @param {Loose<import("./events.mjs").InningsStartEvent>} ev
+ * @returns {Refusal | null}
+ */
+function superOverStartRefusal(innings, i, ev) {
+  const S = scheduledInnings(innings);
+  const marked = ev.superOver !== undefined && ev.superOver !== null;
+  if (!marked) return S != null && i >= S ? REFUSAL.SUPER_OVER_AFTER_MATCH_INNINGS : null;
+  const n = superOverNumber(ev.superOver);
+  const base = S ?? 2;
+  if (n == null || i < base) return REFUSAL.SUPER_OVER_NUMBER;
+  const k = i - base;
+  if (n !== Math.floor(k / 2) + 1) return REFUSAL.SUPER_OVER_NUMBER;
+  if (k % 2 === 1 && innings[i - 1]?.superOver !== n) return REFUSAL.SUPER_OVER_NUMBER;
+  if (base !== 2) return REFUSAL.SUPER_OVER_NOT_TIED;
+  const pairStart = i - (k % 2) - 2;
+  return pairState(innings[pairStart], innings[pairStart + 1]).state === PAIR_STATE.TIED ? null : REFUSAL.SUPER_OVER_NOT_TIED;
 }
 
 /**

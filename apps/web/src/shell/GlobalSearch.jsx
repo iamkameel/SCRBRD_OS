@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { askStatsMagic } from "../lib/ai.js";
-import { signedIn } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
@@ -19,6 +19,19 @@ function GlobalSearch({ role, onNav, onClose }) {
 
   useEffect(()=>{ inputRef.current?.focus(); },[]);
 
+  // Schools are searched from the platform's own list (GET /api/schools: id and
+  // name), not from the sample registry. The sample registry is the
+  // demonstration's alone: signed in, a school that is not on the platform must
+  // not appear as a result.
+  const live = signedIn();
+  const [liveSchools, setLiveSchools] = useState([]);
+  useEffect(()=>{
+    if (!live) return undefined;
+    let off = false;
+    api("/api/schools").then(r=>{ if (!off && r?.rows) setLiveSchools(r.rows); }).catch(()=>{});
+    return ()=>{ off = true; };
+  },[live]);
+
   // Search is a read like any other, and it used to be the widest hole in the
   // app: it matched every player, coach and staff member at every institution
   // regardless of who was searching. Scoped here, so a team coach finds their
@@ -33,17 +46,17 @@ function GlobalSearch({ role, onNav, onClose }) {
   const results = q.length < 2 ? [] : [
     ...ALL_PLAYERS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())).slice(0,4).map(p=>({
       type:"player", icon:ROLES.player?.icon ?? "bat",
-      label:p.name, sub:`${p.role} · ${p.team} · ${p.school}`,
+      label:p.name, sub:[p.role, p.team, p.schoolName].filter(Boolean).join(" · "),
       action:()=>{ onNav("profiles"); onClose(); },
     })),
     ...ALL_STAFF.filter(s=>s.name.toLowerCase().includes(q.toLowerCase())).slice(0,3).map(s=>({
       type:"staff", icon:"user",
-      label:s.name, sub:`${s.role} · ${s.school||"Hilton College"}`,
+      label:s.name, sub:[s.role, s.school].filter(Boolean).join(" · "),
       action:()=>{ onNav("staff"); onClose(); },
     })),
-    ...ALL_MATCHES.filter(m=>(m.home+m.away+m.venue).toLowerCase().includes(q.toLowerCase())).slice(0,3).map(m=>({
+    ...ALL_MATCHES.filter(m=>`${m.homeTeam ?? ""} ${m.awayTeam ?? ""} ${m.venue ?? ""}`.toLowerCase().includes(q.toLowerCase())).slice(0,3).map(m=>({
       type:"match", icon:"stumps",
-      label:`${m.home} vs ${m.away}`, sub:`${m.date} · ${m.format} · ${m.status}`,
+      label:`${m.homeTeam} vs ${m.awayTeam}`, sub:[m.date, m.format, m.status].filter(Boolean).join(" · "),
       action:()=>{ onNav("matches"); onClose(); },
     })),
     ...ALL_COMPS.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(c=>({
@@ -51,10 +64,11 @@ function GlobalSearch({ role, onNav, onClose }) {
       label:c.name, sub:c.format,
       action:()=>{ onNav("competitions"); onClose(); },
     })),
-    ...SCHOOLS_REGISTRY.filter(s=>s.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(s=>({
+    // A school result is a line to read, not a button: there is no school page
+    // to go to, and a control that only closed the box would do nothing.
+    ...(live ? liveSchools : SCHOOLS_REGISTRY).filter(s=>s.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(s=>({
       type:"school", icon:"school",
-      label:s.name, sub:`${s.city} · ${s.province}`,
-      action:()=>{ onClose(); },
+      label:s.name, sub:live ? "School on the platform" : `${s.city} · ${s.province}`,
     })),
   ];
 
@@ -115,16 +129,19 @@ function GlobalSearch({ role, onNav, onClose }) {
         {/* Search results */}
         {!aiMode&&results.length>0&&(
           <div style={{maxHeight:"360px",overflowY:"auto"}}>
-            {results.map((r,i)=>(
-              <button key={i} onClick={r.action} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"12px",padding:"10px 16px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${D.border}44`}}>
+            {results.map((r,i)=>{
+              const Row = r.action ? "button" : "div";
+              return (
+              <Row key={i} data-testid={`search-${r.type}`} {...(r.action ? {onClick:r.action, className:"pressBtn"} : {})} style={{width:"100%",display:"flex",alignItems:"center",gap:"12px",padding:"10px 16px",minHeight:"44px",background:"transparent",border:"none",cursor:r.action?"pointer":"default",textAlign:"left",borderBottom:`1px solid ${D.border}44`}}>
                 <div style={{width:"28px",height:"28px",borderRadius:D.md,background:`${typeColor(r.type)}18`,border:`1px solid ${typeColor(r.type)}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"13px",flexShrink:0,color:typeColor(r.type)}}><Icon name={r.icon}/></div>
                 <div style={{flex:1}}>
                   <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{r.label}</div>
                   <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,textTransform:"uppercase",letterSpacing:"0.04em"}}>{r.sub}</div>
                 </div>
                 <span style={{padding:"2px 7px",borderRadius:D.pill,background:`${typeColor(r.type)}14`,fontFamily:D.head,fontSize:"8px",fontWeight:700,color:typeColor(r.type),textTransform:"uppercase",letterSpacing:"0.06em"}}>{r.type}</span>
-              </button>
-            ))}
+              </Row>
+              );
+            })}
           </div>
         )}
 

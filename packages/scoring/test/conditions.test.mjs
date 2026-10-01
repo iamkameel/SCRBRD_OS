@@ -53,6 +53,11 @@ export const CATALOGUE =
   + 'bowling.limit|play|object|overs|-|band|-|sql,pad; '
   + 'result.min_overs_per_side|play|int|overs|-|-|-|pad,sql; '
   + 'result.tie_break|play|enum|-|none,super_over|-|"none"|fold,table; '
+  // SCRBRD-130 R1 (db/73): the method's values, and G50 with no default.
+  + 'target.method|play|enum|-|umpires_revision,dls_standard|-|"umpires_revision"|fold,sql; '
+  + 'target.g50|play|int|runs|-|-|-|pad; '
+  // SCRBRD-130 R2 (db/75): the frozen table reference, the platform's.
+  + 'target.dls_table|play|object|-|-|-|-|pad,sql; '
   + 'points.win|table|int|points|-|-|-|table; '
   + 'points.tie|table|int|points|-|-|-|table; '
   + 'points.draw|table|int|points|-|-|-|table; '
@@ -73,7 +78,6 @@ export const CATALOGUE =
   + 'pitch.length_m|play|int|m|-|-|-|-; '
   + 'ball.weight_g|play|int|g|-|-|-|-; '
   + 'fielding.powerplay|play|object|-|-|-|-|-; '
-  + 'target.method|play|enum|-|umpires_revision|-|"umpires_revision"|-; '
   + 'bowling.rest_overs_between_spells|play|int|overs|-|-|-|-; '
   + 'eligibility.max_overage_players|sheet|int|-|-|-|-|-';
 
@@ -115,7 +119,8 @@ group("A. The catalogue: one list, in both languages");
 {
   ok("catalogueString() is the pinned string db/99 §39 compares with", catalogueString() === CATALOGUE, catalogueString());
   const keys = Object.keys(CONDITION);
-  ok(`${keys.length} keys, every part one of play, table, sheet`, keys.length === 31
+  // 31 from db/61; SCRBRD-130 adds target.g50 (db/73) and target.dls_table (db/75).
+  ok(`${keys.length} keys, every part one of play, table, sheet`, keys.length === 33
      && Object.values(CONDITION).every((c) => ["play", "table", "sheet"].includes(c.part)));
   ok("the phase 1 readers' keys are in it: free hit, overs, innings cap",
      ["format.free_hit", "format.overs_per_innings", "bowling.max_overs_per_bowler_innings"].every((k) => CONDITION[k]?.part === "play"));
@@ -124,12 +129,15 @@ group("A. The catalogue: one list, in both languages");
   ok("jsonbText prints as Postgres prints a jsonb", jsonbText(["points", "wins"]) === '["points", "wins"]' && jsonbText(false) === "false"
      && jsonbText({ spell: 6, day: 12 }) === '{"day": 12, "spell": 6}' && jsonbText("none") === '"none"');
 
-  // db/61 writes the catalogue by migration: every key here is inserted
-  // there, and none there is missing here.
-  const sql = readFileSync(new URL("../../../db/61_playing_conditions.sql", import.meta.url), "utf8");
-  const insert = sql.slice(sql.indexOf("INSERT INTO playing_condition_key"), sql.indexOf("ON CONFLICT (key)", sql.indexOf("INSERT INTO playing_condition_key")));
-  const listed = [...insert.matchAll(/^\s*\('([a-z_.]+)'/gm)].map((m) => m[1]).sort();
-  ok("db/61 inserts exactly these keys", JSON.stringify(listed) === JSON.stringify([...keys].sort()), listed);
+  // db/61 writes the catalogue by migration, and each later file that adds
+  // a key (SCRBRD-130: db/73) inserts it the same way: every key here is
+  // inserted there, and none there is missing here.
+  const listed = ["61_playing_conditions.sql", "73_rain_interruptions.sql", "75_dls_table.sql"].flatMap((f) => {
+    const sql = readFileSync(new URL(`../../../db/${f}`, import.meta.url), "utf8");
+    const insert = sql.slice(sql.indexOf("INSERT INTO playing_condition_key"), sql.indexOf("ON CONFLICT (key)", sql.indexOf("INSERT INTO playing_condition_key")));
+    return [...insert.matchAll(/^\s*\('([a-z0-9_.]+)'/gm)].map((m) => m[1]);
+  }).sort();
+  ok("db/61 and the files after it insert exactly these keys", JSON.stringify(listed) === JSON.stringify([...keys].sort()), listed);
 }
 
 // ── B. The deny-list ──────────────────────────────────────────────

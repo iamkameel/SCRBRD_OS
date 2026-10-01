@@ -32,19 +32,98 @@ const stateOf = (status) => ({
 }[status] ?? { label: "No answer", color: D.textMuted });
 const word = (s) => (ANSWERS.find(([v]) => v === s)?.[1] ?? s ?? "").toLowerCase();
 
+/** The side's coming fixtures, soonest first: the one list the panel and the player's own setter both draw from. */
+function useUpcoming(role, team) {
+  const { rows: matches } = useLive("matches", role);
+  return useMemo(() => (matches ?? [])
+    .filter((m) => m.homeTeam === team && m.status === "upcoming" && m.startsAt && new Date(m.startsAt) > new Date())
+    .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt))), [matches, team]);
+}
+
+/** The one write: a player's answer for a fixture. The server decides who may; a refusal comes back as an error. */
+const declare = (matchId, playerId, status, reasonKind = null) =>
+  api(`/api/matches/${matchId}/availability`, { method: "POST", body: { playerId, status, reasonKind } });
+
 /**
  * @param {{ role: string, team: string }} props
  */
 export function AvailabilityPanel({ role, team }) {
   const [picked, setPicked] = useState("");
-  const { rows: matches } = useLive("matches", role);
-  const upcoming = useMemo(() => (matches ?? [])
-    .filter((m) => m.homeTeam === team && m.status === "upcoming" && m.startsAt && new Date(m.startsAt) > new Date())
-    .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt))), [matches, team]);
+  const upcoming = useUpcoming(role, team);
   const match = upcoming.find((m) => m.id === picked) ?? upcoming[0] ?? null;
   if (!holdsCapability(role, "availability.read") || !match) return null;
   // Keyed on the fixture, so another fixture starts from its own answers.
   return <AvailabilityList key={match.id} role={role} match={match} upcoming={upcoming} onPick={setPicked}/>;
+}
+
+/**
+ * Set Availability on the Squad screen's player panel: ONE player, the side's
+ * next fixture (or the one picked), the same three answers and the same route
+ * as the panel above. The status drawn after a save is the server's, re-read.
+ * Refusals are shown in the server's words, never swallowed.
+ * @param {{ role: string, team: string, player: { id: string, name: string } }} props
+ */
+export function PlayerAvailability({ role, team, player }) {
+  const [picked, setPicked] = useState("");
+  const upcoming = useUpcoming(role, team);
+  const match = upcoming.find((m) => m.id === picked) ?? upcoming[0] ?? null;
+  if (!match) {
+    return <p data-testid="set-availability-none" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, margin: 0 }}>
+      {team} has no coming fixture to answer for.
+    </p>;
+  }
+  return <PlayerAnswer key={match.id + player.id} role={role} match={match} upcoming={upcoming} onPick={setPicked} player={player}/>;
+}
+
+function PlayerAnswer({ role, match, upcoming, onPick, player }) {
+  const [nonce, setNonce] = useState(0);
+  const [said, setSaid] = useState({ text: "", bad: false });
+  const [busy, setBusy] = useState(false);
+  const mayRead = holdsCapability(role, "availability.read");
+  const { rows } = useLive("availability", role, nonce, { matchId: match.id });
+  const mine = mayRead ? (rows ?? []).find((r) => r.playerId === player.id) ?? null : null;
+  const st = stateOf(mine?.status);
+  const answer = async (status) => {
+    setBusy(true); setSaid({ text: "", bad: false });
+    try {
+      await declare(match.id, player.id, status);
+      setNonce((n) => n + 1);
+      setSaid({ text: `${player.name} is marked ${word(status)}.`, bad: false });
+    } catch (e) {
+      setSaid({ text: e.message || "Refused.", bad: true });
+    } finally { setBusy(false); }
+  };
+  return (
+    <div data-testid="set-availability" style={{ display: "grid", gap: "8px" }}>
+      <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>
+        v {match.awayTeam} · {humanDateTime(match.date, match.time)}
+      </div>
+      {upcoming.length > 1 && (
+        <label style={{ display: "grid", gap: "4px", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted }}>
+          Fixture
+          <select aria-label="Which fixture" value={match.id} onChange={(e) => onPick(e.target.value)}
+            style={{ minHeight: "44px", padding: "9px 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
+              color: D.textPrimary, fontFamily: D.body, fontSize: "14px", boxSizing: "border-box", width: "100%" }}>
+            {upcoming.map((m) => <option key={m.id} value={m.id}>{`v ${m.awayTeam} · ${humanDateTime(m.date, m.time)}`}</option>)}
+          </select>
+        </label>
+      )}
+      {mayRead && <div><Badge color={st.color} data-testid="set-availability-state">{st.label}</Badge></div>}
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+        {ANSWERS.map(([v, l]) => (
+          <button key={v} type="button" className="pressBtn" disabled={busy} data-testid={`set-availability-${v}`}
+            onClick={() => answer(v)} style={{ minHeight: "44px", padding: "8px 14px", borderRadius: D.pill, cursor: busy ? "wait" : "pointer",
+              background: "transparent", border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.head, fontSize: "12px", fontWeight: 700 }}>
+            {l}
+          </button>
+        ))}
+      </div>
+      {said.text && (
+        <div role={said.bad ? "alert" : "status"} data-testid="set-availability-said"
+          style={{ fontFamily: D.body, fontSize: "12px", color: said.bad ? textOn(D.rose) : D.textSecondary }}>{said.text}</div>
+      )}
+    </div>
+  );
 }
 
 /** One fixture's answers, read for this caller alone. */
@@ -58,7 +137,7 @@ function AvailabilityList({ role, match, upcoming, onPick }) {
   const answer = async (playerId, status, reasonKind = null) => {
     setSaid({ id: playerId, text: "" });
     try {
-      await api(`/api/matches/${match.id}/availability`, { method: "POST", body: { playerId, status, reasonKind } });
+      await declare(match.id, playerId, status, reasonKind);
       setNonce((n) => n + 1);
     } catch (e) {
       setSaid({ id: playerId, text: e.message || "Refused." });

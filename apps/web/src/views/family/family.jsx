@@ -25,6 +25,7 @@ import { Card, ChildSwitcher, Line, Page, Title } from "./parts.jsx";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { ChildFileCard } from "./childfile.jsx";
+import { LiftsToday } from "../lifts.jsx";
 
 /** The children this parent answers for, the one chosen, and the fixture list the cards share. */
 function useChildren(role) {
@@ -78,6 +79,10 @@ export function FamilyHome({ role, onNav }) {
         <NextFixtureCard child={child} matches={matches} role={role} now={now}
           onOpen={(m) => setOpen({ kind: "fixture", match: m })}
           onMatches={nav.includes("fixtures") ? () => onNav?.("fixtures") : null}/>
+        {/* SCRBRD-124 phase 2 (db/76): his lifts on the day — the driver's
+            number and car, the marks, "confirm collected"; her own card when
+            she drives. */}
+        <LiftsToday child={child} matches={matches}/>
         <LiveCard child={child} matches={matches} now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>
         <LastMatchCard child={child} matches={matches} now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
         <SeasonCard child={child} role={role}/>

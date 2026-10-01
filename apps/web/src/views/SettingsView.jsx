@@ -14,9 +14,10 @@ import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
+import { DlsTablesPanel } from "./dlsTables.jsx";
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 // SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
-import { LiftDeclarationPanel, LiftPolicyPanel } from "./lifts.jsx";
+import { LiftDeclarationPanel, LiftPolicyPanel, LiftPurgePanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 import { Icon } from "../ui/icons.jsx";
 
@@ -31,6 +32,7 @@ import { Icon } from "../ui/icons.jsx";
 //    School    — what is on record for each school I belong to
 //    Roadmap   — what is built, what is built underneath, what is planned
 //    Support   — platform support holders only: an hour at one school
+//    DLS table — platform reference holders only: the rain rule's table (SCRBRD-130 R2)
 //
 //  Everything drawn here is live and row-scoped: the reads go through the
 //  same choke point as every other screen, and the client decides nothing
@@ -47,6 +49,8 @@ const TABS = [
   { id: "upgrades", label: "Roadmap",  hint: "Built, built underneath, planned" },
   // The platform side of support access (support.jsx); drawn only for a holder.
   { id: "support",  label: "Support",  hint: "Reach one school, for an hour, on the record", cap: "platform.support.impersonate" },
+  // SCRBRD-130 R2: the DLS resource table (dlsTables.jsx); platform reference data.
+  { id: "dls",      label: "DLS table", hint: "Load, publish and withdraw the rain rule's table", cap: "platform.reference.manage" },
 ];
 
 // ── Small shared pieces ────────────────────────────────
@@ -311,6 +315,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "school"   && <SchoolTab role={role} users={users} players={PLAYERS} staff={STAFF} coaches={COACHES} canAudit={canAudit}/>}
         {tab === "upgrades" && <RoadmapTab/>}
         {tab === "support"  && <SupportAccessPanel role={role}/>}
+        {tab === "dls"      && <DlsTablesPanel role={role}/>}
       </div>
 
       {/* ── ENROL MODAL ──
@@ -1226,6 +1231,9 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
       {/* SCRBRD-124: the school's lift policy, signed or withdrawn by the
           principal (the second of the two keys). Drawn for transport.lift.policy. */}
       <LiftPolicyPanel/>
+      {/* SCRBRD-124 phase 2 (db/76): the lift records due for purge, pressed
+          by the office (transport.lift.oversee), never by a job. */}
+      <LiftPurgePanel/>
 
       {canAudit && <AuditSection role={role}/>}
 

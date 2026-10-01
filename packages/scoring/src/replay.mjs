@@ -33,13 +33,14 @@
  * Cricket; deriving made them visible.
  */
 
+import { superOverNumber } from "./events.mjs";
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, SUSPENSION_SCOPE, runsOffBat, inningsEnd } from "./events.mjs";
 import { NB_RUNS, runsToBowler } from "./events.mjs";
 import { countsInOver, FACES_NEXT } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { conditionsOf, freeHit, oversPerInnings } from "./conditions.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
-import { OUTCOME, MARGIN_KIND, applyDecision, hasWinner, marginString, otherSide, resultWords } from "./result.mjs";
+import { OUTCOME, MARGIN_KIND, DECIDED_BY, applyDecision, hasWinner, marginString, otherSide, resultWords } from "./result.mjs";
 
 /** @import { MatchResult } from "./result.mjs" */
 
@@ -199,7 +200,7 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {boolean} freeHit
  * @property {boolean} sealed        a scorer confirmed the figures
  * @property {string | null} sealRefused one of SEAL_REFUSAL
- * @property {{overs: number | null, target: number | null, reason: string | null} | null} revised
+ * @property {{overs: number | null, target: number | null, reason: string | null, par?: number} | null} revised
  * @property {string | null} declaredProfile  one of CAPTURE_PROFILE, or null: never declared
  * @property {number} voided         how many earlier events this log undoes
  * @property {3 | 4} lawsEdition     the Edition of the Laws the match is scored under
@@ -222,6 +223,35 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   deliveries: its ballLog, overLog and partnerships are empty and stay so, and
  *   every reader of a delivery (a wagon wheel, a worm, a spell) has nothing to
  *   read. null for every innings scored on a pad
+ * @property {number | null} superOver  the nth super over this innings belongs to
+ *   (SCRBRD-114 phase 3b, D1): its innings_start's `superOver`, a whole number
+ *   from 1; null for every match innings. Two wickets end it (inningsOverReason())
+ * @property {Stop | null} stopped   SCRBRD-130 R1: the stop now open (play stopped and
+ *   not yet resumed, nor the innings sealed), or null
+ * @property {Interruption[]} interruptions  SCRBRD-130 R1: every stop in this innings, in
+ *   order, the open one included (its `oversAtResume` undefined until it closes)
+ * @property {number | null} par     SCRBRD-130 R1: the last par the umpires announced
+ *   (`revision.par`), or null
+ * @property {number | null} startOvers  SCRBRD-130 R2: the allotment its innings_start gave it
+ * @property {{balls: number, wickets: number, from: number, to: number}[]} overCuts  SCRBRD-130 R2:
+ *   the umpires' changes to the allotment made with no stop open, each at its position
+ */
+
+/**
+ * Where play stopped (SCRBRD-130 R1): the position at the stop, read from the
+ * fold, never typed. `balls` are the legal balls bowled; `over`/`ball` the
+ * same as the board writes them (12.3).
+ * @typedef {{over: number, ball: number, balls: number, runs: number, wickets: number,
+ *   reason: string, at: number | null}} Stop
+ */
+
+/**
+ * One interruption (SCRBRD-130 R1, design §2.3): the position at the stop, the
+ * allotment in force at the stop, and the allotment in force when play resumed
+ * — null when the innings was terminated (sealed with play stopped), undefined
+ * while the stop is open. What the DLS calculator (dls.mjs) turns into
+ * resources; the fold computes none.
+ * @typedef {Stop & {oversAtStop: number, oversAtResume: number | null | undefined, resumedAt: number | null}} Interruption
  */
 
 /**
@@ -423,6 +453,15 @@ function inningsFolder(ctx = {}, carried = 0) {
     conditions: conditionsOf(ctx),
     conditionsHash: typeof ctx.conditionsHash === "string" ? ctx.conditionsHash : null,
     summarised: null,
+    // SCRBRD-114 phase 3b: the nth super over, or null — a match innings.
+    superOver: null,
+    // SCRBRD-130 R1: rain. Positions and allotments only; no resource is
+    // computed here (dls.mjs does that at read time, design §2.3).
+    stopped: null, interruptions: [], par: null,
+    // SCRBRD-130 R2: the allotment the innings started with, and the umpires'
+    // cuts of it made with no stop open (the revision sheet), each at its
+    // position — what the calculator reads beside the interruptions.
+    startOvers: null, overCuts: [],
   };
 
   // Name resolution comes from the squads carried on innings_start, so a
@@ -549,6 +588,16 @@ function inningsFolder(ctx = {}, carried = 0) {
   // they revise it again. See the PENALTY case.
   let targetTyped = false;
 
+  // SCRBRD-130 R1: close the open stop — resumed under `overs`, or terminated
+  // (null) by a seal. New arrays, as resumeWithConsent() makes: a view already
+  // handed out keeps its own.
+  /** @param {number | null} overs @param {number | null} at */
+  const closeStop = (overs, at) => {
+    const last = inn.interruptions.length - 1;
+    if (last >= 0) inn.interruptions = inn.interruptions.map((x, k) => (k === last ? { ...x, oversAtResume: overs, resumedAt: at } : x));
+    inn.stopped = null;
+  };
+
   // Partnership is measured as the run delta while a pair is together, so it
   // includes extras — which is how partnerships are actually reported.
   let partnerStartRuns = 0;
@@ -604,8 +653,13 @@ function inningsFolder(ctx = {}, carried = 0) {
           // takes the conditions' figure before the 20 it always fell back
           // to (conditions.mjs oversPerInnings(), SCRBRD-114).
           overs: oversPerInnings(conditionsOf(ctx), ev), target: ev.target ?? null,
+          // ── SCRBRD-114 phase 3b: the super over's marker (D1) ──
+          // The innings_start's, as its teams are: the last one stands.
+          // db/71's ball_event_live.super_over reads the same row.
+          superOver: superOverNumber(ev.superOver),
         });
         targetTyped = false;
+        inn.startOvers = inn.overs;   // SCRBRD-130 R2: the allotment it starts with
         if (ctx.flagFor) inn.teamFlag = ctx.flagFor(inn.teamKey) ?? "🏏";
         // THE DECLARED CAPTURE PROFILE. SCRBRD-039. Three rules, each one a
         // way a declaration could otherwise rewrite what the evidence means:
@@ -807,6 +861,9 @@ function inningsFolder(ctx = {}, carried = 0) {
         inn.complete = true;
         // sealRefusal() refuses NO_REASON for a null reason, so it is set here.
         inn.endReason = /** @type {string} */ (ev.reason);
+        // SCRBRD-130 R1: a seal while play is stopped terminates the
+        // interruption — no resumption, the allotment at resume null (§3.2).
+        if (inn.stopped != null) closeStop(null, null);
         break;
       }
 
@@ -815,10 +872,35 @@ function inningsFolder(ctx = {}, carried = 0) {
       // sixty balls and a reset target decides the match — from this event,
       // not from anything stored beside the log.
       case KIND.REVISION:
+        // SCRBRD-130 R2: a cut (or a raise) with no stop open, at this position.
+        if (ev.overs != null && inn.stopped == null && ev.overs !== inn.overs) {
+          inn.overCuts = [...inn.overCuts, { balls: inn.balls, wickets: inn.wickets, from: inn.overs ?? 20, to: ev.overs }];
+        }
         if (ev.overs != null) inn.overs = ev.overs;
         if (ev.target != null) { inn.target = ev.target; targetTyped = true; }
-        inn.revised = { overs: ev.overs ?? null, target: ev.target ?? null, reason: ev.reason ?? null };
+        inn.revised = { overs: ev.overs ?? null, target: ev.target ?? null, reason: ev.reason ?? null,
+                        ...(ev.par != null ? { par: ev.par } : {}) };
+        // SCRBRD-130 R1: the umpires' par at a termination; the last one stands.
+        if (typeof ev.par === "number" && Number.isInteger(ev.par)) inn.par = ev.par;
         break;
+
+      // ── SCRBRD-130 R1: interruptions (design §2.3) ──
+      // A stop opens at the position the log has reached; a second stop while
+      // one is open, a stop in a sealed innings, and a resumption with none
+      // open change nothing (the Laws refuse each at commit; a log from
+      // anywhere still folds). A super over may be stopped and resumed too.
+      case KIND.PLAY_STOPPED:
+        if (inn.sealed || inn.stopped != null) break;
+        inn.stopped = { over: Math.floor(inn.balls / 6), ball: inn.balls % 6, balls: inn.balls, runs: inn.runs,
+                        wickets: inn.wickets, reason: typeof ev.reason === "string" ? ev.reason : "other",
+                        at: typeof ev.at === "number" ? ev.at : (typeof ev.clientTs === "number" ? ev.clientTs : null) };
+        inn.interruptions = [...inn.interruptions, { ...inn.stopped, oversAtStop: inn.overs ?? 20, oversAtResume: undefined, resumedAt: null }];
+        break;
+      case KIND.PLAY_RESUMED:
+        if (inn.stopped == null) break;
+        closeStop(inn.overs ?? 20, typeof ev.at === "number" ? ev.at : (typeof ev.clientTs === "number" ? ev.clientTs : null));
+        break;
+      // ── end SCRBRD-130 R1 ──
 
       case KIND.BALL: {
         const type = ev.type ?? BALL_TYPE.RUN;
@@ -1303,9 +1385,21 @@ function computeMaidens(inn) {
  */
 function inningsOverReason(inn) {
   if (inn.target != null && inn.runs >= inn.target) return INNINGS_END_REASON.TARGET;
-  if (inn.wickets >= Math.min(10, Math.max(1, (inn.squad?.length || 11) - 1))) return INNINGS_END_REASON.ALL_OUT;
+  if (inn.wickets >= wicketsToEnd(inn)) return INNINGS_END_REASON.ALL_OUT;
   if (inn.balls >= (inn.overs ?? 20) * 6) return INNINGS_END_REASON.OVERS;
   return null;
+}
+
+/**
+ * The wickets that end an innings: the squad less one, at most ten — or, in a
+ * super over (SCRBRD-114 phase 3b, design §3.2), two: the standard condition.
+ * The ending is still `all_out`, so the seal, DERIVED_END_REASONS and SQL's
+ * innings_over_reason() (db/71 passes it innings_end_squad()) need nothing new.
+ * @param {Pick<Innings, "squad" | "superOver">} inn
+ */
+export function wicketsToEnd(inn) {
+  const most = Math.min(10, Math.max(1, (inn.squad?.length || 11) - 1));
+  return inn.superOver != null ? Math.min(2, most) : most;
 }
 
 /** Why this seal does not close the innings, or null when it does. */
@@ -1418,12 +1512,19 @@ export function sealInnings(inn, reason = inn?.endReason ?? null) {
  *
  * Where no award to the fielding side is in the log, all three folds are
  * exactly what they were: nothing is credited and nothing is re-folded.
+ *
+ *   WITHIN A PAIR (SCRBRD-114 phase 3b, design §3.2): the match's own innings
+ *     are one pair and each super over another, and an award moves only
+ *     inside its own. An award while fielding in innings 2 (the first super
+ *     over's first) lands in innings 3 or nowhere — never in a match innings,
+ *     which would move the tie the super over is breaking. A match with no
+ *     super over is one pair, exactly as before.
  */
 
 /**
  * Where each award to a fielding side goes.
  *
- * @param {Iterable<[number, Pick<Innings, "teamKey" | "bowlingTeamKey" | "penaltyToFielding">]>} innings
+ * @param {Iterable<[number, Pick<Innings, "teamKey" | "bowlingTeamKey" | "penaltyToFielding"> & {superOver?: number | null}]>} innings
  *   each innings of the match that has a log, with its number
  * @returns {{
  *   carried: Map<number, number>,
@@ -1442,8 +1543,11 @@ export function penaltyCredits(innings) {
     const runs = inn.penaltyToFielding;
     const side = inn.bowlingTeamKey;
     if (!runs || side == null) continue;
-    const before = list.filter(([k, x]) => k < n && x.teamKey === side).pop();
-    const after = before ? undefined : list.find(([k, x]) => k > n && x.teamKey === side);
+    // ── SCRBRD-114 phase 3b: within the pair (above) ──
+    const pair = inn.superOver ?? null;
+    const same = (/** @type {{superOver?: number | null}} */ x) => (x.superOver ?? null) === pair;
+    const before = list.filter(([k, x]) => k < n && x.teamKey === side && same(x)).pop();
+    const after = before ? undefined : list.find(([k, x]) => k > n && x.teamKey === side && same(x));
     if (before) added.set(before[0], (added.get(before[0]) ?? 0) + runs);
     else if (after) carried.set(after[0], (carried.get(after[0]) ?? 0) + runs);
     else pending.push({ from: n, team: side, runs });
@@ -1702,7 +1806,10 @@ export class MatchFold {
  * @returns {MatchResult | null}
  */
 export function describeResult(innings, o = {}) {
-  const list = /** @type {Innings[]} */ ((innings ?? []).filter((x) => x != null));
+  const every = /** @type {Innings[]} */ ((innings ?? []).filter((x) => x != null));
+  // The match's own innings: a super over never changes the match's outcome
+  // (SCRBRD-114 phase 3b, D7). Its pairs are read after, below.
+  const list = every.filter((x) => x.superOver == null);
   const conditions = o.conditions ?? {};
   const done = o.status === "complete";
   const keyOf = (/** @type {Innings} */ x) => x.teamKey ?? x.battingTeam ?? null;
@@ -1760,7 +1867,21 @@ export function describeResult(innings, o = {}) {
     }
     const [a, b] = list;
     if (!a || !b || !b.complete) return none(done ? OUTCOME.NO_RESULT : OUTCOME.IN_PROGRESS);
-    if (b.endReason === INNINGS_END_REASON.ABANDONED) return none(OUTCOME.NO_RESULT);
+    // ── SCRBRD-130 R1 (D2, amends 3a §2.2 by a clause): a chase sealed
+    // `abandoned` with the umpires' par is decided on it; without one it is
+    // no result, as before. result.min_overs_per_side reads the overs FACED
+    // here (whole overs of legal balls), not the allotment (§5).
+    if (b.endReason === INNINGS_END_REASON.ABANDONED) {
+      if (b.par == null) return none(OUTCOME.NO_RESULT);
+      const fewest = conditions["result.min_overs_per_side"];
+      if (typeof fewest === "number" && Number.isInteger(fewest) && fewest > 0 && Math.floor(b.balls / 6) < fewest) {
+        return none(OUTCOME.NO_RESULT);
+      }
+      if (b.runs > b.par) return win(b, MARGIN_KIND.WICKETS, inHand(b));
+      if (b.runs === b.par) return none(OUTCOME.TIE);
+      return win(a, MARGIN_KIND.RUNS, b.par - b.runs);
+    }
+    // ── end SCRBRD-130 R1 ──
     // The chase is judged against the TARGET, which is one more than the first
     // innings unless the umpires revised it. Comparing the two totals was right
     // only while those were the same number; in a rain-cut chase of 90 to beat
@@ -1777,11 +1898,42 @@ export function describeResult(innings, o = {}) {
     return short > 0 ? win(a, MARGIN_KIND.RUNS, short) : none(OUTCOME.TIE);
   })();
   const decided = hasWinner(play.outcome) || play.outcome === OUTCOME.TIE || play.outcome === OUTCOME.DRAW;
-  const played = o.status === "abandoned" && !decided ? none(OUTCOME.ABANDONED) : play;
+  /** @type {any} */
+  let played = o.status === "abandoned" && !decided ? none(OUTCOME.ABANDONED) : play;
+
+  // ── SCRBRD-114 phase 3b: the super over (design §2.2, §3.2, §3.6; D7) ──
+  // Only where the match's document provides one (`result.tie_break` =
+  // `super_over`, one innings a side) and the match is tied: its pairs, in
+  // order, each won, tied or incomplete. The first pair won names who goes
+  // through (decidedBy super_over, the winner's side and key) and the
+  // match's outcome stays the tie the table reads; a tie no pair has settled
+  // — none played yet, the last tied, or one left incomplete — is decided by
+  // nobody (null) until the organiser's award. A super over recorded where
+  // the document provides none (the write path refuses one, D10) is listed
+  // nowhere and decides nothing: the tie stands.
+  /** @type {SuperOver[]} */
+  let superOvers = [];
+  if (played.outcome === OUTCOME.TIE && conditions["result.tie_break"] === "super_over"
+      && conditions["format.innings_per_side"] !== 2) {
+    superOvers = superOverPairs(every.filter((x) => x.superOver != null), sideOf, keyOf);
+    // In order: a tied pair is followed by the next; the first that is not
+    // tied settles it, or leaves it to the organiser.
+    /** @type {SuperOver | null} */
+    let won = null;
+    for (const x of superOvers) {
+      if (x.state === PAIR_STATE.WON) { won = x; break; }
+      if (x.state !== PAIR_STATE.TIED) break;
+    }
+    played = won
+      ? { ...played, winnerSide: won.winner, winnerKey: won.winnerKey,
+          winner: every.find((x) => x.superOver === won.n && eq(keyOf(x), won.winnerKey))?.battingTeam ?? won.winnerKey,
+          decidedBy: DECIDED_BY.SUPER_OVER }
+      : { ...played, decidedBy: null };
+  }
 
   /** @param {string | null} side @returns {string | null} */
   const nameOfSide = (side) => (side !== "home" && side !== "away" ? null : o.names?.[side] ?? o.sides?.[side] ?? side);
-  const r = applyDecision(played, o.decision, nameOfSide);
+  const r = { ...applyDecision(played, o.decision, nameOfSide), superOvers };
   if (r.outcome === OUTCOME.IN_PROGRESS && !r.decisionApplied) return null;
   /** A side named by an innings' key: its name for the words, else its battingTeam. @param {string} key */
   const keyName = (key) => {
@@ -1790,10 +1942,96 @@ export function describeResult(innings, o = {}) {
     return (side === "home" || side === "away" ? o.names?.[side] : null) ?? x?.battingTeam ?? key;
   };
   /** @type {MatchResult} */
-  const out = { ...r, margin: marginString(r.outcome, r.marginKind, r.marginValue), text: null };
+  const out = { ...r, margin: marginString(r.outcome, r.marginKind, r.marginValue), text: null,
+                // SCRBRD-130 R1: the suffix's method ("(DLS)", "(revised target)").
+                revisedTarget: revisedTargetMethod(list, conditions) };
   out.text = resultWords(out, { nameOf: (key, side) => (key != null ? keyName(key) : nameOfSide(side) ?? "—") });
   return out;
 }
+
+// ── SCRBRD-114 phase 3b: the super over's pairs ─────────────
+
+/** How a pair of innings stands (design §3.2). */
+export const PAIR_STATE = Object.freeze({ WON: "won", TIED: "tied", INCOMPLETE: "incomplete" });
+
+/**
+ * A pair of innings read as a chase (design §3.2): the match's own pair, or
+ * a super over. `incomplete` until both are complete, and whenever either
+ * was sealed `abandoned` (a super over is played to a finish or not at all,
+ * §3.6); else the second reached its target (its own, or one more than the
+ * first's), fell short, or finished level. min_overs_per_side is not read:
+ * a super over is never shortened, and the Laws ask this of the match's own
+ * pair only to know whether it was level.
+ * @param {Innings | null | undefined} a  @param {Innings | null | undefined} b
+ * @returns {{state: string, winner: Innings | null}}
+ */
+export function pairState(a, b) {
+  const incomplete = { state: PAIR_STATE.INCOMPLETE, winner: null };
+  if (!a || !b || !a.complete || !b.complete) return incomplete;
+  if (a.endReason === INNINGS_END_REASON.ABANDONED || b.endReason === INNINGS_END_REASON.ABANDONED) return incomplete;
+  const target = b.target ?? a.runs + 1;
+  if (b.runs >= target) return { state: PAIR_STATE.WON, winner: b };
+  if (b.runs === target - 1) return { state: PAIR_STATE.TIED, winner: null };
+  return { state: PAIR_STATE.WON, winner: a };
+}
+
+/**
+ * One super over, as describeResult() and match_result() (db/71) list it.
+ * `first` is the side batting first in it; `a` and `b` its two innings'
+ * figures (b null until opened); `winner` the side that won it and
+ * `winnerKey` that innings' teamKey.
+ * @typedef {{n: number, first: string | null, a: {runs: number, wickets: number, balls: number},
+ *            b: {runs: number, wickets: number, balls: number} | null, state: string,
+ *            winner: string | null, winnerKey: string | null}} SuperOver
+ */
+
+/**
+ * The super overs of a match from its super-over innings, in order of
+ * their numbers: the first two innings carrying a number are its pair.
+ * @param {Innings[]} innings  the super-over innings, by innings number
+ * @param {(x: Innings) => string | null} sideOf
+ * @param {(x: Innings) => string | null} keyOf
+ * @returns {SuperOver[]}
+ */
+function superOverPairs(innings, sideOf, keyOf) {
+  /** @type {Map<number, Innings[]>} */
+  const byN = new Map();
+  for (const x of innings) {
+    const n = /** @type {number} */ (x.superOver);
+    if (!byN.has(n)) byN.set(n, []);
+    /** @type {Innings[]} */ (byN.get(n)).push(x);
+  }
+  const figs = (/** @type {Innings} */ x) => ({ runs: x.runs, wickets: x.wickets, balls: x.balls });
+  return [...byN.keys()].sort((p, q) => p - q).map((n) => {
+    const [a, b] = /** @type {Innings[]} */ (byN.get(n));
+    const st = pairState(a, b);
+    return { n, first: sideOf(a), a: figs(a), b: b ? figs(b) : null, state: st.state,
+             winner: st.winner ? sideOf(st.winner) : null, winnerKey: st.winner ? keyOf(st.winner) : null };
+  });
+}
+// ── SCRBRD-130 R1: a revised chase target (design §5) ──
+/**
+ * Was the chase's target revised, and under which method? A one-innings-a-side
+ * match whose chase carries a par, or a target other than one more than the
+ * first innings (the umpires' revision, or an innings_start the umpires set
+ * after a delay between innings): the frozen `target.method` —
+ * `dls_standard`, else `umpires_revision` (the default, today's). Null for a
+ * chase that never faced a revision, and for two innings a side. What the
+ * words' suffix reads, and net run rate's deemed figures (D8) in SQL
+ * (match_result_compute(), db/73), one rule.
+ * @param {(Innings | null | undefined)[]} innings  the match's, compacted or by number
+ * @param {Readonly<Record<string, unknown>>} [conditions]  the frozen play part
+ * @returns {"dls_standard" | "umpires_revision" | null}
+ */
+export function revisedTargetMethod(innings, conditions = {}) {
+  if (conditions?.["format.innings_per_side"] === 2) return null;
+  const [a, b] = (innings ?? []).filter((x) => x != null);
+  if (!a || !b) return null;
+  const revised = b.par != null || (b.target != null && b.target !== a.runs + 1);
+  if (!revised) return null;
+  return conditions?.["target.method"] === "dls_standard" ? "dls_standard" : "umpires_revision";
+}
+// ── end SCRBRD-130 R1 ──
 
 // ── Compatibility with the server's minimal replay ───────
 

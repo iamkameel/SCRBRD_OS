@@ -37,6 +37,19 @@ const SUITES = [
   // innings a side read right, decisions, and the words.
   ["result",   "packages/scoring/test/result.test.mjs"],
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3b (db/71): the super over — the marker, the fold's
+  // two-wicket end and pair-scoped credits, the Laws' structure ──
+  ["superover", "packages/scoring/test/super-over.test.mjs"],
+  // ── SCRBRD-130 R1 (db/73): rain — stops, resumptions, par, the words ──
+  ["rain",     "packages/scoring/test/rain.test.mjs"],
+  // ── end SCRBRD-130 R1 ──
+  // ── SCRBRD-130 R3 (db/74): venue par — the floor pinned with SQL, par at a point ──
+  ["venue",    "packages/scoring/test/venue.test.mjs"],
+  // ── end SCRBRD-130 R3 ──
+  // ── SCRBRD-130 R2 (db/75): the DLS Standard Edition calculator, on the
+  // synthetic table only; the structural checks; the D5 grep ──
+  ["dls",      "packages/scoring/test/dls.test.mjs"],
+  // ── end SCRBRD-130 R2 ──
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],
@@ -85,6 +98,10 @@ const SUITES = [
   ["post-match-report", "apps/web/test/post-match-report.test.mjs"],
   // SCRBRD-114 phase 3a: the league table's words and choices (lib/standings.js).
   ["standings", "apps/web/test/standings.test.mjs"],
+  // SCRBRD-114 phase 3b, the screens: the pad's Super over offer and the
+  // engine's words for why not, the pair's two innings_starts, the board's
+  // block, the eligibility words, the commentary's words.
+  ["super-over-screens", "apps/web/test/super-over-screens.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["season-awards",     "apps/web/test/season-awards.test.mjs"],
   // A figure a scorebook did not record stays null on the career screens
   // (SCRBRD-120 D12): the adapter, the strike rate over recorded balls, "at least N".

@@ -37,9 +37,11 @@ const squadOf = (side, n = 11) => Array.from({ length: n }, (_, k) => ({ id: `${
 /**
  * @typedef {number | "W" | "Wd" | {pen: number, toBat: boolean} | {rev: {overs?: number, target?: number}}} Step
  * @typedef {{bat: string, bowl: string, steps: Step[], overs?: number, target?: number | null, squad?: number,
- *            seal?: string | null | false, card?: {total: number, wickets: number, overs: string, endReason: string}}} InningsPlan
+ *            seal?: string | null | false, card?: {total: number, wickets: number, overs: string, endReason: string},
+ *            superOver?: number}} InningsPlan
  *   seal: undefined seals with the reason the fold derives; a reason seals with
  *   it; false leaves the innings unsealed. card: an innings from a scorebook.
+ *   superOver: the nth super over (SCRBRD-114 phase 3b), on its innings_start.
  */
 
 /**
@@ -58,7 +60,8 @@ export function buildLog(plans, ctx = {}) {
     const sq = squadOf(p.bat, p.squad ?? 11);
     /** @type {any[]} */
     const evs = [inningsStart({ battingTeam: p.bat, bowlingTeam: p.bowl, squad: sq, bowlingSquad: squadOf(p.bowl),
-                                overs: p.overs ?? 20, target: p.target ?? null })];
+                                overs: p.overs ?? 20, target: p.target ?? null,
+                                ...(p.superOver != null ? { superOver: p.superOver } : {}) })];
     if (p.card) {
       evs.push(inningsSummary({ card: { v: 1, innings: i, battingSide: p.bat === RESULT_SIDES.home ? "home" : "away",
         batting: [], didNotBat: [], bowling: [], extras: { byes: null, legByes: null, wides: null, noBalls: null, penalty: null },
@@ -100,6 +103,15 @@ const H = RESULT_SIDES.home, A = RESULT_SIDES.away;
 /** Hilton's 14 off an over: 4 1 0 2 6 1. */
 const FIRST14 = { bat: H, bowl: A, steps: [4, 1, 0, 2, 6, 1], overs: 1 };
 const TWO = { "format.innings_per_side": 2 };
+// ── SCRBRD-114 phase 3b: a cup's document, and a tied match ──
+/** A knockout's play part: a tie goes to a super over (design §3.5). */
+export const CUP = Object.freeze({ "format.kind": "limited", "format.innings_per_side": 1, "result.tie_break": "super_over" });
+/** A league's: a tie stands. */
+export const LEAGUE = Object.freeze({ "format.kind": "limited", "format.innings_per_side": 1, "result.tie_break": "none" });
+/** Kearsney's 14 chasing 15: the match tied. */
+const LEVEL14 = { bat: A, bowl: H, steps: [6, 6, 1, 1, 0, 0], overs: 1, target: 15 };
+/** A super over's innings. @param {number} n @param {string} bat @param {Step[]} steps @param {object} [more] @returns {InningsPlan} */
+const so = (n, bat, steps, more = {}) => ({ bat, bowl: bat === H ? A : H, steps, overs: 1, superOver: n, ...more });
 
 /**
  * @typedef {object} ResultLog
@@ -151,11 +163,12 @@ export const RESULT_LOGS = [
     log: buildLog([{ bat: H, bowl: A, steps: Array(12).fill(2), overs: 2 },
                    { bat: A, bowl: H, steps: [{ rev: { overs: 4, target: 30 } }, ...Array(15).fill(2)], overs: 6, target: 25 }],
                   { conditions: { "result.min_overs_per_side": 5 } }),
-    expect: { outcome: "away_win", marginKind: "wickets", marginValue: 10, winnerSide: "away", decidedBy: "play", text: "Kearsney won by 10 wickets" } },
+    // SCRBRD-130 R1: a revised target under umpires_revision says so (§5).
+    expect: { outcome: "away_win", marginKind: "wickets", marginValue: 10, winnerSide: "away", decidedBy: "play", text: "Kearsney won by 10 wickets (revised target)" } },
   { name: "the same short chase with no minimum: won by runs", status: "complete", play: null, decision: null,
     log: buildLog([{ bat: H, bowl: A, steps: Array(12).fill(2), overs: 2 },
                    { bat: A, bowl: H, steps: [{ rev: { overs: 4, target: 30 } }, ...Array(24).fill(1)], overs: 6, target: 25 }]),
-    expect: { outcome: "home_win", marginKind: "runs", marginValue: 5, winnerSide: "home", decidedBy: "play", text: "Hilton 1XI won by 5 runs" } },
+    expect: { outcome: "home_win", marginKind: "runs", marginValue: 5, winnerSide: "home", decidedBy: "play", text: "Hilton 1XI won by 5 runs (revised target)" } },
   { name: "by penalty runs (Law 16.7, 4th Edition)", status: "complete", play: null, decision: null,
     log: after(buildLog([{ bat: H, bowl: A, steps: [4, 4, 1, 0, 0, 0], overs: 1 },
                          { bat: A, bowl: H, steps: [1, 1, 1, 1, 1, 1], overs: 1, target: 10 }]), 1, [{ pen: 5, toBat: true }]),
@@ -220,4 +233,43 @@ export const RESULT_LOGS = [
     decision: { kind: "conceded", side: "home", reason: "entered against the wrong match by mistake" },
     log: buildLog([FIRST14, { bat: A, bowl: H, steps: [6, 4, "W", 4, 1], overs: 1, target: 15 }]),
     expect: { outcome: "away_win", marginKind: "wickets", marginValue: 9, winnerSide: "away", decidedBy: "play", text: "Kearsney won by 9 wickets" } },
+  // ── SCRBRD-114 phase 3b: the super over (design §7's logs) ──
+  { name: "a cup tie, no super over played yet: nobody has decided it", status: "live", play: CUP, decision: null,
+    log: buildLog([FIRST14, LEVEL14], { conditions: CUP }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: null, decidedBy: null, text: "Match tied" } },
+  { name: "a super over won by wickets", status: "live", play: CUP, decision: null,
+    log: buildLog([FIRST14, LEVEL14, so(1, A, [6, 1, "W", 1, 0, 0]), so(1, H, [4, 4, 1], { target: 9 })], { conditions: CUP }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: "home", decidedBy: "super_over",
+              text: "Match tied; Hilton 1XI won the super over" } },
+  { name: "a super over won by runs, two wickets ending the chase", status: "live", play: CUP, decision: null,
+    log: buildLog([FIRST14, LEVEL14, so(1, A, [4, 4, 1, 1, 0, 0]), so(1, H, [4, "W", 2, "W"], { target: 11 })], { conditions: CUP }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: "away", decidedBy: "super_over",
+              text: "Match tied; Kearsney won the super over" } },
+  { name: "two super overs tied, the third won", status: "live", play: CUP, decision: null,
+    log: buildLog([FIRST14, LEVEL14, so(1, A, [4, 1, 1, 1, 0, 0]), so(1, H, [4, 1, 1, 0, 0, 1], { target: 8 }),
+                   so(2, H, [1, 1, 1, 1, 1, 0]), so(2, A, [4, 1, 0, 0, 0, 0], { target: 6 }),
+                   so(3, A, [6, 1, 1, 1, 0, 0]), so(3, H, [6, 4], { target: 10 })], { conditions: CUP }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: "home", decidedBy: "super_over",
+              text: "Match tied; two super overs tied; Hilton 1XI won the third" } },
+  { name: "a super over left incomplete: its chase unsealed and short", status: "live", play: CUP, decision: null,
+    log: buildLog([FIRST14, LEVEL14, so(1, A, [6, 1, 1, 0, 0, 0]), so(1, H, [1, 2], { target: 9, seal: false })], { conditions: CUP }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: null, decidedBy: null,
+              text: "Match tied; the super over was not completed" } },
+  { name: "a super over sealed abandoned: incomplete, and the organiser's award decides", status: "complete", play: CUP,
+    decision: { kind: "awarded", side: "away", reason: "bad light; the cup's rules: the higher seed goes through" },
+    log: buildLog([FIRST14, LEVEL14, so(1, A, [6, 1, 1, 0, 0, 0]), so(1, H, [1, 2], { target: 9, seal: "abandoned" })], { conditions: CUP }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: "away", decidedBy: "decision",
+              text: "Match tied; the super over was not completed; awarded to Kearsney by the organiser: bad light; the cup's rules: the higher seed goes through" } },
+  { name: "a super over where the document provides none: the tie stands", status: "complete", play: LEAGUE, decision: null,
+    log: buildLog([FIRST14, LEVEL14, so(1, A, [6, 1, 1, 0, 0, 0]), so(1, H, [4, 4, 1], { target: 9 })], { conditions: LEAGUE }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: null, decidedBy: "play", text: "Match tied" } },
+  { name: "a penalty to the fielding side in a super over opens its chase, never a match innings", status: "live", play: CUP, decision: null,
+    log: buildLog([FIRST14, LEVEL14, so(1, A, [6, 1, { pen: 5, toBat: false }, 1, 0, 0, 0]), so(1, H, [1, 1, 1, 1], { target: 9 })], { conditions: CUP }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: "home", decidedBy: "super_over",
+              text: "Match tied; Hilton 1XI won the super over" } },
+  { name: "a concession after a super over was won: the super over stands", status: "complete", play: CUP,
+    decision: { kind: "conceded", side: "home", reason: "entered against the wrong match by mistake" },
+    log: buildLog([FIRST14, LEVEL14, so(1, A, [6, 1, "W", 1, 0, 0]), so(1, H, [4, 4, 1], { target: 9 })], { conditions: CUP }),
+    expect: { outcome: "tie", marginKind: null, marginValue: null, winnerSide: "home", decidedBy: "super_over",
+              text: "Match tied; Hilton 1XI won the super over" } },
 ];

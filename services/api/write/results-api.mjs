@@ -52,6 +52,8 @@ export function resultOut(row, names, reasons = true) {
                              overridesPlay: r.decision.overridesPlay === true, ...(reasons ? { reason: r.decision.reason } : {}),
                              decidedAt: row.decision?.at ?? null } : null,
     text, resultHash: row.result_hash ?? null,
+    // SCRBRD-114 phase 3b (db/71): the super overs, as describeResult() lists them.
+    superOvers: r.superOvers ?? [],
   };
 }
 
@@ -77,7 +79,7 @@ export function resultsRoutes({ pool, secret }) {
   return {
     // GET /api/matches/:id/result
     //   → { matchId, status, home, away, result: { outcome, marginKind, margin, decidedBy, winnerSide,
-    //       playOutcome, decisionApplied, decision, text, resultHash }, innings, canDecide }
+    //       playOutcome, decisionApplied, decision, text, resultHash, superOvers }, innings, canDecide }
     //   For a reader of the fixture: match_result() runs as its caller.
     result: handle(async (req) => {
       const id = idOf(req);
@@ -95,7 +97,8 @@ export function resultsRoutes({ pool, secret }) {
         return { matchId: id, status: m[0].status, competitionId: m[0].competition_id ?? null, home: names.home, away: names.away,
                  result: row ? resultOut(row, names) : null,
                  innings: (row?.innings ?? []).map((/** @type {any} */ i) => ({ innings: i.innings, side: i.side, runs: i.runs, wickets: i.wickets,
-                   balls: i.balls, overs: i.overs, endReason: i.end_reason, complete: i.complete })),
+                   balls: i.balls, overs: i.overs, endReason: i.end_reason, complete: i.complete,
+                   superOver: i.super_over ?? null })),
                  canDecide: d[0]?.may === true };
       });
     }),
@@ -124,6 +127,49 @@ export function resultsRoutes({ pool, secret }) {
         return { ok: true };
       });
     }),
+
+    // ── SCRBRD-114 phase 3c (db/72): knockout progression ──
+    // GET /api/competitions/:id/progression
+    //   → { competitionId, canClear, sides: [{ matchId, side, fromMatchId, fixtureKey, take,
+    //       resolvedSchoolId, resolvedTeamCode, resolvedAt, conflict: { at, note, awaitingWinner, played } | null }] }
+    //   Where each knockout side came from, and the standing flags: the
+    //   bracket's and the organiser's inbox. As the reader may see the rows
+    //   (competition.read at the organiser, or reach of the competition).
+    progression: handle(async (req) => {
+      const id = idOf(req);
+      return runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(
+          `select p.match_id, p.side, p.from_match_id, p.fixture_key, p.take, p.resolved_school_id, p.resolved_team_code,
+                  p.resolved_at, c.conflict_at, c.conflict_note, c.awaiting_winner, c.played
+             from match_progression p
+             left join progression_conflict c on c.match_id = p.match_id and c.side = p.side
+            where p.competition_id = $1
+            order by p.match_id, p.side`, [id]);
+        const { rows: m } = await client.query(
+          `select app_can('competition.manage', competition_organiser($1), '*'::text,
+                          '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid) as may`, [id]);
+        return { competitionId: id, canClear: m[0]?.may === true,
+                 sides: rows.map((r) => ({ matchId: r.match_id, side: r.side, fromMatchId: r.from_match_id, fixtureKey: r.fixture_key ?? null,
+                   take: r.take, resolvedSchoolId: r.resolved_school_id ?? null, resolvedTeamCode: r.resolved_team_code ?? null,
+                   resolvedAt: r.resolved_at ?? null,
+                   conflict: r.conflict_at ? { at: r.conflict_at, note: r.conflict_note, awaitingWinner: r.awaiting_winner === true,
+                                               played: r.played === true } : null })) };
+      });
+    }),
+
+    // POST /api/matches/:id/progression/clear { side, note } → { ok }
+    //   The organiser clears a flag with a note (progression_clear(), db/72).
+    //   refusals: not_permitted, support_session, note_required, no_conflict
+    clearProgression: handle(async (req) => {
+      const id = idOf(req);
+      const b = req.body || {};
+      return runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(`select * from progression_clear($1, $2, $3)`, [id, b.side ?? null, b.note ?? null]);
+        answer(rows[0]);
+        return { ok: true };
+      });
+    }),
+    // ── end SCRBRD-114 phase 3c ──
 
     // GET /api/competitions/:id/standings
     //   → { competitionId, basis, order, headToHeadListed, overRateKind, canAdjust,

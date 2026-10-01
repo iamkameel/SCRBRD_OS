@@ -103,7 +103,8 @@ try {
   // ── A ──────────────────────────────────────────────────────────
   group("A. The catalogue");
   const cat = await api("/api/playing-conditions/catalogue", { token: scorer });
-  ok("anyone signed in reads it: 31 keys", cat.status === 200 && cat.body?.keys?.length === 31, JSON.stringify(cat.body).slice(0, 200));
+  // 33: SCRBRD-130 added target.g50 (db/73) and target.dls_table (db/75).
+  ok("anyone signed in reads it: 33 keys", cat.status === 200 && cat.body?.keys?.length === 33, JSON.stringify(cat.body).slice(0, 200));
   ok("...with the reserved keys marked, and the age bands a limit is given for",
      cat.body?.keys?.find((k) => k.key === "over.max_balls")?.reserved === true && cat.body?.ageBands?.includes("U15")
      && !cat.body?.ageBands?.includes("unknown"));

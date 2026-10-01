@@ -559,6 +559,9 @@ export function publicResult(row, names) {
     decisionApplied: r.decisionApplied,
     decision: r.decision ? { kind: r.decision.kind, side: r.decision.side, overridesPlay: r.decision.overridesPlay === true } : null,
     text: resultWords(r, { reasons: false, nameOf: (key, side) => (side === "away" ? names.away : names.home) }),
+    // SCRBRD-114 phase 3b (db/71): each super over's number, state, and the
+    // sides — who batted first, who won it. No figure, no boy.
+    superOvers: (r.superOvers ?? []).map((p) => ({ n: p.n, state: p.state, first: p.first, winner: p.winner })),
   };
 }
 

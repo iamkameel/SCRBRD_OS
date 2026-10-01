@@ -52,6 +52,23 @@ const WALKS = [
   // re-fix, an amendment that flips a result, and the signed-out reads.
   "results",
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3b (db/71): the super over ──
+  // A cup tie and a friendly's, scored on the real write path; the cup tie
+  // waits for its super over; the Laws and the document at the door; the
+  // pair scored; the result, the live score, careers and the bowler's day;
+  // completion once settled; the signed-out log and header.
+  "superover",
+  // ── SCRBRD-114 phase 3c (db/72): knockout progression ──
+  // A cup drawn by the planner and published; the semi-finals played; the
+  // final made from their winners with a row for each side; a correction
+  // re-resolves the unplayed final and flags the played one; the organiser
+  // clears the flag with a note.
+  "progression",
+  // ── SCRBRD-130 R1/R3 (db/73, db/74): rain on the real write path — the
+  // server refusing play while stopped, a revision behind the balls, a par
+  // without a target; a chase decided on the umpires' par; venue par at a
+  // ground and at a point in a live innings. ──
+  "rain",
   // The scorebook importer (SCRBRD-120, db/63): photos stripped and read on
   // the log, a card ticked and checked, two people, the commit's Laws and
   // seal, the match complete, the amendment path, the purge.
@@ -212,6 +229,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // declaration, a round trip offered, a seat asked for and accepted, the
   // office's counts, and no lifts block where the module is not live.
   "browser-lifts",
+  // Wave A of the prototype clean-up (1 October 2026): the kit register
+  // alone on Logistics, no dead injury controls, the Skills axis, school
+  // search from the platform's list, Profiles' school name from the read,
+  // Squad's Set Availability and Edit Profile, and a still pitch drawing.
+  "browser-cleanup",
   // SCRBRD-068/069/080/081: the pad's four new Laws questions.
   "browser-pad-laws",
   // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
@@ -226,6 +248,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // a short run, a credit the next innings opens on, a target raised
   // mid-chase, a refusal said in place — held to the API's live score.
   "browser-penalty",
+  // ── SCRBRD-130 R1 (db/73): rain on the pad — play stopped and the keys
+  // off, resumed at fewer overs, the first innings cut short and the
+  // umpires' figures for the chase, the chase cut short with their par and
+  // the server's result decided on it. ──
+  "browser-rain",
   // SCRBRD-094 item 2: a bowler suspended mid-over — the reason in words,
   // the replacement only from the bowlers the Laws take, the suspended man
   // and the replacement refused after, split-over figures on the scorecard,
@@ -271,6 +298,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Centre's and the public page's result line; 12px, 44px, 390, Daylight.
   "browser-results",
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3b, the screens: a tied cup match scored on the pad,
+  // the Super over button and its sheet, the board's block (target, balls
+  // left, wickets left of two), two wickets ending an innings, a second
+  // super over with the eligibility words, the result as the engine words
+  // it, the scorecard block below the match's innings, and a league tie with
+  // no button and the words why; 390, the 12px and 44px floors. ──
+  "browser-superover",
+  // ── end SCRBRD-114 phase 3b screens ──
   // The playing-conditions screen (SCRBRD-114, Leagues → the competition →
   // Playing conditions): an organiser drafts, cites, is refused in words,
   // publishes for tomorrow, versions and withdraws; the version in force with

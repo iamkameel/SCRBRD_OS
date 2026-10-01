@@ -572,6 +572,25 @@ export const TABLES = {
   },
   // ── end SCRBRD-114 phase 3a ──────────────────────────────────────────
 
+  // ── SCRBRD-114 phase 3c (db/72): knockout progression ──────────────
+  // Added after db/09 shipped: emitted into db/72 (TABLES_ADDED_SINCE_09).
+  match_progression: {
+    // Where a knockout side came from: the earlier match, the result it was
+    // resolved from, and any flag a later correction raised (design §5).
+    // Read as the competition's results are — by whoever can reach it, and
+    // at the organiser under competition.read — because the bracket is the
+    // competition's; written by db/72's definer functions alone (the
+    // application has no INSERT, UPDATE or DELETE), which ask
+    // competition.conditions.manage to publish and competition.manage to
+    // clear a flag, at the organiser.
+    read:  "competition.read",
+    write: "competition.manage",
+    anchors: { school: "(competition_organiser(match_progression.competition_id))" },
+    visibleWhen: "competition_visible(match_progression.competition_id)",
+    masked: {},
+  },
+  // ── end SCRBRD-114 phase 3c ──────────────────────────────────────────
+
   equipment: {
     // The school's kit: what it has, how many, in what state. Read by
     // whoever reads a side, kept by whoever manages one.

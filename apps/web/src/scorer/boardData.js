@@ -1,5 +1,6 @@
 import { formatKind } from "@scrbrd/scoring";
 import { RR, fmtOv } from "./format.js";
+import { superOverBlock } from "../lib/superOver.js";
 
 /**
  * What the board shows, from the fold — pure, and light enough for any screen
@@ -70,6 +71,30 @@ export function atThisRate(inn, { overs = null, chasing = false, format = null }
   return Math.round(inn.runs + (inn.runs / inn.balls) * left);
 }
 
+// ── SCRBRD-130 R1: the rain line (design §1, §5) ──
+/**
+ * What the board says about rain, or null: "Play stopped" while it is; the
+ * innings' overs where the umpires moved them — "16 overs (revised from 20)",
+ * the figure before read from the first stop that moved it, else "(revised)";
+ * in a chase whose target the umpires set, "Target 134 from 16 overs
+ * (revised)". The umpires' figures, from the fold; never a calculation.
+ * @param {any} inn  a folded innings
+ * @param {number | null} [target]  the chase's target, as the board reads it
+ * @returns {string | null}
+ */
+export function rainLine(inn, target = null) {
+  if (!inn) return null;
+  const moved = (inn.interruptions ?? []).find((/** @type {any} */ i) => i.oversAtResume != null && i.oversAtResume !== i.oversAtStop);
+  const oversRevised = inn.revised?.overs != null || moved != null;
+  const targetRevised = target != null && inn.revised?.target != null;
+  const parts = [];
+  if (inn.stopped) parts.push("Play stopped");
+  if (targetRevised) parts.push(`Target ${target} from ${inn.overs} overs (revised)`);
+  else if (oversRevised) parts.push(`${inn.overs} overs (revised${moved && moved.oversAtStop !== inn.overs ? ` from ${moved.oversAtStop}` : ""})`);
+  return parts.length ? parts.join(" · ") : null;
+}
+// ── end SCRBRD-130 R1 ──
+
 /**
  * Everything the board shows, as Board's props. `inn` is a folded innings
  * (packages/scoring's replay, or the demo's seeded one); `target` and `overs`
@@ -84,14 +109,19 @@ export function boardFromInnings(inn, { target = null, overs = 20, projected = n
   const thisOver = inn.overLog?.find((o) => o.over === Math.floor(inn.balls / 6))?.balls ?? [];
   const crr = RR(inn.runs, inn.balls);
   const chase = chaseLine(inn, target, overs);
+  // A super over (SCRBRD-114 phase 3b, §4): its own block in place of the
+  // rates — "Super over 1 · Need 4 off 4 · 2 wickets left of 2" — read from
+  // the innings' own limits (one over, two wickets), whatever the caller's
+  // overs and target: a match's are not a super over's.
+  const block = superOverBlock(inn, { target });
   // `projected` is atThisRate()'s answer, passed by the screens that show it
   // (the Match Centre's and the public page's Summary): the pad and the day
   // sheet do not pass it, and draw the board as before.
   const rates = [crr !== "—" ? `CRR ${crr}` : null, chase?.rrr ? `RRR ${chase.rrr}` : null,
     projected != null ? `At this rate: ${projected}` : null].filter(Boolean).join(" · ");
-  const sub = chase
+  const sub = block ? block.line : ([rainLine(inn, target), chase
     ? [chase.need > 0 ? `Need ${chase.need} off ${chase.balls}` : "Target reached", rates].filter(Boolean).join(" · ")
-    : rates || null;
+    : rates || null].filter(Boolean).join(" · ") || null);
   // The stand in progress — the fold's `curPartner`: runs with the extras in,
   // as partnerships are reported, and legal balls — while both of the pair
   // are in. Between a wicket and the next batter there is no pair, and no row.

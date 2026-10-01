@@ -767,7 +767,9 @@ const VIEWS = new Set(readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && 
  * a view of. A view not listed here is refused: a view can be over anything,
  * an injury included, and its name says nothing.
  */
-const PUBLIC_VIEW_BASE = Object.freeze({ ball_event_live: "ball_event", match_live_score: "ball_event" });
+// ball_event_career (db/71): ball_event_live less a super over's rows — the
+// same columns, held to the same table's rules.
+const PUBLIC_VIEW_BASE = Object.freeze({ ball_event_live: "ball_event", match_live_score: "ball_event", ball_event_career: "ball_event" });
 
 /**
  * What one function body selects, by table: {table: [columns]}, and anything
@@ -861,7 +863,7 @@ group("§6 step 3 — the signed-out reads name their columns, and none §3 forb
   ok("a read that returns the payload whole is refused", publicReadProblems(log.replace("b.idempotency_key,", "b.idempotency_key, b.payload,")).some((p) => /payload whole/.test(p)));
   ok("a read through a view this suite has not placed is refused", VIEWS.has("player_masked")
      && publicReadProblems("SELECT pm.full_name FROM player_masked pm").some((p) => /player_masked/.test(p)));
-  ok("public_shot_sectors() is read through ball_event_live as ball_event",
+  ok("public_shot_sectors() is read through ball_event_live (db/71: ball_event_career) as ball_event",
      Object.hasOwn(selectedBy(fns.find((f) => f.name === "public_shot_sectors")?.body ?? "").tables, "ball_event"));
   ok("...and a read of the never-public mark is refused whole (C5)",
      publicReadProblems("SELECT m.set_on FROM player_never_public m").some((p) => /player_never_public/.test(p)));

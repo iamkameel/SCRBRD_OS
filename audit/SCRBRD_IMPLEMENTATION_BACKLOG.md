@@ -3924,6 +3924,21 @@ similar algorithm")
 Fable designs (SCRBRD-114 territory: conditions, results, the fold); Opus builds; Sonnet the screens. Sits beside
 SCRBRD-114 phase 3 (db/69–71).
 **Designed 2026-09-30:** `docs/design/SCRBRD-130_rain_and_par.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D14 as recommended** — umpires' figure is the record; `target.method` umpires_revision | dls_standard (no average run rate); table in the database only, from Kameel's source; G50 a cited condition; venue par floor 5, window this season + two, rain-shortened excluded. Phases R1 db/72, R3 db/74, R2 db/73 when the table arrives.
+**Source and permission (Kameel, 2026-09-30 / 2026-10-01):** the ICC playing conditions' section 06 (D-L Standard Edition),
+transcribed to a CSV held outside the repository (sha256 in the design's §8); permission granted by the school (Kameel)
+for the pilot; G50 for schools 200, as the league's `target.g50`, never a platform default.
+**BUILT (2026-10-01, Opus) — as R1 `db/73`, R3 `db/74`, R2 `db/75`** (3b and 3c took db/71–72; db/73's re-emits are merged
+over db/71's bodies, and rain never revises a super over: §52 (super over), `rain.test.mjs` D2); db/99 §52–§54, each guard
+broken once and seen red. Design §9 records what was built and thirteen departures. R1: `play_stopped`/`play_resumed`,
+`revision.par`, the six refusals, the par clause and overs faced in `describeResult()`/`match_result_compute()`, the
+words' suffix, the deemed NRR (D8), the pad's Stop/Resume/End-innings sheets and banner, the board's revised line, the
+public log's lines, the commentary. R3: `venue_par()` and `venue_par_for_match()`, the floor pinned both sides, the ground
+card and the board's "typical side here" line. R2: the table and its loader/publish/withdraw, `platform.reference.manage`,
+`target.dls_table` frozen at fixing, `dls.mjs`, `GET /api/matches/:id/dls`, Settings → DLS table, the proposal beside
+the umpires' figures on the pad, the Match Centre's Rain panel. Synthetic table only in every test and walk (D5; the CI
+grep is `dls.test.mjs` §H). **Left for the operator:** load and publish the real table (`DEPLOYING.md`, "The rain rule");
+the pilot league's officer enters `target.g50` = 200 and `target.method` = `dls_standard`. **Not built:** a calculated
+DLS line and a venue-par line on the signed-out public page (design §9, departure 9).
 
 
 ### SCRBRD-131 — Small things found while building (2026-10-01)
@@ -3944,6 +3959,85 @@ SCRBRD-114 phase 3 (db/69–71).
 - **Invitations write no notification** (`competition_entrant_invite`): the organiser cannot write a notice into
   another school, so it needs a definer function (a migration, Opus), as db/65's availability notices are written.
   With it: the "checked" ticks on a league's defaults, kept in the browser today (`saveTicks`), stored on the set.
+
+### SCRBRD-132 — Prototype leftovers: invented data and dead controls (2026-10-01)
+
+The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/PROTOTYPE_LEFTOVERS.md`.
+
+- **Wave A (Sonnet, screens):** in progress. Invented audit entries come down; ground tasks are read from duties; the Equipment copy is removed in favour of the kit register; real school names; the Skills axis is 1–20; Management tabs follow capabilities; Squad availability and profile edits; dead injury buttons hidden; Fields drawing fixed. Management users show all roles, with Add role.
+- **Wave B (Opus, db/77+):**
+  - End a role (in progress, db/77).
+  - The real audit log, under `audit.read`: names masked, reads logged.
+  - Injury routes: medical staff and coaches log; medical staff update, clear and refer.
+  - A season-per-player read.
+  - League invitation notices.
+- **Wave C:** suspend an account, with safeguarding phase 2; the Rulebook summary checked against the 4th Edition.
+
+### SCRBRD-133 — The immersive Match Centre and the ground display (2026-10-01)
+
+Kameel: the app should be "dynamic, data-rich, informative, immersive, interesting and visually stimulating". The build order is confirmed. Fable designs first, in `docs/design/SCRBRD-133_immersive_match_centre.md`; Fable's list gained this topic with Kameel's say.
+
+1. **Ground display mode:** the pavilion screen.
+2. **Par and pressure:** the par line and pressure meter, plus moving worm and runs-per-over charts.
+3. **Moment cards and the over story strip.**
+
+The full proposal is in the doc "SCRBRD: Making It Come Alive".
+
+### SCRBRD-134 — Player pages worth opening (2026-10-01)
+
+- **Form guide:** the last ten innings.
+- **Scoring and dismissals:** scoring zones and dismissal types by phase (later also by bowling end, and against pace or spin).
+- **Development curve:** assessments over seasons.
+- **Career timeline.**
+
+This needs a season-per-player read, shared with SCRBRD-132 Wave B.
+
+### SCRBRD-135 — Season Wrapped and share cards (2026-10-01)
+
+- **Wrapped:** a recap per team and per boy.
+- **Who sees a boy's Wrapped (Kameel):** his family, his coaches and school staff.
+- **Sharing:** he may share it with friends and family. How a share works (a link, its expiry, a parent's say while he is under 18) is settled in its design.
+- **Share cards:** for the school's social media, under PUBLIC_DATA (consent, a monogram, never a photo).
+
+### SCRBRD-136 — The coach's match-day cockpit (2026-10-01)
+
+Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `CoachCockpitView.tsx` and the rest). Every figure there is typed into the code. This rebuilds the useful half on reads that exist, and leaves out what no read can prove.
+
+- **Match command:** the live state from the fold (score, partnership, current and required rate, the last twelve balls, the bowlers' spells).
+- **Overs left:** each bowler's overs against the frozen `bowling.max_overs_per_bowler_innings`, with no reason given.
+- **The batters in against our bowlers:** the matchups read, and against bowling like his.
+- **Where he scores, by shot:** the wagon wheel filtered by the shot the pad already records (Shot, Area, Outcome; the `shot_points` read carries `shot`).
+- **Phase splits:** powerplay, middle and death, from the log.
+- **Who's out and the XI:** availability and the squad read. Workload only as SCRBRD-110 allows a coach.
+- **Not carried over:**
+  - win probability and a 0–100 pressure index (SCRBRD-133 D4 says par gap and rate trend instead);
+  - ball speed, the pitch landing map (SCRBRD-108), false shots;
+  - "threat levels".
+- **Who builds:** Sonnet, screens over existing reads, then Opus reviews. No migration unless a read is missing.
+
+### SCRBRD-137 — An intelligence feed of real signals (2026-10-01)
+
+beta-2's Intelligence drawer has five fixed cards, among them "+18% win equity", "workload risk 86%" and a pitch rating. Here each card is a rule over data we hold, and it shows its evidence and its count.
+
+- **Example rules:**
+  - a bus with fewer seats than confirmed travellers;
+  - a bowler one over from his limit;
+  - a picked boy marked unavailable;
+  - a lift exception (db/76);
+  - a matchup with enough balls behind it to mean something.
+- **Each rule's reader:** each rule names the capability that may see it. Nothing medical beyond what the reader already holds, and nothing about another school's children outside the opposition window.
+- **Who builds:** Opus writes the rule list with sources and gates, then Sonnet builds the drawer.
+
+### SCRBRD-138 — The captain's view (2026-10-01)
+
+Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same screen for whoever holds the captaincy honour (`recognition`, kind `captain`), never a role. A captain is a pupil reading his team-mates' data, so what he may see is the design's question.
+
+- **beta-2's version (`CaptainCockpitView.tsx`)** shows every pupil a team-mate's "Physio restricted". It also has an inbox of coach directives, which is a one-to-one channel from an adult to a child.
+- **Fable's design answers:**
+  - what he sees (match glance, overs left per bowler, the field);
+  - what he never sees (health, workload reasons, another boy's assessment);
+  - whether a coach may send him anything, under the CSA safeguarding policy;
+  - how the honour switches it on and off.
 ### SCRBRD-128 — A placement helper: a second device adds where the ball went
 **Priority:** P3 · **Domain:** Scoring / match day · **Type:** design + build, bundled with SCRBRD-108 (Kameel,
 2026-09-30)
@@ -4177,7 +4271,7 @@ recorded for clubs (C7 "the same rules as schools") and not built:
 - Premier League coaches hold at least Level 2 (1.2.4; `coaching_accreditation` exists as a clearance kind).
 **Not built, by decision:** 1.2.5 (players of colour per team) and 3.5.4 (foreign players counted as white) are
 transformation quotas, and the transformation-quota rule above applies to them.
-**Phase 3 designed (Fable, 2026-09-30):** `docs/design/SCRBRD-114_phase3_results_super_over.md`; D1–D17 decided as recommended (Kameel). db/69 results and table, db/70 the super over, db/71 knockout progression.
+**Phase 3 designed (Fable, 2026-09-30):** `docs/design/SCRBRD-114_phase3_results_super_over.md`; D1–D17 decided as recommended (Kameel). db/69 results and table, db/71 the super over, db/72 knockout progression (built as those numbers: db/70 is SCRBRD-124).
 **Phase 3a built (Opus, 2026-10-01): results and the table, `db/69_results_and_table.sql`, db/99 §47.** The fold's
 `describeResult()` fixed (a chase sealed `abandoned` is no result; two innings a side has a draw and an innings win)
 and exported, with `text` and `decidedBy`; `result.mjs` holds the outcomes, the decision layer and the words.
@@ -4192,6 +4286,26 @@ server's result. Walks: `smoke-results` (API), `smoke-browser-results`. Departur
 Kameel (§10.4):** nothing marks a pad-scored match complete (the table counts a match decided on the field anyway; a
 no result needs the status); One-Day Declaration documents frozen between db/61 and db/69 read as two innings a side
 (the query is in §10.4). **Next:** 3b the super over, 3c progression, each the next free migration number (db/70 is now SCRBRD-124's lift clubs, so the design's db/70 and db/71 move up).
+**Phase 3b built (Opus, 2026-10-01): the super over, `db/71_super_over.sql`, db/99 §50.** A super over is two more
+innings with `superOver: n` on the `innings_start` (D1); two wickets end one; penalty runs move within a pair;
+`describeResult()` and `match_result()` read the match's outcome from its own innings and the pairs after, where the
+document provides one: the first pair won decides who goes through (`decided_by = super_over`), the tie stays the
+table's (D7). The Laws refuse a super over out of place (`super_over_not_tied`, `_number`,
+`_after_match_innings`, `_no_revision`; `MATCH_DECIDED` per pair); the write path refuses one the document does not
+provide (`super_over_not_provided`, D10). Careers, milestones, dossiers, matchups, phases, ratings and wheels read a
+new `ball_event_career` and never count it; workload counts it (D5, D6). The public log, the public header and the
+broadcast board know it. A tied cup match is not marked complete while nothing has settled it
+(`super_over_pending`). Walk: `smoke-superover`. **Not built: the pad's screens** (the Super over button and the
+pair's flow, the board's block, the eligibility words, the scorecard block, the commentary words), the design's Sonnet
+items: §11.3 says what they stand on. Departures: design §11.2.
+**Phase 3c built (Opus, 2026-10-01): knockout progression, `db/72_knockout_progression.sql`, db/99 §51.** Publishing
+a knockout plan makes a later round from the earlier results' winners and records `match_progression` (where each
+side came from, by the result's hash); a corrected result re-resolves an unplayed fixture's side and tells both
+schools and the organiser, flags a played one and never rewrites it, and the organiser clears a flag with a note
+(D14). `GET /api/competitions/:id/progression`, `POST /api/matches/:id/progression/clear`. Walk:
+`smoke-progression`; `planner-drafts.test.mjs` C. **Not built:** the bracket screen (Sonnet). **For Kameel (§11.5):**
+a re-resolution moves the fixture's side but not the availability asks, team sheet or lift offers recorded for the
+old side; the pad's super-over screens are the next Sonnet item.
 **KZN rules decided (Kameel, 2026-09-30):** KZN schools play the MCC Laws with no further bye-laws, so phase 5's "KZN figures" are the platform defaults. Pilot league: points win 4 / tie 2 / no result 2 / loss 0, no bonus; a knockout tie goes to a super over (a league tie stands); bowling limits are the platform's defaults, which are the ECB fast-bowling directives mapped onto school bands (corrected 2026-09-30: not CSA figures; db/32 says so), cited as the pilot league's decision until a CSA or KZN schedule is published. Entered on the conditions screen, not seeded. Recorded in the design's §8.3a. Phase 3 (the points table and a playable super over) is unblocked.
 **Tie-breaks (Kameel, 2026-09-30, from the `sundayMatches` review):** `result.tie_break` (`none` | `super_over`) is reserved in the catalogue but the fold cannot play a super over. Phase 3 (match results) must: play a super over as its own innings pair (one over, two wickets, the Laws and the fold as for any innings), and support whatever tie rule the KZN bye-laws name instead (e.g. fewer wickets lost, or shared points). The fixture planner's knockouts (SCRBRD-123) need a winner, so this comes before knockout rounds are published.
 
@@ -4398,9 +4512,25 @@ passenger left by a withdrawal falls back to not confirmed under a policy refusi
 **except** (follow-up, same day) a pupil of eighteen still at school, who may ask for, withdraw and read his own seat
 only (`lift_seat.consent_by = 'self'`; his guardian may also ask while db/62's link is live; a simple "Ask for a seat"
 on Squad). One-to-one counts children only (under eighteen or unknown birth date): an adult alone is seated, and keeps
-no child company — Opus's reading, for Kameel to confirm. Departures are in the design's "As built". **Next: phase 2, the day** (marks, receive,
-resolve, `my_lifts()`, the watch, the purge), then phase 3.
+no child company — Opus's reading, **confirmed by Kameel 2026-10-01**, as is the void of his own seat when he leaves school. Departures are in the design's "As built".
 <!-- ── end SCRBRD-124 phase 1 ── -->
+<!-- ── SCRBRD-124 phase 2, as built ── -->
+**Phase 2 built 2026-10-01 (Opus): `db/76_lift_day.sql`, the day.** The driver's marks (left, in the car, handed over, not
+collected, arrived) — hers alone, on the day, forwards, refused to a revoked guardian; the receiver's acknowledgement (the
+side's coach "with us" on the way there, a guardian — or the boy of eighteen — "collected" on the way home); the office's
+exceptions by name (logged) and resolve; the coach's expected list (logged); `my_lifts()` for the boy of eighteen at
+school; `lift_missed_watch()` for the platform's key (`POST /api/lifts/watch`, once per seat); the purge pair and
+`lift_purge_log`. A lift on the road is seen through: no cancel, fixture move, link ended or withdrawal unconfirms a boy in
+the car. Twelve routes, none module-gated; the day cards on the fixture and the family Home, the coach's and the office's
+cards on Squad, the pupil's line on his Home, the purge list on Settings → School. **The module stays off by default; it may
+now be granted per school.** **Who is told (Kameel, 2026-10-01, "this isn't an airline with assigned seats"):** ordinary seat notices
+(confirmed, declined, cancelled, withdrawn, fallen back) to the parent who asked and the driver, no other guardian; his own
+seat at eighteen, him only; the day's safety alerts (not collected, not in the car when it left, not left, not received,
+alone in a car under way) to every live guardian. Proof: db/99 §55 (65 breaks, each seen red or, once, held alone), `smoke-lifts` (118),
+`smoke-browser-lifts` (74). For Kameel: one alert per seat (D14) means a late lift's seat is not alerted again at handover;
+an under-eighteen pupil sees nothing of his own lift; the watch needs a scheduler. **Next: phase 3** (the DSO's bar and
+history, invitations).
+<!-- ── end SCRBRD-124 phase 2 ── -->
 
 ### SCRBRD-125 — Roles scoped to a competition
 **Priority:** P3 (before a second league) · **Domain:** RBAC · **Type:** design + build (found 2026-09-30, SCRBRD-120 §9.4)

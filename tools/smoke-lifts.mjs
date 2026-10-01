@@ -319,6 +319,159 @@ try {
   r = await api(`/api/matches/${m2.id}/lifts`, { token: boy });
   ok("...and reads no lift", r.status === 200 && r.body.rows.length === 0);
 
+  // ── Phase 2: the day (db/76) ─────────────────────────────────────
+  group("The day: the driver's marks, the receivers, the office and the watch (phase 2, db/76)");
+  const u14 = await login("u14coach@example.invalid");
+  // Tomorrow at ten, Johannesburg time: inside the day window.
+  const [m3] = await q(
+    `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+     values ($1, '1XI', 'Smoke Lifts Day', ((current_date + 1)::timestamp + time '10:00') at time zone 'Africa/Johannesburg', 'T20', 20, 'scheduled')
+     returning id, starts_at`, [HIL]);
+  const s3 = new Date(m3.starts_at).getTime();
+  r = await api(`/api/matches/${m3.id}/lifts`, { method: "POST", token: driver, body: { legs: [
+    { leg: "out", seats: 3, meetKind: "school", meetAt: new Date(s3 - 90 * 60_000).toISOString() },
+    { leg: "back", seats: 3, meetKind: "ground", meetAt: new Date(s3 + 300 * 60_000).toISOString() }] } });
+  const DOUT = r.body?.offers?.find((/** @type {any} */ o) => o.leg === "out")?.id;
+  const DBACK = r.body?.offers?.find((/** @type {any} */ o) => o.leg === "back")?.id;
+  ok("the driver offers both ways to tomorrow's fixture", r.status === 200 && Boolean(DOUT && DBACK));
+  /** @type {Record<string, string>} */
+  const seat = {};
+  for (const [leg, o] of /** @type {const} */ ([["out", DOUT], ["back", DBACK]])) {
+    seat[`bekker-${leg}`] = (await api(`/api/lifts/${o}/seats`, { method: "POST", token: bekker, body: { playerId: BEKKER } })).body?.seatId;
+    seat[`cele-${leg}`] = (await api(`/api/lifts/${o}/seats`, { method: "POST", token: cele, body: { playerId: CELE } })).body?.seatId;
+    r = await api(`/api/lifts/${o}/accept`, { method: "POST", token: driver, body: { seatIds: [seat[`bekker-${leg}`], seat[`cele-${leg}`]] } });
+    ok(`...and confirms both boys on the way ${leg === "out" ? "there" : "home"}`, r.status === 200 && r.body.confirmed === 2);
+  }
+
+  r = await api(`/api/matches/${m3.id}/lifts/day`, { token: driver });
+  ok("the driver's day cards name her passengers", r.status === 200 && r.body.rows.length === 2
+     && r.body.rows.every((/** @type {any} */ e) => e.as === "driver" && e.seats.map((/** @type {any} */ s) => s.name).sort().join() === "M Cele,T Bekker"));
+  r = await api(`/api/matches/${m3.id}/lifts/day`, { token: bekker });
+  ok("Bekker's mother's day cards carry her son and nobody else's",
+     r.status === 200 && r.body.rows.length === 2 && r.body.rows[0].driverName === "H Whitfield" && !JSON.stringify(r.body).includes("Cele"));
+  r = await api(`/api/matches/${m3.id}/lifts/day`, { token: coach });
+  ok("the coach has no day card of his own", r.status === 200 && r.body.rows.length === 0);
+
+  for (const [who, t] of /** @type {const} */ ([["a parent on the lift", bekker], ["the coach", coach], ["the office", office]])) {
+    r = await api(`/api/lifts/${DOUT}/mark`, { method: "POST", token: t, body: { event: "departed" } });
+    ok(`${who} cannot mark the lift as left`, r.status === 403);
+  }
+  r = await api(`/api/lift-seats/${seat["bekker-out"]}/mark`, { method: "POST", token: driver, body: { event: "boarded" } });
+  ok("the driver marks T Bekker in the car", r.status === 200);
+  r = await api(`/api/lift-seats/${seat["bekker-out"]}/mark`, { method: "POST", token: driver, body: { event: "boarded" } });
+  ok("...once (marks go forward only)", r.status === 409 && r.body.error === "already_marked");
+  r = await api(`/api/lifts/${DOUT}/cancel`, { method: "POST", token: driver });
+  ok("a lift with a boy in it is not cancelled", r.status === 422 && r.body.error === "on_the_road");
+  await api(`/api/lift-seats/${seat["cele-out"]}/mark`, { method: "POST", token: driver, body: { event: "boarded" } });
+  r = await api(`/api/lifts/${DOUT}/mark`, { method: "POST", token: driver, body: { event: "departed" } });
+  ok("she marks the lift as left", r.status === 200);
+  r = await api(`/api/lifts/${DOUT}/mark`, { method: "POST", token: driver, body: { event: "departed" } });
+  ok("...and a second 'left' is refused", r.status === 409 && r.body.error === "already_departed");
+  r = await api(`/api/lift-seats/${seat["bekker-out"]}/mark`, { method: "POST", token: driver, body: { event: "handed_over" } });
+  ok("she hands T Bekker over at the ground", r.status === 200);
+
+  r = await api(`/api/matches/${m3.id}/lifts/expected`, { token: coach });
+  ok("the 1XI's coach reads who is arriving by lift, with the marks",
+     r.status === 200 && r.body.rows.map((/** @type {any} */ x) => x.name).sort().join() === "M Cele,T Bekker"
+     && Boolean(r.body.rows.find((/** @type {any} */ x) => x.name === "T Bekker")?.handedOverAt));
+  for (const [who, t] of /** @type {const} */ ([["the U14A's coach", u14], ["a parent", bekker], ["the office", office]])) {
+    r = await api(`/api/matches/${m3.id}/lifts/expected`, { token: t });
+    ok(`${who} reads no expected list`, r.status === 200 && r.body.rows.length === 0);
+  }
+  for (const [who, t] of /** @type {const} */ ([["his mother (not at the ground)", bekker], ["the U14A's coach", u14]])) {
+    r = await api(`/api/lift-seats/${seat["bekker-out"]}/receive`, { method: "POST", token: t });
+    ok(`${who} cannot say "with us"`, r.status === 403);
+  }
+  r = await api(`/api/lift-seats/${seat["bekker-out"]}/receive`, { method: "POST", token: coach });
+  ok("the coach says \"with us\"", r.status === 200);
+  r = await api(`/api/lifts/${DOUT}/mark`, { method: "POST", token: driver, body: { event: "arrived" } });
+  const [afterArrive] = await q(`select state from lift_offer where id = $1`, [DOUT]);
+  ok("she arrives; M Cele, in the car and not handed over, keeps the lift short of done",
+     r.status === 200 && afterArrive.state === "closed");
+  r = await api(`/api/lifts/exceptions?schoolId=${HIL}&matchId=${m3.id}`, { token: office });
+  ok("the office reads the exception by name", r.status === 200
+     && r.body.rows.map((/** @type {any} */ x) => `${x.name}:${x.kind}`).join() === "M Cele:not_handed_over");
+  for (const [who, t] of /** @type {const} */ ([["the driver", driver], ["the coach", coach], ["the principal", head]])) {
+    r = await api(`/api/lifts/exceptions?schoolId=${HIL}`, { token: t });
+    ok(`${who} reads no exceptions`, r.status === 200 && r.body.rows.length === 0);
+  }
+  await api(`/api/lift-seats/${seat["cele-out"]}/receive`, { method: "POST", token: coach });
+  ok("the coach has M Cele too, and the lift is done",
+     (await q(`select state from lift_offer where id = $1`, [DOUT]))[0]?.state === "done");
+
+  // The way home: an hour past its meeting time, as the clock would have it.
+  await q(`update lift_offer set meet_at = now() - interval '1 hour' where id = $1`, [DBACK]);
+  r = await api("/api/lifts/watch", { method: "POST", token: driver });
+  ok("only the platform's key runs the watch", r.status === 403);
+  r = await api("/api/lifts/watch", { method: "POST", token: owner });
+  const [watched] = await q(`select count(*) filter (where title = 'A lift has not been marked as leaving')::int fam,
+                                    count(*) filter (where title = 'Has your lift left?')::int drv
+                               from notification where subject_id = $1`, [m3.id]);
+  ok("the watch tells each family and the driver, once", r.status === 200 && r.body.notLeft >= 2 && watched.fam === 2 && watched.drv === 1);
+  await api("/api/lifts/watch", { method: "POST", token: owner });
+  const [again] = await q(`select count(*)::int n from notification where subject_id = $1 and title = 'A lift has not been marked as leaving'`, [m3.id]);
+  ok("...and a second run tells nobody again", again.n === 2);
+  for (const k of ["bekker-back", "cele-back"]) await api(`/api/lift-seats/${seat[k]}/mark`, { method: "POST", token: driver, body: { event: "boarded" } });
+  await api(`/api/lifts/${DBACK}/mark`, { method: "POST", token: driver, body: { event: "departed" } });
+  await api(`/api/lift-seats/${seat["bekker-back"]}/mark`, { method: "POST", token: driver, body: { event: "handed_over" } });
+  r = await api(`/api/lift-seats/${seat["cele-back"]}/mark`, { method: "POST", token: driver, body: { event: "not_collected" } });
+  const [nc] = await q(`select count(*) filter (where recipient_id = (select id from app_user where email = 'parent.cele@example.invalid'))::int mum,
+                               count(*) filter (where recipient_id = (select id from app_user where email = 'registrar@example.invalid'))::int office,
+                               count(*) filter (where position('Cele' in body) > 0)::int named
+                          from notification where subject_id = $1 and title in ('He was not collected from his lift', 'A boy was not collected from a lift')`, [m3.id]);
+  ok("M Cele not collected: his mother and the office are told, naming nobody", r.status === 200 && nc.mum === 1 && nc.office === 1 && nc.named === 0);
+  r = await api(`/api/lift-seats/${seat["bekker-back"]}/receive`, { method: "POST", token: coach });
+  ok("the coach does not receive a boy at home", r.status === 403);
+  r = await api(`/api/lift-seats/${seat["bekker-back"]}/receive`, { method: "POST", token: bekker });
+  ok("his mother confirms she has T Bekker", r.status === 200);
+  r = await api(`/api/lift-seats/${seat["cele-back"]}/resolve`, { method: "POST", token: bekker, body: { resolution: "school_office" } });
+  ok("a parent does not resolve an exception", r.status === 403);
+  r = await api(`/api/lift-seats/${seat["cele-back"]}/resolve`, { method: "POST", token: office, body: { resolution: "school_office" } });
+  ok("the office resolves M Cele: collected at the school office", r.status === 200);
+  r = await api(`/api/lifts/${DBACK}/mark`, { method: "POST", token: driver, body: { event: "arrived" } });
+  ok("she arrives home and the lift is done", r.status === 200 && (await q(`select state from lift_offer where id = $1`, [DBACK]))[0]?.state === "done");
+  const [logs] = await q(`select count(*) filter (where resource = 'lift_exceptions')::int exc, count(*) filter (where resource = 'lift_expected')::int exp,
+                                 count(*) filter (where resource = 'lift_day')::int dayc
+                            from access_log where $1 = any(record_ids)`, [DOUT]);
+  ok("the names read on the day are on the access log", logs.exc >= 1 && logs.exp === 1 && logs.dayc >= 1);
+  r = await api("/api/lifts/mine", { token: boy });
+  ok("a pupil of sixteen reads no lift as his own", r.status === 200 && r.body.rows.length === 0);
+
+  group("The purge: three years after the fixture, by the office, leaving counts (§5.3)");
+  const [old] = await q(
+    `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+     values ($1, '1XI', 'Smoke Lifts Long Ago', ((current_date - interval '3 years' - interval '10 days')::date::timestamp + time '09:00') at time zone 'Africa/Johannesburg', 'T20', 20, 'complete')
+     returning id, starts_at`, [HIL]);
+  const [oldOffer] = await q(
+    `insert into lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
+     select $1, $2, '1XI', 'out', d.person_id, d.id, 2, 'school', $3::timestamptz - interval '90 minutes', $3
+       from lift_driver_declaration d join app_user u on u.id = d.person_id
+      where u.email = 'parent.whitfield@example.invalid' order by d.declared_at desc limit 1
+     returning id`, [HIL, old.id, old.starts_at]);
+  await q(`insert into lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id, guardian_link_id,
+                                  requested_by, guardian_ok_version, driver_ok_version, state)
+           select $1, null, null, null, null, $2, 'guardian', g.assignment_id, g.id, a.person_id, 1, 1, 'confirmed'
+             from assignment_subject g join role_assignment a on a.id = g.assignment_id join app_user u on u.id = a.person_id
+            where g.player_id = $2 and u.email = 'parent.bekker@example.invalid' limit 1`, [oldOffer.id, BEKKER]);
+  r = await api(`/api/lifts/purge?schoolId=${HIL}`, { token: office });
+  ok("the office's due list holds the lift of three years ago, naming nobody",
+     r.status === 200 && r.body.rows.some((/** @type {any} */ x) => x.id === oldOffer.id && x.seats === 1) && !/Bekker|Whitfield/.test(JSON.stringify(r.body)));
+  r = await api(`/api/lifts/purge?schoolId=${HIL}`, { token: bekker });
+  ok("a parent reads no due list", r.status === 200 && r.body.rows.length === 0);
+  r = await api(`/api/lifts/${DOUT}/purge`, { method: "POST", token: office });
+  ok("tomorrow's lift is not due", r.status === 422 && r.body.error === "not_due");
+  r = await api(`/api/lifts/${oldOffer.id}/purge`, { method: "POST", token: owner });
+  ok("the owner's key purges nothing", r.status === 403);
+  r = await api(`/api/lifts/${oldOffer.id}/purge`, { method: "POST", token: office });
+  const [gone] = await q(`select (select count(*) from lift_offer where id = $1)::int o, (select count(*) from lift_seat where offer_id = $1)::int s`, [oldOffer.id]);
+  const [logRow] = await q(`select offers, seats from lift_purge_log where school_id = $1 and season = to_char(($2::timestamptz at time zone 'Africa/Johannesburg'), 'YYYY')`,
+    [HIL, old.starts_at]);
+  ok("the office purges it: the lift and its seat are gone, a row of counts remains",
+     r.status === 200 && gone.o === 0 && gone.s === 0 && logRow?.offers === 1 && logRow.seats === 1);
+  const [named] = await q(`select count(*)::int n from notification where subject_id = $1 and kind = 'lift'
+                             and (position('Bekker' in body) > 0 or position('Cele' in body) > 0 or position('Whitfield' in body) > 0)`, [m3.id]);
+  ok("no notice on the day names anybody", named.n === 0);
+
   group("The principal withdraws the policy: every open lift is cancelled");
   r = await api("/api/lifts/policy/withdraw", { method: "POST", token: head, body: { schoolId: HIL } });
   ok("withdrawn", r.status === 200 && r.body.cancelled === 3);

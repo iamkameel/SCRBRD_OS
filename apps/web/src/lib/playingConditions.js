@@ -41,7 +41,9 @@ export const KEY_WORDS = {
   "pitch.length_m":                       { label: "Pitch length" },
   "ball.weight_g":                        { label: "Ball weight" },
   "fielding.powerplay":                   { label: "Powerplay" },
-  "target.method":                        { label: "Target method" },
+  // SCRBRD-130: the rain rule. G50 has no platform figure: the league states one, with its source.
+  "target.method":                        { label: "Rain rule: how a revised target is set", byDefault: "the umpires' revision, recorded as announced" },
+  "target.g50":                           { label: "DLS G50 (average full-innings score)", byDefault: "not set: the DLS calculator answers only where it is not needed", none: "Not set", hint: "Enter the figure your league's document gives (the ICC's section 06 states one for lower levels of the game), and cite it." },
   "bowling.rest_overs_between_spells":    { label: "Rest between spells" },
   "eligibility.max_overage_players":      { label: "Overage players allowed" },
 };
@@ -68,7 +70,7 @@ const ENUM_WORDS = {
   run_rate_ratio: "Run rate ratio", batting_bowling: "Batting and bowling",
   standard: "Standard", points: "Points", runs: "Runs",
   wins: "Wins", nrr: "Net run rate", head_to_head: "Head to head", fewer_losses: "Fewer losses",
-  umpires_revision: "The umpires' revision",
+  umpires_revision: "The umpires' revision", dls_standard: "DLS Standard Edition",
 };
 
 /** @param {string} key */
