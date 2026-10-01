@@ -4379,6 +4379,19 @@ rules the design must hold, as agreed with Kameel:
 7. **The school decides.** A module off by default; the principal switches it on with the school's own lift policy.
 Fable designs (on its list since 2026-09-30); Opus builds the schema, policy and RLS; Sonnet the screens.
 **Designed 2026-09-30:** `docs/design/SCRBRD-124_lift_clubs.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D18 as recommended** (D9 three years; D11's words as drafted). Four phases; the module goes live for a school after phase 2.
+<!-- ── SCRBRD-124 phase 1, as built ── -->
+**Phase 1 built 2026-10-01 (Opus): `db/70_lift_clubs.sql`, the arrangement.** Five tables (not the bar), hand-written,
+SELECT only for the application, the RESTRICTIVE cuts and the pad guard; `transport.lift.arrange/.receive/.oversee/.policy`;
+the `lift_club` module **off for every school** (live only after phase 2, and then only with the principal's signed policy);
+§1.4's functions down to `lift_contacts()` plus `lift_offers_for()`, `my_lift_standing()`, `lift_summary()`; the fixture
+trigger beside db/65's; the link triggers; `services/api/write/lift-api.mjs`; the screens (policy on Settings → School,
+standing and declaration on Settings → Me, the Lifts block, offer form, driver's card and office counts on the Squad
+screen until STEP 4's P3 and Family exist). Proof: db/99 §48 (55 guards broken and seen red), `smoke-lifts` (53),
+`smoke-browser-lifts` (41). Departures and five questions for Kameel (the driver's number as a pointer to her own child's
+emergency contact, since no adult phone exists; pending processing consent; a lone passenger left by a withdrawal; a pupil
+who is also a guardian; who is told) are in the design's "As built". **Next: phase 2, the day** (marks, receive,
+resolve, `my_lifts()`, the watch, the purge), then phase 3.
+<!-- ── end SCRBRD-124 phase 1 ── -->
 
 ### SCRBRD-125 — Roles scoped to a competition
 **Priority:** P3 (before a second league) · **Domain:** RBAC · **Type:** design + build (found 2026-09-30, SCRBRD-120 §9.4)

@@ -1,8 +1,36 @@
 # SCRBRD-124 — Parent lift clubs: the design
 
-**Status:** design, for Kameel's review (2026-09-30). Nothing here is built. Every number that is not already in the repository is an **assumption** and is marked as one.
+**Status:** design, decided (2026-09-30). **Phase 1 built as db/70 (2026-10-01): see "As built" below.** Phases 2 and 3 are not built. Every number that is not already in the repository is an **assumption** and is marked as one.
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md` SCRBRD-124 (the seven rules) and SCRBRD-122 (reconfirmation when a fixture changes); `docs/design/SAFEGUARDING_DSO.md`; `docs/policy/CSA_SAFEGUARDING_CHECK.md`; `db/08` (vehicle, trip, `trip_mark()`, `match_availability`), `db/41`, `db/56`, `db/62`; `docs/design/STEP4_parent_pupil.md` for where a family's screens live. The earlier build (`iamkameel/scrbrd` at 0a90c71) was read for its one idea worth keeping: an arrangement is confirmed only while the guardian's, the driver's and the fixture's versions all agree.
 **Reader:** the product owner and information officer first; then Opus, who builds §2–§6 and §8; then Sonnet, who builds the screens named in §8. Plain words open each section.
+
+---
+
+## As built — phase 1, the arrangement (db/70, 2026-10-01, Opus)
+
+**Built, against §8's phase 1 row.** The five tables of §1.2 (not the bar) hand-written in `db/70_lift_clubs.sql`, SELECT only for the application, each with the RESTRICTIVE cuts (support session, platform-wide, and pupil on the four family tables) and db/50's pad guard; `transport.lift.arrange / .receive / .oversee / .policy` (`ADDED_SINCE_01`); the `lift_club` module, **off for every school**; §1.4's functions down to `lift_contacts()`, with `lift_offers_for()`, `my_lift_standing()` and `lift_summary()` (counts only); `lift_seat_live`; the fixture trigger of §1.5 (`lift_fixture_moved`, beside db/65's `availability_ask_again` on `match`); the link triggers of §6.4 (deferred, on `assignment_subject`, a guardian's `role_assignment` and `team_membership`); the routes (`services/api/write/lift-api.mjs`, twenty, mounted as `LIFT_ROUTES`); the screens — the principal's policy (Settings → School), the parent's standing line and yearly declaration (Settings → Me), and on the Squad screen beside Availability the Lifts block (offers, ask, status words, withdraw, confirm again), the offer form (a round trip is two offers in one transaction), the driver's card (requests accepted together or declined, reaffirm, close, cancel) and the office's counts. `lift_seat`, `lift_offer` and `lift_driver_declaration` are never public (N4, `public.mjs`). Proof: `db/99` §48 (55 breaks of db/70 each seen red, then green restored), `tools/smoke-lifts.mjs` (53) and `tools/smoke-browser-lifts.mjs` (41), and a LIFT group in the separation suite.
+
+**Where it departs from this document, and why** (each also in db/70's header):
+
+1. **The driver's number.** §1.4 reads "the consenting guardian's name and phone (`app_user`)"; `app_user` has no phone, and no adult parent's number is held anywhere on the platform. The declaration names one of her own child's `emergency_contact` rows as the number to ring her on (`reach_contact_id`, a pointer, read live by `lift_contacts()` on the day). No lift row holds a number. The driver reads each confirmed boy's own emergency contacts, where his guardian's number is.
+2. **`transport.lift.oversee`** is held by schooladmin, sportsadmin and transportcoordinator — the holders of `transport.manage` in `roles.mjs` (the design assumed directorofsport, who holds `transport.read` only).
+3. **receive and oversee read no lift table directly.** §2.3 gave them table reads; §8's proof says a coach reads zero `lift_offer` rows, and §5.1/D10 keep passenger lists from the office. They reach lifts only through the logged functions: `lift_passengers()` (the out leg's receiver) and `lift_summary()` (counts).
+4. **"The fixture is cancelled"** is `match.status = 'abandoned'`: the vocabulary has no `cancelled`.
+5. **D5, the lone passenger.** "Accept refuses while the confirmed count would be one" would refuse the first acceptance on every offer under a refusing policy. `lift_seat_accept()` takes several seats of one offer at once and judges the count they leave.
+6. **`lift_offer.driver_version`**, the version the driver last stood behind, so a seat that is only requested can read `awaiting_driver` after a fixture move. Also added: `lift_seat.team_code`, `guardian_assignment_id` (the link's key is three columns), `ended_at`/`ended_by`; one live offer per driver per fixture per leg; a way home meets after the start.
+7. **A live link, for a lift,** also has its processing consent not withdrawn (§6.3).
+8. **Clearance (D4)** accepts `current` and `expiring` (both live); lapsed, revoked and missing refuse.
+9. **No name in any notice body** (§5.2 is stricter than §1.4's examples).
+10. **The screens sit where they can today:** STEP 4's P3 and Family are not built, so the Lifts block is on the Squad screen beside Availability and the declaration on Settings → Me. The pupil's own request (from eighteen) works through the API; phase 1 draws no screen for it.
+
+**For Kameel** (privacy and safeguarding judgements made in the build):
+
+- **The driver's number** (departure 1) discloses the contact row she chose — her name and number on her son's card — to the guardians of confirmed boys, on the day only, logged. As information officer: is that pointer acceptable, or should an adult's own number be a field on her account (a new collection, read by herself and by this one door)?
+- **Pending processing consent.** A link verified but with processing consent still `pending` (the seed's N Cele) may arrange lifts; only `withdrawn` stops it. Require `granted`?
+- **A withdrawal can leave a lone passenger** confirmed under a policy refusing one-to-one. The platform reassigns nobody (D18), so the seat stays; the families see the count. Should it instead fall back to "not confirmed"?
+- **A pupil who is also a verified guardian** (an eighteen-year-old linked to his brother) reads no lift row and never drives, but may ask a seat for his brother through the guardian path; `lift_contacts()` then gives him no number (rule 4). Refuse pupils that path too?
+- **Every live guardian of a boy** is told when his seat is confirmed, declined or cancelled — not only the one who asked (D13's "either may").
+- **The policy template** (`LIFT_POLICY_TEMPLATE`, apps/web/src/views/lifts.jsx) is a draft in the design's points, awaiting your words.
 
 ---
 

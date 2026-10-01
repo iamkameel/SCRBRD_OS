@@ -356,6 +356,35 @@ In development and in the walks the photos go to a local directory
 (`SCOREBOOK_STORE_DIR`, default under the OS temp directory); that backend
 refuses to exist when `NODE_ENV=production`.
 
+<!-- ── SCRBRD-124 phase 1: parent lift clubs (db/70) ── -->
+#### Parent lift clubs (SCRBRD-124, db/70)
+
+`db/70_lift_clubs.sql` adds the arrangement half of parent lift clubs:
+parents offer seats in their own cars to their own son's fixtures, other
+parents ask for a seat for theirs, and a seat is confirmed only while the
+boy's guardian and the driver have both said yes to the lift as it now
+stands. It needs no secret. The day's marks (left, boy in, handed over,
+received) are phase 2 and are **not** in this file.
+
+**Do not grant it to a school yet.** The module `lift_club` arrives **off**
+for every school, and the design puts it live only after phase 2: an
+arrangement with no record of the day is a noticeboard. When it is time, it
+takes two keys, in this order:
+
+1. The platform grants `lift_club` to the school (Settings → Modules, as a
+   `platform.feature.manage` holder).
+2. The school's principal signs the school's lift policy (Settings → School,
+   "Lift clubs at …"). Until a signed policy stands, nothing is live; the
+   principal's withdrawing it cancels every open lift at the school at once
+   and tells the families.
+
+Taking the grant back stops new arrangements everywhere at the school at
+once; a family's withdrawal, a driver's or the office's cancel, and the
+policy's withdrawal are never switched off. The paste is
+`node tools/bundle-sql.mjs --apply 70`, then the verify bundle (§48 is its
+proof).
+<!-- ── end SCRBRD-124 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh
