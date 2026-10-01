@@ -119,6 +119,8 @@ export const REFUSAL_CAUSE = Object.freeze({
   consent_not_retired_out: () => "The opposing captain's consent is only for a batter who retired out. Was it recorded for the wrong batter?",
   crease_occupied: () => "A batter who is not out was replaced. Was the wicket recorded first?",
   not_at_crease: () => "That batter is not in. Was it the other one?",
+  // SCRBRD-126. No name: the keeper's is not one of the fold's batters or bowlers.
+  stumped_not_keeper: () => "Only the wicket-keeper stumps a batter. Did the gloves change hands? Record the new keeper first.",
   void_not_latest: () => "Something was recorded after it. Undo that first, or ask for an amendment.",
   void_already_voided: () => "It was already undone, perhaps on another device.",
   short_run_unmatched: () => "The five for short running go straight after that delivery, recorded with no runs.",

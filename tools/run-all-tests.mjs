@@ -28,6 +28,9 @@ const SUITES = [
   ["readiness","packages/scoring/test/readiness.test.mjs"],
   // What a scoring command may be: the Laws the server enforces at commit.
   ["laws",     "packages/scoring/test/laws.test.mjs"],
+  // The wicket-keeper (SCRBRD-126): the event, the keeper at each ball, his
+  // catches and stumpings, a stumping only his (Law 39), the words.
+  ["keeper",   "packages/scoring/test/keeper.test.mjs"],
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],

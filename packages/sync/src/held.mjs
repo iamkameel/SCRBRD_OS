@@ -334,6 +334,8 @@ export function describeEvent(ev, inn, find) {
       }
     }
     case "bowler":  return `Bowler — ${n(ev.bowler)} to bowl${ev.reason ? ` (takes over mid-over: ${ev.reason === "suspended" ? "bowler suspended" : "injury"})` : ""}`;
+    // SCRBRD-126.
+    case "keeper":  return `Wicket-keeper — ${n(ev.keeper)}`;
     case "batters": {
       const who = [ev.striker != null ? `${n(ev.striker)} (on strike)` : null,
                    ev.nonStriker != null ? n(ev.nonStriker) : null].filter(Boolean);

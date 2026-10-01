@@ -51,7 +51,7 @@ import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_
 import { WITHDRAWN_PENALTY_REASONS } from "./events.mjs";
 import { FACES_NEXT, FACES_NEXT_VALUES, NOT_IN_OVER, suspensionScope, normaliseDismissal } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
-import { retirementDismissal, isMidOver } from "./replay.mjs";
+import { retirementDismissal, isMidOver, isKeeperRef, keeperOf } from "./replay.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
 
@@ -82,6 +82,8 @@ export const REFUSAL = Object.freeze({
   CONSENT_NOT_RETIRED_OUT: "consent_not_retired_out", // the captain's consent, for nobody who retired out (SCRBRD-071)
   CREASE_OCCUPIED:        "crease_occupied",        // a not-out batter replaced without leaving
   NOT_AT_CREASE:          "not_at_crease",          // dismissed / retiring batter is not batting
+  // The wicket-keeper (SCRBRD-126). Law 39: a stumping is the keeper's.
+  STUMPED_NOT_KEEPER:     "stumped_not_keeper",     // a stumping credited to a fielder who was not keeping
   CONSECUTIVE_OVERS:      "consecutive_overs",      // Law 17.6: not two overs, or parts, running
   MID_OVER_NO_REASON:     "mid_over_no_reason",     // Law 17.7.1: a change during an over says why (SCRBRD-080)
   // A dismissal with no delivery (SCRBRD-081).
@@ -143,6 +145,8 @@ export const REFUSAL_TEXT = Object.freeze({
   consent_not_retired_out: "the opposing captain's consent was recorded for a batter who had not retired out",
   crease_occupied: "a batter who is not out was replaced",
   not_at_crease: "that batter is not at the crease",
+  // Law 39. No clause number in the words.
+  stumped_not_keeper: "a stumping is the wicket-keeper's, and the fielder named was not the keeper at that ball",
   consecutive_overs: "a bowler may not bowl two overs in a row",
   // Law 17.7.1. No clause number in the words: Kameel is verifying them against the current Code.
   mid_over_no_reason: "the bowler was changed during an over without saying why — injury or suspension",
@@ -191,11 +195,12 @@ export const REFUSAL_TEXT = Object.freeze({
 /** Events that happen at the crease and so need the innings to be in play.
  *  @type {ReadonlySet<unknown>}  asked of any event's kind, or of none */
 const PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.RETIRE, KIND.INNINGS_END, KIND.BOWLER_SUSPENDED,
-                      KIND.INNINGS_SUMMARY]);
+                      KIND.INNINGS_SUMMARY, KIND.KEEPER]);
 
 /** Play on the pad: the kinds an innings from a scorebook takes none of (SCRBRD-120).
  *  @type {ReadonlySet<unknown>} */
-const LIVE_PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.PENALTY, KIND.RETIRE, KIND.BOWLER_SUSPENDED]);
+const LIVE_PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.PENALTY, KIND.RETIRE, KIND.BOWLER_SUSPENDED,
+                           KIND.KEEPER]);
 
 /**
  * Why this event may not be added to this match, or null when it may.
@@ -286,6 +291,13 @@ export function lawsRefusal(match, ev) {
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : null;
     case KIND.BOWLER_SUSPENDED:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : suspensionRefusal(innings, inn, i, ev, edition);
+    // The wicket-keeper (SCRBRD-126): named at the start of an innings and on
+    // every change, mid-over included (a keeper hurt hands the gloves on
+    // while the bowler bowls on). An innings must be open for him to keep
+    // in; a later innings with play, or one from a paper scorebook, is
+    // refused above, as for everything at the crease.
+    case KIND.KEEPER:
+      return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : null;
     case KIND.INNINGS_SUMMARY:
       return summaryLawRefusal(innings, inn, i, match?.events?.[i]);
     default:
@@ -500,6 +512,20 @@ function ballRefusal(innings, inn, i, ev, edition) {
   if ((ev.type ?? BALL_TYPE.RUN) === BALL_TYPE.WICKET && ev.dismissed != null
       && ev.dismissed !== inPlay.striker && ev.dismissed !== inPlay.nonStriker) {
     return REFUSAL.NOT_AT_CREASE;
+  }
+
+  // Stumped is the wicket-keeper's (Law 39; SCRBRD-126). While a keeper is
+  // on the record, a stumping that names any other fielder is refused: the
+  // fold would credit the keeper and print the other man's name on the
+  // card. With no keeper recorded — every log before SCRBRD-126, a pad
+  // that skipped the question — nothing changes; nor for a stumping with no
+  // fielder named, which the fold gives to the keeper. A stumping off a wide
+  // is not a delivery type this model writes (a wicket is its own type, W),
+  // so nothing about a wide changes.
+  if ((ev.type ?? BALL_TYPE.RUN) === BALL_TYPE.WICKET && normaliseDismissal(ev.dismissal) === DISMISSAL.STUMPED
+      && typeof ev.fielder === "string" && ev.fielder !== "") {
+    const k = keeperOf(inPlay);
+    if (k != null && !isKeeperRef(k.id, k.name, ev.fielder)) return REFUSAL.STUMPED_NOT_KEEPER;
   }
 
   // A delivery that does not count in the over (Law 17.3.2.5; SCRBRD-113):

@@ -50,7 +50,7 @@
 
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
   penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
-import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers } from "./replay.mjs";
+import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers, isKeeperRef, keeperOf } from "./replay.mjs";
 import { countsInOver } from "./events.mjs";
 import { positionName, sectorOf, batHandOf } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
@@ -67,6 +67,7 @@ export const COMMENTARY_KIND = Object.freeze({
   NEW_BATTER: "new_batter",
   BOWLER: "bowler",                 // a bowler on for the first time, or back for a new spell
   BOWLER_CHANGE: "bowler_change",   // a bowler taking over during an over (Law 17.8)
+  KEEPER: "keeper",                 // the wicket-keeper named, or the gloves changing hands (SCRBRD-126)
   BALL: "ball",
   FOUR: "four",
   SIX: "six",
@@ -220,6 +221,7 @@ function shotPhrase(b, prep = "to", batHand = "R") {
  * @property {Map<string, {runs: number, balls: number, wickets: number}>} bowl
  * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} cp
  * @property {number} changes  bowler changes during an over, so far
+ * @property {string | null} keeper  the wicket-keeper (SCRBRD-126), or null: none recorded
  */
 
 /** @param {Innings} inn  @returns {Snap} */
@@ -232,6 +234,7 @@ function snap(inn) {
     bowl: new Map(inn.bowlers.map((b) => [b.id, { runs: b.runs, balls: b.balls, wickets: b.wickets }])),
     cp: { ...inn.curPartner },
     changes: inn.bowlerChanges.length,
+    keeper: inn.keeper ?? null,
   };
 }
 
@@ -239,6 +242,7 @@ function snap(inn) {
 const openingSnap = (carried) => ({
   runs: carried, wickets: 0, balls: 0, freeHit: false, striker: null, nonStriker: null, bowler: null,
   target: null, overs: 20, bat: new Map(), bowl: new Map(), cp: { runs: 0, balls: 0, bat1: null, bat2: null }, changes: 0,
+  keeper: null,
 });
 
 /**
@@ -337,6 +341,10 @@ export function deriveCommentary(events = [], options = {}) {
     // For the hat-trick: three in three, as the pad's own overlay counts it.
     /** @type {Map<string, boolean[]>} */ const bowlerRun = new Map();
     /** @type {{at: number, balls: number} | null} */ let lastAnnounce = null;
+    // The last keeper line, while no ball has been bowled since it: a keeper
+    // named again then replaces it (the scorer changed his mind), saying who
+    // had the gloves before either.
+    /** @type {{at: number, balls: number, from: string | null} | null} */ let lastKeeper = null;
     let batTeam = "";
 
     /**
@@ -460,6 +468,7 @@ export function deriveCommentary(events = [], options = {}) {
           // mind, so the earlier announcement goes and this one stands.
           if (lastAnnounce && lastAnnounce.balls === cur.balls) {
             out.splice(lastAnnounce.at, 1);
+            if (lastKeeper && lastKeeper.at > lastAnnounce.at) lastKeeper.at--;
             lastAnnounce = null;
           }
           // Said when a bowler comes on: for the first time in the innings, or
@@ -479,10 +488,37 @@ export function deriveCommentary(events = [], options = {}) {
           break;
         }
 
+        // The wicket-keeper (SCRBRD-126): named at the start, and each time
+        // the gloves change hands. Named again before a ball, the earlier
+        // line goes. A keeper the caller does not name is told only as a
+        // change, never as "the keeper keeps wicket".
+        case KIND.KEEPER: {
+          if (cur.keeper == null) break;
+          let from = prev.keeper;
+          if (lastKeeper && lastKeeper.balls === cur.balls) {
+            out.splice(lastKeeper.at, 1);
+            if (lastAnnounce && lastAnnounce.at > lastKeeper.at) lastAnnounce.at--;
+            from = lastKeeper.from;
+            lastKeeper = null;
+          }
+          if (cur.keeper === from) break;
+          const K = who(cur.keeper, "keeper");
+          const named = K !== ROLE_WORDS.keeper;
+          const text = from == null
+            ? (named ? choose(key, "keep", [`${K} keeps wicket for ${fieldTeam}.`, `${K} has the gloves for ${fieldTeam}.`]) : null)
+            : named ? `${K} takes the gloves from ${who(from, "keeper")}.` : "The gloves change hands: a new wicket-keeper.";
+          if (text == null) break;
+          const pos = afterLast();
+          lastKeeper = { at: out.length, balls: cur.balls, from };
+          push(key, pos.over, pos.ball, COMMENTARY_KIND.KEEPER, text);
+          break;
+        }
+
         case KIND.BALL: {
           const entry = inn.ballLog[inn.ballLog.length - 1];
           lastBall = entry;
           lastAnnounce = null;
+          lastKeeper = null;
           const bowlerId = entry.bowlerId ?? ev.bowler ?? null;
           const strikerId = entry.strikerId ?? ev.striker ?? null;
           if (bowlerId != null && !overBowler.has(entry.over)) overBowler.set(entry.over, bowlerId);
@@ -491,7 +527,7 @@ export function deriveCommentary(events = [], options = {}) {
             && normalisePenaltyReason(next.reason, false) === PENALTY_REASON.SHORT_RUNNING;
           const { kind, text } = deliveryLine(ev, entry, {
             key, B: who(bowlerId, "bowler"), S: who(strikerId, "striker"), who, prev, cur, shortRun, score: score(cur),
-            hand: batHandOf(inn, strikerId),
+            hand: batHandOf(inn, strikerId), keeperName: keeperOf(inn)?.name ?? null,
           });
           push(key, entry.over, entry.ballInOver + 1, kind, text);
 
@@ -692,6 +728,7 @@ function countedAfter(evs) {
  * @property {boolean} shortRun  the next event disallows this ball's runs (Law 18.5)
  * @property {string} score  "Hilton 43/3." after the ball
  * @property {"R" | "L"} hand  the striker's (batHandOf): which way a sector-era ball's seg reads
+ * @property {string | null} keeperName  the wicket-keeper's name as the fold has it (SCRBRD-126), or null
  */
 
 /**
@@ -748,7 +785,11 @@ function deliveryLine(ev, entry, c) {
     case BALL_TYPE.WICKET: {
       const mode = normaliseDismissal(ev.dismissal);
       const outId = ev.dismissed ?? entry.strikerId ?? null;
-      const F = ev.fielder ? who(ev.fielder, mode === DISMISSAL.STUMPED ? "keeper" : "fielder") : null;
+      // The keeper at the ball (SCRBRD-126): a catch credited to him is
+      // caught behind, and a stumping with no fielder named is his.
+      const byKeeper = isKeeperRef(entry.keeperId, c.keeperName, ev.fielder);
+      const fielderRef = ev.fielder || (mode === DISMISSAL.STUMPED ? entry.keeperId ?? null : null);
+      const F = fielderRef ? who(fielderRef, mode === DISMISSAL.STUMPED || byKeeper ? "keeper" : "fielder") : null;
       const area = areaOf(entry, hand);
       /** @type {string} */
       let method;
@@ -762,6 +803,7 @@ function deliveryLine(ev, entry, c) {
           // role word never matches ("a fielder", "the bowler"), so a public
           // line does not claim it.
           method = F != null && F === B ? `${shot ? `${shot} and ` : ""}caught and bowled`
+            : byKeeper ? `${shot ? `${shot} and ` : ""}caught behind${F && F !== ROLE_WORDS.keeper ? ` by ${F}` : ""}`
             : `${shot ? `${shot} and ` : ""}caught${F ? ` by ${F}` : ""}${where}`;
           break;
         }

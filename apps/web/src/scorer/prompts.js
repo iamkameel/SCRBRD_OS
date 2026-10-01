@@ -143,6 +143,8 @@ export function undoWords(ev, inn) {
       return names.length === 2 ? `${names[0]} and ${names[1]} in` : names.length ? `${names[0]} in` : "the batters";
     }
     case "bowler": return `${who(ev.bowler, "the bowler")} to bowl`;
+    // SCRBRD-126: his name from the fold's own record of who kept, never an id.
+    case "keeper": return `${foldName({ batsmen: inn?.keepers ?? [] }, ev.keeper, "the new keeper")} keeping wicket`;
     case "penalty": return `${plural(Number(ev.runs ?? 5), "penalty run")}${ev.toBattingTeam === false ? " to the fielding side" : ""}`;
     case "retire": {
       const n = who(ev.batter, "the batter");

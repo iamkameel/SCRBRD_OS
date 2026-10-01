@@ -99,7 +99,21 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   over: number,
  *   ballInOver: number,
  *   freeHitSaved?: boolean,
+ *   keeperId?: string,
  * }} BallLogEntry
+ *
+ * `keeperId` is the wicket-keeper when the delivery was bowled (SCRBRD-126):
+ * present only once a `keeper` event has named one, so every entry of a log
+ * with none is the object it always was.
+ */
+
+/**
+ * One man's keeping in an innings (SCRBRD-126): who, his name as the squads
+ * gave it when he was named, and the dismissals he made as keeper — a catch
+ * credited to him while he kept, and every stumping while he kept (Law 39: a
+ * stumping is the wicket-keeper's alone). Only wickets that stand: a catch a
+ * free hit saved is nobody's.
+ * @typedef {{id: string, name: string, catches: number, stumpings: number}} Keeping
  */
 
 /**
@@ -172,6 +186,11 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {string | null} striker
  * @property {string | null} nonStriker
  * @property {string | null | undefined} bowler
+ * @property {string | null} keeper  the fielding side's wicket-keeper now (SCRBRD-126): the
+ *   last `keeper` event's, null until one. Not cleared at an over's end
+ * @property {Keeping[]} keepers     everyone who kept in this innings, in the order each
+ *   was first named, with the catches and stumpings each made as keeper. Empty
+ *   in a log with no keeper event, and in an innings from a paper scorebook
  * @property {boolean} complete      the laws' answer, or a seal's
  * @property {string | null} endReason one of INNINGS_END_REASON
  * @property {boolean} freeHit
@@ -366,6 +385,9 @@ function inningsFolder(ctx = {}, carried = 0) {
     ballLog: [], overLog: [],
 
     striker: null, nonStriker: null, bowler: null,
+    // The wicket-keeper (SCRBRD-126): state, as the bowler is, set by a
+    // `keeper` event and kept until the next one.
+    keeper: null, keepers: [],
     complete: false, endReason: null, freeHit: false,
     // Over and closed are different facts. `complete` is the laws' answer and
     // needs nobody's permission; `sealed` means a scorer read the figures back
@@ -422,6 +444,14 @@ function inningsFolder(ctx = {}, carried = 0) {
   };
 
   const rotate = () => { const s = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = s; };
+
+  // The keeper's name as the squads gave it when he was named (SCRBRD-126).
+  // A fielder is the keeper when the event names his reference or this name
+  // (isKeeperRef): the pad's wicket sheet writes a fielder by name. db/68
+  // reads the same name the same way, from the innings_start before the
+  // keeper event.
+  /** @type {string | null} */
+  let keeperName = null;
 
   /**
    * Put whoever was chosen on strike for the next ball (FACES_NEXT). `s0`
@@ -543,6 +573,7 @@ function inningsFolder(ctx = {}, carried = 0) {
       ...ev,
       strikerId: inn.striker, bowlerId: inn.bowler,
       over: Math.floor(at / 6), ballInOver: at % 6,
+      ...(inn.keeper != null ? { keeperId: inn.keeper } : {}),
     };
     inn.ballLog.push(entry);
     const last = inn.overLog[inn.overLog.length - 1];
@@ -624,6 +655,23 @@ function inningsFolder(ctx = {}, carried = 0) {
         bowlerFor(ev.bowler);
         inn.bowler = ev.bowler;
         break;
+
+      // The wicket-keeper from here on (SCRBRD-126): state, as the bowler
+      // is. He is on the record of who kept from the first time he is named,
+      // and his dismissals are counted at the wicket (the BALL case).
+      case KIND.KEEPER: {
+        const id = ev.keeper ?? null;
+        inn.keeper = id;
+        keeperName = nameOf(id);
+        if (id != null) {
+          // Named again (the gloves back after a spell without them): the
+          // same line, under his name as the squads give it now.
+          const had = inn.keepers.find((k) => k.id === id);
+          if (had) had.name = /** @type {string} */ (keeperName);
+          else inn.keepers.push({ id, name: /** @type {string} */ (keeperName), catches: 0, stumpings: 0 });
+        }
+        break;
+      }
 
       // The umpires suspended a bowler (Law 41; SCRBRD-094 item 2). Recorded,
       // and nothing else: no figure moves, and the bowler stays "on" until
@@ -861,9 +909,15 @@ function inningsFolder(ctx = {}, carried = 0) {
             inn.wickets += 1;
             if (outBat) {
               outBat.status = BAT_STATUS.OUT;
-              outBat.dismissal = describeDismissal(ev, nameOf(inn.bowler));
+              outBat.dismissal = describeDismissal(ev, nameOf(inn.bowler), mode === DISMISSAL.STUMPED ? keeperName : null);
             }
             if (bow && chargedToBowler(mode)) bow.wickets += 1;
+            // The keeper's (SCRBRD-126): every stumping while he keeps (Law
+            // 39), and a catch the event credits to him by his reference or
+            // his name. Nothing while no keeper is on the record.
+            const k = inn.keeper == null ? null : inn.keepers.find((x) => x.id === inn.keeper);
+            if (k && mode === DISMISSAL.STUMPED) k.stumpings += 1;
+            else if (k && mode === DISMISSAL.CAUGHT && isKeeperRef(inn.keeper, keeperName, ev.fielder)) k.catches += 1;
             inn.fow.push({
               runs: inn.runs, wickets: inn.wickets,
               batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls),
@@ -1114,14 +1168,48 @@ function settleInnings(inn) {
 }
 
 /**
+ * Is this fielder the keeper (SCRBRD-126)? The event names him by his
+ * reference (an id, or the typed name he was recorded under) or by his name
+ * as the squads gave it when he was named — the pad's wicket sheet writes a
+ * fielder by name. Nobody is the keeper while none is recorded. One rule:
+ * the fold's keeper catches, the Laws' stumping check (laws.mjs) and, in
+ * SQL, db/68's keeper_dismissal all read it.
+ * @param {string | null | undefined} keeperRef  inn.keeper
+ * @param {string | null | undefined} keeperName  his name when he was named
+ * @param {unknown} fielder  the event's
+ * @returns {boolean}
+ */
+export function isKeeperRef(keeperRef, keeperName, fielder) {
+  if (keeperRef == null || typeof fielder !== "string" || fielder === "") return false;
+  return fielder === keeperRef || (keeperName != null && fielder === keeperName);
+}
+
+/**
+ * The keeper now and his name (SCRBRD-126), for a reader holding the fold:
+ * the Laws, the pad's wicket sheet, the scorecard. Null while none is
+ * recorded.
+ * @param {{keeper?: string | null, keepers?: Keeping[]} | null | undefined} inn
+ * @returns {{id: string, name: string} | null}
+ */
+export function keeperOf(inn) {
+  const id = inn?.keeper ?? null;
+  if (id == null) return null;
+  const k = (inn?.keepers ?? []).find((x) => x.id === id);
+  return { id, name: k?.name ?? id };
+}
+
+/**
  * The scorecard line, from the canonical dismissal.
  * @param {LoggedBall} ev
  * @param {string | null} bowlerName
+ * @param {string | null} [keeperName]  a stumping with no fielder named is
+ *   the keeper's (SCRBRD-126): his name, when one is recorded
  * @returns {string}
  */
-function describeDismissal(ev, bowlerName) {
+function describeDismissal(ev, bowlerName, keeperName = null) {
   const mode = normaliseDismissal(ev.dismissal);
-  const f = ev.fielder ? ` ${ev.fielder}` : "";
+  const fielder = ev.fielder || (mode === DISMISSAL.STUMPED ? keeperName : null);
+  const f = fielder ? ` ${fielder}` : "";
   const b = bowlerName ?? "?";
   switch (mode) {
     case DISMISSAL.RUN_OUT:    return `run out${ev.fielder ? ` (${ev.fielder})` : ""}`;

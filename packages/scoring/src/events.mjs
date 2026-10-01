@@ -65,6 +65,7 @@ export const KIND = /** @type {const} */ ({
   VOID:          "void",          // undoes an earlier event that has already synced
   BOWLER_SUSPENDED: "bowler_suspended", // the umpires suspended a bowler (Law 41, SCRBRD-094 item 2)
   INNINGS_SUMMARY: "innings_summary",   // an innings known by its figures, from a paper scorebook (SCRBRD-120)
+  KEEPER: "keeper",               // the fielding side's wicket-keeper, from this point of the innings (SCRBRD-126)
 });
 /** @typedef {typeof KIND[keyof typeof KIND]} Kind */
 
@@ -788,6 +789,12 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
 /** @typedef {BaseInput & {bowler?: string | null, reason?: string | null}} BowlerInput */
 
 /**
+ * The fielding side's wicket-keeper from this point of the innings (SCRBRD-126).
+ * @typedef {EventBase & {kind: "keeper", keeper: string | null}} KeeperEvent
+ */
+/** @typedef {BaseInput & {keeper?: string | null}} KeeperInput */
+
+/**
  * The umpires suspended a bowler (SCRBRD-094 item 2). `scope` is the reason's
  * (SUSPENSION_REASON_SCOPE); see bowlerSuspended().
  * @typedef {EventBase & {kind: "bowler_suspended", bowler: string | null, reason: SuspensionReason,
@@ -921,7 +928,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  * Any event a constructor here can build.
  * @typedef {InningsStartEvent | BattersEvent | BowlerEvent | BallEvent | PenaltyEvent
  *   | RetireEvent | VoidEvent | RevisionEvent | InningsEndEvent | BowlerSuspendedEvent
- *   | InningsSummaryEvent} ScoringEvent
+ *   | InningsSummaryEvent | KeeperEvent} ScoringEvent
  */
 
 /**
@@ -945,7 +952,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  * @typedef {Loose<InningsStartEvent> | Loose<BattersEvent> | Loose<BowlerEvent>
  *   | Loose<BallEvent> | Loose<PenaltyEvent> | Loose<RetireEvent> | Loose<VoidEvent>
  *   | Loose<RevisionEvent> | Loose<InningsEndEvent> | Loose<BowlerSuspendedEvent>
- *   | Loose<InningsSummaryEvent>} LogEvent
+ *   | Loose<InningsSummaryEvent> | Loose<KeeperEvent>} LogEvent
  */
 
 // ── Constructors ─────────────────────────────────────────
@@ -1101,6 +1108,39 @@ export const bowler = (o) => {
     ...(o.reason != null ? { reason: /** @type {BowlerChangeReason} */ (o.reason) } : {}),
   };
 };
+
+/**
+ * The fielding side's wicket-keeper, from this point of the innings on
+ * (SCRBRD-126). Set as the bowler is: as STATE at a point in the log, not
+ * typed on every ball. The pad asks for him with the opening bowler, and
+ * records one of these on every change — at an over's start, or mid-over
+ * after an injury. The fold stamps the keeper on each delivery after it
+ * (BallLogEntry.keeperId), credits him with his catches and stumpings
+ * (Innings.keepers), and the Laws refuse a stumping credited to anyone else
+ * while one is recorded (Law 39: a stumping is the wicket-keeper's).
+ *
+ * WHY A KIND OF ITS OWN, and not a field on `bowler`: the keeper changes on
+ * his own clock. A keeper hurt mid-over hands the gloves on while the same
+ * bowler bowls on, and a field on `bowler` would need a bowler event that is
+ * no change of bowler — which the fold would read as one (bowlerChanges) and
+ * the Laws would judge as one (Law 17.6, 17.7.1). A new kind changes nothing
+ * that exists: the fold, the Laws, the commentary and every SQL reader
+ * ignore a kind they do not know (`default: break`; `kind = 'ball'`), so a
+ * log with no keeper event folds exactly as it did, and an older device
+ * that receives one skips it. Nothing is added to any other event.
+ *
+ * `keeper` is a player reference as `bowler` is: an id where SCRBRD holds
+ * a row, a typed name where it does not. It always rides in the payload
+ * (there is no column for it; db/68 reads it there). Null says nobody is
+ * keeping — a log may say so; the pad never does.
+ *
+ * @param {KeeperInput} o
+ * @returns {KeeperEvent}
+ */
+export const keeper = (o) => ({
+  ...base(KIND.KEEPER, o),
+  keeper: o.keeper ?? null,
+});
 
 /**
  * The umpires suspended a bowler (Law 41; SCRBRD-094 item 2). Recorded as
