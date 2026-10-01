@@ -156,7 +156,9 @@ export const READ_QUERIES = {
             order by m.starts_at desc`,
   },
   live_score: {
-    text: `select match_id, innings, runs, wickets, legal_balls, last_seq, last_ball_at
+    // super_over (db/71): the nth super over, NULL for a match innings — the
+    // board's and the scorecard's "Super over 1" block.
+    text: `select match_id, innings, runs, wickets, legal_balls, last_seq, last_ball_at, super_over
              from match_live_score
             where match_id = $1
             order by innings`,
@@ -251,7 +253,9 @@ export const READ_QUERIES = {
                   -- with the balls that should have had one and do not.
                   -- NULL is undeclared, which reads exactly as before.
                   d.declared_profile
-             from ball_event_live b
+             -- The career log (db/71): a super over's shots are no part of
+             -- where a boy scores (SCRBRD-114 phase 3b, design §4).
+             from ball_event_career b
              join match m on m.id = b.match_id
              left join innings_declared_profile d
                     on d.match_id = b.match_id and d.innings = b.innings
@@ -745,6 +749,9 @@ export const READ_QUERIES = {
              from ball_event_live b
              join match m on m.id = b.match_id
             where b.match_id = $1
+              -- A phase is an over number; a one-over super over would read
+              -- as a powerplay (db/71, design §4: never).
+              and b.super_over is null
             order by b.innings, b.seq`,
     params: q => [req(q, "matchId")],
     compose: composePhases,
@@ -2002,7 +2009,8 @@ export const READ_QUERIES = {
                       and ball_dismissed_batter(b.striker_id, b.dismissed_id, b.payload) = b.striker_id
                       and ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal)
                   )::int                                                       as dismissals
-             from ball_event_live b
+             -- The career log (db/71): a super over is no matchup's evidence.
+             from ball_event_career b
              join player bat  on bat.id  = b.striker_id
              join player bowl on bowl.id = b.bowler_id
             where b.kind = 'ball'
@@ -2030,7 +2038,7 @@ export const READ_QUERIES = {
     text: `select count(*) filter (where striker_id is not null and bowler_id is not null)::int as attributable,
                   count(*) filter (where striker_id is null or bowler_id is null)::int         as unattributable,
                   count(*)::int                                                                 as deliveries
-             from ball_event_live
+             from ball_event_career
             where kind = 'ball'
               and ($1::uuid is null or striker_id = $1)`,
     params: q => [q?.batterId || null],
@@ -2076,11 +2084,13 @@ export const READ_QUERIES = {
                coalesce(m.away_school_id::text, m.opponent) as rival_key,
                m.away_school_id,
                bats_first(t.won_by, t.decision) as bats_first,
+               -- The match's own innings (db/71): a super over decides who
+               -- goes through, never the match's runs (SCRBRD-114 D7).
                (select ls.runs from match_live_score ls
-                 where ls.match_id = m.id order by ls.innings asc  limit 1) as first_runs,
+                 where ls.match_id = m.id and ls.super_over is null order by ls.innings asc  limit 1) as first_runs,
                (select ls.runs from match_live_score ls
-                 where ls.match_id = m.id order by ls.innings desc limit 1) as second_runs,
-               (select count(*) from match_live_score ls where ls.match_id = m.id) as innings_played
+                 where ls.match_id = m.id and ls.super_over is null order by ls.innings desc limit 1) as second_runs,
+               (select count(*) from match_live_score ls where ls.match_id = m.id and ls.super_over is null) as innings_played
           from match m
           left join match_toss t on t.match_id = m.id
          where m.status = 'complete'
@@ -2574,7 +2584,8 @@ function ratingsQuery() {
            ),
            ev as materialized (
              select who.player_id, who.fam, b.server_ts, who.runs, who.balls, who.wickets
-               from ball_event_live b
+               -- The career log (db/71), as the three functions it is held to read it.
+               from ball_event_career b
                cross join lateral (select ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal)
                                             as stands offset 0) s
                cross join lateral (values

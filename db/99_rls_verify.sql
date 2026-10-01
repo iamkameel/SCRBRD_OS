@@ -2348,6 +2348,214 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/70 (section 48) ──────────────────────────────────────────────
 
+-- ┌── SCRBRD-114 phase 3b (db/71, section 50): the super over ──────────
+-- A Hilton cup, "Verify 071 Cup", whose matches carry a cup's document
+-- (one innings a side, a tie goes to a super over), and a Hilton league,
+-- "Verify 071 League" (win 4 / tie 2 / no result 2 / loss 0, confirmed; no
+-- tie-break: a tie stands). Every match Hilton 1XI v Westville 1XI on
+-- 3 October 2026 (the 4th Edition), one over a side, our boys by id:
+-- J Whitfield (…01) and T Bekker (…02) bat, S Naidoo (…03) bowls, M Cele
+-- (…04) keeps; Westville's K Botha (bbbb…02) bats and D Mkhize (bbbb…01)
+-- bowls; everyone else a typed name. Each match is the same tie:
+--   innings 0  Hilton: Whitfield 4 1 0 2 6 1 = 14 off Mkhize, sealed
+--   innings 1  Westville chasing 15: Botha 6 6 1 1 0 0 = 14 off Naidoo, sealed
+-- and _so_71() appends the super over each one is about:
+--   K1  Westville 8/1 (Botha 6 1, caught Cele off Naidoo; W3 1 0 0); Hilton
+--       chasing 9: Whitfield 4, bowled Mkhize; Bekker 4 1 — won, by Hilton
+--   K2  Westville 6 1, five to the fielding side (time wasting), 1 0 0 0 = 8;
+--       Hilton open on the five: Whitfield 1 1 1 1 = 9 — won, by Hilton
+--   K3  Westville bowled, bowled: 0/2 off two balls, all out; Hilton a dot
+--       ball and the light goes: sealed abandoned — incomplete
+--   K4  none: the organiser's award decides it
+--   K5  the super over opened: Westville's first ball, on the broadcast board
+--   L1  (the league) Westville 8, Hilton 9 — written directly, as the write
+--       path refuses a super over the document does not provide (D10)
+CREATE OR REPLACE FUNCTION _ev_71(p_match uuid, p_inn smallint, p_kind text, p_bt text, p_v integer, p_dis text,
+                                  p_payload jsonb, p_striker uuid DEFAULT NULL, p_bowler uuid DEFAULT NULL)
+RETURNS integer AS $$
+DECLARE v_seq integer;
+BEGIN
+  SELECT coalesce(max(b.seq), 0) + 1 INTO v_seq FROM ball_event b WHERE b.match_id = p_match;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, ball_type, value, dismissal, payload, striker_id, bowler_id)
+  VALUES (p_match, '11111111-1111-1111-1111-111111111111', v_seq, 1, p_inn, '88888888-0000-0000-0000-000000000006', 'verify-071',
+          'v71:' || p_match || ':' || v_seq, v_seq, '2026-10-03 10:00+02'::timestamptz + v_seq * interval '20 seconds',
+          p_kind, p_bt, p_v, p_dis, coalesce(p_payload, '{}'::jsonb), p_striker, p_bowler);
+  RETURN v_seq;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The squads, as the pad writes them: our boys by id, the rest by name.
+CREATE OR REPLACE FUNCTION _sq_71(p_side text) RETURNS jsonb AS $$
+  SELECT CASE p_side
+    WHEN 'H' THEN jsonb_build_array(jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000001', 'name', 'J Whitfield'),
+                                    jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000002', 'name', 'T Bekker'),
+                                    jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000003', 'name', 'S Naidoo'),
+                                    jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000004', 'name', 'M Cele'))
+                  || (SELECT jsonb_agg(jsonb_build_object('id', 'H' || g, 'name', 'H' || g)) FROM generate_series(5, 11) g)
+    ELSE jsonb_build_array(jsonb_build_object('id', 'bbbbbbbb-0000-0000-0000-000000000002', 'name', 'K Botha'),
+                           jsonb_build_object('id', 'bbbbbbbb-0000-0000-0000-000000000001', 'name', 'D Mkhize'))
+         || (SELECT jsonb_agg(jsonb_build_object('id', 'W' || g, 'name', 'W' || g)) FROM generate_series(3, 11) g) END
+$$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _seed_71() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OWNR uuid := '88888888-0000-0000-0000-000000000022';
+  WHIT uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  NAID uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
+  BOTHA uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  MKHI uuid := 'bbbbbbbb-0000-0000-0000-000000000001';
+  cup uuid; lg uuid; v1 uuid; m uuid; out jsonb := '{}';
+  cupdoc jsonb := '{"v":1,"play":{"format.kind":"limited","format.innings_per_side":1,"result.tie_break":"super_over"},"table":{},"sheet":{}}';
+  lab text; v integer;
+BEGIN
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 071 Cup', 'knockout', 'T20', 'school') RETURNING id INTO cup;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES
+    (cup, HIL, '1XI', 'Verify 071 Hilton 1st XI'), (cup, WES, '1XI', 'Verify 071 Westville 1st XI');
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 071 League', 'league', 'T20', 'school') RETURNING id INTO lg;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES
+    (lg, HIL, '1XI', 'Verify 071 Hilton 1st XI'), (lg, WES, '1XI', 'Verify 071 Westville 1st XI');
+  INSERT INTO condition_set (competition_id, version, title, effective_from, created_by) VALUES (lg, 1, 'Verify 071 v1', '2026-09-28', OWNR) RETURNING id INTO v1;
+  INSERT INTO condition_value (set_id, key, value, status, source_document, source_clause, source_date, entered_by)
+  SELECT v1, x.k, x.v, 'confirmed', 'Pilot league decision, Kameel', '8.3a', '2026-09-30', OWNR
+    FROM (VALUES ('points.win', '4'::jsonb), ('points.tie', '2'), ('points.no_result', '2'), ('points.loss', '0')) AS x(k, v);
+  UPDATE condition_set SET status = 'published', published_by = OWNR, published_at = '2026-09-27 12:00+02' WHERE id = v1;
+  out := jsonb_build_object('cup', cup, 'league', lg);
+
+  FOREACH lab IN ARRAY ARRAY['k1', 'k2', 'k3', 'k4', 'k5', 'l1'] LOOP
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+    VALUES (HIL, '1XI', WES, '1XI', 'Westville 1XI', '2026-10-03 10:00+02', 'cricket', 'T20', 1, 'live',
+            CASE WHEN lab = 'l1' THEN lg ELSE cup END)
+    RETURNING id INTO m;
+    IF lab = 'l1' THEN
+      INSERT INTO match_conditions (match_id, set_id, set_version, doc, sources, doc_hash)
+      SELECT m, r.set_id, r.set_version, r.doc, r.sources, '' FROM match_conditions_compute(m) r;
+    ELSE
+      INSERT INTO match_conditions (match_id, doc, sources, doc_hash) VALUES (m, cupdoc, '{}', '');
+    END IF;
+    PERFORM _ev_71(m, 0::smallint, 'innings_start', NULL, NULL, NULL,
+                   jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', 'Westville 1XI', 'squad', _sq_71('H'), 'bowlingSquad', _sq_71('W'), 'overs', 1));
+    FOREACH v IN ARRAY ARRAY[4, 1, 0, 2, 6, 1] LOOP
+      PERFORM _ev_71(m, 0::smallint, 'ball', 'run', v, NULL, NULL, WHIT, MKHI);
+    END LOOP;
+    PERFORM _ev_71(m, 0::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":14,"wickets":0,"balls":6}}');
+    PERFORM _ev_71(m, 1::smallint, 'innings_start', NULL, NULL, NULL,
+                   jsonb_build_object('battingTeam', 'Westville 1XI', 'bowlingTeam', '1XI', 'squad', _sq_71('W'), 'bowlingSquad', _sq_71('H'), 'overs', 1, 'target', 15));
+    FOREACH v IN ARRAY ARRAY[6, 6, 1, 1, 0, 0] LOOP
+      PERFORM _ev_71(m, 1::smallint, 'ball', 'run', v, NULL, NULL, BOTHA, NAID);
+    END LOOP;
+    PERFORM _ev_71(m, 1::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":14,"wickets":0,"balls":6}}');
+    out := out || jsonb_build_object(lab, m);
+    IF lab = 'k5' THEN
+      INSERT INTO match_broadcast (match_id, school_id, published, published_by) VALUES (m, HIL, true, OWNR);
+    END IF;
+  END LOOP;
+  RETURN out;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The super over each match is about (above). Written as the pad writes it:
+-- the pair's innings_starts carry superOver 1, the second its target.
+CREATE OR REPLACE FUNCTION _so_71(p_match uuid, p_variant text) RETURNS void AS $$
+DECLARE
+  WHIT uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  BEKK uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
+  NAID uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
+  CELE text := 'aaaaaaaa-0000-0000-0000-000000000004';
+  BOTHA uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  MKHI uuid := 'bbbbbbbb-0000-0000-0000-000000000001';
+  v integer;
+BEGIN
+  PERFORM _ev_71(p_match, 2::smallint, 'innings_start', NULL, NULL, NULL,
+                 jsonb_build_object('battingTeam', 'Westville 1XI', 'bowlingTeam', '1XI', 'squad', _sq_71('W'), 'bowlingSquad', _sq_71('H'), 'overs', 1, 'superOver', 1));
+  PERFORM _ev_71(p_match, 2::smallint, 'keeper', NULL, NULL, NULL, jsonb_build_object('keeper', CELE));
+  IF p_variant = 'k5' THEN
+    PERFORM _ev_71(p_match, 2::smallint, 'ball', 'run', 1, NULL, NULL, BOTHA, NAID);
+    RETURN;
+  END IF;
+  IF p_variant = 'k3' THEN
+    PERFORM _ev_71(p_match, 2::smallint, 'ball', 'W', 0, 'bowled', NULL, BOTHA, NAID);
+    PERFORM _ev_71(p_match, 2::smallint, 'ball', 'W', 0, 'bowled', '{"striker":"W3"}', NULL, NAID);
+    PERFORM _ev_71(p_match, 2::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"all_out","confirmed":{"runs":0,"wickets":2,"balls":2}}');
+    PERFORM _ev_71(p_match, 3::smallint, 'innings_start', NULL, NULL, NULL,
+                   jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', 'Westville 1XI', 'squad', _sq_71('H'), 'bowlingSquad', _sq_71('W'), 'overs', 1, 'target', 1, 'superOver', 1));
+    PERFORM _ev_71(p_match, 3::smallint, 'ball', 'run', 0, NULL, NULL, WHIT, MKHI);
+    PERFORM _ev_71(p_match, 3::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"abandoned","confirmed":{"runs":0,"wickets":0,"balls":1}}');
+    RETURN;
+  END IF;
+  PERFORM _ev_71(p_match, 2::smallint, 'ball', 'run', 6, NULL, NULL, BOTHA, NAID);
+  PERFORM _ev_71(p_match, 2::smallint, 'ball', 'run', 1, NULL, NULL, BOTHA, NAID);
+  IF p_variant = 'k2' THEN
+    PERFORM _ev_71(p_match, 2::smallint, 'penalty', NULL, NULL, NULL, '{"runs":5,"toBattingTeam":false,"reason":"time_wasting"}');
+    PERFORM _ev_71(p_match, 2::smallint, 'ball', 'run', 1, NULL, NULL, BOTHA, NAID);
+  ELSE
+    PERFORM _ev_71(p_match, 2::smallint, 'ball', 'W', 0, 'caught', jsonb_build_object('fielder', CELE), BOTHA, NAID);
+    PERFORM _ev_71(p_match, 2::smallint, 'ball', 'run', 1, NULL, '{"striker":"W3"}', NULL, NAID);
+  END IF;
+  -- Six balls in all: K2's penalty is no delivery, K1's wicket is one.
+  FOREACH v IN ARRAY CASE WHEN p_variant = 'k2' THEN ARRAY[0, 0, 0] ELSE ARRAY[0, 0] END LOOP
+    PERFORM _ev_71(p_match, 2::smallint, 'ball', 'run', v, NULL, '{"striker":"W3"}', NULL, NAID);
+  END LOOP;
+  PERFORM _ev_71(p_match, 2::smallint, 'innings_end', NULL, NULL, NULL,
+                 CASE WHEN p_variant = 'k2' THEN '{"reason":"overs_complete","confirmed":{"runs":8,"wickets":0,"balls":6}}'
+                      ELSE '{"reason":"overs_complete","confirmed":{"runs":8,"wickets":1,"balls":6}}' END::jsonb);
+  PERFORM _ev_71(p_match, 3::smallint, 'innings_start', NULL, NULL, NULL,
+                 jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', 'Westville 1XI', 'squad', _sq_71('H'), 'bowlingSquad', _sq_71('W'), 'overs', 1, 'target', 9, 'superOver', 1));
+  IF p_variant = 'k2' THEN
+    FOREACH v IN ARRAY ARRAY[1, 1, 1, 1] LOOP
+      PERFORM _ev_71(p_match, 3::smallint, 'ball', 'run', v, NULL, NULL, WHIT, MKHI);
+    END LOOP;
+    PERFORM _ev_71(p_match, 3::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":9,"wickets":0,"balls":4}}');
+  ELSE
+    PERFORM _ev_71(p_match, 3::smallint, 'ball', 'run', 4, NULL, NULL, WHIT, MKHI);
+    PERFORM _ev_71(p_match, 3::smallint, 'ball', 'W', 0, 'bowled', NULL, WHIT, MKHI);
+    PERFORM _ev_71(p_match, 3::smallint, 'ball', 'run', 4, NULL, NULL, BEKK, MKHI);
+    PERFORM _ev_71(p_match, 3::smallint, 'ball', 'run', 1, NULL, NULL, BEKK, MKHI);
+    PERFORM _ev_71(p_match, 3::smallint, 'innings_end', NULL, NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":9,"wickets":1,"balls":4}}');
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every career figure of our three boys and the keeper in one match, and
+-- their lifetimes, as the reader may see them: one line, compared before
+-- and after a super over is appended (db/64's (typed) proof shape).
+CREATE OR REPLACE FUNCTION _careers_71(p_match uuid) RETURNS text AS $$
+  SELECT concat_ws(' | ',
+    (SELECT string_agg(concat_ws(',', x.player_id, x.innings, x.runs, x.balls_faced, x.out), ';' ORDER BY x.player_id, x.innings)
+       FROM player_innings x WHERE x.match_id = p_match),
+    (SELECT string_agg(concat_ws(',', x.player_id, x.matches, x.runs, x.balls_faced, x.fours, x.sixes), ';' ORDER BY x.player_id)
+       FROM player_batting_career x WHERE x.player_id IN ('aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002')),
+    (SELECT string_agg(concat_ws(',', x.player_id, x.season, x.runs, x.balls_faced), ';' ORDER BY x.player_id, x.season)
+       FROM player_batting_by_season x WHERE x.player_id IN ('aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002')),
+    (SELECT row(s.*)::text FROM player_batting_since('aaaaaaaa-0000-0000-0000-000000000001', NULL) s),
+    (SELECT row(s.*)::text FROM player_batting_since('aaaaaaaa-0000-0000-0000-000000000002', NULL) s),
+    (SELECT string_agg(concat_ws(',', x.player_id, x.matches, x.runs_conceded, x.legal_balls, x.wickets), ';' ORDER BY x.player_id)
+       FROM player_bowling_career x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+    (SELECT string_agg(concat_ws(',', x.season, x.runs_conceded, x.legal_balls, x.wickets), ';' ORDER BY x.season)
+       FROM player_bowling_by_season x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+    (SELECT row(s.*)::text FROM player_bowling_since('aaaaaaaa-0000-0000-0000-000000000003', NULL) s),
+    (SELECT string_agg(concat_ws(',', x.innings, x.wickets, x.runs_conceded), ';' ORDER BY x.innings)
+       FROM bowler_innings_figures x WHERE x.match_id = p_match AND x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+    (SELECT string_agg(concat_ws(',', x.dismissal, x.wickets), ';' ORDER BY x.dismissal)
+       FROM player_wicket_breakdown x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+    (SELECT string_agg(concat_ws(',', x.player_id, x.dismissals), ';' ORDER BY x.player_id)
+       FROM player_dismissals x WHERE x.player_id IN ('aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002')),
+    (SELECT string_agg(concat_ws(',', x.player_id, x.season, x.dismissals), ';' ORDER BY x.player_id, x.season)
+       FROM player_dismissals_by_season x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+    player_dismissals_since('aaaaaaaa-0000-0000-0000-000000000001', NULL)::text,
+    (SELECT string_agg(concat_ws(',', x.dismissal, x.dismissals), ';' ORDER BY x.dismissal)
+       FROM player_dismissal_breakdown x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+    (SELECT string_agg(concat_ws(',', x.matches, x.innings_kept, x.catches, x.stumpings), ';')
+       FROM player_keeping_career x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000004'),
+    (SELECT count(*)::text FROM keeper_dismissal x WHERE x.match_id = p_match),
+    (SELECT count(*)::text FROM bowler_hat_trick x WHERE x.match_id = p_match))
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+-- A boy's match deliveries on a day, as load_day counts them (the owner's
+-- read: load_day is not the application's to select).
+CREATE OR REPLACE FUNCTION _load_71(p_player uuid, p_on date) RETURNS integer AS $$
+  SELECT x.match_units FROM load_day x WHERE x.player_id = p_player AND x.on_date = p_on
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/71 (section 50) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -11736,6 +11944,155 @@ $v49$;
     PERFORM _assert((SELECT count(*) FROM pg_trigger WHERE tgrelid = 'match'::regclass AND NOT tgisinternal
                        AND tgname IN ('availability_ask_again', 'lift_fixture_moved')) = 2,
       'db/70 (coexist): db/65''s and db/70''s triggers on match are not both in place');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 50. The super over (SCRBRD-114 phase 3b, db/71) ──
+  -- _seed_71(): a Hilton cup (a tie goes to a super over) and a Hilton
+  -- league (a tie stands), five matches tied on the same over, and
+  -- _so_71() appending the super over each is about (the seed's header).
+  -- The Laws' refusals and the write path's super_over_not_provided are the
+  -- fold's (packages/scoring/test/super-over.test.mjs; tools/smoke-results.mjs
+  -- through the API); tools/smoke-fold-figures.mjs holds match_result() and
+  -- ball_event_live.super_over to the fold over the design's logs. Here, as
+  -- the application role, what the database must hold.
+  --
+  -- Each labelled assertion was falsified once — the function, view or
+  -- trigger replaced in the database and this file run — and went red:
+  --   (career)     ball_event_career without its filter: every career reader
+  --                counts the super over
+  --   (workload)   bowler_over reading ball_event_career: the boy's day loses
+  --                the balls he bowled
+  --   (marker)     ball_event_live.super_over read as NULL: every reader takes
+  --                the super over for a match innings
+  --   (live)       match_live_score without super_over
+  --   (result)     match_result_compute() without its super-over block: a cup
+  --                tie settled by a super over reads as settled by nobody
+  --   (provided)   match_result_compute() deciding by a super over the
+  --                document does not provide
+  --   (pair)       penalty_credit_as_folded() and penalty_carried_as_folded()
+  --                crediting across pairs
+  --   (two)        innings_end_squad() not ending a super over at two wickets
+  --   (gate)       the completion trigger dropped
+  --   (scope)      ball_event_career as its owner
+  --   (board)      broadcast_state() taking a chase's fallback target across
+  --                pairs: the super over's first innings "chasing" the match
+  DECLARE
+    ids    jsonb := _seed_71();
+    K1 uuid; K2 uuid; K3 uuid; K4 uuid; K5 uuid; L1 uuid; LG uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    P_NAID uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
+    c_before text; c_after text;
+    t_before text; t_after text;
+    w_before integer; w_after integer;
+    got    text;
+    v_ok   boolean;
+    r      record;
+  BEGIN
+    K1 := (ids->>'k1')::uuid; K2 := (ids->>'k2')::uuid; K3 := (ids->>'k3')::uuid; K4 := (ids->>'k4')::uuid;
+    K5 := (ids->>'k5')::uuid; L1 := (ids->>'l1')::uuid; LG := (ids->>'league')::uuid;
+
+    -- Before any super over: every career figure, the boy's day, the table.
+    PERFORM _as(U_SARAH);
+    c_before := _careers_71(K1);
+    PERFORM _assert(c_before LIKE 'aaaaaaaa-0000-0000-0000-000000000001,0,14,6,f;%',
+      format('db/71: the seed is not as its header says: %s', left(c_before, 120)));
+    PERFORM _as(U_OWNER);
+    w_before := _load_71(P_NAID, DATE '2026-10-03');
+    SELECT string_agg(concat_ws(',', s.team_code, s.played, s.won, s.lost, s.tied, s.points, round(s.nrr, 3), s.runs_for, s.balls_for), ' ' ORDER BY s.school_id)
+      INTO t_before FROM competition_standing s WHERE s.competition_id = LG;
+
+    -- (gate) a cup tie is not marked complete before its super over, nor
+    -- before the organiser's award where none is played
+    FOREACH got IN ARRAY ARRAY[K1::text, K4::text] LOOP
+      BEGIN
+        UPDATE match SET status = 'complete' WHERE id = got::uuid;
+        v_ok := FOUND;
+      EXCEPTION WHEN check_violation THEN v_ok := false;
+      END;
+      PERFORM _assert(NOT v_ok, format('db/71 (gate): a cup tie (%s) was marked complete with nothing settling who goes through', got));
+    END LOOP;
+
+    PERFORM _so_71(K1, 'k1'); PERFORM _so_71(K2, 'k2'); PERFORM _so_71(K3, 'k3'); PERFORM _so_71(L1, 'l1');
+
+    -- (career) not a run, a ball, a wicket, a dismissal or a catch of a
+    -- super over is in any career, season, window or keeper's record
+    PERFORM _as(U_SARAH);
+    c_after := _careers_71(K1);
+    PERFORM _assert(c_after = c_before, format('db/71 (career): a super over moved a career: before %s; after %s', c_before, c_after));
+    -- (scope) the career log is the reader's: the visitors' coach reads none
+    -- of the home school's, the home coach reads it
+    PERFORM _assert((SELECT count(*) FROM ball_event_career WHERE match_id = K1) > 0, 'db/71 (scope): Hilton''s director of sport reads none of her school''s career log');
+    PERFORM _as(U_WESC);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ball_event_career WHERE match_id = K1),
+      'db/71 (scope): the visitors'' coach reads the home school''s log through ball_event_career');
+
+    -- (marker) (live) the board's block: innings 2 and 3 are the first super over
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(x.innings || '=' || coalesce(x.super_over::text, '-'), ' ' ORDER BY x.innings) INTO got
+      FROM match_live_score x WHERE x.match_id = K1;
+    PERFORM _assert(got = '0=- 1=- 2=1 3=1', format('db/71 (live): match_live_score reads %s', got));
+    SELECT string_agg(DISTINCT b.innings || '=' || coalesce(b.super_over::text, '-'), ' ') INTO got
+      FROM ball_event_live b WHERE b.match_id = K1;
+    PERFORM _assert(got = '0=- 1=- 2=1 3=1', format('db/71 (marker): ball_event_live.super_over reads %s', got));
+
+    -- (result) the match's outcome is the tie; the super over says who goes through
+    SELECT concat_ws(',', x.outcome, x.decided_by, x.winner_side, x.winner_school_id = HIL, x.play_outcome,
+                     x.super_overs->0->>'state', x.super_overs->0->>'first', x.super_overs->0->'b'->>'runs')
+      INTO got FROM match_result(K1) x;
+    PERFORM _assert(got = 'tie,super_over,home,t,tie,won,away,9', format('db/71 (result): K1 reads %s', got));
+    -- (two) two wickets end a super over: all out, and the pair incomplete
+    -- once the chase is sealed abandoned; nobody has decided it
+    SELECT concat_ws(',', x.outcome, coalesce(x.decided_by, '-'), x.innings->2->>'end_reason', x.innings->2->>'complete',
+                     x.super_overs->0->>'state')
+      INTO got FROM match_result(K3) x;
+    PERFORM _assert(got = 'tie,-,all_out,true,incomplete', format('db/71 (two): K3 reads %s', got));
+    -- (pair) the five awarded in innings 2 open innings 3, never a match innings
+    SELECT string_agg(x.innings || '=' || x.runs, ' ' ORDER BY x.innings) INTO got FROM match_live_score x WHERE x.match_id = K2;
+    PERFORM _assert(got = '0=14 1=14 2=8 3=9', format('db/71 (pair): K2''s innings read %s', got));
+    SELECT concat_ws(',', x.outcome, x.decided_by, x.winner_side) INTO got FROM match_result(K2) x;
+    PERFORM _assert(got = 'tie,super_over,home', format('db/71 (pair): K2 reads %s', got));
+
+    -- (provided) a super over the league's document does not provide: the
+    -- tie stands, nobody is named, and the table does not move — points,
+    -- wins, net run rate — by its runs or its balls
+    PERFORM _as(U_OWNER);
+    SELECT concat_ws(',', x.outcome, x.decided_by, coalesce(x.winner_side, '-'), jsonb_array_length(x.super_overs)) INTO got FROM match_result(L1) x;
+    PERFORM _assert(got = 'tie,play,-,0', format('db/71 (provided): L1 reads %s', got));
+    SELECT string_agg(concat_ws(',', s.team_code, s.played, s.won, s.lost, s.tied, s.points, round(s.nrr, 3), s.runs_for, s.balls_for), ' ' ORDER BY s.school_id)
+      INTO t_after FROM competition_standing s WHERE s.competition_id = LG;
+    PERFORM _assert(t_after = t_before AND t_after = '1XI,1,0,0,1,2,0.000,14,6 1XI,1,0,0,1,2,0.000,14,6',
+      format('db/71 (provided): the league''s table read %s before the super over and %s after', t_before, t_after));
+
+    -- (workload) the boy bowled the super overs: his day counts every ball
+    -- (6 in K1, 6 in K2, 2 in K3, 6 in L1), and each is a spell of its own
+    w_after := _load_71(P_NAID, DATE '2026-10-03');
+    PERFORM _assert(w_after - w_before = 20, format('db/71 (workload): S Naidoo''s day went from %s to %s deliveries', w_before, w_after));
+    SELECT string_agg(x.innings || ':' || x.spell_no || ':' || x.legal_balls, ' ' ORDER BY x.innings) INTO got
+      FROM bowler_spell x WHERE x.match_id = K1 AND x.bowler_id = P_NAID;
+    PERFORM _assert(got = '1:1:6 2:1:6', format('db/71 (workload): S Naidoo''s spells in K1 read %s', got));
+
+    -- (board) the broadcast board on the super over's first ball: innings 2,
+    -- one run, and no target — it chases nothing
+    PERFORM _so_71(K5, 'k5');
+    SELECT concat_ws(',', x.innings, x.runs, coalesce(x.target::text, '-')) INTO got FROM broadcast_state(K5) x;
+    PERFORM _assert(got = '2,1,-', format('db/71 (board): the board on a super over''s first ball reads %s', got));
+
+    -- (gate) completion once settled: a super over won (K1), a pair left
+    -- incomplete (K3), the organiser's award (K4)
+    UPDATE match SET status = 'complete' WHERE id IN (K1, K3);
+    PERFORM _assert((SELECT count(*) FROM match WHERE id IN (K1, K3) AND status = 'complete') = 2,
+      'db/71 (gate): a cup tie settled by its super over, or left incomplete, could not be completed');
+    SELECT * INTO r FROM match_result_decide(K4, 'awarded', 'away', 'the cup''s rules: the higher seed goes through', false);
+    PERFORM _assert(r.ok, format('db/71 (gate): the organiser''s award on K4 was refused: %s', r.reason));
+    UPDATE match SET status = 'complete' WHERE id = K4;
+    PERFORM _assert(EXISTS (SELECT 1 FROM match WHERE id = K4 AND status = 'complete'),
+      'db/71 (gate): a cup tie the organiser awarded could not be completed');
+    -- (scope) the new view runs as its reader; the new functions are not the application's
+    PERFORM _assert(coalesce((SELECT 'security_invoker=true' = ANY (c.reloptions) FROM pg_class c WHERE c.oid = 'ball_event_career'::regclass), false)
+                    AND NOT has_function_privilege('scrbrd_app', 'match_completion_refusal(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'innings_super_over_of(uuid,smallint)', 'EXECUTE'),
+      'db/71 (scope): ball_event_career runs as its owner, or the application may call the gate''s functions');
   END;
   PERFORM set_config('app.user_id', '', true);
 

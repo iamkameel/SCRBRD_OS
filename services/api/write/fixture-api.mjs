@@ -52,6 +52,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * @returns {{ status: number, body: { error: string, detail?: string } }}
  */
 export function fixtureRefusal(e) {
+  // SCRBRD-114 phase 3b (db/71): a cup tie is not marked complete while its
+  // super over, or the organiser's award, has not settled who goes through.
+  if (e.code === "23514" && e.constraint === "match_super_over_pending") {
+    return { status: 422, body: { error: "super_over_pending", detail: e.message } };
+  }
   if (e.code === "23514") return { status: 422, body: { error: "invalid_fixture", detail: e.message } };
   if (e.code === "23503") return { status: 404, body: { error: "no_such_school_ground_or_sport", detail: e.message } };
   const status = e.code === "42501" ? 403 : (e.status || 500);

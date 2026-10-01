@@ -52,6 +52,8 @@ export function resultOut(row, names, reasons = true) {
                              overridesPlay: r.decision.overridesPlay === true, ...(reasons ? { reason: r.decision.reason } : {}),
                              decidedAt: row.decision?.at ?? null } : null,
     text, resultHash: row.result_hash ?? null,
+    // SCRBRD-114 phase 3b (db/71): the super overs, as describeResult() lists them.
+    superOvers: r.superOvers ?? [],
   };
 }
 
@@ -77,7 +79,7 @@ export function resultsRoutes({ pool, secret }) {
   return {
     // GET /api/matches/:id/result
     //   → { matchId, status, home, away, result: { outcome, marginKind, margin, decidedBy, winnerSide,
-    //       playOutcome, decisionApplied, decision, text, resultHash }, innings, canDecide }
+    //       playOutcome, decisionApplied, decision, text, resultHash, superOvers }, innings, canDecide }
     //   For a reader of the fixture: match_result() runs as its caller.
     result: handle(async (req) => {
       const id = idOf(req);
@@ -95,7 +97,8 @@ export function resultsRoutes({ pool, secret }) {
         return { matchId: id, status: m[0].status, competitionId: m[0].competition_id ?? null, home: names.home, away: names.away,
                  result: row ? resultOut(row, names) : null,
                  innings: (row?.innings ?? []).map((/** @type {any} */ i) => ({ innings: i.innings, side: i.side, runs: i.runs, wickets: i.wickets,
-                   balls: i.balls, overs: i.overs, endReason: i.end_reason, complete: i.complete })),
+                   balls: i.balls, overs: i.overs, endReason: i.end_reason, complete: i.complete,
+                   superOver: i.super_over ?? null })),
                  canDecide: d[0]?.may === true };
       });
     }),

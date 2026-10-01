@@ -231,6 +231,12 @@ group("E. The result lists the pairs, and SQL's row says the same words");
                 super_overs: (r?.superOvers ?? []).map((p) => ({ n: p.n, first: p.first, a: p.a, b: p.b, state: p.state, winner: p.winner, winner_key: p.winnerKey })) };
   const words = resultWords(/** @type {any} */ (resultFromRow(row)), { nameOf: (k, s) => (s ? RESULT_NAMES[/** @type {"home" | "away"} */ (s)] : k ?? "—") });
   ok("resultWords() over the row is the fold's text", words === r?.text, { words, fold: r?.text });
+  // The handover reads the innings in play (scoring-session.mjs replayEvents():
+  // deriveMatch().innings[current]): three super overs are eight innings, and
+  // the one in play is the third super over's chase.
+  const m = deriveMatch(x.log, { startsAt: RESULT_STARTS_AT, conditions: x.play });
+  ok("the handover's fold: eight innings, the eighth in play, the third super over's",
+     m.innings.length === 8 && m.current === 7 && m.innings[7].superOver === 3 && m.innings[7].runs === 10, { n: m.innings.length, current: m.current });
   // Logs the Laws would refuse, written from elsewhere: the result still reads them as §3 says.
   const ctx = { startsAt: RESULT_STARTS_AT, conditions: CUP, sides: RESULT_SIDES, names: RESULT_NAMES };
   const noChase = new Log().open(0, H).play(0, [4, 1, 0, 2, 6, 1]).seal(0).open(2, A, { superOver: 1 }).play(2, [6, 6, 6]).seal(2, "declared");

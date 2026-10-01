@@ -43,6 +43,7 @@ import { publicName, POSITION_LABELS } from "@scrbrd/policy/public";
 import {
   BALL_TYPE, DISMISSALS, INNINGS_END_REASON, NB_RUNS_VALUES, NB_TYPES, RUN_OUT_ENDS,
   FACES_NEXT_VALUES, NOT_IN_OVER, PENALTY_REASONS, RETIRE_REASON, CARD_END_REASON, CARD_HOW_OUT,
+  superOverNumber,
 } from "@scrbrd/scoring";
 
 /**
@@ -59,7 +60,9 @@ import {
  * @type {Readonly<Record<string, readonly string[]>>}
  */
 export const PUBLIC_EVENT_FIELDS = Object.freeze({
-  innings_start: Object.freeze(["battingTeam", "bowlingTeam", "teamKey", "bowlingTeamKey", "squad", "bowlingSquad", "overs", "target"]),
+  // superOver: the nth super over (SCRBRD-114 phase 3b, db/71) — a number.
+  innings_start: Object.freeze(["battingTeam", "bowlingTeam", "teamKey", "bowlingTeamKey", "squad", "bowlingSquad", "overs", "target",
+                                "superOver"]),
   batters:       Object.freeze(["striker", "nonStriker", "captainConsent"]),
   bowler:        Object.freeze(["bowler"]),
   ball:          Object.freeze(["type", "value", "striker", "nonStriker", "bowler", "dismissal", "fielder", "dismissed",
@@ -297,6 +300,7 @@ function keep(kind, f, src, { who, squadOf, secret, matchId }) {
       return team(v) ?? undefined;
     case "overs": case "runs": case "value":
       return int(v) ?? undefined;
+    case "superOver":      return superOverNumber(v) ?? undefined;
     case "toBattingTeam": case "freeHit":
       return typeof v === "boolean" ? v : undefined;
     case "captainConsent":

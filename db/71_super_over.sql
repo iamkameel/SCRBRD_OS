@@ -44,6 +44,18 @@
 --                                     has settled. NRR's `scheduled` innings are
 --                                     the match's own (§6.4).
 --   match_live_score.super_over       a new LAST column, for the board's block.
+--   public_match_log()                db/63's, carrying `superOver` in the detail:
+--                                     the public scorecard folds the events as
+--                                     they are (§4), and without the marker would
+--                                     read a super over as match innings.
+--   public_match_result()             db/69's, with `super_overs` (number, state,
+--                                     who batted first, who won: sides only) as
+--                                     a last column, so the signed-out page says
+--                                     who won one. Dropped and made again (its
+--                                     result type changes); grants restated.
+--   broadcast_state()                 db/48's, with a chase's fallback target
+--                                     taken within its own pair: a super over's
+--                                     first innings chases nothing.
 --   the career readers (§4, "never") re-emitted over ball_event_career, each
 --                                     otherwise exactly as its latest file has
 --                                     it: db/64's thirteen views and functions
@@ -109,7 +121,7 @@ SELECT 'function:' || p.oid::regprocedure::text,
                                      'player_dismissals_since(uuid,timestamp with time zone)',
                                      'opposition_squad(uuid)', 'opposition_context(uuid)',
                                      'innings_runs_off_bat(uuid,uuid,smallint)', 'career_runs_off_bat(uuid)',
-                                     'public_shot_sectors(uuid)', 'milestone_watch()',
+                                     'public_shot_sectors(uuid)', 'milestone_watch()', 'public_match_log(uuid,integer)', 'broadcast_state(uuid)',
                                      'penalty_credit_as_folded(uuid,smallint)', 'penalty_carried_as_folded(uuid,smallint)',
                                      'innings_result_state(uuid,smallint,jsonb,boolean)', 'match_result_compute(uuid)');
 
@@ -635,6 +647,183 @@ SELECT
   max(super_over)                                                         AS super_over   -- db/71
 FROM ball_event_live
 GROUP BY match_id, innings;
+
+-- The signed-out log (db/63's) carries the marker: the public scorecard is
+-- the events as they are (§4), and a fold that lost `superOver` would read
+-- a super over as two more match innings. A number, never a boy; the API's
+-- allowlist (services/api/public/redact.mjs) keeps it only as one.
+CREATE OR REPLACE FUNCTION public_match_log(p_match uuid, p_since integer DEFAULT 0)
+RETURNS TABLE (
+  seq integer, innings smallint, kind text, ball_type text, value smallint,
+  striker_id uuid, non_striker_id uuid, bowler_id uuid, dismissed_id uuid, dismissal text,
+  event_key text, client_ts timestamptz, detail jsonb
+) AS $$
+  SELECT b.seq, b.innings, b.kind, b.ball_type, b.value,
+         b.striker_id, b.non_striker_id, b.bowler_id, b.dismissed_id, b.dismissal,
+         b.idempotency_key, b.client_ts,
+         jsonb_strip_nulls(jsonb_build_object(
+           -- innings_start
+           'battingTeam',    b.payload -> 'battingTeam',
+           'bowlingTeam',    b.payload -> 'bowlingTeam',
+           'teamKey',        b.payload -> 'teamKey',
+           'bowlingTeamKey', b.payload -> 'bowlingTeamKey',
+           'squad',          b.payload -> 'squad',
+           'bowlingSquad',   b.payload -> 'bowlingSquad',
+           'overs',          b.payload -> 'overs',
+           'target',         b.payload -> 'target',
+           'superOver',      b.payload -> 'superOver',   -- db/71: the nth super over
+           -- a player the scorer typed, where the column holds no id
+           'striker',        b.payload -> 'striker',
+           'nonStriker',     b.payload -> 'nonStriker',
+           'bowler',         b.payload -> 'bowler',
+           'dismissed',      b.payload -> 'dismissed',
+           -- batters
+           'captainConsent', b.payload -> 'captainConsent',
+           -- ball
+           'fielder',        b.payload -> 'fielder',
+           'freeHit',        b.payload -> 'freeHit',
+           'nbRuns',         b.payload -> 'nbRuns',
+           'nbType',         b.payload -> 'nbType',
+           'outAt',          b.payload -> 'outAt',
+           'facesNext',      b.payload -> 'facesNext',
+           'notInOver',      b.payload -> 'notInOver',
+           -- penalty
+           'runs',           b.payload -> 'runs',
+           'toBattingTeam',  b.payload -> 'toBattingTeam',
+           -- retire; penalty, innings_end and revision reasons (the API keeps
+           -- a reason only where it is a code from a closed list)
+           'batter',         b.payload -> 'batter',
+           'reason',         b.payload -> 'reason',
+           -- innings_end
+           'confirmed',      b.payload -> 'confirmed',
+           -- innings_summary (db/63): the card, less the note on a difference
+           'card',           CASE WHEN b.kind = 'innings_summary' THEN (b.payload -> 'card') #- '{unreconciled,note}' END)) AS detail
+    FROM ball_event b
+   WHERE b.match_id = p_match
+     AND b.seq > coalesce(p_since, 0)
+     AND b.kind IN ('innings_start', 'batters', 'bowler', 'ball', 'penalty', 'retire',
+                    'innings_end', 'revision', 'void', 'innings_summary')
+     AND public_fixture_served(b.match_id)
+   ORDER BY b.seq
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+REVOKE ALL ON FUNCTION public_match_log(uuid, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public_match_log(uuid, integer) TO scrbrd_app;
+
+-- The broadcast board (db/48's): an innings with no target of its own takes
+-- the previous innings' total plus one — within its own pair. The first
+-- innings of a super over chases nothing; its second chases the first.
+CREATE OR REPLACE FUNCTION broadcast_state(p_match uuid)
+RETURNS TABLE (
+  match_id uuid, home_team text, away_team text, strapline text,
+  innings smallint, runs bigint, wickets bigint, legal_balls bigint,
+  overs text, run_rate numeric, target bigint,
+  striker text, non_striker text, bowler text,
+  officials text, name_display text,
+  -- The board, and nothing behind it. See the sponsor CTE below.
+  sponsor_name text, sponsor_logo text, sponsor_bg text
+) AS $$
+  WITH b AS (
+    SELECT * FROM match_broadcast WHERE match_id = p_match AND published
+  ),
+  m AS (
+    SELECT mt.* FROM match mt JOIN b ON b.match_id = mt.id
+  ),
+  -- The innings being played is the highest one the log has reached.
+  cur AS (
+    SELECT ls.* FROM match_live_score ls JOIN b ON b.match_id = ls.match_id
+     ORDER BY ls.innings DESC LIMIT 1
+  ),
+  -- A chase has a target: what the previous innings made, plus one.
+  prev AS (
+    SELECT ls.runs FROM match_live_score ls JOIN cur ON cur.match_id = ls.match_id
+     WHERE ls.innings < cur.innings
+       AND ls.super_over IS NOT DISTINCT FROM cur.super_over   -- db/71: within its pair
+     ORDER BY ls.innings DESC LIMIT 1
+  ),
+  -- Who is at the crease, taken from the last delivery bowled rather than
+  -- replayed: ball_event stamps the striker and the bowler on every ball, and
+  -- an overlay wants the state at the last ball by definition.
+  last_ball AS (
+    SELECT e.striker_id, e.non_striker_id, e.bowler_id
+      FROM ball_event e JOIN cur ON cur.match_id = e.match_id AND cur.innings = e.innings
+     WHERE e.kind = 'ball'
+     ORDER BY e.seq DESC LIMIT 1
+  ),
+  -- The sponsor whose board this is, if the school sold the surface.
+  --
+  -- THREE COLUMNS AND NO MORE. contract_value_zar and school_share_pct are on
+  -- the same row and are not selected here, and this function is SECURITY
+  -- DEFINER — so the masking view that keeps them from a coach would not have
+  -- kept them from a spectator. What a sponsor pays is between the sponsor and
+  -- the school; what a sponsor buys is a name on a screen, and that is all
+  -- that leaves.
+  --
+  -- A placement tied to THIS fixture wins over the school's standing one:
+  -- ordering match_id first with NULLS LAST puts the specific agreement ahead
+  -- of the general one, which is what a school selling a one-off derby board
+  -- on top of a season deal expects.
+  sponsor AS (
+    SELECT sp.name, sp.logo_text, sp.logo_bg
+      FROM sponsorship s
+      JOIN sponsor sp ON sp.id = s.sponsor_id AND sp.active
+      JOIN m ON m.school_id = s.school_id
+     WHERE s.placement = 'broadcast_overlay'
+       AND (s.match_id IS NULL OR s.match_id = m.id)
+       AND current_date BETWEEN s.starts_on AND s.ends_on
+     ORDER BY s.match_id NULLS LAST, s.agreed_at DESC
+     LIMIT 1
+  )
+  SELECT m.id,
+         m.team_code, m.opponent,
+         b.strapline,
+         cur.innings, cur.runs, cur.wickets, cur.legal_balls,
+         (cur.legal_balls / 6)::text || '.' || (cur.legal_balls % 6)::text,
+         CASE WHEN cur.legal_balls > 0
+              THEN round((cur.runs::numeric * 6) / cur.legal_balls, 2) END,
+         -- The fold's target (db/48): the innings' own, else the previous
+         -- innings' total plus one.
+         coalesce(innings_target_as_folded(cur.match_id, cur.innings), (SELECT runs + 1 FROM prev)),
+         -- Every name goes through the masker. There is no branch here that
+         -- returns an unmasked one.
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT striker_id FROM last_ball)), b.name_display),
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT non_striker_id FROM last_ball)), b.name_display),
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT bowler_id FROM last_ball)), b.name_display),
+         -- Officials are adults doing a public job, so they are named in full
+         -- when shown at all — but only when the school said to show them.
+         CASE WHEN b.show_officials THEN (
+           SELECT string_agg(o.person_name, ' · ' ORDER BY o.duty, o.person_name)
+             FROM match_official o
+            WHERE o.match_id = m.id AND NOT o.withdrawn AND o.duty IN ('umpire','third_umpire')
+         ) END,
+         b.name_display,
+         (SELECT name FROM sponsor), (SELECT logo_text FROM sponsor), (SELECT logo_bg FROM sponsor)
+    FROM b JOIN m ON m.id = b.match_id LEFT JOIN cur ON cur.match_id = b.match_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The signed-out result (db/69's) says who won the super over: "Match tied;
+-- Northwood won the super over" is the public page's line (design §1). One
+-- column more, last — so the function is dropped and made again, nothing
+-- depends on it but the API, and its grants are restated as db/69 gave
+-- them. Each pair's number, its state, who batted first and who won it:
+-- sides, never a boy, never a figure the scorecard does not already show.
+DROP FUNCTION IF EXISTS public_match_result(uuid);
+CREATE FUNCTION public_match_result(p_match uuid)
+RETURNS TABLE (outcome text, margin_kind text, margin integer, decided_by text, winner_side text,
+               play_outcome text, play_winner_side text, play_margin_kind text, play_margin integer,
+               decision_applied boolean, decision_kind text, decision_side text, decision_overrides_play boolean,
+               super_overs jsonb) AS $$
+  SELECT r.outcome, r.margin_kind, r.margin, r.decided_by, r.winner_side,
+         r.play_outcome, r.play_winner_side, r.play_margin_kind, r.play_margin,
+         r.decision_applied, r.decision->>'kind', r.decision->>'side', (r.decision->>'overrides_play')::boolean,
+         coalesce((SELECT jsonb_agg(jsonb_build_object('n', p->'n', 'state', p->'state', 'first', p->'first', 'winner', p->'winner')
+                                    ORDER BY (p->>'n')::integer)
+                     FROM jsonb_array_elements(r.super_overs) p), '[]'::jsonb)
+    FROM match_result_compute(p_match) r
+   WHERE public_fixture_served(p_match)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION public_match_result(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public_match_result(uuid) TO scrbrd_app;
 
 -- ── 4 · Careers never count a super over (§4, D6) ───────────────────
 -- Every reader of the list, as its latest file has it, with its reads of
@@ -1310,7 +1499,8 @@ DECLARE r text; f text;
 BEGIN
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-      FOREACH f IN ARRAY ARRAY['innings_super_over_of(uuid,smallint)', 'match_completion_refusal(uuid)', 'match_completion_gate()'] LOOP
+      FOREACH f IN ARRAY ARRAY['innings_super_over_of(uuid,smallint)', 'match_completion_refusal(uuid)', 'match_completion_gate()',
+                               'public_match_result(uuid)'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END LOOP;
       EXECUTE format('REVOKE ALL ON ball_event_career FROM %I', r);
@@ -1369,8 +1559,8 @@ BEGIN
       RAISE EXCEPTION 'db/71: % changed shape: was %, now %', r.obj, want, now_shape;
     END IF;
   END LOOP;
-  IF (SELECT count(*) FROM _db71_before) <> 28 THEN
-    RAISE EXCEPTION 'db/71: the snapshot is not the 28 objects this file replaces (%)', (SELECT count(*) FROM _db71_before);
+  IF (SELECT count(*) FROM _db71_before) <> 30 THEN
+    RAISE EXCEPTION 'db/71: the snapshot is not the 30 objects this file replaces (%)', (SELECT count(*) FROM _db71_before);
   END IF;
 
   -- 2. Every career reader reads the career log, and none the live one.
@@ -1390,6 +1580,15 @@ BEGIN
       RAISE EXCEPTION 'db/71: % does not read the log through ball_event_career alone', r.nm;
     END IF;
   END LOOP;
+  IF (SELECT prosrc FROM pg_proc WHERE oid = 'public_match_log(uuid,integer)'::regprocedure) NOT LIKE '%''superOver'',      b.payload -> ''superOver''%' THEN
+    RAISE EXCEPTION 'db/71: the public log does not carry the super over''s marker';
+  END IF;
+  IF pg_get_function_result('public_match_result(uuid)'::regprocedure) NOT LIKE '%super_overs jsonb)'
+     OR NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public_match_result(uuid)'::regprocedure)
+     OR NOT has_function_privilege('scrbrd_app', 'public_match_result(uuid)', 'EXECUTE')
+     OR has_function_privilege('public', 'public_match_result(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'db/71: public_match_result() lost its grants or its definer, or carries no super overs';
+  END IF;
   IF NOT coalesce((SELECT 'security_invoker=true' = ANY (c.reloptions) FROM pg_class c WHERE c.oid = 'ball_event_career'::regclass), false) THEN
     RAISE EXCEPTION 'db/71: ball_event_career runs as its owner';
   END IF;

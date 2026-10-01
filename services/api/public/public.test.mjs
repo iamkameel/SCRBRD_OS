@@ -120,7 +120,8 @@ LOG.push(at({ ...sealInnings(sealed, "overs_complete") }));
  * added there and not here (or here and not there) is a failure below.
  */
 // The definition that runs: the last file that makes it (db/59's, then
-// db/63's, which serves an innings_summary's card, SCRBRD-120).
+// db/63's, which serves an innings_summary's card, SCRBRD-120; then db/71's,
+// which serves a super over's marker, SCRBRD-114 phase 3b).
 const LOG_FILE = readdirSync(join(ROOT, "db")).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort()
   .filter((f) => readFileSync(join(ROOT, "db", f), "utf8").includes("CREATE OR REPLACE FUNCTION public_match_log")).pop() ?? "";
 const SQL = readFileSync(join(ROOT, "db", LOG_FILE), "utf8");
@@ -147,7 +148,7 @@ const ROWS = LOG.filter((e) => KINDS_SQL.includes(e.kind)).map((e, i) => asLogRo
 // ═════════════════════════════════════════════════════════════════
 console.log("\n── The allowlist, pinned ──");
 ok("PUBLIC_EVENT_FIELDS is exactly the reviewed list", JSON.stringify(PUBLIC_EVENT_FIELDS) === JSON.stringify({
-  innings_start: ["battingTeam", "bowlingTeam", "teamKey", "bowlingTeamKey", "squad", "bowlingSquad", "overs", "target"],
+  innings_start: ["battingTeam", "bowlingTeam", "teamKey", "bowlingTeamKey", "squad", "bowlingSquad", "overs", "target", "superOver"],
   batters: ["striker", "nonStriker", "captainConsent"],
   bowler: ["bowler"],
   ball: ["type", "value", "striker", "nonStriker", "bowler", "dismissal", "fielder", "dismissed", "freeHit", "nbRuns", "nbType", "outAt", "facesNext", "notInOver"],
@@ -246,6 +247,14 @@ const odd = projectLog({ secret: SECRET, matchId: M1, on: ON, people: [], rows: 
   { ...ROWS.find((r) => r.kind === "innings_end"), seq: 4, detail: { reason: "Tired", confirmed: { runs: 50, wickets: "x", balls: 60, note: "n" } } },
 ]) });
 const o = odd.events;
+// A super over's marker (db/71): a whole number from 1, or nothing.
+const sos = projectLog({ secret: SECRET, matchId: M1, on: ON, people: [], rows: /** @type {any[]} */ ([
+  { ...ROWS.find((r) => r.kind === "innings_start"), seq: 1, innings: 2, detail: { battingTeam: "Hilton", superOver: 1 } },
+  { ...ROWS.find((r) => r.kind === "innings_start"), seq: 2, innings: 3, detail: { battingTeam: "Hilton", superOver: "1 or more" } },
+  { ...ROWS.find((r) => r.kind === "innings_start"), seq: 3, innings: 4, detail: { battingTeam: "Hilton", superOver: 1.5 } },
+]) }).events;
+ok("a super over's marker is kept as its number, and anything else is dropped",
+   sos[0].superOver === 1 && !("superOver" in sos[1]) && !("superOver" in sos[2]), sos);
 ok("a free-text dismissal, a bad ball type and a string value are dropped", !("dismissal" in o[0]) && !("type" in o[0]) && !("value" in o[0]), o[0]);
 ok("a free-text penalty reason becomes null", o[1].reason === null);
 ok("a revision reason off the sheet's list is dropped", !("reason" in o[2]));

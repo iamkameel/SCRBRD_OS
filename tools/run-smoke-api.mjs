@@ -52,6 +52,12 @@ const WALKS = [
   // re-fix, an amendment that flips a result, and the signed-out reads.
   "results",
   // ── end SCRBRD-114 phase 3a ──
+  // ── SCRBRD-114 phase 3b (db/71): the super over ──
+  // A cup tie and a friendly's, scored on the real write path; the cup tie
+  // waits for its super over; the Laws and the document at the door; the
+  // pair scored; the result, the live score, careers and the bowler's day;
+  // completion once settled; the signed-out log and header.
+  "superover",
   // The scorebook importer (SCRBRD-120, db/63): photos stripped and read on
   // the log, a card ticked and checked, two people, the commit's Laws and
   // seal, the match complete, the amendment path, the purge.
