@@ -414,6 +414,57 @@ score, the public page and the planner's publish call `db/71` and `db/72`
 by name.
 <!-- ── end SCRBRD-114 phases 3b and 3c ── -->
 
+<!-- ── SCRBRD-130: the rain rule (db/73–75) ── -->
+#### The rain rule: interruptions, venue par, the DLS table (SCRBRD-130, db/73–75)
+
+Three files, pasted in turn, then the verify bundle once (§52–§54 are their proofs):
+
+```sh
+node tools/bundle-sql.mjs --apply 73   # interruptions in the log, the par clause, the deemed NRR figures
+node tools/bundle-sql.mjs --apply 74   # venue par at a ground
+node tools/bundle-sql.mjs --apply 75   # the DLS resource table: storage, the loader, the frozen reference
+node tools/bundle-sql.mjs              # → scrbrd-supabase-verify.sql
+```
+
+None needs a secret. After `db/75` the calculator answers *No DLS table
+loaded; enter the umpires' figures* everywhere until an operator loads the
+table; nothing else waits on it — the record is always the umpires' figure.
+
+**Loading the real table (once, by a platform administrator).** The table is
+never in the repository, a migration or a seed (design D5): it is a CSV held
+outside it, transcribed from the ICC playing conditions' section 06 (the D-L
+Standard Edition, ball by ball, 301 rows × 10 wickets). Its sha256 is the one
+recorded in `docs/design/SCRBRD-130_rain_and_par.md` §8.
+
+1. Sign in as a holder of `platform.reference.manage` — a platform
+   administrator (`platformadmin` on an assignment naming no school) or the
+   owner — as yourself, not inside a support session (the loader refuses one).
+   Go to **Settings → DLS table**.
+2. Choose the CSV. The screen shows the file's sha256: **it must equal the one
+   in §8**. If it does not, stop: the file is not the checked transcription.
+   (`sha256sum <file>` on your machine gives the same figure.)
+3. Fill in: **Title** `DLS Standard Edition, ICC playing conditions section 06`;
+   **Grain** by the ball; **Balls in the full innings** 300; **Figures in**
+   per cent (or "read from the file"); **Publisher** ICC; **Document** the
+   section's title; **Edition date** the document's; **Permission**
+   `granted by the school (Kameel) for the pilot, 2026-10-01`.
+4. **Load as a draft.** Expect *Every structural check passed* with 3010 cells
+   and a content hash; a refusal lists each check that failed, and nothing is
+   kept. The cells go to the database and are never shown or sent back.
+5. **Publish.** Matches fixed from now on name this version in their frozen
+   conditions and read it for ever; a match fixed earlier reads the current
+   table and its words say so.
+6. **G50 is the league's, not the platform's.** In the pilot league's
+   conditions, its officer enters `target.g50` = 200 (cited to the same
+   section 06, "lower levels of the game") and `target.method` =
+   `dls_standard`, with their source, and publishes the version. No platform
+   default exists; without it the calculator's third line says *G50 not set*.
+
+A correction is the next version: load it, publish it, then withdraw the old
+one with a note. A withdrawn table keeps its rows; matches that named it still
+read it, and say *table since withdrawn*. No route ever serves a cell.
+<!-- ── end SCRBRD-130 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

@@ -3924,6 +3924,20 @@ similar algorithm")
 Fable designs (SCRBRD-114 territory: conditions, results, the fold); Opus builds; Sonnet the screens. Sits beside
 SCRBRD-114 phase 3 (db/69–71).
 **Designed 2026-09-30:** `docs/design/SCRBRD-130_rain_and_par.md` (Fable). **Decided (Kameel, 2026-09-30): D1–D14 as recommended** — umpires' figure is the record; `target.method` umpires_revision | dls_standard (no average run rate); table in the database only, from Kameel's source; G50 a cited condition; venue par floor 5, window this season + two, rain-shortened excluded. Phases R1 db/72, R3 db/74, R2 db/73 when the table arrives.
+**Source and permission (Kameel, 2026-09-30 / 2026-10-01):** the ICC playing conditions' section 06 (D-L Standard Edition),
+transcribed to a CSV held outside the repository (sha256 in the design's §8); permission granted by the school (Kameel)
+for the pilot; G50 for schools 200, as the league's `target.g50`, never a platform default.
+**BUILT (2026-10-01, Opus) — as R1 `db/73`, R3 `db/74`, R2 `db/75`** (3b and 3c took db/71–72); db/99 §52–§54, each guard
+broken once and seen red. Design §9 records what was built and thirteen departures. R1: `play_stopped`/`play_resumed`,
+`revision.par`, the six refusals, the par clause and overs faced in `describeResult()`/`match_result_compute()`, the
+words' suffix, the deemed NRR (D8), the pad's Stop/Resume/End-innings sheets and banner, the board's revised line, the
+public log's lines, the commentary. R3: `venue_par()` and `venue_par_for_match()`, the floor pinned both sides, the ground
+card and the board's "typical side here" line. R2: the table and its loader/publish/withdraw, `platform.reference.manage`,
+`target.dls_table` frozen at fixing, `dls.mjs`, `GET /api/matches/:id/dls`, Settings → DLS table, the proposal beside
+the umpires' figures on the pad, the Match Centre's Rain panel. Synthetic table only in every test and walk (D5; the CI
+grep is `dls.test.mjs` §H). **Left for the operator:** load and publish the real table (`DEPLOYING.md`, "The rain rule");
+the pilot league's officer enters `target.g50` = 200 and `target.method` = `dls_standard`. **Not built:** a calculated
+DLS line and a venue-par line on the signed-out public page (design §9, departure 9).
 
 
 ### SCRBRD-131 — Small things found while building (2026-10-01)
