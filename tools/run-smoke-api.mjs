@@ -46,6 +46,12 @@ const WALKS = [
   // citations, the fixture's competition, the document fixed on the first
   // event (live and on the pad's credential), the handover's hash.
   "playing-conditions",
+  // ── SCRBRD-114 phase 3a (db/69): match results and the league table ──
+  // Two matches scored on the real write path, the result in words, the
+  // table computed under the league's figures, a walkover, adjustments, a
+  // re-fix, an amendment that flips a result, and the signed-out reads.
+  "results",
+  // ── end SCRBRD-114 phase 3a ──
   // The scorebook importer (SCRBRD-120, db/63): photos stripped and read on
   // the log, a card ticked and checked, two people, the commit's Laws and
   // seal, the match complete, the amendment path, the purge.

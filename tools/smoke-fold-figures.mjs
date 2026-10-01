@@ -1722,7 +1722,7 @@ try {
       startsAt: RESULT_STARTS_AT, conditions: x.play ?? undefined, status: x.status,
       sides: RESULT_SIDES, names: RESULT_NAMES, decision: x.decision,
     });
-    const [sql] = await q(`select * from match_result($1)`, [rm]);
+    const [sql] = await q(`select * from match_result_compute($1)`, [rm]);
     const f = folded.result;
     const fold = f == null
       ? { outcome: "in_progress", marginKind: null, margin: null, decidedBy: null, winnerSide: null, playOutcome: "in_progress" }

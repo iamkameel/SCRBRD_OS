@@ -34,11 +34,15 @@
 --                                     4th Edition's penalty-runs win and reopened
 --                                     chase (Law 16.7, 41.17.2), a scorebook card,
 --                                     and the end the Laws derive (settleInnings()).
---   match_result(m)                   §2.2's row: the match's outcome from its
+--   match_result_compute(m)           §2.2's row: the match's outcome from its
 --                                     scheduled innings; the margin; who won and
 --                                     who decided; the decision; result_hash.
---                                     SECURITY INVOKER: a reader reads the result
---                                     of a match whose log he may read.
+--                                     Runs as its caller; the owner's alone.
+--   match_result(m)                   the same, for a reader of the fixture at
+--                                     either side's scope or of its competition
+--                                     (match_result_readable()): the away coach
+--                                     reads the result of his match, though the
+--                                     home school's log is the home school's.
 --   match_result_decision             §2.5: conceded, walkover, awarded; one
 --                                     standing per match; withdrawn with a note,
 --                                     never deleted. match_result_decide() and
@@ -84,10 +88,13 @@
 --
 -- RLS. The two tables' policies are generated (below); the application has
 -- no INSERT, UPDATE or DELETE on either. The functions that compute a
--- result run as their caller; competition_results(), the standing and the
--- public reads are SECURITY DEFINER behind competition_visible() or a
+-- result run as their caller and are the owner's alone; match_result(),
+-- competition_results(), the standing and the public reads are SECURITY
+-- DEFINER behind match_result_readable(), competition_visible() or a
 -- publication, because a league's table is every school's matches and no
--- reader may read every school's log. None asks a pad capability by name.
+-- reader may read every school's log. One asks a pad capability by name —
+-- match_result_readable(), fixture.read — and db/99 §28 lists it: a pad's
+-- credential reads its own match's result, which its log already says.
 
 -- ── 0 · What this file replaces, before it does ───────────────────
 DROP TABLE IF EXISTS _db69_before;
@@ -267,8 +274,11 @@ BEGIN
 END $$ LANGUAGE plpgsql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 -- The result (design §2.2). describeResult() and result.mjs applyDecision(),
--- line for line: see the fold for the why of each rule.
-CREATE OR REPLACE FUNCTION match_result(p_match uuid)
+-- line for line: see the fold for the why of each rule. Runs as its caller
+-- and reads the whole log only as the owner: the application calls it through
+-- match_result() below, and the table, the public reads and the amendment's
+-- audit line from their own definers. Not the application's to call.
+CREATE OR REPLACE FUNCTION match_result_compute(p_match uuid)
 RETURNS TABLE (match_id uuid, outcome text, margin_kind text, margin integer, decided_by text,
                winner_side text, winner_school_id uuid, winner_team_code text, winner_key text,
                super_overs jsonb, decision jsonb, decision_applied boolean,
@@ -440,6 +450,36 @@ BEGIN
     md5(concat_ws('|', r_out, coalesce(r_kind, '-'), coalesce(r_margin::text, '-'), coalesce(r_by, '-'),
                   coalesce(r_side, '-'), coalesce(r_school::text, '-'), coalesce(r_team, '-')));
 END $$ LANGUAGE plpgsql STABLE SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION match_result_compute(uuid) FROM PUBLIC;
+
+-- May the caller read this match's result? Whoever may read the fixture, at
+-- either side's scope (the match row's own policy), and whoever can reach the
+-- competition it is played under: a league's results are every participant's
+-- (A1), though another school's log is not. A result names sides, never a boy.
+CREATE OR REPLACE FUNCTION match_result_readable(p_match uuid) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM match m
+     WHERE m.id = p_match
+       AND (app_can('fixture.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+            OR app_can('fixture.read', m.away_school_id, m.away_team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+            OR (m.competition_id IS NOT NULL AND competition_visible(m.competition_id))))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION match_result_readable(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION match_result_readable(uuid) TO scrbrd_app;
+
+-- The result, for a reader of it: the away school's coach reads the result of
+-- the match his side played, though the home school's log is the home
+-- school's; a league's participant reads every result in it.
+CREATE OR REPLACE FUNCTION match_result(p_match uuid)
+RETURNS TABLE (match_id uuid, outcome text, margin_kind text, margin integer, decided_by text,
+               winner_side text, winner_school_id uuid, winner_team_code text, winner_key text,
+               super_overs jsonb, decision jsonb, decision_applied boolean,
+               play_outcome text, play_winner_side text, play_winner_key text, play_margin_kind text, play_margin integer,
+               innings jsonb, result_hash text) AS $$
+  SELECT r.* FROM match_result_compute(p_match) r WHERE match_result_readable(p_match)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION match_result(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION match_result(uuid) TO scrbrd_app;
 
 -- ── 2 · The decision row (design §2.5) ────────────────────────────
 -- The competition a match is played under, whoever asks: the decision's
@@ -770,10 +810,16 @@ RETURNS TABLE (match_id uuid, starts_at timestamptz, status text,
            OR (r.decided_by = 'decision' AND r.outcome IN ('home_win', 'away_win')),
          -- Net run rate (§6.4): play's result only — a win or a tie.
          r.play_outcome IN ('home_win', 'away_win', 'tie'),
-         r.innings, mc.doc->'table', mc.sources, mc.table_refixed_at IS NOT NULL, r.result_hash
+         r.innings,
+         -- The match's frozen table part; a match never scored (a walkover,
+         -- one abandoned before a ball) has none, and counts under the
+         -- version in force on its day, as its first event would have fixed.
+         coalesce(mc.doc->'table', (SELECT x.doc->'table' FROM match_conditions_compute(m.id) x)),
+         coalesce(mc.sources, (SELECT x.sources FROM match_conditions_compute(m.id) x)),
+         mc.table_refixed_at IS NOT NULL, r.result_hash
     FROM match m
     LEFT JOIN match_conditions mc ON mc.match_id = m.id
-   CROSS JOIN LATERAL match_result(m.id) r
+   CROSS JOIN LATERAL match_result_compute(m.id) r
    WHERE m.competition_id = p_competition
    ORDER BY m.starts_at, m.id
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -1077,7 +1123,7 @@ BEGIN
   v_key := 'amendment:' || a.id::text;
 
   -- The result as the log has it now (db/69).
-  SELECT r.outcome, r.result_hash INTO v_before FROM match_result(a.match_id) r;
+  SELECT r.outcome, r.result_hash INTO v_before FROM match_result_compute(a.match_id) r;
 
   -- (4) authored by the requester, approved by the caller
   INSERT INTO ball_event
@@ -1099,7 +1145,7 @@ BEGIN
    WHERE id = p_amendment;
 
   -- ...and as it has it after the void: the audit line (db/69).
-  SELECT r.outcome, r.result_hash INTO v_after FROM match_result(a.match_id) r;
+  SELECT r.outcome, r.result_hash INTO v_after FROM match_result_compute(a.match_id) r;
   INSERT INTO scoring_audit (match_id, school_id, event, actor_id, epoch, detail)
   VALUES (a.match_id, a.school_id, 'amendment_approved', app_user_id(), v_epoch,
           jsonb_build_object('amendment', a.id, 'void_key', v_key,
@@ -1233,7 +1279,7 @@ RETURNS TABLE (outcome text, margin_kind text, margin integer, decided_by text, 
   SELECT r.outcome, r.margin_kind, r.margin, r.decided_by, r.winner_side,
          r.play_outcome, r.play_winner_side, r.play_margin_kind, r.play_margin,
          r.decision_applied, r.decision->>'kind', r.decision->>'side', (r.decision->>'overrides_play')::boolean
-    FROM match_result(p_match) r
+    FROM match_result_compute(p_match) r
    WHERE public_fixture_served(p_match)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION public_match_result(uuid) FROM PUBLIC;
@@ -1265,7 +1311,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('REVOKE ALL ON match_result_decision, competition_points_adjustment, competition_standing FROM %I', r);
       FOREACH f IN ARRAY ARRAY[
-          'match_result(uuid)', 'innings_result_state(uuid,smallint,jsonb,boolean)', 'penalty_carried_as_folded(uuid,smallint)',
+          'match_result(uuid)', 'match_result_compute(uuid)', 'match_result_readable(uuid)',
+          'innings_result_state(uuid,smallint,jsonb,boolean)', 'penalty_carried_as_folded(uuid,smallint)',
           'innings_over_reason(integer,integer,integer,integer,integer,integer)', 'result_key_eq(text,text)',
           'match_competition_of(uuid)', 'match_result_decider(uuid)',
           'match_result_decide(uuid,text,text,text,boolean)', 'match_result_decision_withdraw(uuid,text)',
@@ -1360,9 +1407,10 @@ BEGIN
   IF NOT coalesce((SELECT 'security_invoker=true' = ANY (c.reloptions) FROM pg_class c WHERE c.oid = 'competition_standing'::regclass), false) THEN
     RAISE EXCEPTION 'db/69: competition_standing runs as its owner';
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid IN ('match_result(uuid)'::regprocedure,
-               'innings_result_state(uuid,smallint,jsonb,boolean)'::regprocedure) AND p.prosecdef) THEN
-    RAISE EXCEPTION 'db/69: a result is computed as its owner, not its reader';
+  IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid IN ('match_result_compute(uuid)'::regprocedure,
+               'innings_result_state(uuid,smallint,jsonb,boolean)'::regprocedure) AND p.prosecdef)
+     OR has_function_privilege('scrbrd_app', 'match_result_compute(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'db/69: a result is computed as its owner, or the application may compute one past its guard';
   END IF;
   IF has_function_privilege('scrbrd_app', 'competition_results_all(uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'db/69: the application may read every competition''s results with no guard';
@@ -1408,7 +1456,7 @@ BEGIN
             '{"reason":"abandoned","confirmed":{"runs":10,"wickets":1,"balls":3}}');
     SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, r2.margin_kind, r2.margin, r2.decided_by, r2.winner_side), ' ' ORDER BY x.label)
       INTO got
-      FROM (VALUES ('abd', v_abd), ('won', v_won)) AS x(label, m), LATERAL match_result(x.m) r2;
+      FROM (VALUES ('abd', v_abd), ('won', v_won)) AS x(label, m), LATERAL match_result_compute(x.m) r2;
     IF got IS DISTINCT FROM 'abd=no_result won=away_win,wickets,9,play,away' THEN
       RAISE EXCEPTION 'db/69: match_result reads %', got;
     END IF;
@@ -1422,9 +1470,9 @@ BEGIN
     END;
     INSERT INTO match_result_decision (match_id, kind, side, reason, overrides_play, decided_by)
     VALUES (v_won, 'awarded', 'home', 'protest upheld by the committee', true, v_user);
-    IF (SELECT row(r2.outcome, r2.margin_kind, r2.decided_by, r2.play_outcome)::text FROM match_result(v_won) r2)
+    IF (SELECT row(r2.outcome, r2.margin_kind, r2.decided_by, r2.play_outcome)::text FROM match_result_compute(v_won) r2)
        IS DISTINCT FROM '(home_win,awarded,decision,away_win)' THEN
-      RAISE EXCEPTION 'db/69: the override reads %', (SELECT row(r2.outcome, r2.margin_kind, r2.decided_by, r2.play_outcome)::text FROM match_result(v_won) r2);
+      RAISE EXCEPTION 'db/69: the override reads %', (SELECT row(r2.outcome, r2.margin_kind, r2.decided_by, r2.play_outcome)::text FROM match_result_compute(v_won) r2);
     END IF;
     RAISE EXCEPTION USING ERRCODE = 'ZZ069', MESSAGE = 'db/69: undo the proof';
   EXCEPTION WHEN sqlstate 'ZZ069' THEN NULL;

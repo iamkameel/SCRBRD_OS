@@ -581,18 +581,24 @@ export const READ_QUERIES = {
   // The league ladder. Readable whole by anyone who can reach the competition,
   // through the organiser or through any entrant — a log with one row in it is
   // not a log. Writing a row stays anchored to the entrant's own school.
+  //
+  // SCRBRD-114 phase 3a (db/69): read from competition_standing, the table
+  // computed on every read from each match's result under its own frozen
+  // table document — or, where a competition's points are not confirmed
+  // (`basis` = 'entered'), the figures its schools typed, as before. Ranked
+  // by the competition's table.order, equal sides sharing a rank. Accepted
+  // entrants only (db/67), as before.
   league: {
-    text: `select e.id, e.competition_id, e.school_id, e.team_code, e.display_name,
-                  e.played, e.won, e.lost, e.drawn, e.no_result, e.points,
-                  e.net_run_rate,
+    text: `select s.entrant_id as id, s.competition_id, s.school_id, s.team_code, s.display_name,
+                  s.played, s.won, s.lost, s.tied, s.drawn, s.no_result, s.points,
+                  s.nrr as net_run_rate, s.basis, s.rank, s.adjustment_points, s.conditions_adjusted,
                   -- The tier, when the competition has them. An entrant nobody
                   -- has placed sits after every division, not in a made-up one.
                   d.id as division_id, d.code as division_code, d.name as division_name, d.rank as division_rank
-             from competition_entrant e
-             left join competition_division d on d.id = e.division_id
-            -- An invitation not accepted is not a place in the ladder (db/67).
-            where ($1::uuid is null or e.competition_id = $1) and e.status = 'accepted'
-            order by e.competition_id, d.rank nulls last, e.points desc, e.net_run_rate desc nulls last, e.display_name`,
+             from competition_standing s
+             left join competition_division d on d.id = s.division_id
+            where ($1::uuid is null or s.competition_id = $1)
+            order by s.competition_id, d.rank nulls last, s.rank, s.display_name`,
     params: q => [q?.competitionId || null],
   },
 

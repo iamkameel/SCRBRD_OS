@@ -14,6 +14,9 @@
  *   GET /api/public/matches/:id           the header (team level)
  *   GET /api/public/matches/:id/log       the redacted log (?since=seq)
  *   GET /api/public/matches/:id/shots     the team's sectors (L7)
+ *   GET /api/public/competitions/:id/standings  a published competition's table
+ *                                         (SCRBRD-114 phase 3a, db/69): sides and
+ *                                         figures, never a boy, never a reason (A1)
  *   GET /live/:id, /scorecard/:id         the HTML shells (noindex; OG title)
  *   GET /table/:id, /fixtures/:id         phase 2: answered as not found
  *
@@ -50,6 +53,7 @@ import pg from "pg";
 import { ANON, withPrincipal } from "../auth/auth.mjs";
 import { ROBOTS } from "@scrbrd/policy/public";
 import { projectLog } from "./redact.mjs";
+import { resultFromRow, resultWords } from "@scrbrd/scoring";
 /** @import { IncomingMessage, ServerResponse } from "node:http" */
 /** @import { Pool, Db } from "../api-types.mjs" */
 /** @import { PublicLog, PersonRow, LogRow } from "./redact.mjs" */
@@ -61,6 +65,8 @@ export const RATE = Object.freeze({ perMinute: 120, burst: 30 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const API = /^\/api\/public\/matches\/([^/]+)(\/log|\/shots)?$/;
+/** A published competition's table (SCRBRD-114 phase 3a). */
+const STANDINGS = /^\/api\/public\/competitions\/([^/]+)\/standings$/;
 const SHELL = /^\/(live|scorecard|table|fixtures)\/([^/]+)$/;
 /** The two shells phase 1 serves; the other two answer not found until phase 2. */
 const SERVED_SHELLS = new Set(["live", "scorecard"]);
@@ -96,6 +102,7 @@ export const NOT_FOUND = JSON.stringify({ error: "not_found" });
  * @property {Held<any> | undefined} [header]
  * @property {Held<any> | undefined} [log]      a PublicLog
  * @property {Held<any> | undefined} [shots]
+ * @property {Held<any> | undefined} [standings]  a competition's table, keyed by its id
  * @property {Set<string>} players   the real player ids its log names
  * @property {Map<string, Promise<any>>} inflight
  */
@@ -150,7 +157,7 @@ export class PublicCache {
    * The cached answer for `part`, or a fresh one from `load()` — one load at
    * a time per fixture and part, however many requests arrive together.
    * @template T
-   * @param {string} matchId @param {"header" | "log" | "shots"} part
+   * @param {string} matchId @param {"header" | "log" | "shots" | "standings"} part
    * @param {number} ttl @param {() => Promise<T>} load
    * @returns {Promise<T>}
    */
@@ -379,6 +386,9 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     // folds the log as the server does: a league with no free hit stands the
     // wicket there too. None for a match with no document.
     const { rows: pc } = await asNobody((c) => c.query(`select play, doc_hash from public_match_conditions($1)`, [id]));
+    // The result as the server reads it (SCRBRD-114 phase 3a, db/69): who won
+    // and by what, and a decision's kind and side — never its reason.
+    const { rows: pr } = await asNobody((c) => c.query(`select * from public_match_result($1)`, [id]));
     return {
       conditions: pc[0]?.play ?? null, conditionsHash: pc[0]?.doc_hash ?? null,
       id,
@@ -393,6 +403,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
         innings: Number(s.innings), runs: s.runs == null ? null : Number(s.runs),
         wickets: Number(s.wickets ?? 0), balls: Number(s.balls ?? 0) })),
       servedOn: r.served_on,
+      result: publicResult(pr[0], { home: r.home_label ?? r.home_team ?? "Home", away: r.away_label ?? "Away" }),
     };
   }).then(async (h) => {
     // A live fixture's header lives 5 s, not 60: re-read once the short TTL is up.
@@ -420,6 +431,17 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
   const shots = (id, h, hot) => cache.get(id, "shots", ttlFor(h, hot), async () => {
     const { rows } = await asNobody((c) => c.query(`select * from public_shot_sectors($1)`, [id]));
     return rows.map((r) => ({ innings: Number(r.innings), sector: Number(r.sector), shots: Number(r.shots), runs: Number(r.runs) }));
+  });
+
+  /** A published competition's table, or null. @param {string} id @param {boolean} hot */
+  const standings = (id, hot) => cache.get(id, "standings", SETTLED_TTL_MS * (hot ? 2 : 1), async () => {
+    const { rows } = await asNobody((c) => c.query(`select * from public_competition_standing($1)`, [id]));
+    if (!rows.length) return null;
+    return rows.map((r) => ({
+      rank: r.rank, division: r.division ?? null, side: r.side, played: r.played, won: r.won, lost: r.lost, tied: r.tied,
+      drawn: r.drawn, noResult: r.no_result, points: r.points == null ? null : Number(r.points),
+      nrr: r.nrr == null ? null : Number(r.nrr), basis: r.basis,
+    }));
   });
 
   /**
@@ -462,6 +484,20 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       return true;
     }
 
+    const standingsMatch = STANDINGS.exec(path);
+    if (standingsMatch) {
+      const cid = standingsMatch[1].toLowerCase();
+      if (!UUID.test(cid)) { notFound(res, false, head); return true; }
+      try {
+        const rows = await standings(cid, cache.hit(cid));
+        if (!rows) { notFound(res, false, head); return true; }
+        send(res, 200, JSON.stringify({ competitionId: cid, rows }), { cache: TEAM_LEVEL }, head);
+      } catch (/** @type {any} */ err) {
+        console.error(`GET ${path} (public) →`, err.code || "", err.message);
+        send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
+      }
+      return true;
+    }
     const apiMatch = API.exec(path);
     const id = (shellMatch ? shellMatch[2] : apiMatch?.[1] ?? "").toLowerCase();
     if (!UUID.test(id) || (shellMatch && !SERVED_SHELLS.has(shellMatch[1])) || (!shellMatch && !apiMatch)) {
@@ -503,6 +539,26 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     close: () => listener?.close(),
     /** Whether the LISTEN connection is up, for /api/health. */
     listening: () => listener?.up() ?? false,
+  };
+}
+
+/**
+ * The result on the public page (SCRBRD-114 phase 3a): public_match_result()'s
+ * row as structure and words, each side named by its label. A decision's
+ * reason is not in the row and so not in the words (PUBLIC_DATA §3).
+ * @param {any} row  @param {{home: string, away: string}} names
+ */
+export function publicResult(row, names) {
+  if (!row) return null;
+  const r = resultFromRow({ ...row, decision: row.decision_kind ? { kind: row.decision_kind, side: row.decision_side,
+                                                                     overrides_play: row.decision_overrides_play === true } : null });
+  if (!r) return null;
+  return {
+    outcome: r.outcome, marginKind: r.marginKind, margin: r.marginValue, decidedBy: r.decidedBy, winnerSide: r.winnerSide,
+    playOutcome: r.playOutcome, playWinnerSide: r.playWinnerSide, playMarginKind: r.playMarginKind, playMargin: r.playMarginValue,
+    decisionApplied: r.decisionApplied,
+    decision: r.decision ? { kind: r.decision.kind, side: r.decision.side, overridesPlay: r.decision.overridesPlay === true } : null,
+    text: resultWords(r, { reasons: false, nameOf: (key, side) => (side === "away" ? names.away : names.home) }),
   };
 }
 

@@ -6414,8 +6414,12 @@ BEGIN
     -- caller read an entrant side's fixtures — asked only by the policy on
     -- competition_blackout, which carries the pad guard, so a credential
     -- reads no blackout whatever it answers.
+    -- match_result_readable (db/69, SCRBRD-114 phase 3a): yes or no, may the
+    -- caller read a match's result — the fixture's reader at either side, or
+    -- the competition's; a credential reads its own match's result, which its
+    -- log already says, and a result names sides, never a boy.
     PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
+                             || 'match_playing_conditions,match_result_readable,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
@@ -10297,6 +10301,8 @@ BEGIN
   --   (audit)       scoring_amendment_decide() without its audit line
   --   (refix)       match_conditions_refix_table() writing set_id from the version named
   --   (scope)       competition_standing as its owner
+  --   (away)        match_result() run as its caller (the visitors' coach reads
+  --                 no innings of the home school's log: no result)
   --   (public)      public_competition_standing() not asking for a publication
   DECLARE
     ids    jsonb := _seed_69();
@@ -10342,6 +10348,12 @@ BEGIN
     T0 := _table_69(C, ids);
     PERFORM _assert(T0 = 'A=4,0,3,0,1,2,4 B=3,1,0,1,1,8,3 C=3,1,0,1,1,8,2 D=4,2,1,0,1,11,1',
       format('db/69 (fallback): the table reads %s', T0));
+    -- (away) the visitors' coach reads the result of the match his side
+    -- played, whoever's log it is; and, a participant, every result in it
+    SELECT string_agg(concat_ws(',', r2.outcome, r2.margin_kind, r2.margin), ' ' ORDER BY x.n) INTO got
+      FROM (VALUES (1, M1), (2, M2)) AS x(n, m), LATERAL match_result(x.m) r2;
+    PERFORM _assert(got = 'away_win,wickets,10 home_win,runs,50',
+      format('db/69 (away): Westville''s coach reads %s for M1 and M2', got));
     SELECT string_agg(concat_ws('/', s.runs_for, s.balls_for, s.runs_against, s.balls_against), ' ' ORDER BY s.display_name),
            bool_and(s.basis = 'computed'), count(*)
       INTO got, v_ok, n FROM competition_standing s WHERE s.competition_id = C;
@@ -10540,7 +10552,7 @@ BEGIN
     -- The new objects: the view as its reader, the rule as its caller, the
     -- tables closed to the application's writes.
     PERFORM _assert(coalesce((SELECT 'security_invoker=true' = ANY (c.reloptions) FROM pg_class c WHERE c.oid = 'competition_standing'::regclass), false)
-                    AND NOT (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = 'match_result(uuid)'::regprocedure)
+                    AND NOT has_function_privilege('scrbrd_app', 'match_result_compute(uuid)', 'EXECUTE')
                     AND NOT has_table_privilege('scrbrd_app', 'match_result_decision', 'INSERT')
                     AND NOT has_table_privilege('scrbrd_app', 'competition_points_adjustment', 'UPDATE')
                     AND NOT has_function_privilege('scrbrd_app', 'competition_results_all(uuid)', 'EXECUTE'),
