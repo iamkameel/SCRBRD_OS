@@ -253,6 +253,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // league pre-filled from its conditions; the pad's words; the bowled after
   // a no-ball standing where the league says no free hit.
   "browser-playing-conditions",
+  // ── SCRBRD-114 phase 3a (db/69): the table, the decision and adjustment
+  // sheets as the organiser uses them, the participant's read, the Match
+  // Centre's and the public page's result line; 12px, 44px, 390, Daylight.
+  "browser-results",
+  // ── end SCRBRD-114 phase 3a ──
   // The playing-conditions screen (SCRBRD-114, Leagues → the competition →
   // Playing conditions): an organiser drafts, cites, is refused in words,
   // publishes for tomorrow, versions and withdraws; the version in force with

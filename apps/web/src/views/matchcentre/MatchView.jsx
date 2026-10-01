@@ -284,7 +284,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !log.result ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
             {isLive && !log.result && <span className="live-dot" aria-hidden="true"/>}
-            {log.result || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {log.result || (server && server.outcome !== "in_progress") || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           {log.demo && <span style={{ ...T.role.label, color: T.content.tertiary }}>Demonstration</span>}
         </div>

@@ -312,7 +312,7 @@ export function PublicMatch({ matchId, view }) {
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !folded?.result ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
             {isLive && !folded?.result && <span className="live-dot" aria-hidden="true"/>}
-            {folded?.result || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {folded?.result || (match.result && match.result.outcome !== "in_progress") || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}

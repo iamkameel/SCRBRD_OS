@@ -119,6 +119,9 @@ export function asPublicMatch(m) {
     format: m.format ?? null,
     tossWonBy: m.tossWonBy ?? null,
     tossDecision: m.tossDecision ?? null,
-    result: null,
+    // The result as the server reads it (SCRBRD-114 phase 3a, db/69): play,
+    // the status and a decision, as structure and words — sides named, never
+    // a reason. Null before db/69's header carried one.
+    result: m.result ?? null,
   };
 }
