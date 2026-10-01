@@ -17,7 +17,7 @@ import { SupportAccessPanel } from "./support.jsx";
 import { DlsTablesPanel } from "./dlsTables.jsx";
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 // SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
-import { LiftDeclarationPanel, LiftPolicyPanel } from "./lifts.jsx";
+import { LiftDeclarationPanel, LiftPolicyPanel, LiftPurgePanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 import { Icon } from "../ui/icons.jsx";
 
@@ -1231,6 +1231,9 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
       {/* SCRBRD-124: the school's lift policy, signed or withdrawn by the
           principal (the second of the two keys). Drawn for transport.lift.policy. */}
       <LiftPolicyPanel/>
+      {/* SCRBRD-124 phase 2 (db/76): the lift records due for purge, pressed
+          by the office (transport.lift.oversee), never by a job. */}
+      <LiftPurgePanel/>
 
       {canAudit && <AuditSection role={role}/>}
 

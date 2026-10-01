@@ -25,6 +25,7 @@ import { Action, Card, Line, Page, Title } from "./parts.jsx";
 import { LastMatchCard, LiveCard, NewsCard, NextFixtureCard, NoticesCard, SeasonCard, TrainingCard } from "./cards.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { Health, TheirRecord } from "./childfile.jsx";
+import { MyLiftLine } from "../lifts.jsx";
 
 /** The pupil himself, in the shape the shared cards take: his own player row. */
 function useSelf(role) {
@@ -66,6 +67,9 @@ export function PupilHome({ role }) {
         <Line quiet>{[me.schoolName, me.team].filter(Boolean).join(" · ")}</Line>
       </header>
       <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={(m) => setOpen({ kind: "fixture", match: m })}/>
+      {/* SCRBRD-124 phase 2 (db/76): his own lifts, for a pupil of eighteen
+          still at school (Kameel, 2026-10-01); nothing for anybody younger. */}
+      <MyLiftLine/>
       <LiveCard child={me} matches={matches} self now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>
       <LastMatchCard child={me} matches={matches} self now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
       <SeasonCard child={me} role={role} self/>

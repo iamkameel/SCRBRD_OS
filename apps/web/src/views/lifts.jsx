@@ -40,6 +40,7 @@ import { api } from "../lib/api.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { humanDateTime } from "../lib/format.js";
 import { roleGrants } from "@scrbrd/policy/roles";
+import { isTheirs } from "../lib/family.js";
 
 const TZ = "Africa/Johannesburg";
 
@@ -225,14 +226,19 @@ export function LiftsPanel({ role, team }) {
  * only; the server decides what is listed (empty for anybody it is not for).
  * @param {{ match: any }} props
  */
-export function FixtureLifts({ match }) {
+export function FixtureLifts({ match, child = null }) {
   const family = schoolsWhere("transport.lift.arrange");
   const pupil = !family.length && (profile()?.assignments ?? []).some((a) => roleGrants(a.role, "medical.details.read"));
-  if (!match?.id || match.status !== "upcoming") return null;
-  if (pupil) return <SelfLifts upcoming={[match]}/>;
+  if (!match?.id) return null;
+  // On the day (db/76): the day cards, whatever the fixture's status — the
+  // way home is after the start. A pupil's is his own seat, at eighteen.
+  const day = (family.length || pupil) && inLiftDay(match.startsAt)
+    ? <LiftDayCards match={match} childId={pupil ? null : child?.id ?? null}/> : null;
+  if (match.status !== "upcoming") return day;
+  if (pupil) return <>{day}<SelfLifts upcoming={[match]}/></>;
   if (!family.length) return null;
-  return <LiftsForFixture key={match.id} match={match} upcoming={[match]} onPick={() => {}}
-    familySchool={family[0]?.id ?? null} office={false}/>;
+  return <>{day}<LiftsForFixture key={match.id} match={match} upcoming={[match]} onPick={() => {}}
+    familySchool={family[0]?.id ?? null} office={false}/></>;
 }
 
 /** One act, then reload; a refusal said beside the thing it refused. */
@@ -318,6 +324,8 @@ function LiftsForFixture({ match, upcoming, onPick, familySchool, office }) {
   const others = offers.filter((o) => !o.mine);
 
   return (
+    <>
+    {familySchool && inLiftDay(match.startsAt) && <LiftDayCards match={match}/>}
     <Card sx={{ padding: "14px 16px", marginBottom: "16px" }} data-testid="lifts-panel">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "12px", flexWrap: "wrap" }}>
         <div>
@@ -351,6 +359,7 @@ function LiftsForFixture({ match, upcoming, onPick, familySchool, office }) {
       )}
       {office && summary.length > 0 && <OfficeCounts rows={summary}/>}
     </Card>
+    </>
   );
 }
 
@@ -727,6 +736,429 @@ function LiftDeclarationForSchool({ school }) {
         </details>
       )}
       {said && <div role="status" data-testid="lift-declare-said" style={{ ...body(), marginTop: "8px" }}>{said}</div>}
+    </Card>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Phase 2 (db/76): the day
+// ══════════════════════════════════════════════════════════════════
+//
+// Every card below reads one route and acts through one route; the database
+// decides who sees which names (the driver hers, logged; a family its own
+// boys; the coach the way there, logged; the office the exceptions, logged)
+// and the numbers stay lift_contacts()'s, on the day. Nothing here is
+// module-gated: a lift on the road is seen through.
+
+/** Within the day window (the day before to the day after), as the client chooses what to ask about. */
+export const inLiftDay = (startsAt, now = Date.now()) => {
+  const t = Date.parse(startsAt ?? "");
+  return Number.isFinite(t) && Math.abs(t - now) < 36 * 3600e3;
+};
+
+const DAY_REFUSAL = {
+  on_the_road: "This lift is under way: it is seen through to its end. Ring the families, or the office resolves.",
+  not_the_day: "Marks are made on the day of the lift.",
+  already_departed: "The lift is already marked as left.",
+  already_arrived: "The lift is already marked as arrived.",
+  already_marked: "That is already marked.",
+  already_received: "He has already been received.",
+  not_confirmed: "That seat is not confirmed: do not take him.",
+  not_boarded: "Mark him in the car first.",
+  not_departed: "Mark the lift as left first.",
+  unknown_event: "That is not a mark.",
+  resolution: "Choose how it was resolved.",
+  not_yet: "The lift's meeting time has not come yet.",
+  not_due: "Not due yet: lift records are kept three years after the fixture, declarations a year after they end.",
+  lifts_remain: "Lift records still name this declaration; they go first.",
+};
+const sayDay = (e) => DAY_REFUSAL[e?.code] ?? say(e);
+
+/** One act, then reload; a refusal said beside the thing it refused (the day's words). */
+function useDayAct(reload) {
+  const [said, setSaid] = useState({ at: null, text: "" });
+  const act = async (at, path, payload) => {
+    setSaid({ at, text: "" });
+    try { await api(path, { method: "POST", body: payload ?? {} }); reload(); return true; }
+    catch (e) { setSaid({ at, text: sayDay(e) }); return false; }
+  };
+  return { act, said };
+}
+
+/** "In the car 07:20 · Handed over 08:40" — the marks on one seat, in words. */
+function marksWords(s) {
+  return [
+    s.boardedAt && `In the car ${saClock(s.boardedAt)}`,
+    s.handedOverAt && (s.handoverKind === "not_collected" ? `Not collected ${saClock(s.handedOverAt)}` : `Handed over ${saClock(s.handedOverAt)}`),
+    s.acknowledgedAt && `Received ${saClock(s.acknowledgedAt)}`,
+    s.resolvedAt && s.resolution !== "collected_late" && `Resolved by the office ${saClock(s.resolvedAt)}`,
+  ].filter(Boolean).join(" · ");
+}
+
+/** A phone number as a link to ring, 44px to tap. */
+function Ring({ phone, testid }) {
+  if (!phone) return null;
+  return (
+    <a href={`tel:${String(phone).replace(/[^+\d]/g, "")}`} data-testid={testid}
+      style={{ display: "inline-flex", alignItems: "center", minHeight: "44px", color: textOn(D.sky), fontFamily: D.body,
+               fontSize: "14px", fontWeight: 600 }}>{phone}</a>
+  );
+}
+
+/** The numbers on the day (lift_contacts(), logged): null off the day or for anybody else. */
+function useContacts(offerId, nonce) {
+  const [c, setC] = useState(null);
+  useEffect(() => {
+    let gone = false;
+    api(`/api/lifts/${offerId}/contacts`).then((r) => { if (!gone) setC(r.contacts ?? null); }).catch(() => { if (!gone) setC(null); });
+    return () => { gone = true; };
+  }, [offerId, nonce]);
+  return c;
+}
+
+/**
+ * The day cards on one fixture (lift_my_day()): the driver's — her marks and
+ * her passengers' numbers — and the family's — the driver's number and car,
+ * and "confirm collected" on the way home. `childId` narrows a family's card
+ * to one boy (a family Home is about one child). Nothing off the day.
+ */
+export function LiftDayCards({ match, childId = null }) {
+  const [nonce, setNonce] = useState(0);
+  const [rows, setRows] = useState([]);
+  const reload = () => setNonce((n) => n + 1);
+  useEffect(() => {
+    let gone = false;
+    api(`/api/matches/${match.id}/lifts/day`).then((r) => { if (!gone) setRows(r.rows ?? []); }).catch(() => { if (!gone) setRows([]); });
+    return () => { gone = true; };
+  }, [match.id, nonce]);
+  const shown = rows
+    .map((e) => (e.as === "family" && childId ? { ...e, seats: e.seats.filter((s) => s.playerId === childId) } : e))
+    .filter((e) => e.as === "driver" || e.seats.length);
+  if (!shown.length) return null;
+  return (
+    <div style={{ display: "grid", gap: "10px", marginBottom: "16px" }} data-testid="lift-day">
+      {shown.map((e) => (e.as === "driver"
+        ? <DriverDay key={e.offerId} e={e} reload={reload} nonce={nonce}/>
+        : <FamilyDay key={e.offerId} e={e} reload={reload} nonce={nonce}/>))}
+    </div>
+  );
+}
+
+/** The driver's day card: left, boy in, handed over, not collected, arrived; and the numbers. */
+function DriverDay({ e, reload, nonce }) {
+  const { act, said } = useDayAct(reload);
+  const contacts = useContacts(e.offerId, nonce);
+  const there = e.leg === "out";
+  const taking = e.seats.filter((s) => s.status === "confirmed" || s.status === "done");
+  const notTaking = e.seats.filter((s) => !(s.status === "confirmed" || s.status === "done"));
+  const at = `day:${e.offerId}`;
+  const numbers = (pid) => contacts?.passengers?.find((p) => p.playerId === pid) ?? null;
+  return (
+    <Card sx={{ padding: "14px 16px" }} data-testid={`lift-day-driver-${e.offerId}`}>
+      <div style={label()}>Your lift {there ? "there" : "home"} today</div>
+      <div style={{ ...body(), marginTop: "4px" }}>
+        {e.meetPlace} · {saClock(e.meetAt)}
+        {e.departedAt && <> · Left {saClock(e.departedAt)}</>}
+        {e.arrivedAt && <> · Arrived {saClock(e.arrivedAt)}</>}
+        {e.state === "done" && <> · <strong>Done</strong></>}
+      </div>
+      {e.awaitingDriver && <div style={{ ...muted(), color: textOn(D.amber), marginTop: "4px" }}>The fixture has moved: confirm the lift on the fixture before you leave.</div>}
+      <div style={{ display: "grid", gap: "8px", marginTop: "10px" }}>
+        {taking.length === 0 && <div style={muted()}>No boy is confirmed on this lift.</div>}
+        {taking.map((s) => {
+          const n = numbers(s.playerId);
+          const done = s.acknowledgedAt || s.resolvedAt;
+          return (
+            <div key={s.seatId} data-testid={`lift-day-seat-${s.seatId}`} style={{ padding: "8px 10px", borderRadius: D.sm, background: D.surf2,
+              border: `1px solid ${s.handoverKind === "not_collected" && !done ? D.rose : D.border}` }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ ...body(), fontWeight: 600 }}>{s.name}</div>
+                  <div style={muted()} data-testid={`lift-day-marks-${s.seatId}`}>{marksWords(s) || "Not yet in the car"}</div>
+                </div>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {e.state !== "done" && !s.boardedAt && !done && (
+                    <Btn data-testid={`lift-board-${s.seatId}`} onClick={() => act(at, `/api/lift-seats/${s.seatId}/mark`, { event: "boarded" })}>In the car</Btn>
+                  )}
+                  {e.departedAt && s.boardedAt && !s.handedOverAt && !done && (
+                    <>
+                      <Btn data-testid={`lift-handover-${s.seatId}`} onClick={() => act(at, `/api/lift-seats/${s.seatId}/mark`, { event: "handed_over" })}>Handed over</Btn>
+                      <Btn variant="danger" data-testid={`lift-notcollected-${s.seatId}`} onClick={() => act(at, `/api/lift-seats/${s.seatId}/mark`, { event: "not_collected" })}>Not collected</Btn>
+                    </>
+                  )}
+                </div>
+              </div>
+              {n && (
+                <div style={{ marginTop: "6px", display: "grid", gap: "2px" }} data-testid={`lift-day-numbers-${s.seatId}`}>
+                  {n.guardian && <div style={muted()}>Consent given by {n.guardian}</div>}
+                  {(n.contacts ?? []).map((c, i) => (
+                    <div key={i} style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", ...muted() }}>
+                      <span>{c.name}{c.relationship ? ` (${c.relationship})` : ""}</span>
+                      <Ring phone={c.phone}/>{c.phoneAlt && <Ring phone={c.phoneAlt}/>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {notTaking.length > 0 && (
+        <div style={{ marginTop: "10px" }} data-testid={`lift-day-nottaking-${e.offerId}`}>
+          <div style={{ ...label(), color: textOn(D.rose) }}>Not confirmed — do not take</div>
+          {notTaking.map((s) => <div key={s.seatId} style={muted()}>{s.name} · {SEAT_WORDS[s.status] ?? s.status}</div>)}
+        </div>
+      )}
+      {e.state !== "done" && (
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
+          {!e.departedAt && <Btn data-testid={`lift-left-${e.offerId}`} disabled={e.awaitingDriver} onClick={() => act(at, `/api/lifts/${e.offerId}/mark`, { event: "departed" })}>We have left</Btn>}
+          {e.departedAt && !e.arrivedAt && <Btn data-testid={`lift-arrived-${e.offerId}`} onClick={() => act(at, `/api/lifts/${e.offerId}/mark`, { event: "arrived" })}>We have arrived</Btn>}
+        </div>
+      )}
+      {said.at === at && said.text && <div role="alert" style={alert()} data-testid={`lift-day-said-${e.offerId}`}>{said.text}</div>}
+      <p style={{ ...muted(), margin: "8px 0 0" }}>If a boy is not collected, stay with him and ring his family; the school office is told.</p>
+    </Card>
+  );
+}
+
+/** The family's day card: who drives, her number and the car, the marks, and "confirm collected" on the way home. */
+function FamilyDay({ e, reload, nonce }) {
+  const { act, said } = useDayAct(reload);
+  const contacts = useContacts(e.offerId, nonce);
+  const d = contacts?.driver ?? null;
+  const at = `famday:${e.offerId}`;
+  return (
+    <Card sx={{ padding: "14px 16px" }} data-testid={`lift-day-family-${e.offerId}`}>
+      <div style={label()}>Lift {e.leg === "out" ? "there" : "home"} today</div>
+      <div style={{ ...body(), marginTop: "4px" }}>
+        With {e.driverName} · {e.meetPlace} · {saClock(e.meetAt)}
+        {e.departedAt && <> · Left {saClock(e.departedAt)}</>}
+        {e.arrivedAt && <> · Arrived {saClock(e.arrivedAt)}</>}
+      </div>
+      {d && (
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", ...muted() }} data-testid={`lift-day-car-${e.offerId}`}>
+          <span>{d.vehicle}{d.registration ? ` · ${d.registration}` : ""}</span>
+          <Ring phone={d.phone} testid={`lift-driver-phone-${e.offerId}`}/>{d.phoneAlt && <Ring phone={d.phoneAlt}/>}
+        </div>
+      )}
+      {e.seats.map((s) => (
+        <div key={s.seatId} style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", marginTop: "8px" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...body(), fontWeight: 600 }}>{s.self ? "You" : s.name}</div>
+            <div style={muted()} data-testid={`lift-day-marks-${s.seatId}`}>{marksWords(s) || (SEAT_WORDS[s.status] ?? s.status)}</div>
+          </div>
+          {s.mayReceive && e.leg === "back" && (e.departedAt || s.handedOverAt) && (
+            <Btn data-testid={`lift-collected-${s.seatId}`} onClick={() => act(at, `/api/lift-seats/${s.seatId}/receive`)}>
+              {s.self ? "I am home" : "Confirm collected"}
+            </Btn>
+          )}
+        </div>
+      ))}
+      {said.at === at && said.text && <div role="alert" style={alert()}>{said.text}</div>}
+    </Card>
+  );
+}
+
+/**
+ * The coach's expected list for the way there (lift_expected(), logged):
+ * each boy arriving by lift, with whom, when, the marks, "not left" when the
+ * lift is late, and "with us".
+ */
+export function LiftExpected({ match }) {
+  const [nonce, setNonce] = useState(0);
+  const [rows, setRows] = useState([]);
+  const { act, said } = useDayAct(() => setNonce((n) => n + 1));
+  useEffect(() => {
+    let gone = false;
+    api(`/api/matches/${match.id}/lifts/expected`).then((r) => { if (!gone) setRows(r.rows ?? []); }).catch(() => { if (!gone) setRows([]); });
+    return () => { gone = true; };
+  }, [match.id, nonce]);
+  if (!rows.length) return null;
+  return (
+    <Card sx={{ padding: "14px 16px", marginBottom: "16px" }} data-testid={`lift-expected-${match.id}`}>
+      <div style={label()}>Arriving by lift · v {match.awayTeam}</div>
+      <div style={{ display: "grid", gap: "8px", marginTop: "8px" }}>
+        {rows.map((r) => (
+          <div key={r.seatId} data-testid={`lift-expected-row-${r.seatId}`} style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ ...body(), fontWeight: 600 }}>{r.name}</div>
+              <div style={muted()}>
+                With {r.driverName} · meets {saClock(r.meetAt)}
+                {r.departedAt ? ` · left ${saClock(r.departedAt)}` : ""}
+                {marksWords(r) ? ` · ${marksWords(r)}` : ""}
+              </div>
+              {r.notLeft && <div style={{ ...muted(), color: textOn(D.rose) }} data-testid={`lift-notleft-${r.seatId}`}>Not left: the lift is late and not marked as leaving.</div>}
+            </div>
+            {!r.acknowledgedAt && !r.resolvedAt && (
+              <Btn data-testid={`lift-with-us-${r.seatId}`} onClick={() => act(r.seatId, `/api/lift-seats/${r.seatId}/receive`)}>With us</Btn>
+            )}
+            {said.at === r.seatId && said.text && <div role="alert" style={alert()}>{said.text}</div>}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+const EXCEPTION_WORDS = {
+  not_left: "The lift is late and not marked as left",
+  not_boarded: "Not marked in the car when the lift left",
+  not_collected: "Not collected",
+  not_received: "Handed over; nobody has said they have him",
+  not_handed_over: "The lift arrived; not marked handed over",
+};
+
+/**
+ * The office's exceptions at a school (lift_exceptions(), by name, logged),
+ * each to be resolved: collected late, at the school office, or other. A red
+ * line stays until it is.
+ */
+export function LiftExceptions({ schoolId }) {
+  const [nonce, setNonce] = useState(0);
+  const [rows, setRows] = useState([]);
+  const [how, setHow] = useState({});
+  const { act, said } = useDayAct(() => setNonce((n) => n + 1));
+  useEffect(() => {
+    let gone = false;
+    api(`/api/lifts/exceptions?schoolId=${schoolId}`).then((r) => { if (!gone) setRows(r.rows ?? []); }).catch(() => { if (!gone) setRows([]); });
+    return () => { gone = true; };
+  }, [schoolId, nonce]);
+  if (!rows.length) return null;
+  return (
+    <Card sx={{ padding: "14px 16px", marginBottom: "16px", border: `1px solid ${D.rose}` }} data-testid="lift-exceptions">
+      <div style={{ ...label(), color: textOn(D.rose) }}>Lift exceptions</div>
+      <div style={{ display: "grid", gap: "10px", marginTop: "8px" }}>
+        {rows.map((r) => (
+          <div key={r.seatId} data-testid={`lift-exception-${r.seatId}`} style={{ display: "grid", gap: "4px" }}>
+            <div style={body()}><strong>{r.name}</strong> · {EXCEPTION_WORDS[r.kind] ?? r.kind}</div>
+            <div style={muted()}>{r.leg === "out" ? "To the fixture" : "Home"} with {r.driverName} · since {saClock(r.since)}</div>
+            <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ minWidth: "220px" }}>
+                <Select label="Resolved" value={how[r.seatId] ?? "collected_late"} onChange={(v) => setHow((h) => ({ ...h, [r.seatId]: v }))}
+                  data-testid={`lift-resolution-${r.seatId}`}
+                  options={[{ value: "collected_late", label: "Collected late by his family" },
+                            { value: "school_office", label: "With the school office" },
+                            { value: "other", label: "Other (the DSO knows)" }]}/>
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <Btn data-testid={`lift-resolve-${r.seatId}`}
+                  onClick={() => act(r.seatId, `/api/lift-seats/${r.seatId}/resolve`, { resolution: how[r.seatId] ?? "collected_late" })}>Resolve</Btn>
+              </div>
+            </div>
+            {said.at === r.seatId && said.text && <div role="alert" style={alert()}>{said.text}</div>}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The lift cards on the Squad screen on the day: the office's exceptions at
+ * the school, and the coach's expected list for each of the side's fixtures
+ * in the window. Presentation only: the server answers empty for anybody it
+ * is not for.
+ */
+export function LiftDayStaff({ role, team }) {
+  const receive = schoolsWhere("transport.lift.receive");
+  const office = schoolsWhere("transport.lift.oversee");
+  const { rows: matches } = useLive("matches", role);
+  const today = useMemo(() => (matches ?? []).filter((m) => m.homeTeam === team && inLiftDay(m.startsAt)), [matches, team]);
+  if (!receive.length && !office.length) return null;
+  return (
+    <>
+      {office.map((s) => <LiftExceptions key={s.id} schoolId={s.id}/>)}
+      {receive.length > 0 && today.map((m) => <LiftExpected key={m.id} match={m}/>)}
+    </>
+  );
+}
+
+/**
+ * Lifts today on a family's Home (one child): the day cards on each of his
+ * side's fixtures in the window. The pupil of eighteen reads his own line
+ * (MyLiftLine) instead.
+ */
+export function LiftsToday({ child, matches }) {
+  const family = schoolsWhere("transport.lift.arrange");
+  const today = (matches ?? []).filter((m) => isTheirs(m, child) && inLiftDay(m.startsAt));
+  if (!family.length || !today.length) return null;
+  return <>{today.map((m) => <LiftDayCards key={m.id} match={m} childId={child.id}/>)}</>;
+}
+
+/**
+ * The boy's own line on his Home (my_lifts()): for a pupil of eighteen still
+ * at school, his confirmed lifts — who drives, where, when, the car; never a
+ * number. "I am home" on the way home once the car has left. Empty for
+ * anybody else, a pupil under eighteen included.
+ */
+export function MyLiftLine() {
+  const [nonce, setNonce] = useState(0);
+  const [rows, setRows] = useState([]);
+  const { act, said } = useDayAct(() => setNonce((n) => n + 1));
+  useEffect(() => {
+    let gone = false;
+    api("/api/lifts/mine").then((r) => { if (!gone) setRows(r.rows ?? []); }).catch(() => { if (!gone) setRows([]); });
+    return () => { gone = true; };
+  }, [nonce]);
+  if (!rows.length) return null;
+  return (
+    <Card sx={{ padding: "14px 16px" }} data-testid="my-lifts">
+      <div style={label()}>Your lifts</div>
+      {rows.map((r) => (
+        <div key={r.seatId} style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", marginTop: "6px" }}>
+          <div style={body()} data-testid={`my-lift-${r.seatId}`}>
+            Lift {r.leg === "out" ? "there" : "home"} with {r.driverName} · {saDay(r.meetAt) === saDay(new Date()) ? "today" : saDay(r.meetAt)} {saClock(r.meetAt)} · {r.meetPlace}{r.vehicle ? ` · ${r.vehicle}` : ""}
+          </div>
+          {r.mayReceive && <Btn data-testid={`my-lift-home-${r.seatId}`} onClick={() => act(r.seatId, `/api/lift-seats/${r.seatId}/receive`)}>I am home</Btn>}
+          {said.at === r.seatId && said.text && <div role="alert" style={alert()}>{said.text}</div>}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+/**
+ * Settings → School, for the office (transport.lift.oversee): the lift records
+ * due for purge (§5.3, D9) — lifts three years after the fixture, drivers'
+ * declarations a year after they end. Pressed here, never by a job; a row of
+ * counts naming nobody remains.
+ */
+export function LiftPurgePanel() {
+  const schools = schoolsWhere("transport.lift.oversee");
+  if (!schools.length) return null;
+  return <>{schools.map((s) => <LiftPurgeForSchool key={s.id} school={s}/>)}</>;
+}
+
+function LiftPurgeForSchool({ school }) {
+  const [nonce, setNonce] = useState(0);
+  const [rows, setRows] = useState(null);
+  const { act, said } = useDayAct(() => setNonce((n) => n + 1));
+  useEffect(() => {
+    let gone = false;
+    api(`/api/lifts/purge?schoolId=${school.id}`).then((r) => { if (!gone) setRows(r.rows ?? []); }).catch(() => { if (!gone) setRows([]); });
+    return () => { gone = true; };
+  }, [school.id, nonce]);
+  if (!rows || !rows.length) return null;
+  return (
+    <Card sx={{ padding: "16px", marginTop: "16px" }} data-testid="lift-purge-panel">
+      <div style={{ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>Lift records due for purge at {school.name}</div>
+      <p style={{ ...muted(), margin: "4px 0 10px", maxWidth: "62ch" }}>
+        Lift records are kept three years after the fixture, so a late concern can be checked; drivers' declarations a year
+        after they end. Purging deletes them; a count for the season, naming nobody, remains.
+      </p>
+      <div style={{ display: "grid", gap: "6px" }}>
+        {rows.map((r) => (
+          <div key={r.id} data-testid={`lift-purge-row-${r.id}`} style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}>
+            <span style={body()}>
+              {r.kind === "offer" ? `A lift ${r.leg === "out" ? "there" : "home"}, fixture of ${String(r.day).slice(0, 10)}, ${r.seats} seat${r.seats === 1 ? "" : "s"}`
+                : `A driver's declaration that ended ${String(r.day).slice(0, 10)}`}
+            </span>
+            <Btn variant="ghost" data-testid={`lift-purge-${r.id}`}
+              onClick={() => act(r.id, r.kind === "offer" ? `/api/lifts/${r.id}/purge` : `/api/lift-declarations/${r.id}/purge`)}>Purge</Btn>
+            {said.at === r.id && said.text && <div role="alert" style={alert()}>{said.text}</div>}
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }

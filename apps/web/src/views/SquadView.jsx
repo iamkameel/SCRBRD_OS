@@ -11,7 +11,7 @@ import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
 import { AvailabilityPanel } from "./availability.jsx";
 // SCRBRD-124 (db/70): lifts on the side's fixture.
-import { LiftsPanel } from "./lifts.jsx";
+import { LiftDayStaff, LiftsPanel } from "./lifts.jsx";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { ageAtCutoff, compareTeams, isEligible, parseTeam, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 
@@ -124,6 +124,9 @@ function SquadView({ role }) {
           seat asked for, the driver's own card, the office's counts. Nothing
           where the module is not live. */}
       <LiftsPanel role={role} team={team}/>
+      {/* The day (SCRBRD-124 phase 2, db/76): the office's lift exceptions,
+          by name, to resolve; the coach's expected list with "with us". */}
+      <LiftDayStaff role={role} team={team}/>
       <div style={{display:"grid",gridTemplateColumns:selected?"1fr 320px":"1fr",gap:"16px"}}>
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>
