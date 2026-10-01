@@ -3928,14 +3928,19 @@ SCRBRD-114 phase 3 (db/69–71).
 
 ### SCRBRD-131 — Small things found while building (2026-10-01)
 
-- **The pad: Enter in the batting-order sheet presses the Wicket key again.** Typing the next batter's name and
+- **DONE (2026-10-01).** **The pad: Enter in the batting-order sheet presses the Wicket key again.** Typing the next batter's name and
   pressing Enter closes the sheet, focus returns to the Wicket key, and the same keypress lands on it. Found by the
   SCRBRD-126 agent; its walk steps use the Go button. Fix: don't let the closing keypress reach the key that focus
   returns to (or return focus elsewhere after a wicket). Sonnet, with a pad walk step that presses Enter.
-- **The notification bell's count is 9px**, under the 12px text floor. The a11y ratchet passes it today. Lift it to
+  Done: `CustomBatEntry` calls preventDefault on the Enter that sends the batter in; `smoke-browser-pad-laws` presses Enter
+  after a wicket and asserts no second wicket sheet and no second wicket (it goes red with the preventDefault removed).
+- **DONE (2026-10-01).** **The notification bell's count is 9px**, under the 12px text floor. The a11y ratchet passes it today. Lift it to
   12px with the new Competitions badge (same mechanism, `notifCount`).
-- **`resumeStep` and a league with only a withdrawn set** reads "step 4 of 4, Review and publish", where there is
+  Done: 12px in `Sidebar.jsx` and `MobileNav.jsx` (the latter also gets `mnav-alerts-badge`); `smoke-a11y` asserts it, and its
+  shell ceilings drop by one.
+- **DONE (2026-10-01).** **`resumeStep` and a league with only a withdrawn set** reads "step 4 of 4, Review and publish", where there is
   nothing to publish. It should open at step 3 (state the conditions again). `lib/league.js`, one line and a test.
+  Done: no published set (or a draft) opens at step 3; tests in `apps/web/test/league.test.mjs`.
 - **Invitations write no notification** (`competition_entrant_invite`): the organiser cannot write a notice into
   another school, so it needs a definer function (a migration, Opus), as db/65's availability notices are written.
   With it: the "checked" ticks on a league's defaults, kept in the browser today (`saveTicks`), stored on the set.
