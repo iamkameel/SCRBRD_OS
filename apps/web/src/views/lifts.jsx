@@ -1,5 +1,8 @@
 /**
- * Parent lift clubs, phase 1: the arrangement (SCRBRD-124; db/70).
+ * Parent lift clubs, phase 1: the arrangement (SCRBRD-124; db/70); and at the
+ * end of this file phase 2, the day (db/76): the driver's and the family's
+ * day cards, the coach's expected list, the office's exceptions and purge
+ * list, and the boy of eighteen's own line.
  *
  * Three pieces, over services/api/write/lift-api.mjs:
  *

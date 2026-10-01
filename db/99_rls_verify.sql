@@ -13263,9 +13263,49 @@ $v49$;
   -- naming nobody; and the zeros. _seed_76() builds its own world.
   -- tools/smoke-lifts.mjs walks the same through the API.
   --
-  -- Each labelled assertion was falsified once — see the list in the
-  -- commit that added it and docs/design/SCRBRD-124_lift_clubs.md's "As
-  -- built, phase 2" — and went red, and was green again restored.
+  -- Each labelled assertion was falsified once — the guard broken (as the
+  -- owner, inside this file's own transaction, before the section ran) —
+  -- and went red, and was green again restored. 60 breaks: 55 red at their
+  -- own assertion, four red at a second layer (marked "layer"), one single
+  -- layer that held alone as designed (marked "held"):
+  --   (zero)       lift_mark()'s and lift_seat_mark()'s driver test
+  --   (day)        the day window; (forward) a second "left", a second "in",
+  --                a handover before leaving, a second handover, received
+  --                twice, resolved twice; arrived before leaving (layer: the
+  --                table's arrives_after_departing check)
+  --   (road)       departing while the lift waits on its driver; the row
+  --                guard dropped; lift_offer_end() ending a lift on the road
+  --                (layer: the row guard; with the guard dropped and its own
+  --                test blinded, red at (revoked)); a fixture move
+  --                re-versioning it, the lone boy in the car falling back, a
+  --                boy in the car voided when the link ends (each with the
+  --                guard dropped); cancel on the road; edit on the road
+  --                (layer: the row guard; with it dropped, red at its word)
+  --   (depart)     requests not declined; the offer not closed
+  --   (not-boarded) the family not told
+  --   (board)      a seat only asked for marked in
+  --   (not-collected) the family not told; the office not told; the
+  --                office's notice behind arrange (the office could not read it)
+  --   (receive-out), (receive-back)  anybody at the ground; anybody at home;
+  --                not collected then received left unresolved
+  --   (done)       done on arrival whoever was received; not asked after a receipt
+  --   (resolve)    oversee swapped for fixture.read; any word (layer: the
+  --                table's resolution check); before the meeting time; a lift
+  --                under way made to wait for its meeting time
+  --   (expected)   receive swapped for fixture.read; the log dropped; a boy in
+  --                the car not expected once his link ended (lift_day_status())
+  --   (exceptions) oversee swapped for news.read; the log dropped; not
+  --                collected dropped; not boarded dropped
+  --   (my-day)     the driver's names not logged; any guardian at the school;
+  --                off the day; the cuts (held: each branch asks its own)
+  --   (mine)       any pupil's own seat (Tom, seventeen, read his)
+  --   (watch)      anybody runs it; not left alerted again; a handover
+  --                alerted after a not-left alert (once per seat, D14); the
+  --                side's staff not told; the driver told per seat; staff of
+  --                any side (the U17B's coach told)
+  --   (purge)      oversee swapped for news.read; before the date; no row of
+  --                counts; due at two years; a declaration before its year
+  --   (privacy)    the boy's name in the not-collected notice
   DECLARE
     ids      jsonb := _seed_76();
     MT uuid; MU uuid; MW uuid; MX uuid; MF uuid; MP uuid; MQ uuid;
@@ -13767,6 +13807,11 @@ $v49$;
     PERFORM _as(U_OFF);
     SELECT string_agg(full_name || ':' || kind, ',' ORDER BY full_name) INTO got FROM lift_exceptions(HIL, MX);
     PERFORM _assert(got = 'Lou Liftseventysix:not_received', format('db/76 (revoked): the evening''s exceptions read %s', got));
+    -- (resolve) a lift under way is resolved before its meeting time: Max,
+    -- in the car with a revoked driver, is with the school office
+    SELECT ok, reason INTO v_ok, v_reason FROM lift_resolve(S_MAX_X, 'school_office');
+    PERFORM _assert(v_ok AND (_v76_seat(S_MAX_X)).resolution = 'school_office',
+      format('db/76 (resolve): the office could not resolve a boy on a lift under way: %s %s', v_ok, v_reason));
 
     -- (purge) the office's due list: the lift of three years and ten days
     -- ago, and the declaration that ended a year and five days ago; not the

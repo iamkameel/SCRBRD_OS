@@ -4472,9 +4472,22 @@ passenger left by a withdrawal falls back to not confirmed under a policy refusi
 **except** (follow-up, same day) a pupil of eighteen still at school, who may ask for, withdraw and read his own seat
 only (`lift_seat.consent_by = 'self'`; his guardian may also ask while db/62's link is live; a simple "Ask for a seat"
 on Squad). One-to-one counts children only (under eighteen or unknown birth date): an adult alone is seated, and keeps
-no child company — Opus's reading, for Kameel to confirm. Departures are in the design's "As built". **Next: phase 2, the day** (marks, receive,
-resolve, `my_lifts()`, the watch, the purge), then phase 3.
+no child company — Opus's reading, for Kameel to confirm. Departures are in the design's "As built".
 <!-- ── end SCRBRD-124 phase 1 ── -->
+<!-- ── SCRBRD-124 phase 2, as built ── -->
+**Phase 2 built 2026-10-01 (Opus): `db/76_lift_day.sql`, the day.** The driver's marks (left, in the car, handed over, not
+collected, arrived) — hers alone, on the day, forwards, refused to a revoked guardian; the receiver's acknowledgement (the
+side's coach "with us" on the way there, a guardian — or the boy of eighteen — "collected" on the way home); the office's
+exceptions by name (logged) and resolve; the coach's expected list (logged); `my_lifts()` for the boy of eighteen at
+school; `lift_missed_watch()` for the platform's key (`POST /api/lifts/watch`, once per seat); the purge pair and
+`lift_purge_log`. A lift on the road is seen through: no cancel, fixture move, link ended or withdrawal unconfirms a boy in
+the car. Twelve routes, none module-gated; the day cards on the fixture and the family Home, the coach's and the office's
+cards on Squad, the pupil's line on his Home, the purge list on Settings → School. **The module stays off by default; it may
+now be granted per school.** Proof: db/99 §55 (60 breaks, each seen red or, once, held alone), `smoke-lifts` (118),
+`smoke-browser-lifts` (74). For Kameel: one alert per seat (D14) means a late lift's seat is not alerted again at handover;
+an under-eighteen pupil sees nothing of his own lift; the watch needs a scheduler. **Next: phase 3** (the DSO's bar and
+history, invitations).
+<!-- ── end SCRBRD-124 phase 2 ── -->
 
 ### SCRBRD-125 — Roles scoped to a competition
 **Priority:** P3 (before a second league) · **Domain:** RBAC · **Type:** design + build (found 2026-09-30, SCRBRD-120 §9.4)

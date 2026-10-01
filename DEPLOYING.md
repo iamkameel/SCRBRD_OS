@@ -368,7 +368,7 @@ school may ask for, withdraw and read his own seat. It needs no secret. The
 day's marks (left, boy in, handed over, received) are phase 2 and are
 **not** in this file.
 
-**Do not grant it to a school yet.** The module `lift_club` arrives **off**
+**Do not grant it to a school before db/76 (phase 2, below) is pasted.** The module `lift_club` arrives **off**
 for every school, and the design puts it live only after phase 2: an
 arrangement with no record of the day is a noticeboard. When it is time, it
 takes two keys, in this order:
@@ -464,6 +464,40 @@ A correction is the next version: load it, publish it, then withdraw the old
 one with a note. A withdrawn table keeps its rows; matches that named it still
 read it, and say *table since withdrawn*. No route ever serves a cell.
 <!-- ── end SCRBRD-130 ── -->
+
+<!-- ── SCRBRD-124 phase 2: the day (db/76) ── -->
+#### Parent lift clubs, the day (SCRBRD-124, db/76)
+
+`db/76_lift_day.sql` adds the day: the driver's marks (left, boy in, handed
+over, not collected, arrived), the receiver's "with us" (the side's coach on
+the way there) and "collected" (the boy's guardian on the way home), the
+office's exceptions by name and resolve, the coach's expected list, the
+boy of eighteen's own line, the watch, and the purge. It needs no secret and
+applies after db/75.
+
+**After this paste the module may go live per school, and it stays off by
+default.** It still takes the two keys of db/70, in that order: the platform
+grants `lift_club` to one school (Settings → Modules), then that school's
+principal signs its lift policy. Grant it to the pilot school only when
+Kameel says so.
+
+**The watch** (`lift_missed_watch()`) tells a family when a lift is 45
+minutes past its meeting time and not marked as left, and when a boy handed
+over has not been acknowledged within 30 minutes — once per seat. It is run
+by the platform's key (a `platform.feature.manage` holder, platform-wide);
+for anybody else it is refused. Until a scheduler exists, run it every few
+minutes on match days from any job:
+```sh
+curl -X POST -H "Authorization: Bearer <platform token>" https://<your-domain>/api/lifts/watch
+# {"notLeft": 0, "notReceived": 0}
+```
+**The purge** is the office's, never a job: Settings → School lists the
+lifts three years past their fixture and the declarations a year past their
+end; each purge leaves a row of counts for the season, naming nobody.
+
+The paste is `node tools/bundle-sql.mjs --apply 76`, then the verify bundle
+(§55 is its proof).
+<!-- ── end SCRBRD-124 phase 2 ── -->
 
 ### 5 · Cloud Run, the first time
 

@@ -1,6 +1,6 @@
 # SCRBRD-124 — Parent lift clubs: the design
 
-**Status:** design, decided (2026-09-30). **Phase 1 built as db/70 (2026-10-01): see "As built" below.** Phases 2 and 3 are not built. Every number that is not already in the repository is an **assumption** and is marked as one.
+**Status:** design, decided (2026-09-30). **Phase 1 built as db/70 and phase 2 as db/76 (2026-10-01): see "As built" below.** Phase 3 is not built. The module may now go live per school; it stays off by default. Every number that is not already in the repository is an **assumption** and is marked as one.
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md` SCRBRD-124 (the seven rules) and SCRBRD-122 (reconfirmation when a fixture changes); `docs/design/SAFEGUARDING_DSO.md`; `docs/policy/CSA_SAFEGUARDING_CHECK.md`; `db/08` (vehicle, trip, `trip_mark()`, `match_availability`), `db/41`, `db/56`, `db/62`; `docs/design/STEP4_parent_pupil.md` for where a family's screens live. The earlier build (`iamkameel/scrbrd` at 0a90c71) was read for its one idea worth keeping: an arrangement is confirmed only while the guardian's, the driver's and the fixture's versions all agree.
 **Reader:** the product owner and information officer first; then Opus, who builds §2–§6 and §8; then Sonnet, who builds the screens named in §8. Plain words open each section.
 
@@ -36,6 +36,32 @@
    Proved in §48 with Ed: at eighteen and at school he asks and is seated (alone, under a refusing policy); at seventeen he is refused and his own seat can no longer be confirmed; at eighteen but gone from school he is refused and his seat is void; asking for his brother he is still refused; he reads his own seat and nothing else (no table, no passenger list, no counts; the driver's name and number only once confirmed, logged); Dan with only Ed beside him is refused, and falls back when Pat is withdrawn while Ed stays confirmed; Ed and his mother are told, Dan never. Screens: on Squad, a pupil of eighteen at school sees a simple "Ask for a seat" on his own fixtures.
 
 Still open, for Kameel when convenient: every live guardian of a boy is told when his seat is confirmed, declined, cancelled or falls back — not only the one who asked (D13's "either may"); and the policy template (`LIFT_POLICY_TEMPLATE`, apps/web/src/views/lifts.jsx) awaits your words.
+
+## As built — phase 2, the day (db/76, 2026-10-01, Opus)
+
+**Built, against §8's phase 2 row.** In `db/76_lift_day.sql`: `lift_mark()` (left, arrived) and `lift_seat_mark()` (in the car, handed over, not collected) — the offer's driver only, still holding `transport.lift.arrange` on its side (a revoked guardian is refused on an offer that still names her), on the day (the day before the meeting to the day after, `lift_contacts()`'s window), each once and forwards; `lift_receive()` — on the way out the side's staff (`transport.lift.receive`, "with us"), on the way home a live guardian of the boy (consent granted) or he himself at eighteen and at school ("collected"); `lift_resolve()` for `transport.lift.oversee`; `lift_my_day()` (the day cards), `lift_expected()` (the coach's head count, logged), `lift_exceptions()` (by name, logged), `my_lifts()`, `lift_missed_watch()` and its route for the platform's key (`POST /api/lifts/watch`), `lift_purge_due()`, `lift_purge()`, `lift_purge_declaration()` and `lift_purge_log` (one row per school per season, now with `declarations`). Twelve routes in `lift-api.mjs`, none module-gated. The screens: on the fixture a family opens (FixtureDetail's `FixtureLifts`) and on the family Home (`LiftsToday`), the driver's day card (the marks, her passengers' numbers, "not confirmed — do not take") and the family's (the driver, her number and car, the marks, "confirm collected"); on Squad for staff, the office's exceptions with resolve and the coach's "arriving by lift" with "with us" (`LiftDayStaff`); on the pupil's Home, his own line at eighteen (`MyLiftLine`); on Settings → School, the office's purge list. **The module stays off by default**; DEPLOYING.md's db/76 section says how the platform grants it per school and how the watch is run. Proof: db/99 §55 (60 breaks — 55 red at their own assertion, four at a second layer, one single layer held alone), `smoke-lifts` (118, 45 new), `smoke-browser-lifts` (74, 23 new).
+
+**Where it departs from this document, and why** (each also in db/76's header):
+
+1. **On the road.** A lift whose car has left, or that has a boy in it, is seen through to `done`: nothing the platform does ends it early. db/70's endings are taught it — `lift_offer_end()` (cancel, policy withdrawn, link ended, fixture abandoned) leaves it, the fixture trigger does not re-version it (a start delayed on the day moves only the lifts not yet under way), a link that ends does not void a boy in the car, the driver and the office are refused `on_the_road` for cancel and edit — and a row guard refuses the same past the functions. The design was silent; without this, a fixture delayed by an hour, or a mother's link revoked at 10:00, would have unconfirmed a boy sitting in the car.
+2. **The lone passenger on the road.** Decision 3's fallback still applies before anybody is in the car. Once a boy is in it and a withdrawal leaves him the only child, his seat stands (the platform puts nobody out of a car) and the driver and his family are told to ring each other now.
+3. **Done means every confirmed boy is accounted for.** The design said "every boarded seat acknowledged or resolved"; db/76 asks it of every confirmed seat, so a boy the car left without stays an exception until somebody says where he is.
+4. **Five exceptions, not two**: not left (§6.1), not boarded when the car left, not collected (§6.2), handed over and not received within 30 minutes (§6.2), and arrived with a boy not handed over.
+5. **"Left" closes the lift** to new requests and declines the requests the driver never accepted (their families told); a confirmed boy not marked in when the car leaves is told to his family.
+6. **lift_summary() keeps its shape**; its exceptions are `lift_exceptions()`, per school (a match optional), because a returned row's shape cannot change without DROP FUNCTION and db/70 is shipped.
+7. **"By name, to oversee" (§6.2)** is the office's exception list, logged; the notice to the office points at the boy (`subject_person_id`) and names nobody, as every lift notice does (§5.2, phase 1's departure 9).
+8. **The day's routes are not module-gated**, as phase 1's endings are not: switching the module off must never strand a lift on the road.
+9. **A boy may be marked in after the car has left** (she forgot to tap); the time is when she marked it. **The receiver may acknowledge before the driver marks the handover.**
+10. **The office resolves** once the lift has left or its meeting time has come.
+11. **my_lifts() is for the boy of eighteen still at school only** (decisions 4 and 5): a pupil under eighteen reads no lift, his own included — the design's S1 line for every pupil is superseded.
+12. **The purge** also takes declarations a year after they end (D9), with no lift left on them; `lift_purge_log` gains `declarations` and a unique (school, season).
+
+**For Kameel:**
+
+- **One alert per seat (D14).** A seat alerted because its lift was late leaving is not alerted again if, later, he is handed over and nobody acknowledges him. That is D14 as decided; the office's exception list still shows him. Say if a second, different alert should go.
+- **A pupil under eighteen sees nothing of his own lift**, not even "Lift with Mrs Naidoo · 07:15" on his Home (decision 4 read strictly). His parent's Home carries it. Say if the boy's own nameless line should return for under-eighteens.
+- **The watch needs a scheduler.** Until one exists it is a curl from a job (DEPLOYING.md); without it no not-left or not-received alert is sent, though the office's exception list still shows both.
+- **Going live:** grant `lift_club` to the pilot school only when you choose; nothing in db/76 grants it.
 
 ---
 

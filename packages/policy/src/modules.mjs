@@ -151,8 +151,9 @@ export const MODULES = {
   // ── SCRBRD-124: parent lift clubs (db/70) ──
   // OFF until the platform grants it per school (D17's first key); live at a
   // school only while its principal's signed lift policy stands (the second,
-  // asked in the database: lift_module_live()). Goes live for a school after
-  // phase 2. No destination of its own: its screens sit on the fixture (the
+  // asked in the database: lift_module_live()). Phase 2, the day, is db/76:
+  // the platform may now grant it per school, and it stays off by default.
+  // No destination of its own: its screens sit on the fixture (the
   // Squad screen), on Settings and on the family's own page. Owns no read
   // resource — no lift table is a read-api resource; the functions are the
   // only doors (§5.4).
