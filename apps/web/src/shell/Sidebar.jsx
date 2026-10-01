@@ -10,7 +10,7 @@ import { Icon } from "../ui/icons.jsx";
 // ══════════════════════════════════════════════════════
 //  SIDEBAR
 // ══════════════════════════════════════════════════════
-function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut }) {
+function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut, persona = null }) {
   // The role's destinations, narrowed by the modules this school has on.
   // Narrowed only — useNav() cannot add a destination the role did not hold.
   const nav = useNav(role);
@@ -45,8 +45,10 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
           every other application puts it and where it costs the navigation
           nothing. */}
 
-      {/* Sport switcher — ScrbrdOS multi-sport shell */}
-      {!collapsed&&<SportSwitcher/>}
+      {/* Sport switcher — ScrbrdOS multi-sport shell. Not on a family's or a
+          pupil's rail (step 4 §2.0): their app is four destinations about
+          one child, and a choice of sport is the school's, not theirs. */}
+      {!collapsed&&!persona&&<SportSwitcher/>}
 
       {/* Nav — one landmark, one group per section. A heading names each
           section for sighted readers; role="group" + aria-labelledby names it

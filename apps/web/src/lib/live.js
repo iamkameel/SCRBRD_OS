@@ -113,6 +113,10 @@ function asPlayer(r) {
     fitness: r.fitness,
     born: r.born,
     hometown: r.hometown,
+    // The two the family's own record screen draws (step 4 P7b, S4): masked
+    // per row like every column here — null means "not yours to read".
+    address: r.address ?? null,
+    idNumber: r.id_number ?? null,
     houseAtSchool: r.houseatschool,
     height: r.height,
     weight: r.weight,
@@ -189,6 +193,10 @@ function asNotification(r) {
     id: r.id, type: r.kind, urgency: r.urgency, title: r.title, body: r.body,
     time: r.published_at, read: r.read, team: r.team_code, school: r.school_id,
     isPublic: r.is_public,
+    // The child a notice is about, when it is about one (step 4 P1/P5): a
+    // family screen says whose it is, and a parent who is also staff sees on
+    // a child's Home only the notices about that child or about nobody.
+    subjectPerson: r.subject_person_id ?? null,
     // The mock carried a `roles: [...]` list, and it was never security — it
     // was a filter the browser applied to rows it already held. The server
     // does not send a notice this person may not have, so there is nothing
@@ -937,6 +945,24 @@ function asAssignment(r) {
            live: true };
 }
 
+/**
+ * One child the signed-in guardian answers for (step 4 G1), from her own live
+ * link. `until` is the link's own end date (G11): null while the child is at
+ * school (db/62), a date otherwise. Never derived from a birthday here.
+ */
+function asChild(r) {
+  return { id: r.player_id, name: r.full_name, knownAs: r.known_as ?? null, team: r.team_code,
+           school: r.school_id, schoolName: r.school_name ?? null, schoolKind: r.school_kind ?? null,
+           relationship: r.relationship, verification: r.verification_state, consent: r.consent_state,
+           from: d10(r.valid_from), until: d10(r.valid_until), live: true };
+}
+
+/** One name on a fixture's team sheet, as the reader's policy returns it. */
+function asSquadLine(r) {
+  return { matchId: r.match_id, playerId: r.player_id, side: r.side, battingNo: r.batting_no ?? null,
+           twelfth: r.twelfth === true, name: r.full_name, live: true };
+}
+
 function asInjury(r) {
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
            dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
@@ -1152,6 +1178,8 @@ const ADAPT = {
   sponsor_categories: asSponsorCategory,
   sponsorships: asSponsorship,
   injuries: asInjury,
+  my_children: asChild,
+  match_squad: asSquadLine,
   skills: asSkill,
   career: asCareer,
   career_by_season: asSeasonCareer,

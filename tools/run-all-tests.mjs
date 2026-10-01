@@ -129,6 +129,10 @@ const SUITES = [
   // before a batter is offered, the fold after it and his return (SCRBRD-071).
   ["retire-sheet", "apps/web/test/retire-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["ways-out", "apps/web/test/ways-out.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Redesign step 4, phase A: the family and pupil apps' helpers — one child
+  // per screen, a method and never a name, the tenant's words (G15) — and
+  // the Match Centre's family mode (G13).
+  ["family", "apps/web/test/family.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,
   // its source, "N of M confirmed", a version's standing, a refusal in words.
   ["playing-conditions-screen", "apps/web/test/playing-conditions.test.mjs"],

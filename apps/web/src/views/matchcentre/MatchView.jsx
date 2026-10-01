@@ -164,7 +164,15 @@ function TabBar({ tab, setTab }) {
   );
 }
 
-function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults }) {
+/**
+ * `focus` is FAMILY MODE (step 4 G13): the player ids this reader is here for
+ * — a parent's child, a pupil himself. Their rows are lit on the scorecard
+ * with `focusLabel` beside the name ("Your child", "You"), and the Analytics
+ * tab offers a per-player wheel for them only, because another child's row is
+ * not one this reader may open (§2.1 P4). Everything else is the Match Centre
+ * as every signed-in reader has it.
+ */
+function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches" }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
@@ -244,7 +252,8 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
 
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
-    moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel };
+    moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
+    focus: focus?.length ? new Set(focus) : null, focusLabel };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>
@@ -253,7 +262,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           style={{ minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
             background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer",
             color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
-          <Icon name="chevron-left"/> All matches
+          <Icon name="chevron-left"/> {backLabel}
         </button>
         <span style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
         {!log.demo && played.length > 0 && (

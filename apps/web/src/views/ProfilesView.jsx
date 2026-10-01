@@ -883,4 +883,6 @@ function DismissalMethodCard({ title, testId, color, live, playerId, side, empty
   );
 }
 
-export { ProfilesView, DismissalMethodCard, dismissalMethodLabel };
+// CareerWagonWheel is the pupil's Passport → Wheel tab too (step 4 S3): his
+// own points, read under his own selfaccess, the SCRBRD-102 panel with them.
+export { CareerWagonWheel, ProfilesView, DismissalMethodCard, dismissalMethodLabel };

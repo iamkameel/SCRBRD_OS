@@ -22,7 +22,7 @@
  */
 import { api, signedIn } from "./api.js";
 import { MODULE_OF_NAV } from "@scrbrd/policy/modules";
-import { ROLES, navForRoles } from "../design/roles.js";
+import { ROLES, navForRoles, personaFor } from "../design/roles.js";
 import { profile } from "./session.js";
 import { useEffect, useState } from "react";
 
@@ -105,6 +105,18 @@ export function useNav(role) {
     const module = MODULE_OF_NAV[k];
     return !module || features[module] !== false;
   });
+}
+
+/**
+ * Which persona app the shell lays out — "family", "pupil", or null for the
+ * staff application (step 4 §2.0) — from the same roles useNav() reads: the
+ * assignments actually held, or, in the demo, the persona and the roles it
+ * comes with. Layout only; it decides which bar and header are drawn and
+ * nothing about what any read returns.
+ */
+export function personaOf(role) {
+  const held = profile()?.assignments?.map((a) => a.role) ?? [];
+  return personaFor(held.length ? held : [role, ...(ROLES[role]?.also ?? [])]);
 }
 
 // ── The sports this session's schools run ──
