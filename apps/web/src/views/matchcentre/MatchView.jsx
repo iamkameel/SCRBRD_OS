@@ -20,7 +20,7 @@ import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../../li
 import { Quiet } from "./bits.jsx";
 import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "./live.js";
-import { BigScreen } from "./spectator.jsx";
+import { BigScreen } from "./bigscreen.jsx";
 
 /**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
@@ -296,7 +296,6 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const bi = boardInnings(played, log.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${match.id}:${bi.index}`);
-  const boardTarget = bi.index === 1 && played[1] ? (played[1].target ?? played[0].runs + 1) : null;
   const [big, setBig] = useState(false);
 
   // A rain delay or interruption (SCRBRD-100 item 1): the one signal the log
@@ -347,8 +346,8 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
         )}
         </span>
       </div>
-      {big && <BigScreen match={match} inn={boardInn} target={boardTarget} overs={boardInn?.overs ?? log.overs} shownRuns={shownRuns}
-        moment={moment} overSummary={overSummary} line={line} onClose={() => setBig(false)}/>}
+      {big && <BigScreen match={match} events={log.events} fold={log.fold} innings={played} result={result} settled={settled}
+        commentary={commentary} onClose={() => setBig(false)}/>}
 
       <header style={{ display: "grid", gap: T.space.sm }}>
         <div style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>

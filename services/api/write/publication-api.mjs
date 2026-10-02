@@ -10,7 +10,9 @@
  *   GET  /api/matches/:id/publication   each side's state as this reader may
  *                                       read it (fixture_publication's own
  *                                       policy: fixture.read at that side),
- *                                       and whether he may change it
+ *                                       whether he may change it, and for a
+ *                                       side he may: how many of it the public
+ *                                       surfaces name (SCRBRD-133 D3, counts)
  *   POST /api/matches/:id/publication   { side: "home" | "away", published: bool }
  *
  * NEVER SERVED STALE AFTER IT ANSWERS. The public pages' cache is dropped by
@@ -24,7 +26,44 @@
  * other API instance and every change made outside this route.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { nameFor } from "../public/redact.mjs";
 /** @import { RouteDeps, IdHandler } from "../api-types.mjs" */
+
+/**
+ * SCRBRD-133 G1 (D3): how many of a side are named on the public surfaces —
+ * the live page and the ground display — and how many shown by position, for
+ * the setup section's "8 of 11 named on public surfaces · 3 shown by
+ * position". Counts only, never a name, and only for a side the reader may
+ * publish (his own school's boys, whom he can read anyway).
+ *
+ * The side is the team sheet (match_squad: not withdrawn, not twelfth) and
+ * every boy of that side's school the log names. For a boy in the log the
+ * facts are public_match_people()'s own — the row the public projection
+ * names him from — so the count is the display's, not a second reading of
+ * the rule; a boy on the sheet and not yet in the log is asked the same
+ * question through public_name_facts() for the side's team, published as the
+ * side is. Each through nameFor(), redact.mjs's: publicName() and nothing else.
+ */
+const NAMES_SQL = `
+  with m as (
+    select id, case when $2 = 'home' then school_id else away_school_id end as school,
+           case when $2 = 'home' then team_code else away_team_code end as team
+      from match where id = $1),
+  logged as (
+    select x.player_id, x.school_published, x.facts, x.full_name, x.surname, x.known_as, x.served_on
+      from public_match_people($1) x
+      join player p on p.id = x.player_id
+      join m on p.school_id = m.school),
+  sheet as (
+    select p.id as player_id, fixture_side_published(m.id, $2) as school_published,
+           public_name_facts(p.id, m.team, sa_today()) as facts,
+           p.full_name, p.surname, p.known_as, to_char(sa_today(), 'YYYY-MM-DD') as served_on
+      from match_squad q
+      join m on q.match_id = m.id
+      join player p on p.id = q.player_id and p.school_id = m.school
+     where q.side = $2 and not q.withdrawn and not q.twelfth
+       and not exists (select 1 from logged l where l.player_id = p.id))
+  select * from logged union all select * from sheet`;
 
 /**
  * @param {RouteDeps & {onChange?: (note: {k: string, id: string}) => void}} deps
@@ -48,6 +87,16 @@ export function publicationRoutes({ pool, secret, onChange }) {
              left join fixture_publication f on f.match_id = m.id and f.side = s.side
             where m.id = $1
             order by s.side desc`, [req.params.id])).rows);
+        // D3: the count for each side this reader may publish, as the public
+        // projection names it today.
+        for (const r of rows) {
+          r.names = null;
+          if (!r.on_platform || !r.may_publish) continue;
+          const people = await runAsPrincipal(pool, secret, req.headers?.authorization,
+            async (client) => (await client.query(NAMES_SQL, [req.params.id, r.side])).rows);
+          const named = people.filter((p) => nameFor(p, p.served_on) != null).length;
+          r.names = { named, positions: people.length - named, total: people.length };
+        }
         res.json({ matchId: req.params.id, sides: rows });
       } catch (/** @type {any} */ e) {
         if (e.code === "22P02") return res.status(404).json({ error: "not_found" });
