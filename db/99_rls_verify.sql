@@ -3448,6 +3448,87 @@ CREATE OR REPLACE FUNCTION _v79_reads_naming(p_person uuid, p_child uuid) RETURN
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/79 (section 58) ──────────────────────────────────────────────
 
+-- ┌── db/80 (section 59): the audit log shows roles granted (SCRBRD-132 B2) ─
+-- Its own world, as the owner, at a school of its own (Verify 080), so every
+-- grant there is one of these and nothing else in this file reaches it. Each
+-- appointment is made as the session db/01's stamp reads (app.user_id), so
+-- created_by is who made it: the office and the principal arrive as a seed
+-- does (nobody), the DSO is appointed by the principal, the coach, the pupil
+-- and the leaver by the office. The leaver's player role is then ended. A
+-- support hour at the school (an assignment and its support_access row, as
+-- support_access_begin() writes them) is the support kind's, not a grant.
+-- And one Hilton office, to read Verify 080 from outside. Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_80() RETURNS jsonb AS $$
+DECLARE
+  HIL  uuid := '11111111-1111-1111-1111-111111111111';
+  V80  uuid := '80800000-0000-0000-0000-000000000080';
+  ids  jsonb := jsonb_build_object('school', '80800000-0000-0000-0000-000000000080');
+  r    record;
+  v_u  uuid; v_a uuid; v_p uuid;
+BEGIN
+  INSERT INTO school (id, code, name) VALUES (V80, 'verify-080', 'Verify 080');
+  FOR r IN SELECT * FROM (VALUES
+      ('office',    'schooladmin', V80,  NULL,   NULL),
+      ('principal', 'principal',   V80,  NULL,   NULL),
+      ('dso',       'dso',         V80,  NULL,   'principal'),
+      ('coach',     'coach',       V80,  'U15A', 'office'),
+      ('hil',       'schooladmin', HIL,  NULL,   NULL)) AS v(k, role, school, team, granter)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (r.school, 'v80.' || r.k || '@example.invalid', 'V80 ' || initcap(r.k), r.role)
+    RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+    PERFORM set_config('app.user_id', coalesce(ids->>('u_' || r.granter), ''), true);
+    INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+    VALUES (v_u, r.role, r.school, r.team, current_date - 30) RETURNING id INTO v_a;
+    ids := ids || jsonb_build_object('a_' || r.k, v_a);
+  END LOOP;
+
+  -- The pupil: a player row, an account that is that player, his player role
+  -- granted by the office.
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (V80, 'U15A', 'Verify Eighty Pupil', 'Pupil', 780, 'batter',
+          (current_date - interval '14 years' - interval '80 days')::date)
+  RETURNING id INTO v_p;
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (V80, 'v80.pupil@example.invalid', 'Verify Eighty Pupil', 'player', v_p) RETURNING id INTO v_u;
+  ids := ids || jsonb_build_object('p_pupil', v_p, 'u_pupil', v_u);
+  PERFORM set_config('app.user_id', ids->>'u_office', true);
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+  VALUES (v_u, 'player', V80, 'U15A', current_date - 30) RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('a_pupil', v_a);
+
+  -- The leaver: his player role granted by the office, and ended by it.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (V80, 'v80.leaver@example.invalid', 'Verify Eighty Leaver', 'player') RETURNING id INTO v_u;
+  ids := ids || jsonb_build_object('u_leaver', v_u);
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+  VALUES (v_u, 'player', V80, 'U15A', current_date - 300) RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('a_leaver', v_a);
+  UPDATE role_assignment SET active = false WHERE id = v_a;
+  INSERT INTO role_assignment_ending (assignment_id, person_id, role, school_id, team_code, reason, ended_by)
+  VALUES (v_a, v_u, 'player', V80, 'U15A',
+          'Verify Eighty Leaver left Verify 080 for section 59.', (ids->>'u_office')::uuid);
+
+  -- A support hour: its assignment is made by the support person, as
+  -- support_access_begin() makes it, and its row is the support kind's.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (HIL, 'v80.support@example.invalid', 'V80 Support', 'platformadmin') RETURNING id INTO v_u;
+  ids := ids || jsonb_build_object('u_support', v_u);
+  PERFORM set_config('app.user_id', v_u::text, true);
+  INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
+  VALUES (v_u, 'schooladmin', V80, true, current_date, now() + interval '1 hour') RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('a_support', v_a);
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+  VALUES (v_u, V80, 'schooladmin', 'Section 59 support hour at Verify 080.', v_a, now() + interval '1 hour')
+  RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('s_support', v_a);
+
+  PERFORM set_config('app.user_id', '', true);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/80 (section 59) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -14651,6 +14732,132 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 58
+
+  -- ┌── section 59 · db/80: the audit log shows roles granted (SCRBRD-132 B2) ─
+  -- audit_log() lists a role GRANTED beside a role ended (Kameel,
+  -- 2026-10-02), under audit.read AND role_assignment's own reader, never a
+  -- support hour's assignment, a child in initials. Under the application
+  -- role, against _seed_80()'s world at Verify 080 (a school nothing else in
+  -- this file touches):
+  --   (grant)    the office reads the school's six grants, "Granted a role:
+  --              <words> (<team>)", each by whom it was made, keyed
+  --              role:<id>:granted; the DSO's appointment among them
+  --   (system)   an appointment made by nobody (a seed) has a null actor
+  --   (masked)   the pupil and the leaver are "V E Pupil" and "V E Leaver",
+  --              never whole; an adult (the coach) is named whole
+  --   (detail)   a grant's detail is {role, team} and nothing else: no id
+  --   (both)     the role filter shows the leaver's role granted and ended,
+  --              the ending under db/79's key, role:<id>
+  --   (support)  the support hour is one support row, never also a grant
+  --   (gate)     the DSO (audit.read, not the office's key) reads his own
+  --              appointment and no other grant; a coach (no audit.read)
+  --              reads nothing; Hilton's office reads nothing at Verify 080
+  --   (door)     role_assignment_read is still the reader the branch mirrors
+  --   (logged)   the office's read is on the record, naming the pupil
+  --
+  -- Falsified, each once, by replacing audit_log() in the database (as the
+  -- owner, inside this file's transaction, before the section ran) with
+  -- db/80's body broken in one place; each went red at its own assertion:
+  --   (gate)     `(ra.person_id = v_me OR app_can('user.role.assign', ...))`
+  --              made `true`: the DSO read every grant
+  --   (masked)   the grant's subject taken from app_user.name directly, not
+  --              through the person (and so audit_person_label()'s mask)
+  --   (support)  the `NOT EXISTS (... support_access ...)` cut dropped
+  --   (detail)   the grant's created_by added to its detail
+  --   (both)     the ending's key given the grant's suffix, `:ended`
+  DECLARE
+    ids     jsonb := _seed_80();
+    V80     uuid := (ids->>'school')::uuid;
+    U_OFF   uuid := (ids->>'u_office')::uuid;
+    U_DSO   uuid := (ids->>'u_dso')::uuid;
+    U_CO    uuid := (ids->>'u_coach')::uuid;
+    U_HIL   uuid := (ids->>'u_hil')::uuid;
+    U_PUP   uuid := (ids->>'u_pupil')::uuid;
+    A_LEAV  uuid := (ids->>'a_leaver')::uuid;
+    A_SUP   uuid := (ids->>'a_support')::uuid;
+    k       int;
+    k1      int;
+    v_txt   text;
+  BEGIN
+    -- (gate) first, the coach: no audit.read, nothing, his own grant included
+    PERFORM _as(U_CO);
+    SELECT count(*) INTO n FROM audit_log(V80, NULL, NULL, NULL, NULL, 200);
+    PERFORM _assert(n = 0, format('db/80 (gate): a coach read %s rows of the audit log', n));
+    -- ...Hilton's office, at Verify 080: nothing
+    PERFORM _as(U_HIL);
+    SELECT count(*) INTO n FROM audit_log(V80, NULL, NULL, NULL, NULL, 200);
+    PERFORM _assert(n = 0, format('db/80 (gate): Hilton''s office read %s of Verify 080''s rows', n));
+    SELECT count(*) INTO n FROM audit_log(HIL, ARRAY['role'], NULL, NULL, NULL, 200) l
+     WHERE l.subject LIKE 'V E %' OR (l.subject LIKE 'V80 %' AND l.subject <> 'V80 Hil');
+    PERFORM _assert(n = 0, format('db/80 (gate): Hilton''s office read %s of Verify 080''s grants at Hilton', n));
+    -- ...the DSO: audit.read without the office's key, so his own appointment
+    -- (role_assignment_read admits a person's own row) and no other grant
+    PERFORM _as(U_DSO);
+    SELECT count(*), string_agg(l.key, ',') INTO n, v_txt FROM audit_log(V80, ARRAY['role'], NULL, NULL, NULL, 200) l
+     WHERE l.key LIKE '%:granted';
+    PERFORM _assert(n = 1 AND v_txt = 'role:' || (ids->>'a_dso') || ':granted',
+      format('db/80 (gate): the DSO read %s grants: %s', n, v_txt));
+
+    -- (door) the reader mirrored is still role_assignment's own
+    SELECT string_agg(regexp_replace(p.qual, '\s+', ' ', 'g'), ' | ') INTO v_txt FROM pg_policies p
+     WHERE p.schemaname = 'public' AND p.tablename = 'role_assignment' AND p.cmd = 'SELECT' AND p.permissive = 'PERMISSIVE';
+    PERFORM _assert(v_txt = '((person_id = app_user_id()) OR app_can(''user.role.assign''::text, school_id, team_code, NULL::uuid, NULL::uuid))',
+      format('db/80 (door): role_assignment''s reader is now %s; move audit_log()''s grant gate with it', v_txt));
+
+    -- The office reads Verify 080.
+    PERFORM _as(U_OFF);
+    k := _v79_reads(U_OFF, V80);
+    SELECT string_agg(row_to_json(l)::text, ' ') INTO v_txt FROM audit_log(V80, NULL, NULL, NULL, NULL, 200) l;
+    k1 := _v79_reads(U_OFF, V80);
+    -- (masked) the children in initials, never whole (the reason names the
+    -- leaver too, and must be absent for its own sake)
+    PERFORM _assert(v_txt NOT LIKE '%left Verify 080%' AND v_txt NOT LIKE '%support hour%',
+      format('db/80 (masked): a reason reached the log: %s', v_txt));
+    PERFORM _assert(v_txt NOT LIKE '%Verify Eighty%' AND v_txt NOT LIKE '%Eighty Pupil%' AND v_txt NOT LIKE '%Eighty Leaver%',
+      format('db/80 (masked): a child is named whole: %s', v_txt));
+    SELECT count(*) INTO n FROM audit_log(V80, ARRAY['role'], NULL, NULL, NULL, 200) l
+     WHERE (l.key = 'role:' || (ids->>'a_pupil') || ':granted' AND l.subject = 'V E Pupil' AND l.subject_kind = 'person'
+            AND l.actor = 'V80 Office' AND l.action = 'Granted a role: Player (U15A)')
+        OR (l.key = 'role:' || (ids->>'a_coach') || ':granted' AND l.subject = 'V80 Coach' AND l.actor = 'V80 Office'
+            AND l.action = 'Granted a role: Coach (U15A)');
+    PERFORM _assert(n = 2, format('db/80 (masked): %s of the pupil''s and the coach''s grants read as they should: %s', n, v_txt));
+
+    -- (logged) the first read is on the record, once, naming the pupil it named
+    PERFORM _assert(k1 = k + 1, format('db/80 (logged): the office''s read left %s access_log rows, not one', k1 - k));
+    PERFORM _assert(_v79_reads_naming(U_OFF, U_PUP) >= 1, 'db/80 (logged): the office''s read does not name the pupil it named');
+    -- (support) one support row, never a grant
+    SELECT count(*) FILTER (WHERE l.kind = 'role' AND l.key LIKE 'role:' || A_SUP || '%'),
+           count(*) FILTER (WHERE l.kind = 'support' AND l.key = 'support:' || (ids->>'s_support') || ':began')
+      INTO n, k FROM audit_log(V80, ARRAY['role', 'support'], NULL, NULL, NULL, 200) l;
+    PERFORM _assert(n = 0 AND k = 1, format('db/80 (support): the support hour reads as %s grants and %s support rows', n, k));
+    -- (grant) the school's six, each by whom it was made, the DSO's among them
+    SELECT count(*), string_agg(l.subject || '<-' || coalesce(l.actor, '-'), ',' ORDER BY l.subject)
+      INTO n, v_txt FROM audit_log(V80, ARRAY['role'], NULL, NULL, NULL, 200) l
+     WHERE l.key LIKE 'role:%:granted' AND l.kind = 'role' AND l.action LIKE 'Granted a role: %' AND l.school_id = V80;
+    PERFORM _assert(n = 6 AND v_txt = 'V E Leaver<-V80 Office,V E Pupil<-V80 Office,V80 Coach<-V80 Office,'
+                                       'V80 Dso<-V80 Principal,V80 Office<--,V80 Principal<--',
+      format('db/80 (grant): the office read %s grants: %s', n, v_txt));
+    SELECT count(*) INTO n FROM audit_log(V80, ARRAY['role'], NULL, NULL, NULL, 200) l
+     WHERE l.key = 'role:' || (ids->>'a_dso') || ':granted' AND l.action = 'Granted a role: Safeguarding Officer';
+    PERFORM _assert(n = 1, 'db/80 (grant): the office does not read the DSO''s appointment');
+    -- (system) the seed's appointment: nobody made it, and the row says so
+    SELECT count(*) INTO n FROM audit_log(V80, ARRAY['role'], NULL, NULL, NULL, 200) l
+     WHERE l.key = 'role:' || (ids->>'a_office') || ':granted' AND l.actor IS NULL;
+    PERFORM _assert(n = 1, 'db/80 (system): an appointment made by nobody does not read with a null actor');
+    -- (detail) {role, team}, nothing else, and no id
+    SELECT count(*) INTO n FROM audit_log(V80, ARRAY['role'], NULL, NULL, NULL, 200) l
+     WHERE l.key LIKE '%:granted'
+       AND (l.detail - 'role' - 'team' <> '{}'::jsonb
+            OR l.detail::text ~ '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+    PERFORM _assert(n = 0, format('db/80 (detail): %s grants carry more than {role, team}', n));
+    -- (both) the leaver's role granted and ended, under the filter "role"
+    SELECT string_agg(l.key || '=' || l.action, ' | ' ORDER BY l.key) INTO v_txt
+      FROM audit_log(V80, ARRAY['role'], NULL, NULL, NULL, 200) l WHERE l.key LIKE 'role:' || A_LEAV || '%';
+    PERFORM _assert(v_txt = 'role:' || A_LEAV || '=Ended a role: Player (U15A) | role:' || A_LEAV || ':granted=Granted a role: Player (U15A)',
+      format('db/80 (both): the leaver''s role reads %s', v_txt));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 59
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
