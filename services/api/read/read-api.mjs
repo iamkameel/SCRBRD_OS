@@ -214,7 +214,9 @@ export const READ_QUERIES = {
     text: `select b.seq, b.innings, b.ball_type, b.value, b.shot,
                   b.theta, b.radius, b.close_position, b.capture_profile,
                   b.striker_id, b.bowler_id
-             from ball_event b
+             -- The live log, as player_shot_points reads it: a delivery the
+             -- scorer voided is not drawn on the match's wagon wheel.
+             from ball_event_live b
             where b.match_id = $1
               and b.placement_source = 'point'
               and b.capture_profile in ('full','standard')
@@ -1431,24 +1433,40 @@ export const READ_QUERIES = {
    * ONE MATCH'S SPELLS, per bowler, from the log, with the directive that
    * applied to each boy beside it. The scorer's screen and the coach's both
    * read this; neither computes a spell of its own.
+   *
+   * The spells are the match's log and go to whoever may read it. The
+   * directive beside them does not: its age band is derived from the boy's
+   * date of birth, and its limits are a reading of his workload. So those
+   * columns, and over_spell_limit, come back only to a reader holding
+   * player.workload.read for that boy (his team, his school, or the boy
+   * himself through self-access), asked per row with the same app_can() call
+   * workload() and bowling_breach's policy make (SCRBRD-136/137 D15).
+   * Everyone else — a scorer, a pupil, a spectator — gets the spell with
+   * them null. The gate is the join's own condition, in SQL: an unauthorised
+   * reader's row never holds the figures for JavaScript to forget to strip.
+   * breach_recorded needs no gate of its own: bowling_breach's policy is the
+   * same capability, so for that reader it is already false.
    */
   bowling_spells: {
     text: `select s.match_id, s.innings, s.bowler_id, p.full_name, s.spell_no, s.first_over, s.last_over,
                   s.overs, s.legal_balls, s.bowled_on,
                   d.age_band, d.pace, d.max_overs_per_spell, d.max_overs_per_day,
-                  (d.max_overs_per_spell is not null and s.overs > d.max_overs_per_spell) as over_spell_limit,
+                  (case when w.may then d.max_overs_per_spell is not null
+                                        and s.overs > d.max_overs_per_spell end) as over_spell_limit,
                   exists (select 1 from bowling_breach x
                            where x.match_id = s.match_id and x.innings = s.innings
                              and x.bowler_id = s.bowler_id and x.kind = 'spell' and x.key = s.first_over) as breach_recorded
              from bowler_spell s
              join player p on p.id = s.bowler_id
-             cross join lateral bowling_directive_for(s.bowler_id) d
+             cross join lateral (select app_can('player.workload.read', p.school_id, p.team_code, p.id,
+                                                '00000000-0000-0000-0000-000000000000'::uuid) as may) w
+             left join lateral bowling_directive_for(s.bowler_id) d on w.may
             where s.match_id = $1
             order by s.innings, s.bowler_id, s.spell_no`,
     params: q => [req(q, "matchId")],
   },
 
-  /* Breaches on record, most recent first. Per row under player.development.read. */
+  /* Breaches on record, most recent first. Per row under player.workload.read (bowling_breach's policy, db/08). */
   bowling_breaches: {
     text: `select x.id, x.match_id, m.opponent, x.innings, x.bowler_id, p.full_name, p.team_code,
                   x.kind, x.overs, x.allowed, x.age_band, x.bowled_on, x.noticed_at
