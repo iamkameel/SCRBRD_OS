@@ -39,6 +39,7 @@ import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildPublicFixture, EXPECTED, HIL } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
 import { ball, batters, bowler, inningsStart, BALL_TYPE } from "@scrbrd/scoring";
+import { RATE } from "../services/api/public/public-api.mjs";
 
 const PORT = port(8848);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -337,12 +338,22 @@ try {
   group("6. The rate limit");
   {
     const ctx = await browser.newContext();
-    const codes = [];
-    for (let i = 0; i < 34; i++) codes.push((await ctx.request.get(`${BASE}/api/public/matches/${pub}`, { headers: { "x-forwarded-for": "10.84.9.9" } })).status());
+    const hit = () => ctx.request.get(`${BASE}/api/public/matches/${pub}`, { headers: { "x-forwarded-for": "10.84.9.9" } }).then((r) => r.status());
+    // Fired at once: the bucket refills at RATE.perMinute / 60 a second while
+    // they run, a token or two, which a slow sequential loop would multiply.
+    const codes = await Promise.all(Array.from({ length: RATE.burst + 10 }, hit));
+    const answered = codes.filter((c) => c === 200).length;
     const page = await ctx.newPage();
     await page.setExtraHTTPHeaders({ "x-forwarded-for": "10.84.9.9" });
-    const res = await page.goto(`${BASE}/live/${pub}`);
-    ok("one address: 200s to the burst, then 429", codes.slice(0, 30).every((c) => c === 200) && codes.slice(30).every((c) => c === 429), codes.join(","));
+    // The page itself, opened with the bucket empty: drained again first,
+    // each try, so a token that refilled since does not let it through.
+    let res = null;
+    for (let i = 0; i < 5 && res?.status() !== 429; i++) {
+      await Promise.all(Array.from({ length: 10 }, hit));
+      res = await page.goto(`${BASE}/live/${pub}`);
+    }
+    ok(`one address, ${RATE.burst + 10} at once: the burst of ${RATE.burst} answered (${answered}), the rest 429`,
+       answered >= RATE.burst && answered <= RATE.burst + 3 && codes.every((c) => c === 200 || c === 429), codes.join(","));
     ok("...and the page itself answers 429 with Retry-After", res?.status() === 429 && Number(res?.headers()["retry-after"]) >= 1);
     await ctx.close();
   }

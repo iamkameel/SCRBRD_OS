@@ -395,10 +395,13 @@ try {
        && since.last === whole.last && JSON.stringify(since.people) === JSON.stringify(whole.people), JSON.stringify({ n: since.events.length, last: since.last }));
     const nothing = JSON.parse((await get(`/api/public/matches/${pub}/log?since=${whole.last}`)).body);
     ok("?since= the last seq: nothing new, and still the names", nothing.events.length === 0 && JSON.stringify(nothing.people) === JSON.stringify(whole.people));
-    const statuses = [];
-    for (let i = 0; i < RATE.burst + 5; i++) statuses.push((await get(`/api/public/matches/${pub}`, { ip: "198.51.100.200" })).status);
-    const limited = await get(`/api/public/matches/${pub}`, { ip: "198.51.100.200" });
-    ok(`one address: ${RATE.burst}, then 429`, statuses.slice(0, RATE.burst).every((s) => s === 200) && statuses.slice(RATE.burst).every((s) => s === 429), statuses.join(","));
+    // Fired at once, so the bucket's refill while they run (RATE.perMinute / 60
+    // a second) is a token or two, not the dozen a slow sequential loop earns.
+    const fired = await Promise.all(Array.from({ length: RATE.burst + 10 }, () => get(`/api/public/matches/${pub}`, { ip: "198.51.100.200" })));
+    const answered = fired.filter((r) => r.status === 200).length, refused = fired.filter((r) => r.status === 429);
+    ok(`one address, ${RATE.burst + 10} at once: the burst of ${RATE.burst} answered (${answered}, with what refilled meanwhile), the rest 429`,
+       answered >= RATE.burst && answered <= RATE.burst + 3 && answered + refused.length === fired.length, fired.map((r) => r.status).join(","));
+    const limited = refused[0] ?? { headers: {} };
     ok("...with Retry-After and noindex", Number(limited.headers["retry-after"]) >= 1 && /noindex/.test(limited.headers["x-robots-tag"]));
     ok("...and another address is not limited", (await get(`/api/public/matches/${pub}`, { ip: "198.51.100.201" })).status === 200);
     ok("Hilton withdraws its side: the page is gone on the next request", await publish(pub2, "home", false, sarahToken) === 200
