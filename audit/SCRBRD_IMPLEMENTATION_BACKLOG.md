@@ -3973,7 +3973,23 @@ The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/
     superadmin's roles from below, your own last key, your own DSO appointment, a support hour; a guardian role keeps
     the guardian link's rules. `POST /api/assignments/:id/end`; `EndRoleButton` in `apps/web/src/views/endrole.jsx`
     for the lead to wire in. db/99 §56, `smoke-end-role`, `end-role.test`. `docs/design/SCRBRD-132_end_a_role.md`.
-  - The real audit log, under `audit.read`: names masked, reads logged.
+  - **B2 · The real audit log. BUILT (2026-10-02, Opus): db/79.** `audit_log(school, kinds, since, before,
+    before_key, limit)`, one definer, newest first, paged by (at, key): `access_log`, `scoring_audit`,
+    `scoring_amendment`, `scorebook_import_revision`, `support_access`, `role_assignment_ending` each under its own
+    `audit.read` predicate, and `duty_suspension` only for a reader who also holds its own (the office's key). Never
+    a safeguarding row (not even for the DSO), never a reason, note, card or account. A pupil (db/57's test, widened
+    to past player/selfaccess roles) is named by initials, `broadcast_name(…, 'initials')`. Every call, refused ones
+    included, writes one `access_log` row (`audit_log`, the school asked about, the children its rows named).
+    `GET /api/read/audit_log`; Management's Audit log tab (kind and date filters, Older entries; "Sign in to see the
+    audit log" in the demonstration). db/99 §58, `smoke-audit-log`, the management browser walk's audit group.
+    **Roles granted too (2026-10-02, Kameel; Opus): db/80** re-emits `audit_log()` (md5-guarded over db/79's body,
+    which shipped and does not move) with `role_assignment` as a source: "Granted a role: <role> (<team>)", kind
+    `role` beside the endings, actor `created_by` (null for a seeded grant: "The system" on the tab), the person
+    masked by the same rule, detail `{role, team}`, key `role:<id>:granted` (an ending keeps `role:<id>`). Gated on
+    `audit.read` AND role_assignment's own reader (the person's own row, or `user.role.assign` over its school and
+    team; not under a pad credential), so the DSO sees only his own grant. A support hour's assignment is the
+    support row alone. A `dso` appointment is shown, as its ending already was: it is public (`dso_contacts()`, the
+    DSO register) and says nothing about a concern. db/99 §59, `smoke-audit-log`'s grant group, the management walk.
   - Injury routes: medical staff and coaches log; medical staff update, clear and refer.
   - A season-per-player read.
   - League invitation notices.
@@ -4009,6 +4025,8 @@ This needs a season-per-player read, shared with SCRBRD-132 Wave B.
 
 ### SCRBRD-136 — The coach's match-day cockpit (2026-10-01)
 
+**Decided (Kameel, 2026-10-02):** see SCRBRD-137 and the design.
+
 Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `CoachCockpitView.tsx` and the rest). Every figure there is typed into the code. This rebuilds the useful half on reads that exist, and leaves out what no read can prove.
 
 - **Match command:** the live state from the fold (score, partnership, current and required rate, the last twelve balls, the bowlers' spells).
@@ -4024,6 +4042,8 @@ Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `Coac
 - **Who builds:** Sonnet, screens over existing reads, then Opus reviews. No migration unless a read is missing.
 
 ### SCRBRD-137 — An intelligence feed of real signals (2026-10-01)
+
+**Decided (Kameel, 2026-10-02), with SCRBRD-136:** D1–D16 of `docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md` as recommended. Phase A (the Coach tab, the Dashboard card and the drawer over existing reads, no migration) first; the lead's three read findings are one small Opus fix beside it.
 
 beta-2's Intelligence drawer has five fixed cards, among them "+18% win equity", "workload risk 86%" and a pitch rating. Here each card is a rule over data we hold, and it shows its evidence and its count.
 
@@ -4055,6 +4075,7 @@ Kameel, 2026-10-02: *"Can we use Google OAuth via Firebase? Can users just sign 
 
 - **Decided (Kameel, 2026-10-02): D1–D14 all as recommended.** Google sign-in through Firebase Auth, the ID token verified by the API itself, ending in today's thirty-minute token; an account with no school sees nothing but itself; staff on the office's register are granted on a verified email, with the uploader's authority re-checked; a parent's claim on a child is free text and the office confirms it; pupils are linked by the office or a verified guardian; D14 narrows the fourteen tables any signed-in account may read today to accounts holding a live assignment.
 - **Phases:** 1 · Google sign-in, `auth_identity`, `pending_claim`, the school-less proof and D14 (Opus; screens Sonnet). 2 · the staff register (Opus; screens Sonnet). 3 · Microsoft, email-link, a Workspace pupil register, account erasure.
+- **Go-live checks (Kameel, 2026-10-02, on the Build Board):** A1 done (Google sign-in switched on in the `scrbrd-os` console, authorised domains checked); A2 confirmed (Google's minimum age in South Africa is 13); the privacy paragraph (A5) is Claude's to draft for his signature.
 - **Before phase 1 goes live:** Kameel enables Authentication and the Google provider in the `scrbrd-os` Firebase console (A1) and signs the privacy-notice paragraph on the transfer outside the Republic (§7.5, A5).
 
 ### SCRBRD-139 — Public commentary names the shot and where it went (2026-10-01)

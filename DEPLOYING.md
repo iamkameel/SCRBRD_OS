@@ -516,6 +516,39 @@ without db/78 has nothing to word, so its lines say "Four" as before. Only both
 together name the shot.
 <!-- ── end SCRBRD-139 ── -->
 
+<!-- ── SCRBRD-132 B2: the audit log (db/79) ── -->
+#### The audit log, read (SCRBRD-132 B2, db/79)
+
+`db/79_audit_log.sql` adds `audit_log()`, the one door Management's **Audit
+log** tab reads through: the school's audit tables under each one's own
+`audit.read` predicate, never a safeguarding row and never a written reason, a
+child named by initials, and one `access_log` row for every read of it. It
+creates no table, changes no policy and needs no secret or backfill: every row
+it shows is one the audit tables already hold.
+
+Paste `node tools/bundle-sql.mjs --apply 79`, then the verify bundle (§58 is its
+proof). **Schema first:** the API built with it serves `GET
+/api/read/audit_log`, which against a database without db/79 is a `42883`
+(the server refuses to start on the missing migration anyway). The tab is
+read-only, so nothing a school does waits on it.
+
+`db/80_audit_log_grants.sql` re-emits `audit_log()` with roles **granted** as
+well as ended (`role_assignment`, under `audit.read` and that table's own
+reader; never a support hour's assignment; a child by initials). db/79 is not
+touched: db/80 refuses to run unless the `audit_log()` in place is db/79's as
+shipped (the md5 of its body) or db/80's own. No table, policy, secret or
+backfill: every appointment already on record appears, those made by a seed
+or a migration with no actor ("The system" on the tab).
+
+Paste `node tools/bundle-sql.mjs --apply 80` (after 79), then the verify bundle
+(§59 is its proof). **Schema first**, as always: the code built with it lists
+db/80 in `expected-migrations.json` and refuses to start without it. The
+route and its shape are unchanged, so the code from before it, against a
+database with db/80, already serves the grants; its tab only words them less
+well ("Roles ended" for the filter, and "Somebody no longer on the system"
+for a seeded grant's missing actor) until the client follows.
+<!-- ── end SCRBRD-132 B2 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ROLES } from "../design/roles.js";
 import { D, inkOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive, useRows } from "../lib/live.js";
-import { api } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
 import { humanDate } from "../lib/format.js";
 import { Icon } from "../ui/icons.jsx";
 import { PeoplePanel } from "./people.jsx";
@@ -150,15 +150,136 @@ function ManagementView({ role, onDirectoryChanged }) {
         </div>
       )}
 
-      {/* ── AUDIT LOG ── there is no audit read yet; the entries that stood here
-          were invented, with real-looking names (a boy's "medical clearance"
-          among them), and are gone. The tab is for audit.read and says so. */}
-      {tab==="audit"&&(
-        <p data-testid="audit-coming" style={{margin:0,fontFamily:D.body,fontSize:"14px",color:D.textMuted}}>The audit log is coming.</p>
-      )}
+      {/* ── AUDIT LOG ── the real one (db/79): audit_log(), under audit.read */}
+      {tab==="audit"&&<AuditLog/>}
 
       {/* ── GROUND TASKS ── the duties are the fixtures at this person's grounds */}
       {tab==="grounds"&&<GroundDuties role={role}/>}
+    </div>
+  );
+}
+
+// THE AUDIT LOG (SCRBRD-132 B2, db/79; roles granted, db/80). Who did what, newest first, from the
+// school's audit tables, read through audit_log(): each table only under its
+// own audit.read predicate, never a safeguarding row, never a reason or a
+// note, a child's name in initials — and every read of it, this one included,
+// is itself on the log. The server decides all of that; this draws it, with a
+// filter by kind and by date, and a page at a time (the cursor is the last
+// row's instant and key, so the reads the log appends while somebody pages
+// do not repeat a row). The demonstration has no log to read and says so.
+const AUDIT_KINDS = [
+  ["access",    "Reads"],
+  ["role",      "Roles granted and ended"],
+  ["support",   "Support sessions"],
+  ["scoring",   "Scoring pen"],
+  ["amendment", "Amendments"],
+  ["scorebook", "Scorebook imports"],
+  ["duty",      "Duty suspensions"],
+];
+const AUDIT_PAGE = 25;
+// A row with nobody behind it. A grant made by a seed or a migration has no
+// created_by (db/80): the system made it. Anything else without an actor was
+// somebody whose account is gone.
+const auditActor = (r) => r.actor ?? (r.kind === "role" && String(r.key).endsWith(":granted") ? "The system" : "Somebody no longer on the system");
+const auditWhen = (at) => {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+};
+
+function AuditLog() {
+  const [kind, setKind] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [state, setState] = useState({ rows: [], loading: true, error: null, more: false });
+  const [nonce, setNonce] = useState(0);
+  const live = signedIn();
+
+  const query = (cursor) => {
+    const p = new URLSearchParams({ limit: String(AUDIT_PAGE) });
+    if (kind) p.set("kinds", kind);
+    if (from) p.set("since", new Date(`${from}T00:00:00+02:00`).toISOString());
+    if (cursor) { p.set("before", cursor.at); p.set("beforeKey", cursor.key); }
+    else if (to) p.set("before", new Date(new Date(`${to}T00:00:00+02:00`).getTime() + 86400000).toISOString());
+    return `/api/read/audit_log?${p.toString()}`;
+  };
+
+  // Every hook above any return: the hook count must not change between renders.
+  useEffect(() => {
+    if (!live) return undefined;
+    let cancelled = false;
+    setState({ rows: [], loading: true, error: null, more: false });
+    api(query(null))
+      .then(({ rows }) => { if (!cancelled) setState({ rows, loading: false, error: null, more: rows.length === AUDIT_PAGE }); })
+      .catch(() => { if (!cancelled) setState({ rows: [], loading: false, error: "unreachable", more: false }); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, kind, from, to, nonce]);
+
+  const older = async () => {
+    const last = state.rows[state.rows.length - 1];
+    if (!last) return;
+    setState((s) => ({ ...s, loading: true }));
+    try {
+      const { rows } = await api(query({ at: last.at, key: last.key }));
+      setState((s) => ({ rows: [...s.rows, ...rows], loading: false, error: null, more: rows.length === AUDIT_PAGE }));
+    } catch {
+      setState((s) => ({ ...s, loading: false, error: "unreachable" }));
+    }
+  };
+
+  const note = {margin:0,fontFamily:D.body,fontSize:"14px",color:D.textMuted};
+  if (!live) return <p data-testid="audit-signin" style={note}>Sign in to see the audit log.</p>;
+
+  const field = {minHeight:"44px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"6px 10px",fontFamily:D.body,fontSize:"14px",color:D.textPrimary};
+  const label = {display:"flex",flexDirection:"column",gap:"4px",fontFamily:D.body,fontSize:"12px",color:D.textMuted};
+  return (
+    <div data-testid="audit-log" style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+      <p style={{...note,fontSize:"13px"}}>Who did what at your school, newest first. A child is named by initials, and your reading this is on the log too.</p>
+      <div role="group" aria-label="Filter the audit log" style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"flex-end"}}>
+        <label style={label}>Kind
+          <select data-testid="audit-kind" value={kind} onChange={(e)=>setKind(e.target.value)} style={field}>
+            <option value="">Everything</option>
+            {AUDIT_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}
+          </select>
+        </label>
+        <label style={label}>From
+          <input data-testid="audit-from" type="date" value={from} onChange={(e)=>setFrom(e.target.value)} style={field}/>
+        </label>
+        <label style={label}>To
+          <input data-testid="audit-to" type="date" value={to} onChange={(e)=>setTo(e.target.value)} style={field}/>
+        </label>
+        {(kind||from||to)&&(
+          <button type="button" className="pressBtn" onClick={()=>{setKind("");setFrom("");setTo("");setNonce((n)=>n+1);}}
+            style={{...field,cursor:"pointer",color:D.textSecondary}}>Clear</button>
+        )}
+      </div>
+      {state.error&&<p data-testid="audit-error" style={{...note,color:D.roseText}}>The audit log could not be read — the server did not answer. This is not the same as there being nothing on it.</p>}
+      {!state.error&&!state.loading&&state.rows.length===0&&(
+        <p data-testid="audit-none" style={note}>Nothing on the audit log{kind||from||to?" for this filter":""}.</p>
+      )}
+      {state.rows.length>0&&(
+        <ul data-testid="audit-rows" style={{listStyle:"none",margin:0,padding:0,border:`1px solid ${D.border}`,borderRadius:D.lg,background:D.surf1}}>
+          {state.rows.map((r)=>(
+            <li key={r.key} data-testid="audit-row" data-kind={r.kind} style={{display:"flex",gap:"12px",flexWrap:"wrap",padding:"10px 14px",borderTop:`1px solid ${D.border}`}}>
+              <div style={{flex:1,minWidth:"220px"}}>
+                <div style={{fontFamily:D.body,fontSize:"14px",color:D.textPrimary}}>
+                  <span style={{fontWeight:600}}>{auditActor(r)}</span> · {r.action}
+                </div>
+                <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginTop:"2px"}}>
+                  {r.subject}{r.detail?.resource&&r.subjectKind!=="records"?` · ${r.detail.resource.replace(/_/g," ")}`:""}{r.detail?.fields?.length?` · ${r.detail.fields.join(", ")}`:""}{r.detail?.fixture?` · ${r.detail.fixture}`:""}{r.detail?.support?" · under a support session":""}{r.detail?.platformWide?" · from the platform":""}
+                </div>
+              </div>
+              <time dateTime={r.at} style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,alignSelf:"center"}}>{auditWhen(r.at)}</time>
+            </li>
+          ))}
+        </ul>
+      )}
+      {state.loading&&<p style={note}>Loading…</p>}
+      {state.more&&!state.loading&&(
+        <button type="button" data-testid="audit-older" className="pressBtn" onClick={older}
+          style={{alignSelf:"flex-start",minHeight:"44px",padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",border:`1px solid ${D.border}`,background:"transparent",fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textSecondary}}>Older entries</button>
+      )}
     </div>
   );
 }

@@ -76,5 +76,7 @@
   "75_dls_table.sql",
   "76_lift_day.sql",
   "77_role_assignment_end.sql",
-  "78_public_shot_words.sql"
+  "78_public_shot_words.sql",
+  "79_audit_log.sql",
+  "80_audit_log_grants.sql"
 ]

@@ -146,12 +146,14 @@ group("The tabs a person has are the capabilities they hold");
   ok("reading the people (user.read) is not the audit log (audit.read): a bursar has neither tab", eq(tabsOf("finance").tabs, []), tabsOf("finance").tabs);
   ok("a role with none of these is told so, and drawn no tab", eq(tabsOf("spectator").tabs, []) && /Nothing on this screen is yours to manage/.test(tabsOf("spectator").out));
   ok("the screen opens on the first tab a person has — a groundskeeper is not shown the directory", !/people-panel/.test(tabsOf("facilities").out));
-  // The audit log: holders of audit.read, and a plain line. The demo directory
+  // The audit log: holders of audit.read; signed out (as this render is), one
+  // plain line asking for a sign-in and nothing else (db/79). The demo directory
   // (the Users tab) legitimately names Hendricks and Khumalo, so what is
   // checked is the invented ENTRIES, on the tab that used to carry them.
   const audit = tabsOf("dso");
   ok("a holder of audit.read and nothing else has the Audit log tab, opened on it", eq(audit.tabs, ["audit"]), audit.tabs);
-  ok("...which says one plain line", /The audit log is coming\./.test(audit.out));
+  ok("...which, signed out, asks for a sign-in and lists nothing", /Sign in to see the audit log\./.test(audit.out)
+     && !/data-testid="audit-row"/.test(audit.out) && !/The audit log is coming/.test(audit.out));
   const invented = /Updated fixture|Added training session|role changed|scorecard submitted|Medical clearance|New user created|Coaching Asst|Pretorius/;
   ok("none of the invented audit entries is anywhere", ["superadmin", "directorofsport", "facilities", "schooladmin", "dso"].every((r) => !invented.test(tabsOf(r).out)));
   const gk = tabsOf("facilities").out;

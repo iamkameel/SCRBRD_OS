@@ -75,6 +75,12 @@ const BAND_ORDER = (/** @type {string} */ col) =>
  * @property {boolean} [masked]                              reads a *_masked view
  * @property {(q: Record<string, string>) => unknown[]} [params]  request query → SQL params
  * @property {(rows: any[]) => any[]} [compose]              rows → the answer, when judgement is applied in JS
+ * @property {boolean} [logsItself]                          the SQL writes its own access_log row (a definer that
+ *                                                           logs every call); the read path adds none of its own
+ * @property {(q: Record<string, string>) => string[]} [logsReads]  a read of the record itself (the access log,
+ *                                                           the support sessions): every answer that holds a row
+ *                                                           not the reader's own is logged, under this resource;
+ *                                                           the function names the ids the query asked about
  */
 
 /** @type {Record<string, ReadQuery>} */
@@ -2392,7 +2398,10 @@ export const READ_QUERIES = {
   // the thing the decision functions read — rather than from a join: the
   // auditor at a school may not read the support person's assignment row,
   // and a join would silently drop the session they are entitled to see.
+  // Reading the sessions is itself on the record (Kameel, 2026-10-02:
+  // "transparency and accountability"): logsReads, below.
   support_access: {
+    logsReads: () => [],
     text: `select s.id, s.actor_id, u.name as actor_name,
                   s.school_id, sc.name as school_name,
                   s.role, s.team_code, s.reason,
@@ -2414,7 +2423,8 @@ export const READ_QUERIES = {
                   -- And whether they reached it through a support session
                   -- (db/22): the row in support_access says who, why and
                   -- for how long.
-                  l.support_access_id
+                  l.support_access_id,
+                  l.person_id = app_user_id() as mine
              from access_log l
              left join app_user u on u.id = l.person_id
             where ($1::uuid is null or l.record_ids @> array[$1::uuid])
@@ -2423,6 +2433,26 @@ export const READ_QUERIES = {
     // Optional: everything read about ONE child, which is the question a
     // parent actually asks.
     params: q => [q?.playerId || null],
+    // Reading the log is itself on the record, as audit_log() (db/79) is:
+    // the raw log is no quieter a door than the tab (Kameel, 2026-10-02).
+    // A read about one child names him.
+    logsReads: q => (q?.playerId ? [q.playerId] : []),
+  },
+
+  // THE AUDIT LOG (SCRBRD-132 B2, db/79). audit_log() is the one door: it
+  // reads each audit table under that table's own audit.read predicate,
+  // never a safeguarding row and never free text, masks a child's name to
+  // initials, and writes its own access_log row on every call — answered or
+  // refused — so this read adds none (logsItself). Newest first, paged by
+  // the last row's (at, key): ?before=&beforeKey=. ?schoolId defaults to
+  // the reader's own school; ?kinds=access,role,...; ?since=, ?before= as
+  // ISO instants; ?limit= 1..200 (50).
+  audit_log: {
+    text: `select l.at, l.kind, l.action, l.actor, l.subject_kind as "subjectKind", l.subject,
+                  l.school_id, l.school, l.detail, l.key
+             from audit_log($1::uuid, $2::text[], $3::timestamptz, $4::timestamptz, $5::text, $6::int) l`,
+    params: (q) => auditLogParams(q),
+    logsItself: true,
   },
 
   // The team sheet for a fixture: a roster of identified minors, governed by
@@ -2740,6 +2770,35 @@ function composeRatings(rows) {
   });
 }
 
+const AUDIT_KINDS = new Set(["access", "scoring", "amendment", "scorebook", "support", "role", "duty"]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The audit log's query string, checked before it reaches SQL: a malformed
+ * value is the caller's mistake (400), not a failed read.
+ * @param {Record<string, string> | undefined} q
+ */
+function auditLogParams(q) {
+  const bad = (/** @type {string} */ key) => {
+    const e = /** @type {DressedError} */ (new Error(`bad_param:${key}`)); e.status = 400; throw e;
+  };
+  const school = q?.schoolId || null;
+  if (school && !UUID_RE.test(school)) bad("schoolId");
+  const kinds = q?.kinds ? String(q.kinds).split(",").map((k) => k.trim()).filter(Boolean) : null;
+  if (kinds && kinds.some((k) => !AUDIT_KINDS.has(k))) bad("kinds");
+  const instant = (/** @type {string} */ key) => {
+    const v = q?.[key];
+    if (!v) return null;
+    if (Number.isNaN(Date.parse(v))) bad(key);
+    return v;
+  };
+  const beforeKey = q?.beforeKey ? String(q.beforeKey) : null;
+  if (beforeKey && !/^[a-z]+:[0-9a-f-]+(:[a-z]+)?$/i.test(beforeKey)) bad("beforeKey");
+  const limit = q?.limit ? Number(q.limit) : 50;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) bad("limit");
+  return [school, kinds, instant("since"), instant("before"), beforeKey, limit];
+}
+
 /** @param {Record<string, string> | undefined} q @param {string} key */
 function req(q, key) {
   const v = q?.[key];
@@ -2894,7 +2953,23 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
     // log_restricted_read(), never sent from here.
     const { rows: [who] } = await client.query(
       `select app_is_platform_wide() as platform, app_support_access_id() is not null as support`);
-    if ((who?.platform || who?.support) && rows.length) {
+    if (def.logsItself) {
+      // The SQL has already written this read's row, at the school it asked
+      // about; a second from here would count one read twice.
+    } else if (def.logsReads) {
+      // A read of the record itself (the access log, the support sessions):
+      // one row per school whose rows came back, whenever any of them is not
+      // the reader's own — a person looking at their own sessions or their
+      // own reads is not auditing anybody. Platform-wide and support stamps
+      // are decided inside log_restricted_read(), as for every other read.
+      const others = rows.filter((r) => r.mine !== true);
+      const ids = def.logsReads(query).filter((id) => UUID_RE.test(id)).slice(0, MAX_LOGGED_IDS);
+      for (const school of new Set(others.map((r) => r.school_id ?? null))) {
+        await client.query(
+          `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
+          [resource, ids, [], school]);
+      }
+    } else if ((who?.platform || who?.support) && rows.length) {
       const disclosed = (watched ?? []).filter((f) => rows.some((r) => pick(r, f) != null));
       for (const school of new Set(rows.map((r) => r.school_id ?? null))) {
         const mine = rows.filter((r) => (r.school_id ?? null) === school);

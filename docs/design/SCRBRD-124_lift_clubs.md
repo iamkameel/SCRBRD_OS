@@ -63,7 +63,7 @@ Still open, for Kameel when convenient: the policy template (`LIFT_POLICY_TEMPLA
 
 **For Kameel:**
 
-- **One alert per seat (D14).** A seat alerted because its lift was late leaving is not alerted again if, later, he is handed over and nobody acknowledges him. That is D14 as decided; the office's exception list still shows him. Say if a second, different alert should go.
+- **One alert per seat (D14; confirmed by Kameel, 2026-10-02: one per seat, not one per hazard).** A seat alerted because its lift was late leaving is not alerted again if, later, he is handed over and nobody acknowledges him. That is D14 as decided; the office's exception list still shows him. Say if a second, different alert should go.
 - **A pupil under eighteen sees nothing of his own lift**, not even "Lift with Mrs Naidoo · 07:15" on his Home (decision 4 read strictly). His parent's Home carries it. Say if the boy's own nameless line should return for under-eighteens.
 - **The watch needs a scheduler.** Until one exists it is a curl from a job (DEPLOYING.md); without it no not-left or not-received alert is sent, though the office's exception list still shows both.
 - **Going live:** grant `lift_club` to the pilot school only when you choose; nothing in db/76 grants it.
