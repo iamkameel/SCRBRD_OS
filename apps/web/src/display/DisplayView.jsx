@@ -44,6 +44,7 @@ const sheet = () => `
   background:var(--dv-face);color:var(--dv-figure);font-family:${T.type.mono};font-variant-numeric:tabular-nums;
   padding:max(12px,2.4vmin) max(16px,3.2vmin);gap:max(8px,1.6vmin);font-size:max(12px,2.2vmin)}
 .dv-root[data-public="true"]{cursor:none;user-select:none;-webkit-user-select:none}
+.dv-root[data-public="false"]{padding-top:calc(max(12px,2.4vmin) + 56px)}
 .dv-root *{box-sizing:border-box}
 .dv-board{position:relative;flex:0 0 auto;display:grid;gap:max(4px,0.8vmin);transition:opacity 1100ms ${T.motion.ease}}
 .dv-top{display:flex;align-items:flex-end;justify-content:space-between;gap:max(8px,2vmin);min-width:0}
