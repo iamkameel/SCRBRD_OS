@@ -4076,7 +4076,15 @@ Kameel, 2026-10-02: *"Can we use Google OAuth via Firebase? Can users just sign 
 - **Decided (Kameel, 2026-10-02): D1–D14 all as recommended.** Google sign-in through Firebase Auth, the ID token verified by the API itself, ending in today's thirty-minute token; an account with no school sees nothing but itself; staff on the office's register are granted on a verified email, with the uploader's authority re-checked; a parent's claim on a child is free text and the office confirms it; pupils are linked by the office or a verified guardian; D14 narrows the fourteen tables any signed-in account may read today to accounts holding a live assignment.
 - **Phases:** 1 · Google sign-in, `auth_identity`, `pending_claim`, the school-less proof and D14 (Opus; screens Sonnet). 2 · the staff register (Opus; screens Sonnet). 3 · Microsoft, email-link, a Workspace pupil register, account erasure.
 - **Go-live checks (Kameel, 2026-10-02, on the Build Board):** A1 done (Google sign-in switched on in the `scrbrd-os` console, authorised domains checked); A2 confirmed (Google's minimum age in South Africa is 13); the privacy paragraph (A5) is Claude's to draft for his signature.
+- **Privacy paragraph signed (Kameel, 2026-10-02):** `docs/policy/SIGNIN_PRIVACY_NOTICE.md`, as written; it ships with the sign-up screens.
 - **Before phase 1 goes live:** Kameel enables Authentication and the Google provider in the `scrbrd-os` Firebase console (A1) and signs the privacy-notice paragraph on the transfer outside the Republic (§7.5, A5).
+
+### SCRBRD-142 — The public home page (2026-10-02)
+
+Kameel, 2026-10-02: a landing page with a public view of live matches, news, public information and the product pitch. Design: `docs/design/SCRBRD-142_public_home_page.md` (Fable).
+
+- **Decided (Kameel, 2026-10-02, on the Build Board): D1–D14 as recommended.** A per-school listing switch on top of per-fixture publication; team-level cards with no child and no ground; the home page indexed, match pages not (PUBLIC_DATA rule 7 amended, D1a); public news names no pupil in v1 and needs a second person; the app moves to `/app`.
+- **Build:** after the coach cockpit. Opus: the listing switch and its migration, `public_live_fixtures()`, the public news read, and an office withdraw for news (today only the author can). Sonnet: the home page screens, with the pitch already refreshed on `claude/wip-landing-pitch`.
 
 ### SCRBRD-139 — Public commentary names the shot and where it went (2026-10-01)
 
