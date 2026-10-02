@@ -137,8 +137,8 @@ group("S5 · A matchup with enough balls: thirty, and not before");
 {
   const row = (balls, o = {}) => ({ bowlingStyle: "Right-arm fast", balls, runs: 31, dismissals: 3, ...o });
   const run = (rows, cov = { attributable: 48, deliveries: 61 }, m = SOON, g = COACH) => ruleS5(base({ gate: g, match: m, squad: sheet(1), matchups: { p1: { rows, coverage: cov } } }));
-  ok(`${MATCHUP_FLOOR - 1} balls: silent`, run([row(MATCHUP_FLOOR - 1)]).length === 0);
-  ok(`${MATCHUP_FLOOR} balls: fires`, run([row(MATCHUP_FLOOR)]).length === 1);
+  ok("29 balls: silent", run([row(29)]).length === 0);
+  ok("30 balls: fires", run([row(30)]).length === 1 && MATCHUP_FLOOR === 30);
   ok("the sentence: the type, balls, runs, dismissals, and what is attributable", run([row(48)])[0]?.lines.join(" | ") === "Boy 1 v pace · 48 balls · 31 runs · out 3 times | 48 of 61 balls attributable", run([row(48)])[0]?.lines);
   ok("two bowlers of one type are one type", run([row(20, { runs: 10, dismissals: 1 }), row(15, { runs: 5, dismissals: 1 })])[0]?.count === 35);
   ok("pace and spin are two cards", run([row(40), row(31, { bowlingStyle: "Left-arm orthodox" })]).length === 2);
