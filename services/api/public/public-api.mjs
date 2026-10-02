@@ -539,6 +539,11 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       const hot = cache.hit(id);
       const h = await header(id, hot);
       if (!h) { notFound(res, shell, head); return true; }
+      // SCRBRD-133 D2: the ground display is switched on by the HOME side's
+      // publication — the fixture is the home school's to put on a pavilion
+      // screen. Published by the away side alone, its live page is served and
+      // its display is the one not found.
+      if (shellMatch?.[1] === "display" && h.published?.home !== true) { notFound(res, true, head); return true; }
       if (shellMatch) {
         send(res, 200, shellHtml({ view: shellMatch[1], matchId: id, header: h }),
           { type: "text/html; charset=utf-8", cache: NO_STORE, robots: SHELL_ROBOTS }, head);

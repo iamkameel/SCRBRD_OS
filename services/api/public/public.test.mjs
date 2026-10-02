@@ -391,7 +391,7 @@ console.log("\n── The router, over a fake database ──");
  * M1 published, M2 not (the header answers nothing, as db/59 does). It
  * records every app.user_id set, and counts reads.
  */
-const seen = { users: /** @type {string[]} */ ([]), reads: 0, status: "complete", alsoServed: new Set() };
+const seen = { users: /** @type {string[]} */ ([]), reads: 0, status: "complete", alsoServed: new Set(), awayOnly: new Set() };
 const fakePool = {
   query: async () => ({ rows: [] }),
   connect: async () => ({
@@ -405,7 +405,7 @@ const fakePool = {
       if (/public_match_header/.test(text)) return { rows: served ? [{
         home_label: "Hilton College 1XI", home_code: "HIL", home_team: "1XI", away_label: "Westville Boys' High 1XI", away_code: "WES",
         away_team: "1XI", away_on_platform: true, sport: "cricket", format: "T10", overs: 10, starts_at: "2026-09-26T08:00:00Z",
-        ground: "Gordon Sherwood Oval", status: seen.status, toss_won_by: "home", toss_decision: "bat", home_published: true,
+        ground: "Gordon Sherwood Oval", status: seen.status, toss_won_by: "home", toss_decision: "bat", home_published: !seen.awayOnly.has(params[0]),
         away_published: true, scores: [{ innings: 0, runs: 25, wickets: 2, balls: 12 }], served_on: ON }] : [] };
       // The match's frozen playing conditions (SCRBRD-114, db/61): this one has none.
       if (/public_match_conditions/.test(text)) return { rows: [] };
@@ -523,6 +523,13 @@ const on = await serve({});
   ok("...painted the board's black before the bundle loads", /documentElement\.style\.background = "#0b0e0b"/.test(disp.body)
      && !/#0b0e0b/.test(all[5].body));
   ok("...names the teams and the score, and nobody", leaks(disp.body).length === 0 && /Hilton College 1XI v /.test(disp.body));
+  // D2: the display is the HOME side's to switch on. A fixture only the away side published.
+  const M3 = "77777777-0000-0000-0000-0000000000a3";
+  seen.alsoServed.add(M3); seen.awayOnly.add(M3);
+  const awayLive = await on.get(`/live/${M3}`), awayDisp = await on.get(`/display/${M3}`);
+  ok("published by the away side alone: its live page is served, its ground display is the one 404",
+     awayLive.status === 200 && awayDisp.status === 404 && awayDisp.body === ns[0].body
+     && JSON.stringify(awayDisp.headers) === JSON.stringify(ns[0].headers), `${awayLive.status} ${awayDisp.status}`);
   const head = await on.get(`/api/public/matches/${M1}`, { method: "HEAD" });
   ok("HEAD answers the headers and no body", head.status === 200 && head.body === "");
 }

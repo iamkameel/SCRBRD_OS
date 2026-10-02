@@ -251,7 +251,7 @@ export function DisplayView({ match, events, fold, innings, result, settled, com
         {panel && (
           <div key={panel} className="os-panel-in">
             <DisplayPanel panel={panel} match={match} played={state.played} inn={state.inn} index={state.index}
-              events={events} fold={fold} result={result}/>
+              events={events} fold={fold} result={result} commentary={commentary}/>
           </div>
         )}
       </div>

@@ -130,12 +130,17 @@ function Bowling({ inn }) {
   );
 }
 
-function FallOfWicket({ inn }) {
+function FallOfWicket({ inn, commentary, n }) {
   const f = fallOfWicket(inn);
   if (!f) return null;
+  // The wicket's own line from the shared generator — on /display the public
+  // projection's words, the shot and where it went included (db/78) — its
+  // first sentence: the rest is the figures drawn below it.
+  const said = [...(commentary ?? [])].reverse().find((c) => c.kind === "wicket" && c.innings === n)?.text?.split(/(?<=\.)\s+/)[0] ?? null;
   return (
     <section data-testid="display-panel-fow" aria-label="Fall of wicket">
       <h2 className="dv-title">Fall of wicket · {nth(f.wicket)}</h2>
+      {said && <p className="dv-text" data-testid="display-fow-line" style={{ margin: 0 }}>{said}</p>}
       <p className="dv-sub" style={{ margin: 0 }}>
         <span className="dv-name">{f.batter.name}</span>{f.batter.runs != null && <span className="dv-fig"> {f.batter.runs} ({f.batter.balls})</span>}
       </p>
@@ -218,14 +223,14 @@ function PreToss({ match }) {
 
 /**
  * One panel, by id.
- * @param {{panel: string | null, match: any, played: any[], inn: any, index: number, events: any[], fold: any, result: string | null}} p
+ * @param {{panel: string | null, match: any, played: any[], inn: any, index: number, events: any[], fold: any, result: string | null, commentary: any[]}} p
  */
-export function DisplayPanel({ panel, match, played, inn, index, events, fold, result }) {
+export function DisplayPanel({ panel, match, played, inn, index, events, fold, result, commentary }) {
   switch (panel) {
     case "partnership": return <Partnership inn={inn}/>;
     case "overs": return <OverStory inn={inn} events={events} fold={fold} n={index}/>;
     case "bowling": return <Bowling inn={inn}/>;
-    case "fow": return <FallOfWicket inn={inn}/>;
+    case "fow": return <FallOfWicket inn={inn} commentary={commentary} n={index}/>;
     case "break": return <InningsBreak match={match} played={played}/>;
     case "result": return <Result match={match} played={played} words={result}/>;
     case "stopped": return <Stopped inn={inn}/>;

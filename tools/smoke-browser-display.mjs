@@ -312,6 +312,8 @@ try {
        await panelOf(v.page));
     const fow = await tid(v.page, "display-panel-fow").innerText().catch(() => "");
     ok("...by position, with how he went and the score at the fall", /Batter/.test(fow) && /\bb Bowler\b/.test(fow) && /Score at the fall/.test(fow) && leaks(fow).length === 0, fow);
+    const said = await tid(v.page, "display-fow-line").innerText().catch(() => "");
+    ok(`...and the generator's own line for it, nobody named who is not ("${said}")`, /bowled/i.test(said) && /the striker/i.test(said) && leaks(said).length === 0);
     const t0 = Date.now();
     ok("...then BOWLING again, where the cycle was — not its start", await until(v.page, () => document.querySelector('[data-testid="display"]')?.getAttribute("data-panel") === "bowling", 12000),
        await panelOf(v.page));
