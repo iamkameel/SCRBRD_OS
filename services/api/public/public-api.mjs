@@ -18,6 +18,10 @@
  *                                         (SCRBRD-114 phase 3a, db/69): sides and
  *                                         figures, never a boy, never a reason (A1)
  *   GET /live/:id, /scorecard/:id         the HTML shells (noindex; OG title)
+ *   GET /display/:id                      the ground display's shell (SCRBRD-133 G1):
+ *                                         the same public bundle, its own lazy
+ *                                         chunk, reading exactly the three reads
+ *                                         above — no credential, nothing more
  *   GET /table/:id, /fixtures/:id         phase 2: answered as not found
  *
  * OFF UNTIL SWITCHED ON. `enabled` comes from PUBLIC_PAGES=on (server.mjs);
@@ -46,8 +50,16 @@
  * 429 and shell; `public, max-age=30` on the header and the sectors, which
  * are team facts.
  *
- * RATE LIMIT (§2.8). A token bucket per client address: 120 a minute, bursts
- * of 30, then 429 with Retry-After. The address is the socket's, or — behind
+ * RATE LIMIT (§2.8). A token bucket per client address: 360 a minute, bursts
+ * of 60, then 429 with Retry-After. SCRBRD-133 A4: a pavilion's phones share
+ * the school's one address, and the ground display polls the log every 5 s
+ * from the same one — the display ~13 a minute (a log read every 5 s, the
+ * header every 60 s), each phone on /live 8 (header and log every 15 s). The
+ * 120/30 this started at carried the display and 13 phones; 360/60 carries
+ * the display and 43, and 19 phones opening the page in the same second
+ * (3 requests each). The cache, not this, protects the database: a fixture's
+ * reads are one query per part per TTL however many ask (public.test.mjs
+ * holds the arithmetic). The address is the socket's, or — behind
  * `trustProxyHops` proxies that append to X-Forwarded-For (Cloud Run, Render,
  * Firebase Hosting) — the one that many hops from the right, which a client
  * cannot forge by sending its own header.
@@ -67,15 +79,19 @@ import { resultFromRow, resultWords } from "@scrbrd/scoring";
 export const LIVE_TTL_MS = 5_000;
 export const SETTLED_TTL_MS = 60_000;
 export const HOT_PER_MINUTE = 2_000;
-export const RATE = Object.freeze({ perMinute: 120, burst: 30 });
+export const RATE = Object.freeze({ perMinute: 360, burst: 60 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const API = /^\/api\/public\/matches\/([^/]+)(\/log|\/shots)?$/;
 /** A published competition's table (SCRBRD-114 phase 3a). */
 const STANDINGS = /^\/api\/public\/competitions\/([^/]+)\/standings$/;
-const SHELL = /^\/(live|scorecard|table|fixtures)\/([^/]+)$/;
-/** The two shells phase 1 serves; the other two answer not found until phase 2. */
-const SERVED_SHELLS = new Set(["live", "scorecard"]);
+const SHELL = /^\/(live|scorecard|display|table|fixtures)\/([^/]+)$/;
+/**
+ * The shells served: phase 1's two and the ground display (SCRBRD-133 G1, D1,
+ * D2: on exactly when the live page is — the fixture published, read as
+ * nobody); the other two answer not found until phase 2.
+ */
+const SERVED_SHELLS = new Set(["live", "scorecard", "display"]);
 
 /** Is this a path the public router answers (on or off)? @param {string} path */
 export const isPublicPath = (path) => path.startsWith("/api/public/") || SHELL.test(path);
@@ -292,6 +308,14 @@ export const THEME_BOOT = `(function () {
       })();`;
 
 /**
+ * The ground display is the board's black whatever the theme (SCRBRD-133 §2.6:
+ * the board never changes): painted before the bundle loads, so a pavilion TV
+ * never flashes the daylight canvas.
+ */
+const DISPLAY_BOOT = `
+      document.documentElement.style.background = "#0b0e0b";`;
+
+/**
  * "Hilton College 1XI v Westville Boys' High 1XI" and the score by innings:
  * the WhatsApp preview (D3). Team facts only.
  * @param {any} h  the header
@@ -309,7 +333,7 @@ export function shellTitle(h) {
  */
 export function shellHtml({ view, matchId, header }) {
   const title = shellTitle(header);
-  const what = view === "scorecard" ? "Scorecard" : "Live score";
+  const what = view === "scorecard" ? "Scorecard" : view === "display" ? "Ground display" : "Live score";
   return `<!doctype html>
 <html lang="en-ZA">
   <head>
@@ -324,7 +348,7 @@ export function shellHtml({ view, matchId, header }) {
     <meta property="og:description" content="${esc(what)} · SCRBRD" />
     <title>${esc(title)} · SCRBRD</title>
     <script>
-      ${THEME_BOOT}
+      ${THEME_BOOT}${view === "display" ? DISPLAY_BOOT : ""}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -515,6 +539,11 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       const hot = cache.hit(id);
       const h = await header(id, hot);
       if (!h) { notFound(res, shell, head); return true; }
+      // SCRBRD-133 D2: the ground display is switched on by the HOME side's
+      // publication — the fixture is the home school's to put on a pavilion
+      // screen. Published by the away side alone, its live page is served and
+      // its display is the one not found.
+      if (shellMatch?.[1] === "display" && h.published?.home !== true) { notFound(res, true, head); return true; }
       if (shellMatch) {
         send(res, 200, shellHtml({ view: shellMatch[1], matchId: id, header: h }),
           { type: "text/html; charset=utf-8", cache: NO_STORE, robots: SHELL_ROBOTS }, head);

@@ -118,6 +118,12 @@ const SUITES = [
   // "At this rate" on the first innings' board: plain arithmetic, left off
   // when it would say nothing (scorer/boardData.js atThisRate).
   ["at-this-rate",      "apps/web/test/at-this-rate.test.mjs"],
+  // The ground display (SCRBRD-133 G1): the rotation with a hand-held clock —
+  // the dwell, the skip, a wicket's interrupt resuming where it was, the holds
+  // — and its panels over built logs (display/rotation.js, display/data.js).
+  ["rotation",          "apps/web/test/rotation.test.mjs"],
+  // The ground display's QR code (lib/qr.js) against an independent encoder.
+  ["qr",                "apps/web/test/qr.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.

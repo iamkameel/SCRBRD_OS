@@ -1,19 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
-import { deriveMatch } from "@scrbrd/scoring";
-import { deriveCommentary } from "@scrbrd/scoring/commentary";
-import { boardInnings, inningsPhase, matchLine, resultText, revisionNotice, sidesOf, teamOf } from "../lib/matchCentre.js";
+import { boardInnings, inningsPhase, matchLine, revisionNotice, sidesOf } from "../lib/matchCentre.js";
 import { humanDateTime } from "../lib/format.js";
 import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre/tabs-core.jsx";
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
 import { HeaderScores } from "../views/matchcentre/scores.jsx";
-import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../lib/superOver.js";
+import { matchInningsOf } from "../lib/superOver.js";
 import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
-import { asPublicMatch, foldable, unnamedToPositions } from "./publicLog.js";
+import { publicStory, read } from "./reads.js";
 
 /**
  * THE PUBLIC MATCH PAGE — /live/:match and /scorecard/:match (SCRBRD-083
@@ -52,12 +50,6 @@ const TABS = [
   { id: "details",      label: "Match details" },
 ];
 
-/** Same origin, no credentials, JSON or a thrown status. @param {string} path */
-async function read(path) {
-  const res = await fetch(path, { credentials: "omit", headers: { accept: "application/json" } });
-  if (!res.ok) throw Object.assign(new Error(`http_${res.status}`), { status: res.status });
-  return res.json();
-}
 
 /** The phone breakpoint, as the shell's useIsMobile reads it — without the shell. */
 function usePhone(px = 640) {
@@ -248,39 +240,24 @@ export function PublicMatch({ matchId, view }) {
   const [picked, setPicked] = useState(null);
   const sectors = useSectors(matchId, tab === "analytics" && !data.missing);
 
-  const match = useMemo(() => (data.header ? asPublicMatch(data.header) : null), [data.header]);
-  const events = useMemo(() => foldable(data.events, data.people), [data.events, data.people]);
-  const spoken = useMemo(() => foldable(data.events, data.people, { forCommentary: true }), [data.events, data.people]);
-  const folded = useMemo(() => {
-    if (!match) return null;
-    const m = deriveMatch(events, data.fold ?? {});
-    unnamedToPositions(m.innings, data.people);
-    return m;
-  }, [events, match, data.fold, data.people]);
-  const played = (folded?.innings ?? []).filter(Boolean);
+  // The match folded and told (public/reads.js, shared with the ground
+  // display): the log made foldable, the fold, the shared generator named by
+  // the page's own labels — `sensitive` never passed, so no health or
+  // discipline is said on a public page — and the result: the server's words
+  // where it has one (SCRBRD-114 phase 3a: sides named, never a boy, never an
+  // organiser's reason), "in progress" while a super over is played (3b), the
+  // fold's otherwise.
+  const story = useMemo(() => publicStory({ header: data.header, fold: data.fold, events: data.events, people: data.people }),
+    [data.header, data.fold, data.events, data.people]);
+  const match = story?.match ?? null;
+  const events = story?.events ?? [];
+  const folded = story?.folded ?? null;
+  const played = story?.played ?? [];
   // ...of the match's own innings: a super over has its block (SCRBRD-114 phase 3b).
   const inningsSel = picked ?? Math.max(0, matchInningsOf(played).length - 1);
-
-  // The shared generator, named by the page's own labels. `sensitive` is
-  // never passed: no health or discipline is said on a public page.
-  const commentary = useMemo(() => {
-    if (!match) return [];
-    const teamName = (_key, name) => teamOf(match, name).full;
-    return superOverCommentary(deriveCommentary(spoken, {
-      ctx: data.fold ?? {},
-      nameOf: (ref) => data.people[ref] ?? null,
-      teamName,
-    }), folded?.innings ?? [], { teamName });
-  }, [spoken, match, data.fold, data.people, folded]);
-
-  // The server's words where it has a result (SCRBRD-114 phase 3a, db/69):
-  // sides named, never a boy, never an organiser's reason; the fold's while
-  // it has none.
-  // While a super over is being played the engine's "not completed" is not yet
-  // true (SCRBRD-114 phase 3b): the line says it is in progress.
-  const liveSO = liveSuperOverLine(played, match?.status);
-  const result = match ? (liveSO ?? (match.result && match.result.outcome !== "in_progress" ? match.result.text : null)
-    ?? resultText(match, folded?.result, { reasons: false }) ?? null) : null;
+  const commentary = story?.commentary ?? [];
+  const liveSO = story?.liveSO ?? null;
+  const result = story?.result ?? null;
   const { moment, overSummary } = useMoments(commentary, !data.loading && !!match);
   // What a screen reader is told as each ball arrives (lib/announce.js): the
   // newest only, and nothing for the log as it stood on first load.

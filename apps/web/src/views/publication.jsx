@@ -3,6 +3,8 @@ import { D, textOn } from "../design/tokens.js";
 import { api, apiStatus, signedIn } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { Btn, Card } from "../ui/primitives.jsx";
+import { displayUrl } from "../display/data.js";
+import { qrMatrix, qrPath } from "../lib/qr.js";
 
 /**
  * Putting a side of a fixture on the public pages (SCRBRD-083 phase 1).
@@ -83,7 +85,95 @@ export function PublishPanel({ matchId, role }) {
             : <>Link: <a href={`/live/${matchId}`} style={{ color: D.textPrimary }}>/live/{matchId}</a> (not listed by search engines)</>}
         </p>
       )}
+      {sides.find((s) => s.side === "home")?.published && pagesOn !== false && (
+        <GroundDisplaySetup matchId={matchId} sides={sides}/>
+      )}
       {said && <div role="alert" data-testid="publish-refused" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginTop: "8px" }}>{said}</div>}
     </Card>
+  );
+}
+
+// ── The ground display (SCRBRD-133 G1, §1.3) ──
+
+const CHOICE = {
+  theme: [["floodlit", "Floodlit"], ["daylight", "Daylight"]],
+  dwell: [["normal", "Normal (12 s)"], ["long", "Long (24 s)"]],
+};
+
+/**
+ * Under the switch that publishes the live page: the ground display's link and
+ * QR code, its three settings, and how many of the side the public surfaces
+ * name (D3). On exactly when the home side is published (D2) — the display IS
+ * the public page, drawn for a pavilion TV, and signs in as nothing (D1).
+ *
+ * The settings travel in the link (`?theme=daylight&dwell=long&motion=reduce`):
+ * nothing is stored and nothing is counted (§1.3, 083 Q8). The names line is
+ * the publication read's count (publication-api.mjs), the public projection's
+ * own answer for each boy of a side this reader may publish — a count, never
+ * a name. The lever it points at is consent, not a looser screen (D3).
+ */
+function GroundDisplaySetup({ matchId, sides }) {
+  const [theme, setTheme] = useState("floodlit");
+  const [dwell, setDwell] = useState("normal");
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const url = displayUrl(window.location.origin, matchId, { theme, dwell, reduceMotion });
+  const qr = qrPath(qrMatrix(url));
+  const counted = sides.filter((s) => s.names);
+  const seg = (name, value, set) => (
+    <div role="radiogroup" aria-label={name === "theme" ? "Light" : "How long each panel stays"} style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+      {CHOICE[name].map(([v, label]) => (
+        <button key={v} type="button" role="radio" aria-checked={value === v} onClick={() => set(v)} data-testid={`display-setup-${name}-${v}`}
+          className="pressBtn"
+          style={{ minHeight: "44px", padding: "0 14px", borderRadius: "999px", cursor: "pointer", fontFamily: D.body, fontSize: "13px",
+            border: `1px solid ${value === v ? D.textPrimary : D.borderMed}`, background: value === v ? D.textPrimary : "transparent",
+            color: value === v ? textOn(D.textPrimary) : D.textPrimary, fontWeight: value === v ? 600 : 500 }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  return (
+    <section data-testid="display-setup" aria-label="Ground display" style={{ borderTop: `1px solid ${D.border}`, marginTop: "10px", paddingTop: "10px" }}>
+      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textPrimary, marginBottom: "6px" }}>Ground display</div>
+      <p style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, margin: "0 0 8px" }}>
+        Open this link on the pavilion TV&apos;s browser and leave it. Nobody signs in there: it shows exactly what the live page
+        shows, and nothing on it can be pressed. After full time it holds the result, then dims.
+      </p>
+      <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", alignItems: "flex-start" }}>
+        <svg data-testid="display-setup-qr" viewBox={`0 0 ${qr.size} ${qr.size}`} width="132" height="132" role="img"
+          aria-label="QR code for the ground display's link" shapeRendering="crispEdges" style={{ background: "#ffffff", borderRadius: "6px", flexShrink: 0 }}>
+          <path d={qr.d} fill="#000000"/>
+        </svg>
+        <div style={{ display: "grid", gap: "8px", minWidth: 0, flex: "1 1 220px" }}>
+          <a href={url} data-testid="display-setup-link" target="_blank" rel="noreferrer noopener"
+            style={{ fontFamily: D.mono, fontSize: "12px", color: D.textPrimary, overflowWrap: "anywhere" }}>{url}</a>
+          {seg("theme", theme, setTheme)}
+          {seg("dwell", dwell, setDwell)}
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", minHeight: "44px", fontFamily: D.body, fontSize: "13px", color: D.textPrimary, cursor: "pointer" }}>
+            <input type="checkbox" checked={reduceMotion} onChange={(e) => setReduceMotion(e.target.checked)} data-testid="display-setup-motion"
+              style={{ width: "20px", height: "20px" }}/>
+            Reduce motion
+          </label>
+        </div>
+      </div>
+      {counted.map((s) => (
+        <p key={s.side} data-testid={`display-setup-names-${s.side}`} style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, margin: "8px 0 0" }}>
+          {SIDE[s.side]}: {s.names.total
+            ? <><strong>{s.names.named} of {s.names.total}</strong> named on public surfaces · <strong>{s.names.positions}</strong> shown by position</>
+            : "nobody of this side is on the team sheet or in the scorebook yet"}
+        </p>
+      ))}
+      {counted.length > 0 && (
+        <details data-testid="display-setup-consent" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "6px" }}>
+          <summary style={{ cursor: "pointer", minHeight: "44px", display: "flex", alignItems: "center", color: D.textPrimary }}>Why a boy is shown by position</summary>
+          <p style={{ margin: "4px 0 0" }}>
+            A boy is named — initial and surname — only where his family&apos;s consent to public naming is recorded with the school
+            office, from the admission form, and nothing else stops it (a never-public mark, or names switched off for his age
+            group). Everyone else is shown as Batter or Bowler. The display follows the same rule as the live page: recording
+            consent is the only way to name a boy on it.
+          </p>
+        </details>
+      )}
+    </section>
   );
 }

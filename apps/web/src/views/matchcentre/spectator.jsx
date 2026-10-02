@@ -1,7 +1,5 @@
-import { useEffect, useRef } from "react";
 import { T, contrast } from "../../design/tokens.js";
-import { Figure, chipFill, chipFor } from "../../ui/board.jsx";
-import { boardFromInnings } from "../../scorer/boardData.js";
+import { chipFill } from "../../ui/board.jsx";
 import { teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName } from "./bits.jsx";
@@ -115,111 +113,6 @@ export function Highlights({ match, innings, commentary }) {
   );
 }
 
-/**
- * BIG-SCREEN MODE: the board, full screen, legible from the boundary — the
- * board's own black, large tabular figures, nothing to press. It is fed by
- * the Match Centre's own live read (it refreshes itself), holds a screen wake
- * lock where the browser allows one (and carries on where it does not), and
- * leaves on Escape or its own labelled button. Signed in, like the rest of
- * the Match Centre.
- */
-export function BigScreen({ match, inn, target, overs, shownRuns, moment, overSummary, line, onClose }) {
-  const closeRef = useRef(null);
-  // Held, not watched: the board re-renders on every live read, and the
-  // lock and the focus are taken once, when it opens.
-  const leave = useRef(onClose);
-  leave.current = onClose;
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); leave.current(); } };
-    document.addEventListener("keydown", onKey);
-    closeRef.current?.focus();
-    // A screen at a ground must not go dark mid-over. Where the browser has
-    // no wake lock, or refuses one, the board simply carries on.
-    let lock = null, alive = true;
-    const ask = async () => {
-      try {
-        if (!alive || document.visibilityState !== "visible" || !navigator.wakeLock) return;
-        const got = await navigator.wakeLock.request("screen");
-        if (alive) lock = got; else got.release().catch(() => {});   // closed while it was asked for
-      } catch { lock = null; }
-    };
-    const onVis = () => { if (document.visibilityState === "visible") ask(); };
-    ask();
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      alive = false;
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("visibilitychange", onVis);
-      lock?.release?.().catch(() => {});
-    };
-  }, []);
-
-  const props = inn ? boardFromInnings(inn, { target, overs }) : null;
-  const B = T.board;
-  const side = inn ? teamOf(match, inn.battingTeam) : null;
-  return (
-    <div data-testid="mc-bigscreen" role="dialog" aria-modal="true" aria-label="Big screen: the scoreboard"
-      style={{ position: "fixed", inset: 0, zIndex: 3000, background: B.face, color: B.figure, display: "flex", flexDirection: "column",
-        padding: "clamp(16px, 4vmin, 56px)", gap: "clamp(8px, 2vmin, 24px)", overflow: "auto", fontFamily: T.type.mono,
-        fontVariantNumeric: "tabular-nums" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.md }}>
-        <span style={{ fontFamily: T.type.body, fontSize: "clamp(14px, 2.2vmin, 24px)", color: B.dim }}>{line}</span>
-        <button ref={closeRef} type="button" onClick={onClose} data-testid="mc-bigscreen-close" className="pressBtn"
-          style={{ minHeight: "48px", padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, border: `1px solid ${B.rule}`, background: "transparent",
-            color: B.figure, fontFamily: T.type.body, fontSize: "16px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
-          Exit big screen
-        </button>
-      </div>
-      {!props ? (
-        <p style={{ fontFamily: T.type.body, fontSize: "clamp(24px, 5vmin, 56px)", color: B.dim, margin: "auto" }}>The board opens with the first ball.</p>
-      ) : (
-        <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: "clamp(8px, 2.5vmin, 32px)" }}>
-          <MomentMark moment={moment} big/>
-          <div style={{ fontFamily: T.type.body, fontWeight: 700, fontSize: "clamp(22px, 5vmin, 72px)", lineHeight: 1.1, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            {side.full}
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: T.space.lg }}>
-            <span data-testid="mc-bigscreen-total" style={{ fontSize: "clamp(96px, 26vmin, 360px)", lineHeight: 0.95, fontWeight: 500 }}>
-              <Figure value={shownRuns ?? props.total}/><span style={{ color: B.dim }}>/</span><Figure value={props.wickets}/>
-            </span>
-            <span style={{ textAlign: "right" }}>
-              <span style={{ display: "block", fontSize: "clamp(40px, 10vmin, 140px)", lineHeight: 1 }}><Figure value={props.overs}/></span>
-              <span style={{ display: "block", fontFamily: T.type.body, fontSize: "clamp(16px, 2.6vmin, 30px)", color: B.dim }}>overs</span>
-            </span>
-          </div>
-          {props.sub && <div data-testid="mc-bigscreen-sub" style={{ fontFamily: T.type.body, fontSize: "clamp(22px, 5vmin, 64px)", color: B.lime }}>{props.sub}</div>}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(12px, 3vmin, 48px)", fontSize: "clamp(22px, 4.4vmin, 56px)", borderTop: `1px solid ${B.rule}`, paddingTop: "clamp(8px, 2vmin, 24px)" }}>
-            {props.batters.map((b) => (
-              <span key={b.name} style={{ color: b.onStrike ? B.figure : B.dim, whiteSpace: "nowrap" }}>
-                <span aria-hidden="true" style={{ color: b.onStrike ? B.lime : "transparent" }}>● </span>
-                {b.onStrike && <span className="sr-only">on strike: </span>}
-                <span style={{ fontFamily: T.type.body }}>{b.name}</span> <Figure value={b.runs ?? 0}/>
-                <span style={{ color: B.dim }}> ({b.balls})</span>
-              </span>
-            ))}
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: T.space.lg, fontSize: "clamp(20px, 3.6vmin, 44px)" }}>
-            {props.bowler && (
-              <span style={{ whiteSpace: "nowrap" }}>
-                <span style={{ fontFamily: T.type.body }}>{props.bowler.name}</span> {props.bowler.wickets}/{props.bowler.runs}
-                <span style={{ color: B.dim }}> ({props.bowler.overs})</span>
-              </span>
-            )}
-            <span style={{ display: "flex", gap: "clamp(6px, 1.2vmin, 14px)", flexWrap: "wrap" }}>
-              <span className="sr-only">This over: {props.thisOver.map((m) => chipFor(m).say).join(", ")}</span>
-              {props.thisOver.map((m, i) => {
-                const c = chipFor(m), f = chipFill(c.kind);
-                return (
-                  <span key={i} aria-hidden="true" style={{ minWidth: "1.6em", height: "1.6em", padding: c.text.length > 1 ? "0 0.35em" : 0, borderRadius: T.radius.pill,
-                    display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
-                    background: f ?? "transparent", color: f ? inkFor(f) : B.dim, fontSize: "0.8em" }}>{c.text}</span>
-                );
-              })}
-            </span>
-          </div>
-          <OverSummary item={overSummary} big/>
-        </div>
-      )}
-    </div>
-  );
-}
+// BIG-SCREEN MODE moved to bigscreen.jsx (SCRBRD-133 D11): it is the ground
+// display's own view now, which the public page's graph must not reach through
+// this file.

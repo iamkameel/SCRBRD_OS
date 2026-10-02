@@ -474,6 +474,15 @@ try {
   ok(`...the total in figures large enough for the boundary (${bigBox?.font}px)`, (bigBox?.font ?? 0) >= 96);
   ok("...and it is the live total", bigBox?.text === `${after.runs}/${after.wickets}`, bigBox?.text);
   ok("...a labelled way out", (await tid(L, "mc-bigscreen-close").innerText()).trim() === "Exit big screen");
+  // SCRBRD-133 D11: the big screen is the ground display's own view, fed by
+  // the signed-in names — the Board band and a panel beneath it.
+  ok("...it is the ground display's view: the Board and a panel in its turn",
+     await L.locator('[data-testid="mc-bigscreen"] [data-testid="display-board"]').count() === 1
+     && /^(partnership|overs|bowling|break|result|stopped|fow)$/.test(await tid(L, "mc-bigscreen").getAttribute("data-panel") ?? ""),
+     await tid(L, "mc-bigscreen").getAttribute("data-panel"));
+  await L.keyboard.press("Space");
+  ok("...Space pauses the rotation, and Space again resumes it", await tid(L, "mc-bigscreen").getAttribute("data-paused") === "true"
+     && await L.keyboard.press("Space").then(() => tid(L, "mc-bigscreen").getAttribute("data-paused")) === "false");
   await L.keyboard.press("Escape");
   await L.waitForTimeout(300);
   ok("Escape leaves it", await tid(L, "mc-bigscreen").count() === 0 && await tid(L, "match-view").count() === 1);
