@@ -246,10 +246,11 @@ try {
   await writeEvents(q, BAT, stamped(logs.bat));
   // Played "now" so the 7-day week reads them; the log is the same.
 
-  // The fixture today, 23:00 SA time: soon, and the match day.
+  // The fixture today, 23:30 SA time: soon, and the match day. Late, so the
+  // walk can book a lift for it at most hours of the day (see the lift below).
   const DAY = (await q(
     `insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-     values ($1, '1XI', 'Verify Cockpit XI', (sa_today()::timestamp + time '23:00') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL]))[0].id;
+     values ($1, '1XI', 'Verify Cockpit XI', (sa_today()::timestamp + time '23:30') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL]))[0].id;
   const SHEET = [WHITFIELD, BEKKER, NAIDOO, PILLAY, SEVEN, SIX, ...EXTRA];
   await q(`insert into match_squad (match_id, player_id, side, batting_no) select $1, p, 'home', n from unnest($2::uuid[]) with ordinality as t(p, n)`, [DAY, SHEET]);
   await q(`insert into match_pitch_report (match_id, school_id, surface, grass, bounce, pace, favours) values ($1, $2, 'firm', 'covered', 'even', 'quick', 'seam')`, [DAY, HIL]);
@@ -278,8 +279,14 @@ try {
     licenceHeld: true, insured: true, roadworthy: true, belts: true, codeAcknowledged: true, contactId: card.id } });
   const startsAt = new Date((await q(`select starts_at from match where id = $1`, [DAY]))[0].starts_at);
   const at = (min) => new Date(startsAt.getTime() + min * 60000).toISOString();
+  // The outbound meeting must be ahead of now and before the start
+  // (lift_meet_refusal, db/70). 105 minutes before the start is in the past
+  // after 21:45 SA time, when CI can well be running: then meet halfway
+  // between now and the start. The walk makes the lift late below anyway.
+  const meetOut = Date.parse(at(-105)) > Date.now() + 60e3 ? at(-105)
+    : new Date(Date.now() + (startsAt.getTime() - Date.now()) / 2).toISOString();
   const offer = await call(`/api/matches/${DAY}/lifts`, { method: "POST", token: driver, body: { legs: [
-    { leg: "out", seats: 3, meetKind: "school", meetAt: at(-105) }, { leg: "back", seats: 3, meetKind: "ground", meetAt: at(300) }] } });
+    { leg: "out", seats: 3, meetKind: "school", meetAt: meetOut }, { leg: "back", seats: 3, meetKind: "ground", meetAt: at(300) }] } });
   const OUT = offer.body?.offers?.find((o) => o.leg === "out")?.id;
   const seat = await call(`/api/lifts/${OUT}/seats`, { method: "POST", token: mum, body: { playerId: BEKKER } });
   await call(`/api/lifts/${OUT}/accept`, { method: "POST", token: driver, body: { seatIds: [seat.body?.seatId] } });
@@ -377,6 +384,7 @@ try {
   ok("...the weather, in words", /18° showers, rain likely/.test(day), day);
   ok("...no umpire and no scorer on record, said", /Umpires: none on record/.test(day) && /no scorer on record/.test(day), day);
   const bus = await inner(c.page, "coach-day-bus");
+  ok("...the bus leaves at 21:00 on the SA clock, whatever the browser's zone", /Bus 21:00 /.test(bus), bus);
   ok("...the bus: four seats, ten named, one arriving by lift", /4 seats/.test(bus) && /10 named/.test(bus) && /1 arriving by lift/.test(bus), bus);
   ok("...and the lift as a head count: no driver, no boy's name beside it", !/Whitfield|Bekker|Fortuner/.test(bus + day), bus);
 

@@ -4,7 +4,7 @@ import { bowlingLimit } from "@scrbrd/scoring";
 import { boardInnings, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { bandLine, bandOfTeam, bowlerRows, matchupTypes, matchupWords, notYetBowled, overStory, pitchWords, sheetOf } from "../../lib/captain.js";
 import {
-  LOAD_SENTENCE, busOf, limitWords, liftCounts, ourInnings, shortDate, sideFoot, sideRows, spellLines, weatherWords, weekRows, weekWords,
+  LOAD_SENTENCE, busOf, limitWords, liftCounts, ourInnings, saDay, saTime, shortDate, sideFoot, sideRows, spellLines, weatherWords, weekRows, weekWords,
 } from "../../lib/cockpit.js";
 import { MATCHUP_FLOOR } from "../../lib/signals.js";
 import { humanDateTime } from "../../lib/format.js";
@@ -110,7 +110,7 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
             {panels.opposition && reads.opposition && (
               <Part label={`${reads.opposition.theirLabel ?? "The opposition"} · dossier`} testid="coach-opposition">
                 <p style={body()}>{reads.opposition.open
-                  ? `Open until ${reads.opposition.closesAt ? humanDateTime(String(reads.opposition.closesAt).slice(0, 10), String(reads.opposition.closesAt).slice(11, 16)) : "the first ball"}.`
+                  ? `Open until ${saTime(reads.opposition.closesAt) ? humanDateTime(saDay(Date.parse(String(reads.opposition.closesAt))), saTime(reads.opposition.closesAt)) : "the first ball"}.`
                   : reads.opposition.reason === "not_yet_open" ? "The dossier has not opened yet." : "The dossier is not open for this fixture."}</p>
                 {reads.opposition.open && (
                   <button type="button" data-testid="coach-dossier-open" className="os-state" onClick={() => setDossier(true)} style={{ ...btn(), justifySelf: "start" }}>Open the dossier</button>
@@ -163,7 +163,7 @@ function TheDay({ match, gate, reads, terms, sheet, sides }) {
       {p.bus && (reads.trips == null ? <Unread what="The bus"/>
         : bus ? (
           <p data-testid="coach-day-bus" style={body()}>
-            Bus{bus.departAt ? ` ${String(bus.departAt).slice(11, 16)}` : ""}{bus.pickup ? ` ${bus.pickup}` : ""} · {bus.capacity} seats · {named} named
+            Bus{saTime(bus.departAt) ? ` ${saTime(bus.departAt)}` : ""}{bus.pickup ? ` ${bus.pickup}` : ""} · {bus.capacity} seats · {named} named
             {lifts && lifts.count > 0 ? ` · ${lifts.count} arriving by lift` : ""}
           </p>)
         : <p data-testid="coach-day-bus" style={quiet()}>No bus is arranged for this fixture.</p>)}
