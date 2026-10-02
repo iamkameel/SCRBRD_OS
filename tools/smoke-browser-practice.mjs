@@ -6,7 +6,10 @@
  *   A  Start Practice Match from the scorer's start screen; the label
  *      "Practice match · kept on this phone" on every screen; overs, the
  *      location prompt once (denied, then allowed), the venue typed, the
- *      weather buttons.
+ *      weather buttons. THE WEATHER HINT, once a position exists: Google
+ *      down gives "Weather unavailable" and the buttons, offline asks nothing,
+ *      and when it comes it fills in under the scorer's own button, marked as
+ *      his change. Starting is never blocked.
  *   B  Two teams typed, shown as "Hilton U15A" and "Kearsney U15A"; two
  *      squads pasted — numbering, blank lines, commas and a repeated name
  *      cleaned or flagged — reordered, a twelfth man marked; the toss, the
@@ -19,7 +22,10 @@
  *   E  THE NETWORK. Every request the page made, from the first load to the
  *      last, is held to a list of every name and team typed: not one carries
  *      any, in its URL, its headers or its body — and the walk made no write
- *      to the API at all once the practice match was under way.
+ *      to the API at all once the practice match was under way. The weather
+ *      requests carry the position rounded to two places and nothing else:
+ *      the unrounded position is in no request, and Google's stub (on
+ *      loopback; nothing here calls Google) was sent only the rounded one.
  *   F  The Practice Matches list: the scorecard saved as a file (with the
  *      names), a second match deleted from the page's own confirmation (not
  *      confirm()), then all of them; and nothing is left in IndexedDB or
@@ -50,9 +56,32 @@ let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 400)}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
+// Google, stubbed on loopback: the API is pointed at it (GOOGLE_WEATHER_BASE_URL is
+// honoured outside production and only for localhost). `mode` says whether it
+// answers or is down; `upstream` is every request it was sent. Nothing here
+// calls Google, and the key is a stand-in that opens nothing.
+const STUB_KEY = "walk-stub-key-not-google";
+let mode = "down";
+/** @type {{ url: string, headers: import("node:http").IncomingHttpHeaders }[]} */
+const upstream = [];
+const stub = createServer((req, res) => {
+  upstream.push({ url: String(req.url), headers: req.headers });
+  if (mode !== "ok") { res.writeHead(500, { "content-type": "application/json" }); res.end("{}"); return; }
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({
+    currentTime: "2026-10-02T09:15:00Z", isDaytime: true,
+    weatherCondition: { type: "LIGHT_RAIN" }, temperature: { degrees: 17.4, unit: "CELSIUS" }, relativeHumidity: 88,
+    wind: { direction: { degrees: 45, cardinal: "NORTHEAST" }, speed: { value: 18, unit: "KILOMETERS_PER_HOUR" } },
+    precipitation: { probability: { percent: 70, type: "RAIN" } }, visibility: { distance: 8, unit: "KILOMETERS" },
+  }));
+});
+await new Promise((r) => stub.listen(0, "127.0.0.1", () => r(null)));
+const STUB_PORT = stub.address().port;
+
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
   env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(API_PORT), NODE_ENV: "development",
-         ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "browser-practice-secret", WEB_ORIGIN: ORIGIN },
+         ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "browser-practice-secret", WEB_ORIGIN: ORIGIN,
+         GOOGLE_WEATHER_API_KEY: STUB_KEY, GOOGLE_WEATHER_BASE_URL: `http://127.0.0.1:${STUB_PORT}` },
   stdio: ["ignore", "pipe", "pipe"],
 });
 const apiErr = [];
@@ -215,9 +244,20 @@ try {
     if (window.__geoWatched) return;
     window.__geoWatched = true;
     const real = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
-    navigator.geolocation.getCurrentPosition = (...a) => { window.__geoAsked(); return real(...a); };
+    // While __geoRefuse is set the phone answers as one whose person said no.
+    navigator.geolocation.getCurrentPosition = (ok, err, ...rest) => {
+      window.__geoAsked();
+      if (window.__geoRefuse) { setTimeout(() => err && err({ code: 1, message: "User denied Geolocation" }), 20); return undefined; }
+      return real(ok, err, ...rest);
+    };
   });
+  // The phone has a position and the page may use it; the walk's first tap is
+  // answered "no", then it is allowed. (No reload between: the sign-in token
+  // lives in memory, and the weather hint is a signed-in route.)
+  await ctx.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await ctx.setGeolocation({ latitude: -29.54012, longitude: 30.28765, accuracy: 20 });
   await watchGeo();
+  await page.evaluate(() => { window.__geoRefuse = true; });
   await tid("practice-venue").fill(VENUE);
   ok("the venue is typed", (await tid("practice-venue").inputValue()) === VENUE);
   await tap("practice-locate");
@@ -226,27 +266,53 @@ try {
   ok("...it was asked once for that tap", asked === 1, asked);
   await tap("practice-overs-30");
 
-  await ctx.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await ctx.setGeolocation({ latitude: -29.54012, longitude: 30.28765, accuracy: 20 });
-  await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(2200);
-  await openScorer();
-  await tap("start-practice");
-  ok("a reload mid-setup: the draft is picked up where it was left, and says so", (await has("practice-draft-note")) && (await tid("practice-venue").inputValue()) === VENUE
-    && (await tid("practice-overs-30").getAttribute("aria-checked")) === "true", (await text()).slice(0, 300));
-  await watchGeo();
+  await page.evaluate(() => { window.__geoRefuse = false; });
   await tap("practice-locate");
   await page.waitForFunction(() => /Position kept/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
   ok("allowed: the position is kept on the phone, from one more request", /Position kept on this phone \(about 20 m\)/.test(await text()) && asked === 2, `${asked} ${(await text()).slice(0, 300)}`);
   await tap("practice-overs-20");
   ok("20 overs again", (await tid("practice-overs-20").getAttribute("aria-checked")) === "true");
 
+  // THE HINT. The position now exists, so it was asked for once: Google (the stub) is down.
+  const hintReqs = () => requests.filter((r) => r.url.includes("/api/weather/hint"));
+  await page.waitForFunction(() => /Weather unavailable/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+  ok("Google down (the API answers 502): \"Weather unavailable\", and the five buttons are still there",
+    /Weather unavailable/.test(await text()) && (await has("practice-weather-unavailable")) && (await has("practice-weather-overcast")), (await text()).slice(0, 400));
+  ok("...it was asked once, for the position the phone gave", hintReqs().length === 1 && upstream.length === 1, `${hintReqs().length} ${upstream.length}`);
+  ok("...and it does not block starting: Next is on", !(await tid("practice-next").isDisabled()));
   await tap("practice-weather-overcast");
+  await ctx.setOffline(true);
+  const beforeOffline = hintReqs().length;
+  await tap("practice-weather-retry");
+  await page.waitForTimeout(500);
+  ok("offline, Try again asks nothing and still says \"Weather unavailable\"", hintReqs().length === beforeOffline && /Weather unavailable/.test(await text()), `${hintReqs().length} ${beforeOffline}`);
+  await ctx.setOffline(false);
+  mode = "ok";
+  await tap("practice-weather-retry");
+  await page.waitForFunction(() => !!document.querySelector('[data-testid="practice-weather-hint"]'), null, { timeout: 15000 }).catch(() => {});
+  const hintText = (await tid("practice-weather-hint").innerText().catch(() => "")).replace(/\s+/g, " ");
+  ok("back online and Google up: the hint arrives, with its numbers and \"Weather by Google\"", /17°C/.test(hintText) && /wind 18 km\/h NE/.test(hintText) && /70% chance of rain/.test(hintText) && /Weather by Google/.test(hintText), hintText);
+  ok("...the scorer's Overcast stays (the hint said drizzle) and says so: the condition is his", (await tid("practice-weather-overcast").getAttribute("aria-pressed")) === "true"
+    && (await tid("practice-weather-drizzle").getAttribute("aria-pressed")) === "false" && /The condition is yours/.test(hintText), hintText);
+  ok("...\"Weather unavailable\" is gone", !/Weather unavailable/.test(await text()));
   ok("the weather buttons: Sunny, Overcast, Drizzle, Rain, Windy and Playable or not",
     (await Promise.all(["sunny", "overcast", "drizzle", "rain", "windy"].map((c) => has(`practice-weather-${c}`)))).every(Boolean)
     && (await has("practice-playable")) && (await has("practice-not-playable")));
   ok("...Overcast is chosen, and playable", (await tid("practice-weather-overcast").getAttribute("aria-pressed")) === "true" && (await tid("practice-playable").getAttribute("aria-pressed")) === "true");
-  ok("no weather hint is shown (there is none yet)", !(await has("practice-weather-hint")));
+  // A reload mid-setup (which also signs the scorer out: the token lives in
+  // memory). The draft is picked up where it was, with the weather kept in it,
+  // and it is not asked for again.
+  const askedBeforeReload = hintReqs().length;
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForTimeout(2200);
+  await openScorer();
+  await tap("start-practice");
+  ok("a reload mid-setup: the draft is picked up where it was left, and says so", (await has("practice-draft-note")) && (await tid("practice-venue").inputValue()) === VENUE
+    && (await tid("practice-overs-20").getAttribute("aria-checked")) === "true", (await text()).slice(0, 300));
+  ok("...the weather with it: Overcast, and the hint's numbers, by Google, as captured", (await tid("practice-weather-overcast").getAttribute("aria-pressed")) === "true"
+    && /17°C/.test(await tid("practice-weather-hint").innerText().catch(() => "")), (await text()).slice(0, 300));
+  await page.waitForTimeout(800);
+  ok("...and the weather was not asked for again", hintReqs().length === askedBeforeReload, `${hintReqs().length} ${askedBeforeReload}`);
   ok("no sideways scroll at 390", await noSideways());
   await shot("01-match");
   await tap("practice-next");
@@ -334,6 +400,9 @@ try {
   ok("the pad is open on the practice match, labelled", (await has("pad-titlebar")) && (await labelShown()).startsWith(LABEL), await labelShown());
   ok("...Hilton U15A v Kearsney U15A", /Hilton U15A v Kearsney U15A/.test(await tid("pad-titlebar").innerText()));
   ok("...and says when it was last saved", /last saved/.test(await labelShown()), await labelShown());
+  const chipText = (await tid("practice-weather-chip").innerText().catch(() => "")).replace(/\s+/g, " ");
+  ok("the header carries a small weather chip: Overcast, 17°C, by Google", /Overcast · 17°C/.test(chipText) && /Weather by Google/.test(chipText), chipText);
+  ok("...in 12px or more", (await tid("practice-weather-chip").evaluate((el) => parseFloat(getComputedStyle(el).fontSize)).catch(() => 0)) >= 12);
   ok("the pad is ready to score on the names typed", (await ensureBasic()) && !(await has("scoring-blocked")), (await text()).slice(0, 300));
   await tap("run-1");
   await tap("run-0");
@@ -403,6 +472,11 @@ try {
   ok("the weather change is kept with the innings, over and ball", meta?.weather_changes?.length === 1 && meta.weather_changes[0].innings === 1 && meta.weather_changes[0].over === 1 && meta.weather_changes[0].ball === 1
     && meta.weather_changes[0].condition === "rain" && meta.weather_changes[0].playable === false, JSON.stringify(meta?.weather_changes));
   ok("...and the start of the day is match_weather's shape: Overcast", meta?.match_weather?.condition === "overcast" && "observed_at" in meta.match_weather && "rain_chance_pct" in meta.match_weather);
+  const wo = meta?.weather_observation;
+  ok("...with the observation kept beside it: conditions, temperature_c, wind_kph, precip_probability_pct, is_forecast, source, captured_at, edited_by_scorer",
+    wo?.conditions === "overcast" && wo.temperature_c === 17 && wo.wind_kph === 18 && wo.precip_probability_pct === 70 && wo.is_forecast === false
+    && wo.source === "google_weather" && wo.captured_at === "2026-10-02T09:15:00Z" && wo.edited_by_scorer === true, JSON.stringify(wo));
+  ok("...and the chip follows the change: Rain, not playable", /Rain · not playable/.test(await tid("practice-weather-chip").innerText().catch(() => "")));
   ok("...the record has the venue and its position", meta?.match?.venue?.name === VENUE && meta.match.venue.lat === -29.54012);
   ok("the board did not move for any of it", (await board()) === "9 for 0, 1.1 overs", await board());
 
@@ -417,6 +491,20 @@ try {
   ok(`once the practice match began: ${toApi.length} reads of the API (the shell's own), and no write to it at all`, writes.length === 0, writes.map((r) => `${r.method} ${r.url}`).join(", "));
   ok("...nothing about a match, its events, its toss or its squad was asked of the API", !toApi.some((r) => /\/api\/matches\/|\/events|\/toss|\/session\/pad|\/discipline/.test(r.url)), toApi.map((r) => r.url).join(", ").slice(0, 300));
   ok("...no beacon, no websocket", sockets.length === 0 && !requests.some((r) => /collect|analytics|beacon|gtag|firebase/i.test(r.url)), sockets.join(","));
+  const wreqs = hintReqs();
+  ok("THE WEATHER REQUESTS: GET, to our own API, and none before a position existed", wreqs.length >= 2 && wreqs.every((r) => r.method === "GET" && r.url.startsWith(`${API}/api/weather/hint?`) && r.phase === "practice"), wreqs.map((r) => `${r.method} ${r.url}`).join(" || "));
+  ok("...each is lat and lon and nothing else, rounded to two places: -29.54 and 30.29",
+    wreqs.every((r) => { const q = new URL(r.url).searchParams; return [...q.keys()].sort().join() === "lat,lon" && q.get("lat") === "-29.54" && q.get("lon") === "30.29"; }),
+    wreqs.map((r) => r.url).join(" || "));
+  ok("...with no body", wreqs.every((r) => r.body === ""));
+  ok("...the unrounded position (-29.54012, 30.28765) is in no request the page made at all", !requests.some((r) => /29\.54012|30\.28765/.test(r.url + r.body + r.headers)));
+  const sentUp = upstream.map((u) => new URL(u.url, "http://stub"));
+  ok("Google's stub was sent the rounded position and nothing else: no person, no match, no key in the URL",
+    upstream.length >= 1 && sentUp.every((u, i) => u.pathname === "/v1/currentConditions:lookup"
+      && [...u.searchParams.keys()].sort().join() === "location.latitude,location.longitude,unitsSystem"
+      && u.searchParams.get("location.latitude") === "-29.54" && u.searchParams.get("location.longitude") === "30.29"
+      && !upstream[i].url.includes(STUB_KEY) && !SECRETS.some((x) => upstream[i].url.includes(x) || JSON.stringify(upstream[i].headers).includes(x))),
+    upstream.map((u) => u.url).join(" || "));
   const outbox = await phone();
   ok("the sync outbox has no practice match in it", !outbox.keys.some((k) => /scrbrd-outbox/.test(k) && /practice/.test(k)), outbox.keys.filter((k) => /outbox/.test(k)).join(", "));
 
@@ -472,7 +560,7 @@ try {
   ok("...still no browser confirm()", dialogs.length === 0);
   const clean = await phone();
   ok("NOTHING REMAINS: no practice key anywhere in IndexedDB or localStorage", !clean.keys.some((k) => /practice/i.test(k)), clean.keys.filter((k) => /practice/i.test(k)).join(", "));
-  ok("...and no name, team, venue or weather in any of it", !SECRETS.some((s) => clean.text.includes(s)) && !/overcast|Rain stopped/.test(clean.text), SECRETS.filter((s) => clean.text.includes(s)).join(", "));
+  ok("...and no name, team, venue or weather in any of it", !SECRETS.some((s) => clean.text.includes(s)) && !/overcast|Rain stopped|google_weather|Weather by Google/.test(clean.text), SECRETS.filter((s) => clean.text.includes(s)).join(", "));
   await page.screenshot({ path: SHOTS ? join(SHOTS, "12-empty.png") : "/dev/null" }).catch(() => {});
   await tap("practice-back");
   ok("back on the start screen: nothing to resume", !(await has("practice-resume-card")) && (await has("start-practice")));
@@ -491,6 +579,7 @@ try {
 } finally {
   await browser.close().catch(() => {});
   web.close();
+  stub.close();
   api.kill();
 }
 
