@@ -1,6 +1,6 @@
 # SCRBRD-140 — Sign-up with Google, and linking an account to a school: the design
 
-Status: **design, for Kameel's review** (Fable, 2026-10-02). Nothing here is built. Kameel's
+Status: **decided (Kameel, 2026-10-02): D1–D14 all as recommended.** Designed by Fable the same day; nothing here is built yet. Kameel's
 question (2026-10-02): "Can we use Google OAuth via Firebase? Can users just sign up and then
 later be linked to their school, or select a school and it must get passed against a
 school-provided register." Added to Fable's list the same day: "security isn't cheap."
