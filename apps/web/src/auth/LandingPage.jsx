@@ -30,7 +30,7 @@ function LandingPage({ onEnter, onLogin }) {
     { icon:"heart-pulse", title:"Bowling workload within the directives",
       desc:"Spells are counted against the age-group limits. Breaches show up, each tied to the rule it breaks. Health data needs a parent's consent." },
     { icon:"van", title:"Parent lift clubs",
-      desc:"Parents offer and ask for seats to fixtures. The school signs a lift policy. A parent declares before she drives." },
+      desc:"Parents offer and ask for seats to fixtures. The school signs a lift policy. Every driver signs a declaration before driving." },
     { icon:"shield-check", title:"Safeguarding built in",
       desc:"Anyone signed in can raise a concern with the school's Designated Safeguarding Officers. Only they can read it, and every read is logged." },
     { icon:"lock", title:"Privacy for minors",
