@@ -34,6 +34,13 @@
  *      for four"; an unconsented boy's placed ball names the place and not
  *      him; and no response the walk read, of any kind, carried a
  *      coordinate or anything a placement was made from.
+ *   9. The home page's strip (SCRBRD-142, db/82): /api/public/live is the
+ *      one 404 when off; a published fixture is not on it until its school
+ *      lists, through GET/POST /api/schools/:id/listing (a coach and the
+ *      other school refused); listed, it is there on the next request, team
+ *      facts only — no ground, no name — noindex and max-age=10, the same
+ *      bytes for a staff token; it stays on the other school's own listing
+ *      and leaves when nobody who lists has published it.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-public.mjs
@@ -452,6 +459,62 @@ try {
        && Number.isInteger(wes.sides.find((/** @type {any} */ x) => x.side === "away")?.names?.total), JSON.stringify(wes.sides));
     const coach = await read(coachToken);
     ok("a coach (no broadcast.publish) gets no count", coach.sides?.every((/** @type {any} */ x) => x.names == null) ?? true, JSON.stringify(coach));
+  }
+
+  group("9. The home page's strip: listing and GET /api/public/live (SCRBRD-142, db/82)");
+  {
+    const WES = "22222222-2222-2222-2222-222222222222";
+    // Hilton 1XI v Westville 1XI, today at noon in South Africa, live, at a ground.
+    const [{ id: today }] = await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', 'ffffffff-0000-0000-0000-000000000001',
+               (sa_today()::timestamp + interval '12 hours') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'live')
+       returning id`, [HIL, WES]);
+    const liveIds = async () => (/** @type {any[]} */ (JSON.parse((await get("/api/public/live")).body).fixtures ?? [])).map((f) => f.id);
+    const listing = async (/** @type {string} */ school, /** @type {string} */ token, /** @type {boolean | undefined} */ listed) =>
+      fetch(`${BASE}/api/schools/${school}/listing`, listed === undefined ? { headers: { authorization: `Bearer ${token}` } }
+        : { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ listed }) });
+
+    const off = await get("/api/public/live", { base: OFF });
+    ok("off: the live read is the one 404", off.status === 404 && off.body === JSON.stringify({ error: "not_found" }));
+    ok("Hilton publishes its side through its route", (await publish(today, "home", true, sarahToken)) === 200);
+    ok("published and not listed: not on the home page (link only, rule 7)", !(await liveIds()).includes(today));
+
+    ok("a coach cannot list the school", (await listing(HIL, coachToken, true)).status === 403);
+    ok("...nor read the switch: the one not found", (await listing(HIL, coachToken)).status === 404);
+    ok("Westville's publisher cannot list Hilton", (await listing(HIL, wesToken, true)).status === 403);
+    const before = await (await listing(HIL, sarahToken)).json();
+    ok("Hilton's director of sport reads the switch: off, and hers to change", before.listed === false && before.mayChange === true, JSON.stringify(before));
+    ok("she lists the school", (await listing(HIL, sarahToken, true)).status === 200);
+    const after = await (await listing(HIL, sarahToken)).json();
+    ok("...and the switch reads on, with when", after.listed === true && typeof after.setAt === "string", JSON.stringify(after));
+
+    // The next request, no wait: listing-api.mjs drops the cache on commit.
+    const r = await get("/api/public/live");
+    const j = JSON.parse(r.body);
+    const card = j.fixtures.find((/** @type {any} */ f) => f.id === today);
+    ok("listed and published: on the home page on the next request", !!card, r.body.slice(0, 300));
+    ok("...team facts: the schools, the codes, live, today", card?.home?.label === "Hilton College" && card?.home?.code === "1XI"
+       && card?.away?.label === "Westville Boys' High" && card?.away?.onPlatform === true && card?.status === "live"
+       && /^\d{4}-\d\d-\d\d$/.test(j.asOf), JSON.stringify(card));
+    ok("...no ground, no place, no name, no id but the fixture's", !/Gordon|Sherwood|ground|venue|ffffffff-/i.test(r.body)
+       && leaksIn(r.body, []).length === 0, leaksIn(r.body, []).join(", "));
+    ok("...noindex, public max-age=10", /noindex/.test(r.headers["x-robots-tag"] ?? "") && r.headers["cache-control"] === "public, max-age=10", JSON.stringify(r.headers));
+    const staff = await get("/api/public/live", { token: `Bearer ${sarahToken}` });
+    ok("...the same bytes for a staff token", staff.body === r.body);
+
+    // Westville publishes its side and lists too; then Hilton stops listing:
+    // the fixture stays, on Westville's word (§1.4, D2).
+    ok("Westville publishes its side", (await publish(today, "away", true, wesToken)) === 200);
+    // Westville's publisher in fixture-public.mjs holds a school-wide sports
+    // administrator's role, and so may list Westville.
+    ok("...and lists", (await listing(WES, wesToken, true)).status === 200);
+    ok("Hilton stops listing", (await listing(HIL, sarahToken, false)).status === 200);
+    ok("...and the fixture stays, on Westville's own listing", (await liveIds()).includes(today));
+    ok("Westville withdraws its side", (await publish(today, "away", false, wesToken)) === 200);
+    ok("...and it is gone on the next request: nobody who lists has published it", !(await liveIds()).includes(today));
+    await listing(WES, wesToken, false);
+    await publish(today, "home", false, sarahToken);
   }
 
   group("7. The shot and where it went (SCRBRD-139, db/78)");

@@ -33,6 +33,7 @@
  *   GET  /api/matches/:id/events?since=           incremental sync
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
+ *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
  *   GET  /api/public/…, /live/:id, /scorecard/:id  the signed-out pages (off unless
  *                                         PUBLIC_PAGES=on — public/public-api.mjs)
  *
@@ -89,6 +90,7 @@ import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
+import { listingRoutes } from "./write/listing-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
 // SCRBRD-124 phase 1: parent lift clubs (db/70).
 import { liftRoutes } from "./write/lift-api.mjs";
@@ -437,6 +439,7 @@ const training = trainingRoutes({ pool, secret: SECRET });
 // A publish or withdrawal drops the public cache's entry before it answers,
 // not when db/59's notification arrives (publication-api.mjs).
 const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
+const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
 // The fixture planner, phase 2 (SCRBRD-123, db/67).
 const planner = plannerRoutes({ pool, secret: SECRET });
@@ -626,6 +629,12 @@ const MATCH_ROUTES = [
   // and taking a side off must never depend on a menu setting.
   [/^\/api\/matches\/([^/]+)\/publication$/,        "GET",  publication.read],
   [/^\/api\/matches\/([^/]+)\/publication$/,        "POST", publication.set],
+  // A school's matches on the public home page (SCRBRD-142, db/82):
+  // public_listing_set() decides who — broadcast.publish at the school, no
+  // team. Not module-gated, as publication is not: taking a school off the
+  // front page must never depend on a menu setting.
+  [/^\/api\/schools\/([0-9a-f-]{36})\/listing$/,      "GET",  listing.read],
+  [/^\/api\/schools\/([0-9a-f-]{36})\/listing$/,      "POST", listing.set],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.

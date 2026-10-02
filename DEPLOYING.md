@@ -590,6 +590,30 @@ Paste `node tools/bundle-sql.mjs --apply 81`, then the verify bundle (§60 is it
 proof). **Schema first**: an API with the route against a database without
 db/81 refuses to start (the migrations guard), as for every file.
 <!-- ── end SCRBRD-140 phase 1 ── -->
+<!-- ── SCRBRD-142 phase 2: listing on the home page (db/82) ── -->
+#### Listing on the home page, and its live read (SCRBRD-142, db/82)
+
+`db/82_public_listing.sql` adds `public_listing` (one switch per school, **off
+until switched on**, written only through `public_listing_set()` under
+`broadcast.publish` at the school with no team: the director of sport or the
+office), and `public_live_fixtures()`, the home page's strip: today's fixtures
+where a side is published **and** that side's school lists (PUBLIC_DATA rule 7
+as amended, D1a). Team facts only — no ground, no player. A trigger on the
+switch drops the public cache. No secret, no backfill: no school lists until
+one says so, so the strip is empty after the paste.
+
+Paste `node tools/bundle-sql.mjs --apply 82` (after 81), then the verify bundle
+(§61 is its proof). **Schema first**: the API built with it serves `GET
+/api/public/live` and `GET/POST /api/schools/:id/listing`, and refuses to
+start without db/82 (`expected-migrations.json`). With `PUBLIC_PAGES` off the
+live read is the one 404 and the home page hides the strip.
+
+**The home page itself (phase 1) needs no paste.** It ships with the client:
+`/` and `/privacy` are `home.html`, the app is at `/app`. Hosting no longer
+uploads `index.html` (it would answer `/` before any rewrite) and serves the
+app as `/app.html`, which the build writes beside it; `serveClient` does the
+same for a single container. The service worker's shell moves to a v2 cache.
+<!-- ── end SCRBRD-142 phase 2 ── -->
 
 ### 5 · Cloud Run, the first time
 

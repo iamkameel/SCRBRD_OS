@@ -299,7 +299,11 @@ are the first surface an anonymous script can hammer, so:
   live TTL doubles automatically — a viral derby degrades to slower updates, not
   to a down API;
 - no enumeration: uuids only, 404 for unpublished and unknown alike, no listing
-  endpoint that walks all matches (the school and competition lists require an id);
+  endpoint that walks unlisted or unpublished fixtures (the school and competition
+  lists require an id). *Amended by SCRBRD-142 (2026-10-02, §10 note 4): the home
+  page's `GET /api/public/live` (db/82 `public_live_fixtures()`) is the one public
+  read with no id, and it walks only today's fixtures a school has both published
+  and listed (PUBLIC_DATA rule 7 as amended, D1a), at most 50;*
 - no per-request access log rows (there is no principal to log), but one counter per
   match per day (`public_page_view`) so a school can see "this page was opened
   1,204 times" — a fact the information officer will be asked for, and cheap. §9 Q8.

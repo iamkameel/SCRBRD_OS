@@ -14,6 +14,10 @@
  *   GET /api/public/matches/:id           the header (team level)
  *   GET /api/public/matches/:id/log       the redacted log (?since=seq)
  *   GET /api/public/matches/:id/shots     the team's sectors (L7)
+ *   GET /api/public/live                  the home page's strip (SCRBRD-142, db/82):
+ *                                         today's fixtures of the schools that list,
+ *                                         each published by a listing school —
+ *                                         team facts, no ground, no boy (§2.2)
  *   GET /api/public/competitions/:id/standings  a published competition's table
  *                                         (SCRBRD-114 phase 3a, db/69): sides and
  *                                         figures, never a boy, never a reason (A1)
@@ -83,6 +87,16 @@ export const RATE = Object.freeze({ perMinute: 360, burst: 60 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const API = /^\/api\/public\/matches\/([^/]+)(\/log|\/shots)?$/;
+/** The home page's strip (SCRBRD-142 §2.2): the one public read with no id. */
+const LIVE = "/api/public/live";
+/** Its one cache entry, under a key no fixture id can be. */
+export const LIVE_KEY = "live";
+/**
+ * At the edge: ten seconds (D14). Team facts with no label, so the edge may
+ * hold them; a withdrawn publication still 404s the match page — where the
+ * names are, `no-store` — on the next request.
+ */
+export const LIVE_EDGE = "public, max-age=10";
 /** A published competition's table (SCRBRD-114 phase 3a). */
 const STANDINGS = /^\/api\/public\/competitions\/([^/]+)\/standings$/;
 const SHELL = /^\/(live|scorecard|display|table|fixtures)\/([^/]+)$/;
@@ -125,6 +139,7 @@ export const NOT_FOUND = JSON.stringify({ error: "not_found" });
  * @property {Held<any> | undefined} [log]      a PublicLog
  * @property {Held<any> | undefined} [shots]
  * @property {Held<any> | undefined} [standings]  a competition's table, keyed by its id
+ * @property {Held<any> | undefined} [live]  the home page's list, under LIVE_KEY
  * @property {Set<string>} players   the real player ids its log names
  * @property {Map<string, Promise<any>>} inflight
  */
@@ -179,7 +194,7 @@ export class PublicCache {
    * The cached answer for `part`, or a fresh one from `load()` — one load at
    * a time per fixture and part, however many requests arrive together.
    * @template T
-   * @param {string} matchId @param {"header" | "log" | "shots" | "standings"} part
+   * @param {string} matchId @param {"header" | "log" | "shots" | "standings" | "live"} part
    * @param {number} ttl @param {() => Promise<T>} load
    * @returns {Promise<T>}
    */
@@ -209,15 +224,17 @@ export class PublicCache {
   }
 
   /**
-   * A change the database announced. A fixture's own change drops it; a
-   * player's drops every fixture whose log names him; anything else (a
-   * school's names-off switch, a competition, a message this build does not
-   * know) drops everything, which is always safe.
+   * A change the database announced. A fixture's own change drops it, and
+   * the home page's list (SCRBRD-142: a publication, a status, a start — any
+   * of them moves a card); a player's drops every fixture whose log names
+   * him (the list names nobody); anything else (a school's names-off or
+   * listing switch, a competition, a message this build does not know) drops
+   * everything, which is always safe.
    * @param {{k?: unknown, id?: unknown} | null} note
    */
   drop(note) {
     const id = typeof note?.id === "string" ? note.id.toLowerCase() : null;
-    if (note?.k === "match" && id) { this.entries.delete(id); return; }
+    if (note?.k === "match" && id) { this.entries.delete(id); this.entries.delete(LIVE_KEY); return; }
     if (note?.k === "player" && id) {
       for (const [m, e] of this.entries) if (e.players.has(id)) this.entries.delete(m);
       return;
@@ -477,6 +494,44 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
   });
 
   /**
+   * Today's listed fixtures (db/82 public_live_fixtures()), as the home page's
+   * cards read them. One entry for everybody; 5 s while any card is live, 60 s
+   * otherwise. The result is worded as the match page words it, each side by
+   * its school and team; the score carries the side that batted.
+   */
+  const live = () => cache.get(LIVE_KEY, "live", SETTLED_TTL_MS, async () => {
+    const { rows, day } = await asNobody(async (c) => ({
+      rows: (await c.query(`select * from public_live_fixtures()`)).rows,
+      day: (await c.query(`select to_char(sa_today(), 'YYYY-MM-DD') as d`)).rows[0]?.d ?? null,
+    }));
+    const name = (/** @type {any} */ label, /** @type {any} */ code) => [label, code].filter(Boolean).join(" ") || null;
+    return {
+      asOf: day,
+      fixtures: rows.map((r) => {
+        const home = name(r.home_label, r.home_code) ?? "Home", away = name(r.away_label, r.away_code) ?? "Away";
+        const result = publicResult(r.result, { home, away });
+        return {
+          id: r.match_id,
+          home: { label: r.home_label, code: r.home_code ?? null },
+          away: { label: r.away_label, code: r.away_code ?? null, onPlatform: r.away_on_platform === true },
+          status: r.status, format: r.format, overs: r.overs,
+          startsAt: r.starts_at ? new Date(r.starts_at).toISOString() : null,
+          scores: (r.scores ?? []).map((/** @type {any} */ s) => ({
+            innings: Number(s.innings), runs: s.runs == null ? null : Number(s.runs),
+            wickets: Number(s.wickets ?? 0), balls: Number(s.balls ?? 0),
+            side: s.side === "home" || s.side === "away" ? s.side : null })),
+          result: result && result.outcome !== "in_progress" ? result.text ?? null : null,
+        };
+      }),
+    };
+  }).then((l) => {
+    // While a card is live, the list lives 5 s, not 60.
+    const e = cache.entry(LIVE_KEY);
+    if (e.live && l.fixtures.some((/** @type {any} */ f) => f.status === "live")) e.live.ttl = LIVE_TTL_MS;
+    return l;
+  });
+
+  /**
    * @param {ServerResponse} res @param {number} status @param {string} body
    * @param {{type?: string, cache: string, robots?: string, extra?: Record<string, string>}} h
    * @param {boolean} head
@@ -516,6 +571,15 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       return true;
     }
 
+    if (path === LIVE) {
+      try {
+        send(res, 200, JSON.stringify(await live()), { cache: LIVE_EDGE }, head);
+      } catch (/** @type {any} */ err) {
+        console.error(`GET ${path} (public) →`, err.code || "", err.message);
+        send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
+      }
+      return true;
+    }
     const standingsMatch = STANDINGS.exec(path);
     if (standingsMatch) {
       const cid = standingsMatch[1].toLowerCase();

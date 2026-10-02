@@ -305,6 +305,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   "browser-pupil",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
   "browser-public",
+  // SCRBRD-142 phases 1–2 (db/82): the home page at /, signed out at phone
+  // width — no app, no token, no robots meta, Log in to /app, no child's
+  // name; the analytics switch starts nothing there; a listed fixture's card
+  // with no ground, nofollow, landing on /live/:id.
+  "browser-home",
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
   // the eighteen card, and the sign-up row — both themes, 12px and 44px.
   "browser-consent",
