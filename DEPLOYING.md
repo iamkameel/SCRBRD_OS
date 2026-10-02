@@ -516,6 +516,35 @@ without db/78 has nothing to word, so its lines say "Four" as before. Only both
 together name the shot.
 <!-- ── end SCRBRD-139 ── -->
 
+<!-- ── SCRBRD-140 phase 1: sign-in with Google (db/81) ── -->
+#### Sign-in with Google, and an account with no school (SCRBRD-140, db/81)
+
+`db/81_signup_google.sql` adds `auth_identity` and `pending_claim` (no policy,
+no privilege for the application: every read and write is a function), the
+functions behind `POST /api/auth/firebase`, the pupil-consent trigger, one line
+in `decide_role_request()` (a first grant gives a school-less account its
+school), and **D14**: sixteen read policies that let any signed-in account read
+reference data — umpires' records among them — now ask for a live assignment
+(`app_enrolled()`). It depends on nothing in db/79–80 and applies after either.
+
+**No new secret.** Google's signing keys are public; the API fetches them from
+`www.googleapis.com` (A9) and caches them. If it cannot, the exchange answers
+503 and the sign-in screen offers the office code; nothing skips the signature.
+`FIREBASE_TEST_KEYS` exists for `tools/smoke-signup.mjs` only: the API refuses
+to start with it set and `NODE_ENV=production`, and even in development it
+verifies only the project `scrbrd-os-test`. **Never set it on a deployment.**
+
+Before anybody signs in with Google (design §11): Kameel enables Authentication
+and the Google provider in the `scrbrd-os` Firebase console, with only
+`scrbrd-os.web.app` and the custom domain as authorised domains (A1), and signs
+the privacy notice's paragraph on the transfer outside the Republic (§7.5, A5).
+Until the sign-in screen ships, the route is simply unused.
+
+Paste `node tools/bundle-sql.mjs --apply 81`, then the verify bundle (§60 is its
+proof). **Schema first**: an API with the route against a database without
+db/81 refuses to start (the migrations guard), as for every file.
+<!-- ── end SCRBRD-140 phase 1 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

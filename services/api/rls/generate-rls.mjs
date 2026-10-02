@@ -806,7 +806,29 @@ export const GENERATED_END = "-- └── END GENERATED";
  */
 export function tablesAddedIn(file) {
   const tables = Object.keys(TABLES).filter((t) => TABLES_ADDED_SINCE_09[t] === file);
-  return [GENERATED_BEGIN, ...tables.map((t) => tablePolicy(t, TABLES[t])), "", GENERATED_END].join("\n");
+  return [GENERATED_BEGIN, ...tables.map((t) => tablePolicy(t, asShippedIn(t, TABLES[t]))), "", GENERATED_END].join("\n");
+}
+
+/**
+ * A later table's read exception as its own file shipped it, when a later
+ * file narrowed it — the same discipline as MASKED_SINCE_09 for a later
+ * table: tables.mjs is the truth for the client, the tests and a fresh
+ * install's next generated file; the generated block in the table's own file
+ * keeps being emitted exactly as it shipped; the db/NN named re-emits the
+ * policy as it runs. rls.test.mjs holds both halves. Never retires.
+ *
+ * SCRBRD-140 D14: "anybody signed in" stopped meaning "somebody a school
+ * enrolled" when sign-up opened, so load_unit's open read is app_enrolled().
+ * @type {Readonly<Record<string, { file: string, shipped: string }>>}
+ */
+export const NARROWED_SINCE = Object.freeze({
+  load_unit: { file: "81_signup_google.sql", shipped: "app_user_id() IS NOT NULL" },
+});
+
+/** @param {string} table @param {TableDef} def @returns {TableDef} */
+function asShippedIn(table, def) {
+  const n = /** @type {Record<string, { file: string, shipped: string }>} */ (NARROWED_SINCE)[table];
+  return n ? { ...def, visibleWhen: n.shipped } : def;
 }
 
 /**

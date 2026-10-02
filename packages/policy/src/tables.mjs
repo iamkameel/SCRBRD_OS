@@ -268,11 +268,14 @@ export const TABLES = {
     // rather than "units"); written only by the platform. The design wrote
     // the read as a boolean expression, but a capability slot takes a NAME
     // (or an expression computing one), so the open read is the named
-    // exception instead, and the capability is the platform's.
+    // exception instead, and the capability is the platform's. "Anyone
+    // signed in" became "anyone enrolled" when sign-up opened (SCRBRD-140
+    // D14, db/81); db/60's generated block keeps the text it shipped with
+    // (NARROWED_SINCE in generate-rls.mjs).
     read:  "platform.feature.manage",
     write: "platform.feature.manage",
     anchors: {},
-    visibleWhen: "app_user_id() IS NOT NULL",
+    visibleWhen: "app_enrolled()",
     masked: {},
   },
   load_entry: {
