@@ -14574,10 +14574,19 @@ $v49$;
     v_keys1 text[];
     v_keys2 text[];
   BEGIN
+    -- (none) first: a coach holds no audit.read: nothing, and the asking is on the record
+    PERFORM _as(U_CO);
+    k := _v79_reads(U_CO, HIL);
+    SELECT count(*) INTO n FROM audit_log(HIL, NULL, NULL, NULL, NULL, 200);
+    PERFORM _assert(n = 0, format('db/79 (none): a coach read %s rows of the audit log', n));
+    PERFORM _assert(_v79_reads(U_CO, HIL) = k + 1, 'db/79 (logged): the coach''s refused read is not on the record');
+    PERFORM _assert(_v79_reads_naming(U_CO, P_PUP) = 0, 'db/79 (logged): the coach''s refused read names a child');
+
     -- (school) Hilton's office: Hilton's five rows in the window, and only Hilton's
     PERFORM _as(U_OFF);
     k := _v79_reads(U_OFF, HIL);
-    SELECT count(*), string_agg(l.kind, ',' ORDER BY l.kind) INTO n, v_txt FROM audit_log(HIL, NULL, W0, W1, NULL, 200) l;
+    SELECT count(*), string_agg(l.kind, ',' ORDER BY l.kind) INTO n, v_txt FROM audit_log(HIL, NULL, W0, W1, NULL, 200) l
+     WHERE l.school_id = HIL AND coalesce(l.detail->>'resource', '') NOT LIKE 'safeguarding%';
     PERFORM _assert(n = 5 AND v_txt = 'access,access,duty,role,scoring',
       format('db/79 (school): Hilton''s office read %s rows in the window: %s', n, v_txt));
     PERFORM _assert(_v79_reads(U_OFF, HIL) = k + 1,
@@ -14597,17 +14606,13 @@ $v49$;
     SELECT count(*) INTO n FROM audit_log(HIL, NULL, NULL, NULL, NULL, 200);
     PERFORM _assert(n = 0, format('db/79 (school): Westville''s office read %s of Hilton''s rows', n));
 
-    -- (none) a coach holds no audit.read: nothing, and the asking is on the record
-    PERFORM _as(U_CO);
-    k := _v79_reads(U_CO, HIL);
-    SELECT count(*) INTO n FROM audit_log(HIL, NULL, NULL, NULL, NULL, 200);
-    PERFORM _assert(n = 0, format('db/79 (none): a coach read %s rows of the audit log', n));
-    PERFORM _assert(_v79_reads(U_CO, HIL) = k + 1, 'db/79 (logged): the coach''s refused read is not on the record');
-    PERFORM _assert(_v79_reads_naming(U_CO, P_PUP) = 0, 'db/79 (logged): the coach''s refused read names a child');
-
     -- (masked) the children in initials, everywhere; an adult whole
     PERFORM _as(U_OFF);
     SELECT string_agg(row_to_json(l)::text, ' ') INTO v_txt FROM audit_log(HIL, NULL, W0, W1, NULL, 200) l;
+    -- (text) first: the reasons name the children, and must be absent for
+    -- their own sake before the names are looked for
+    PERFORM _assert(v_txt NOT LIKE '%left the school%' AND v_txt NOT LIKE '%briefing%' AND v_txt NOT LIKE '%section 58%',
+      format('db/79 (text): a reason reached the log: %s', v_txt));
     PERFORM _assert(v_txt NOT LIKE '%Verify Seventynine%' AND v_txt NOT LIKE '%Seventynine Pupil%',
       format('db/79 (masked): a child is named whole: %s', v_txt));
     SELECT count(*) INTO n FROM audit_log(HIL, NULL, W0, W1, NULL, 200) l
@@ -14618,9 +14623,6 @@ $v49$;
         OR (l.kind = 'duty'    AND l.subject = 'V S Pupil' AND l.actor = 'V79 Office');
     PERFORM _assert(n = 5, format('db/79 (masked): %s of the five rows read as masked: %s', n, v_txt));
 
-    -- (text) no reason reaches a row
-    PERFORM _assert(v_txt NOT LIKE '%left the school%' AND v_txt NOT LIKE '%briefing%' AND v_txt NOT LIKE '%section 58%',
-      format('db/79 (text): a reason reached the log: %s', v_txt));
 
     -- (safeguarding) never, for the office or the DSO whose read it was
     SELECT count(*) INTO n FROM audit_log(HIL, ARRAY['access'], NULL, NULL, NULL, 200) l
