@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { D, T, textOn } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { humanDate } from "../lib/format.js";
@@ -22,6 +22,7 @@ import { useRows, useWeather } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
+import { clearCoach, peekCoach } from "../lib/cockpitNav.js";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   useTheme();
@@ -40,6 +41,14 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   const STAFF = useRows("staff", role);
   const WEATHER = useWeather(role);
   const [filter, setFilter] = useState("all");
+  useEffect(() => {
+    const want = peekCoach();
+    const m = want ? MATCHES.find((x) => x.id === want.matchId) : null;
+    if (!want || !m) return;
+    clearCoach();
+    setCoachOn({ tab: "coach", drawer: want.drawer });
+    setOpenM(m);
+  }, [MATCHES]);
   const [selMatch, setSelMatch] = useState(null);
   // The fixture open in the Match Centre's own view (views/matchcentre/):
   // the board, the scorecard, the commentary and the rest, in six tabs. It
@@ -48,6 +57,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // A paper scorebook being imported for a fixture (SCRBRD-120): its own
   // screens, opened from the fixture's side panel.
   const [sbOpen,   setSbOpen]   = useState(null);
+  // The Dashboard's match-day card sends the coach to a fixture's Coach tab
+  // (SCRBRD-136): taken once the fixtures have loaded, then forgotten.
+  const [coachOn, setCoachOn] = useState(/** @type {{tab: string, drawer: boolean} | null} */ (null));
   // The Post-Match Report (SCRBRD-082) — a fixture's own screen, opened from
   // its card the same way the Scorecard is. Offered only once a match is
   // complete: a live fixture's report would be reporting on a game still
@@ -95,7 +107,8 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
     // (a result, a new status) is the one the view shows.
     const fresh = MATCHES.find((m) => m.id === openM.id) ?? openM;
     return (
-      <MatchView match={fresh} role={role} onClose={() => setOpenM(null)} canScoreIt={canScore(role)}
+      <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={canScore(role)}
+        initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false}
         onOpenScorer={onOpenScorer} onNavProfile={onNavProfile}
         matches={MATCHES} onOpenFixture={openFixture} onTeamResults={teamResults}/>
     );

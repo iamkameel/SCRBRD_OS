@@ -160,6 +160,13 @@ const SUITES = [
   // per screen, a method and never a name, the tenant's words (G15) — and
   // the Match Centre's family mode (G13).
   ["family", "apps/web/test/family.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The coach's match-day cockpit and the intelligence feed (SCRBRD-136/137
+  // phase A): the entry gate derived from roles.mjs and held to the design's
+  // table, the status-tier-only health, the load word, the head count of
+  // lifts (cockpit); each feed rule at its threshold and one short of it, its
+  // gate, its words, and what a dismissal holds (signals).
+  ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Ending a role (SCRBRD-132 C1, db/77): EndRoleButton asks for the reason,
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
