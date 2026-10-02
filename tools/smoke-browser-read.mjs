@@ -1643,6 +1643,12 @@ try {
           await buttons.nth(i).click({ timeout: 2500 }).catch(() => {});
           await s.page.waitForTimeout(600);
           await s.page.keyboard.press("Escape").catch(() => {});
+          // A button may take the person to another screen (the Dashboard's match-day card opens the Coach tab):
+          // that is a screen standing, not a break. Come back to this one, so the next poke is on the screen it was chosen from.
+          if (await s.page.locator('[data-testid="os-main"]').getAttribute("data-page", { timeout: 1500 }).catch(() => k) !== k) {
+            await s.page.locator(`[data-testid="nav-${k}"]`).click({ timeout: 4000 }).catch(() => {});
+            await s.page.waitForTimeout(700);
+          }
           poked++; pokes++;
           if (s.errors.length > b0) broken.push(`${k} › "${t.slice(0, 32)}": ${s.errors.slice(b0).join("; ").slice(0, 120)}`);
           if (!(await s.page.locator('[data-testid="os-main"]').count())) { broken.push(`${k} › "${t.slice(0, 32)}": page gone`); break; }

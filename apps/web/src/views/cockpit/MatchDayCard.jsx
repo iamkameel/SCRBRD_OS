@@ -69,9 +69,8 @@ function Card({ match, gate, onNav, now }) {
         )}
         <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
           <button type="button" data-testid="matchday-open" className="os-state" onClick={() => go(false)} style={btn}>Open the Coach tab</button>
-          {!loading && feed.open.length > 0 && (
-            <button type="button" data-testid="matchday-signals" className="os-state" onClick={() => go(true)} style={btn}>See the signals</button>
-          )}
+          {/* Always drawn, so the card's controls do not change under a finger (or a script) while its reads arrive. */}
+          <button type="button" data-testid="matchday-signals" className="os-state" onClick={() => go(true)} style={btn}>See the signals</button>
         </div>
       </div>
     </BentoCard>
