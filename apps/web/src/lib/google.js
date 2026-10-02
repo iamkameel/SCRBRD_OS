@@ -8,11 +8,11 @@
  * token. Firebase is a verifier here. It is not our session, not a user store
  * we read, and not where anyone's role lives.
  *
- *   - NO KEYS IN CODE. The project's web config comes from the build's
- *     environment (VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN,
- *     VITE_FIREBASE_PROJECT_ID, and optionally VITE_FIREBASE_APP_ID). A build
- *     without them has no Google button and says why; it never reaches for
- *     lib/firebase.js's analytics config, which is a different decision.
+ *   - ONE PROJECT. The web config is scrbrd-os's public one
+ *     (lib/firebaseProject.js), the project the server pins every token to,
+ *     unless the build is given its own VITE_FIREBASE_* (a walk's build, for
+ *     its test project). Identifiers, not secrets. Sharing the config with
+ *     lib/firebase.js shares nothing else: no analytics, and no SDK at boot.
  *   - THE SDK IS NOT AT BOOT. `firebase/auth` is a dynamic import, fetched when
  *     somebody presses the button, so the chunk every visitor downloads to reach
  *     the sign-in screen does not carry it (tools/check-bundle.mjs holds that).
@@ -27,6 +27,7 @@
  * It decides nothing about who anyone is or what they may do.
  */
 import { api } from "./api.js";
+import { FIREBASE_PROJECT_CONFIG } from "./firebaseProject.js";
 
 const KEYS = ["apiKey", "authDomain", "projectId"];
 
@@ -48,8 +49,24 @@ export function googleConfig(env = /** @type {any} */ (import.meta).env) {
   return { apiKey: cfg.apiKey, authDomain: cfg.authDomain, projectId: cfg.projectId, ...(cfg.appId ? { appId: cfg.appId } : {}) };
 }
 
+/**
+ * The config this build signs in with: the build's own VITE_FIREBASE_* when it
+ * was given them (a walk's build points at its test project), otherwise the
+ * project's public web config, scrbrd-os (lib/firebaseProject.js), which is
+ * the project the server verifies against. Outside a Vite build (plain node,
+ * the unit tests) there is none.
+ * @param {Record<string, string | undefined> | undefined} [env]
+ */
+export function signInConfig(env = /** @type {any} */ (import.meta).env) {
+  if (!env) return null;
+  const own = googleConfig(env);
+  if (own) return own;
+  const { apiKey, authDomain, projectId, appId } = FIREBASE_PROJECT_CONFIG;
+  return { apiKey, authDomain, projectId, appId };
+}
+
 /** Is Google sign-in switched on in this build? */
-export const googleAvailable = () => googleConfig() !== null;
+export const googleAvailable = () => signInConfig() !== null;
 
 // THE WALKS' DOOR. A build made for the browser walks (SCRBRD_TEST_HOOKS=1, into dist-test/ —
 // vite.config.js) lets window.__SCRBRD_TEST_GOOGLE__ answer in place of the
@@ -102,7 +119,7 @@ let _ready = null;
  */
 export function authReady({ load = () => Promise.all([import("firebase/app"), import("firebase/auth")]) } = {}) {
   if (!_ready) {
-    const cfg = googleConfig();
+    const cfg = signInConfig();
     if (!cfg) return Promise.reject(Object.assign(new Error("not_configured"), { code: "not_configured" }));
     _ready = load().then(([appSdk, authSdk]) => {
       // A named app of its own: lib/firebase.js's default app belongs to the

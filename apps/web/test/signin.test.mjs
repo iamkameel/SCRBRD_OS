@@ -27,7 +27,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { GRANTABLE_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { exchangeGoogle, exchangeState, EXCHANGE_WORDS, CLAIM_STEPS } from "../src/lib/signin.js";
-import { googleConfig, googleFailure, GOOGLE_FAILURE_WORDS, addSignIn, authReady } from "../src/lib/google.js";
+import { googleConfig, signInConfig, googleFailure, GOOGLE_FAILURE_WORDS, addSignIn, authReady } from "../src/lib/google.js";
 import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../src/lib/signinNotice.js";
 import {
   KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, PUPIL_UNDER_18, NOTE_MAX, buildRequest, joinWords, parentNote, sentWords,
@@ -107,6 +107,9 @@ group("The exchange posts the token and the device, and returns the state");
 group("Google's side: config from the environment, failures in words");
 {
   ok("no environment, no Google", googleConfig(undefined) === null);
+  ok("a build without its own config signs in with the project's, scrbrd-os", signInConfig({})?.projectId === "scrbrd-os" && signInConfig({})?.authDomain === "scrbrd-os.firebaseapp.com");
+  ok("...a build given its own (a walk's) uses that", signInConfig({ VITE_FIREBASE_API_KEY: "k", VITE_FIREBASE_AUTH_DOMAIN: "d", VITE_FIREBASE_PROJECT_ID: "scrbrd-os-test" })?.projectId === "scrbrd-os-test");
+  ok("...and outside a build there is none", signInConfig(undefined) === null);
   ok("an empty one, no Google", googleConfig({}) === null);
   ok("a key without a domain is no Google", googleConfig({ VITE_FIREBASE_API_KEY: "k", VITE_FIREBASE_PROJECT_ID: "p" }) === null);
   const cfg = googleConfig({ VITE_FIREBASE_API_KEY: " k ", VITE_FIREBASE_AUTH_DOMAIN: "d.example", VITE_FIREBASE_PROJECT_ID: "p" });
