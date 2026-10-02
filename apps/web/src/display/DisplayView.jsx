@@ -105,10 +105,7 @@ li.dv-share{grid-template-columns:3ch minmax(40px,1fr) max-content minmax(0,1.4f
 .dv-root[data-sleeping="true"] .dv-board{opacity:.4}
 @keyframes dvPanelIn{from{opacity:0}to{opacity:1}}
 .os-panel-in{animation:dvPanelIn ${T.motion.panel} ${T.motion.ease} both}
-/* 4:3 — a projector: the same bands, the rows wrap rather than shrink. */
-@media (max-aspect-ratio: 3/2) and (orientation: landscape){
-  .dv-grid2{grid-template-columns:1fr}
-}
+/* 4:3 — a projector: the same bands; the Board's rows wrap rather than shrink (flex-wrap above). */
 /* Portrait — a phone on a stand, a rotated monitor: the Board stacks. */
 @media (orientation: portrait){
   .dv-top{flex-direction:column;align-items:flex-start}
@@ -242,7 +239,7 @@ export function DisplayView({ match, events, fold, innings, result, settled, com
   return (
     <div className="dv-root" data-testid={onClose ? "mc-bigscreen" : "display"} data-public={onClose ? "false" : "true"}
       data-panel={panel ?? "none"} data-hold={state.hold ?? ""} data-theme-display={settings.theme} data-dwell={settings.dwell}
-      data-sleeping={status.sleeping ? "true" : "false"} data-stale={status.stale ? "true" : "false"}
+      data-sleeping={status.sleeping ? "true" : "false"} data-stale={status.stale ? "true" : "false"} data-paused={paused ? "true" : "false"}
       {...(onClose ? { role: "dialog", "aria-modal": "true", "aria-label": "Big screen: the scoreboard" } : { role: "main", "aria-label": "Ground display" })}
       style={vars}>
       <style>{sheet()}</style>
