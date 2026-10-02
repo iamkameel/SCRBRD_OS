@@ -240,8 +240,13 @@ try {
   group("7. The limits");
   {
     const statuses = [];
-    for (let i = 0; i < 12; i++) statuses.push((await api("/api/auth/firebase", { method: "POST", from: "10.81.9.9", body: { idToken: "x.y.z", deviceId: "d" } })).status);
-    ok("one address: ten, then 429", statuses.slice(0, 10).every((s) => s === 401) && statuses.slice(10).every((s) => s === 429), statuses);
+    const t0 = Date.now();
+    for (let i = 0; i < 50; i++) statuses.push((await api("/api/auth/firebase", { method: "POST", from: "10.81.9.9", body: { idToken: "x.y.z", deviceId: "d" } })).status);
+    // A school behind one address: a burst of forty (EXCHANGE_RATE), then
+    // two a second — so beyond forty, only what the walk's own time refilled.
+    const served = statuses.filter((s) => s === 401).length;
+    ok("one address: forty at once, then 429", statuses.slice(0, 40).every((s) => s === 401) && statuses.includes(429)
+       && served <= 40 + Math.ceil((Date.now() - t0) / 500) + 1, statuses);
     const LIMIT_UID = `walk-limit-${RUN}`;
     const byUid = [];
     for (let i = 0; i < 8; i++) byUid.push((await exchange(idToken(LIMIT_UID, `walk.limit.${RUN}@example.invalid`))).status);

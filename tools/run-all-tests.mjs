@@ -188,6 +188,9 @@ const SUITES = [
   // Sign-up with Google (SCRBRD-140): a Firebase ID token verified with no
   // firebase-admin, every refusal by name, keys fetched by an injected fetcher.
   ["firebase-verify", "services/api/auth/firebase-verify.test.mjs"],
+  // The exchange's rate limits, sized for a school behind one address, and
+  // the walk's signing key never the default.
+  ["signin-api", "services/api/auth/signin-api.test.mjs"],
   // The pad's resume credential (SCRBRD-078): the device signs, the server
   // verifies, and a signed request reaches five routes and nothing else.
   ["pad-resume", "services/api/auth/pad-resume.test.mjs"],

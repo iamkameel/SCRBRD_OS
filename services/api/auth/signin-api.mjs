@@ -41,8 +41,29 @@ import { RateLimit, clientAddress } from "../public/public-api.mjs";
 /** The project the walk signs for. Never the real one. */
 export const TEST_PROJECT = "scrbrd-os-test";
 
-/** Per address, before a token is even parsed; per Google account, after. */
-export const EXCHANGE_RATE = Object.freeze({ perMinute: 20, burst: 10 });
+/**
+ * Per address, before a token is even parsed; per Google account, after.
+ *
+ * THE ADDRESS LIMIT IS A SCHOOL'S, NOT A PERSON'S. A school's staff room,
+ * labs and Wi-Fi reach us through one NAT address, so the bucket is sized
+ * for the whole school (as SCRBRD-133 A4 sized the public pages' for a
+ * ground). The arithmetic, for ~80 staff plus the pupils of 13 and over who
+ * use Google rather than a code (say 100; most pupils are on codes, which
+ * never touch this route):
+ *   steady state — every signed-in client re-exchanges once per thirty-minute
+ *     token: 180 / 30 min = 6 a minute, 5% of 120;
+ *   Monday 07:30 — the staff briefing, everybody opening the app in the same
+ *     minute: a burst of 40 is served at once and the rest at 2 a second, so
+ *     all 80 staff are in within twenty seconds (each 429 carries no penalty
+ *     beyond a retry); at the old 20/min with a burst of 10, seventy would
+ *     have waited up to three and a half minutes;
+ *   a period change, 30 pupils in a lab — inside the burst.
+ * What it still stops: one address hammering the exchange. A forged token
+ * costs one RSA verification (tens of microseconds) and never reaches the
+ * database; a real one is limited again per Google account below, so no
+ * single account re-mints more than six tokens a minute from anywhere.
+ */
+export const EXCHANGE_RATE = Object.freeze({ perMinute: 120, burst: 40 });
 export const UID_RATE = Object.freeze({ perMinute: 6, burst: 6 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
