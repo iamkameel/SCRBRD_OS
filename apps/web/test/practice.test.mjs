@@ -272,8 +272,10 @@ group("F. The sandbox: nothing reaches sync, nothing shows in a normal list");
 
   const hooks = { padLog: () => [[], []], adopt: () => false, restore() {}, followToss() {}, onStatus() {} };
   const ps = new PadSync({ matchId: ID, userId: "u1", intent: "open", hooks });
-  const engine = await ps.open();
-  ok("the pad's sync will not open an outbox for a practice match", engine === null && ps.engine === null && ps.stopped === true);
+  let engine = "not asked", opening = null;
+  try { engine = await ps.open(); } catch (e) { opening = e; }
+  ok("the pad's sync will not open an outbox for a practice match", opening === null && engine === null && ps.engine === null && ps.stopped === true,
+    opening ? `it tried to open an outbox on disk: ${opening.message}` : "");
   ps.attach("open");
   let refused = null;
   try { await ps.call(`/api/matches/${ID}/events`, { method: "POST", body: { events: [{ id: "x" }] } }); } catch (e) { refused = e; }

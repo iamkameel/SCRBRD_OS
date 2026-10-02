@@ -317,7 +317,7 @@ function TeamSelector({value, onChange, accent, label}){
     <div style={{position:"relative"}}>
       <Lbl sx={{marginBottom:"8px"}}>{label}</Lbl>
       <button onClick={()=>setOpen(p=>!p)} className="pressBtn" style={{
-        width:"100%",padding:"12px 16px",borderRadius:D.md,cursor:"pointer",
+        width:"100%",padding:"12px 16px",minHeight:"48px",borderRadius:D.md,cursor:"pointer",
         background:D.surf2,border:`1px solid ${selected?accent+"55":D.border}`,
         display:"flex",alignItems:"center",gap:"10px",transition:"all .2s",
         boxShadow:selected?`0 0 16px ${accent}10`:"none",
@@ -325,9 +325,9 @@ function TeamSelector({value, onChange, accent, label}){
         {selected
           ?<><div style={{flex:1,textAlign:"left"}}>
               <div style={{fontFamily:D.body,fontSize:"14px",fontWeight:600,color:D.textPrimary}}>{value}</div>
-              <div style={{fontFamily:D.mono,fontSize:"10px",color:accent}}>{selected.abbr}</div>
+              <div style={{fontFamily:D.mono,fontSize:"12px",color:accent}}>{selected.abbr}</div>
             </div></>
-          :<span style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,flex:1,textAlign:"left"}}>Select team…</span>
+          :<span style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,flex:1,textAlign:"left"}}>Select team…</span>
         }
         <span style={{color:D.textMuted,fontSize:"12px",transform:open?"rotate(180deg)":"none",transition:"transform .2s"}}>▾</span>
       </button>
@@ -339,13 +339,13 @@ function TeamSelector({value, onChange, accent, label}){
           <div style={{maxHeight:"260px",overflow:"auto"}}>
             {Object.entries(INT_TEAMS).map(([name,info])=>(
               <button key={name} onClick={()=>{onChange(name);setOpen(false);}} className="pressBtn" style={{
-                width:"100%",padding:"10px 14px",background:value===name?`${accent}12`:"transparent",
+                width:"100%",padding:"10px 14px",minHeight:"44px",background:value===name?`${accent}12`:"transparent",
                 border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:"10px",
                 borderBottom:`1px solid ${D.border}`,transition:"background .15s",
               }}>
-                <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:value===name?600:400,
+                <span style={{fontFamily:D.body,fontSize:"14px",fontWeight:value===name?600:400,
                   color:value===name?D.textPrimary:D.textSecondary,flex:1,textAlign:"left"}}>{name}</span>
-                <span style={{fontFamily:D.mono,fontSize:"10px",color:value===name?textOn(accent):D.textMuted}}>{info.abbr}</span>
+                <span style={{fontFamily:D.mono,fontSize:"12px",color:value===name?textOn(accent):D.textMuted}}>{info.abbr}</span>
               </button>
             ))}
           </div>
@@ -582,7 +582,7 @@ function SetupScreen({onStart,practice=null}){
         <div style={{fontFamily:D.head,fontSize:"clamp(36px,7vw,60px)",fontWeight:800,letterSpacing:"0.04em",
           background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
           backgroundClip:"text",lineHeight:.95,marginBottom:"8px"}}>SCRBRD</div>
-        <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:400,color:D.textMuted,
+        <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:400,color:D.textMuted,
           letterSpacing:"0.2em",textTransform:"uppercase"}}>Cricket Match Centre</div>
         <div style={{width:"60px",height:"2px",background:D.grad,borderRadius:"2px",margin:"12px auto 0"}}/>
       </div>
@@ -592,14 +592,14 @@ function SetupScreen({onStart,practice=null}){
         {STEPS.map((s,i)=>(
           <div key={i} style={{display:"flex",alignItems:"center",gap:"6px"}}>
             <div style={{
-              width:"22px",height:"22px",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
-              fontFamily:D.mono,fontSize:"10px",fontWeight:600,cursor:i<step?"pointer":"default",
+              width:"28px",height:"28px",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+              fontFamily:D.mono,fontSize:"12px",fontWeight:600,cursor:i<step?"pointer":"default",
               background:i===step?D.grad:i<step?`${D.emerald}22`:D.surf2,
               color:i===step?T.light.ink:i<step?D.emerald:D.textMuted,
               border:`1px solid ${i===step?D.indigo+"66":i<step?D.emerald+"44":D.border}`,
               transition:"all .3s",
             }} onClick={()=>i<step&&setStep(i)}>{i<step?"✓":i+1}</div>
-            <span style={{fontFamily:D.body,fontSize:"11px",color:i===step?D.textPrimary:D.textMuted,fontWeight:i===step?600:400}}>{s}</span>
+            <span style={{fontFamily:D.body,fontSize:"12px",color:i===step?D.textPrimary:D.textMuted,fontWeight:i===step?600:400}}>{s}</span>
             {i<3&&<div style={{width:"16px",height:"1px",background:D.border}}/>}
           </div>
         ))}
@@ -611,14 +611,14 @@ function SetupScreen({onStart,practice=null}){
               <TeamSelector value={team1Key} onChange={setTeam1Key} accent={D.sky} label="Team 1"/>
               <TeamSelector value={team2Key} onChange={v=>{if(v!==team1Key)setTeam2Key(v);}} accent={D.emerald} label="Team 2"/>
               {team1Key&&team2Key&&team1Key===team2Key&&(
-                <div style={{color:D.roseText,fontSize:"11px",fontFamily:D.body,textAlign:"center"}}>Teams must be different</div>
+                <div style={{color:D.roseText,fontSize:"12px",fontFamily:D.body,textAlign:"center"}}>Teams must be different</div>
               )}
               <div>
                 <Lbl sx={{marginBottom:"8px"}}>Overs Per Innings</Lbl>
                 <div style={{display:"flex",gap:"6px"}}>
                   {[10,20,40,50].map(o=>(
                     <button key={o} onClick={()=>setOvers(o)} className="pressBtn" style={{
-                      flex:1,padding:"11px 0",borderRadius:D.md,cursor:"pointer",
+                      flex:1,padding:"11px 0",minHeight:"44px",borderRadius:D.md,cursor:"pointer",
                       fontFamily:D.mono,fontSize:"15px",fontWeight:500,
                       border:`1px solid ${overs===o?D.indigo+"77":D.border}`,
                       background:overs===o?`${D.indigo}1a`:D.surf2,

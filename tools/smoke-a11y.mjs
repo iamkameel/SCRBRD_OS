@@ -577,7 +577,7 @@ async function captainWalk(theme) {
 
 /**
  * PRACTICE MATCH, PHASE 1 (2026-10-02): every screen of it, on a phone, in the
- * demo (no server — a practice match never needs one) signed in as a Scorer.
+ * demo (no server — a practice match never needs one) signed in as the Head Coach, who may score.
  * The way in on the scorer's start screen; the six steps of the setup, with
  * the location refused, a squad pasted with a repeated name and a reserve; the
  * pad's title bar with its label; the weather sheet; the Resume card after
@@ -617,7 +617,7 @@ async function practiceWalk(theme) {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
     await click(/Get Started|Log In/, 5000);
     await page.waitForTimeout(600);
-    await click(/Scorer/, 4000);
+    await click("Head Coach", 4000);
     await click(/^Sign In$/, 5000);
     await page.waitForTimeout(1600);
     await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
