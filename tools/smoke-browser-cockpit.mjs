@@ -108,10 +108,27 @@ const call = async (path, { method = "GET", token, body } = {}) => {
 const login = async (email) => (await call("/api/auth/dev-login", { method: "POST", body: { email, deviceId: "device-cockpit" } })).body?.token;
 const rows = async (token, path) => (await call(`/api/read/${path}`, { token })).body?.rows ?? [];
 
+// ── The clock ──
+// The walk needs a fixture TODAY on the SA clock that has not started, with
+// a lift meeting still ahead of the server's now() (lift_meet_refusal, db/70).
+// Until 22:00 SA time that is tonight at 23:30. From 22:00 there is no such
+// time left today, and CI runs at any hour: the fixture is then tomorrow at
+// 01:00, and the browser's clock is set just past midnight, so the cockpit
+// (which reads "today" from the browser, lib/cockpit.js isMatchDay) sees the
+// match day. The server keeps the real clock; the client never checks a
+// token's expiry against its own, and the offset is at most two hours.
+const SA_LATE = new Date(Date.now() + 2 * 3600e3).getUTCHours() >= 22;
+/** The browser's time for a late run: 00:05 SA time tomorrow (22:05 UTC today), or now if later. */
+const browserNow = () => {
+  const d = new Date(Date.now() + 2 * 3600e3);
+  return Math.max(Date.now(), Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 22, 5));
+};
+
 // ── The browser ──
 async function open({ viewport = DESK, scheme = "light", reduced = false } = {}) {
   const ctx = await browser.newContext({ viewport, colorScheme: scheme, reducedMotion: reduced ? "reduce" : "no-preference",
     ...(viewport.width < 500 ? { isMobile: true, hasTouch: true } : {}) });
+  if (SA_LATE) await ctx.clock.install({ time: browserNow() });
   await offline(ctx);
   const page = await ctx.newPage();
   const errors = [], refusals = [];
@@ -246,11 +263,13 @@ try {
   await writeEvents(q, BAT, stamped(logs.bat));
   // Played "now" so the 7-day week reads them; the log is the same.
 
-  // The fixture today, 23:30 SA time: soon, and the match day. Late, so the
-  // walk can book a lift for it at most hours of the day (see the lift below).
+  // The fixture on the match day, soon: tonight at 23:30 SA time, or after
+  // 22:00 tomorrow at 01:00 with the browser's clock past midnight (above).
   const DAY = (await q(
     `insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-     values ($1, '1XI', 'Verify Cockpit XI', (sa_today()::timestamp + time '23:30') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL]))[0].id;
+     values ($1, '1XI', 'Verify Cockpit XI',
+             case when $2 then (sa_today()::timestamp + interval '1 day' + time '01:00') else (sa_today()::timestamp + time '23:30') end at time zone 'Africa/Johannesburg',
+             'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, SA_LATE]))[0].id;
   const SHEET = [WHITFIELD, BEKKER, NAIDOO, PILLAY, SEVEN, SIX, ...EXTRA];
   await q(`insert into match_squad (match_id, player_id, side, batting_no) select $1, p, 'home', n from unnest($2::uuid[]) with ordinality as t(p, n)`, [DAY, SHEET]);
   await q(`insert into match_pitch_report (match_id, school_id, surface, grass, bounce, pace, favours) values ($1, $2, 'firm', 'covered', 'even', 'quick', 'seam')`, [DAY, HIL]);
@@ -266,7 +285,9 @@ try {
   // The bus: a four-seater, and a big one to swap to.
   const SMALL = (await q(`insert into vehicle (school_id, registration, description, kind, capacity) values ($1, 'KZN 4 SEAT', 'Verify four-seater', 'van', 4) returning id`, [HIL]))[0].id;
   const BIG = "4e111111-0000-0000-0000-000000000001";
-  const TRIP = (await q(`insert into trip (match_id, school_id, vehicle_id, depart_at, pickup) values ($1, $2, $3, (sa_today()::timestamp + time '21:00') at time zone 'Africa/Johannesburg', 'the Chapel car park') returning id`, [DAY, HIL, SMALL]))[0].id;
+  // The bus leaves two and a half hours before the start: 21:00, or 22:30 on a late run.
+  const TRIP = (await q(`insert into trip (match_id, school_id, vehicle_id, depart_at, pickup) select $1, $2, $3, starts_at - interval '150 minutes', 'the Chapel car park' from match where id = $1 returning id`, [DAY, HIL, SMALL]))[0].id;
+  const BUS_AT = SA_LATE ? "22:30" : "21:00";
   ok("the stage is set", !!DAY && !!TRIP);
   const reads0 = (await q(`select count(*)::int n from notification_read`))[0].n;
 
@@ -384,7 +405,7 @@ try {
   ok("...the weather, in words", /18° showers, rain likely/.test(day), day);
   ok("...no umpire and no scorer on record, said", /Umpires: none on record/.test(day) && /no scorer on record/.test(day), day);
   const bus = await inner(c.page, "coach-day-bus");
-  ok("...the bus leaves at 21:00 on the SA clock, whatever the browser's zone", /Bus 21:00 /.test(bus), bus);
+  ok(`...the bus leaves at ${BUS_AT} on the SA clock, whatever the browser's zone`, bus.includes(`Bus ${BUS_AT} `), bus);
   ok("...the bus: four seats, ten named, one arriving by lift", /4 seats/.test(bus) && /10 named/.test(bus) && /1 arriving by lift/.test(bus), bus);
   ok("...and the lift as a head count: no driver, no boy's name beside it", !/Whitfield|Bekker|Fortuner/.test(bus + day), bus);
 
