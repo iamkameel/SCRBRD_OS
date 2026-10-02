@@ -228,6 +228,9 @@ const SUITES = [
   ["guard",    "tools/hooks/guard.test.mjs"],
   // The typecheck strict list only grows, and names nothing that is not there.
   ["ts-scope", "tools/typecheck-scope.test.mjs"],
+  // The browser walks' shards: every walk in exactly one, for n = 1 to 6, and
+  // --shard 1/1 is the whole list as it was.
+  ["smoke-shard", "tools/run-smoke-shard.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
   // The scorebook reader (SCRBRD-120 phase 4, D8): the request carries the
   // page photos and the hint and nothing else, asserted whole; an id in a
