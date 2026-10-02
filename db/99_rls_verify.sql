@@ -14991,6 +14991,9 @@ $v49$;
   --                 again is the same one claim
   --   (link)        an address on an account that holds and held nothing (an
   --                 onboarding stub) links at once
+  --   (stub)        ...and loses the school its unverified asker typed: Hilton's
+  --                 office may not issue it a code, still sees and decides its
+  --                 request, and the grant files it at Hilton
   --   (office)      who may confirm: the account's office, once, never their
   --                 own, never an owner's key from below; the Claims list
   --   (pupil)       the trigger: a minor whose family has not consented is
@@ -15027,6 +15030,8 @@ $v49$;
   --                                                   not superadmin_only
   --   the rule's statement taken back out of
   --   login_code_issue()                            → (codes) red: the same
+  --   the stub's school left as typed on an
+  --   automatic link                                → (stub) red: still filed at Hilton
   --   the seam's platform-wide guard removed        → (codes) red: the platform
   --                                                   administrator filed at Hilton
   DECLARE
@@ -15216,6 +15221,22 @@ $v49$;
     PERFORM _assert(v_out = 'linked' AND U_STUB IS NOT NULL AND (_v81_user(U_STUB)).email = 'v81.stub@example.invalid',
       format('§60 (link): the onboarding stub''s address answered %s', v_out));
     PERFORM _assert((_v81_identity('v81-stub')).linked_how = 'new_account', '§60 (link): the stub''s identity is not new_account');
+    -- (stub) the school the unverified asker typed is not kept: no office
+    -- reaches the account until a grant files it, and its request stands.
+    PERFORM _assert((_v81_user(U_STUB)).school_id IS NULL,
+      format('§60 (stub): the auto-linked stub is still filed at %s', (_v81_user(U_STUB)).school_id));
+    PERFORM _as(U_OFFICE);
+    SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.stub@example.invalid', md5('v81-code-stub'), 3600) i;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§60 (stub): Hilton''s office issued itself a code for the auto-linked stub: %s %s', v_ok, v_reason));
+    SELECT r.id INTO v_req FROM role_request r WHERE r.person_id = U_STUB AND r.state = 'pending';
+    SELECT q.name INTO v_out FROM role_requester(v_req) q;
+    PERFORM _assert(v_req IS NOT NULL AND v_out = 'V81 Stub',
+      format('§60 (stub): Hilton''s office no longer sees the stub''s request (%s, %s)', v_req, v_out));
+    SELECT d.ok, d.reason INTO v_ok, v_reason FROM decide_role_request(v_req, true, 'Known to the office.', NULL, NULL) d;
+    PERFORM _assert(v_ok AND (_v81_user(U_STUB)).school_id = HIL81,
+      format('§60 (stub): deciding the stub''s request answered %s %s and filed it at %s', v_ok, v_reason, (_v81_user(U_STUB)).school_id));
+    PERFORM set_config('app.user_id', '', true);
     -- A second Google account with the stub's address is a claim now: it holds a sign-in.
     SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', 'v81-stub-b', 'v81.stub@example.invalid', 'x') s;
     PERFORM _assert(v_out = 'claim_required', format('§60 (link): a second Google account took the stub''s address: %s', v_out));
