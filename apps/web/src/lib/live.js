@@ -789,7 +789,11 @@ function asPitchReport(r) {
 function asHonour(r) {
   return { id: r.id, playerId: r.player_id, name: r.full_name, school: r.school_id, team: r.team_code, kind: r.kind,
            awardName: r.name, label: r.label, season: r.season, citation: r.citation, awardedOn: d10(r.awarded_on),
-           isPublic: r.is_public, awardedBy: r.awarded_by_name, live: true };
+           isPublic: r.is_public, awardedBy: r.awarded_by_name,
+           // The read returns live honours only (withdrawn_at is null); the
+           // captain's gate (lib/captain.js) checks it again, so a read that
+           // ever returned a withdrawn row could not switch the view on.
+           withdrawnAt: r.withdrawn_at ?? null, live: true };
 }
 function asMilestone(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code, kind: r.kind, label: r.label, value: r.value,

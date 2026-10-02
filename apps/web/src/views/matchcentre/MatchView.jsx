@@ -21,6 +21,8 @@ import { Quiet } from "./bits.jsx";
 import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "./live.js";
 import { BigScreen } from "./spectator.jsx";
+import { CaptainTab } from "./captainTab.jsx";
+import { termsOf } from "../../lib/captain.js";
 
 /**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
@@ -181,23 +183,30 @@ function useRainLine(match, innings, seen) {
 }
 // ── end SCRBRD-130 R2 ──
 
+/**
+ * The captain's tab (SCRBRD-138 C3 to C5): after the Summary, only for a boy
+ * who holds the honour (the `captain` prop, which the pupil app's match screen
+ * passes). Anybody else has the six tabs and nothing suggests one is missing.
+ */
+const CAPTAIN_TAB = { id: "captain", label: "Captain" };
+
 /** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
-function TabBar({ tab, setTab }) {
+function TabBar({ tab, setTab, tabs = TABS }) {
   const refs = useRef({});
   const onKey = (e, i) => {
-    const n = TABS.length;
+    const n = tabs.length;
     const to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n
       : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
     if (to == null) return;
     e.preventDefault();
-    setTab(TABS[to].id);
-    refs.current[TABS[to].id]?.focus();
+    setTab(tabs[to].id);
+    refs.current[tabs[to].id]?.focus();
   };
   return (
     <div role="tablist" aria-label="Match Centre" data-testid="mc-tabs"
       style={{ display: "flex", gap: T.space.xs, overflowX: "auto", borderBottom: `1px solid ${T.line.normal}`,
         margin: `${T.space.lg} 0`, scrollbarWidth: "thin" }}>
-      {TABS.map((t, i) => {
+      {tabs.map((t, i) => {
         const on = t.id === tab;
         return (
           <button key={t.id} ref={(el) => { refs.current[t.id] = el; }} role="tab" type="button"
@@ -224,7 +233,7 @@ function TabBar({ tab, setTab }) {
  * not one this reader may open (§2.1 P4). Everything else is the Match Centre
  * as every signed-in reader has it.
  */
-function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches" }) {
+function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
@@ -318,7 +327,8 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
-    focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine };
+    focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine,
+    captain, terms: captain ? termsOf(log.fold) : null };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>
@@ -388,7 +398,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
         </div>
       )}
 
-      <TabBar tab={tab} setTab={setTab}/>
+      <TabBar tab={tab} setTab={setTab} tabs={captain ? [TABS[0], CAPTAIN_TAB, ...TABS.slice(1)] : TABS}/>
 
       <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={`mc-tab-${tab}`} data-testid={`mc-panel-${tab}`} tabIndex={0}
         style={{ outline: "none" }}>
@@ -399,6 +409,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           // and the other five tabs stay.
           : <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
             {tab === "summary" ? <SummaryTab {...ctx}/>
+              : tab === "captain" && captain ? <CaptainTab {...ctx}/>
               : tab === "scorecard" ? <ScorecardTab {...ctx}/>
               : tab === "commentary" ? <CommentaryTab {...ctx}/>
               : tab === "partnerships" ? <PartnershipsTab {...ctx}/>

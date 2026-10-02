@@ -20,6 +20,7 @@ import { MatchView } from "../matchcentre/MatchView.jsx";
 import { Icon } from "../../ui/icons.jsx";
 import { AvailabilityBlock, Back, BusCard, Card, Line, OpenRow, StateChip, TeamSheetLine, Title, WeatherLine, whenOf } from "./parts.jsx";
 import { useFold } from "./useFold.js";
+import { CaptainSection, useCaptaincy } from "./captain.jsx";
 // SCRBRD-124 (db/70): lifts to this fixture, where a family or a pupil asks for a seat.
 import { FixtureLifts } from "../lifts.jsx";
 
@@ -112,6 +113,10 @@ function Umpires({ match, role }) {
  */
 export function FixtureDetail({ match, child, role, self = false, onBack }) {
   const name = child.knownAs || child.name;
+  // SCRBRD-138: a captain's section, only for the pupil himself and only while
+  // his own honour passes the gate for this fixture's season. Everyone else
+  // sees the fixture exactly as it was.
+  const { cap } = useCaptaincy(self ? child : null, role, match.season ?? null);
   const maps = match.venue ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(match.venue)}` : null;
   return (
     <>
@@ -138,8 +143,9 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
       </Card>
       <Card label="Team sheet" testid="fixture-teamsheet">
         <TeamSheetLine match={match} child={child} role={role} self={self}/>
-        {self && <SideSheet match={match} role={role}/>}
+        {self && !cap && <SideSheet match={match} role={role}/>}
       </Card>
+      {self && cap && <CaptainSection match={match} child={child} role={role} label={cap.label}/>}
     </>
   );
 }
@@ -167,8 +173,11 @@ function SideSheet({ match, role }) {
 
 /** P4 · The match, live or past: the Match Centre in family mode (G13). */
 export function MatchFor({ match, child, role, self = false, matches, onBack }) {
+  // SCRBRD-138: the Captain tab, for the pupil himself while his honour passes the gate.
+  const { cap } = useCaptaincy(self ? child : null, role, match.season ?? null);
   return (
     <MatchView match={match} role={role} onClose={onBack} matches={matches}
-      focus={[child.id]} focusLabel={self ? "You" : "Your child"} backLabel="Matches"/>
+      focus={[child.id]} focusLabel={self ? "You" : "Your child"} backLabel="Matches"
+      captain={cap ? { label: cap.label, me: child } : null}/>
   );
 }
