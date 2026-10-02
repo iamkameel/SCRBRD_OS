@@ -69,7 +69,7 @@ try {
   }
   const registrar = await devLogin("registrar@example.invalid");  // schooladmin, user.invite
   const coach     = await devLogin("coach@example.invalid");      // no user.invite
-  const head      = await devLogin("sarah@example.invalid");      // directorofsport, user.invite
+  const head      = await devLogin("sarah@example.invalid");      // directorofsport, user.invite, may not appoint a parent
   const wesReg    = await devLogin("registrar.wes@example.invalid");
 
   group("The office issues a code");
@@ -129,9 +129,22 @@ try {
   ok("...and the row says when it was spent",
      (await q(`select used_at from login_code where id = $1`, [stored[0].id]))[0].used_at != null);
 
+  // A code makes the issuer able to sign in as that person, so the office
+  // issues one only to an account whose every role it could appoint itself
+  // (db/81's re-emit of login_code_issue()). The director of sport holds
+  // user.invite and may not appoint a parent: before db/81 she could become
+  // one — and give a family's consents in its name.
+  group("Only to somebody the issuer could appoint");
+  ok("the director of sport may not issue a parent's code",
+     (await invite(head, "parent@example.invalid")).body?.error === "not_permitted");
+  ok("...nor the office the principal's",
+     (await invite(registrar, "principal@example.invalid")).body?.error === "not_permitted");
+  ok("...nor the DSO's: the office never reads a concern",
+     (await invite(registrar, "dso@example.invalid")).body?.error === "not_permitted");
+
   group("Issuing a second code spends the first");
-  const first = await invite(head, "parent@example.invalid");
-  const second = await invite(head, "parent@example.invalid");
+  const first = await invite(registrar, "parent@example.invalid");
+  const second = await invite(registrar, "parent@example.invalid");
   ok("both are issued", !!first.body?.code && !!second.body?.code);
   ok("the first no longer works",
      (await redeem("parent@example.invalid", first.body.code, "phone-2")).body?.error === "invalid_or_expired_code");

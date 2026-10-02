@@ -164,6 +164,12 @@ const WALKS = [
   // at a time, a child in initials, never a safeguarding row or a reason,
   // and every read of it on the record. (smoke-audit is access_log's own.)
   "audit-log",
+  // Signing in with Google (SCRBRD-140 phase 1, db/81): the exchange and its
+  // refusals, an account with no school reading nothing, a request granted
+  // and seen on the next read, a claim the office confirms, the code path,
+  // a second Google account, revocation, and the rate limits — against the
+  // walk's own signing key, which a production server refuses to start with.
+  "signup",
   "kit",
   "passport",
   "web",
@@ -348,7 +354,16 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // role the caller may not grant not offered and a forced post refused in
   // words, the fake actions gone, tabs by capability, no invented audit or
   // ground tasks, nothing offered signed out; 12px, 44px, phone.
-  "browser-management"];
+  "browser-management",
+  // The coach's match-day cockpit and the intelligence feed (SCRBRD-136/137
+  // phase A): the Coach tab, the Dashboard's match-day card and the feed's
+  // drawer, by capability — the coach, the assistant coach, the team manager,
+  // the physio and the director of sport each see the panels the policy grants
+  // them, a scorer, a parent and a pupil see nothing; no injury nature and no
+  // reason for an absence anywhere; every card's evidence equal to the reads;
+  // Seen per person and per evidence; the live tab's cap sentences are the
+  // pad's; 12px, 44px, both themes, reduced motion.
+  "browser-cockpit"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

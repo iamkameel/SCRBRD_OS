@@ -31,8 +31,15 @@ ground for publishing it on these pages is the prior consent of a competent pers
 5. **Some things are never public**, whatever the consent (§3).
 6. **A "no" is immediate and reaches the past.** Withdrawn consent or a never-public
    mark changes every public page at once, finished scorecards included (C3).
-7. **Findable by link, not by search.** Every public page tells search engines not to
-   index it (D1).
+7. **Findable by link, not by search — except the front door.** Every public page about a match,
+   a competition or a school tells search engines not to index it (D1). The home page at `/` may be
+   indexed: it names no child and shows only team-level facts — school names, team codes, scores,
+   status — of fixtures whose school has chosen to list them. A school's fixtures and news appear on
+   the home page only when that school has switched listing on (one setting per school, under
+   `broadcast.publish`, off until switched on) **and** has published that fixture or approved that
+   post. A fixture a school has published but not listed stays findable by its link alone. The home
+   page links to match pages with `nofollow`, and those pages stay unindexed (D1a, 2026-10-02).
+   *Amended by Kameel, information officer, 2026-10-02 (SCRBRD-142 D4, accepted on the Build Board).*
 
 ## 2. Surface by surface
 
@@ -54,6 +61,7 @@ ground for publishing it on these pages is the prior consent of a competent pers
 | A7 | Team sheets before the match | Not public; the school's own channels. *Note: "Opposing schools will have access to each other's team squads 5 days prior to their head-to-head fixtures."* The signed-in dossier now opens 5 days before (§5). |
 | A8 | Photographs of pupils | None on public pages. *Note: photo and video sharing will come later, for registered users only.* |
 | D1 | Search engines | Public pages are not indexed |
+| D1a | The home page lists live matches and news | Team-level only; per-school listing switch plus the existing per-fixture publication; indexed itself, its match pages not (2026-10-02) |
 | D2 | The stream overlay (built) | Brought under the L2 consent rule |
 | D3 | A live link shared on WhatsApp | Expected; the page shows only what this rule allows |
 | D4 | News posts naming pupils | News stays signed-in for now |

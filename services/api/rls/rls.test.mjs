@@ -10,7 +10,7 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, MASKED_SINCE_09, TABLES_ADDED_SINCE_09, GENERATED_BEGIN, GENERATED_END, tablesAddedIn, spliceTablesAdded, maskPairs } from "./generate-rls.mjs";
+import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, MASKED_SINCE_09, TABLES_ADDED_SINCE_09, NARROWED_SINCE, GENERATED_BEGIN, GENERATED_END, tablesAddedIn, spliceTablesAdded, maskPairs } from "./generate-rls.mjs";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -245,6 +245,18 @@ group("C2. Tables added after db/09 shipped (SCRBRD-110)");
     ok(`...verbatim: regenerating would not change ${file}`, spliceTablesAdded(text, file) === text);
     ok(`...and it is the whole of what tables.mjs says for its tables`, text.includes(tablesAddedIn(file)));
     ok(`...with no DELETE policy`, !/FOR DELETE/.test(tablesAddedIn(file)));
+  }
+  // A later table's read exception narrowed by a later file (NARROWED_SINCE):
+  // its own file keeps the text it shipped with, tables.mjs says what runs,
+  // and the narrowing file re-emits the policy with exactly that.
+  for (const [table, n] of Object.entries(NARROWED_SINCE)) {
+    const own = readFileSync(join(DB_DIR, /** @type {Record<string, string>} */ (TABLES_ADDED_SINCE_09)[table]), "utf8");
+    const policy = own.match(new RegExp(`CREATE POLICY ${table}_read ON ${table}[\\s\\S]*?;`))?.[0] ?? "";
+    ok(`${table}: its own file still reads as it shipped (${n.shipped})`, policy.includes(n.shipped));
+    ok(`...tables.mjs says what runs now`, TABLES[table]?.visibleWhen === "app_enrolled()" && !policy.includes("app_enrolled()"));
+    const later = existsSync(join(DB_DIR, n.file)) ? readFileSync(join(DB_DIR, n.file), "utf8") : "";
+    ok(`...${n.file} exists, the API expects it, and it narrows ${table}_read`,
+       expected.includes(n.file) && later.includes(`'${table}_read'`) && later.includes("app_enrolled()"));
   }
   // It can fail: an edit inside the block is seen.
   const file = Object.values(TABLES_ADDED_SINCE_09)[0];

@@ -160,6 +160,13 @@ const SUITES = [
   // per screen, a method and never a name, the tenant's words (G15) — and
   // the Match Centre's family mode (G13).
   ["family", "apps/web/test/family.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The coach's match-day cockpit and the intelligence feed (SCRBRD-136/137
+  // phase A): the entry gate derived from roles.mjs and held to the design's
+  // table, the status-tier-only health, the load word, the head count of
+  // lifts (cockpit); each feed rule at its threshold and one short of it, its
+  // gate, its words, and what a dismissal holds (signals).
+  ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Ending a role (SCRBRD-132 C1, db/77): EndRoleButton asks for the reason,
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
@@ -191,6 +198,12 @@ const SUITES = [
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
   ["auth",     "services/api/auth/auth.test.mjs"],
+  // Sign-up with Google (SCRBRD-140): a Firebase ID token verified with no
+  // firebase-admin, every refusal by name, keys fetched by an injected fetcher.
+  ["firebase-verify", "services/api/auth/firebase-verify.test.mjs"],
+  // The exchange's rate limits, sized for a school behind one address, and
+  // the walk's signing key never the default.
+  ["signin-api", "services/api/auth/signin-api.test.mjs"],
   // The pad's resume credential (SCRBRD-078): the device signs, the server
   // verifies, and a signed request reaches five routes and nothing else.
   ["pad-resume", "services/api/auth/pad-resume.test.mjs"],

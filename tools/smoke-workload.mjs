@@ -228,6 +228,25 @@ try {
     ok("...and his spell reads Open, no limit", (await spells(m, coach)).find((r) => r.bowler_id === OPEN)?.age_band === "open" && (await spells(m, coach)).find((r) => r.bowler_id === OPEN)?.max_overs_per_spell === null);
     ok("the same eight from a U15 is two overs too many", (await q(`select overs, allowed from bowling_breach where bowler_id = $1 and kind = 'spell'`, [U15]))
        .some((b) => b.overs === 7 && b.allowed === 6));
+
+    // SCRBRD-136/137 D15: the spells are the match's log; the directive beside
+    // them is the boy's — an age band read off his date of birth, and his
+    // limits. Only player.workload.read for that boy gets them.
+    const scorer = await login("scorer@example.invalid");
+    const pupil = await login("pillay@example.invalid");   // 1XI, and neither of these bowlers
+    for (const [who, tok] of [["a scorer", scorer], ["a pupil on the side", pupil]]) {
+      const s = await spells(m, tok);
+      // A pupil reads only the team-mates he may read at all, so the 1XI's own
+      // Open bowler is the one both are sure to see.
+      ok(`${who} reads the match's spells`, s.some((r) => r.bowler_id === OPEN));
+      ok(`...but not the age band, the directive or the limit flag`, s.every((r) => r.age_band === null && r.pace === null
+         && r.max_overs_per_spell === null && r.max_overs_per_day === null && r.over_spell_limit === null));
+    }
+    const hs = (await spells(m, head)).find((r) => r.bowler_id === U15);
+    ok("the director of sport reads the U15's band, his limit and that he went over it",
+       hs?.age_band === "U15" && hs?.max_overs_per_spell === 6 && hs?.over_spell_limit === true);
+    const cs = (await spells(m, coach)).find((r) => r.bowler_id === U15);
+    ok("...and the 1XI coach, who holds no load read for a U16B boy, does not", cs && cs.age_band === null && cs.over_spell_limit === null);
   }
 
   group("A high school may put its own ceiling on the Open band; a club may not");

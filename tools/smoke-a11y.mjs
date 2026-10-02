@@ -44,6 +44,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { port } from "./db-url.mjs";
 import { captainApi, IDS, MATCH } from "./a11y-captain-mock.mjs";
+import { cockpitApi, MATCH as COCKPIT } from "./a11y-cockpit-mock.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 
@@ -127,6 +128,15 @@ const TYPE_FLOOR_CEILING = {
   display1080: 0,
   display768:  0,
   display390:  0,
+  // SCRBRD-136/137 phase A (2026-10-02): the coach's cockpit, on a phone, against the
+  // walk's own API (tools/a11y-cockpit-mock.mjs): the Dashboard's match-day card, the
+  // Coach tab before the first ball and live, and the feed's drawer. Measured inside the
+  // cockpit's own regions (the card, the tab, the drawer) — the staff shell around them
+  // is priced into dashboard and matchview above, not here. Born at 0, and kept there.
+  cockpithome:   0,
+  cockpitday:    0,
+  cockpitlive:   0,
+  cockpitdrawer: 0,
 };                   // 103 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
@@ -160,6 +170,11 @@ const TAP_FLOOR_CEILING = {
   captainfield:   1,
   captainbat:     1,
   captainafter:   1,
+  // SCRBRD-136/137: the cockpit's card, tab and drawer: every control 44px or more.
+  cockpithome:   0,
+  cockpitday:    0,
+  cockpitlive:   0,
+  cockpitdrawer: 0,
 };
 
 /**
@@ -198,9 +213,11 @@ const CONTRAST_CEILING = {
   // (board.dim lifted) on the daylight one.
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
+              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0,
               display1080: 0, display768: 0, display390: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
+              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0,
               display1080: 0, display768: 0, display390: 0 },
 };
 
@@ -236,6 +253,11 @@ const EMOJI_CEILING = {
   captainfield:   0,
   captainbat:     0,
   captainafter:   0,
+  // SCRBRD-136/137: the coach's cockpit.
+  cockpithome:   0,
+  cockpitday:    0,
+  cockpitlive:   0,
+  cockpitdrawer: 0,
   // SCRBRD-133 G1: the ground display (it has no controls at all).
   display1080: 0,
   display768:  0,
@@ -336,7 +358,9 @@ const browser = await chromium.launch({ ...launchOptions() });
 const measured = { floodlit: { type: {}, contrast: {}, emoji: {}, tap: {} }, daylight: { type: {}, contrast: {}, emoji: {}, tap: {} } };
 
 /** Every visible piece of text on the page: its element, size, and whether it reads. */
-const survey = (page) => page.evaluate(() => {
+const survey = (page, root = null) => page.evaluate((root) => {
+  const base = root ? document.querySelector(root) : document.body;
+  if (!base) return [];
   const parse = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const [r, g, b, a = 1] = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r, g, b, a }; };
   const lin = (x) => { x /= 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
   const lum = ({ r, g, b }) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
@@ -360,7 +384,7 @@ const survey = (page) => page.evaluate(() => {
   };
   const out = [];
   const seen = new Set();
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(base, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (!n.nodeValue.trim()) continue;
     const el = n.parentElement;
@@ -391,7 +415,7 @@ const survey = (page) => page.evaluate(() => {
     out.push({ size, text, ratio, need, tag: el.tagName.toLowerCase() });
   }
   return out;
-});
+}, root);
 
 /**
  * Every emoji in a control's or a label's rendered text, or in a control's
@@ -399,12 +423,14 @@ const survey = (page) => page.evaluate(() => {
  * Unicode's pictographs, flags' regional indicators and the keycap mark;
  * not ©, ® or ™, which are typography.
  */
-const emojiInControls = (page) => page.evaluate(() => {
+const emojiInControls = (page, root = null) => page.evaluate((root) => {
+  const base = root ? document.querySelector(root) : document.body;
+  if (!base) return [];
   const EMOJI = /(?![©®™])\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/gu;
   const CONTROL = "button, a[href], label, legend, summary, option, nav, h1, h2, h3, h4, h5, h6, th, " +
     "[role=button], [role=tab], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=radio], [role=option], [role=link]";
   const hits = [];
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(base, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const el = n.parentElement;
     if (!el || el.closest("script, style, noscript")) continue;
@@ -415,36 +441,38 @@ const emojiInControls = (page) => page.evaluate(() => {
     if (r.width < 1 || r.height < 1 || cs.visibility === "hidden" || cs.display === "none") continue;
     for (const m of n.nodeValue.match(EMOJI) ?? []) hits.push(`<${host.tagName.toLowerCase()}> "${host.textContent.trim().slice(0, 30)}" ${m}`);
   }
-  for (const el of document.querySelectorAll(`${CONTROL}, input, select, textarea`)) {
+  for (const el of base.querySelectorAll(`${CONTROL}, input, select, textarea`)) {
     for (const m of (el.getAttribute("aria-label") ?? "").match(EMOJI) ?? []) hits.push(`aria-label "${el.getAttribute("aria-label").slice(0, 30)}" ${m}`);
   }
   return hits;
-});
+}, root);
 
 /**
  * Every visible thing a person taps whose box is under 44px either way
  * (§3.5): buttons, links, inputs, and anything with a control's role. What is
  * hidden from everyone (aria-hidden, display:none, a zero box) is not a target.
  */
-const smallTargets = (page) => page.evaluate(() => {
+const smallTargets = (page, root = null) => page.evaluate((root) => {
+  const base = root ? document.querySelector(root) : document;
+  if (!base) return [];
   const TAPPED = "button, a[href], input:not([type=hidden]), select, textarea, [role=button], [role=tab], [role=radio], [role=switch], [role=checkbox]";
   const out = [];
-  for (const el of document.querySelectorAll(TAPPED)) {
+  for (const el of base.querySelectorAll(TAPPED)) {
     if (el.closest("[aria-hidden=true]")) continue;
     const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
     if (r.width < 1 || r.height < 1 || cs.visibility === "hidden") continue;
     if (r.width < 44 || r.height < 44) out.push(`${Math.round(r.width)}x${Math.round(r.height)} "${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24)}"`);
   }
   return out;
-});
+}, root);
 
 /** Record the floor, contrast and emoji counts for one screen, and the tap floor where it is ratcheted. */
-const measure = async (page, theme, screen) => {
-  const items = await survey(page);
+const measure = async (page, theme, screen, root = null) => {
+  const items = await survey(page, root);
   const small = items.filter((i) => i.size < 12);
   const weak = items.filter((i) => i.ratio != null && i.ratio < i.need);
-  const emoji = await emojiInControls(page);
-  const tiny = screen in TAP_FLOOR_CEILING ? await smallTargets(page) : [];
+  const emoji = await emojiInControls(page, root);
+  const tiny = screen in TAP_FLOOR_CEILING ? await smallTargets(page, root) : [];
   measured[theme].type[screen] = small.length;
   measured[theme].contrast[screen] = weak.length;
   measured[theme].emoji[screen] = emoji.length;
@@ -553,6 +581,89 @@ async function captainWalk(theme) {
     ok(`no page errors on the captain's screens`, errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} captain walk threw: ${e.message?.slice(0, 160)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * THE COACH'S COCKPIT (SCRBRD-136/137 phase A): a signed-in coach of the 1XI, on
+ * a phone, against tools/a11y-cockpit-mock.mjs — no server, no database. The
+ * match-day card on his Dashboard, the Coach tab before the first ball and with
+ * the match live, and the feed's drawer. Each is measured inside its own region
+ * (the card, the tab, the drawer) by the same ratchets as the rest (12px, 44px,
+ * AA, emoji), every control is named, and the drawer is reached by keyboard:
+ * focus moves into it, Tab stays inside, Escape closes it and focus comes back.
+ * Who may see what is the cockpit walk's, against the real stack.
+ * @param {"floodlit" | "daylight"} theme
+ */
+async function cockpitWalk(theme) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await offline(ctx);
+  const handle = cockpitApi();
+  await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
+    const u = new URL(route.request().url());
+    const r = handle(route.request().method(), u.pathname, u.searchParams);
+    return route.fulfill({ status: r.status, contentType: "application/json", body: JSON.stringify(r.body) });
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const tap = async (id, ms = 800) => { await tid(id).click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(ms); };
+  /** Measure a screen inside its region, and have every control in it named. */
+  const check = async (screen, region) => {
+    ok(`${T_} ${screen}: the region is on the page`, await page.locator(region).count() === 1);
+    await measure(page, theme, screen, region);
+    const unnamed = (await unnamedControlsOf(page)).filter((c) => c);
+    const inRegion = await page.evaluate((region) => [...document.querySelectorAll(`${region} button, ${region} a[href], ${region} input, ${region} select`)]
+      .filter((el) => !(el.getAttribute("aria-label") || el.textContent || "").trim()).length, region);
+    ok(`${T_} ${screen}: every control in it has a name`, inRegion === 0, unnamed.slice(0, 3).join(", "));
+  };
+  try {
+    group(`${T_} — the coach's cockpit`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+    if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    await page.locator("#login-email").fill("coach@example.invalid");
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(2400);
+    ok("the coach signs in", await tid("os-main").count() === 1);
+    await page.waitForSelector('[data-testid="matchday-count"]', { timeout: 8000 }).catch(() => {});
+    ok("his Dashboard carries the match-day card", await tid("day-matchday").count() === 1);
+    await check("cockpithome", '[data-testid="day-matchday"]');
+
+    await tap("matchday-open", 3000);
+    ok("one tap opens the Coach tab of the fixture", await tid("mc-coach").count() === 1);
+    await page.waitForFunction(() => !document.querySelector('[data-testid="mc-coach-loading"]'), null, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    ok("...with the day, the side and the week drawn", await tid("coach-day").count() === 1 && await tid("coach-side").count() === 1 && await tid("coach-week").count() === 1);
+    await check("cockpitday", '[data-testid="mc-coach"]');
+
+    // The drawer, by keyboard.
+    await tid("coach-signals-open").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(500);
+    ok("Enter on the Signals button opens the drawer, and focus moves into it", await tid("signals").count() === 1 && await page.evaluate(() => !!document.activeElement?.closest('[data-testid="signals"]')));
+    ok("the cards are articles, each with its evidence as text", await page.evaluate(() => { const a = [...document.querySelectorAll('[data-testid="signals"] article')]; return a.length > 0 && a.every((x) => x.innerText.trim().length > 10 && x.getAttribute("aria-labelledby")); }));
+    await check("cockpitdrawer", '[data-testid="signals"]');
+    for (let i = 0; i < 40; i++) await page.keyboard.press("Tab");
+    ok("Tab stays inside the open drawer", await page.evaluate(() => !!document.activeElement?.closest('[data-testid="signals"]')));
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+    ok("Escape closes it and focus returns to the button that opened it", await tid("signals").count() === 0 && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "coach-signals-open");
+
+    await tap("mc-back", 800);
+    await tap(`mc-open-${COCKPIT.live}`, 1800);
+    await tap("mc-tab-coach", 2500);
+    ok("the live match has the Coach tab, with the Board and the bowlers' overs left", await tid("coach-board").count() === 1 && await tid("coach-bowlers").count() === 1);
+    await check("cockpitlive", '[data-testid="mc-coach"]');
+    ok("no page errors on the cockpit's screens", errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} cockpit walk threw: ${e.message?.slice(0, 160)}`, false);
   } finally {
     await ctx.close();
   }
@@ -1246,8 +1357,10 @@ async function displayWalk(theme) {
 try {
   await walk("floodlit");
   await captainWalk("floodlit");
+  await cockpitWalk("floodlit");
   await walk("daylight");
   await captainWalk("daylight");
+  await cockpitWalk("daylight");
 
   group("The ground display (SCRBRD-133 G1) — three sizes, every panel");
   await displayWalk("floodlit");

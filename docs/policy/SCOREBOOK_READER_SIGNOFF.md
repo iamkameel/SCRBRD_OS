@@ -1,7 +1,6 @@
 # The scorebook reader: sign-off for the information officer
 
-**For:** Kameel, as information officer. **Written:** 2026-09-30. **Status:** not yet signed. Until it is, the
-`scorebook_reader` switch stays off in production and no page is ever sent anywhere.
+**For:** Kameel, as information officer. **Written:** 2026-09-30. **Status:** **signed by Kameel, information officer, on 2026-10-02** (on the Build Board, "I sign it as written: photos deleted after 30 days"). The `scorebook_reader` switch may now be turned on, school by school, under items 1–7.
 **Design:** `docs/design/SCRBRD-120_scorebook_importer.md` §6 and D8. §9.5 records the facts as built.
 
 ## What it does, in one paragraph
@@ -55,6 +54,6 @@ transfer** (POPIA s72).
 That the reader may be switched on, school by school, under items 1–7. Photos remain deleted 30 days after
 confirmation (D7), and every other rule of the importer stands.
 
-**Signed:** ______________________ (information officer) **Date:** __________
+**Signed:** Kameel (information officer) **Date:** 2026-10-02
 
-**Retention confirmed as:** ______________________
+**Retention confirmed as:** photos deleted 30 days after the scorebook is confirmed (D7), as written

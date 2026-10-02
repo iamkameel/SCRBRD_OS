@@ -264,7 +264,7 @@ try {
   ok("Match Centre opens the fixture", await openMatch(dos.page, fx.live));
   const p = dos.page;
 
-  group("The tabs: six, in the prototype's order, a tablist a keyboard drives");
+  group("The tabs: six, in the prototype's order (and the Coach tab after the Summary, for the director of sport's grant), a tablist a keyboard drives");
   const tabs = await p.evaluate(() => {
     const list = document.querySelector('[role="tablist"][data-testid="mc-tabs"]');
     return list ? [...list.querySelectorAll('[role="tab"]')].map((t) => {
@@ -273,12 +273,16 @@ try {
         h: r.height, font: parseFloat(getComputedStyle(t).fontSize) };
     }) : null;
   });
-  ok("Summary · Scorecard · Commentary · Partnerships · Analytics · Match details",
-     tabs?.map((t) => t.name).join(" · ") === "Summary · Scorecard · Commentary · Partnerships · Analytics · Match details", tabs?.map((t) => t.name).join(" · "));
+  // SCRBRD-136: the director of sport holds team.select and player.workload.read school-wide, so the Coach tab
+  // follows the Summary (the cockpit walk holds who gets it); the six are unchanged and in their order.
+  ok("Summary · Coach · Scorecard · Commentary · Partnerships · Analytics · Match details",
+     tabs?.map((t) => t.name).join(" · ") === "Summary · Coach · Scorecard · Commentary · Partnerships · Analytics · Match details", tabs?.map((t) => t.name).join(" · "));
   ok("...Summary selected first, and each names the panel it controls", tabs?.[0]?.selected === "true" && tabs.every((t) => /^mc-panel-/.test(t.controls ?? "")));
   ok("...every tab at least 44px tall", tabs?.every((t) => t.h >= 44), tabs?.map((t) => t.h).join(","));
   ok("...and on the 12px floor", tabs?.every((t) => t.font >= 12));
   await tid(p, "mc-tab-summary").focus();
+  await p.keyboard.press("ArrowRight");
+  ok("ArrowRight moves to Coach", await tid(p, "mc-tab-coach").getAttribute("aria-selected") === "true");
   await p.keyboard.press("ArrowRight");
   ok("ArrowRight moves to Scorecard", await tid(p, "mc-tab-scorecard").getAttribute("aria-selected") === "true"
      && await p.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "mc-tab-scorecard");

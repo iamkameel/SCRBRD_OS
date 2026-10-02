@@ -27,7 +27,8 @@
  *   node tools/smoke-read.mjs
  */
 import { spawn } from "node:child_process";
-import { appUrl, port } from "./db-url.mjs";
+import pg from "pg";
+import { appUrl, ownerUrl, port } from "./db-url.mjs";
 
 const PORT = port(8793);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -107,6 +108,31 @@ try {
   // so the honest answer is zero, not a synthesised one.
   ok("a match with no point-era balls returns none, not fabricated ones",
      (await read(`shot_points?matchId=${MATCH}`, coach)).length === 0);
+
+  // A delivery the scorer voided is not a shot anybody played: the match's
+  // wheel reads the live log, as a boy's own wheel does (SCRBRD-136/137 D15).
+  // Two point-era balls fed as the owner, then the second voided.
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    try {
+      const ball = (seq, key, extra = {}) => owner.query(
+        `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                                 client_seq, client_ts, kind, ball_type, value, payload,
+                                 theta, radius, placement_source, capture_profile)
+         values ($1, $2, $3, 0, 0, '88888888-0000-0000-0000-000000000006', 'walk-read', $4, $3, now(), $5,
+                 $6, $7, $8, $9, $10, $11, $12)`,
+        [MATCH, HIL, seq, key, extra.kind ?? "ball", extra.kind ? null : "run", extra.kind ? null : 4,
+         extra.payload ?? {},extra.kind ? null : 70, extra.kind ? null : 0.9,
+         extra.kind ? null : "point", extra.kind ? null : "full"]);
+      await ball(1, "read-shot-1");
+      await ball(2, "read-shot-2");
+      ok("both point-era balls are drawn before either is voided",
+         (await read(`shot_points?matchId=${MATCH}`, coach)).map((r) => r.seq).join() === "1,2");
+      await ball(3, "read-shot-void", { kind: "void", payload: { target: "read-shot-2" } });
+      ok("a voided delivery is gone from the match's wagon wheel",
+         (await read(`shot_points?matchId=${MATCH}`, coach)).map((r) => r.seq).join() === "1");
+    } finally { await owner.end(); }
+  }
 
   // ── The same query, different answers ───────────────────────────
   group("The same query, scoped per person");
