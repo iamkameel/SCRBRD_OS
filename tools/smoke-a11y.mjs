@@ -127,6 +127,12 @@ const TYPE_FLOOR_CEILING = {
   display1080: 0,
   display768:  0,
   display390:  0,
+  // Practice Match, phase 1 (2026-10-02): every screen of it, on a phone —
+  // the way in and the Resume card on the scorer's start screen, the six
+  // steps of the setup, the pad's title bar with its label, the weather
+  // sheet, the list and its confirmation. Born at 0, and they stay there.
+  practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+  practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
 };                   // 103 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
@@ -160,6 +166,10 @@ const TAP_FLOOR_CEILING = {
   captainfield:   1,
   captainbat:     1,
   captainafter:   1,
+  // Practice Match, phase 1: everything on these screens is tapped one-handed
+  // in a field, and none of it is under 44px.
+  practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+  practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
 };
 
 /**
@@ -198,10 +208,14 @@ const CONTRAST_CEILING = {
   // (board.dim lifted) on the daylight one.
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
-              display1080: 0, display768: 0, display390: 0 },
+              display1080: 0, display768: 0, display390: 0,
+              practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+              practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
-              display1080: 0, display768: 0, display390: 0 },
+              display1080: 0, display768: 0, display390: 0,
+              practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+              practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0 },
 };
 
 /**
@@ -240,6 +254,9 @@ const EMOJI_CEILING = {
   display1080: 0,
   display768:  0,
   display390:  0,
+  // Practice Match, phase 1.
+  practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+  practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -553,6 +570,131 @@ async function captainWalk(theme) {
     ok(`no page errors on the captain's screens`, errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} captain walk threw: ${e.message?.slice(0, 160)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * PRACTICE MATCH, PHASE 1 (2026-10-02): every screen of it, on a phone, in the
+ * demo (no server — a practice match never needs one) signed in as a Scorer.
+ * The way in on the scorer's start screen; the six steps of the setup, with
+ * the location refused, a squad pasted with a repeated name and a reserve; the
+ * pad's title bar with its label; the weather sheet; the Resume card after
+ * leaving and coming back; the list, and its delete confirmation. Each goes
+ * through the same ratchets as the rest (12px, 44px, AA, emoji — all 0) and
+ * has every control named. The label is on each of them.
+ * @param {"floodlit" | "daylight"} theme
+ */
+async function practiceWalk(theme) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const LABEL = "Practice match · kept on this phone";
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 1280, height: 800 } });
+  await offline(ctx);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const tap = async (id, ms = 500) => { await tid(id).first().click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(ms); };
+  const click = async (re, ms = 4000) => {
+    const l = page.locator("button:not([disabled])", { hasText: re }).first();
+    if (!(await l.count())) return false;
+    try { await l.click({ timeout: ms }); } catch { return false; }
+    await page.waitForTimeout(300);
+    return true;
+  };
+  const check = async (screen, { label = true } = {}) => {
+    await measure(page, theme, screen);
+    const unnamed = await unnamedControlsOf(page);
+    ok(`${T_} ${screen}: every control has a name`, unnamed.length === 0, unnamed.slice(0, 4).join(", "));
+    if (label) ok(`${T_} ${screen}: it says "${LABEL}"`, (await page.locator('[data-testid="practice-label"]').first().innerText().catch(() => "")).replace(/\s+/g, " ").startsWith(LABEL));
+    ok(`${T_} ${screen}: no sideways scroll at 390`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  };
+  const names = (p, n) => Array.from({ length: n }, (_, i) => `${i + 1}. ${p} ${String.fromCharCode(65 + i)}`).join("\n");
+  try {
+    group(`${T_} — Practice Match`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    await click(/Get Started|Log In/, 5000);
+    await page.waitForTimeout(600);
+    await click(/Scorer/, 4000);
+    await click(/^Sign In$/, 5000);
+    await page.waitForTimeout(1600);
+    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.waitForTimeout(1000);
+    await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
+    await page.waitForTimeout(1500);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    ok("the scorer's start screen offers Start Practice Match", (await tid("start-practice").count()) === 1);
+    await check("practicestart", { label: false });
+
+    await tap("start-practice");
+    await tap("practice-overs-custom");
+    await tap("practice-locate", 1200);
+    await tap("practice-weather-rain");
+    await check("practicematch");
+    await tap("practice-next");
+
+    for (const i of [0, 1]) {
+      await tid(`practice-school-${i}`).fill(i === 0 ? "Hilton" : "Kearsney");
+      await tid(`practice-division-${i}`).selectOption("U15");
+      await tap(`practice-class-${i}-A`, 150);
+    }
+    await check("practiceteams");
+    await tap("practice-next");
+
+    // A squad with a repeat, a twelfth man and reserves: the rows, the flag, the words.
+    await tid("practice-paste-0").fill(`${names("Alpha", 14)}\n15. Alpha B`);
+    await tap("practice-add-0");
+    await page.locator('button[aria-label="Alpha C is the 12th man"]').click({ timeout: 3000 }).catch(() => {});
+    await check("practicesquad");
+    await tap("practice-dedupe-0");
+    await tap("practice-next");
+    await tid("practice-paste-1").fill(names("Bravo", 11));
+    await tap("practice-add-1");
+    await tap("practice-next");
+
+    await page.locator("button[role=radio]", { hasText: "Hilton U15A" }).first().click({ timeout: 3000 }).catch(() => {});
+    await check("practicetoss");
+    await click(/Confirm Toss/);
+    await check("practiceopeners");
+    await page.locator("button", { hasText: "Alpha A" }).first().click({ timeout: 3000 }).catch(() => {});
+    await page.locator("button", { hasText: "Alpha B" }).first().click({ timeout: 3000 }).catch(() => {});
+    await click(/Select Opening Bowler/);
+    await page.locator("button", { hasText: "Bravo A" }).first().click({ timeout: 3000 }).catch(() => {});
+    await check("practicebowler");
+    await click(/Start Match/);
+    await page.waitForTimeout(1200);
+
+    await check("practicepad");
+    await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 }).catch(() => {});
+    await tap("pad-practice-weather", 600);
+    await tap("pw-overcast", 150);
+    await check("practiceweather");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+
+    await tap("exit-scorer", 800);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    ok("back on the start screen, the practice match is offered first", (await tid("practice-resume-card").count()) === 1);
+    await check("practiceresume", { label: false });
+
+    await tap("practice-list-open", 800);
+    await check("practicelist");
+    await page.locator('[data-testid="practice-delete"]').first().click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await check("practiceconfirm");
+    ok("...asked on the page, not with the browser's confirm()", (await tid("practice-confirm").count()) === 1);
+    ok(`no page errors on the practice screens`, errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} practice walk threw: ${e.message?.slice(0, 160)}`, false);
   } finally {
     await ctx.close();
   }
@@ -1246,8 +1388,10 @@ async function displayWalk(theme) {
 try {
   await walk("floodlit");
   await captainWalk("floodlit");
+  await practiceWalk("floodlit");
   await walk("daylight");
   await captainWalk("daylight");
+  await practiceWalk("daylight");
 
   group("The ground display (SCRBRD-133 G1) — three sizes, every panel");
   await displayWalk("floodlit");
