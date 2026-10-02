@@ -31,7 +31,7 @@
  *      principal, a director of sport, and a groundskeeper.
  *   9. No invented text: the audit log is the school's own (db/79) — a child
  *      in initials, no safeguarding row, reading it on the record, a filter
- *      by kind and by date, one plain line when nothing matches, and in the
+ *      by kind and by date, roles granted beside roles ended (db/80), one plain line when nothing matches, and in the
  *      demonstration only "Sign in to see the audit log" — and Ground tasks are
  *      the fixtures at the grounds the reader may see, with the pitch report's
  *      standing from the database — and one plain line when there are none.
@@ -351,6 +351,15 @@ try {
   await off.page.waitForTimeout(1200);
   const kinds = await off.page.locator('[data-testid="audit-row"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
   ok("filtered by kind, it lists that kind alone", kinds.length > 0 && kinds.every((k) => k === "access"), kinds.join());
+  // Roles granted as well as ended (db/80): the seed's appointments were made
+  // by nobody, and the tab says the system made them.
+  await tid(off.page, "audit-kind").selectOption("role");
+  await off.page.waitForTimeout(1200);
+  const roleKinds = await off.page.locator('[data-testid="audit-row"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
+  const roleText = await tid(off.page, "audit-log").innerText().catch(() => "");
+  ok("filtered to roles, it lists roles alone", roleKinds.length > 0 && roleKinds.every((k) => k === "role"), roleKinds.join());
+  ok("...a role granted among them, by the system when nobody made it", /The system · Granted a role: /.test(roleText), roleText.slice(0, 400));
+  ok("...and no free text, no invented entry", !INVENTED.test(roleText));
   const tomorrow = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
   await tid(off.page, "audit-from").fill(tomorrow);
   await tid(off.page, "audit-none").waitFor({ timeout: 8000 }).catch(() => {});

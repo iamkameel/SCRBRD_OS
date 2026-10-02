@@ -159,7 +159,7 @@ function ManagementView({ role, onDirectoryChanged }) {
   );
 }
 
-// THE AUDIT LOG (SCRBRD-132 B2, db/79). Who did what, newest first, from the
+// THE AUDIT LOG (SCRBRD-132 B2, db/79; roles granted, db/80). Who did what, newest first, from the
 // school's audit tables, read through audit_log(): each table only under its
 // own audit.read predicate, never a safeguarding row, never a reason or a
 // note, a child's name in initials — and every read of it, this one included,
@@ -169,7 +169,7 @@ function ManagementView({ role, onDirectoryChanged }) {
 // do not repeat a row). The demonstration has no log to read and says so.
 const AUDIT_KINDS = [
   ["access",    "Reads"],
-  ["role",      "Roles ended"],
+  ["role",      "Roles granted and ended"],
   ["support",   "Support sessions"],
   ["scoring",   "Scoring pen"],
   ["amendment", "Amendments"],
@@ -177,6 +177,10 @@ const AUDIT_KINDS = [
   ["duty",      "Duty suspensions"],
 ];
 const AUDIT_PAGE = 25;
+// A row with nobody behind it. A grant made by a seed or a migration has no
+// created_by (db/80): the system made it. Anything else without an actor was
+// somebody whose account is gone.
+const auditActor = (r) => r.actor ?? (r.kind === "role" && String(r.key).endsWith(":granted") ? "The system" : "Somebody no longer on the system");
 const auditWhen = (at) => {
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return "";
@@ -260,7 +264,7 @@ function AuditLog() {
             <li key={r.key} data-testid="audit-row" data-kind={r.kind} style={{display:"flex",gap:"12px",flexWrap:"wrap",padding:"10px 14px",borderTop:`1px solid ${D.border}`}}>
               <div style={{flex:1,minWidth:"220px"}}>
                 <div style={{fontFamily:D.body,fontSize:"14px",color:D.textPrimary}}>
-                  <span style={{fontWeight:600}}>{r.actor ?? "Somebody no longer on the system"}</span> · {r.action}
+                  <span style={{fontWeight:600}}>{auditActor(r)}</span> · {r.action}
                 </div>
                 <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginTop:"2px"}}>
                   {r.subject}{r.detail?.resource&&r.subjectKind!=="records"?` · ${r.detail.resource.replace(/_/g," ")}`:""}{r.detail?.fields?.length?` · ${r.detail.fields.join(", ")}`:""}{r.detail?.fixture?` · ${r.detail.fixture}`:""}{r.detail?.support?" · under a support session":""}{r.detail?.platformWide?" · from the platform":""}
