@@ -38,7 +38,8 @@ import { FOW_MS } from "./rotation.js";
  * `data-reduce-motion` on the root, which GLOBAL_CSS turns into cuts.
  */
 
-const SHEET = `
+/** The display's sheet — a function, so the tokens are read at render, never at import (tokens.js's rule). */
+const sheet = () => `
 .dv-root{position:fixed;inset:0;z-index:3000;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;
   background:var(--dv-face);color:var(--dv-figure);font-family:${T.type.mono};font-variant-numeric:tabular-nums;
   padding:max(12px,2.4vmin) max(16px,3.2vmin);gap:max(8px,1.6vmin);font-size:max(12px,2.2vmin)}
@@ -244,7 +245,7 @@ export function DisplayView({ match, events, fold, innings, result, settled, com
       data-sleeping={status.sleeping ? "true" : "false"} data-stale={status.stale ? "true" : "false"}
       {...(onClose ? { role: "dialog", "aria-modal": "true", "aria-label": "Big screen: the scoreboard" } : { role: "main", "aria-label": "Ground display" })}
       style={vars}>
-      <style>{SHEET}</style>
+      <style>{sheet()}</style>
       {onClose && <ExitButton onClose={onClose}/>}
       <DisplayBoard match={match} state={state} shownRuns={shownRuns} moment={status.sleeping ? null : moment}
         overSummary={status.sleeping ? null : overSummary} paused={paused || !!status.sleeping} announce={announce}

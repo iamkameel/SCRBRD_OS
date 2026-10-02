@@ -56,7 +56,7 @@
  * from the same one — the display ~13 a minute (a log read every 5 s, the
  * header every 60 s), each phone on /live 8 (header and log every 15 s). The
  * 120/30 this started at carried the display and 13 phones; 360/60 carries
- * the display and 43, and a burst of 20 phones opening the page together
+ * the display and 43, and 19 phones opening the page in the same second
  * (3 requests each). The cache, not this, protects the database: a fixture's
  * reads are one query per part per TTL however many ask (public.test.mjs
  * holds the arithmetic). The address is the socket's, or — behind

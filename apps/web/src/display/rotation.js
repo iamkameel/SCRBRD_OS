@@ -71,15 +71,19 @@ export function nextAvailable(from, available) {
  * @returns {{state: RotationState, panel: string | null}}  the panel to draw: a hold, an interrupt, a panel of the cycle, or none
  */
 export function stepRotation(state, { now, available, hold = null, dwellMs = DWELL_MS.normal, paused = false }) {
-  const dt = Math.max(0, now - state.last);
   /** @type {RotationState} */
   let s = { ...state, last: now };
   // A hold covers everything, and the cycle's clock stands still under it.
   if (hold) return { state: s, panel: hold };
+  // The panel's clock runs from the last step — or, the step an interrupt
+  // ends on, from the moment it ended: not a millisecond of the card counts.
+  let since = state.last;
   if (s.interrupt) {
     if (now < s.interrupt.until) return { state: s, panel: s.interrupt.panel };
+    since = Math.max(since, s.interrupt.until);
     s = { ...s, interrupt: null };
   }
+  const dt = Math.max(0, now - since);
   // The panel in its turn has nothing (or there is none yet): the next that has.
   if (s.at < 0 || !has(available, CYCLE[s.at])) {
     const at = nextAvailable(s.at, available);
