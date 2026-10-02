@@ -36,7 +36,10 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   his team-mates' match data; what he may see, and whether a coach may send him
   anything) and sign-up and school linking (added 2026-10-02, SCRBRD-140: Google
   sign-in through Firebase, an account with no school, and a school-provided
-  register checked before anyone is linked to a school or a child). A new problem joins this list
+  register checked before anyone is linked to a school or a child) and the coach's
+  cockpit and intelligence feed (added 2026-10-02, SCRBRD-136/137: what a coach
+  sees on match day, each feed signal's source and reader, and what never
+  surfaces about a child). A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write
