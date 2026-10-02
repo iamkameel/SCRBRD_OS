@@ -117,8 +117,12 @@ try {
   ok("...and his name is nowhere whole", !JSON.stringify(first.body).includes("Walkthrough Auditwalk"));
 
   group("No safeguarding row");
+  // A read of a concern is what must never show. A DSO's appointment is a
+  // role like any other (db/80: dso_contacts() names him to everybody), so
+  // "Safeguarding Officer" in a role row is not one.
   ok("nothing whose resource is safeguarding's", rows.every((r) => !String(r.detail?.resource ?? "").startsWith("safeguarding")
-     && !/safeguarding/i.test(r.action)), rows.filter((r) => /safeguarding/i.test(JSON.stringify(r))));
+     && !(r.kind !== "role" && /safeguarding/i.test(r.action))),
+     rows.filter((r) => r.kind !== "role" && /safeguarding/i.test(JSON.stringify(r))));
 
   group("Every read is on the record");
   ok("the office's read left exactly one access_log row", await reads("registrar@example.invalid", HIL) === before + 1);
@@ -186,6 +190,9 @@ try {
   const dso = await login("dso@example.invalid");                 // dso, Hilton: audit.read, not the office's key
   const dsoRows = (await log(dso, "?kinds=role&limit=200")).body?.rows ?? [];
   const dsoGrants = dsoRows.filter((r) => r.key.endsWith(":granted"));
+  ok("the office reads the DSO's appointment, as it reads its ending", roleRows.some((r) => r.kind === "role"
+     && r.subject === "N Dube" && r.action === "Granted a role: Safeguarding Officer" && r.key.endsWith(":granted")
+     && JSON.stringify(r.detail) === JSON.stringify({ role: "dso", team: null })));
   ok("the DSO reads his own grant and nobody else's", dsoGrants.length >= 1 && dsoGrants.every((r) => r.subject === "N Dube"),
      dsoGrants.map((r) => `${r.subject}: ${r.action}`));
 
