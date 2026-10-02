@@ -146,31 +146,29 @@ BEGIN
 
   IF v_any THEN
     FOR r IN
+      -- Cheap columns first — ids, never labels — so the sort and the page
+      -- cut run before any name is looked up or masked; the labels are made
+      -- for the page alone, in the outer query.
       WITH src AS (
         -- access_log: a read somebody made. Never a safeguarding row.
         SELECT l.occurred_at AS at, 'access'::text AS kind,
                CASE WHEN l.resource = 'audit_log' THEN 'Read the audit log'
                     ELSE 'Read ' || replace(l.resource, '_', ' ') END AS action,
                l.person_id AS actor_id,
-               CASE WHEN p1.id IS NOT NULL THEN 'pupil'
-                    WHEN u1.id IS NOT NULL THEN 'person'
-                    ELSE 'records' END AS subject_kind,
-               CASE WHEN p1.id IS NOT NULL THEN audit_mask_name(p1.full_name, true)
-                    WHEN u1.id IS NOT NULL THEN audit_mask_name(u1.name, audit_names_pupil(u1.id))
-                    ELSE l.record_count || CASE WHEN l.record_count = 1 THEN ' record' ELSE ' records' END
-                  END AS subject,
-               CASE WHEN p1.id IS NOT NULL THEN p1.id
-                    WHEN u1.id IS NOT NULL AND audit_names_pupil(u1.id) THEN u1.id END AS child_id,
+               CASE WHEN l.record_count = 1 THEN l.record_ids[1] END AS one_id,
+               NULL::uuid AS person_id, NULL::uuid AS match_id, NULL::uuid AS from_id, NULL::uuid AS to_id,
+               CASE WHEN l.resource = 'audit_log' THEN 'the audit log'
+                    ELSE l.record_count || CASE WHEN l.record_count = 1 THEN ' record' ELSE ' records' END END AS words,
                l.school_id,
                jsonb_build_object('resource', l.resource, 'records', l.record_count, 'fields', to_jsonb(l.fields),
                                   'platformWide', l.platform_wide, 'support', l.support_access_id IS NOT NULL) AS detail,
                'access:' || l.id::text AS key
           FROM access_log l
-          LEFT JOIN player   p1 ON l.record_count = 1 AND p1.id = l.record_ids[1]
-          LEFT JOIN app_user u1 ON l.record_count = 1 AND p1.id IS NULL AND u1.id = l.record_ids[1]
          WHERE 'access' = ANY (v_kinds)
            AND l.school_id = p_school
            AND l.resource NOT LIKE 'safeguarding%'
+           AND (p_since IS NULL OR l.occurred_at >= p_since)
+           AND (p_before IS NULL OR l.occurred_at <= p_before)
         UNION ALL
         -- scoring_audit: who took, offered, handed over or released the pen.
         SELECT s.at, 'scoring',
@@ -186,9 +184,8 @@ BEGIN
                  WHEN 'pad_resume_revoked'     THEN 'Ended a pad resume key'
                  WHEN 'scorebook_import'       THEN 'Imported a scorebook'
                  ELSE 'Scoring: ' || replace(s.event, '_', ' ') END,
-               s.actor_id, 'fixture', audit_fixture_label(s.match_id), NULL::uuid, s.school_id,
-               jsonb_strip_nulls(jsonb_build_object('event', s.event,
-                 'from', audit_person_label(s.from_user), 'to', audit_person_label(s.to_user), 'epoch', s.epoch)),
+               s.actor_id, NULL, NULL, s.match_id, s.from_user, s.to_user, NULL, s.school_id,
+               jsonb_strip_nulls(jsonb_build_object('event', s.event, 'epoch', s.epoch)),
                'scoring:' || s.id::text
           FROM scoring_audit s
          WHERE 'scoring' = ANY (v_kinds)
@@ -197,7 +194,7 @@ BEGIN
         UNION ALL
         -- scoring_amendment: the request, and the decision when there is one.
         SELECT a.requested_at, 'amendment', 'Asked to amend a delivery', a.requested_by,
-               'fixture', audit_fixture_label(a.match_id), NULL::uuid, a.school_id,
+               NULL, NULL, a.match_id, NULL, NULL, NULL, a.school_id,
                jsonb_build_object('state', a.state), 'amendment:' || a.id::text || ':asked'
           FROM scoring_amendment a
          WHERE 'amendment' = ANY (v_kinds)
@@ -206,7 +203,7 @@ BEGIN
         UNION ALL
         SELECT a.decided_at, 'amendment',
                CASE a.state WHEN 'approved' THEN 'Approved an amendment' ELSE 'Declined an amendment' END,
-               a.decided_by, 'fixture', audit_fixture_label(a.match_id), NULL::uuid, a.school_id,
+               a.decided_by, NULL, NULL, a.match_id, NULL, NULL, NULL, a.school_id,
                jsonb_build_object('state', a.state), 'amendment:' || a.id::text || ':decided'
           FROM scoring_amendment a
          WHERE 'amendment' = ANY (v_kinds)
@@ -215,7 +212,7 @@ BEGIN
         UNION ALL
         -- scorebook_import_revision: what was done to an import, never the card.
         SELECT v.at, 'scorebook', 'Scorebook import: ' || v.action, v.actor_id,
-               'fixture', audit_fixture_label(v.match_id), NULL::uuid, v.school_id,
+               NULL, NULL, v.match_id, NULL, NULL, NULL, v.school_id,
                jsonb_build_object('version', v.version, 'step', v.action), 'scorebook:' || v.id::text
           FROM scorebook_import_revision v
          WHERE 'scorebook' = ANY (v_kinds)
@@ -224,14 +221,14 @@ BEGIN
         UNION ALL
         -- support_access: an hour of platform support, begun and ended.
         SELECT x.started_at, 'support', 'Began a support session', x.actor_id,
-               'school', role_words(x.role) || coalesce(' (' || x.team_code || ')', ''), NULL::uuid, x.school_id,
+               NULL, NULL, NULL, NULL, NULL, role_words(x.role) || coalesce(' (' || x.team_code || ')', ''), x.school_id,
                jsonb_build_object('role', x.role, 'team', x.team_code, 'expiresAt', x.expires_at),
                'support:' || x.id::text || ':began'
           FROM support_access x
          WHERE 'support' = ANY (v_kinds) AND x.school_id = p_school
         UNION ALL
         SELECT x.ended_at, 'support', 'Ended a support session', x.ended_by,
-               'school', role_words(x.role) || coalesce(' (' || x.team_code || ')', ''), NULL::uuid, x.school_id,
+               NULL, NULL, NULL, NULL, NULL, role_words(x.role) || coalesce(' (' || x.team_code || ')', ''), x.school_id,
                jsonb_build_object('role', x.role, 'team', x.team_code),
                'support:' || x.id::text || ':ended'
           FROM support_access x
@@ -240,8 +237,7 @@ BEGIN
         -- role_assignment_ending: whose role ended, which, by whom. Not why.
         SELECT e.ended_at, 'role',
                'Ended a role: ' || role_words(e.role) || coalesce(' (' || e.team_code || ')', ''),
-               e.ended_by, 'person', audit_person_label(e.person_id),
-               CASE WHEN audit_names_pupil(e.person_id) THEN e.person_id END, e.school_id,
+               e.ended_by, NULL, e.person_id, NULL, NULL, NULL, NULL, e.school_id,
                jsonb_build_object('role', e.role, 'team', e.team_code),
                'role:' || e.assignment_id::text
           FROM role_assignment_ending e
@@ -249,35 +245,60 @@ BEGIN
         UNION ALL
         -- duty_suspension: a match duty paused and lifted. The office's only.
         SELECT d.suspended_at, 'duty', 'Suspended a match duty: ' || o.duty, d.suspended_by,
-               'person', audit_person_label(ra.person_id),
-               CASE WHEN audit_names_pupil(ra.person_id) THEN ra.person_id END, d.school_id,
-               jsonb_build_object('duty', o.duty, 'fixture', audit_fixture_label(o.match_id)),
-               'duty:' || d.id::text || ':suspended'
+               NULL, ra.person_id, o.match_id, NULL, NULL, NULL, d.school_id,
+               jsonb_build_object('duty', o.duty), 'duty:' || d.id::text || ':suspended'
           FROM duty_suspension d
           JOIN match_official o ON o.id = d.duty_id
           JOIN role_assignment ra ON ra.id = d.assignment_id
          WHERE 'duty' = ANY (v_kinds) AND v_office AND d.school_id = p_school
         UNION ALL
         SELECT d.lifted_at, 'duty', 'Lifted a match duty''s suspension: ' || o.duty, d.lifted_by,
-               'person', audit_person_label(ra.person_id),
-               CASE WHEN audit_names_pupil(ra.person_id) THEN ra.person_id END, d.school_id,
-               jsonb_build_object('duty', o.duty, 'fixture', audit_fixture_label(o.match_id)),
-               'duty:' || d.id::text || ':lifted'
+               NULL, ra.person_id, o.match_id, NULL, NULL, NULL, d.school_id,
+               jsonb_build_object('duty', o.duty), 'duty:' || d.id::text || ':lifted'
           FROM duty_suspension d
           JOIN match_official o ON o.id = d.duty_id
           JOIN role_assignment ra ON ra.id = d.assignment_id
          WHERE 'duty' = ANY (v_kinds) AND v_office AND d.school_id = p_school AND d.lifted_at IS NOT NULL
+      ),
+      page AS (
+        SELECT * FROM src
+         WHERE (p_since IS NULL OR src.at >= p_since)
+           AND (p_before IS NULL OR src.at < p_before
+                OR (p_before_key IS NOT NULL AND src.at = p_before AND src.key < p_before_key))
+         ORDER BY src.at DESC, src.key DESC
+         LIMIT v_limit
+      ),
+      -- Who each row is about: the one child or person a single-record read
+      -- named, the person whose role or duty it is, or the fixture.
+      named AS (
+        SELECT page.*,
+               p1.id AS player_hit, p1.full_name AS player_name,
+               coalesce(page.person_id, CASE WHEN p1.id IS NULL THEN u1.id END) AS person_hit
+          FROM page
+          LEFT JOIN player   p1 ON p1.id = page.one_id
+          LEFT JOIN app_user u1 ON u1.id = page.one_id
       )
-      SELECT src.at, src.kind, src.action, audit_person_label(src.actor_id) AS actor,
-             CASE WHEN src.actor_id IS NOT NULL AND audit_names_pupil(src.actor_id) THEN src.actor_id END AS actor_child,
-             src.subject_kind, src.subject, src.child_id, src.school_id, sc.name AS school, src.detail, src.key
-        FROM src
-        LEFT JOIN school sc ON sc.id = src.school_id
-       WHERE (p_since IS NULL OR src.at >= p_since)
-         AND (p_before IS NULL OR src.at < p_before
-              OR (p_before_key IS NOT NULL AND src.at = p_before AND src.key < p_before_key))
-       ORDER BY src.at DESC, src.key DESC
-       LIMIT v_limit
+      SELECT n.at, n.kind, n.action, audit_person_label(n.actor_id) AS actor,
+             CASE WHEN n.actor_id IS NOT NULL AND audit_names_pupil(n.actor_id) THEN n.actor_id END AS actor_child,
+             CASE WHEN n.player_hit IS NOT NULL THEN 'pupil'
+                  WHEN n.person_hit IS NOT NULL THEN 'person'
+                  WHEN n.match_id IS NOT NULL AND n.kind <> 'duty' THEN 'fixture'
+                  WHEN n.kind = 'support' THEN 'school'
+                  ELSE 'records' END AS subject_kind,
+             CASE WHEN n.player_hit IS NOT NULL THEN audit_mask_name(n.player_name, true)
+                  WHEN n.person_hit IS NOT NULL THEN audit_person_label(n.person_hit)
+                  WHEN n.match_id IS NOT NULL AND n.kind <> 'duty' THEN audit_fixture_label(n.match_id)
+                  ELSE n.words END AS subject,
+             CASE WHEN n.player_hit IS NOT NULL THEN n.player_hit
+                  WHEN n.person_hit IS NOT NULL AND audit_names_pupil(n.person_hit) THEN n.person_hit END AS child_id,
+             n.school_id, sc.name AS school,
+             n.detail || jsonb_strip_nulls(jsonb_build_object(
+               'from', audit_person_label(n.from_id), 'to', audit_person_label(n.to_id),
+               'fixture', CASE WHEN n.kind = 'duty' THEN audit_fixture_label(n.match_id) END)) AS detail,
+             n.key
+        FROM named n
+        LEFT JOIN school sc ON sc.id = n.school_id
+       ORDER BY n.at DESC, n.key DESC
     LOOP
       at := r.at; kind := r.kind; action := r.action; actor := r.actor;
       subject_kind := r.subject_kind; subject := r.subject;
