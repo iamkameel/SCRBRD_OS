@@ -89,6 +89,9 @@ import { publicationRoutes } from "./write/publication-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
 // SCRBRD-124 phase 1: parent lift clubs (db/70).
 import { liftRoutes } from "./write/lift-api.mjs";
+// Practice Match's live weather hint, from Google (2026-10-02): a hint, never
+// the match's record; nothing stored (weather/weather-api.mjs).
+import { weatherRoutes, weatherConfig } from "./weather/weather-api.mjs";
 import { objectStoreFromEnv } from "./io/object-store.mjs";
 import { PAGE_MAX_BYTES } from "./io/page-image.mjs";
 import { publicPages } from "./public/public-api.mjs";
@@ -442,6 +445,9 @@ const scorebook = scorebookRoutes({ pool, secret: SECRET, store: pageStore });
 const scorebookFiles = scorebookFileRoutes({ pool, secret: SECRET, store: pageStore });
 // SCRBRD-124 phase 1: parent lift clubs (db/70).
 const lifts = liftRoutes({ pool, secret: SECRET });
+// The key is read once, here, and goes nowhere but Google's header. Unset,
+// the hint answers 503 weather_unavailable and the scorer picks by hand.
+const weather = weatherRoutes({ secret: SECRET, ...weatherConfig(process.env) });
 
 /**
  * Development sign-in.
@@ -1113,12 +1119,23 @@ const server = createServer(async (req, res) => {
       // recorded replay (development only), or none. Whether a school may use
       // it is its grant, in the database.
       reader: readerConfig().mode,
+      // The weather hint (Practice Match): configured | unconfigured. Never the key.
+      weather: weather.configured() ? "configured" : "unconfigured",
     });
   }
 
   try {
     if (req.method === "GET" && path === "/api/session")
       return json(res, 200, await sessionProfile(pool, SECRET, req.headers.authorization));
+
+    // The weather hint: any signed-in person, 30 a minute each; no-store,
+    // because it is Google's and briefly true (weather/weather-api.mjs).
+    if (req.method === "GET" && path === "/api/weather/hint") {
+      const r = await weather.hint({ query: Object.fromEntries(url.searchParams), authorization: req.headers.authorization });
+      res.writeHead(r.status, { "content-type": "application/json", "cache-control": "no-store", ...CORS, ...(r.headers ?? {}) });
+      res.end(JSON.stringify(r.body));
+      return;
+    }
 
     // A file, from the same read. Every guarantee — row-level security, the
     // masking views, the module gate, the access_log entry — comes from
@@ -1286,6 +1303,7 @@ server.listen(PORT, () => {
   console.log(`  db:   ${DATABASE_URL.replace(/:[^:@]*@/, ":***@")} (row-level security applies)`);
   console.log(`  ai:   ${aiConfigured() ? "configured" : "NO CREDENTIALS — Stats-Magic and commentary return null"}`);
   console.log(`  scorebook reader: ${readerConfig().mode}${readerConfig().mode === "replay" ? " (a recorded answer, never a real read)" : ""}`);
+  console.log(`  weather hint: ${weather.configured() ? "configured" : "unconfigured (GOOGLE_WEATHER_API_KEY unset: 503, the scorer picks)"}`);
   if (CLIENT_DIR) console.log(`  web:  serving the client from ${CLIENT_DIR}`);
   if (!process.env.SESSION_SECRET) console.log("  auth: EPHEMERAL dev secret — tokens die on restart");
   if (DEV && process.env.ALLOW_DEV_LOGIN === "1") console.log("  auth: DEV LOGIN ENABLED — /api/auth/dev-login mints tokens without a code");

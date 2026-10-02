@@ -44,6 +44,11 @@ services:
       # without it rather than mint a well-known one.
       - key: SESSION_SECRET
         sync: false
+      # Optional: the Practice Match weather hint. Unset, the hint answers 503
+      # and the scorer picks the weather by hand. Server-side only; restrict
+      # it to the Weather API — DEPLOYING.md, "The weather hint".
+      - key: GOOGLE_WEATHER_API_KEY
+        sync: false
       # WEB_ORIGIN is deliberately absent: with the client on this same origin
       # there is no cross-origin request for CORS to permit or refuse.
       #
