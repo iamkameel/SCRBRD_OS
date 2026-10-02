@@ -28,6 +28,10 @@
  *      no further request.
  *   8. Daylight lifts the dim token, rules the rows at 2px; Reduce motion
  *      marks the root; nothing on the page can be tapped or focused.
+ *   9. The setup section on the fixture's Publication panel, signed in as
+ *      the director of sport: the link and its QR code, the three settings
+ *      in the link, and "N of M named on public surfaces · K shown by
+ *      position" — the count the live page itself shows, and no name.
  *
  * The test hooks are the page's own: window.__SCRBRD_LIVE_MS__ (the poll),
  * __SCRBRD_DISPLAY_DWELL_MS__ (the dwell) and __SCRBRD_DISPLAY_SLEEP_MS__.
@@ -64,7 +68,7 @@ const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms)
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
   env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", SESSION_SECRET: "browser-display-secret",
          PUBLIC_PAGES: "on", PUBLIC_PSEUDONYM_SECRET: "browser-display-pseudonyms-0123456789abcdef", PUBLIC_TRUST_PROXY_HOPS: "1",
-         SERVE_CLIENT: "apps/web/dist" },
+         SERVE_CLIENT: "apps/web/dist", ALLOW_DEV_LOGIN: "1" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 const apiErr = [];
@@ -400,6 +404,57 @@ try {
       ok(`...a click goes nowhere (${x.got.theme})`, x.v.page.url() === url);
       await x.v.ctx.close();
     }
+  }
+
+  group("9. The setup section, signed in as the director of sport");
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.1.${++ipN}` } });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+    await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    const press = async (/** @type {RegExp} */ re) => {
+      const l = page.locator("button:not([disabled])", { hasText: re }).first();
+      if (await l.count()) { await l.click({ timeout: 5000 }).catch(() => {}); await sleep(500); }
+    };
+    await press(/Get Started|Log In/); await press(/sarah@example\.invalid|Director/); await press(/^Sign In$/);
+    await sleep(1500);
+    await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+    await sleep(1500);
+    await tid(page, `match-card-${pub}`).click({ timeout: 6000 }).catch(() => {});
+    const shown = await until(page, () => !!document.querySelector('[data-testid="display-setup"]'), 15000);
+    ok("the fixture's Publication panel carries the Ground display section (Hilton has published)", shown, (await text(page)).slice(0, 300));
+    const link = () => tid(page, "display-setup-link").innerText().catch(() => "");
+    const qr = () => page.locator('[data-testid="display-setup-qr"] path').getAttribute("d").catch(() => "");
+    ok("the link is the display's own address, plain", (await link()) === `${BASE}/display/${pub}`, await link());
+    const qr0 = await qr();
+    ok("...with a QR code drawn for it", (qr0 ?? "").length > 500);
+    await tid(page, "display-setup-theme-daylight").click();
+    await tid(page, "display-setup-dwell-long").click();
+    await tid(page, "display-setup-motion").check();
+    ok("Daylight, Long and Reduce motion travel in the link", (await link()) === `${BASE}/display/${pub}?theme=daylight&dwell=long&motion=reduce`, await link());
+    ok("...and the QR code follows the link", (await qr()) !== qr0);
+    ok("...the choices are radios that say which is chosen",
+       await tid(page, "display-setup-theme-daylight").getAttribute("aria-checked") === "true"
+       && await tid(page, "display-setup-theme-floodlit").getAttribute("aria-checked") === "false");
+    // What the live page names of Hilton's side right now, from the public answer itself.
+    const l = await (await fetch(`${BASE}/api/public/matches/${pub}/log`, { headers: { "x-forwarded-for": "10.85.2.1" } })).json();
+    const s0 = l.events.find((/** @type {any} */ e) => e.kind === "innings_start" && e.innings === 0);
+    const hilton = (s0?.squad ?? []).map((/** @type {any} */ m) => m.label);
+    const named = hilton.filter((/** @type {string} */ x) => x !== "Batter").length;
+    const line = await tid(page, "display-setup-names-home").innerText().catch(() => "");
+    ok(`"${line}" — the live page's own count (${named} of ${hilton.length})`,
+       line === `Home side: ${named} of ${hilton.length} named on public surfaces · ${hilton.length - named} shown by position`, line);
+    ok("...no count for Westville's side (Sarah may not publish it)", await tid(page, "display-setup-names-away").count() === 0);
+    const setup = await tid(page, "display-setup").innerText();
+    // (asText off: the section's link carries the fixture's own uuid, which is no pseudonym.)
+    ok("...and no boy's name in the section", leaks(setup, ["Erasmus", "Visser", "Botha", "Nkosi"], false).length === 0,
+       leaks(setup, ["Erasmus", "Visser", "Botha", "Nkosi"], false).join(","));
+    ok("...which points at consent as the way a boy is named", /consent/i.test(await tid(page, "display-setup-consent").textContent() ?? ""));
+    ok("no page errors (the setup section)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
   }
 
   group("4b. A publication withdrawn while the display is open");
