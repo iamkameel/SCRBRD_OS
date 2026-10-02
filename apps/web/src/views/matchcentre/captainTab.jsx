@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
-import { boardInnings, oversOf, teamOf } from "../../lib/matchCentre.js";
+import { boardInnings, teamOf } from "../../lib/matchCentre.js";
 import { endOf } from "../../lib/family.js";
 import { bowlerRows, inningsOf, matchupTypes, matchupWords, nextIn, notYetBowled, overStory, sheetOf } from "../../lib/captain.js";
 import { Board } from "../../ui/board.jsx";
@@ -48,8 +48,8 @@ function Part({ label, children, testid }) {
   );
 }
 
-const body = { ...T.role.body, color: T.content.primary, margin: 0 };
-const fig = { ...T.role.figure.sm, fontSize: "14px", color: T.content.primary };
+const body = () => ({ ...T.role.body, color: T.content.primary, margin: 0 });
+const fig = () => ({ ...T.role.figure.sm, fontSize: "14px", color: T.content.primary });
 
 /** His batters' innings in words, from the fold: "D Erasmus 23 off 18, 3 fours; caught" — the log's own dismissal line. */
 function inningsWords(b) {
@@ -122,7 +122,7 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
         <Part label="Next in" testid="mc-captain-next-in">
           <ol style={{ margin: 0, paddingLeft: T.space.xl, display: "grid", gap: "2px", listStyle: "none" }}>
             {coming.map((r) => (
-              <li key={r.playerId} style={body}>{r.battingNo != null ? `${r.battingNo} ` : ""}{r.name}</li>
+              <li key={r.playerId} style={body()}>{r.battingNo != null ? `${r.battingNo} ` : ""}{r.name}</li>
             ))}
           </ol>
         </Part>
@@ -131,7 +131,7 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
       {batters.length > 0 && (
         <Part label={decided ? "Our batters" : "Our batters today"} testid="mc-captain-batters">
           {batters.map((b) => (
-            <p key={b.id} style={fig}>
+            <p key={b.id} style={fig()}>
               {b.name} {b.runs}{b.balls != null ? ` (${b.balls})` : ""}{b.status !== "out" && b.status !== "retired" ? " not out" : ""}{b.fours > 0 ? ` · ${b.fours}×4` : ""}{b.sixes > 0 ? ` · ${b.sixes}×6` : ""}
             </p>
           ))}
@@ -147,13 +147,13 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
           <Part key={`bowl-${i}`} label={decided ? "Our bowlers" : "Our bowlers · overs left"} testid="mc-captain-bowlers">
             {rows.map((b) => (
               <div key={b.id} data-testid={`mc-captain-bowler-${b.id}`} style={{ display: "flex", justifyContent: "space-between", gap: T.space.md, flexWrap: "wrap" }}>
-                <span style={body}>{b.name}</span>
-                <span style={fig}>{b.figures}</span>
-                {b.words && <span data-testid={`mc-captain-cap-${b.id}`} style={{ ...body, fontWeight: 600, flexBasis: "100%" }}>{b.words}</span>}
+                <span style={body()}>{b.name}</span>
+                <span style={fig()}>{b.figures}</span>
+                {b.words && <span data-testid={`mc-captain-cap-${b.id}`} style={{ ...body(), fontWeight: 600, flexBasis: "100%" }}>{b.words}</span>}
               </div>
             ))}
             {inPlay && rest.length > 0 && (
-              <p style={{ ...body, color: T.content.secondary }}>Not yet bowled: {rest.map((r) => r.name).join(", ")}</p>
+              <p style={{ ...body(), color: T.content.secondary }}>Not yet bowled: {rest.map((r) => r.name).join(", ")}</p>
             )}
           </Part>
         );
@@ -171,7 +171,7 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
         return (
           <Part key={`story-${i}`} label={decided ? `Over story · ${teamOf(match, innings[i].battingTeam).short}` : "Over story · last six"} testid="mc-captain-story">
             <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "2px" }}>
-              {story.map((o) => <li key={o.key} style={{ ...body, fontSize: "14px" }}><span style={fig}>{o.over}</span> {o.text}</li>)}
+              {story.map((o) => <li key={o.key} style={{ ...body(), fontSize: "14px" }}><span style={fig()}>{o.over}</span> {o.text}</li>)}
             </ol>
           </Part>
         );
@@ -179,7 +179,7 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
 
       {decided && batters.length > 0 && (
         <Part label="Our innings, in words" testid="mc-captain-words">
-          {batters.map((b) => <p key={b.id} style={{ ...body, fontSize: "14px" }}>{inningsWords(b)}.</p>)}
+          {batters.map((b) => <p key={b.id} style={{ ...body(), fontSize: "14px" }}>{inningsWords(b)}.</p>)}
         </Part>
       )}
 
@@ -187,9 +187,9 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
         <Part label="Our batters against pace and spin" testid="mc-captain-matchups">
           {batters.filter((b) => matchupTypes(matchups[b.id]).length).map((b) => (
             <div key={b.id} style={{ display: "grid", gap: "2px" }}>
-              <span style={body}>{b.name}</span>
+              <span style={body()}>{b.name}</span>
               {matchupTypes(matchups[b.id]).map((t) => (
-                <span key={t.type} style={{ ...body, fontSize: "14px", color: T.content.secondary }}>
+                <span key={t.type} style={{ ...body(), fontSize: "14px", color: T.content.secondary }}>
                   v {t.type}: {matchupWords(t)}
                 </span>
               ))}
