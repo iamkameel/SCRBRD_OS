@@ -206,6 +206,10 @@ export default function SCRBRD_OS() {
   // be persisted: the resume payload carries a whole seeded innings and has no
   // business in storage, but its match id is all that's needed to rebuild it.
   const [scorerMatchId, setScorerMatchId] = useState(null);
+  // The pad is on a practice match (scorer/engine.jsx tells us). A reload then
+  // reopens the scorer's start screen, where Resume is offered first; the match
+  // itself is on the phone, not in the session (lib/practice.js).
+  const [scorerPractice, setScorerPractice] = useState(false);
   // The login page was opened from a live pad (SCRBRD-078): it offers the
   // real sign-in only — never the demo — and returns to the pad.
   const [loginForPad, setLoginForPad] = useState(false);
@@ -261,7 +265,7 @@ export default function SCRBRD_OS() {
   const handleSignOut = () => {
     signOut();
     clearSession();
-    setScorerOpen(false); setScorerResume(null); setScorerMatchId(null);
+    setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
     setAppState("landing");
@@ -349,6 +353,7 @@ export default function SCRBRD_OS() {
       if (s.role) setRole(s.role);
       if (s.userName) setUserName(s.userName);
       if (s.page) setPage(s.page);
+      if (s.scorerPractice && !s.scorerMatchId) openScorer(null, s.role ?? role, { restored: true });
       if (s.scorerMatchId) {
         // A saved session must not become a way to reopen a fixture the person
         // is no longer allowed to see — so, with a session, the fixture is
@@ -397,10 +402,10 @@ export default function SCRBRD_OS() {
     const c = scorerOpen && scorerResume?.cfg?.live ? scorerResume.cfg : null;
     // Signing in from the pad is a detour: a reload on the way comes back to
     // the pad, which asks again.
-    saveSession({ appState: loginForPad ? "app" : appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null,
+    saveSession({ appState: loginForPad ? "app" : appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null, scorerPractice: scorerOpen && scorerPractice,
       scorerCfg: c ? { matchId: c.matchId, team1: c.team1, team2: c.team2, teamCode: c.teamCode, overs: c.overs, live: true,
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
-  }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, loginForPad]);
+  }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
 
   // Counted over the notices the SERVER agreed to send this person. A badge is
   // a disclosure: "3 unread" built from rows nobody authorised states a fact
@@ -463,6 +468,7 @@ export default function SCRBRD_OS() {
           <ScorerApp
             key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
             resume={scorerResume}
+            onPracticeActive={setScorerPractice}
             // The pad asks it once: whether this account files the umpires'
             // report of a suspension itself (SCRBRD-094; rbac/conduct.js).
             role={role}

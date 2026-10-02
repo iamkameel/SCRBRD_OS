@@ -363,7 +363,15 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // reason for an absence anywhere; every card's evidence equal to the reads;
   // Seen per person and per evidence; the live tab's cap sentences are the
   // pad's; 12px, 44px, both themes, reduced motion.
-  "browser-cockpit"];
+  "browser-cockpit",
+  // Practice Match, phase 1: a scorer starts one from the start screen with
+  // typed teams and pasted squads, scores an over, reloads mid-over and
+  // resumes with undo intact, changes the weather at an over and ball; every
+  // request the page made is held to the names typed (none carries one, and
+  // no write reaches the API); the scorecard saved as a file; one deleted and
+  // all deleted from the page's own confirmation, and nothing left in
+  // IndexedDB or localStorage; 390 wide.
+  "browser-practice"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
