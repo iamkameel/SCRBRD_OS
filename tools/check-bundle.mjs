@@ -264,7 +264,35 @@ if (splitProblems.length) {
 // marker must still be found somewhere else in the build, so the check cannot
 // pass because a marker went stale. And the bundle must be the public one:
 // it reads /api/public/matches/.
+//
+// SCRBRD-133 G1: the ground display is a LAZY chunk of the same bundle
+// (/display/:match), which a static graph never reaches — so a signed-in
+// marker folded into it would pass a check of the static graph alone. Every
+// marker below is therefore held out of the WHOLE public graph: the entry,
+// its static imports, and every chunk it or they import dynamically, and
+// theirs. And the display must be that lazy chunk: its marker absent from the
+// static graph (the live page does not pay for it) and present in the whole
+// one (it was not lost). The static graph has a ceiling of its own.
 const PUBLIC_ENTRY = join(DIST, "public-app.js");
+const DYNAMIC_IMPORT = /\bimport\(\s*["'](\.{1,2}\/[^"']+\.js)["']\s*\)/g;
+/** An entry file and every chunk reachable from it by static OR dynamic import. @param {string} file */
+function wholeGraph(file) {
+  const seen = new Set();
+  const todo = [file];
+  while (todo.length) {
+    const f = todo.pop();
+    if (seen.has(f) || !existsSync(f)) continue;
+    seen.add(f);
+    const text = readFileSync(f, "utf8");
+    for (const m of text.matchAll(STATIC_IMPORT)) todo.push(join(dirname(f), m[1]));
+    for (const m of text.matchAll(DYNAMIC_IMPORT)) todo.push(join(dirname(f), m[1]));
+  }
+  return [...seen];
+}
+/** The display's own marker: its rotating panel area's test id (display/DisplayView.jsx). */
+const DISPLAY_MARKER = "display-panel-partnership";
+/** The public entry's static graph: React, the tokens, the fold, the live page — not the display. Measured 447 KB on 2026-10-02. */
+const PUBLIC_LIMIT_KB = 470;
 const NOT_PUBLIC = [
   ["the scorer (sheets.jsx)",            "revise-target"],
   ["a view (SettingsView)",              "dob-gaps"],
@@ -276,19 +304,25 @@ const NOT_PUBLIC = [
   ["the service worker's registration",  "serviceWorker"],
 ];
 const publicProblems = [];
-let publicKB = 0;
+let publicKB = 0, publicWholeKB = 0;
 if (!existsSync(PUBLIC_ENTRY)) {
   publicProblems.push("dist/public-app.js is missing — the public pages have no bundle (vite.config.js's `public` entry)");
 } else {
   const graph = staticGraph(PUBLIC_ENTRY);
+  const whole = wholeGraph(PUBLIC_ENTRY);
   publicKB = Math.round(graph.reduce((n, f) => n + statSync(f).size, 0) / 1024);
-  const text = graph.map((f) => readFileSync(f, "utf8")).join("\n");
-  const rest = js.filter((f) => !graph.includes(f)).map((f) => readFileSync(f, "utf8"));
-  if (!text.includes("/api/public/matches/")) publicProblems.push("public-app.js does not read /api/public/matches/ — it is not the public bundle");
+  publicWholeKB = Math.round(whole.reduce((n, f) => n + statSync(f).size, 0) / 1024);
+  const staticText = graph.map((f) => readFileSync(f, "utf8")).join("\n");
+  const text = whole.map((f) => readFileSync(f, "utf8")).join("\n");
+  const rest = js.filter((f) => !whole.includes(f)).map((f) => readFileSync(f, "utf8"));
+  if (!staticText.includes("/api/public/matches/")) publicProblems.push("public-app.js does not read /api/public/matches/ — it is not the public bundle");
   for (const [what, marker] of NOT_PUBLIC) {
-    if (text.includes(marker)) publicProblems.push(`${what} is in the public pages' graph ("${marker}" found)`);
+    if (text.includes(marker)) publicProblems.push(`${what} is in the public pages' graph, static or lazy ("${marker}" found)`);
     else if (!rest.some((t) => t.includes(marker))) publicProblems.push(`${what}'s marker "${marker}" is in no chunk at all — the marker went stale`);
   }
+  if (staticText.includes(DISPLAY_MARKER)) publicProblems.push(`the ground display is in the public entry's static graph ("${DISPLAY_MARKER}" found) — /live pays for it; import it lazily (public/main.jsx)`);
+  else if (!text.includes(DISPLAY_MARKER)) publicProblems.push(`the ground display is in no chunk the public entry reaches ("${DISPLAY_MARKER}" not found) — the marker or the display went missing`);
+  if (publicKB > PUBLIC_LIMIT_KB) publicProblems.push(`the public entry's static graph is ${publicKB} KB; the ceiling is ${PUBLIC_LIMIT_KB} KB`);
 }
 if (publicProblems.length) {
   console.error("✗ THE PUBLIC PAGES' BUNDLE REACHES THE SIGNED-IN APP");
@@ -298,5 +332,5 @@ if (publicProblems.length) {
   console.error("  the design tokens and @scrbrd/scoring. Find the static import that reaches the rest.");
   process.exit(1);
 }
-console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry graph (ceiling ${ENTRY_LIMIT_KB} KB) · the ${publicKB} KB public pages' graph holds none of the ${NOT_PUBLIC.length} signed-in markers`);
+console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry graph (ceiling ${ENTRY_LIMIT_KB} KB) · the public pages' graph (${publicKB} KB static, ceiling ${PUBLIC_LIMIT_KB} KB; ${publicWholeKB} KB with the lazy ground display) holds none of the ${NOT_PUBLIC.length} signed-in markers`);
 process.exit(0);

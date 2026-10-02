@@ -23,6 +23,12 @@
  *   5. Pseudonyms: stable within a match, never shared between two.
  *   6. A staff token changes nothing; noindex and Cache-Control on every
  *      answer; the rate limit answers 429.
+ *   8. The ground display (SCRBRD-133 G1): /display/:id is served exactly
+ *      when /live/:id is — the same 404 unpublished, noindex and no-store
+ *      published — every leak check above reads it with the other shells;
+ *      the log's ?since= answers only what is new and the whole names map;
+ *      and the setup section's count, from the publication read, is the
+ *      projection's own for a side its reader may publish, and only a count.
  *   7. The shot and where it went (SCRBRD-139, db/78): the page's own
  *      commentary over the public log says "D Erasmus, driven through cover
  *      for four"; an unconsented boy's placed ball names the place and not
@@ -38,6 +44,7 @@ import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildPublicFixture, PEOPLE, TYPED_FIELDER, KEARSNEY, EXPECTED, HIL } from "./fixture-public.mjs";
 import { deriveCommentary } from "@scrbrd/scoring";
 import { foldable } from "../apps/web/src/public/publicLog.js";
+import { RATE } from "../services/api/public/public-api.mjs";
 
 const PORT = port(8846), OFF_PORT = port(8847);
 const BASE = `http://127.0.0.1:${PORT}`, OFF = `http://127.0.0.1:${OFF_PORT}`;
@@ -108,7 +115,7 @@ const coordinatesIn = (body) => {
 /** Everything a stranger can read about one fixture, as one string. */
 async function everything(/** @type {string} */ id) {
   const parts = await Promise.all([`/api/public/matches/${id}`, `/api/public/matches/${id}/log`, `/api/public/matches/${id}/shots`,
-    `/live/${id}`, `/scorecard/${id}`].map((p) => get(p)));
+    `/live/${id}`, `/scorecard/${id}`, `/display/${id}`].map((p) => get(p)));
   return { parts, text: parts.map((p) => p.body).join("\n") };
 }
 const log = async (/** @type {string} */ id) => JSON.parse((await get(`/api/public/matches/${id}/log`)).body);
@@ -197,7 +204,8 @@ try {
     // withdrawal must reach group 2's first read, which a notification alone
     // does not promise under load (publication-api.mjs).
     ok("Hilton publishes the seed's fixture for the check", await publish(SEEDED, "home", true, sarahToken) === 200);
-    const off = await Promise.all([`/api/public/matches/${SEEDED}`, `/api/public/matches/${SEEDED}/log`, `/live/${SEEDED}`].map((p) => get(p, { base: OFF })));
+    const off = await Promise.all([`/api/public/matches/${SEEDED}`, `/api/public/matches/${SEEDED}/log`, `/live/${SEEDED}`, `/display/${SEEDED}`]
+      .map((p) => get(p, { base: OFF })));
     ok("off: a published fixture's reads and shell are all 404", off.every((r) => r.status === 404), off.map((r) => r.status));
     ok("off: the same 404 body as an unknown fixture's", off[0].body === (await get(`/api/public/matches/${MISSING}`, { base: OFF })).body);
     const onRead = await get(`/api/public/matches/${SEEDED}`);
@@ -212,7 +220,8 @@ try {
       ok(`unpublished ${id === SEEDED ? "seeded fixture" : "fixture"}: every read and shell is 404`, a.parts.every((p) => p.status === 404), a.parts.map((p) => p.status));
     }
     const pairs = [[`/api/public/matches/${pub}`, `/api/public/matches/${MISSING}`], [`/api/public/matches/${pub}/log`, `/api/public/matches/not-a-uuid/log`],
-                   [`/live/${pub}`, `/live/${MISSING}`], [`/scorecard/${pub}`, `/scorecard/x`]];
+                   [`/live/${pub}`, `/live/${MISSING}`], [`/scorecard/${pub}`, `/scorecard/x`],
+                   [`/display/${pub}`, `/display/${MISSING}`], [`/display/${pub}`, `/live/${MISSING}`]];
     for (const [a, b] of pairs) {
       const ra = await get(a), rb = await get(b);
       ok(`${a.replace(pub, ":unpublished")} reads exactly as ${b.replace(MISSING, ":missing")}`,
@@ -367,14 +376,64 @@ try {
     const header = JSON.parse(all.parts[0].body).match;
     ok("the header names no official, no weather, and publishes its sides", !("officials" in header) && !("weather" in header)
        && header.published.home === true && header.published.away === true);
-    const statuses = [];
-    for (let i = 0; i < 35; i++) statuses.push((await get(`/api/public/matches/${pub}`, { ip: "198.51.100.200" })).status);
-    const limited = await get(`/api/public/matches/${pub}`, { ip: "198.51.100.200" });
-    ok("one address: thirty, then 429", statuses.slice(0, 30).every((s) => s === 200) && statuses.slice(30).every((s) => s === 429), statuses.join(","));
+    // SCRBRD-133 G1: the ground display's shell, beside the live page's.
+    const disp = all.parts[5], live = all.parts[3];
+    ok("the ground display's shell: 200, no-store, X-Robots-Tag noindex, nofollow — the live shell's headers exactly",
+       disp.status === 200 && disp.headers["cache-control"] === "no-store" && disp.headers["x-robots-tag"] === "noindex, nofollow"
+       && JSON.stringify(Object.keys(disp.headers).filter((k) => k !== "content-length").sort())
+          === JSON.stringify(Object.keys(live.headers).filter((k) => k !== "content-length").sort())
+       && ["x-content-type-options", "referrer-policy", "content-type"].every((k) => disp.headers[k] === live.headers[k]),
+       JSON.stringify(disp.headers));
+    ok("...the display view of the same public bundle", /data-view="display"/.test(disp.body) && /src="\/public-app.js"/.test(disp.body));
+    // The display reads what is new every 5 s (§1.3), and every read carries
+    // the whole names map, which is how it never holds a withdrawn name.
+    const whole = JSON.parse(all.parts[1].body);
+    const cut = whole.events[Math.floor(whole.events.length / 2)].seq;
+    const since = JSON.parse((await get(`/api/public/matches/${pub}/log?since=${cut}`)).body);
+    ok(`?since=${cut}: only the events after it, the same last seq, and the whole names map`,
+       since.events.length === whole.events.filter((/** @type {any} */ e) => e.seq > cut).length && since.events.every((/** @type {any} */ e) => e.seq > cut)
+       && since.last === whole.last && JSON.stringify(since.people) === JSON.stringify(whole.people), JSON.stringify({ n: since.events.length, last: since.last }));
+    const nothing = JSON.parse((await get(`/api/public/matches/${pub}/log?since=${whole.last}`)).body);
+    ok("?since= the last seq: nothing new, and still the names", nothing.events.length === 0 && JSON.stringify(nothing.people) === JSON.stringify(whole.people));
+    // Fired at once, so the bucket's refill while they run (RATE.perMinute / 60
+    // a second) is a token or two, not the dozen a slow sequential loop earns.
+    const fired = await Promise.all(Array.from({ length: RATE.burst + 10 }, () => get(`/api/public/matches/${pub}`, { ip: "198.51.100.200" })));
+    const answered = fired.filter((r) => r.status === 200).length, refused = fired.filter((r) => r.status === 429);
+    ok(`one address, ${RATE.burst + 10} at once: the burst of ${RATE.burst} answered (${answered}, with what refilled meanwhile), the rest 429`,
+       answered >= RATE.burst && answered <= RATE.burst + 3 && answered + refused.length === fired.length, fired.map((r) => r.status).join(","));
+    const limited = refused[0] ?? { headers: {} };
     ok("...with Retry-After and noindex", Number(limited.headers["retry-after"]) >= 1 && /noindex/.test(limited.headers["x-robots-tag"]));
     ok("...and another address is not limited", (await get(`/api/public/matches/${pub}`, { ip: "198.51.100.201" })).status === 200);
     ok("Hilton withdraws its side: the page is gone on the next request", await publish(pub2, "home", false, sarahToken) === 200
        && (await get(`/api/public/matches/${pub2}/log`)).status === 404);
+    ok("...and the ground display's shell with it", (await get(`/display/${pub2}`)).status === 404);
+  }
+
+  group("8. The ground display's setup: how many are named (SCRBRD-133 D3)");
+  {
+    // The publication read counts, for each side its reader may publish, how
+    // many of that side the public surfaces name — the projection's own answer.
+    const read = async (/** @type {string} */ token) => (await fetch(`${BASE}/api/matches/${pub}/publication`, { headers: { authorization: `Bearer ${token}` } })).json();
+    const sarah = await read(sarahToken);
+    const home = sarah.sides.find((/** @type {any} */ x) => x.side === "home"), away = sarah.sides.find((/** @type {any} */ x) => x.side === "away");
+    // What the public log names of Hilton's boys right now, counted here from the public answer itself.
+    const l = await log(pub);
+    const hilton = new Map([...squadLabels(l, 0)].filter(([id]) => {
+      const s = l.events.find((/** @type {any} */ e) => e.kind === "innings_start" && e.innings === 0);
+      return (s?.squad ?? []).some((/** @type {any} */ m) => m.id === id);
+    }));
+    const namedOnPage = [...hilton.values()].filter((x) => x !== "Batter").length;
+    ok(`Hilton's director of sport: ${home?.names?.named} of ${home?.names?.total} named · ${home?.names?.positions} by position — the live page's own count (${namedOnPage} of ${hilton.size})`,
+       home?.names && home.names.total === hilton.size && home.names.named === namedOnPage && home.names.positions === hilton.size - namedOnPage,
+       JSON.stringify({ names: home?.names, page: [...hilton.values()] }));
+    ok("...and no count for the side she may not publish", away?.names === null, JSON.stringify(away));
+    ok("...and nothing in the answer but the counts: no name, no id of a boy",
+       leaksIn(JSON.stringify(sarah), []).length === 0, leaksIn(JSON.stringify(sarah), []).join(", "));
+    const wes = await read(wesToken);
+    ok("Westville's publisher gets Westville's count, not Hilton's", wes.sides.find((/** @type {any} */ x) => x.side === "home")?.names === null
+       && Number.isInteger(wes.sides.find((/** @type {any} */ x) => x.side === "away")?.names?.total), JSON.stringify(wes.sides));
+    const coach = await read(coachToken);
+    ok("a coach (no broadcast.publish) gets no count", coach.sides?.every((/** @type {any} */ x) => x.names == null) ?? true, JSON.stringify(coach));
   }
 
   group("7. The shot and where it went (SCRBRD-139, db/78)");

@@ -24,6 +24,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Linter } from "eslint";
+import { DAYLIGHT_DIM } from "../src/display/data.js";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "../src");
 
@@ -125,6 +126,12 @@ for (const k of ["figure", "lime", "dim"])
   ok(`board.${k} reads on the face at ${ratio(T.board[k], T.board.face).toFixed(2)}:1`, ratio(T.board[k], T.board.face) >= 4.5);
 ok("the board uses the §3.1 values", T.board.face === "#0b0e0b" && T.board.figure === "#f4f6f3" && T.board.lime === "#b9f227"
    && T.board.dim === "#8a94a5" && T.board.rule === "rgba(255,255,255,0.14)");
+// SCRBRD-133 G1 (§2.6, D14): the ground display's Daylight setting lifts the
+// dim row one step against glare — and stays under the figures, so dim still
+// reads as dim, and clears AA (7:1, AAA, with room) on the board's own face.
+ok(`the display's Daylight board.dim reads on the face at ${ratio(DAYLIGHT_DIM, T.board.face).toFixed(2)}:1, above board.dim and under the figures`,
+   ratio(DAYLIGHT_DIM, T.board.face) >= 7 && ratio(DAYLIGHT_DIM, T.board.face) > ratio(T.board.dim, T.board.face)
+   && ratio(DAYLIGHT_DIM, T.board.face) < ratio(T.board.figure, T.board.face));
 
 group("Type roles and the flip (§3.2, §3.6)");
 const R = T.role;

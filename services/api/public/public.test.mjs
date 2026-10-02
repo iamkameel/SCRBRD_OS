@@ -26,7 +26,7 @@ import {
 } from "@scrbrd/scoring";
 import { PUBLIC_EVENT_FIELDS, PUBLIC_EVENT_COMMON, projectLog, playerPseudonym, eventPseudonym, nameFor, RETIRED_NOT_OUT, areasOf } from "./redact.mjs";
 import {
-  publicPages, PublicCache, RateLimit, clientAddress, shellHtml, THEME_BOOT, NOT_FOUND, LIVE_TTL_MS, SETTLED_TTL_MS,
+  publicPages, PublicCache, RateLimit, clientAddress, shellHtml, THEME_BOOT, NOT_FOUND, LIVE_TTL_MS, SETTLED_TTL_MS, RATE,
 } from "./public-api.mjs";
 import { publicationRoutes } from "../write/publication-api.mjs";
 import { signToken } from "../auth/auth.mjs";
@@ -391,7 +391,7 @@ console.log("\n── The router, over a fake database ──");
  * M1 published, M2 not (the header answers nothing, as db/59 does). It
  * records every app.user_id set, and counts reads.
  */
-const seen = { users: /** @type {string[]} */ ([]), reads: 0, status: "complete", alsoServed: new Set() };
+const seen = { users: /** @type {string[]} */ ([]), reads: 0, status: "complete", alsoServed: new Set(), awayOnly: new Set() };
 const fakePool = {
   query: async () => ({ rows: [] }),
   connect: async () => ({
@@ -405,7 +405,7 @@ const fakePool = {
       if (/public_match_header/.test(text)) return { rows: served ? [{
         home_label: "Hilton College 1XI", home_code: "HIL", home_team: "1XI", away_label: "Westville Boys' High 1XI", away_code: "WES",
         away_team: "1XI", away_on_platform: true, sport: "cricket", format: "T10", overs: 10, starts_at: "2026-09-26T08:00:00Z",
-        ground: "Gordon Sherwood Oval", status: seen.status, toss_won_by: "home", toss_decision: "bat", home_published: true,
+        ground: "Gordon Sherwood Oval", status: seen.status, toss_won_by: "home", toss_decision: "bat", home_published: !seen.awayOnly.has(params[0]),
         away_published: true, scores: [{ innings: 0, runs: 25, wickets: 2, balls: 12 }], served_on: ON }] : [] };
       // The match's frozen playing conditions (SCRBRD-114, db/61): this one has none.
       if (/public_match_conditions/.test(text)) return { rows: [] };
@@ -486,8 +486,10 @@ const on = await serve({});
   ok("unpublished, unknown, malformed, and unmounted reads: one status, one body, one set of headers",
      nf.every((x) => x.status === 404 && x.body === nf[0].body && JSON.stringify(x.headers) === JSON.stringify(nf[0].headers)), nf.map((x) => [x.status, x.headers]));
   const ns = [await on.get(`/live/${M2}`), await on.get("/live/77777777-0000-0000-0000-00000000dead"), await on.get("/scorecard/nope"),
-    await on.get(`/table/${M1}`), await on.get(`/fixtures/${M1}`)];
-  ok("the shells: unpublished, unknown, malformed, and phase 2's two answer one 404 page",
+    await on.get(`/table/${M1}`), await on.get(`/fixtures/${M1}`),
+    // SCRBRD-133 G1: the ground display is the same answer for an unpublished fixture (D2).
+    await on.get(`/display/${M2}`), await on.get("/display/not-a-uuid")];
+  ok("the shells: unpublished, unknown, malformed, phase 2's two and the ground display's answer one 404 page",
      ns.every((x) => x.status === 404 && x.body === ns[0].body && JSON.stringify(x.headers) === JSON.stringify(ns[0].headers)));
   ok("a POST is the same 404", (await on.get(`/api/public/matches/${M1}`, { method: "POST" })).status === 404);
 
@@ -511,6 +513,23 @@ const on = await serve({});
   ok("the shell says noindex, nofollow in its header and its meta", all[5].headers["x-robots-tag"] === "noindex, nofollow" && /<meta name="robots" content="noindex, nofollow" \/>/.test(all[5].body));
   ok("the shell names the teams and the score, and nobody", /og:title" content="Hilton College 1XI v Westville Boys&#39; High 1XI · 25\/2"/.test(all[5].body) && leaks(all[5].body).length === 0);
   ok("the scorecard shell asks for the scorecard view", /data-view="scorecard"/.test(all[6].body) && /src="\/public-app.js"/.test(all[6].body));
+  // SCRBRD-133 G1: the ground display's shell, served as the live page's is (D1, D2).
+  const disp = await on.get(`/display/${M1}`);
+  ok("the ground display's shell answers 200 for a published fixture, no-store", disp.status === 200 && disp.headers["cache-control"] === "no-store");
+  ok("...noindex, nofollow in its header and its meta", disp.headers["x-robots-tag"] === "noindex, nofollow"
+     && /<meta name="robots" content="noindex, nofollow" \/>/.test(disp.body));
+  ok("...the same public bundle, asked for the display view", /data-view="display"/.test(disp.body) && /src="\/public-app.js"/.test(disp.body)
+     && /og:description" content="Ground display · SCRBRD"/.test(disp.body));
+  ok("...painted the board's black before the bundle loads", /documentElement\.style\.background = "#0b0e0b"/.test(disp.body)
+     && !/#0b0e0b/.test(all[5].body));
+  ok("...names the teams and the score, and nobody", leaks(disp.body).length === 0 && /Hilton College 1XI v /.test(disp.body));
+  // D2: the display is the HOME side's to switch on. A fixture only the away side published.
+  const M3 = "77777777-0000-0000-0000-0000000000a3";
+  seen.alsoServed.add(M3); seen.awayOnly.add(M3);
+  const awayLive = await on.get(`/live/${M3}`), awayDisp = await on.get(`/display/${M3}`);
+  ok("published by the away side alone: its live page is served, its ground display is the one 404",
+     awayLive.status === 200 && awayDisp.status === 404 && awayDisp.body === ns[0].body
+     && JSON.stringify(awayDisp.headers) === JSON.stringify(ns[0].headers), `${awayLive.status} ${awayDisp.status}`);
   const head = await on.get(`/api/public/matches/${M1}`, { method: "HEAD" });
   ok("HEAD answers the headers and no body", head.status === 200 && head.body === "");
 }
@@ -622,13 +641,13 @@ console.log("\n── A publish through this API is never served stale ──");
 console.log("\n── The rate limit ──");
 {
   const codes = [];
-  for (let i = 0; i < 32; i++) codes.push((await on.get(`/api/public/matches/${M1}`, { ip: "192.0.2.77" })).status);
+  for (let i = 0; i < RATE.burst + 2; i++) codes.push((await on.get(`/api/public/matches/${M1}`, { ip: "192.0.2.77" })).status);
   const limited = await on.get(`/live/${M1}`, { ip: "192.0.2.77" });
-  ok("thirty in a burst, then 429", codes.slice(0, 30).every((s) => s === 200) && codes[30] === 429 && codes[31] === 429, codes);
+  ok(`${RATE.burst} in a burst, then 429`, codes.slice(0, RATE.burst).every((s) => s === 200) && codes[RATE.burst] === 429 && codes[RATE.burst + 1] === 429, codes);
   ok("...with Retry-After, noindex and no-store", Number(limited.headers["retry-after"]) >= 1 && /noindex/.test(limited.headers["x-robots-tag"]) && limited.headers["cache-control"] === "no-store");
   ok("another address is not limited", (await on.get(`/api/public/matches/${M1}`, { ip: "192.0.2.78" })).status === 200);
   clock += 1000;
-  ok("a token comes back at two a second", (await on.get(`/api/public/matches/${M1}`, { ip: "192.0.2.77" })).status === 200);
+  ok(`a token comes back at ${RATE.perMinute / 60} a second`, (await on.get(`/api/public/matches/${M1}`, { ip: "192.0.2.77" })).status === 200);
   const rl = new RateLimit(() => clock, { perMinute: 120, burst: 30 });
   for (let i = 0; i < 30; i++) rl.take("x");
   ok("120 a minute is the steady rate", rl.take("x") === 1);
@@ -636,6 +655,43 @@ console.log("\n── The rate limit ──");
   ok("a minute later the whole burst is back", Array.from({ length: 30 }, () => rl.take("x")).every((w) => w === 0));
 }
 await on.close();
+
+console.log("\n── A pavilion on one address (SCRBRD-133 A4) ──");
+{
+  // The ground display reads the log every 5 s and the header every 60 s
+  // (public/reads.js); each phone on /live reads the header and the log
+  // every 15 s (PublicMatch.jsx), after its shell, header and log on opening.
+  // A school's wifi is one address for all of them.
+  /** @param {{perMinute: number, burst: number}} rate @param {number} phones @param {number} arriveEveryMs @returns {number} 429s in ten minutes */
+  const pavilion = (rate, phones, arriveEveryMs) => {
+    let t = 0;
+    const rl = new RateLimit(() => t, rate);
+    /** @type {[number, number][]} when, how many */
+    const asks = [];
+    for (let at = 0; at < 600_000; at += 5_000) asks.push([at, 1]);                       // the display's log
+    for (let at = 0; at < 600_000; at += 60_000) asks.push([at + 1, 1]);                  // ...and its header
+    for (let p = 0; p < phones; p++) {
+      const start = p * arriveEveryMs;
+      asks.push([start, 3]);                                                              // shell, header, log
+      for (let at = start + 15_000; at < 600_000; at += 15_000) asks.push([at, 2]);        // header and log
+    }
+    asks.sort((a, b) => a[0] - b[0]);
+    let refused = 0;
+    for (const [at, n] of asks) { t = at; for (let i = 0; i < n; i++) if (rl.take("pavilion")) refused++; }
+    return refused;
+  };
+  ok(`${RATE.perMinute} a minute, burst ${RATE.burst}: the display and 40 phones arriving over two minutes, ten minutes, never a 429`,
+     pavilion(RATE, 40, 3_000) === 0, String(pavilion(RATE, 40, 3_000)));
+  ok("...and 19 phones opening the page in the same second beside the display", pavilion(RATE, 19, 0) === 0, String(pavilion(RATE, 19, 0)));
+  ok("the 120 a minute, burst 30 it replaced refused that pavilion (why it moved)", pavilion({ perMinute: 120, burst: 30 }, 40, 3_000) > 0);
+  ok("...though it carried the display and a dozen phones", pavilion({ perMinute: 120, burst: 30 }, 12, 3_000) === 0);
+  ok("one address is still limited: a script at ten a second is refused within the minute", (() => {
+    let t = 0, refused = 0;
+    const rl = new RateLimit(() => t, RATE);
+    for (; t < 60_000; t += 100) if (rl.take("script")) refused++;
+    return refused > 0;
+  })());
+}
 
 console.log("\n── The client's address ──");
 {

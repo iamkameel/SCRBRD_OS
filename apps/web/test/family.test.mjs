@@ -18,6 +18,12 @@ import { tenantWords } from "../src/lib/words.js";
 import { ChildSwitcher, stateWords } from "../src/views/family/parts.jsx";
 import { ScorecardTab } from "../src/views/matchcentre/scorecard.jsx";
 import { AnalyticsTab } from "../src/views/matchcentre/tabs.jsx";
+import {
+  captaincyOf, currentSchoolSeason, sheetOf, nextIn, inningsOf, bowlerRows, notYetBowled, bandOfTeam, bandLine, pitchWords,
+  bowlingType, matchupTypes, matchupWords, termsOf, overStory, NEVER_ON_THE_TAB,
+} from "../src/lib/captain.js";
+import { bowlerCapWords } from "../src/scorer/conditionsLine.jsx";
+import { bowlingLimit } from "@scrbrd/scoring";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -154,6 +160,160 @@ group("The Match Centre in family mode (G13): his rows lit, a wheel offered for 
   ok("Analytics offers every batter's wheel to a staff reader", ["R Pillay", "T Bekker"].every((n) => chips(aPlain).includes(n)), chips(aPlain));
   ok("...and to a family only the whole innings and his own", chips(aFam).includes("R Pillay") && !chips(aFam).includes("T Bekker")
      && chips(aFam).includes("Whole innings"), chips(aFam));
+}
+
+// ── SCRBRD-138 phase A: the captain's view ──────────────
+// Names are the seed's illustrative ones; no date is pinned to a clock.
+
+group("The captain's gate (§1.2): five tests, and each refuses on its own");
+{
+  const ME = { id: "p-rohan", school: HIL, team: "1XI" };
+  const H = { playerId: "p-rohan", school: HIL, team: "1XI", kind: "captain", season: "2026", withdrawnAt: null };
+  ok("his live captain honour, this season, this side, this school: the view", captaincyOf([H], ME, "2026")?.label === "Captain");
+  ok("a vice-captain has the same view, labelled for what he is (D1)", captaincyOf([{ ...H, kind: "vice_captain" }], ME, "2026")?.label === "Vice-captain");
+  ok("holding both, the captain's label wins, whichever order the read gives them", captaincyOf([{ ...H, kind: "vice_captain" }, H], ME, "2026")?.label === "Captain" && captaincyOf([H, { ...H, kind: "vice_captain" }], ME, "2026")?.label === "Captain");
+  ok("the kind alone: colours are not a captaincy", captaincyOf([{ ...H, kind: "colours" }], ME, "2026") === null);
+  ok("...nor half colours, honours, player of the season or an award",
+     ["half_colours", "honours", "player_of_season", "award"].every((k) => captaincyOf([{ ...H, kind: k }], ME, "2026") === null));
+  ok("live alone: a withdrawn honour is not a captaincy", captaincyOf([{ ...H, withdrawnAt: "2026-09-30T08:00:00Z" }], ME, "2026") === null);
+  ok("this season alone: last season's captaincy is last season's", captaincyOf([{ ...H, season: "2025" }], ME, "2026") === null);
+  ok("this side alone: an honour does not move sides when he does", captaincyOf([{ ...H, team: "2XI" }], ME, "2026") === null);
+  ok("...whichever way the sides differ: he moved down", captaincyOf([H], { ...ME, team: "2XI" }, "2026") === null);
+  ok("his school alone", captaincyOf([{ ...H, school: WES }], ME, "2026") === null);
+  ok("it must be HIS honour: a team-mate's is not his", captaincyOf([{ ...H, playerId: "p-other" }], ME, "2026") === null);
+  ok("a team-mate with no honour at all has no view", captaincyOf([], ME, "2026") === null && captaincyOf(null, ME, "2026") === null);
+  ok("no season to ask about, no view (fails closed)", captaincyOf([H], ME, null) === null && captaincyOf([H], ME, undefined) === null);
+  ok("no player, no view", captaincyOf([H], null, "2026") === null && captaincyOf([H], { ...ME, team: null }, "2026") === null);
+  ok("the season is the school's current one, from the calendar's own flag",
+     currentSchoolSeason([{ level: "club", label: "2025/26", current: true }, { level: "school", label: "2025", current: false },
+       { level: "school", label: "2026", current: true }]) === "2026" && currentSchoolSeason([]) === null);
+}
+
+group("Next in: the sheet's order minus those who have batted (C3)");
+{
+  const rows = [
+    { playerId: "p6", side: "home", battingNo: 6, twelfth: false, name: "J Smith" },
+    { playerId: "p2", side: "home", battingNo: 2, twelfth: false, name: "R Pillay" },
+    { playerId: "p1", side: "home", battingNo: 1, twelfth: false, name: "D Erasmus" },
+    { playerId: "p12", side: "home", battingNo: null, twelfth: true, name: "T Cele" },
+    { playerId: "p7", side: "home", battingNo: null, twelfth: false, name: "K Naidoo" },
+    { playerId: "p3", side: "home", battingNo: 3, twelfth: false, name: "M Khan" },
+    { playerId: "x1", side: "away", battingNo: 1, twelfth: false, name: "Other Side" },
+  ];
+  const sheet = sheetOf(rows, "home");
+  ok("the sheet: his end only, in batting order, the unnumbered then the twelfth last", sheet.map((r) => r.playerId).join() === "p1,p2,p3,p6,p7,p12", sheet.map((r) => r.playerId));
+  const out = nextIn(sheet, [{ id: "p1" }, { id: "p2" }]);
+  ok("next in is the sheet minus the batted, in the sheet's order", out.map((r) => r.playerId).join() === "p3,p6,p7", out.map((r) => r.playerId));
+  ok("...the twelfth man does not bat", !out.some((r) => r.twelfth));
+  ok("...nobody has batted: the whole order", nextIn(sheet, []).map((r) => r.playerId).join() === "p1,p2,p3,p6,p7");
+  ok("...everybody has: nobody", nextIn(sheet, sheet.map((r) => ({ id: r.playerId }))).length === 0);
+  ok("...and the batted list is the fold's: a name not on the sheet changes nothing", nextIn(sheet, [{ id: "zz" }]).length === 5);
+  ok("not yet bowled is the sheet minus the bowlers", notYetBowled(sheet, [{ id: "p3" }]).map((r) => r.playerId).join() === "p1,p2,p6,p7");
+}
+
+group("Overs left, in the cap's own words (D4): the pad's sentence, or no line");
+{
+  const doc = { "bowling.max_overs_per_bowler_innings": 4 };
+  const info = { conditions: doc, sources: { "bowling.max_overs_per_bowler_innings": { from: "set", status: "confirmed" } } };
+  const inn = { bowlers: [
+    { id: "b1", name: "K Naidoo", balls: 24, runs: 18, wickets: 2, maidens: 0 },
+    { id: "b2", name: "J Smith", balls: 18, runs: 21, wickets: 0, maidens: 0 },
+    { id: "b3", name: "T Cele", balls: 12, runs: 12, wickets: 1, maidens: 1 },
+    { id: "b4", name: "M Khan", balls: 30, runs: 19, wickets: 0, maidens: 0 },
+    { id: "b5", name: "Not Bowled", balls: 0, runs: 0, wickets: 0, maidens: 0 },
+  ] };
+  const rows = bowlerRows(inn, (balls) => bowlerCapWords(info, balls), true);
+  const say = Object.fromEntries(rows.map((r) => [r.id, r.words]));
+  ok("at the cap: 'Has bowled his 4 overs'", say.b1 === "Has bowled his 4 overs", say.b1);
+  ok("one over short: 'Has 1 over left (4 an innings)'", say.b2 === "Has 1 over left (4 an innings)", say.b2);
+  ok("nothing worth saying earlier in his spell: no line", say.b3 === null);
+  ok("past the cap: recorded, and said", say.b4 === "5 overs; the conditions allow 4", say.b4);
+  ok("...each is the pad's own sentence for the same balls, word for word",
+     rows.every((r) => r.words === bowlerCapWords(info, inn.bowlers.find((b) => b.id === r.id).balls)));
+  ok("a bowler who has not bowled is not listed", !rows.some((r) => r.id === "b5") && rows.length === 4);
+  ok("his figures are overs-maidens-runs-wickets", rows[0].figures === "4-0-18-2" && rows[2].figures === "2-1-12-1", rows.map((r) => r.figures));
+  const none = bowlerRows(inn, (balls) => bowlerCapWords({ conditions: {}, sources: null }, balls), true);
+  ok("a document with no cap: no line for any bowler", none.every((r) => r.words === null) && none.length === 4);
+  ok("no document at all: no line either", bowlerRows(inn, (balls) => bowlerCapWords(null, balls), true).every((r) => r.words === null));
+  ok("an innings no longer in play says nothing about overs left", bowlerRows(inn, (balls) => bowlerCapWords(info, balls), false).every((r) => r.words === null));
+  const unconf = bowlerRows(inn, (balls) => bowlerCapWords({ conditions: doc, sources: null }, balls), true);
+  ok("an unconfirmed figure carries the pad's own tail", unconf[0].words === "Has bowled his 4 overs (platform default, unconfirmed)", unconf[0].words);
+  const every = rows.map((r) => `${r.name} ${r.figures} ${r.words ?? ""}`).join(" ");
+  ok("...and nothing in them is a reason or a per-boy limit", !NEVER_ON_THE_TAB.test(every) && !/spell/i.test(every), every);
+}
+
+group("The band's one line for the side (D4), and the groundsman's words");
+{
+  ok("U15A is the U15 band; the open sides are open; a code nobody can read has none",
+     bandOfTeam("U15A") === "U15" && bandOfTeam("U16B") === "U16" && bandOfTeam("1XI") === "open" && bandOfTeam("2nd XI") === "open"
+     && bandOfTeam("U12A") === null && bandOfTeam("Colts") === null && bandOfTeam(null) === null);
+  const doc = { "bowling.limit": { U15: { spell: 6, day: 12 } } };
+  ok("the competition's document first: 'U15 rule: 6-over spells, 12 a day, for every bowler'",
+     bandLine(bowlingLimit(doc, "U15"), { maxSpell: 5, maxDay: 10 }, "U15") === "U15 rule: 6-over spells, 12 a day, for every bowler");
+  ok("else the platform's directive for the band", bandLine(null, { maxSpell: 5, maxDay: 10 }, "U15") === "U15 rule: 5-over spells, 10 a day, for every bowler");
+  ok("neither names a figure: no line", bandLine(null, { maxSpell: null, maxDay: null }, "open") === null && bandLine(null, null, "U15") === null && bandLine(null, { maxSpell: 5, maxDay: 10 }, null) === null);
+  ok("the line is for every bowler: it names no boy and no source", !/[A-Z] [A-Z][a-z]+|physio|guideline/.test(bandLine(null, { maxSpell: 5, maxDay: 10 }, "U15")));
+  ok("the pitch, in a line a captain reads on the bus",
+     pitchWords({ surface: "firm", grass: "covered", bounce: "even", pace: "quick", favours: "seam", notes: null }) === "firm, good grass cover, even bounce, quick pace, favours seam");
+  ok("...nothing reported, nothing said", pitchWords(null) === null && pitchWords({ surface: null, grass: null, bounce: null, pace: null, favours: null }) === null);
+}
+
+group("Matchups: bowling types only, and no row the read cannot fill (D8)");
+{
+  ok("pace and spin from the style a record carries", bowlingType("Right-arm fast-medium") === "pace" && bowlingType("Left-arm orthodox") === "spin"
+     && bowlingType("Leg-break googly") === "spin" && bowlingType("S") === "spin" && bowlingType("F") === "pace");
+  ok("a style that says nothing names no type, and its row is dropped", bowlingType(null) === null && bowlingType("") === null && bowlingType("Underarm") === null);
+  const rows = [
+    { bowlingStyle: "Right-arm fast", balls: 12, runs: 15, dismissals: 1 },
+    { bowlingStyle: "Right-arm medium", balls: 6, runs: 9, dismissals: 0 },
+    { bowlingStyle: "Off-break", balls: 10, runs: 7, dismissals: 2 },
+    { bowlingStyle: null, balls: 30, runs: 40, dismissals: 3 },
+    { bowlingStyle: "Left-arm orthodox", balls: 0, runs: 0, dismissals: 0 },
+  ];
+  const t = matchupTypes(rows);
+  ok("folded by type: pace 18 balls, spin 10; the unnamed and the empty are not offered",
+     t.length === 2 && t[0].type === "pace" && t[0].balls === 18 && t[0].runs === 24 && t[0].out === 1 && t[1].type === "spin" && t[1].balls === 10 && t[1].out === 2, JSON.stringify(t));
+  ok("...in words, naming no bowler", matchupWords(t[0]) === "24 off 18 balls, out once" && matchupWords(t[1]) === "7 off 10 balls, out 2 times" && matchupWords({ balls: 1, runs: 0, out: 0 }) === "0 off 1 ball, not out");
+  ok("a batter nobody has bowled to has nothing to offer", matchupTypes([]).length === 0 && matchupTypes(undefined).length === 0);
+}
+
+group("What the tab never says (§4), and the terms the fold hands over");
+{
+  for (const w of ["Has 1 over left (4 an innings)", "Has bowled his 4 overs", "5 overs; the conditions allow 4", "K Naidoo 4-0-18-2", "Next in", "D Erasmus 23 off 18, 3 fours; caught"]) {
+    ok(`allowed: "${w}"`, !NEVER_ON_THE_TAB.test(w), w);
+  }
+  for (const w of ["Physio restricted", "shoulder injury", "not fit", "guideline set by the physio", "Unavailable, family", "doubtful", "no reason given", "threat level high", "win probability 62%", "workload 8.0", "rehab", "Back Sat 10 Oct, return date"]) {
+    ok(`refused: "${w}"`, NEVER_ON_THE_TAB.test(w), w);
+  }
+  ok("the terms are the document's play part, its sources and its title; none, none", termsOf({ conditions: { "format.free_hit": true }, conditionsTitle: "U15 League", conditionsVersion: 2 })?.title === "U15 League"
+     && termsOf({ conditions: null }) === null && termsOf(null) === null && termsOf({}) === null);
+  const items = [
+    { innings: 0, over: 0, kind: "over_end", key: "a", text: "End of over 1: 6 runs", ball: 6 },
+    { innings: 0, over: 1, kind: "over_end", key: "b", text: "End of over 2: 9 runs", ball: 6 },
+    { innings: 0, over: 2, kind: "ball", key: "c", text: "no summary yet", ball: 2 },
+    { innings: 1, over: 0, kind: "over_end", key: "d", text: "End of over 1 (chase)", ball: 6 },
+  ];
+  ok("the over story: finished overs of one innings, newest first, the over in play left out",
+     overStory(items, 0).map((o) => o.over).join() === "2,1" && overStory(items, 1).map((o) => o.over).join() === "1");
+  ok("...the last N", overStory(items, 0, 1).map((o) => o.over).join() === "2");
+}
+
+group("Which innings are his side's: by the side the innings names, else by his own players");
+{
+  const me = { id: "p-rohan", school: HIL, team: "1XI" };
+  const match = { id: "m", schoolId: HIL, homeTeam: "1XI", awayTeam: "Westville", awaySchoolId: WES, awayTeamCode: "1XI", homeLabel: "Hilton College 1XI", awayLabel: "Westville 1XI" };
+  const ours = new Set(["p-rohan", "p-two"]);
+  const mk = (battingTeam, batIds, bowlIds) => ({ battingTeam, batsmen: batIds.map((id) => ({ id })), bowlers: bowlIds.map((id) => ({ id })) });
+  const byName = inningsOf(match, me, [mk("1XI", [], []), mk("Westville 1XI", [], [])], ours);
+  ok("by name: the home side batting is his, the other's is his bowling", byName.map((x) => x.side).join() === "batting,bowling");
+  const byIds = inningsOf(match, me, [mk("Hilton 1XI", ["p-two"], ["o-1"]), mk("Somebody", ["o-1"], ["p-rohan"])], ours);
+  ok("by ids when the name says nothing", byIds.map((x) => x.side).join() === "batting,bowling");
+  const none = inningsOf(match, me, [mk("Somebody", ["o-1"], ["o-2"])], ours);
+  ok("an innings neither says is neither: nothing 'ours' is drawn from it", none[0].side === null);
+  const away = inningsOf({ ...match, schoolId: WES, homeTeam: "1XI", awaySchoolId: HIL, awayTeamCode: "1XI", homeLabel: "Westville 1XI", awayLabel: "Hilton College 1XI" },
+    me, [mk("Westville 1XI", [], []), mk("Hilton College 1XI", [], [])], ours);
+  ok("at the away end the sides turn over", away.map((x) => x.side).join() === "bowling,batting");
+  ok("a super over is no part of it", inningsOf(match, me, [{ ...mk("1XI", [], []), superOver: 1 }], ours)[0].side === null);
 }
 
 console.log(`\n${"─".repeat(52)}\nFAMILY APPS: ${pass} passed, ${fail} failed`);

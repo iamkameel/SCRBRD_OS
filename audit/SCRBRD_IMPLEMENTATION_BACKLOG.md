@@ -4049,6 +4049,14 @@ Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same scree
   - whether a coach may send him anything, under the CSA safeguarding policy;
   - how the honour switches it on and off.
 
+### SCRBRD-140 — Sign-up with Google, and linking an account to a school (2026-10-02)
+
+Kameel, 2026-10-02: *"Can we use Google OAuth via Firebase? Can users just sign up and then later be linked to their school, or select a school and it must get passed against a school-provided register."* Added to Fable's list the same day ("security isn't cheap"). Design: `docs/design/SCRBRD-140_signup_and_school_linking.md`.
+
+- **Decided (Kameel, 2026-10-02): D1–D14 all as recommended.** Google sign-in through Firebase Auth, the ID token verified by the API itself, ending in today's thirty-minute token; an account with no school sees nothing but itself; staff on the office's register are granted on a verified email, with the uploader's authority re-checked; a parent's claim on a child is free text and the office confirms it; pupils are linked by the office or a verified guardian; D14 narrows the fourteen tables any signed-in account may read today to accounts holding a live assignment.
+- **Phases:** 1 · Google sign-in, `auth_identity`, `pending_claim`, the school-less proof and D14 (Opus; screens Sonnet). 2 · the staff register (Opus; screens Sonnet). 3 · Microsoft, email-link, a Workspace pupil register, account erasure.
+- **Before phase 1 goes live:** Kameel enables Authentication and the Google provider in the `scrbrd-os` Firebase console (A1) and signs the privacy-notice paragraph on the transfer outside the Republic (§7.5, A5).
+
 ### SCRBRD-139 — Public commentary names the shot and where it went (2026-10-01)
 
 Kameel, 2026-10-01: *"I want the public page to name the shot and where it went ('driven through the covers for four')."* Decided; it amends SCRBRD-083's rule L7 (`docs/policy/PUBLIC_DATA.md` §5b): the shot and where a ball went may be named in public commentary as words; drawings stay team-level; no coordinate ever reaches a browser or the public cache; names still by L2 and L6.
