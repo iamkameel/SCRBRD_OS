@@ -281,6 +281,7 @@ In Secret Manager, on the project:
 | `SUPABASE_URL` | where scorebook photos are stored (SCRBRD-120, db/63): the Supabase project's URL, `https://<project-ref>.supabase.co` — the project that holds the database, so the photos sit in its region. Not a secret. See "The scorebook importer's photos" below |
 | `SUPABASE_SERVICE_ROLE_KEY` | the same project's **service-role** key (Project Settings → API). A secret: it reads and writes every bucket, and never leaves the API — no photo is ever signed for a browser. Unset with `NODE_ENV=production`, photo uploads answer 503 `store_unconfigured` and nothing is written to the server's disk |
 | `SCOREBOOK_BUCKET` | optional, default `scorebook-pages`: the private bucket's name |
+| `GOOGLE_WEATHER_API_KEY` | optional. The Practice Match weather hint (`GET /api/weather/hint`) asks Google's Weather API with it; unset, the hint answers 503 `weather_unavailable` and the scorer picks the weather from the buttons as before. A secret: it stays in the API's environment, goes only in the request header to Google, and is never logged or sent to a browser. Restrict it as below ("The weather hint") |
 | `PUBLIC_TRUST_PROXY_HOPS` | optional, default `0`. How many proxies in front of the API append to `X-Forwarded-For`, for the public pages' per-address rate limit (120 a minute, bursts of 30). `1` behind Cloud Run alone or Render; `2` behind Firebase Hosting in front of Cloud Run. `0` behind a proxy limits everybody as one address |
 
 #### Turning the public pages on (SCRBRD-083)
@@ -298,6 +299,43 @@ holder publishes its side of a fixture from the fixture screen; the page is
 then `/live/<fixture id>` (and `/scorecard/<fixture id>`). Firebase Hosting
 rewrites those four prefixes to the API (`firebase.json`); the single-service
 deployment (`SERVE_CLIENT`) needs nothing more.
+
+#### The weather hint (Practice Match, 2026-10-02)
+
+`GET /api/weather/hint?lat=…&lon=…` gives a signed-in person the current
+conditions at a ground from Google's Weather API (`currentConditions:lookup`),
+in the scorer's words (sunny, partly_cloudy, overcast, drizzle, rain, storm,
+fog, windy), marked "Weather by Google". It needs no migration and stores
+nothing in the database: the match's weather stays what the scorer records.
+Only the position goes to Google, rounded to two decimal places (about a
+kilometre). Answers are kept in the process for ten minutes at most, per
+rounded position, and sent to the browser `no-store`; each person may ask 30
+times a minute. `GET /api/health` says `"weather": "configured"` or
+`"unconfigured"`.
+
+`GOOGLE_WEATHER_API_KEY` is **optional**. To set it up, in the Google Cloud
+project that bills Maps Platform:
+
+1. APIs & Services → Library → enable **Weather API**.
+2. APIs & Services → Credentials → Create credentials → API key. Then edit it:
+   - **API restrictions:** Restrict key → **Weather API** only. A leaked key
+     then reaches nothing else on the account.
+   - **Application restrictions:** not *HTTP referrers*. The API calls Google
+     from the server, which sends no referrer, and a referrer-restricted key
+     is meant for a browser, where this key must never be. Use *IP addresses*
+     with the outbound addresses the host lists (Render: the service's
+     Connect → Outbound tab), or *None* on a host with no fixed outbound
+     address — the API restriction and the quota still hold it.
+3. APIs & Services → Weather API → Quotas: cap requests per day at what the
+   pilot needs (a few thousand is generous with the ten-minute cache), so a
+   leaked key cannot run up a bill.
+4. Set the key on the API service (Render: Environment → `GOOGLE_WEATHER_API_KEY`;
+   Cloud Run: a Secret Manager secret, as the table above) and redeploy. Never
+   in the client's build variables, never committed.
+
+To rotate it: make a new key with the same restrictions, set it, redeploy,
+then delete the old one. `GOOGLE_WEATHER_BASE_URL` exists only for the API
+walk's stub and is ignored in production and for any non-loopback address.
 
 #### Workload monitoring (SCRBRD-110, db/60)
 
