@@ -117,7 +117,7 @@ const named = (/** @type {Ctx} */ c) => ours(c).filter((r) => !r.twelfth);
 // ── S1 · The bus is short ──────────────────────────────
 
 /** @param {Ctx} c @returns {Card[]} */
-export function s1(c) {
+export function ruleS1(c) {
   const p = c.gate.panels;
   if (!p.bus || !p.team || !c.squad || !c.trips) return [];
   const bus = busOf(c.trips, c.gate.school);
@@ -144,7 +144,7 @@ export function s1(c) {
 const pastCap = (/** @type {string} */ w) => /the conditions allow/.test(w);
 
 /** The cap's own sentence beside each bowler (capWords, verbatim), while he is in play and after if he went past it. @param {Ctx} c @returns {Card[]} */
-export function s2a(c) {
+export function ruleS2a(c) {
   if (!c.gate.panels.day || typeof c.capFor !== "function") return [];
   const out = [];
   for (const { inn, i, inPlay } of c.fielding ?? []) {
@@ -161,7 +161,7 @@ export function s2a(c) {
 // ── S2b · A bowler at the directive's spell ────────────
 
 /** @param {Ctx} c @returns {Card[]} */
-export function s2b(c) {
+export function ruleS2b(c) {
   if (!c.gate.panels.load || !c.spells) return [];
   const out = [];
   for (const { inn, i, inPlay } of c.fielding ?? []) {
@@ -179,7 +179,7 @@ export function s2b(c) {
 // ── S3 · A picked boy may not be available ─────────────
 
 /** @param {Ctx} c @returns {Card[]} */
-export function s3(c) {
+export function ruleS3(c) {
   const p = c.gate.panels;
   if (!p.select || !p.side || !c.readiness) return [];
   return c.readiness.filter((r) => r.selected && (r.side == null || r.side === c.gate.end)).flatMap((r) => {
@@ -197,7 +197,7 @@ export function s3(c) {
 // ── S4a · Lifts to chase ───────────────────────────────
 
 /** Head count only (D10): no name, no driver, no number. @param {Ctx} c @returns {Card[]} */
-export function s4a(c) {
+export function ruleS4a(c) {
   if (!c.gate.panels.lifts || !c.lifts || !isMatchDay(c.match, c.now)) return [];
   const l = c.lifts;
   if (!l.notLeft && !l.handedOverUnconfirmed) return [];
@@ -211,7 +211,7 @@ export function s4a(c) {
 // ── S4b · A lift exception (the office's) ──────────────
 
 /** By name, to the office only: `transport.lift.oversee`, which the coach does not hold (D10). @param {Ctx} c @returns {Card[]} */
-export function s4b(c) {
+export function ruleS4b(c) {
   if (!c.gate.panels.liftOffice || !c.liftExceptions) return [];
   return c.liftExceptions.map((r) => card("S4b", `S4b:${r.seatId}`, `S4b:${r.seatId}:${r.kind}`, [
     `${r.name} · ${/** @type {Record<string, string>} */ (EXCEPTION_WORDS)[r.kind] ?? r.kind}`,
@@ -222,7 +222,7 @@ export function s4b(c) {
 // ── S5 · A matchup with enough balls ───────────────────
 
 /** Before the match, our boys against pace or spin; thirty balls or nothing (D14). @param {Ctx} c @returns {Card[]} */
-export function s5(c) {
+export function ruleS5(c) {
   if (!c.gate.panels.matchups || !c.matchups || c.match?.status !== "upcoming") return [];
   const out = [];
   for (const r of named(c)) {
@@ -242,7 +242,7 @@ export function s5(c) {
 // ── S6 · The sheet is thin ─────────────────────────────
 
 /** @param {Ctx} c @returns {Card[]} */
-export function s6(c) {
+export function ruleS6(c) {
   if (!c.gate.panels.select || !c.squad || !isSoon(c.match, c.now)) return [];
   const n = named(c).length;
   if (n >= SIDE) return [];
@@ -252,7 +252,7 @@ export function s6(c) {
 // ── S7 · Unanswered ────────────────────────────────────
 
 /** A count, never a name and never a reason. @param {Ctx} c @returns {Card[]} */
-export function s7(c) {
+export function ruleS7(c) {
   const p = c.gate.panels;
   if (!p.side || !c.readiness || !isSoon(c.match, c.now)) return [];
   const rows = c.readiness.filter((r) => r.team == null || c.gate.teamCode == null || r.team === c.gate.teamCode);
@@ -268,7 +268,7 @@ export function s7(c) {
 // ── S8 · Nobody on record ──────────────────────────────
 
 /** Scorer and umpire only: no read says how many a fixture ought to have. @param {Ctx} c @returns {Card[]} */
-export function s8(c) {
+export function ruleS8(c) {
   if (!c.gate.panels.day || !c.duties || !isSoon(c.match, c.now)) return [];
   const has = new Set(c.duties.map((r) => r.duty));
   const day = shortDate(c.match.startsAt ?? c.match.date) ?? "the day";
@@ -279,7 +279,7 @@ export function s8(c) {
 // ── S9 · Weather ───────────────────────────────────────
 
 /** @param {Ctx} c @returns {Card[]} */
-export function s9(c) {
+export function ruleS9(c) {
   const w = c.weather;
   if (!c.gate.panels.day || !w || !isSoon(c.match, c.now)) return [];
   const rain = w.rainChancePct != null && w.rainChancePct >= 40;
@@ -299,7 +299,7 @@ export function s9(c) {
  * guess: a cap is named only if the document names one.
  * @param {Ctx} c @returns {Card[]}
  */
-export function s10(c) {
+export function ruleS10(c) {
   if (!c.gate.panels.day || c.conditions?.state !== "defaults" || !isSoon(c.match, c.now)) return [];
   const { cap, freeHit } = c.conditions;
   return [card("S10", "S10", `S10:${cap ?? "x"}:${freeHit}`, [
@@ -312,7 +312,7 @@ export function s10(c) {
 // ── S11 · A bowler's week ──────────────────────────────
 
 /** The word and the fixed sentence, for a pace bowler on the sheet; never a ratio (D7). @param {Ctx} c @returns {Card[]} */
-export function s11(c) {
+export function ruleS11(c) {
   if (!c.gate.panels.load || !c.workload || !c.squad) return [];
   const sheet = new Set(named(c).map((r) => r.playerId));
   return c.workload.filter((w) => w.pace === true && sheet.has(w.playerId) && (w.loadWord === "rising" || w.loadWord === "spike"))
@@ -323,14 +323,14 @@ export function s11(c) {
 // ── S12 · A notice for this fixture ────────────────────
 
 /** Welfare, selection and transport notices about this match, as published. Nothing here is derived. @param {Ctx} c @returns {Card[]} */
-export function s12(c) {
+export function ruleS12(c) {
   if (!c.notices) return [];
   return c.notices.filter((n) => ["welfare", "selection", "transport"].includes(n.type) && n.subjectKind === "match" && n.subjectId === c.match?.id)
     .map((n) => card("S12", `S12:${n.id}`, `S12:${n.id}`, [n.title, n.body], 1));
 }
 
 /** Every rule, in the fixed order. */
-const EVALUATE = [s1, s2a, s2b, s3, s4a, s4b, s5, s6, s7, s8, s9, s10, s11, s12];
+const EVALUATE = [ruleS1, ruleS2a, ruleS2b, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12];
 
 /**
  * The feed: every rule over what the cockpit holds, in the rules' fixed order.
@@ -360,7 +360,7 @@ export function isSeen(c, seen) {
 }
 
 /** The store after this person sees the card. Pure. @param {Seen} seen @param {Card} c @returns {Seen} */
-export function see(seen, c) {
+export function markSeen(seen, c) {
   return c.dismissable ? { ...(seen ?? {}), [c.base]: { key: c.key, count: c.count } } : (seen ?? {});
 }
 

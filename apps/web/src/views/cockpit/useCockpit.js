@@ -3,7 +3,7 @@ import { api, signedIn } from "../../lib/api.js";
 import { readLive } from "../../lib/live.js";
 import { profile } from "../../lib/session.js";
 import { conditionsState, liftCounts, termsFromConditions } from "../../lib/cockpit.js";
-import { evaluate, isSeen, see, unseen } from "../../lib/signals.js";
+import { evaluate, isSeen, markSeen, unseen } from "../../lib/signals.js";
 
 /**
  * THE COCKPIT'S READS (SCRBRD-136 phase A): every read the Coach tab, the
@@ -129,7 +129,7 @@ export function useFeed({ match, gate, cockpit, fielding = [], capFor = null }) 
   const person = profile()?.user?.id ?? null;
   const [seen, setSeen] = useState(() => loadSeen(person));
   const dismiss = useCallback((card) => {
-    setSeen((prev) => { const next = see(prev, card); saveSeen(person, next); return next; });
+    setSeen((prev) => { const next = markSeen(prev, card); saveSeen(person, next); return next; });
   }, [person]);
   const open = useMemo(() => unseen(cards, seen), [cards, seen]);
   return { cards, open, seenCount: cards.length - open.length, dismiss, isSeen: (/** @type {any} */ c) => isSeen(c, seen), now };

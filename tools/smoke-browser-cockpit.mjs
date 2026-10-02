@@ -239,6 +239,7 @@ try {
   const BIG = "4e111111-0000-0000-0000-000000000001";
   const TRIP = (await q(`insert into trip (match_id, school_id, vehicle_id, depart_at, pickup) values ($1, $2, $3, (sa_today()::timestamp + time '21:00') at time zone 'Africa/Johannesburg', 'the Chapel car park') returning id`, [DAY, HIL, SMALL]))[0].id;
   ok("the stage is set", !!DAY && !!TRIP);
+  const reads0 = (await q(`select count(*)::int n from notification_read`))[0].n;
 
   // The lift: one boy arrives by lift, the lift is late and not marked as leaving.
   const head = await login("principal@example.invalid"), driver = await login("parent.whitfield@example.invalid"), mum = await login("parent.bekker@example.invalid");
@@ -307,7 +308,8 @@ try {
     const entered = await openMatch(s.page, DAY);
     const tabs = entered ? await tabIds(s.page) : [];
     ok(`${label}: no tab, and the six as built`, entered && tabs.join() === "summary,scorecard,commentary,partnerships,analytics,details", tabs.join());
-    ok(`${label}: no card on the Dashboard`, (await go(s.page, "dashboard") || true) && (await tid(s.page, "day-matchday").count()) === 0);
+    await go(s.page, "dashboard");
+    ok(`${label}: no card on the Dashboard`, (await tid(s.page, "day-matchday").count()) === 0);
     ok(`${label}: nothing on the page says Coach or Signals`, !/\bCoach\b|Signals \(/.test(await text(s.page).catch(() => "")));
     await s.ctx.close();
   }
@@ -329,7 +331,6 @@ try {
     await p.page.waitForTimeout(2000);
     const tabs2 = await tabIds(p.page);
     ok("a pupil: the live match has the six tabs and no Coach", tabs2.length > 0 && !tabs2.includes("coach"), tabs2.join());
-    ok("a pupil: nothing reads the cockpit's reads on his behalf", true);
     await p.ctx.close();
   }
 
@@ -351,7 +352,6 @@ try {
   ok("...the bus: four seats, ten named, one arriving by lift", /4 seats/.test(bus) && /10 named/.test(bus) && /1 arriving by lift/.test(bus), bus);
   ok("...and the lift as a head count: no driver, no boy's name beside it", !/Whitfield|Bekker|Fortuner/.test(bus + day), bus);
 
-  const side = await inner(c.page, "coach-side");
   const sideRows = await c.page.$$eval('[data-testid^="coach-side-"][data-state]', (els) => els.map((e) => ({ id: e.getAttribute("data-testid").replace("coach-side-", ""), state: e.getAttribute("data-state"), text: e.innerText })));
   ok("THE SIDE: ten named, in batting order", sideRows.length === 10 && sideRows[0].id === WHITFIELD, sideRows.length);
   ok("...Bekker reads restricted and the date he is back, nothing more", /restricted/.test(sideRows.find((r) => r.id === BEKKER)?.text ?? "") && /back 11 Oct/.test(sideRows.find((r) => r.id === BEKKER)?.text ?? ""), sideRows.find((r) => r.id === BEKKER)?.text);
@@ -446,14 +446,14 @@ try {
   await tid(c.page, "signal-seen-S7").click({ timeout: 4000 });
   await c.page.waitForTimeout(300);
   const after = await cards(c.page);
-  ok("Seen hides the card (S7), and the count falls by one", byRule(after, "S7").length === 0 && after.length === before - 1 && /Signals/.test(await inner(c.page, "signals-count")) === false || after.length === before - 1, `${after.length} v ${before}`);
+  ok("Seen hides the card (S7), and the count falls by one", byRule(after, "S7").length === 0 && after.length === before - 1 && Number(await inner(c.page, "signals-count")) === before - 1, `${after.length} v ${before}`);
   ok("...Show N I have seen brings it back, marked seen", await click(c.page, /^Show 1 I have seen/) && byRule(await cards(c.page), "S7")[0]?.seen === "yes");
   await c.page.keyboard.press("Escape");
   await c.page.reload({ waitUntil: "networkidle" });
   await c.page.waitForTimeout(2200);
   await openMatch(c.page, DAY); await coachTab(c.page); await openDrawer(c.page);
-  ok("...across a reload it stays seen (held on the device)", byRule(await cards(c.page), "S7")[0]?.seen === "yes" || byRule(await cards(c.page), "S7").length === 0);
-  ok("...and the database holds nothing of it", (await q(`select count(*)::int n from notification_read`))[0].n === 0 || true);
+  ok("...across a reload it is still hidden (held on the device)", byRule(await cards(c.page), "S7").length === 0 && await click(c.page, /^Show 1 I have seen/) && byRule(await cards(c.page), "S7")[0]?.seen === "yes");
+  ok("...and the database holds nothing of it: no notice marked read, no row written", (await q(`select count(*)::int n from notification_read`))[0].n === reads0);
   await c.page.keyboard.press("Escape");
   // Naidoo answers: the evidence changes, and the card comes back.
   await q(`insert into match_availability (match_id, player_id, school_id, status, declared_by) values ($1, $2, $3, 'available', $4)`, [DAY, NAIDOO, HIL, coachId]);
