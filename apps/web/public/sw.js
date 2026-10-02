@@ -21,8 +21,23 @@
  * scoring path does not read from the network anyway.
  */
 
-const CACHE = "scrbrd-shell-v1";
-const SHELL = "/index.html";
+// v2 (SCRBRD-142): the app moved to /app and / became the public home page.
+// A v1 worker still in charge when / first answered with the home page
+// stored THAT as its shell, so v1's cache is dropped on activate below and
+// the shell is fetched afresh from where the app now lives. "/app" is the
+// app's page on every server: Hosting rewrites it to /app.html, serveClient
+// and the dev server answer it with index.html.
+const CACHE = "scrbrd-shell-v2";
+const SHELL = "/app";
+/**
+ * The public home page (home.html, at / and /privacy). Not the app: never
+ * stored as the shell, and never answered from the cache while the network
+ * answers. Offline, a returning user — someone who has used the app on this
+ * device, since only the app registers this worker — gets the app's shell
+ * rather than the browser's error page: a scorer whose bookmark is / still
+ * reaches the pad with no signal. A stranger has no worker and never sees it.
+ */
+const HOME = new Set(["/", "/home.html", "/privacy", "/privacy/"]);
 
 self.addEventListener("install", (event) => {
   // Take over as soon as possible: a scorer who reloads should get the new
@@ -49,7 +64,15 @@ self.addEventListener("fetch", (event) => {
   // served by the API per fixture, and their bundle has a fixed name. Left to
   // the network, so a public page is never cached as the app's offline shell
   // below, and a stale public bundle is never served from cache.
-  if (/^\/(live|scorecard|table|fixtures)\//.test(url.pathname) || url.pathname === "/public-app.js") return;
+  // The ground display (/display/, SCRBRD-133) is one of them.
+  if (/^\/(live|scorecard|display|table|fixtures)\//.test(url.pathname) || url.pathname === "/public-app.js") return;
+
+  // The home page: the network's answer, never stored; offline, the app.
+  if (HOME.has(url.pathname)) {
+    if (request.mode !== "navigate") return;
+    event.respondWith(fetch(request).catch(async () => (await caches.match(SHELL)) ?? Response.error()));
+    return;
+  }
 
   // Navigations: network first, cached shell when offline.
   if (request.mode === "navigate") {

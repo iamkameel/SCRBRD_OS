@@ -365,7 +365,7 @@ try {
   // ── 5. Sign-up ──────────────────────────────────────────────────
   group("The sign-up flow says it is separate and off");
   const signup = await open();
-  await click(signup.page, /Get Started/, 5000);
+  await click(signup.page, /Create an account/, 5000);
   await click(signup.page, /^Continue/);
   await click(signup.page, /Parent \/ Guardian/);
   await signup.page.waitForTimeout(600);

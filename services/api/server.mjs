@@ -1020,6 +1020,9 @@ const MEDIA = {
   ".txt": "text/plain; charset=utf-8", ".webmanifest": "application/manifest+json",
 };
 
+/** The paths the public home page answers (firebase.json rewrites the same two). */
+const HOME_PATHS = new Set(["/", "/privacy", "/privacy/"]);
+
 /**
  * Serve one file out of CLIENT_DIR, or the app's index for a route the client
  * owns. Returns true when it answered.
@@ -1037,7 +1040,13 @@ async function serveClient(req, res, path) {
   const wanted = resolve(join(CLIENT_DIR, decodeURIComponent(path)));
   const inside = wanted === CLIENT_DIR || wanted.startsWith(CLIENT_DIR + sep);
   let file = inside ? wanted : null;
-  if (file) {
+  // The public home page (SCRBRD-142 §6.2): / and /privacy are home.html, the
+  // signed-out page with no app in it; the app is at /app (and every other
+  // client route), as before. A build without home.html falls through to the
+  // app's index rather than to nothing, so / is never a blank page.
+  if (HOME_PATHS.has(path) && (await stat(join(CLIENT_DIR, "home.html")).catch(() => null))) {
+    file = join(CLIENT_DIR, "home.html");
+  } else if (file) {
     const found = await stat(file).then((st) => (st.isDirectory() ? null : st)).catch(() => null);
     // A path the client routes rather than a file on disk: the app's own
     // index answers it and React reads the address. Never for /api, which
@@ -1051,7 +1060,7 @@ async function serveClient(req, res, path) {
   const type = MEDIA[extname(file).toLowerCase()] ?? "application/octet-stream";
   // The index must never be cached: it names the hashed asset files, and a
   // stale one points a returning browser at bundles that no longer exist.
-  const cache = file.endsWith("index.html")
+  const cache = file.endsWith(".html")
     ? "no-cache"
     : (path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache");
   res.writeHead(200, { "content-type": type, "cache-control": cache });

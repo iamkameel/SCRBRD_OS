@@ -1422,14 +1422,14 @@ try {
   }
 
   // ── Onboarding has a way out ─────────────────────────────────────
-  // A person who clicks "Get Started" by mistake, or who already has an
+  // A person who clicks "Create an account" by mistake, or who already has an
   // account, used to have no way back to the login screen from the welcome
   // step — the only exit was closing the tab. Caught after a live deployment
   // left someone stuck there.
   group("Landing on onboarding by mistake still reaches sign-in");
   {
     const s = await open();
-    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    await click(s.page, /Create an account/, 5000); await s.page.waitForTimeout(600);
     ok("the welcome step offers a way back", await click(s.page, /Sign in instead/, 4000));
     await s.page.waitForTimeout(500);
     ok("...and it is the login screen, not another dead end", await s.page.locator("#login-email").count() === 1);
@@ -1440,7 +1440,7 @@ try {
   group("A stranger onboards into a request; the office answers it; then he has a side");
   {
     const s = await open();
-    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    await click(s.page, /Create an account/, 5000); await s.page.waitForTimeout(600);
     await click(s.page, /Continue/, 4000);                                   // welcome
     // Choosing a role or a school now advances on its own — the pick IS the
     // intent, so there is no separate Continue press to make here anymore.
@@ -1496,7 +1496,7 @@ try {
   group("A parent names his child on the way in, and the office reads it");
   {
     const s = await open();
-    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    await click(s.page, /Create an account/, 5000); await s.page.waitForTimeout(600);
     await click(s.page, /Continue/, 4000);                                   // welcome
     await s.page.locator("button", { hasText: /Parent \/ Guardian/ }).first().click({ timeout: 4000 });
     await s.page.waitForTimeout(500);                                        // role auto-advances
@@ -1545,7 +1545,7 @@ try {
       if (failNext) { failNext = false; return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"try_again"}' }); }
       return route.continue();
     });
-    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    await click(s.page, /Create an account/, 5000); await s.page.waitForTimeout(600);
     await click(s.page, /Continue/, 4000);
     await s.page.locator("button", { hasText: /Head Coach/ }).first().click({ timeout: 4000 });
     await s.page.waitForTimeout(500);
@@ -1717,11 +1717,12 @@ try {
     await tid("sidebar-signout").click({ timeout: 4000 });
     await c.page.waitForTimeout(1200);
 
-    // The landing page, not a blank shell and not the dashboard.
-    ok("signing out lands on the landing page",
+    // The login screen (SCRBRD-142: the app's own landing page is gone; the
+    // public home page is at /), not a blank shell and not the dashboard.
+    ok("signing out leaves the shell",
        (await c.page.locator('[data-testid="os-main"]').count()) === 0);
-    ok("...which offers a way back in",
-       (await c.page.locator("button", { hasText: /Get Started|Log In/ }).count()) > 0);
+    ok("...for the login screen, a way back in",
+       (await c.page.locator("#login-email").count()) > 0);
 
     await c.page.reload({ waitUntil: "networkidle" });
     await c.page.waitForTimeout(1500);
@@ -1730,7 +1731,7 @@ try {
 
     // AND IT LET GO OF WHO THEY WERE, which is a different claim and the one
     // that needed checking. The reload assertion above passes either way: the
-    // saved appState is "landing" whether or not anything else was cleared, so
+    // saved appState is "login" whether or not anything else was cleared, so
     // it cannot tell a real sign-out from a cosmetic one — proved by putting
     // the bug back and watching all 286 assertions stay green.
     //
@@ -1764,6 +1765,10 @@ try {
   }
 
   // ── Nothing phones home until asked ───────────────────────────
+  // The switch itself lives on the public home page's footer since SCRBRD-142
+  // (tools/smoke-browser-home.mjs walks it: it sets this device's preference
+  // and starts nothing on that page). This is the app's half: the preference
+  // the switch writes is what the app's boot reads, and nothing else is.
   group("Analytics waits for consent");
   {
     const c = await open();
@@ -1771,14 +1776,24 @@ try {
     c.page.on("request", (r) => { // Firebase's own hosts, not Google's: the page fetches its typefaces from
     // fonts.googleapis.com on every visit, and that is a font, not analytics.
     if (/firebase[a-z]*\.googleapis\.com|firebaseapp\.com|google-analytics\.com|googletagmanager\.com/.test(r.url())) google.push(r.url()); });
+    /** The switch's write: lib/persist.js's store, key pref:analytics. @param {boolean} on */
+    const consent = (on) => c.page.evaluate((v) => new Promise((resolve, reject) => {
+      const r = indexedDB.open("scrbrd", 1);
+      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("kv")) r.result.createObjectStore("kv"); };
+      r.onerror = () => reject(r.error);
+      r.onsuccess = () => {
+        const t = r.result.transaction("kv", "readwrite");
+        t.objectStore("kv").put(v, "pref:analytics");
+        t.oncomplete = () => { r.result.close(); resolve(true); };
+        t.onerror = () => reject(t.error);
+      };
+    }), on);
     await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
-    ok("the landing page makes no Firebase or Google request", google.length === 0, google.slice(0, 3).join(" | "));
-    const sw = c.page.locator('[data-testid="analytics-consent"]');
-    ok("the switch is on the landing page, and off", (await sw.count()) === 1 && (await sw.getAttribute("aria-checked")) === "false");
-    await sw.click({ timeout: 4000 }); await c.page.waitForTimeout(2500);
-    ok("turning it on is what starts the SDK", google.length > 0, "no Firebase request after consent");
-    ok("...and the switch says on", (await sw.getAttribute("aria-checked")) === "true");
-    await sw.click({ timeout: 4000 }); await c.page.waitForTimeout(500);
+    ok("the app, on a device that never said yes, makes no Firebase or Google request", google.length === 0, google.slice(0, 3).join(" | "));
+    await consent(true);
+    await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(2500);
+    ok("said yes, the app's next boot is what starts the SDK", google.length > 0, "no Firebase request after consent");
+    await consent(false);
     const before = google.length;
     await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
     ok("off again, the next visit makes none", google.length === before, google.slice(before, before + 3).join(" | "));

@@ -55,6 +55,10 @@ const errors = [];
 const external = [];
 page.on("requestfailed", (r) => {
   const u = r.url();
+  // This walk runs no API. The login screen — the app's first screen since
+  // SCRBRD-142 — asks /api/health whether there is one and, refused, offers
+  // the demo: that refusal is the question being answered, not a fault.
+  if (/^https?:\/\/localhost(:\d+)?\/api\/health$/.test(u)) { external.push(`no API in this walk: ${u}`); return; }
   (/^https?:\/\/localhost/.test(u) ? errors : external).push(`requestfailed: ${u} (${r.failure()?.errorText})`);
 });
 page.on("console", (m) => {
@@ -67,13 +71,14 @@ page.on("pageerror", (e) => { errors.push(`pageerror: ${e.message}`); });
 
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
 
-// The landing page must actually paint something, not just mount an empty root.
+// The first screen (the login page) must actually paint something, not just
+// mount an empty root.
 const rootHtml = await page.$eval("#root", (el) => el.innerHTML.length);
 const text = await page.$eval("body", (el) => el.innerText);
 
 const checks = [
   ["root rendered content", rootHtml > 500],
-  ["landing copy present", /SCRBRD/i.test(text)],
+  ["first-screen copy present", /SCRBRD/i.test(text)],
   ["no console errors", errors.length === 0],
 ];
 
@@ -83,8 +88,11 @@ const checks = [
 // view actually renders — invisible to both the compiler and the test suite.
 const deep = [];
 try {
-  await page.locator("button", { hasText: /Get Started|Log In/ }).first().click({ timeout: 4000 });
-  await page.waitForTimeout(800);
+  // The app opens on the login screen (SCRBRD-142: / is the public home page
+  // now, and the app's own landing page is gone); a build from before it
+  // opened on a landing page with a Log In button.
+  const landing = page.locator("button", { hasText: /Get Started|Log In/ }).first();
+  if (await landing.count()) { await landing.click({ timeout: 4000 }); await page.waitForTimeout(800); }
 
   // The login screen offers demo accounts; picking one fills the form.
   await page.locator("button", { hasText: "Head Coach" }).first().click({ timeout: 4000 });

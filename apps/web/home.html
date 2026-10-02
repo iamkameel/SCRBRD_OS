@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en-ZA">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#05070a" />
+    <meta name="color-scheme" content="dark light" />
+    <!--
+      The public home page (SCRBRD-142 §6.2, D8): served at / and /privacy by
+      Hosting (firebase.json) and by serveClient (services/api/server.mjs).
+      A third Vite entry, on the public side of tools/check-bundle.mjs's line:
+      no scorer, no API client, no Firebase, no service worker.
+
+      NO robots meta, on purpose (D4, PUBLIC_DATA rule 7 as amended): the
+      front door may be indexed; it names no child. Every match page it links
+      to stays noindex and is linked with rel="nofollow".
+
+      The Open Graph lines are static and name no match (§10 note 5): a shared
+      link to / previews the product, never a fixture.
+
+      The theme boot is index.html's, line for line (public.test.mjs holds it).
+    -->
+    <meta name="description" content="SCRBRD — scoring, live pages and records for school cricket in South Africa." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SCRBRD — the cricket OS for schools" />
+    <meta property="og:description" content="Scoring that works with no signal, a live page for families, and children's data kept as the school decides." />
+    <script>
+      (function () {
+        var t = "floodlit", m;
+        try {
+          var p = localStorage.getItem("scrbrd:theme");
+          if (p === "daylight" || p === "floodlit") t = p;
+          else if (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) t = "daylight";
+        } catch (e) {
+          try { if (matchMedia("(prefers-color-scheme: light)").matches) t = "daylight"; } catch (e2) { /* floodlit */ }
+        }
+        var d = document.documentElement, bg = t === "daylight" ? "#eef0ea" : "#05070a";
+        d.setAttribute("data-theme", t);
+        d.style.colorScheme = t === "daylight" ? "light" : "dark";
+        d.style.background = bg;
+        m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute("content", bg);
+      })();
+    </script>
+    <title>SCRBRD — the cricket OS for schools</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <!--
+      Never a blank page: what is inside #root shows until the bundle mounts
+      over it, and stays if the script never runs — a name and the way in.
+    -->
+    <div id="root">
+      <div data-testid="home-static" style="font-family:'DM Sans',system-ui,sans-serif;padding:18px 16px;display:flex;align-items:center;gap:12px">
+        <strong style="font-family:'Syne',system-ui,sans-serif;letter-spacing:0.04em">SCRBRD</strong>
+        <a href="/app" style="margin-left:auto;color:inherit">Log in</a>
+      </div>
+    </div>
+    <script type="module" src="/src/home/main.jsx"></script>
+  </body>
+</html>

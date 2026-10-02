@@ -13,6 +13,7 @@ const SUITES = [
   ["laws-spec","packages/scoring/test/laws-spec.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
+  ["home-routing","apps/web/test/home-routing.test.mjs"],
   ["teams",    "packages/policy/test/teams.test.mjs"],
   ["sa-id",    "packages/policy/test/sa-id.test.mjs"],
   ["dob",      "packages/policy/test/date-of-birth.test.mjs"],

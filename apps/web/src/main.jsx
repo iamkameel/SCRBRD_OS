@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import SCRBRD_OS from "./App.jsx";
 // Analytics starts only on a device that said yes — see lib/firebase.js for
-// what it does and does not collect, and the landing page for the switch.
+// what it does and does not collect; the switch is in the home page's footer.
 import { startAnalyticsIfConsented } from "./lib/firebase.js";
 startAnalyticsIfConsented();
 

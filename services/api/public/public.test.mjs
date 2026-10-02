@@ -708,6 +708,13 @@ console.log("\n── The shell ──");
   const boot = index.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1] ?? "";
   const norm = (/** @type {string} */ s) => s.replace(/\s+/g, " ").trim();
   ok("the shell's theme boot is index.html's, line for line", norm(boot) === norm(THEME_BOOT));
+  // SCRBRD-142: the home page paints before its bundle the same way, and is
+  // the one public page with no robots meta (D4: it may be indexed).
+  const home = readFileSync(join(ROOT, "apps", "web", "home.html"), "utf8");
+  ok("home.html's theme boot is index.html's, line for line",
+     norm(home.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1] ?? "") === norm(THEME_BOOT));
+  ok("home.html carries no robots meta (D4) and names no match in its preview",
+     !/name="robots"/.test(home) && /og:title" content="SCRBRD/.test(home));
   const html = shellHtml({ view: "live", matchId: M1, header: { homeLabel: "<script>x</script>", awayLabel: "A\"B", scores: [] } });
   ok("a team name is escaped in the shell", !html.includes("<script>x</script>") && html.includes("&lt;script&gt;") && html.includes("A&quot;B"));
 }

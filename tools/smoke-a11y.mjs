@@ -757,10 +757,16 @@ async function walk(theme) {
     const tapProbe = await smallTargets(page);
     await page.evaluate(() => document.body.lastElementChild.remove());
     ok("...and the tap floor sees a 30px key, not a hidden one", tapProbe.some((t) => /probe key/.test(t)) && !tapProbe.some((t) => /hidden/.test(t)), tapProbe.join(" · "));
+    // "landing" is the public home page since SCRBRD-142 (home.html, at / in
+    // production; this walk's server answers / with the app, so it is asked
+    // for by name). The app's own first screen is the login page.
+    await page.goto(`http://localhost:${PORT}/home.html`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(400);
     await measure(page, theme, "landing");
     let unnamed = await unnamedControls();
-    ok("every control on the landing page has a name", unnamed.length === 0, unnamed.slice(0, 4).join(", "));
+    ok("every control on the home page has a name", unnamed.length === 0, unnamed.slice(0, 4).join(", "));
 
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
     await click(/Get Started|Log In/, 5000);
     await page.waitForTimeout(700);
     await measure(page, theme, "login");

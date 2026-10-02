@@ -69,7 +69,7 @@
         const until = body.expiresAt ? new Date(body.expiresAt).toLocaleString() : "24 hours from now";
         box.className = "ok";
         box.innerHTML = `Sign in with this code, valid until <strong>${until}</strong>:<div class="code">${body.code}</div>` +
-          `<a class="back" href="/">Go to sign in →</a>`;
+          `<a class="back" href="/app">Go to sign in →</a>`;
       } else {
         box.className = "err";
         box.textContent = res.status === 501 ? "Recovery is not configured on this server (OWNER_RECOVERY_SECRET is unset)."
