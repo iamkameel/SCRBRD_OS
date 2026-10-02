@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The audit log, over HTTP (SCRBRD-132 B2, db/79).
+ * The audit log, over HTTP (SCRBRD-132 B2, db/79 and db/80).
  *
  * GET /api/read/audit_log is Management's "Audit log" tab, and audit_log()
  * decides everything behind it. What this walk proves, through the server
@@ -20,6 +20,12 @@
  *      kind filter narrows to that kind
  *   7. a malformed filter is refused in words the client can act on (400);
  *      no session, no log
+ *   8. a role GRANTED is on it too (db/80): who granted it, whose, which —
+ *      the same `role` kind as an ending, keyed role:<id>:granted beside the
+ *      ending's role:<id>; a pupil's grant in initials; a seeded grant with
+ *      no actor; a support hour listed once, as support, never as a grant;
+ *      and the DSO (audit.read without the office's key) reads only his own
+ *      grant, as role_assignment's own policy would let him
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-audit-log.mjs
@@ -101,7 +107,7 @@ try {
   ok("the office reads the audit log", first.status === 200 && rows.length > 0, first.body);
   ok("...newest first", rows.every((r, i) => i === 0 || rows[i - 1].at >= r.at), rows.map((r) => r.at));
   ok("...Hilton's rows only", rows.every((r) => r.school_id === HIL), rows.map((r) => r.school_id));
-  const role = rows.find((r) => r.kind === "role" && r.subject === "E Auditcoach");
+  const role = rows.find((r) => r.kind === "role" && r.subject === "E Auditcoach" && r.key === `role:${made.body?.assignmentId}`);
   ok("the ended role is on it: who, whose, which", role?.action === "Ended a role: Coach (U15A)" && role?.actor === "B Naicker", role);
   ok("...and not why", !JSON.stringify(first.body).includes("walk's term"), role);
 
@@ -150,6 +156,38 @@ try {
      && onlyRoles.body.rows.every((r) => r.kind === "role"), onlyRoles.body);
   const future = await log(office, `?since=${encodeURIComponent(new Date(Date.now() + 86400000).toISOString())}`);
   ok("a date filter after today reads nothing", future.status === 200 && (future.body?.rows ?? []).length === 0, future.body);
+
+  group("A role granted is on it too (db/80)");
+  // His player role, as a seed or a migration makes one: nobody's act.
+  const [boyRole] = await q(`insert into role_assignment (person_id, role, school_id, team_code, valid_from)
+                             values ($1, 'player', $2, 'U15A', current_date) returning id`, [pupilUser.id, HIL]);
+  // An hour of support at Hilton: an assignment, and the support row it is.
+  const sup = await api("/api/support/access", { method: "POST", token: platform,
+    body: { schoolId: HIL, role: "schooladmin", reason: "audit walk: is a support hour listed once?" } });
+  ok("the platform opens a support hour at Hilton", sup.status === 200 && !!sup.body?.id, sup.body);
+  const [supRow] = await q(`select assignment_id from support_access where id = $1`, [sup.body?.id]);
+  const roleRows = (await log(office, "?kinds=role,support&limit=200")).body?.rows ?? [];
+  const granted = roleRows.find((r) => r.key === `role:${made.body?.assignmentId}:granted`);
+  ok("the coach's grant is on it: who, whose, which",
+     granted?.kind === "role" && granted?.action === "Granted a role: Coach (U15A)" && granted?.actor === "B Naicker"
+     && granted?.subject === "E Auditcoach" && granted?.subjectKind === "person", granted);
+  ok("...its detail is the role and the side, nothing else",
+     JSON.stringify(granted?.detail) === JSON.stringify({ role: "coach", team: "U15A" }), granted?.detail);
+  ok("...beside its ending, under the ending's own key",
+     roleRows.some((r) => r.key === `role:${made.body?.assignmentId}` && r.action === "Ended a role: Coach (U15A)"));
+  const boyGrant = roleRows.find((r) => r.key === `role:${boyRole.id}:granted`);
+  ok("a pupil's grant names him by initials, and nobody granted it",
+     boyGrant?.subject === "W A Boy" && boyGrant?.actor === null && boyGrant?.action === "Granted a role: Player (U15A)", boyGrant);
+  ok("...his name nowhere whole", !JSON.stringify(roleRows).includes("Walkthrough Auditwalk"));
+  ok("the support hour is one support row", roleRows.filter((r) => r.key === `support:${sup.body?.id}:began`).length === 1,
+     roleRows.filter((r) => r.kind === "support").map((r) => r.key));
+  ok("...and never a grant", !roleRows.some((r) => r.key.startsWith(`role:${supRow?.assignment_id}`)), supRow);
+  await api(`/api/support/access/${sup.body?.id}/end`, { method: "POST", token: platform });
+  const dso = await login("dso@example.invalid");                 // dso, Hilton: audit.read, not the office's key
+  const dsoRows = (await log(dso, "?kinds=role&limit=200")).body?.rows ?? [];
+  const dsoGrants = dsoRows.filter((r) => r.key.endsWith(":granted"));
+  ok("the DSO reads his own grant and nobody else's", dsoGrants.length >= 1 && dsoGrants.every((r) => r.subject === "N Dube"),
+     dsoGrants.map((r) => `${r.subject}: ${r.action}`));
 
   group("Refusals");
   const badKind = await log(office, "?kinds=gossip");

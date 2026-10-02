@@ -3982,6 +3982,14 @@ The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/
     included, writes one `access_log` row (`audit_log`, the school asked about, the children its rows named).
     `GET /api/read/audit_log`; Management's Audit log tab (kind and date filters, Older entries; "Sign in to see the
     audit log" in the demonstration). db/99 §58, `smoke-audit-log`, the management browser walk's audit group.
+    **Roles granted too (2026-10-02, Kameel; Opus): db/80** re-emits `audit_log()` (md5-guarded over db/79's body,
+    which shipped and does not move) with `role_assignment` as a source: "Granted a role: <role> (<team>)", kind
+    `role` beside the endings, actor `created_by` (null for a seeded grant: "The system" on the tab), the person
+    masked by the same rule, detail `{role, team}`, key `role:<id>:granted` (an ending keeps `role:<id>`). Gated on
+    `audit.read` AND role_assignment's own reader (the person's own row, or `user.role.assign` over its school and
+    team; not under a pad credential), so the DSO sees only his own grant. A support hour's assignment is the
+    support row alone. A `dso` appointment is shown, as its ending already was: it is public (`dso_contacts()`, the
+    DSO register) and says nothing about a concern. db/99 §59, `smoke-audit-log`'s grant group, the management walk.
   - Injury routes: medical staff and coaches log; medical staff update, clear and refer.
   - A season-per-player read.
   - League invitation notices.
