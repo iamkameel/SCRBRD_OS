@@ -342,7 +342,7 @@ END $grants$;
 
 -- ── 4 · What this file promised, checked in the same paste ──────────
 -- The behaviour is asserted live in db/99 §58 and walked through the API by
--- tools/smoke-audit.mjs.
+-- tools/smoke-audit-log.mjs.
 DO $check$
 DECLARE f text; src text;
 BEGIN
