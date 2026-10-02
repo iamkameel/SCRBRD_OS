@@ -8,6 +8,25 @@ school-provided register." Added to Fable's list the same day: "security isn't c
 What this document reads from, by name, is in Appendix A. Opus builds from it; the lead
 numbers the migration, the `db/99` section and the phases at build.
 
+**Lead's review (Opus, 2026-10-02), before Kameel reads it.** Checked against the branch:
+`onboard_request()`, `decide_role_request()`, `login_code_issue()`/`_redeem()` and
+`public_schools()` are where Appendix A says; §2.3's issuer, audience and key URLs are
+Google's documented ones; the first-sign-in table (§3.3) never links on an email alone.
+**One correction, to §4.2–4.3:** "every policy denies" a school-less account is **not true
+today**. Fourteen tables are readable by *any signed-in account* (`app_user_id() IS NOT NULL`):
+`official`, `official_accreditation`, `season`, `sport`, `feature_flag`, `feature_grant`,
+`feature_suppression`, `load_unit`, `bowling_directive`, `clearance_requirement`,
+`clearance_kind_max_days`, `playing_condition_key`, `rulebook_clause`, `rulebook_clause_age`
+(db/08, db/32, db/56, db/60, db/61). Until now "signed in" meant "somebody a school enrolled";
+with open sign-up it means "anybody with a Google account". Most are reference data, but
+`official` holds umpires' **ID numbers, birthdays, emails and phones**. The API reads it only
+through `official_masked`, so nothing leaks today, but the row policy is the second layer and it
+would let a stranger's session read every row. So phase 1's migration also re-emits these
+policies as "signed in **and** holding a live assignment" (one helper, `app_enrolled()`,
+md5-guarded like db/77), and §4.3's `db/99` sweep is the proof: it would fail on exactly these
+tables without the fix. That is **D14** below. The other `app_user_id() IS NOT NULL` uses
+(db/63, db/69, db/70, db/75–77) sit beside an authority check and need no change.
+
 ---
 
 ## 0 · Summary, in plain words
@@ -529,6 +548,7 @@ The lead numbers the migration files, the `db/99` sections and the phases at bui
 | **D11** | Several Google accounts per person | **Allowed, from a signed-in session only** | being signed in is the proof; an email match is not |
 | **D12** | A changed Google email | **Not propagated** to `app_user.email`; the office updates on request | `app_user.email` is the office's record and `UNIQUE`; collisions are the office's to resolve |
 | **D13** | Firebase Auth behind the analytics consent switch? | **No**: a sign-in is the person's own act; the privacy notice carries the disclosure | gating the sign-in button behind an analytics switch confuses two different things |
+| **D14** | Tables any signed-in account may read today (14, incl. umpires' records) | **Narrow them to "signed in and holding a live assignment"** in phase 1's migration | open sign-up turns "signed in" into "anyone with Google"; the db/99 sweep proves the narrowing |
 
 ## 11 · Assumptions
 
