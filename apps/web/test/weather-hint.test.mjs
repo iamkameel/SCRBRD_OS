@@ -1,7 +1,7 @@
 // The client's weather hint (lib/weatherHint.js): our route only, the
 // position rounded before it leaves, the token as a bearer, and null on every
 // failure. A mocked fetch; nothing here reaches a network.
-import { getWeatherHint, WEATHER_CONDITIONS } from "../src/lib/weatherHint.js";
+import { getWeatherHint, roundedCoord, WEATHER_CONDITIONS } from "../src/lib/weatherHint.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { console.log(`${c ? "✓" : "✗"} ${n}${c || !d ? "" : `\n    ${typeof d === "string" ? d : JSON.stringify(d)}`}`); if (c) pass++; else fail++; };
@@ -21,6 +21,11 @@ ok("the vocabulary is the route's eight", WEATHER_CONDITIONS.join() === "sunny,p
 const odd = await getWeatherHint(-29.6, 30.4, deps(answer(200, { ...HINT, condition: "volcanic", temp_c: "hot", extra: "x" })));
 ok("an unknown condition is null and a non-number is null; nothing extra passes",
   odd?.condition === null && odd.temp_c === null && !("extra" in odd) && odd.attribution === "Weather by Google", odd);
+
+ok("a position near zero is \"0.00\", never \"-0.00\" (the server's rounding)", roundedCoord(-0.001) === "0.00" && roundedCoord(0.004) === "0.00");
+const nearZero = calls.length;
+await getWeatherHint(-0.001, 0.002, deps(answer(200, HINT)));
+ok("...in the request too", calls[nearZero].url === "https://api.test/api/weather/hint?lat=0.00&lon=0.00", calls[nearZero].url);
 
 console.log("\nB. Null, never a throw");
 const n = calls.length;

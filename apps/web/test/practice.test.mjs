@@ -47,7 +47,7 @@ globalThis.fetch = async (...a) => { fetched.push(String(a[0])); throw new Error
 const P = await import("../src/lib/practice.js");
 const store = await import("../src/lib/persist.js");
 const { PadSync } = await import("../src/lib/sync.js");
-const { getWeatherHint } = await import("../src/lib/weatherHint.js");
+const { getWeatherHint, roundedCoord } = await import("../src/lib/weatherHint.js");
 const { scorecardText, scorecardFileName } = await import("../src/lib/practiceExport.js");
 const {
   inningsStart, batters, bowler, ball, deriveInnings, newEventId, LOCAL_ONLY,
@@ -352,8 +352,109 @@ group("H. Weather: the scorer's own, and no service");
   const c = P.weatherChange({ condition: "rain", playable: false, innings: 1, balls: 45, note: "Rain stopped play", at: 1760000000000 });
   ok("a weather change carries the innings, the over and the ball", c.innings === 2 && c.over === 7 && c.ball === 3);
   ok("...in words", P.weatherChangeWords(c) === "Rain, not playable, Rain stopped play — 2nd innings, 7.3 overs", P.weatherChangeWords(c));
-  ok("getWeatherHint(lat, lon) returns null, and calls nothing", getWeatherHint(-29.5, 30.3) === null);
+  ok("signed out, getWeatherHint(lat, lon) resolves null, and calls nothing", (await getWeatherHint(-29.5, 30.3)) === null);
   ok("...and this suite made no request at all but the one it asked of the door", fetched.length === 1, fetched.join(","));
+}
+
+// ── H2 ───────────────────────────────────────────────────────────────
+group("H2. The weather hint: rounded coordinates only, and the fallback");
+{
+  const HINT = { condition: "overcast", temp_c: 18, humidity_pct: 70, wind_kph: 14, wind_dir: "SW", rain_chance_pct: 20,
+    observed_at: "2026-10-02T09:15:00.000Z", attribution: "Weather by Google" };
+  const sent = [];
+  const answers = (status, body) => async (url, init) => { sent.push({ url: String(url), init }); return { ok: status === 200, status, json: async () => body }; };
+  const via = (fetchImpl, more = {}) => (lat, lon) => getWeatherHint(lat, lon, { fetchImpl, base: "https://api.test", token: "tok", online: true, ...more });
+
+  // Rounding, end to end: what getWeatherHint puts in the one request.
+  const good = await P.fetchWeather(-29.54012, 30.28765, { get: via(answers(200, HINT)) });
+  ok("a good answer is ok, with the hint", good.status === "ok" && good.hint.temp_c === 18 && good.hint.attribution === "Weather by Google", good);
+  const u = new URL(sent[0].url);
+  ok("the position leaves rounded to two places: -29.54 and 30.29", u.searchParams.get("lat") === "-29.54" && u.searchParams.get("lon") === "30.29", sent[0].url);
+  ok("...and the query is those two things and nothing else", [...u.searchParams.keys()].sort().join() === "lat,lon" && u.pathname === "/api/weather/hint", sent[0].url);
+  ok("...no body, no name in the URL or the headers, only the bearer",
+    sent[0].init.body === undefined && sent[0].init.method === undefined && Object.keys(sent[0].init.headers).join() === "authorization"
+    && !/Hilton|Kearsney|Alpha|Bravo|Oval/.test(JSON.stringify(sent[0])), JSON.stringify(sent[0]));
+  const edge = [[-0.001, 0.004, "0.00", "0.00"], [-29.9951, 30.0051, "-30.00", "30.01"], [12.3, -7, "12.30", "-7.00"], [-29.6049, 30.3751, "-29.60", "30.38"]];
+  for (const [la, lo, wla, wlo] of edge) {
+    sent.length = 0;
+    await P.fetchWeather(la, lo, { get: via(answers(200, HINT)) });
+    const q = new URL(sent[0].url).searchParams;
+    ok(`${la}, ${lo} leaves as ${wla}, ${wlo}`, q.get("lat") === wla && q.get("lon") === wlo, sent[0].url);
+  }
+  ok("roundedCoord is the one rule", roundedCoord(-29.54012) === "-29.54" && roundedCoord(-0.0004) === "0.00" && roundedCoord(30.286) === "30.29" && roundedCoord(5) === "5.00");
+
+  // The fallback: every way it can go wrong is "unavailable", and none throws.
+  const down = { status: "unavailable" };
+  sent.length = 0;
+  ok("offline: unavailable, and nothing was asked", same(await P.fetchWeather(-29.5, 30.3, { get: via(answers(200, HINT), { online: false }) }), down) && sent.length === 0);
+  ok("signed out: unavailable, and nothing was asked", same(await P.fetchWeather(-29.5, 30.3, { get: via(answers(200, HINT), { token: null }) }), down) && sent.length === 0);
+  ok("the server's 503 (no key): unavailable", same(await P.fetchWeather(-29.5, 30.3, { get: via(answers(503, { error: "weather_unavailable" })) }), down));
+  ok("Google down (502): unavailable", same(await P.fetchWeather(-29.5, 30.3, { get: via(answers(502, { error: "weather_unavailable" })) }), down));
+  ok("a timeout: unavailable",
+    same(await P.fetchWeather(-29.5, 30.3, { get: via((url, init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted")))), { timeoutMs: 20 }) }), down));
+  ok("fetch throwing: unavailable", same(await P.fetchWeather(-29.5, 30.3, { get: via(async () => { throw new TypeError("Failed to fetch"); }) }), down));
+  ok("a getter that throws is still unavailable", same(await P.fetchWeather(-29.5, 30.3, { get: () => { throw new Error("boom"); } }), down));
+  ok("a getter that rejects is still unavailable", same(await P.fetchWeather(-29.5, 30.3, { get: () => Promise.reject(new Error("boom")) }), down));
+  ok("no position: unavailable, the getter not called", same(await P.fetchWeather(null, 30.3, { get: () => { throw new Error("called"); } }), down));
+  ok("the words are \"Weather unavailable\"", P.WEATHER_UNAVAILABLE === "Weather unavailable");
+
+  // The observation: the spec's fields, kept with the match.
+  const at = 1760000000000;
+  const obs = P.observationFromHint(HINT, at);
+  ok("an observation has conditions, temperature_c, wind_kph, precip_probability_pct, is_forecast, source, captured_at, edited_by_scorer",
+    obs.conditions === "overcast" && obs.temperature_c === 18 && obs.wind_kph === 14 && obs.precip_probability_pct === 20 && obs.humidity_pct === 70 && obs.wind_dir === "SW"
+    && obs.is_forecast === false && obs.source === "google_weather" && obs.captured_at === "2026-10-02T09:15:00.000Z" && obs.edited_by_scorer === false, obs);
+  ok("...captured_at is now when the provider gave no time", P.observationFromHint({ ...HINT, observed_at: null }, at).captured_at === new Date(at).toISOString());
+  const blank = P.blankDraft().weather;
+  const filled = P.applyHint(blank, HINT, at);
+  ok("a hint fills an empty weather, and a button the hint names is on", filled.condition === "overcast" && filled.observation.source === "google_weather", filled);
+  ok("...a condition with no button (storm) fills the observation and leaves the buttons clear", (() => { const w = P.applyHint(blank, { ...HINT, condition: "storm" }, at); return w.condition === null && w.observation.conditions === "storm"; })());
+  ok("...and a hint with no condition at all is kept for its numbers", (() => { const w = P.applyHint(blank, { ...HINT, condition: null }, at); return w.condition === null && w.observation.temperature_c === 18; })());
+  const over = P.chooseCondition(filled, "rain", at);
+  ok("the scorer overrides: his button, the numbers kept, edited_by_scorer true, still Google's",
+    over.condition === "rain" && over.observation.conditions === "rain" && over.observation.edited_by_scorer === true && over.observation.temperature_c === 18 && over.observation.source === "google_weather", over);
+  ok("...once edited it stays marked; choosing what the hint said is not an edit", P.chooseCondition(P.chooseCondition(filled, "rain", at), "overcast", at).observation.edited_by_scorer === true
+    && P.chooseCondition({ ...filled, condition: null }, "overcast", at).observation.edited_by_scorer === false);
+  const typed = P.chooseCondition(blank, "windy", at);
+  ok("a button alone is a manual observation: source manual, nothing else known, not edited", typed.condition === "windy" && typed.observation.source === "manual"
+    && typed.observation.temperature_c === null && typed.observation.edited_by_scorer === false && typed.observation.is_forecast === false, typed);
+  ok("...tapped again it is cleared, observation and all", (() => { const w = P.chooseCondition(typed, "windy", at); return w.condition === null && w.observation === null; })());
+  const late = P.applyHint(typed, HINT, at);
+  ok("a hint arriving after his button keeps his button, takes the numbers, and is marked edited where they differ",
+    late.condition === "windy" && late.observation.conditions === "windy" && late.observation.temperature_c === 18 && late.observation.source === "google_weather" && late.observation.edited_by_scorer === true, late);
+  ok("the earliest capture is kept: a second hint changes nothing", P.applyHint(filled, { ...HINT, temp_c: 5 }, at + 5000) === filled);
+  const cleared = P.chooseCondition(filled, "overcast", at);
+  ok("a hint-filled weather cleared by the scorer stays his: no second hint refills it", cleared.condition === null && cleared.observation.conditions === null && P.applyHint(cleared, HINT, at) === cleared);
+
+  // Kept with the match, and gone with it.
+  const wd = { ...draft, venue: { name: "Main Oval", lat: -29.54012, lon: 30.28765, accuracy_m: 20 }, weather: { ...filled, playable: true } };
+  const rec = P.practiceRecord(wd, "practice-h2a", at);
+  ok("the record keeps the observation as captured", same(rec.weather_observation, filled.observation));
+  ok("...and match_weather (db/08's shape) carries its numbers", rec.match_weather.condition === "overcast" && rec.match_weather.temp_c === 18 && rec.match_weather.wind_kph === 14
+    && rec.match_weather.rain_chance_pct === 20 && rec.match_weather.observed_at === "2026-10-02T09:15:00.000Z", rec.match_weather);
+  ok("...the keys of match_weather are unchanged", same(Object.keys(rec.match_weather).sort(), ["condition", "forecast", "humidity_pct", "observed_at", "playable", "rain_chance_pct", "temp_c", "wind_dir", "wind_kph"]));
+  ok("a match started with no weather has neither", (() => { const r = P.practiceRecord({ ...wd, weather: P.blankDraft().weather }, "practice-h2b", at); return r.weather_observation === null && r.match_weather === null; })());
+  ok("a draft saved before the observation existed still starts", (() => { const r = P.practiceRecord({ ...wd, weather: { condition: "rain", playable: true } }, "practice-h2c", at); return r.weather_observation === null && r.match_weather.condition === "rain"; })());
+  ok("a hint-only start (no button, a storm) is a record with that condition", (() => { const w = P.applyHint(blank, { ...HINT, condition: "storm" }, at); return P.practiceRecord({ ...wd, weather: w }, "practice-h2d", at).match_weather.condition === "storm"; })());
+  const chip = P.weatherChip(rec);
+  ok("the header chip: Overcast and 18°C, by Google", chip.words === "Overcast · 18°C" && chip.byGoogle === true, chip);
+  const afterChange = { ...rec, weather_changes: [P.weatherChange({ condition: "rain", playable: false, innings: 0, balls: 14, at })] };
+  ok("...after a weather change it is the change (the start's temperature is not carried over)", P.weatherChip(afterChange).words === "Rain · not playable" && P.weatherChip(afterChange).byGoogle === false, P.weatherChip(afterChange));
+  ok("...and no chip when nothing is recorded", P.weatherChip({ match_weather: null, weather_changes: [] }).words === null);
+  ok("the start in words, with the attribution", P.weatherStartWords(rec) === "Overcast, 18°C, wind 14 km/h SW, 20% chance of rain (Weather by Google)", P.weatherStartWords(rec));
+  ok("...and the scorecard carries it", /Weather at the start: Overcast, 18°C, wind 14 km\/h SW, 20% chance of rain \(Weather by Google\)/.test(scorecardText(rec, pad.log)));
+
+  // Deleting the match deletes its weather.
+  await P.savePractice(rec);
+  const keysWith = (await store.recordKeys("practice:")).filter((k) => k.includes("practice-h2a"));
+  ok("kept on the phone under the match's own key", keysWith.length >= 1 && (await P.loadPractice("practice-h2a"))?.weather_observation?.temperature_c === 18, keysWith.join());
+  await P.deletePractice("practice-h2a");
+  ok("deleting the match deletes its weather: no record, no key", (await P.loadPractice("practice-h2a")) === null && !(await store.recordKeys("practice:")).some((k) => k.includes("practice-h2a")));
+  await P.savePractice(P.practiceRecord(wd, "practice-h2e", at));
+  await P.saveDraft(wd);
+  await P.deleteAllPractice();
+  ok("delete all takes the weather and the draft that held it", (await P.loadPractice("practice-h2e")) === null && (await P.loadDraft()) === null);
+  ok("...and none of this reached the real network", fetched.length === 1, fetched.join(","));
 }
 
 // ── I ────────────────────────────────────────────────────────────────

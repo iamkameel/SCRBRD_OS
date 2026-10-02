@@ -17,6 +17,14 @@ import { apiBase, getToken } from "./api.js";
 export const WEATHER_CONDITIONS = Object.freeze(["sunny", "partly_cloudy", "overcast", "drizzle", "rain", "storm", "fog", "windy"]);
 export const HINT_TIMEOUT_MS = 6000;
 
+/**
+ * A coordinate as it leaves the device: two decimal places (about a kilometre),
+ * as text. `+ 0` turns -0 into 0 so -0.001 reads "0.00", as the server's own
+ * rounding does (services/api/weather/weather-api.mjs roundedPosition).
+ * @param {number} x
+ */
+export const roundedCoord = (x) => (Math.round(x * 100) / 100 + 0).toFixed(2);
+
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v) => (typeof v === "string" ? v : null);
 
@@ -42,7 +50,7 @@ export async function getWeatherHint(lat, lon, deps = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(`${base}/api/weather/hint?lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`, {
+    const res = await fetchImpl(`${base}/api/weather/hint?lat=${roundedCoord(lat)}&lon=${roundedCoord(lon)}`, {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",
       signal: ctl.signal,

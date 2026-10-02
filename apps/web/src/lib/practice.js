@@ -4,7 +4,10 @@
  * A match a scorer starts from the field with nothing set up: two typed teams
  * and two lists of names, scored on the real pad. Everything about it stays on
  * this phone. Phase 1 sends NOTHING to any server — not the sync engine, not
- * analytics, not error reporting — and a practice match is in no fixture list,
+ * analytics, not error reporting — with ONE exception: the weather hint asks
+ * our API for the weather at the phone's position, rounded to two decimal
+ * places, and sends nothing else (fetchWeather below; no name, no team, no
+ * detail of the match). A practice match is in no fixture list,
  * Match Centre, stat or table. Players are children, and a name is personal
  * information, so the only copy is the one on the scorer's device, labelled
  * as such on every screen and deletable in one action.
@@ -46,6 +49,7 @@ import {
   PRACTICE_ID_PREFIX, isPracticeId, putRecord, getRecord, deleteRecord, recordKeys, loadMatch, clearMatch,
 } from "./persist.js";
 import { foldPad } from "../scorer/penalty.js";
+import { getWeatherHint } from "./weatherHint.js";
 
 export { isPracticeId, PRACTICE_ID_PREFIX };
 
@@ -241,10 +245,15 @@ export function oversOf(v) {
   return Number.isInteger(n) && n >= 1 && n <= MAX_OVERS ? n : null;
 }
 
-// ── Weather: the scorer's own observation ────────────────────────────
+// ── Weather: the scorer's own observation, and a hint beside it ──────
 //
-// Six quick buttons; a clean place for a hint to come from later. Nothing
-// here calls a weather service.
+// Five quick buttons are the record. Once the phone has a position, a hint is
+// asked of OUR api (lib/weatherHint.js; the key is on the server, never here)
+// and, if it comes, it fills the observation in for the scorer to keep or
+// change. Only the position, rounded to two places, leaves the phone for it:
+// no name, no team, nothing of the match. It never blocks starting: offline,
+// slow, signed out or refused, the screen says WEATHER_UNAVAILABLE and the
+// buttons are all there is.
 
 export const WEATHER_CONDITIONS = Object.freeze([
   { id: "sunny", label: "Sunny" },
@@ -253,22 +262,157 @@ export const WEATHER_CONDITIONS = Object.freeze([
   { id: "rain", label: "Rain" },
   { id: "windy", label: "Windy" },
 ]);
-const conditionLabel = (id) => WEATHER_CONDITIONS.find((c) => c.id === id)?.label ?? null;
+/** Every condition the hint can name (weatherHint.js): the buttons' five, and three more. */
+const CONDITION_LABELS = Object.freeze({
+  ...Object.fromEntries(WEATHER_CONDITIONS.map((c) => [c.id, c.label])),
+  partly_cloudy: "Partly cloudy", storm: "Storm", fog: "Fog",
+});
+export const conditionLabel = (id) => (typeof id === "string" && Object.hasOwn(CONDITION_LABELS, id) ? CONDITION_LABELS[id] : null);
+const isButton = (id) => WEATHER_CONDITIONS.some((c) => c.id === id);
+
+export const WEATHER_UNAVAILABLE = "Weather unavailable";
+export const WEATHER_ATTRIBUTION = "Weather by Google";
+/** `source` of an observation that came from the hint; a typed one is "manual". */
+export const WEATHER_SOURCE = "google_weather";
 
 /**
- * The scorer's observation, in the shape of db/08's match_weather. Only what
- * the buttons say is filled; the rest is null, and `forecast` is never set
- * here — a forecast, when there is one, comes from a hint and is not stored.
- * @param {{condition: string | null, playable?: boolean | null, at?: number}} o
+ * Ask for the hint ONCE for a position. Never throws and never waits longer
+ * than getWeatherHint's own timeout; anything but a good answer is
+ * `unavailable`. `get` is injected by the test.
+ * @param {number} lat @param {number} lon
+ * @param {{get?: typeof getWeatherHint}} [o]
+ * @returns {Promise<{status: "ok", hint: NonNullable<Awaited<ReturnType<typeof getWeatherHint>>>} | {status: "unavailable"}>}
  */
-export function weatherRecord({ condition, playable = null, at = Date.now() }) {
+export async function fetchWeather(lat, lon, { get = getWeatherHint } = {}) {
+  if (typeof lat !== "number" || typeof lon !== "number") return { status: "unavailable" };
+  try {
+    const hint = await get(lat, lon);
+    return hint ? { status: "ok", hint } : { status: "unavailable" };
+  } catch { return { status: "unavailable" }; }
+}
+
+/**
+ * One observation, the spec's fields (pilot-match design section 5), as many
+ * as the route returns. `conditions` is one of the hint's eight ids or null;
+ * `is_forecast` is false because the route answers current conditions;
+ * `captured_at` is the provider's own time when it gave one.
+ * @param {NonNullable<Awaited<ReturnType<typeof getWeatherHint>>>} hint @param {number} [at]
+ */
+export function observationFromHint(hint, at = Date.now()) {
+  return {
+    conditions: hint.condition ?? null,
+    temperature_c: hint.temp_c ?? null,
+    humidity_pct: hint.humidity_pct ?? null,
+    wind_kph: hint.wind_kph ?? null,
+    wind_dir: hint.wind_dir ?? null,
+    precip_probability_pct: hint.rain_chance_pct ?? null,
+    is_forecast: false,
+    source: WEATHER_SOURCE,
+    attribution: hint.attribution || WEATHER_ATTRIBUTION,
+    captured_at: hint.observed_at ?? new Date(at).toISOString(),
+    edited_by_scorer: false,
+  };
+}
+
+/** What the scorer saw, typed with a button: no number, no provider. @param {string} conditions @param {number} [at] */
+export function manualObservation(conditions, at = Date.now()) {
+  return {
+    conditions, temperature_c: null, humidity_pct: null, wind_kph: null, wind_dir: null, precip_probability_pct: null,
+    is_forecast: false, source: "manual", attribution: null, captured_at: new Date(at).toISOString(), edited_by_scorer: false,
+  };
+}
+
+/**
+ * The scorer taps a button (or taps it again to clear): the draft's weather
+ * with that condition. Over a hint's reading it is an OVERRIDE: the numbers
+ * stay, `conditions` is the scorer's, and `edited_by_scorer` is true.
+ * @param {{condition: string | null, playable: boolean | null, observation?: any}} w @param {string | null} id @param {number} [at]
+ */
+export function chooseCondition(w, id, at = Date.now()) {
+  const cur = w.observation ?? null;
+  const next = w.condition === id ? null : id;
+  if (!cur || cur.source === "manual") return { ...w, condition: next, observation: next ? manualObservation(next, at) : null };
+  return { ...w, condition: next, observation: { ...cur, conditions: next, edited_by_scorer: next !== cur.conditions || cur.edited_by_scorer } };
+}
+
+/**
+ * The hint arrived. It fills in an empty weather, or sits under a button the
+ * scorer got to first (his button stays, the numbers are kept, and it is
+ * marked edited if he and the provider disagree). The EARLIEST capture is
+ * kept: a second hint changes nothing (spec section 5).
+ * @param {{condition: string | null, playable: boolean | null, observation?: any}} w
+ * @param {NonNullable<Awaited<ReturnType<typeof getWeatherHint>>>} hint @param {number} [at]
+ */
+export function applyHint(w, hint, at = Date.now()) {
+  const cur = w.observation ?? null;
+  if (cur && cur.source !== "manual") return w;
+  const obs = observationFromHint(hint, at);
+  const chosen = cur ? cur.conditions : w.condition;
+  if (chosen) return { ...w, observation: { ...obs, conditions: chosen, edited_by_scorer: chosen !== obs.conditions } };
+  return { ...w, condition: isButton(obs.conditions) ? obs.conditions : null, observation: obs };
+}
+
+/**
+ * The scorer's observation, in the shape of db/08's match_weather. Filled from
+ * the observation when there is one (temperature, humidity, wind, the chance
+ * of rain, the time it was taken).
+ * @param {{condition: string | null, playable?: boolean | null, at?: number, observation?: any}} o
+ */
+export function weatherRecord({ condition, playable = null, at = Date.now(), observation = null }) {
+  const o = observation;
   return {
     condition: condition ?? "not_recorded",
-    temp_c: null, humidity_pct: null, wind_kph: null, wind_dir: null, rain_chance_pct: null,
+    temp_c: o?.temperature_c ?? null, humidity_pct: o?.humidity_pct ?? null, wind_kph: o?.wind_kph ?? null,
+    wind_dir: o?.wind_dir ?? null, rain_chance_pct: o?.precip_probability_pct ?? null,
     forecast: null,
     playable: playable !== false,
-    observed_at: new Date(at).toISOString(),
+    observed_at: o?.captured_at ?? new Date(at).toISOString(),
   };
+}
+
+/**
+ * The words on the pad's header chip, from the record: the latest condition
+ * (the last weather change that named one, else the start), and the start's
+ * temperature when the start is what is shown. Null when nothing is recorded.
+ * @param {any} rec
+ */
+export function weatherChipWords(rec) {
+  const changes = [...(rec?.weather_changes ?? [])].reverse();
+  const last = changes.find((c) => c.condition);
+  const start = rec?.match_weather;
+  const id = last ? last.condition : start && start.condition !== "not_recorded" ? start.condition : null;
+  const bits = [];
+  if (id) bits.push(conditionLabel(id) ?? String(id));
+  if (!last && start?.temp_c != null) bits.push(`${start.temp_c}°C`);
+  const playable = changes.find((c) => c.playable != null)?.playable ?? start?.playable;
+  if (playable === false) bits.push("not playable");
+  return bits.length ? bits.join(" · ") : null;
+}
+
+/**
+ * The chip's props: its words, and whether they are Google's (the start's
+ * reading is on show, from the provider) so the chip carries the attribution.
+ * @param {any} rec
+ */
+export function weatherChip(rec) {
+  const words = weatherChipWords(rec);
+  const shownIsStart = !(rec?.weather_changes ?? []).some((c) => c.condition);
+  return { words, byGoogle: !!words && shownIsStart && rec?.weather_observation?.source === WEATHER_SOURCE };
+}
+
+/** "Overcast, 18°C, wind 14 km/h SW": the start's reading, for the sheet and the scorecard. @param {any} rec */
+export function weatherStartWords(rec) {
+  const w = rec?.match_weather;
+  if (!w) return null;
+  const bits = [conditionLabel(w.condition) ?? (w.condition === "not_recorded" ? null : w.condition)];
+  if (w.temp_c != null) bits.push(`${w.temp_c}°C`);
+  if (w.wind_kph != null) bits.push(`wind ${w.wind_kph} km/h${w.wind_dir ? ` ${w.wind_dir}` : ""}`);
+  if (w.rain_chance_pct != null) bits.push(`${w.rain_chance_pct}% chance of rain`);
+  if (w.playable === false) bits.push("not playable");
+  const out = bits.filter(Boolean).join(", ");
+  const src = rec?.weather_observation;
+  if (!out) return null;
+  return src?.source === WEATHER_SOURCE ? `${out} (${src.attribution || WEATHER_ATTRIBUTION}${src.edited_by_scorer ? ", condition changed by the scorer" : ""})` : out;
 }
 
 /**
@@ -305,7 +449,7 @@ const DRAFT_KEY = "practice:draft";
 export function blankDraft() {
   return {
     v: 1, step: 0, overs: 20, oversCustom: false, oversText: "20", venue: { name: "", lat: null, lon: null, accuracy_m: null },
-    weather: { condition: null, playable: true },
+    weather: { condition: null, playable: true, observation: null },
     captureProfile: "full",
     teams: [{ school: "", division: "", cls: "" }, { school: "", division: "", cls: "" }],
     squads: [[], []],
@@ -329,9 +473,8 @@ export async function clearDraft() { return deleteRecord(DRAFT_KEY); }
  * up after `timeoutMs`. Never throws; the answer says what happened, and the
  * scorer types the venue when it is anything but "ok".
  *
- * The position stays on the phone. It is not sent anywhere — the weather
- * hint (lib/weatherHint.js) is the only thing that may one day take it, and
- * only as rounded coordinates.
+ * The position stays on the phone. The weather hint (lib/weatherHint.js) is
+ * the only thing that takes it, and only as coordinates rounded to two places.
  *
  * @param {{timeoutMs?: number, geo?: Geolocation | null}} [o]
  * @returns {Promise<{status: "ok", lat: number, lon: number, accuracy_m: number | null} | {status: "denied" | "slow" | "unavailable" | "unsupported"}>}
@@ -417,7 +560,9 @@ export function practiceRecord(draft, id, now = Date.now()) {
   });
   const v = draft.venue ?? {};
   const hasPos = typeof v.lat === "number" && typeof v.lon === "number";
-  const w = draft.weather?.condition ? weatherRecord({ condition: draft.weather.condition, playable: draft.weather.playable, at: now }) : null;
+  const obs = draft.weather?.observation ?? null;
+  const wc = draft.weather?.condition ?? obs?.conditions ?? null;
+  const w = wc || obs ? weatherRecord({ condition: wc, playable: draft.weather.playable, at: now, observation: obs }) : null;
   return {
     v: 1, id, createdAt: now, updatedAt: now, status: "in_progress",
     match: {
@@ -431,6 +576,10 @@ export function practiceRecord(draft, id, now = Date.now()) {
     })),
     players, match_squad,
     match_weather: w,
+    // The observation as captured, with its source and whether the scorer
+    // changed it (pilot-match design section 5). It lives in this record and
+    // nowhere else, so deleting the match deletes it.
+    weather_observation: obs,
     weather_changes: [],
   };
 }

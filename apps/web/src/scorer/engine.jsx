@@ -27,8 +27,8 @@ import { loadMatch, saveMatch, saveAside, storageKind, isPracticeId } from "../l
 // lazy: the scorer's chunk is the one a phone has cached for a ground with no
 // signal, and a practice match is started from the field.
 import { PracticeSetup, PracticeList, PracticeWeatherSheet, withWeatherChange } from "./practice.jsx";
-import { PracticeLabel } from "./practiceLabel.jsx";
-import { clearDraft, inProgressPractice, loadPractice, savePractice, updatePractice, savedClock, cfgFromRecord } from "../lib/practice.js";
+import { PracticeLabel, PracticeWeatherChip } from "./practiceLabel.jsx";
+import { clearDraft, inProgressPractice, loadPractice, savePractice, updatePractice, savedClock, cfgFromRecord, weatherChip } from "../lib/practice.js";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
@@ -2279,6 +2279,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                 :chaseSlot?`${superOverTitle(innings[curIn-1].superOver)} · second innings`:`Innings ${curIn+1}`} · {inn?.overs??(chaseSlot?innings[curIn-1].overs:match?.overs)}ov{inn?.revised&&<span style={{color:T.semantic.warning}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}
             </div>
             {practiceMode&&<PracticeLabel compact saved={saveState.savedAt?savedClock(saveState.savedAt):null}/>}
+            {practiceMode&&<PracticeWeatherChip {...weatherChip(practice)}/>}
           </div>
           {showHandover&&(
             <button onClick={()=>setModal("handover")} className="pressBtn os-state" data-testid="open-handover"

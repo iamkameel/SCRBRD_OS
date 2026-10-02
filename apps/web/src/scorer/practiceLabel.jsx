@@ -22,3 +22,24 @@ export function PracticeLabel({ saved = null, compact = false }) {
     </p>
   );
 }
+
+/**
+ * The small weather chip in the practice pad's header: what the weather is
+ * now, in words ("Overcast · 18°C"), from the record (lib/practice.js
+ * weatherChipWords). Text only, not a control; nothing when none is recorded.
+ * Where the numbers are Google's, the chip says so (the provider's attribution).
+ * @param {{words: string | null, byGoogle?: boolean}} props
+ */
+export function PracticeWeatherChip({ words, byGoogle = false }) {
+  if (!words) return null;
+  return (
+    <p data-testid="practice-weather-chip" aria-label={`Weather: ${words}${byGoogle ? ". Weather by Google" : ""}`} style={{
+      margin: 0, display: "inline-flex", alignItems: "center", gap: T.space.xs, maxWidth: "100%",
+      fontFamily: T.type.body, fontSize: "12px", lineHeight: 1.3, fontWeight: 600, color: T.content.secondary,
+    }}>
+      <Icon name="cloud-sun"/>
+      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{words}</span>
+      {byGoogle && <span style={{ fontWeight: 400, whiteSpace: "nowrap" }}>· Weather by Google</span>}
+    </p>
+  );
+}

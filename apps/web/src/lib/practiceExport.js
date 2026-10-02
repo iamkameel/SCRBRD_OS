@@ -10,7 +10,7 @@
  */
 import { describeResult } from "@scrbrd/scoring";
 import { foldPad } from "../scorer/penalty.js";
-import { weatherChangeWords } from "./practice.js";
+import { weatherChangeWords, weatherStartWords } from "./practice.js";
 
 const ov = (b) => `${Math.floor(b / 6)}.${b % 6}`;
 const pad = (s, n) => String(s).padEnd(n);
@@ -42,8 +42,8 @@ export function scorecardText(meta, events) {
     const side = meta.match.toss.won_by === "away" ? away : home;
     out.push(`Toss: ${side} won and chose to ${meta.match.toss.decision}`);
   }
-  const w = meta?.match_weather;
-  if (w) out.push(`Weather at the start: ${w.condition}${w.playable === false ? ", not playable" : ""}`);
+  const w = weatherStartWords(meta);
+  if (w) out.push(`Weather at the start: ${w}`);
   for (const c of meta?.weather_changes ?? []) out.push(`Weather: ${weatherChangeWords(c)}`);
 
   innings.forEach((inn, idx) => {

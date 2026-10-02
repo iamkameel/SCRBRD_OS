@@ -5,13 +5,12 @@ import { CaptureProfilePicker, Sheet } from "./ui.jsx";
 import { OpeningSetupStep, TossStep } from "./setup.jsx";
 import { PracticeLabel } from "./practiceLabel.jsx";
 import {
-  CLASSES, DIVISIONS, MAX_OVERS, MAX_SQUAD, MIN_SQUAD, OVERS_PRESETS, WEATHER_CONDITIONS,
-  addNames, blankDraft, clearDraft, deleteAllPractice, deletePractice, isRepeated, lineUp, listPractice, loadDraft, loadPractice,
+  CLASSES, DIVISIONS, MAX_OVERS, MAX_SQUAD, MIN_SQUAD, OVERS_PRESETS, WEATHER_ATTRIBUTION, WEATHER_CONDITIONS, WEATHER_SOURCE, WEATHER_UNAVAILABLE,
+  addNames, applyHint, blankDraft, chooseCondition, conditionLabel, fetchWeather, clearDraft, deleteAllPractice, deletePractice, isRepeated, lineUp, listPractice, loadDraft, loadPractice,
   locate, moveAt, newPracticeId, oversOf, parseSquadText, practiceCfg, practiceRecord, removeAt, saveDraft, savedWords,
-  sharedNames, sameTeam, practiceTeamName, teamProblems, toggleTwelfth, validateSquad, weatherChange, weatherChangeWords, weatherRecord,
+  sharedNames, sameTeam, practiceTeamName, teamProblems, toggleTwelfth, validateSquad, weatherChange, weatherChangeWords, weatherRecord, weatherStartWords,
   withoutDuplicates,
 } from "../lib/practice.js";
-import { getWeatherHint } from "../lib/weatherHint.js";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { loadMatch } from "../lib/persist.js";
 
@@ -145,6 +144,16 @@ function PracticePage({ title, sub, onBack, backLabel = "Back", saved = null, ch
 
 const STEP_TITLES = ["The match", "The teams", "First squad", "Second squad", "The toss", "Openers and bowler"];
 
+/** "Overcast, 18°C, wind 14 km/h SW, 15% chance of rain": what the hint read, in words. @param {any} o */
+function observationWords(o) {
+  return [
+    conditionLabel(o.conditions) ?? "Conditions not given",
+    o.temperature_c != null ? `${o.temperature_c}°C` : null,
+    o.wind_kph != null ? `wind ${o.wind_kph} km/h${o.wind_dir ? ` ${o.wind_dir}` : ""}` : null,
+    o.precip_probability_pct != null ? `${o.precip_probability_pct}% chance of rain` : null,
+  ].filter(Boolean).join(", ");
+}
+
 const hasContent = (d) =>
   d.step > 0 || !!d.venue?.name || d.venue?.lat != null || !!d.weather?.condition
   || d.teams.some((t) => t.school.trim() || t.division || t.cls) || d.squads.some((s) => s.length > 0);
@@ -166,7 +175,10 @@ export function PracticeSetup({ onStart, onCancel }) {
   const [ready, setReady] = useState(false);
   const [picked, setPicked] = useState(false);
   const [geo, setGeo] = useState({ status: "idle" });
-  const [hint, setHint] = useState(null);
+  // The weather hint: idle (no position yet), loading, ok, or unavailable. It
+  // never stands between the scorer and Next.
+  const [wx, setWx] = useState(/** @type {"idle" | "loading" | "ok" | "unavailable"} */ ("idle"));
+  const [wxTry, setWxTry] = useState(0);
   const [paste, setPaste] = useState(["", ""]);
   const started = useRef(false);
   const mounted = useRef(true);
@@ -192,12 +204,24 @@ export function PracticeSetup({ onStart, onCancel }) {
 
   const names = draft.teams.map(practiceTeamName);
   const lat = draft.venue?.lat, lon = draft.venue?.lon;
+  // Fetched once a position exists (and again only for "Try again"): the
+  // position, rounded to two places, is all that leaves the phone. A capture
+  // already kept in the draft is not asked for twice.
+  const observation = draft.weather?.observation ?? null;
+  const haveHint = useRef(false);
+  haveHint.current = observation?.source === WEATHER_SOURCE;
   useEffect(() => {
     let off = false;
-    if (typeof lat !== "number" || typeof lon !== "number") { setHint(null); return undefined; }
-    Promise.resolve().then(() => getWeatherHint(lat, lon)).then((h) => { if (!off) setHint(h ?? null); }).catch(() => { if (!off) setHint(null); });
+    if (!ready || typeof lat !== "number" || typeof lon !== "number") { setWx("idle"); return undefined; }
+    if (haveHint.current) { setWx("ok"); return undefined; }
+    setWx("loading");
+    fetchWeather(lat, lon).then((r) => {
+      if (off) return;
+      if (r.status === "ok") setDraft((d) => ({ ...d, weather: applyHint(d.weather, r.hint) }));
+      setWx(r.status);
+    });
     return () => { off = true; };
-  }, [lat, lon]);
+  }, [ready, lat, lon, wxTry]);
 
   const findMe = async () => {
     if (geo.status === "finding") return;
@@ -294,14 +318,25 @@ export function PracticeSetup({ onStart, onCancel }) {
             <div role="group" aria-labelledby="pm-weather" style={{ display: "flex", flexWrap: "wrap", gap: T.space.sm }}>
               {WEATHER_CONDITIONS.map((c) => (
                 <Pick key={c.id} pressed testid={`practice-weather-${c.id}`} on={draft.weather.condition === c.id}
-                  onClick={() => up({ weather: { ...draft.weather, condition: draft.weather.condition === c.id ? null : c.id } })}>{c.label}</Pick>
+                  onClick={() => up({ weather: chooseCondition(draft.weather, c.id) })}>{c.label}</Pick>
               ))}
             </div>
             <div role="group" aria-label="Playable or not" style={{ display: "flex", flexWrap: "wrap", gap: T.space.sm }}>
               <Pick pressed testid="practice-playable" on={draft.weather.playable !== false} onClick={() => up({ weather: { ...draft.weather, playable: true } })}>Playable</Pick>
               <Pick pressed testid="practice-not-playable" on={draft.weather.playable === false} onClick={() => up({ weather: { ...draft.weather, playable: false } })}>Not playable</Pick>
             </div>
-            {hint && <p data-testid="practice-weather-hint" style={S.note("ok")}>{`${hint.condition ?? "Hint"}${hint.temp_c != null ? `, ${hint.temp_c}°C` : ""} · ${hint.attribution}`}</p>}
+            {wx === "loading" && <p role="status" data-testid="practice-weather-loading" style={S.note("ok")}>Checking the weather…</p>}
+            {wx === "unavailable" && (
+              <div data-testid="practice-weather-unavailable" style={{ display: "grid", gap: T.space.sm }}>
+                <p role="status" style={S.note("bad")}>{WEATHER_UNAVAILABLE}. Tap what you can see instead.</p>
+                <button type="button" className="pressBtn" style={S.secondary()} data-testid="practice-weather-retry" onClick={() => setWxTry((n) => n + 1)}>Try the weather again</button>
+              </div>
+            )}
+            {observation?.source === WEATHER_SOURCE && (
+              <p data-testid="practice-weather-hint" style={S.note("ok")}>
+                {`${observationWords(observation)} · ${observation.attribution || WEATHER_ATTRIBUTION}${observation.edited_by_scorer ? ". The condition is yours." : ""}`}
+              </p>
+            )}
           </section>
 
           <section style={S.card()}>
@@ -570,7 +605,7 @@ export function PracticeWeatherSheet({ record, innings, balls, position, onSave,
   useEffect(() => {
     let off = false;
     if (typeof lat !== "number" || typeof lon !== "number") return undefined;
-    Promise.resolve().then(() => getWeatherHint(lat, lon)).then((h) => { if (!off) setHint(h ?? null); }).catch(() => {});
+    fetchWeather(lat, lon).then((r) => { if (!off && r.status === "ok") setHint(r.hint); });
     return () => { off = true; };
   }, [lat, lon]);
   const changes = record?.weather_changes ?? [];
@@ -595,13 +630,13 @@ export function PracticeWeatherSheet({ record, innings, balls, position, onSave,
           <input value={note} onChange={(e) => setNote(e.target.value.slice(0, 140))} data-testid="pw-note" aria-label="Weather note" autoComplete="off"
             placeholder="Rain stopped play" style={S.field()}/>
         </Field>
-        {hint && <p data-testid="practice-weather-hint" style={S.note("ok")}>{`${hint.condition ?? "Hint"} · ${hint.attribution}`}</p>}
+        {hint && <p data-testid="practice-weather-hint" style={S.note("ok")}>{`Now: ${observationWords({ conditions: hint.condition, temperature_c: hint.temp_c, wind_kph: hint.wind_kph, wind_dir: hint.wind_dir, precip_probability_pct: hint.rain_chance_pct })} · ${hint.attribution}`}</p>}
         <button type="button" className="pressBtn" style={S.primary(can)} disabled={!can} data-testid="pw-save"
           onClick={() => onSave(weatherChange({ condition, playable, innings, balls, note }))}>Record this weather change</button>
         {(start || changes.length > 0) && (
           <div data-testid="pw-history" style={{ display: "grid", gap: T.space.xs }}>
             <h3 style={S.label()}>So far</h3>
-            {start && <p style={S.body()}>{`At the start: ${WEATHER_CONDITIONS.find((c) => c.id === start.condition)?.label ?? start.condition}${start.playable === false ? ", not playable" : ""}`}</p>}
+            {start && <p data-testid="pw-start" style={S.body()}>{`At the start: ${weatherStartWords(record) ?? "not recorded"}`}</p>}
             {changes.map((c) => <p key={c.id} style={S.body()}>{weatherChangeWords(c)}</p>)}
           </div>
         )}
