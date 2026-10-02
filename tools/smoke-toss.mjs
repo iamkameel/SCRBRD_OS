@@ -207,7 +207,11 @@ try {
   // dls_resource_table and dls_resource (db/75, SCRBRD-130 R2) are the DLS
   // table: read and written only through db/75's operator functions and
   // dls_table_for_match(), whose cells no route returns (design D6).
-  const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource"]);
+  // auth_identity and pending_claim (db/81, SCRBRD-140) are login_code's
+  // shape for Google sign-in: read and written only through db/81's
+  // functions, the provider's uid never returned to anybody.
+  const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
+                                          "auth_identity", "pending_claim"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c
