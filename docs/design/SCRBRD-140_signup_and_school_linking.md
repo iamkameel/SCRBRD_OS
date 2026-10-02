@@ -34,8 +34,9 @@ numbers the migration, the `db/99` section and the phases at build.
 - **The office code stays** — for anyone without Google (many pupils, the under-thirteens Google
   will not sign up), as the way to claim an enrolled account, and as recovery.
 - **Microsoft and email-link sign-in come later**, in that order, through the same exchange.
-- **One new table** (`auth_identity`), one new route (`POST /api/auth/firebase`), five
-  `SECURITY DEFINER` functions, no new role, no policy change, no change to the token, the
+- **Three small tables** (`auth_identity`, `pending_claim`; in phase 2 `school_register`), one
+  new route (`POST /api/auth/firebase`), a handful of `SECURITY DEFINER` functions in
+  `login_code`'s no-policy shape, no new role, no policy change, no change to the token, the
   pad's resume credential or the support session.
 
 ---
