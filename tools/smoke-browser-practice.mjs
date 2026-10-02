@@ -140,6 +140,18 @@ const phone = () => page.evaluate(async () => {
   return out;
 });
 
+/** From the shell to the scorer's start screen, at 390. */
+const openScorer = async () => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.waitForTimeout(300);
+  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await page.waitForTimeout(1200);
+  await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
+  await page.waitForTimeout(1800);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+};
+
 /** Basic Scoring, from the pad's menu: the one-tap keys. */
 const ensureBasic = async () => {
   if (await has("basic-pad")) return true;
@@ -171,12 +183,7 @@ try {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await page.waitForTimeout(2200);
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
-  await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1800);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(400);
+  await openScorer();
   ok("the scorer's start screen offers Start Practice Match", await has("start-practice"), (await text()).slice(0, 300));
   ok("...and the list of practice matches", await has("practice-list-open"));
   ok("...and nothing to resume yet", !(await has("practice-resume-card")));
@@ -200,27 +207,39 @@ try {
   ok("a preset puts it back", (await tid("practice-overs-40").getAttribute("aria-checked")) === "true" && (await tid("practice-overs-custom").getAttribute("aria-checked")) === "false");
   await tap("practice-overs-20");
 
-  // The location: one request per tap. Allowed first, then taken away.
+  // The location: one request per tap. Refused first (nothing granted), then
+  // allowed after a reload — which also proves the setup was kept: the draft.
   let asked = 0;
   await page.exposeFunction("__geoAsked", () => { asked++; });
-  await page.evaluate(() => {
+  const watchGeo = () => page.evaluate(() => {
+    if (window.__geoWatched) return;
+    window.__geoWatched = true;
     const real = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
     navigator.geolocation.getCurrentPosition = (...a) => { window.__geoAsked(); return real(...a); };
   });
-  await ctx.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await ctx.setGeolocation({ latitude: -29.54012, longitude: 30.28765, accuracy: 20 });
-  await tap("practice-locate");
-  await page.waitForFunction(() => /Position kept/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
-  ok("allowed: the position is kept on the phone, from one request", /Position kept on this phone \(about 20 m\)/.test(await text()) && asked === 1, `${asked} ${(await text()).slice(0, 300)}`);
-  await ctx.clearPermissions();
-  const cdp = await ctx.newCDPSession(page);
-  await cdp.send("Browser.setPermission", { permission: { name: "geolocation" }, setting: "denied", origin: ORIGIN }).catch(() => {});
+  await watchGeo();
+  await tid("practice-venue").fill(VENUE);
+  ok("the venue is typed", (await tid("practice-venue").inputValue()) === VENUE);
   await tap("practice-locate");
   await page.waitForFunction(() => /Type the venue instead/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
-  ok("then refused: the scorer is told to type the venue instead, and can", /Type the venue instead/.test(await text()), (await text()).slice(0, 400));
-  ok("...it was asked once for that tap too", asked === 2, asked);
-  await tid("practice-venue").fill(VENUE);
-  ok("the venue is typed beside it", (await tid("practice-venue").inputValue()) === VENUE);
+  ok("with the location refused, the scorer is told to type the venue instead, and has", /Type the venue instead/.test(await text()), (await text()).slice(0, 400));
+  ok("...it was asked once for that tap", asked === 1, asked);
+  await tap("practice-overs-30");
+
+  await ctx.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await ctx.setGeolocation({ latitude: -29.54012, longitude: 30.28765, accuracy: 20 });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForTimeout(2200);
+  await openScorer();
+  await tap("start-practice");
+  ok("a reload mid-setup: the draft is picked up where it was left, and says so", (await has("practice-draft-note")) && (await tid("practice-venue").inputValue()) === VENUE
+    && (await tid("practice-overs-30").getAttribute("aria-checked")) === "true", (await text()).slice(0, 300));
+  await watchGeo();
+  await tap("practice-locate");
+  await page.waitForFunction(() => /Position kept/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+  ok("allowed: the position is kept on the phone, from one more request", /Position kept on this phone \(about 20 m\)/.test(await text()) && asked === 2, `${asked} ${(await text()).slice(0, 300)}`);
+  await tap("practice-overs-20");
+  ok("20 overs again", (await tid("practice-overs-20").getAttribute("aria-checked")) === "true");
 
   await tap("practice-weather-overcast");
   ok("the weather buttons: Sunny, Overcast, Drizzle, Rain, Windy and Playable or not",
