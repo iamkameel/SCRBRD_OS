@@ -3528,6 +3528,108 @@ BEGIN
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/80 (section 59) ──────────────────────────────────────────────
+-- ┌── db/81 (section 60): sign-up with Google, an account with no school (SCRBRD-140) ──
+-- Its own world, as the owner: Hilton's and Westville's offices, the
+-- platform, an owner's key, a parent with one verified link, three pupils
+-- (a minor whose family has not consented, a minor whose family has, and one
+-- of eighteen whose has not), an inactive account and a departed teacher
+-- whose only role has ended. Every child invented; every date explicit.
+CREATE OR REPLACE FUNCTION _seed_81() RETURNS jsonb AS $$
+DECLARE
+  HIL  uuid := '11111111-1111-1111-1111-111111111111';
+  WES  uuid := '22222222-2222-2222-2222-222222222222';
+  ids  jsonb := '{}'::jsonb;
+  r    record;
+  v_u  uuid;
+  v_a  uuid;
+  v_p  uuid;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('office', 'schooladmin',   HIL),
+      ('wes',    'schooladmin',   WES),
+      ('plat',   'platformadmin', NULL::uuid),
+      ('own',    'superadmin',    NULL::uuid),
+      ('ownhil', 'superadmin',    NULL::uuid),
+      ('parent', 'guardian',      HIL),
+      ('ended',  'coach',         HIL)) AS v(k, role, school)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (r.school, 'v81.' || r.k || '@example.invalid', 'V81 ' || initcap(r.k), r.role)
+    RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+    INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+    VALUES (v_u, r.role, r.school, CASE WHEN r.role = 'coach' THEN 'U15A' END, current_date - 30)
+    RETURNING id INTO v_a;
+    ids := ids || jsonb_build_object('a_' || r.k, v_a);
+  END LOOP;
+  -- A second owner's key, whose ACCOUNT is filed at Hilton: Hilton's office
+  -- may issue it a code (login_code_issue() asks only user.invite there), but
+  -- may not confirm a Google sign-in onto it.
+  UPDATE app_user SET school_id = HIL WHERE id = (ids->>'u_ownhil')::uuid;
+  -- The departed teacher: his one role ended, nothing live.
+  UPDATE role_assignment SET active = false WHERE id = (ids->>'a_ended')::uuid;
+
+  -- The parent's child, a minor, verified by the office.
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, NULL, 'Kid Eightyone', 'Eightyone', 810, 'batter', (current_date - interval '13 years')::date)
+  RETURNING id INTO v_p;
+  ids := ids || jsonb_build_object('p_kid', v_p);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, created_by, valid_from)
+  VALUES ((ids->>'a_parent')::uuid, v_p, 'parent', 'verified', (ids->>'u_office')::uuid, now(),
+          'pending', (ids->>'u_office')::uuid, current_date - 30);
+
+  -- Three pupils, each enrolled with his own record: his roster link and a
+  -- verified `self` link, consent as named.
+  FOR r IN SELECT * FROM (VALUES
+      ('minor',  14, 'pending'),
+      ('pupil',  15, 'granted'),
+      ('adult',  19, 'pending')) AS v(k, age, consent)
+  LOOP
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (HIL, NULL, 'Pupil ' || initcap(r.k) || 'eightyone', initcap(r.k) || 'eightyone', 811, 'bowler',
+            (current_date - make_interval(years => r.age) - interval '20 days')::date)
+    RETURNING id INTO v_p;
+    INSERT INTO app_user (school_id, email, name, role, player_id)
+    VALUES (HIL, 'v81.' || r.k || '@example.invalid', 'V81 ' || initcap(r.k), 'player', v_p)
+    RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u, 'p_' || r.k, v_p);
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+    VALUES (v_u, 'selfaccess', HIL, current_date - 30) RETURNING id INTO v_a;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (v_a, v_p, 'self', 'verified', (ids->>'u_office')::uuid, now(),
+            r.consent, CASE WHEN r.consent = 'granted' THEN 'popia-2026-01' END,
+            CASE WHEN r.consent = 'granted' THEN now() END, (ids->>'u_office')::uuid, current_date - 30);
+  END LOOP;
+
+  -- Deactivated by the office, holding nothing.
+  INSERT INTO app_user (school_id, email, name, role, active)
+  VALUES (HIL, 'v81.gone@example.invalid', 'V81 Gone', 'coach', false) RETURNING id INTO v_u;
+  ids := ids || jsonb_build_object('u_gone', v_u);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The rows as the owner reads them, past RLS: the claims are about the record.
+CREATE OR REPLACE FUNCTION _v81_identity(p_uid text) RETURNS auth_identity AS $$
+  SELECT * FROM auth_identity WHERE provider = 'google.com' AND provider_uid = p_uid
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v81_open_claims(p_uid text) RETURNS integer AS $$
+  SELECT count(*)::int FROM pending_claim WHERE provider = 'google.com' AND provider_uid = p_uid AND resolved_at IS NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v81_claim(p_uid text) RETURNS pending_claim AS $$
+  SELECT * FROM pending_claim WHERE provider = 'google.com' AND provider_uid = p_uid ORDER BY requested_at DESC LIMIT 1
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v81_user(p uuid) RETURNS app_user AS $$
+  SELECT * FROM app_user WHERE id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v81_deactivate(p uuid) RETURNS void AS $$
+  UPDATE app_user SET active = false WHERE id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v81_log(p_resource text, p_user uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM access_log WHERE resource = p_resource AND p_user = ANY (record_ids)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/81 (section 60) ──────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -14858,6 +14960,352 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 59
+  -- ┌── section 60: sign-up with Google, and an account with no school (db/81, SCRBRD-140) ──
+  -- docs/design/SCRBRD-140_signup_and_school_linking.md §4.3 and §9 proof 1.
+  -- auth_identity_sign_in() is called as the exchange calls it, with no
+  -- identity, after the API has verified Google's token; everything else as
+  -- the person or the office, under the application role. _seed_81() builds
+  -- its own world (Hilton's and Westville's offices, the platform, two
+  -- owner's keys, a parent with one verified link, three pupils, an inactive
+  -- account and a departed teacher).
+  --
+  --   (signup)      an unknown Google account with an unknown address is a
+  --                 new account: no school, role 'none', nothing else; again,
+  --                 the same account
+  --   (nothing)     signed in as it, every table and view the application
+  --                 may read answers nothing — but its own app_user row and
+  --                 the policy catalogue every signed-out session reads too
+  --   (own)         its own sign-ins, never a uid; its own requests only
+  --   (d14)         the sixteen reference tables "any signed-in account" read
+  --                 answer it nothing, and answer an enrolled person
+  --   (grant)       the office grants its request; on the very next
+  --                 statement it reads its side, the reference tables, and its
+  --                 account has the request's school
+  --   (claim)       an address the office enrolled — a parent with one
+  --                 verified link, a departed teacher, a deactivated account,
+  --                 an owner's key — is claim_required, never linked; asking
+  --                 again is the same one claim
+  --   (link)        an address on an account that holds and held nothing (an
+  --                 onboarding stub) links at once
+  --   (office)      who may confirm: the account's office, once, never their
+  --                 own, never an owner's key from below; the Claims list
+  --   (pupil)       the trigger: a minor whose family has not consented is
+  --                 refused by every door; consented, or eighteen, is not
+  --   (self)        adding and removing one's own; a uid is one account's
+  --   (revoke)      a revoked sign-in, and a deactivated account, sign in to
+  --                 nothing
+  --
+  -- Falsified once each, the change made in the database as the owner before
+  -- this file ran, and red at its own assertion:
+  --   app_enrolled() made `SELECT true`            → (nothing) red: sixteen tables
+  --                                                   and official_masked answer
+  --   the auto-link rule made "link on any email
+  --   match of an active account"                   → (claim) red: the parent's
+  --                                                   address was linked
+  --   the pupil-consent trigger dropped             → (pupil) red: the office
+  --                                                   linked a minor without consent
+  --   the school seam left out of
+  --   decide_role_request()                         → (grant) red: no school
+  DECLARE
+    ids       jsonb;
+    HIL81     uuid := '11111111-1111-1111-1111-111111111111';
+    NIL81     uuid := '00000000-0000-0000-0000-000000000000';
+    U_OFFICE  uuid; U_WESOFF uuid; U_PLAT81 uuid; U_OWN uuid; U_OWNHIL uuid;
+    U_PARENT81 uuid; U_ENDED uuid; U_MINOR uuid; U_PUP uuid; U_ADULT uuid; U_GONE uuid;
+    U_NEW     uuid;
+    U_STUB    uuid;
+    v_out     text;
+    v_user    uuid;
+    v_req     uuid;
+    v_claim   uuid;
+    v_id      uuid;
+    v_how     text;
+    k         bigint;
+    k2        bigint;
+    t         record;
+    detail    text;
+    u         app_user;
+    ai        auth_identity;
+    pc        pending_claim;
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    ids := _seed_81();
+    U_OFFICE := (ids->>'u_office')::uuid;  U_WESOFF := (ids->>'u_wes')::uuid;
+    U_PLAT81 := (ids->>'u_plat')::uuid;    U_OWN := (ids->>'u_own')::uuid;
+    U_OWNHIL := (ids->>'u_ownhil')::uuid;  U_PARENT81 := (ids->>'u_parent')::uuid;
+    U_ENDED := (ids->>'u_ended')::uuid;    U_MINOR := (ids->>'u_minor')::uuid;
+    U_PUP := (ids->>'u_pupil')::uuid;      U_ADULT := (ids->>'u_adult')::uuid;
+    U_GONE := (ids->>'u_gone')::uuid;
+
+    -- ── (signup) ──
+    SELECT s.outcome, s.user_id INTO v_out, U_NEW
+      FROM auth_identity_sign_in('google.com', 'v81-new', 'V81.Newcomer@Example.invalid', '  New   Comer ') s;
+    PERFORM _assert(v_out = 'new_account' AND U_NEW IS NOT NULL, format('§60 (signup): a first sign-in answered %s', v_out));
+    u := _v81_user(U_NEW);
+    PERFORM _assert(u.school_id IS NULL AND u.role = 'none' AND u.email = 'v81.newcomer@example.invalid'
+                    AND u.name = 'New Comer' AND u.active AND u.player_id IS NULL,
+      format('§60 (signup): the new account is %s', row_to_json(u)));
+    ai := _v81_identity('v81-new');
+    PERFORM _assert(ai.user_id = U_NEW AND ai.linked_how = 'new_account' AND ai.email_at_link = 'v81.newcomer@example.invalid',
+      '§60 (signup): the identity was not written as a new account''s');
+    SELECT s.outcome, s.user_id INTO v_out, v_user FROM auth_identity_sign_in('google.com', 'v81-new', 'v81.newcomer@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'signed_in' AND v_user = U_NEW, format('§60 (signup): the second sign-in answered %s %s', v_out, v_user));
+    PERFORM _assert((_v81_identity('v81-new')).last_sign_in_at IS NOT NULL, '§60 (signup): the sign-in was not stamped');
+    -- Asked inside a session, or with a provider nobody allowed, it answers nothing.
+    PERFORM _as(U_OFFICE);
+    SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', 'v81-x', 'v81.x@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'refused', format('§60 (signup): called inside a session it answered %s', v_out));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT s.outcome INTO v_out FROM auth_identity_sign_in('password', 'v81-x', 'v81.x@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'refused', format('§60 (signup): an unknown provider answered %s', v_out));
+    SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', '', 'v81.x@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'refused', format('§60 (signup): an empty uid answered %s', v_out));
+
+    -- ── (nothing) every table and view, as the account with no school ──
+    PERFORM _as(U_NEW);
+    k := 0; detail := '';
+    FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+              WHERE ns.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm')
+                AND has_table_privilege('scrbrd_app', c.oid, 'SELECT')
+                -- its own row, and the policy catalogue (checked against signed-out below)
+                AND c.relname NOT IN ('app_user', 'capability', 'role_capability', 'role_grantable')
+              ORDER BY 1 LOOP
+      EXECUTE format('SELECT count(*) FROM %I', t.relname) INTO k2;
+      IF k2 > 0 THEN k := k + k2; detail := detail || format('%s %s; ', t.relname, k2); END IF;
+    END LOOP;
+    -- (nothing)
+    PERFORM _assert(k = 0, format('§60 (nothing): the account with no school read %s rows: %s', k, left(detail, 600)));
+    PERFORM _assert(NOT app_enrolled(), '§60 (nothing): a school-less account counts as enrolled');
+    SELECT count(*) INTO k FROM app_user;
+    PERFORM _assert(k = 1 AND (SELECT id FROM app_user) = U_NEW, format('§60 (nothing): it reads %s app_user rows, not just its own', k));
+    SELECT (SELECT count(*) FROM capability) + (SELECT count(*) FROM role_capability) + (SELECT count(*) FROM role_grantable) INTO k;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT (SELECT count(*) FROM capability) + (SELECT count(*) FROM role_capability) + (SELECT count(*) FROM role_grantable) INTO k2;
+    PERFORM _assert(k = k2 AND k > 0, format('§60 (nothing): the catalogue reads %s signed in and %s signed out', k, k2));
+    -- The control: the same sweep finds rows for the office, so nothing proved nothing.
+    PERFORM _as(U_OFFICE);
+    SELECT (SELECT count(*) FROM player) + (SELECT count(*) FROM season) + (SELECT count(*) FROM official) INTO k;
+    PERFORM _assert(k > 0, '§60 (nothing): the control read nothing as the office');
+    -- The two new tables: no privilege at all, for anybody through the application.
+    PERFORM _as(U_NEW);
+    BEGIN
+      PERFORM 1 FROM auth_identity LIMIT 1;
+      PERFORM _assert(false, '§60 (nothing): the application read auth_identity');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      PERFORM 1 FROM pending_claim LIMIT 1;
+      PERFORM _assert(false, '§60 (nothing): the application read pending_claim');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- ── (own) ──
+    SELECT count(*), min(m.provider), min(m.email_at_link) INTO k, v_out, detail FROM my_sign_ins() m;
+    PERFORM _assert(k = 1 AND v_out = 'google.com' AND detail = 'v81.newcomer@example.invalid',
+      format('§60 (own): my_sign_ins() answered %s rows', k));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p, unnest(coalesce(p.proargnames, '{}')) a
+                                 WHERE p.oid IN ('my_sign_ins()'::regprocedure, 'pending_claims()'::regprocedure,
+                                                 'account_sign_ins(uuid)'::regprocedure) AND a ~ 'uid'),
+      '§60 (own): a sign-in reader returns the provider uid');
+    SELECT count(*) INTO k FROM pending_claims();
+    SELECT count(*) INTO k2 FROM account_sign_ins(U_PARENT81);
+    PERFORM _assert(k = 0 AND k2 = 0, format('§60 (own): the account with no school read %s claims and %s of another''s sign-ins', k, k2));
+    -- It asks for a role at Hilton: its own request, and nothing else it may write.
+    INSERT INTO role_request (person_id, role, school_id, team_code, note)
+    VALUES (U_NEW, 'coach', HIL81, 'U15A', 'I coach the under-15s on Saturdays.') RETURNING id INTO v_req;
+    BEGIN
+      INSERT INTO role_request (person_id, role, school_id, team_code) VALUES (U_PARENT81, 'coach', HIL81, 'U15A');
+      PERFORM _assert(false, '§60 (own): it asked for a role in somebody else''s name');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES (U_NEW, 'coach', HIL81, 'U15A');
+      PERFORM _assert(false, '§60 (own): it appointed itself');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    SELECT count(*), bool_and(person_id = U_NEW) INTO k, v_out FROM role_request;
+    PERFORM _assert(k = 1 AND v_out::boolean, format('§60 (own): it reads %s requests, not just its own', k));
+    -- The office sees who asked, though the account has no school yet.
+    PERFORM _as(U_OFFICE);
+    SELECT q.name INTO v_out FROM role_requester(v_req) q;
+    PERFORM _assert(v_out = 'New Comer', format('§60 (own): the office cannot see who asked (%s)', v_out));
+    PERFORM _as(U_WESOFF);
+    SELECT count(*) INTO k FROM role_requester(v_req);
+    PERFORM _assert(k = 0, '§60 (own): another school''s office sees who asked at Hilton');
+
+    -- ── (d14) the sixteen, before and after ──
+    PERFORM _as(U_OFFICE);
+    PERFORM _assert(app_enrolled(), '§60 (d14): the office is not enrolled');
+    FOR t IN SELECT x FROM unnest(ARRAY['official', 'official_accreditation', 'season', 'sport', 'feature_flag', 'load_unit',
+                                        'bowling_directive', 'clearance_requirement', 'clearance_kind_max_days',
+                                        'playing_condition_key', 'rulebook_clause', 'rulebook_clause_age', 'drill',
+                                        'sponsor_category']) x LOOP
+      EXECUTE format('SELECT count(*) FROM %I', t.x) INTO k;
+      PERFORM _assert(k > 0, format('§60 (d14): the office reads no %s, so the narrowing proved nothing', t.x));
+    END LOOP;
+    SELECT string_agg(tablename || '.' || policyname, ', ') INTO detail FROM pg_policies
+     WHERE schemaname = 'public' AND coalesce(qual, '') ~ 'app_user_id\(\) IS NOT NULL';
+    PERFORM _assert(detail IS NULL, format('§60 (d14): a policy still opens on any signed-in account: %s', detail));
+    SELECT count(*) INTO k FROM pg_policies WHERE schemaname = 'public' AND qual ~ 'app_enrolled\(\)';
+    PERFORM _assert(k = 16, format('§60 (d14): %s policies read app_enrolled(), expected sixteen', k));
+
+    -- ── (grant) the office answers; the next statement sees it ──
+    SELECT d.ok, d.reason INTO v_ok, v_reason FROM decide_role_request(v_req, true, 'Known to the sportsmaster.', NULL, NULL) d;
+    PERFORM _assert(v_ok, format('§60 (grant): the office could not grant the request: %s', v_reason));
+    PERFORM _as(U_NEW);
+    SELECT count(*) INTO k FROM player WHERE school_id = HIL81;
+    PERFORM _assert(k > 0, '§60 (grant): the granted coach reads no Hilton player on the next statement');
+    SELECT count(*) INTO k FROM season;
+    PERFORM _assert(k > 0 AND app_enrolled(), '§60 (grant): the granted coach still reads no season');
+    PERFORM _assert((_v81_user(U_NEW)).school_id = HIL81,
+      format('§60 (grant): the account''s school is %s after its first grant', (_v81_user(U_NEW)).school_id));
+
+    -- ── (claim) never linked on an address alone ──
+    PERFORM set_config('app.user_id', '', true);
+    SELECT s.outcome, s.user_id INTO v_out, v_user FROM auth_identity_sign_in('google.com', 'v81-parent', 'V81.PARENT@example.invalid', 'Mum') s;
+    -- (claim)
+    PERFORM _assert(v_out = 'claim_required' AND v_user IS NULL,
+      format('§60 (claim): a parent''s address answered %s %s', v_out, v_user));
+    PERFORM _assert((_v81_identity('v81-parent')).id IS NULL, '§60 (claim): the parent''s address was linked');
+    SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', 'v81-parent', 'v81.parent@example.invalid', 'Mum') s;
+    PERFORM _assert(v_out = 'claim_required' AND _v81_open_claims('v81-parent') = 1,
+      format('§60 (claim): asking again answered %s with %s open claims', v_out, _v81_open_claims('v81-parent')));
+    pc := _v81_claim('v81-parent');
+    PERFORM _assert(pc.user_id = U_PARENT81 AND pc.email = 'v81.parent@example.invalid', '§60 (claim): the claim names the wrong account');
+    FOR t IN SELECT * FROM (VALUES ('v81-ended', 'v81.ended@example.invalid', 'a departed teacher'),
+                                   ('v81-gone',  'v81.gone@example.invalid',  'a deactivated account'),
+                                   ('v81-own',   'v81.own@example.invalid',   'the owner''s key'),
+                                   ('v81-ownhil','v81.ownhil@example.invalid','an owner''s key filed at Hilton'),
+                                   ('v81-minor', 'v81.minor@example.invalid', 'a pupil'),
+                                   ('v81-pupil', 'v81.pupil@example.invalid', 'a consented pupil'),
+                                   ('v81-adult', 'v81.adult@example.invalid', 'a pupil of eighteen')) AS v(uid, email, who) LOOP
+      SELECT s.outcome, s.user_id INTO v_out, v_user FROM auth_identity_sign_in('google.com', t.uid, t.email, 'x') s;
+      PERFORM _assert(v_out = 'claim_required' AND v_user IS NULL AND (_v81_identity(t.uid)).id IS NULL,
+        format('§60 (claim): %s''s address answered %s %s', t.who, v_out, v_user));
+    END LOOP;
+
+    -- ── (link) an account holding nothing ──
+    PERFORM onboard_request('v81.stub@example.invalid', 'V81 Stub', 'spectator', HIL81, NULL, 'Following the 1st XI.');
+    SELECT s.outcome, s.user_id INTO v_out, U_STUB FROM auth_identity_sign_in('google.com', 'v81-stub', 'v81.stub@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'linked' AND U_STUB IS NOT NULL AND (_v81_user(U_STUB)).email = 'v81.stub@example.invalid',
+      format('§60 (link): the onboarding stub''s address answered %s', v_out));
+    PERFORM _assert((_v81_identity('v81-stub')).linked_how = 'new_account', '§60 (link): the stub''s identity is not new_account');
+    -- A second Google account with the stub's address is a claim now: it holds a sign-in.
+    SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', 'v81-stub-b', 'v81.stub@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'claim_required', format('§60 (link): a second Google account took the stub''s address: %s', v_out));
+
+    -- ── (office) who confirms, and the list ──
+    PERFORM _as(U_OFFICE);
+    SELECT string_agg(c.account_email, ',' ORDER BY c.account_email) INTO detail FROM pending_claims() c;
+    PERFORM _assert(detail = 'v81.adult@example.invalid,v81.ended@example.invalid,v81.gone@example.invalid,v81.minor@example.invalid,'
+                             || 'v81.parent@example.invalid,v81.pupil@example.invalid,v81.stub@example.invalid',
+      format('§60 (office): Hilton''s Claims list is %s', detail));
+    SELECT c.id INTO v_claim FROM pending_claims() c WHERE c.account_email = 'v81.parent@example.invalid';
+    PERFORM _as(U_WESOFF);
+    SELECT count(*) INTO k FROM pending_claims();
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm(v_claim) p;
+    PERFORM _assert(k = 0 AND v_reason = 'not_permitted',
+      format('§60 (office): Westville''s office lists %s Hilton claims and confirming one answered %s', k, v_reason));
+    PERFORM _as(U_NEW);   -- a coach: no user.invite
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm(v_claim) p;
+    PERFORM _assert(v_reason = 'not_permitted', format('§60 (office): a coach confirmed a claim: %s', v_reason));
+    PERFORM _as(U_OFFICE);
+    SELECT p.ok, p.reason INTO v_ok, v_reason FROM pending_claim_confirm(v_claim) p;
+    PERFORM _assert(v_ok, format('§60 (office): the office could not confirm the parent''s claim: %s', v_reason));
+    ai := _v81_identity('v81-parent');
+    PERFORM _assert(ai.user_id = U_PARENT81 AND ai.linked_how = 'office_confirmed' AND ai.linked_by = U_OFFICE,
+      '§60 (office): the confirmed identity is not the office''s act on the parent''s account');
+    PERFORM _assert((_v81_claim('v81-parent')).resolved_how = 'office_confirmed' AND _v81_log('auth.claim_confirmed', U_PARENT81) = 1,
+      '§60 (office): the claim is not closed, or the confirmation is not on the record');
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm(v_claim) p;
+    PERFORM _assert(v_reason = 'already_resolved', format('§60 (office): a second confirm answered %s', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT s.outcome, s.user_id INTO v_out, v_user FROM auth_identity_sign_in('google.com', 'v81-parent', 'v81.parent@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'signed_in' AND v_user = U_PARENT81, format('§60 (office): after confirming, the parent signs in as %s %s', v_out, v_user));
+    -- Declined: the deactivated account's.
+    PERFORM _as(U_OFFICE);
+    SELECT c.id INTO v_claim FROM pending_claims() c WHERE c.account_email = 'v81.gone@example.invalid';
+    SELECT p.ok INTO v_ok FROM pending_claim_decline(v_claim) p;
+    PERFORM _assert(v_ok AND (_v81_claim('v81-gone')).resolved_how = 'declined', '§60 (office): the office could not decline a claim');
+    -- The owner's keys: never from below.
+    SELECT count(*) INTO k FROM pending_claims() c WHERE c.account_email IN ('v81.own@example.invalid', 'v81.ownhil@example.invalid');
+    PERFORM _assert(k = 0, '§60 (office): the office lists a claim on an owner''s key');
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm((_v81_claim('v81-ownhil')).id) p;
+    PERFORM _assert(v_reason = 'superadmin_only', format('§60 (office): Hilton''s office confirmed a sign-in onto an owner''s key filed at Hilton: %s', v_reason));
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm((_v81_claim('v81-own')).id) p;
+    PERFORM _assert(v_reason = 'not_permitted', format('§60 (office): Hilton''s office confirmed onto the owner''s key: %s', v_reason));
+    PERFORM _as(U_PLAT81);
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm((_v81_claim('v81-own')).id) p;
+    PERFORM _assert(v_reason IN ('not_permitted', 'superadmin_only'), format('§60 (office): the platform confirmed onto the owner''s key: %s', v_reason));
+    PERFORM _as(U_OWN);
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm((_v81_claim('v81-own')).id) p;
+    PERFORM _assert(v_reason = 'cannot_confirm_your_own', format('§60 (office): the owner confirmed his own claim: %s', v_reason));
+    SELECT p.ok, p.reason INTO v_ok, v_reason FROM pending_claim_confirm((_v81_claim('v81-ownhil')).id) p;
+    PERFORM _assert(v_ok, format('§60 (office): one owner could not confirm a claim on another''s account: %s', v_reason));
+
+    -- ── (pupil) the family's consent, or eighteen ──
+    PERFORM _as(U_OFFICE);
+    SELECT p.ok, p.reason INTO v_ok, v_reason FROM pending_claim_confirm((_v81_claim('v81-minor')).id) p;
+    -- (pupil)
+    PERFORM _assert(NOT v_ok AND v_reason = 'pupil_consent_required' AND (_v81_identity('v81-minor')).id IS NULL,
+      format('§60 (pupil): the office linked a minor whose family has not consented: %s %s', v_ok, v_reason));
+    PERFORM _assert(_v81_open_claims('v81-minor') = 1, '§60 (pupil): the refused claim was closed');
+    PERFORM _as(U_MINOR);
+    SELECT l.ok, l.reason INTO v_ok, v_reason FROM auth_identity_link_self('google.com', 'v81-minor-b', 'v81.minor.b@example.invalid') l;
+    PERFORM _assert(NOT v_ok AND v_reason = 'pupil_consent_required',
+      format('§60 (pupil): the minor added a Google account himself: %s %s', v_ok, v_reason));
+    PERFORM _as(U_OFFICE);
+    SELECT p.ok, p.reason INTO v_ok, v_reason FROM pending_claim_confirm((_v81_claim('v81-pupil')).id) p;
+    PERFORM _assert(v_ok, format('§60 (pupil): a consented pupil could not be linked: %s', v_reason));
+    SELECT p.ok, p.reason INTO v_ok, v_reason FROM pending_claim_confirm((_v81_claim('v81-adult')).id) p;
+    PERFORM _assert(v_ok, format('§60 (pupil): a pupil of eighteen could not be linked: %s', v_reason));
+
+    -- ── (self) adding and removing one's own ──
+    PERFORM _as(U_NEW);
+    SELECT l.ok, l.reason, l.identity_id, l.linked_how INTO v_ok, v_reason, v_id, v_how
+      FROM auth_identity_link_self('google.com', 'v81-new-b', 'v81.newcomer.b@example.invalid') l;
+    PERFORM _assert(v_ok AND v_how = 'self_added' AND (_v81_identity('v81-new-b')).linked_by = U_NEW,
+      format('§60 (self): adding a second Google account answered %s %s %s', v_ok, v_reason, v_how));
+    SELECT l.ok, l.reason INTO v_ok, v_reason FROM auth_identity_link_self('google.com', 'v81-new-b', 'v81.newcomer.b@example.invalid') l;
+    PERFORM _assert(v_ok AND v_reason = 'already_linked', format('§60 (self): adding it again answered %s %s', v_ok, v_reason));
+    SELECT l.ok, l.reason INTO v_ok, v_reason FROM auth_identity_link_self('google.com', 'v81-parent', 'v81.parent@example.invalid') l;
+    PERFORM _assert(NOT v_ok AND v_reason = 'identity_in_use', format('§60 (self): it took the parent''s Google account: %s %s', v_ok, v_reason));
+    -- The code path: the departed teacher redeemed the office's code, and adds
+    -- the Google account his claim was waiting on.
+    PERFORM _as(U_ENDED);
+    SELECT l.ok, l.linked_how INTO v_ok, v_how FROM auth_identity_link_self('google.com', 'v81-ended', 'v81.ended@example.invalid') l;
+    PERFORM _assert(v_ok AND v_how = 'code' AND (_v81_claim('v81-ended')).resolved_how = 'code',
+      format('§60 (self): after a code the teacher''s claim linked as %s', v_how));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT l.reason INTO v_reason FROM auth_identity_link_self('google.com', 'v81-z', 'v81.z@example.invalid') l;
+    PERFORM _assert(v_reason = 'not_signed_in', format('§60 (self): with no session, linking answered %s', v_reason));
+
+    -- ── (revoke) ──
+    PERFORM _as(U_NEW);
+    SELECT r.ok INTO v_ok FROM auth_identity_revoke_self((_v81_identity('v81-parent')).id) r;
+    PERFORM _assert(NOT v_ok, '§60 (revoke): the coach revoked the parent''s sign-in as his own');
+    SELECT r.ok INTO v_ok FROM auth_identity_revoke_self(v_id) r;
+    PERFORM _assert(v_ok AND (_v81_identity('v81-new-b')).revoked_by = U_NEW, '§60 (revoke): the coach could not remove his own');
+    SELECT count(*) FILTER (WHERE m.revoked_at IS NULL), count(*) INTO k, k2 FROM my_sign_ins() m;
+    PERFORM _assert(k = 1 AND k2 = 2, format('§60 (revoke): my_sign_ins() shows %s live of %s', k, k2));
+    PERFORM _as(U_WESOFF);
+    SELECT r.reason INTO v_reason FROM auth_identity_revoke((_v81_identity('v81-parent')).id) r;
+    PERFORM _assert(v_reason = 'not_permitted', format('§60 (revoke): Westville''s office revoked a Hilton sign-in: %s', v_reason));
+    PERFORM _as(U_OFFICE);
+    SELECT count(*) INTO k FROM account_sign_ins(U_PARENT81);
+    SELECT r.ok INTO v_ok FROM auth_identity_revoke((_v81_identity('v81-parent')).id) r;
+    PERFORM _assert(k = 1 AND v_ok AND _v81_log('auth.identity_revoked', U_PARENT81) = 1,
+      format('§60 (revoke): the office read %s of the parent''s sign-ins and revoked %s', k, v_ok));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', 'v81-new-b', 'v81.newcomer.b@example.invalid', 'x') s;
+    SELECT s.outcome INTO v_reason FROM auth_identity_sign_in('google.com', 'v81-parent', 'v81.parent@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'revoked' AND v_reason = 'revoked', format('§60 (revoke): revoked sign-ins answered %s and %s', v_out, v_reason));
+    PERFORM _v81_deactivate(U_STUB);
+    SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', 'v81-stub', 'v81.stub@example.invalid', 'x') s;
+    PERFORM _assert(v_out = 'account_inactive', format('§60 (revoke): a deactivated account''s sign-in answered %s', v_out));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 60
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

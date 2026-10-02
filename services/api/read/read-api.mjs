@@ -1551,13 +1551,41 @@ export const READ_QUERIES = {
                    -- The role question at the request's school (db/77), as the grant asks it.
                    and app_may_grant_at(r.role, r.school_id)) as decidable
              from role_request r
-             join app_user u on u.id = r.person_id
+             -- Who asked, through role_requester() (db/81): an account that
+             -- signed up with Google has no school until its first grant, and
+             -- the office's own RLS on app_user reads an account only at the
+             -- office's school — a join here dropped exactly those requests.
+             left join lateral (select q.name, q.email from role_requester(r.id) q) u on true
              -- The school's name from the public list: a stranger with no
              -- assignments may not read the school row and must still see
              -- which school his request is with.
              left join lateral (select ps.name from public_schools() ps where ps.id = r.school_id) s on true
              left join app_user d on d.id = r.decided_by
             order by case r.state when 'pending' then 0 else 1 end, r.requested_at desc`,
+  },
+
+  /**
+   * THE WAYS I SIGN IN (SCRBRD-140, db/81): Google accounts linked to this
+   * account, live and revoked — never the provider's uid. my_sign_ins() reads
+   * the caller's own and nobody else's.
+   */
+  my_sign_ins: {
+    text: `select id, provider, email_at_link, linked_at, linked_how, last_sign_in_at, revoked_at
+             from my_sign_ins()`,
+  },
+
+  /**
+   * THE OFFICE'S CLAIMS LIST (SCRBRD-140 §3.3): a Google sign-in whose
+   * verified email matched an account the office enrolled, waiting for a
+   * person to look — confirm (POST /api/auth/claims/:id/confirm), or issue a
+   * code as today. pending_claims() returns only claims on accounts the
+   * caller may issue a code to (user.invite at the account's school), the
+   * account as enrolled beside the address Google verified, never the uid.
+   */
+  sign_in_claims: {
+    text: `select id, user_id, account_name, account_email, account_active, school_id,
+                  presented_email, provider, requested_at, last_requested_at
+             from pending_claims()`,
   },
 
   /* The drill library: the platform's, and this reader's schools'. */

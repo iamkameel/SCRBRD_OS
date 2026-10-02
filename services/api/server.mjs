@@ -11,6 +11,8 @@
  * What is mounted:
  *   GET  /api/health
  *   POST /api/auth/dev-login                      (development only)
+ *   POST /api/auth/firebase                       sign in with Google (SCRBRD-140, auth/signin-api.mjs)
+ *   POST /api/auth/sign-ins, …/claims/:id/confirm the ways a person signs in, and the office's claims
  *   GET  /api/session                             who am I, what am I assigned to
  *   GET  /api/read/:resource                      the governed read path
  *   POST /api/matches/:id/session/claim           take the scoring token
@@ -50,6 +52,7 @@ import { readerConfig } from "./ai/scorebook-reader.mjs";
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { isPadAuthorization, padRoute, padPrincipal, padRefusal, padCredentialRoutes } from "./auth/pad-resume.mjs";
+import { signInRoutes, verifierFromEnv } from "./auth/signin-api.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
@@ -416,6 +419,15 @@ const safeguarding = safeguardingRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
+// Sign-up with Google (SCRBRD-140 phase 1, db/81). Google's keys for
+// scrbrd-os; FIREBASE_TEST_KEYS (the walk's own key) is refused in
+// production and verifies only a project that is not scrbrd-os.
+const firebase = (() => {
+  try { return verifierFromEnv({ dev: DEV }); }
+  catch (/** @type {any} */ e) { console.error(e.message); process.exit(1); }
+})();
+const signIn = signInRoutes({ pool, secret: SECRET, verifier: firebase.verifier,
+                              trustProxyHops: Number(process.env.PUBLIC_TRUST_PROXY_HOPS || 0) });
 const news = newsRoutes({ pool, secret: SECRET });
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
@@ -491,6 +503,12 @@ const EXACT = {
     (client) => issueLoginCode(client, SECRET, { email: body?.email })),
   "POST /api/auth/redeem": async (body) => redeemMagicLink(
     pool, SECRET, { email: body?.email, code: body?.code, deviceId: body?.deviceId }),
+  // Sign-in with Google (SCRBRD-140): Google's signed statement, verified
+  // here, exchanged for the same token a code ends in. Unauthenticated, rate
+  // limited per address and per Google account; auth_identity_sign_in()
+  // (db/81) decides — and never links on an email alone where there is
+  // anything to protect (claim_required).
+  "POST /api/auth/firebase": signIn.exchange,
   // Signing out ends this person's pad resume credentials on this device
   // (db/50). The client also forgets the keys, which ends them there even
   // when this cannot reach the server.
@@ -648,6 +666,14 @@ const PLAYER_ROUTES = [
   // Asking for a role, and answering. /api/onboard and /api/schools carry no
   // principal: a stranger gets an account with nothing in it and a request.
   [/^\/api\/schools$/,                              "GET",  requests.schools],
+  // The ways a person signs in (SCRBRD-140, db/81): their own, and the
+  // office's claims list and revocations. Every decision is a db/81 function.
+  [/^\/api\/auth\/sign-ins$/,                        "POST", signIn.link],
+  [/^\/api\/auth\/sign-ins\/([^/]+)\/revoke$/,       "POST", signIn.revokeOwn],
+  [/^\/api\/auth\/users\/([^/]+)\/sign-ins$/,        "GET",  signIn.accountSignIns],
+  [/^\/api\/auth\/office\/sign-ins\/([^/]+)\/revoke$/, "POST", signIn.revokeOffice],
+  [/^\/api\/auth\/claims\/([^/]+)\/confirm$/,        "POST", signIn.confirmClaim],
+  [/^\/api\/auth\/claims\/([^/]+)\/decline$/,        "POST", signIn.declineClaim],
   [/^\/api\/onboard$/,                              "POST", requests.onboard],
   [/^\/api\/requests$/,                             "POST", requests.request],
   [/^\/api\/requests\/([^/]+)\/withdraw$/,           "POST", requests.withdraw],
@@ -1288,6 +1314,7 @@ server.listen(PORT, () => {
   console.log(`  scorebook reader: ${readerConfig().mode}${readerConfig().mode === "replay" ? " (a recorded answer, never a real read)" : ""}`);
   if (CLIENT_DIR) console.log(`  web:  serving the client from ${CLIENT_DIR}`);
   if (!process.env.SESSION_SECRET) console.log("  auth: EPHEMERAL dev secret — tokens die on restart");
+  if (firebase.test) console.log("  auth: FIREBASE TEST KEYS — Google sign-in verifies the walk's own key, for a test project only");
   if (DEV && process.env.ALLOW_DEV_LOGIN === "1") console.log("  auth: DEV LOGIN ENABLED — /api/auth/dev-login mints tokens without a code");
   console.log(`  public pages: ${PUBLIC_ON ? "ON (PUBLIC_PAGES=on)" : "off (set PUBLIC_PAGES=on once the information officer has confirmed PUBLIC_DATA.md)"}`);
   if (PUBLIC_ON && !process.env.PUBLIC_PSEUDONYM_SECRET) console.log("  public: EPHEMERAL dev pseudonym secret — pseudonyms change on restart");

@@ -164,6 +164,12 @@ const WALKS = [
   // at a time, a child in initials, never a safeguarding row or a reason,
   // and every read of it on the record. (smoke-audit is access_log's own.)
   "audit-log",
+  // Signing in with Google (SCRBRD-140 phase 1, db/81): the exchange and its
+  // refusals, an account with no school reading nothing, a request granted
+  // and seen on the next read, a claim the office confirms, the code path,
+  // a second Google account, revocation, and the rate limits — against the
+  // walk's own signing key, which a production server refuses to start with.
+  "signup",
   "kit",
   "passport",
   "web",
