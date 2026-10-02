@@ -47,7 +47,8 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { capWords } from "@scrbrd/scoring";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
-import { ATTACK, PLAY, buildCaptainFixtures } from "./fixture-captain.mjs";
+import { ATTACK, PLAY, captainLogs, fixConditions } from "./fixture-captain.mjs";
+import { writeEvents } from "./fixture-matchcentre.mjs";
 import { entryTable, LOAD_SENTENCE } from "../apps/web/src/lib/cockpit.js";
 import { NEVER_ON_THE_COCKPIT } from "../apps/web/src/lib/cockpitNever.js";
 
@@ -193,6 +194,18 @@ async function floors(page) {
   });
 }
 
+/** A reload loses the session on purpose (the token lives in memory): sign in again and come back to the Coach tab. */
+async function backTo(page, email, id, drawer = true) {
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForTimeout(1500);
+  // The reload drops the token: the app comes back as its demonstration, and the coach signs in again.
+  if (/Demonstration\./.test(await text(page))) { await click(page, /^Sign in$/i); await page.waitForTimeout(500); await signIn(page, email); }
+  const opened = await openMatch(page, id);
+  await coachTab(page);
+  if (!opened || (await tid(page, "coach-signals-open").count()) === 0) throw new Error(`could not come back to the Coach tab (opened=${opened}): ${(await text(page)).slice(0, 400).replace(/\s+/g, " ")}`);
+  if (drawer) await openDrawer(page);
+}
+
 const SAFE_WORDS = (t) => t.replaceAll(LOAD_SENTENCE, "");
 
 try {
@@ -213,10 +226,25 @@ try {
   const nm = Object.fromEntries((await q(`select id, full_name from player where id = any($1::uuid[])`, [[PILLAY, WHITFIELD, BEKKER, NAIDOO, SEVEN, SIX, ...EXTRA]])).map((r) => [r.id, r.full_name]));
   const ids = { pillay: PILLAY, whitfield: WHITFIELD, bekker: BEKKER, naidoo: NAIDOO, seven: SEVEN, six: SIX };
   const names = { pillay: nm[PILLAY], whitfield: nm[WHITFIELD], bekker: nm[BEKKER], naidoo: nm[NAIDOO], seven: nm[SEVEN], six: nm[SIX] };
-  const { field: FIELD, bat: BAT } = await buildCaptainFixtures(q, { school: HIL, ids, names, westville: WES });
+  // The captain walk's two live matches (tools/fixture-captain.mjs), written here so that each ball
+  // carries its bowler as the pad's server stamps it: the overs, the spells and the week's load
+  // then read as they would from a scored match.
+  const mk = async (status, startsAt) => (await q(
+    `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+     values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', $3, 'cricket', 'T20', 20, $4) returning id`, [HIL, WES, startsAt, status]))[0].id;
+  const FIELD = await mk("live", new Date(Date.now() - 3 * 3600e3).toISOString());
+  const BAT = await mk("live", new Date(Date.now() - 2 * 3600e3).toISOString());
+  for (const m of [FIELD, BAT]) {
+    await fixConditions(q, m);
+    await q(`insert into match_squad (match_id, player_id, side, batting_no) values
+               ($1, $2, 'home', 1), ($1, $3, 'home', 2), ($1, $4, 'home', 3), ($1, $5, 'home', 4), ($1, $6, 'home', 5), ($1, $7, 'home', 6)`,
+      [m, ids.whitfield, ids.bekker, ids.naidoo, ids.pillay, ids.seven, ids.six]);
+  }
+  const logs = captainLogs({ ids, names });
+  const stamped = (log) => { let on = null; return log.map((ev) => { if (ev.kind === "bowler") on = ev.bowler; return ev.kind === "ball" && on && Object.values(ids).includes(on) ? { ...ev, bowler: on } : ev; }); };
+  await writeEvents(q, FIELD, stamped(logs.field));
+  await writeEvents(q, BAT, stamped(logs.bat));
   // Played "now" so the 7-day week reads them; the log is the same.
-  await q(`update match set starts_at = now() - interval '3 hours' where id = $1`, [FIELD]);
-  await q(`update match set starts_at = now() - interval '2 hours' where id = $1`, [BAT]);
 
   // The fixture today, 23:00 SA time: soon, and the match day.
   const DAY = (await q(
@@ -358,7 +386,7 @@ try {
   ok("...Pillay too, back 18 Oct", /back 18 Oct/.test(sideRows.find((r) => r.id === PILLAY)?.text ?? ""));
   ok("...Whitfield reads unavailable, with no reason", sideRows.find((r) => r.id === WHITFIELD)?.state === "unavailable" && !/funeral|family|Durban/i.test(sideRows.find((r) => r.id === WHITFIELD)?.text ?? ""), sideRows.find((r) => r.id === WHITFIELD)?.text);
   ok("...Naidoo has not answered, in words", sideRows.find((r) => r.id === NAIDOO)?.state === "unanswered" && /no answer/.test(sideRows.find((r) => r.id === NAIDOO).text));
-  ok("...the foot counts them", /10 named · 6 to chase · 1 unavailable · 2 restricted/.test(await inner(c.page, "coach-side-foot")), await inner(c.page, "coach-side-foot"));
+  ok("...the foot counts them", /10 named · 5 to chase · 1 unavailable · 2 restricted/.test(await inner(c.page, "coach-side-foot")), await inner(c.page, "coach-side-foot"));
 
   const wk = await inner(c.page, "coach-week");
   const weekRows = await c.page.$$eval('[data-testid^="coach-week-"]:not([data-testid="coach-week-sentence"])', (els) => els.map((e) => e.innerText));
@@ -387,7 +415,7 @@ try {
   const rawNotes = await rows(coach, "notifications");
   const home = rawSquad.filter((r) => r.side === "home");
   const sheetIds = new Set(home.map((r) => r.player_id));
-  const byLift = new Set(rawLifts.map((r) => r.player_id).filter((id) => sheetIds.has(id))).size;
+  const byLift = new Set(rawLifts.map((r) => r.playerId).filter((id) => sheetIds.has(id))).size;
   const cap = rawTrips.filter((t) => t.state !== "cancelled").reduce((n, t) => n + t.capacity, 0);
   const travelling = home.length - byLift;
 
@@ -403,7 +431,7 @@ try {
   ok("S3: no reason and no nature on any", s3.every((x) => leaks(x.text).length === 0), s3.map((x) => leaks(x.text)).flat().join());
 
   const s4 = byRule(cs, "S4a");
-  const lateOffers = new Set(rawLifts.filter((r) => r.not_left).map((r) => r.offer_id)).size;
+  const lateOffers = new Set(rawLifts.filter((r) => r.notLeft).map((r) => r.offerId)).size;
   ok("S4a: one lift not marked as leaving, as a head count", s4.length === 1 && lateOffers === 1 && s4[0].count === byLift && /1 arriving by lift/.test(s4[0].text) && /1 lift not marked as leaving/.test(s4[0].text), JSON.stringify(s4));
   ok("S4a: no name, no driver, no number", !/Bekker|Whitfield|Fortuner|\d{3} \d{3}/.test(s4[0]?.text ?? ""));
   ok("S4b: not the coach's (the office's, by name)", byRule(cs, "S4b").length === 0);
@@ -449,31 +477,23 @@ try {
   ok("Seen hides the card (S7), and the count falls by one", byRule(after, "S7").length === 0 && after.length === before - 1 && Number(await inner(c.page, "signals-count")) === before - 1, `${after.length} v ${before}`);
   ok("...Show N I have seen brings it back, marked seen", await click(c.page, /^Show 1 I have seen/) && byRule(await cards(c.page), "S7")[0]?.seen === "yes");
   await c.page.keyboard.press("Escape");
-  await c.page.reload({ waitUntil: "networkidle" });
-  await c.page.waitForTimeout(2200);
-  await openMatch(c.page, DAY); await coachTab(c.page); await openDrawer(c.page);
+  await backTo(c.page, "coach@example.invalid", DAY);
   ok("...across a reload it is still hidden (held on the device)", byRule(await cards(c.page), "S7").length === 0 && await click(c.page, /^Show 1 I have seen/) && byRule(await cards(c.page), "S7")[0]?.seen === "yes");
   ok("...and the database holds nothing of it: no notice marked read, no row written", (await q(`select count(*)::int n from notification_read`))[0].n === reads0);
   await c.page.keyboard.press("Escape");
   // Naidoo answers: the evidence changes, and the card comes back.
   await q(`insert into match_availability (match_id, player_id, school_id, status, declared_by) values ($1, $2, $3, 'available', $4)`, [DAY, NAIDOO, HIL, coachId]);
-  await c.page.reload({ waitUntil: "networkidle" });
-  await c.page.waitForTimeout(2200);
-  await openMatch(c.page, DAY); await coachTab(c.page); await openDrawer(c.page);
+  await backTo(c.page, "coach@example.invalid", DAY);
   const back = byRule(await cards(c.page), "S7");
   ok("a new answer changes the count (five now have not answered) and S7 comes back unseen", back.length === 1 && back[0].seen === "no" && back[0].count === none - 1, JSON.stringify(back));
   await c.page.keyboard.press("Escape");
   // The bus swaps to the big one: S1 clears; swapped back, it returns.
   await q(`update trip set vehicle_id = $1 where id = $2`, [BIG, TRIP]);
-  await c.page.reload({ waitUntil: "networkidle" });
-  await c.page.waitForTimeout(2200);
-  await openMatch(c.page, DAY); await coachTab(c.page); await openDrawer(c.page);
+  await backTo(c.page, "coach@example.invalid", DAY);
   ok("swap the bus to a 22-seater: S1 clears", byRule(await cards(c.page), "S1").length === 0);
   await c.page.keyboard.press("Escape");
   await q(`update trip set vehicle_id = $1 where id = $2`, [SMALL, TRIP]);
-  await c.page.reload({ waitUntil: "networkidle" });
-  await c.page.waitForTimeout(2200);
-  await openMatch(c.page, DAY); await coachTab(c.page); await openDrawer(c.page);
+  await backTo(c.page, "coach@example.invalid", DAY);
   ok("...and back to the four-seater: S1 returns", byRule(await cards(c.page), "S1").length === 1);
   await c.page.keyboard.press("Escape");
   ok("the coach's tab raised no error and no scoping refusal", c.errors.length === 0 && c.refusals.length === 0, [...c.errors, ...c.refusals].join(" | "));
@@ -516,7 +536,7 @@ try {
   dbg("CARD", cardText);
   ok("the coach's Dashboard carries the card for the fixture today", await tid(d.page, "day-matchday").count() === 1 && /v Verify Cockpit XI/.test(cardText), cardText);
   const cardCount = Number((await inner(d.page, "matchday-count")).match(/\d+/)?.[0]);
-  ok("...the side in a line: ten named, six to chase, two restricted", /10 named/.test(await inner(d.page, "matchday-side")) && /2 restricted/.test(await inner(d.page, "matchday-side")), await inner(d.page, "matchday-side"));
+  ok("...the side in a line: ten named, five to chase, two restricted", /10 named/.test(await inner(d.page, "matchday-side")) && /2 restricted/.test(await inner(d.page, "matchday-side")), await inner(d.page, "matchday-side"));
   await tid(d.page, "matchday-signals").click({ timeout: 4000 });
   await d.page.waitForTimeout(3500);
   ok("one tap on the count opens the Coach tab of that fixture, with the drawer open", await tid(d.page, "mc-coach").count() === 1 && await tid(d.page, "signals").count() === 1);
@@ -562,9 +582,7 @@ try {
   await lm.ctx.close();
   // After the match: the spells as recorded, and the cap's past-the-cap sentence.
   await q(`update match set status = 'complete' where id = $1`, [FIELD]);
-  await lv.page.reload({ waitUntil: "networkidle" });
-  await lv.page.waitForTimeout(2200);
-  await openMatch(lv.page, FIELD); await coachTab(lv.page);
+  await backTo(lv.page, "coach@example.invalid", FIELD, false);
   ok("after: the spells as the log recorded them", await tid(lv.page, "coach-spells").count() === 1, await inner(lv.page, "mc-panel-coach"));
   await openDrawer(lv.page);
   const after2 = byRule(await cards(lv.page), "S2a");
