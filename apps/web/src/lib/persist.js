@@ -131,7 +131,17 @@ async function backend() {
 export async function storageKind() { return (await backend()).name; }
 
 // ── The two things worth persisting ──────────────────────
-const matchKey = (id) => `match:${id}`;
+
+/**
+ * Practice matches (apps/web/src/lib/practice.js) are scored on the real pad
+ * and saved by the real saveMatch() below, but into their own namespace:
+ * every key of theirs starts with `practice:`, so "everything of theirs" is
+ * one prefix, a delete-all is one sweep, and nothing that looks for a
+ * `match:` key can ever find one. Their ids all start `practice-`.
+ */
+export const PRACTICE_ID_PREFIX = "practice-";
+export const isPracticeId = (id) => typeof id === "string" && id.startsWith(PRACTICE_ID_PREFIX);
+const matchKey = (id) => (isPracticeId(id) ? `practice:log:${id}` : `match:${id}`);
 
 /**
  * Save an in-progress innings log.
@@ -158,6 +168,27 @@ export async function loadMatch(matchId) {
 
 export async function clearMatch(matchId) {
   try { await (await backend()).del(matchKey(matchId)); return true; } catch { return false; }
+}
+
+// ── Plain records, for the stores built on this backend ──────────────
+//
+// A thin door onto the same backend (IndexedDB, then localStorage, then
+// memory) for a store that keeps its own small records under its own key
+// prefix — practice matches today. Same promises as above: a failed write is
+// reported, never thrown into the scoring path.
+export async function putRecord(key, value) {
+  try { await (await backend()).put(key, value); return true; } catch { return false; }
+}
+export async function getRecord(key) {
+  try { return await (await backend()).get(key); } catch { return null; }
+}
+export async function deleteRecord(key) {
+  try { await (await backend()).del(key); return true; } catch { return false; }
+}
+/** Every key that starts with `prefix`, or null when the store could not be read. */
+export async function recordKeys(prefix) {
+  try { return (await (await backend()).keys()).filter((k) => typeof k === "string" && k.startsWith(prefix)); }
+  catch { return null; }
 }
 
 /**

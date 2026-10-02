@@ -3,13 +3,18 @@ import { D, T, textOn } from "../design/tokens.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
 import { Badge, Btn, CaptureProfilePicker, GS, Glass, Lbl } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
+import { Icon } from "../ui/icons.jsx";
+import { savedWords } from "../lib/practice.js";
 
 /* ═══════════════════════════════════════════════════════
    OPENING SETUP STEP  (step 4 of SetupScreen)
    Batting order → select 2 openers → select opening bowler
 ═══════════════════════════════════════════════════════ */
-function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowlingTeamKey,onConfirm}){
-  const[subStep,setSubStep]=useState(0); // 0=bat order, 1=openers, 2=bowler
+// `startAt` skips the steps already done: a Practice Match orders its squads
+// on its own squad screen, so it opens on the openers (1). Nothing else
+// passes it.
+function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowlingTeamKey,onConfirm,startAt=0}){
+  const[subStep,setSubStep]=useState(startAt); // 0=bat order, 1=openers, 2=bowler
   const[dragging,setDragging]=useState(null);const[dragOver,setDragOver]=useState(null);
   const[opener1,setOpener1]=useState(null);
   const[opener2,setOpener2]=useState(null);
@@ -29,6 +34,11 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
     setBatOrder(next);setDragging(null);setDragOver(null);
   };
 
+  // The same move by button, for a phone: a drag does not work with a thumb.
+  const moveBy=(i,dir)=>{
+    const j=i+dir;if(j<0||j>=batOrder.length)return;
+    const next=[...batOrder];[next[i],next[j]]=[next[j],next[i]];setBatOrder(next);
+  };
   const bowlerCandidates=(bowlingSquad||[]).filter(n=>{
     const p=getBowler(n);
     if(!p)return true; // custom player — include
@@ -42,14 +52,14 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
       {/* Sub-step tabs */}
       <div style={{display:"flex",gap:"4px"}}>
         {SUBSTEP_LABELS.map((l,i)=>(
-          <div key={i} style={{flex:1,textAlign:"center",padding:"7px 4px",borderRadius:D.md,cursor:i<subStep?"pointer":"default",
+          <button type="button" key={i} disabled={i>=subStep} aria-current={i===subStep?"step":undefined} style={{flex:1,textAlign:"center",padding:"7px 4px",minHeight:"44px",borderRadius:D.md,cursor:i<subStep?"pointer":"default",
             background:i===subStep?D.indigo+"20":i<subStep?D.emerald+"10":"transparent",
             border:`1px solid ${i===subStep?D.indigo+"55":i<subStep?D.emerald+"33":D.border}`,
-            fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",
+            fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",
             color:i===subStep?D.sky:i<subStep?D.emerald:D.textMuted,transition:"all .2s",
           }} onClick={()=>i<subStep&&setSubStep(i)}>
             {i<subStep?"✓ ":""}{l}
-          </div>
+          </button>
         ))}
       </div>
 
@@ -61,7 +71,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
             <Lbl sx={{color:D.amber}}>Batting First</Lbl>
           </div>
           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
-            Drag to set your batting order. Openers (1 & 2) are highlighted.
+            Drag, or use the arrows, to set your batting order. Openers (1 & 2) are highlighted.
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
             {batOrder.map((name,i)=>{
@@ -73,7 +83,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
               return (
                 <div key={name} draggable onDragStart={()=>onDragStart(i)}
                   onDragEnter={()=>onDragEnter(i)} onDragOver={e=>e.preventDefault()} onDragEnd={onDragEnd}
-                  style={{display:"flex",alignItems:"center",gap:"9px",padding:"9px 11px",borderRadius:D.md,
+                  style={{display:"flex",alignItems:"center",gap:"9px",padding:"8px 11px",minHeight:"44px",borderRadius:D.md,
                     background:isDraggingThis?`${D.sky}18`:isDragTarget?`${D.indigo}14`:isOpener?`${D.emerald}09`:D.surf2,
                     border:`1px solid ${isDraggingThis?D.sky+"66":isDragTarget?D.indigo+"44":isOpener?D.emerald+"33":D.border}`,
                     cursor:"grab",userSelect:"none",
@@ -81,24 +91,34 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
                     boxShadow:isDragTarget?`0 0 0 2px ${D.indigo}44`:"none",
                   }}>
                   <span style={{color:D.textMuted,fontSize:"14px",cursor:"grab",flexShrink:0}}>⠿</span>
-                  <div style={{width:"22px",height:"22px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-                    fontFamily:D.mono,fontSize:"10px",fontWeight:600,
+                  <div style={{width:"28px",height:"28px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                    fontFamily:D.mono,fontSize:"12px",fontWeight:600,
                     background:isOpener?`${D.emerald}20`:D.surf3,
                     color:isOpener?D.emerald:D.textMuted,
                     border:`1px solid ${isOpener?D.emerald+"44":D.border}`}}>
                     {i+1}
                   </div>
-                  <span style={{flex:1,fontFamily:D.body,fontSize:"13px",fontWeight:isOpener?600:400,color:D.textPrimary}}>{name}</span>
+                  <span style={{flex:1,fontFamily:D.body,fontSize:"14px",fontWeight:isOpener?600:400,color:D.textPrimary}}>{name}</span>
                   {p&&(
                     <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
                       {/* Handedness badges */}
-                      <span style={{fontFamily:D.mono,fontSize:"9px",fontWeight:700,padding:"1px 5px",borderRadius:D.pill,
+                      <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,padding:"1px 5px",borderRadius:D.pill,
                         background:p.batHand==="L"?`${D.amber}15`:`${D.sky}15`,
                         border:`1px solid ${p.batHand==="L"?D.amber+"33":D.sky+"33"}`,
                         color:p.batHand==="L"?D.amber:D.sky}}>{p.batHand}HB</span>
-                      <Badge color={rc} sx={{fontSize:"8px"}}>{p.role}</Badge>
+                      <Badge color={rc} sx={{fontSize:"12px"}}>{p.role}</Badge>
                     </div>
                   )}
+                  <span style={{display:"flex",flexShrink:0,margin:"-8px -11px -8px 0"}}>
+                    {[-1,1].map(dir=>(
+                      <button key={dir} type="button" className="pressBtn" disabled={dir<0?i===0:i===batOrder.length-1}
+                        aria-label={`Move ${name} ${dir<0?"up":"down"}`} onClick={()=>moveBy(i,dir)}
+                        style={{width:"44px",height:"44px",display:"flex",alignItems:"center",justifyContent:"center",
+                          background:"transparent",border:"none",cursor:"pointer",color:D.textSecondary}}>
+                        <Icon name="chevron-down" size={20} style={dir<0?{transform:"rotate(180deg)"}:undefined}/>
+                      </button>
+                    ))}
+                  </span>
                 </div>
               );
             })}
@@ -112,15 +132,15 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
       {/* Sub-step 1: Select 2 openers */}
       {subStep===1&&(
         <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-          <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>
+          <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>
             {!opener1?"Tap to select Striker (facing first ball)":!opener2?"Tap to select Non-Striker":"Both openers set ✓"}
           </div>
           <div style={{display:"flex",gap:"8px",marginBottom:"4px"}}>
             {[{label:"Striker",val:opener1,col:D.emerald},{label:"Non-Striker",val:opener2,col:D.sky}].map(({label,val,col})=>(
               <div key={label} style={{flex:1,padding:"10px",borderRadius:D.md,border:`1px solid ${val?col+"55":D.border}`,
                 background:val?`${col}0e`:D.surf2,textAlign:"center"}}>
-                <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:val?col:D.textMuted,marginBottom:"4px"}}>{label}</div>
-                <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:val?D.textPrimary:D.textMuted}}>{val||"—"}</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:val?col:D.textMuted,marginBottom:"4px"}}>{label}</div>
+                <div style={{fontFamily:D.body,fontSize:"14px",fontWeight:600,color:val?D.textPrimary:D.textMuted}}>{val||"—"}</div>
               </div>
             ))}
           </div>
@@ -137,28 +157,28 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
                   if(!opener1){setOpener1(name);return;}
                   if(!opener2){setOpener2(name);}
                 }} className="pressBtn" style={{
-                  display:"flex",alignItems:"center",gap:"9px",padding:"9px 11px",borderRadius:D.md,cursor:"pointer",
+                  display:"flex",alignItems:"center",gap:"9px",padding:"8px 11px",minHeight:"44px",borderRadius:D.md,cursor:"pointer",
                   textAlign:"left",width:"100%",
                   border:`1px solid ${isO1?D.emerald+"55":isO2?D.sky+"55":D.border}`,
                   background:isO1?`${D.emerald}0e`:isO2?`${D.sky}0e`:D.surf2,
                   transition:"all .15s",
                 }}>
-                  <div style={{width:"22px",height:"22px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-                    fontFamily:isSelected?"Syne":"DM Mono",fontSize:isSelected?"10px":"10px",fontWeight:700,
+                  <div style={{width:"28px",height:"28px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                    fontFamily:isSelected?"Syne":"DM Mono",fontSize:"12px",fontWeight:700,
                     background:isO1?`${D.emerald}22`:isO2?`${D.sky}22`:D.surf3,
                     color:isO1?D.emerald:isO2?D.sky:D.textMuted,
                     border:`1px solid ${isO1?D.emerald+"55":isO2?D.sky+"55":D.border}`}}>
                     {isO1?"S":isO2?"N":i+1}
                   </div>
-                  <span style={{flex:1,fontFamily:D.body,fontSize:"13px",fontWeight:isSelected?600:400,
+                  <span style={{flex:1,fontFamily:D.body,fontSize:"14px",fontWeight:isSelected?600:400,
                     color:isSelected?D.textPrimary:D.textSecondary}}>{name}</span>
                   {p&&(
                     <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
-                      <span style={{fontFamily:D.mono,fontSize:"9px",fontWeight:700,padding:"1px 5px",borderRadius:D.pill,
+                      <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,padding:"1px 5px",borderRadius:D.pill,
                         background:p.batHand==="L"?`${D.amber}15`:`${D.sky}15`,
                         border:`1px solid ${p.batHand==="L"?D.amber+"33":D.sky+"33"}`,
                         color:p.batHand==="L"?D.amber:D.sky}}>{p.batHand}HB</span>
-                      <Badge color={rc} sx={{fontSize:"8px"}}>{p.role}</Badge>
+                      <Badge color={rc} sx={{fontSize:"12px"}}>{p.role}</Badge>
                     </div>
                   )}
                 </button>
@@ -183,7 +203,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
           <input value={bowlerFilter} onChange={e=>setBowlerFilter(e.target.value)} aria-label="Search bowlers"
             placeholder="Filter bowlers…"
             style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"8px 12px",width:"100%"}}/>
+              color:D.textPrimary,fontSize:"16px",fontFamily:D.body,padding:"8px 12px",minHeight:"44px",width:"100%"}}/>
           <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"300px",overflowY:"auto"}}>
             {bowlerCandidates.map(name=>{
               const p=getBowler(name);
@@ -192,25 +212,25 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
               const styleDesc=p?`${p.bowlArm==="L"?"LA":"RA"}${p.bowlStyle==="F"?"F":p.bowlStyle==="S"?"S":"M"}`:"";
               return (
                 <button key={name} onClick={()=>setBowler(name)} className="pressBtn" style={{
-                  display:"flex",alignItems:"center",gap:"9px",padding:"9px 11px",borderRadius:D.md,
+                  display:"flex",alignItems:"center",gap:"9px",padding:"8px 11px",minHeight:"44px",borderRadius:D.md,
                   cursor:"pointer",textAlign:"left",width:"100%",
                   border:`1px solid ${isSel?D.rose+"55":D.border}`,
                   background:isSel?`${D.rose}0e`:D.surf2,transition:"all .15s",
                 }}>
-                  <div style={{width:"22px",height:"22px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-                    fontFamily:D.mono,fontSize:"10px",fontWeight:700,
+                  <div style={{width:"28px",height:"28px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                    fontFamily:D.mono,fontSize:"12px",fontWeight:700,
                     background:isSel?`${D.rose}22`:D.surf3,
                     color:isSel?D.rose:D.textMuted,
                     border:`1px solid ${isSel?D.rose+"55":D.border}`}}>
                     {isSel?"✓":"B"}
                   </div>
-                  <span style={{flex:1,fontFamily:D.body,fontSize:"13px",fontWeight:isSel?600:400,
+                  <span style={{flex:1,fontFamily:D.body,fontSize:"14px",fontWeight:isSel?600:400,
                     color:isSel?D.textPrimary:D.textSecondary}}>{name}</span>
                   {p&&(
                     <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
-                      {styleDesc&&<span style={{fontFamily:D.mono,fontSize:"9px",fontWeight:700,padding:"1px 5px",borderRadius:D.pill,
+                      {styleDesc&&<span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,padding:"1px 5px",borderRadius:D.pill,
                         background:`${D.violet}15`,border:`1px solid ${D.violet}33`,color:D.violetText}}>{styleDesc}</span>}
-                      <Badge color={rc} sx={{fontSize:"8px"}}>{p.role}</Badge>
+                      <Badge color={rc} sx={{fontSize:"12px"}}>{p.role}</Badge>
                     </div>
                   )}
                 </button>
@@ -223,6 +243,66 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
           </Btn>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   TOSS STEP  (step 3 of SetupScreen, and of a Practice Match)
+   Who won it, and what they chose. `toss` is the index (0 or 1) of the side
+   that won; `bat` is 0 for bat, 1 for bowl. Both setups read them the same
+   way (SetupScreen's step 4 below; lib/practice.js practiceCfg).
+═══════════════════════════════════════════════════════ */
+function TossStep({team1Key,team2Key,overs,toss,setToss,bat,setBat,onConfirm,abbr1,abbr2}){
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+      {/* Match summary */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+        background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.lg,padding:"14px 16px"}}>
+        <div style={{textAlign:"center",flex:1,minWidth:0}}>
+          <div style={{fontFamily:D.body,fontSize:"14px",fontWeight:600,color:D.textPrimary,overflowWrap:"anywhere"}}>{team1Key}</div>
+          {abbr1&&<div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{abbr1}</div>}
+        </div>
+        <div style={{textAlign:"center",padding:"0 16px"}}>
+          <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em"}}>vs</div>
+          <div style={{fontFamily:D.mono,fontSize:"12px",color:D.amber,marginTop:"4px"}}>{overs} ov</div>
+        </div>
+        <div style={{textAlign:"center",flex:1,minWidth:0}}>
+          <div style={{fontFamily:D.body,fontSize:"14px",fontWeight:600,color:D.textPrimary,overflowWrap:"anywhere"}}>{team2Key}</div>
+          {abbr2&&<div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{abbr2}</div>}
+        </div>
+      </div>
+      <div>
+        <Lbl sx={{marginBottom:"8px"}}>Toss Won By</Lbl>
+        <div role="radiogroup" aria-label="Toss won by" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+          {[team1Key,team2Key].map((t,i)=>(
+            <button key={i} type="button" role="radio" aria-checked={toss===i} onClick={()=>setToss(i)} className="pressBtn" style={{
+              padding:"12px",minHeight:"48px",borderRadius:D.md,cursor:"pointer",overflowWrap:"anywhere",
+              fontFamily:D.body,fontSize:"14px",fontWeight:600,
+              border:`1px solid ${toss===i?D.emerald+"66":D.border}`,
+              background:toss===i?`${D.emerald}14`:D.surf2,
+              color:toss===i?D.emerald:D.textSecondary,transition:"all .2s",
+            }}>{t}</button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <Lbl sx={{marginBottom:"8px"}}>{[team1Key,team2Key][toss]} elected to…</Lbl>
+        <div role="radiogroup" aria-label="Elected to" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+          {["Bat","Bowl"].map((opt,i)=>(
+            <button key={i} type="button" role="radio" aria-checked={bat===i} onClick={()=>setBat(i)} className="pressBtn" style={{
+              padding:"12px",minHeight:"48px",borderRadius:D.md,cursor:"pointer",
+              fontFamily:D.body,fontSize:"14px",fontWeight:600,
+              border:`1px solid ${bat===i?D.amber+"66":D.border}`,
+              background:bat===i?`${D.amber}14`:D.surf2,
+              color:bat===i?D.amber:D.textSecondary,transition:"all .2s",
+            }}>{opt}</button>
+          ))}
+        </div>
+      </div>
+      <Btn variant="primary" size="lg" full onClick={onConfirm} sx={{borderRadius:D.md}}>
+        Confirm Toss →
+      </Btn>
     </div>
   );
 }
@@ -432,9 +512,48 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
 }
 
 /* ═══════════════════════════════════════════════════════
+   PRACTICE MATCH, FROM THE START SCREEN
+   "Start Practice Match" is the way in. A practice match still in progress is
+   offered first: Resume, with the score and when it was last saved. The list
+   of them is one tap away. Everything about them is kept on this phone
+   (lib/practice.js), and the card says so.
+═══════════════════════════════════════════════════════ */
+function PracticeEntry({offer,onStart,onList,onResume}){
+  const score=(offer?.lines||[]).map(l=>`${l.team} ${l.runs}/${l.wickets} (${Math.floor(l.balls/6)}.${l.balls%6})`).join(" · ");
+  return (
+    <div data-testid="practice-entry" style={{width:"100%",maxWidth:"520px",display:"flex",flexDirection:"column",gap:"10px",marginBottom:"16px"}}>
+      {offer&&(
+        <Glass style={{padding:"16px 18px"}}>
+          <div data-testid="practice-resume-card" style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+            <Lbl>Practice match in progress</Lbl>
+            <div style={{fontFamily:D.body,fontSize:"16px",fontWeight:600,color:D.textPrimary,overflowWrap:"anywhere"}}>{offer.title}</div>
+            <div style={{fontFamily:D.body,fontSize:"14px",color:D.textSecondary,overflowWrap:"anywhere"}}>
+              {score||"Nothing scored yet"}
+            </div>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Last saved {savedWords(offer.savedAt)}</div>
+            <Btn variant="live" size="lg" full data-testid="practice-resume" onClick={()=>onResume(offer.id)} sx={{borderRadius:D.md}}>Resume</Btn>
+          </div>
+        </Glass>
+      )}
+      <Btn variant={offer?"tonal":"primary"} size="lg" full data-testid="start-practice" onClick={onStart} sx={{borderRadius:D.md}}>
+        Start Practice Match
+      </Btn>
+      <Btn variant="ghost" size="lg" full data-testid="practice-list-open" onClick={onList} sx={{borderRadius:D.md}}>
+        Practice Matches
+      </Btn>
+      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,textAlign:"center"}}>
+        A practice match is kept on this phone only. It is never sent anywhere or counted.
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    SETUP SCREEN
 ═══════════════════════════════════════════════════════ */
-function SetupScreen({onStart}){
+// `practice` is the Practice Match way in (see PracticeEntry): { offer,
+// onStart, onList, onResume }. Absent, the screen is what it always was.
+function SetupScreen({onStart,practice=null}){
   const[step,setStep]=useState(0);
   const[team1Key,setTeam1Key]=useState("");
   const[team2Key,setTeam2Key]=useState("");
@@ -467,6 +586,7 @@ function SetupScreen({onStart}){
           letterSpacing:"0.2em",textTransform:"uppercase"}}>Cricket Match Centre</div>
         <div style={{width:"60px",height:"2px",background:D.grad,borderRadius:"2px",margin:"12px auto 0"}}/>
       </div>
+      {practice&&<PracticeEntry {...practice}/>}
       {/* Steps */}
       <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap",justifyContent:"center"}}>
         {STEPS.map((s,i)=>(
@@ -549,55 +669,9 @@ function SetupScreen({onStart}){
             </div>
           )}
           {step===3&&(
-            <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-              {/* Match summary */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.lg,padding:"14px 16px"}}>
-                <div style={{textAlign:"center",flex:1}}>
-                  <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{team1Key}</div>
-                  <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{INT_TEAMS[team1Key]?.abbr}</div>
-                </div>
-                <div style={{textAlign:"center",padding:"0 16px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em"}}>vs</div>
-                  <div style={{fontFamily:D.mono,fontSize:"11px",color:D.amber,marginTop:"4px"}}>{overs} ov</div>
-                </div>
-                <div style={{textAlign:"center",flex:1}}>
-                  <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{team2Key}</div>
-                  <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{INT_TEAMS[team2Key]?.abbr}</div>
-                </div>
-              </div>
-              <div>
-                <Lbl sx={{marginBottom:"8px"}}>Toss Won By</Lbl>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
-                  {[team1Key,team2Key].map((t,i)=>(
-                    <button key={i} onClick={()=>setToss(i)} className="pressBtn" style={{
-                      padding:"12px",borderRadius:D.md,cursor:"pointer",
-                      fontFamily:D.body,fontSize:"13px",fontWeight:600,
-                      border:`1px solid ${toss===i?D.emerald+"66":D.border}`,
-                      background:toss===i?`${D.emerald}14`:D.surf2,
-                      color:toss===i?D.emerald:D.textSecondary,transition:"all .2s",
-                    }}>{t}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <Lbl sx={{marginBottom:"8px"}}>{[team1Key,team2Key][toss]} elected to…</Lbl>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
-                  {["Bat","Bowl"].map((opt,i)=>(
-                    <button key={i} onClick={()=>setBat(i)} className="pressBtn" style={{
-                      padding:"12px",borderRadius:D.md,cursor:"pointer",
-                      fontFamily:D.body,fontSize:"13px",fontWeight:600,
-                      border:`1px solid ${bat===i?D.amber+"66":D.border}`,
-                      background:bat===i?`${D.amber}14`:D.surf2,
-                      color:bat===i?D.amber:D.textSecondary,transition:"all .2s",
-                    }}>{opt}</button>
-                  ))}
-                </div>
-              </div>
-              <Btn variant="primary" size="lg" full onClick={()=>setStep(4)} sx={{borderRadius:D.md}}>
-                Confirm Toss →
-              </Btn>
-            </div>
+            <TossStep team1Key={team1Key} team2Key={team2Key} overs={overs}
+              abbr1={INT_TEAMS[team1Key]?.abbr} abbr2={INT_TEAMS[team2Key]?.abbr}
+              toss={toss} setToss={setToss} bat={bat} setBat={setBat} onConfirm={()=>setStep(4)}/>
           )}
           {step===4&&(()=>{
             // Determine batting & bowling teams
@@ -633,4 +707,4 @@ function SetupScreen({onStart}){
   );
 }
 
-export { OpeningSetupStep, SetupScreen, SquadBuilder, TeamSelector };
+export { OpeningSetupStep, SetupScreen, SquadBuilder, TeamSelector, TossStep };

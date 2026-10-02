@@ -135,6 +135,11 @@ const SUITES = [
   ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // What a live pad says about the server when it cannot send (SCRBRD-078), same transform.
   ["sync-banner", "apps/web/test/sync-banner.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Practice Match, phase 1: a pasted list read, the squad limits, the display
+  // name, the cfg startMatch takes, a reload that loses nothing (score, wickets,
+  // overs, batters, bowler, undo), no route to the sync path or to any normal
+  // list, delete one and delete all, the weather record, the scorecard file.
+  ["practice", "apps/web/test/practice.test.mjs"],
   // A panel that throws is a quiet card in its place, logs its name and the
   // message once, and resets on "Try again" (ui/ErrorBoundary.jsx); same transform.
   ["error-boundary", "apps/web/test/error-boundary.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
