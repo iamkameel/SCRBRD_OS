@@ -167,6 +167,21 @@ function leaksIn(text, allowed) {
 /** The labels a log's squads and people carry. */
 const labelsOf = (/** @type {any} */ l) => [...new Set([...Object.values(l.people ?? {}),
   ...(l.events ?? []).flatMap((e) => [...(e.squad ?? []), ...(e.bowlingSquad ?? [])].map((m) => m.label))])].filter(Boolean);
+/**
+ * The log, re-read until `done(l)` holds or 5 s pass. A change made by SQL
+ * (not this API's own routes) drops the cache by LISTEN public_data_changed,
+ * which reaches the server asynchronously: the next read can still be the
+ * old entry for a moment (public-api.mjs, CACHING).
+ * @param {string} id @param {(l: any) => boolean} done
+ */
+async function logOnceNotified(id, done) {
+  let l = await log(id);
+  for (let i = 0; i < 50 && !done(l); i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    l = await log(id);
+  }
+  return l;
+}
 /** Pseudonym → label, for one side's squad in the first innings_start. */
 const squadLabels = (/** @type {any} */ l, innings = 0) => {
   const s = l.events.find((e) => e.kind === "innings_start" && e.innings === innings);
@@ -273,7 +288,10 @@ try {
     const [offU14] = await as(SARAH, `select ok, reason from public_names_off_set($1, $2, true)`, [HIL, grp]);
     ok(`...and the director of sport switches Hilton's ${grp} names off`, offU14.ok === true, offU14.reason);
 
-    l = await log(pub);
+    l = await logOnceNotified(pub, (x) => {
+      const v = [...squadLabels(x, 0).values()];
+      return v.includes(EXPECTED.erasmus) && !v.includes("T Nkosi");
+    });
     const s1 = squadLabels(l, 0);
     const names = [...s1.values()];
     ok("the next request names the two consenting Hilton boys", names.includes(EXPECTED.erasmus) && names.includes(EXPECTED.botha), names.join(","));
@@ -299,7 +317,7 @@ try {
 
     const [{ grp: g2 }] = await q(`select birth_age_group(born) as grp from player where id = $1`, [ids.nkosi]);
     const [lift] = await as(SARAH, `select ok, reason from public_names_off_set($1, $2, false)`, [HIL, g2]);
-    l = await log(pub);
+    l = await logOnceNotified(pub, (x) => [...squadLabels(x, 0).values()].includes("T Nkosi"));
     ok(`names back on for ${g2}: Thabo Nkosi is named on the next request`, lift.ok && [...squadLabels(l, 0).values()].includes("T Nkosi"));
 
     // The office withdraws Daniel Erasmus's consent, on the family's word. A
