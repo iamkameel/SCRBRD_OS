@@ -43,6 +43,8 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { port } from "./db-url.mjs";
+import { shellHtml } from "../services/api/public/public-api.mjs";
+import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 
 const PORT = port(4331);
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
@@ -108,6 +110,12 @@ const TYPE_FLOOR_CEILING = {
   // straight to the 18-item shell, matching Analytics.
   analytics:   17,
   career:      17,
+  // SCRBRD-133 G1: the ground display at its three sizes — 1920×1080,
+  // 1024×768, 390×844 — over every panel the rotation shows. Every size is
+  // max(12px, vmin), so 0 from the first measurement, and kept there.
+  display1080: 0,
+  display768:  0,
+  display390:  0,
 };                   // 103 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
@@ -163,8 +171,12 @@ const CONTRAST_CEILING = {
   // still clearly apart from critical's red and positive's green. Every
   // caller of textOn(D.amber) — Badge in both ui/primitives.jsx and
   // scorer/ui.jsx, and the handful of direct reads elsewhere — inherits it.
-  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0 },
-  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0 },
+  // SCRBRD-133 G1: the ground display's three sizes, Floodlit on the floodlit
+  // pass and its own Daylight setting (board.dim lifted) on the daylight one.
+  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
+              display1080: 0, display768: 0, display390: 0 },
+  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
+              display1080: 0, display768: 0, display390: 0 },
 };
 
 /**
@@ -193,6 +205,10 @@ const EMOJI_CEILING = {
   // SCRBRD-102: neither was the Analytics tab or the Career tab.
   analytics:   0,
   career:      0,
+  // SCRBRD-133 G1: the ground display (it has no controls at all).
+  display1080: 0,
+  display768:  0,
+  display390:  0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -232,8 +248,45 @@ const ok = (n, c, detail) => { if (c) pass++; else { fail++; console.log("  ✗"
 const group = (t) => console.log("\n" + t);
 const rgbOf = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
 
+// ── The ground display (SCRBRD-133 G1), served here without an API ──
+// The shell the public router serves, and a public header and log as the
+// router sends them — labels already decided, pseudonyms for ids — built
+// with @scrbrd/scoring's own constructors: a chase, a pair in, two overs and
+// a bit, so every panel of the cycle has something. The names are the
+// design's own illustrative ones (SCRBRD-133's sketches), nobody real.
+const DISPLAY_ID = "77777777-0000-0000-0000-0000000a11d0";
+const DISPLAY_HEADER = { match: { id: DISPLAY_ID, homeLabel: "Hilton College 1XI", homeTeam: "1XI", homeCode: "HIL", awayLabel: "Kearsney College 1XI",
+  awayTeam: "Kearsney College 1XI", awayOnPlatform: false, sport: "cricket", format: "T20", overs: 20, startsAt: "2026-09-26T08:00:00.000Z",
+  ground: "Gordon Sherwood Oval", status: "live", tossWonBy: "home", tossDecision: "bat", published: { home: true, away: false },
+  scores: [{ innings: 0, runs: 9, wickets: 0, balls: 8 }], result: null }, fold: { startsAt: "2026-09-26T08:00:00.000Z", format: "T20" } };
+const DISPLAY_LOG = (() => {
+  const P = (/** @type {number} */ n) => `a11d${String(n).padStart(8, "0")}`;
+  const squad = [["D Erasmus", 1], ["R Pillay", 2], ["Batter", 3], ["Batter", 4], ["Batter", 5], ["Batter", 6], ["Batter", 7], ["Batter", 8],
+    ["Batter", 9], ["Batter", 10], ["Batter", 11]].map(([label, n]) => ({ id: P(/** @type {number} */ (n)), label }));
+  const theirs = [["K Naidoo", 21], ["Bowler", 22], ...Array.from({ length: 9 }, (_, i) => ["Bowler", 23 + i])].map(([label, n]) => ({ id: P(/** @type {number} */ (n)), label }));
+  let seq = 0;
+  const at = (/** @type {any} */ ev) => ({ ...ev, innings: 0, seq: ++seq, id: `e${String(seq).padStart(15, "0")}`, clientTs: Date.parse("2026-09-26T08:00:00Z") + seq * 30_000 });
+  const events = [
+    at(inningsStart({ battingTeam: "1XI", bowlingTeam: "Kearsney College 1XI", teamKey: "1XI", bowlingTeamKey: "Kearsney College 1XI", squad, bowlingSquad: theirs, overs: 20 })),
+    at(batters({ striker: squad[0].id, nonStriker: squad[1].id })), at(bowler({ bowler: theirs[0].id })),
+    ...[1, 0, 4, 0, 2, 1].map((v) => at(ball({ value: v }))), at(bowler({ bowler: theirs[1].id })),
+    at(ball({ type: BALL_TYPE.WIDE, value: 0 })), at(ball({ value: 1 })), at(ball({ value: 0 })),
+  ];
+  return { matchId: DISPLAY_ID, servedOn: "2026-09-26", last: seq, events, people: { [P(1)]: "D Erasmus", [P(2)]: "R Pillay", [P(21)]: "K Naidoo" } };
+})();
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://x").pathname;
+  if (url === `/display/${DISPLAY_ID}`) {
+    res.writeHead(200, { "content-type": "text/html" });
+    res.end(shellHtml({ view: "display", matchId: DISPLAY_ID, header: { homeLabel: "Hilton College 1XI", awayLabel: "Kearsney College 1XI", scores: [] } }));
+    return;
+  }
+  if (url === `/api/public/matches/${DISPLAY_ID}` || url === `/api/public/matches/${DISPLAY_ID}/log`) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(url.endsWith("/log") ? DISPLAY_LOG : DISPLAY_HEADER));
+    return;
+  }
   let body, type;
   try {
     const f = join("apps/web/dist", url === "/" ? "index.html" : url);
@@ -1032,9 +1085,62 @@ async function padFit() {
   }
 }
 
+/**
+ * SCRBRD-133 G1: the ground display at its three sizes, through every panel
+ * of its rotation (the dwell shortened by its own test hook), measured by the
+ * same three ratchets as every other screen: the type floor, contrast on what
+ * is actually behind the text, emoji in controls. The daylight pass opens the
+ * display's own Daylight setting. Falsified on the display itself first.
+ * @param {"floodlit" | "daylight"} theme
+ */
+async function displayWalk(theme) {
+  for (const [w, h, screen] of [[1920, 1080, "display1080"], [1024, 768, "display768"], [390, 844, "display390"]]) {
+    const ctx = await browser.newContext({ colorScheme: theme === "daylight" ? "light" : "dark", viewport: { width: w, height: h } });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    try {
+      await page.addInitScript("window.__SCRBRD_DISPLAY_DWELL_MS__ = 900;");
+      await page.goto(`http://localhost:${PORT}/display/${DISPLAY_ID}${theme === "daylight" ? "?theme=daylight" : ""}`, { waitUntil: "networkidle" });
+      await page.waitForSelector('[data-testid="display-panel"] section', { timeout: 8000 }).catch(() => {});
+      const drawn = await page.evaluate(() => document.querySelector('[data-testid="display"]')?.getAttribute("data-theme-display"));
+      ok(`${theme} ${w}×${h}: the ground display is drawn${theme === "daylight" ? ", in its own Daylight" : ""}`, drawn === theme, String(drawn));
+      if (screen === "display1080") {
+        await page.evaluate(() => {
+          const d = document.createElement("div");
+          d.innerHTML = '<p style="font-size:9px">display probe small</p><p style="color:#1a1f1a;font-size:14px">display probe dark</p>';
+          document.querySelector('[data-testid="display-panel"]').appendChild(d);
+        });
+        const probe = await survey(page);
+        await page.evaluate(() => document.querySelector('[data-testid="display-panel"]').lastElementChild.remove());
+        ok(`${theme}: the display probe — a 9px line is seen`, probe.some((i) => i.text === "display probe small" && i.size < 12));
+        ok(`${theme}: ...and near-black on the board's black is seen`, probe.some((i) => i.text === "display probe dark" && i.ratio != null && i.ratio < 4.5));
+      }
+      const most = { type: 0, contrast: 0, emoji: 0 };
+      const panels = new Set();
+      for (let i = 0; i < 5; i++) {
+        panels.add(await page.evaluate(() => document.querySelector('[data-testid="display"]')?.getAttribute("data-panel")));
+        await measure(page, theme, screen);
+        for (const k of /** @type {const} */ (["type", "contrast", "emoji"])) most[k] = Math.max(most[k], measured[theme][k][screen]);
+        await page.waitForTimeout(900);
+      }
+      for (const k of /** @type {const} */ (["type", "contrast", "emoji"])) measured[theme][k][screen] = most[k];
+      ok(`${theme} ${w}×${h}: measured over the cycle's three panels (${[...panels].join(", ")})`,
+         ["partnership", "overs", "bowling"].every((p) => panels.has(p)), [...panels].join(", "));
+    } catch (e) {
+      ok(`the ${theme} ${w}×${h} display walk threw: ${/** @type {any} */ (e).message?.slice(0, 100)}`, false);
+    } finally {
+      await ctx.close();
+    }
+  }
+}
+
 try {
   await walk("floodlit");
   await walk("daylight");
+
+  group("The ground display (SCRBRD-133 G1) — three sizes, every panel");
+  await displayWalk("floodlit");
+  await displayWalk("daylight");
 
   group("The pad's strip on a phone (§4 rule 1) — no scrolling to reach it");
   await padFit();
