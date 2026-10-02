@@ -87,8 +87,9 @@ function HelpLine() {
     <div data-testid="no-school-help" style={{ ...card, marginBottom: 0 }}>
       <div style={{ fontFamily: FONT.head, fontSize: "14px", fontWeight: 700, color: T.content.primary, marginBottom: "4px" }}>Worried about a child?</div>
       {url
-        ? <div style={text(14)}>You do not need a school to speak up. <a href={url} target="_blank" rel="noopener noreferrer" data-testid="no-school-guardian"
-            style={{ color: T.brand.blueText, fontWeight: 600 }}>Report anonymously with The Guardian's app</a>.</div>
+        ? <div style={text(14)}>You do not need a school to speak up.
+            <a href={url} target="_blank" rel="noopener noreferrer" data-testid="no-school-guardian"
+               style={{ display: "flex", alignItems: "center", minHeight: "44px", color: T.brand.blueText, fontWeight: 600, fontSize: "14px" }}>Report anonymously with The Guardian's app</a></div>
         : <div style={text(14)} data-testid="no-school-guardian-unset">The Guardian's app link has not been set on this platform yet.</div>}
     </div>
   );

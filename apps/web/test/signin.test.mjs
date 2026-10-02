@@ -133,7 +133,7 @@ group("Google's side: config from the environment, failures in words");
   ok("the Firebase session is held in memory only", /inMemoryPersistence/.test(code) && !/browserLocalPersistence|indexedDBLocalPersistence/.test(code));
   ok("...and ended once the token is in hand", /signOut\(auth\)/.test(code));
   ok("the account chooser is always asked", /select_account/.test(code));
-  ok("the test hook is gated on the build-time constant", /TEST_HOOKS\s*&&[^;]*__SCRBRD_TEST_GOOGLE__/.test(code));
+  ok("the test hook is gated on the build-time constant", /typeof __SCRBRD_TEST_HOOKS__ !== "undefined" && __SCRBRD_TEST_HOOKS__\) \{\s*if \(typeof window\.__SCRBRD_TEST_GOOGLE__/.test(code));
 }
 
 group("The privacy paragraph is the one Kameel signed");

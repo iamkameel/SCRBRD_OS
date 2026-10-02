@@ -51,15 +51,13 @@ export function googleConfig(env = /** @type {any} */ (import.meta).env) {
 /** Is Google sign-in switched on in this build? */
 export const googleAvailable = () => googleConfig() !== null;
 
-/**
- * A build made for the browser walks (SCRBRD_TEST_HOOKS=1, into dist-test/ —
- * vite.config.js) lets window.__SCRBRD_TEST_GOOGLE__ answer in place of the
- * popup, with an ID token the walk signed with its own key. In every other
- * build the constant is the literal `false`, the branch is dead code and the
- * name is not in the bundle (tools/check-bundle.mjs fails the build if it is).
- * The SDK is still loaded first, so the walk can see WHEN it is fetched.
- */
-const TEST_HOOKS = typeof __SCRBRD_TEST_HOOKS__ !== "undefined" && __SCRBRD_TEST_HOOKS__;
+// THE WALKS' DOOR. A build made for the browser walks (SCRBRD_TEST_HOOKS=1, into dist-test/ —
+// vite.config.js) lets window.__SCRBRD_TEST_GOOGLE__ answer in place of the
+// popup, with an ID token the walk signed with its own key. In every other
+// build the constant is the literal `false`, the branch is dead code and the
+// name is not in the bundle (tools/check-bundle.mjs fails the build if it is).
+// The SDK is still loaded first, so the walk can see WHEN it is fetched.
+// (See googleIdToken below.)
 
 /**
  * What a failure to get a token from Google is called, in our words. Firebase's
@@ -129,9 +127,13 @@ export function authReady({ load = () => Promise.all([import("firebase/app"), im
 export async function googleIdToken() {
   try {
     const { auth, sdk } = await authReady();
-    if (TEST_HOOKS && typeof window !== "undefined" && typeof window.__SCRBRD_TEST_GOOGLE__ === "function") {
-      const t = await window.__SCRBRD_TEST_GOOGLE__();
-      return { ok: true, idToken: String(t.idToken), email: t.email ?? null };
+    // Written out here rather than through a named constant: a constant the
+    // minifier does not inline leaves the condition behind, name and all.
+    if (typeof __SCRBRD_TEST_HOOKS__ !== "undefined" && __SCRBRD_TEST_HOOKS__) {
+      if (typeof window.__SCRBRD_TEST_GOOGLE__ === "function") {
+        const t = await window.__SCRBRD_TEST_GOOGLE__();
+        return { ok: true, idToken: String(t.idToken), email: t.email ?? null };
+      }
     }
     const provider = new sdk.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
