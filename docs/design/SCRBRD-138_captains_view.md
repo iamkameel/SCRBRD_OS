@@ -1,6 +1,6 @@
 # SCRBRD-138 — The captain's view: the design
 
-**Status:** for Kameel's review, 2026-10-01. Nothing is built.
+**Status:** **decided (Kameel, 2026-10-02): D1–D11 all as recommended.** Written for Kameel's review 2026-10-01; nothing built yet.
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md` SCRBRD-136/137/138; ADR 0003; `docs/design/STEP4_parent_pupil.md` (the pupil app as built); `docs/design/SAFEGUARDING_DSO.md` and `docs/policy/CSA_SAFEGUARDING_CHECK.md` (SG-9, K3, db/57); `docs/design/SCRBRD-110_workload.md` and ADR 0002; `docs/design/SCRBRD-133_immersive_match_centre.md` §2–3; `packages/scoring/src/conditions.mjs`; `tools/smoke-matchups.mjs`; the beta-2 prototype's `CaptainCockpitView.tsx` and `CaptainTacticalCockpit.tsx`.
 **Reader:** the product owner first, then the Opus agent who builds the gate and the channel, and the Sonnet agent who builds the screens. Plain words come first in each section. Names in the sketches are the seed's illustrative ones (Hilton, Kearsney, D Erasmus, R Pillay, K Naidoo), never a real child's.
 

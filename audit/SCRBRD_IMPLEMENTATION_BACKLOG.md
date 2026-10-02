@@ -3981,6 +3981,8 @@ The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/
 
 ### SCRBRD-133 — The immersive Match Centre and the ground display (2026-10-01)
 
+**Decided (Kameel, 2026-10-02):** D1–D16 as the design recommends. Build G1 (the ground display, no migration) first, then G2 (par and pressure), then G3 (moving charts, moment cards, the over strip).
+
 Kameel: the app should be "dynamic, data-rich, informative, immersive, interesting and visually stimulating". The build order is confirmed. Fable designs first, in `docs/design/SCRBRD-133_immersive_match_centre.md`; Fable's list gained this topic with Kameel's say.
 
 1. **Ground display mode:** the pavilion screen.
@@ -4035,6 +4037,8 @@ beta-2's Intelligence drawer has five fixed cards, among them "+18% win equity",
 - **Who builds:** Opus writes the rule list with sources and gates, then Sonnet builds the drawer.
 
 ### SCRBRD-138 — The captain's view (2026-10-01)
+
+**Decided (Kameel, 2026-10-02):** D1–D11 as the design recommends. Phase A (the view over reads that exist, no migration) first; phase B (the coach's plan to the side) after.
 
 Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same screen for whoever holds the captaincy honour (`recognition`, kind `captain`), never a role. A captain is a pupil reading his team-mates' data, so what he may see is the design's question.
 
