@@ -363,7 +363,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // reason for an absence anywhere; every card's evidence equal to the reads;
   // Seen per person and per evidence; the live tab's cap sentences are the
   // pad's; 12px, 44px, both themes, reduced motion.
-  "browser-cockpit"];
+  "browser-cockpit",
+  // Signing in with Google, from a browser (SCRBRD-140 phase 1, the screens):
+  // the button and the signed privacy paragraph, the SDK fetched only when
+  // pressed, a new account on the no-school screen, a parent's request as free
+  // text with nothing looked up and nothing linked, the office's answer, Me's
+  // ways to sign in (add, refuse, remove), and the office's Claims list; 12px
+  // and 44px, both themes.
+  "browser-signup"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
