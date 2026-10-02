@@ -77,6 +77,10 @@ const BAND_ORDER = (/** @type {string} */ col) =>
  * @property {(rows: any[]) => any[]} [compose]              rows → the answer, when judgement is applied in JS
  * @property {boolean} [logsItself]                          the SQL writes its own access_log row (a definer that
  *                                                           logs every call); the read path adds none of its own
+ * @property {(q: Record<string, string>) => string[]} [logsReads]  a read of the record itself (the access log,
+ *                                                           the support sessions): every answer that holds a row
+ *                                                           not the reader's own is logged, under this resource;
+ *                                                           the function names the ids the query asked about
  */
 
 /** @type {Record<string, ReadQuery>} */
@@ -2394,7 +2398,10 @@ export const READ_QUERIES = {
   // the thing the decision functions read — rather than from a join: the
   // auditor at a school may not read the support person's assignment row,
   // and a join would silently drop the session they are entitled to see.
+  // Reading the sessions is itself on the record (Kameel, 2026-10-02:
+  // "transparency and accountability"): logsReads, below.
   support_access: {
+    logsReads: () => [],
     text: `select s.id, s.actor_id, u.name as actor_name,
                   s.school_id, sc.name as school_name,
                   s.role, s.team_code, s.reason,
@@ -2416,7 +2423,8 @@ export const READ_QUERIES = {
                   -- And whether they reached it through a support session
                   -- (db/22): the row in support_access says who, why and
                   -- for how long.
-                  l.support_access_id
+                  l.support_access_id,
+                  l.person_id = app_user_id() as mine
              from access_log l
              left join app_user u on u.id = l.person_id
             where ($1::uuid is null or l.record_ids @> array[$1::uuid])
@@ -2425,6 +2433,10 @@ export const READ_QUERIES = {
     // Optional: everything read about ONE child, which is the question a
     // parent actually asks.
     params: q => [q?.playerId || null],
+    // Reading the log is itself on the record, as audit_log() (db/79) is:
+    // the raw log is no quieter a door than the tab (Kameel, 2026-10-02).
+    // A read about one child names him.
+    logsReads: q => (q?.playerId ? [q.playerId] : []),
   },
 
   // THE AUDIT LOG (SCRBRD-132 B2, db/79). audit_log() is the one door: it
@@ -2944,6 +2956,19 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
     if (def.logsItself) {
       // The SQL has already written this read's row, at the school it asked
       // about; a second from here would count one read twice.
+    } else if (def.logsReads) {
+      // A read of the record itself (the access log, the support sessions):
+      // one row per school whose rows came back, whenever any of them is not
+      // the reader's own — a person looking at their own sessions or their
+      // own reads is not auditing anybody. Platform-wide and support stamps
+      // are decided inside log_restricted_read(), as for every other read.
+      const others = rows.filter((r) => r.mine !== true);
+      const ids = def.logsReads(query).filter((id) => UUID_RE.test(id)).slice(0, MAX_LOGGED_IDS);
+      for (const school of new Set(others.map((r) => r.school_id ?? null))) {
+        await client.query(
+          `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
+          [resource, ids, [], school]);
+      }
     } else if ((who?.platform || who?.support) && rows.length) {
       const disclosed = (watched ?? []).filter((f) => rows.some((r) => pick(r, f) != null));
       for (const school of new Set(rows.map((r) => r.school_id ?? null))) {

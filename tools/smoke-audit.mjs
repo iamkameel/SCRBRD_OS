@@ -200,6 +200,27 @@ try {
     ok("the school's auditor sees the owner's read in their own log",
        seen.some((r) => r.resource === "players" && r.platform_wide === true));
     ok("...and not the other school's row", seen.every((r) => r.school_id === HIL));
+
+    // Reading the log is itself on the record (Kameel, 2026-10-02:
+    // "transparency and accountability"). The raw log and the support
+    // sessions are no quieter a door than the audit log tab.
+    await q(`delete from access_log`);
+    await read("players", owner);
+    await read("access_log", head);
+    ok("the auditor's read of the log is itself logged",
+       (await q(`select count(*)::int n from access_log where resource = 'access_log' and school_id = $1`, [HIL]))[0].n === 1);
+    await q(`delete from access_log`);
+    await read("players", owner);
+    await api(`/api/read/access_log?playerId=${P_INJURED}`, { token: head });
+    ok("...and a read about one child names him",
+       (await q(`select count(*)::int n from access_log where resource = 'access_log' and record_ids @> array[$1::uuid]`, [P_INJURED]))[0].n === 1);
+    await q(`delete from access_log`);
+    await read("access_log", coach);
+    ok("a coach's empty read of the log writes nothing",
+       (await q(`select count(*)::int n from access_log`))[0].n === 0);
+    await read("support_access", head);
+    ok("reading support sessions with none to show writes nothing",
+       (await q(`select count(*)::int n from access_log where resource = 'support_access'`))[0].n === 0);
   }
 } catch (e) {
   ok(`the audit walk threw: ${e.message?.slice(0, 160)}`, false);
