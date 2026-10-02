@@ -20,7 +20,17 @@
  *     return date reaches him — not on the team sheet, and not through the
  *     reads behind it;
  *   - nothing read under 12px and nothing tapped under 44px, at phone width;
- *   - no scoping refusals, no page errors.
+ *   - no scoping refusals, no page errors;
+ *   - THE CAPTAIN'S VIEW (SCRBRD-138 phase A): the seed's pupil is awarded
+ *     `captain` for the walk and it is withdrawn after. With it, his Home
+ *     carries the card, his fixture the section, his match the tab; a
+ *     team-mate without the honour has none of them; after the withdrawal
+ *     they are gone on the next load; so they are when the honour's side is
+ *     not his; a vice-captain has the same view under his own label. The tab
+ *     says overs left in the cap's own words (the pad's sentence, from the
+ *     scoring package), says no injury, fitness word, guideline,
+ *     availability or reason, offers no row to open, and puts no child of
+ *     another school on screen beyond the log's own names.
  *
  * Every fixture here takes an explicit date.
  *
@@ -37,6 +47,8 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
+import { capWords } from "@scrbrd/scoring";
+import { ATTACK, buildCaptainFixtures, fixConditions, PLAY } from "./fixture-captain.mjs";
 
 const WEB_PORT = port(4366);
 const API_PORT = port(8966);
@@ -298,6 +310,304 @@ try {
     ok("availability: his own answer and no team-mate's", avail.every((a) => a.player_id === PILLAY || a.status == null) && !avail.some((a) => a.reason_kind === "family"),
        JSON.stringify(avail.map((a) => [a.player_id.slice(-2), a.status, a.reason_kind])));
   }
+
+  // ══ SCRBRD-138 phase A: the captain's view ══════════════════════════════
+  // Dates here are the fixtures' own, explicit; the one "tomorrow" fixture is
+  // relative to the clock only so that it is within a week of the Home card's
+  // test (and in the current school season, bar the last day of the year).
+  // Nothing is pinned to a birthday the seed computes.
+  group("The captain's view (SCRBRD-138): set the stage");
+  const WES = "22222222-2222-2222-2222-222222222222";
+  const MKHIZE = "bbbbbbbb-0000-0000-0000-000000000001";   // Westville's, the other school's child
+  const SEASON = (await q(`select id, label from season_for(sa_today(), 'school')`))[0];
+  // Two more on the sheet: of age (eighteen), because a minor needs a verified guardian link and consent before he may be selected.
+  const SIX = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
+                        values ($1, '1XI', 'V Mate Six', 66, 'batter', current_date - interval '19 years') returning id`, [HIL]))[0].id;
+  const SEVEN = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
+                          values ($1, '1XI', 'V Mate Seven', 67, 'bowler', current_date - interval '19 years') returning id`, [HIL]))[0].id;
+  await q(`update player set bowling_style = 'F' where id = $1`, [NAIDOO]);
+  const nm = Object.fromEntries((await q(`select id, full_name from player where id = any($1::uuid[])`,
+    [[PILLAY, WHITFIELD, BEKKER, NAIDOO, SEVEN, SIX]])).map((r) => [r.id, r.full_name]));
+  const ids = { pillay: PILLAY, whitfield: WHITFIELD, bekker: BEKKER, naidoo: NAIDOO, seven: SEVEN, six: SIX };
+  const names = { pillay: nm[PILLAY], whitfield: nm[WHITFIELD], bekker: nm[BEKKER], naidoo: nm[NAIDOO], seven: nm[SEVEN], six: nm[SIX] };
+  const { field: FIELD, bat: BAT } = await buildCaptainFixtures(q, { school: HIL, ids, names, westville: WES });
+  // Tomorrow: with the day's terms, a report, a sheet, and a team-mate's answer and injury he must not learn.
+  const DAY = (await q(
+    `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+     values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', now() + interval '1 day', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, WES]))[0].id;
+  await fixConditions(q, DAY);
+  await q(`insert into match_squad (match_id, player_id, side, batting_no) values
+             ($1, $2, 'home', 1), ($1, $3, 'home', 2), ($1, $4, 'home', 3), ($1, $5, 'home', 4), ($1, $6, 'home', 5), ($1, $7, 'home', 6)`,
+    [DAY, WHITFIELD, BEKKER, NAIDOO, PILLAY, SEVEN, SIX]);
+  await q(`insert into match_pitch_report (match_id, school_id, surface, grass, bounce, pace, favours) values ($1, $2, 'firm', 'covered', 'even', 'quick', 'seam')`, [DAY, HIL]);
+  await q(`insert into match_availability (match_id, player_id, school_id, status, reason_kind, note, declared_by)
+           values ($1, $2, $3, 'unavailable', 'illness', 'Shoulder impingement, physio says rest', $4)`, [DAY, BEKKER, HIL, coachId]);
+  // Batter against bowler: R Pillay faced a team-mate (fast) six times and Westville's D Mkhize three times.
+  const MU = (await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status) values ($1, '1XI', 'Verify Nets XI', '2026-09-20 09:00+02', 'T20', 20, 'complete') returning id`, [HIL]))[0].id;
+  const scorerId = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+  let seq = 0;
+  for (const [bowl, v] of [[NAIDOO, 1], [NAIDOO, 0], [NAIDOO, 4], [NAIDOO, 0], [NAIDOO, 1], [NAIDOO, 2], [MKHIZE, 1], [MKHIZE, 1], [MKHIZE, 0]]) {
+    seq += 1;
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id, bowler_id, payload)
+             values ($1, $2, $3, 1, 0, $4, 'device-cap', $5, $3, now(), 'ball', 'run', $6, $7, $8, '{}'::jsonb)`, [MU, HIL, seq, scorerId, `cap-mu-${seq}`, v, PILLAY, bowl]);
+  }
+  // A team-mate with an account of his own and no honour but last season's colours.
+  const MATE_EMAIL = "mate.pupil@example.invalid";
+  const MATE_USER = "cafe0000-0000-0000-0000-0000000000a1";
+  await q(`insert into app_user (id, school_id, email, name, role, player_id, teams) values ($1, $2, $3, 'James Whitfield', 'player', $4, '{1XI}')`, [MATE_USER, HIL, MATE_EMAIL, WHITFIELD]);
+  await q(`insert into role_assignment (id, person_id, role, school_id, team_code) values
+             ('a5510000-0000-0000-0000-0000000000a1', $1, 'player', $2, '1XI'), ('a5510000-0000-0000-0000-0000000000a2', $1, 'selfaccess', $2, NULL)`, [MATE_USER, HIL]);
+  await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+           values ('a5510000-0000-0000-0000-0000000000a2', $1, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c')`, [WHITFIELD]);
+
+  // What the tab may never say (§4): the walk's own list, kept apart from the screen's.
+  const NEVER = /injur|fitness|\bfit\b|physio|rehab|restrict|return date|guideline|workload|wellness|available|unavailable|doubtful|\breason|because|\bwhy\b|threat|probab|win chance|shoulder|impingement|hamstring|funeral|10 Oct|2026-10-10/i;
+  async function signInAs(page, email) {
+    await click(page, /Get Started|Log In/, 5000);
+    await page.waitForTimeout(500);
+    await page.locator("#login-email").fill(email);
+    await click(page, /^Sign In$/, 5000);
+    await page.waitForTimeout(2200);
+    return (await tid(page, "persona-bar").count()) === 1;
+  }
+  /**
+   * Where the captain's view shows, read off a fresh sitting: the card on Home,
+   * the section on `day`'s fixture screen, the tab on `live`'s match.
+   */
+  async function surfaces(email, { day = DAY, live = FIELD } = {}) {
+    const x = await open();
+    const out = { signedIn: await signInAs(x.page, email) };
+    await x.page.waitForTimeout(800);
+    out.card = await tid(x.page, "captain-card").count() === 1;
+    out.cardText = out.card ? await inner(x.page, "captain-card") : "";
+    await go(x.page, "mymatches");
+    await tid(x.page, `fixture-row-${day}`).click({ timeout: 4000 }).catch(() => {});
+    await x.page.waitForTimeout(1500);
+    out.section = await tid(x.page, "captain-section").count() === 1;
+    await tid(x.page, "family-back").click({ timeout: 4000 }).catch(() => {});
+    await x.page.waitForTimeout(500);
+    await tid(x.page, `live-row-${live}`).click({ timeout: 4000 }).catch(() => {});
+    await x.page.waitForTimeout(2000);
+    out.tab = await tid(x.page, "mc-tab-captain").count() === 1;
+    out.tabs = await x.page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
+    out.errors = x.errors.length; out.refusals = x.refusals.length;
+    await x.ctx.close();
+    return out;
+  }
+
+  group("Without the honour: no card, no section, no tab — and nothing suggests one is missing");
+  {
+    const none = await surfaces("pillay@example.invalid");
+    ok("R Pillay with no captaincy: no Home card, no section, no tab", none.signedIn && !none.card && !none.section && !none.tab, JSON.stringify(none));
+    ok("...and his tabs are the six, as built", none.tabs.join() === "summary,scorecard,commentary,partnerships,analytics,details", none.tabs.join());
+  }
+
+  const honourId = (await q(`insert into honour (player_id, kind, season_id, citation) values ($1, 'captain', $2, 'the walk') returning id`, [PILLAY, SEASON.id]))[0].id;
+  const stamped = (await q(`select school_id, team_code, withdrawn_at from honour where id = $1`, [honourId]))[0];
+  ok("the honour is his side's, stamped at the award: Hilton, the 1XI, live", stamped.school_id === HIL && stamped.team_code === "1XI" && stamped.withdrawn_at === null, JSON.stringify(stamped));
+
+  group("Captain: the card on Home, the section on the fixture, the tab in the match");
+  const c = await open();
+  ok("R Pillay signs in", await signInAs(c.page, "pillay@example.invalid"));
+  await c.page.waitForTimeout(1200);
+  ok("his next fixture is still first, ahead of the card",
+     await c.page.$$eval('[data-testid="next-fixture"], [data-testid="captain-card"]', (els) => els.map((e) => e.getAttribute("data-testid")).join()) === "next-fixture,captain-card");
+  const card = await inner(c.page, "captain-card");
+  const dbg = (t, v) => { if (process.env.CAPTAIN_DEBUG) console.log(`\n--- ${t}\n${v}`); };
+  dbg("CARD", card);
+  ok("the Home card says Captain, his side, and the match live now", /^CAPTAIN/i.test(card) && /1XI/i.test(card) && /live now/.test(card) && /v Westville/.test(card), card);
+  ok("...a count of the side and no name on it", /\d+ named in the side/.test(card) && !/Whitfield|Bekker|Naidoo|Seven|Mate Six/.test(card), card);
+  ok("...no plan line: the coach's plan is phase B", !/plan/i.test(card));
+  const f1 = await floors(c.page);
+  ok(`Home with the card: nothing read under 12px (${f1.small.length}), nothing tapped under 44px (${f1.tiny.length})`, f1.small.length === 0 && f1.tiny.length === 0, [...f1.small, ...f1.tiny].slice(0, 4).join(" · "));
+
+  // C2 — the fixture's Captain section.
+  ok("Matches opens", await go(c.page, "mymatches"));
+  await tid(c.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(2200);
+  const sec = await inner(c.page, "captain-section");
+  dbg("SECTION", sec);
+  const dayLine = await inner(c.page, "captain-day-line");
+  ok("the fixture carries a Captain section", await tid(c.page, "captain-section").count() === 1 && /^CAPTAIN/i.test(sec), sec.slice(0, 80));
+  ok("...the day: the format and overs, the document's own words (cap, free hit)",
+     /T20/.test(dayLine) && /20 overs/.test(dayLine) && /4 overs a bowler/.test(dayLine) && /Free hit after a no-ball/.test(dayLine), dayLine);
+  ok("...the band's one line for the side, for every bowler", (await inner(c.page, "captain-band-rule")).trim() === "Open rule: 6-over spells, 12 a day, for every bowler", await inner(c.page, "captain-band-rule"));
+  ok("...the groundsman's report, written for him", /firm, good grass cover, even bounce, quick pace, favours seam/.test(await inner(c.page, "captain-pitch")), await inner(c.page, "captain-pitch"));
+  const side = await inner(c.page, "captain-side");
+  ok("...the side, by name and place, once on the screen", /6 named/i.test(side) && [WHITFIELD, BEKKER, NAIDOO, PILLAY, SEVEN, SIX].every((id) => side.includes(nm[id])) && await tid(c.page, "side-sheet").count() === 1, side);
+  ok("...this season's figures for a boy on the sheet, in the figure line", /inns · \d+ runs · avg \d/.test(await inner(c.page, `captain-season-${PILLAY}`)), await inner(c.page, `captain-season-${PILLAY}`));
+  ok("...nothing of the plan, and no place held for it", !/plan/i.test(sec));
+  const secAll = await inner(c.page, "os-main");
+  ok("...and no team-mate's injury, answer or reason anywhere on the screen (D7, K3)",
+     !HEALTH.test(secAll) && !/physio says rest|illness/i.test(secAll) && await tid(c.page, `availability-state-${BEKKER}`).count() === 0, secAll.match(HEALTH)?.[0]);
+  ok("the section itself says no injury, fitness word, guideline, availability or reason", !NEVER.test(sec), sec.match(NEVER)?.[0]);
+  const f2 = await floors(c.page);
+  ok(`the fixture with the section: nothing under 12px (${f2.small.length}), nothing tapped under 44px (${f2.tiny.length})`, f2.small.length === 0 && f2.tiny.length === 0, [...f2.small, ...f2.tiny].slice(0, 4).join(" · "));
+
+  // C4 — fielding.
+  await tid(c.page, "family-back").click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(500);
+  await tid(c.page, `live-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(2200);
+  const tabs = await c.page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
+  ok("the Match Centre has a Captain tab after the Summary", tabs.join() === "summary,captain,scorecard,commentary,partnerships,analytics,details", tabs.join());
+  await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(1500);
+  const field = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
+  dbg("FIELDING", field);
+  ok("the tab is labelled for what he is", /^CAPTAIN/i.test(await inner(c.page, "mc-captain-label")), await inner(c.page, "mc-captain-label"));
+  ok("the Board is on it", await tid(c.page, "mc-captain-board").count() === 1);
+  ok("OUR BOWLERS · overs left", /Our bowlers/i.test(field));
+  // The cap's own words, against the scoring package's — the pad's sentence for the same balls.
+  // Six legal balls an over; the fixture records who bowled each (ATTACK), so the balls are counted from it, not read back off the screen.
+  const bowled = Object.fromEntries(Object.entries(ids).map(([k, id]) => [id, ATTACK.filter((w) => w === k).length * 6]));
+  for (const [who, id] of [["Naidoo", NAIDOO], ["Whitfield", WHITFIELD], ["Bekker", BEKKER], ["Seven", SEVEN]]) {
+    const want = capWords(bowled[id], PLAY, { unconfirmed: false });
+    const got = (await tid(c.page, `mc-captain-cap-${id}`).first().innerText({ timeout: 1500 }).catch(() => null))?.trim() ?? null;
+    ok(`${who} (${bowled[id]} balls): the screen says ${want === null ? "nothing" : `"${want}"`}, as capWords() does for the pad`, got === want, `${got} v ${want}`);
+  }
+  ok("...the three sentences are the three, verbatim",
+     capWords(24, PLAY) === "Has bowled his 4 overs" && capWords(18, PLAY) === "Has 1 over left (4 an innings)" && capWords(30, PLAY) === "5 overs; the conditions allow 4");
+  ok("not yet bowled: the boy who has not, by name", new RegExp(`Not yet bowled:.*${nm[PILLAY]}`).test(field), field.slice(0, 300));
+  ok("where they have scored: the side's wheel, with no batter named in its place", await tid(c.page, "mc-captain-wheel").count() === 1);
+  ok("nothing on the tab is an injury, a fitness word, a guideline, an availability, a reason, a win chance or a threat level", !NEVER.test(field), field.match(NEVER)?.[0]);
+  ok("no per-boy limit, spell count or source of one", !/spell|directive|limit|guideline/i.test(field), field.match(/spell|directive|limit/i)?.[0]);
+  ok("no row of the tab opens: nothing on it is a button or a link",
+     await c.page.$$eval('[data-testid="mc-panel-captain"] button, [data-testid="mc-panel-captain"] a, [data-testid="mc-panel-captain"] [role="button"]', (e) => e.length) === 0);
+  ok("no other school's child by name beyond the log's own opposition names", !/Mkhize|Botha/.test(field));
+  const f3 = await floors(c.page);
+  ok(`the tab fielding: nothing under 12px (${f3.small.length}), nothing tapped under 44px (${f3.tiny.length})`, f3.small.length === 0 && f3.tiny.length === 0, [...f3.small, ...f3.tiny].slice(0, 4).join(" · "));
+
+  // C3 — batting.
+  await tid(c.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(500);
+  await tid(c.page, `live-row-${BAT}`).click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(2200);
+  await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(1500);
+  const batTab = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
+  dbg("BATTING", batTab);
+  const nextInText = await inner(c.page, "mc-captain-next-in");
+  ok("next in is the sheet minus the batted: the fourth to the sixth", nextInText.includes(nm[PILLAY]) && nextInText.includes(nm[SEVEN]) && nextInText.includes(nm[SIX])
+     && !nextInText.includes(nm[WHITFIELD]) && !nextInText.includes(nm[BEKKER]) && !nextInText.includes(nm[NAIDOO]), nextInText);
+  ok("...in the sheet's order", nextInText.indexOf(nm[PILLAY]) < nextInText.indexOf(nm[SEVEN]) && nextInText.indexOf(nm[SEVEN]) < nextInText.indexOf(nm[SIX]), nextInText);
+  ok("our batters today: the two in and the one out", /Our batters today/i.test(batTab) && batTab.includes(nm[WHITFIELD]) && batTab.includes(nm[NAIDOO]), batTab.slice(0, 300));
+  ok("fielding sections are not drawn while his side bats (no bowlers of his own)", !/Our bowlers/i.test(batTab));
+  ok("the tab batting says no injury, fitness word, guideline, availability or reason", !NEVER.test(batTab), batTab.match(NEVER)?.[0]);
+  const f4 = await floors(c.page);
+  ok(`the tab batting: nothing under 12px (${f4.small.length}), nothing tapped under 44px (${f4.tiny.length})`, f4.small.length === 0 && f4.tiny.length === 0, [...f4.small, ...f4.tiny].slice(0, 4).join(" · "));
+
+  // C5 — after: his batters in words, and against bowling types.
+  await tid(c.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(500);
+  await tid(c.page, `played-row-${PLAYED}`).click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(2200);
+  await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+  await c.page.waitForTimeout(2000);
+  const after = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
+  dbg("AFTER", after);
+  ok("after the match: his batters' innings in words", /Our innings, in words/i.test(after) && after.includes(nm[PILLAY]), after.slice(0, 300));
+  ok("...a blank in the paper scorebook is said as a blank, never drawn as a number", /balls not recorded/.test(after) && !/off null|\(\)/.test(after), after.match(/.*(null|\(\)).*/)?.[0]);
+  const mu = await inner(c.page, "mc-captain-matchups");
+  ok("his batter against pace: 8 off 6 balls, not out — from the team-mate who bowled at him", /v pace: 8 off 6 balls, not out/.test(mu) && mu.includes(nm[PILLAY]), mu);
+  ok("...and no row for Westville's bowler: nothing names him, and no type is drawn for him", !after.includes("Mkhize") && !/spin/.test(mu), mu);
+  ok("...and no bowler is named in a matchup", !mu.includes(nm[NAIDOO]));
+  ok("no overs-left words on a finished match", !/over left|bowled his|conditions allow/.test(after));
+  ok("after: nothing is an injury, a fitness word, a guideline, an availability or a reason", !NEVER.test(after), after.match(NEVER)?.[0]);
+  const f5 = await floors(c.page);
+  ok(`the tab after: nothing under 12px (${f5.small.length}), nothing tapped under 44px (${f5.tiny.length})`, f5.small.length === 0 && f5.tiny.length === 0, [...f5.small, ...f5.tiny].slice(0, 4).join(" · "));
+  ok("no scoping refusals and no page errors in the captain's sitting", c.refusals.length === 0 && c.errors.length === 0, c.refusals[0] ?? c.errors.join(" | "));
+  await c.ctx.close();
+
+  group("A team-mate without the honour has none of it");
+  {
+    const mate = await surfaces(MATE_EMAIL);
+    ok("a team-mate with only last season's colours: no card, no section, no tab", mate.signedIn && !mate.card && !mate.section && !mate.tab, JSON.stringify(mate));
+    ok("...he has the six tabs, as built", mate.tabs.join() === "summary,scorecard,commentary,partnerships,analytics,details", mate.tabs.join());
+  }
+
+  group("The reads behind it: no other school's child reaches him");
+  {
+    const { token } = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "pillay@example.invalid", deviceId: "pupil-captain-walk" }) })).json();
+    const read = async (r) => (await (await fetch(`${API}/api/read/${r}`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+    const rows = await read(`matchups?batterId=${PILLAY}`);
+    ok("matchups for his batter: the team-mate's row", rows.some((r) => r.bowler_id === NAIDOO && r.balls === 6), JSON.stringify(rows.map((r) => [r.bowler_id?.slice(-2), r.balls])));
+    ok("...and no row naming Westville's bowler, though the log holds three balls to him",
+       !rows.some((r) => r.bowler_id === MKHIZE) && (await q(`select count(*)::int as n from ball_event where striker_id = $1 and bowler_id = $2`, [PILLAY, MKHIZE]))[0].n === 3);
+    const players = await read("players");
+    ok("players: nobody of Westville's", players.every((p) => p.school_id === HIL), JSON.stringify(players.filter((p) => p.school_id !== HIL).map((p) => p.id)));
+    const honours = await read("honours");
+    ok("honours: his own live captaincy is on the read, as a row of the side", honours.some((h) => h.player_id === PILLAY && h.kind === "captain" && h.team_code === "1XI" && h.school_id === HIL));
+  }
+
+  group("Withdrawn: gone on the next load");
+  await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [honourId]);
+  {
+    const gone = await surfaces("pillay@example.invalid");
+    ok("after the withdrawal: no card, no section, no tab", gone.signedIn && !gone.card && !gone.section && !gone.tab, JSON.stringify(gone));
+    const { token } = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "pillay@example.invalid", deviceId: "pupil-captain-walk2" }) })).json();
+    const hs = (await (await fetch(`${API}/api/read/honours`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+    ok("...the read no longer returns it", !hs.some((h) => h.player_id === PILLAY && h.kind === "captain"));
+  }
+
+  group("A vice-captain has the same view, under his own label");
+  const viceId = (await q(`insert into honour (player_id, kind, season_id) values ($1, 'vice_captain', $2) returning id`, [PILLAY, SEASON.id]))[0].id;
+  {
+    const v = await surfaces("pillay@example.invalid");
+    ok("the card, the section and the tab", v.signedIn && v.card && v.section && v.tab, JSON.stringify(v));
+    ok("...the card says Vice-captain, not Captain", /^VICE-CAPTAIN/i.test(v.cardText), v.cardText);
+  }
+  await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [viceId]);
+
+  group("Last season's captaincy, and another side's, switch nothing on");
+  const lastSeason = (await q(`select id from season where level = 'school' and label = ($1::int - 1)::text`, [SEASON.label]))[0].id;
+  const oldId = (await q(`insert into honour (player_id, kind, season_id) values ($1, 'captain', $2) returning id`, [PILLAY, lastSeason]))[0].id;
+  {
+    const old = await surfaces("pillay@example.invalid");
+    ok("a captaincy of last season: no card, no section, no tab", old.signedIn && !old.card && !old.section && !old.tab, JSON.stringify(old));
+  }
+  await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [oldId]);
+  // A captaincy of the 2XI, awarded while he was on it, and then he moved up to the 1XI: "an honour does not
+  // move sides when he does" (db/08), so on the 1XI's fixtures it is not the side's captaincy.
+  await q(`update player set team_code = '2XI' where id = $1`, [PILLAY]);
+  const kept = (await q(`insert into honour (player_id, kind, season_id) values ($1, 'captain', $2) returning id, team_code`, [PILLAY, SEASON.id]))[0];
+  await q(`update player set team_code = '1XI' where id = $1`, [PILLAY]);
+  try {
+    ok("the honour is stamped with the side he was on when it was awarded: the 2XI", kept.team_code === "2XI", kept.team_code);
+    const moved = await surfaces("pillay@example.invalid");
+    ok("a live captaincy of this season at his school, for a side that is not his: no card, no section, no tab",
+       moved.signedIn && !moved.card && !moved.section && !moved.tab, JSON.stringify(moved));
+    ok("...and the 1XI's fixtures were there to be seen (the gate, not an empty list, is what refused)", moved.signedIn && moved.tabs.length === 6, moved.tabs.join());
+  } finally {
+    await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [kept.id]);
+  }
+
+  group("Reduced motion: the captain's tab does not animate");
+  const keptAgain = (await q(`insert into honour (player_id, kind, season_id) values ($1, 'captain', $2) returning id`, [PILLAY, SEASON.id]))[0].id;
+  {
+    const rm = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
+    await offline(rm);
+    const page = await rm.newPage();
+    await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+    await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await signInAs(page, "pillay@example.invalid");
+    await go(page, "mymatches");
+    await tid(page, `live-row-${BAT}`).click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+    await tid(page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    ok("the device asks for reduced motion", await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches));
+    const anims = await page.evaluate(() => {
+      const p = document.querySelector('[data-testid="mc-panel-captain"]');
+      return p ? p.getAnimations({ subtree: true }).filter((a) => a.playState === "running" && (a.effect?.getComputedTiming?.().iterations ?? 1) !== 1).length : -1;
+    });
+    ok("...and nothing in the tab loops or pulses", anims === 0, anims);
+    await rm.close();
+  }
+  await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [keptAgain]);
+  ok("the walk leaves no live captaincy of his behind", (await q(`select count(*)::int as n from honour where player_id = $1 and withdrawn_at is null`, [PILLAY]))[0].n === 0);
 } catch (e) {
   ok(`the pupil walk threw: ${e.message?.slice(0, 200)}`, false);
 } finally {
