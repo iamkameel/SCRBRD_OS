@@ -397,7 +397,8 @@ REVOKE ALL ON FUNCTION auth_identity_log(text, uuid) FROM PUBLIC;
  *                    since ADR 0001) and nothing in it, and its identity
  *   linked           the uid is unknown and the email matches an ACTIVE
  *                    account that holds and held NOTHING: no assignment ever,
- *                    no roster link, no other sign-in → linked to it
+ *                    no roster link, no other sign-in → linked to it, its
+ *                    school (typed by whoever asked) set back to none
  *   claim_required   the uid is unknown and the email matches an account that
  *                    holds or held anything, or is inactive → no account, and
  *                    a pending_claim the office sees. Says nothing about what
@@ -451,7 +452,12 @@ BEGIN
      AND NOT EXISTS (SELECT 1 FROM role_assignment a WHERE a.person_id = u.id)
      AND NOT EXISTS (SELECT 1 FROM auth_identity x WHERE x.user_id = u.id) THEN
     -- Nothing reachable is being claimed: an onboard_request() stub. Its
-    -- pending request, if any, now has a verified email behind it.
+    -- pending request, if any, now has a verified email behind it. Its school
+    -- was whatever the unverified asker typed, and a school on the account
+    -- puts it in that school's office's reach (codes, claims): so it goes
+    -- back to none, and the first grant sets it (§4.3's seam). The pending
+    -- requests stay; the office reads them through role_requester().
+    UPDATE app_user SET school_id = NULL WHERE id = u.id;
     INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how, last_sign_in_at)
     VALUES (u.id, p_provider, p_uid, v_email, 'new_account', now());
     RETURN QUERY SELECT 'linked'::text, u.id; RETURN;
