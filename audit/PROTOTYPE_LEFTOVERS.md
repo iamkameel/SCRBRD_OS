@@ -114,7 +114,7 @@ These are honest "planned" items on Settings → Roadmap, not leftovers:
 - **Migrations:** each takes the next number, db/77 onwards.
 
 1. **B1, end a role.** It replaces Promote and Delete in Management (4.1).
-2. **B2, the real audit log**, under `audit.read`. Children's names are masked and every read is logged (1.1).
+2. **B2, the real audit log**, under `audit.read`. Children's names are masked and every read is logged (1.1). **Built (2026-10-02): db/79.**
 3. **B3, injury routes:**
    - log, update phase, clear for training (through clearances), refer;
    - wire the injury buttons Wave A hid (2.2–2.4, 4.3).

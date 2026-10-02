@@ -516,6 +516,23 @@ without db/78 has nothing to word, so its lines say "Four" as before. Only both
 together name the shot.
 <!-- ── end SCRBRD-139 ── -->
 
+<!-- ── SCRBRD-132 B2: the audit log (db/79) ── -->
+#### The audit log, read (SCRBRD-132 B2, db/79)
+
+`db/79_audit_log.sql` adds `audit_log()`, the one door Management's **Audit
+log** tab reads through: the school's audit tables under each one's own
+`audit.read` predicate, never a safeguarding row and never a written reason, a
+child named by initials, and one `access_log` row for every read of it. It
+creates no table, changes no policy and needs no secret or backfill: every row
+it shows is one the audit tables already hold.
+
+Paste `node tools/bundle-sql.mjs --apply 79`, then the verify bundle (§58 is its
+proof). **Schema first:** the API built with it serves `GET
+/api/read/audit_log`, which against a database without db/79 is a `42883`
+(the server refuses to start on the missing migration anyway). The tab is
+read-only, so nothing a school does waits on it.
+<!-- ── end SCRBRD-132 B2 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

@@ -3973,7 +3973,15 @@ The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/
     superadmin's roles from below, your own last key, your own DSO appointment, a support hour; a guardian role keeps
     the guardian link's rules. `POST /api/assignments/:id/end`; `EndRoleButton` in `apps/web/src/views/endrole.jsx`
     for the lead to wire in. db/99 §56, `smoke-end-role`, `end-role.test`. `docs/design/SCRBRD-132_end_a_role.md`.
-  - The real audit log, under `audit.read`: names masked, reads logged.
+  - **B2 · The real audit log. BUILT (2026-10-02, Opus): db/79.** `audit_log(school, kinds, since, before,
+    before_key, limit)`, one definer, newest first, paged by (at, key): `access_log`, `scoring_audit`,
+    `scoring_amendment`, `scorebook_import_revision`, `support_access`, `role_assignment_ending` each under its own
+    `audit.read` predicate, and `duty_suspension` only for a reader who also holds its own (the office's key). Never
+    a safeguarding row (not even for the DSO), never a reason, note, card or account. A pupil (db/57's test, widened
+    to past player/selfaccess roles) is named by initials, `broadcast_name(…, 'initials')`. Every call, refused ones
+    included, writes one `access_log` row (`audit_log`, the school asked about, the children its rows named).
+    `GET /api/read/audit_log`; Management's Audit log tab (kind and date filters, Older entries; "Sign in to see the
+    audit log" in the demonstration). db/99 §58, `smoke-audit-log`, the management browser walk's audit group.
   - Injury routes: medical staff and coaches log; medical staff update, clear and refer.
   - A season-per-player read.
   - League invitation notices.

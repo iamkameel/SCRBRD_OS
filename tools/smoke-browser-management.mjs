@@ -29,7 +29,10 @@
  *   8. The tabs a person has are the capabilities they hold (checked against
  *      the policy itself, not against a list in this file): a registrar, a
  *      principal, a director of sport, and a groundskeeper.
- *   9. No invented text: the audit log is one plain line, and Ground tasks are
+ *   9. No invented text: the audit log is the school's own (db/79) — a child
+ *      in initials, no safeguarding row, reading it on the record, a filter
+ *      by kind and by date, one plain line when nothing matches, and in the
+ *      demonstration only "Sign in to see the audit log" — and Ground tasks are
  *      the fixtures at the grounds the reader may see, with the pitch report's
  *      standing from the database — and one plain line when there are none.
  *
@@ -316,12 +319,43 @@ try {
   const tf = await floors(off.page, '[role="group"][aria-label="Management sections"]');
   ok("the tab strip is on the 12px and 44px floors", tf.small.length === 0 && tf.taps.length === 0, tf.small.concat(tf.taps).slice(0, 4).join(" | "));
 
-  group("The audit log is one plain line, with no invented entries");
+  group("The audit log is the school's own, a child in initials, and reading it is on it");
+  // A pupil made up for this walk reads his own record, and the DSO reads a
+  // concern: both filed as log_restricted_read() files them, a minute ago.
+  const [walkBoy] = await q(`insert into player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+     values ($1, 'U15A', 'Walkbrowser Mgmt Pupil', 'Pupil', 978, 'batter', current_date - interval '15 years') returning id`, [HILTON]);
+  const [walkBoyUser] = await q(`insert into app_user (school_id, email, name, role, player_id)
+     values ($1, 'mgmt.walk.pupil@example.invalid', 'Walkbrowser Mgmt Pupil', 'player', $2) returning id`, [HILTON, walkBoy.id]);
+  await q(`insert into access_log (school_id, person_id, resource, record_ids, record_count, fields, occurred_at)
+           values ($1, $2, 'players', array[$3::uuid], 1, '{born}', now() - interval '1 minute'),
+                  ($1, $2, 'safeguarding_concern', array[gen_random_uuid()], 1, '{account}', now() - interval '1 minute')`,
+          [HILTON, walkBoyUser.id, walkBoy.id]);
+  const readsBefore = Number((await q(`select count(*) from access_log l join app_user u on u.id = l.person_id
+     where l.resource = 'audit_log' and u.email = 'registrar@example.invalid'`))[0].count);
   if (await tid(off.page, "mgmt-tab-audit").count()) await tid(off.page, "mgmt-tab-audit").click({ timeout: 5000 });
-  await off.page.waitForTimeout(400);
-  ok("she holds audit.read, so the tab opens", await tid(off.page, "audit-coming").count() === 1);
-  ok("...and says one plain line", (await tid(off.page, "audit-coming").innerText({ timeout: 3000 }).catch(() => "")).trim() === "The audit log is coming.");
-  ok("...with no entry, no name and no medical clearance", !INVENTED.test(await tid(off.page, "os-main").innerText()), (await tid(off.page, "os-main").innerText()).slice(0, 300));
+  await tid(off.page, "audit-rows").waitFor({ timeout: 10000 }).catch(() => {});
+  ok("she holds audit.read, so the tab opens on the log", await tid(off.page, "audit-log").count() === 1);
+  ok("...the line that it is coming is gone", await tid(off.page, "audit-coming").count() === 0);
+  const auditText = await tid(off.page, "audit-log").innerText().catch(() => "");
+  ok("...it lists entries", await off.page.locator('[data-testid="audit-row"]').count() > 0, auditText.slice(0, 300));
+  ok("...the boy's read of his own record, by initials", /W M Pupil/.test(auditText), auditText.slice(0, 400));
+  ok("...and his name nowhere whole", !/Walkbrowser Mgmt/.test(auditText));
+  ok("...no safeguarding row", !/safeguarding/i.test(auditText));
+  ok("...no invented entry, no medical clearance", !INVENTED.test(await tid(off.page, "os-main").innerText()), (await tid(off.page, "os-main").innerText()).slice(0, 300));
+  const readsAfter = Number((await q(`select count(*) from access_log l join app_user u on u.id = l.person_id
+     where l.resource = 'audit_log' and u.email = 'registrar@example.invalid'`))[0].count);
+  ok("her reading it is on the record", readsAfter >= readsBefore + 1, `${readsBefore} → ${readsAfter}`);
+  const af = await floors(off.page, '[data-testid="audit-log"]');
+  ok("the log is on the 12px and 44px floors", af.small.length === 0 && af.taps.length === 0, af.small.concat(af.taps).slice(0, 4).join(" | "));
+  await tid(off.page, "audit-kind").selectOption("access");
+  await off.page.waitForTimeout(1200);
+  const kinds = await off.page.locator('[data-testid="audit-row"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
+  ok("filtered by kind, it lists that kind alone", kinds.length > 0 && kinds.every((k) => k === "access"), kinds.join());
+  const tomorrow = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+  await tid(off.page, "audit-from").fill(tomorrow);
+  await tid(off.page, "audit-none").waitFor({ timeout: 8000 }).catch(() => {});
+  ok("filtered to a day still to come, it says so in one plain line",
+     (await tid(off.page, "audit-none").innerText().catch(() => "")).trim() === "Nothing on the audit log for this filter.");
 
   group("Ground tasks are the fixtures at the grounds, with the pitch report from the database");
   if (await tid(off.page, "mgmt-tab-grounds").count()) await tid(off.page, "mgmt-tab-grounds").click({ timeout: 5000 });
@@ -598,6 +632,11 @@ try {
   ok("...and the plain line is there", /Suspending an account is coming\./.test(await tid(demo.page, "people-coming").innerText()));
   const demoButtons = await demo.page.locator('[data-testid="os-main"] button').allInnerTexts();
   ok("no Edit, Promote, Suspend or Delete", !demoButtons.some((b) => /^(Edit|Promote|Suspend|Restore|Delete)\b/i.test(b.trim())), demoButtons.join(" | "));
+  if (await tid(demo.page, "mgmt-tab-audit").count()) await tid(demo.page, "mgmt-tab-audit").click({ timeout: 5000 });
+  await demo.page.waitForTimeout(400);
+  ok("the audit log asks for a sign-in, and shows nothing else",
+     (await tid(demo.page, "audit-signin").innerText().catch(() => "")).trim() === "Sign in to see the audit log."
+     && await demo.page.locator('[data-testid="audit-row"]').count() === 0);
   ok("nothing was posted", posts.length === 0, posts.join(","));
   ok("no console errors in the demonstration", demo.errors.length === 0, demo.errors.join(" | "));
   await demo.ctx.close();
