@@ -386,22 +386,35 @@ if (unlisted.length) {
   process.exit(1);
 }
 
-// What a walk costs, relative to a typical one (1). The browser walks ran one
-// after another in one CI job; they now run in shards side by side, and a
-// shard's length is the sum of its walks, so the split has to know the heavy
-// ones or one shard gets browser-read and the rest finish early. The repo holds
-// no per-walk timings, so the weights follow the walks' size, the one signal
-// there is: browser-read is a tenth of the whole set by itself, and the walks
-// of 600+ lines drive several roles and viewports each. Anything not named
-// costs 1. Re-measure from a CI log if the shards drift apart. A wrong weight
-// costs balance, never coverage: every walk is in exactly one shard.
+// What a walk costs, in seconds on a CI runner. A shard's length is the sum
+// of its walks, so the split has to know the heavy ones. These are measured,
+// not guessed: the gaps between walks in CI run 37016856524 (2 Oct 2026,
+// Browser walks, one job), rounded to 10 s. A walk added since then and not
+// named here (browser-cockpit, browser-practice, ...) costs DEFAULT_COST, about
+// the median. Re-measure from a CI log when the shards drift apart. A wrong
+// weight costs balance, never coverage: every walk is in exactly one shard.
+// Each shard also pays the rls-verify preamble (~250 s) and its own setup.
+const DEFAULT_COST = 70;
 const WEIGHTS = {
-  "browser-read": 6,
-  "browser-scorebook": 2, "browser-matchcentre": 2, "browser-league": 2,
-  "browser-management": 2, "browser-dossier": 2, "browser-pupil": 2,
-  "browser-cockpit": 2, "browser-pad-laws": 2,
+  "browser-read": 580,
+  "browser-lifts": 200, "browser-scorebook": 170, "browser-league": 160,
+  "browser-deck": 150, "browser-matchcentre": 150, "browser-pupil": 140,
+  "browser-superover": 140, "browser-display": 120, "browser-retire": 110,
+  "browser-held": 100, "browser-consent": 100, "browser-pad-laws": 100,
+  "browser-penalty": 100, "browser-padfeel": 100, "browser-discipline": 100,
+  "browser-cockpit": 100, "browser-management": 90, "browser-rain": 80,
+  "browser-offline-day": 80, "browser-playing-conditions-screen": 70,
+  "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,
+  "browser-laws4": 70, "browser-handover": 60, "browser-support": 60,
+  "browser-pad-resume": 60, "browser-dossier": 60, "browser-offline-undo": 50,
+  "browser-wagonwheel": 50, "browser-results": 50, "browser-drs": 50,
+  "browser-safeguarding": 50, "browser-playing-conditions": 50,
+  "browser-innings-end": 40, "browser-toss": 40, "browser-dayof": 40,
+  "browser-quarantine": 40, "browser-sync": 40, "browser-fixture-create": 30,
+  "browser-awards": 30, "browser-dismissals": 30, "browser-duties": 30,
+  "browser-rulebook": 30, "browser-seasons": 20, "browser-report": 20,
 };
-const weightOf = (w) => WEIGHTS[w] ?? 1;
+const weightOf = (w) => WEIGHTS[w] ?? DEFAULT_COST;
 const staleWeights = Object.keys(WEIGHTS).filter((w) => !BROWSER_WALKS.includes(w));
 if (staleWeights.length) {
   console.error(`\n✗ WEIGHTS names walks that are not in BROWSER_WALKS: ${staleWeights.join(", ")}`);
