@@ -1,6 +1,6 @@
 # SCRBRD-142 — The public home page: the pitch, live matches, news and public data
 
-**Status:** design, for Kameel's review (Fable, 2026-10-02). Nothing built.
+**Status:** **decided (Kameel, 2026-10-02, on the Build Board): D1–D14 all as recommended; rule 8 amended in PUBLIC_DATA as §1.5 words.** Nothing built yet.
 **Lead's review (Opus, 2026-10-02), before Kameel reads it.** Sound. Listing is a second, school-level switch on top of the per-fixture publication (D1), off by default, so nothing becomes findable until a school chooses it. The home-page card names no child and no ground. Public news names no pupil in v1 (D6) and needs a second person (D7). Two findings go on the build list:
 1. **Only a post's author can withdraw it today** (`news_post_update` in db/12 is author-only). For public news the office must be able to take a post down, so phase 3's withdraw function is the office's too.
 2. **`notification.is_public`** (db/08) is a public flag that nothing reads. It will be marked dormant so nobody mistakes it for this design's switch.

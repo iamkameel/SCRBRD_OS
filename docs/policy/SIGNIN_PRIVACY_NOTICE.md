@@ -1,8 +1,7 @@
 # Signing in with Google: the privacy notice paragraph (SCRBRD-140)
 
 **For:** Kameel, as information officer. **Drafted:** 2026-10-02 by Claude, from
-`docs/design/SCRBRD-140_signup_and_school_linking.md` §7.4–7.5. **Status:** not yet signed.
-Google sign-in does not go live until it is.
+`docs/design/SCRBRD-140_signup_and_school_linking.md` §7.4–7.5. **Status:** **signed by Kameel, information officer, on 2026-10-02** (on the Build Board, "I sign it as written"). It goes into the privacy notice with the sign-up screens.
 
 This is a draft for the information officer, not legal advice. Check the section numbers and the
 transfer basis against your own reading of POPIA, or with counsel, before you sign.
@@ -38,4 +37,4 @@ transfer basis against your own reading of POPIA, or with counsel, before you si
 
 That this paragraph is added to the privacy notice before Google sign-in goes live.
 
-**Signed:** ______________________ (information officer) **Date:** __________
+**Signed:** Kameel (information officer) **Date:** 2026-10-02
