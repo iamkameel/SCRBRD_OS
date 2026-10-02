@@ -148,7 +148,8 @@ export function shortDate(iso) {
   const t = Date.parse(String(iso ?? "").length <= 10 ? `${iso}T12:00:00+02:00` : String(iso));
   if (!Number.isFinite(t)) return null;
   const d = new Date(t + 2 * HOUR);
-  return `${d.getUTCDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]}`;
+  const month = "jan feb mar apr may jun jul aug sep oct nov dec".split(" ")[d.getUTCMonth()];
+  return `${d.getUTCDate()} ${month[0].toUpperCase()}${month.slice(1)}`;
 }
 
 /** "07:15" for an instant, on the SA clock. @param {string | null | undefined} iso */
