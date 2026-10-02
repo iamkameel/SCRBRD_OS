@@ -195,6 +195,10 @@ const SUITES = [
   // No emoji in the client outside a reasoned allow-list, every icon name
   // resolves, and the glyphs sit on Lucide's grid (DESIGN_DIRECTION §3.4).
   ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The public home page's sections (SCRBRD-142 phase 1): signed out, the
+  // strip and news hidden on a 404, the analytics toggle writes the pref and
+  // starts nothing, the 12px and 44px floors, the copy.
+  ["home-page", "apps/web/test/home-page.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
