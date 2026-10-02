@@ -340,7 +340,9 @@ try {
   ok("...it lists entries", await off.page.locator('[data-testid="audit-row"]').count() > 0, auditText.slice(0, 300));
   ok("...the boy's read of his own record, by initials", /W M Pupil/.test(auditText), auditText.slice(0, 400));
   ok("...and his name nowhere whole", !/Walkbrowser Mgmt/.test(auditText));
-  ok("...no safeguarding row", !/safeguarding/i.test(auditText));
+  // No read of a concern. (A DSO's appointment, "Safeguarding Officer", is a
+  // role row like any other: db/80.)
+  ok("...no safeguarding row", !/Read safeguarding|safeguarding[ _]concern/i.test(auditText), auditText.slice(0, 400));
   ok("...no invented entry, no medical clearance", !INVENTED.test(await tid(off.page, "os-main").innerText()), (await tid(off.page, "os-main").innerText()).slice(0, 300));
   const readsAfter = Number((await q(`select count(*) from access_log l join app_user u on u.id = l.person_id
      where l.resource = 'audit_log' and u.email = 'registrar@example.invalid'`))[0].count);
