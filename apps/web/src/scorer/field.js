@@ -1,5 +1,6 @@
 import { ANGULAR_FAMILIES, SECTORS, batterSector, positionName, screenAngle, sectorOf, segFromScreenAngle } from "@scrbrd/scoring";
 import { D, T, clr, themed } from "../design/tokens.js";
+import { isOut } from "./format.js";
 
 /* ═══════════════════════════════════════════════════════
    FIELD GEOMETRY
@@ -107,7 +108,7 @@ const LK_COLS=themed(() => ({"1":T.chip.one,"2":T.chip.two,"3":T.chip.three,"4":
 const LEGEND_KEYS=["1","2","3","4","6","0","W","extras"];
 
 const lineKey=b=>{
-  if(b.type==="W")return"W";
+  if(isOut(b))return"W";
   if(b.type==="Wd"||b.type==="Nb"||b.type==="B"||b.type==="LB")return"extras";
   const v=b.value??0;
   if(v===0)return"0";

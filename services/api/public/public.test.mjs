@@ -4,7 +4,9 @@
 //      of reasons, notes, placement, typed names and ids comes out with none
 //      of them; pseudonyms stable in a match and different across matches;
 //      labels by publicName(); the projected log folds to the same scorecard;
-//      db/59's selected payload keys and the allowlist in step;
+//      db/59's selected payload keys and the allowlist in step; a ball's
+//      shot and where it went as words (SCRBRD-139, db/78): the public line
+//      the signed-in line, and no coordinate on the wire;
 //   2. the router (public-api.mjs) over a fake pool: off unless enabled; one
 //      404 for unpublished, unknown and malformed; the same bytes with a staff
 //      token; always the anonymous principal; X-Robots-Tag and Cache-Control
@@ -20,12 +22,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   inningsStart, batters, bowler, ball, penalty, retire, voidEvent, revision, sealInnings, toRow,
-  deriveMatch, BALL_TYPE, inningsSummary,
+  deriveMatch, BALL_TYPE, inningsSummary, deriveCommentary, placementFromTap, AREA_WORDS,
 } from "@scrbrd/scoring";
-import { PUBLIC_EVENT_FIELDS, PUBLIC_EVENT_COMMON, projectLog, playerPseudonym, eventPseudonym, nameFor, RETIRED_NOT_OUT } from "./redact.mjs";
+import { PUBLIC_EVENT_FIELDS, PUBLIC_EVENT_COMMON, projectLog, playerPseudonym, eventPseudonym, nameFor, RETIRED_NOT_OUT, areasOf } from "./redact.mjs";
 import {
   publicPages, PublicCache, RateLimit, clientAddress, shellHtml, THEME_BOOT, NOT_FOUND, LIVE_TTL_MS, SETTLED_TTL_MS,
 } from "./public-api.mjs";
+import { publicationRoutes } from "../write/publication-api.mjs";
+import { signToken } from "../auth/auth.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 let passes = 0, fails = 0;
@@ -131,11 +135,29 @@ const DETAIL_KEYS = [
   // A key served for one kind only: 'card', CASE WHEN b.kind = '…' THEN (b.payload -> 'card') …
   ...[...logBody.matchAll(/'(\w+)',\s+CASE WHEN b\.kind = '\w+' THEN \(b\.payload -> '(\w+)'\)/g)]
     .map((m) => { if (m[1] !== m[2]) throw new Error(`${LOG_FILE} renames ${m[2]}`); return m[1]; }),
+  // A ball's key as fromRow() reads it, the payload's else the column's (db/78): 'shot'
+  ...[...logBody.matchAll(/'(\w+)',\s+CASE WHEN b\.kind = 'ball' THEN coalesce\(b\.payload -> '(\w+)', to_jsonb\(b\.\w+\)\)/g)]
+    .map((m) => { if (m[1] !== m[2]) throw new Error(`${LOG_FILE} renames ${m[2]}`); return m[1]; }),
 ];
+/**
+ * db/78's `place`: what the words for where a ball went are made from, by
+ * the API, which then drops it. Its four keys, read out of the file.
+ */
+const PLACE_BODY = logBody.match(/'place',\s+CASE WHEN b\.kind = 'ball' THEN ([\s\S]*?) END,/)?.[1] ?? "";
+const PLACE_KEYS = [...PLACE_BODY.matchAll(/'(\w+)',\s+coalesce\(/g)].map((m) => m[1]);
+/** The fields the API makes and the SQL does not select: the word for where a ball went. */
+const MADE_HERE = new Set(["area"]);
 /** @param {any} ev @param {number} seq */
 const asLogRow = (ev, seq) => {
   const row = toRow(ev);
-  const detail = Object.fromEntries(DETAIL_KEYS.filter((k) => row.payload[k] !== undefined && row.payload[k] !== null).map((k) => [k, row.payload[k]]));
+  // Each key as db/78 reads it: the payload's, else the column's.
+  const from = (/** @type {string} */ k) => row.payload[k] ?? row[k];
+  const detail = Object.fromEntries(DETAIL_KEYS.filter((k) => from(k) !== undefined && from(k) !== null).map((k) => [k, from(k)]));
+  if (ev.kind === "ball") {
+    const place = Object.fromEntries(/** @type {[string, any][]} */ ([["theta", row.theta], ["radius", row.radius], ["seg", row.seg],
+      ["source", row.placement_source]]).filter(([, x]) => x != null));
+    if (Object.keys(place).length) detail.place = place;
+  }
   return {
     seq, innings: ev.innings ?? 0, kind: ev.kind, ball_type: row.ball_type ?? null, value: row.value ?? null,
     striker_id: row.striker_id, non_striker_id: row.non_striker_id, bowler_id: row.bowler_id, dismissed_id: row.dismissed_id,
@@ -151,7 +173,9 @@ ok("PUBLIC_EVENT_FIELDS is exactly the reviewed list", JSON.stringify(PUBLIC_EVE
   innings_start: ["battingTeam", "bowlingTeam", "teamKey", "bowlingTeamKey", "squad", "bowlingSquad", "overs", "target", "superOver"],
   batters: ["striker", "nonStriker", "captainConsent"],
   bowler: ["bowler"],
-  ball: ["type", "value", "striker", "nonStriker", "bowler", "dismissal", "fielder", "dismissed", "freeHit", "nbRuns", "nbType", "outAt", "facesNext", "notInOver"],
+  ball: ["type", "value", "striker", "nonStriker", "bowler", "dismissal", "fielder", "dismissed", "freeHit", "nbRuns", "nbType", "outAt", "facesNext", "notInOver",
+         // SCRBRD-139 (db/78): the shot, and where it went as a word
+         "shot", "area"],
   penalty: ["runs", "toBattingTeam", "reason"],
   retire: ["batter", "reason", "type", "dismissal"],
   innings_end: ["reason", "confirmed"],
@@ -167,9 +191,14 @@ const COLUMN_FIELDS = new Set(["type", "value", "dismissal", "striker", "nonStri
 const payloadFields = new Set(Object.values(PUBLIC_EVENT_FIELDS).flat().filter((f) => !["type", "value", "dismissal"].includes(f)));
 ok("every payload key db/59 selects is a field some kind may keep", DETAIL_KEYS.every((k) => payloadFields.has(k)),
    DETAIL_KEYS.filter((k) => !payloadFields.has(k)));
-ok("every field the allowlist keeps is a column or a key db/59 selects",
-   [...new Set(Object.values(PUBLIC_EVENT_FIELDS).flat())].every((f) => COLUMN_FIELDS.has(f) || DETAIL_KEYS.includes(f)),
-   [...new Set(Object.values(PUBLIC_EVENT_FIELDS).flat())].filter((f) => !COLUMN_FIELDS.has(f) && !DETAIL_KEYS.includes(f)));
+ok("every field the allowlist keeps is a column, a key db/59 selects, or the word made here",
+   [...new Set(Object.values(PUBLIC_EVENT_FIELDS).flat())].every((f) => COLUMN_FIELDS.has(f) || DETAIL_KEYS.includes(f) || MADE_HERE.has(f)),
+   [...new Set(Object.values(PUBLIC_EVENT_FIELDS).flat())].filter((f) => !COLUMN_FIELDS.has(f) && !DETAIL_KEYS.includes(f) && !MADE_HERE.has(f)));
+ok("db/78's `place` is exactly the four fields the words read, and no kind keeps it",
+   JSON.stringify(PLACE_KEYS) === JSON.stringify(["theta", "radius", "seg", "source"])
+   && Object.values(PUBLIC_EVENT_FIELDS).every((fs) => !fs.includes("place")), PLACE_KEYS);
+ok("db/78 never selects a placement field the words do not read",
+   !/b\.(zone|contact|trajectory|close_position|placement_null|capture_profile)\b|'(zone|contact|trajectory|closePosition|placementNull|captureProfile|bowlerApproach)'/.test(logBody));
 ok("db/59 never selects the payload whole", !/b\.payload(?!\s*(->|->>|#>>))/.test(logBody));
 
 console.log("\n── The projection ──");
@@ -263,6 +292,70 @@ ok("a free-text penalty reason becomes null", o[1].reason === null);
 ok("a revision reason off the sheet's list is dropped", !("reason" in o[2]));
 ok("an innings end keeps only a code and three numbers", o[3].reason === null && JSON.stringify(o[3].confirmed) === JSON.stringify({ runs: 50, wickets: null, balls: 60 }));
 
+console.log("\n── The shot and where it went (SCRBRD-139, db/78) ──");
+{
+  // The fixture's four went to deep point off an id the commentary has no
+  // words for (cover_drive): the place is a word, the id is dropped.
+  const four = /** @type {any} */ (out.events.find((e) => e.kind === "ball" && e.value === 4));
+  ok("a ball's place reaches the page as the word its line says", four?.area === "deep point" && !("shot" in four), four);
+  ok("...and nothing it was made from: no theta, radius, seg, zone, source or place",
+     out.events.every((e) => ["theta", "radius", "seg", "zone", "placementSource", "placement", "place", "closePosition", "captureProfile",
+                              "contact", "trajectory", "bowlerApproach"].every((k) => !(k in e))));
+  // A log of every kind of ball, through the whole path: rows as db/78 hands
+  // them over, the projection, and the page's own generator over the result.
+  const hands = [
+    { id: P.erasmus, name: WHO[P.erasmus][0], batting_style: "Right-hand bat" },
+    { id: P.marked, name: WHO[P.marked][0], batting_style: "Left-hand bat" },
+    { id: P.nobody, name: WHO[P.nobody][0], batting_style: "Right-hand bat" },
+  ];
+  let k = 0;
+  const T = (/** @type {any} */ ev) => ({ ...ev, innings: 0, id: `${DEVICE}:${M2}:${++k}`, clientTs: Date.parse("2026-09-26T08:00:00Z") + k * 30000 });
+  const tap = (/** @type {number} */ angle, /** @type {number} */ radius, hand = "R") => placementFromTap({ angle, radius, batHand: hand });
+  const LOG2 = [
+    T(inningsStart({ battingTeam: "1XI", bowlingTeam: "Westville Boys' High 1XI", squad: hands, bowlingSquad: attack, overs: 5 })),
+    T(batters({ striker: P.erasmus, nonStriker: P.marked })),
+    T(bowler({ bowler: P.bowl1 })),
+    T(ball({ type: BALL_TYPE.RUN, value: 4, shot: "drive", ...tap(235, 0.35), contact: "middle", trajectory: "ground" })),
+    T(ball({ type: BALL_TYPE.RUN, value: 1, shot: "cut", ...tap(265, 0.35) })),
+    // the left-hander's sector-era tap at the screen's 90°: HIS point, which
+    // only the fold knows (it is his strike now)
+    T(ball({ type: BALL_TYPE.RUN, value: 4, shot: "drive", seg: 3, zone: "boundary", placementSource: "sector" })),
+    T(ball({ type: BALL_TYPE.RUN, value: 0 })),
+    T(ball({ type: BALL_TYPE.LEG_BYE, value: 1, shot: "padded", ...tap(30, 0.7) })),
+    T(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: TYPED, shot: "outside_edge", ...tap(348, 0.06) })),
+    T(batters({ striker: P.nobody })),
+    T(ball({ type: BALL_TYPE.RUN, value: 6, shot: "loft", ...tap(170, 1) })),
+  ];
+  const rows2 = LOG2.map((e, i) => asLogRow(e, i + 1));
+  ok("the rows carry the shot and `place`, as db/78 builds them", rows2[3].detail.shot === "drive"
+     && JSON.stringify(rows2[3].detail.place) === JSON.stringify({ theta: 235, radius: 0.35, seg: 8, source: "point" })
+     && !("place" in rows2[6].detail) && !("shot" in rows2[6].detail), rows2[3].detail);
+  const proj = projectLog({ rows: rows2, people: PEOPLE, secret: SECRET, matchId: M2, on: ON });
+  const wire2 = JSON.stringify({ events: proj.events, people: proj.people });
+  ok("no coordinate, no place, no contact on the wire", !/theta|radius|"seg"|zone|placement|"place"|contact|trajectory|"source"/.test(wire2), wire2.match(/theta|radius|"seg"|zone|placement|"place"|contact|trajectory|"source"/g));
+  ok("every area is one of AREA_WORDS", proj.events.every((e) => !("area" in e) || AREA_WORDS.has(e.area)));
+  // The page names by `people` (pseudonym → name); the signed-in reader, for
+  // the comparison, by the same rule over the real ids.
+  const realName = new Map(Object.entries(proj.people).map(([pseudo, name]) => [Object.values(P).find((id) => playerPseudonym(SECRET, M2, id) === pseudo), name]));
+  // The same ball is the same event: a line's choice of words is seeded by the
+  // event's id, which the page holds as its pseudonym.
+  const sameIds = LOG2.map((e) => ({ ...e, id: eventPseudonym(SECRET, M2, e.id) }));
+  const signedIn = deriveCommentary(sameIds, { nameOf: (ref) => realName.get(ref) ?? null }).map((x) => x.text);
+  const page = deriveCommentary(/** @type {any[]} */ (proj.events), { nameOf: (ref) => proj.people[ref] ?? null }).map((x) => x.text);
+  ok("the public line is the signed-in line, for every line of the log", JSON.stringify(page) === JSON.stringify(signedIn),
+     page.map((t, i) => (t === signedIn[i] ? null : `${t} ≠ ${signedIn[i]}`)).filter(Boolean).join(" | "));
+  const said = page.join("\n");
+  ok("...and names the shot and where it went: 'driven through cover for four'", /D Erasmus, driven through cover for four\./.test(said), said);
+  ok("...the left-hander's sector tap through his own point, unnamed (never-public)", /to the striker, driven through point for four\./.test(said), said);
+  ok("...a catch at first slip by a typed fielder, who is a role word", /off the outside edge and caught by a fielder at first slip/.test(said), said);
+  ok("...lofted over long on for six by a boy with nothing recorded, unnamed", /to the striker, lofted over long on for six\./.test(said), said);
+  ok("...and a ball with nothing recorded says only the outcome", page.some((t) => /^R van der Bowlmerwe to the striker, (no run|dot ball)\.$/.test(t)), said);
+  ok("no name the rule did not give, nothing else that must not be said", leaks(said).length === 0, leaks(said));
+  // A log the fold cannot read gives no words, and no error.
+  ok("a log the fold cannot read gives no words, never an error",
+     areasOf(/** @type {any[]} */ ([{ ...rows2[3], detail: { ...rows2[3].detail, squad: 7 } }, { seq: 2, kind: "ball", detail: null }])).every((x) => x === null || typeof x === "string"));
+}
+
 console.log("\n── Pseudonyms ──");
 const again = projectLog({ rows: ROWS, people: PEOPLE, secret: SECRET, matchId: M1, on: ON });
 ok("stable within a match: the same log projects to the same bytes", JSON.stringify(again.events) === JSON.stringify(out.events));
@@ -298,7 +391,7 @@ console.log("\n── The router, over a fake database ──");
  * M1 published, M2 not (the header answers nothing, as db/59 does). It
  * records every app.user_id set, and counts reads.
  */
-const seen = { users: /** @type {string[]} */ ([]), reads: 0, status: "complete" };
+const seen = { users: /** @type {string[]} */ ([]), reads: 0, status: "complete", alsoServed: new Set() };
 const fakePool = {
   query: async () => ({ rows: [] }),
   connect: async () => ({
@@ -307,7 +400,7 @@ const fakePool = {
     async query(text, params = []) {
       if (/set_config\('app\.user_id'/.test(text)) { seen.users.push(params[0]); return { rows: [] }; }
       if (/^(BEGIN|COMMIT|ROLLBACK)/.test(text) || /set_config/.test(text)) return { rows: [] };
-      const served = params[0] === M1;
+      const served = params[0] === M1 || seen.alsoServed.has(params[0]);
       seen.reads++;
       if (/public_match_header/.test(text)) return { rows: served ? [{
         home_label: "Hilton College 1XI", home_code: "HIL", home_team: "1XI", away_label: "Westville Boys' High 1XI", away_code: "WES",
@@ -476,6 +569,54 @@ console.log("\n── The cache ──");
   ok("past 2,000 requests a minute a fixture is hot", hot.hit(M1) === true);
   clock += 60_000;
   ok("...and the next minute starts cold, with last minute's counts forgotten", hot.hit(M1) === false && hot.hits.size === 1);
+}
+
+console.log("\n── A publish through this API is never served stale ──");
+{
+  // db/59's notification arrives on its own connection whenever the listening
+  // backend sends it; under load that was after the publisher's next request
+  // had been served from the old entry (tools/smoke-public.mjs, two runs in
+  // five). Here it never arrives at all — no listener — so only the write
+  // path's own drop can make the next read right.
+  const site = await serve({});
+  const SESSION = "session-secret-for-the-publication-route-0123456789";
+  const token = `Bearer ${signToken({ userId: "bbbbbbbb-0000-0000-0000-00000000b001", deviceId: "t" }, SESSION)}`;
+  let refuse = false;
+  const writes = {
+    connect: async () => ({
+      release() {},
+      /** @param {string} text @param {any[]} [params] */
+      async query(text, params = []) {
+        if (!/fixture_publish/.test(text)) return { rows: [] };
+        if (refuse) return { rows: [{ ok: false, reason: "not_permitted" }] };
+        if (params[2]) seen.alsoServed.add(params[0]); else seen.alsoServed.delete(params[0]);
+        return { rows: [{ ok: true, reason: null }] };
+      },
+    }),
+  };
+  const routes = publicationRoutes({ pool: /** @type {any} */ (writes), secret: SESSION, onChange: site.site.changed });
+  /** @param {boolean} published */
+  const publish = async (published) => {
+    /** @type {{status: number, body: any}} */
+    const out = { status: 200, body: null };
+    const res = /** @type {any} */ ({ status(/** @type {number} */ c) { out.status = c; return res; }, json(/** @type {any} */ b) { out.body = b; return res; } });
+    await routes.set(/** @type {any} */ ({ params: { id: M2 }, body: { side: "home", published }, headers: { authorization: token } }), res);
+    return out.status;
+  };
+  const ip = { ip: "203.0.113.90" };
+  ok("unpublished: not found, and that answer is cached", (await site.get(`/api/public/matches/${M2}`, ip)).status === 404
+     && site.site.cache.entries.get(M2)?.header?.value === null);
+  ok("published through the route", await publish(true) === 200);
+  ok("...and the very next read serves it, with no notification", (await site.get(`/api/public/matches/${M2}`, ip)).status === 200
+     && (await site.get(`/api/public/matches/${M2}/log`, ip)).status === 200);
+  ok("withdrawn through the route", await publish(false) === 200);
+  ok("...and the very next read is not found, header and log", (await site.get(`/api/public/matches/${M2}`, ip)).status === 404
+     && (await site.get(`/api/public/matches/${M2}/log`, ip)).status === 404);
+  refuse = true;
+  ok("a refused publish changes nothing and drops nothing", await publish(true) === 403 && site.site.cache.entries.get(M2)?.header?.value === null);
+  ok("server.mjs hands the publication route the public cache",
+     /publicationRoutes\(\{[^}]*onChange: \(note\) => publicSite\.changed\(note\)/.test(readFileSync(join(ROOT, "services", "api", "server.mjs"), "utf8")));
+  await site.close();
 }
 
 console.log("\n── The rate limit ──");

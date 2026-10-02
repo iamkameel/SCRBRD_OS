@@ -185,7 +185,7 @@ const Modal = ({ title, children, onClose, width="520px" }) => {
       style={{background:D.surf1,borderRadius:D.xl,border:`1px solid ${D.borderMed}`,width:"100%",maxWidth:width,maxHeight:"90vh",overflow:"auto",outline:"none"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:`1px solid ${D.border}`}}>
         <h3 id={headingId} style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary}}>{title}</h3>
-        <button onClick={onClose} className="pressBtn" aria-label="Close dialog" style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"18px"}}>✕</button>
+        <button onClick={onClose} className="pressBtn" aria-label="Close dialog" style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"18px",minWidth:"44px",minHeight:"44px",margin:"-8px -10px -8px 0"}}>✕</button>
       </div>
       <div style={{padding:"20px"}}>{children}</div>
     </div>

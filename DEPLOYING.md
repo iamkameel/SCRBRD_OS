@@ -499,6 +499,23 @@ The paste is `node tools/bundle-sql.mjs --apply 76`, then the verify bundle
 (§55 is its proof).
 <!-- ── end SCRBRD-124 phase 2 ── -->
 
+<!-- ── SCRBRD-139: public commentary names the shot (db/78) ── -->
+#### Public commentary names the shot and where it went (SCRBRD-139, db/78)
+
+`db/78_public_shot_words.sql` re-emits `public_match_log()` (db/73's, md5-guarded)
+with two keys for a ball: `shot`, and `place` (theta, radius, seg and the
+placement's source), which only the API reads. The API turns `place` into the
+word the commentary says ("cover") and drops it, so no coordinate reaches a
+browser or the public cache (PUBLIC_DATA L7 as amended, 2026-10-01). No secret,
+no backfill: every ball already scored is worded from what it already carries.
+
+Paste `node tools/bundle-sql.mjs --apply 78`, then the verify bundle (§57 is its
+proof). Either order with the API is safe: the API from before this change drops
+`shot` and `place` (neither is on its list), and this API against a database
+without db/78 has nothing to word, so its lines say "Four" as before. Only both
+together name the shot.
+<!-- ── end SCRBRD-139 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

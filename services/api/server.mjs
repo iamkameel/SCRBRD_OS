@@ -27,6 +27,7 @@
  *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
+ *   POST /api/assignments/:id/end { reason }      end one role (db/77), the row withdrawn, never deleted
  *   GET  /api/matches/:id/events?since=           incremental sync
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
@@ -421,7 +422,9 @@ const workload = workloadRoutes({ pool, secret: SECRET });
 const load = loadRoutes({ pool, secret: SECRET });
 const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
-const publication = publicationRoutes({ pool, secret: SECRET });
+// A publish or withdrawal drops the public cache's entry before it answers,
+// not when db/59's notification arrives (publication-api.mjs).
+const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
 // The fixture planner, phase 2 (SCRBRD-123, db/67).
 const planner = plannerRoutes({ pool, secret: SECRET });
@@ -653,6 +656,9 @@ const PLAYER_ROUTES = [
   // push half of onboarding. Authenticated: enrol_person() checks
   // user.role.assign and the granter table under the caller's identity.
   [/^\/api\/users$/,                                "POST", requests.enrol],
+  // Ending one role (db/77). role_assignment_end() decides who may, and
+  // answers every refusal with a code the route turns into words.
+  [/^\/api\/assignments\/([^/]+)\/end$/,           "POST", requests.endAssignment],
   // The newsfeed. Which tier a post needs is decided by its ANCHOR, inside the
   // INSERT policy — see db/12 — so these routes carry no capability checks.
   [/^\/api\/news$/,                                 "POST", news.publish],

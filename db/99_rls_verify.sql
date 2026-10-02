@@ -3214,6 +3214,140 @@ CREATE OR REPLACE FUNCTION _v76_overseers(p_school uuid) RETURNS bigint AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/76 (section 55) ──────────────────────────────────────────────
 
+-- ┌── db/77 (section 56): ending a role (SCRBRD-132 C1) ──────────────
+-- Its own world, as the owner: people at Hilton in the roles the section
+-- ends and is refused, one child with one verified parent and one pending,
+-- and an owner's key held by somebody new. Every date explicit.
+CREATE OR REPLACE FUNCTION _seed_77() RETURNS jsonb AS $$
+DECLARE
+  HIL  uuid := '11111111-1111-1111-1111-111111111111';
+  ids  jsonb := '{}'::jsonb;
+  r    record;
+  v_u  uuid;
+  v_a  uuid;
+  v_p  uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, 'U15A', 'Kid Endseventyseven', 'Endseventyseven', 777, 'batter',
+          (current_date - interval '14 years' - interval '40 days')::date)
+  RETURNING id INTO v_p;
+  ids := ids || jsonb_build_object('p_kid', v_p);
+
+  FOR r IN SELECT * FROM (VALUES
+      ('office', 'schooladmin',   true,  'schooladmin'),
+      ('head',   'principal',     true,  'principal'),
+      ('dso',    'dso',           true,  'dso'),
+      ('dsob',   'dso',           true,  'dso'),
+      ('medic',  'medical',       true,  'medical'),
+      ('plat',   'platformadmin', false, 'platformadmin'),
+      ('own',    'superadmin',    false, 'superadmin'),
+      ('mum',    'guardian',      true,  'guardian'),
+      ('dad',    'guardian',      true,  'guardian')) AS v(k, role, at_school, urole)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (CASE WHEN r.at_school THEN HIL END, 'v77.' || r.k || '@example.invalid', 'V77 ' || initcap(r.k), r.urole)
+    RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+    VALUES (v_u, r.role, CASE WHEN r.at_school THEN HIL END, current_date - 30)
+    RETURNING id INTO v_a;
+    ids := ids || jsonb_build_object('a_' || r.k, v_a);
+  END LOOP;
+
+  -- The principal is also a DSO, and holds the office's key besides.
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES ((ids->>'u_head')::uuid, 'dso', HIL, current_date - 30) RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('a_head_dso', v_a);
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES ((ids->>'u_head')::uuid, 'schooladmin', HIL, current_date - 30) RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('a_head_office', v_a);
+  -- The owner's key also coaches a side.
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+  VALUES ((ids->>'u_own')::uuid, 'coach', HIL, 'U15A', current_date - 30) RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('a_own_coach', v_a);
+  -- Two keys at two schools: Hilton's office, and Westville's principal. A
+  -- principal may appoint medical staff; an office may not.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (HIL, 'v77.twokeys@example.invalid', 'V77 Twokeys', 'schooladmin') RETURNING id INTO v_u;
+  ids := ids || jsonb_build_object('u_two', v_u);
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (v_u, 'schooladmin', HIL, current_date - 30), (v_u, 'principal', '22222222-2222-2222-2222-222222222222', current_date - 30);
+
+  -- Mum's link is verified; Dad's waits for the office.
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES ((ids->>'a_mum')::uuid, v_p, 'parent', 'verified', (ids->>'u_office')::uuid, now(),
+          'granted', 'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, created_by, valid_from)
+  VALUES ((ids->>'a_dad')::uuid, v_p, 'parent', (ids->>'u_office')::uuid, current_date - 30);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The rows as the owner reads them, past RLS: the claims are about the record.
+CREATE OR REPLACE FUNCTION _v77_assignment(p uuid) RETURNS role_assignment AS $$
+  SELECT * FROM role_assignment WHERE id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v77_ending(p uuid) RETURNS role_assignment_ending AS $$
+  SELECT * FROM role_assignment_ending WHERE assignment_id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v77_notice(p uuid) RETURNS notification AS $$
+  SELECT * FROM notification WHERE id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v77_link(p_assignment uuid) RETURNS assignment_subject AS $$
+  SELECT * FROM assignment_subject WHERE assignment_id = p_assignment ORDER BY created_at DESC LIMIT 1
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v77_live_links(p_player uuid) RETURNS integer AS $$
+  SELECT live_links FROM player_guardian_status WHERE player_id = p_player
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An open concern about the school's leadership, naming this person (db/57).
+CREATE OR REPLACE FUNCTION _v77_concern(p_school uuid, p_person uuid) RETURNS uuid AS $$
+  INSERT INTO safeguarding_concern (reference, tenant_id, school_id, about_kind, subject_person_id,
+                                    nature, certainty, account)
+  VALUES ('SG-V77A-0077', p_school, p_school, 'leadership', p_person,
+          '{other}', 'suspicion', 'A concern raised for db/99 section 56 only.')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/77 (section 56) ──────────────────────────────────────────────
+
+-- db/78 (section 57). Two Hilton 1XI fixtures against a typed side, written
+-- as the owner, each with the same log: the squad; a four placed as a point
+-- with every placement field the pad records (contact, trajectory, zone,
+-- capture profile, the bowler's approach); a sector-era four; a ball with
+-- nothing recorded; a penalty row carrying a stray shot and seg (a kind that
+-- is not a ball). Only `pub` will be published. Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_78() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  v_pub  uuid; v_un uuid; m uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '1XI', 'Verify Seventyeight College 1XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live') RETURNING id INTO v_pub;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '1XI', 'Verify Seventyeight College 1XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live') RETURNING id INTO v_un;
+  FOREACH m IN ARRAY ARRAY[v_pub, v_un] LOOP
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                            client_ts, kind, ball_type, value, shot, contact, trajectory, seg, zone, theta, radius,
+                            placement_source, placement_null, close_position, capture_profile, payload)
+    VALUES
+      (m, HIL, 1, 1, 0, SCORER, 'v78', 'v78-' || m || '-1', 1, now(), 'innings_start', NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+       NULL, NULL, NULL, NULL, NULL, NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', 'Verify Seventyeight College 1XI',
+         'overs', 20, 'squad', jsonb_build_array(jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000001', 'name', 'Seed One'),
+                                                 jsonb_build_object('id', 'aaaaaaaa-0000-0000-0000-000000000002', 'name', 'Seed Two')),
+         'bowlingSquad', jsonb_build_array('Typed Seventyeight'))),
+      (m, HIL, 2, 1, 0, SCORER, 'v78', 'v78-' || m || '-2', 2, now(), 'ball', 'run', 4, 'drive', 'middle', 'ground', 8, 'boundary',
+       235, 0.35, 'point', NULL, NULL, 'full', '{"bowlerApproach": "over", "bowler": "Typed Seventyeight"}'),
+      (m, HIL, 3, 1, 0, SCORER, 'v78', 'v78-' || m || '-3', 3, now(), 'ball', 'run', 4, 'drive', NULL, NULL, 3, 'boundary',
+       NULL, NULL, 'sector', NULL, NULL, NULL, '{"bowler": "Typed Seventyeight"}'),
+      (m, HIL, 4, 1, 0, SCORER, 'v78', 'v78-' || m || '-4', 4, now(), 'ball', 'run', 0, NULL, NULL, NULL, NULL, NULL,
+       NULL, NULL, NULL, 'skipped', NULL, 'quick', '{"bowler": "Typed Seventyeight"}'),
+      (m, HIL, 5, 1, 0, SCORER, 'v78', 'v78-' || m || '-5', 5, now(), 'penalty', NULL, NULL, 'pull', NULL, NULL, 5, NULL,
+       NULL, NULL, NULL, NULL, NULL, NULL, '{"runs": 5, "toBattingTeam": true, "reason": "helmet_struck"}');
+  END LOOP;
+  RETURN jsonb_build_object('pub', v_pub, 'un', v_un);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/78 (section 57) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -8871,13 +9005,16 @@ BEGIN
     PERFORM _assert(n = 6, format('db/59 (log): %s events, expected the 7 written less the suspension', n));
     SELECT count(*) INTO n FROM public_match_log(M_ON, 0) l WHERE l.kind = 'bowler_suspended';
     PERFORM _assert(n = 0, 'db/59 (log): a Law 41 suspension of one boy reached the public log');
+    -- (db/78, SCRBRD-139: a ball's shot and `place`, the material of the
+    -- words for where it went, which the API makes and drops; §57 holds them
+    -- key for key)
     SELECT string_agg(DISTINCT k, ',') INTO v_keys FROM public_match_log(M_ON, 0) l, jsonb_object_keys(l.detail) k
      WHERE k NOT IN ('battingTeam', 'bowlingTeam', 'teamKey', 'bowlingTeamKey', 'squad', 'bowlingSquad', 'overs', 'target',
                      'striker', 'nonStriker', 'bowler', 'dismissed', 'captainConsent', 'fielder', 'freeHit', 'nbRuns', 'nbType',
-                     'outAt', 'facesNext', 'notInOver', 'runs', 'toBattingTeam', 'batter', 'reason', 'confirmed');
+                     'outAt', 'facesNext', 'notInOver', 'runs', 'toBattingTeam', 'batter', 'reason', 'confirmed', 'shot', 'place');
     PERFORM _assert(v_keys IS NULL, format('db/59 (log): the detail carries %s', v_keys));
-    SELECT count(*) INTO n FROM public_match_log(M_ON, 0) l WHERE l.detail ? 'twelfthMan' OR l.detail ? 'captureProfile' OR l.detail ? 'shot';
-    PERFORM _assert(n = 0, 'db/59 (log): the twelfth man, a capture profile or a shot reached the public log');
+    SELECT count(*) INTO n FROM public_match_log(M_ON, 0) l WHERE l.detail ? 'twelfthMan' OR l.detail ? 'captureProfile';
+    PERFORM _assert(n = 0, 'db/59 (log): the twelfth man or a capture profile reached the public log');
     SELECT count(*) INTO n FROM public_match_log(M_ON, 4);
     PERFORM _assert(n = 2, format('db/59 (since): %s events after seq 4, expected 2', n));
     SELECT count(*) INTO n FROM public_shot_sectors(M_ON) WHERE sector = 9 AND runs = 4 AND shots = 1;
@@ -13923,6 +14060,366 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 55
+
+  -- ── 56. Ending a role (SCRBRD-132 C1, db/77) ──────────────────────
+  -- role_assignment_end(): an assignment granted through the real path
+  -- (enrol_person()) and ended stops granting on the next statement; whoever
+  -- may not grant the role may not end it; nobody ends their own last key,
+  -- their own DSO appointment, a superadmin's role from below, or the owner's
+  -- key; the reason is required; the audit row and the notice are written,
+  -- the notice without the reason and readable by somebody left with no role;
+  -- the ended row stays on the audit read; a guardian role keeps the guardian
+  -- link's rules (guardian.link.manage, the last verified link of a minor)
+  -- and takes its live links with it; db/57's DSO guard still answers.
+  -- _seed_77() builds its own world. tools/smoke-end-role.mjs walks the same
+  -- through the API.
+  --
+  -- Each labelled guard was falsified once, by taking it out of
+  -- role_assignment_end() as the owner before this file ran, and went red. It
+  -- was green again once restored. 15 breaks:
+  --   (scope)       app_may_grant_at() without its school condition: it
+  --                 answered at Hilton on Westville's key; and with that
+  --                 direct assertion taken out as well, enrol_person() appointed
+  --                 medical staff at Hilton on Westville's principal
+  --   (grant)       the UPDATE of active dropped: the ended coach still held
+  --                 his capabilities
+  --   (granter)     app_may_grant_at() dropped from the authority test: the office
+  --                 ended a medical appointment
+  --   (last-admin)  the last_admin answer dropped: the platform ended its only key
+  --   (superadmin)  the superadmin_only answer dropped: the office ended the
+  --                 coaching role of the owner's key
+  --   (owner)       the owners_key answer dropped: a superadmin ended the key
+  --   (reason)      the ten-character test lowered to one: held by
+  --                 role_assignment_ending's CHECK, the second layer (the
+  --                 end raised); with that CHECK dropped as well, 'short'
+  --                 ended a role
+  --   (audit)       the ending row's INSERT dropped; the notice's INSERT dropped
+  --                 (the row had no notice_id)
+  --   (notice)      notification_role_ended dropped: the coach, with no role
+  --                 left, read nothing
+  --   (guardian)    the last_verified_link answer dropped; the
+  --                 guardian.link.manage test dropped (the platform got past
+  --                 not_permitted); the links left verified (Mum's link stayed
+  --                 'verified')
+  --   (dso)         the own_dso answer dropped: the principal ended his own
+  DECLARE
+    ids      jsonb := _seed_77();
+    U_OFF    uuid := (ids->>'u_office')::uuid;
+    U_HD     uuid := (ids->>'u_head')::uuid;
+    U_DS     uuid := (ids->>'u_dso')::uuid;
+    U_PL     uuid := (ids->>'u_plat')::uuid;
+    U_OWN    uuid := (ids->>'u_own')::uuid;
+    U_MUM    uuid := (ids->>'u_mum')::uuid;
+    U_DAD    uuid := (ids->>'u_dad')::uuid;
+    U_MED    uuid := (ids->>'u_medic')::uuid;
+    P_KID    uuid := (ids->>'p_kid')::uuid;
+    A_COACH  uuid;
+    U_CO     uuid;
+    v_notice uuid;
+    WHY      text := 'Left the school at the end of the term.';
+    NIL      uuid := '00000000-0000-0000-0000-000000000000';
+    e        role_assignment_ending;
+    nt       notification;
+    lk       assignment_subject;
+  BEGIN
+    -- (grant) granted through enrol_person(), as the office does it
+    PERFORM _as(U_OFF);
+    SELECT x.ok, x.reason, x.user_id, x.assignment_id INTO v_ok, v_reason, U_CO, A_COACH
+      FROM enrol_person('v77.coach@example.invalid', 'V77 Coach', 'coach', HIL, 'U15A', NULL, NULL) x;
+    PERFORM _assert(v_ok AND A_COACH IS NOT NULL, format('§56 (grant): the office could not enrol a coach: %s', v_reason));
+    PERFORM _as(U_CO);
+    PERFORM _assert(app_can('team.manage', HIL, 'U15A', NIL, NIL) AND app_holds('team.manage'),
+      '§56 (grant): the enrolled coach does not hold team.manage at his side');
+
+    -- (granter) nobody who may not grant the role ends it
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_COACH, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§56 (granter): the coach ended his own appointment: %s %s', v_ok, v_reason));
+    PERFORM _as(U_MED);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_COACH, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§56 (granter): the medical officer ended a coach: %s %s', v_ok, v_reason));
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_medic')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND (_v77_assignment((ids->>'a_medic')::uuid)).active,
+      format('§56 (granter): the office, which may not appoint medical staff, ended one: %s %s', v_ok, v_reason));
+    PERFORM _as(U_WES_ADM);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_COACH, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§56 (granter): another school''s office ended a Hilton coach: %s %s', v_ok, v_reason));
+
+    -- (scope) the role question is asked at the school the scope question
+    -- is: Hilton's office who is Westville's principal appoints and ends a
+    -- medical officer at Westville, and neither at Hilton
+    PERFORM _as((ids->>'u_two')::uuid);
+    PERFORM _assert(NOT app_may_grant_at('medical', HIL) AND app_may_grant_at('medical', WES)
+                    AND NOT app_may_grant_at('medical', NULL),
+      '§56 (scope): app_may_grant_at() does not answer at the school asked');
+    SELECT x.ok, x.reason INTO v_ok, v_reason
+      FROM enrol_person('v77.hilmedic@example.invalid', 'V77 Hilmedic', 'medical', HIL, NULL, NULL, NULL) x;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§56 (scope): Westville''s principal, through Hilton''s office, appointed medical staff at Hilton: %s %s', v_ok, v_reason));
+    BEGIN
+      INSERT INTO role_assignment (person_id, role, school_id) VALUES (U_MED, 'medical', HIL);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, '§56 (scope): role_assignment_write let a Hilton medical appointment through on Westville''s key');
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_medic')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND (_v77_assignment((ids->>'a_medic')::uuid)).active,
+      format('§56 (scope): Westville''s principal, through Hilton''s office, ended Hilton''s medical officer: %s %s', v_ok, v_reason));
+    SELECT x.ok, x.reason, x.assignment_id INTO v_ok, v_reason, A_ID
+      FROM enrol_person('v77.wesmedic@example.invalid', 'V77 Wesmedic', 'medical', WES, NULL, NULL, NULL) x;
+    PERFORM _assert(v_ok AND A_ID IS NOT NULL, format('§56 (scope): Westville''s principal could not appoint medical staff at Westville: %s', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_ID, WHY);
+    PERFORM _assert(v_ok, format('§56 (scope): Westville''s principal could not end Westville''s medical officer: %s', v_reason));
+
+    -- (reason) at least ten characters, after trimming
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_COACH, 'short');
+    PERFORM _assert(NOT v_ok AND v_reason = 'reason_required' AND (_v77_assignment(A_COACH)).active,
+      format('§56 (reason): a five-letter reason ended a role: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_COACH, '   left    ');
+    PERFORM _assert(NOT v_ok AND v_reason = 'reason_required',
+      format('§56 (reason): padding made a reason: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_COACH, NULL);
+    PERFORM _assert(NOT v_ok AND v_reason = 'reason_required', '§56 (reason): no reason ended a role');
+
+    -- (grant) ended, and no longer granted on the very next statement
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_COACH, WHY);
+    PERFORM _assert(v_ok, format('§56 (grant): the office could not end the coach: %s', v_reason));
+    PERFORM _as(U_CO);
+    PERFORM _assert(NOT app_can('team.manage', HIL, 'U15A', NIL, NIL) AND NOT app_holds('team.manage')
+                    AND NOT app_can('fixture.read', HIL, 'U15A', NIL, NIL),
+      '§56 (grant): the ended coach still holds his capabilities');
+    PERFORM _assert((_v77_assignment(A_COACH)).active = false AND (_v77_assignment(A_COACH)).revoked_by = U_OFF
+                    AND (_v77_assignment(A_COACH)).revoked_at IS NOT NULL,
+      '§56 (grant): the row does not say it was withdrawn, and by the office');
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end(A_COACH, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'already_ended', format('§56: a second end answered %s %s', v_ok, v_reason));
+
+    -- (audit) one row: who, when, why; the office reads it, the coach does not
+    e := _v77_ending(A_COACH);
+    PERFORM _assert(e.assignment_id = A_COACH AND e.ended_by = U_OFF AND e.reason = WHY AND e.role = 'coach'
+                    AND e.school_id = HIL AND e.ended_at IS NOT NULL AND e.notice_id IS NOT NULL,
+      '§56 (audit): the ending row is missing or wrong');
+    PERFORM _assert((SELECT count(*) FROM role_assignment_ending WHERE assignment_id = A_COACH) = 1,
+      '§56 (audit): the office cannot read the ending row');
+    -- the ended row is still on the audit read (role_assignment, as the office)
+    PERFORM _assert((SELECT count(*) FROM role_assignment WHERE id = A_COACH AND NOT active AND revoked_by = U_OFF) = 1,
+      '§56 (audit): the withdrawn assignment is gone from the office''s read');
+
+    -- (notice) to him, without the reason, readable with no role left
+    nt := _v77_notice(e.notice_id);
+    PERFORM _assert(nt.recipient_id = U_CO AND nt.kind = 'system' AND nt.school_id = HIL
+                    AND position('Coach' IN nt.body) > 0 AND position('Hilton College' IN nt.body) > 0
+                    AND position('term' IN nt.body) = 0 AND position('term' IN nt.title) = 0,
+      format('§56 (notice): the notice is wrong or carries the reason: %s', nt.body));
+    PERFORM _as(U_CO);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE id = e.notice_id) = 1,
+      '§56 (notice): the coach, with no role left, cannot read the notice about it');
+    PERFORM _assert((SELECT count(*) FROM role_assignment_ending) = 0,
+      '§56 (audit): the coach reads the reason his role was ended');
+    PERFORM _assert((SELECT count(*) FROM role_assignment WHERE id = A_COACH) = 1,
+      '§56: the coach cannot see his own ended appointment');
+    PERFORM _as(U_OFF);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE id = e.notice_id) = 0,
+      '§56 (notice): the office reads a notice addressed to the coach');
+    -- the door is not forgeable: a system notice the office publishes about
+    -- his ended assignment is not admitted by it
+    -- (No RETURNING: the office may not read a notice addressed to him.)
+    v_notice := gen_random_uuid();
+    BEGIN
+      INSERT INTO notification (id, school_id, scope_level, kind, title, body, required_capability, subject_kind, subject_id, recipient_id)
+      VALUES (v_notice, HIL, 'school', 'system', 'Forged', 'Forged', 'news.read', 'system', A_COACH, U_CO);
+    EXCEPTION WHEN insufficient_privilege OR check_violation THEN v_notice := NULL;
+    END;
+    PERFORM _assert(v_notice IS NOT NULL, '§56: the fixture is void — the office could not publish the forged notice');
+    PERFORM _as(U_CO);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE id = v_notice) = 0,
+      '§56 (notice): a notice the office wrote reached the coach through the role-ended door');
+
+    -- (superadmin) a superadmin's role, only by a superadmin; (owner) never the key
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_own_coach')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'superadmin_only',
+      format('§56 (superadmin): the office ended the owner''s coaching role: %s %s', v_ok, v_reason));
+    PERFORM _as(U_PL);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_own_coach')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'superadmin_only',
+      format('§56 (superadmin): the platform ended the owner''s coaching role: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_own')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§56 (owner): the platform ended the owner''s key: %s %s', v_ok, v_reason));
+    PERFORM _as(U_OWNER);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_own')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'owners_key' AND (_v77_assignment((ids->>'a_own')::uuid)).active,
+      format('§56 (owner): a superadmin ended the owner''s key: %s %s', v_ok, v_reason));
+    PERFORM _as(U_OWN);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_own')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'owners_key',
+      format('§56 (owner): the key ended itself: %s %s', v_ok, v_reason));
+    PERFORM _as(U_OWNER);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_own_coach')::uuid, WHY);
+    PERFORM _assert(v_ok, format('§56 (superadmin): a superadmin could not end another''s coaching role: %s', v_reason));
+
+    -- (last-admin) nobody ends their own last key over a school
+    PERFORM _as(U_PL);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_plat')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'last_admin' AND (_v77_assignment((ids->>'a_plat')::uuid)).active,
+      format('§56 (last-admin): the platform administrator ended his only key: %s %s', v_ok, v_reason));
+    PERFORM _assert(app_can('user.role.assign', HIL, '*', NIL, NIL), '§56 (last-admin): the platform lost its key');
+    PERFORM _as(U_HD);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_head_office')::uuid, WHY);
+    PERFORM _assert(v_ok, format('§56 (last-admin): the principal, keeping his own key, could not end his office role: %s', v_reason));
+    PERFORM _assert(app_can('user.role.assign', HIL, '*', NIL, NIL), '§56 (last-admin): the principal lost his key');
+
+    -- (dso) not the office; never one's own; db/57's guard still answers
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_dso')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§56 (dso): the office ended a DSO: %s %s', v_ok, v_reason));
+    PERFORM _as(U_DS);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_dso')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§56 (dso): a DSO ended his own appointment: %s %s', v_ok, v_reason));
+    PERFORM _as(U_HD);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_head_dso')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'own_dso' AND (_v77_assignment((ids->>'a_head_dso')::uuid)).active,
+      format('§56 (dso): the principal ended his own DSO appointment: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_dsob')::uuid, WHY);
+    PERFORM _assert(v_ok, format('§56 (dso): the principal could not end a DSO''s appointment: %s', v_reason));
+    PERFORM _v77_concern(HIL, U_HD);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_dso')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'dso_blocked' AND (_v77_assignment((ids->>'a_dso')::uuid)).active
+                    AND (_v77_ending((ids->>'a_dso')::uuid)).assignment_id IS NULL,
+      format('§56 (dso): with a concern naming him open, the principal ended the DSO: %s %s', v_ok, v_reason));
+
+    -- (guardian) the guardian link's rules hold
+    PERFORM _as(U_PL);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_mum')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§56 (guardian): the platform, holding no guardian.link.manage, ended a parent: %s %s', v_ok, v_reason));
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_mum')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'last_verified_link' AND (_v77_assignment((ids->>'a_mum')::uuid)).active,
+      format('§56 (guardian): the last verified parent of a minor was ended: %s %s', v_ok, v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM guardian_link_verify(U_DAD, P_KID, 'popia-2026-01', NULL);
+    PERFORM _assert(v_ok AND _v77_live_links(P_KID) = 2, format('§56: the fixture is void — Dad''s link was not verified: %s', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_mum')::uuid, WHY);
+    PERFORM _assert(v_ok, format('§56 (guardian): with Dad verified, Mum''s role could not be ended: %s', v_reason));
+    lk := _v77_link((ids->>'a_mum')::uuid);
+    PERFORM _assert(lk.verification_state = 'revoked' AND lk.valid_until = current_date AND _v77_live_links(P_KID) = 1,
+      format('§56 (guardian): Mum''s link is %s until %s, and the boy counts %s live link(s)',
+             lk.verification_state, lk.valid_until, _v77_live_links(P_KID)));
+    PERFORM _as(U_MUM);
+    PERFORM _assert(NOT app_can('player.profile.read', HIL, 'U15A', P_KID, NIL),
+      '§56 (guardian): Mum still reaches the boy');
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_dad')::uuid, WHY);
+    PERFORM _assert(NOT v_ok AND v_reason = 'last_verified_link',
+      format('§56 (guardian): Dad, now the last verified parent, was ended: %s %s', v_ok, v_reason));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 57. Public commentary names the shot and where it went (SCRBRD-139, db/78) ──
+  -- PUBLIC_DATA L7 as amended (Kameel, 2026-10-01): a ball's shot and where
+  -- it went may be named in public commentary, as words; no coordinate ever
+  -- reaches a browser or the public cache. The words are made on the API
+  -- (redact.mjs, by packages/scoring's ballAreas(): one implementation, the
+  -- commentary's own), so what the application role gets from
+  -- public_match_log() for a served fixture is, key for key: a ball's `shot`
+  -- and `place` {theta, radius, seg, source} — the four fields the words
+  -- read — and nothing else positional; a ball with nothing recorded,
+  -- neither; any other kind, neither. The API drops `place` once it has the
+  -- word (services/api/public/public.test.mjs, tools/smoke-public.mjs: no
+  -- coordinate in any response). _seed_78() builds its own two fixtures.
+  --
+  -- Each labelled assertion was falsified once — public_match_log() replaced
+  -- in the database (as the owner, inside this file's transaction, before
+  -- the section ran) — and went red at its own assertion; six breaks:
+  --   (unpublished)  public_fixture_served() dropped from the WHERE
+  --   (shot)         the shot not selected
+  --   (place)        `place` given the zone as well
+  --   (never)        the contact selected as a key of its own
+  --   (bare)         `place` without its nullif: an empty object on a ball
+  --                  with nothing recorded
+  --   (ball-only)    `shot` and `place` built for every kind, not only a ball
+  -- (withdrawn) rests on the same guard as (unpublished), which goes red
+  -- first when it is dropped.
+  DECLARE
+    ids     jsonb := _seed_78();
+    M_PUB   uuid;
+    M_UN    uuid;
+    v_keys  text;
+    j       jsonb;
+  BEGIN
+    M_PUB := (ids->>'pub')::uuid;
+    M_UN := (ids->>'un')::uuid;
+
+    -- (unpublished) neither fixture answers while nobody has published it,
+    -- signed out or signed in
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_match_log(M_PUB, 0);
+    PERFORM _assert(n = 0, format('db/78 (unpublished): an unpublished fixture''s log answered %s rows', n));
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM public_match_log(M_UN, 0);
+    PERFORM _assert(n = 0, format('db/78 (unpublished): a signed-in reader got %s public rows of an unpublished fixture', n));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_PUB, 'home', true) s;
+    PERFORM _assert(v_ok, format('db/78: Hilton could not publish its side (%s)', v_reason));
+
+    -- Signed out from here: what the API's public read gets.
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_match_log(M_UN, 0);
+    PERFORM _assert(n = 0, format('db/78 (unpublished): the fixture nobody published answered %s rows once the other was', n));
+
+    -- (shot) the placed four: the shot, and the words' material, exactly
+    SELECT l.detail INTO j FROM public_match_log(M_PUB, 0) l WHERE l.seq = 2;
+    PERFORM _assert(j->>'shot' = 'drive', format('db/78 (shot): the placed four''s detail is %s', j));
+    -- (place) exactly the four fields the words read
+    PERFORM _assert(j->'place' = '{"theta": 235, "radius": 0.35, "seg": 8, "source": "point"}'::jsonb,
+      format('db/78 (place): the placed four''s place is %s', j->'place'));
+    SELECT l.detail INTO j FROM public_match_log(M_PUB, 0) l WHERE l.seq = 3;
+    PERFORM _assert(j - 'bowler' = '{"shot": "drive", "place": {"seg": 3, "source": "sector"}}'::jsonb,
+      format('db/78 (place): the sector-era four''s detail is %s', j));
+
+    -- (never) no other placement field, at the top or inside `place`, on any row
+    SELECT string_agg(DISTINCT k, ',' ORDER BY k) INTO v_keys
+      FROM public_match_log(M_PUB, 0) l, jsonb_object_keys(l.detail) k
+     WHERE k IN ('theta', 'radius', 'seg', 'zone', 'placementSource', 'placementNull', 'closePosition', 'captureProfile',
+                 'contact', 'trajectory', 'bowlerApproach', 'placement');
+    PERFORM _assert(v_keys IS NULL, format('db/78 (never): the detail carries %s', v_keys));
+    SELECT string_agg(DISTINCT k, ',' ORDER BY k) INTO v_keys
+      FROM public_match_log(M_PUB, 0) l, jsonb_object_keys(l.detail->'place') k
+     WHERE l.detail ? 'place' AND k NOT IN ('theta', 'radius', 'seg', 'source');
+    PERFORM _assert(v_keys IS NULL, format('db/78 (never): a place carries %s', v_keys));
+    SELECT count(*) INTO n FROM public_match_log(M_PUB, 0) l
+     WHERE l.detail::text ~ '(boundary|middle|"ground"|skipped|quick|bowlerApproach|"over")';
+    PERFORM _assert(n = 0, format('db/78 (never): %s rows carry a zone, a contact, a trajectory, a null reason, a profile or an approach', n));
+
+    -- (bare) a ball with nothing recorded says only its outcome: the columns
+    -- and the typed bowler, nothing of a shot or a place
+    SELECT l.detail INTO j FROM public_match_log(M_PUB, 0) l WHERE l.seq = 4;
+    PERFORM _assert(j - 'bowler' = '{}'::jsonb AND (SELECT l.ball_type = 'run' AND l.value = 0 FROM public_match_log(M_PUB, 0) l WHERE l.seq = 4),
+      format('db/78 (bare): the ball with nothing recorded reads %s', j));
+
+    -- (ball-only) a kind that is not a ball has no shot and no place
+    SELECT l.detail INTO j FROM public_match_log(M_PUB, 0) l WHERE l.seq = 5;
+    PERFORM _assert(NOT (j ? 'shot') AND NOT (j ? 'place') AND (j->>'runs')::int = 5,
+      format('db/78 (ball-only): the penalty reads %s', j));
+    SELECT count(*) INTO n FROM public_match_log(M_PUB, 0) l WHERE l.kind <> 'ball' AND (l.detail ? 'shot' OR l.detail ? 'place');
+    PERFORM _assert(n = 0, format('db/78 (ball-only): %s rows not a ball carry a shot or a place', n));
+
+    -- (withdrawn) taken down, it answers nothing again
+    PERFORM _as(U_SARAH);
+    PERFORM fixture_publish(M_PUB, 'home', false);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_match_log(M_PUB, 0);
+    PERFORM _assert(n = 0, format('db/78 (withdrawn): a fixture Hilton took back down answered %s rows', n));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 57
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

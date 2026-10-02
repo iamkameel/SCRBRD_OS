@@ -269,8 +269,10 @@ try {
   ok("...and is, when he does", s.reads.length === 1 && await tid(s.page, "me-conduct").count() === 1);
   await tid(s.page, "me-record-show").click({ timeout: 4000 }).catch(() => {});
   await s.page.waitForTimeout(1500);
-  ok("his own record: his date of birth, his ID behind a tap",
-     /1 Dec 2009/.test(await inner(s.page, "their-record")) && await tid(s.page, "record-id").count() === 0 && await tid(s.page, "record-id-show").count() === 1);
+  // The seed's birthdays are relative to today (db/98), so the day is read, not pinned.
+  const bornWords = (await q(`select to_char(born, 'FMDD Mon YYYY') as d from player where full_name = 'R Pillay'`))[0]?.d;
+  ok(`his own record: his date of birth (${bornWords}), his ID behind a tap`,
+     !!bornWords && (await inner(s.page, "their-record")).includes(bornWords) && await tid(s.page, "record-id").count() === 0 && await tid(s.page, "record-id-show").count() === 1);
   const fm = await floors(s.page);
   ok(`Me at phone width: nothing read under 12px (${fm.small.length})`, fm.small.length === 0, fm.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fm.tiny.length})`, fm.tiny.length === 0, fm.tiny.slice(0, 4).join(" · "));

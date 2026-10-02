@@ -44,7 +44,7 @@ ground for publishing it on these pages is the prior consent of a competent pers
 | L4 | Ball-by-ball commentary and dismissals | Same rule as L2 |
 | L5 | The other school's players | Each side named only by its own school's rule; a side not on the platform is never named |
 | L6 | A name the scorer typed in | Never named publicly: shown as a position. *Note: "limited information about a player is available to a stranger."* |
-| L7 | Shot maps and wagon wheels | Team-level only on public pages |
+| L7 | Shot maps and wagon wheels; a ball's shot and where it went | Drawings team-level only on public pages. **Amended 2026-10-01 (§5b): the commentary may name a ball's shot and where it went, as words** |
 | A1 | Results and standings | Public |
 | A2 | Full scorecards after the match | Same name rule as L2 |
 | A3 | Leaderboards across a competition | Not public |
@@ -103,6 +103,26 @@ Nothing. The one item this section held is decided:
   dossier opens — squad and figures alike.** `db/46_opposition_window.sql` sets
   `opposition_window_days()` to 5. It was never a public-page question: the dossier is
   signed-in, and nothing about it is public under §1–§4.
+
+## 5b. L7 amended: the commentary names the shot and where it went (2026-10-01)
+
+Kameel, 2026-10-01: *"I want the public page to name the shot and where it went
+('driven through the covers for four')."* Recorded as SCRBRD-139. L7 now reads:
+
+- **A ball's shot and where it went may be named in public commentary, as words**:
+  "D Erasmus, driven through cover for four". The words are the signed-in Match
+  Centre's, made by the same code (`packages/scoring` commentary), so the public
+  line and the signed-in line for one ball are one string.
+- **Drawings stay team-level.** Wagon wheels and shot maps on a public page are the
+  side's scoring sectors (`public_shot_sectors()`), never a boy's.
+- **No coordinate ever reaches a browser or the public cache**: no theta, radius,
+  seg, zone or other placement field (its source, its null reason, the close
+  position, the capture profile), and no contact, trajectory or bowler's approach.
+  The server turns where a ball went into its word and drops the rest
+  (`db/78_public_shot_words.sql`, `services/api/public/redact.mjs`).
+- **Names are unchanged**: the line names a boy only by L2 ("D Erasmus" with
+  consent, otherwise "the striker"), and a name the scorer typed is never said (L6).
+  "Driven through cover" says nothing about who unless the rule already named him.
 
 ## 5a. How the rule reads in code (`packages/policy/src/public.mjs`)
 

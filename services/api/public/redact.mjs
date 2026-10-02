@@ -26,6 +26,17 @@
  *   never-public mark, a boy whose school has names off and a typed name are
  *   the same absence (principle 3: "Batter" is one string).
  *
+ *   WHERE THE BALL WENT, AS WORDS (SCRBRD-139; PUBLIC_DATA L7 as amended by
+ *   Kameel, 2026-10-01). db/78 hands this process each ball's shot and the
+ *   material of where it went (`place`: theta, radius, seg, its source). The
+ *   log is folded here — packages/scoring's ballAreas(), the commentary's own
+ *   walk and areaOf() — and each ball gets `area`, the word its line says
+ *   ("cover", "deep mid-wicket", "first slip"). `place` is then gone: no
+ *   kind lists it, so it is never copied, cached or sent, and neither is any
+ *   coordinate. The page's commentary composes "driven through cover for
+ *   four" from `shot` and `area` with the same generator the signed-in Match
+ *   Centre uses, so the two say one string for one ball.
+ *
  *   THE ALLOWLIST. PUBLIC_EVENT_FIELDS names, per event kind, every field that
  *   may be emitted; a kind not listed is dropped whole (a new kind reaches the
  *   public only when somebody lists it), and every kept field passes its own
@@ -45,6 +56,7 @@ import {
   FACES_NEXT_VALUES, NOT_IN_OVER, PENALTY_REASONS, RETIRE_REASON, CARD_END_REASON, CARD_HOW_OUT,
   superOverNumber,
   STOP_REASONS,
+  ballAreas, AREA_WORDS, SHOT_WORDS,
 } from "@scrbrd/scoring";
 
 /**
@@ -53,11 +65,16 @@ import {
  * services/api/public/public.test.mjs; the design's table (§2.4) is the
  * source, finalised against events.mjs and what the fold reads.
  *
- * Dropped by not being here: every ball's shot, contact, trajectory, seg,
- * zone, bowlerApproach, theta, radius and placement fields (L7 — the team's
- * sectors are public_shot_sectors()); a bowler change's reason; the twelfth
- * man (a team sheet, A7); an innings' declared capture profile; a void's
- * reason; `bowler_suspended` whole (Law 41 against one boy is N3).
+ * A ball's `shot` (an id SHOT_WORDS has words for) and `area` (a word of
+ * AREA_WORDS, made here from db/78's `place`) are kept: the commentary names
+ * the shot and where it went (L7 as amended, SCRBRD-139).
+ *
+ * Dropped by not being here: `place` itself, and every ball's contact,
+ * trajectory, seg, zone, bowlerApproach, theta, radius and placement fields
+ * (L7 — no coordinate reaches a browser; the team's sectors are
+ * public_shot_sectors()); a bowler change's reason; the twelfth man (a team
+ * sheet, A7); an innings' declared capture profile; a void's reason;
+ * `bowler_suspended` whole (Law 41 against one boy is N3).
  * @type {Readonly<Record<string, readonly string[]>>}
  */
 export const PUBLIC_EVENT_FIELDS = Object.freeze({
@@ -67,7 +84,9 @@ export const PUBLIC_EVENT_FIELDS = Object.freeze({
   batters:       Object.freeze(["striker", "nonStriker", "captainConsent"]),
   bowler:        Object.freeze(["bowler"]),
   ball:          Object.freeze(["type", "value", "striker", "nonStriker", "bowler", "dismissal", "fielder", "dismissed",
-                                "freeHit", "nbRuns", "nbType", "outAt", "facesNext", "notInOver"]),
+                                "freeHit", "nbRuns", "nbType", "outAt", "facesNext", "notInOver",
+                                // SCRBRD-139 (db/78): the shot, and where it went as a word
+                                "shot", "area"]),
   penalty:       Object.freeze(["runs", "toBattingTeam", "reason"]),
   retire:        Object.freeze(["batter", "reason", "type", "dismissal"]),
   innings_end:   Object.freeze(["reason", "confirmed"]),
@@ -210,12 +229,53 @@ const team = (v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 120) 
 const oneOf = (v, set) => (typeof v === "string" && set.has(v) ? v : null);
 
 /**
+ * Where each ball went, as the word its commentary line says — or null. The
+ * rows are folded as the log they are (real ids, db/78's `place` as the
+ * placement fields the fold reads) by ballAreas(), the commentary's own walk,
+ * so the word is the signed-in line's: a sector-era ball is read through the
+ * hand of the batter the fold has on strike. A log the fold cannot read gives
+ * no words, never an error: the page still shows "FOUR".
+ * @param {LogRow[]} rows
+ * @param {import("@scrbrd/scoring").FoldContext} ctx  the fixture's, as the page folds it
+ * @returns {(string | null)[]}  by row
+ */
+export function areasOf(rows, ctx = {}) {
+  const evs = rows.map((row) => {
+    const { place, ...d } = /** @type {Record<string, any>} */ (row.detail ?? {});
+    const p = place != null && typeof place === "object" ? place : {};
+    /** @type {Record<string, any>} */
+    const ev = { ...d, kind: row.kind, innings: int(row.innings) ?? 0, seq: Number(row.seq), id: String(row.event_key) };
+    if (row.ball_type != null) ev.type = row.ball_type;
+    if (row.value != null) ev.value = row.value;
+    if (row.dismissal != null) ev.dismissal = row.dismissal;
+    for (const [f, col] of /** @type {const} */ ([["striker", "striker_id"], ["nonStriker", "non_striker_id"], ["bowler", "bowler_id"], ["dismissed", "dismissed_id"]])) {
+      if (row[col] != null) ev[f] = row[col];
+    }
+    if (typeof p.theta === "number") ev.theta = p.theta;
+    if (typeof p.radius === "number") ev.radius = p.radius;
+    if (typeof p.seg === "number") ev.seg = p.seg;
+    if (typeof p.source === "string") ev.placementSource = p.source;
+    return /** @type {import("@scrbrd/scoring").LogEvent} */ (/** @type {unknown} */ (ev));
+  });
+  try {
+    const words = ballAreas(evs, { ctx });
+    return evs.map((ev) => words.get(ev) ?? null);
+  } catch {
+    return evs.map(() => null);
+  }
+}
+
+/**
  * Project the log. `rows` from public_match_log(), `people` from
- * public_match_people(), `on` the day the database says it is.
- * @param {{rows: LogRow[], people: PersonRow[], secret: string, matchId: string, on: string}} o
+ * public_match_people(), `on` the day the database says it is, `ctx` the
+ * fixture's fold context (its start, format and frozen conditions: the
+ * header's), so the words for where a ball went come from the same fold the
+ * page runs.
+ * @param {{rows: LogRow[], people: PersonRow[], secret: string, matchId: string, on: string,
+ *          ctx?: import("@scrbrd/scoring").FoldContext}} o
  * @returns {PublicLog}
  */
-export function projectLog({ rows, people, secret, matchId, on }) {
+export function projectLog({ rows, people, secret, matchId, on, ctx = {} }) {
   /** @type {Map<string, PersonRow>} */
   const byId = new Map(people.map((p) => [String(p.player_id).toLowerCase(), p]));
   /** @type {Record<string, string>} */
@@ -257,17 +317,20 @@ export function projectLog({ rows, people, secret, matchId, on }) {
     return [out];
   });
 
+  // The words first; the placement they were made from goes no further.
+  const areas = areasOf(rows, ctx);
   /** @type {Record<string, any>[]} */
   const events = [];
   let last = 0;
-  for (const row of rows) {
+  for (const [i, row] of rows.entries()) {
     last = Math.max(last, Number(row.seq) || 0);
     const fields = PUBLIC_EVENT_FIELDS[row.kind];
     if (!fields) continue;                            // a kind nobody listed
-    const d = row.detail ?? {};
+    const { place: _place, ...d } = /** @type {Record<string, any>} */ (row.detail ?? {});
     /** @type {Record<string, any>} the candidate values, before each field's own check */
     const src = {
       ...d,
+      area: areas[i],
       type: row.ball_type, value: row.value, dismissal: row.dismissal,
       striker: row.striker_id ?? d.striker, nonStriker: row.non_striker_id ?? d.nonStriker,
       bowler: row.bowler_id ?? d.bowler, dismissed: row.dismissed_id ?? d.dismissed,
@@ -343,6 +406,12 @@ function keep(kind, f, src, { who, squadOf, secret, matchId }) {
       return int(v) ?? undefined;
     case "card":
       return kind === "innings_summary" ? publicCard(v, who) : undefined;
+    // SCRBRD-139: a shot the commentary has words for, and where it went as
+    // one of the words areaOf() can say. Anything else, nothing.
+    case "shot":
+      return kind === "ball" && typeof v === "string" && Object.hasOwn(SHOT_WORDS, v) ? v : undefined;
+    case "area":
+      return kind === "ball" && typeof v === "string" && AREA_WORDS.has(v) ? v : undefined;
     default:
       return undefined;                               // listed but unknown: never emitted
   }

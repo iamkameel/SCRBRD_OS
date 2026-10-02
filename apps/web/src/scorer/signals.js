@@ -1,5 +1,5 @@
 import { D } from "../design/tokens.js";
-import { fmtOv } from "./format.js";
+import { fmtOv, isOut } from "./format.js";
 
 /* ═══════════════════════════════════════════════════════
    INTELLIGENCE ENGINE
@@ -24,7 +24,7 @@ const buildSignals=(inn,overs,target,isChase)=>{
   const dotsL12=ll12.filter(b=>b.value===0&&b.type==="run").length;
   const bndsL6=l6.filter(b=>b.value===4||b.value===6).length;
   const bndsL12=l12.filter(b=>b.value===4||b.value===6).length;
-  const wktsL12=l12.filter(b=>b.type==="W").length;
+  const wktsL12=l12.filter(isOut).length;
   const runsL6=l6.reduce((s,b)=>s+(b.value||0),0);
   const runsL12=l12.reduce((s,b)=>s+(b.value||0),0);
   const lastBndIdx=[...ballLog].reverse().findIndex(b=>b.value===4||b.value===6);
@@ -33,7 +33,7 @@ const buildSignals=(inn,overs,target,isChase)=>{
   const curBowEcon=curBow?.balls>0?+(curBow.runs/(curBow.balls/6)).toFixed(2):0;
   const striker=batsmen.find(b=>b.id===inn.striker);
   const strikerSR=striker?.balls>0?+((striker.runs/striker.balls)*100).toFixed(1):0;
-  const lastWktIdx=[...ballLog].reverse().findIndex(b=>b.type==="W");
+  const lastWktIdx=[...ballLog].reverse().findIndex(isOut);
   const pshipBalls=lastWktIdx===-1?balls:lastWktIdx;
   const pshipRuns=lastWktIdx===-1?runs:ballLog.slice(ballLog.length-lastWktIdx).reduce((s,b)=>s+(b.value||0),0);
   let pressure=30;
@@ -77,7 +77,7 @@ const buildNarratives=(sig,lastOver)=>{
   const push=(type,pri,hl,chips,accent=D.emerald,icon="")=>n.push({type,pri,hl,chips,accent,icon});
   if(lastOver?.balls.length===6){
     const ovR=lastOver.balls.reduce((s,b)=>s+(b.value||0),0);
-    const ovW=lastOver.balls.filter(b=>b.type==="W").length;
+    const ovW=lastOver.balls.filter(isOut).length;
     const ovB=lastOver.balls.filter(b=>b.value===4||b.value===6).length;
     const ovD=lastOver.balls.filter(b=>b.value===0&&b.type==="run").length;
     const imp=ovR>=14?"HIGH":ovR>=8?"MED":"LOW";

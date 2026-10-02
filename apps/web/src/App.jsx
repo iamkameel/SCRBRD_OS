@@ -516,7 +516,7 @@ export default function SCRBRD_OS() {
     notifications:<NotificationsView role={role}/>,
     safeguarding: <SafeguardingView  role={role}/>,
     settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory}/>,
-    management:   <ManagementView    role={role} users={users} setUsers={setUsersTracked}/>,
+    management:   <ManagementView    role={role} onDirectoryChanged={refreshDirectory}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,
     // The family app (step 4 P1–P7) and the pupil's (S1–S4).

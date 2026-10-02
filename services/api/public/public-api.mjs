@@ -36,6 +36,12 @@
  * never-public mark, a names-off switch, a publication, a guardian link, a
  * surname. If the LISTEN connection is down the TTL is the ceiling, and on
  * reconnecting everything is dropped (a notification may have been missed).
+ * The notification is asynchronous: it reaches this process on the LISTEN
+ * connection whenever the listening backend sends it, which under load is
+ * after the writer's own request has been answered. So a change made through
+ * this API's own routes (a side published or withdrawn) also calls
+ * `changed()` once it has committed and before it answers, and the next read
+ * in this process is never the old entry (publication-api.mjs).
  * At the edge: `no-store` on the log (it carries labels) and on every 404,
  * 429 and shell; `public, max-age=30` on the header and the sectors, which
  * are team facts.
@@ -424,7 +430,9 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       const rows = /** @type {LogRow[]} */ ((await c.query(`select * from public_match_log($1, 0)`, [id])).rows);
       return { people, rows };
     });
-    return projectLog({ rows, people, secret: /** @type {string} */ (secret), matchId: id, on: h.servedOn });
+    // The fold context the page is sent (foldContext()), so the words for
+    // where each ball went come from the fold the page itself runs.
+    return projectLog({ rows, people, secret: /** @type {string} */ (secret), matchId: id, on: h.servedOn, ctx: foldContext(h) });
   });
 
   /** @param {string} id @param {any} h @param {boolean} hot */
@@ -512,8 +520,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
           { type: "text/html; charset=utf-8", cache: NO_STORE, robots: SHELL_ROBOTS }, head);
       } else if (!apiMatch?.[2]) {
         const { servedOn: _day, conditions: _conditions, conditionsHash: _hash, ...match } = h;
-        send(res, 200, JSON.stringify({ match, fold: { startsAt: h.startsAt, format: h.format,
-          ...(h.conditions ? { conditions: h.conditions, conditionsHash: h.conditionsHash } : {}) } }), { cache: TEAM_LEVEL }, head);
+        send(res, 200, JSON.stringify({ match, fold: foldContext(h) }), { cache: TEAM_LEVEL }, head);
       } else if (apiMatch[2] === "/log") {
         const l = await log(id, h, hot);
         const since = Math.max(0, Number.parseInt(url.searchParams.get("since") ?? "0", 10) || 0);
@@ -535,11 +542,28 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
   return {
     handle,
     cache,
+    /**
+     * A committed change, told by this process's own write path: dropped at
+     * once, as the notification will drop it again when it arrives.
+     * @param {{k?: unknown, id?: unknown} | null} note
+     */
+    changed: (note) => cache.drop(note),
     /** Stop listening (tests, shutdown). */
     close: () => listener?.close(),
     /** Whether the LISTEN connection is up, for /api/health. */
     listening: () => listener?.up() ?? false,
   };
+}
+
+/**
+ * The fixture's fold context, as the page folds the log with it: its start,
+ * its format and its frozen playing conditions where it has them. The header
+ * route sends it as `fold`; the log's words are made under the same one.
+ * @param {any} h  the cached header
+ */
+export function foldContext(h) {
+  return { startsAt: h.startsAt, format: h.format,
+    ...(h.conditions ? { conditions: h.conditions, conditionsHash: h.conditionsHash } : {}) };
 }
 
 /**

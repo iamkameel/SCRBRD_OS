@@ -1,5 +1,5 @@
 import { formatKind } from "@scrbrd/scoring";
-import { RR, fmtOv } from "./format.js";
+import { RR, fmtOv, isOut } from "./format.js";
 import { superOverBlock } from "../lib/superOver.js";
 
 /**
@@ -18,7 +18,7 @@ import { superOverBlock } from "../lib/superOver.js";
  * no-ball runs, so that no-ball says both: "nb+4b", "nb+1lb".
  */
 export function boardBall(b) {
-  if (b.type === "W") return "W";
+  if (isOut(b)) return "W";
   if (b.type === "Wd") return b.value ? `${1 + b.value}wd` : "wd";
   if (b.type === "Nb" && b.value && (b.nbRuns === "byes" || b.nbRuns === "leg_byes")) return `nb+${b.value}${b.nbRuns === "byes" ? "b" : "lb"}`;
   if (b.type === "Nb") return b.value ? `${1 + b.value}nb` : "nb";

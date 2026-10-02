@@ -9,7 +9,7 @@
  *   POST /api/duties/:id/lift    {reason}  duty_lift()     — restore it
  *
  * Who may do each (the school office: user.role.assign at the school, and
- * app_may_grant for the two that give authority) is the database's answer,
+ * app_may_grant_at at the duty's school (db/77) for the two that give authority) is the database's answer,
  * returned as a reason the screen shows — like support_access_begin(), a
  * refusal is a fact for the person, not a 500. The reason for a suspension or
  * a lift is required by the function and by the table; the check here only

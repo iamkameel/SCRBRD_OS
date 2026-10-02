@@ -141,6 +141,8 @@ group("From the fold: one function for the pad and the day sheet");
   ok("...a no-ball's byes and leg byes as the no-ball and its byes, not no-ball runs",
      [{ type: "Nb", value: 4, nbRuns: "byes" }, { type: "Nb", value: 1, nbRuns: "leg_byes" }, { type: "Nb", value: 0, nbRuns: "byes" }]
        .map(boardBall).join(" ") === "nb+4b nb+1lb nb");
+  ok("a wicket the free hit saved is drawn as its runs, not a W (the batter is not out)",
+     [{ type: "W", value: 0, freeHitSaved: true }, { type: "W", value: 2, freeHitSaved: true }, { type: "W", value: 0 }].map(boardBall).join(" ") === "· 2 W");
   const inn = {
     battingTeam: "Hilton 1st XI", runs: 142, wickets: 3, balls: 86, striker: "a", nonStriker: "b", bowler: "k",
     batsmen: [{ id: "a", name: "D Erasmus", runs: 5, balls: 1 }, { id: "b", name: "R Pillay", runs: 17, balls: 12 }],

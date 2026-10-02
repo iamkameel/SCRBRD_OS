@@ -23,6 +23,11 @@
  *   5. Pseudonyms: stable within a match, never shared between two.
  *   6. A staff token changes nothing; noindex and Cache-Control on every
  *      answer; the rate limit answers 429.
+ *   7. The shot and where it went (SCRBRD-139, db/78): the page's own
+ *      commentary over the public log says "D Erasmus, driven through cover
+ *      for four"; an unconsented boy's placed ball names the place and not
+ *      him; and no response the walk read, of any kind, carried a
+ *      coordinate or anything a placement was made from.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-public.mjs
@@ -31,6 +36,8 @@ import { spawn } from "node:child_process";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildPublicFixture, PEOPLE, TYPED_FIELDER, KEARSNEY, EXPECTED, HIL } from "./fixture-public.mjs";
+import { deriveCommentary } from "@scrbrd/scoring";
+import { foldable } from "../apps/web/src/public/publicLog.js";
 
 const PORT = port(8846), OFF_PORT = port(8847);
 const BASE = `http://127.0.0.1:${PORT}`, OFF = `http://127.0.0.1:${OFF_PORT}`;
@@ -73,11 +80,31 @@ const userId = async (/** @type {string} */ email) => (await q(`select id from a
  * so the walk's own hundreds of reads never meet the rate limit it tests.
  */
 let nextIp = 0;
+/** Every public answer the walk read, for group 7's check that none carried a coordinate. */
+const answers = /** @type {{path: string, body: string}[]} */ ([]);
 async function get(/** @type {string} */ path, { base = BASE, ip = `10.83.${(++nextIp >> 8) & 255}.${nextIp & 255}`, token = /** @type {string|undefined} */ (undefined) } = {}) {
   const r = await fetch(base + path, { headers: { "x-forwarded-for": ip, ...(token ? { authorization: token } : {}) } });
   const headers = Object.fromEntries([...r.headers].filter(([k]) => !["date", "connection", "keep-alive"].includes(k)));
-  return { status: r.status, headers, body: await r.text() };
+  const body = await r.text();
+  answers.push({ path, body });
+  return { status: r.status, headers, body };
 }
+/**
+ * The placement keys no public answer may carry (PUBLIC_DATA L7 as amended):
+ * what the pad records of where a ball went, and db/78's `place`. A ball's
+ * `shot` and `area` (a word) are allowed; nothing a word was made from.
+ */
+const COORDINATES = ["theta", "radius", "seg", "zone", "place", "placement", "placementSource", "placementNull", "closePosition",
+  "captureProfile", "contact", "trajectory", "bowlerApproach"];
+/** Every key anywhere in a JSON value. @param {unknown} v @returns {string[]} */
+const keysIn = (v) => (Array.isArray(v) ? v.flatMap(keysIn)
+  : v != null && typeof v === "object" ? Object.entries(v).flatMap(([k, x]) => [k, ...keysIn(x)]) : []);
+/** The coordinate keys in one answer's body: its JSON keys, or a shell's text. @param {string} body */
+const coordinatesIn = (body) => {
+  let json;
+  try { json = JSON.parse(body); } catch { return COORDINATES.filter((k) => body.includes(`"${k}"`)); }
+  return [...new Set(keysIn(json).filter((k) => COORDINATES.includes(k)))];
+};
 /** Everything a stranger can read about one fixture, as one string. */
 async function everything(/** @type {string} */ id) {
   const parts = await Promise.all([`/api/public/matches/${id}`, `/api/public/matches/${id}/log`, `/api/public/matches/${id}/shots`,
@@ -85,6 +112,19 @@ async function everything(/** @type {string} */ id) {
   return { parts, text: parts.map((p) => p.body).join("\n") };
 }
 const log = async (/** @type {string} */ id) => JSON.parse((await get(`/api/public/matches/${id}/log`)).body);
+/**
+ * The commentary the public page shows for a fixture: its log, folded and
+ * said by the page's own generator as PublicMatch.jsx does it (foldable() for
+ * commentary, `people` as the names, the header's fold context).
+ * @param {string} id @returns {Promise<{lines: string[], l: any}>}
+ */
+async function pageLines(id) {
+  const l = await log(id);
+  const header = JSON.parse((await get(`/api/public/matches/${id}`)).body);
+  const lines = deriveCommentary(foldable(l.events, l.people, { forCommentary: true }), {
+    ctx: header.fold, nameOf: (/** @type {string} */ ref) => l.people[ref] ?? null }).map((x) => x.text);
+  return { lines, l };
+}
 
 // ── The leak check ──────────────────────────────────────────────
 /** Every player the database holds, with what must never leak about each. */
@@ -111,7 +151,8 @@ function leaksIn(text, allowed) {
     for (const w of typed.split(" ")) if (new RegExp(`\\b${w}\\b`).test(text)) found.push(`the typed name "${typed}"`);
   }
   for (const w of ["hurt", "injur", "unavail", "suspend", "\"born\"", "\"age\"", "\"dob\"", "photo", "avatar", "\"image",
-                   "twelfth", "\"shot\"", "theta", "radius", "idempotency", "device_id", "\"device", "mc-pad", "pub-0-", "pub2-0-", "said it was two"]) {
+                   "twelfth", "theta", "radius", "\"seg\"", "\"zone\"", "\"place\"", "placement", "closePosition",
+                   "captureProfile", "\"contact\"", "trajectory", "bowlerApproach", "idempotency", "device_id", "\"device", "mc-pad", "pub-0-", "pub2-0-", "said it was two"]) {
     if (lower.includes(w.toLowerCase())) found.push(`"${w}"`);
   }
   return [...new Set(found)];
@@ -152,13 +193,16 @@ try {
     ok("a server told nothing says the public pages are off", health.public === "off", health.public);
     const onHealth = await (await fetch(`${BASE}/api/health`)).json();
     ok("PUBLIC_PAGES=on says on, and listening", onHealth.public === "on", onHealth.public);
-    await q(`insert into fixture_publication (match_id, side, school_id, team_code, published, set_by) values ($1, 'home', $2, '1XI', true, $3)`, [SEEDED, HIL, SARAH]);
+    // Published and withdrawn through the route, as a school does it: the
+    // withdrawal must reach group 2's first read, which a notification alone
+    // does not promise under load (publication-api.mjs).
+    ok("Hilton publishes the seed's fixture for the check", await publish(SEEDED, "home", true, sarahToken) === 200);
     const off = await Promise.all([`/api/public/matches/${SEEDED}`, `/api/public/matches/${SEEDED}/log`, `/live/${SEEDED}`].map((p) => get(p, { base: OFF })));
     ok("off: a published fixture's reads and shell are all 404", off.every((r) => r.status === 404), off.map((r) => r.status));
     ok("off: the same 404 body as an unknown fixture's", off[0].body === (await get(`/api/public/matches/${MISSING}`, { base: OFF })).body);
     const onRead = await get(`/api/public/matches/${SEEDED}`);
     ok("on: the same fixture answers", onRead.status === 200, onRead.body);
-    await q(`delete from fixture_publication where match_id = $1`, [SEEDED]);
+    ok("...and withdraws it again", await publish(SEEDED, "home", false, sarahToken) === 200);
   }
 
   group("2. Unpublished is not found, exactly as nothing is");
@@ -239,6 +283,10 @@ try {
     ok("...and still not Musa Zulu", [...squadLabels(l, 0).values()].filter((x) => x === "Bowler").length === 1);
     all = await everything(pub);
     ok("both sides published: still nothing but the three names", leaksIn(all.text, labelsOf(l)).length === 0, leaksIn(all.text, labelsOf(l)).join(", "));
+    // SCRBRD-139: the page names the shot and where it went, by the name rule.
+    const { lines: said4 } = await pageLines(pub);
+    ok("the page's commentary: \"R Visser to D Erasmus, driven through cover for four\"",
+       said4.includes("R Visser to D Erasmus, driven through cover for four."), said4.slice(0, 6).join(" | "));
 
     const [{ grp: g2 }] = await q(`select birth_age_group(born) as grp from player where id = $1`, [ids.nkosi]);
     const [lift] = await as(SARAH, `select ok, reason from public_names_off_set($1, $2, false)`, [HIL, g2]);
@@ -327,6 +375,29 @@ try {
     ok("...and another address is not limited", (await get(`/api/public/matches/${pub}`, { ip: "198.51.100.201" })).status === 200);
     ok("Hilton withdraws its side: the page is gone on the next request", await publish(pub2, "home", false, sarahToken) === 200
        && (await get(`/api/public/matches/${pub2}/log`)).status === 404);
+  }
+
+  group("7. The shot and where it went (SCRBRD-139, db/78)");
+  {
+    // PUB's first ball: D Erasmus's cover drive for four, placed as a point.
+    // His consent was withdrawn in group 4: the shot and the place are still
+    // said, and he is not.
+    const { lines, l } = await pageLines(pub);
+    const four = l.events.find((/** @type {any} */ e) => e.kind === "ball" && e.value === 4 && e.innings === 0);
+    ok("the four carries its shot and where it went, as a word, and nothing it was made from",
+       four?.shot === "drive" && four?.area === "cover" && COORDINATES.every((k) => !(k in four)), JSON.stringify(four));
+    const said = lines.join("\n");
+    ok("the page's commentary: \"R Visser to the striker, driven through cover for four\" (his consent withdrawn)",
+       lines.includes("R Visser to the striker, driven through cover for four.") && !/Erasmus/.test(said), lines.slice(0, 6).join(" | "));
+    ok("...an unconsented boy's placed two names the place and not him",
+       lines.some((t) => /^R Visser to the striker, to deep mid-wicket, (two runs|they come back for two)\.$/.test(t)), said);
+    ok("...a ball with nothing recorded says only the outcome", lines.some((t) => /^.+ to [^,]+, (no run|dot ball)\.$/.test(t)), said);
+    ok("...and the lines name nobody the rule does not", leaksIn(said, labelsOf(l)).length === 0, leaksIn(said, labelsOf(l)).join(", "));
+    // Every answer this walk read — headers, logs, sectors, shells, 404s,
+    // for every fixture in every state — carried no coordinate.
+    const carrying = answers.map((a) => ({ path: a.path, keys: coordinatesIn(a.body) })).filter((a) => a.keys.length);
+    ok(`no coordinate in any of the ${answers.length} public answers this walk read`, answers.length > 50 && carrying.length === 0,
+       carrying.slice(0, 5).map((a) => `${a.path}: ${a.keys.join(",")}`).join(" | "));
   }
 } catch (e) {
   fail++;

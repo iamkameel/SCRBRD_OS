@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import pkg from "../../package.json";
-import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY, canonicalRole } from "../design/roles.js";
-import { boundaries, GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
+import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY } from "../design/roles.js";
+import { boundaries, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { D, T, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { Metric, MetricGroup } from "../ui/data.jsx";
@@ -15,6 +15,9 @@ import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-bir
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
 import { DlsTablesPanel } from "./dlsTables.jsx";
+// The enrolment form, its words and the one-time code card are shared with the
+// Management screen (views/enrol.jsx): one form, one set of refusals in words.
+import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, grantableFor, issuedFrom } from "./enrol.jsx";
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 // SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
 import { LiftDeclarationPanel, LiftPolicyPanel, LiftPurgePanel } from "./lifts.jsx";
@@ -127,15 +130,9 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   const setUsers = setUsersFromApp || setUsersLocal;
   void setUsers;
 
-  const [addUser, setAddUser] = useState(false);
-  // ENROLMENT, which is what this modal does. The fields are the ones
-  // enrol_person() actually takes: a name, an address, a role, and the person
-  // on the roster the account is FOR. `withCode` asks for the sign-in code in
-  // the same breath, because there is no email channel yet and somebody has to
-  // read it off the screen.
-  const [newUser, setNewUser] = useState({ name: "", email: "", role: "player", player: "", withCode: true });
-  const [enrolling, setEnrolling] = useState(false);
-  const [enrolError, setEnrolError] = useState(null);
+  // The enrolment dialog: null while closed, else what it opens with. The
+  // form itself (views/enrol.jsx) holds its own fields and its own refusal.
+  const [enrolWith, setEnrolWith] = useState(null);
   // The code, held until it is dismissed. It exists in readable form exactly
   // once — this is that once.
   const [issued, setIssued] = useState(null);
@@ -145,12 +142,6 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   // resolves through the same assignments the real name does.
   const canEdit = holdsCapability(role, "user.role.assign");
   const canAudit = holdsCapability(role, "audit.read");
-
-  // WHICH SCHOOL the account is opened at, taken from the signed-in person's
-  // own assignments rather than from a constant.
-  const enrolSchools = schoolsWhere("user.role.assign");
-  const [enrolSchool, setEnrolSchool] = useState(null);
-  const enrolAt = enrolSchool || enrolSchools[0]?.id || null;
 
   // Roster people with no account, by the link the accounts read carries.
   // Both sides are already row-scoped in Postgres for this reader, so this
@@ -199,34 +190,14 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
     }
   };
 
-  // It enrols. The server decides everything: whether this caller may,
-  // whether the role is one they can grant, whether the boy already has an
-  // account. The client sends the form and shows the answer.
-  const enrolPerson = async () => {
-    setEnrolError(null);
-    setEnrolling(true);
-    try {
-      const linked = PLAYERS.find((p) => p.id === newUser.player) || null;
-      const out = await api("/api/users", { method: "POST", body: {
-        email: newUser.email.trim(),
-        name: newUser.name.trim(),
-        role: newUser.role,
-        schoolId: enrolAt,
-        teamCode: linked?.team || undefined,
-        playerId: newUser.player || undefined,
-        withCode: newUser.withCode === true,
-      } });
-      setAddUser(false);
-      setNewUser({ name: "", email: "", role: "player", player: "", withCode: true });
-      if (out?.code) setIssued({ code: out.code, expiresAt: out.expiresAt, name: newUser.name.trim() });
-      else if (out?.codeError) setIssued({ code: null, error: out.codeError, name: newUser.name.trim() });
-      setNonce((n) => n + 1);
-      onDirectoryChanged?.();
-    } catch (e) {
-      setEnrolError(e?.code || e?.message || "enrol_failed");
-    } finally {
-      setEnrolling(false);
-    }
+  // After the server has said yes. The server decided everything — whether
+  // this caller may, whether the role is one they can grant, whether the boy
+  // already has an account; the form only sent the fields and showed the answer.
+  const enrolled = ({ out, name }) => {
+    setEnrolWith(null);
+    setIssued(issuedFrom(out, name));
+    setNonce((n) => n + 1);
+    onDirectoryChanged?.();
   };
 
   // A fresh code for an account that already exists — through
@@ -245,25 +216,8 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
     }
   };
 
-  // Said in the office's words, not the database's. An unmapped code shows as
-  // itself rather than as a friendly guess at what it might have meant.
-  const ENROL_MESSAGE = {
-    not_permitted: "You do not hold the capability to open an account at this school.",
-    email_invalid: "That email address is not a valid one.",
-    name_required: "A full name is needed.",
-    player_required: "Choose the person on the roster this account is for.",
-    no_such_player: "That person is not on the roster.",
-    player_not_at_that_school: "That person is on another school's roster.",
-    player_already_has_an_account: "That person already has an account. Look for them in the table above.",
-    email_belongs_to_another_school: "That email address already belongs to an account at another school.",
-    player_is_an_adult: "Guardian access ends at eighteen, and this person has turned eighteen.",
-    player_date_of_birth_required: "Capture this person's date of birth first — guardian access is worked out from it.",
-    team_required: "Choose the side this person coaches.",
-    missing_token: "You are not signed in.",
-  };
-
   // The roles THIS person may actually grant, from the policy's own table.
-  const grantable = GRANTABLE_ROLES[canonicalRole(role)] ?? [];
+  const grantable = grantableFor(role);
 
   // The number on the People tab: things to fix, not things to read.
   const attention = noAccount.length + noDob.length + linkEnded.length;
@@ -305,8 +259,8 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
           <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
                      noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}
                      canEdit={canEdit} coding={coding}
-                     onEnrol={() => { setEnrolError(null); setAddUser(true); }}
-                     onEnrolFor={(p) => { setNewUser({ name: p.name, email: "", role: "player", player: p.id, withCode: true }); setEnrolError(null); setAddUser(true); }}
+                     onEnrol={() => setEnrolWith({ role: "player" })}
+                     onEnrolFor={(p) => setEnrolWith({ name: p.name, role: "player", player: p.id })}
                      onCapture={openCapture} onIssueCode={issueCodeFor}/>
         )}
         {tab === "roles"    && <RolesTab users={users} grantable={grantable}/>}
@@ -318,50 +272,12 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "dls"      && <DlsTablesPanel role={role}/>}
       </div>
 
-      {/* ── ENROL MODAL ──
-          The fields are the ones enrol_person() takes and no others: a form
-          that collects something the server has no place to put is a form
-          that quietly discards it. */}
-      {addUser && (
-        <Modal title="Enrol a person" onClose={() => { setAddUser(false); setEnrolError(null); }}>
-          <div style={{ ...SUB(), marginBottom: "10px" }}>
-            This opens a real account and links it to their record. There is no email yet —
-            ask for a sign-in code and hand it over in person.
-          </div>
-          {enrolSchools.length > 1 && (
-            <Select label="School" value={enrolAt || ""} onChange={(v) => setEnrolSchool(v)}
-                    options={enrolSchools.map((sc) => ({ value: sc.id, label: sc.name }))}/>
-          )}
-          <Select label="Role" value={newUser.role} onChange={(v) => setNewUser((p) => ({ ...p, role: v }))}
-                  options={grantable.map((v) => ({ value: v, label: ROLES[v].label }))}/>
-          {/* The roster, narrowed to the people who have no account — the list
-              this screen already shows as the problem. */}
-          <Select label={newUser.role === "player" ? "Who this account is for" : "Linked person (optional)"}
-                  value={newUser.player}
-                  onChange={(v) => {
-                    const pick = PLAYERS.find((x) => x.id === v);
-                    setNewUser((p) => ({ ...p, player: v, name: p.name || pick?.name || "" }));
-                  }}
-                  options={[{ value: "", label: "None" }, ...noAccount.map((p) => ({ value: p.id, label: `${p.name} (${p.team})` }))]}/>
-          <Input label="Full Name" value={newUser.name} onChange={(v) => setNewUser((p) => ({ ...p, name: v }))} placeholder="First Last"/>
-          <Input label="Email" value={newUser.email} onChange={(v) => setNewUser((p) => ({ ...p, email: v }))} type="email" placeholder="name@school.co.za"/>
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "10px", cursor: "pointer",
-                          fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>
-            <input type="checkbox" checked={newUser.withCode === true}
-                   onChange={(e) => setNewUser((p) => ({ ...p, withCode: e.target.checked }))}/>
-            Issue a sign-in code now
-          </label>
-          {enrolError && (
-            <div data-testid="enrol-error" role="alert" style={{ marginTop: "10px", padding: "8px 10px", borderRadius: D.sm,
-              background: D.rose + "14", border: `1px solid ${D.rose}33`, fontFamily: D.body, fontSize: "11px", color: D.roseText }}>
-              {ENROL_MESSAGE[enrolError] || enrolError}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "10px" }}>
-            <Btn variant="ghost" onClick={() => { setAddUser(false); setEnrolError(null); }}>Cancel</Btn>
-            <Btn onClick={enrolPerson} disabled={enrolling || !enrolAt}>{enrolling ? "Enrolling…" : "Enrol"}</Btn>
-          </div>
-        </Modal>
+      {/* ── ENROL MODAL ── views/enrol.jsx. The fields are the ones
+          enrol_person() takes and no others: a form that collects something
+          the server has no place to put is a form that quietly discards it. */}
+      {enrolWith && (
+        <EnrolModal role={role} players={PLAYERS} accountless={noAccount} initial={enrolWith}
+                    onClose={() => setEnrolWith(null)} onEnrolled={enrolled}/>
       )}
 
       {/* ── CAPTURE A DATE OF BIRTH ── the same form for both rows of the
@@ -405,35 +321,8 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         </Modal>
       )}
 
-      {/* ── THE CODE, ONCE ── login_code_issue() stores a hash; the readable
-          code exists in this response and nowhere else, ever again. */}
-      {issued && (
-        <Modal title={issued.code ? "Sign-in code" : "Account opened"} onClose={() => setIssued(null)}>
-          {issued.code ? (
-            <>
-              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, lineHeight: 1.6, marginBottom: "10px" }}>
-                <strong style={{ color: D.textPrimary }}>{issued.name}</strong> now has an account.
-                Write this code down and hand it over — it is shown once and cannot be read again.
-              </div>
-              <div data-testid="issued-code" style={{ fontFamily: D.mono, fontSize: "22px", letterSpacing: "0.18em",
-                textAlign: "center", padding: "14px", borderRadius: D.sm, color: D.textPrimary,
-                background: D.emerald + "14", border: `1px solid ${D.emerald}44` }}>{issued.code}</div>
-              {issued.expiresAt && (
-                <div style={{ ...SUB(), marginTop: "8px", textAlign: "center" }}>Expires {new Date(issued.expiresAt).toLocaleString()}</div>
-              )}
-            </>
-          ) : (
-            <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, lineHeight: 1.6 }}>
-              <strong style={{ color: D.textPrimary }}>{issued.name}</strong> now has an account, but no
-              sign-in code could be issued ({issued.error}). The account is real — issue a code from
-              this screen when you are ready.
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "12px" }}>
-            <Btn onClick={() => setIssued(null)}>Done</Btn>
-          </div>
-        </Modal>
-      )}
+      {/* ── THE CODE, ONCE ── views/enrol.jsx */}
+      {issued && <IssuedCodeModal issued={issued} onClose={() => setIssued(null)}/>}
     </div>
   );
 }

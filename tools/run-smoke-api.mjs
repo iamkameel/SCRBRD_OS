@@ -156,6 +156,10 @@ const WALKS = [
   "season",
   "requests",
   "enrol",
+  // Ending a role (SCRBRD-132 C1, db/77): the other half of enrolling —
+  // ended with a reason, holding nothing on the next request, on the record,
+  // told without the reason; the guardian link's rules and nobody's last key.
+  "end-role",
   "kit",
   "passport",
   "web",
@@ -329,7 +333,13 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // closes the ground and names its ends; the planner draws a bracket and a
   // round robin, shows a fixture's reasons, locks, regenerates and publishes with
   // a per-fixture report; phone, Daylight, the 12px and 44px floors.
-  "browser-league"];
+  "browser-league",
+  // Management → Users on the real directory: each person with every role they
+  // hold (ended ones muted and worded), Add user / Add role saved for real, a
+  // role the caller may not grant not offered and a forced post refused in
+  // words, the fake actions gone, tabs by capability, no invented audit or
+  // ground tasks, nothing offered signed out; 12px, 44px, phone.
+  "browser-management"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

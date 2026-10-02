@@ -15,13 +15,16 @@
  *   I. foldSteps is the fold: its last step is deriveInnings()
  *   J. a left-hander's sector-era ball is worded for HIS side of the ground
  *      (SCRBRD-101): the stored seg is the screen's, mirrored for him
+ *   K. a public page's ball (SCRBRD-139): the placement made a word on the
+ *      server (ballAreas), every coordinate dropped, and the line is the
+ *      signed-in line, string for string
  */
 import { readFileSync } from "node:fs";
 import {
   deriveCommentary, COMMENTARY_KIND as K, ROLE_WORDS, SHOT_WORDS, SECTOR_WORDS,
   inningsStart, batters, bowler, ball, penalty, retire, inningsEnd, revision, voidEvent, shortRunning,
   sealInnings, deriveInnings, foldSteps, placementFromTap, BALL_TYPE, PENALTY_REASON_TEXT,
-  ANGULAR_FAMILIES, angularFamily,
+  ANGULAR_FAMILIES, angularFamily, ballAreas, AREA_WORDS,
 } from "../src/index.mjs";
 
 /** Words without a Law clause bracket, escaped for a RegExp. */
@@ -124,7 +127,7 @@ group("A. Every event kind has its line, with the fold's figures");
   ok("the first bowler opens the bowling", ofKind(out, K.BOWLER)[0]?.text.startsWith("K Naidoo") &&
      /open(s)? the bowling/.test(ofKind(out, K.BOWLER)[0]?.text ?? ""));
   const four = ofKind(out, K.FOUR)[0];
-  ok("a four, with the recorded shot and where it went", four && /K Naidoo to D Erasmus, .*four.*driven to deep point\./.test(four.text), four?.text);
+  ok("a four, with the recorded shot and where it went", four && /K Naidoo to D Erasmus, driven to deep point for four\./.test(four.text), four?.text);
   ok("...at 0.1", four?.over === 0 && four?.ball === 1);
   ok("a dot, with the shot", at(/defended on the front foot, no run\.$|defended on the front foot, dot ball\.$/));
   ok("a wide alone", at(/K Naidoo to D Erasmus, (wide|a wide|that's a wide)\.$/));
@@ -135,7 +138,7 @@ group("A. Every event kind has its line, with the fold's figures");
   const six = ofKind(out, K.SIX)[0];
   // Sector 5 is centred on 150°: mid on, for this right-hander (SCRBRD-101;
   // it was named "deep mid-on", and sector 4, at 120°, "long-on").
-  ok("a six, over the sector the scorer tapped", six && /lofted over mid on\./.test(six.text), six?.text);
+  ok("a six, over the sector the scorer tapped", six && /lofted over mid on for six\./.test(six.text), six?.text);
   ok("byes", at(/, two byes\.$/));
   ok("leg byes, with the body contact recorded", at(/, off the body, one leg bye\.$/));
   const w = ofKind(out, K.WICKET)[0];
@@ -567,15 +570,15 @@ group("J. A left-hander's ball is worded for his side of the ground (SCRBRD-101)
   // right of the screen). Under his mirrored field that is his point, not
   // square leg: 12 − 3 = 9.
   const sector = fourOf(lefty({ seg: 3, zone: "boundary", placementSource: "sector" }));
-  ok("a left-hander's sector tap on the screen's right is through point", /driven through point\./.test(sector), sector);
+  ok("a left-hander's sector tap on the screen's right is through point", /driven through point for four\./.test(sector), sector);
   ok("...not square leg, which is where it is on a right-hander's screen", !/square leg/.test(sector), sector);
   // His cover drive tapped at the screen's 120°: his 240°, cover.
   const cover = fourOf(lefty({ seg: 4, zone: "boundary", placementSource: "sector" }));
-  ok("...and the screen's 120° is his cover", /driven through cover\./.test(cover), cover);
+  ok("...and the screen's 120° is his cover", /driven through cover for four\./.test(cover), cover);
   // A point: the same screen tap, captured as a point for him, is his point
   // too — theta is batter-relative already, so the two eras agree.
   const point = fourOf(lefty(placementFromTap({ angle: 90, radius: 0.6, batHand: "L" })));
-  ok("a point tapped at the same place is his deep point: the two eras agree", /driven to deep point\./.test(point), point);
+  ok("a point tapped at the same place is his deep point: the two eras agree", /driven to deep point for four\./.test(point), point);
   // The right-hander's same screen sector stays square leg.
   seq = 3400;
   const righty = deriveCommentary([
@@ -584,7 +587,72 @@ group("J. A left-hander's ball is worded for his side of the ground (SCRBRD-101)
     I(bowler({ bowler: TYPED[0] })),
     run(4, { shot: "drive", seg: 3, zone: "boundary", placementSource: "sector" }),
   ], { nameOf });
-  ok("...while a right-hander's tap there is through square leg", /driven through square leg\./.test(fourOf(righty)), fourOf(righty));
+  ok("...while a right-hander's tap there is through square leg", /driven through square leg for four\./.test(fourOf(righty)), fourOf(righty));
+}
+
+// ── K. A public page's ball ──────────────────────────────
+group("K. A public page's ball: the word made on the server, the same line (SCRBRD-139)");
+{
+  // Every way a ball can be placed: a point at cover, a catch at first slip,
+  // one by the keeper, a sector-era tap for a left-hander and a right-hander,
+  // a shot with no stroke and a place, a bye off the pad, a no-ball struck
+  // for four, a ball with nothing recorded, and a point at his feet.
+  const hands = SQUAD.map((p, i) => ({ ...p, batHand: i === 1 ? "L" : "R" }));
+  seq = 3500;
+  const at = (/** @type {number} */ angle, /** @type {number} */ radius, hand = "R") => placementFromTap({ angle, radius, batHand: hand });
+  const full = [
+    I(inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville", squad: hands, overs: 5 })),
+    I(batters({ striker: H[0], nonStriker: H[1] })),
+    I(bowler({ bowler: TYPED[0] })),
+    run(4, { shot: "drive", ...at(235, 0.35) }),
+    run(1, { shot: "cut", ...at(265, 0.35) }),                         // to the left-hander now on strike
+    run(4, { shot: "drive", seg: 3, zone: "boundary", placementSource: "sector" }),   // his sector tap: through point
+    run(0, { shot: "missed", ...at(200, 0.5) }),
+    I(ball({ type: BALL_TYPE.LEG_BYE, value: 1, shot: "padded", ...at(30, 0.7) })),
+    run(0),
+    I(ball({ type: BALL_TYPE.NO_BALL, value: 4, shot: "pull", ...at(110, 1) })),
+    run(6, { shot: "loft", seg: 5, zone: "boundary", placementSource: "sector" }),
+    run(0, { shot: "fwd_def", ...at(180, 0.02) }),
+    I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: FIELDER, shot: "outside_edge", ...at(348, 0.06) })),
+    I(batters({ striker: H[2] })),
+    I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: FIELDER, shot: "top_edge", ...at(0, 0.05) })),
+  ];
+  const areas = ballAreas(full);
+  const COORDS = ["theta", "radius", "seg", "zone", "placementSource", "placementNull", "closePosition", "captureProfile", "contact", "trajectory", "bowlerApproach"];
+  // What the public log carries for each: the shot id, the word, no coordinate.
+  const pub = full.map((ev) => {
+    const out = /** @type {Record<string, any>} */ ({ ...ev });
+    for (const k of COORDS) delete out[k];
+    const a = areas.get(ev);
+    if (a != null) out.area = a;
+    return /** @type {LogEvent} */ (out);
+  });
+  const signedIn = deriveCommentary(full, { nameOf }).map((x) => x.text);
+  const signedOut = deriveCommentary(pub, { nameOf }).map((x) => x.text);
+  ok("the public line is the signed-in line, every one of them", JSON.stringify(signedOut) === JSON.stringify(signedIn),
+     signedOut.filter((t, i) => t !== signedIn[i]).join(" | "));
+  const said = signedOut.join("\n");
+  ok("...which names the shot and where it went: driven through cover for four", /K Naidoo to D Erasmus, driven through cover for four\./.test(said), said);
+  ok("...the left-hander's sector tap through HIS point", /to R Pillay, driven through point for four\./.test(said), said);
+  ok("...a catch at first slip and one by the keeper", /off the outside edge and caught by W Venter at first slip/.test(said)
+     && /caught behind|caught by W Venter|by the keeper/.test(said), said);
+  ok("...a ball with nothing recorded says only what happened", signedOut.some((t) => /, (no run|dot ball)\.$/.test(t) && !/ to | through | over /.test(t.split(", ").slice(1).join(", "))), said);
+  ok("no word for a ball at his feet, or for one with nothing recorded",
+     [...areas.keys()].every((ev) => /** @type {any} */ (ev).theta == null || /** @type {any} */ (ev).radius >= 0.03) && areas.size === 9, areas.size);
+  ok("every word made is one areaOf() could say", [...areas.values()].every((w) => AREA_WORDS.has(w)), [...areas.values()]);
+  ok("no public event carries a coordinate", pub.every((ev) => COORDS.every((k) => !(k in ev))));
+  ok("the vocabulary: every sector's word, the slips and the keeper as said, never a raw id",
+     SECTOR_WORDS.every((w) => AREA_WORDS.has(w)) && AREA_WORDS.has("first slip") && AREA_WORDS.has("the keeper")
+     && !AREA_WORDS.has("keeper") && !AREA_WORDS.has("slip 1") && !AREA_WORDS.has("at feet") && [...AREA_WORDS].every((w) => /^[a-z][a-z -]*$/.test(w)));
+  // A word areaOf() would never say is not said; a placement beats a word.
+  seq = 3600;
+  // `area` rides on the event as the public log carries it (ball() keeps only
+  // the fields a scorer records).
+  const odd = deriveCommentary([...openA(), /** @type {any} */ ({ ...run(4, { shot: "drive" }), area: "the car park" }),
+    /** @type {any} */ ({ ...run(4, { shot: "drive", seg: 6, placementSource: "sector" }), area: "cover" })], { nameOf })
+    .filter((x) => x.kind === K.FOUR).map((x) => x.text);
+  ok("an area that is not a word of areaOf()'s says nothing", odd[0] === "K Naidoo to D Erasmus, driven for four.", odd[0]);
+  ok("...and a ball's own placement beats a word riding with it", /straight down the ground/.test(odd[1] ?? "") && !/cover/.test(odd[1] ?? ""), odd[1]);
 }
 
 console.log(`\n${"─".repeat(52)}\nCOMMENTARY SUITE: ${pass} passed, ${fail} failed`);
