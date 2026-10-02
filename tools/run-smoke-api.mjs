@@ -16,6 +16,12 @@
  *
  *   node tools/run-smoke-api.mjs            all of them
  *   node tools/run-smoke-api.mjs toss squad  just these
+ *   node tools/run-smoke-api.mjs --browser --shard 2/4
+ *                                           the second of four fixed slices of
+ *                                           the set (CI runs one job per slice)
+ *   node tools/run-smoke-api.mjs --browser --shard 2/4 --list
+ *                                           print that slice, run nothing: no
+ *                                           database needed
  */
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
@@ -380,19 +386,83 @@ if (unlisted.length) {
   process.exit(1);
 }
 
+// What a walk costs, relative to a typical one (1). The browser walks ran one
+// after another in one CI job; they now run in shards side by side, and a
+// shard's length is the sum of its walks, so the split has to know the heavy
+// ones or one shard gets browser-read and the rest finish early. The repo holds
+// no per-walk timings, so the weights follow the walks' size, the one signal
+// there is: browser-read is a tenth of the whole set by itself, and the walks
+// of 600+ lines drive several roles and viewports each. Anything not named
+// costs 1. Re-measure from a CI log if the shards drift apart. A wrong weight
+// costs balance, never coverage: every walk is in exactly one shard.
+const WEIGHTS = {
+  "browser-read": 6,
+  "browser-scorebook": 2, "browser-matchcentre": 2, "browser-league": 2,
+  "browser-management": 2, "browser-dossier": 2, "browser-pupil": 2,
+  "browser-cockpit": 2, "browser-pad-laws": 2,
+};
+const weightOf = (w) => WEIGHTS[w] ?? 1;
+const staleWeights = Object.keys(WEIGHTS).filter((w) => !BROWSER_WALKS.includes(w));
+if (staleWeights.length) {
+  console.error(`\n✗ WEIGHTS names walks that are not in BROWSER_WALKS: ${staleWeights.join(", ")}`);
+  process.exit(1);
+}
+
+// Shard i of n (1-based) of `walks`: heaviest first, each to the lightest shard
+// so far, ties to the lowest shard number and to list order. Nothing random and
+// nothing that depends on the machine, so every job computes the same split and
+// every walk is in exactly one. A shard keeps the list's own order.
+function shardOf(walks, i, n) {
+  const load = new Array(n).fill(0);
+  const owner = new Map();
+  const heaviestFirst = walks.map((w, at) => ({ w, at }))
+    .sort((a, b) => weightOf(b.w) - weightOf(a.w) || a.at - b.at);
+  for (const { w } of heaviestFirst) {
+    const k = load.indexOf(Math.min(...load));
+    load[k] += weightOf(w);
+    owner.set(w, k);
+  }
+  return walks.filter((w) => owner.get(w) === i - 1);
+}
+
 // `--browser` runs the browser set instead of the API set. Both are named
 // walks on the same runner, so a browser walk still gets its own reset and
 // still cannot go unlisted.
 // A bare "--" arrives when a package manager forwards arguments (pnpm keeps
 // the separator; npm eats it). It is noise from the caller, not a walk name.
-const args = process.argv.slice(2).filter((a) => a !== "--");
+let args = process.argv.slice(2).filter((a) => a !== "--");
 const wantBrowser = args.includes("--browser");
-const only = args.filter((a) => a !== "--browser");
+const listOnly = args.includes("--list");
+let shard = null;
+{
+  const at = args.findIndex((a) => a === "--shard" || a.startsWith("--shard="));
+  if (at !== -1) {
+    const spaced = args[at] === "--shard";
+    const spec = spaced ? args[at + 1] : args[at].slice("--shard=".length);
+    const m = /^(\d+)\/(\d+)$/.exec(spec ?? "");
+    const [i, n] = m ? [Number(m[1]), Number(m[2])] : [0, 0];
+    if (!m || i < 1 || i > n) {
+      console.error(`✗ --shard wants i/n with 1 <= i <= n, e.g. --shard 2/4 (got "${spec ?? ""}")`);
+      process.exit(1);
+    }
+    shard = { i, n };
+    args = args.filter((_, k) => k !== at && !(spaced && k === at + 1));
+  }
+}
+const only = args.filter((a) => a !== "--browser" && a !== "--list");
 const pool = wantBrowser ? BROWSER_WALKS : WALKS;
-const run = only.length ? pool.filter((w) => only.includes(w)) : pool;
-if (only.length && run.length !== only.length) {
+if (only.some((o) => !pool.includes(o))) {
   console.error(`✗ unknown walk: ${only.filter((o) => !pool.includes(o)).join(", ")}`);
   process.exit(1);
+}
+const slice = shard ? shardOf(pool, shard.i, shard.n) : pool;
+const run = only.length ? slice.filter((w) => only.includes(w)) : slice;
+
+// One walk per line on stdout, the slice's weight on stderr, nothing run.
+if (listOnly) {
+  for (const w of run) console.log(w);
+  console.error(`${shard ? `shard ${shard.i}/${shard.n}: ` : ""}${run.length} walks, weight ${run.reduce((a, w) => a + weightOf(w), 0)}`);
+  process.exit(0);
 }
 
 const sh = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
