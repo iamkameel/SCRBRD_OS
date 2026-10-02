@@ -1,6 +1,6 @@
 # SCRBRD-136 / 137 — The coach's match-day cockpit, and a feed of real signals: the design
 
-**Status:** for Kameel's review, 2026-10-02. Nothing built yet.
+**Status:** **decided (Kameel, 2026-10-02, on the Build Board): D1–D16 all as recommended.** Nothing built yet.
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md` SCRBRD-136, 137, 138; ADR 0001, 0002, 0003; `docs/design/SCRBRD-110_workload.md` (what a coach reads of load and health; the health consent); `docs/design/SCRBRD-138_captains_view.md` (the sister design, decided); `docs/design/SCRBRD-133_immersive_match_centre.md` §2–3 and D4; `docs/design/SAFEGUARDING_DSO.md` §1, §4.4, K3; `docs/design/SCRBRD-124_lift_clubs.md` (db/76 as built; §2, §5, §6); `packages/policy/src/roles.mjs`, `capabilities.mjs`; `services/api/read/read-api.mjs`; the beta-2 prototype's `CoachCockpitView.tsx` and its Intelligence drawer.
 **Reader:** the product owner first, then the Opus lead who reviews it, then the Opus agent who builds any new read or gate and the Sonnet agent who builds the screens. Plain words come first in each section. Names in the sketches are the seed's illustrative ones (Hilton, Kearsney, D Erasmus, R Pillay, K Naidoo, J Smith, T Cele, M Khan, Mr Dlamini, Mrs Naidoo), never a real child's.
 
