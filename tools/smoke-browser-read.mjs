@@ -1871,9 +1871,14 @@ try {
     ok("the login screen is up", (await c.page.locator("#login-email").count()) === 1);
     // There IS a server, so the demo's front door is not offered. It used to
     // be, labelled "Continue with Google", and it set a role with no token.
+    // The real Google sign-in (SCRBRD-140, auth/LoginPage.jsx) now carries
+    // those words: every control saying them must be that button, which
+    // exchanges a Google ID token with the server and sets no role itself.
+    const googleWords = await c.page.locator("button, a", { hasText: /Continue with Google/ }).count();
+    const realGoogle = await c.page.locator('[data-testid="google-button"]').count();
     ok("with a server reachable, no demo entry is offered",
-       (await c.page.locator('[data-testid="login-demo"]').count()) === 0
-       && !/Continue with Google/.test(await text(c.page)));
+       (await c.page.locator('[data-testid="login-demo"]').count()) === 0 && googleWords === realGoogle,
+       `demo entries ${await c.page.locator('[data-testid="login-demo"]').count()}, "Continue with Google" controls ${googleWords}, of which the real sign-in ${realGoogle}`);
 
     // The other way into the shell without a token: a saved appState from a
     // previous visit. The token is module-scope and does not survive a reload,
