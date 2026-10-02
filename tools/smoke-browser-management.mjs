@@ -321,14 +321,15 @@ try {
 
   group("The audit log is the school's own, a child in initials, and reading it is on it");
   // A pupil made up for this walk reads his own record, and the DSO reads a
-  // concern: both filed as log_restricted_read() files them, a minute ago.
+  // concern: both filed as log_restricted_read() files them, just now (newer than the
+  // appointments this walk made above, which db/80 lists too, so the first page holds them).
   const [walkBoy] = await q(`insert into player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
      values ($1, 'U15A', 'Walkbrowser Mgmt Pupil', 'Pupil', 978, 'batter', current_date - interval '15 years') returning id`, [HILTON]);
   const [walkBoyUser] = await q(`insert into app_user (school_id, email, name, role, player_id)
      values ($1, 'mgmt.walk.pupil@example.invalid', 'Walkbrowser Mgmt Pupil', 'player', $2) returning id`, [HILTON, walkBoy.id]);
   await q(`insert into access_log (school_id, person_id, resource, record_ids, record_count, fields, occurred_at)
-           values ($1, $2, 'players', array[$3::uuid], 1, '{born}', now() - interval '1 minute'),
-                  ($1, $2, 'safeguarding_concern', array[gen_random_uuid()], 1, '{account}', now() - interval '1 minute')`,
+           values ($1, $2, 'players', array[$3::uuid], 1, '{born}', now()),
+                  ($1, $2, 'safeguarding_concern', array[gen_random_uuid()], 1, '{account}', now())`,
           [HILTON, walkBoyUser.id, walkBoy.id]);
   const readsBefore = Number((await q(`select count(*) from access_log l join app_user u on u.id = l.person_id
      where l.resource = 'audit_log' and u.email = 'registrar@example.invalid'`))[0].count);
