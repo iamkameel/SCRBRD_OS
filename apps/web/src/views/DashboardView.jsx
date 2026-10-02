@@ -14,6 +14,7 @@ import { boardFromInnings } from "../scorer/boardData.js";
 import { seedCompletedMatch } from "../scorer/seed.js";
 import { boardInsights } from "../scorer/signals.js";
 import { parseBalls, parseScore, teamSquad } from "./shared.jsx";
+import { MatchDayCard } from "./cockpit/MatchDayCard.jsx";
 
 // ══════════════════════════════════════════════════════
 //  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
@@ -136,7 +137,7 @@ function useLiveScore(matchId) {
  */
 function DaySheet({ role, live = true, demoNote = "Demonstration — no server connected", liveMatch = null, board = null, boardState = {},
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
-                    onNav, onOpenScorer }) {
+                    onNav, onOpenScorer, matchDay = null }) {
   const holds = (capability) => holdsCapability(role, capability);
   const rc = ROLES[role];
   const hasDuty = (key) => dutyRows.some((r) => r.duty === key);
@@ -172,6 +173,11 @@ function DaySheet({ role, live = true, demoNote = "Demonstration — no server c
             )}
           </BentoCard>
         )}
+
+        {/* 1b. Match day — the coach's card for the next fixture within seven days
+            (SCRBRD-136). Handed in, so the pitch deck's frame draws the day
+            sheet without it; it draws nothing for anyone the gate does not admit. */}
+        {matchDay}
 
         {/* 2. Today / next — the next fixture, ready or not. */}
         {holds("fixture.read") && (
@@ -343,7 +349,8 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     <DaySheet role={role} live={matchesAreLive} liveMatch={liveMatch} board={board} boardState={liveScore}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
-      onNav={onNav} onOpenScorer={onOpenScorer}/>
+      onNav={onNav} onOpenScorer={onOpenScorer}
+      matchDay={signedIn() ? <MatchDayCard matches={MATCHES} onNav={onNav}/> : null}/>
   );
 }
 

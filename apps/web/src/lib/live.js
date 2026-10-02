@@ -193,6 +193,9 @@ function asNotification(r) {
     id: r.id, type: r.kind, urgency: r.urgency, title: r.title, body: r.body,
     time: r.published_at, read: r.read, team: r.team_code, school: r.school_id,
     isPublic: r.is_public,
+    // What the notice is about (SCRBRD-137 S12): a fixture, say, by its id. The
+    // cockpit's notices lane shows only those about the match it is open on.
+    subjectKind: r.subject_kind ?? null, subjectId: r.subject_id ?? null,
     // The child a notice is about, when it is about one (step 4 P1/P5): a
     // family screen says whose it is, and a parent who is also staff sees on
     // a child's Home only the notices about that child or about nobody.
@@ -667,6 +670,10 @@ function asWorkload(r) {
            // boy under no limit — the server decides which, not this screen.
            clause: r.clause_code ? { code: r.clause_code, title: r.clause_title,
                                      severity: r.clause_severity, body: r.clause_body } : null,
+           // SCRBRD-136 (the coach's cockpit): the week's load as the server's WORD and whether a
+           // training band is inside the figure. The ratio behind the word (ewma_ratio) is
+           // deliberately not carried here: the cockpit draws the word, never the number (D7).
+           loadWord: r.load_word ?? null, estimated7d: r.estimated_7d === true,
            live: true };
 }
 /**
@@ -1364,6 +1371,26 @@ export function useLive(resource, role, nonce = 0, params = null) {
   }, [resource, role, nonce, query]);
 
   return state;
+}
+
+/**
+ * One read, mapped by the same adapter useLive() uses, for code that reads
+ * several resources at once and cannot call a hook for each (the coach's
+ * cockpit, SCRBRD-136). Signed out, or on any failure, it returns null: the
+ * caller then knows the read did not answer, which is not the same as the read
+ * answering with nothing — a rule over a read that failed must not fire.
+ * @param {string} resource  @param {Record<string, string> | null} [params]
+ * @returns {Promise<any[] | null>}
+ */
+export async function readLive(resource, params = null) {
+  if (!signedIn() || !ADAPT[resource]) return null;
+  const query = params && Object.keys(params).length
+    ? "?" + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== "")).toString()
+    : "";
+  try {
+    const { rows } = await api(`/api/read/${resource}${query}`);
+    return (rows ?? []).map(ADAPT[resource]);
+  } catch { return null; }
 }
 
 /**

@@ -23,6 +23,9 @@ import { liveRefreshMs, useMoments, useTicker } from "./live.js";
 import { BigScreen } from "./bigscreen.jsx";
 import { CaptainTab } from "./captainTab.jsx";
 import { termsOf } from "../../lib/captain.js";
+import { cockpitGate } from "../../lib/cockpit.js";
+import { profile } from "../../lib/session.js";
+import { CoachTab } from "../cockpit/CoachTab.jsx";
 
 /**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
@@ -190,6 +193,14 @@ function useRainLine(match, innings, seen) {
  */
 const CAPTAIN_TAB = { id: "captain", label: "Captain" };
 
+/**
+ * The coach's tab (SCRBRD-136 phase A): after the Summary, for a person whose
+ * single assignment covers this fixture's side and grants `team.select` or
+ * `player.workload.read` (lib/cockpit.js cockpitGate: by capability, never by
+ * title). Anybody else has the six tabs, and nothing suggests one is missing.
+ */
+const COACH_TAB = { id: "coach", label: "Coach" };
+
 /** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
 function TabBar({ tab, setTab, tabs = TABS }) {
   const refs = useRef({});
@@ -233,14 +244,17 @@ function TabBar({ tab, setTab, tabs = TABS }) {
  * not one this reader may open (§2.1 P4). Everything else is the Match Centre
  * as every signed-in reader has it.
  */
-function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null }) {
+function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
   const WEATHER = useWeather(role);
   const log = useMatchLog(match, PLAYERS);
   const phone = useIsMobile(640);
-  const [tab, setTab] = useState("summary");
+  // The Coach tab: signed in, the staff screen (not a family's or the captain's), and a grant on this side.
+  const staff = useMemo(() => (signedIn() && !captain && !focus?.length ? cockpitGate(profile()?.assignments, match) : null),
+    [match, captain, focus]);
+  const [tab, setTab] = useState(initialTab === "coach" && staff ? "coach" : "summary");
   const played = log.innings.filter(Boolean);
   // The innings the Scorecard, Partnerships and Analytics tabs are on: the
   // one in play, until the reader picks another.
@@ -327,7 +341,8 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
     focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine,
-    captain, terms: captain ? termsOf(log.fold) : null };
+    captain, terms: captain || staff ? termsOf(log.fold) : null,
+    staff, eventCount: log.events?.length ?? 0, initialDrawer };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>
@@ -397,7 +412,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
         </div>
       )}
 
-      <TabBar tab={tab} setTab={setTab} tabs={captain ? [TABS[0], CAPTAIN_TAB, ...TABS.slice(1)] : TABS}/>
+      <TabBar tab={tab} setTab={setTab} tabs={captain ? [TABS[0], CAPTAIN_TAB, ...TABS.slice(1)] : staff ? [TABS[0], COACH_TAB, ...TABS.slice(1)] : TABS}/>
 
       <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={`mc-tab-${tab}`} data-testid={`mc-panel-${tab}`} tabIndex={0}
         style={{ outline: "none" }}>
@@ -409,6 +424,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           : <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
             {tab === "summary" ? <SummaryTab {...ctx}/>
               : tab === "captain" && captain ? <CaptainTab {...ctx}/>
+              : tab === "coach" && staff ? <CoachTab {...ctx}/>
               : tab === "scorecard" ? <ScorecardTab {...ctx}/>
               : tab === "commentary" ? <CommentaryTab {...ctx}/>
               : tab === "partnerships" ? <PartnershipsTab {...ctx}/>

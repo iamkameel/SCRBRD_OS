@@ -44,6 +44,7 @@ import { profile, schoolsWhere } from "../lib/session.js";
 import { humanDateTime } from "../lib/format.js";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { isTheirs } from "../lib/family.js";
+import { EXCEPTION_WORDS } from "../lib/liftWords.js";
 
 const TZ = "Africa/Johannesburg";
 
@@ -1005,14 +1006,6 @@ export function LiftExpected({ match }) {
     </Card>
   );
 }
-
-const EXCEPTION_WORDS = {
-  not_left: "The lift is late and not marked as left",
-  not_boarded: "Not marked in the car when the lift left",
-  not_collected: "Not collected",
-  not_received: "Handed over; nobody has said they have him",
-  not_handed_over: "The lift arrived; not marked handed over",
-};
 
 /**
  * The office's exceptions at a school (lift_exceptions(), by name, logged),
