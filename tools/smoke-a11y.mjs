@@ -43,6 +43,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { port } from "./db-url.mjs";
+import { captainApi, IDS, MATCH } from "./a11y-captain-mock.mjs";
 
 const PORT = port(4331);
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
@@ -108,6 +109,16 @@ const TYPE_FLOOR_CEILING = {
   // straight to the 18-item shell, matching Analytics.
   analytics:   17,
   career:      17,
+  // SCRBRD-138 phase A (2026-10-02): the captain's view, on a phone, against
+  // the walk's own API (tools/a11y-captain-mock.mjs). The card on a pupil's
+  // Home, the section on his fixture, and the Captain tab fielding, batting
+  // and after — born at 0, and it stays there: the screens are new, so no
+  // shell or shared component is priced in.
+  captainhome:    0,
+  captainfixture: 0,
+  captainfield:   0,
+  captainbat:     0,
+  captainafter:   0,
 };                   // 103 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
@@ -130,6 +141,17 @@ const TAP_FLOOR_CEILING = {
   // matchcentre, matchview and dashboard are not in this map either. Tracked
   // instead under the type floor below, which already prices the shell in
   // at 18 per screen.
+  //
+  // SCRBRD-138 phase A: the captain's view, on a phone. Everything the view
+  // adds is 44px or more (its section and tab hold no control at all). What
+  // is counted is the shell's, not the view's: the skip link (119x34, on
+  // every screen) and, on the fixture, the pupil fixture header's own "map"
+  // link (29x17, STEP4 S3, found here and left for its own change).
+  captainhome:    1,
+  captainfixture: 2,
+  captainfield:   1,
+  captainbat:     1,
+  captainafter:   1,
 };
 
 /**
@@ -163,8 +185,10 @@ const CONTRAST_CEILING = {
   // still clearly apart from critical's red and positive's green. Every
   // caller of textOn(D.amber) — Badge in both ui/primitives.jsx and
   // scorer/ui.jsx, and the handful of direct reads elsewhere — inherits it.
-  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0 },
-  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0 },
+  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
+              captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0 },
+  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
+              captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0 },
 };
 
 /**
@@ -193,6 +217,12 @@ const EMOJI_CEILING = {
   // SCRBRD-102: neither was the Analytics tab or the Career tab.
   analytics:   0,
   career:      0,
+  // SCRBRD-138 phase A: the captain's view.
+  captainhome:    0,
+  captainfixture: 0,
+  captainfield:   0,
+  captainbat:     0,
+  captainafter:   0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -373,6 +403,107 @@ const measure = async (page, theme, screen) => {
   }
 };
 
+/** Every control on screen, with whatever name assistive tech would compute. */
+const unnamedControlsOf = (page) => page.evaluate(() => {
+  const name = (el) =>
+    (el.getAttribute("aria-label") ||
+     (el.getAttribute("aria-labelledby") &&
+       document.getElementById(el.getAttribute("aria-labelledby"))?.textContent) ||
+     (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent) ||
+     el.closest("label")?.textContent ||
+     el.textContent || "").replace(/\s+/g, " ").trim();
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+  };
+  return [...document.querySelectorAll("button, input, select, textarea, a[href]")]
+    .filter(visible)
+    .filter((el) => el.getAttribute("aria-hidden") !== "true")
+    .filter((el) => !name(el))
+    .map((el) => {
+      const r = el.getBoundingClientRect();
+      return `${el.tagName.toLowerCase()}${el.className ? "." + String(el.className).split(" ")[0] : ""}` +
+             `@${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)} ` +
+             `html=${el.outerHTML.slice(0, 90).replace(/\s+/g, " ")}`;
+    });
+});
+
+/**
+ * THE CAPTAIN'S VIEW (SCRBRD-138 phase A): a signed-in pupil holding the
+ * captaincy honour, on a phone, against tools/a11y-captain-mock.mjs — no
+ * server, no database. The card on Home, the section on his fixture, and the
+ * Captain tab of a match with his side fielding, batting, and over. Each
+ * screen goes through the same ratchets as the rest (12px, 44px, AA, emoji)
+ * and has every control named. Who may see what is the pupil walk's, against
+ * the real stack; this walk only counts what is drawn.
+ */
+async function captainWalk(theme) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await offline(ctx);
+  const handle = captainApi();
+  await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
+    const u = new URL(route.request().url());
+    const r = handle(route.request().method(), u.pathname, u.searchParams);
+    return route.fulfill({ status: r.status, contentType: "application/json", body: JSON.stringify(r.body) });
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const tap = async (id, ms = 800) => { await tid(id).click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(ms); };
+  /** Measure a screen, and have every control on it named. */
+  const check = async (screen) => {
+    await measure(page, theme, screen);
+    const unnamed = await unnamedControlsOf(page);
+    ok(`${T_} ${screen}: every control has a name`, unnamed.length === 0, unnamed.slice(0, 4).join(", "));
+  };
+  try {
+    group(`${T_} — the captain's view`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    for (const re of [/Get Started|Log In/]) {
+      const l = page.locator("button:not([disabled])", { hasText: re }).first();
+      if (await l.count()) { await l.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    }
+    await page.locator("#login-email").fill("pillay@example.invalid");
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(2200);
+    ok("the pupil signs in, to his own app", await tid("persona-bar").count() === 1);
+    ok("Home carries the Captain card", await tid("captain-card").count() === 1);
+    await check("captainhome");
+
+    await tap("mnav-mymatches", 1500);
+    await tap(`fixture-row-${MATCH.day}`, 1800);
+    ok("the fixture carries the Captain section", await tid("captain-section").count() === 1);
+    await check("captainfixture");
+    await tap("family-back", 600);
+
+    for (const [screen, id, what] of [["captainfield", MATCH.field, "his side fielding"], ["captainbat", MATCH.bat, "his side batting"]]) {
+      await tap(`live-row-${id}`, 1800);
+      await tap("mc-tab-captain", 1200);
+      ok(`the Captain tab is drawn, ${what}`, await tid("mc-captain").count() === 1);
+      if (screen === "captainfield") {
+        ok("...with overs left in the cap's own words beside the bowler on four", (await tid(`mc-captain-cap-${IDS.naidoo}`).innerText({ timeout: 2000 }).catch(() => "")).trim() === "Has bowled his 4 overs");
+      } else {
+        ok("...with the next in, from the sheet", /Pillay/.test(await tid("mc-captain-next-in").innerText({ timeout: 2000 }).catch(() => "")));
+      }
+      await check(screen);
+      await tap("mc-back", 700);
+    }
+    await tap(`played-row-${MATCH.played}`, 1800);
+    await tap("mc-tab-captain", 1500);
+    ok("the Captain tab is drawn, after the match", await tid("mc-captain").count() === 1);
+    await check("captainafter");
+    ok(`no page errors on the captain's screens`, errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} captain walk threw: ${e.message?.slice(0, 160)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function walk(theme) {
   const scheme = theme === "daylight" ? "light" : "dark";
   const ctx = await browser.newContext({ colorScheme: scheme });
@@ -387,30 +518,7 @@ async function walk(theme) {
     return true;
   };
 
-  /** Every control on screen, with whatever name assistive tech would compute. */
-  const unnamedControls = () => page.evaluate(() => {
-    const name = (el) =>
-      (el.getAttribute("aria-label") ||
-       (el.getAttribute("aria-labelledby") &&
-         document.getElementById(el.getAttribute("aria-labelledby"))?.textContent) ||
-       (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent) ||
-       el.closest("label")?.textContent ||
-       el.textContent || "").replace(/\s+/g, " ").trim();
-    const visible = (el) => {
-      const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
-    };
-    return [...document.querySelectorAll("button, input, select, textarea, a[href]")]
-      .filter(visible)
-      .filter((el) => el.getAttribute("aria-hidden") !== "true")
-      .filter((el) => !name(el))
-      .map((el) => {
-        const r = el.getBoundingClientRect();
-        return `${el.tagName.toLowerCase()}${el.className ? "." + String(el.className).split(" ")[0] : ""}` +
-               `@${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)} ` +
-               `html=${el.outerHTML.slice(0, 90).replace(/\s+/g, " ")}`;
-      });
-  });
+  const unnamedControls = () => unnamedControlsOf(page);
 
   const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
   try {
@@ -1034,7 +1142,9 @@ async function padFit() {
 
 try {
   await walk("floodlit");
+  await captainWalk("floodlit");
   await walk("daylight");
+  await captainWalk("daylight");
 
   group("The pad's strip on a phone (§4 rule 1) — no scrolling to reach it");
   await padFit();
