@@ -702,6 +702,7 @@ gcloud iam service-accounts add-iam-policy-binding \
 | `GCP_DEPLOY_SERVICE_ACCOUNT` | `scrbrd-deploy@scrbrd-os.iam.gserviceaccount.com` |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<project number>/locations/global/workloadIdentityPools/github/providers/github` |
 | `VITE_FCM_VAPID_KEY` | optional; the public half of the web-push pair |
+| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID` | optional; the Firebase web config for Continue with Google (SCRBRD-140). All three, or the client is built with no Google button. The deploy job must pass them to `pnpm build` |
 
 Until they exist the deploy jobs build and then say so in a notice, rather
 than fail. **The moment they exist, the next push to main deploys for real** —

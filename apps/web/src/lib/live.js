@@ -1150,6 +1150,9 @@ const ADAPT = {
   my_clearances: asClearance,
   clearance_requirements: asRequirement,
   role_requests: asRoleRequest,
+  // SCRBRD-140: no mock twin, and never one (an invented sign-in reads like a real one). Rows stay as the read returns them.
+  my_sign_ins: (r) => r,
+  sign_in_claims: (r) => r,
   drills: asDrill,
   passport: asPassportLine,
   passport_consents: asPassportConsent,

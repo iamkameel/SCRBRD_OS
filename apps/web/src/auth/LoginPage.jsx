@@ -2,7 +2,10 @@ import { useState, useEffect } from "react";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { ROLES } from "../design/roles.js";
 import { T, clr } from "../design/tokens.js";
-import { mode as apiMode, signIn, signInWithCode, devLoginAvailable } from "../lib/session.js";
+import { mode as apiMode, signIn, signInWithCode, signInWithToken, devLoginAvailable } from "../lib/session.js";
+import { googleAvailable, googleIdToken, GOOGLE_FAILURE_WORDS } from "../lib/google.js";
+import { exchangeGoogle, CLAIM_STEPS, EXCHANGE_WORDS } from "../lib/signin.js";
+import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../lib/signinNotice.js";
 import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -79,6 +82,11 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
   const [oauthLoading, setOauthLoading] = useState(false);
   const [liveState, setLive]    = useState(null);   // null = still asking
   const live = liveOnly ? true : liveState;
+  // Google sign-in (SCRBRD-140). idle | working | claim | use_code, with the
+  // words for whatever last went wrong. Where a build has no Google config the
+  // button is not drawn at all — see lib/google.js.
+  const [google, setGoogle] = useState({ phase: "idle", message: "", email: null });
+  const googleOn = live === true && googleAvailable();
 
   useEffect(() => { apiMode().then(m => setLive(m === "live")).catch(() => setLive(false)); }, []);
   useEffect(() => { devLoginAvailable().then(setDevLogin).catch(() => setDevLogin(false)); }, []);
@@ -142,6 +150,43 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
       setError("No account found. Sign up or try a demo account below.");
     }
     setLoading(false);
+  };
+
+  // Continue with Google: Google's token, once, to the exchange; the exchange
+  // answers with SCRBRD's own token or with a state this screen draws
+  // (lib/signin.js). Nothing here decides who the person is or what they may do.
+  const handleGoogle = async () => {
+    if (google.phase === "working") return;
+    setError(""); setGoogle({ phase: "working", message: "", email: null });
+    const g = await googleIdToken();
+    if (!g.ok) {
+      setGoogle({ phase: "idle", message: GOOGLE_FAILURE_WORDS[g.failure] ?? GOOGLE_FAILURE_WORDS.google_failed, email: null });
+      return;
+    }
+    const a = await exchangeGoogle(g.idToken);
+    if (a.state === "token") {
+      try {
+        const p = await signInWithToken(a.token);
+        onLogin(primaryRole(p), p?.user?.name || g.email || "User", p);
+        return;
+      } catch {
+        setGoogle({ phase: "idle", message: EXCHANGE_WORDS.not_found, email: null });
+        return;
+      }
+    }
+    if (a.state === "claim_required") {
+      // The enrolled address is the Google one; the code the office issues is
+      // redeemed against it, so it is filled in for them.
+      if (g.email && !email) setEmail(g.email);
+      setGoogle({ phase: "claim", message: "", email: g.email });
+      return;
+    }
+    if (a.state === "use_code") {
+      setGoogle({ phase: "use_code", message: a.words, email: null });
+      setTimeout(() => document.getElementById("login-email")?.focus(), 0);
+      return;
+    }
+    setGoogle({ phase: "idle", message: a.words, email: null });
   };
 
   /**
@@ -220,6 +265,49 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
             <div style={{flex:1,height:"1px",background:T.fill.track}}/>
           </div>
           </>}
+
+          {/* Continue with Google (SCRBRD-140). Only against a live server in a
+              build that has the project's web config (lib/google.js); the
+              privacy paragraph the information officer signed is on the
+              screen where the choice is made, not behind a link. */}
+          {googleOn && (
+            <div data-testid="google-signin" style={{marginBottom:"20px"}}>
+              <button type="button" onClick={handleGoogle} disabled={google.phase==="working"} data-testid="google-button" className="pressBtn"
+                style={{width:"100%",minHeight:"48px",padding:"12px 16px",borderRadius:"12px",cursor:google.phase==="working"?"wait":"pointer",background:T.fill.field,border:`1px solid ${T.line.strong}`,display:"flex",alignItems:"center",justifyContent:"center",gap:"12px",boxSizing:"border-box"}}>
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 48 48" style={{flexShrink:0}}>
+                  <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/>
+                  <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.7 6c4.5-4.2 6.9-10.3 6.9-17.7z"/>
+                  <path fill="#FBBC05" d="M10.5 28.7a14.5 14.5 0 0 1 0-9.4l-7.9-6.1a24 24 0 0 0 0 21.6l7.9-6.1z"/>
+                  <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.7-6c-2.1 1.4-4.9 2.3-8.2 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/>
+                </svg>
+                <span style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:700,color:T.content.primary}}>{google.phase==="working"?"Waiting for Google…":"Continue with Google"}</span>
+              </button>
+
+              {google.message && (
+                <div role="alert" data-testid="google-error" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",lineHeight:1.5,color:T.semantic.criticalText,marginTop:"12px",padding:"10px 12px",borderRadius:"8px",background:clr(T.semantic.critical,0.1),border:`1px solid ${clr(T.semantic.critical,0.2)}`}}>{google.message}</div>
+              )}
+
+              {google.phase === "claim" && (
+                <div role="status" data-testid="google-claim-required" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",lineHeight:1.5,color:T.content.secondary,marginTop:"12px",padding:"12px 14px",borderRadius:"10px",background:T.fill.field,border:`1px solid ${T.line.normal}`}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:700,color:T.content.primary,marginBottom:"6px"}}>Waiting for your school office</div>
+                  <div style={{marginBottom:"8px"}}>{EXCHANGE_WORDS.claim_required}</div>
+                  <ol style={{margin:0,paddingLeft:"20px"}}>
+                    {CLAIM_STEPS.map((x) => <li key={x} style={{marginBottom:"4px"}}>{x}</li>)}
+                  </ol>
+                </div>
+              )}
+
+              <div data-testid="google-notice" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",lineHeight:1.55,color:T.content.secondary,marginTop:"14px"}}>
+                <strong style={{color:T.content.primary}}>{SIGNIN_NOTICE_TITLE}</strong> {SIGNIN_NOTICE}
+              </div>
+
+              <div style={{display:"flex",alignItems:"center",gap:"10px",marginTop:"18px"}}>
+                <div style={{flex:1,height:"1px",background:T.fill.track}}/>
+                <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:T.content.tertiary}}>or with a code from your school office</span>
+                <div style={{flex:1,height:"1px",background:T.fill.track}}/>
+              </div>
+            </div>
+          )}
 
           {/* Email + password */}
           {[

@@ -167,6 +167,12 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Signing in with Google and joining a school (SCRBRD-140 phase 1, the screens):
+  // each answer of the exchange as one state, Google's config from the
+  // environment only, the signed privacy paragraph word for word, a request
+  // and never a role, a parent's child as free text that is never looked up
+  // and never "found", the ways to sign in and the office's Claims list.
+  ["signin-screens", "apps/web/test/signin.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Ending a role (SCRBRD-132 C1, db/77): EndRoleButton asks for the reason,
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

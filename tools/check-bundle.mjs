@@ -152,13 +152,13 @@ if (findings.length) {
 // which is not code that runs. The second half, the boundary's own card being
 // in the build, is so this cannot pass because the boundary went missing.
 {
-  const HOOK = "__SCRBRD_TEST_THROW__";
+  const HOOKS = ["__SCRBRD_TEST_THROW__", "__SCRBRD_TEST_GOOGLE__"];   // the second: lib/google.js, SCRBRD-140
   const code = files.filter((f) => !/\.map$/.test(f));
-  const hooked = code.filter((f) => readFileSync(f, "utf8").includes(HOOK));
+  const hooked = code.filter((f) => HOOKS.some((HOOK) => readFileSync(f, "utf8").includes(HOOK)));
   const boundaries = code.some((f) => readFileSync(f, "utf8").includes("panel-error"));
   if (hooked.length || !boundaries) {
     console.error("✗ THE TEST HOOK IS IN THE SHIPPED CLIENT, OR THE ERROR BOUNDARY IS NOT\n");
-    for (const f of hooked) console.error(`  ${relative(".", f)} contains ${HOOK}`);
+    for (const f of hooked) console.error(`  ${relative(".", f)} contains a walk hook (${HOOKS.join(", ")})`);
     if (!boundaries) console.error('  no asset contains the boundary\'s card ("panel-error") — ui/ErrorBoundary.jsx is not in the build');
     console.error("\n  Build without SCRBRD_TEST_HOOKS (the walks make their own apps/web/dist-test).");
     process.exit(1);
