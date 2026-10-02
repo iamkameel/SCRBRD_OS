@@ -3554,7 +3554,8 @@ BEGIN
       ('ended',  'coach',         HIL),
       ('head',   'principal',     HIL),
       ('dso',    'dso',           HIL),
-      ('coach',  'coach',         HIL)) AS v(k, role, school)
+      ('coach',  'coach',         HIL),
+      ('dos',    'directorofsport', HIL)) AS v(k, role, school)
   LOOP
     INSERT INTO app_user (school_id, email, name, role)
     VALUES (r.school, 'v81.' || r.k || '@example.invalid', 'V81 ' || initcap(r.k), r.role)
@@ -15000,7 +15001,9 @@ $v49$;
   --   (codes)       the office issues a login code (db/05's function, re-emitted)
   --                 or confirms a claim only for an account whose every standing
   --                 role it could appoint: never the principal, the DSO, another
-  --                 school's office or an owner's key; a coach and a parent, yes;
+  --                 school's office or an owner's key; a coach and a parent, yes
+  --                 (a pupil's own record counts as granted with `player`, so the
+  --                 director of sport issues a pupil's code but not a parent's);
   --                 a superadmin, the owner's key and the DSO; and the seam never
   --                 files a platform-wide account under a school
   --
@@ -15346,6 +15349,15 @@ $v49$;
     PERFORM _assert(v_ok, format('§60 (codes): the office could not issue a code to a coach it may appoint: %s', v_reason));
     SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.parent@example.invalid', md5('v81-code-parent'), 3600) i;
     PERFORM _assert(v_ok, format('§60 (codes): the office could not issue a code to a parent: %s', v_reason));
+    -- The director of sport may enrol a pupil (player, and the record that
+    -- comes with it) and not appoint a parent: so she issues the pupil's code
+    -- and not the parent's.
+    PERFORM _as((ids->>'u_dos')::uuid);
+    SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.pupil@example.invalid', md5('v81-code-pupil'), 3600) i;
+    PERFORM _assert(v_ok, format('§60 (codes): the director of sport could not issue a pupil''s code: %s', v_reason));
+    SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.parent@example.invalid', md5('v81-code-parent2'), 3600) i;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§60 (codes): the director of sport issued herself a parent''s code: %s %s', v_ok, v_reason));
     PERFORM _as(U_HEAD);   -- the principal may appoint a DSO
     SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.dso@example.invalid', md5('v81-code-dso'), 3600) i;
     PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',

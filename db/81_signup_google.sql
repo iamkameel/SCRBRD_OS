@@ -295,7 +295,9 @@ REVOKE ALL ON FUNCTION auth_holds_superadmin(uuid) FROM PUBLIC;
 --     the owner's key, a platform administrator) → only a superadmin, as
 --     db/77's platform-only floor: 'superadmin_only';
 --   * any standing assignment at a school that the caller could not grant
---     there — app_may_grant_at(role, school), db/77 — → 'not_permitted'. An
+--     there — app_may_grant_at(role, school), db/77; a pupil's `selfaccess`
+--     counts as granted by whoever may grant `player`, because the grant door
+--     writes the pair together — → 'not_permitted'. An
 --     office does not become the principal, the DSO (the safeguarding
 --     separation: the office never reads a concern), medical staff, or a
 --     parent of a child at another school.
@@ -327,7 +329,12 @@ BEGIN
                 AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
                 AND (a.valid_until IS NULL OR a.valid_until >  current_date)
                 AND (a.expires_at  IS NULL OR a.expires_at  >  now())
-                AND NOT app_may_grant_at(a.role, a.school_id)) THEN
+                AND NOT (app_may_grant_at(a.role, a.school_id)
+                         -- a pupil's own record comes with `player`: the grant
+                         -- door writes the pair for whoever may grant player
+                         -- there (decide_role_request(), db/08), so whoever
+                         -- may enrol a pupil may issue his code
+                         OR (a.role = 'selfaccess' AND app_may_grant_at('player', a.school_id)))) THEN
     RETURN 'not_permitted';
   END IF;
   RETURN NULL;
