@@ -3551,7 +3551,10 @@ BEGIN
       ('own',    'superadmin',    NULL::uuid),
       ('ownhil', 'superadmin',    NULL::uuid),
       ('parent', 'guardian',      HIL),
-      ('ended',  'coach',         HIL)) AS v(k, role, school)
+      ('ended',  'coach',         HIL),
+      ('head',   'principal',     HIL),
+      ('dso',    'dso',           HIL),
+      ('coach',  'coach',         HIL)) AS v(k, role, school)
   LOOP
     INSERT INTO app_user (school_id, email, name, role)
     VALUES (r.school, 'v81.' || r.k || '@example.invalid', 'V81 ' || initcap(r.k), r.role)
@@ -14994,6 +14997,12 @@ $v49$;
   --   (self)        adding and removing one's own; a uid is one account's
   --   (revoke)      a revoked sign-in, and a deactivated account, sign in to
   --                 nothing
+  --   (codes)       the office issues a login code (db/05's function, re-emitted)
+  --                 or confirms a claim only for an account whose every standing
+  --                 role it could appoint: never the principal, the DSO, another
+  --                 school's office or an owner's key; a coach and a parent, yes;
+  --                 a superadmin, the owner's key and the DSO; and the seam never
+  --                 files a platform-wide account under a school
   --
   -- Falsified once each, the change made in the database as the owner before
   -- this file ran, and red at its own assertion:
@@ -15006,6 +15015,17 @@ $v49$;
   --                                                   linked a minor without consent
   --   the school seam left out of
   --   decide_role_request()                         → (grant) red: no school
+  --   auth_office_refusal() without its may-grant
+  --   clause (the old rule: user.invite alone)       → (codes) red: the office
+  --                                                   issued itself the principal's code
+  --   its platform-wide floor removed (superadmin
+  --   no longer required)                            → (office) red: an owner's key
+  --                                                   at Hilton answered not_permitted,
+  --                                                   not superadmin_only
+  --   the rule's statement taken back out of
+  --   login_code_issue()                            → (codes) red: the same
+  --   the seam's platform-wide guard removed        → (codes) red: the platform
+  --                                                   administrator filed at Hilton
   DECLARE
     ids       jsonb;
     HIL81     uuid := '11111111-1111-1111-1111-111111111111';
@@ -15014,6 +15034,7 @@ $v49$;
     U_PARENT81 uuid; U_ENDED uuid; U_MINOR uuid; U_PUP uuid; U_ADULT uuid; U_GONE uuid;
     U_NEW     uuid;
     U_STUB    uuid;
+    U_HEAD    uuid; U_DSO81 uuid; U_COACH81 uuid;
     v_out     text;
     v_user    uuid;
     v_req     uuid;
@@ -15036,6 +15057,8 @@ $v49$;
     U_ENDED := (ids->>'u_ended')::uuid;    U_MINOR := (ids->>'u_minor')::uuid;
     U_PUP := (ids->>'u_pupil')::uuid;      U_ADULT := (ids->>'u_adult')::uuid;
     U_GONE := (ids->>'u_gone')::uuid;
+    U_HEAD := (ids->>'u_head')::uuid;      U_DSO81 := (ids->>'u_dso')::uuid;
+    U_COACH81 := (ids->>'u_coach')::uuid;
 
     -- ── (signup) ──
     SELECT s.outcome, s.user_id INTO v_out, U_NEW
@@ -15303,6 +15326,60 @@ $v49$;
     PERFORM _v81_deactivate(U_STUB);
     SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', 'v81-stub', 'v81.stub@example.invalid', 'x') s;
     PERFORM _assert(v_out = 'account_inactive', format('§60 (revoke): a deactivated account''s sign-in answered %s', v_out));
+
+    -- ── (codes) the office becomes only somebody it could appoint ──
+    -- login_code_issue() (db/05, re-emitted by db/81) and every door above
+    -- ask one rule: the issuer could grant every standing role the account
+    -- holds; a platform-wide one, only a superadmin.
+    PERFORM _as(U_OFFICE);
+    FOR t IN SELECT * FROM (VALUES ('v81.head@example.invalid',   'not_permitted',   'the principal'),
+                                   ('v81.dso@example.invalid',    'not_permitted',   'the DSO'),
+                                   ('v81.ownhil@example.invalid', 'superadmin_only', 'an owner''s key filed at Hilton'),
+                                   ('v81.own@example.invalid',    'not_permitted',   'the owner''s key'),
+                                   ('v81.wes@example.invalid',    'not_permitted',   'Westville''s office')) AS v(email, want, who) LOOP
+      SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue(t.email, md5('v81-code-' || t.email), 3600) i;
+      -- (codes)
+      PERFORM _assert(NOT v_ok AND v_reason = t.want,
+        format('§60 (codes): Hilton''s office issued itself a code for %s: %s %s (expected %s)', t.who, v_ok, v_reason, t.want));
+    END LOOP;
+    SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.coach@example.invalid', md5('v81-code-coach'), 3600) i;
+    PERFORM _assert(v_ok, format('§60 (codes): the office could not issue a code to a coach it may appoint: %s', v_reason));
+    SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.parent@example.invalid', md5('v81-code-parent'), 3600) i;
+    PERFORM _assert(v_ok, format('§60 (codes): the office could not issue a code to a parent: %s', v_reason));
+    PERFORM _as(U_HEAD);   -- the principal may appoint a DSO
+    SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.dso@example.invalid', md5('v81-code-dso'), 3600) i;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§60 (codes): the principal, holding no user.invite, issued a code: %s %s', v_ok, v_reason));
+    PERFORM _as(U_OWN);
+    SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.ownhil@example.invalid', md5('v81-code-ownhil'), 3600) i;
+    PERFORM _assert(v_ok, format('§60 (codes): a superadmin could not issue a code to an owner''s key: %s', v_reason));
+    SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.dso@example.invalid', md5('v81-code-dso2'), 3600) i;
+    PERFORM _assert(v_ok, format('§60 (codes): a superadmin could not issue a code to a DSO: %s', v_reason));
+    -- Claims follow the same rule.
+    PERFORM set_config('app.user_id', '', true);
+    FOR t IN SELECT * FROM (VALUES ('v81-head', 'v81.head@example.invalid'), ('v81-dso', 'v81.dso@example.invalid'),
+                                   ('v81-coach', 'v81.coach@example.invalid')) AS v(uid, email) LOOP
+      SELECT s.outcome INTO v_out FROM auth_identity_sign_in('google.com', t.uid, t.email, 'x') s;
+      PERFORM _assert(v_out = 'claim_required', format('§60 (codes): %s answered %s', t.email, v_out));
+    END LOOP;
+    PERFORM _as(U_OFFICE);
+    SELECT string_agg(c.account_email, ',' ORDER BY c.account_email) INTO detail FROM pending_claims() c
+     WHERE c.account_email IN ('v81.head@example.invalid', 'v81.dso@example.invalid', 'v81.coach@example.invalid');
+    PERFORM _assert(detail = 'v81.coach@example.invalid', format('§60 (codes): Hilton''s Claims list shows %s', detail));
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm((_v81_claim('v81-dso')).id) p;
+    PERFORM _assert(v_reason = 'not_permitted', format('§60 (codes): the office confirmed a Google sign-in onto the DSO: %s', v_reason));
+    SELECT p.reason INTO v_reason FROM pending_claim_confirm((_v81_claim('v81-head')).id) p;
+    PERFORM _assert(v_reason = 'not_permitted', format('§60 (codes): the office confirmed a Google sign-in onto the principal: %s', v_reason));
+    SELECT p.ok, p.reason INTO v_ok, v_reason FROM pending_claim_confirm((_v81_claim('v81-coach')).id) p;
+    PERFORM _assert(v_ok, format('§60 (codes): the office could not confirm a coach''s claim: %s', v_reason));
+    -- The seam never files a platform-wide account under a school.
+    PERFORM _as(U_PLAT81);
+    INSERT INTO role_request (person_id, role, school_id, team_code) VALUES (U_PLAT81, 'coach', HIL81, 'U15A') RETURNING id INTO v_req;
+    PERFORM _as(U_OFFICE);
+    SELECT d.ok, d.reason INTO v_ok, v_reason FROM decide_role_request(v_req, true, 'Helps with the under-15s.', NULL, NULL) d;
+    PERFORM _assert(v_ok AND (_v81_user(U_PLAT81)).school_id IS NULL,
+      format('§60 (codes): granting the platform administrator a coaching role filed him at %s (%s %s)',
+             (_v81_user(U_PLAT81)).school_id, v_ok, v_reason));
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 60

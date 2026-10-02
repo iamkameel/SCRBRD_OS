@@ -559,6 +559,20 @@ school), and **D14**: sixteen read policies that let any signed-in account read
 reference data — umpires' records among them — now ask for a live assignment
 (`app_enrolled()`). It depends on nothing in db/79–80 and applies after either.
 
+**One behaviour changes for every school at once: who may issue a login code.**
+db/81 re-emits `login_code_issue()` (db/05). Before it, anybody holding
+`user.invite` at a school could issue a code — which comes back to the issuer —
+to any account filed at that school, the principal's and the DSO's included. Now
+the issuer must be able to appoint every role the account holds there
+(`app_may_grant_at()`, db/77), and an account holding anything platform-wide
+(the owner's key, a platform administrator) takes a superadmin. In the pilot's
+role table that means: the office still issues codes for coaches, parents,
+pupils, officials and its own colleagues; **a principal's, a director of
+sport's or a DSO's code — and that of anybody holding roles at two schools —
+comes from the owner** (`/api/auth/invite` signed in with the owner's key), or
+the person signs in with Google. The same rule decides who may confirm a Google
+sign-in onto an account (the office's Claims list).
+
 **No new secret.** Google's signing keys are public; the API fetches them from
 `www.googleapis.com` (A9) and caches them. If it cannot, the exchange answers
 503 and the sign-in screen offers the office code; nothing skips the signature.

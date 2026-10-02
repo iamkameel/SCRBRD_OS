@@ -54,17 +54,23 @@
 --        role_requester(request) — who asked, for whoever may read the
 --          request: the office's Requests list could not see an account with
 --          no school (app_user_read reads one only at the office's school).
---      The office's authority over a claim or a sign-in is exactly its
---      authority to issue that account a login code (login_code_issue(),
---      db/05): user.invite at the account's school. Plus db/77's rule: an
---      account holding the owner's key is acted on only by a superadmin.
+--      ONE RULE (auth_office_refusal()) decides when the office may act on
+--      somebody else's account — issue it a login code, confirm or decline a
+--      claim on it, read or revoke its sign-ins: user.invite at the account's
+--      school, AND every standing assignment on the account is one the caller
+--      could grant there (app_may_grant_at(), db/77), AND a platform-wide one
+--      only by a superadmin. login_code_issue() (db/05) is RE-EMITTED with it,
+--      md5-guarded: before this file a school office could issue itself a
+--      code for its principal, its DSO, or an owner's key filed at the school
+--      — and the raw code comes back to the issuer.
 --   4. The pupil-consent trigger (§5.3, §7.3): an identity is written to a
 --      pupil's account only while he is an adult, or his own `self` link is
 --      verified, live and consented ('granted'). Every door above passes it.
---   5. decide_role_request()'s one-line seam (§4.3): granting a request to
---      an account with no school sets app_user.school_id to the request's,
---      so the account has an office for codes and erasure. Re-emitted from
---      db/77's body, md5-guarded as db/77 re-emits.
+--   5. decide_role_request()'s seam (§4.3): granting a request to an account
+--      with no school sets app_user.school_id to the request's, so the
+--      account has an office for codes and erasure — never for an account
+--      holding a platform-wide assignment. Re-emitted from db/77's body,
+--      md5-guarded as db/77 re-emits.
 --
 -- AN ACCOUNT WITH NO SCHOOL can read its own app_user row, its own role
 -- requests (role_request_read), its own sign-ins (my_sign_ins()), the school
@@ -279,11 +285,24 @@ CREATE OR REPLACE FUNCTION auth_holds_superadmin(p_person uuid) RETURNS boolean 
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION auth_holds_superadmin(uuid) FROM PUBLIC;
 
--- May the caller act, as the office, on this account's sign-ins? Exactly who
--- may issue it a login code (login_code_issue(), db/05): user.invite at the
--- account's school — and, for an account holding the owner's key, only a
--- superadmin (db/77's superadmin_only). Never under a pad's credential.
--- Answers a reason, NULL when permitted.
+-- THE ONE RULE for the office acting on somebody else's account: issuing it a
+-- login code (login_code_issue(), re-emitted below), confirming or declining a
+-- claim on it, reading or revoking its sign-ins. Each of those lets the office
+-- become that person, so the office may do it only for an account whose every
+-- authority it could itself grant (Opus's review, 2026-10-02):
+--   * user.invite at the account's school (db/05's question, unchanged);
+--   * any STANDING platform-wide assignment on the account (school_id NULL —
+--     the owner's key, a platform administrator) → only a superadmin, as
+--     db/77's platform-only floor: 'superadmin_only';
+--   * any standing assignment at a school that the caller could not grant
+--     there — app_may_grant_at(role, school), db/77 — → 'not_permitted'. An
+--     office does not become the principal, the DSO (the safeguarding
+--     separation: the office never reads a concern), medical staff, or a
+--     parent of a child at another school.
+-- STANDING means active, in its dates and not past its hour; a suspended
+-- assignment still counts (a suspension is a pause, and a code is for good),
+-- and a guardian's counts whatever state its link is in. Never under a pad's
+-- credential. Answers a reason, NULL when permitted.
 CREATE OR REPLACE FUNCTION auth_office_refusal(p_user uuid) RETURNS text AS $$
 DECLARE v_school uuid;
 BEGIN
@@ -295,12 +314,61 @@ BEGIN
                               '00000000-0000-0000-0000-000000000000'::uuid) THEN
     RETURN 'not_permitted';
   END IF;
-  IF auth_holds_superadmin(p_user) AND NOT auth_holds_superadmin(app_user_id()) THEN
+  IF EXISTS (SELECT 1 FROM role_assignment a
+              WHERE a.person_id = p_user AND a.active AND a.school_id IS NULL
+                AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+                AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+                AND (a.expires_at  IS NULL OR a.expires_at  >  now()))
+     AND NOT auth_holds_superadmin(app_user_id()) THEN
     RETURN 'superadmin_only';
+  END IF;
+  IF EXISTS (SELECT 1 FROM role_assignment a
+              WHERE a.person_id = p_user AND a.active
+                AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+                AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+                AND (a.expires_at  IS NULL OR a.expires_at  >  now())
+                AND NOT app_may_grant_at(a.role, a.school_id)) THEN
+    RETURN 'not_permitted';
   END IF;
   RETURN NULL;
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION auth_office_refusal(uuid) FROM PUBLIC;
+
+-- login_code_issue() (db/05), re-emitted with the rule above. db/05 asked only
+-- user.invite at the account's school, and the raw code goes back to the
+-- issuer — so a school office could issue itself a way in as its principal,
+-- its DSO, or an owner's key whose account is filed at the school (which the
+-- school seam in §5 below would otherwise make reachable). One statement is
+-- added after the self-issue refusal; the body is md5-guarded as db/77
+-- guards, and a body already carrying it is left alone, so the file runs twice.
+DO $issue$
+DECLARE
+  v_fn   regprocedure := 'login_code_issue(text,text,integer)'::regprocedure;
+  v_old  text := '  UPDATE login_code SET used_at = now()';
+  v_rule text := '  -- db/81: only an account whose every authority the issuer could grant.' || chr(10)
+              || '  IF auth_office_refusal(v_user) IS NOT NULL THEN' || chr(10)
+              || '    RETURN QUERY SELECT false, auth_office_refusal(v_user), NULL::uuid, NULL::timestamptz; RETURN;' || chr(10)
+              || '  END IF;' || chr(10) || chr(10);
+  v_src  text; v_def text; v_cfg text; v_acl text; v_sec boolean;
+BEGIN
+  SELECT p.prosrc, array_to_string(p.proconfig, ','), p.proacl::text, p.prosecdef
+    INTO v_src, v_cfg, v_acl, v_sec FROM pg_proc p WHERE p.oid = v_fn;
+  IF position(v_rule IN v_src) > 0 THEN RETURN; END IF;   -- a second run
+  IF md5(v_src) IS DISTINCT FROM 'cfcf5bea5911de5ef7d6b879eeef3b92' THEN
+    RAISE EXCEPTION 'db/81: login_code_issue() is not db/05''s any more; add the account rule to the version now in place and move its hash';
+  END IF;
+  IF (length(v_src) - length(replace(v_src, v_old, ''))) / length(v_old) <> 1 THEN
+    RAISE EXCEPTION 'db/81: login_code_issue() does not spend the previous codes exactly once';
+  END IF;
+  v_def := pg_get_functiondef(v_fn);
+  EXECUTE replace(v_def, v_old, v_rule || v_old);
+  IF (SELECT p.prosrc FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM replace(v_src, v_old, v_rule || v_old)
+     OR (SELECT array_to_string(p.proconfig, ',') FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_cfg
+     OR (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_acl
+     OR (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_sec THEN
+    RAISE EXCEPTION 'db/81: re-emitting login_code_issue() changed more than the account rule';
+  END IF;
+END $issue$;
 
 -- The record of an office's or a person's act on a sign-in (§6's audit trail).
 CREATE OR REPLACE FUNCTION auth_identity_log(p_resource text, p_user uuid) RETURNS void AS $$
@@ -598,7 +666,11 @@ DO $reemit$
 DECLARE
   v_fn   regprocedure := 'decide_role_request(uuid,boolean,text,uuid,text)'::regprocedure;
   v_old  text := '  UPDATE role_request SET state = ''granted'',';
-  v_seam text := '  UPDATE app_user SET school_id = r.school_id WHERE id = r.person_id AND school_id IS NULL;' || chr(10);
+  -- Never onto an account holding a platform-wide assignment: filing an
+  -- owner's key or a platform administrator under a school would put it in
+  -- that school's office's reach (auth_office_refusal() refuses it anyway).
+  v_seam text := '  UPDATE app_user SET school_id = r.school_id WHERE id = r.person_id AND school_id IS NULL' || chr(10)
+              || '     AND NOT EXISTS (SELECT 1 FROM role_assignment pa WHERE pa.person_id = r.person_id AND pa.active AND pa.school_id IS NULL);' || chr(10);
   v_src  text; v_def text; v_cfg text; v_acl text; v_sec boolean;
 BEGIN
   SELECT p.prosrc, array_to_string(p.proconfig, ','), p.proacl::text, p.prosecdef
@@ -684,6 +756,14 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'auth_identity'::regclass
                     AND tgname = 'auth_identity_pupil_consent' AND NOT tgisinternal AND tgenabled <> 'D') THEN
     RAISE EXCEPTION 'db/81: the pupil-consent trigger is missing or disabled';
+  END IF;
+  IF position('IF auth_office_refusal(v_user) IS NOT NULL THEN' IN
+              (SELECT prosrc FROM pg_proc WHERE oid = 'login_code_issue(text,text,integer)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/81: login_code_issue() does not ask whether the issuer could grant the account''s every role';
+  END IF;
+  IF position('pa.school_id IS NULL' IN
+              (SELECT prosrc FROM pg_proc WHERE oid = 'decide_role_request(uuid,boolean,text,uuid,text)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/81: the school seam would file a platform-wide account under a school';
   END IF;
   IF position('UPDATE app_user SET school_id = r.school_id' IN
               (SELECT prosrc FROM pg_proc WHERE oid = 'decide_role_request(uuid,boolean,text,uuid,text)'::regprocedure)) = 0 THEN
