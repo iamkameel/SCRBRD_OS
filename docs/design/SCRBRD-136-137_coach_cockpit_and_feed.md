@@ -4,7 +4,11 @@
 **Source:** `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md` SCRBRD-136, 137, 138; ADR 0001, 0002, 0003; `docs/design/SCRBRD-110_workload.md` (what a coach reads of load and health; the health consent); `docs/design/SCRBRD-138_captains_view.md` (the sister design, decided); `docs/design/SCRBRD-133_immersive_match_centre.md` §2–3 and D4; `docs/design/SAFEGUARDING_DSO.md` §1, §4.4, K3; `docs/design/SCRBRD-124_lift_clubs.md` (db/76 as built; §2, §5, §6); `packages/policy/src/roles.mjs`, `capabilities.mjs`; `services/api/read/read-api.mjs`; the beta-2 prototype's `CoachCockpitView.tsx` and its Intelligence drawer.
 **Reader:** the product owner first, then the Opus lead who reviews it, then the Opus agent who builds any new read or gate and the Sonnet agent who builds the screens. Plain words come first in each section. Names in the sketches are the seed's illustrative ones (Hilton, Kearsney, D Erasmus, R Pillay, K Naidoo, J Smith, T Cele, M Khan, Mr Dlamini, Mrs Naidoo), never a real child's.
 
-**Lead's review (Opus):** pending.
+**Lead's review (Opus, 2026-10-02), before Kameel reads it.** Checked against the branch: the entry rule and the role table follow `roles.mjs`; phase A widens no read and needs no migration; the refused signals (§4.4) are the right ones; D11 keeps every signal off parents' and pupils' phones. The three findings in §3.6 (D15) are confirmed and become one small Opus fix, separate from this build:
+1. **`bowling_spells`** returns `age_band` (derived from a boy's date of birth) and the directive's maxima to every reader of the match's log, a scorer or a pupil included. The age band and the limits will be returned only under `player.workload.read`; everyone else gets the spells without them.
+2. **`shot_points`** reads `ball_event`, so a delivery the scorer voided can still be drawn on the match wagon wheel; `player_shot_points` already reads `ball_event_live`. It will read `ball_event_live` too.
+3. **`bowling_breaches`**: the comment names `player.development.read`; the policy is `player.workload.read`. The comment will be corrected.
+`teammanager` holding `medical.nature.read` and `availability` carrying `reason_kind` and `note` are as designed (ADR 0002, SCRBRD-110); this design keeps both off the cockpit (D4).
 
 ---
 
