@@ -19,6 +19,9 @@ import { DlsTablesPanel } from "./dlsTables.jsx";
 // Management screen (views/enrol.jsx): one form, one set of refusals in words.
 import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, grantableFor, issuedFrom } from "./enrol.jsx";
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
+// SCRBRD-140: the ways a person signs in (Me), and the office's Google claims (People).
+import { WaysToSignIn } from "./signins.jsx";
+import { ClaimsPanel } from "./claims.jsx";
 // SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
 import { LiftDeclarationPanel, LiftPolicyPanel, LiftPurgePanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
@@ -220,7 +223,11 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   const grantable = grantableFor(role);
 
   // The number on the People tab: things to fix, not things to read.
-  const attention = noAccount.length + noDob.length + linkEnded.length;
+  // Google sign-ins waiting for the office to look at (SCRBRD-140 §3.3). The
+  // read returns only claims on accounts this caller may issue a code to.
+  const canClaims = holdsCapability(role, "user.invite");
+  const claims = useLive("sign_in_claims", role, nonce);
+  const attention = noAccount.length + noDob.length + linkEnded.length + (canClaims ? claims.rows.length : 0);
 
   return (
     <div className="os-page">
@@ -255,6 +262,9 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
       </div>
 
       <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`}>
+        {tab === "users" && canClaims && signedIn() && (
+          <ClaimsPanel rows={claims.rows} loading={claims.loading} onChanged={() => setNonce((n) => n + 1)} onIssueCode={issueCodeFor}/>
+        )}
         {tab === "users" && (
           <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
                      noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}
@@ -716,6 +726,9 @@ function MeTab({ role }) {
           <VisionChoice/>
         </div>
       </Panel>
+
+      {/* SCRBRD-140: the Google accounts on this account, and adding another. */}
+      {live && <Panel><WaysToSignIn/></Panel>}
 
       <Panel>
         <CardHead title="My access"

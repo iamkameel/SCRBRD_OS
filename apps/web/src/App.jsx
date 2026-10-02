@@ -9,12 +9,14 @@ import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LandingPage } from "./auth/LandingPage.jsx";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
+// Somebody signed in who holds nothing yet: their requests, and how to ask (SCRBRD-140).
+import { NoSchool } from "./auth/NoSchool.jsx";
 import { NAV_META, ROLES } from "./design/roles.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
-import { useLive, useRows } from "./lib/live.js";
+import { useRows } from "./lib/live.js";
 import { useWaitingInvitations } from "./lib/invitations.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
@@ -134,35 +136,6 @@ function ViewChange({ page, title }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
   return <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="view-announcer">{said}</div>;
-}
-
-// What a person with no assignments sees: their requests, each with its
-// state, and nothing of the school's. Rows come from the server under the
-// request's own policy (mine, or ones I could answer — and they can answer
-// none).
-function PendingRequests({ name, onSignOut }) {
-  const [nudge, setNudge] = useState(0);
-  const rows = useLive("role_requests", "spectator", nudge).rows;
-  const withdraw = async (id) => { await api(`/api/requests/${id}/withdraw`, { method: "POST" }).catch(() => {}); setNudge((n) => n + 1); };
-  return (
-    <div data-testid="pending-requests" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:D.bg}}>
-      <div style={{maxWidth:"480px",width:"100%"}}>
-        <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:D.textPrimary,marginBottom:"4px"}}>Hello {name}</div>
-        <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginBottom:"16px"}}>Your account has no role yet. Requests are answered by the school.</div>
-        {rows.length===0&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>No requests on record.</div>}
-        {rows.map((r)=>(
-          <div key={r.id} data-testid={`request-${r.state}`} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",border:`1px solid ${D.border}`,borderRadius:D.md,background:D.surf1,marginBottom:"8px"}}>
-            <div style={{flex:1}}>
-              <div style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,fontWeight:600}}>{ROLES[r.role]?.label ?? r.role}{r.team?` · ${r.team}`:""}</div>
-              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{r.schoolName ?? "School"} · {r.state}{r.decidedNote?` — ${r.decidedNote}`:""}</div>
-            </div>
-            {r.state==="pending"&&<button onClick={()=>withdraw(r.id)} className="pressBtn" style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"4px 10px",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"11px"}}>Withdraw</button>}
-          </div>
-        ))}
-        <button onClick={onSignOut} className="pressBtn" style={{marginTop:"10px",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"12px"}}>Sign out</button>
-      </div>
-    </div>
-  );
 }
 
 export default function SCRBRD_OS() {
@@ -438,7 +411,7 @@ export default function SCRBRD_OS() {
       {/* The same sign-out the shell uses. This one cleared the profile and
           left the persisted session behind, so a reload put the next person
           back where the last one stood. */}
-      <PendingRequests name={userName} onSignOut={handleSignOut}/>
+      <NoSchool name={userName} onSignOut={handleSignOut}/>
     </>
   );
   if (appState === "onboarding") return (

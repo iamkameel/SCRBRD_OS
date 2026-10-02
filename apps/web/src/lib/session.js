@@ -65,6 +65,19 @@ export async function signInWithCode(email, code) {
 }
 
 /**
+ * The token a Google sign-in ended in (lib/signin.js): the same thirty-minute,
+ * device-bound token an office code ends in, so everything after it is exactly
+ * what signInWithCode does — keep it in memory, ask the server who this is.
+ * A person with no assignment yet gets a profile with none, and the shell shows
+ * them the school-less screen; nothing here decides what they may do.
+ */
+export async function signInWithToken(token) {
+  setToken(token);
+  _profile = await api("/api/session");
+  return _profile;
+}
+
+/**
  * Whether this server will accept the development sign-in.
  *
  * Read from /api/health rather than assumed, so the screen offers the seeded
