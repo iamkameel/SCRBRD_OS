@@ -55,6 +55,10 @@ jobs:
         env:
           VITE_API_BASE: ""
           VITE_FCM_VAPID_KEY: ${{ secrets.VITE_FCM_VAPID_KEY }}
+          # Continue with Google (SCRBRD-140): all three, or the client has no Google button.
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
 
       - name: Nothing confidential in the bundle
         run: pnpm check:bundle

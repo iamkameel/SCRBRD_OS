@@ -105,14 +105,11 @@ await new Promise((r) => web.listen(WEB_PORT, r));
 const browser = await chromium.launch({ ...launchOptions() });
 
 // ── API, as a person ──
-let addr = 0;
 const call = async (path, { method = "GET", token, body } = {}) => {
   const res = await fetch(API + path, { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: res.status, body: await res.json().catch(() => null) };
 };
-void addr;
-const login = async (email) => (await call("/api/auth/dev-login", { method: "POST", body: { email, deviceId: "device-signup-browser" } })).body?.token;
 const exchange = (tok) => call("/api/auth/firebase", { method: "POST", body: { idToken: tok, deviceId: "device-signup-browser" } });
 
 // ── The browser ──
@@ -269,7 +266,7 @@ try {
     ok("the account holds nothing", before.body?.assignments?.length === 0, before.body);
 
     await tid(P, `join-school-${HIL}`).click();
-    ok("choosing a school offers the four kinds", ["staff", "parent", "pupil", "follower"].every((k) => true) && (await tid(P, "join-kind-parent").count()) === 1);
+    ok("choosing a school offers the kinds", (await tid(P, "join-kind-parent").count()) === 1);
     // Pupil under 18: told, sends nothing.
     await tid(P, "join-kind-pupil").click();
     await tid(P, "join-pupil-minor").click();

@@ -32,7 +32,7 @@ import {
 
 const FONT = { head: "'Syne',sans-serif", body: "'DM Sans',sans-serif" };
 const text = (size = 14, color = T.content.secondary) => ({ fontFamily: FONT.body, fontSize: `${size}px`, lineHeight: 1.5, color });
-const card = { borderRadius: "16px", border: `1px solid ${T.line.normal}`, background: T.fill.panel, padding: "20px", marginBottom: "16px" };
+const card = () => ({ borderRadius: "16px", border: `1px solid ${T.line.normal}`, background: T.fill.panel, padding: "20px", marginBottom: "16px" });
 
 /** A button at the floors: 12px type, 44px tall. */
 function Btn({ children, kind = "quiet", style, ...rest }) {
@@ -70,8 +70,8 @@ function Field({ label, hint, children }) {
     </div>
   );
 }
-const input = { width: "100%", minHeight: "44px", boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
-  background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: "16px" };
+const input = () => ({ width: "100%", minHeight: "44px", boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
+  background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: "16px" });
 
 /** The Guardian's anonymous link, as the safeguarding screens carry it (GET /api/safeguarding/contacts). */
 function HelpLine() {
@@ -84,7 +84,7 @@ function HelpLine() {
   }, []);
   if (url === undefined) return null;
   return (
-    <div data-testid="no-school-help" style={{ ...card, marginBottom: 0 }}>
+    <div data-testid="no-school-help" style={{ ...card(), marginBottom: 0 }}>
       <div style={{ fontFamily: FONT.head, fontSize: "14px", fontWeight: 700, color: T.content.primary, marginBottom: "4px" }}>Worried about a child?</div>
       {url
         ? <div style={text(14)}>You do not need a school to speak up.
@@ -129,7 +129,7 @@ export function JoinSchool({ schools, onSent, post = api }) {
 
   if (sent) {
     return (
-      <div role="status" data-testid="join-sent" style={card}>
+      <div role="status" data-testid="join-sent" style={card()}>
         <div style={{ fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary, marginBottom: "6px" }}>Request sent</div>
         <div style={text(14)}>{sentWords(sent.kind, sent.school)}</div>
         <Btn style={{ marginTop: "14px" }} data-testid="join-another" onClick={() => { setSent(null); setKind(null); setForm({ role: "", extra: "", child: "", relationship: "", year: "", adult: "" }); }}>Ask for something else</Btn>
@@ -138,7 +138,7 @@ export function JoinSchool({ schools, onSent, post = api }) {
   }
 
   return (
-    <div data-testid="join-school" style={card}>
+    <div data-testid="join-school" style={card()}>
       <h2 style={{ margin: "0 0 4px", fontFamily: FONT.head, fontSize: "18px", fontWeight: 800, color: T.content.primary }}>Join a school</h2>
       <div style={{ ...text(14), marginBottom: "16px" }}>Say which school and who you are. Somebody at the school answers; nothing is given to you until they do.</div>
 
@@ -149,7 +149,7 @@ export function JoinSchool({ schools, onSent, post = api }) {
         {schools.length === 1 && <div data-testid="join-only-school" style={text(14, T.content.primary)}>{schools[0].name}</div>}
         {schools.length > 1 && <>
           {schools.length > 6 && (
-            <Field label="Search schools">{(id) => <input id={id} value={q} onChange={(e) => setQ(e.target.value)} style={input} autoComplete="off" data-testid="join-school-search"/>}</Field>
+            <Field label="Search schools">{(id) => <input id={id} value={q} onChange={(e) => setQ(e.target.value)} style={input()} autoComplete="off" data-testid="join-school-search"/>}</Field>
           )}
           <div style={{ maxHeight: "260px", overflowY: "auto" }}>
             {shown.map((s) => <Choice key={s.id} on={s.id === schoolId} title={s.name} data-testid={`join-school-${s.id}`} onClick={() => { setSchoolId(s.id); setProblem(""); }}/>)}
@@ -170,12 +170,12 @@ export function JoinSchool({ schools, onSent, post = api }) {
       {schoolId && kind === "staff" && (
         <div data-testid="join-form-staff">
           <Field label="What do you do at the school?">{(id) => (
-            <select id={id} value={form.role} onChange={(e) => set("role", e.target.value)} style={input} data-testid="join-staff-role">
+            <select id={id} value={form.role} onChange={(e) => set("role", e.target.value)} style={input()} data-testid="join-staff-role">
               <option value="">Choose…</option>
               {STAFF_ROLES.map((r) => <option key={r} value={r}>{ROLES[r]?.label ?? r}</option>)}
             </select>)}</Field>
           <Field label="Anything the office should know (optional)" hint="For example, which side you coach.">{(id) => (
-            <input id={id} value={form.extra} maxLength={EXTRA_MAX} onChange={(e) => set("extra", e.target.value)} style={input} autoComplete="off"/>)}</Field>
+            <input id={id} value={form.extra} maxLength={EXTRA_MAX} onChange={(e) => set("extra", e.target.value)} style={input()} autoComplete="off"/>)}</Field>
         </div>
       )}
 
@@ -183,14 +183,14 @@ export function JoinSchool({ schools, onSent, post = api }) {
         <div data-testid="join-form-parent">
           {/* Free text, on purpose (§5.3): this form never looks a child up. */}
           <Field label="Your child's name" hint="Type it as you would write it. The school office matches it by hand; nothing is looked up here.">{(id) => (
-            <input id={id} value={form.child} maxLength={CHILD_MAX} onChange={(e) => set("child", e.target.value)} style={input} autoComplete="off" data-testid="join-child"/>)}</Field>
+            <input id={id} value={form.child} maxLength={CHILD_MAX} onChange={(e) => set("child", e.target.value)} style={input()} autoComplete="off" data-testid="join-child"/>)}</Field>
           <Field label="How are you related to your child?">{(id) => (
-            <select id={id} value={form.relationship} onChange={(e) => set("relationship", e.target.value)} style={input} data-testid="join-relationship">
+            <select id={id} value={form.relationship} onChange={(e) => set("relationship", e.target.value)} style={input()} data-testid="join-relationship">
               <option value="">Choose…</option>
               {RELATIONSHIPS.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>)}</Field>
           <Field label="Your child's year or team (optional)">{(id) => (
-            <input id={id} value={form.year} maxLength={YEAR_MAX} onChange={(e) => set("year", e.target.value)} style={input} autoComplete="off"/>)}</Field>
+            <input id={id} value={form.year} maxLength={YEAR_MAX} onChange={(e) => set("year", e.target.value)} style={input()} autoComplete="off"/>)}</Field>
           {/* SCRBRD-092 / SCRBRD-110 §7: health monitoring is a separate yes, given later. */}
           <div role="note" data-testid="join-health-note" style={{ ...text(13), padding: "12px 14px", borderRadius: "10px", border: `1px solid ${T.line.normal}`, background: T.surface.base, marginBottom: "14px" }}>
             <strong style={{ color: T.content.primary }}>Health monitoring is separate, and off.</strong> It is not part of joining. Once the school has checked that you are your child's parent, you can turn it on, or leave it off, under Settings, Me.
@@ -210,7 +210,7 @@ export function JoinSchool({ schools, onSent, post = api }) {
           )}
           {form.adult === "yes" && (
             <Field label="Your year or team (optional)" hint="The office matches your request to your place on the school's list.">{(id) => (
-              <input id={id} value={form.extra} maxLength={EXTRA_MAX} onChange={(e) => set("extra", e.target.value)} style={input} autoComplete="off"/>)}</Field>
+              <input id={id} value={form.extra} maxLength={EXTRA_MAX} onChange={(e) => set("extra", e.target.value)} style={input()} autoComplete="off"/>)}</Field>
           )}
         </div>
       )}
