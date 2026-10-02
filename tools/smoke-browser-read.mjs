@@ -254,7 +254,9 @@ try {
   await ptid(`family-open-record-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
   await parent.page.waitForTimeout(1500);
   const rec = await ptid("their-record").innerText({ timeout: 4000 }).catch(() => "");
-  ok("his record: his name and date of birth, on her own screen", /R Pillay/.test(rec) && /1 Dec 2009/.test(rec), rec.slice(0, 200));
+  // The seed's birthdays are relative to today (db/98), so the day is read, not pinned.
+  const bornWords = (await owner.query(`select to_char(born, 'FMDD Mon YYYY') as d from player where id = $1`, [PILLAY])).rows[0]?.d;
+  ok(`his record: his name and date of birth (${bornWords}), on her own screen`, /R Pillay/.test(rec) && !!bornWords && rec.includes(bornWords), rec.slice(0, 200));
   ok("...the ID number is not on the screen until she asks", await ptid("record-id").count() === 0 && await ptid("record-id-show").count() === 1);
   await ptid("record-id-show").click({ timeout: 4000 }).catch(() => {});
   ok("...and is, once she taps Show", await ptid("record-id").count() === 1);
