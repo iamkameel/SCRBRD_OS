@@ -12,8 +12,9 @@
 --
 --   audit_log(school, kinds, since, before, before_key, limit)
 --       The one door. SECURITY DEFINER, search_path pinned, granted to the
---       application role alone. One uniform row — when, kind, action, actor,
---       subject kind, subject, school, detail, key — newest first, drawn
+--       application role alone; no school named is the reader's own. One
+--       uniform row — when, kind, action, actor, subject kind, subject,
+--       school, detail, key — newest first, drawn
 --       from the audit tables that exist, each ONLY under the audit.read
 --       predicate that table's own policy already admits:
 --
@@ -131,7 +132,13 @@ DECLARE
   v_seen   text[] := '{}';
   r        record;
 BEGIN
-  IF v_me IS NULL OR p_school IS NULL THEN RETURN; END IF;
+  IF v_me IS NULL THEN RETURN; END IF;
+  -- No school named: the reader's own.
+  p_school := coalesce(p_school, (SELECT u.school_id FROM app_user u WHERE u.id = v_me));
+  IF p_school IS NULL THEN
+    PERFORM log_restricted_read('audit_log', '{}'::uuid[], '{}'::text[], NULL);
+    RETURN;
+  END IF;
 
   -- Asked once: every school-wide source's own predicate is this one.
   v_any    := app_can('audit.read', p_school, '*'::text, NIL, NIL);

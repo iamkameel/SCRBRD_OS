@@ -160,6 +160,10 @@ const WALKS = [
   // ended with a reason, holding nothing on the next request, on the record,
   // told without the reason; the guardian link's rules and nobody's last key.
   "end-role",
+  // The audit log, read (SCRBRD-132 B2, db/79): under audit.read, one school
+  // at a time, a child in initials, never a safeguarding row or a reason,
+  // and every read of it on the record. (smoke-audit is access_log's own.)
+  "audit-log",
   "kit",
   "passport",
   "web",

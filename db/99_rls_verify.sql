@@ -3348,6 +3348,106 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/78 (section 57) ──────────────────────────────────────────────
 
+-- ┌── db/79 (section 58): the audit log, read (SCRBRD-132 B2) ─────────
+-- Its own world, as the owner. Readers: Hilton's office (audit.read and the
+-- office's key), Westville's office, Hilton's DSO (audit.read without the
+-- office's key) and a Hilton coach (no audit.read). Two children, both made
+-- up for this section: a pupil with an account (a player row and a player
+-- assignment) and a leaver whose only player assignment has ended. And the
+-- rows, at known instants on 1 January 2000: at Hilton, the pupil reading his
+-- own record, the office reading the pupil's account, a safeguarding read,
+-- the leaver's role ended with a reason that names him in full, the pupil
+-- taking a scoring pen, the pupil's scorer duty suspended; at Westville, a
+-- read and an ended role. Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_79() RETURNS jsonb AS $$
+DECLARE
+  HIL  uuid := '11111111-1111-1111-1111-111111111111';
+  WES  uuid := '22222222-2222-2222-2222-222222222222';
+  -- Far in the past, so a window on it holds these rows and nothing a real
+  -- school wrote: the verify bundle runs against production too.
+  T0   timestamptz := timestamptz '2000-01-01 10:00:00+02';
+  ids  jsonb := '{}'::jsonb;
+  r    record;
+  v_u  uuid; v_a uuid; v_p uuid; v_m uuid; v_d uuid;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('office', 'schooladmin', HIL),
+      ('wes',    'schooladmin', WES),
+      ('dso',    'dso',         HIL),
+      ('coach',  'coach',       HIL)) AS v(k, role, school)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (r.school, 'v79.' || r.k || '@example.invalid', 'V79 ' || initcap(r.k), r.role)
+    RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+    INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+    VALUES (v_u, r.role, r.school, CASE WHEN r.role = 'coach' THEN 'U15A' END, current_date - 30);
+  END LOOP;
+
+  -- The pupil: a player row, an account that is that player, a live player
+  -- assignment and a scorer's assignment for one fixture.
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, 'U15A', 'Verify Seventynine Pupil', 'Pupil', 779, 'batter',
+          (current_date - interval '14 years' - interval '79 days')::date)
+  RETURNING id INTO v_p;
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (HIL, 'v79.pupil@example.invalid', 'Verify Seventynine Pupil', 'player', v_p) RETURNING id INTO v_u;
+  ids := ids || jsonb_build_object('p_pupil', v_p, 'u_pupil', v_u);
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+  VALUES (v_u, 'player', HIL, 'U15A', current_date - 30);
+
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', 'Section Fiftyeight College U15A', T0, 'cricket', 'T20', 20, 'live') RETURNING id INTO v_m;
+  ids := ids || jsonb_build_object('m', v_m);
+  INSERT INTO role_assignment (person_id, role, school_id, fixture_id, valid_from)
+  VALUES (v_u, 'scorer', HIL, v_m, current_date - 30) RETURNING id INTO v_a;
+  INSERT INTO match_official (match_id, school_id, duty, person_name, person_id)
+  VALUES (v_m, HIL, 'scorer', 'Verify Seventynine Pupil', v_u) RETURNING id INTO v_d;
+  INSERT INTO duty_suspension (duty_id, assignment_id, school_id, suspended_at, suspended_by, reason)
+  VALUES (v_d, v_a, HIL, T0 + interval '5 minutes', (ids->>'u_office')::uuid,
+          'Suspended for db/99 section 58: Verify Seventynine Pupil missed the briefing.');
+  INSERT INTO scoring_audit (match_id, school_id, event, actor_id, epoch, at)
+  VALUES (v_m, HIL, 'claim', v_u, 1, T0 + interval '4 minutes');
+
+  -- The leaver: no player row of his own here, and his player role ended.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (HIL, 'v79.leaver@example.invalid', 'Verify Seventynine Leaver', 'player') RETURNING id INTO v_u;
+  ids := ids || jsonb_build_object('u_leaver', v_u);
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from, active)
+  VALUES (v_u, 'player', HIL, 'U15A', current_date - 300, false) RETURNING id INTO v_a;
+  INSERT INTO role_assignment_ending (assignment_id, person_id, role, school_id, team_code, reason, ended_by, ended_at)
+  VALUES (v_a, v_u, 'player', HIL, 'U15A',
+          'Verify Seventynine Leaver left the school at the end of term.', (ids->>'u_office')::uuid, T0 + interval '3 minutes');
+
+  -- The reads, as log_restricted_read() would have filed them.
+  INSERT INTO access_log (school_id, person_id, resource, record_ids, record_count, fields, occurred_at) VALUES
+    (HIL, (ids->>'u_pupil')::uuid, 'players', ARRAY[v_p], 1, '{born}', T0 + interval '1 minute'),
+    (HIL, (ids->>'u_office')::uuid, 'users', ARRAY[(ids->>'u_pupil')::uuid], 1, '{email}', T0 + interval '2 minutes'),
+    (HIL, (ids->>'u_dso')::uuid, 'safeguarding_concern', ARRAY[gen_random_uuid()], 1, '{account,reporter}', T0 + interval '6 minutes'),
+    (WES, (ids->>'u_wes')::uuid, 'players', ARRAY[gen_random_uuid(), gen_random_uuid()], 2, '{born}', T0 + interval '7 minutes');
+
+  -- Westville's own ended role.
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from, active)
+  VALUES ((ids->>'u_wes')::uuid, 'coach', WES, '1XI', current_date - 300, false) RETURNING id INTO v_a;
+  INSERT INTO role_assignment_ending (assignment_id, person_id, role, school_id, team_code, reason, ended_by, ended_at)
+  VALUES (v_a, (ids->>'u_wes')::uuid, 'coach', WES, '1XI', 'Westville''s own ending, for section 58.', (ids->>'u_wes')::uuid,
+          T0 + interval '8 minutes');
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many reads of the audit log are on the record for this person at this
+-- school, as the owner counts them (access_log is not the caller's to count).
+CREATE OR REPLACE FUNCTION _v79_reads(p_person uuid, p_school uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM access_log
+   WHERE resource = 'audit_log' AND person_id = p_person AND school_id IS NOT DISTINCT FROM p_school
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- ...and how many of those name this child among the records they disclosed.
+CREATE OR REPLACE FUNCTION _v79_reads_naming(p_person uuid, p_child uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM access_log
+   WHERE resource = 'audit_log' AND person_id = p_person AND record_ids @> ARRAY[p_child]
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/79 (section 58) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -14420,6 +14520,135 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 57
+
+  -- ┌── section 58 · db/79: the audit log, read (SCRBRD-132 B2) ────────
+  -- audit_log() is the one door to the audit tables for Management's tab,
+  -- under audit.read (Kameel, 2026-10-01): whoever holds it today. Under the
+  -- application role, against _seed_79()'s world on 1 January 2000 (a window
+  -- nothing real falls in):
+  --   (school)   Hilton's office reads Hilton's five rows and not
+  --              Westville's; Westville's office the reverse; neither reads
+  --              the other school by naming it
+  --   (none)     a coach, holding no audit.read, gets nothing
+  --   (masked)   the pupil and the leaver are "V S Pupil" and "V S Leaver"
+  --              wherever they appear — actor, subject, from/to — and never
+  --              whole; an adult is named whole
+  --   (safeguarding) no row whose resource starts `safeguarding`, for the
+  --              office or for the DSO whose read it was
+  --   (text)     no reason written about anybody reaches a row
+  --   (office)   the DSO (audit.read, not the office's key) reads no duty
+  --              suspension; the office does
+  --   (logged)   every call — answered, refused, empty — leaves exactly one
+  --              access_log row, at the school asked about, and the office's
+  --              names the child its rows named
+  --   (paged)    a page and the page after it, by (at, key), are the window,
+  --              without a repeat; a kind filter narrows to that kind
+  --
+  -- Each labelled assertion was falsified once — audit_log() or a helper
+  -- replaced in the database (as the owner, inside this file's transaction,
+  -- before the section ran) — and went red at its own assertion; seven breaks:
+  --   (school)        the access branch's `l.school_id = p_school` dropped
+  --   (none)          the gate `IF v_any THEN` made `IF true THEN`
+  --   (masked)        audit_mask_name() returning the name whole for a child
+  --   (safeguarding)  the `l.resource NOT LIKE 'safeguarding%'` cut dropped
+  --   (text)          the ended role's reason added to its row's detail
+  --   (office)        `v_office` dropped from both duty branches
+  --   (logged)        the PERFORM log_restricted_read() line dropped
+  -- (paged) was not falsified on its own: a cursor that repeats or skips a
+  -- row fails its count, which the run itself showed while it was written.
+  DECLARE
+    ids     jsonb := _seed_79();
+    W0      timestamptz := timestamptz '2000-01-01 00:00:00+02';
+    W1      timestamptz := timestamptz '2000-01-02 00:00:00+02';
+    U_OFF   uuid := (ids->>'u_office')::uuid;
+    U_WOFF  uuid := (ids->>'u_wes')::uuid;
+    U_DSO   uuid := (ids->>'u_dso')::uuid;
+    U_CO    uuid := (ids->>'u_coach')::uuid;
+    U_PUP   uuid := (ids->>'u_pupil')::uuid;
+    P_PUP   uuid := (ids->>'p_pupil')::uuid;
+    k       int;
+    k2      int;
+    v_txt   text;
+    v_at    timestamptz;
+    v_key   text;
+    v_keys1 text[];
+    v_keys2 text[];
+  BEGIN
+    -- (school) Hilton's office: Hilton's five rows in the window, and only Hilton's
+    PERFORM _as(U_OFF);
+    k := _v79_reads(U_OFF, HIL);
+    SELECT count(*), string_agg(l.kind, ',' ORDER BY l.kind) INTO n, v_txt FROM audit_log(HIL, NULL, W0, W1, NULL, 200) l;
+    PERFORM _assert(n = 5 AND v_txt = 'access,access,duty,role,scoring',
+      format('db/79 (school): Hilton''s office read %s rows in the window: %s', n, v_txt));
+    PERFORM _assert(_v79_reads(U_OFF, HIL) = k + 1,
+      format('db/79 (logged): the office''s read left %s access_log rows, not one', _v79_reads(U_OFF, HIL) - k));
+    PERFORM _assert(_v79_reads_naming(U_OFF, P_PUP) >= 1,
+      'db/79 (logged): the office''s read does not name the child its rows named');
+    SELECT count(*) INTO n FROM audit_log(HIL, NULL, NULL, NULL, NULL, 200) l WHERE l.school_id IS DISTINCT FROM HIL;
+    PERFORM _assert(n = 0, format('db/79 (school): Hilton''s office read %s rows of another school', n));
+    k := _v79_reads(U_OFF, WES);
+    SELECT count(*) INTO n FROM audit_log(WES, NULL, NULL, NULL, NULL, 200);
+    PERFORM _assert(n = 0, format('db/79 (school): Hilton''s office read %s of Westville''s rows by naming it', n));
+    PERFORM _assert(_v79_reads(U_OFF, WES) = k + 1, 'db/79 (logged): the office''s refused read of Westville is not on the record');
+    -- ...and Westville's office the reverse
+    PERFORM _as(U_WOFF);
+    SELECT count(*), string_agg(l.kind, ',' ORDER BY l.kind) INTO n, v_txt FROM audit_log(WES, NULL, W0, W1, NULL, 200) l;
+    PERFORM _assert(n = 2 AND v_txt = 'access,role', format('db/79 (school): Westville''s office read %s rows: %s', n, v_txt));
+    SELECT count(*) INTO n FROM audit_log(HIL, NULL, NULL, NULL, NULL, 200);
+    PERFORM _assert(n = 0, format('db/79 (school): Westville''s office read %s of Hilton''s rows', n));
+
+    -- (none) a coach holds no audit.read: nothing, and the asking is on the record
+    PERFORM _as(U_CO);
+    k := _v79_reads(U_CO, HIL);
+    SELECT count(*) INTO n FROM audit_log(HIL, NULL, NULL, NULL, NULL, 200);
+    PERFORM _assert(n = 0, format('db/79 (none): a coach read %s rows of the audit log', n));
+    PERFORM _assert(_v79_reads(U_CO, HIL) = k + 1, 'db/79 (logged): the coach''s refused read is not on the record');
+    PERFORM _assert(_v79_reads_naming(U_CO, P_PUP) = 0, 'db/79 (logged): the coach''s refused read names a child');
+
+    -- (masked) the children in initials, everywhere; an adult whole
+    PERFORM _as(U_OFF);
+    SELECT string_agg(row_to_json(l)::text, ' ') INTO v_txt FROM audit_log(HIL, NULL, W0, W1, NULL, 200) l;
+    PERFORM _assert(v_txt NOT LIKE '%Verify Seventynine%' AND v_txt NOT LIKE '%Seventynine Pupil%',
+      format('db/79 (masked): a child is named whole: %s', v_txt));
+    SELECT count(*) INTO n FROM audit_log(HIL, NULL, W0, W1, NULL, 200) l
+     WHERE (l.kind = 'access' AND l.action = 'Read players' AND l.actor = 'V S Pupil' AND l.subject = 'V S Pupil')
+        OR (l.kind = 'access' AND l.action = 'Read users'   AND l.actor = 'V79 Office' AND l.subject = 'V S Pupil')
+        OR (l.kind = 'role'    AND l.subject = 'V S Leaver' AND l.actor = 'V79 Office')
+        OR (l.kind = 'scoring' AND l.actor = 'V S Pupil' AND l.action = 'Took the scoring pen')
+        OR (l.kind = 'duty'    AND l.subject = 'V S Pupil' AND l.actor = 'V79 Office');
+    PERFORM _assert(n = 5, format('db/79 (masked): %s of the five rows read as masked: %s', n, v_txt));
+
+    -- (text) no reason reaches a row
+    PERFORM _assert(v_txt NOT LIKE '%left the school%' AND v_txt NOT LIKE '%briefing%' AND v_txt NOT LIKE '%section 58%',
+      format('db/79 (text): a reason reached the log: %s', v_txt));
+
+    -- (safeguarding) never, for the office or the DSO whose read it was
+    SELECT count(*) INTO n FROM audit_log(HIL, ARRAY['access'], NULL, NULL, NULL, 200) l
+     WHERE l.detail->>'resource' LIKE 'safeguarding%' OR l.action ILIKE '%safeguarding%';
+    PERFORM _assert(n = 0, format('db/79 (safeguarding): the office read %s safeguarding rows', n));
+    PERFORM _as(U_DSO);
+    k := _v79_reads(U_DSO, HIL);
+    SELECT count(*), count(*) FILTER (WHERE l.detail->>'resource' LIKE 'safeguarding%' OR l.action ILIKE '%safeguarding%'),
+           count(*) FILTER (WHERE l.kind = 'duty')
+      INTO n, k2, k FROM audit_log(HIL, NULL, W0, W1, NULL, 200) l;
+    PERFORM _assert(k2 = 0, format('db/79 (safeguarding): the DSO read %s safeguarding rows on the audit log', k2));
+    -- (office) the DSO holds audit.read and not the office's key: no suspension
+    PERFORM _assert(n = 4 AND k = 0, format('db/79 (office): the DSO read %s rows, %s of them duty suspensions', n, k));
+    PERFORM _assert(_v79_reads(U_DSO, HIL) >= 1, 'db/79 (logged): the DSO''s read is not on the record');
+
+    -- (paged) two rows, then the rest strictly older, by (at, key)
+    PERFORM _as(U_OFF);
+    SELECT array_agg(l.key ORDER BY l.at DESC, l.key DESC), min(l.at) INTO v_keys1, v_at
+      FROM audit_log(HIL, NULL, W0, W1, NULL, 2) l;
+    SELECT l.key INTO v_key FROM unnest(v_keys1) WITH ORDINALITY l(key, o) ORDER BY o DESC LIMIT 1;
+    SELECT array_agg(l.key) INTO v_keys2 FROM audit_log(HIL, NULL, W0, v_at, v_key, 10) l;
+    PERFORM _assert(cardinality(v_keys1) = 2 AND cardinality(v_keys2) = 3 AND NOT v_keys1 && v_keys2,
+      format('db/79 (paged): page one %s, page two %s', v_keys1, v_keys2));
+    SELECT count(*), string_agg(DISTINCT l.kind, ',') INTO n, v_txt FROM audit_log(HIL, ARRAY['role'], W0, W1, NULL, 200) l;
+    PERFORM _assert(n = 1 AND v_txt = 'role', format('db/79 (paged): the role filter read %s rows of %s', n, v_txt));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 58
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
