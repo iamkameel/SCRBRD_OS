@@ -171,7 +171,7 @@ group("The captain's gate (§1.2): five tests, and each refuses on its own");
   const H = { playerId: "p-rohan", school: HIL, team: "1XI", kind: "captain", season: "2026", withdrawnAt: null };
   ok("his live captain honour, this season, this side, this school: the view", captaincyOf([H], ME, "2026")?.label === "Captain");
   ok("a vice-captain has the same view, labelled for what he is (D1)", captaincyOf([{ ...H, kind: "vice_captain" }], ME, "2026")?.label === "Vice-captain");
-  ok("holding both, the captain's label wins", captaincyOf([{ ...H, kind: "vice_captain" }, H], ME, "2026")?.label === "Captain");
+  ok("holding both, the captain's label wins, whichever order the read gives them", captaincyOf([{ ...H, kind: "vice_captain" }, H], ME, "2026")?.label === "Captain" && captaincyOf([H, { ...H, kind: "vice_captain" }], ME, "2026")?.label === "Captain");
   ok("the kind alone: colours are not a captaincy", captaincyOf([{ ...H, kind: "colours" }], ME, "2026") === null);
   ok("...nor half colours, honours, player of the season or an award",
      ["half_colours", "honours", "player_of_season", "award"].every((k) => captaincyOf([{ ...H, kind: k }], ME, "2026") === null));
