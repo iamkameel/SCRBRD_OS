@@ -56,7 +56,9 @@ function inningsWords(b) {
   const how = b.status === "out" ? (b.dismissal ?? "out") : b.status === "retired" ? "retired" : "not out";
   const fours = b.fours > 0 ? `, ${b.fours} four${b.fours === 1 ? "" : "s"}` : "";
   const sixes = b.sixes > 0 ? `, ${b.sixes} six${b.sixes === 1 ? "" : "es"}` : "";
-  return `${b.name} ${b.runs} off ${b.balls}${fours}${sixes}; ${how}`;
+  // A paper scorebook may leave the balls blank: said as it is, never as a number.
+  const faced = b.balls == null ? `${b.runs}, balls not recorded` : `${b.runs} off ${b.balls}`;
+  return `${b.name} ${faced}${fours}${sixes}; ${how}`;
 }
 
 /** His batters against pace and spin: one read per batter, folded by type, rows that name no type dropped. */
@@ -130,7 +132,7 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
         <Part label={decided ? "Our batters" : "Our batters today"} testid="mc-captain-batters">
           {batters.map((b) => (
             <p key={b.id} style={fig}>
-              {b.name} {b.runs} ({b.balls}){b.status !== "out" && b.status !== "retired" ? " not out" : ""}{b.fours > 0 ? ` · ${b.fours}×4` : ""}{b.sixes > 0 ? ` · ${b.sixes}×6` : ""}
+              {b.name} {b.runs}{b.balls != null ? ` (${b.balls})` : ""}{b.status !== "out" && b.status !== "retired" ? " not out" : ""}{b.fours > 0 ? ` · ${b.fours}×4` : ""}{b.sixes > 0 ? ` · ${b.sixes}×6` : ""}
             </p>
           ))}
         </Part>
@@ -176,7 +178,7 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
       })}
 
       {decided && batters.length > 0 && (
-        <Part label="Their innings, in words" testid="mc-captain-words">
+        <Part label="Our innings, in words" testid="mc-captain-words">
           {batters.map((b) => <p key={b.id} style={{ ...body, fontSize: "14px" }}>{inningsWords(b)}.</p>)}
         </Part>
       )}
