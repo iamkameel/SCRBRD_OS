@@ -300,7 +300,7 @@ export function NamesOffPanel({ schoolId }) {
             style={{ minHeight: "44px", padding: "0 14px", borderRadius: D.pill, cursor: busy ? "default" : "pointer",
               fontFamily: D.body, fontSize: "13px", fontWeight: 600,
               border: `1px solid ${g.namesOff ? D.textPrimary : D.borderMed}`, background: g.namesOff ? D.textPrimary : "transparent",
-              color: g.namesOff ? textOn(D.textPrimary) : D.textPrimary }}>
+              color: g.namesOff ? inkOn(D.textPrimary) : D.textPrimary }}>
             {g.ageGroup === "open" ? "Open sides" : g.ageGroup}: {g.namesOff ? "names off" : "names shown"}
           </button>
         ))}

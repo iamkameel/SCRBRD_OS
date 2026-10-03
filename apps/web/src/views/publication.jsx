@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, inkOn, textOn } from "../design/tokens.js";
 import { api, apiStatus, signedIn } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { Btn, Card } from "../ui/primitives.jsx";
@@ -143,7 +143,7 @@ function GroundDisplaySetup({ matchId, sides }) {
           className="pressBtn"
           style={{ minHeight: "44px", padding: "0 14px", borderRadius: "999px", cursor: "pointer", fontFamily: D.body, fontSize: "13px",
             border: `1px solid ${value === v ? D.textPrimary : D.borderMed}`, background: value === v ? D.textPrimary : "transparent",
-            color: value === v ? textOn(D.textPrimary) : D.textPrimary, fontWeight: value === v ? 600 : 500 }}>
+            color: value === v ? inkOn(D.textPrimary) : D.textPrimary, fontWeight: value === v ? 600 : 500 }}>
           {label}
         </button>
       ))}
