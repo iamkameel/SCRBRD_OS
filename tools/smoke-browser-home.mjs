@@ -124,7 +124,10 @@ try {
   }
 
   group("2. No child's name");
-  ok(`none of the ${NAMES.length} words of the seed's players' names is on the page`, NAMES.length > 20 && namesIn(await text(v.page)).length === 0,
+  // The seed has 11 players, which make 12 words here (db/98); a database
+  // other walks have added to has more. At least 10, so the list is never
+  // empty by accident.
+  ok(`none of the ${NAMES.length} words of the seed's players' names is on the page`, NAMES.length >= 10 && namesIn(await text(v.page)).length === 0,
      namesIn(await text(v.page)).join(", "));
 
   group("3. The analytics switch starts nothing here; the app's next boot does");
