@@ -1,227 +1,125 @@
 
 import { useState } from "react";
-import { holdsCapability } from "../rbac/index.js";
 import { ROLES } from "../design/roles.js";
-import { D, T, textOn, themed } from "../design/tokens.js";
-import { roleColor } from "../lib/format.js";
-import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
-import { Icon } from "../ui/icons.jsx";
+import { D, T, themed } from "../design/tokens.js";
+import { humanDate } from "../lib/format.js";
+import { rolesPresent, staffFrom } from "../lib/staff.js";
+import { Avatar, Badge, Card, EmptyState, SectionHeader } from "../ui/primitives.jsx";
+import { useLive, useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
-//  STAFF VIEW — scorers, medical, drivers, groundskeepers
+//  STAFF VIEW — the school's staff, from its role assignments
 // ══════════════════════════════════════════════════════
 function StaffView({ role }) {
-  // Read through the choke point: row-scoped and column-masked for this
-  // principal. Importing the raw constant here would bypass both.
-  const GROUNDS = useRows("grounds", role);
-  const STAFF = useRows("staff", role);
+  // The school's own staff are the people who hold a staff role there: the
+  // `users` and `assignments` reads Settings → People uses, through the same
+  // choke point (row-scoped and column-masked for this principal). The old
+  // `staff` and `coach` tables are not read: nothing writes them (lib/staff.js).
+  const accounts = useLive("users", role);
+  const appointments = useLive("assignments", role);
   // The clearance register, for the reader's own school. Empty for anybody
   // the server did not hand it to, and the panel is not drawn: whether the
   // office may see who is unchecked is decided in clearance_register(), and
   // this screen only draws the answer.
   const REGISTER = useRows("clearance_register", role);
   const [filter, setFilter] = useState("all");
-  const [sel, setSel]       = useState(null);
-  const canEdit = holdsCapability(role,"user.role.assign");
+  const [selId, setSelId]   = useState(null);
 
-  // A name from ui/icons.jsx, drawn by <RoleIcon>.
-  const roleIcon  = r => r==="scorer"?"scorebook":r==="medical"?"stethoscope":r==="driver"?"bus":r==="facilities"?"sprout":"user";
-  const roleColor = r => ROLES[r]?.color || D.textMuted;
-  const filtered  = filter==="all" ? STAFF : STAFF.filter(s=>s.role===filter);
+  const today = new Date().toLocaleDateString("en-CA");
+  const STAFF = staffFrom(accounts.rows, appointments.rows, today);
+  const present = rolesPresent(STAFF).sort((a, b) => (ROLES[a]?.label ?? a).localeCompare(ROLES[b]?.label ?? b));
+  const filtered = filter === "all" ? STAFF : STAFF.filter((s) => s.roles.some((r) => r.role === filter));
+  const sel = STAFF.find((s) => s.id === selId) ?? null;
+  const loading = accounts.loading || appointments.loading;
+  const failed = !!accounts.error;
+  const label = (r) => ROLES[r]?.label ?? r;
+  const colour = (r) => ROLES[r]?.color ?? T.content.secondary;
+
+  const chip = (on, c) => ({
+    minHeight: `${T.floor.target}px`, padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, cursor: "pointer",
+    border: `1px solid ${on ? c : T.line.normal}`, background: on ? c + "22" : "transparent",
+    color: on ? T.content.primary : T.content.secondary, ...T.role.body, fontWeight: on ? 700 : 500,
+  });
+  const roleBadge = (r) => (
+    <Badge key={r.key} color={colour(r.role)} data-testid="staff-role" data-role={r.role}>
+      {label(r.role)}{r.team ? ` · ${r.team}` : ""}{r.state === "paused" ? " · paused" : ""}
+    </Badge>
+  );
 
   return (
-    <div className="os-page">
-      <SectionHeader title="Staff Profiles" sub="Scorers · Medical · Drivers · Groundskeepers" color={D.cyan}
-        actions={canEdit&&<Btn size="sm">+ Add Staff</Btn>}/>
+    <div className="os-page" data-testid="staff-view">
+      <SectionHeader title="Staff" sub="Everyone at the school who holds a staff role" color={D.cyan}/>
+      <p data-testid="staff-source" style={{ ...T.role.body, color: T.content.secondary, margin: `0 0 ${T.space.lg}`, maxWidth: "72ch" }}>
+        This is the school's role assignments. To add someone, or to give them another role, use Settings → People.
+      </p>
 
-      <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap"}}>
-        {["all","scorer","medical","driver","facilities"].map(f=>(
-          <button key={f} onClick={()=>{setFilter(f);setSel(null);}} className="pressBtn" style={{
-            padding:"6px 16px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
-            border:`1px solid ${filter===f?(ROLES[f]?.color||D.cyan)+"55":D.border}`,
-            background:filter===f?(ROLES[f]?.color||D.cyan)+"14":"transparent",
-            fontFamily:D.body,fontSize:"11px",fontWeight:filter===f?600:400,
-            color:filter===f?D.textPrimary:D.textMuted,
-          }}>{f==="all"?"All Staff":f==="facilities"?<><Icon name={roleIcon(f)}/> Groundskeepers</>:<><Icon name={roleIcon(f)}/> {f.charAt(0).toUpperCase()+f.slice(1)}s</>}</button>
-        ))}
-      </div>
-
-      {REGISTER.length>0&&<ClearanceRegister rows={REGISTER}/>}
-
-      <div style={{display:"grid",gridTemplateColumns:sel?"1fr 360px":"repeat(auto-fill,minmax(260px,1fr))",gap:"14px",alignItems:"start"}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:"12px"}}>
-          {filtered.map(s=>{
-            const rc = ROLES[s.role];
-            return (
-              <Card key={s.id} onClick={()=>setSel(s)} sx={{
-                padding:"16px",cursor:"pointer",
-                border:`1px solid ${sel?.id===s.id?roleColor(s.role)+"55":D.border}`,
-                background:sel?.id===s.id?roleColor(s.role)+"08":D.surf1,
-              }}>
-                <div style={{display:"flex",gap:"12px",alignItems:"flex-start",marginBottom:"12px"}}>
-                  <div style={{position:"relative"}}>
-                    <Avatar name={s.name} size={44} color={roleColor(s.role)}/>
-                    <div style={{position:"absolute",bottom:-2,right:-2,width:"14px",height:"14px",borderRadius:"50%",
-                      background:s.active?D.emerald:D.rose,border:`2px solid ${D.surf1}`,
-                      display:"flex",alignItems:"center",justifyContent:"center",fontSize:"9px"}}>
-                      <Icon name={roleIcon(s.role)}/>
-                    </div>
-                  </div>
-                  <div style={{flex:1}}>
-                    <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"2px"}}>{s.name}</div>
-                    <Badge color={roleColor(s.role)}><Icon name={roleIcon(s.role)}/> {s.role}</Badge>
-                  </div>
-                </div>
-                <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px",lineHeight:1.4}}>
-                  {s.experience?.split(".")[0]}.
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                  <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{s.phone}</span>
-                  {s.vehicles&&<Badge color={D.lime}>{s.vehicles.length} vehicle{s.vehicles.length>1?"s":""}</Badge>}
-                  {s.teamsAssigned&&<Badge color={D.sky}>{s.teamsAssigned.join(" · ")}</Badge>}
-                </div>
-              </Card>
-            );
-          })}
+      {present.length > 1 && (
+        <div role="group" aria-label="Filter by role" style={{ display: "flex", gap: T.space.sm, marginBottom: T.space.xl, flexWrap: "wrap" }}>
+          {["all", ...present].map((f) => (
+            <button key={f} type="button" onClick={() => { setFilter(f); setSelId(null); }} className="pressBtn" aria-pressed={filter === f}
+                    data-testid={`staff-filter-${f}`} style={chip(filter === f, f === "all" ? T.content.secondary : colour(f))}>
+              {f === "all" ? "Everyone" : label(f)}
+            </button>
+          ))}
         </div>
+      )}
 
-        {/* Detail panel */}
-        {sel&&(()=>{
-          const rc = ROLES[sel.role];
-          return (
-            <Card sx={{padding:"16px",position:"sticky",top:"16px",maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:"16px"}}>
-                <div style={{display:"flex",gap:"10px",alignItems:"center"}}>
-                  <Avatar name={sel.name} size={48} color={roleColor(sel.role)}/>
-                  <div>
-                    <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,lineHeight:1.2}}>{sel.name}</div>
-                    <div style={{marginTop:"4px",display:"flex",gap:"4px",flexWrap:"wrap"}}>
-                      <Badge color={roleColor(sel.role)}><Icon name={roleIcon(sel.role)}/> {sel.role}</Badge>
-                      <Badge color={sel.active?D.emerald:D.rose}>{sel.active?"Active":"Inactive"}</Badge>
-                    </div>
-                  </div>
+      {REGISTER.length > 0 && <ClearanceRegister rows={REGISTER}/>}
+
+      {failed ? (
+        <Card sx={{ padding: T.space.lg }}><EmptyState error/></Card>
+      ) : loading && STAFF.length === 0 ? (
+        <Card sx={{ padding: T.space.lg }}><EmptyState loading/></Card>
+      ) : filtered.length === 0 ? (
+        <Card sx={{ padding: T.space.lg }}>
+          <div data-testid="staff-none" style={{ ...T.role.body, color: T.content.secondary }}>
+            {STAFF.length === 0 ? "No one holds a staff role at this school yet. Add people in Settings → People." : "No one holds that role."}
+          </div>
+        </Card>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: sel ? "minmax(0,1fr) minmax(0,360px)" : "1fr", gap: T.space.lg, alignItems: "start" }}>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: T.space.md }}>
+            {filtered.map((s) => (
+              <li key={s.id}>
+                <button type="button" onClick={() => setSelId(sel?.id === s.id ? null : s.id)} className="pressBtn" aria-pressed={sel?.id === s.id}
+                        data-testid="staff-card" data-email={s.email ?? ""}
+                        style={{ width: "100%", minHeight: `${T.floor.target}px`, textAlign: "left", cursor: "pointer", padding: T.space.lg,
+                                 borderRadius: T.radius.md, background: sel?.id === s.id ? colour(s.roles[0].role) + "10" : T.surface.raised,
+                                 border: `1px solid ${sel?.id === s.id ? colour(s.roles[0].role) : T.line.normal}`, color: T.content.primary }}>
+                  <span style={{ display: "flex", gap: T.space.md, alignItems: "center", marginBottom: T.space.sm }}>
+                    <Avatar name={s.name} size={44} color={colour(s.roles[0].role)}/>
+                    <span style={{ ...T.role.body, fontWeight: 700 }} data-testid="staff-name">{s.name}</span>
+                  </span>
+                  <span style={{ display: "flex", gap: T.space.xs, flexWrap: "wrap" }}>{s.roles.map(roleBadge)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {sel && (
+            <Card sx={{ padding: T.space.lg }} data-testid="staff-detail">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: T.space.md, marginBottom: T.space.md }}>
+                <div style={{ display: "flex", gap: T.space.md, alignItems: "center" }}>
+                  <Avatar name={sel.name} size={48} color={colour(sel.roles[0].role)}/>
+                  <div style={{ ...T.role.title.md, color: T.content.primary }}>{sel.name}</div>
                 </div>
-                <button onClick={()=>setSel(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px",flexShrink:0}}>✕</button>
+                <button type="button" onClick={() => setSelId(null)} className="pressBtn" data-testid="staff-close"
+                        style={{ minHeight: `${T.floor.target}px`, minWidth: `${T.floor.target}px`, background: "none", border: "none", cursor: "pointer", color: T.content.secondary, ...T.role.body }}>
+                  Close
+                </button>
               </div>
-
-              {/* Contact */}
-              <div style={{background:D.surf2,borderRadius:D.md,padding:"10px 12px",marginBottom:"12px"}}>
-                {[["phone","Phone",sel.phone],["mail","Email",sel.email],sel.age&&["cake","Age",`${sel.age} years`]].filter(Boolean).map(([ic,l,v])=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${D.border}`}}>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name={ic}/> {l}</span>
-                    <span style={{fontFamily:sel.email&&l.includes("Email")?D.mono:D.body,fontSize:"11px",color:D.textPrimary}}>{v}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Qualifications */}
-              <div style={{marginBottom:"12px"}}>
-                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"7px"}}>QUALIFICATIONS</div>
-                {sel.qualifications?.map(q=>(
-                  <div key={q} style={{display:"flex",alignItems:"center",gap:"7px",padding:"4px 0"}}>
-                    <div style={{width:"5px",height:"5px",borderRadius:"50%",background:roleColor(sel.role),flexShrink:0}}/>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{q}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Experience */}
-              <div style={{marginBottom:"12px",background:D.surf2,borderRadius:D.md,padding:"10px 12px"}}>
-                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>EXPERIENCE</div>
-                <p style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>{sel.experience}</p>
-              </div>
-
-              {/* Role-specific fields */}
-              {sel.role==="scorer"&&(
-                <div style={{marginBottom:"12px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"7px"}}>SCORING SETUP</div>
-                  {[["System",sel.scoringSystem],["Teams",sel.teamsAssigned?.join(", ")],["Languages",sel.languages?.join(", ")],["Availability",sel.availability]].map(([l,v])=>(
-                    <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${D.border}`}}>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary,textAlign:"right",maxWidth:"60%"}}>{v}</span>
-                    </div>
-                  ))}
-                  <div style={{marginTop:"8px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"5px"}}>EQUIPMENT</div>
-                    <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>{sel.equipment?.map(e=><Pill key={e} color={D.orange}>{e}</Pill>)}</div>
-                  </div>
-                </div>
-              )}
-
-              {sel.role==="medical"&&(
-                <div style={{marginBottom:"12px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"7px"}}>MEDICAL PROFILE</div>
-                  {[["Specialisation",sel.specialisation],["Registered",sel.registeredWith],["Availability",sel.availability]].filter(([,v])=>v).map(([l,v])=>(
-                    <div key={l} style={{padding:"5px 0",borderBottom:`1px solid ${D.border}`}}>
-                      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{l}</div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary,marginTop:"2px"}}>{v}</div>
-                    </div>
-                  ))}
-                  {sel.concussionProtocol&&(
-                    <div style={{marginTop:"8px",background:D.rose+"10",borderRadius:D.sm,padding:"8px 10px",border:`1px solid ${D.rose}22`}}>
-                      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.roseText,letterSpacing:"0.08em",marginBottom:"4px"}}>CONCUSSION PROTOCOL</div>
-                      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textSecondary}}>{sel.concussionProtocol}</div>
-                    </div>
-                  )}
-                  <div style={{marginTop:"8px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"5px"}}>EMERGENCY EQUIPMENT</div>
-                    <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>{sel.emergencyEquipment?.map(e=><Pill key={e} color={D.rose}>{e}</Pill>)}</div>
-                  </div>
-                </div>
-              )}
-
-              {sel.role==="driver"&&(
-                <div style={{marginBottom:"12px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"7px"}}>VEHICLES</div>
-                  {sel.vehicles?.map(v=>(
-                    <div key={v.reg} style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,marginBottom:"8px",border:`1px solid ${D.border}`}}>
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                        <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:textOn(D.lime)}}>{v.reg}</span>
-                        <Badge color={v.condition==="Excellent"?D.emerald:v.condition==="Good"?D.sky:D.amber}>{v.condition}</Badge>
-                      </div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{v.type} · {v.capacity} seats</div>
-                      <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,marginTop:"3px"}}>Next service: {v.nextService}</div>
-                    </div>
-                  ))}
-                  <div style={{marginTop:"6px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"5px"}}>REGULAR ROUTES</div>
-                    {sel.regularRoutes?.map(r=>(
-                      <div key={r} style={{padding:"4px 0",display:"flex",gap:"7px",alignItems:"center"}}>
-                        <span style={{color:textOn(D.lime)}}>→</span>
-                        <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{r}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {sel.role==="facilities"&&(
-                <div style={{marginBottom:"12px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"7px"}}>GROUNDS PROFILE</div>
-                  {[["Assigned Grounds",sel.groundsAssigned?.map(id=>GROUNDS.find(g=>g.id===id)?.shortName).join(", ")],["Speciality",sel.speciality],["Pitch Prep",sel.pitchPreparation]].filter(([,v])=>v).map(([l,v])=>(
-                    <div key={l} style={{padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
-                      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{l}</div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary,marginTop:"2px"}}>{v}</div>
-                    </div>
-                  ))}
-                  <div style={{marginTop:"8px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"5px"}}>EQUIPMENT</div>
-                    <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>{sel.equipment?.map(e=><Pill key={e} color={D.teal}>{e}</Pill>)}</div>
-                  </div>
-                </div>
-              )}
-
-              {sel.notes&&(
-                <div style={{background:D.amber+"0a",borderRadius:D.md,padding:"9px 12px",border:`1px solid ${D.amber}18`}}>
-                  <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.amber,letterSpacing:"0.08em",marginBottom:"4px"}}>NOTES</div>
-                  <p style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>{sel.notes}</p>
-                </div>
-              )}
+              <div style={{ display: "flex", gap: T.space.xs, flexWrap: "wrap", marginBottom: T.space.md }}>{sel.roles.map(roleBadge)}</div>
+              <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "auto 1fr", gap: `${T.space.xs} ${T.space.lg}`, ...T.role.body }}>
+                <dt style={{ color: T.content.secondary }}>Email</dt>
+                <dd style={{ margin: 0, color: T.content.primary, wordBreak: "break-all" }}>{sel.email ?? "Not shown to you"}</dd>
+                {sel.teams.length > 0 && <><dt style={{ color: T.content.secondary }}>Sides</dt><dd style={{ margin: 0, color: T.content.primary }}>{sel.teams.join(", ")}</dd></>}
+                <dt style={{ color: T.content.secondary }}>Signed in</dt>
+                <dd style={{ margin: 0, color: T.content.primary }}>{sel.lastSeen ? humanDate(String(sel.lastSeen).slice(0, 10)) : "Never"}</dd>
+              </dl>
             </Card>
-          );
-        })()}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
