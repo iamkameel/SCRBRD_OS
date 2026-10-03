@@ -414,7 +414,8 @@ try {
     await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
     const errors = [];
     page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
-    await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    // The app is at /app since SCRBRD-142; / is the public home page.
+    await page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
     const press = async (/** @type {RegExp} */ re) => {
       const l = page.locator("button:not([disabled])", { hasText: re }).first();
       if (await l.count()) { await l.click({ timeout: 5000 }).catch(() => {}); await sleep(500); }

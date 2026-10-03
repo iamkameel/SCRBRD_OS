@@ -207,7 +207,10 @@ const press = async (page, re, scope = "button:not([disabled])") => {
 const until = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: WAIT }).then(() => true, () => false);
 
 async function signIn(page, who) {
-  if (!(await press(page, /Get Started|Log In/))) return false;
+  // The app opens on its login screen since SCRBRD-142 retired the landing
+  // page; its old "Get Started" button is pressed only if it is there.
+  const landing = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+  if (await landing.count()) await landing.click({ timeout: WAIT }).catch(() => {});
   // The pilot accounts appear once the page has found the server.
   if (!(await press(page, who))) return false;
   if (!(await press(page, /^Sign In$/))) return false;

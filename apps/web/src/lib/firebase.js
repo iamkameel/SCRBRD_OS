@@ -26,7 +26,8 @@
  * before any of them had been asked. Its identifiers are personal
  * information under POPIA, and a child's doubly so. So the SDK is not even
  * imported until a per-device preference says yes (lib/persist.js, key
- * "analytics"; the switch is on the landing page), which also keeps ~200 KB
+ * "analytics"; the switch is in the public home page's footer, SCRBRD-142
+ * §5.3, which sets the preference and starts nothing there), which keeps ~200 KB
  * of SDK out of the chunk every visitor downloads to reach the login screen.
  * Push messaging still needs the Firebase app object and asks for it lazily.
  */

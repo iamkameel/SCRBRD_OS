@@ -332,5 +332,60 @@ if (publicProblems.length) {
   console.error("  the design tokens and @scrbrd/scoring. Find the static import that reaches the rest.");
   process.exit(1);
 }
-console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry graph (ceiling ${ENTRY_LIMIT_KB} KB) · the public pages' graph (${publicKB} KB static, ceiling ${PUBLIC_LIMIT_KB} KB; ${publicWholeKB} KB with the lazy ground display) holds none of the ${NOT_PUBLIC.length} signed-in markers`);
+// ── The home page carries nothing signed-in either (SCRBRD-142) ──
+//
+// home.html is what a stranger's phone loads at / — the front door, which
+// search engines may index. Its graph, static AND lazy, must hold none of the
+// eight markers above: no scorer, no view, no App shell, no API client, no
+// governed read, no signed-in match route, no Firebase SDK (the analytics
+// switch in its footer only sets the device's preference, lib/persist.js),
+// no service worker. It must be the home bundle: it reads /api/public/live.
+// It must not carry the public pages' fold either — a stranger reading a
+// pitch does not download the scorer's engine — which the ceiling bounds: it
+// was measured at the first build, React and the tokens (§6.2, A9). And the
+// HTML stays small (A9: < 15 KB): it paints before any script.
+const HOME_HTML = join(DIST, "home.html");
+/**
+ * The home entry's whole graph. Measured 2026-10-02: 166 KB with placeholder
+ * sections; 249 KB with the sections mounted, of which the shared chunk is
+ * 222 KB — React, the tokens and ui/icons.jsx (the Tiles' icons, ~44 KB) —
+ * the home chunk 23 KB and lib/persist.js 3 KB. Over A9's ~220 KB guess by the
+ * icon vocabulary; a home-only icon set is the lever if it must come down.
+ */
+const HOME_LIMIT_KB = 260;
+const HOME_HTML_LIMIT_KB = 15;
+const homeProblems = [];
+let homeKB = 0;
+if (!existsSync(HOME_HTML)) {
+  homeProblems.push("dist/home.html is missing — the home page has no build (vite.config.js's `home` entry)");
+} else {
+  const page = readFileSync(HOME_HTML, "utf8");
+  const homeName = page.match(/<script[^>]+type="module"[^>]+src="\/?assets\/(home-[^"]+\.js)"/)?.[1];
+  const homeEntry = homeName ? js.find((f) => f.endsWith(homeName)) : undefined;
+  if (!homeEntry) homeProblems.push("dist/home.html loads no assets/home-*.js — the home entry did not build");
+  else {
+    const whole = wholeGraph(homeEntry);
+    homeKB = Math.round(whole.reduce((n, f) => n + statSync(f).size, 0) / 1024);
+    const text = whole.map((f) => readFileSync(f, "utf8")).join("\n");
+    const rest = js.filter((f) => !whole.includes(f)).map((f) => readFileSync(f, "utf8"));
+    if (!text.includes("/api/public/live")) homeProblems.push("the home graph does not read /api/public/live — it is not the home bundle");
+    for (const [what, marker] of NOT_PUBLIC) {
+      if (text.includes(marker)) homeProblems.push(`${what} is in the home page's graph, static or lazy ("${marker}" found)`);
+      else if (!rest.some((t) => t.includes(marker))) homeProblems.push(`${what}'s marker "${marker}" is in no chunk outside the home graph — the marker went stale`);
+    }
+    if (text.includes(DISPLAY_MARKER)) homeProblems.push(`the ground display is in the home page's graph ("${DISPLAY_MARKER}" found)`);
+    if (homeKB > HOME_LIMIT_KB) homeProblems.push(`the home page's graph is ${homeKB} KB; the ceiling is ${HOME_LIMIT_KB} KB`);
+  }
+  const htmlKB = Buffer.byteLength(page) / 1024;
+  if (htmlKB > HOME_HTML_LIMIT_KB) homeProblems.push(`dist/home.html is ${htmlKB.toFixed(1)} KB; the ceiling is ${HOME_HTML_LIMIT_KB} KB`);
+}
+if (homeProblems.length) {
+  console.error("✗ THE HOME PAGE'S BUNDLE REACHES THE SIGNED-IN APP, OR OUTGREW ITSELF");
+  for (const p of homeProblems) console.error(`  ${p}`);
+  console.error("\n  apps/web/src/home/ may import only what a signed-out page draws: the design");
+  console.error("  tokens, the theme, lib/persist.js's preferences and its own reads (home/reads.js).");
+  console.error("  Not public/reads.js (the fold), not lib/firebase.js, not lib/api.js.");
+  process.exit(1);
+}
+console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry graph (ceiling ${ENTRY_LIMIT_KB} KB) · the public pages' graph (${publicKB} KB static, ceiling ${PUBLIC_LIMIT_KB} KB; ${publicWholeKB} KB with the lazy ground display) holds none of the ${NOT_PUBLIC.length} signed-in markers · nor does the home page's (${homeKB} KB, ceiling ${HOME_LIMIT_KB} KB)`);
 process.exit(0);

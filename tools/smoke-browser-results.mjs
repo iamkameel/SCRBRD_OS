@@ -98,7 +98,7 @@ async function seed() {
 
 const browser = await chromium.launch({ ...launchOptions() });
 let ipN = 0;
-async function open(theme = "floodlit", viewport = { width: 1280, height: 900 }, path = "/") {
+async function open(theme = "floodlit", viewport = { width: 1280, height: 900 }, path = "/app") {
   const ctx = await browser.newContext({ viewport, extraHTTPHeaders: { "x-forwarded-for": `10.69.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
@@ -120,6 +120,8 @@ const click = async (page, re, ms = 4000) => {
   await page.waitForTimeout(300);
   return true;
 };
+// The app is at /app since SCRBRD-142 (/ is the public home page) and opens
+// on its login screen; the old landing's button is clicked only if present.
 async function signIn(page, email) {
   await click(page, /Get Started|Log In/, 5000);
   await page.waitForTimeout(500);

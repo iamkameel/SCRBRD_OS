@@ -702,12 +702,160 @@ console.log("\n── The client's address ──");
   ok("two trusted proxies: the second from the right", clientAddress(req("6.6.6.6, 1.2.3.4, 35.1.1.1"), 2) === "1.2.3.4");
 }
 
+// ═════════════════════════════════════════════════════════════════
+console.log("\n── The home page's strip: GET /api/public/live (SCRBRD-142, db/82) ──");
+/**
+ * A database whose public_live_fixtures() applies §1.2's rule over a small
+ * world — what db/99 §61 proves the real function does — so this suite can
+ * hold the API to it: the rows the database answers are the rows served, and
+ * nothing else of them. Each row also carries a ground and a player's name,
+ * columns the real function does not return: the API names what it sends,
+ * so neither may reach the wire whatever the database hands back.
+ */
+const L = {
+  reads: 0, users: /** @type {string[]} */ ([]),
+  listed: /** @type {Set<string>} */ (new Set()),
+  /** @type {{id: string, home: string, away: string | null, pub: {home: boolean, away: boolean}, status: string}[]} */
+  fixtures: [],
+};
+const LF = "77777777-0000-0000-0000-0000000001f1";
+const liveRow = (/** @type {typeof L.fixtures[number]} */ f) => ({
+  match_id: f.id, home_label: f.home, home_code: "1XI", away_label: f.away ?? "Verify Typed College 1XI", away_code: f.away ? "1XI" : null,
+  away_on_platform: !!f.away, status: f.status, format: "T20", overs: 20, starts_at: "2026-10-03T08:00:00Z",
+  scores: [{ innings: 0, runs: 142, wickets: 3, balls: 110, side: "home" }, { innings: 1, runs: 20, wickets: 0, balls: 12, side: "away" }],
+  result: f.status === "complete"
+    ? { outcome: "away_win", margin_kind: "wickets", margin: 6, decided_by: "play", winner_side: "away", play_outcome: "away_win",
+        play_winner_side: "away", play_margin_kind: "wickets", play_margin: 6, decision_applied: false, decision_kind: null,
+        decision_side: null, decision_overrides_play: null, super_overs: [] }
+    : { outcome: "in_progress", margin_kind: null, margin: null, decided_by: null, winner_side: null, play_outcome: "in_progress",
+        play_winner_side: null, play_margin_kind: null, play_margin: null, decision_applied: false, decision_kind: null,
+        decision_side: null, decision_overrides_play: null, super_overs: [] },
+  served_on: "2026-10-03",
+  ground: "Gordon Sherwood Oval", player_full_name: "Daniel Erasmus",
+});
+const livePool = {
+  query: async () => ({ rows: [] }),
+  connect: async () => ({
+    release() {},
+    /** @param {string} text @param {any[]} [params] */
+    async query(text, params = []) {
+      if (/set_config\('app\.user_id'/.test(text)) { L.users.push(params[0]); return { rows: [] }; }
+      if (/^(BEGIN|COMMIT|ROLLBACK)/.test(text) || /set_config/.test(text)) return { rows: [] };
+      if (/sa_today\(\)/.test(text) && !/public_live_fixtures/.test(text)) return { rows: [{ d: "2026-10-03" }] };
+      if (/public_live_fixtures\(\)/.test(text)) {
+        L.reads++;
+        return { rows: L.fixtures.filter((f) => (f.pub.home && L.listed.has(f.home)) || (!!f.away && f.pub.away && L.listed.has(f.away)))
+          .sort((a, b) => Number(b.status === "live") - Number(a.status === "live")).map(liveRow) };
+      }
+      throw new Error(`unexpected query ${text}`);
+    },
+  }),
+};
+{
+  const site = publicPages({ pool: /** @type {any} */ (livePool), enabled: true, secret: SECRET, trustProxyHops: 1, now: () => clock });
+  const srv = createServer(async (req, res) => { if (!(await site.handle(req, res))) { res.writeHead(599); res.end(); } });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", () => r(null)));
+  const port = /** @type {any} */ (srv.address()).port;
+  /** @param {{token?: string}} [x] */
+  const read = async ({ token } = {}) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api/public/live`, { headers: { "x-forwarded-for": "198.51.100.9, 203.0.113.77", ...(token ? { authorization: token } : {}) } });
+    const headers = Object.fromEntries([...r.headers].filter(([k]) => !["date", "connection", "keep-alive"].includes(k)));
+    return { status: r.status, headers, body: await r.text() };
+  };
+  const ids = async () => (/** @type {any[]} */ (JSON.parse((await read()).body).fixtures)).map((f) => f.id);
+
+  // §1.4, row by row: one fixture, Hilton at home to Westville, the switches
+  // changed between reads and the cache told, as the triggers tell it.
+  const HILTON = "Hilton College", WESTVILLE = "Westville Boys' High";
+  L.fixtures = [{ id: LF, home: HILTON, away: WESTVILLE, pub: { home: true, away: false }, status: "live" }];
+  /** @param {string[]} listed @param {{home: boolean, away: boolean}} pub */
+  const world = (listed, pub) => { L.listed = new Set(listed); L.fixtures[0].pub = pub; site.changed({ k: "school", id: "x" }); };
+  world([HILTON], { home: true, away: false });
+  ok("§1.4 row 1: home lists, home published — on the home page", (await ids()).includes(LF));
+  world([HILTON], { home: true, away: true });
+  ok("§1.4 row 2: home lists, away does not, both published — on", (await ids()).includes(LF));
+  world([WESTVILLE], { home: false, away: true });
+  ok("§1.4 row 3: the away school lists its own published side — on", (await ids()).includes(LF));
+  world([], { home: true, away: true });
+  ok("§1.4 row 4: neither lists — off, link only", !(await ids()).includes(LF));
+  world([HILTON], { home: false, away: false });
+  ok("§1.4 row 5: listed, nothing published — off", !(await ids()).includes(LF));
+
+  world([HILTON], { home: true, away: false });
+  const plain = await read();
+  const j = JSON.parse(plain.body);
+  const f = j.fixtures[0];
+  ok("the card's fields: the schools and codes, live, the start, the scores with their sides",
+     j.asOf === "2026-10-03" && f.home.label === HILTON && f.home.code === "1XI" && f.away.label === WESTVILLE && f.away.onPlatform === true
+     && f.status === "live" && f.startsAt === "2026-10-03T08:00:00.000Z"
+     && JSON.stringify(f.scores.map((/** @type {any} */ s) => s.side)) === '["home","away"]' && f.scores[0].runs === 142, f);
+  ok("...a live fixture has no result words yet", f.result === null);
+  ok("...and no ground, no player, nothing the API did not name", !/Gordon|Sherwood|ground|Erasmus|Daniel|player/i.test(plain.body)
+     && JSON.stringify(Object.keys(f).sort()) === JSON.stringify(["away", "format", "home", "id", "overs", "result", "scores", "startsAt", "status"]), plain.body);
+  const staff = await read({ token: "Bearer eyJhbGciOi.staff.token" });
+  ok("a staff token changes nothing: the same bytes and headers", staff.body === plain.body && JSON.stringify(staff.headers) === JSON.stringify(plain.headers));
+  ok("...and every read ran as nobody", L.users.length > 0 && L.users.every((u) => u === ""), L.users);
+  ok("headers: X-Robots-Tag noindex, public max-age=10 at the edge (D14), JSON",
+     plain.status === 200 && /noindex/.test(plain.headers["x-robots-tag"] ?? "") && plain.headers["cache-control"] === "public, max-age=10"
+     && /application\/json/.test(plain.headers["content-type"] ?? ""), plain.headers);
+
+  // The cache: one entry for everybody; 5 s while a card is live, 60 s otherwise.
+  let before = L.reads;
+  await read(); await read();
+  ok("the cache answers repeated reads with one query", L.reads === before);
+  clock += LIVE_TTL_MS + 1;
+  await read();
+  ok("with a live card the list lives 5 s", L.reads === before + 1);
+  L.fixtures[0].status = "complete";
+  clock += LIVE_TTL_MS + 1;
+  const done = JSON.parse((await read()).body).fixtures[0];
+  ok("a finished card carries the result in words, sides named", done.result === "Westville Boys' High 1XI won by 6 wickets", done.result);
+  before = L.reads;
+  clock += LIVE_TTL_MS + 1;
+  await read();
+  ok("with nothing live the TTL flips to 60 s: no query after 5 s", L.reads === before);
+  clock += SETTLED_TTL_MS;
+  await read();
+  ok("...and one after 60", L.reads === before + 1);
+
+  // Notifications clear it (db/82's trigger on public_listing; db/59's on
+  // fixture_publication and match).
+  before = L.reads;
+  site.changed({ k: "school", id: "22222222-2222-2222-2222-222222222222" });
+  await read();
+  ok("a public_listing notification ({k: school}) clears it: the next read queries", L.reads === before + 1);
+  site.changed({ k: "match", id: "77777777-0000-0000-0000-00000000beef" });
+  await read();
+  ok("...and so does any fixture's ({k: match}): a publication or a start moves a card", L.reads === before + 2);
+  site.changed({ k: "player", id: "aaaaaaaa-0000-0000-0000-000000000001" });
+  await read();
+  ok("...but not a player's: the list names nobody", L.reads === before + 2);
+  ok("a fixed cache key that no fixture id can be", !/^[0-9a-f-]{36}$/.test("live") && site.cache.entries.has("live"));
+
+  site.close(); await new Promise((r) => srv.close(() => r(null)));
+
+  const offSite = publicPages({ pool: /** @type {any} */ (livePool), enabled: false, secret: null });
+  const offSrv = createServer(async (req, res) => { if (!(await offSite.handle(req, res))) { res.writeHead(599); res.end(); } });
+  await new Promise((r) => offSrv.listen(0, "127.0.0.1", () => r(null)));
+  const readsOff = L.reads;
+  const offR = await fetch(`http://127.0.0.1:${/** @type {any} */ (offSrv.address()).port}/api/public/live`);
+  ok("off: the one 404, and nothing read", offR.status === 404 && (await offR.text()) === NOT_FOUND && L.reads === readsOff);
+  offSite.close(); await new Promise((r) => offSrv.close(() => r(null)));
+}
+
 console.log("\n── The shell ──");
 {
   const index = readFileSync(join(ROOT, "apps", "web", "index.html"), "utf8");
   const boot = index.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1] ?? "";
   const norm = (/** @type {string} */ s) => s.replace(/\s+/g, " ").trim();
   ok("the shell's theme boot is index.html's, line for line", norm(boot) === norm(THEME_BOOT));
+  // SCRBRD-142: the home page paints before its bundle the same way, and is
+  // the one public page with no robots meta (D4: it may be indexed).
+  const home = readFileSync(join(ROOT, "apps", "web", "home.html"), "utf8");
+  ok("home.html's theme boot is index.html's, line for line",
+     norm(home.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1] ?? "") === norm(THEME_BOOT));
+  ok("home.html carries no robots meta (D4) and names no match in its preview",
+     !/name="robots"/.test(home) && /og:title" content="SCRBRD/.test(home));
   const html = shellHtml({ view: "live", matchId: M1, header: { homeLabel: "<script>x</script>", awayLabel: "A\"B", scores: [] } });
   ok("a team name is escaped in the shell", !html.includes("<script>x</script>") && html.includes("&lt;script&gt;") && html.includes("A&quot;B"));
 }

@@ -43,5 +43,6 @@ firebase.messaging().onBackgroundMessage((payload) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const id = event.notification?.data?.notificationId;
-  event.waitUntil(clients.openWindow(id ? `/?notice=${encodeURIComponent(id)}` : "/"));
+  // The app is at /app; / is the public home page (SCRBRD-142).
+  event.waitUntil(clients.openWindow(id ? `/app?notice=${encodeURIComponent(id)}` : "/app"));
 });
