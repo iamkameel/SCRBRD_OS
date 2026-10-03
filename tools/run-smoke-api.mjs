@@ -330,6 +330,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // name; the analytics switch starts nothing there; a listed fixture's card
   // with no ground, nofollow, landing on /live/:id.
   "browser-home",
+  // SCRBRD-142 phase 2's switch and Fields → Add ground: the director of sport lists
+  // the school and the public list carries (then drops) a published fixture, the
+  // panel's line follows; a one-side publisher's switch is disabled with its
+  // reason; the office adds a field and a pitch on it, a duplicate is refused in
+  // words; a coach has neither; 12px and 44px at 390 wide in Daylight.
+  "browser-listing",
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
   // the eighteen card, and the sign-up row — both themes, 12px and 44px.
   "browser-consent",

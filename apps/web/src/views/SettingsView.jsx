@@ -26,6 +26,8 @@ import { WaysToSignIn } from "./signins.jsx";
 import { ClaimsPanel } from "./claims.jsx";
 // SCRBRD-083 C4 (db/47): a school's names-off switch per age group.
 import { NamesOffPanel } from "./publicname.jsx";
+// SCRBRD-142 phase 2: the school lists its published matches on the home page.
+import { ListingPanel } from "./listing.jsx";
 // SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
 import { LiftDeclarationPanel, LiftPolicyPanel, LiftPurgePanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
@@ -1099,6 +1101,9 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
                   read says this reader may change it (broadcast.publish,
                   school-wide); public_names_off_set() decides again. */}
               {live && holdsCapability(role, "broadcast.publish") && <NamesOffPanel schoolId={s.id}/>}
+              {/* The listing switch (db/82): drawn for anybody the read lets see it,
+                  and disabled, with the reason, for one who may not change it. */}
+              {live && holdsCapability(role, "broadcast.publish") && <ListingPanel schoolId={s.id}/>}
             </Panel>
           );
         })}

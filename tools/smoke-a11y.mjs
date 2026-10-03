@@ -47,6 +47,7 @@ import { captainApi, IDS, MATCH } from "./a11y-captain-mock.mjs";
 import { cockpitApi, MATCH as COCKPIT } from "./a11y-cockpit-mock.mjs";
 import { signupApi } from "./a11y-signup-mock.mjs";
 import { importApi } from "./a11y-import-mock.mjs";
+import { listingApi, MATCH as LISTING_MATCH } from "./a11y-listing-mock.mjs";
 import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
@@ -161,7 +162,12 @@ const TYPE_FLOOR_CEILING = {
   // with a bad line reported, and clean; the Staff list and one person opened. Measured inside their own
   // regions. Born at 0, and kept there.
   importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-};                   // 103 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
+  // The school's listing switch (Settings → School), the fixture panel's listing line and Fields → Add ground
+  // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
+  // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
+  // Measured inside their own regions. Born at 0, and kept there.
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+};                   // 115 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
  * Things tapped under 44px, on the pad (§3.5, §3.8: "no tappable element
@@ -213,6 +219,11 @@ const TAP_FLOOR_CEILING = {
   // with a bad line reported, and clean; the Staff list and one person opened. Measured inside their own
   // regions. Born at 0, and kept there.
   importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
+  // The school's listing switch (Settings → School), the fixture panel's listing line and Fields → Add ground
+  // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
+  // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
+  // Measured inside their own regions. Born at 0, and kept there.
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
 };
 
 /**
@@ -256,7 +267,8 @@ const CONTRAST_CEILING = {
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
-              importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0 },
+              importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0,
@@ -264,7 +276,8 @@ const CONTRAST_CEILING = {
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
-              importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0 },
+              importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0 },
 };
 
 /**
@@ -321,6 +334,11 @@ const EMOJI_CEILING = {
   // with a bad line reported, and clean; the Staff list and one person opened. Measured inside their own
   // regions. Born at 0, and kept there.
   importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
+  // The school's listing switch (Settings → School), the fixture panel's listing line and Fields → Add ground
+  // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
+  // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
+  // Measured inside their own regions. Born at 0, and kept there.
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -817,6 +835,104 @@ async function importWalk(theme) {
     ok("no page errors on the import and staff screens", errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} import walk threw: ${e.message?.slice(0, 160)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * THE LISTING SWITCH, ITS LINE AND ADD GROUND (SCRBRD-142 phase 2; PILOT_LOAD
+ * gap 4): the director of sport, against tools/a11y-listing-mock.mjs — no
+ * server, no database — at 1280 wide and at 390 (screens named with an m). The
+ * fixture panel's listing line; Settings → School's switch off, on, and a
+ * reader's (disabled, with its reason); Fields → Add ground, and with a refusal
+ * showing. Measured inside their own regions, every control named. Who may list
+ * and who may add a ground are tools/smoke-browser-listing.mjs's, against the
+ * real stack.
+ */
+async function listingWalk(theme, width) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const m = width < 500 ? "m" : "";
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width, height: width < 500 ? 844 : 900 }, ...(m ? { isMobile: true, hasTouch: true } : {}) });
+  await offline(ctx);
+  const { handle, state } = listingApi();
+  await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
+    const u = new URL(route.request().url());
+    const r = handle(route.request().method(), u.pathname, u.searchParams, route.request().method() === "POST" ? route.request().postDataJSON() : undefined);
+    return route.fulfill({ status: r.status, contentType: "application/json", body: JSON.stringify(r.body) });
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const goTo = async (nav) => {
+    const bar = page.locator(`[data-testid="nav-${nav}"]:visible, [data-testid="mnav-${nav}"]:visible`).first();
+    if (await bar.count()) await bar.click({ timeout: 5000 }).catch(() => {});
+    else {
+      await page.locator('[data-testid="mnav-more"]').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.locator(`[data-testid="drawer-${nav}"]`).click({ timeout: 5000 }).catch(() => {});
+    }
+    await page.waitForTimeout(1200);
+  };
+  const check = async (screen, region) => {
+    await page.waitForTimeout(500);
+    ok(`${T_} ${width} ${screen}: the region is on the page`, await page.locator(region).count() === 1);
+    await measure(page, theme, `${screen}${m}`, region);
+    const inRegion = await page.evaluate((region) => [...document.querySelectorAll(`${region} button, ${region} a[href], ${region} input, ${region} select`)]
+      .filter((el) => !(el.getAttribute("aria-label") || el.textContent || (el.id && document.querySelector(`label[for="${el.id}"]`)?.textContent) || "").trim()).length, region);
+    ok(`${T_} ${width} ${screen}: every control in it has a name`, inRegion === 0);
+  };
+  const HIL = "11111111-1111-1111-1111-111111111111";
+  try {
+    group(`${T_} ${width} — the listing switch, its line and Add ground`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+    if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    await page.locator("#login-email").fill("sarah@example.invalid");
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(2400);
+    ok("the director of sport signs in", await tid("os-main").count() === 1 || await tid("persona-bar").count() === 1);
+
+    await goTo("matches");
+    await tid(`match-card-${LISTING_MATCH}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="publish-listing"]', { timeout: 6000 }).catch(() => {});
+    ok("the fixture's panel carries the listing line, the does-not-list form", /does not list/.test(await tid("publish-listing").innerText().catch(() => "")));
+    await check("listingline", '[data-testid="publish-listing"]');
+
+    await goTo("settings");
+    await page.locator("#settings-tab-school").click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector(`[data-testid="listing-${HIL}"]`, { timeout: 6000 }).catch(() => {});
+    ok("Settings → School has the listing switch, off", await tid("listing-switch").getAttribute("aria-checked") === "false");
+    await check("listing", `[data-testid="listing-${HIL}"]`);
+    await tid("listing-switch").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    ok("the switch turns on", await tid("listing-switch").getAttribute("aria-checked") === "true");
+    await check("listingon", `[data-testid="listing-${HIL}"]`);
+
+    state.mayChange = false;
+    await page.locator("#settings-tab-users").click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.locator("#settings-tab-school").click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="listing-why"]', { timeout: 6000 }).catch(() => {});
+    ok("a reader who may not change it: the switch is disabled, with the reason", await tid("listing-switch").isDisabled() && await tid("listing-why").count() === 1);
+    await check("listingro", `[data-testid="listing-${HIL}"]`);
+
+    await goTo("fields");
+    await tid("add-ground-open").click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="add-ground-form"]', { timeout: 5000 }).catch(() => {});
+    ok("Fields has Add ground, opening the form", await tid("add-ground-form").count() === 1);
+    await check("addground", '[data-testid="add-ground-form"]');
+    await tid("add-ground-name").fill("verify   OVAL");
+    await tid("add-ground-save").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="add-ground-refused"]', { timeout: 5000 }).catch(() => {});
+    ok("a name the school has is refused in words", /already exists at this school/.test(await tid("add-ground-refused").innerText().catch(() => "")));
+    await check("addgrounderr", '[data-testid="add-ground-form"]');
+    ok("no page errors on the listing and Add ground screens", errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} ${width} listing walk threw: ${e.message?.slice(0, 160)}`, false);
   } finally {
     await ctx.close();
   }
@@ -1759,12 +1875,16 @@ try {
   await captainWalk("floodlit");
   await cockpitWalk("floodlit");
   await importWalk("floodlit");
+  await listingWalk("floodlit", 1280);
+  await listingWalk("floodlit", 390);
   await signupWalk("floodlit");
   await practiceWalk("floodlit");
   await walk("daylight");
   await captainWalk("daylight");
   await cockpitWalk("daylight");
   await importWalk("daylight");
+  await listingWalk("daylight", 1280);
+  await listingWalk("daylight", 390);
   await signupWalk("daylight");
   await practiceWalk("daylight");
 
