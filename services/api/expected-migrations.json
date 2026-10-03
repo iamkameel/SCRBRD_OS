@@ -79,5 +79,6 @@
   "78_public_shot_words.sql",
   "79_audit_log.sql",
   "80_audit_log_grants.sql",
-  "81_signup_google.sql"
+  "81_signup_google.sql",
+  "82_public_listing.sql"
 ]

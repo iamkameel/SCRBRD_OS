@@ -3634,6 +3634,65 @@ CREATE OR REPLACE FUNCTION _v81_log(p_resource text, p_user uuid) RETURNS intege
   SELECT count(*)::int FROM access_log WHERE resource = p_resource AND p_user = ANY (record_ids)
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/81 (section 60) ──────────────────────────────────────────────
+-- ┌── db/82 (section 61): listing on the home page, the live read (SCRBRD-142) ──
+-- Seven fixtures written as the owner, six of them today at noon in South
+-- Africa, each a row of the design's §1.4 table or one beside it. Nothing is
+-- published or listed here: the section does that as the schools' own
+-- publishers. f1 is live, at a ground, with two innings in its log (Hilton
+-- batting first) so the score carries its side. Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_82() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  GROUND uuid := 'ffffffff-0000-0000-0000-000000000001';   -- Gordon Sherwood Oval
+  noon   timestamptz := (sa_today()::timestamp + interval '12 hours') AT TIME ZONE 'Africa/Johannesburg';
+  ids    jsonb := '{}';
+  m      uuid;
+BEGIN
+  -- f1 · Hilton at home to a typed side; Hilton publishes and lists (row 1)
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, '1XI', 'Verify Eightytwo College 1XI', noon, 'cricket', 'T20', 20, 'live', GROUND) RETURNING id INTO m;
+  ids := ids || jsonb_build_object('f1', m);
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, ball_type, value, payload)
+  VALUES
+    (m, HIL, 1, 1, 0, SCORER, 'v82', 'v82-' || m || '-1', 1, now(), 'innings_start', NULL, NULL,
+     '{"battingTeam": "1XI", "bowlingTeam": "Verify Eightytwo College 1XI", "overs": 20}'),
+    (m, HIL, 2, 1, 0, SCORER, 'v82', 'v82-' || m || '-2', 2, now(), 'ball', 'run', 4, '{"bowler": "Typed Eightytwo"}'),
+    (m, HIL, 3, 1, 1, SCORER, 'v82', 'v82-' || m || '-3', 3, now(), 'innings_start', NULL, NULL,
+     '{"battingTeam": "Verify Eightytwo College 1XI", "bowlingTeam": "1XI", "overs": 20, "target": 5}'),
+    (m, HIL, 4, 1, 1, SCORER, 'v82', 'v82-' || m || '-4', 4, now(), 'ball', 'run', 1, '{"striker": "Typed Batter"}');
+  -- f2 · Hilton v Westville; both publish; Hilton lists, Westville does not (row 2)
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, '2XI', WES, '2XI', 'Westville Boys'' High 2XI', noon + interval '1 hour', 'cricket', 'T20', 20, 'scheduled', GROUND)
+  RETURNING id INTO m;
+  ids := ids || jsonb_build_object('f2', m);
+  -- f3 · Westville at home to Hilton; only Hilton (away) publishes; Hilton lists (row 3)
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (WES, 'U15A', HIL, 'U15A', 'Hilton College U15A', noon - interval '2 hours', 'cricket', 'T20', 20, 'complete')
+  RETURNING id INTO m;
+  ids := ids || jsonb_build_object('f3', m);
+  -- f4 · Westville at home to a typed side; Westville publishes; nobody lists (row 4)
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (WES, '1XI', 'Verify Eightytwo Academy 1XI', noon, 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('f4', m);
+  -- f5 · Hilton at home, Hilton lists, nobody publishes (row 5)
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14A', 'Verify Eightytwo School U14A', noon, 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('f5', m);
+  -- f6 · Westville at home to Hilton; only Westville publishes; Hilton (away) lists
+  --      but has published nothing of its own
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (WES, 'U16A', HIL, 'U16A', 'Hilton College U16A', noon, 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('f6', m);
+  -- f7 · Hilton yesterday; published and listed: nothing from yesterday (D13)
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U13A', 'Verify Eightytwo Prep U13A', noon - interval '1 day', 'cricket', 'T20', 20, 'complete') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('f7', m);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/82 (section 61) ──────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -15416,6 +15475,152 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 60
+  -- ┌── section 61 · db/82: listing on the home page, and the live read (SCRBRD-142) ──
+  -- docs/design/SCRBRD-142_public_home_page.md §1.2–§1.4, §2.2; PUBLIC_DATA
+  -- rule 7 as amended (D1a). Two schools, one listing at a time: a fixture is
+  -- on the home page when, for at least one side, that side is published AND
+  -- its school lists. Signed out (what the API's public read gets) for every
+  -- read of public_live_fixtures(); as each school's publisher for every
+  -- switch. _seed_82() builds seven fixtures, nothing published or listed.
+  --
+  --   (default)    nothing is listed until a school lists: no fixture of
+  --                _seed_82()'s answers while every side is published
+  --   (door)       a coach, and Westville's publisher for Hilton, cannot list
+  --   (rows)       §1.4 row by row with Hilton listing: f1 (home lists, home
+  --                published), f2 (home lists, both published, away does not
+  --                list), f3 (home does not list, the away school lists and
+  --                published its side) answer; f4 (neither lists), f5
+  --                (listed, nothing published), f6 (the listing school
+  --                published nothing of its own) and f7 (yesterday) do not
+  --   (both)       Westville lists too: f4 and f6 join
+  --   (unlist)     Hilton stops listing: f1 and f3 leave at once; f2 stays,
+  --                Westville's own published side and its listing hold it
+  --   (withdrawn)  Westville withdraws its side of f2: gone
+  --   (card)       f1's row: the schools' names and codes, live, its two
+  --                innings with the side that batted each (home, away);
+  --                its ground's name appears nowhere in any row
+  --   (read)       each school's publisher reads its own switch and not the
+  --                other's; a coach reads none
+  --
+  -- Falsified once each, by replacing public_live_fixtures() in the database
+  -- (as the owner, before the verify ran, then restored) and watching the section
+  -- go red at its own assertion: the listing test dropped from the away
+  -- branch (default: two answered before anyone listed); fixture_side_published() dropped from the home
+  -- branch (rows: f5 answered); the day test dropped (rows: f7 answered);
+  -- the side lookup dropped (card).
+  DECLARE
+    ids    jsonb := _seed_82();
+    U_WPUB uuid := '88888888-0000-0000-0000-00000000047a';   -- sportsadmin, Westville, school-wide (§25)
+    U_C2   uuid := '88888888-0000-0000-0000-00000000000a';   -- 2XI coach, Hilton
+    F1 uuid; F2 uuid; F3 uuid; F4 uuid; F5 uuid; F6 uuid; F7 uuid;
+    mine   uuid[];
+    v_ok boolean; v_reason text; n int; j jsonb; v_list text; v_first uuid;
+  BEGIN
+    F1 := (ids->>'f1')::uuid; F2 := (ids->>'f2')::uuid; F3 := (ids->>'f3')::uuid; F4 := (ids->>'f4')::uuid;
+    F5 := (ids->>'f5')::uuid; F6 := (ids->>'f6')::uuid; F7 := (ids->>'f7')::uuid;
+    mine := ARRAY[F1, F2, F3, F4, F5, F6, F7];
+
+    -- Publish as each school's own publisher (fixture_publish(), db/47).
+    PERFORM _as(U_SARAH);
+    FOREACH v_list IN ARRAY ARRAY[F1::text || ':home', F2::text || ':home', F3::text || ':away', F7::text || ':home'] LOOP
+      SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(split_part(v_list, ':', 1)::uuid, split_part(v_list, ':', 2), true) s;
+      PERFORM _assert(v_ok, format('§61: Hilton could not publish %s (%s)', v_list, v_reason));
+    END LOOP;
+    PERFORM _as(U_WPUB);
+    FOREACH v_list IN ARRAY ARRAY[F2::text || ':away', F4::text || ':home', F6::text || ':home'] LOOP
+      SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(split_part(v_list, ':', 1)::uuid, split_part(v_list, ':', 2), true) s;
+      PERFORM _assert(v_ok, format('§61: Westville could not publish %s (%s)', v_list, v_reason));
+    END LOOP;
+
+    -- (default)
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_live_fixtures() x WHERE x.match_id = ANY (mine);
+    PERFORM _assert(n = 0, format('§61 (default): %s fixtures answered with no school listing', n));
+    PERFORM _assert((SELECT column_default FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'public_listing' AND column_name = 'listed') = 'false',
+      '§61 (default): a listing row does not default to off');
+
+    -- (door)
+    PERFORM _as(U_C2);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_listing_set(HIL, true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('§61 (door): a coach listed Hilton (%s %s)', v_ok, v_reason));
+    PERFORM _as(U_WPUB);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_listing_set(HIL, true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('§61 (door): Westville''s publisher listed Hilton (%s %s)', v_ok, v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_live_fixtures() x WHERE x.match_id = ANY (mine);
+    PERFORM _assert(n = 0, format('§61 (door): a refused listing put %s fixtures on the home page', n));
+
+    -- (rows)
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_listing_set(HIL, true) s;
+    PERFORM _assert(v_ok, format('§61 (rows): Hilton''s director of sport could not list (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT string_agg(z.k, ',' ORDER BY z.k) INTO v_list
+      FROM (SELECT CASE x.match_id WHEN F1 THEN 'f1' WHEN F2 THEN 'f2' WHEN F3 THEN 'f3' WHEN F4 THEN 'f4'
+                                   WHEN F5 THEN 'f5' WHEN F6 THEN 'f6' WHEN F7 THEN 'f7' END AS k
+              FROM public_live_fixtures() x WHERE x.match_id = ANY (mine)) z;
+    PERFORM _assert(v_list = 'f1,f2,f3', format('§61 (rows): Hilton listing, the home page answers %s (expected f1,f2,f3)', v_list));
+    -- Live first.
+    SELECT y.match_id INTO v_first FROM public_live_fixtures() y WHERE y.match_id = ANY (mine) LIMIT 1;
+    PERFORM _assert(v_first = F1, format('§61 (rows): the live fixture is not first (%s)', v_first));
+
+    -- (both)
+    PERFORM _as(U_WPUB);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_listing_set(WES, true) s;
+    PERFORM _assert(v_ok, format('§61 (both): Westville''s publisher could not list (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT string_agg(z.k, ',' ORDER BY z.k) INTO v_list
+      FROM (SELECT CASE x.match_id WHEN F1 THEN 'f1' WHEN F2 THEN 'f2' WHEN F3 THEN 'f3' WHEN F4 THEN 'f4'
+                                   WHEN F5 THEN 'f5' WHEN F6 THEN 'f6' WHEN F7 THEN 'f7' END AS k
+              FROM public_live_fixtures() x WHERE x.match_id = ANY (mine)) z;
+    PERFORM _assert(v_list = 'f1,f2,f3,f4,f6', format('§61 (both): both listing, the home page answers %s', v_list));
+
+    -- (unlist)
+    PERFORM _as(U_SARAH);
+    SELECT s.ok INTO v_ok FROM public_listing_set(HIL, false) s;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT string_agg(z.k, ',' ORDER BY z.k) INTO v_list
+      FROM (SELECT CASE x.match_id WHEN F1 THEN 'f1' WHEN F2 THEN 'f2' WHEN F3 THEN 'f3' WHEN F4 THEN 'f4'
+                                   WHEN F5 THEN 'f5' WHEN F6 THEN 'f6' WHEN F7 THEN 'f7' END AS k
+              FROM public_live_fixtures() x WHERE x.match_id = ANY (mine)) z;
+    PERFORM _assert(v_ok AND v_list = 'f2,f4,f6', format('§61 (unlist): Hilton unlisted, the home page answers %s', v_list));
+
+    -- (withdrawn)
+    PERFORM _as(U_WPUB);
+    PERFORM fixture_publish(F2, 'away', false);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_live_fixtures() x WHERE x.match_id = F2;
+    PERFORM _assert(n = 0, '§61 (withdrawn): f2 answered after its only listing school withdrew its side');
+
+    -- (card) Hilton lists again for f1's row.
+    PERFORM _as(U_SARAH);
+    PERFORM public_listing_set(HIL, true);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT to_jsonb(x) INTO j FROM public_live_fixtures() x WHERE x.match_id = F1;
+    PERFORM _assert(j->>'home_label' = 'Hilton College' AND j->>'home_code' = '1XI'
+                    AND j->>'away_label' = 'Verify Eightytwo College 1XI' AND j->>'away_code' IS NULL
+                    AND (j->>'away_on_platform')::boolean = false AND j->>'status' = 'live',
+      format('§61 (card): f1 reads %s', j));
+    PERFORM _assert(jsonb_path_query_array(j->'scores', '$[*].side') = '["home", "away"]'::jsonb
+                    AND jsonb_path_query_array(j->'scores', '$[*].runs') = '[4, 1]'::jsonb,
+      format('§61 (card): f1''s scores are %s', j->'scores'));
+    SELECT count(*) INTO n FROM public_live_fixtures() x WHERE to_jsonb(x)::text ~ 'Gordon Sherwood|ffffffff-0000-0000-0000-000000000001';
+    PERFORM _assert(n = 0, format('§61 (card): %s rows carry a ground', n));
+
+    -- (read)
+    PERFORM _as(U_WPUB);
+    SELECT string_agg(l.school_id::text, ',') INTO v_list FROM public_listing l;
+    PERFORM _assert(v_list = WES::text, format('§61 (read): Westville''s publisher reads the switches of %s', v_list));
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM public_listing l WHERE l.school_id = HIL;
+    PERFORM _assert(n = 1, '§61 (read): Hilton''s director of sport cannot read her own switch');
+    PERFORM _as(U_C2);
+    SELECT count(*) INTO n FROM public_listing;
+    PERFORM _assert(n = 0, format('§61 (read): a coach reads %s listing switches', n));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 61
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

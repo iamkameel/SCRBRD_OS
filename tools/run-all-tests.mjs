@@ -13,6 +13,7 @@ const SUITES = [
   ["laws-spec","packages/scoring/test/laws-spec.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
+  ["home-routing","apps/web/test/home-routing.test.mjs"],
   ["teams",    "packages/policy/test/teams.test.mjs"],
   ["sa-id",    "packages/policy/test/sa-id.test.mjs"],
   ["dob",      "packages/policy/test/date-of-birth.test.mjs"],
@@ -208,6 +209,10 @@ const SUITES = [
   // failure, a mocked fetch.
   ["weather-hint", "apps/web/test/weather-hint.test.mjs"],
   ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The public home page's sections (SCRBRD-142 phase 1): signed out, the
+  // strip and news hidden on a 404, the analytics toggle writes the pref and
+  // starts nothing, the 12px and 44px floors, the copy.
+  ["home-page", "apps/web/test/home-page.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],

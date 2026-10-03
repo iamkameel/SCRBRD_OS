@@ -867,6 +867,24 @@ group("§6 step 3 — the signed-out reads name their columns, and none §3 forb
      Object.hasOwn(selectedBy(fns.find((f) => f.name === "public_shot_sectors")?.body ?? "").tables, "ball_event"));
   ok("...and a read of the never-public mark is refused whole (C5)",
      publicReadProblems("SELECT m.set_on FROM player_never_public m").some((p) => /player_never_public/.test(p)));
+
+  // SCRBRD-142 (db/82): the home page's strip. Held to the rule above like
+  // every public_*() read, and to more: it names no child, so it reads no
+  // player at all; and it says where no child is (D3), so it reads no ground.
+  const liveRead = fns.find((f) => f.name === "public_live_fixtures");
+  const liveTables = selectedBy(liveRead?.body ?? "").tables;
+  ok("db/82 has public_live_fixtures()", !!liveRead, names.join(" "));
+  ok("public_live_fixtures() reads the fixture, the schools' names and the score — and no player, no ground, no toss, no official",
+     ["match", "school", "ball_event"].every((t) => Object.hasOwn(liveTables, t))
+     && ["player", "ground", "match_toss", "official", "match_official"].every((t) => !Object.hasOwn(liveTables, t))
+     && !/\bground_id\b|\bplayer\b/i.test(liveRead?.body ?? ""), JSON.stringify(liveTables));
+  ok("...of school, only its name and id", JSON.stringify([...(liveTables.school ?? [])].sort()) === '["id","name"]', String(liveTables.school));
+  const withGround = (liveRead?.body ?? "").replace("LEFT JOIN school aws", "LEFT JOIN ground g ON g.id = l.id LEFT JOIN school aws")
+    .replace("l.status, l.format", "g.name, l.status, l.format");
+  ok("...and the check sees a ground joined in", Object.hasOwn(selectedBy(withGround).tables, "ground"));
+  const withBorn = (liveRead?.body ?? "").replace("JOIN school hs", "JOIN player p ON p.school_id = l.school_id JOIN school hs")
+    .replace("l.status, l.format", "p.born, l.status, l.format");
+  ok("...and the rule refuses a date of birth slipped in (N1)", publicReadProblems(withBorn).some((p) => /player\.born/.test(p)));
 }
 
 console.log("\n" + "─".repeat(52));

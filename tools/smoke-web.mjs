@@ -90,14 +90,35 @@ try {
 
   group("The client is served beside the API, from one origin");
   {
+    // No home.html in this build yet: / falls back to the app's index, so a
+    // build without the home page is never a blank root (SCRBRD-142).
     const index = await get("/");
-    ok("the root is the app's index", index.status === 200 && /id=root/.test(index.body));
+    ok("the root, with no home page built, is the app's index", index.status === 200 && /id=root/.test(index.body) && !/HOME-PAGE/.test(index.body));
     ok("...as HTML", /text\/html/.test(index.type));
     ok("...and never cached, because it names the hashed bundles", /no-cache/.test(index.cache));
     const asset = await get("/assets/app-abc123.js");
     ok("a hashed asset is served", asset.status === 200 && /the bundle/.test(asset.body));
     ok("...as JavaScript", /javascript/.test(asset.type));
     ok("...cached hard, because its name changes when it changes", /immutable/.test(asset.cache));
+  }
+
+  // SCRBRD-142 §6.2: / and /privacy are the public home page; the app is at
+  // /app and every other client route, as before. firebase.json says the same.
+  group("The home page is at / and /privacy; the app at /app");
+  {
+    await writeFile(join(dist, "home.html"), "<!doctype html><title>SCRBRD</title><div id=root>HOME-PAGE</div>");
+    const home = await get("/");
+    ok("the root is the home page", home.status === 200 && /HOME-PAGE/.test(home.body));
+    ok("...as HTML, never cached", /text\/html/.test(home.type) && /no-cache/.test(home.cache));
+    const privacy = await get("/privacy");
+    ok("/privacy is the home page's too", privacy.status === 200 && /HOME-PAGE/.test(privacy.body));
+    const app = await get("/app");
+    ok("/app is the app's index", app.status === 200 && /id=root/.test(app.body) && !/HOME-PAGE/.test(app.body));
+    ok("...never cached", /no-cache/.test(app.cache));
+    const named = await get("/home.html");
+    ok("home.html by name is itself, never cached", /HOME-PAGE/.test(named.body) && /no-cache/.test(named.cache));
+    const nested = await get("/privacy/more");
+    ok("a path under /privacy is the app's, not the home page's", nested.status === 200 && !/HOME-PAGE/.test(nested.body));
   }
 
   group("The address bar belongs to the client, except under /api");

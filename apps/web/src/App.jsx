@@ -6,7 +6,6 @@
  * rbac/, never from the mock constants directly.
  */
 import { Suspense, lazy, useState, useEffect, useRef } from "react";
-import { LandingPage } from "./auth/LandingPage.jsx";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
 // Somebody signed in who holds nothing yet: their requests, and how to ask (SCRBRD-140).
@@ -145,7 +144,10 @@ export default function SCRBRD_OS() {
   // again. Nothing below needs to know the theme exists.
   useTheme();
   // ── App-level state ──
-  const [appState,  setAppState]  = useState("landing"); // landing|login|onboarding|app
+  // The app opens on the login screen: the public home page at / is the front
+  // door now (SCRBRD-142, home.html), and the app lives at /app. The in-app
+  // landing page it replaced is gone.
+  const [appState,  setAppState]  = useState("login"); // login|onboarding|pending|app
   const [role,      setRole]      = useState("superadmin");
   const [userName,  setUserName]  = useState("Super Admin");
   const [page,      setPage]      = useState("dashboard");
@@ -199,9 +201,6 @@ export default function SCRBRD_OS() {
   };
 
   // Auth handlers
-  const handleLandingEnter = () => setAppState("onboarding");
-  const handleLandingLogin  = () => setAppState("login");
-
   const handleLogin = (r, n, p) => {
     // Signed in with nothing: an account whose requests are still with the
     // school. No role, no shell; the requests, and a way out.
@@ -241,7 +240,7 @@ export default function SCRBRD_OS() {
     setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
-    setAppState("landing");
+    setAppState("login");
   };
 
   const handleLoginSignUp = () => setAppState("onboarding");
@@ -313,7 +312,7 @@ export default function SCRBRD_OS() {
   };
 
   // ── Session durability ──────────────────────────────────
-  // A reload mid-over must not drop the scorer back to the landing page. The
+  // A reload mid-over must not drop the scorer back to the login screen. The
   // match log itself is saved by the scorer; this is the far smaller matter of
   // where the person was, so they land back on the pad instead of navigating
   // in from scratch while play continues.
@@ -322,7 +321,9 @@ export default function SCRBRD_OS() {
     (async () => {
       const s = await loadSession();
       if (cancelled || !s) { restoredRef.current = true; return; }
-      if (s.appState) setAppState(s.appState);
+      // A session saved before SCRBRD-142 may say "landing", a state that no
+      // longer exists: it is the login screen now, never a blank page.
+      if (s.appState) setAppState(s.appState === "landing" ? "login" : s.appState);
       if (s.role) setRole(s.role);
       if (s.userName) setUserName(s.userName);
       if (s.page) setPage(s.page);
@@ -397,11 +398,6 @@ export default function SCRBRD_OS() {
   }, [appState, role]);
 
   // ── Auth screens ──
-  if (appState === "landing") return (
-    <><style>{GLOBAL_CSS}</style>
-      <LandingPage onEnter={handleLandingEnter} onLogin={handleLandingLogin}/>
-    </>
-  );
   if (appState === "login") return (
     <><style>{GLOBAL_CSS}</style>
       {/* From a live pad (SCRBRD-078): the real sign-in only, and back to

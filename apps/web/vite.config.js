@@ -1,8 +1,32 @@
+import { copyFileSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+/**
+ * dist/app.html: the app's page under a second name, for Firebase Hosting
+ * (SCRBRD-142 §6.2). Hosting serves an existing file before it applies any
+ * rewrite, and it answers `/` with dist/index.html — so a rewrite of `/` to
+ * the home page never fires while index.html is deployed. firebase.json
+ * therefore leaves index.html out of the upload and rewrites `/` and
+ * `/privacy` to /home.html and everything else to /app.html. index.html stays
+ * the app for the dev server, serveClient and every browser walk.
+ */
+function appHtml() {
+  let out = "";
+  return {
+    name: "scrbrd-app-html",
+    apply: /** @type {const} */ ("build"),
+    /** @param {{root: string, build: {outDir: string}}} c */
+    configResolved(c) { out = resolve(c.root, c.build.outDir); },
+    closeBundle() {
+      if (existsSync(join(out, "index.html"))) copyFileSync(join(out, "index.html"), join(out, "app.html"));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), appHtml()],
   // Compile-time, never runtime: `false` in every build but the browser walks'
   // own (tools/smoke-browser-matchcentre.mjs makes one with SCRBRD_TEST_HOOKS=1
   // into dist-test/). ui/ErrorBoundary.jsx reads it; with `false` the test
@@ -41,14 +65,17 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
-    // Two entries. `index` is the app (index.html). `public` is the signed-out
+    // Three entries. `index` is the app (index.html), served at /app. `home`
+    // is the public home page (home.html, SCRBRD-142): static, signed out,
+    // served at / and /privacy, with a graph of its own on the public side of
+    // check-bundle's line. `public` is the signed-out
     // pages' bundle (SCRBRD-083): the API serves their HTML shells itself, with
     // the robots meta and a title per fixture, and those shells load it by a
     // FIXED name, /public-app.js — the API image does not carry dist/ and so
     // cannot know a hashed one. It is served no-cache (server.mjs serveClient,
     // and firebase.json's header), and everything it imports is hashed as usual.
     rollupOptions: {
-      input: { index: "index.html", public: "src/public/main.jsx" },
+      input: { index: "index.html", home: "home.html", public: "src/public/main.jsx" },
       output: {
         entryFileNames: (chunk) => (chunk.name === "public" ? "public-app.js" : "assets/[name]-[hash].js"),
       },
