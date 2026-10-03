@@ -302,6 +302,9 @@ try {
     const reads = h.requests.filter((r) => /\/api\//.test(r)).map((r) => r.replace(/^\w+ /, ""));
     ok("the only things the screen asked for: schools, her own requests, the help link, the sessions, her requests", reads.every((r) => /^\/api\/(schools|session|read\/role_requests|safeguarding\/contacts|requests)$/.test(r)), [...new Set(reads)]);
     ok("...and never a pupil, a child, a squad or a roster", !reads.some((r) => /players|pupils|children|squad|roster|guardians/.test(r)));
+    // The list of her requests is re-read from the server after each send, so
+    // the second row arrives a moment after "sent" is drawn (CI saw 1).
+    await P.waitForFunction(() => document.querySelectorAll('[data-testid="request-pending"]').length >= 2, null, { timeout: 6000 }).catch(() => {});
     ok("both requests are listed as waiting", (await P.locator('[data-testid="request-pending"]').count()) === 2, await P.locator('[data-testid="request-pending"]').count());
 
     const after = await call("/api/session", { token: mine.body?.token });
@@ -452,7 +455,9 @@ try {
     ok("the coach's claim is on the list", (await coachClaim.count()) === 1);
     await coachClaim.locator('[data-testid="claim-code"]').click();
     await o.page.waitForSelector('[data-testid="issued-code"]', { timeout: 6000 }).catch(() => {});
-    ok("Issue a code instead shows the code once", /^[A-Z0-9 -]{6,}$/i.test((await tid(o.page, "issued-code").innerText().catch(() => "")).trim()), await tid(o.page, "issued-code").innerText().catch(() => ""));
+    // A code is randomBytes(24) in base64url (auth/auth.mjs): 32 of A–Z, a–z,
+    // 0–9, "-" and "_". The old pattern left out "_", in about 40% of codes.
+    ok("Issue a code instead shows the code once", /^[A-Za-z0-9_-]{32}$/.test((await tid(o.page, "issued-code").innerText().catch(() => "")).trim()), await tid(o.page, "issued-code").innerText().catch(() => ""));
     ok("no page errors on the claim screens", h.errors.length + c2.errors.length + o.errors.length === 0, [...h.errors, ...c2.errors, ...o.errors].join(" | "));
     await h.ctx.close(); await c2.ctx.close(); await o.ctx.close();
   }
