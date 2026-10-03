@@ -1,5 +1,5 @@
 import { T } from "../../design/tokens.js";
-import { Section, homeBody, homeHead, oversText, timeOfDay } from "./shared.jsx";
+import { Section, homeBody, homeHead, oversOfBalls, timeOfDay } from "./shared.jsx";
 
 /**
  * "Live now" and "Today": the fixtures of the schools that list (SCRBRD-142
@@ -63,7 +63,7 @@ function Card({ f, rel }) {
       <div style={{ display: "flex", justifyContent: "space-between", gap: T.space.md, alignItems: "baseline" }}>
         <span style={{ ...homeHead(), fontSize: "15px", fontWeight: 700, color: T.content.primary, lineHeight: 1.3 }}>{nameOf(side)}</span>
         <span style={{ fontFamily: T.type.mono, fontSize: "15px", color: T.content.primary, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-          {bySide ? (own.length ? own.map((s) => `${figure(s)}${live || done ? ` (${oversText(s.balls)})` : ""}`).join(" & ") : "—") : ""}
+          {bySide ? (own.length ? own.map((s) => `${figure(s)}${live || done ? ` (${oversOfBalls(s.balls)})` : ""}`).join(" & ") : "—") : ""}
         </span>
       </div>
     );
@@ -76,7 +76,7 @@ function Card({ f, rel }) {
         <span style={{ fontFamily: T.type.mono, fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", color: live ? T.brand.green : T.content.tertiary }}>
           {live && <span aria-hidden="true">● </span>}{tag}
         </span>
-        {live && current && <span style={{ fontFamily: T.type.mono, fontSize: "12px", color: T.content.tertiary }}>{oversText(current.balls)} ov</span>}
+        {live && current && <span style={{ fontFamily: T.type.mono, fontSize: "12px", color: T.content.tertiary }}>{oversOfBalls(current.balls)} ov</span>}
       </div>
       <div style={{ display: "grid", gap: T.space.xs }}>
         {sideLine(f.home, "home")}
@@ -84,7 +84,7 @@ function Card({ f, rel }) {
       </div>
       {!bySide && scores.length > 0 && (
         <ul style={{ listStyle: "none", margin: `${T.space.sm} 0 0`, padding: 0, ...homeBody(), fontFamily: T.type.mono, fontSize: "13px", color: T.content.secondary }}>
-          {scores.map((s) => <li key={s.innings}>{ordinal(s.innings)} innings {figure(s)} ({oversText(s.balls)})</li>)}
+          {scores.map((s) => <li key={s.innings}>{ordinal(s.innings)} innings {figure(s)} ({oversOfBalls(s.balls)})</li>)}
         </ul>
       )}
       {done && f.result && <div style={{ ...homeBody(), fontSize: "14px", color: T.content.secondary, marginTop: T.space.sm }}>{f.result}</div>}

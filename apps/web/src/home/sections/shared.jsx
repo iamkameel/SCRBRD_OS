@@ -71,7 +71,7 @@ export function shortDate(iso) {
 }
 
 /** Overs bowled from legal balls: 110 balls is "18.2". */
-export const oversText = (balls) => {
+export const oversOfBalls = (balls) => {
   const b = Number.isFinite(balls) ? Math.max(0, Math.trunc(balls)) : 0;
   return `${Math.floor(b / 6)}.${b % 6}`;
 };
