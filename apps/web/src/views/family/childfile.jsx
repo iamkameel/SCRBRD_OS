@@ -18,6 +18,7 @@ import { useLive } from "../../lib/live.js";
 import { humanDate } from "../../lib/format.js";
 import { holds, linkEndWords, longDate } from "../../lib/family.js";
 import { PassportTab } from "../SettingsView.jsx";
+import { PublicNameSwitch } from "../publicname.jsx";
 import { Action, Card, Line, OpenRow, Unread } from "./parts.jsx";
 
 /** Roles that never belong in "who else can see this": the break-glass keys and the platform. */
@@ -66,7 +67,7 @@ export function ChildFileCard({ child, role, w }) {
         {panel === "health" && <Health child={child} role={role}/>}
         <OpenRow onClick={() => toggle("consents")} testid={`family-open-consents-${child.id}`}>
           <span style={{ ...T.role.body, fontWeight: 600 }}>Consents</span>
-          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Where {name}&apos;s {w.record} may travel, and scouts</span>
+          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Public match pages, where {name}&apos;s {w.record} may travel, and scouts</span>
         </OpenRow>
         {panel === "consents" && <Consents child={child} role={role}/>}
       </div>
@@ -248,12 +249,14 @@ export function Health({ child, role, self = false }) {
  * The consents that exist today, as they are (§8 phase A): where his record
  * may travel (the passport) and whether accredited scouts may see him — the
  * Settings screen's own PassportTab and ScoutingConsentSection, narrowed to
- * this one child. The consents read, the public-name switch and the terms
- * are phase B.
+ * this one child — and, first, whether he is named on public match pages
+ * (PUBLIC_DATA C1, publicname.jsx). The consents read and the terms are
+ * phase B.
  */
 export function Consents({ child, role }) {
   return (
     <div data-testid="family-consents" style={{ display: "grid", gap: T.space.sm }}>
+      <PublicNameSwitch child={child}/>
       <PassportTab role={role} only={[child]}/>
     </div>
   );

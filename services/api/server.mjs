@@ -34,6 +34,8 @@
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
  *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
+ *   GET/POST /api/players/:id/public-name      a child's public-name consent (and …/never-public, the mark)
+ *   GET/POST /api/schools/:id/public-names     a school's names-off switch per age group
  *   GET  /api/public/…, /live/:id, /scorecard/:id  the signed-out pages (off unless
  *                                         PUBLIC_PAGES=on — public/public-api.mjs)
  *
@@ -91,6 +93,7 @@ import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
 import { listingRoutes } from "./write/listing-api.mjs";
+import { publicNameRoutes } from "./write/public-name-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
 // SCRBRD-124 phase 1: parent lift clubs (db/70).
 import { liftRoutes } from "./write/lift-api.mjs";
@@ -443,6 +446,7 @@ const training = trainingRoutes({ pool, secret: SECRET });
 // not when db/59's notification arrives (publication-api.mjs).
 const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
 const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
+const publicName = publicNameRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
 // The fixture planner, phase 2 (SCRBRD-123, db/67).
 const planner = plannerRoutes({ pool, secret: SECRET });
@@ -641,6 +645,16 @@ const MATCH_ROUTES = [
   // front page must never depend on a menu setting.
   [/^\/api\/schools\/([0-9a-f-]{36})\/listing$/,      "GET",  listing.read],
   [/^\/api\/schools\/([0-9a-f-]{36})\/listing$/,      "POST", listing.set],
+  // A child's name on the public pages (SCRBRD-083 C1-C5, db/47): the
+  // family's consent, the never-public mark, a school's names-off switch per
+  // age group. Each door checks its own authority (public-name-api.mjs). Not
+  // module-gated: a "no" that a menu setting could hide is not a "no".
+  [/^\/api\/players\/([^/]+)\/public-name$/,          "GET",  publicName.read],
+  [/^\/api\/players\/([^/]+)\/public-name$/,          "POST", publicName.consent],
+  [/^\/api\/players\/([^/]+)\/never-public$/,         "POST", publicName.mark],
+  [/^\/api\/players\/([^/]+)\/never-public\/end$/,    "POST", publicName.unmark],
+  [/^\/api\/schools\/([0-9a-f-]{36})\/public-names$/, "GET",  publicName.namesOff],
+  [/^\/api\/schools\/([0-9a-f-]{36})\/public-names$/, "POST", publicName.setNamesOff],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
