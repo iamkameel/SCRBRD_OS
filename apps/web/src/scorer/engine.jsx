@@ -57,6 +57,7 @@ import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
+import { sidesFor, sideWords } from "./side.js";
 import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
@@ -112,27 +113,30 @@ function eventsFromInnings(i){
 }
 
 /**
- * The squad for a fixture, from the server.
+ * The squads for a fixture, from the server: each end's side as its coach
+ * named it (`match_squad`, where the age and registration triggers live),
+ * else what that end always had — the home team's roster, the away side
+ * nobody. scorer/side.js chooses; this only reads.
  *
- * Returns null rather than throwing when there is no server or no team sheet:
- * a scorer with a fixture and no roster still has to be able to score, naming
- * players as they come in. Refusing to open the pad because a lookup failed
- * would strand them at the moment play starts.
+ * The named side is the `match_squad` read, governed by player.profile.read:
+ * the capability the scorer role holds for exactly this (policy roles.mjs,
+ * "a scorer who cannot read the squad cannot name a striker"), and the read
+ * leaves withdrawn rows out. An away side's rows anchor at the away school,
+ * so they come back only where the scorer may read that school's squad.
+ *
+ * Returns null rather than throwing when there is no server: a scorer with a
+ * fixture and no roster still has to be able to score, naming players as they
+ * come in. Refusing to open the pad because a lookup failed would strand them
+ * at the moment play starts. Each read fails on its own — a roster with no
+ * sheet is still a roster, and the pad says which it got.
  */
-async function liveSquad(cfg) {
+async function liveSides(cfg) {
   if (!cfg?.matchId || !signedIn()) return null;
-  try {
-    const { rows } = await api("/api/read/players");
-    const team = rows.filter((p) => !cfg.teamCode || p.team_code === cfg.teamCode);
-    // batHand travels with the squad because placement is stored
-    // batter-relative: without it every left-hander's innings is mirrored.
-    return (team.length ? team : rows).map((p) => ({
-      id: p.id, name: p.full_name,
-      batHand: /^l/i.test(p.batting_style || "") ? "L" : "R",
-    }));
-  } catch {
-    return null;
-  }
+  const [players, squad] = await Promise.all([
+    api("/api/read/players").then((r) => r.rows ?? null, () => null),
+    api(`/api/read/match_squad?matchId=${encodeURIComponent(cfg.matchId)}`).then((r) => r.rows ?? null, () => null),
+  ]);
+  return sidesFor({ players, squad, teamCode: cfg.teamCode ?? null });
 }
 
 /**
@@ -428,7 +432,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // the server gave it, and the toss — read at hydration, or answered on the
   // pad. Refs, like the two above: read when the innings opens, never drawn.
   const homeSquadRef = useRef(null);
+  // The away side's, only where its coach named one the scorer may read.
+  const awaySquadRef = useRef(null);
   const tossRef = useRef(null);
+  // Where each end's squad came from (scorer/side.js), for the one line the
+  // openers' and opening bowler's sheets say it in. Null: nothing was read.
+  const [sideSource, setSideSource] = useState(null);
 
 
   // ── Derivation ──────────────────────────────────────────
@@ -673,13 +682,20 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           // the order the fixture lists its sides in: innings_start is the one
           // event undo will not walk past. No toss — none recorded, or no way
           // to ask — and nothing opens: the scorer is asked first (TossSheet).
-          const [squad, toss] = await Promise.all([liveSquad(resume.cfg), liveToss(resume.cfg)]);
+          //
+          // Each end's squad is the side its coach named, where there is one
+          // (scorer/side.js): the pad scores who the safeguarding checks let
+          // onto the sheet, not the whole roster around them.
+          const [sides, toss] = await Promise.all([liveSides(resume.cfg), liveToss(resume.cfg)]);
           if (cancelled) return;
-          homeSquadRef.current = squad;
+          homeSquadRef.current = sides?.home.squad ?? null;
+          awaySquadRef.current = sides?.away.squad ?? null;
+          if (sides) setSideSource({ home: sides.home.source, away: sides.away.source, team: sides.home.team });
           tossRef.current = toss;
           const openId = newEventId(deviceIdRef.current, id ?? "local");
           const log = [toss ? [inningsStart({
-            ...firstInningsSides({ batsFirst: toss.batsFirst, fixture: resume.cfg, homeSquad: squad }),
+            ...firstInningsSides({ batsFirst: toss.batsFirst, fixture: resume.cfg,
+              homeSquad: homeSquadRef.current, awaySquad: awaySquadRef.current }),
             overs: resume.cfg.overs ?? 20,
             // A fixture that carries a declaration passes it on; none does yet,
             // so this innings opens undeclared — exactly as before — and the
@@ -996,8 +1012,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     :`Runs, extras and wickets only. ${declaredWords}; switching changes only how the pad asks.`;
 
   // ── The first innings of a live fixture (SCRBRD-067) ─────
-  // The side the toss put in bats; the home roster (the one the pad reads)
-  // goes with the home side, batting or bowling. firstInningsSides says which.
+  // The side the toss put in bats; each end's squad (the side its coach
+  // named, else the home roster) goes with its side, batting or bowling.
+  // firstInningsSides says which.
   const openFirstInnings=(batsFirst)=>{
     if(!match||curIn!==0||padLockRef.current)return;
     // Decided against the log as it is when the update applies, not as this
@@ -1005,7 +1022,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // the innings, and a second tap in that time must find it already open —
     // two first-innings starts would be two different sides in.
     const open={...inningsStart({
-      ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current}),
+      ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current,awaySquad:awaySquadRef.current}),
       overs:match.overs??20,
       captureProfile:match.captureProfile??undefined,
     }),innings:0,id:newEventId(deviceIdRef.current,matchIdRef.current??"local")};
@@ -1064,7 +1081,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       mintedRef.current.add(id);
       const cp=[...prev];
       cp[0]=[...inn0,{...inningsStart({
-        ...firstInningsSides({batsFirst,fixture,homeSquad:homeIn?cur.squad:cur.bowlingSquad}),
+        ...firstInningsSides({batsFirst,fixture,homeSquad:homeIn?cur.squad:cur.bowlingSquad,awaySquad:homeIn?cur.bowlingSquad:cur.squad}),
         overs:cur.overs??fixture.overs??20,
         captureProfile:cur.declaredProfile??undefined,
       }),innings:0,id}];
@@ -1806,6 +1823,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     if(!inn)return[];
     return inn.squad||[];
   };
+  // Where the squad on a setup sheet came from, in one line (scorer/side.js):
+  // the side the coach named, or the roster because none was. Said while the
+  // first innings is being set up — the openers and the opening bowler — and
+  // only for an end the server gave the pad; an end typed as it comes in has
+  // nothing to say. `end` is the batting or the bowling side of this innings.
+  const sideLine=(end)=>{
+    if(!sideSource||curIn!==0||!inn||isSuperOver(inn)||(inn.ballLog?.length??0)>0)return null;
+    const homeBats=(inn.teamKey??inn.battingTeam)===(match?.teamKey1??match?.team1);
+    const home=(end==="batting")===homeBats;
+    const source=home?sideSource.home:sideSource.away;
+    const words=sideWords(source,match?.teamCode??match?.team1,home?sideSource.team:true);
+    return words?<p data-testid="side-source" data-source={source} style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.secondary,margin:"0 0 12px"}}>{words}</p>:null;
+  };
 
   /* ── Modal router ── */
   const renderModal=()=>{
@@ -1947,7 +1977,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         batsmen={inn?.batsmen||[]}
         teamKey={inn?.teamKey}
         twelfthMan={inn?.twelfthMan}
-        header={canDeclare?<CaptureProfilePicker value={inn.declaredProfile} onChange={declareCapture}/>:null}
+        header={(()=>{const line=sideLine("batting");return line||canDeclare?<>{line}{canDeclare&&<CaptureProfilePicker value={inn.declaredProfile} onChange={declareCapture}/>}</>:null;})()}
         onTimedOut={canTimeOut?recordTimedOut:null}
         resumable={resumeChoices({innings,events},curIn)}
         noteFor={soNotes?id=>soNotes.batters.get(id)??null:null} footer={isSuperOver(inn)?(soNoteWords??NOT_RECORDED_WORDS):null}
@@ -1965,7 +1995,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       const lastBowler=inn?.bowlers.find(b=>b.id===modalCtx?.lastBowlerId);
       return (
         <NewOverSheet
-          ovNum={0} inn={inn}
+          ovNum={0} inn={inn} header={sideLine("bowling")}
           prevBowlers={inn?.bowlers||[]}
           bowlingSquad={inn?.bowlingSquad||[]}
           bowlingTeamKey={inn?.bowlingTeamKey}

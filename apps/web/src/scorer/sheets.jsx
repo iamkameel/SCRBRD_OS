@@ -903,7 +903,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
  * anyone, and passes it on: onConfirm(id, reason).
  */
 function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false,capWordsFor=null,
-  keeper=null,keeperChoices=[],onKeeper=null,noteFor=null,footer=null}){
+  keeper=null,keeperChoices=[],onKeeper=null,noteFor=null,footer=null,header=null}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
   const[reason,setReason]=useState(null);
@@ -938,6 +938,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
   return (
     <Sheet title={midOver?"Change of Bowler":ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"8px"}}>
+        {header}
         {/* Who is keeping (SCRBRD-126): asked with the opening bowler and at
             each over's start, never in the way of the bowler. A change
             mid-over is the pad menu's "Change keeper". */}

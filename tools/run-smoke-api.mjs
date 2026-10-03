@@ -402,6 +402,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // are refused before anything is sent; a coach of another team and a parent
   // are offered nothing and a forced post is a 403; 12px, 44px, 390, Daylight.
   "browser-pick-side",
+  // The live scorer scores the side the coach named: a fixture with a named
+  // side opens the pad with exactly those eleven in that batting order and
+  // says so; the twelfth and a withdrawn boy are not offered; a fixture with
+  // none opens with the U14A roster as before and says that; the away side
+  // batting first is typed, with the named eleven bowling.
+  "browser-scorer-side",
   // Signing in with Google, from a browser (SCRBRD-140 phase 1, the screens):
   // the button and the signed privacy paragraph, the SDK fetched only when
   // pressed, a new account on the no-school screen, a parent's request as free
