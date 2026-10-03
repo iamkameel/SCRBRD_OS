@@ -272,7 +272,7 @@ In Secret Manager, on the project:
 |---|---|
 | `DATABASE_URL` | `postgres://scrbrd_app:<app secret>@/scrbrd?host=/cloudsql/scrbrd-os:africa-south1:<instance>` |
 | `SESSION_SECRET` | 32+ random bytes; the API refuses to start without it outside development |
-| `WEB_ORIGIN` | `https://scrbrd-os.web.app` (or the custom domain) |
+| `WEB_ORIGIN` | only when the client is served from another origin (Firebase Hosting: `https://scrbrd-os.web.app`). Unset on Render, where the API serves the client itself |
 | `ANTHROPIC_API_KEY` | optional; without it Stats-Magic and commentary answer null |
 | `OWNER_RECOVERY_SECRET` | optional; unset means /api/auth/owner/recover is a 501. Separate from SESSION_SECRET — see §3b |
 | `GUARDIAN_APP_URL` | The Guardian's app, CSA's anonymous-reporting partner, linked from Safeguarding (db/57). https only; unset, the screen says the link has not been set. Not a secret, but set here with the rest |
@@ -619,8 +619,11 @@ to start with it set and `NODE_ENV=production`, and even in development it
 verifies only the project `scrbrd-os-test`. **Never set it on a deployment.**
 
 Before anybody signs in with Google (design §11): Kameel enables Authentication
-and the Google provider in the `scrbrd-os` Firebase console, with only
-`scrbrd-os.web.app` and the custom domain as authorised domains (A1), and signs
+and the Google provider in the `scrbrd-os` Firebase console, with the
+address the app is served from as an authorised domain (A1): for the pilot
+that is the Render service, `scrbrd.onrender.com`, plus a custom domain if one
+is added (Authentication → Settings → Authorized domains). A domain missing
+from that list fails Google sign-in with `auth/unauthorized-domain`. Kameel signs
 the privacy notice's paragraph on the transfer outside the Republic (§7.5, A5).
 Until the sign-in screen ships, the route is simply unused.
 

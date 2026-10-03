@@ -4,7 +4,7 @@
 
 ## Sign in
 
-Open `scrbrd-os.web.app/app`. Tap **Continue with Google**, or type your email and the school office's code in **Sign-in code**, then **Sign In**. A code works once. If it was used, ask the office for a new one.
+Open `scrbrd.onrender.com/app`. Tap **Continue with Google**, or type your email and the school office's code in **Sign-in code**, then **Sign In**. A code works once. If it was used, ask the office for a new one.
 
 ## Link to your son
 
