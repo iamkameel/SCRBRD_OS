@@ -338,6 +338,13 @@ try {
   const mum = await login("parent@example.invalid");
   const forcedParent = await call(`/api/matches/${M}/squad`, { method: "POST", token: mum, body: { side: "home", players: lineup } });
   ok("her forced post to the route is a 403", forcedParent.status === 403, JSON.stringify(forcedParent));
+  // The age check fires before the insert policy, so the route asks for
+  // team.select first: a boy too old for the side, posted by someone who may
+  // not name it, is a bare 403 and never the trigger's sentence with his name.
+  for (const [who, tok] of [["the other coach", other], ["the parent", mum]]) {
+    const probe = await call(`/api/matches/${M}/squad`, { method: "POST", token: tok, body: { side: "home", players: [{ playerId: boy.old, battingNo: 1 }] } });
+    ok(`${who}'s post of the too-old boy is a 403 that names nobody`, probe.status === 403 && !/Verify Pick Old|on 1 January/.test(JSON.stringify(probe)), JSON.stringify(probe));
+  }
   const signedOut = await call(`/api/matches/${M}/squad`, { method: "POST", body: { side: "home", players: lineup } });
   ok("signed out, it is a 401", signedOut.status === 401, JSON.stringify(signedOut));
   ok("...and the side is untouched", JSON.stringify(await side(M)) === JSON.stringify(keep));
