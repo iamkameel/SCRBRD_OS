@@ -205,7 +205,11 @@ try {
   ok("the office signs in", await signIn(off.page, OFFICE));
   ok("...opens Settings → Import", await toImport(off.page));
   ok("Import is among the office's tabs", (await tabsOf(off.page)).includes("import"));
-  ok("the kind is named, from the list the screen was given", /Importing: Players/.test(await tid(off.page, "import-kind-one").innerText().catch(() => "")));
+  // The office holds both kinds' capabilities, so it is offered a choice,
+  // players first; the rest of this walk imports players.
+  const kindOpts = await tid(off.page, "import-kind").locator("option").allInnerTexts().catch(() => []);
+  ok("the kinds are offered, from the list the screen was given", kindOpts.join("|") === "Players|Guardians", kindOpts);
+  ok("...with Players chosen", await tid(off.page, "import-kind").inputValue().catch(() => "") === "players");
   ok("the school is named", /At: .*Hilton/i.test(await tid(off.page, "import-school-one").innerText().catch(() => "")));
   ok("with no file chosen, Check and Import are both disabled",
      await tid(off.page, "import-check").isDisabled() && await tid(off.page, "import-run").isDisabled());
