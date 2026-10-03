@@ -162,6 +162,10 @@ const SUITES = [
   // filters across all of them, nothing that writes signed out, the role
   // picker offering what GRANTABLE_ROLES gives the caller, refusals in words.
   ["people", "apps/web/test/people.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Settings → Import and the Staff screen: the screen's kinds held to the
+  // server's IMPORTS, Import offered only after a clean Check of the same file,
+  // the route's words, who is offered the tab, and who counts as staff.
+  ["import-screen", "apps/web/test/import-screen.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Redesign step 4, phase A: the family and pupil apps' helpers — one child
   // per screen, a method and never a name, the tenant's words (G15) — and
   // the Match Centre's family mode (G13).
@@ -230,6 +234,10 @@ const SUITES = [
   // The signed-out read path (SCRBRD-083): the projection, the router, the shell.
   ["public-api", "services/api/public/public.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
+  // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
+  // birthday, a side his birthday does not fit, a guardian with no email, an
+  // email two people share; the templates clean; and it sends nothing.
+  ["pilot-load-check", "tools/pilot-load-check.test.mjs"],
   // A scorebook page's photo (SCRBRD-120): JPEG or PNG only, its metadata
   // stripped without a decoder, and the private store's two backends.
   ["page-image", "services/api/io/page-image.test.mjs"],

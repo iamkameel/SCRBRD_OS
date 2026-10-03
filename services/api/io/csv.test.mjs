@@ -197,5 +197,144 @@ group("G. The field parsers refuse rather than guess");
   ok("text refuses over-length", /120 characters/.test(t(asText(120), "x".repeat(121))));
 }
 
+group("H. The template a school downloads is a file the importer accepts");
+{
+  // GET /api/import/players/template sends the header and this one row. Its
+  // first version had ten values for twelve columns and "right" for a hand,
+  // so the example itself failed on four columns. Read it through the spec.
+  const { IMPORTS } = await import("./import-api.mjs");
+  const def = IMPORTS.players;
+  const parsed = parseCsv(def.template.join(",") + "\n" + def.example + "\n");
+  ok("the example has one value per column",
+     parsed.rows[0]?.length === def.template.length);
+  const mapped = mapRows(parsed, def.spec);
+  ok("...and every one of them parses", mapped.errors.length === 0 && mapped.rows.length === 1);
+  ok("...with no column the importer does not read", mapped.unknown.length === 0);
+  const checked = def.resolve?.(mapped.rows[0].values, null);
+  ok("...and a new player from it passes the birth-date rule", checked?.ok === true);
+}
+
+group("I. Guardians: each row is enrolment, and the import refuses rather than guesses");
+{
+  const { IMPORTS, GUARDIAN_RELATIONSHIPS } = await import("./import-api.mjs");
+  const def = IMPORTS.guardians;
+  const apply = /** @type {NonNullable<typeof def.apply>} */ (def.apply);
+
+  // The template and its example go through the spec cleanly.
+  const parsed = parseCsv(def.template.join(",") + "\n" + def.example + "\n");
+  const mapped = mapRows(parsed, def.spec);
+  ok("the guardians template's example parses, every column read",
+     mapped.errors.length === 0 && mapped.rows.length === 1 && mapped.unknown.length === 0);
+  ok("...the header the office fills",
+     def.template.join(",") === "player_full_name,guardian_name,guardian_email,relationship");
+  ok("the role is not a column", !("role" in def.spec));
+  ok("the relationship is the link vocabulary less self and enquiry",
+     !GUARDIAN_RELATIONSHIPS.includes("self") && !GUARDIAN_RELATIONSHIPS.includes("enquiry"));
+  const noRel = mapRows(parseCsv("player_full_name,guardian_name,guardian_email\nA,B C,b@example.invalid\n"), def.spec);
+  ok("a file with no relationship column is refused once, not assumed parent",
+     noRel.errors.length === 1 && /no relationship column/.test(noRel.errors[0].message));
+
+  // A database stand-in: the boys, the accounts and the links a query would
+  // find, and every enrol_person() call recorded with what it was asked.
+  /** @typedef {{ sql: string, params: unknown[] }} Call */
+  /**
+   * @param {{ boys?: Record<string, string[]>, accounts?: Record<string, { id: string, name: string, player_id?: string | null }>,
+   *           links?: Record<string, string>, enrol?: (p: unknown[]) => { ok: boolean, reason?: string } }} world
+   */
+  const fake = (world) => {
+    /** @type {Call[]} */ const enrolled = [];
+    const client = {
+      /** @param {string} sql @param {unknown[]} [params] */
+      query: async (sql, params = []) => {
+        /** @param {any[]} rows */
+        const out = (rows) => ({ rows, rowCount: rows.length });
+        if (/from player/.test(sql)) return out((world.boys?.[String(params[1]).trim().toLowerCase()] ?? []).map((id) => ({ id })));
+        if (/from app_user/.test(sql)) { const a = world.accounts?.[String(params[0])]; return out(a ? [a] : []); }
+        if (/from assignment_subject/.test(sql)) {
+          const st = world.links?.[`${params[0]}|${params[2]}`];
+          return out(st ? [{ verification_state: st }] : []);
+        }
+        if (/enrol_person/.test(sql)) { enrolled.push({ sql, params }); return out([world.enrol?.(params) ?? { ok: true }]); }
+        throw new Error("unexpected query: " + sql);
+      },
+    };
+    return { client: /** @type {any} */ (client), enrolled };
+  };
+  /** @param {string} child @param {string} name @param {string} email @param {string} [rel] */
+  const row = (child, name, email, rel = "parent") =>
+    ({ player_full_name: child, guardian_name: name, guardian_email: email, relationship: rel });
+  const HIL = "11111111-1111-1111-1111-111111111111";
+
+  // One email, two boys: two enrolments of the one address, each granting guardian.
+  {
+    const { client, enrolled } = fake({ boys: { "fake pupil one": ["p1"], "fake pupil two": ["p2"] } });
+    const file = new Map();
+    const a = await apply(client, HIL, row("Fake Pupil One", "Fake Parent", "fp@example.invalid"), file, 2);
+    const b = await apply(client, HIL, row("Fake Pupil Two", "Fake Parent", "fp@example.invalid"), file, 3);
+    ok("one email for two children: both lines are links", a.ok && a.did === "insert" && b.ok && b.did === "insert");
+    ok("...two enrolments of the one address, one per boy",
+       enrolled.length === 2 && enrolled.every((c) => c.params[0] === "fp@example.invalid")
+       && enrolled[0].params[3] === "p1" && enrolled[1].params[3] === "p2");
+    ok("nothing beyond guardian: the role is written into the call, never read from the file",
+       enrolled.every((c) => /enrol_person\(\$1, \$2, 'guardian', \$3, null, \$4, \$5\)/.test(c.sql)
+                            && !c.params.includes("schooladmin")));
+    const c = await apply(client, HIL, { ...row("Fake Pupil One", "Fake Parent X", "x@example.invalid"), role: "schooladmin" }, new Map(), 2);
+    ok("...even when a row carries a role", c.ok && enrolled.length === 3 && /'guardian'/.test(enrolled[2].sql)
+       && !enrolled[2].params.includes("schooladmin"));
+  }
+
+  // Every refusal, and that a refusal never reaches enrolment.
+  /** @param {any} out @param {string | null} column @param {RegExp} re */
+  const refused = (out, column, re) => out.ok === false && out.column === column && re.test(out.message);
+  {
+    const world = {
+      boys: { "fake pupil one": ["p1"], "fake twin": ["t1", "t2"] },
+      accounts: { "coach@example.invalid": { id: "u1", name: "C Coach" },
+                  "pupil@example.invalid": { id: "u2", name: "A Pupil", player_id: "p9" },
+                  "linked@example.invalid": { id: "u3", name: "Fake Linked" },
+                  "waiting@example.invalid": { id: "u4", name: "Fake Waiting" } },
+      links: { "u3|p1": "verified", "u4|p1": "pending" },
+    };
+    const { client, enrolled } = fake(world);
+    const one = async (/** @type {Record<string, any>} */ r, file = new Map()) => apply(client, HIL, r, file, 3);
+    ok("a relationship enrolment cannot record is refused, not written as parent",
+       refused(await one(row("Fake Pupil One", "Fake Gran", "g@example.invalid", "grandparent")), "relationship", /parent link only/));
+    ok("a boy not found is an error on the line",
+       refused(await one(row("Fake Nobody", "Fake Parent", "n@example.invalid")), "player_full_name", /no player at this school/));
+    ok("two boys of one name are refused, never guessed",
+       refused(await one(row("Fake Twin", "Fake Parent", "t@example.invalid")), "player_full_name", /more than one player/));
+    ok("an email that is a pupil's own account",
+       refused(await one(row("Fake Pupil One", "A Pupil", "pupil@example.invalid")), "guardian_email", /pupil's own account/));
+    ok("an email that is already another person's account",
+       refused(await one(row("Fake Pupil One", "Fake Parent", "coach@example.invalid")), "guardian_email", /already C Coach's account/));
+    ok("...but the same person, by name, is the coach who is also a parent",
+       (await one(row("Fake Pupil One", " c  coach ", "coach@example.invalid"))).ok === true);
+    ok("a link already verified is left as it is",
+       (/** @type {any} */ (await one(row("Fake Pupil One", "Fake Linked", "linked@example.invalid")))).did === "unchanged");
+    ok("a link waiting to be verified is not doubled",
+       refused(await one(row("Fake Pupil One", "Fake Waiting", "waiting@example.invalid")), null, /verify that request/));
+    const file = new Map([["d@example.invalid|fake pupil one", 2]]);
+    ok("the same guardian and child twice in the file",
+       refused(await one(row("Fake Pupil One", "Fake Dup", "d@example.invalid"), file), null, /on line 2/));
+    const named = new Map([["email:e@example.invalid", { name: "fake first", as: "Fake First", line: 2 }]]);
+    ok("one email under two names in the file",
+       refused(await one(row("Fake Pupil One", "Fake Second", "e@example.invalid"), named), "guardian_email", /Fake First's on line 2/));
+    ok("none of those refusals reached enrolment, but the one it should have",
+       enrolled.length === 1 && enrolled[0].params[0] === "coach@example.invalid");
+  }
+
+  // Enrolment's own refusals come back on the line, in the office's words.
+  for (const [reason, column, re] of /** @type {[string, string | null, RegExp][]} */ ([
+    ["player_is_an_adult", "player_full_name", /eighteen/],
+    ["player_date_of_birth_required", "player_full_name", /date of birth/],
+    ["email_belongs_to_another_school", "guardian_email", /another school/],
+    ["not_permitted", null, /not permitted/],
+  ])) {
+    const { client } = fake({ boys: { "fake pupil one": ["p1"] }, enrol: () => ({ ok: false, reason }) });
+    ok(`enrolment's ${reason} is that line's error`,
+       refused(await apply(client, HIL, row("Fake Pupil One", "Fake Parent", "fp@example.invalid"), new Map(), 2), column, re));
+  }
+}
+
 console.log(`\n${"─".repeat(52)}\nCSV SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

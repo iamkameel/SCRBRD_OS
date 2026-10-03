@@ -34,6 +34,9 @@
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
  *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
+ *   POST /api/news/:id/public/{request,approve,withdraw}  a notice on the public home page (db/83)
+ *   GET/POST /api/players/:id/public-name      a child's public-name consent (and …/never-public, the mark)
+ *   GET/POST /api/schools/:id/public-names     a school's names-off switch per age group
  *   GET  /api/public/…, /live/:id, /scorecard/:id  the signed-out pages (off unless
  *                                         PUBLIC_PAGES=on — public/public-api.mjs)
  *
@@ -91,6 +94,7 @@ import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
 import { listingRoutes } from "./write/listing-api.mjs";
+import { publicNameRoutes } from "./write/public-name-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
 // SCRBRD-124 phase 1: parent lift clubs (db/70).
 import { liftRoutes } from "./write/lift-api.mjs";
@@ -433,7 +437,9 @@ const firebase = (() => {
 })();
 const signIn = signInRoutes({ pool, secret: SECRET, verifier: firebase.verifier,
                               trustProxyHops: Number(process.env.PUBLIC_TRUST_PROXY_HOPS || 0) });
-const news = newsRoutes({ pool, secret: SECRET });
+// A notice's public request, approval or withdrawal — and the author's own
+// withdrawal of a notice — drops the public news before it answers (db/83).
+const news = newsRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
 const load = loadRoutes({ pool, secret: SECRET });
@@ -443,6 +449,7 @@ const training = trainingRoutes({ pool, secret: SECRET });
 // not when db/59's notification arrives (publication-api.mjs).
 const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
 const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
+const publicName = publicNameRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
 // The fixture planner, phase 2 (SCRBRD-123, db/67).
 const planner = plannerRoutes({ pool, secret: SECRET });
@@ -641,6 +648,16 @@ const MATCH_ROUTES = [
   // front page must never depend on a menu setting.
   [/^\/api\/schools\/([0-9a-f-]{36})\/listing$/,      "GET",  listing.read],
   [/^\/api\/schools\/([0-9a-f-]{36})\/listing$/,      "POST", listing.set],
+  // A child's name on the public pages (SCRBRD-083 C1-C5, db/47): the
+  // family's consent, the never-public mark, a school's names-off switch per
+  // age group. Each door checks its own authority (public-name-api.mjs). Not
+  // module-gated: a "no" that a menu setting could hide is not a "no".
+  [/^\/api\/players\/([^/]+)\/public-name$/,          "GET",  publicName.read],
+  [/^\/api\/players\/([^/]+)\/public-name$/,          "POST", publicName.consent],
+  [/^\/api\/players\/([^/]+)\/never-public$/,         "POST", publicName.mark],
+  [/^\/api\/players\/([^/]+)\/never-public\/end$/,    "POST", publicName.unmark],
+  [/^\/api\/schools\/([0-9a-f-]{36})\/public-names$/, "GET",  publicName.namesOff],
+  [/^\/api\/schools\/([0-9a-f-]{36})\/public-names$/, "POST", publicName.setNamesOff],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
@@ -705,6 +722,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/news$/,                                 "POST", news.publish],
   [/^\/api\/news\/([^/]+)\/publish$/,               "POST", news.send],
   [/^\/api\/news\/([^/]+)\/withdraw$/,              "POST", news.withdraw],
+  // The public home page (SCRBRD-142 §3, db/83). The three functions decide
+  // who: the author asks; a school-wide publisher who is not the author
+  // approves; the author or any publisher at the school takes it down.
+  [/^\/api\/news\/([^/]+)\/public\/request$/,       "POST", news.public_request],
+  [/^\/api\/news\/([^/]+)\/public\/approve$/,       "POST", news.public_approve],
+  [/^\/api\/news\/([^/]+)\/public\/withdraw$/,      "POST", news.public_withdraw],
   [/^\/api\/drills$/,                               "POST", kit.drill],
   [/^\/api\/equipment$/,                            "POST", kit.equipment],
   [/^\/api\/equipment\/([^/]+)\/issue$/,             "POST", kit.issue],
@@ -780,6 +803,9 @@ const PLAYER_ROUTES = [
   [/^\/api\/grounds\/([^/]+)\/closures$/,                       "GET",  planner.closures],
   [/^\/api\/grounds\/([^/]+)\/closures$/,                       "POST", planner.closureAdd],
   [/^\/api\/ground-closures\/([^/]+)\/remove$/,                 "POST", planner.closureRemove],
+  // A ground made (PILOT_LOAD.md gap 4): facility.manage at the school, the
+  // table's own insert policy. Read back with GET /api/read/grounds.
+  [/^\/api\/grounds$/,                                         "POST", planner.groundCreate],
   [/^\/api\/grounds\/([^/]+)\/parent$/,                         "POST", planner.parent],
   [/^\/api\/grounds\/([^/]+)\/ends$/,                           "POST", planner.ends],
   // Making a league (SCRBRD-123, db/67 §8a–8c): the competition, its

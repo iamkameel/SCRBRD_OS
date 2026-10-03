@@ -339,7 +339,8 @@ if (publicProblems.length) {
 // eight markers above: no scorer, no view, no App shell, no API client, no
 // governed read, no signed-in match route, no Firebase SDK (the analytics
 // switch in its footer only sets the device's preference, lib/persist.js),
-// no service worker. It must be the home bundle: it reads /api/public/live.
+// no service worker. It must be the home bundle: it reads /api/public/live
+// and /api/public/news.
 // It must not carry the public pages' fold either — a stranger reading a
 // pitch does not download the scorer's engine — which the ceiling bounds: it
 // was measured at the first build, React and the tokens (§6.2, A9). And the
@@ -369,6 +370,8 @@ if (!existsSync(HOME_HTML)) {
     const text = whole.map((f) => readFileSync(f, "utf8")).join("\n");
     const rest = js.filter((f) => !whole.includes(f)).map((f) => readFileSync(f, "utf8"));
     if (!text.includes("/api/public/live")) homeProblems.push("the home graph does not read /api/public/live — it is not the home bundle");
+    // SCRBRD-142 phase 3: the news section is mounted with its read.
+    if (!text.includes("/api/public/news")) homeProblems.push("the home graph does not read /api/public/news — the news section is not mounted");
     for (const [what, marker] of NOT_PUBLIC) {
       if (text.includes(marker)) homeProblems.push(`${what} is in the home page's graph, static or lazy ("${marker}" found)`);
       else if (!rest.some((t) => t.includes(marker))) homeProblems.push(`${what}'s marker "${marker}" is in no chunk outside the home graph — the marker went stale`);

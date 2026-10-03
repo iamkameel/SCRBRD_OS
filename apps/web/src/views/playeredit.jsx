@@ -9,10 +9,15 @@
  *   - a missing date of birth     POST /api/players/:id/date-of-birth
  *                                 (writes only where there is none)
  *   - who to ring in an emergency POST /api/players/:id/emergency-contacts
+ *   - his name on public pages    POST /api/players/:id/public-name (the office,
+ *                                 on a guardian's word or form) and
+ *                                 …/never-public (the mark): publicname.jsx
  *
  * Name, squad number, playing role and the rest have no route, so they have no
- * field here. The first two need player.profile.manage and the third
- * player.emergency.manage. A demonstration offers no writes at all.
+ * field here. The first two need player.profile.manage, the third
+ * player.emergency.manage, and the public-name section guardian.link.manage
+ * or player.public.withhold (it draws only what its read returns). A
+ * demonstration offers no writes at all.
  *
  * Floors: nothing read under 12px, nothing pressed under 44px.
  */
@@ -24,10 +29,18 @@ import { holdsCapability } from "../rbac/index.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { compareTeams, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 import { WhoToRing } from "./family/childfile.jsx";
+import { PublicNameStaff } from "./publicname.jsx";
+import { holds } from "../lib/family.js";
 
 /** Does this person hold anything Edit Profile could offer? Signed out: nothing. */
 export function mayEditProfile(role) {
-  return signedIn() && (holdsCapability(role, "player.profile.manage") || holdsCapability(role, "player.emergency.manage"));
+  return signedIn() && (holdsCapability(role, "player.profile.manage") || holdsCapability(role, "player.emergency.manage")
+    || mayPublicName(role));
+}
+
+/** The public-name section: a guardian's answer recorded by the office, or the never-public mark. */
+function mayPublicName(role) {
+  return holds(role, "guardian.link.manage") || holds(role, "player.public.withhold");
 }
 
 const SAY = {
@@ -67,6 +80,7 @@ export function EditProfile({ role, player, teams, onMoved }) {
           <WhoToRing child={{ id: player.id, name: player.name }} role={role}/>
         </div>
       )}
+      {mayPublicName(role) && <PublicNameStaff player={player}/>}
     </div>
   );
 }

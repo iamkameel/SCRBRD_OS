@@ -24,8 +24,9 @@
     "dev:web": "pnpm --filter @scrbrd/web dev",
     "dev:api": "node services/api/server.mjs",
     "check:imports": "node tools/check-imports.mjs",
+    "check:pilot-docs": "node tools/check-pilot-docs.mjs",
     "smoke": "node tools/smoke.mjs && node tools/smoke-scorer.mjs && node tools/smoke-persist.mjs && node tools/smoke-a11y.mjs",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm check:imports && pnpm build && pnpm check:bundle && pnpm smoke && pnpm smoke:api",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm check:imports && pnpm check:pilot-docs && pnpm build && pnpm check:bundle && pnpm smoke && pnpm smoke:api",
     "smoke:api": "node tools/run-smoke-api.mjs",
     "smoke:browser": "node tools/run-smoke-api.mjs --browser",
     "check:bundle": "node tools/check-bundle.mjs"

@@ -92,6 +92,10 @@ jobs:
       - name: Import boundaries
         run: pnpm check:imports
 
+      # docs/pilot quotes the app's buttons in bold; a renamed button fails here.
+      - name: Pilot documents
+        run: pnpm check:pilot-docs
+
       - name: Build
         run: pnpm build
 

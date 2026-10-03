@@ -162,6 +162,11 @@ const WALKS = [
   "season",
   "requests",
   "enrol",
+  // The pilot's load (PILOT_LOAD.md gaps 3 and 4): parents in bulk, each row
+  // enrol_person() under the office's own identity; and a ground made by
+  // route rather than by SQL on the owner's key.
+  "guardian-import",
+  "grounds",
   // Ending a role (SCRBRD-132 C1, db/77): the other half of enrolling —
   // ended with a reason, holding nothing on the next request, on the record,
   // told without the reason; the guardian link's rules and nobody's last key.
@@ -220,6 +225,11 @@ const WALKS = [
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
   "public",
+  // A child's name on the public pages over HTTP (SCRBRD-083 C1–C5, PILOT_LOAD
+  // gap 5): a guardian's consent for his own child and no other, the office's
+  // "no" on the family's word, the never-public mark over a consent, names
+  // off per age group — each on the public log's very next request.
+  "public-name",
   // Parent lift clubs, phase 1 (SCRBRD-124, db/70): the school's two keys, a
   // driver's declaration, a round trip made as one act, consent per boy per
   // lift by version, the fixture moving under it, names and numbers through
@@ -311,6 +321,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   "browser-pupil",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
   "browser-public",
+  // SCRBRD-083 C1–C5: the parent's switch on her child's file, the office's
+  // never-public mark and its reason (never on her screen), the director of
+  // sport's names off per age group — each held to the public log; 12px, 44px.
+  "browser-public-name",
   // SCRBRD-142 phases 1–2 (db/82): the home page at /, signed out at phone
   // width — no app, no token, no robots meta, Log in to /app, no child's
   // name; the analytics switch starts nothing there; a listed fixture's card
@@ -389,7 +403,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // no write reaches the API); the scorecard saved as a file; one deleted and
   // all deleted from the page's own confirmation, and nothing left in
   // IndexedDB or localStorage; 390 wide.
-  "browser-practice"];
+  "browser-practice",
+  // Settings → Import and the Staff screen: the office has the tab and a coach
+  // does not; the template downloads; a file with one bad line shows that line
+  // in the route's words and keeps Import disabled; a clean file is checked,
+  // imported and on Squad, and Import is offered only after a clean Check of
+  // that same file; Staff is the school's role assignments, checked against
+  // role_assignment; 12px, 44px, 390 wide.
+  "browser-import"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

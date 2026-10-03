@@ -12,13 +12,12 @@ import { Section, homeBody, homeHead, shortDate } from "./shared.jsx";
  *           { posts: [{ id,
  *               school,        // the school's label, as the match header's
  *               team,          // team code, or null for a school-wide post
- *               title, homeBody,   // team-level words; a public post names no pupil
+ *               title, body,   // team-level words; a public post names no pupil
  *               publishedAt    // ISO
  *           }] }
- *         A bare array of the same posts is read the same way. The route
- *         does not exist yet: this is the shape §3.2's public_news() returns
- *         (id, school label, team_code, title, homeBody, published_at), renamed
- *         to camel case; the entry maps it if the API keeps the column names.
+ *         A bare array of the same posts is read the same way. This is
+ *         db/83's public_news() (id, school, team_code, title, body,
+ *         published_at) as public-api.mjs names it; no author is sent.
  *         null or undefined (not yet answered, or 404 because the public
  *         pages are off): the section renders NOTHING. So does an empty list:
  *         no "no news" line, because a school with nothing to say is not news.

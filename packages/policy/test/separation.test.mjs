@@ -459,7 +459,9 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
   // now derived from mayGrantRole() instead of a hand-written role literal.
   // This is a ratchet, not a pass: it may fall, never rise, so a new one
   // fails here rather than in review.
-  const GATE_CEILING = 10;
+  // 10 → 6: the Staff screen's four per-role detail panels (scorer, medical,
+  // driver, facilities) went with its move onto the school's role assignments.
+  const GATE_CEILING = 6;
   /** @type {(dir: string) => string[]} */
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);

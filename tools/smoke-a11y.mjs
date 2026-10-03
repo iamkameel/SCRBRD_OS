@@ -46,6 +46,7 @@ import { port } from "./db-url.mjs";
 import { captainApi, IDS, MATCH } from "./a11y-captain-mock.mjs";
 import { cockpitApi, MATCH as COCKPIT } from "./a11y-cockpit-mock.mjs";
 import { signupApi } from "./a11y-signup-mock.mjs";
+import { importApi } from "./a11y-import-mock.mjs";
 import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
@@ -156,6 +157,10 @@ const TYPE_FLOOR_CEILING = {
   // sheet, the list and its confirmation. Born at 0, and they stay there.
   practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
   practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
+  // Settings → Import and Staff (the office, on a desktop, against tools/a11y-import-mock.mjs): the panel idle,
+  // with a bad line reported, and clean; the Staff list and one person opened. Measured inside their own
+  // regions. Born at 0, and kept there.
+  importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
 };                   // 103 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
@@ -204,6 +209,10 @@ const TAP_FLOOR_CEILING = {
   // in a field, and none of it is under 44px.
   practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
   practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
+  // Settings → Import and Staff (the office, on a desktop, against tools/a11y-import-mock.mjs): the panel idle,
+  // with a bad line reported, and clean; the Staff list and one person opened. Measured inside their own
+  // regions. Born at 0, and kept there.
+  importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
 };
 
 /**
@@ -246,14 +255,16 @@ const CONTRAST_CEILING = {
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
-              practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0 },
+              practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
+              importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
-              practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0 },
+              practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
+              importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0 },
 };
 
 /**
@@ -306,6 +317,10 @@ const EMOJI_CEILING = {
   // Practice Match, phase 1.
   practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
   practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
+  // Settings → Import and Staff (the office, on a desktop, against tools/a11y-import-mock.mjs): the panel idle,
+  // with a bad line reported, and clean; the Staff list and one person opened. Measured inside their own
+  // regions. Born at 0, and kept there.
+  importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -722,6 +737,86 @@ async function cockpitWalk(theme) {
     ok("no page errors on the cockpit's screens", errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} cockpit walk threw: ${e.message?.slice(0, 160)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * SETTINGS → IMPORT AND STAFF: the school office on a desktop, against
+ * tools/a11y-import-mock.mjs — no server, no database. The import panel idle,
+ * after a Check that reports one bad line, and after a clean Check; then the
+ * Staff list and one person opened. Measured inside their own regions. What the
+ * server lets an office import, and who counts as staff, are
+ * tools/smoke-browser-import.mjs's, against the real stack.
+ */
+async function importWalk(theme) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 1280, height: 900 } });
+  await offline(ctx);
+  const handle = importApi();
+  await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
+    const u = new URL(route.request().url());
+    const r = handle(route.request().method(), u.pathname, u.searchParams, route.request().method() === "POST" ? route.request().postDataJSON() : undefined);
+    return route.fulfill({ status: r.status, contentType: "application/json", body: JSON.stringify(r.body) });
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const check = async (screen, region) => {
+    // The press state scales a button to 0.96 for .12s (.pressBtn:active); a box measured inside it reads 43px.
+    await page.waitForTimeout(500);
+    ok(`${T_} ${screen}: the region is on the page`, await page.locator(region).count() === 1);
+    await measure(page, theme, screen, region);
+    const inRegion = await page.evaluate((region) => [...document.querySelectorAll(`${region} button, ${region} a[href], ${region} input, ${region} select`)]
+      .filter((el) => !(el.getAttribute("aria-label") || el.textContent || (el.id && document.querySelector(`label[for="${el.id}"]`)?.textContent) || "").trim()).length, region);
+    ok(`${T_} ${screen}: every control in it has a name`, inRegion === 0);
+  };
+  const csv = (body) => ({ name: "boys.csv", mimeType: "text/csv", buffer: Buffer.from(body, "utf8") });
+  try {
+    group(`${T_} — Settings → Import and Staff`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+    if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    await page.locator("#login-email").fill("registrar@example.invalid");
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(2400);
+    ok("the office signs in", await tid("os-main").count() === 1);
+    await tid("nav-settings").click({ timeout: 5000 }).catch(() => {});
+    await page.locator("#settings-tab-import").click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="import-panel"]', { timeout: 8000 }).catch(() => {});
+    ok("the office has Settings → Import", await tid("import-panel").count() === 1);
+    await check("importidle", '[data-testid="import-panel"]');
+
+    await tid("import-file").setInputFiles(csv("full_name,born\r\nA,2012-05-05\r\nB,09/08/2012\r\nC,2012-11-23\r\n"));
+    await tid("import-check").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="import-report"]', { timeout: 8000 }).catch(() => {});
+    ok("a Check with a bad line lists it and keeps Import disabled", await tid("import-error").count() === 1 && await tid("import-run").isDisabled());
+    await check("importproblems", '[data-testid="import-panel"]');
+
+    await tid("import-file").setInputFiles(csv("full_name,born\r\nA,2012-05-05\r\nB,2012-08-09\r\nC,2012-11-23\r\n"));
+    await tid("import-check").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="import-clean"]', { timeout: 8000 }).catch(() => {});
+    ok("a clean Check enables Import", await tid("import-clean").count() === 1 && !(await tid("import-run").isDisabled()));
+    await tid("import-run").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="import-result"]', { timeout: 8000 }).catch(() => {});
+    ok("Import says what it did", await tid("import-result").count() === 1);
+    await check("importclean", '[data-testid="import-panel"]');
+
+    await tid("nav-staff").click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="staff-card"]', { timeout: 8000 }).catch(() => {});
+    ok("Staff lists the people who hold a staff role, and not the parent", await tid("staff-card").count() === 4 && await page.locator('[data-testid="staff-card"]', { hasText: "D Pillay" }).count() === 0);
+    await check("staffcards", '[data-testid="staff-view"]');
+    await page.locator('[data-testid="staff-card"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="staff-detail"]', { timeout: 5000 }).catch(() => {});
+    ok("a card opens its detail", await tid("staff-detail").count() === 1);
+    await check("staffdetail", '[data-testid="staff-view"]');
+    ok("no page errors on the import and staff screens", errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} import walk threw: ${e.message?.slice(0, 160)}`, false);
   } finally {
     await ctx.close();
   }
@@ -1663,11 +1758,13 @@ try {
   await walk("floodlit");
   await captainWalk("floodlit");
   await cockpitWalk("floodlit");
+  await importWalk("floodlit");
   await signupWalk("floodlit");
   await practiceWalk("floodlit");
   await walk("daylight");
   await captainWalk("daylight");
   await cockpitWalk("daylight");
+  await importWalk("daylight");
   await signupWalk("daylight");
   await practiceWalk("daylight");
 

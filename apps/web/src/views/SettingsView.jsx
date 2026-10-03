@@ -15,6 +15,8 @@ import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-bir
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
 import { DlsTablesPanel } from "./dlsTables.jsx";
+// Settings → Import: a spreadsheet of boys, checked, then imported (services/api/io/import-api.mjs).
+import { ImportPanel, canImport } from "./importer.jsx";
 // The enrolment form, its words and the one-time code card are shared with the
 // Management screen (views/enrol.jsx): one form, one set of refusals in words.
 import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, grantableFor, issuedFrom } from "./enrol.jsx";
@@ -22,6 +24,8 @@ import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healt
 // SCRBRD-140: the ways a person signs in (Me), and the office's Google claims (People).
 import { WaysToSignIn } from "./signins.jsx";
 import { ClaimsPanel } from "./claims.jsx";
+// SCRBRD-083 C4 (db/47): a school's names-off switch per age group.
+import { NamesOffPanel } from "./publicname.jsx";
 // SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
 import { LiftDeclarationPanel, LiftPolicyPanel, LiftPurgePanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
@@ -37,6 +41,7 @@ import { Icon } from "../ui/icons.jsx";
 //    Passport  — where a boy's record may travel
 //    School    — what is on record for each school I belong to
 //    Roadmap   — what is built, what is built underneath, what is planned
+//    Import    — for those who may import: a spreadsheet of boys, checked and then imported
 //    Support   — platform support holders only: an hour at one school
 //    DLS table — platform reference holders only: the rain rule's table (SCRBRD-130 R2)
 //
@@ -53,6 +58,8 @@ const TABS = [
   { id: "passport", label: "Passport", hint: "Where a record may travel" },
   { id: "school",   label: "School",   hint: "What is on record for each school" },
   { id: "upgrades", label: "Roadmap",  hint: "Built, built underneath, planned" },
+  // Drawn for a role that holds an import kind's capability (views/importer.jsx canImport).
+  { id: "import",   label: "Import",   hint: "Bring a spreadsheet in, checked first", offeredTo: canImport },
   // The platform side of support access (support.jsx); drawn only for a holder.
   { id: "support",  label: "Support",  hint: "Reach one school, for an hour, on the record", cap: "platform.support.impersonate" },
   // SCRBRD-130 R2: the DLS resource table (dlsTables.jsx); platform reference data.
@@ -241,7 +248,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
           text had to know the icon. */}
       <div role="tablist" aria-label="Settings sections"
            style={{ display: "flex", gap: "6px", marginBottom: "18px", flexWrap: "wrap" }}>
-        {TABS.filter((t) => !t.cap || holdsCapability(role, t.cap)).map((t) => {
+        {TABS.filter((t) => (!t.cap || holdsCapability(role, t.cap)) && (!t.offeredTo || t.offeredTo(role))).map((t) => {
           const on = tab === t.id;
           const n = t.id === "users" ? attention : 0;
           return (
@@ -278,6 +285,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "passport" && <PassportTab role={role}/>}
         {tab === "school"   && <SchoolTab role={role} users={users} players={PLAYERS} staff={STAFF} coaches={COACHES} canAudit={canAudit}/>}
         {tab === "upgrades" && <RoadmapTab/>}
+        {tab === "import"   && <ImportPanel role={role}/>}
         {tab === "support"  && <SupportAccessPanel role={role}/>}
         {tab === "dls"      && <DlsTablesPanel role={role}/>}
       </div>
@@ -1087,6 +1095,10 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
                   </div>
                 </div>
               )}
+              {/* PUBLIC_DATA C4: names off per age group. Drawn only when the
+                  read says this reader may change it (broadcast.publish,
+                  school-wide); public_names_off_set() decides again. */}
+              {live && holdsCapability(role, "broadcast.publish") && <NamesOffPanel schoolId={s.id}/>}
             </Panel>
           );
         })}

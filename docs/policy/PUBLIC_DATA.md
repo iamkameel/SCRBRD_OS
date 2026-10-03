@@ -183,6 +183,13 @@ below. Kameel confirmed all of them the same day.
    Two readings it takes: every revoked guardian link counts as "revoked as untrue"
    (the schema records no reason for a revocation), and a guardian's consent given on
    or after the boy's eighteenth birthday is refused and does not count.
+   **Routes and screens (2026-10-03):** `services/api/write/public-name-api.mjs` calls
+   those doors as the caller and drops the public cache on commit:
+   `GET/POST /api/players/:id/public-name`, `POST …/never-public` and `…/never-public/end`,
+   `GET/POST /api/schools/:id/public-names`. The parent's switch is on the child's file
+   (Family → Consents); the office's answers and the mark are on Squad → Edit Profile; the
+   names-off switches on Settings → School (`apps/web/src/views/publicname.jsx`). Proved by
+   `tools/smoke-public-name.mjs` and `tools/smoke-browser-public-name.mjs`.
 3. **Signed-out reads** that apply the rule on the server, never in the browser, and a
    `noindex` on every public page.
    **Built for the live page and the scorecard (2026-09-28), and switched off**:
