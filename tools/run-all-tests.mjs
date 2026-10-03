@@ -181,6 +181,11 @@ const SUITES = [
   // the route's three pre-write checks in its own codes, the codes as sentences,
   // and which boy a trigger's message names.
   ["pick-side", "apps/web/test/pick-side.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The side the live scorer scores (scorer/side.js): the side the coach named
+  // when there is one — withdrawn rows and the twelfth left out, in batting
+  // order — else the team's roster exactly as before; the away end only where
+  // its own sheet is readable; and the pad's line saying which.
+  ["scorer-side", "apps/web/test/scorer-side.test.mjs"],
   // Signing in with Google and joining a school (SCRBRD-140 phase 1, the screens):
   // each answer of the exchange as one state, Google's config from the
   // environment only, the signed privacy paragraph word for word, a request

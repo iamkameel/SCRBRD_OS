@@ -61,24 +61,26 @@ export function tossFromRow(row) {
  * squad goes where.
  *
  * `team1` is the home side and `team2` the away side, as the Match Centre
- * opens the scorer (App.jsx openScorer). The pad reads one roster, the home
- * side's (`homeSquad`); the away side's players are named as they come in.
- * So when the away side bats first the home squad is the BOWLING squad, and
- * the batting squad is empty — the two swap with the batting side, never
- * stay where the fixture lists them.
+ * opens the scorer (App.jsx openScorer). The pad reads the home side's squad
+ * (`homeSquad`: the side the coach named, else the team's roster), and the
+ * away side's only where that school named one the scorer may read
+ * (`awaySquad`); otherwise the away side's players are named as they come in.
+ * So when the away side bats first the home squad is the BOWLING squad — the
+ * two swap with the batting side, never stay where the fixture lists them.
  *
  * @param {object} args
  * @param {Side} args.batsFirst
  * @param {{team1?: string, team2?: string, teamKey1?: string, teamKey2?: string}} args.fixture
  * @param {any[]|null} [args.homeSquad]
+ * @param {any[]|null} [args.awaySquad]
  * @returns {{battingTeam: string|undefined, bowlingTeam: string|undefined,
  *            teamKey: string|undefined, bowlingTeamKey: string|undefined,
  *            squad: any[], bowlingSquad: any[]}}
  */
-export function firstInningsSides({ batsFirst, fixture, homeSquad = null }) {
+export function firstInningsSides({ batsFirst, fixture, homeSquad = null, awaySquad = null }) {
   if (batsFirst !== "home" && batsFirst !== "away") throw new Error("firstInningsSides: batsFirst must be 'home' or 'away'");
   const home = { team: fixture.team1, key: fixture.teamKey1 ?? fixture.team1, squad: homeSquad ?? [] };
-  const away = { team: fixture.team2, key: fixture.teamKey2 ?? fixture.team2, squad: /** @type {any[]} */ ([]) };
+  const away = { team: fixture.team2, key: fixture.teamKey2 ?? fixture.team2, squad: awaySquad ?? [] };
   const [bat, bowl] = batsFirst === "home" ? [home, away] : [away, home];
   return {
     battingTeam: bat.team, bowlingTeam: bowl.team,

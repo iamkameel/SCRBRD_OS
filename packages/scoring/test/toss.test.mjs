@@ -67,6 +67,16 @@ group("D. The first innings: the batting side, and the squads swap with it");
   ok("explicit keys are kept, and follow their side", keyed.teamKey === "MHS" && keyed.bowlingTeamKey === "HIL");
   ok("no roster at all: both squads empty", keyed.squad.length === 0 && keyed.bowlingSquad.length === 0);
 
+  // The away side's squad, where that school named one the scorer may read:
+  // it goes with the away side, batting or bowling, as the home one does.
+  const AWAY = [{ id: "a1", name: "Verify Away 01" }];
+  const awayNamedBats = firstInningsSides({ batsFirst: "away", fixture, homeSquad: HOME, awaySquad: AWAY });
+  ok("a named away side bats with the away side", awayNamedBats.squad === AWAY && awayNamedBats.bowlingSquad === HOME);
+  const awayNamedBowls = firstInningsSides({ batsFirst: "home", fixture, homeSquad: HOME, awaySquad: AWAY });
+  ok("...and bowls with it", awayNamedBowls.squad === HOME && awayNamedBowls.bowlingSquad === AWAY);
+  ok("no away squad given: exactly as before, typed as they come in",
+     firstInningsSides({ batsFirst: "home", fixture, homeSquad: HOME, awaySquad: null }).bowlingSquad.length === 0);
+
   let threw = false;
   try { firstInningsSides({ batsFirst: /** @type {any} */ (null), fixture }); } catch { threw = true; }
   ok("there is no default side: no toss is refused, not defaulted to home", threw);
