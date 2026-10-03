@@ -22,6 +22,8 @@ import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healt
 // SCRBRD-140: the ways a person signs in (Me), and the office's Google claims (People).
 import { WaysToSignIn } from "./signins.jsx";
 import { ClaimsPanel } from "./claims.jsx";
+// SCRBRD-083 C4 (db/47): a school's names-off switch per age group.
+import { NamesOffPanel } from "./publicname.jsx";
 // SCRBRD-124 (db/70): the principal's lift policy, and a parent's standing and declaration.
 import { LiftDeclarationPanel, LiftPolicyPanel, LiftPurgePanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
@@ -1087,6 +1089,10 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
                   </div>
                 </div>
               )}
+              {/* PUBLIC_DATA C4: names off per age group. Drawn only when the
+                  read says this reader may change it (broadcast.publish,
+                  school-wide); public_names_off_set() decides again. */}
+              {live && holdsCapability(role, "broadcast.publish") && <NamesOffPanel schoolId={s.id}/>}
             </Panel>
           );
         })}

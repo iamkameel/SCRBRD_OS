@@ -225,6 +225,11 @@ const WALKS = [
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
   "public",
+  // A child's name on the public pages over HTTP (SCRBRD-083 C1–C5, PILOT_LOAD
+  // gap 5): a guardian's consent for his own child and no other, the office's
+  // "no" on the family's word, the never-public mark over a consent, names
+  // off per age group — each on the public log's very next request.
+  "public-name",
   // Parent lift clubs, phase 1 (SCRBRD-124, db/70): the school's two keys, a
   // driver's declaration, a round trip made as one act, consent per boy per
   // lift by version, the fixture moving under it, names and numbers through
@@ -316,6 +321,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   "browser-pupil",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
   "browser-public",
+  // SCRBRD-083 C1–C5: the parent's switch on her child's file, the office's
+  // never-public mark and its reason (never on her screen), the director of
+  // sport's names off per age group — each held to the public log; 12px, 44px.
+  "browser-public-name",
   // SCRBRD-142 phases 1–2 (db/82): the home page at /, signed out at phone
   // width — no app, no token, no robots meta, Log in to /app, no child's
   // name; the analytics switch starts nothing there; a listed fixture's card
