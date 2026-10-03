@@ -22,7 +22,7 @@
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } from "./csv.mjs";
-/** @import { Pool, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
+/** @import { Pool, Db, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
 /** @import { ColumnSpec, RowError } from "./csv.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
 
@@ -37,12 +37,51 @@ import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } f
  * @property {string[]} template
  * @property {string} [example]
  * @property {string} find
- * @property {string} insert
- * @property {string} update
- * @property {(school: string | undefined, v: Record<string, any>) => unknown[]} params
+ * @property {string} [insert]
+ * @property {string} [update]
+ * @property {(school: string | undefined, v: Record<string, any>) => unknown[]} [params]
  * @property {(v: Record<string, any>, existing: any) => ({ ok: true, warning?: string, column?: undefined, message?: undefined }
  *                                                          | { ok: false, column: string, message: string, warning?: undefined })} [resolve]
+ * @property {string} [mayImport]  SQL answering one boolean `ok` for the school ($1): may this
+ *                                 caller import this kind at all. Asked once, before any row.
+ * @property {(client: Db, school: string | undefined, v: Record<string, any>,
+ *             file: Map<string, any>, line: number) => Promise<RowOutcome>} [apply]
+ *                                 One row, written its own way. Used instead of find/insert/update.
  */
+
+/**
+ * What one row came to. `did` is what was (or, on a dry run, would be) done.
+ * @typedef {{ ok: true, did: "insert" | "update" | "unchanged", warning?: RowError }
+ *         | { ok: false, column: string | null, message: string }} RowOutcome
+ */
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The link vocabulary for a guardian (assignment_subject.relationship, db/00), less 'self' and 'enquiry'. */
+export const GUARDIAN_RELATIONSHIPS = Object.freeze(["parent", "guardian", "grandparent", "sibling", "other"]);
+
+/** A name as the import compares two: trimmed, runs of spaces closed, case ignored. */
+const norm = (/** @type {unknown} */ s) => String(s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+
+/** enrol_person()'s refusals (db/08, db/62), in the office's words. */
+/** @type {Record<string, string>} */
+export const ENROL_REFUSAL = {
+  not_permitted: "not permitted at this school",
+  player_is_an_adult: "he is eighteen; guardian access ends at eighteen and a new link is never made for an adult",
+  player_date_of_birth_required: "his date of birth is not on his record; add it in Squad, then import this line",
+  email_belongs_to_another_school: "this email is an account at another school",
+  email_invalid: "does not look like an email address",
+  name_required: "guardian_name is required",
+  player_not_at_that_school: "no player at this school is called that",
+  no_such_player: "no player at this school is called that",
+};
+/** @type {Record<string, string>} */
+const ENROL_REFUSAL_COLUMN = {
+  player_is_an_adult: "player_full_name", player_date_of_birth_required: "player_full_name",
+  player_not_at_that_school: "player_full_name", no_such_player: "player_full_name",
+  email_belongs_to_another_school: "guardian_email", email_invalid: "guardian_email",
+  name_required: "guardian_name",
+};
 
 /**
  * What may be imported, and how each column is read.
@@ -198,7 +237,143 @@ export const IMPORTS = {
       return { ok: true, warning: dob.warning };
     },
   },
+
+  /**
+   * Parents, against the boys already loaded (PILOT_LOAD.md gap 3). Kameel's
+   * decision, 3 October 2026: the office vouches for every parent–child link
+   * in the file, exactly as it vouches for one typed on Settings → People.
+   *
+   * SO EACH ROW IS POST /api/users, NOT A SHORTCUT ROUND IT. The write is
+   * enrol_person(email, name, 'guardian', school, null, child) under the
+   * importer's own identity: the same capability check (user.role.assign at
+   * this school, and app_may_grant('guardian')), the same majority and
+   * date-of-birth refusals, the same link — verified by the person importing,
+   * consent pending, ended at eighteen where he has left school — and the
+   * same record of who decided it (role_request.decided_by, the link's
+   * verified_by and created_by). Consent stays the family's to give.
+   *
+   * THE ROLE IS NOT A COLUMN. Every row grants `guardian` and nothing else; a
+   * file carrying a `role` column has it reported as a column not read.
+   *
+   * What the import adds to the one-at-a-time path is only what a file needs
+   * and a screen does not: the child found by name (the players import's own
+   * rule, and two boys of one name refused rather than guessed), the same
+   * line twice refused, one email under two names refused, an email that is
+   * already somebody else's account (another name, or a pupil's own) refused,
+   * and a link already in place left alone, so the file can be sent again.
+   *
+   * A CHILD UNDER A NEVER-PUBLIC MARK, or the subject of a safeguarding
+   * concern, is linked exactly as the one-at-a-time path links him: enrolment
+   * reads neither (the mark governs public pages, db/47; a concern is the
+   * DSO's, db/57), and the importer, which may not read them either, does not
+   * learn from a refusal that they exist.
+   */
+  guardians: {
+    table: "assignment_subject",
+    label: "Guardians",
+    needsSchool: true,
+    spec: {
+      player_full_name: { required: true, parse: asText(120) },
+      guardian_name:    { required: true, parse: asText(120) },
+      guardian_email:   { required: true, parse: asEmail },
+      // Required, so the office says what it is vouching for rather than the
+      // import assuming it. Enrolment records every link as 'parent' today
+      // (decide_role_request(), db/62), so that is the one value it can
+      // write truthfully; the rest of the link vocabulary (db/00) is read,
+      // and refused on its line rather than recorded as something it is not.
+      relationship:     { required: true, parse: asOneOf(GUARDIAN_RELATIONSHIPS) },
+    },
+    template: ["player_full_name", "guardian_name", "guardian_email", "relationship"],
+    example: "A Botha,B Botha,b.botha@example.invalid,parent",
+    // The players import's own match on the name.
+    find: `select id, born from player
+            where school_id = $1 and lower(btrim(full_name)) = lower(btrim($2))`,
+    // enrol_person()'s own first check, asked once for the file: a coach, or
+    // another school's office, is told no once rather than on every line.
+    // enrol_person() asks it again on every row and remains the authority.
+    mayImport: `select (app_can('user.role.assign', $1::uuid, '*',
+                                '00000000-0000-0000-0000-000000000000'::uuid,
+                                '00000000-0000-0000-0000-000000000000'::uuid)
+                        and app_may_grant('guardian')) as ok`,
+    apply: async (client, school, v, file, line) => {
+      if (v.relationship !== "parent") {
+        return { ok: false, column: "relationship",
+          message: `enrolment records a parent link only, so a ${v.relationship} cannot be imported yet. ` +
+                   "Leave this line out and raise it with Kameel." };
+      }
+      const email = /** @type {string} */ (v.guardian_email);
+      const name = norm(v.guardian_name);
+
+      // Within the file: the same line twice, and one email under two names.
+      const pair = `${email}|${norm(v.player_full_name)}`;
+      if (file.has(pair)) {
+        return { ok: false, column: null, message: `the same guardian and child is on line ${file.get(pair)}` };
+      }
+      const named = file.get(`email:${email}`);
+      if (named && named.name !== name) {
+        return { ok: false, column: "guardian_email",
+          message: `${email} is ${named.as}'s on line ${named.line}; one email is one person` };
+      }
+      file.set(pair, line);
+      if (!named) file.set(`email:${email}`, { name, as: v.guardian_name, line });
+
+      // The child, matched as the players import matches.
+      const found = await client.query(IMPORTS.guardians.find, [school, v.player_full_name]);
+      if (!found.rowCount) {
+        return { ok: false, column: "player_full_name",
+          message: `no player at this school is called ${v.player_full_name}; ` +
+                   "the name has to match his row in Squad, letter for letter" };
+      }
+      if (/** @type {number} */ (found.rowCount) > 1) {
+        return { ok: false, column: "player_full_name",
+          message: `more than one player at this school is called ${v.player_full_name}; ` +
+                   "the import cannot tell them apart. Link this one on Settings → People" };
+      }
+      const child = found.rows[0].id;
+
+      // The account this email already opens, if the importer may see it
+      // (People shows the same). One at another school is enrolment's own
+      // refusal below.
+      const acct = (await client.query(
+        `select id, name, player_id from app_user where lower(email) = $1`, [email])).rows[0];
+      if (acct?.player_id) {
+        return { ok: false, column: "guardian_email",
+          message: `${email} is a pupil's own account, not a guardian's` };
+      }
+      if (acct && norm(acct.name) !== name) {
+        return { ok: false, column: "guardian_email",
+          message: `${email} is already ${acct.name}'s account; one email is one person` };
+      }
+      if (acct) {
+        // A link already in place is left as it is, so the file can be sent
+        // twice. enrolment would write a second one beside it.
+        const link = (await client.query(
+          `select s.verification_state from assignment_subject s
+             join role_assignment a on a.id = s.assignment_id
+            where a.person_id = $1 and a.school_id = $2 and a.role = 'guardian' and a.active
+              and s.player_id = $3 and s.verification_state in ('pending', 'verified')
+              and (s.valid_until is null or s.valid_until > current_date)
+            limit 1`, [acct.id, school, child])).rows[0];
+        if (link?.verification_state === "verified") return { ok: true, did: "unchanged" };
+        if (link) {
+          return { ok: false, column: null,
+            message: `${v.guardian_name} has asked to be linked to ${v.player_full_name} and is waiting; ` +
+                     "verify that request on Settings → People rather than importing a second link" };
+        }
+      }
+
+      const r = (await client.query(`select * from enrol_person($1, $2, 'guardian', $3, null, $4, $5)`,
+        [email, v.guardian_name, school, child, "guardians import"])).rows[0];
+      if (!r?.ok) {
+        const reason = r?.reason || "refused";
+        return { ok: false, column: ENROL_REFUSAL_COLUMN[reason] ?? null,
+                 message: ENROL_REFUSAL[reason] ?? reason };
+      }
+      return { ok: true, did: "insert" };
+    },
+  },
 };
+
 
 /**
  * Read a file and say what would happen, or make it happen.
@@ -213,7 +388,7 @@ export const IMPORTS = {
 export async function runImport(pool, secret, bearer, kind, { csv, schoolId, commit }) {
   const def = Object.hasOwn(IMPORTS, /** @type {string} */ (kind)) ? IMPORTS[/** @type {string} */ (kind)] : undefined;   // an absent kind finds nothing, as "undefined"
   if (!def) { const e = /** @type {DressedError} */ (new Error("unknown_import")); e.status = 404; throw e; }
-  if (def.needsSchool && !schoolId) {
+  if (def.needsSchool && !(typeof schoolId === "string" && UUID.test(schoolId))) {
     const e = /** @type {DressedError} */ (new Error("school_required")); e.status = 400; throw e;
   }
   if (typeof csv !== "string" || !csv.trim()) {
@@ -228,7 +403,16 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
   // making it a flag would mean somebody sets the flag.
 
   return runAsPrincipal(pool, secret, bearer, async (client) => {
-    let inserted = 0, updated = 0;
+    // A kind that says who may import it asks once, before any row: a caller
+    // with no authority at this school is refused the file, not every line.
+    if (def.mayImport) {
+      const may = (await client.query(def.mayImport, [schoolId])).rows[0];
+      if (!may?.ok) { const e = /** @type {DressedError} */ (new Error("not_permitted")); e.status = 403; throw e; }
+    }
+    let inserted = 0, updated = 0, unchanged = 0;
+    // What a kind's apply() remembers across the file's rows.
+    /** @type {Map<string, any>} */
+    const file = new Map();
     /** @type {RowError[]} */
     const refused = [];
     // Not refusals: a row that went in and is worth a second look. Kept apart
@@ -239,6 +423,19 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
     await client.query("SAVEPOINT bulk");
     for (const { line, values } of rows) {
       try {
+        if (def.apply) {
+          const out = await def.apply(client, schoolId, values, file, line);
+          if (!out.ok) refused.push({ line, column: out.column, message: out.message });
+          else {
+            if (out.warning) warnings.push(out.warning);
+            if (out.did === "insert") inserted += 1;
+            else if (out.did === "update") updated += 1;
+            else unchanged += 1;
+          }
+          await client.query("RELEASE SAVEPOINT bulk");
+          await client.query("SAVEPOINT bulk");
+          continue;
+        }
         // The lookup runs under the caller's own row-level security too, so a
         // name they may not read comes back as "none found" and they attempt
         // an insert — which the INSERT policy then refuses. That is the right
@@ -269,10 +466,10 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
           warnings.push({ line, column: "id_number",
                           message: BIRTH_DATE_MESSAGE[checked.warning] ?? checked.warning });
         }
-        const resolved = def.params(schoolId, values);
+        const resolved = /** @type {NonNullable<ImportDef["params"]>} */ (def.params)(schoolId, values);
         const r = found.rowCount === 1
-          ? await client.query(def.update, [...resolved, found.rows[0].id])
-          : await client.query(def.insert, resolved);
+          ? await client.query(/** @type {string} */ (def.update), [...resolved, found.rows[0].id])
+          : await client.query(/** @type {string} */ (def.insert), resolved);
         if (!r.rowCount) {
           // No row and no error is the policy declining silently.
           refused.push({ line, column: null, message: "not permitted at this school" });
@@ -301,12 +498,12 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
     if (!committed) {
       const e = /** @type {Error & { report?: unknown, rollback?: boolean }} */ (new Error("dry_run"));
       e.report = { kind, committed: false, rows: rows.length, wouldInsert: inserted,
-                   wouldUpdate: updated, errors: allErrors, unknownColumns: unknown,
+                   wouldUpdate: updated, unchanged, errors: allErrors, unknownColumns: unknown,
                    warnings, clean: allErrors.length === 0 };
       e.rollback = true;
       throw e;
     }
-    return { kind, committed: true, rows: rows.length, inserted, updated,
+    return { kind, committed: true, rows: rows.length, inserted, updated, unchanged,
              errors: [], unknownColumns: unknown, warnings, clean: true };
   }).catch((e) => {
     if (e?.rollback && e.report) return e.report;

@@ -56,7 +56,7 @@ as it is, write dates as `YYYY-MM-DD`, and save as CSV (UTF-8).
 |---|---|---|---|
 | `players.csv` | boy | The importer's own twelve columns, in its order. Fill `full_name`, `team_code`, `born`. Fill `squad_no`, `playing_role` (batter, bowler, allrounder, keeper), `batting_style` (R/L), `bowling_arm` (R/L) and `bowling_style` (F/M/S) if known. Leave the last four blank. | `POST /api/import/players`, step 5 |
 | `staff.csv` | role a person holds | `name, email, role, team_code`. `team_code` is required for coach, assistantcoach and teammanager, and blank otherwise | Settings → People, steps 3 and 6 |
-| `guardians.csv` | guardian, per child | `player_full_name, guardian_name, guardian_email`. The child's name must match `players.csv` exactly. A parent of two boys takes two rows with the same email | Settings → People, step 7 |
+| `guardians.csv` | guardian, per child | The guardians import's own four columns: `player_full_name, guardian_name, guardian_email, relationship`. The child's name must match `players.csv` exactly. A parent of two boys takes two rows with the same email. `relationship` is `parent`: enrolment records a parent link only, so the import refuses any other value (gap 3) | `POST /api/import/guardians`, step 7 |
 
 Sides are `U9`–`U16` with an optional `A`–`F` (`U14A`), or `1XI`, `2XI`…. A boy's side
 must be his age group by birth or older. "U14" means fourteen and under on 1 January.
@@ -90,8 +90,8 @@ fixtures.
 | 4 | Appoint the DSO | The principal, signed in. Only the principal appoints a DSO (CSA p17). The office and the director of sport cannot | Settings → People → Add, role `dso` (`POST /api/users`). The principal cannot issue the DSO's code, so Kameel issues it (People → issue code, `POST /api/auth/invite`), or the DSO signs in with Google and Kameel confirms the claim | 5 min | Every signed-in person's Safeguarding card names the DSO (`dso_contacts()`) |
 | 5 | Players: dry run, then commit | Kameel, with the office beside him reading the report. No import screen exists (gap 2). The route needs `player.profile.manage`, which the office and the owner hold | `POST /api/import/players`, recipe below | 5 min | The commit answers `committed: true, inserted: <rows>`. Squad shows every side. `GET /api/export/players` gives the same count in `x-scrbrd-rows` |
 | 6 | Staff | The office (`user.role.assign`; it grants coach, assistantcoach, teammanager, scorer, official and more). Kameel or the principal does the roles the checker lists as "office cannot grant" | Settings → People → Add, one per `staff.csv` line, with the role and side. No code yet | about 1 min a line | People lists each person with role and side. A coach who is also a parent is one account with two roles |
-| 7 | Guardians | The office (`user.role.assign` and `guardian`) | Settings → People → Add, role `guardian`, choosing the child, one per `guardians.csv` line (`POST /api/users`). The link is written verified by the office, with the family's consent still pending. A second child under the same email adds a second link to the same account (checked against a local copy on 3 Oct) | about 1 min a line, **the long step** (gap 3) | People shows each guardian against each child |
-| 8 | Grounds | Kameel. No screen or route creates a ground (gap 4); the table's own policy is `facility.manage` | SQL as the owner: `insert into ground (school_id, name, surface) values (…)`. One row per ground, no child's data | 2 min | Fields lists the grounds, and the fixture form offers them |
+| 7 | Guardians: dry run, then commit | Kameel, with the office beside him, on the office's own sign-in: the route needs exactly what Settings → People needs for one guardian (`user.role.assign` at the school, and may grant `guardian`). Kameel decided on 3 Oct that the office vouches for every link in the file | `POST /api/import/guardians`, the step 5 recipe with `guardians.csv`. Each row is `enrol_person()` under the office's identity: the link is written verified by the office, with the family's consent still pending. One email for two boys is one account with two links. A boy not found, or two boys of one name, is an error on that line, never a guess; so is one email under two names, an email that is another person's account or a pupil's, and any relationship but `parent`. Sending the file again changes nothing | 5 min | The commit answers `committed: true`. People shows each guardian against each child |
+| 8 | Grounds | The office or Kameel (`facility.manage` at the school). No screen yet (gap 4) | `POST /api/grounds {schoolId, name, surface?, parentId?}`, one call per ground, the step 5 token. A pitch on a field names the field as `parentId`. The same name twice at the school is refused (409) | 2 min | `GET /api/read/grounds` lists them; Fields lists them, and the fixture form offers them |
 | 9 | Fixtures | The office or the director of sport (`fixture.create`) | Calendar → Add fixture (`POST /api/fixtures`): side, date and time, opponent (typed, or the school if it is on SCRBRD), ground, format | about 1 min each | Calendar shows each fixture; an opposing school on SCRBRD sees it too |
 | 10 | Check the result | The DSO | The DSO reads People and Squad as a second pair of eyes: no stranger linked to a child, no adult in a team role the school did not list | 10 min | The DSO says so in writing (an email to Kameel) |
 | 11 | Ways in, **in the week of 12 October** | The office: codes for coaches, scorers and parents. Kameel: codes for the principal, director of sport, DSO and office, which nobody below the owner may issue (db/81) | People → issue code (`POST /api/auth/invite`), handed over in person or by phone, never by email. Or Google sign-in, with the office confirming each claim on Claims (Kameel for leadership) | 1 min each | The person reaches their own screen |
@@ -138,13 +138,17 @@ These steps have no screen or route today. Nothing here builds one.
 2. **An import screen.** Proposed shape: Settings → Import, over the existing
    `POST /api/import/:kind`. It would show the dry-run report by line and offer
    "Commit" only when the report is clean. It needs no new API, so it is Sonnet work.
-3. **Bulk guardian (and staff) enrolment.** Proposed shape: an `IMPORTS.guardians`
+3. **Built 3 Oct for guardians** (`IMPORTS.guardians`, `tools/smoke-guardian-import.mjs`).
+   Still open: enrolment writes every link as `parent`, so recording a grandparent or a
+   court-appointed guardian needs `enrol_person()` to take a relationship (a migration),
+   and there is no import screen (gap 2). The proposal as it stood: **Bulk guardian (and staff) enrolment.** Proposed shape: an `IMPORTS.guardians`
    kind, each row calling `enrol_person()` under the office's own identity, with dry
    run as the default and the child matched by name as the players import does it.
    Linking adults to children in bulk is a safeguarding decision (SCRBRD-140 D5), so
    it is Kameel's call. Staff could instead wait for the SCRBRD-140 phase 2 register,
    which `staff.csv`'s columns already match.
-4. **Creating a ground.** Proposed shape: `POST /api/grounds {schoolId, name, surface?,
+4. **Built 3 Oct as a route** (`POST /api/grounds`, `tools/smoke-grounds.mjs`); Add ground on
+   Fields is still to come. The proposal as it stood: **Creating a ground.** Proposed shape: `POST /api/grounds {schoolId, name, surface?,
    parentId?}` under `facility.manage`, with Add ground on Fields. The table's policy
    is already there.
 5. **Public-name consent and the never-public mark.** `public_name_consent_set()` and

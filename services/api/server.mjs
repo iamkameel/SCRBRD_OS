@@ -780,6 +780,9 @@ const PLAYER_ROUTES = [
   [/^\/api\/grounds\/([^/]+)\/closures$/,                       "GET",  planner.closures],
   [/^\/api\/grounds\/([^/]+)\/closures$/,                       "POST", planner.closureAdd],
   [/^\/api\/ground-closures\/([^/]+)\/remove$/,                 "POST", planner.closureRemove],
+  // A ground made (PILOT_LOAD.md gap 4): facility.manage at the school, the
+  // table's own insert policy. Read back with GET /api/read/grounds.
+  [/^\/api\/grounds$/,                                         "POST", planner.groundCreate],
   [/^\/api\/grounds\/([^/]+)\/parent$/,                         "POST", planner.parent],
   [/^\/api\/grounds\/([^/]+)\/ends$/,                           "POST", planner.ends],
   // Making a league (SCRBRD-123, db/67 §8a–8c): the competition, its

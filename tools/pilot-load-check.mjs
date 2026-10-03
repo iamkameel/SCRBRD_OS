@@ -23,16 +23,16 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCsv, mapRows, asText, asEmail } from "../services/api/io/csv.mjs";
-import { IMPORTS } from "../services/api/io/import-api.mjs";
+import { parseCsv, mapRows, asText, asEmail, asOneOf } from "../services/api/io/csv.mjs";
+import { IMPORTS, GUARDIAN_RELATIONSHIPS } from "../services/api/io/import-api.mjs";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { parseTeam, isValidTeam, ageAtCutoff } from "@scrbrd/policy/teams";
 import { ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, mayGrantRole } from "@scrbrd/policy/roles";
 
 /** The office's staff worksheet: one row per role a person is to hold. */
 export const STAFF_COLUMNS = ["name", "email", "role", "team_code"];
-/** The office's guardian worksheet: one row per guardian per child. */
-export const GUARDIAN_COLUMNS = ["player_full_name", "guardian_name", "guardian_email"];
+/** The guardians import's own file (POST /api/import/guardians): one row per guardian per child. */
+export const GUARDIAN_COLUMNS = IMPORTS.guardians.template;
 
 // Parsed with the importer's own column parsers, so "does not look like an
 // email address" reads the same here as it will on the server. The role and
@@ -48,6 +48,7 @@ const GUARDIAN_SPEC = {
   player_full_name: { required: true, parse: asText(120) },
   guardian_name:    { required: true, parse: asText(120) },
   guardian_email:   { parse: asText(254) },
+  relationship:     { required: true, parse: asOneOf(GUARDIAN_RELATIONSHIPS) },
 };
 
 // Roles that are never a staff line: a person's link to a child or to his
@@ -273,6 +274,11 @@ export function checkLoad(files, { on = new Date(), ageGroupOf } = {}) {
             `no email for ${v.guardian_name}: a guardian's account is opened on an email, and without one ` +
             "the family cannot be linked. Ask the office for it, or leave this row for later.");
         continue;
+      }
+      if (v.relationship !== "parent") {
+        add("error", F, line, "relationship",
+            `the import records a parent link only, so a ${v.relationship} cannot be loaded from this file yet. ` +
+            "Take this row out and raise it with Kameel.");
       }
       let email;
       try { email = asEmail(v.guardian_email); }

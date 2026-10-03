@@ -68,8 +68,8 @@ group("B. Duplicates");
                                   "Fake Coach,FAKE.COACH@example.invalid,coach,U14A"].join("\n") });
   ok("the same person, role and side twice in staff.csv is an error",
      at(s, "staff.csv", 3).some((p) => p.level === "error"));
-  const g = run({ guardians: [G_HEAD, "Fake Pupil,Fake Parent,fake.parent@example.invalid",
-                                      "Fake Pupil,Fake Parent,fake.parent@example.invalid"].join("\n") });
+  const g = run({ guardians: [G_HEAD, "Fake Pupil,Fake Parent,fake.parent@example.invalid,parent",
+                                      "Fake Pupil,Fake Parent,fake.parent@example.invalid,parent"].join("\n") });
   ok("the same guardian and child twice is an error", at(g, "guardians.csv", 3).some((p) => p.level === "error"));
 }
 
@@ -121,17 +121,24 @@ group("E. Guardians");
                            prow("Fake Adult", "1XI", "2008-01-20"),
                            prow("Fake Orphanrow", "U14A", "2012-04-04")].join("\n");
   const r = run({ players, guardians: [G_HEAD,
-    "Fake Pupil,Fake Parent,",
-    "Fake Pupil,Fake Parent Two,not-an-email",
-    "Fake Nobody,Fake Parent Three,fake.three@example.invalid",
-    "Fake Adult,Fake Parent Four,fake.four@example.invalid",
-    "fake pupil,Fake Parent Five,fake.five@example.invalid"].join("\n") });
+    "Fake Pupil,Fake Parent,,parent",
+    "Fake Pupil,Fake Parent Two,not-an-email,parent",
+    "Fake Nobody,Fake Parent Three,fake.three@example.invalid,parent",
+    "Fake Adult,Fake Parent Four,fake.four@example.invalid,parent",
+    "fake pupil,Fake Parent Five,fake.five@example.invalid,parent",
+    "Fake Pupil,Fake Gran,fake.gran@example.invalid,grandparent"].join("\n") });
   ok("a missing guardian email is an error",
      at(r, "guardians.csv", 2).some((p) => p.level === "error" && p.column === "guardian_email" && /no email/.test(p.message)));
   ok("...and so is one that is not an email", at(r, "guardians.csv", 3).some((p) => p.level === "error"));
   ok("a child who is not in players.csv is an error", at(r, "guardians.csv", 4).some((p) => p.level === "error"));
   ok("a guardian for an eighteen-year-old is an error", at(r, "guardians.csv", 5).some((p) => /eighteen/.test(p.message)));
   ok("the child's name matches as the importer matches, ignoring case", at(r, "guardians.csv", 6).length === 0);
+  ok("a relationship the import cannot record yet is an error",
+     at(r, "guardians.csv", 7).some((p) => p.level === "error" && p.column === "relationship" && /parent link only/.test(p.message)));
+  const noRel = run({ guardians: ["player_full_name,guardian_name,guardian_email",
+                                  "Fake Pupil,Fake Parent,fake.parent@example.invalid"].join("\n") });
+  ok("...and a file with no relationship column is refused, not assumed parent",
+     noRel.problems.some((p) => p.level === "error" && /no relationship column/.test(p.message)));
   ok("a boy with no guardian at all is a warning",
      at(r, "players.csv", 4).some((p) => p.level === "warning" && /no guardian/.test(p.message)));
 }
@@ -148,8 +155,8 @@ group("F. Staff, and an email already in use");
       "Fake Wizard,fake.wizard@example.invalid,wizard,",
       "Fake Dso,fake.dso@example.invalid,dso,"].join("\n"),
     guardians: [G_HEAD,
-      "Fake Pupil,Fake Coach,fake.coach@example.invalid",
-      "Fake Pupil Two,Fake Stranger,fake.coach@example.invalid"].join("\n"),
+      "Fake Pupil,Fake Coach,fake.coach@example.invalid,parent",
+      "Fake Pupil Two,Fake Stranger,fake.coach@example.invalid,parent"].join("\n"),
   });
   ok("a staff email already used by another person is an error",
      at(r, "staff.csv", 3).some((p) => p.level === "error" && /already Fake Coach's/.test(p.message)));

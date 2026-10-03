@@ -1,5 +1,5 @@
-player_full_name,guardian_name,guardian_email
-Fake Pupil One,Fake Parent One,fake.parent.one@example.invalid
-Fake Pupil Two,Fake Parent Two,fake.parent.two@example.invalid
-Fake Pupil Two,Fake Parent Three,fake.parent.three@example.invalid
-Fake Pupil Three,Fake Coach Two,fake.coach.two@example.invalid
+player_full_name,guardian_name,guardian_email,relationship
+Fake Pupil One,Fake Parent One,fake.parent.one@example.invalid,parent
+Fake Pupil Two,Fake Parent Two,fake.parent.two@example.invalid,parent
+Fake Pupil Two,Fake Parent Three,fake.parent.three@example.invalid,parent
+Fake Pupil Three,Fake Coach Two,fake.coach.two@example.invalid,parent

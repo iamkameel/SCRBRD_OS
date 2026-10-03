@@ -812,6 +812,44 @@ export function plannerRoutes({ pool, secret }) {
       });
     }),
 
+    // POST /api/grounds { schoolId, name, surface?, parentId? } → { id, schoolId, name, surface, parentId }
+    //   A ground (PILOT_LOAD.md gap 4), under the table's own insert policy:
+    //   facility.manage at that school, as editing a ground's ends or parent
+    //   is. A pitch may be put on a field of the same school (parentId).
+    //   refusals: not_permitted (403), school_required, name_invalid (2–80
+    //   characters), surface_invalid (up to 40), parent_invalid (400 when not
+    //   an id; 422 another school's ground, or none), ground_exists (409, the
+    //   same name at that school, any case; `detail` is its id).
+    groundCreate: handle(async (req) => {
+      const b = req.body || {};
+      const school = String(b.schoolId ?? "");
+      if (!UUID.test(school)) throw err("school_required");
+      const name = typeof b.name === "string" ? b.name.trim().replace(/\s+/g, " ") : "";
+      if (name.length < 2 || name.length > 80) throw err("name_invalid", 400, "a name of 2 to 80 characters");
+      if (b.surface != null && typeof b.surface !== "string") throw err("surface_invalid");
+      const surface = b.surface?.trim() || null;
+      if (surface && surface.length > 40) throw err("surface_invalid", 400, "up to 40 characters");
+      const parent = b.parentId == null || b.parentId === "" ? null : String(b.parentId);
+      if (parent && !UUID.test(parent)) throw err("parent_invalid", 400, "parentId: a ground's id, or null");
+      return runAsPrincipal(pool, secret, as(req), async (client) => {
+        // Read under the caller's own policy (facility.read), so the answer
+        // says nothing about a school whose grounds they may not see.
+        const { rows: same } = await client.query(
+          `select id from ground where school_id = $1 and lower(name) = lower($2) limit 1`, [school, name]);
+        if (same.length) throw err("ground_exists", 409, same[0].id);
+        try {
+          const { rows } = await client.query(
+            `insert into ground (school_id, name, surface, parent_id) values ($1, $2, $3, $4)
+             returning id, school_id, name, surface, parent_id`, [school, name, surface, parent]);
+          const g = rows[0];
+          return { id: g.id, schoolId: g.school_id, name: g.name, surface: g.surface ?? null, parentId: g.parent_id ?? null };
+        } catch (/** @type {any} */ e) {
+          if (e.code === "23514" || e.code === "23503") throw err("parent_invalid", 422, e.code === "23514" ? e.message : "no such ground");
+          throw e;
+        }
+      });
+    }),
+
     // POST /api/grounds/:id/parent { parentId: uuid | null } → { id, parentId }
     //   A pitch put on its field (or taken off it). facility.manage at the
     //   ground's school (the ground's own policy). refusals: not_permitted,
