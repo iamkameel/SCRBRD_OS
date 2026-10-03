@@ -395,6 +395,13 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Seen per person and per evidence; the live tab's cap sentences are the
   // pad's; 12px, 44px, both themes, reduced motion.
   "browser-cockpit",
+  // Pick the side (Match Centre → Match Details, and the Coach tab's side
+  // panel): a coach names an XI with a batting order and a twelfth and the Coach
+  // tab shows it with no reload; a boy too old for the age group is refused in
+  // the trigger's words beside him and the old side stands; duplicate numbers
+  // are refused before anything is sent; a coach of another team and a parent
+  // are offered nothing and a forced post is a 403; 12px, 44px, 390, Daylight.
+  "browser-pick-side",
   // Signing in with Google, from a browser (SCRBRD-140 phase 1, the screens):
   // the button and the signed privacy paragraph, the SDK fetched only when
   // pressed, a new account on the no-school screen, a parent's request as free
