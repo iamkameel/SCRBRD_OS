@@ -1,188 +1,123 @@
-# Pilot Match Day — Runbook
+# Pilot match day runbook
 
-15 October 2026, Westville Boys' High. Scoring and live broadcast for one fixture.
+15 October 2026. [school] v [opponent]. One fixture scored on the app and shown on the pavilion screen.
 
----
+Fill in before the day: [school], [opponent], [match link from the Match Centre], [who to call].
 
-## The Day Before
-
-### Phones and Accounts
-
-1. Charge both scorers' phones to 100% and restart them
-2. Sign in with each scorer's account (`scorer@example.invalid` logins at your school)
-3. Open the app, tap **Match Centre**, find the fixture (1XI vs Michaelhouse), and tap **Open Live Scorer**
-4. Verify that both pads open without a login code required — if they ask for a code, the session has ended; sign out and sign back in
-5. Close the app on both phones
-
-### API Health Check
-
-1. Visit the health check: `https://your-api-url/api/health`
-2. Confirm all three lines show green: `db: ok`, `auth: ok` (or `auth: "dev_login_enabled"` for a test run)
-3. Note the URL for the display screen (below)
-
-### Ground Display Screen
-
-1. Open a tablet or laptop on the pavilion WiFi
-2. Go to `https://your-api-url/display/77777777-0000-0000-0000-000000000002` (ask your technical person for the correct match ID)
-3. Bookmark it
-4. Do not close the browser — close the tab only; test that refreshing (Ctrl+R) shows the current score
-5. Test WiFi signal at the scorer's box — if weak, you may have connectivity issues during the match
+Every button name below is written as the app shows it. The scorers' own one-page guide is `docs/pilot/SCORER_HELP.md`.
 
 ---
 
-## Two Hours Before Play
+## The day before (14 October)
 
-### Fixture Details
+### Check the server
 
-1. Confirm the teams, the match location and time, and the ground with the umpires
-2. Check that both scorers have the right fixture open (both phones show the same match)
-3. Verify the toss in the app (if your school records it in advance). If not recorded:
-   - The pad will ask the toss question when the first scorer opens the match
-   - Make sure they have signal before play starts so the server knows who bats first
+1. Open `https://scrbrd-os.web.app/api/health` in a browser. Hosting sends `/api` to the API. If the school has been given a custom domain, use that address instead.
+2. It must show `"ok":true` and `"db":"ok"`.
+3. It must show `"public":"on"`. If it says `off`, the pavilion screen cannot work: public pages stay off until the information officer has confirmed `docs/policy/PUBLIC_DATA.md` in writing (`DEPLOYING.md`, "Turning the public pages on").
+4. `"auth":"token_only"` is right for the pilot. `"auth":"dev_login_enabled"` means a test server.
 
-### Ground Display
+### Phones and accounts
 
-1. On the pavilion screen, open the display page (bookmarked above)
-2. Refresh the page (Ctrl+R)
-3. Verify that it shows "No match started" or the current score if one exists
-4. Leave it open; it will update automatically every 10 seconds
-5. Do not close the app on the scorers' phones if the display needs to update
+1. Charge both scorers' phones and restart them.
+2. Each scorer opens `https://scrbrd-os.web.app/app` on their own phone (the home page at `https://scrbrd-os.web.app` has a **Log in** link to it). They tap **Continue with Google**, or type their email and the code from the school office in **Sign-in code** and tap **Sign In**. A code works once and expires, so ask the office for a fresh one on the morning if it was used.
+3. If the screen says **Waiting for your school office**, the office has not linked that account yet. Ask [who to call].
+4. Tap **Match Centre** (the bottom bar on a phone, or under **More**). The fixture must be listed. While it is upcoming its button reads **Start Scoring →**; once live it reads **Open Live Scorer →**. If there is no button, that account is not offered scoring: tell [who to call].
+5. Rehearse on a practice match, not the real fixture: **Open SCRBRD Scorer**, then **Start Practice Match**. Score a few balls, a **Wicket** and an **Undo**. A practice match stays on the phone and is never counted.
+6. **Do not** score balls on the real fixture before the match.
 
----
+### Pavilion screen
 
-## During the Match
-
-### Before First Ball
-
-1. Confirm with the umpires that play is about to start
-2. First scorer: tap to open the pad. Answer any setup sheets (toss, openers, bowler)
-3. Both scorers: tap the score area to confirm you can see it — the board should show the team names and 0 runs
-4. Check the sync pill (bottom of the pad) — it should say **Sent** (if signed in) or **On device** (if no signal)
-
-### During Play
-
-**If there is signal:**
-
-- Watch the sync pill: if it ever says **Held**, there is an error. Stop and ask the office (below)
-- Reload the pavilion screen every two overs so spectators see the up-to-date score
-
-**If there is no signal:**
-
-- The scorers can keep scoring. Balls stay on the phone in the **On device** state
-- Every time one scorer finishes an over, check the boards match — runs, wickets, overs
-- Do not hand over during an over if there is no signal (below)
-
-### Score Handover
-
-**If changing scorers between innings (preferred):**
-
-1. First scorer: open the pad menu (**⋯**) and tap **Hand over**
-2. Wait for the sync pill to say **Sent** (if there is signal). Wait for signal to come back if needed — do not hand over without all balls sent
-3. Tap **Arm handover**. A code appears (example: 123456)
-4. Read the code aloud to the second scorer
-5. Second scorer: on their phone, open the same match, tap the pad menu (**⋯**), tap **Hand over**, then **Take over**
-6. Type the code: 1, 2, 3, 4, 5, 6
-7. Second scorer: check the board on their screen against the physical scoreboard (runs, wickets, overs, batters)
-8. If they match, tap **Confirm**
-9. If they do not match, tap back and ask the office to help (below)
-
-**If you must hand over mid-over (phone dying, scorer leaving):**
-
-1. First scorer: wait until the bowler is running in (to avoid confusion), then hand the phone to the second scorer
-2. Second scorer: keep scoring from where the first scorer left off
-3. No code is needed — the new scorer signs in with their account and the app joins the same match
-4. You will be on a different token, and the sync system tracks both scorers — this is recorded in the match history
-
-### Stopping Play (Rain)
-
-1. Scorer: tap the pad menu (**⋯**) and tap **Play stopped**
-2. Select the reason (Rain, Bad light, Wet ground)
-3. Tap **Stop**
-4. Pavilion screen: it will show the over as stopped; batters and bowlers are removed from the board
-
-### Resuming Play
-
-1. Scorer: tap the pad menu (**⋯**) and tap **Resume play**
-2. If the umpires shortened the overs (for example, from 20 to 16), enter the new overs
-3. In the chase, enter the new target the umpires set
-4. Tap **Resume**
-5. The board updates; scoring continues
+1. Someone who may publish [school]'s side (the director of sport or the office) taps the fixture's card in the Match Centre to open **Match Details**. Under **Public page** they tap **Publish** for the home side. If [school] is the away side, the home school publishes its own side.
+2. A **Ground display** section appears with a link and a QR code. Choose **Floodlit** or **Daylight**, **Normal (12 s)** or **Long (24 s)**, and tick **Reduce motion** if wanted. The choices travel in the link.
+3. Open that link in the pavilion screen's browser: [match link from the Match Centre]. Nobody signs in on it and nothing on it can be pressed.
+4. Before the toss it shows **Before the toss** and "The board opens with the first ball."
+5. If it says "This page is not available", the link is wrong or the match is not public (the side is not published, or public pages are off).
+6. Test the Wi-Fi where the screen sits.
 
 ---
 
-## If Something Goes Wrong
+## Two hours before play
 
-### Scorer's App Refused Balls
-
-If the sync pill shows **Held 2** (or any number) — the server refused some balls:
-
-1. Do not keep scoring — you are now out of sync with the server
-2. Call the office (see below)
-3. The office will review the refused balls and approve or discard them
-4. The app will say when it is safe to score again
-
-### Connection Lost or Worse
-
-If the pad says "Signing in…" or does not respond for more than 30 seconds:
-
-1. Do not reload the page — keep the app open
-2. Check the phone's WiFi or mobile signal
-3. If there is still no connection after 5 minutes, close the app and reopen the match (do not restart the phone)
-4. If it still does not connect, continue scoring offline — the pad will send everything when the connection returns
-
-### Technical Help (Call the Office)
-
-If you need to contact your technical person or the school office:
-
-1. The match ID is in the app: open the Match Centre, find the fixture, and tap it — the ID is in the URL
-2. Tell them the scorer's name, the phone's device ID (in the app settings or sign-in page), and what is not working
-3. Ask them to check the API health: `https://your-api-url/api/health`
-4. If they fix it, reload the page and carry on — you do not have to restart
+1. Agree who scores first and who stands by.
+2. Both scorers sign in again, at the gate where there is signal.
+3. The first scorer opens the fixture from **Match Centre** (**Open Live Scorer →** or **Start Scoring →**). If no toss is recorded, the pad shows **The toss**. Answer it only when the umpires have told you the result: the side batting first opens the innings and that cannot be undone on the pad.
+4. The standby opens the same fixture afterwards. Their pad should say **Someone else is scoring this match**. Leave it.
+5. Check the pavilion screen still shows **Before the toss**.
+6. Open the health address again.
 
 ---
 
-## After the Match
+## During play
 
-### Check the Scorecard
+### First ball
 
-1. When both innings are finished, the app shows a result screen
-2. Review it (runs, wickets, overs per side)
-3. Tap **Accept**
-4. The match is sealed and sent to the server
+1. The first scorer answers the sheets: the toss, the openers, **Opening Bowler**. If an amber bar says **Can't score yet**, its button opens the sheet that is missing.
+2. The sync pill under the scoreboard should say **Sent**.
 
-### Send Results to School
+### Through the innings
 
-1. In the Match Centre, find the fixture and tap it
-2. Go to the **Result** tab
-3. The school will see:
-   - Team names and overs (example: Hilton College 1st innings 42 all out off 15.2 overs)
-   - The man of the match (if set)
-   - Full scorecard (every batter and bowler's figures)
-4. Copy the link to the match and send it to the school or post on their sports board
-5. That link is the live scorecard — it updates every time a match is scored
+- The pavilion screen shows only what has been sent. If the pill says **Held** or **On device**, the screen is behind until the balls go.
+- At the end of each innings the check sheet opens. Compare it with the umpires' book, then tap **That is right — close the innings**. If it is wrong, tap **Take back the last ball**. After the first innings tap **Start 2nd Innings →**.
+- A handover needs signal on both phones, because arming and claiming both call the server. The sheet will not arm while balls are unsent or a ball is half entered. Do it between balls, ideally at the end of an over. The steps are in the scorers' guide: **Hand over**, **Hand over scoring**, the six-digit code, **Take over**, **Claim this match**, then the second scorer types the physical scoreboard's figures and taps **Confirm and take over**.
 
----
+### Rain or bad light
 
-## Offline Day (No Signal at the Ground)
-
-If the ground has no signal:
-
-1. Before the match, sign in at a place with signal (the office, home) so both phones have an active session
-2. Open the match on both phones — the app will load the fixture details
-3. Close the app but leave WiFi on — the app will cache the fixture details
-4. At the ground, open the app; it will try to connect but carry on offline
-5. Score normally — every ball is saved on the phone
-6. The pavilion display will show "No match active" (offline, no signal)
-7. After the match, go back to a place with signal (the office) and reload the app
-8. All balls will send to the server and the scorecard will appear online
+1. The scorer taps **Pad menu**, then **Play stopped**, picks **Rain**, **Bad light**, **Wet ground** or **Other**, and taps **Stop play**. The keys grey out. The pavilion screen shows **Play stopped**.
+2. To restart, the scorer taps **Resume**, types the umpires' overs (and the target in a chase), and taps the button at the bottom of the sheet.
+3. If play cannot restart, the scorer taps **End innings (rain)**. In a chase the sheet asks for the umpires' par score.
 
 ---
 
-## Checklist for 14 October (Day Before)
+## If something goes wrong
 
-- [ ] Both scorers' phones charged and restarted
-- [ ] Both scorers signed in and can open the fixture
-- [ ] API health check is green
-- [ ] Display screen bookmarked and working
-- [ ] Pavilion WiFi tested at the scorer's box
-- [ ] Umpires confirmed start time and teams
+### Pill says Refused
+
+The server turned some balls down. They stay on that phone and still count on its board.
+
+1. Tap the pill. The sheet **Refused by the server** lists each ball with the reason.
+2. If the sheet says what to name first (a bowler, the next batter), name them on the pad, then tap **Record again**.
+3. Tap **Discard** only when the scorer and the umpires' book agree the ball was wrong.
+
+### Pill says For review
+
+The server held balls sent under a token the phone no longer held. They are not in the scorebook. A supervisor decides on each one. Call [who to call].
+
+### No signal at the ground
+
+1. Scoring carries on. The pill says **Held** or **On device**, and the balls are saved on the phone.
+2. If the page reloads or the phone restarts, the pad reopens with its score. If a bar says **Sign in**, tap it and sign in again. If the old code has been used, ask the office for a new one.
+3. When signal returns the balls send by themselves. Wait for **Sent**.
+4. There is no handover without signal.
+
+### A bar says another device holds the match
+
+- **Someone else is scoring this match** with a **Try again** button: another phone holds it. Do not score on both.
+- **Another device has taken over scoring this match**: a handover finished. This phone sends nothing more.
+- **Score on this device**: another device scored since this one last held the match, and the pad is showing the server's log.
+
+### The pavilion screen
+
+- **Last updated** followed by a time and "reconnecting", bottom right: the screen has lost its connection. Check the pavilion Wi-Fi.
+- The screen says **This display is no longer available.** The side has been withdrawn from the public page.
+
+---
+
+## After the match
+
+1. After the second innings the scorer's screen says **Match Complete**. The scorer stays until the pill says **Sent**, moving to where there is signal if needed.
+2. In the Match Centre tap **Open match**, then **Scorecard**, and compare with the umpires' book.
+3. The public page is at the link in the **Public page** panel: [match link from the Match Centre]. Only players whose family has consented are named; everyone else is shown by position.
+4. To take the public page down, tap **Withdraw** in the same panel.
+
+---
+
+## Checklist for 14 October
+
+- [ ] Health address shows `"ok":true`, `"db":"ok"`, `"public":"on"`
+- [ ] Both scorers signed in, and the fixture and its button are there
+- [ ] Both scorers rehearsed on a practice match
+- [ ] Home side published and the pavilion screen shows **Before the toss**
+- [ ] Pavilion Wi-Fi tested
+- [ ] Phones charged
+- [ ] [who to call] known to both scorers
