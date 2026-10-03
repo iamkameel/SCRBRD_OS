@@ -131,8 +131,9 @@ const PIN = new Map([
 
 /** Phrases an earlier draft invented or got wrong. They must not come back. */
 const BANNED = [
-  ["Westville", "the pilot school and opponent are not known: use [school] and [opponent]"],
-  ["Michaelhouse", "the pilot school and opponent are not known: use [school] and [opponent]"],
+  // The pilot school is Westville Boys' High School (Kameel, 3 October 2026);
+  // the opponent is not known yet.
+  ["Michaelhouse", "the opponent is not known: use [opponent]"],
   ["77777777-", "a seed match id is not the pilot's match"],
   ["your-api-url", "the address is scrbrd-os.web.app (firebase.json, DEPLOYING.md)"],
   ["Get Started", "the app opens on the sign-in screen"],

@@ -1,6 +1,6 @@
 # Scorer's quick sheet
 
-15 October 2026. [school] v [opponent].
+15 October 2026. Westville Boys' High School v [opponent].
 
 ## Sign in
 

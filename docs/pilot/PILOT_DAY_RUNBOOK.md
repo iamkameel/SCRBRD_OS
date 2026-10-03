@@ -1,8 +1,8 @@
 # Pilot match day runbook
 
-15 October 2026. [school] v [opponent]. One fixture scored on the app and shown on the pavilion screen.
+15 October 2026. Westville Boys' High School v [opponent]. One fixture scored on the app and shown on the pavilion screen.
 
-Fill in before the day: [school], [opponent], [match link from the Match Centre], [who to call].
+Fill in before the day: [opponent], [match link from the Match Centre], [who to call].
 
 Every button name below is written as the app shows it. The scorers' own one-page guide is `docs/pilot/SCORER_HELP.md`.
 
@@ -28,7 +28,7 @@ Every button name below is written as the app shows it. The scorers' own one-pag
 
 ### Pavilion screen
 
-1. Someone who may publish [school]'s side (the director of sport or the office) taps the fixture's card in the Match Centre to open **Match Details**. Under **Public page** they tap **Publish** for the home side. If [school] is the away side, the home school publishes its own side.
+1. Someone who may publish Westville Boys' High School's side (the director of sport or the office) taps the fixture's card in the Match Centre to open **Match Details**. Under **Public page** they tap **Publish** for the home side. If Westville Boys' High School is the away side, the home school publishes its own side.
 2. A **Ground display** section appears with a link and a QR code. Choose **Floodlit** or **Daylight**, **Normal (12 s)** or **Long (24 s)**, and tick **Reduce motion** if wanted. The choices travel in the link.
 3. Open that link in the pavilion screen's browser: [match link from the Match Centre]. Nobody signs in on it and nothing on it can be pressed.
 4. Before the toss it shows **Before the toss** and "The board opens with the first ball."
