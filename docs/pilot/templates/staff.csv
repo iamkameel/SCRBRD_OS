@@ -1,0 +1,6 @@
+name,email,role,team_code
+Fake Principal,fake.principal@example.invalid,principal,
+Fake Office,fake.office@example.invalid,schooladmin,
+Fake Coach One,fake.coach.one@example.invalid,coach,U14A
+Fake Coach Two,fake.coach.two@example.invalid,coach,1XI
+Fake Scorer One,fake.scorer.one@example.invalid,scorer,

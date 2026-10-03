@@ -197,5 +197,22 @@ group("G. The field parsers refuse rather than guess");
   ok("text refuses over-length", /120 characters/.test(t(asText(120), "x".repeat(121))));
 }
 
+group("H. The template a school downloads is a file the importer accepts");
+{
+  // GET /api/import/players/template sends the header and this one row. Its
+  // first version had ten values for twelve columns and "right" for a hand,
+  // so the example itself failed on four columns. Read it through the spec.
+  const { IMPORTS } = await import("./import-api.mjs");
+  const def = IMPORTS.players;
+  const parsed = parseCsv(def.template.join(",") + "\n" + def.example + "\n");
+  ok("the example has one value per column",
+     parsed.rows[0]?.length === def.template.length);
+  const mapped = mapRows(parsed, def.spec);
+  ok("...and every one of them parses", mapped.errors.length === 0 && mapped.rows.length === 1);
+  ok("...with no column the importer does not read", mapped.unknown.length === 0);
+  const checked = def.resolve?.(mapped.rows[0].values, null);
+  ok("...and a new player from it passes the birth-date rule", checked?.ok === true);
+}
+
 console.log(`\n${"─".repeat(52)}\nCSV SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

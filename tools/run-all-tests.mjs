@@ -230,6 +230,10 @@ const SUITES = [
   // The signed-out read path (SCRBRD-083): the projection, the router, the shell.
   ["public-api", "services/api/public/public.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
+  // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
+  // birthday, a side his birthday does not fit, a guardian with no email, an
+  // email two people share; the templates clean; and it sends nothing.
+  ["pilot-load-check", "tools/pilot-load-check.test.mjs"],
   // A scorebook page's photo (SCRBRD-120): JPEG or PNG only, its metadata
   // stripped without a decoder, and the private store's two backends.
   ["page-image", "services/api/io/page-image.test.mjs"],

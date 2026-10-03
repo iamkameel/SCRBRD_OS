@@ -106,6 +106,11 @@ export const IMPORTS = {
     template: ["full_name", "team_code", "squad_no", "playing_role",
                "batting_style", "bowling_arm", "bowling_style", "born", "id_number",
                "email", "phone", "hometown"],
+    // One value per template column, each one the parser accepts. The route's
+    // old fallback row had ten values for twelve columns and spelled the hand
+    // "right", so a school that copied it got four errors on its first line.
+    // csv.test.mjs reads this row through the spec, so the two cannot drift.
+    example: "A Botha,1XI,7,batter,R,R,M,2011-04-07,,,,",
     /**
      * One row, matched on the name — and refusing to guess when it cannot.
      *
@@ -347,8 +352,7 @@ export function importRoutes({ pool, secret }) {
       // A header and one example row. An empty template teaches nothing about
       // the date format, which is the field schools get wrong.
       res.end("﻿" + def.template.join(",") + "\r\n" +
-              (def.example ?? "A Botha,1XI,7,batter,right,right-arm medium,2011-04-07,,,Hilton") +
-              "\r\n");
+              (def.example ?? "") + "\r\n");
     },
   };
 }
