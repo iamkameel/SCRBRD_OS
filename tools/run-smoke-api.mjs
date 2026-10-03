@@ -162,6 +162,11 @@ const WALKS = [
   "season",
   "requests",
   "enrol",
+  // The pilot's load (PILOT_LOAD.md gaps 3 and 4): parents in bulk, each row
+  // enrol_person() under the office's own identity; and a ground made by
+  // route rather than by SQL on the owner's key.
+  "guardian-import",
+  "grounds",
   // Ending a role (SCRBRD-132 C1, db/77): the other half of enrolling —
   // ended with a reason, holding nothing on the next request, on the record,
   // told without the reason; the guardian link's rules and nobody's last key.
