@@ -22,7 +22,12 @@ live are in [section 3](#3--where-a-dump-may-live-and-for-how-long).
 **Tick the plan the production project is on.** The Supabase dashboard shows
 it under *Organization → Billing*. This document does not assume a plan.
 
-- [ ] Free
+**Decided 3 October 2026 (Kameel): production stays on Free for the pilot,
+and Kameel's own encrypted dumps (section 2) are the backup.** So the dump
+before the pilot and the dump on each match day are not optional: on Free
+they may be the only copy there is.
+
+- [x] Free
 - [ ] Pro
 - [ ] Team
 - [ ] Enterprise
