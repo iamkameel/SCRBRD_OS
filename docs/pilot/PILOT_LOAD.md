@@ -88,7 +88,7 @@ fixtures.
 | 2 | Switch on the pilot's modules | Kameel | Modules (`POST /api/admin/modules/:key/grant`): the modules decided for the pilot. Lift clubs wait for the principal's lift policy (DEPLOYING.md) | 2 min | The Modules screen shows them on for the school |
 | 3 | Principal and office accounts, and a director of sport if there is one | Kameel (`user.role.assign`). Only the owner or a platform admin may grant `principal`; `schooladmin` also the principal, never the office | Settings → People → Add (`POST /api/users`). Leave "issue a code" off unless the person signs in this week (codes last three days) | 3 min | People lists each person with their role |
 | 4 | Appoint the DSO | The principal, signed in. Only the principal appoints a DSO (CSA p17). The office and the director of sport cannot | Settings → People → Add, role `dso` (`POST /api/users`). The principal cannot issue the DSO's code, so Kameel issues it (People → issue code, `POST /api/auth/invite`), or the DSO signs in with Google and Kameel confirms the claim | 5 min | Every signed-in person's Safeguarding card names the DSO (`dso_contacts()`) |
-| 5 | Players: dry run, then commit | Kameel, with the office beside him reading the report. No import screen exists (gap 2). The route needs `player.profile.manage`, which the office and the owner hold | `POST /api/import/players`, recipe below | 5 min | The commit answers `committed: true, inserted: <rows>`. Squad shows every side. `GET /api/export/players` gives the same count in `x-scrbrd-rows` |
+| 5 | Players: dry run, then commit | Kameel, with the office beside him reading the report. The office signs in and uses Settings → Import: Download the template, choose the file, Check, then Import (offered only after a clean Check of that file). The route needs `player.profile.manage`, which the office and the owner hold | Settings → Import; the recipe below is the same two calls by hand, if the screen is not up | 5 min | The commit answers `committed: true, inserted: <rows>`. Squad shows every side. `GET /api/export/players` gives the same count in `x-scrbrd-rows` |
 | 6 | Staff | The office (`user.role.assign`; it grants coach, assistantcoach, teammanager, scorer, official and more). Kameel or the principal does the roles the checker lists as "office cannot grant" | Settings → People → Add, one per `staff.csv` line, with the role and side. No code yet | about 1 min a line | People lists each person with role and side. A coach who is also a parent is one account with two roles |
 | 7 | Guardians | The office (`user.role.assign` and `guardian`) | Settings → People → Add, role `guardian`, choosing the child, one per `guardians.csv` line (`POST /api/users`). The link is written verified by the office, with the family's consent still pending. A second child under the same email adds a second link to the same account (checked against a local copy on 3 Oct) | about 1 min a line, **the long step** (gap 3) | People shows each guardian against each child |
 | 8 | Grounds | Kameel. No screen or route creates a ground (gap 4); the table's own policy is `facility.manage` | SQL as the owner: `insert into ground (school_id, name, surface) values (…)`. One row per ground, no child's data | 2 min | Fields lists the grounds, and the fixture form offers them |
@@ -102,7 +102,7 @@ it the guardian lines.
 
 ### Step 5, the import recipe
 
-There is no import screen yet, so Kameel calls the route the screen would call. The
+Settings → Import is the way in. If it is not up, Kameel calls the route the screen calls. The
 token is the one the browser already holds. In DevTools → Network, open any `/api/`
 request and copy the `Authorization` value after `Bearer `. It lasts 30 minutes. The
 file goes from disk to the request through a pipe and is never written anywhere else.
@@ -135,9 +135,12 @@ These steps have no screen or route today. Nothing here builds one.
 1. **Creating a school or a union.** Today this is `tools/bootstrap.mjs --school` or SQL.
    Proposed shape: `POST /api/admin/schools {code, name, kind, province}` under
    `platform.tenant.manage`, behind a platform-only screen.
-2. **An import screen.** Proposed shape: Settings → Import, over the existing
-   `POST /api/import/:kind`. It would show the dry-run report by line and offer
-   "Commit" only when the report is clean. It needs no new API, so it is Sonnet work.
+2. **An import screen.** Built: Settings → Import, over the existing
+   `POST /api/import/:kind`. It shows the dry-run report by line and offers
+   Import only after a clean Check of the same file. The screen keeps its own short
+   list of kinds (`apps/web/src/lib/importScreen.js`, held to `IMPORTS` by a test),
+   because no read lists the registry; a read that did would let a new kind appear
+   with no screen change.
 3. **Bulk guardian (and staff) enrolment.** Proposed shape: an `IMPORTS.guardians`
    kind, each row calling `enrol_person()` under the office's own identity, with dry
    run as the default and the child matched by name as the players import does it.
