@@ -1069,13 +1069,28 @@ export function squadRoutes({ pool, secret }) {
           // One thing is said before it: an away side that is not a school on
           // SCRBRD is nobody's to name (db/08 match_squad_side_exists), which
           // a reader of the fixture can already see on its card.
+          //
+          // AND EVERY BOY MUST BE THE SIDE'S OWN SCHOOL'S. team.select on a
+          // coach's assignment names no person, so app_can() passes it for
+          // any player id at all — and the insert policy asks nothing more.
+          // Without this a coach at one school who posted another school's
+          // boy's id got the trigger's sentence back (his full name, his age,
+          // whether his family has consented), or, for an eligible boy, put
+          // him on the team sheet. The boy is read under the caller's own
+          // policy: every holder of team.select reads his own school's roll
+          // (player.roster.read), and a boy he cannot read is refused the
+          // same way as one at another school.
           const gate = (await client.query(
-            `select bool_and(app_can('team.select',
+            `select bool_and(pl.id is not null
+                      and pl.school_id = case when $2 = 'away' then m.away_school_id else m.school_id end
+                      and app_can('team.select',
                       case when $2 = 'away' then m.away_school_id else m.school_id end,
                       case when $2 = 'away' then m.away_team_code else m.team_code end,
-                      p, m.id)) as ok,
+                      p.id, m.id)) as ok,
                     bool_or($2 = 'away' and m.away_school_id is null) as no_away
-               from match m, unnest($3::uuid[]) as p
+               from match m
+               cross join unnest($3::uuid[]) as p(id)
+               left join player pl on pl.id = p.id
               where m.id = $1`, [req.params.id, side, ids])).rows[0];
           if (gate?.no_away === true) {
             throw Object.assign(new Error("this fixture's away side is not a school on SCRBRD, so its team sheet is not ours to name"),

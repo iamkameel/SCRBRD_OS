@@ -25,6 +25,9 @@ const DB = ownerUrl();
 const HIL     = "11111111-1111-1111-1111-111111111111";
 const P_1XI   = "aaaaaaaa-0000-0000-0000-000000000001";  // James Whitfield, far too old for U13
 const GUARDIAN = "88888888-0000-0000-0000-0000000000e1";
+// Westville's boys (the seed's second school): one too old for U13, one not.
+const WES_OLD = "bbbbbbbb-0000-0000-0000-000000000002";
+const WES_BOY = "bbbbbbbb-0000-0000-0000-000000000001";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -147,6 +150,26 @@ try {
      (await pick(m.id, wes, "home", squad.slice(1))).status === 403);
   ok("an unsigned request cannot either",
      (await pick(m.id, null, "home", squad.slice(1))).status === 401);
+  // team.select names no person, so app_can() alone passes it for ANY player
+  // id. A coach at this school posting another school's boy must learn
+  // nothing about him (the age trigger's sentence carries his name and age)
+  // and must not put him on the sheet.
+  // An open side (no age limit) for the second half: there an eligible,
+  // registered boy of another school would otherwise simply go in.
+  const [open] = await q(
+    `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+     values ($1,'1XI','Michaelhouse', now() + interval '4 days','T20',20,'scheduled') returning id`, [HIL]);
+  const before = JSON.stringify(await live(m.id));
+  for (const [what, match, id] of [["over-age boy (U13 side)", m.id, WES_OLD], ["registered boy (1XI side)", open.id, WES_BOY]]) {
+    const probe = await pick(match, head, "home", [{ playerId: id, battingNo: 1 }]);
+    ok(`another school's ${what}, posted by this school's director of sport, is a 403`, probe.status === 403);
+    ok("...that names nobody and gives no age",
+       !/on 1 January|registered|Botha|Mkhize/.test(JSON.stringify(probe.body)));
+  }
+  ok("...and the U13 side is untouched", JSON.stringify(await live(m.id)) === before);
+  ok("no row for another school's boy was written",
+     (await q(`select count(*)::int n from match_squad where match_id = any($1::uuid[]) and player_id = any($2::uuid[])`,
+              [[m.id, open.id], [WES_OLD, WES_BOY]]))[0].n === 0);
 
   group("The request itself has to make sense");
   ok("a side must be home or away",
