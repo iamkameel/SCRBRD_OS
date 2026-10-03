@@ -250,6 +250,10 @@ const SUITES = [
   // verification against its own database.
   ["db-url-guard", "tools/db-url-guard.test.mjs"],
   ["shipped",  "tools/shipped.test.mjs"],
+  // The backup drill's tool (docs/pilot/BACKUP_RESTORE.md): which hosts are
+  // this machine, the ledger and row-count comparisons, the roles a dump's
+  // grants name, and a restore aimed anywhere else refused with exit 2.
+  ["backup-verify", "tools/backup-verify.test.mjs"],
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
