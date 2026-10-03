@@ -16,7 +16,7 @@
  *      real injury rows (the nature, severity, phase, the physio's notes) and
  *      the real reason a family gave for an absence: none appears. No wellness
  *      word, no ratio, no percentage beside a name, no phone number. Restricted
- *      reads "restricted · back 11 Oct", and the load reads a word and the
+ *      reads "restricted · back <his return date>", and the load reads a word and the
  *      fixed sentence.
  *   3. THE FEED'S EVIDENCE MATCHES THE READS. Every card's count and sentence is
  *      checked against the same reads fetched here, raw, with the coach's own
@@ -409,10 +409,14 @@ try {
   ok("...the bus: four seats, ten named, one arriving by lift", /4 seats/.test(bus) && /10 named/.test(bus) && /1 arriving by lift/.test(bus), bus);
   ok("...and the lift as a head count: no driver, no boy's name beside it", !/Whitfield|Bekker|Fortuner/.test(bus + day), bus);
 
+  // The return dates are the seed's, relative to the day it ran (db/98:
+  // current_date + 9 and + 16), so they are read, not pinned. The screen
+  // writes them "11 Oct" (lib/cockpit.js shortDate).
+  const backOn = Object.fromEntries((await q(`select player_id::text as id, to_char(rtw_date, 'FMDD Mon') as d from injury where player_id = any($1::uuid[]) and restricted`, [[BEKKER, PILLAY]])).map((r) => [r.id, r.d]));
   const sideRows = await c.page.$$eval('[data-testid^="coach-side-"][data-state]', (els) => els.map((e) => ({ id: e.getAttribute("data-testid").replace("coach-side-", ""), state: e.getAttribute("data-state"), text: e.innerText })));
   ok("THE SIDE: ten named, in batting order", sideRows.length === 10 && sideRows[0].id === WHITFIELD, sideRows.length);
-  ok("...Bekker reads restricted and the date he is back, nothing more", /restricted/.test(sideRows.find((r) => r.id === BEKKER)?.text ?? "") && /back 11 Oct/.test(sideRows.find((r) => r.id === BEKKER)?.text ?? ""), sideRows.find((r) => r.id === BEKKER)?.text);
-  ok("...Pillay too, back 18 Oct", /back 18 Oct/.test(sideRows.find((r) => r.id === PILLAY)?.text ?? ""));
+  ok(`...Bekker reads restricted and the date he is back (${backOn[BEKKER]}), nothing more`, /restricted/.test(sideRows.find((r) => r.id === BEKKER)?.text ?? "") && (sideRows.find((r) => r.id === BEKKER)?.text ?? "").includes(`back ${backOn[BEKKER]}`), sideRows.find((r) => r.id === BEKKER)?.text);
+  ok(`...Pillay too, back ${backOn[PILLAY]}`, (sideRows.find((r) => r.id === PILLAY)?.text ?? "").includes(`back ${backOn[PILLAY]}`), sideRows.find((r) => r.id === PILLAY)?.text);
   ok("...Whitfield reads unavailable, with no reason", sideRows.find((r) => r.id === WHITFIELD)?.state === "unavailable" && !/funeral|family|Durban/i.test(sideRows.find((r) => r.id === WHITFIELD)?.text ?? ""), sideRows.find((r) => r.id === WHITFIELD)?.text);
   ok("...Naidoo has not answered, in words", sideRows.find((r) => r.id === NAIDOO)?.state === "unanswered" && /no answer/.test(sideRows.find((r) => r.id === NAIDOO).text));
   ok("...the foot counts them", /10 named · 5 to chase · 1 unavailable · 2 restricted/.test(await inner(c.page, "coach-side-foot")), await inner(c.page, "coach-side-foot"));
@@ -456,7 +460,7 @@ try {
   const s3 = byRule(cs, "S3");
   const wantS3 = rawReady.filter((r) => r.selected && (r.state === "restricted" || r.state === "unavailable" || r.declared_status === "needs_reconfirming"));
   ok(`S3: one card per picked boy who is restricted, unavailable or asked again (${wantS3.length})`, s3.length === wantS3.length && wantS3.length >= 3, `${s3.length} v ${wantS3.length}`);
-  ok("S3: Bekker restricted · back 11 Oct, Whitfield unavailable", s3.some((x) => /Bekker · restricted · back 11 Oct/.test(x.text)) && s3.some((x) => /Whitfield · on the sheet · marked unavailable/.test(x.text)));
+  ok(`S3: Bekker restricted · back ${backOn[BEKKER]}, Whitfield unavailable`, s3.some((x) => x.text.includes(`Bekker · restricted · back ${backOn[BEKKER]}`)) && s3.some((x) => /Whitfield · on the sheet · marked unavailable/.test(x.text)), s3.map((x) => x.text).join(" | "));
   ok("S3: no reason and no nature on any", s3.every((x) => leaks(x.text).length === 0), s3.map((x) => leaks(x.text)).flat().join());
 
   const s4 = byRule(cs, "S4a");
