@@ -559,15 +559,43 @@ export const READ_QUERIES = {
   // The author's own drafts come back too, by the second SELECT policy, which
   // is why published_at is returned rather than assumed: the screen shows a
   // draft as a draft instead of as a notice nobody else can see.
+  //
+  // The public home page (SCRBRD-142 §3.5, db/83): each post's latest
+  // request, as news_post_public's own policy lets this reader see it — the
+  // author's, and the school's publishers'; to anybody else no row, so no
+  // state. may_approve and may_take_down say which buttons the screen offers;
+  // the doors decide again (news_public_approve() also refuses the author).
+  // public_names is the scan's count on a waiting request, for the approvals
+  // card's warning: news_public_check() answers the author and the school's
+  // publishers, and NULL to anybody else.
   news: {
     text: `select n.id, n.scope, n.school_id, n.team_code, n.competition_id,
                   n.title, n.body, n.published_at, n.created_at,
                   s.name as school_name, c.name as competition_name,
-                  u.name as author_name
+                  u.name as author_name,
+                  (n.author_id = app_user_id()) as mine,
+                  coalesce(app_can('broadcast.publish', n.school_id, null::text,
+                                   '00000000-0000-0000-0000-000000000000'::uuid,
+                                   '00000000-0000-0000-0000-000000000000'::uuid), false) as may_approve,
+                  coalesce(app_can('broadcast.publish', n.school_id, '*'::text,
+                                   '00000000-0000-0000-0000-000000000000'::uuid,
+                                   '00000000-0000-0000-0000-000000000000'::uuid), false) as may_take_down,
+                  pp.state as public_state,
+                  case when pp.state = 'requested' then news_public_check(n.id) end as public_names
              from news_post n
              left join school s      on s.id = n.school_id
              left join competition c on c.id = n.competition_id
              left join app_user u    on u.id = n.author_id
+             left join lateral (
+               select case when q.withdrawn_at is not null then 'withdrawn'
+                           when q.approved_at is null then 'requested'
+                           when q.approved_digest = news_public_digest(n.scope, n.school_id, n.team_code, n.title, n.body)
+                             then 'approved'
+                           else 'edited' end as state
+                 from news_post_public q
+                where q.post_id = n.id
+                order by (q.withdrawn_at is null) desc, q.requested_at desc
+                limit 1) pp on true
             order by coalesce(n.published_at, n.created_at) desc
             limit 100`,
     params: () => [],
