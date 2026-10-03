@@ -652,6 +652,29 @@ uploads `index.html` (it would answer `/` before any rewrite) and serves the
 app as `/app.html`, which the build writes beside it; `serveClient` does the
 same for a single container. The service worker's shell moves to a v2 cache.
 <!-- ── end SCRBRD-142 phase 2 ── -->
+<!-- ── SCRBRD-142 phase 3: public news on the home page (db/83) ── -->
+#### Public news on the home page (SCRBRD-142, db/83)
+
+`db/83_public_news.sql` adds `news_post_public` (a side table: one row per
+request to put a notice on the home page; db/12 is untouched) and its four
+doors: `news_public_request()` (the author, a sent team or school post),
+`news_public_approve()` (`broadcast.publish` at the post's school with no team,
+**never the author or the requester**, and refused `names_pupils` with a count
+when the words name one of the school's pupils by full name or known-as),
+`news_public_withdraw()` (the author or any `broadcast.publish` holder at the
+school — so the office can take a coach's post down), `news_public_check()`;
+and `public_news()`, the home page's read: approved, unwithdrawn, unedited
+posts of schools that list (db/82's switch), no author. Triggers on both tables
+drop the public news cache. No secret, no backfill: nothing is asked for, so the
+section is empty after the paste.
+
+Paste `node tools/bundle-sql.mjs --apply 83` (after 82), then the verify bundle
+(§62 is its proof). **Schema first**: the API built with it serves `GET
+/api/public/news` and `POST /api/news/:id/public/{request,approve,withdraw}`,
+reads the request state on the newsfeed, and refuses to start without db/83
+(`expected-migrations.json`). With `PUBLIC_PAGES` off the news read is the one
+404 and the home page hides the section.
+<!-- ── end SCRBRD-142 phase 3 ── -->
 
 ### 5 · Cloud Run, the first time
 

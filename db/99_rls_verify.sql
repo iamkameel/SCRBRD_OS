@@ -3694,6 +3694,14 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/82 (section 61) ──────────────────────────────────────────────
 
+-- ┌── db/83 (section 62) ──────────────────────────────────────────────
+-- A known-as for one Hilton pupil (T Bekker), as the owner writes it, so the
+-- scan has a nickname to find. Rolled back with everything else.
+CREATE OR REPLACE FUNCTION _seed_83() RETURNS void AS $$
+  UPDATE player SET known_as = 'Bekks' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000002';
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/83 (section 62) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -15621,6 +15629,214 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 61
+  -- ┌── section 62 · db/83: public news on the home page (SCRBRD-142 phase 3) ──
+  -- docs/design/SCRBRD-142_public_home_page.md §3, §7 phase 3. A post reaches
+  -- the home page when its author asked, a school-wide broadcast.publish
+  -- holder at its school who is not the author approved, its words name none
+  -- of the school's pupils, it is unchanged since, and the school lists.
+  -- Signed out for every read of public_news().
+  --
+  --   (request)   only the author asks; not a draft, not a competition post;
+  --               asked twice is refused
+  --   (sod)       the 2XI coach (no broadcast.publish), Westville's publisher
+  --               for Hilton's post, and the director of sport for her own
+  --               post cannot approve; the table refuses a requester approving
+  --   (scan)      a post naming a pupil by full name, or by known-as, is
+  --               refused names_pupils with a count — and no name anywhere in
+  --               the answer; news_public_check() gives the count to the
+  --               author and the school's publishers, and nobody else
+  --   (approve)   approved, it is not on the home page until the school
+  --               lists; listed, it is, with id, school, team, title, body,
+  --               date and nothing else — no author
+  --   (edited)    the author edits it: off the home page until asked and
+  --               approved again
+  --   (withdraw)  Westville's publisher cannot take it down; the director of
+  --               sport — who cannot UPDATE the coach's post (db/12) — can
+  --   (internal)  the author's own withdrawal (published_at = null) takes it off
+  --   (decline)   a request withdrawn by the office is no longer approvable
+  --   (read)      requests are read by the author and the school's publishers,
+  --               and written only through the doors
+  --
+  -- Falsified once each, by replacing a function in the database (as the
+  -- owner, before the verify ran, then restored) and watching the section go
+  -- red at its own assertion: the listing test dropped from public_news()
+  -- (approve: on the home page unlisted); known-as dropped from the scan
+  -- (scan: the known-as post passed); the digest test dropped from
+  -- public_news() (edited: still public after the edit); the author and
+  -- requester test dropped from news_public_approve() with the table's CHECK
+  -- lifted (sod: she approved her own post — and db/83's $check$ refused to
+  -- re-run without the CHECK).
+  DECLARE
+    U_WPUB uuid := '88888888-0000-0000-0000-00000000047a';   -- sportsadmin, Westville, school-wide (§25)
+    U_C2   uuid := '88888888-0000-0000-0000-00000000000a';   -- 2XI coach, Hilton: news.publish.team only
+    U_LEAG uuid := '88888888-0000-0000-0000-000000000021';   -- wrote the league notice
+    U_DOC  uuid := '88888888-0000-0000-0000-000000000003';   -- news.read, nothing else here
+    C_POST uuid := '0c000000-0000-0000-0000-000000000003';   -- the league notice (competition)
+    D_POST uuid := '0c000000-0000-0000-0000-000000000004';   -- Sarah's draft
+    P1 uuid; P2 uuid; P3 uuid; S1 uuid; v_post uuid;
+    v_ok boolean; v_reason text; v_names int; n int; j jsonb; v_list text;
+  BEGIN
+    PERFORM _seed_83();
+
+    PERFORM _as(U_C2);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Second XI through to the final', 'The side beat Westville by six wickets on Saturday.', now())
+    RETURNING id INTO P1;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'A hundred on Saturday', 'Well batted, JAMES   whitfield — the first of the season.', now())
+    RETURNING id INTO P2;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Four wickets', 'Bekks took four for twelve.', now())
+    RETURNING id INTO P3;
+    PERFORM _as(U_SARAH);
+    INSERT INTO news_post (scope, school_id, title, body, published_at)
+    VALUES ('school', HIL, 'Pavilion open on Saturday', 'Teas from three.', now())
+    RETURNING id INTO S1;
+
+    -- (request)
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(P1) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('§62 (request): the director of sport asked for the coach''s post (%s %s)', v_ok, v_reason));
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(D_POST) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_published', format('§62 (request): a draft was asked for (%s %s)', v_ok, v_reason));
+    PERFORM _as(U_LEAG);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(C_POST) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'scope_not_public', format('§62 (request): a competition post was asked for (%s %s)', v_ok, v_reason));
+    PERFORM _as(U_C2);
+    FOREACH v_post IN ARRAY ARRAY[P1, P2, P3] LOOP
+      SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(v_post) r;
+      PERFORM _assert(v_ok, format('§62 (request): the coach could not ask for %s (%s)', v_post, v_reason));
+    END LOOP;
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(P1) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'already_requested', format('§62 (request): asked twice (%s %s)', v_ok, v_reason));
+    PERFORM _as(U_SARAH);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(S1) r;
+    PERFORM _assert(v_ok, format('§62 (request): the director of sport could not ask for her own post (%s)', v_reason));
+
+    -- (sod)
+    PERFORM _as(U_C2);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(P1) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('§62 (sod): the coach approved (%s %s)', v_ok, v_reason));
+    PERFORM _as(U_WPUB);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(P1) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('§62 (sod): Westville''s publisher approved Hilton''s post (%s %s)', v_ok, v_reason));
+    PERFORM _as(U_SARAH);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(S1) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'own_post', format('§62 (sod): the director of sport approved her own post (%s %s)', v_ok, v_reason));
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'news_post_public_two_people'
+                             AND pg_get_constraintdef(oid) ~ 'approved_by <> requested_by'),
+      '§62 (sod): the table does not refuse a requester approving');
+
+    -- (scan)
+    SELECT r.ok, r.reason, r.names, to_jsonb(r) INTO v_ok, v_reason, v_names, j FROM news_public_approve(P2) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'names_pupils' AND v_names = 1,
+      format('§62 (scan): a post naming James Whitfield by full name answered %s %s %s', v_ok, v_reason, v_names));
+    PERFORM _assert(j::text !~* 'whitfield|james|aaaaaaaa', format('§62 (scan): the refusal carries a name: %s', j));
+    SELECT r.ok, r.reason, r.names INTO v_ok, v_reason, v_names FROM news_public_approve(P3) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'names_pupils' AND v_names = 1,
+      format('§62 (scan): a post naming a pupil by his known-as answered %s %s %s', v_ok, v_reason, v_names));
+    PERFORM _assert(news_public_check(P2) = 1 AND news_public_check(P1) = 0, '§62 (scan): the publisher''s check is not 1 and 0');
+    PERFORM _as(U_C2);
+    PERFORM _assert(news_public_check(P2) = 1, '§62 (scan): the author cannot see his post''s count');
+    PERFORM _as(U_DOC);
+    PERFORM _assert(news_public_check(P2) IS NULL, '§62 (scan): somebody neither the author nor a publisher read the count');
+    PERFORM _as(U_WPUB);
+    PERFORM _assert(news_public_check(P2) IS NULL, '§62 (scan): another school''s publisher read the count');
+
+    -- (approve) Hilton not listing first.
+    PERFORM _as(U_SARAH);
+    PERFORM public_listing_set(HIL, false);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(P1) r;
+    PERFORM _assert(v_ok, format('§62 (approve): the director of sport could not approve the coach''s post (%s)', v_reason));
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(P1) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'already_public', format('§62 (approve): approved twice (%s %s)', v_ok, v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_news(20) x WHERE x.id = P1;
+    PERFORM _assert(n = 0, '§62 (approve): approved, on the home page of a school that does not list');
+    PERFORM _as(U_SARAH);
+    PERFORM public_listing_set(HIL, true);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT to_jsonb(x) INTO j FROM public_news(20) x WHERE x.id = P1;
+    PERFORM _assert(j->>'school' = 'Hilton College' AND j->>'team_code' = '2XI' AND j->>'title' = 'Second XI through to the final'
+                    AND j->>'published_at' IS NOT NULL,
+      format('§62 (approve): listed, the read answers %s', j));
+    SELECT string_agg(k, ',' ORDER BY k) INTO v_list FROM jsonb_object_keys(j) k;
+    PERFORM _assert(v_list = 'body,id,published_at,school,team_code,title', format('§62 (approve): the read''s columns are %s', v_list));
+    PERFORM _assert(strpos(j::text, U_C2::text) = 0, '§62 (approve): the author''s id is in the row');
+    SELECT string_agg(CASE x.id WHEN P1 THEN 'p1' WHEN P2 THEN 'p2' WHEN P3 THEN 'p3' WHEN S1 THEN 's1' END, ',') INTO v_list
+      FROM public_news(20) x WHERE x.id IN (P1, P2, P3, S1);
+    PERFORM _assert(v_list = 'p1', format('§62 (approve): the home page answers %s (only p1 is approved)', v_list));
+
+    -- (edited)
+    PERFORM _as(U_C2);
+    UPDATE news_post SET body = body || ' Well played, all.' WHERE id = P1;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_news(20) x WHERE x.id = P1;
+    PERFORM _assert(n = 0, '§62 (edited): edited after approval, still on the home page');
+    PERFORM _as(U_C2);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(P1) r;
+    PERFORM _assert(v_ok, format('§62 (edited): the author could not ask again for the new words (%s)', v_reason));
+    PERFORM _as(U_SARAH);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(P1) r;
+    PERFORM _assert(v_ok, format('§62 (edited): the new words could not be approved (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_news(20) x WHERE x.id = P1;
+    PERFORM _assert(n = 1, '§62 (edited): approved again, not on the home page');
+
+    -- (withdraw)
+    PERFORM _as(U_WPUB);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_withdraw(P1) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('§62 (withdraw): Westville''s publisher took down Hilton''s post (%s %s)', v_ok, v_reason));
+    PERFORM _as(U_SARAH);
+    UPDATE news_post SET published_at = NULL WHERE id = P1;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0, '§62 (withdraw): the director of sport could UPDATE the coach''s post (db/12 is the author''s)');
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_withdraw(P1) r;
+    PERFORM _assert(v_ok, format('§62 (withdraw): the director of sport could not take the coach''s post down (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_news(20) x WHERE x.id = P1;
+    PERFORM _assert(n = 0, '§62 (withdraw): taken down, still on the home page');
+
+    -- (internal)
+    PERFORM _as(U_C2);
+    PERFORM news_public_request(P1);
+    PERFORM _as(U_SARAH);
+    PERFORM news_public_approve(P1);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_news(20) x WHERE x.id = P1;
+    PERFORM _assert(n = 1, '§62 (internal): asked and approved a third time, not on the home page');
+    PERFORM _as(U_C2);
+    UPDATE news_post SET published_at = NULL WHERE id = P1;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM public_news(20) x WHERE x.id = P1;
+    PERFORM _assert(n = 0, '§62 (internal): the author withdrew the notice, still on the home page');
+
+    -- (decline)
+    PERFORM _as(U_SARAH);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_withdraw(P3) r;
+    PERFORM _assert(v_ok, format('§62 (decline): the office could not decline a request (%s)', v_reason));
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(P3) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_requested', format('§62 (decline): a declined request was approvable (%s %s)', v_ok, v_reason));
+
+    -- (read)
+    PERFORM _as(U_C2);
+    SELECT count(*) INTO n FROM news_post_public WHERE post_id IN (P1, P2, P3);
+    PERFORM _assert(n >= 3, format('§62 (read): the author reads %s of his requests', n));
+    SELECT count(*) INTO n FROM news_post_public WHERE post_id = S1;
+    PERFORM _assert(n = 0, '§62 (read): the coach reads the director of sport''s request');
+    PERFORM _as(U_WPUB);
+    SELECT count(*) INTO n FROM news_post_public WHERE school_id = HIL;
+    PERFORM _assert(n = 0, format('§62 (read): Westville''s publisher reads %s of Hilton''s requests', n));
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM news_post_public WHERE post_id IN (P1, P2, P3, S1);
+    PERFORM _assert(n >= 4, format('§62 (read): Hilton''s director of sport reads %s of its requests', n));
+    BEGIN
+      INSERT INTO news_post_public (post_id, school_id, requested_by) VALUES (S1, HIL, U_SARAH);
+      PERFORM _assert(false, '§62 (read): the application wrote a request directly');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 62
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
