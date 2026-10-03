@@ -20,10 +20,12 @@ import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
  * failure leaves the strip hidden and the page whole.
  *
  * News (phase 3): /api/public/news once after paint, no poll — a post is not
- * a score. A 404 or a failure leaves the section hidden. Schools' address
- * waits on A8.
+ * a score. A 404 or a failure leaves the section hidden.
+ *
+ * Schools write to SCHOOLS_EMAIL (A8: the address Kameel named, 3 October 2026).
  */
 const APP = "/app";
+const SCHOOLS_EMAIL = "kameel@maverickdesign.co.za";
 const PRIVACY = "/privacy";
 
 /** Today's listed fixtures: null until answered, and on a 404 or a failure. */
@@ -75,7 +77,7 @@ function Home() {
         <Tiles/>
         <News data={news}/>
         <Families privacyHref={PRIVACY}/>
-        <Schools/>
+        <Schools email={SCHOOLS_EMAIL}/>
       </main>
       <Footer privacyHref={PRIVACY}/>
     </>
