@@ -72,6 +72,7 @@ import { SyncEngine, indexedDbStorage, tryAttach, tossDecision, RETRY } from "@s
 import { fromRow, tossFromRow } from "@scrbrd/scoring";
 import { api, signedIn } from "./api.js";
 import { deviceId } from "./device.js";
+import { isPracticeId } from "./persist.js";
 import { padResumeSupported, loadPadCredential, mintPadCredential, forgetPadCredential, padApi, padEnded } from "./padKey.js";
 
 const RETRY_MS = 4000;
@@ -191,8 +192,17 @@ export class PadSync {
     };
   }
 
-  /** Open the outbox (unattached) from disk, then try to attach. */
+  /**
+   * Open the outbox (unattached) from disk, then try to attach.
+   *
+   * NEVER FOR A PRACTICE MATCH. Its names stay on the phone (lib/practice.js):
+   * a pad on one has no outbox, takes no token and sends nothing. The pad does
+   * not make one for it; this is the second lock, so that an id that starts
+   * `practice-` cannot be put in a queue by any caller, and call() below is
+   * the third.
+   */
   async open() {
+    if (isPracticeId(this.matchId)) { this.stopped = true; return null; }
     const device = deviceId();
     const engine = new SyncEngine({
       matchId: this.matchId, deviceId: device, scorerId: this.userId ?? "", epoch: null, innings: 0,
@@ -501,6 +511,7 @@ export class PadSync {
    * @param {{method?: string, body?: any}} [opts]
    */
   async call(path, opts = {}) {
+    if (isPracticeId(this.matchId)) throw new Error("practice_match_stays_on_this_phone");
     const rec = await this.padRecord();
     if (rec) {
       try { return await padApi(rec, path, opts); }

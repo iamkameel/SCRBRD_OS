@@ -135,6 +135,11 @@ const SUITES = [
   ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // What a live pad says about the server when it cannot send (SCRBRD-078), same transform.
   ["sync-banner", "apps/web/test/sync-banner.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Practice Match, phase 1: a pasted list read, the squad limits, the display
+  // name, the cfg startMatch takes, a reload that loses nothing (score, wickets,
+  // overs, batters, bowler, undo), no route to the sync path or to any normal
+  // list, delete one and delete all, the weather record, the scorecard file.
+  ["practice", "apps/web/test/practice.test.mjs"],
   // A panel that throws is a quiet card in its place, logs its name and the
   // message once, and resets on "Try again" (ui/ErrorBoundary.jsx); same transform.
   ["error-boundary", "apps/web/test/error-boundary.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
@@ -167,6 +172,12 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Signing in with Google and joining a school (SCRBRD-140 phase 1, the screens):
+  // each answer of the exchange as one state, Google's config from the
+  // environment only, the signed privacy paragraph word for word, a request
+  // and never a role, a parent's child as free text that is never looked up
+  // and never "found", the ways to sign in and the office's Claims list.
+  ["signin-screens", "apps/web/test/signin.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Ending a role (SCRBRD-132 C1, db/77): EndRoleButton asks for the reason,
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
@@ -193,6 +204,9 @@ const SUITES = [
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No emoji in the client outside a reasoned allow-list, every icon name
   // resolves, and the glyphs sit on Lucide's grid (DESIGN_DIRECTION §3.4).
+  // The client's side of the weather hint (lib/weatherHint.js): null on any
+  // failure, a mocked fetch.
+  ["weather-hint", "apps/web/test/weather-hint.test.mjs"],
   ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
@@ -228,12 +242,19 @@ const SUITES = [
   ["guard",    "tools/hooks/guard.test.mjs"],
   // The typecheck strict list only grows, and names nothing that is not there.
   ["ts-scope", "tools/typecheck-scope.test.mjs"],
+  // The browser walks' shards: every walk in exactly one, for n = 1 to 6, and
+  // --shard 1/1 is the whole list as it was.
+  ["smoke-shard", "tools/run-smoke-shard.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
   // The scorebook reader (SCRBRD-120 phase 4, D8): the request carries the
   // page photos and the hint and nothing else, asserted whole; an id in a
   // name cell is dropped; our boys matched on the server, after the model.
   ["scorebook-reader", "services/api/ai/scorebook-reader.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
+  // Practice Match's weather hint (2026-10-02): Google's condition types by
+  // the table, the units, the position rounded, the gate, the ten-minute
+  // cache — over a stubbed fetch; nothing here calls Google.
+  ["weather",  "services/api/weather/weather.test.mjs"],
 ];
 
 let allPass = true;

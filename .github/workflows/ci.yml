@@ -17,7 +17,8 @@
 #
 #   unit     — pure logic. No database, no browser. Fastest signal.
 #   walks    — the API against a real Postgres with RLS enforced.
-#   browser  — the client rendering real rows in real Chromium.
+#   browser  — the client rendering real rows in real Chromium. Cut into four
+#              shards that run side by side (see "Browser walks" below).
 #
 # They run in parallel; none gates another. A broken browser install must not
 # hide a failing authorisation test.
@@ -223,9 +224,24 @@ jobs:
           done
           echo "::error::/api/health never reported db ok"; echo "$body"; docker logs api; exit 1
 
-  browser:
-    name: Browser walks
+  # The browser walks, four shards at a time. Run one after another in one job
+  # they took most of an hour and decided how long every push waited; the walks
+  # share nothing but the code under test (each shard has its own runner, its
+  # own Postgres service container and its own build), so they can be split
+  # freely. `run-smoke-api.mjs --shard i/n` gives each shard a fixed, weighted
+  # slice of the list, and its unit test (tools/run-smoke-shard.test.mjs) holds
+  # every walk to exactly one shard. To change the count, change the matrix
+  # AND the `/4` in the job name and the walks step.
+  #
+  # fail-fast is off on purpose: one red shard must not cancel the other three,
+  # or the first run tells you about one failure and hides the rest.
+  browser-shard:
+    name: Browser walks (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: postgres:16-alpine
@@ -274,10 +290,34 @@ jobs:
       # still filtering a mock in the browser, and that a guardian's screen
       # contains their own child and nobody else's. A view can read through a
       # correct API and still show mock data; only a browser catches that.
-      - name: Client against the API
-        run: pnpm smoke:browser
+      - name: Client against the API (shard ${{ matrix.shard }}/4)
+        run: node tools/run-smoke-api.mjs --browser --shard ${{ matrix.shard }}/4
 
       # Rendering, the scoring pad, persistence and the accessibility floor.
-      # No database between them, so they run as one step.
+      # No database between them, so they run as one step. Once, on the first
+      # shard, which is the one with the fewest walks.
       - name: Client on its own
+        if: ${{ matrix.shard == 1 }}
         run: pnpm smoke
+
+  # The one check that stands for all four shards. Branch protection and our
+  # tooling look for a check called exactly "Browser walks"; the matrix jobs
+  # are named "Browser walks (i/4)" and would never satisfy it. `if: always()`
+  # so it still reports when a shard failed or was cancelled, instead of
+  # showing as skipped, which a required check reads as passing or as missing
+  # depending on the setting. Anything but success from the shards fails it.
+  browser:
+    name: Browser walks
+    needs: browser-shard
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every shard passed
+        env:
+          SHARDS: ${{ needs.browser-shard.result }}
+        run: |
+          if [ "$SHARDS" != "success" ]; then
+            echo "::error::Browser walks: the shards finished as '$SHARDS', not 'success'"
+            exit 1
+          fi
+          echo "All four browser shards passed."

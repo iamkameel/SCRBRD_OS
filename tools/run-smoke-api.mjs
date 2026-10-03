@@ -16,6 +16,12 @@
  *
  *   node tools/run-smoke-api.mjs            all of them
  *   node tools/run-smoke-api.mjs toss squad  just these
+ *   node tools/run-smoke-api.mjs --browser --shard 2/4
+ *                                           the second of four fixed slices of
+ *                                           the set (CI runs one job per slice)
+ *   node tools/run-smoke-api.mjs --browser --shard 2/4 --list
+ *                                           print that slice, run nothing: no
+ *                                           database needed
  */
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
@@ -363,7 +369,22 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // reason for an absence anywhere; every card's evidence equal to the reads;
   // Seen per person and per evidence; the live tab's cap sentences are the
   // pad's; 12px, 44px, both themes, reduced motion.
-  "browser-cockpit"];
+  "browser-cockpit",
+  // Signing in with Google, from a browser (SCRBRD-140 phase 1, the screens):
+  // the button and the signed privacy paragraph, the SDK fetched only when
+  // pressed, a new account on the no-school screen, a parent's request as free
+  // text with nothing looked up and nothing linked, the office's answer, Me's
+  // ways to sign in (add, refuse, remove), and the office's Claims list; 12px
+  // and 44px, both themes.
+  "browser-signup",
+  // Practice Match, phase 1: a scorer starts one from the start screen with
+  // typed teams and pasted squads, scores an over, reloads mid-over and
+  // resumes with undo intact, changes the weather at an over and ball; every
+  // request the page made is held to the names typed (none carries one, and
+  // no write reaches the API); the scorecard saved as a file; one deleted and
+  // all deleted from the page's own confirmation, and nothing left in
+  // IndexedDB or localStorage; 390 wide.
+  "browser-practice"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
@@ -380,19 +401,96 @@ if (unlisted.length) {
   process.exit(1);
 }
 
+// What a walk costs, in seconds on a CI runner. A shard's length is the sum
+// of its walks, so the split has to know the heavy ones. These are measured,
+// not guessed: the gaps between walks in CI run 37016856524 (2 Oct 2026,
+// Browser walks, one job), rounded to 10 s. A walk added since then and not
+// named here (browser-cockpit, browser-practice, ...) costs DEFAULT_COST, about
+// the median. Re-measure from a CI log when the shards drift apart. A wrong
+// weight costs balance, never coverage: every walk is in exactly one shard.
+// Each shard also pays the rls-verify preamble (~250 s) and its own setup.
+const DEFAULT_COST = 70;
+const WEIGHTS = {
+  "browser-read": 580,
+  "browser-lifts": 200, "browser-scorebook": 170, "browser-league": 160,
+  "browser-deck": 150, "browser-matchcentre": 150, "browser-pupil": 140,
+  "browser-superover": 140, "browser-display": 120, "browser-retire": 110,
+  "browser-held": 100, "browser-consent": 100, "browser-pad-laws": 100,
+  "browser-penalty": 100, "browser-padfeel": 100, "browser-discipline": 100,
+  "browser-cockpit": 100, "browser-management": 90, "browser-rain": 80,
+  "browser-offline-day": 80, "browser-playing-conditions-screen": 70,
+  "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,
+  "browser-laws4": 70, "browser-handover": 60, "browser-support": 60,
+  "browser-pad-resume": 60, "browser-dossier": 60, "browser-offline-undo": 50,
+  "browser-wagonwheel": 50, "browser-results": 50, "browser-drs": 50,
+  "browser-safeguarding": 50, "browser-playing-conditions": 50,
+  "browser-innings-end": 40, "browser-toss": 40, "browser-dayof": 40,
+  "browser-quarantine": 40, "browser-sync": 40, "browser-fixture-create": 30,
+  "browser-awards": 30, "browser-dismissals": 30, "browser-duties": 30,
+  "browser-rulebook": 30, "browser-seasons": 20, "browser-report": 20,
+};
+const weightOf = (w) => WEIGHTS[w] ?? DEFAULT_COST;
+const staleWeights = Object.keys(WEIGHTS).filter((w) => !BROWSER_WALKS.includes(w));
+if (staleWeights.length) {
+  console.error(`\n✗ WEIGHTS names walks that are not in BROWSER_WALKS: ${staleWeights.join(", ")}`);
+  process.exit(1);
+}
+
+// Shard i of n (1-based) of `walks`: heaviest first, each to the lightest shard
+// so far, ties to the lowest shard number and to list order. Nothing random and
+// nothing that depends on the machine, so every job computes the same split and
+// every walk is in exactly one. A shard keeps the list's own order.
+function shardOf(walks, i, n) {
+  const load = new Array(n).fill(0);
+  const owner = new Map();
+  const heaviestFirst = walks.map((w, at) => ({ w, at }))
+    .sort((a, b) => weightOf(b.w) - weightOf(a.w) || a.at - b.at);
+  for (const { w } of heaviestFirst) {
+    const k = load.indexOf(Math.min(...load));
+    load[k] += weightOf(w);
+    owner.set(w, k);
+  }
+  return walks.filter((w) => owner.get(w) === i - 1);
+}
+
 // `--browser` runs the browser set instead of the API set. Both are named
 // walks on the same runner, so a browser walk still gets its own reset and
 // still cannot go unlisted.
 // A bare "--" arrives when a package manager forwards arguments (pnpm keeps
 // the separator; npm eats it). It is noise from the caller, not a walk name.
-const args = process.argv.slice(2).filter((a) => a !== "--");
+let args = process.argv.slice(2).filter((a) => a !== "--");
 const wantBrowser = args.includes("--browser");
-const only = args.filter((a) => a !== "--browser");
+const listOnly = args.includes("--list");
+let shard = null;
+{
+  const at = args.findIndex((a) => a === "--shard" || a.startsWith("--shard="));
+  if (at !== -1) {
+    const spaced = args[at] === "--shard";
+    const spec = spaced ? args[at + 1] : args[at].slice("--shard=".length);
+    const m = /^(\d+)\/(\d+)$/.exec(spec ?? "");
+    const [i, n] = m ? [Number(m[1]), Number(m[2])] : [0, 0];
+    if (!m || i < 1 || i > n) {
+      console.error(`✗ --shard wants i/n with 1 <= i <= n, e.g. --shard 2/4 (got "${spec ?? ""}")`);
+      process.exit(1);
+    }
+    shard = { i, n };
+    args = args.filter((_, k) => k !== at && !(spaced && k === at + 1));
+  }
+}
+const only = args.filter((a) => a !== "--browser" && a !== "--list");
 const pool = wantBrowser ? BROWSER_WALKS : WALKS;
-const run = only.length ? pool.filter((w) => only.includes(w)) : pool;
-if (only.length && run.length !== only.length) {
+if (only.some((o) => !pool.includes(o))) {
   console.error(`✗ unknown walk: ${only.filter((o) => !pool.includes(o)).join(", ")}`);
   process.exit(1);
+}
+const slice = shard ? shardOf(pool, shard.i, shard.n) : pool;
+const run = only.length ? slice.filter((w) => only.includes(w)) : slice;
+
+// One walk per line on stdout, the slice's weight on stderr, nothing run.
+if (listOnly) {
+  for (const w of run) console.log(w);
+  console.error(`${shard ? `shard ${shard.i}/${shard.n}: ` : ""}${run.length} walks, weight ${run.reduce((a, w) => a + weightOf(w), 0)}`);
+  process.exit(0);
 }
 
 const sh = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });

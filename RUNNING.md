@@ -229,6 +229,7 @@ unused binding starts with `_`.
 | `NODE_ENV` / `ALLOW_DEV_LOGIN` | API | set by `pnpm dev` | dev login is refused whenever `NODE_ENV=production` |
 | `VITE_API_BASE` | client | `http://localhost:8787` | Vite reads the **root** `.env` (`envDir`) |
 | `VITE_FCM_VAPID_KEY` | client | unset | web-push public key; without it the Alerts tab says push is not configured |
+| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID` (`VITE_FIREBASE_APP_ID` optional) | client | unset | an override of the Firebase web config for **Continue with Google** (SCRBRD-140). Unset, the build uses scrbrd-os's public config (`apps/web/src/lib/firebaseProject.js`); the walks' build sets all three for its test project |
 | `FCM_PROJECT_ID` / `FCM_ACCESS_TOKEN` | API | unset | push fan-out answers `503 push_not_configured` and logs nothing; `PUSH_TRANSPORT=echo` in development records sends in memory |
 | `CHROMIUM_PATH` | browser walks | auto | see `tools/chromium.mjs` |
 | `SCRBRD_DB` | every tool, via `tools/db-url.mjs` | `scrbrd` | names the database; see "Running verification in parallel" below |

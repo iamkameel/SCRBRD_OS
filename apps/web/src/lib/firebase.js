@@ -30,15 +30,7 @@
  * of SDK out of the chunk every visitor downloads to reach the login screen.
  * Push messaging still needs the Firebase app object and asks for it lazily.
  */
-const firebaseConfig = {
-  apiKey: "AIzaSyAagOmj51ns5R64-IQRI92o4Sa5iagFRPA",
-  authDomain: "scrbrd-os.firebaseapp.com",
-  projectId: "scrbrd-os",
-  storageBucket: "scrbrd-os.firebasestorage.app",
-  messagingSenderId: "705280257618",
-  appId: "1:705280257618:web:8f5d627b62e3c826c3398b",
-  measurementId: "G-978R0NW98E",
-};
+import { FIREBASE_PROJECT_CONFIG } from "./firebaseProject.js";
 
 import { getPref, setPref } from "./persist.js";
 
@@ -50,7 +42,7 @@ let _app = null;
 export async function firebaseApp() {
   if (!_app) {
     const { initializeApp, getApps } = await import("firebase/app");
-    _app = getApps()[0] ?? initializeApp(firebaseConfig);
+    _app = getApps()[0] ?? initializeApp(FIREBASE_PROJECT_CONFIG);
   }
   return _app;
 }

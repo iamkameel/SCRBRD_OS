@@ -21,7 +21,15 @@ import { StopSheet, RainBanner, ResumeSheet, RainEndSheet } from "./rainSheet.js
 import { ConditionsLine, bowlerCapWords } from "./conditionsLine.jsx";
 import { D, T, inkOn } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
-import { loadMatch, saveMatch, saveAside, storageKind } from "../lib/persist.js";
+import { loadMatch, saveMatch, saveAside, storageKind, isPracticeId } from "../lib/persist.js";
+// Practice Match, phase 1: typed teams and names, scored on this pad, kept on
+// this phone and nowhere else (lib/practice.js). Statically imported, not
+// lazy: the scorer's chunk is the one a phone has cached for a ground with no
+// signal, and a practice match is started from the field.
+import { PracticeSetup, PracticeList, PracticeWeatherSheet, withWeatherChange } from "./practice.jsx";
+import { PracticeLabel, PracticeWeatherChip } from "./practiceLabel.jsx";
+import { clearDraft, inProgressPractice, loadPractice, savePractice, updatePractice, savedClock, cfgFromRecord, weatherChip } from "../lib/practice.js";
+import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { PadSync } from "../lib/sync.js";
@@ -291,9 +299,15 @@ function SyncPill({ sync, storage, onOpenHeld }) {
 // (App.jsx): a live pad that is signed out says so and offers it (SCRBRD-078).
 // `onExit` is the way back to the shell (App.jsx): the first thing in the
 // pad's title bar, and a floating key on the setup and result screens.
-function SCRBRD({resume,onSignIn,onExit,role=null}={}){
+function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   const[screen,setScreen]=useState("setup");
   const[match,setMatch]=useState(null);
+  // A Practice Match (lib/practice.js): the record kept beside its ball log, the
+  // one the start screen offers to resume, and whether the pad is on one.
+  // `practiceMode` is read by everything that would otherwise reach a server.
+  const[practice,setPractice]=useState(null);
+  const[practiceOffer,setPracticeOffer]=useState(null);
+  const practiceMode=!!match?.practice;
   // ── The event log is the state ──────────────────────────
   // One log per innings. Everything the UI renders — score, scorecard, wagon
   // wheel, worm, partnerships, fall of wickets — is a fold over these, so
@@ -357,7 +371,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // Centre or restored after a reload (App.jsx puts `live` on its cfg). The
   // demo's seeded fixtures and a match started on the setup screen have
   // none, and nothing of theirs is ever queued.
-  const live = resume?.cfg?.live === true && !!resume?.cfg?.matchId;
+  const live = resume?.cfg?.live === true && !!resume?.cfg?.matchId && !isPracticeId(resume.cfg.matchId);
   // Who opened it: a person, from the Match Centre ("open"), or the session
   // restore after a reload ("restore"), which never takes a match another
   // device has claimed since this one held it (packages/sync attach.mjs).
@@ -859,6 +873,72 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     setMatchId(cfg.matchId ?? `local-${Date.now().toString(36)}`);
     hydratedRef.current = true;
     setCurIn(0);setScreen("match");setModal(null);
+  };
+
+  // ── Practice Match (phase 1) ────────────────────────────
+  // Starting one is startMatch(cfg) with a practice cfg (lib/practice.js
+  // practiceCfg): plain names for the squads and the sides, no INT_TEAMS entry,
+  // no matchId from a fixture. The record (teams, squads, venue, weather) is
+  // written first, then the pad opens, then the draft is dropped; from the
+  // first ball the log is saved by the same effect as every match's, into the
+  // practice namespace (persist.js matchKey). Nothing here is queued, claimed
+  // or sent: `live` is false and PadSync is never made. matchIdRef is left
+  // unset on purpose, as startMatch leaves it: undo reads that as "no server
+  // behind this match" (LOCAL_ONLY, undoLastBall) and cuts the last ball out
+  // of the log, where a set one would append a void to a log nobody else has.
+  const startPractice=async(cfg,record)=>{
+    await savePractice(record);
+    setPractice(record);
+    startMatch(cfg);
+    clearDraft();
+  };
+  // Back into a practice match from the list or the start screen: the saved
+  // log and the saved record, as they were, on the pad (or its result).
+  const resumePractice=async(id)=>{
+    const[rec,saved]=await Promise.all([loadPractice(id),loadMatch(id)]);
+    if(!saved?.events?.some(e=>e?.length))return;
+    const cfg=saved.cfg?.practice?saved.cfg:cfgFromRecord(rec,id);
+    setPractice(rec);
+    setMatch(cfg);
+    setMatchId(id);
+    eventsRef.current=saved.events;
+    setEvents(saved.events);
+    setCurIn(saved.curIn??0);
+    setSaveState({kind:await storageKind(),restored:true,savedAt:saved.savedAt??null});
+    hydratedRef.current=true;
+    setModal(null);
+    setScreen(foldPad(saved.events,scoringCtxRef.current)[1]?.sealed===true?"result":"match");
+  };
+  // The start screen offers a practice match still in progress, first.
+  useEffect(()=>{
+    if(screen!=="setup")return undefined;
+    let off=false;
+    inProgressPractice().then(r=>{if(!off)setPracticeOffer(r);}).catch(()=>{});
+    return()=>{off=true;};
+  },[screen]);
+  // The shell is told when the pad is on a practice match, so a reload brings
+  // the scorer back to the start screen, where Resume is offered first.
+  useEffect(()=>{
+    if(!onPracticeActive)return undefined;
+    onPracticeActive((practiceMode&&(screen==="match"||screen==="result"))||(screen==="setup"&&!!practiceOffer));
+    return()=>onPracticeActive(false);
+  },[practiceMode,screen,practiceOffer,onPracticeActive]);
+  // Finished: the record says so (the start screen reads it to stop offering it).
+  useEffect(()=>{
+    if(practiceMode&&matchOver&&matchId&&practice?.status!=="complete")updatePractice(matchId,{status:"complete"}).then(r=>{if(r)setPractice(r);});
+  },[practiceMode,matchOver,matchId,practice?.status]);
+  // A weather change from the pad's menu: the scorer's own look at the sky,
+  // kept with the over and ball it was seen at.
+  const saveWeather=async(change)=>{
+    if(!practice)return;
+    const next=withWeatherChange(practice,change);
+    setPractice(next);
+    await savePractice(next);
+    setModal(null);
+  };
+  const saveScorecard=()=>{
+    if(!practice)return;
+    saveTextFile(scorecardText(practice,events),scorecardFileName(practice));
   };
 
   const toggleLine=k=>setHidden(prev=>{const n=new Set(prev);n.has(k)?n.delete(k):n.add(k);return n;});
@@ -2059,6 +2139,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         }}/>
     );
 
+    if(modal==="practiceWeather"&&practice)return (
+      <PracticeWeatherSheet record={practice} innings={curIn} balls={inn?.balls??0}
+        position={practice.match?.venue?.lat!=null?{lat:practice.match.venue.lat,lon:practice.match.venue.lon}:null}
+        onSave={saveWeather} onClose={()=>setModal(null)}/>
+    );
+
     if(modal==="editOrder")return (
       <BattingOrderSheet
         squad={getSquad()}
@@ -2093,6 +2179,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         <ExitKey onExit={onExit}/>
         {renderModal()}
         <div style={{width:"100%",maxWidth:"920px"}}>
+          {practiceMode&&<div style={{marginBottom:"16px",textAlign:"center"}}><PracticeLabel/></div>}
           <Glass style={{padding:"36px",textAlign:"center",marginBottom:"28px"}}>
             <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.2em",textTransform:"uppercase",marginBottom:"12px"}}>
               {offer.state==="available"?"Not yet decided":"Match Complete"}
@@ -2120,9 +2207,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
               </div>
             </section>
           ))}
-          <div style={{textAlign:"center"}}>
-            <Btn variant="primary" size="lg" onClick={()=>{setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setSelSeg(null);}}>
-              New Match
+          <div style={{textAlign:"center",display:"flex",gap:"12px",justifyContent:"center",flexWrap:"wrap"}}>
+            {practiceMode&&(
+              <Btn variant="tonal" size="lg" data-testid="practice-save-scorecard" onClick={saveScorecard}>
+                Save the scorecard
+              </Btn>
+            )}
+            <Btn variant="primary" size="lg" onClick={()=>{setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setPractice(null);setSelSeg(null);}}>
+              {practiceMode?"Back to the start":"New Match"}
             </Btn>
           </div>
         </div>
@@ -2130,7 +2222,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     );
   }
 
-  if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}/><ExitKey onExit={onExit}/></>);
+  if(screen==="practice")return (<><GS/><PracticeSetup onStart={startPractice} onCancel={()=>setScreen("setup")}/></>);
+  if(screen==="practice-list")return (<><GS/><PracticeList onBack={()=>setScreen("setup")} onResume={resumePractice}/></>);
+  if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}
+    practice={{offer:practiceOffer,onStart:()=>setScreen("practice"),onList:()=>setScreen("practice-list"),onResume:resumePractice}}/><ExitKey onExit={onExit}/></>);
 
   /* ── MATCH SCREEN ── */
   const NAV=[{id:"score",icon:"bat",label:"Score"},{id:"cards",icon:"scorebook",label:"Cards"},{id:"analysis",icon:"chart-column",label:"Analysis"},{id:"history",icon:"scroll-text",label:"History"}];
@@ -2183,6 +2278,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
               {isSuperOver(inn)?`${superOverTitle(inn.superOver)} · ${pairPlace(innings,curIn)} innings`
                 :chaseSlot?`${superOverTitle(innings[curIn-1].superOver)} · second innings`:`Innings ${curIn+1}`} · {inn?.overs??(chaseSlot?innings[curIn-1].overs:match?.overs)}ov{inn?.revised&&<span style={{color:T.semantic.warning}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}
             </div>
+            {practiceMode&&<PracticeLabel compact saved={saveState.savedAt?savedClock(saveState.savedAt):null}/>}
+            {practiceMode&&<PracticeWeatherChip {...weatherChip(practice)}/>}
           </div>
           {showHandover&&(
             <button onClick={()=>setModal("handover")} className="pressBtn os-state" data-testid="open-handover"
@@ -2236,6 +2333,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                     onClick={()=>{close();setModal("suspendReport");}}/>
                 )}
               </MenuSection>
+              {practiceMode&&(
+                <MenuSection title="Practice match">
+                  <MenuItem testid="pad-practice-weather" label="Weather" hint="Your own look at the sky, with the over and ball it changed at"
+                    onClick={()=>{close();setModal("practiceWeather");}}/>
+                  <MenuItem testid="pad-practice-save" label="Save the scorecard" hint="A file with the names in it. You choose where it goes."
+                    onClick={()=>{close();saveScorecard();}}/>
+                </MenuSection>
+              )}
             </>
           )}</PadMenu>
           {/* The score, announced.

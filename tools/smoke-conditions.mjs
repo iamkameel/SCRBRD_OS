@@ -22,11 +22,16 @@
  *   node tools/smoke-conditions.mjs
  */
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const PORT = port(8811);
 const BASE = `http://127.0.0.1:${PORT}`;
+// A second API, with a weather key and a stub for Google (the hint, below).
+const HINT_PORT = port(8812);
+const HINT_BASE = `http://127.0.0.1:${HINT_PORT}`;
+const STUB_KEY = "walk-stub-key-not-google";
 const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
 
@@ -36,11 +41,46 @@ const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
   env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development",
-         ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-conditions-secret" },
+         ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-conditions-secret",
+         // This one has no weather key, whatever the shell has.
+         GOOGLE_WEATHER_API_KEY: "", GOOGLE_WEATHER_BASE_URL: "" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 const serverErr = [];
 server.stderr.on("data", (d) => serverErr.push(d.toString()));
+
+// Google, stubbed: it records what it was sent and answers in the shape
+// LookupCurrentConditionsResponse documents. Nothing in this walk calls Google.
+/** @type {{ url: string, headers: import("node:http").IncomingHttpHeaders }[]} */
+const upstream = [];
+const stub = createServer((req, res) => {
+  upstream.push({ url: String(req.url), headers: req.headers });
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({
+    currentTime: "2026-10-02T09:15:00Z", isDaytime: true,
+    weatherCondition: { type: "LIGHT_RAIN", description: { text: "Light rain", languageCode: "en" } },
+    temperature: { degrees: 17.4, unit: "CELSIUS" }, relativeHumidity: 88,
+    wind: { direction: { degrees: 45, cardinal: "NORTHEAST" }, speed: { value: 18, unit: "KILOMETERS_PER_HOUR" } },
+    precipitation: { probability: { percent: 70, type: "RAIN" } },
+    visibility: { distance: 8, unit: "KILOMETERS" },
+  }));
+});
+await new Promise((r) => stub.listen(0, "127.0.0.1", () => r(null)));
+const stubPort = /** @type {import("node:net").AddressInfo} */ (stub.address()).port;
+const hintServer = spawn(process.execPath, ["services/api/server.mjs"], {
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(HINT_PORT), NODE_ENV: "development",
+         ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-conditions-secret",
+         GOOGLE_WEATHER_API_KEY: STUB_KEY, GOOGLE_WEATHER_BASE_URL: `http://127.0.0.1:${stubPort}` },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+const hintOut = [];
+hintServer.stdout.on("data", (d) => hintOut.push(d.toString()));
+hintServer.stderr.on("data", (d) => hintOut.push(d.toString()));
+/** GET the hint, with its headers. */
+const hint = async (base, query, authorization) => {
+  const res = await fetch(`${base}/api/weather/hint?${query}`, { headers: authorization ? { authorization } : {} });
+  return { status: res.status, cache: res.headers.get("cache-control"), body: await res.json().catch(() => null) };
+};
 
 const api = async (path, { method = "GET", token, body } = {}) => {
   const res = await fetch(BASE + path, {
@@ -170,6 +210,53 @@ try {
   ok("...and nothing was written for it",
      (await q(`select 1 from match_weather where match_id = $1`, ["00000000-0000-0000-0000-00000000dead"])).length === 0);
 
+  // ── THE WEATHER HINT (Practice Match, 2026-10-02) ───────────
+  group("The weather hint: Google's, briefly, and never the record");
+  for (let i = 0; i < 60; i++) {
+    try { if ((await fetch(HINT_BASE + "/api/health").then((r) => r.json()))?.db === "ok") break; } catch { /* not up */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const bearer = `Bearer ${head}`;
+  ok("health says unconfigured with no key, and configured with one — never the key",
+     (await api("/api/health")).body?.weather === "unconfigured"
+     && (await fetch(HINT_BASE + "/api/health").then((r) => r.json()))?.weather === "configured");
+  const unset = await hint(BASE, "lat=-29.6012&lon=30.3799", bearer);
+  ok("no key: 503 weather_unavailable, no-store", unset.status === 503 && unset.body?.error === "weather_unavailable" && unset.cache === "no-store",
+     JSON.stringify(unset));
+  ok("signed out: 401", (await hint(BASE, "lat=-29.6&lon=30.4")).status === 401
+     && (await hint(HINT_BASE, "lat=-29.6&lon=30.4")).status === 401);
+  const padTry = await hint(HINT_BASE, "lat=-29.6&lon=30.4", "ScrbrdPad anything");
+  ok("a pad credential: 403 pad_scope, before anything is read", padTry.status === 403 && padTry.body?.error === "pad_scope", JSON.stringify(padTry));
+  ok("out of range: 400 bad_param, with or without a key",
+     (await hint(BASE, "lat=91&lon=30.4", bearer)).body?.error === "bad_param"
+     && (await hint(HINT_BASE, "lat=-29.6&lon=-180.5", bearer)).body?.error === "bad_param"
+     && (await hint(HINT_BASE, "lat=&lon=30.4", bearer)).status === 400);
+  ok("...and none of those reached Google", upstream.length === 0, upstream.length);
+
+  const weatherRows = (await q(`select count(*)::int as n from match_weather`))[0].n;
+  const got = await hint(HINT_BASE, "lat=-29.601234&lon=30.379876", bearer);
+  ok("with a key: Google's answer in our words", got.status === 200 && JSON.stringify(got.body) === JSON.stringify({
+       condition: "drizzle", temp_c: 17, humidity_pct: 88, wind_kph: 18, wind_dir: "NE", rain_chance_pct: 70,
+       observed_at: "2026-10-02T09:15:00Z", attribution: "Weather by Google" }), JSON.stringify(got.body));
+  ok("...said to the browser no-store", got.cache === "no-store");
+  ok("one request upstream", upstream.length === 1);
+  const sentUp = new URL(upstream[0]?.url ?? "/", "http://stub");
+  ok("to currentConditions:lookup, the position rounded to two places",
+     sentUp.pathname === "/v1/currentConditions:lookup"
+     && sentUp.searchParams.get("location.latitude") === "-29.6" && sentUp.searchParams.get("location.longitude") === "30.38",
+     upstream[0]?.url);
+  ok("nothing else in it: no person, no match, no key",
+     [...sentUp.searchParams.keys()].sort().join() === "location.latitude,location.longitude,unitsSystem"
+     && !upstream[0].url.includes(STUB_KEY), upstream[0]?.url);
+  ok("the key in the header", upstream[0]?.headers["x-goog-api-key"] === STUB_KEY);
+  ok("no session token went upstream", !upstream[0]?.headers.authorization && !JSON.stringify(upstream[0]?.headers).includes(head));
+  const parentHint = await hint(HINT_BASE, "lat=-29.6049&lon=30.3751", `Bearer ${parent}`);
+  ok("anybody signed in may ask; the same rounded place is the cache, not Google again",
+     parentHint.status === 200 && parentHint.body?.condition === "drizzle" && upstream.length === 1, upstream.length);
+  ok("the hint writes nothing: match_weather is untouched",
+     (await q(`select count(*)::int as n from match_weather`))[0].n === weatherRows);
+  ok("the server never printed the key", !hintOut.join("").includes(STUB_KEY));
+
   // ── PITCH REPORT ─────────────────────────────────────────────
   group("The pitch report");
   const pr = await pitch(m, head, {
@@ -280,6 +367,8 @@ try {
 } finally {
   await pool.end().catch(() => {});
   server.kill();
+  hintServer.kill();
+  stub.close();
   console.log("\n" + "─".repeat(52));
   console.log(`CONDITIONS SMOKE: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

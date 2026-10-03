@@ -9,12 +9,14 @@ import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LandingPage } from "./auth/LandingPage.jsx";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
+// Somebody signed in who holds nothing yet: their requests, and how to ask (SCRBRD-140).
+import { NoSchool } from "./auth/NoSchool.jsx";
 import { NAV_META, ROLES } from "./design/roles.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
-import { useLive, useRows } from "./lib/live.js";
+import { useRows } from "./lib/live.js";
 import { useWaitingInvitations } from "./lib/invitations.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
@@ -136,35 +138,6 @@ function ViewChange({ page, title }) {
   return <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="view-announcer">{said}</div>;
 }
 
-// What a person with no assignments sees: their requests, each with its
-// state, and nothing of the school's. Rows come from the server under the
-// request's own policy (mine, or ones I could answer — and they can answer
-// none).
-function PendingRequests({ name, onSignOut }) {
-  const [nudge, setNudge] = useState(0);
-  const rows = useLive("role_requests", "spectator", nudge).rows;
-  const withdraw = async (id) => { await api(`/api/requests/${id}/withdraw`, { method: "POST" }).catch(() => {}); setNudge((n) => n + 1); };
-  return (
-    <div data-testid="pending-requests" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:D.bg}}>
-      <div style={{maxWidth:"480px",width:"100%"}}>
-        <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:D.textPrimary,marginBottom:"4px"}}>Hello {name}</div>
-        <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginBottom:"16px"}}>Your account has no role yet. Requests are answered by the school.</div>
-        {rows.length===0&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>No requests on record.</div>}
-        {rows.map((r)=>(
-          <div key={r.id} data-testid={`request-${r.state}`} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",border:`1px solid ${D.border}`,borderRadius:D.md,background:D.surf1,marginBottom:"8px"}}>
-            <div style={{flex:1}}>
-              <div style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,fontWeight:600}}>{ROLES[r.role]?.label ?? r.role}{r.team?` · ${r.team}`:""}</div>
-              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{r.schoolName ?? "School"} · {r.state}{r.decidedNote?` — ${r.decidedNote}`:""}</div>
-            </div>
-            {r.state==="pending"&&<button onClick={()=>withdraw(r.id)} className="pressBtn" style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"4px 10px",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"11px"}}>Withdraw</button>}
-          </div>
-        ))}
-        <button onClick={onSignOut} className="pressBtn" style={{marginTop:"10px",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"12px"}}>Sign out</button>
-      </div>
-    </div>
-  );
-}
-
 export default function SCRBRD_OS() {
   // The theme (design/theme.js). Subscribing HERE, at the root, is what makes
   // a switch reach every screen: the tokens change value in place, and this
@@ -206,6 +179,10 @@ export default function SCRBRD_OS() {
   // be persisted: the resume payload carries a whole seeded innings and has no
   // business in storage, but its match id is all that's needed to rebuild it.
   const [scorerMatchId, setScorerMatchId] = useState(null);
+  // The pad is on a practice match (scorer/engine.jsx tells us). A reload then
+  // reopens the scorer's start screen, where Resume is offered first; the match
+  // itself is on the phone, not in the session (lib/practice.js).
+  const [scorerPractice, setScorerPractice] = useState(false);
   // The login page was opened from a live pad (SCRBRD-078): it offers the
   // real sign-in only — never the demo — and returns to the pad.
   const [loginForPad, setLoginForPad] = useState(false);
@@ -261,7 +238,7 @@ export default function SCRBRD_OS() {
   const handleSignOut = () => {
     signOut();
     clearSession();
-    setScorerOpen(false); setScorerResume(null); setScorerMatchId(null);
+    setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
     setAppState("landing");
@@ -349,6 +326,7 @@ export default function SCRBRD_OS() {
       if (s.role) setRole(s.role);
       if (s.userName) setUserName(s.userName);
       if (s.page) setPage(s.page);
+      if (s.scorerPractice && !s.scorerMatchId) openScorer(null, s.role ?? role, { restored: true });
       if (s.scorerMatchId) {
         // A saved session must not become a way to reopen a fixture the person
         // is no longer allowed to see — so, with a session, the fixture is
@@ -397,10 +375,10 @@ export default function SCRBRD_OS() {
     const c = scorerOpen && scorerResume?.cfg?.live ? scorerResume.cfg : null;
     // Signing in from the pad is a detour: a reload on the way comes back to
     // the pad, which asks again.
-    saveSession({ appState: loginForPad ? "app" : appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null,
+    saveSession({ appState: loginForPad ? "app" : appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null, scorerPractice: scorerOpen && scorerPractice,
       scorerCfg: c ? { matchId: c.matchId, team1: c.team1, team2: c.team2, teamCode: c.teamCode, overs: c.overs, live: true,
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
-  }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, loginForPad]);
+  }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
 
   // Counted over the notices the SERVER agreed to send this person. A badge is
   // a disclosure: "3 unread" built from rows nobody authorised states a fact
@@ -438,7 +416,7 @@ export default function SCRBRD_OS() {
       {/* The same sign-out the shell uses. This one cleared the profile and
           left the persisted session behind, so a reload put the next person
           back where the last one stood. */}
-      <PendingRequests name={userName} onSignOut={handleSignOut}/>
+      <NoSchool name={userName} onSignOut={handleSignOut}/>
     </>
   );
   if (appState === "onboarding") return (
@@ -463,6 +441,7 @@ export default function SCRBRD_OS() {
           <ScorerApp
             key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
             resume={scorerResume}
+            onPracticeActive={setScorerPractice}
             // The pad asks it once: whether this account files the umpires'
             // report of a suspension itself (SCRBRD-094; rbac/conduct.js).
             role={role}

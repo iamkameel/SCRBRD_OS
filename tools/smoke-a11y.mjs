@@ -45,10 +45,13 @@ import { join, extname } from "node:path";
 import { port } from "./db-url.mjs";
 import { captainApi, IDS, MATCH } from "./a11y-captain-mock.mjs";
 import { cockpitApi, MATCH as COCKPIT } from "./a11y-cockpit-mock.mjs";
+import { signupApi } from "./a11y-signup-mock.mjs";
+import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 
 const PORT = port(4331);
+const SIGNUP_PORT = port(4332);   // the walk's own build for the sign-in screens (tools/web-test-build.mjs)
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
 /**
@@ -137,6 +140,22 @@ const TYPE_FLOOR_CEILING = {
   cockpitday:    0,
   cockpitlive:   0,
   cockpitdrawer: 0,
+  // SCRBRD-140 phase 1 (2026-10-02): the sign-in screens, on a phone, against the walk's
+  // own API (tools/a11y-signup-mock.mjs): the Google block on the sign-in screen and its
+  // "waiting for your school office" state, the no-school screen with the parent's form
+  // open, Me's Ways to sign in, and the office's Claims list on People. Measured inside
+  // their own regions. Born at 0, and kept there.
+  signuplogin:    0,
+  signupclaim:    0,
+  signupnoschool: 0,
+  signupme:       0,
+  signupclaims:   0,
+  // Practice Match, phase 1 (2026-10-02): every screen of it, on a phone —
+  // the way in and the Resume card on the scorer's start screen, the six
+  // steps of the setup, the pad's title bar with its label, the weather
+  // sheet, the list and its confirmation. Born at 0, and they stay there.
+  practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+  practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
 };                   // 103 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
@@ -175,6 +194,16 @@ const TAP_FLOOR_CEILING = {
   cockpitday:    0,
   cockpitlive:   0,
   cockpitdrawer: 0,
+  // SCRBRD-140: the sign-in screens: every control 44px or more.
+  signuplogin:    0,
+  signupclaim:    0,
+  signupnoschool: 0,
+  signupme:       0,
+  signupclaims:   0,
+  // Practice Match, phase 1: everything on these screens is tapped one-handed
+  // in a field, and none of it is under 44px.
+  practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+  practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
 };
 
 /**
@@ -214,11 +243,17 @@ const CONTRAST_CEILING = {
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0,
-              display1080: 0, display768: 0, display390: 0 },
+              signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
+              display1080: 0, display768: 0, display390: 0,
+              practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+              practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0,
-              display1080: 0, display768: 0, display390: 0 },
+              signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
+              display1080: 0, display768: 0, display390: 0,
+              practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+              practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0 },
 };
 
 /**
@@ -258,10 +293,19 @@ const EMOJI_CEILING = {
   cockpitday:    0,
   cockpitlive:   0,
   cockpitdrawer: 0,
+  // SCRBRD-140: the sign-in screens.
+  signuplogin:    0,
+  signupclaim:    0,
+  signupnoschool: 0,
+  signupme:       0,
+  signupclaims:   0,
   // SCRBRD-133 G1: the ground display (it has no controls at all).
   display1080: 0,
   display768:  0,
   display390:  0,
+  // Practice Match, phase 1.
+  practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
+  practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -353,6 +397,20 @@ const server = createServer(async (req, res) => {
   res.end(body);
 });
 await new Promise((r) => server.listen(PORT, r));
+
+// The sign-in screens need a build that has the project's web config and the walk's
+// hook (SCRBRD-140, tools/web-test-build.mjs), so they are served from their own
+// copy, apps/web/dist-test, on their own port, and built only when the walk is reached.
+let signupBuilt = null;
+const signupServer = createServer(async (req, res) => {
+  const url = new URL(req.url, "http://x").pathname;
+  let body, type;
+  try { const f = join(WEB_TEST_ROOT, url === "/" ? "index.html" : url); body = await readFile(f); type = TYPES[extname(f)] ?? "application/octet-stream"; }
+  catch { body = await readFile(join(WEB_TEST_ROOT, "index.html")); type = "text/html"; }
+  res.writeHead(200, { "content-type": type });
+  res.end(body);
+});
+await new Promise((r) => signupServer.listen(SIGNUP_PORT, r));
 
 const browser = await chromium.launch({ ...launchOptions() });
 const measured = { floodlit: { type: {}, contrast: {}, emoji: {}, tap: {} }, daylight: { type: {}, contrast: {}, emoji: {}, tap: {} } };
@@ -664,6 +722,247 @@ async function cockpitWalk(theme) {
     ok("no page errors on the cockpit's screens", errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} cockpit walk threw: ${e.message?.slice(0, 160)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * THE SIGN-IN SCREENS (SCRBRD-140 phase 1): on a phone, against
+ * tools/a11y-signup-mock.mjs — no server, no database — in a build that has the
+ * project's web config (tools/web-test-build.mjs). The Google block and its
+ * "waiting for your school office" state, the no-school screen with the
+ * parent's form open, Me's Ways to sign in, and the office's Claims list.
+ * Each is measured inside its own region by the same ratchets as the rest
+ * (12px, 44px, AA, emoji) and has every control named. Who may see what is
+ * tools/smoke-browser-signup.mjs's, against the real stack.
+ * @param {"floodlit" | "daylight"} theme
+ */
+async function signupWalk(theme) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  if (!signupBuilt) signupBuilt = buildWebForWalk();
+  group(`${T_} — the sign-in screens`);
+  ok("the walk's own build (test hook, web config for the walk's project) is made", signupBuilt.ok, signupBuilt.out);
+  const handle = signupApi();
+  const errors = [];
+  /** A fresh context, so a fresh session, signed in as `who`. */
+  const fresh = async (who) => {
+    const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await offline(ctx);
+    await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
+      const u = new URL(route.request().url());
+      handle.who = who;
+      const r = handle(route.request().method(), u.pathname, u.searchParams);
+      return route.fulfill({ status: r.status, contentType: "application/json", body: JSON.stringify(r.body) });
+    });
+    const page = await ctx.newPage();
+    page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+    await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${SIGNUP_PORT}"; window.__SCRBRD_TEST_GOOGLE__ = async () => ({ idToken: "a11y.fake.token", email: "walk.newcomer@example.invalid" });`);
+    await page.goto(`http://localhost:${SIGNUP_PORT}/`, { waitUntil: "networkidle" });
+    const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+    if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    return { ctx, page };
+  };
+  /** Measure a screen inside its region, and have every control in it named. */
+  const check = async (page, screen, region) => {
+    ok(`${T_} ${screen}: the region is on the page`, await page.locator(region).count() === 1);
+    await measure(page, theme, screen, region);
+    const unnamed = await page.evaluate((region) => [...document.querySelectorAll(`${region} button, ${region} a[href], ${region} input, ${region} select`)]
+      .filter((el) => !(el.getAttribute("aria-label") || el.textContent || (el.id && document.querySelector(`label[for="${el.id}"]`)?.textContent) || "").trim()).length, region);
+    ok(`${T_} ${screen}: every control in it has a name`, unnamed === 0, String(unnamed));
+  };
+  const staffIn = async (page, email) => {
+    await page.locator("#login-email").fill(email);
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(2400);
+  };
+  const toSettings = async (page, tab) => {
+    // On a phone Settings is in the More drawer.
+    const direct = page.locator('[data-testid="mnav-settings"], [data-testid="nav-settings"]').first();
+    if (await direct.count()) await direct.click({ timeout: 6000 }).catch(() => {});
+    else {
+      await page.locator('[data-testid="mnav-more"]').click({ timeout: 6000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.locator('[data-testid="drawer-settings"]').click({ timeout: 6000 }).catch(() => {});
+    }
+    await page.waitForTimeout(1200);
+    await page.locator(`#settings-tab-${tab}`).click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+  };
+  try {
+    // The sign-in screen, and the claim state.
+    let { ctx, page } = await fresh("newcomer");
+    await page.waitForSelector('[data-testid="google-button"]', { timeout: 6000 }).catch(() => {});
+    await check(page, "signuplogin", '[data-testid="google-signin"]');
+    handle.exchange = "claim";
+    await page.locator('[data-testid="google-button"]').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    ok("the claim state is drawn", await page.locator('[data-testid="google-claim-required"]').count() === 1);
+    await check(page, "signupclaim", '[data-testid="google-signin"]');
+    // A new account, and the no-school screen with the parent's form open.
+    handle.exchange = "new";
+    await page.locator('[data-testid="google-button"]').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(2200);
+    ok("a new account lands on the no-school screen", await page.locator('[data-testid="pending-requests"]').count() === 1);
+    await page.locator('[data-testid^="join-school-1111"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.locator('[data-testid="join-kind-parent"]').click({ timeout: 4000 }).catch(() => {});
+    await page.locator('[data-testid="join-child"]').fill("Test Child").catch(() => {});
+    await page.locator('[data-testid="join-relationship"]').selectOption("Mother").catch(() => {});
+    await page.locator('[data-testid="join-send"]').click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    await page.locator('[data-testid="join-another"]').click({ timeout: 4000 }).catch(() => {});
+    await page.locator('[data-testid="join-kind-parent"]').click({ timeout: 4000 }).catch(() => {});
+    ok("the parent's form and the request it sent are on the screen", await page.locator('[data-testid="join-form-parent"]').count() === 1 && await page.locator('[data-testid="request-pending"]').count() === 1);
+    await check(page, "signupnoschool", '[data-testid="pending-requests"]');
+    await ctx.close();
+
+    // Me, as a coach.
+    ({ ctx, page } = await fresh("coach"));
+    await staffIn(page, "coach@example.invalid");
+    await toSettings(page, "me");
+    await page.waitForSelector('[data-testid="sign-ins"]', { timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.locator('[data-testid="sign-in-remove"]').first().click({ timeout: 4000 }).catch(() => {});
+    ok("Me carries Ways to sign in, with the remove question open", await page.locator('[data-testid="sign-ins"]').count() === 1 && await page.locator('[data-testid="sign-in-remove-confirm"]').count() === 1);
+    await check(page, "signupme", '[data-testid="sign-ins"]');
+    await ctx.close();
+
+    // The Claims list, as the office.
+    ({ ctx, page } = await fresh("office"));
+    await staffIn(page, "registrar@example.invalid");
+    await toSettings(page, "users");
+    await page.waitForSelector('[data-testid="claims"]', { timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    ok("People carries the Claims list, with a claim on it", await page.locator('[data-testid="claim"]').count() === 1);
+    await check(page, "signupclaims", '[data-testid="claims"]');
+    await ctx.close();
+    ok("no page errors on the sign-in screens", errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} sign-in walk threw: ${e.message?.slice(0, 160)}`, false);
+  }
+}
+
+/**
+ * PRACTICE MATCH, PHASE 1 (2026-10-02): every screen of it, on a phone, in the
+ * demo (no server — a practice match never needs one) signed in as the Head Coach, who may score.
+ * The way in on the scorer's start screen; the six steps of the setup, with
+ * the location refused, a squad pasted with a repeated name and a reserve; the
+ * pad's title bar with its label; the weather sheet; the Resume card after
+ * leaving and coming back; the list, and its delete confirmation. Each goes
+ * through the same ratchets as the rest (12px, 44px, AA, emoji — all 0) and
+ * has every control named. The label is on each of them.
+ * @param {"floodlit" | "daylight"} theme
+ */
+async function practiceWalk(theme) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const LABEL = "Practice match · kept on this phone";
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 1280, height: 800 } });
+  await offline(ctx);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const tap = async (id, ms = 500) => { await tid(id).first().click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(ms); };
+  const click = async (re, ms = 4000) => {
+    const l = page.locator("button:not([disabled])", { hasText: re }).first();
+    if (!(await l.count())) return false;
+    try { await l.click({ timeout: ms }); } catch { return false; }
+    await page.waitForTimeout(300);
+    return true;
+  };
+  const check = async (screen, { label = true } = {}) => {
+    await measure(page, theme, screen);
+    const unnamed = await unnamedControlsOf(page);
+    ok(`${T_} ${screen}: every control has a name`, unnamed.length === 0, unnamed.slice(0, 4).join(", "));
+    if (label) ok(`${T_} ${screen}: it says "${LABEL}"`, (await page.locator('[data-testid="practice-label"]').first().innerText().catch(() => "")).replace(/\s+/g, " ").startsWith(LABEL));
+    ok(`${T_} ${screen}: no sideways scroll at 390`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  };
+  const names = (p, n) => Array.from({ length: n }, (_, i) => `${i + 1}. ${p} ${String.fromCharCode(65 + i)}`).join("\n");
+  try {
+    group(`${T_} — Practice Match`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    await click(/Get Started|Log In/, 5000);
+    await page.waitForTimeout(600);
+    await click("Head Coach", 4000);
+    await click(/^Sign In$/, 5000);
+    await page.waitForTimeout(1600);
+    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.waitForTimeout(1000);
+    await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
+    await page.waitForTimeout(1500);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    ok("the scorer's start screen offers Start Practice Match", (await tid("start-practice").count()) === 1);
+    await check("practicestart", { label: false });
+
+    await tap("start-practice");
+    await tap("practice-overs-custom");
+    await tap("practice-locate", 1200);
+    await tap("practice-weather-rain");
+    await check("practicematch");
+    await tap("practice-next");
+
+    for (const i of [0, 1]) {
+      await tid(`practice-school-${i}`).fill(i === 0 ? "Hilton" : "Kearsney");
+      await tid(`practice-division-${i}`).selectOption("U15");
+      await tap(`practice-class-${i}-A`, 150);
+    }
+    await check("practiceteams");
+    await tap("practice-next");
+
+    // A squad with a repeat, a twelfth man and reserves: the rows, the flag, the words.
+    await tid("practice-paste-0").fill(`${names("Alpha", 14)}\n15. Alpha B`);
+    await tap("practice-add-0");
+    await page.locator('button[aria-label="Alpha C is the 12th man"]').click({ timeout: 3000 }).catch(() => {});
+    await check("practicesquad");
+    await tap("practice-dedupe-0");
+    await tap("practice-next");
+    await tid("practice-paste-1").fill(names("Bravo", 11));
+    await tap("practice-add-1");
+    await tap("practice-next");
+
+    await page.locator("button[role=radio]", { hasText: "Hilton U15A" }).first().click({ timeout: 3000 }).catch(() => {});
+    await check("practicetoss");
+    await click(/Confirm Toss/);
+    await check("practiceopeners");
+    await page.locator("button", { hasText: "Alpha A" }).first().click({ timeout: 3000 }).catch(() => {});
+    await page.locator("button", { hasText: "Alpha B" }).first().click({ timeout: 3000 }).catch(() => {});
+    await click(/Select Opening Bowler/);
+    await page.locator("button", { hasText: "Bravo A" }).first().click({ timeout: 3000 }).catch(() => {});
+    await check("practicebowler");
+    await click(/Start Match/);
+    await page.waitForTimeout(1200);
+
+    await check("practicepad");
+    await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 }).catch(() => {});
+    await tap("pad-practice-weather", 600);
+    await tap("pw-overcast", 150);
+    await check("practiceweather");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+
+    await tap("exit-scorer", 800);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    ok("back on the start screen, the practice match is offered first", (await tid("practice-resume-card").count()) === 1);
+    await check("practiceresume", { label: false });
+
+    await tap("practice-list-open", 800);
+    await check("practicelist");
+    await page.locator('[data-testid="practice-delete"]').first().click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await check("practiceconfirm");
+    ok("...asked on the page, not with the browser's confirm()", (await tid("practice-confirm").count()) === 1);
+    ok(`no page errors on the practice screens`, errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} practice walk threw: ${e.message?.slice(0, 160)}`, false);
   } finally {
     await ctx.close();
   }
@@ -1358,9 +1657,13 @@ try {
   await walk("floodlit");
   await captainWalk("floodlit");
   await cockpitWalk("floodlit");
+  await signupWalk("floodlit");
+  await practiceWalk("floodlit");
   await walk("daylight");
   await captainWalk("daylight");
   await cockpitWalk("daylight");
+  await signupWalk("daylight");
+  await practiceWalk("daylight");
 
   group("The ground display (SCRBRD-133 G1) — three sizes, every panel");
   await displayWalk("floodlit");
@@ -1407,6 +1710,7 @@ try {
 } finally {
   await browser.close();
   server.close();
+  signupServer.close();
 }
 
 console.log(`\n${"─".repeat(52)}\nACCESSIBILITY SMOKE: ${pass} passed, ${fail} failed`);
