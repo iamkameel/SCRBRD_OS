@@ -403,7 +403,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // no write reaches the API); the scorecard saved as a file; one deleted and
   // all deleted from the page's own confirmation, and nothing left in
   // IndexedDB or localStorage; 390 wide.
-  "browser-practice"];
+  "browser-practice",
+  // Settings → Import and the Staff screen: the office has the tab and a coach
+  // does not; the template downloads; a file with one bad line shows that line
+  // in the route's words and keeps Import disabled; a clean file is checked,
+  // imported and on Squad, and Import is offered only after a clean Check of
+  // that same file; Staff is the school's role assignments, checked against
+  // role_assignment; 12px, 44px, 390 wide.
+  "browser-import"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

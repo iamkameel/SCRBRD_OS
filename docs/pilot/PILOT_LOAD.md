@@ -88,7 +88,7 @@ fixtures.
 | 2 | Switch on the pilot's modules | Kameel | Modules (`POST /api/admin/modules/:key/grant`): the modules decided for the pilot. Lift clubs wait for the principal's lift policy (DEPLOYING.md) | 2 min | The Modules screen shows them on for the school |
 | 3 | Principal and office accounts, and a director of sport if there is one | Kameel (`user.role.assign`). Only the owner or a platform admin may grant `principal`; `schooladmin` also the principal, never the office | Settings → People → Add (`POST /api/users`). Leave "issue a code" off unless the person signs in this week (codes last three days) | 3 min | People lists each person with their role |
 | 4 | Appoint the DSO | The principal, signed in. Only the principal appoints a DSO (CSA p17). The office and the director of sport cannot | Settings → People → Add, role `dso` (`POST /api/users`). The principal cannot issue the DSO's code, so Kameel issues it (People → issue code, `POST /api/auth/invite`), or the DSO signs in with Google and Kameel confirms the claim | 5 min | Every signed-in person's Safeguarding card names the DSO (`dso_contacts()`) |
-| 5 | Players: dry run, then commit | Kameel, with the office beside him reading the report. No import screen exists (gap 2). The route needs `player.profile.manage`, which the office and the owner hold | `POST /api/import/players`, recipe below | 5 min | The commit answers `committed: true, inserted: <rows>`. Squad shows every side. `GET /api/export/players` gives the same count in `x-scrbrd-rows` |
+| 5 | Players: dry run, then commit | Kameel, with the office beside him reading the report. The office signs in and uses Settings → Import: Download the template, choose the file, Check, then Import (offered only after a clean Check of that file). The route needs `player.profile.manage`, which the office and the owner hold | Settings → Import; the recipe below is the same two calls by hand, if the screen is not up | 5 min | The commit answers `committed: true, inserted: <rows>`. Squad shows every side. `GET /api/export/players` gives the same count in `x-scrbrd-rows` |
 | 6 | Staff | The office (`user.role.assign`; it grants coach, assistantcoach, teammanager, scorer, official and more). Kameel or the principal does the roles the checker lists as "office cannot grant" | Settings → People → Add, one per `staff.csv` line, with the role and side. No code yet | about 1 min a line | People lists each person with role and side. A coach who is also a parent is one account with two roles |
 | 7 | Guardians: dry run, then commit | Kameel, with the office beside him, on the office's own sign-in: the route needs exactly what Settings → People needs for one guardian (`user.role.assign` at the school, and may grant `guardian`). Kameel decided on 3 Oct that the office vouches for every link in the file | `POST /api/import/guardians`, the step 5 recipe with `guardians.csv`. Each row is `enrol_person()` under the office's identity: the link is written verified by the office, with the family's consent still pending. One email for two boys is one account with two links. A boy not found, or two boys of one name, is an error on that line, never a guess; so is one email under two names, an email that is another person's account or a pupil's, and any relationship but `parent`. Sending the file again changes nothing | 5 min | The commit answers `committed: true`. People shows each guardian against each child |
 | 8 | Grounds | The office or Kameel (`facility.manage` at the school). No screen yet (gap 4) | `POST /api/grounds {schoolId, name, surface?, parentId?}`, one call per ground, the step 5 token. A pitch on a field names the field as `parentId`. The same name twice at the school is refused (409) | 2 min | `GET /api/read/grounds` lists them; Fields lists them, and the fixture form offers them |
@@ -102,7 +102,7 @@ it the guardian lines.
 
 ### Step 5, the import recipe
 
-There is no import screen yet, so Kameel calls the route the screen would call. The
+Settings → Import is the way in. If it is not up, Kameel calls the route the screen calls. The
 token is the one the browser already holds. In DevTools → Network, open any `/api/`
 request and copy the `Authorization` value after `Bearer `. It lasts 30 minutes. The
 file goes from disk to the request through a pipe and is never written anywhere else.
@@ -135,13 +135,16 @@ These steps have no screen or route today. Nothing here builds one.
 1. **Creating a school or a union.** Today this is `tools/bootstrap.mjs --school` or SQL.
    Proposed shape: `POST /api/admin/schools {code, name, kind, province}` under
    `platform.tenant.manage`, behind a platform-only screen.
-2. **An import screen.** Proposed shape: Settings → Import, over the existing
-   `POST /api/import/:kind`. It would show the dry-run report by line and offer
-   "Commit" only when the report is clean. It needs no new API, so it is Sonnet work.
-3. **Built 3 Oct for guardians** (`IMPORTS.guardians`, `tools/smoke-guardian-import.mjs`).
-   Still open: enrolment writes every link as `parent`, so recording a grandparent or a
-   court-appointed guardian needs `enrol_person()` to take a relationship (a migration),
-   and there is no import screen (gap 2). The proposal as it stood: **Bulk guardian (and staff) enrolment.** Proposed shape: an `IMPORTS.guardians`
+2. **An import screen.** Built: Settings → Import, over the existing
+   `POST /api/import/:kind`. It shows the dry-run report by line and offers
+   Import only after a clean Check of the same file. The screen keeps its own short
+   list of kinds (`apps/web/src/lib/importScreen.js`, held to `IMPORTS` by a test),
+   because no read lists the registry; a read that did would let a new kind appear
+   with no screen change.
+3. **Built 3 Oct for guardians** (`IMPORTS.guardians`, `tools/smoke-guardian-import.mjs`),
+   offered on Settings → Import. Still open: enrolment writes every link as `parent`, so
+   recording a grandparent or a court-appointed guardian needs `enrol_person()` to take a
+   relationship (a migration). The proposal as it stood: **Bulk guardian (and staff) enrolment.** Proposed shape: an `IMPORTS.guardians`
    kind, each row calling `enrol_person()` under the office's own identity, with dry
    run as the default and the child matched by name as the players import does it.
    Linking adults to children in bulk is a safeguarding decision (SCRBRD-140 D5), so
@@ -151,13 +154,13 @@ These steps have no screen or route today. Nothing here builds one.
    Fields is still to come. The proposal as it stood: **Creating a ground.** Proposed shape: `POST /api/grounds {schoolId, name, surface?,
    parentId?}` under `facility.manage`, with Add ground on Fields. The table's policy
    is already there.
-5. **Public-name consent and the never-public mark.** `public_name_consent_set()` and
+5. **Built 3 Oct** (`services/api/write/public-name-api.mjs`, `views/publicname.jsx`, `tools/smoke-public-name.mjs`): the parent's switch under Family → Consents, the office's record and the never-public mark on the player's profile, and the names-off switches on Settings → School. The proposal as it stood: **Public-name consent and the never-public mark.** `public_name_consent_set()` and
    `player_never_public_set()`/`_end()` exist in db/47, but no route or screen calls
    them. Proposed shape: `POST /api/players/:id/public-name-consent {yes, version,
    formName?, formDate?}` and `POST /api/players/:id/never-public {reason}` / `…/end`.
    The mark has to ship with or before the consent entry.
 6. **Recording clearances.** `POST /api/clearances` exists but has no screen. The CSA
    checks for coaches and the DSO therefore start out shown as missing.
-7. **The Staff screen** reads the old `staff` and `coach` tables, which nothing writes,
+7. **Built 3 Oct:** Staff now reads the role assignments, as People does (`apps/web/src/lib/staff.js`). The problem as it stood: **The Staff screen** reads the old `staff` and `coach` tables, which nothing writes,
    so it will be empty for the pilot school. People shows everyone. Proposed shape:
    point Staff at the role assignments, or retire it in favour of People.

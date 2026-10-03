@@ -162,6 +162,10 @@ const SUITES = [
   // filters across all of them, nothing that writes signed out, the role
   // picker offering what GRANTABLE_ROLES gives the caller, refusals in words.
   ["people", "apps/web/test/people.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Settings → Import and the Staff screen: the screen's kinds held to the
+  // server's IMPORTS, Import offered only after a clean Check of the same file,
+  // the route's words, who is offered the tab, and who counts as staff.
+  ["import-screen", "apps/web/test/import-screen.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Redesign step 4, phase A: the family and pupil apps' helpers — one child
   // per screen, a method and never a name, the tenant's words (G15) — and
   // the Match Centre's family mode (G13).
