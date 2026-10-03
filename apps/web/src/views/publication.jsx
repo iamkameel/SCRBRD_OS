@@ -5,6 +5,7 @@ import { holdsCapability } from "../rbac/index.js";
 import { Btn, Card } from "../ui/primitives.jsx";
 import { displayUrl } from "../display/data.js";
 import { qrMatrix, qrPath } from "../lib/qr.js";
+import { listingLine } from "../lib/listing.js";
 
 /**
  * Putting a side of a fixture on the public pages (SCRBRD-083 phase 1).
@@ -28,13 +29,15 @@ const REFUSAL = {
   no_such_fixture: "That fixture could not be found.",
 };
 
-export function PublishPanel({ matchId, role }) {
+export function PublishPanel({ matchId, role, schools = null }) {
   const [sides, setSides] = useState(null);
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
   const [pagesOn, setPagesOn] = useState(null);
   const [nonce, setNonce] = useState(0);
+  const [listed, setListed] = useState(/** @type {Record<string, boolean>} */ ({}));
   const show = signedIn() && holdsCapability(role, "broadcast.publish");
+  const homeSchool = schools?.home, awaySchool = schools?.away;
 
   useEffect(() => {
     if (!show) return undefined;
@@ -43,12 +46,21 @@ export function PublishPanel({ matchId, role }) {
       try {
         const r = await api(`/api/matches/${matchId}/publication`);
         if (!cancelled) setSides(r.sides ?? []);
+        // Whether each school this reader publishes for lists (SCRBRD-142). A
+        // 404 is a reader who may not see the setting: no entry, no line.
+        const schoolOf = { home: homeSchool, away: awaySchool };
+        const mine = (r.sides ?? []).filter((x) => x.on_platform && x.may_publish && schoolOf[x.side]);
+        const got = {};
+        for (const id of new Set(mine.map((x) => schoolOf[x.side]))) {
+          try { got[id] = (await api(`/api/schools/${id}/listing`)).listed === true; } catch { /* not readable: nothing said */ }
+        }
+        if (!cancelled) setListed(got);
       } catch { if (!cancelled) setSides([]); }
       const s = await apiStatus();
       if (!cancelled) setPagesOn(s?.health?.public ? s.health.public !== "off" : null);
     })();
     return () => { cancelled = true; };
-  }, [matchId, nonce, show]);
+  }, [matchId, nonce, show, homeSchool, awaySchool]);
 
   if (!show || !sides) return null;
   const set = async (side, published) => {
@@ -77,6 +89,11 @@ export function PublishPanel({ matchId, role }) {
               data-testid={`publish-${s.side}-toggle`}>{s.published ? "Withdraw" : "Publish"}</Btn>
           )}
         </div>
+      ))}
+      {[...new Set(sides.filter((s) => s.on_platform && s.may_publish).map((s) => schools?.[s.side]))].filter((id) => id && listed[id] != null).map((id) => (
+        <p key={id} data-testid="publish-listing" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, margin: "8px 0 0" }}>
+          {listingLine({ listed: listed[id], pagesOn, published: sides.some((s) => s.published && schools?.[s.side] === id) })}
+        </p>
       ))}
       {anyPublished && (
         <p style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, margin: "8px 0 0" }} data-testid="publish-link">

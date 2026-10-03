@@ -266,7 +266,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               <ErrorBoundary name="duties"><DutyRoster matchId={selMatch.id} role={role}/></ErrorBoundary>
               {/* SCRBRD-083: a side on the public pages, for broadcast.publish
                   holders. fixture_publish() (db/47) is the gate. */}
-              <ErrorBoundary name="publication"><PublishPanel matchId={selMatch.id} role={role}/></ErrorBoundary>
+              <ErrorBoundary name="publication"><PublishPanel matchId={selMatch.id} role={role} schools={{ home: selMatch.schoolId, away: selMatch.awaySchoolId }}/></ErrorBoundary>
               {/* SCRBRD-003. Offered only to whoever holds scoring.amend.approve
                   — see quarantine.jsx for why that check is a courtesy and not
                   the gate. Placed in Match Centre rather than the live pad: a

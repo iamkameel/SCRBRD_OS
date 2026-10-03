@@ -4,10 +4,12 @@ import { holdsCapability } from "../rbac/index.js";
 import { D, T, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, Select, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
-import { api } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
+import { schoolsWhere } from "../lib/session.js";
 import { Icon } from "../ui/icons.jsx";
 import { GroundOffers } from "./groundoffers.jsx";
 import { VenueParCard } from "./venuePar.jsx";   // SCRBRD-130 R3
+import { AddGroundButton, AddGroundForm } from "./addground.jsx";
 
 // The cracks on a strip's drawing are decoration, fixed by the strip's number:
 // the same strip draws the same cracks every time. They used to be
@@ -25,7 +27,8 @@ const crackJitter = (seed, i) => {
 function FieldsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const { rows: GROUNDS, loading, error } = useLive("grounds", role);
+  const [groundsNonce, setGroundsNonce] = useState(0);
+  const { rows: GROUNDS, loading, error } = useLive("grounds", role, groundsNonce);
   const STAFF = useRows("staff", role);
   // Fixtures at this ground, for the pitch-report picker below. `venue` is
   // the ground's NAME (the matches read joins it in; there is no ground_id
@@ -47,6 +50,15 @@ function FieldsView({ role }) {
   const [selPitch,  setSelPitch]  = useState(0);
   const [tab, setTab]             = useState("overview");
   const canEdit = holdsCapability(role,"facility.manage");
+  // Add ground: offered where this person holds facility.manage at a school.
+  // POST /api/grounds decides again, under the ground table's own policy.
+  const [adding, setAdding] = useState(false);
+  const addSchools = signedIn() ? schoolsWhere("facility.manage") : [];
+  const addControl = addSchools.length > 0 && <AddGroundButton open={adding} onClick={()=>setAdding(a=>!a)}/>;
+  const addForm = adding && addSchools.length > 0 && (
+    <AddGroundForm schools={addSchools} grounds={GROUNDS} onClose={()=>setAdding(false)}
+      onAdded={(g)=>{ setGroundsNonce(n=>n+1); setSelId(g.id); setSelPitch(0); setTab("overview"); }}/>
+  );
   const selGround = GROUNDS.find(g => g.id === selId) ?? GROUNDS[0];
   const gk = selGround?.groundskeeper ? STAFF.find(s=>s.id===selGround.groundskeeper) : null;
 
@@ -121,7 +133,8 @@ function FieldsView({ role }) {
   // became asynchronous.
   if (!selGround) return (
     <div className="os-page">
-      <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}/>
+      <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal} actions={addControl}/>
+      {addForm}
       <EmptyState loading={loading} error={error} icon="ground" message="No grounds are in scope for you." />
     </div>
   );
@@ -129,7 +142,8 @@ function FieldsView({ role }) {
   return (
     <div className="os-page">
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}
-        actions={canEdit&&<Btn size="sm" data-testid="open-pitch-report" onClick={()=>setReportOpen(true)}>+ Pitch Report</Btn>}/>
+        actions={<>{addControl}{canEdit&&<Btn size="sm" data-testid="open-pitch-report" onClick={()=>setReportOpen(true)}>+ Pitch Report</Btn>}</>}/>
+      {addForm}
       {reportOpen&&(
         <PitchReportModal ground={selGround} role={role}
           fixtures={MATCHES.filter(m=>m.venue===selGround.name)}
@@ -140,14 +154,17 @@ function FieldsView({ role }) {
         {/* Ground list */}
         <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
           {GROUNDS.map(g=>(
-            <button key={g.id} onClick={()=>{setSelId(g.id);setSelPitch(0);setTab("overview");}} className="pressBtn" style={{
+            <button key={g.id} data-testid={`ground-${g.id}`} onClick={()=>{setSelId(g.id);setSelPitch(0);setTab("overview");}} className="pressBtn" style={{
               width:"100%",padding:"10px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
               border:`1px solid ${selGround.id===g.id?D.teal+"55":D.border}`,
               background:selGround.id===g.id?D.teal+"10":D.surf1,
             }}>
               <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:selGround.id===g.id?600:400,color:selGround.id===g.id?D.textPrimary:D.textSecondary,marginBottom:"3px"}}>{g.shortName||g.name}</div>
+              {g.parentId&&GROUNDS.some(f=>f.id===g.parentId)&&(
+                <div data-testid={`ground-on-${g.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"3px"}}>Pitch on {GROUNDS.find(f=>f.id===g.parentId).name}</div>
+              )}
               <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
-                <Badge color={g.type==="turf"?D.emerald:g.type==="nets"?D.sky:D.amber}>{g.type}</Badge>
+                {g.type&&<Badge color={g.type==="turf"?D.emerald:g.type==="nets"?D.sky:D.amber}>{g.type}</Badge>}
                 <Badge color={g.available?D.emerald:D.rose}>{g.available?"Open":"Closed"}</Badge>
               </div>
             </button>
@@ -162,7 +179,7 @@ function FieldsView({ role }) {
               <div>
                 <div style={{fontFamily:D.head,fontSize:"18px",fontWeight:800,color:D.textPrimary,marginBottom:"4px"}}>{selGround.name}</div>
                 <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
-                  <Badge color={D.teal}>{selGround.type}</Badge>
+                  {selGround.type&&<Badge color={D.teal}>{selGround.type}</Badge>}
                   <Badge color={selGround.available?D.emerald:D.rose}>{selGround.available?"Available":"Unavailable"}</Badge>
                   {selGround.lights&&<Badge color={D.amber}><Icon name="lightbulb"/> Lights</Badge>}
                   {selGround.homeTo?.map(t=><Badge key={t} color={D.sky}>{t}</Badge>)}
