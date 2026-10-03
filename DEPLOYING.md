@@ -951,5 +951,10 @@ been failing with `42883` worked.
   `services/api/auth/auth-db.mjs` for why that is the design and not a gap.
 - **Push delivery.** Without `FCM_*` on the service the fan-out route answers
   503 and writes no delivery log. Turn it on when the credentials exist.
-- **Backups and retention.** Cloud SQL automated backups on; a retention rule
-  for a churned school is an open POPIA decision noted in `db/00_schema_core.sql`.
+- **Backups and retention.** Production is Supabase. What Supabase keeps
+  depends on the plan, and on Free it may be nothing you can restore; the
+  backup that counts is the one you take and prove yourself:
+  [docs/pilot/BACKUP_RESTORE.md](docs/pilot/BACKUP_RESTORE.md) (the dump, where
+  it may live, the restore drill with `tools/backup-verify.mjs`, and when a
+  restore into production is and is not the answer). A retention rule for a
+  churned school is still an open POPIA decision noted in `db/00_schema_core.sql`.
