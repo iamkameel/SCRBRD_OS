@@ -18,3 +18,9 @@ scrbrd-supabase-apply-*.sql
 # are committed; anything you set for yourself alone is not.
 .claude/settings.local.json
 dist-test/
+
+# Backups of the database (docs/pilot/BACKUP_RESTORE.md). They hold minors' personal
+# data and live outside the repository; these lines are only the second lock.
+*.dump
+*.dump.gpg
+*.counts.json

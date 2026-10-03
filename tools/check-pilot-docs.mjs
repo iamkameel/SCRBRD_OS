@@ -2,8 +2,9 @@
 /**
  * The pilot documents say only what the app says.
  *
- * docs/pilot/SCORER_HELP.md and docs/pilot/PILOT_DAY_RUNBOOK.md quote every
- * button, tab and sheet by writing it in **bold**. This checks each bold label
+ * docs/pilot/SCORER_HELP.md, PILOT_DAY_RUNBOOK.md and the coach's, parent's
+ * and office's help sheets (COACH_HELP.md, PARENT_HELP.md, OFFICE_HELP.md)
+ * quote every button, tab and sheet by writing it in **bold**. This checks each bold label
  * against apps/web/src: the label must appear there, word for word, as JSX
  * text, a string literal, a template literal or an aria-label. A label that was
  * renamed, or that never existed, fails the run.
@@ -26,8 +27,9 @@
  *  - A label built from a template, such as `Held ${n}`, is quoted by its
  *    fixed words only ("Held"), never with the number.
  *
- * Also checked: banned phrases that an earlier draft invented, and the
- * scorer's sheet staying under the A4 word budget.
+ * Also checked: banned phrases that an earlier draft invented, and each
+ * one-page help sheet (scorer, coach, parent, office) staying under its word
+ * budget.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
@@ -35,7 +37,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const SRC = join(ROOT, "apps/web/src");
-const DOCS = ["docs/pilot/SCORER_HELP.md", "docs/pilot/PILOT_DAY_RUNBOOK.md"];
+const DOCS = [
+  "docs/pilot/SCORER_HELP.md",
+  "docs/pilot/PILOT_DAY_RUNBOOK.md",
+  "docs/pilot/COACH_HELP.md",
+  "docs/pilot/PARENT_HELP.md",
+  "docs/pilot/OFFICE_HELP.md",
+];
 
 /**
  * Bold that is not a label. Each entry is a word the docs bold for emphasis;
@@ -127,6 +135,87 @@ const PIN = new Map([
   ["Last updated", { in: ["display/DisplayView.jsx"], part: "Last updated \\{" }],
   // "Play stopped" is the pad's menu item, the sheet's title and the display's panel.
   ["Play stopped", { in: ["scorer/engine.jsx", "scorer/rainSheet.jsx", "display/panels.jsx"] }],
+  // The coach's sheet: the cockpit, the Squad screen's availability panel, Training.
+  ["Dashboard", { in: ["design/roles.js"] }],                 // the nav label
+  ["Match day", { in: ["views/cockpit/MatchDayCard.jsx"] }],  // the Dashboard card's title
+  ["Open the Coach tab", { in: ["views/cockpit/MatchDayCard.jsx"] }],
+  ["See the signals", { in: ["views/cockpit/MatchDayCard.jsx"] }],
+  ["Coach", { in: ["views/matchcentre/MatchView.jsx"] }],     // COACH_TAB, a tab of the fixture's own screen
+  ["The side", { in: ["views/cockpit/CoachTab.jsx"] }],
+  ["Our bowlers this week", { in: ["views/cockpit/CoachTab.jsx"] }],
+  ["Signals", { in: ["views/cockpit/CoachTab.jsx", "views/cockpit/FeedDrawer.jsx"] }],
+  ["Seen", { in: ["views/cockpit/FeedDrawer.jsx"] }],
+  ["Squad", { in: ["design/roles.js"] }],                     // the nav label
+  ["Availability", { in: ["views/availability.jsx"] }],       // the panel on the Squad screen
+  ["Available", { in: ["views/availability.jsx"] }],
+  ["Doubtful", { in: ["views/availability.jsx"] }],
+  ["Unavailable", { in: ["views/availability.jsx"] }],
+  ["Needs reconfirming", { in: ["views/availability.jsx"] }],
+  ["Set Availability", { in: ["views/SquadView.jsx"] }],      // a boy's card
+  ["Summary", { in: ["views/matchcentre/MatchView.jsx"] }],
+  ["Commentary", { in: ["views/matchcentre/MatchView.jsx"] }],
+  ["Open SCRBRD Scorer", { in: ["views/MatchCentreView.jsx"] }],
+  ["Start Practice Match", { in: ["scorer/setup.jsx"] }],
+  ["Training", { in: ["design/roles.js"] }],                  // the nav label
+  ["Bowling & training load", { in: ["views/TrainingView.jsx"] }],
+  // The parent's sheet: the family app, the consent switch, the Safeguarding screen.
+  ["Join a school", { in: ["auth/NoSchool.jsx"] }],
+  ["I am a parent or guardian", { in: ["lib/joinSchool.js"] }],
+  ["Home", { in: ["design/roles.js"] }],                      // the parent's bar
+  ["Matches", { in: ["design/roles.js"] }],
+  ["Family", { in: ["design/roles.js"] }],
+  ["Live", { in: ["views/family/cards.jsx"] }],               // the Home card's label
+  ["Follow the match", { in: ["views/family/cards.jsx"] }],
+  ["Live now", { in: ["views/family/matches.jsx"] }],
+  ["Played", { in: ["views/family/matches.jsx"] }],
+  ["Consents", { in: ["views/family/childfile.jsx"] }],       // a row of the child's card
+  // The switch's label is `Show {label} on public match pages`: the name is the child's,
+  // so the sheet writes [name], and the fixed words around it are what is checked.
+  ["Show [name] on public match pages", { in: ["views/publicname.jsx"], part: "Show \\{label\\} on public match pages" }],
+  ["On", { in: ["views/publicname.jsx"] }],                   // the switch's two states
+  ["Off", { in: ["views/publicname.jsx"] }],
+  ["Raise a concern", { in: ["shell/PersonaBar.jsx", "views/SafeguardingView.jsx"] }],  // the bar's aria-label, then the button
+  ["Safeguarding", { in: ["views/SafeguardingView.jsx"] }],
+  ["Your DSO", { in: ["views/SafeguardingView.jsx"] }],
+  // The office's sheet: Settings, the importer, enrolment, claims, Staff, the public-name and publication panels.
+  ["Settings", { in: ["design/roles.js"] }],                  // the nav label
+  ["Import", { in: ["views/SettingsView.jsx"] }],             // a tab of Settings
+  ["People", { in: ["views/SettingsView.jsx"] }],             // a tab of Settings
+  ["What are you importing", { in: ["views/importer.jsx"] }],
+  ["Players", { in: ["lib/importScreen.js"] }],
+  ["Guardians", { in: ["lib/importScreen.js"] }],
+  ["Download the template", { in: ["views/importer.jsx"] }],
+  ["CSV file", { in: ["views/importer.jsx"] }],
+  ["Check", { in: ["views/importer.jsx"] }],
+  ["+ Enrol a person", { in: ["views/SettingsView.jsx"] }],
+  ["Full name", { in: ["views/enrol.jsx"] }],
+  ["Email", { in: ["views/enrol.jsx"] }],
+  ["Role", { in: ["views/enrol.jsx"] }],
+  ["Which side", { in: ["views/enrol.jsx"] }],
+  ["Which child", { in: ["views/enrol.jsx"] }],
+  ["Issue a sign-in code now", { in: ["views/enrol.jsx"] }],
+  ["Enrol", { in: ["views/enrol.jsx"] }],                     // the form's default submit label
+  ["Google sign-ins waiting for you", { in: ["views/claims.jsx"] }],
+  ["Confirm it is them", { in: ["views/claims.jsx"] }],
+  ["Issue a code instead", { in: ["views/claims.jsx"] }],
+  ["Decline", { in: ["views/claims.jsx"] }],
+  ["Staff", { in: ["design/roles.js"] }],                     // the nav label
+  ["Everyone", { in: ["views/StaffView.jsx"] }],
+  ["Clearance register", { in: ["views/StaffView.jsx"] }],
+  ["Hide", { in: ["views/StaffView.jsx"] }],
+  ["Show", { in: ["views/StaffView.jsx"] }],
+  ["Edit Profile", { in: ["views/SquadView.jsx"] }],          // a boy's card on the Squad screen
+  ["Public match pages", { in: ["views/publicname.jsx"] }],
+  ["Record a no, on the family's word", { in: ["views/publicname.jsx"] }],
+  ["Record a yes from a signed form", { in: ["views/publicname.jsx"] }],
+  ["Which form", { in: ["views/publicname.jsx"] }],
+  ["The date it was signed", { in: ["views/publicname.jsx"] }],
+  ["Record the yes", { in: ["views/publicname.jsx"] }],
+  ["Never show this child publicly", { in: ["views/publicname.jsx"] }],
+  ["Reason", { in: ["views/publicname.jsx"] }],
+  ["Remove the mark", { in: ["views/publicname.jsx"] }],
+  ["Match Details", { in: ["views/MatchCentreView.jsx"] }],
+  ["Public page", { in: ["views/publication.jsx"] }],
 ]);
 
 /** Phrases an earlier draft invented or got wrong. They must not come back. */
@@ -143,8 +232,17 @@ const BANNED = [
   ["Tap your name", "that exists only in the demo"],
 ];
 
-/** The scorer's sheet must fit one A4 page. */
-const SCORER_WORD_LIMIT = 450;
+/**
+ * Each one-page help sheet must fit one A4 page: the word count, counting
+ * every run of non-space characters, stays under its limit. The scorer's sheet
+ * is a card for a phone in one hand and is shorter than the other three.
+ */
+const WORD_LIMIT = new Map([
+  ["SCORER_HELP.md", 450],
+  ["COACH_HELP.md", 650],
+  ["PARENT_HELP.md", 650],
+  ["OFFICE_HELP.md", 650],
+]);
 
 // ── The corpus: apps/web/src, comments removed ──
 
@@ -230,8 +328,10 @@ for (const doc of DOCS) {
     if (text.includes(phrase)) fail(`"${phrase}" is in ${doc}: ${why}`);
   }
 
-  if (doc.endsWith("SCORER_HELP.md") && text.split(/\s+/).filter(Boolean).length >= SCORER_WORD_LIMIT) {
-    fail(`${doc} is ${text.split(/\s+/).filter(Boolean).length} words; the A4 limit is under ${SCORER_WORD_LIMIT}`);
+  const limit = WORD_LIMIT.get(doc.split("/").pop());
+  const counted = text.split(/\s+/).filter(Boolean).length;
+  if (limit && counted >= limit) {
+    fail(`${doc} is ${counted} words; the A4 limit is under ${limit}`);
   }
 }
 

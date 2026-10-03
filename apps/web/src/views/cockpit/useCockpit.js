@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, signedIn } from "../../lib/api.js";
 import { readLive } from "../../lib/live.js";
 import { profile } from "../../lib/session.js";
@@ -26,6 +26,11 @@ import { evaluate, isSeen, markSeen, unseen } from "../../lib/signals.js";
 export function useCockpit({ match, gate, lifts = false, matchups = false, seen = 0 }) {
   const [reads, setReads] = useState(/** @type {Record<string, any>} */ ({}));
   const [loading, setLoading] = useState(true);
+  // `reload()` asks for the static reads again (the sheet has just been named):
+  // the panels keep what they show until the new answer lands, rather than blank.
+  const [again, setAgain] = useState(0);
+  const quiet = useRef(false);
+  const reload = useCallback(() => { quiet.current = true; setAgain((n) => n + 1); }, []);
   const id = match?.id;
   const live = match?.status === "live";
   const on = !!gate && !!id && signedIn();
@@ -39,7 +44,7 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
   useEffect(() => {
     if (!on || !panels) { setReads({}); setLoading(false); return undefined; }
     let cancelled = false;
-    setLoading(true);
+    if (quiet.current) quiet.current = false; else setLoading(true);
     const q = { matchId: /** @type {string} */ (id) };
     (async () => {
       const squad = await readLive("match_squad", q);
@@ -85,7 +90,7 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [on, id, match?.status, end, school, teamCode, can, lifts, matchups]);
+  }, [on, id, match?.status, end, school, teamCode, can, lifts, matchups, again]);
 
   // The live reads: the spells and the week's load move as the match is played.
   useEffect(() => {
@@ -100,7 +105,7 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [on, live, id, teamCode, seen, can]);
 
-  return { reads, loading, on };
+  return { reads, loading, on, reload };
 }
 
 /**

@@ -330,6 +330,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // name; the analytics switch starts nothing there; a listed fixture's card
   // with no ground, nofollow, landing on /live/:id.
   "browser-home",
+  // SCRBRD-142 phase 2's switch and Fields → Add ground: the director of sport lists
+  // the school and the public list carries (then drops) a published fixture, the
+  // panel's line follows; a one-side publisher's switch is disabled with its
+  // reason; the office adds a field and a pitch on it, a duplicate is refused in
+  // words; a coach has neither; 12px and 44px at 390 wide in Daylight.
+  "browser-listing",
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
   // the eighteen card, and the sign-up row — both themes, 12px and 44px.
   "browser-consent",
@@ -389,6 +395,19 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Seen per person and per evidence; the live tab's cap sentences are the
   // pad's; 12px, 44px, both themes, reduced motion.
   "browser-cockpit",
+  // Pick the side (Match Centre → Match Details, and the Coach tab's side
+  // panel): a coach names an XI with a batting order and a twelfth and the Coach
+  // tab shows it with no reload; a boy too old for the age group is refused in
+  // the trigger's words beside him and the old side stands; duplicate numbers
+  // are refused before anything is sent; a coach of another team and a parent
+  // are offered nothing and a forced post is a 403; 12px, 44px, 390, Daylight.
+  "browser-pick-side",
+  // The live scorer scores the side the coach named: a fixture with a named
+  // side opens the pad with exactly those eleven in that batting order and
+  // says so; the twelfth and a withdrawn boy are not offered; a fixture with
+  // none opens with the U14A roster as before and says that; the away side
+  // batting first is typed, with the named eleven bowling.
+  "browser-scorer-side",
   // Signing in with Google, from a browser (SCRBRD-140 phase 1, the screens):
   // the button and the signed privacy paragraph, the SDK fetched only when
   // pressed, a new account on the no-school screen, a parent's request as free

@@ -23,6 +23,7 @@ import { Icon } from "../ui/icons.jsx";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
 import { clearCoach, peekCoach } from "../lib/cockpitNav.js";
+import { PickSideEntry } from "./cockpit/PickSide.jsx";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   useTheme();
@@ -254,6 +255,11 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               {holdsCapability(role,"fixture.update")&&amendSchools.some(s=>s.id===selMatch.schoolId)&&(
                 <RescheduleFixture match={selMatch} grounds={GROUNDS} onChanged={()=>setMatchesNonce(n=>n+1)}/>
               )}
+              {/* Naming the side, for the one assignment that holds team.select
+                  for a side of this fixture, while it is still to be played.
+                  Whether he may is decided again by the squad route and the
+                  two triggers on match_squad; see cockpit/PickSide.jsx. */}
+              <ErrorBoundary name="pick the side"><PickSideEntry match={selMatch}/></ErrorBoundary>
               {/* SCRBRD-037. The live answer to the question the blocks below
                   gesture at. Those read demo constants — STAFF, GROUNDS,
                   selMatch.transport — which are null for every real fixture,
@@ -266,7 +272,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               <ErrorBoundary name="duties"><DutyRoster matchId={selMatch.id} role={role}/></ErrorBoundary>
               {/* SCRBRD-083: a side on the public pages, for broadcast.publish
                   holders. fixture_publish() (db/47) is the gate. */}
-              <ErrorBoundary name="publication"><PublishPanel matchId={selMatch.id} role={role}/></ErrorBoundary>
+              <ErrorBoundary name="publication"><PublishPanel matchId={selMatch.id} role={role} schools={{ home: selMatch.schoolId, away: selMatch.awaySchoolId }}/></ErrorBoundary>
               {/* SCRBRD-003. Offered only to whoever holds scoring.amend.approve
                   — see quarantine.jsx for why that check is a courtesy and not
                   the gate. Placed in Match Centre rather than the live pad: a

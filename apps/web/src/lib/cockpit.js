@@ -173,6 +173,23 @@ export function isWithin(match, now, days = 7) {
 // ── Health, as a status tier only (D4) ─────────────────
 
 /**
+ * One boy's answer for this fixture, as a state: the family's word, or
+ * "restricted" where the physio's tier is this reader's to see (D4). Shared by
+ * the sheet (sideRows) and the picker (lib/pickSide.js), so the two say the
+ * same thing of the same boy.
+ * @param {any} r  a `readiness` row, adapted
+ * @param {{status: boolean}} may
+ * @returns {"restricted" | "unavailable" | "unanswered" | "needs_reconfirming" | "doubtful" | "available"}
+ */
+export function stateOf(r, may) {
+  return may.status && r.clinicallyRestricted === true ? "restricted"
+    : r.declaredStatus === "unavailable" ? "unavailable"
+    : r.declaredStatus == null ? "unanswered"
+    : r.declaredStatus === "needs_reconfirming" ? "needs_reconfirming"
+    : r.declaredStatus === "doubtful" ? "doubtful" : "available";
+}
+
+/**
  * The side (P2): the boys on the sheet for our end, in batting order, each with
  * the family's word and, where the physio has restricted him, until when. The
  * row carries exactly these fields and no others: not the reason an absence was
@@ -187,12 +204,8 @@ export function isWithin(match, now, days = 7) {
 export function sideRows(readiness, end, may) {
   return (readiness ?? []).filter((r) => r.selected && (r.side == null || r.side === end))
     .map((r) => {
-      const restricted = may.status && r.clinicallyRestricted === true;
-      const state = restricted ? "restricted"
-        : r.declaredStatus === "unavailable" ? "unavailable"
-        : r.declaredStatus == null ? "unanswered"
-        : r.declaredStatus === "needs_reconfirming" ? "needs_reconfirming"
-        : r.declaredStatus === "doubtful" ? "doubtful" : "available";
+      const state = stateOf(r, may);
+      const restricted = state === "restricted";
       return { id: r.playerId, name: r.name, battingNo: r.battingNo ?? null, state,
         words: STATE_WORDS[state] ?? state,
         byWhom: state === "unavailable" || state === "doubtful"

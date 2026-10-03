@@ -138,8 +138,8 @@ const tLine = (quiet) => ({ ...T.role.body, margin: 0, color: quiet ? T.content.
 
 // ── The school's: each guardian's answer, and the mark ─
 
-const dHead = () => ({ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 6px" });
-const dNote = (bad) => ({ fontFamily: D.body, fontSize: "12px", lineHeight: 1.5, margin: "4px 0 0", color: bad ? textOn(D.rose) : D.textSecondary });
+export const dHead = () => ({ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 6px" });
+export const dNote = (bad) => ({ fontFamily: D.body, fontSize: "12px", lineHeight: 1.5, margin: "4px 0 0", color: bad ? textOn(D.rose) : D.textSecondary });
 const dField = () => ({ width: "100%", minHeight: "44px", padding: "9px 12px", background: D.surf2, boxSizing: "border-box",
   border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "14px" });
 function DBtn({ children, onClick, disabled, testid, quiet = false, type = "button" }) {
@@ -300,7 +300,7 @@ export function NamesOffPanel({ schoolId }) {
             style={{ minHeight: "44px", padding: "0 14px", borderRadius: D.pill, cursor: busy ? "default" : "pointer",
               fontFamily: D.body, fontSize: "13px", fontWeight: 600,
               border: `1px solid ${g.namesOff ? D.textPrimary : D.borderMed}`, background: g.namesOff ? D.textPrimary : "transparent",
-              color: g.namesOff ? textOn(D.textPrimary) : D.textPrimary }}>
+              color: g.namesOff ? inkOn(D.textPrimary) : D.textPrimary }}>
             {g.ageGroup === "open" ? "Open sides" : g.ageGroup}: {g.namesOff ? "names off" : "names shown"}
           </button>
         ))}

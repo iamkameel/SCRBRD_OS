@@ -177,6 +177,15 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
+  // the route's three pre-write checks in its own codes, the codes as sentences,
+  // and which boy a trigger's message names.
+  ["pick-side", "apps/web/test/pick-side.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The side the live scorer scores (scorer/side.js): the side the coach named
+  // when there is one — withdrawn rows and the twelfth left out, in batting
+  // order — else the team's roster exactly as before; the away end only where
+  // its own sheet is readable; and the pad's line saying which.
+  ["scorer-side", "apps/web/test/scorer-side.test.mjs"],
   // Signing in with Google and joining a school (SCRBRD-140 phase 1, the screens):
   // each answer of the exchange as one state, Google's config from the
   // environment only, the signed privacy paragraph word for word, a request
@@ -217,6 +226,10 @@ const SUITES = [
   // strip and news hidden on a 404, the analytics toggle writes the pref and
   // starts nothing, the 12px and 44px floors, the copy.
   ["home-page", "apps/web/test/home-page.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // SCRBRD-142 phase 2's switch on Settings → School and the line under the
+  // Publish switch (the words held to the design, the line's forms), and
+  // Fields → Add ground (every refusal in words, the route's limits).
+  ["listing-screens", "apps/web/test/listing-screens.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
@@ -250,6 +263,10 @@ const SUITES = [
   // verification against its own database.
   ["db-url-guard", "tools/db-url-guard.test.mjs"],
   ["shipped",  "tools/shipped.test.mjs"],
+  // The backup drill's tool (docs/pilot/BACKUP_RESTORE.md): which hosts are
+  // this machine, the ledger and row-count comparisons, the roles a dump's
+  // grants name, and a restore aimed anywhere else refused with exit 2.
+  ["backup-verify", "tools/backup-verify.test.mjs"],
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],

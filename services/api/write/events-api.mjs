@@ -1059,6 +1059,30 @@ export function squadRoutes({ pool, secret }) {
         }
 
         const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          // The caller's right to name this side, asked first and for every
+          // boy, in the insert policy's own terms (db/09 match_squad_insert).
+          // Postgres fires BEFORE triggers ahead of WITH CHECK, so without
+          // this a caller with no team.select (a parent, another side's coach)
+          // reaches the eligibility trigger, whose message names a boy and his
+          // age. Refused here, nobody learns anything but "not permitted". A
+          // fixture the caller cannot read answers the same: no row, no ok.
+          // One thing is said before it: an away side that is not a school on
+          // SCRBRD is nobody's to name (db/08 match_squad_side_exists), which
+          // a reader of the fixture can already see on its card.
+          const gate = (await client.query(
+            `select bool_and(app_can('team.select',
+                      case when $2 = 'away' then m.away_school_id else m.school_id end,
+                      case when $2 = 'away' then m.away_team_code else m.team_code end,
+                      p, m.id)) as ok,
+                    bool_or($2 = 'away' and m.away_school_id is null) as no_away
+               from match m, unnest($3::uuid[]) as p
+              where m.id = $1`, [req.params.id, side, ids])).rows[0];
+          if (gate?.no_away === true) {
+            throw Object.assign(new Error("this fixture's away side is not a school on SCRBRD, so its team sheet is not ours to name"),
+                                { code: "23514" });
+          }
+          if (gate?.ok !== true) throw err("not_permitted", 403);
+
           // Withdraw the side as it stands. UPDATE rather than DELETE, and the
           // triggers let a withdrawal through unconditionally — a player who
           // became ineligible AFTER selection has to be removable, or the check
