@@ -5,6 +5,7 @@
  * use for (tools/check-bundle.mjs holds the home graph apart from both).
  *
  *   GET /api/public/live    today's listed fixtures, team facts only
+ *   GET /api/public/news    approved posts of the schools that list; no author
  *
  * Both answers that mean "nothing to show" come back as null: a 404 (the
  * public pages are switched off, PUBLIC_PAGES) and a failure (offline, 5xx,
@@ -35,3 +36,23 @@ export const anyLive = (live) => !!live?.fixtures?.some((f) => f.status === "liv
 
 /** The strip's poll while a card is live and the tab is visible (D14). */
 export const LIVE_POLL_MS = 15_000;
+
+/** The news path, named once: check-bundle looks for it in the home graph. */
+export const NEWS_PATH = "/api/public/news";
+
+/**
+ * The approved posts of the schools that list (SCRBRD-142 §3), or null when
+ * there is nothing to show — a 404 (the public pages off) or a failure. Read
+ * once after paint; a withdrawn post is gone on the next visit (§3.4).
+ * @returns {Promise<{posts: any[]} | null>}
+ */
+export async function readNews() {
+  try {
+    const res = await fetch(NEWS_PATH, { credentials: "omit", headers: { accept: "application/json" } });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body && Array.isArray(body.posts) ? body : null;
+  } catch {
+    return null;
+  }
+}

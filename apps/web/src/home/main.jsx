@@ -4,7 +4,7 @@ import { GLOBAL_CSS, T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { Header, LiveStrip, Hero, Tiles, News, Families, Schools, Footer, Privacy } from "./sections/index.js";
-import { LIVE_POLL_MS, anyLive, readLive } from "./reads.js";
+import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
 
 /**
  * The public home page's entry (SCRBRD-142), built from home.html and served
@@ -19,8 +19,9 @@ import { LIVE_POLL_MS, anyLive, readLive } from "./reads.js";
  * live and the tab is visible (D14, §6.3). A 404 (the public pages off) or a
  * failure leaves the strip hidden and the page whole.
  *
- * News (phase 3) has no read yet: its section is given nothing and draws
- * nothing. Schools' address waits on A8.
+ * News (phase 3): /api/public/news once after paint, no poll — a post is not
+ * a score. A 404 or a failure leaves the section hidden. Schools' address
+ * waits on A8.
  */
 const APP = "/app";
 const PRIVACY = "/privacy";
@@ -50,8 +51,20 @@ function useLive() {
   return live;
 }
 
+/** The approved posts of the schools that list: null until answered, and on a 404 or a failure. */
+function useNews() {
+  const [news, setNews] = useState(/** @type {Awaited<ReturnType<typeof readNews>>} */ (null));
+  useEffect(() => {
+    let stop = false;
+    readNews().then((n) => { if (!stop) setNews(n); });
+    return () => { stop = true; };
+  }, []);
+  return news;
+}
+
 function Home() {
   const live = useLive();
+  const news = useNews();
   return (
     <>
       <Header appHref={APP} logo={SCRBRD_LOGO}/>
@@ -60,7 +73,7 @@ function Home() {
         <Hero appHref={APP} hasStrip={!!live}/>
         <LiveStrip data={live} show="today"/>
         <Tiles/>
-        <News data={null}/>
+        <News data={news}/>
         <Families privacyHref={PRIVACY}/>
         <Schools/>
       </main>

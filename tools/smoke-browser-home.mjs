@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The public home page, signed out, in a browser (SCRBRD-142 phases 1 and 2).
+ * The public home page, signed out, in a browser (SCRBRD-142 phases 1–3).
  *
  * The API serves everything from one origin, as a single-container
  * deployment does (SERVE_CLIENT=apps/web/dist): / and /privacy (home.html),
@@ -24,6 +24,14 @@
  *      /live/:id with rel="nofollow"; no ground's name anywhere in the DOM, no
  *      child's name; the tap lands on /live/:id. Unlisted, it is gone.
  *
+ * Phase 3 — the news (db/83):
+ *   6. A coach's post, asked for and approved by the director of sport with
+ *      Hilton listing, appears: its school and side, its words, no author,
+ *      read signed out. A post naming a pupil is refused at approval with a
+ *      count and no name, and is not on the page; the DOM still holds no
+ *      seed name. Taken down by the office, it is gone (within 60 s: the
+ *      LISTEN notification, or the cache's TTL).
+ *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-home.mjs
  */
@@ -40,6 +48,9 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const HIL = "11111111-1111-1111-1111-111111111111";
 const WES = "22222222-2222-2222-2222-222222222222";
 const GROUND = "ffffffff-0000-0000-0000-000000000001";
+const COACH2 = "88888888-0000-0000-0000-00000000000a";   // the 2XI coach: news.publish.team at Hilton
+/** @type {string} */
+let NAMED;
 const DEBUG = !!process.env.BROWSER_HOME_DEBUG;
 
 let pass = 0, fail = 0;
@@ -47,7 +58,9 @@ const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => { if (
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
+  // ALLOW_DEV_LOGIN: §7 signs the coach and the director of sport in at /app.
   env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", SESSION_SECRET: "browser-home-secret",
+         ALLOW_DEV_LOGIN: "1",
          PUBLIC_PAGES: "on", PUBLIC_PSEUDONYM_SECRET: "browser-home-pseudonyms-0123456789abcdef", PUBLIC_TRUST_PROXY_HOPS: "1",
          SERVE_CLIENT: "apps/web/dist" },
   stdio: ["ignore", "pipe", "pipe"],
@@ -104,6 +117,8 @@ try {
   NAMES = [...new Set(players.flatMap((p) => [p.full_name, p.surname, p.known_as].filter(Boolean).flatMap((s) => String(s).split(/[\s,()"'-]+/))))]
     .filter((w) => w.length >= 4 && /^[A-Z]/.test(w) && !/^(Hilton|College|Westville|Boys|High|School)$/.test(w));
   const SARAH = (await q(`select id from app_user where email = 'sarah@example.invalid'`))[0].id;
+  // A Hilton pupil's full name, for the post the scan must refuse (§6).
+  NAMED = (await q(`select full_name from player where school_id = $1 and full_name ~ '^[A-Z][a-z]+ [A-Z][a-z]+$' order by id limit 1`, [HIL]))[0]?.full_name ?? "James Whitfield";
 
   group("1. / is the home page, and nothing of the app");
   const v = await visitor();
@@ -210,6 +225,125 @@ try {
     ok("no console errors through the strip", s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
     await as(SARAH, `select * from fixture_publish($1, 'home', false)`, [today]);
+  }
+
+  group("6. News: an approved post appears, a withdrawn one goes (db/83)");
+  {
+    const TITLE = "Second XI through to the final";
+    // The coach posts and asks; the director of sport — not the author —
+    // approves; Hilton lists. Each as that person, through the application
+    // role, as the API's doors run them.
+    const [{ id: post }] = await as(COACH2,
+      `insert into news_post (scope, school_id, team_code, title, body, published_at)
+       values ('team', $1, '2XI', $2, 'The side beat Westville by six wickets on Saturday. Teas in the pavilion from three.', now())
+       returning id`, [HIL, TITLE]);
+    const [asked] = await as(COACH2, `select * from news_public_request($1)`, [post]);
+    ok("the coach asks for his post", asked?.ok === true, asked?.reason);
+    // A post naming a pupil cannot get there: refused with a count, no name.
+    const [{ id: named }] = await as(COACH2,
+      `insert into news_post (scope, school_id, team_code, title, body, published_at)
+       values ('team', $1, '2XI', 'A hundred', $2, now()) returning id`, [HIL, `Well batted, ${NAMED}.`]);
+    await as(COACH2, `select * from news_public_request($1)`, [named]);
+    const [refused] = await as(SARAH, `select * from news_public_approve($1)`, [named]);
+    ok("a post naming a pupil is refused: names_pupils, a count, no name", refused?.ok === false && refused?.reason === "names_pupils"
+       && refused?.names >= 1 && !JSON.stringify(refused).includes(NAMED.split(" ").pop() ?? "?"), JSON.stringify(refused));
+    const [approved] = await as(SARAH, `select * from news_public_approve($1)`, [post]);
+    ok("the director of sport approves the coach's post", approved?.ok === true, approved?.reason);
+    await as(SARAH, `select * from public_listing_set($1, true)`, [HIL]);
+
+    const item = (/** @type {any} */ page) => page.locator('[data-testid="home-news-post"]', { hasText: TITLE });
+    /** Reload until the post is (or is not) there: a change made by SQL reaches the cache by LISTEN. */
+    const settle = async (/** @type {any} */ page, /** @type {boolean} */ want) => {
+      for (let i = 0; i < 30; i++) {
+        await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+        await page.waitForTimeout(300);
+        if (((await item(page).count()) > 0) === want) return true;
+        await page.waitForTimeout(400);
+      }
+      return false;
+    };
+    const s = await visitor();
+    ok("approved and listed: the post is on the home page", await settle(s.page, true));
+    const words = await item(s.page).first().innerText().catch(() => "");
+    ok("...with its school and side, and its words", /Hilton College 2XI/.test(words) && /six wickets/.test(words), words);
+    const all = await text(s.page);
+    ok("...no author on the page", !/Coach|author/i.test(words), words);
+    ok("the page still names no child — and not the refused post's", namesIn(all).length === 0 && !all.includes("A hundred"),
+       namesIn(all).join(", "));
+    const news = s.requests.filter((r) => new URL(r.url).pathname === "/api/public/news");
+    ok("the news is read signed out, with no Authorization header", news.length > 0 && news.every((r) => !r.auth));
+    await as(SARAH, `select * from news_public_withdraw($1)`, [post]);
+    ok("the director of sport takes it down: gone from the home page", await settle(s.page, false));
+    ok("no console errors through the news", s.errors.length === 0, s.errors.join(" | "));
+    await s.ctx.close();
+    await as(SARAH, `select * from public_listing_set($1, false)`, [HIL]);
+  }
+
+  group("7. The newsfeed's doors, signed in: the coach asks, the office approves and takes it down");
+  {
+    const TITLE = "Under-15s win the festival";
+    const [{ id: post }] = await as(COACH2,
+      `insert into news_post (scope, school_id, team_code, title, body, published_at)
+       values ('team', $1, '2XI', $2, 'Three wins from three at the weekend festival.', now()) returning id`, [HIL, TITLE]);
+    await as(SARAH, `select * from public_listing_set($1, true)`, [HIL]);
+    try {
+    /** Signed in at /app as `email`, on the newsfeed, desktop width. */
+    const member = async (/** @type {string} */ email) => {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.1.${++ipN}` } });
+      await offline(ctx);
+      const page = await ctx.newPage();
+      const errors = /** @type {string[]} */ ([]);
+      page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+      page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error: ${m.text()}`); });
+      // The app finds its server as every signed-in walk tells it (lib/api.js).
+      await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
+      await page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+      await page.locator("#login-email").fill(email, { timeout: 8000 });
+      await page.locator("button", { hasText: /^Sign In$/ }).first().click({ timeout: 4000 });
+      await page.waitForFunction(() => /Match Centre|Dashboard/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+      await page.locator("nav button", { hasText: /Newsfeed/ }).first().click({ timeout: 6000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="news-list"]', { timeout: 10000 }).catch(() => {});
+      if (DEBUG) console.log(email, page.url(), (await text(page)).slice(0, 1500));
+      return { ctx, page, errors };
+    };
+    const row = (/** @type {any} */ page) => page.locator(`[data-testid="news-public-${post}"]`);
+
+    const coach = await member("coach2@example.invalid");
+    ok("the coach's own post carries the line: not asked", /not asked/.test(await row(coach.page).innerText({ timeout: 8000 }).catch(() => "")));
+    await coach.page.locator(`[data-testid="news-public-request-${post}"]`).click({ timeout: 4000 });
+    ok("he asks: waiting for the office", await coach.page.waitForFunction((id) =>
+      /waiting for the office/.test(document.querySelector(`[data-testid="news-public-${id}"]`)?.textContent ?? ""), post, { timeout: 8000 })
+      .then(() => true, () => false));
+    ok("...and has no approvals card: it is not his to approve", (await coach.page.locator('[data-testid="news-approvals"]').count()) === 0);
+
+    const office = await member("sarah@example.invalid");
+    const card = office.page.locator(`[data-testid="news-approve-${post}"]`);
+    ok("the director of sport has it in her approvals card, with the attestation",
+       (await card.count().catch(() => 0)) === 1 && /no pupil's name, no photo/.test(await office.page.locator('[data-testid="news-approvals"]').innerText().catch(() => "")));
+    await office.page.locator(`[data-testid="news-approve-yes-${post}"]`).click({ timeout: 4000 });
+    ok("she approves: the card empties and the post says it is on the home page", await office.page.waitForFunction((id) =>
+      !document.querySelector(`[data-testid="news-approve-${id}"]`)
+      && /on the home page/.test(document.querySelector(`[data-testid="news-public-${id}"]`)?.textContent ?? ""), post, { timeout: 8000 })
+      .then(() => true, () => false));
+
+    const s = await visitor();
+    const item = s.page.locator('[data-testid="home-news-post"]', { hasText: TITLE });
+    await s.page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    ok("a stranger at / sees it at once (the route dropped the cache)", (await item.count()) === 1);
+    await office.page.locator(`[data-testid="news-public-withdraw-${post}"]`).click({ timeout: 4000 });
+    ok("she takes it down: the post says withdrawn", await office.page.waitForFunction((id) =>
+      /withdrawn/.test(document.querySelector(`[data-testid="news-public-${id}"]`)?.textContent ?? ""), post, { timeout: 8000 })
+      .then(() => true, () => false));
+    await s.page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    ok("...and the stranger's next visit does not carry it", (await item.count()) === 0);
+    ok("the home page still names no child", namesIn(await text(s.page)).length === 0, namesIn(await text(s.page)).join(", "));
+    ok("no console errors on the newsfeed or the home page", [...coach.errors, ...office.errors, ...s.errors].length === 0,
+       [...coach.errors, ...office.errors, ...s.errors].join(" | "));
+    await coach.ctx.close(); await office.ctx.close(); await s.ctx.close();
+    } finally {
+      // Left as found, so a rerun's §5 starts unlisted.
+      await as(SARAH, `select * from public_listing_set($1, false)`, [HIL]);
+    }
   }
 } catch (e) {
   fail++;

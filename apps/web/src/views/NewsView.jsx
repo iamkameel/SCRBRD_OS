@@ -18,6 +18,12 @@ import { holdsCapability } from "../rbac/index.js";
  * a competition post to every school entered in it — and the composer is
  * offered on the same capabilities the INSERT policy demands, so the button is
  * never there for somebody the database would then refuse.
+ *
+ * THE PUBLIC HOME PAGE (SCRBRD-142 §3.5, db/83): a sent team or school post
+ * carries a line saying whether it is on the SCRBRD home page, with the one
+ * button its state allows; the school's publishers get a short approvals card
+ * at the top. The composer has nothing new: a post is asked about after it
+ * is posted, so nobody writes "for the public" in haste.
  */
 const TIER = themed(() => ({
   team:        { cap: "news.publish.team",        label: "My side",     tone: D.emerald },
@@ -59,11 +65,59 @@ function NewsView({ role }) {
     } finally { setSending(false); }
   };
 
+  // The public home page (SCRBRD-142 §3.5): one door per action, the
+  // database deciding who may (db/83). A refusal is shown on the post.
+  const [busy, setBusy] = useState(null);
+  const [publicError, setPublicError] = useState(null);
+  const door = async (id, action) => {
+    setPublicError(null); setBusy(id + action);
+    try {
+      await api(`/api/news/${id}/public/${action}`, { method: "POST" });
+      setNonce(n => n + 1);
+    } catch (e) {
+      setPublicError({ id, text: MESSAGE[e?.code] || e?.code || "Could not do that." });
+    } finally { setBusy(null); }
+  };
+  const waiting = rows.filter(n => n.publicState === "requested" && n.mayApprove && !n.mine);
+
   return (
     <div>
       <SectionHeader title="Newsfeed"
         subtitle="Notices for your side, your school and the leagues you play in"
         actions={canPublish && <Btn size="sm" data-testid="news-compose" onClick={()=>{setError(null);setComposing(true);}}>＋ Post a notice</Btn>}/>
+
+      {waiting.length>0 && (
+        <Card data-testid="news-approvals" sx={{padding:"14px",marginBottom:"12px"}}>
+          <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>Asked for the SCRBRD home page</div>
+          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5,marginBottom:"10px"}}>
+            Anyone can read the home page. Approve only a post that talks about sides: no pupil's name, no photo, no health, no discipline, no address or contact.
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+            {waiting.map(n=>(
+              <div key={n.id} data-testid={`news-approve-${n.id}`} style={{borderTop:`1px solid ${D.border}`,paddingTop:"10px"}}>
+                <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"4px",flexWrap:"wrap"}}>
+                  <Badge color={TIER[n.scope]?.tone || D.textMuted}>{n.audience}</Badge>
+                  <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{n.author}</span>
+                </div>
+                <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{n.title}</div>
+                <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6,whiteSpace:"pre-wrap",margin:"4px 0 8px"}}>{n.body}</div>
+                {n.publicNames>0 && (
+                  <div role="alert" style={{marginBottom:"8px",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{MESSAGE.names_pupils}</div>
+                )}
+                {publicError?.id===n.id && (
+                  <div role="alert" style={{marginBottom:"8px",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{publicError.text}</div>
+                )}
+                <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                  <Btn size="sm" data-testid={`news-approve-yes-${n.id}`} disabled={!!busy||n.publicNames>0} onClick={()=>door(n.id,"approve")}>
+                    Approve: no names, photos, health, discipline or contact details
+                  </Btn>
+                  <Btn size="sm" variant="ghost" data-testid={`news-approve-no-${n.id}`} disabled={!!busy} onClick={()=>door(n.id,"withdraw")}>Decline</Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {loading && rows.length===0 && (
         <Card sx={{padding:"16px"}}><div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Loading…</div></Card>
@@ -89,6 +143,7 @@ function NewsView({ role }) {
             <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>{n.title}</div>
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{n.body}</div>
             <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px"}}>{n.author}</div>
+            <PublicRow n={n} busy={!!busy} onDoor={door} error={publicError?.id===n.id ? publicError.text : null}/>
           </Card>
         ))}
       </div>
@@ -134,9 +189,54 @@ function NewsView({ role }) {
   );
 }
 
+const PUBLIC_WORDS = {
+  none:      "Public: not asked",
+  requested: "Public: asked (waiting for the office)",
+  approved:  "Public: on the home page",
+  edited:    "Public: edited since it was approved, so off the home page",
+  withdrawn: "Public: withdrawn",
+};
+
+/**
+ * A post's line about the public home page (SCRBRD-142 §3.5): its state, and
+ * the one button that state allows. The author sees it on a sent team or
+ * school post; the school's publishers see it once somebody has asked, so
+ * the office can take a coach's post down.
+ */
+function PublicRow({ n, busy, onDoor, error }) {
+  if (n.draft || n.scope === "competition") return null;
+  if (!n.mine && !(n.mayTakeDown && n.publicState)) return null;
+  const state = n.publicState || "none";
+  const action =
+    n.mine && (state === "none" || state === "withdrawn" || state === "edited") ? { door: "request", label: state === "none" ? "Ask to put this on the home page" : "Ask again" }
+    : n.mine && state === "requested" ? { door: "withdraw", label: "Withdraw the request" }
+    : state === "approved" ? { door: "withdraw", label: "Take it off the home page" }
+    : null;
+  return (
+    <div data-testid={`news-public-${n.id}`} style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",marginTop:"10px",paddingTop:"8px",borderTop:`1px solid ${D.border}`}}>
+      <span style={{fontFamily:D.body,fontSize:"12px",color:state==="approved"?textOn(D.emerald):D.textMuted}}>{PUBLIC_WORDS[state]}</span>
+      {action && (
+        <span style={{marginLeft:"auto"}}>
+          <Btn size="sm" variant="ghost" data-testid={`news-public-${action.door}-${n.id}`} disabled={busy}
+               onClick={()=>onDoor(n.id, action.door)}>{action.label}</Btn>
+        </span>
+      )}
+      {error && <div role="alert" style={{width:"100%",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{error}</div>}
+    </div>
+  );
+}
+
 // The office's words for what the server refuses, so the screen never shows a
 // reason code to somebody who has to act on it.
 const MESSAGE = {
+  names_pupils: "This post names a pupil. Public posts talk about sides, not boys — reword it, or keep it on the school's feed.",
+  own_post: "Somebody else at the school approves this: nobody approves their own post.",
+  already_requested: "This post is already waiting for the office.",
+  already_public: "This post is already on the home page.",
+  not_published: "Send the notice first; only a sent notice can go on the home page.",
+  scope_not_public: "League notices cannot go on the home page yet.",
+  not_requested: "Nobody has asked for this post to go on the home page.",
+  no_such_post: "That post is no longer there.",
   not_permitted: "You do not hold the tier this audience needs.",
   scope_invalid: "Choose who this notice is for.",
   title_required: "A headline is needed.",
