@@ -177,6 +177,10 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
+  // the route's three pre-write checks in its own codes, the codes as sentences,
+  // and which boy a trigger's message names.
+  ["pick-side", "apps/web/test/pick-side.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Signing in with Google and joining a school (SCRBRD-140 phase 1, the screens):
   // each answer of the exchange as one state, Google's config from the
   // environment only, the signed privacy paragraph word for word, a request

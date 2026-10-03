@@ -79,6 +79,9 @@ export function cockpitApi() {
   const reads = {
     matches: () => matches,
     match_squad: (q) => squad(q.get("matchId")),
+    // The roster Pick the side offers: the ten on the sheet and a reserve who is not.
+    players: () => [...ORDER.map((k) => ({ id: IDS[k], school_id: HIL, school_name: "Hilton College", full_name: NAMES[k], team_code: "1XI", squad_no: PLAYERS[k].no, playing_role: "batter" })),
+      { id: "aaaaaaaa-0000-0000-0000-0000000000ac", school_id: HIL, school_name: "Hilton College", full_name: "V Mate Twelve", team_code: "1XI", squad_no: 72, playing_role: "bowler" }],
     readiness: () => readiness,
     workload: () => workload,
     bowling_spells: (q) => (q.get("matchId") === MATCH.live ? [{ match_id: MATCH.live, innings: 0, bowler_id: IDS.bekker, full_name: NAMES.bekker, spell_no: 5, first_over: 13, last_over: 13, overs: 1,

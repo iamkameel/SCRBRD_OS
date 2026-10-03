@@ -15,6 +15,7 @@ import { ShotWheel } from "../../scorer/charts.jsx";
 import { Panel, Quiet } from "../matchcentre/bits.jsx";
 import { OppositionDossier } from "../dossier.jsx";
 import { FeedDrawer } from "./FeedDrawer.jsx";
+import { PickSide } from "./PickSide.jsx";
 import { useCockpit, useFeed } from "./useCockpit.js";
 
 /**
@@ -86,6 +87,10 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
   const [drawer, setDrawer] = useState(initialDrawer);
   const opener = useRef(null);
   const [dossier, setDossier] = useState(false);
+  // Naming the side (team.select, on a fixture still to be played); the reads are made again once it is saved.
+  const [picking, setPicking] = useState(false);
+  const picker = useRef(null);
+  const mayPick = panels.select && match.status === "upcoming";
 
   const label = `Coach · ${phone ? sides[gate.end].short : sides[gate.end].full}`;
   const cols = phone ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))";
@@ -105,7 +110,7 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
         {!loading && !played && (
           <>
             {panels.day && <TheDay match={match} gate={gate} reads={reads} terms={termsNow} sheet={sheet} sides={sides}/>}
-            {panels.side && <TheSide reads={reads} gate={gate}/>}
+            {panels.side && <TheSide reads={reads} gate={gate} onPick={mayPick ? () => setPicking(true) : null} opener={picker}/>}
             {panels.load && <TheWeek reads={reads} sheet={sheet}/>}
             {panels.opposition && reads.opposition && (
               <Part label={`${reads.opposition.theirLabel ?? "The opposition"} · dossier`} testid="coach-opposition">
@@ -133,6 +138,9 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
         <FeedDrawer feed={feed} gate={gate} onClose={() => { setDrawer(false); opener.current?.focus(); }}/>
       )}
       {dossier && <OppositionDossier match={match} role={role} onClose={() => setDossier(false)}/>}
+      {picking && (
+        <PickSide match={match} gate={gate} onSaved={cockpit.reload} onClose={() => { setPicking(false); picker.current?.focus(); }}/>
+      )}
     </section>
   );
 }
@@ -173,8 +181,13 @@ function TheDay({ match, gate, reads, terms, sheet, sides }) {
 
 // ── P2 · The side ──────────────────────────────────────
 
-function TheSide({ reads, gate }) {
-  if (reads.readiness == null) return <Part label="The side" testid="coach-side"><Unread what="The side"/></Part>;
+function TheSide({ reads, gate, onPick, opener }) {
+  const pickButton = onPick && (
+    <button type="button" ref={opener} data-testid="pick-side-open" className="os-state" onClick={onPick} style={{ ...btn(), justifySelf: "start" }}>
+      {(reads.squad ?? []).some((r) => r.side === gate.end) ? "Change the side" : "Pick the side"}
+    </button>
+  );
+  if (reads.readiness == null) return <Part label="The side" testid="coach-side"><Unread what="The side"/>{pickButton}</Part>;
   const rows = sideRows(reads.readiness, gate.end, gate.panels);
   return (
     <Part label="The side" testid="coach-side">
@@ -192,6 +205,7 @@ function TheSide({ reads, gate }) {
         </ol>
       )}
       <p data-testid="coach-side-foot" style={quiet()}>{sideFoot(rows)}</p>
+      {pickButton}
     </Part>
   );
 }

@@ -141,6 +141,9 @@ const TYPE_FLOOR_CEILING = {
   cockpitday:    0,
   cockpitlive:   0,
   cockpitdrawer: 0,
+  // Pick the side (2026-10-03): the coach's dialog naming the side, opened from the Coach
+  // tab's side panel, on a phone; measured inside its own region. Born at 0, and kept there.
+  pickside:      0,
   // SCRBRD-140 phase 1 (2026-10-02): the sign-in screens, on a phone, against the walk's
   // own API (tools/a11y-signup-mock.mjs): the Google block on the sign-in screen and its
   // "waiting for your school office" state, the no-school screen with the parent's form
@@ -198,7 +201,7 @@ const TAP_FLOOR_CEILING = {
   cockpithome:   0,
   cockpitday:    0,
   cockpitlive:   0,
-  cockpitdrawer: 0,
+  cockpitdrawer: 0, pickside: 0,
   // SCRBRD-140: the sign-in screens: every control 44px or more.
   signuplogin:    0,
   signupclaim:    0,
@@ -251,7 +254,7 @@ const CONTRAST_CEILING = {
   // (board.dim lifted) on the daylight one.
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
-              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0,
+              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, pickside: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
@@ -259,7 +262,7 @@ const CONTRAST_CEILING = {
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
-              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0,
+              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, pickside: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
@@ -303,7 +306,7 @@ const EMOJI_CEILING = {
   cockpithome:   0,
   cockpitday:    0,
   cockpitlive:   0,
-  cockpitdrawer: 0,
+  cockpitdrawer: 0, pickside: 0,
   // SCRBRD-140: the sign-in screens.
   signuplogin:    0,
   signupclaim:    0,
@@ -715,6 +718,19 @@ async function cockpitWalk(theme) {
     await page.waitForTimeout(500);
     ok("...with the day, the side and the week drawn", await tid("coach-day").count() === 1 && await tid("coach-side").count() === 1 && await tid("coach-week").count() === 1);
     await check("cockpitday", '[data-testid="mc-coach"]');
+
+    // Pick the side, by keyboard: the dialog opens with focus inside, Tab stays inside, Escape closes it and focus comes back.
+    await tid("pick-side-open").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="pick-side"] [data-testid^="pick-xi-"]', { timeout: 6000 }).catch(() => {});
+    ok("Enter on Change the side opens the dialog, and focus moves into it", await tid("pick-side").count() === 1 && await page.evaluate(() => !!document.activeElement?.closest('[data-testid="pick-side"]')));
+    ok("...every boy is a row with a name, a Pick button and a twelfth-man button", await page.evaluate(() => { const r = [...document.querySelectorAll('[data-testid="pick-side"] li')]; return r.length > 0 && r.every((x) => x.querySelectorAll("button").length >= 2 && x.innerText.trim().length > 5); }));
+    await check("pickside", '[data-testid="pick-side"]');
+    for (let i = 0; i < 60; i++) await page.keyboard.press("Tab");
+    ok("Tab stays inside the open dialog", await page.evaluate(() => !!document.activeElement?.closest('[data-testid="pick-side"]')));
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+    ok("Escape closes it and focus returns to the button that opened it", await tid("pick-side").count() === 0 && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "pick-side-open");
 
     // The drawer, by keyboard.
     await tid("coach-signals-open").focus();
