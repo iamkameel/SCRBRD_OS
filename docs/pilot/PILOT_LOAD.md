@@ -144,7 +144,7 @@ These steps have no screen or route today. Nothing here builds one.
 3. **Built 3 Oct for guardians** (`IMPORTS.guardians`, `tools/smoke-guardian-import.mjs`),
    offered on Settings → Import. Still open: enrolment writes every link as `parent`, so
    recording a grandparent or a court-appointed guardian needs `enrol_person()` to take a
-   relationship (a migration). The proposal as it stood: **Bulk guardian (and staff) enrolment.** Proposed shape: an `IMPORTS.guardians`
+   relationship (a migration): after the pilot (Kameel, 3 October 2026). The proposal as it stood: **Bulk guardian (and staff) enrolment.** Proposed shape: an `IMPORTS.guardians`
    kind, each row calling `enrol_person()` under the office's own identity, with dry
    run as the default and the child matched by name as the players import does it.
    Linking adults to children in bulk is a safeguarding decision (SCRBRD-140 D5), so
