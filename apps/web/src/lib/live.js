@@ -276,6 +276,14 @@ function asNewsPost(r) {
     // is labelled — an unlabelled draft looks like a notice nobody else got.
     draft: r.published_at == null,
     at: r.published_at || r.created_at,
+    // The public home page (SCRBRD-142 §3.5, db/83). `publicState` is null
+    // (never asked, or not this reader's to know), "requested", "approved",
+    // "edited" (approved, then changed: off the home page) or "withdrawn".
+    mine: r.mine === true,
+    mayApprove: r.may_approve === true,
+    mayTakeDown: r.may_take_down === true,
+    publicState: r.public_state ?? null,
+    publicNames: r.public_names == null ? null : Number(r.public_names),
   };
 }
 

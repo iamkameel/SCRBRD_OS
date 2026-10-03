@@ -885,6 +885,33 @@ group("§6 step 3 — the signed-out reads name their columns, and none §3 forb
   const withBorn = (liveRead?.body ?? "").replace("JOIN school hs", "JOIN player p ON p.school_id = l.school_id JOIN school hs")
     .replace("l.status, l.format", "p.born, l.status, l.format");
   ok("...and the rule refuses a date of birth slipped in (N1)", publicReadProblems(withBorn).some((p) => /player\.born/.test(p)));
+
+  // SCRBRD-142 phase 3 (db/83): the home page's news. A post's words, its
+  // school's name and side, and its date — no author (§3.2, A4: a byline is
+  // an adult's, outside the rule, but the home page need not carry it) and
+  // no person at all. The request table is read for the approval's facts
+  // only: never who asked, approved or withdrew.
+  const newsRead = fns.find((f) => f.name === "public_news");
+  const newsBody = newsRead?.body ?? "";
+  const newsTables = selectedBy(newsBody).tables;
+  ok("db/83 has public_news()", !!newsRead, names.join(" "));
+  ok("public_news() reads the post's id, anchor, words and date — and not its author",
+     JSON.stringify([...(newsTables.news_post ?? [])].sort())
+       === JSON.stringify(["body", "id", "published_at", "school_id", "scope", "team_code", "title"]),
+     String(newsTables.news_post));
+  ok("...of school, only its name and id", JSON.stringify([...(newsTables.school ?? [])].sort()) === '["id","name"]', String(newsTables.school));
+  ok("...of the request, whether and what was approved and whether withdrawn — never who",
+     (newsTables.news_post_public ?? []).every((c) => ["post_id", "approved_at", "approved_digest", "withdrawn_at"].includes(c))
+     && !/_by\b/.test(newsBody), String(newsTables.news_post_public));
+  ok("...and no author, no app_user, no player anywhere in it",
+     !/\bauthor_id\b|\bapp_user\b|\bplayer\b/i.test(newsBody) && !["player", "app_user"].some((t) => Object.hasOwn(newsTables, t)));
+  const newsSql = readFileSync(join(DB, "83_public_news.sql"), "utf8");
+  const returns = stripComments(newsSql).match(/FUNCTION\s+public_news\s*\([^)]*\)\s*RETURNS\s+TABLE\s*\(([^)]*)\)/i)?.[1] ?? "";
+  ok("its columns are id, school, team_code, title, body, published_at — no author",
+     JSON.stringify(returns.split(",").map((c) => c.trim().split(/\s+/)[0]))
+       === JSON.stringify(["id", "school", "team_code", "title", "body", "published_at"]), returns);
+  const withAuthor = newsBody.replace("SELECT n.id, s.name", "SELECT n.id, n.author_id, s.name");
+  ok("...and the check sees an author_id slipped in", (selectedBy(withAuthor).tables.news_post ?? []).includes("author_id"));
 }
 
 console.log("\n" + "─".repeat(52));

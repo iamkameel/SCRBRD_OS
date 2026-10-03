@@ -843,6 +843,119 @@ const livePool = {
   offSite.close(); await new Promise((r) => offSrv.close(() => r(null)));
 }
 
+// ═════════════════════════════════════════════════════════════════
+console.log("\n── The home page's news: GET /api/public/news (SCRBRD-142 phase 3, db/83) ──");
+/**
+ * A database whose public_news() answers the approved posts of the schools
+ * that list — what db/99 §62 proves the real one does. Each row also carries
+ * an author_id, an author's name and an approver, columns the real function
+ * does not return: the API names what it sends, so none of them may reach
+ * the wire whatever the database hands back.
+ */
+const N = {
+  reads: 0, users: /** @type {string[]} */ ([]), limits: /** @type {any[]} */ ([]),
+  /** @type {{id: string, approved: boolean, withdrawn: boolean, listed: boolean}[]} */
+  posts: [],
+};
+const NP = "0c000000-0000-0000-0000-0000000000a1";
+const newsPool = {
+  query: async () => ({ rows: [] }),
+  connect: async () => ({
+    release() {},
+    /** @param {string} text @param {any[]} [params] */
+    async query(text, params = []) {
+      if (/set_config\('app\.user_id'/.test(text)) { N.users.push(params[0]); return { rows: [] }; }
+      if (/^(BEGIN|COMMIT|ROLLBACK)/.test(text) || /set_config/.test(text)) return { rows: [] };
+      if (/public_news\(\$1\)/.test(text)) {
+        N.reads++; N.limits.push(params[0]);
+        return { rows: N.posts.filter((p) => p.approved && !p.withdrawn && p.listed).map((p) => ({
+          id: p.id, school: "Hilton College", team_code: "2XI", title: "Second XI through to the final",
+          body: "The side beat Westville by six wickets.", published_at: "2026-10-03T07:30:00Z",
+          author_id: "88888888-0000-0000-0000-00000000000a", author_name: "Coach Verify", approved_by: "88888888-0000-0000-0000-000000000007",
+        })) };
+      }
+      throw new Error(`unexpected query ${text}`);
+    },
+  }),
+};
+{
+  const site = publicPages({ pool: /** @type {any} */ (newsPool), enabled: true, secret: SECRET, trustProxyHops: 1, now: () => clock });
+  const srv = createServer(async (req, res) => { if (!(await site.handle(req, res))) { res.writeHead(599); res.end(); } });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", () => r(null)));
+  const port = /** @type {any} */ (srv.address()).port;
+  /** @param {{token?: string}} [x] */
+  const read = async ({ token } = {}) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api/public/news`, { headers: { "x-forwarded-for": "198.51.100.10, 203.0.113.78", ...(token ? { authorization: token } : {}) } });
+    const headers = Object.fromEntries([...r.headers].filter(([k]) => !["date", "connection", "keep-alive"].includes(k)));
+    return { status: r.status, headers, body: await r.text() };
+  };
+  const ids = async () => (/** @type {any[]} */ (JSON.parse((await read()).body).posts)).map((p) => p.id);
+  /** @param {Partial<typeof N.posts[number]>} s */
+  const world = (s) => { N.posts = [{ id: NP, approved: false, withdrawn: false, listed: true, ...s }]; site.changed({ k: "news", id: NP }); };
+
+  world({ approved: false });
+  ok("asked and not approved: not on the home page", !(await ids()).includes(NP));
+  world({ approved: true, listed: false });
+  ok("approved, the school not listing: not on it", !(await ids()).includes(NP));
+  world({ approved: true });
+  ok("approved and listed: on it", (await ids()).includes(NP));
+
+  const plain = await read();
+  const p = JSON.parse(plain.body).posts[0];
+  ok("the post's fields: id, school, side, title, words, date — and nothing else",
+     JSON.stringify(Object.keys(p).sort()) === JSON.stringify(["body", "id", "publishedAt", "school", "team", "title"])
+     && p.school === "Hilton College" && p.team === "2XI" && p.publishedAt === "2026-10-03T07:30:00.000Z", p);
+  ok("...no author_id, no author's name, no approver on the wire", !/author|approved|Coach Verify|88888888/.test(plain.body), plain.body);
+  ok("...the home page is sent its five, no more", N.limits.every((l) => l === 5), N.limits);
+  const staff = await read({ token: "Bearer eyJhbGciOi.staff.token" });
+  ok("a staff token changes nothing: the same bytes and headers", staff.body === plain.body && JSON.stringify(staff.headers) === JSON.stringify(plain.headers));
+  ok("...and every read ran as nobody", N.users.length > 0 && N.users.every((u) => u === ""), N.users);
+  ok("headers: X-Robots-Tag noindex, public max-age=30 at the edge (§3.4), JSON, nosniff",
+     plain.status === 200 && /noindex/.test(plain.headers["x-robots-tag"] ?? "") && plain.headers["cache-control"] === "public, max-age=30"
+     && /application\/json/.test(plain.headers["content-type"] ?? "") && plain.headers["x-content-type-options"] === "nosniff", plain.headers);
+
+  // The cache: one entry for everybody, 60 s.
+  let before = N.reads;
+  await read(); await read();
+  ok("the cache answers repeated reads with one query", N.reads === before);
+  clock += SETTLED_TTL_MS - 1;
+  await read();
+  ok("...for 60 s", N.reads === before);
+  clock += 2;
+  await read();
+  ok("...and queries after", N.reads === before + 1);
+
+  // Withdrawn: the notification (db/83's triggers, or the route's own
+  // changed()) clears it; the next read does not carry the post.
+  N.posts[0].withdrawn = true;
+  site.changed({ k: "news", id: NP });
+  ok("withdrawn: a {k: news} notification clears it and the post is gone", !(await ids()).includes(NP));
+  N.posts[0].withdrawn = false;
+  before = N.reads;
+  site.changed({ k: "school", id: "11111111-1111-1111-1111-111111111111" });
+  await read();
+  ok("a school's listing switch ({k: school}) clears it too", N.reads === before + 1);
+  site.changed({ k: "match", id: "77777777-0000-0000-0000-00000000beef" });
+  site.changed({ k: "player", id: "aaaaaaaa-0000-0000-0000-000000000001" });
+  await read();
+  ok("...but not a fixture's or a player's: the news reads neither", N.reads === before + 1);
+  ok("a fixed cache key that no fixture id can be", !/^[0-9a-f-]{36}$/.test("news") && site.cache.entries.has("news"));
+  site.cache.entries.set("77777777-0000-0000-0000-00000000cafe", { players: new Set(), inflight: new Map() });
+  site.changed({ k: "news", id: NP });
+  ok("...and a news notification drops the news and nothing else", !site.cache.entries.has("news")
+     && site.cache.entries.has("77777777-0000-0000-0000-00000000cafe"));
+
+  site.close(); await new Promise((r) => srv.close(() => r(null)));
+
+  const offSite = publicPages({ pool: /** @type {any} */ (newsPool), enabled: false, secret: null });
+  const offSrv = createServer(async (req, res) => { if (!(await offSite.handle(req, res))) { res.writeHead(599); res.end(); } });
+  await new Promise((r) => offSrv.listen(0, "127.0.0.1", () => r(null)));
+  const readsOff = N.reads;
+  const offR = await fetch(`http://127.0.0.1:${/** @type {any} */ (offSrv.address()).port}/api/public/news`);
+  ok("off: the one 404, and nothing read", offR.status === 404 && (await offR.text()) === NOT_FOUND && N.reads === readsOff);
+  offSite.close(); await new Promise((r) => offSrv.close(() => r(null)));
+}
+
 console.log("\n── The shell ──");
 {
   const index = readFileSync(join(ROOT, "apps", "web", "index.html"), "utf8");

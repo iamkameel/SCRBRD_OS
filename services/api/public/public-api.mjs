@@ -18,6 +18,9 @@
  *                                         today's fixtures of the schools that list,
  *                                         each published by a listing school —
  *                                         team facts, no ground, no boy (§2.2)
+ *   GET /api/public/news                  the home page's news (SCRBRD-142 §3, db/83):
+ *                                         posts a listing school's publisher approved —
+ *                                         school, side, title, words, date; no author
  *   GET /api/public/competitions/:id/standings  a published competition's table
  *                                         (SCRBRD-114 phase 3a, db/69): sides and
  *                                         figures, never a boy, never a reason (A1)
@@ -51,8 +54,8 @@
  * `changed()` once it has committed and before it answers, and the next read
  * in this process is never the old entry (publication-api.mjs).
  * At the edge: `no-store` on the log (it carries labels) and on every 404,
- * 429 and shell; `public, max-age=30` on the header and the sectors, which
- * are team facts.
+ * 429 and shell; `public, max-age=30` on the header, the sectors and the
+ * news, which are team facts.
  *
  * RATE LIMIT (§2.8). A token bucket per client address: 360 a minute, bursts
  * of 60, then 429 with Retry-After. SCRBRD-133 A4: a pavilion's phones share
@@ -97,6 +100,12 @@ export const LIVE_KEY = "live";
  * names are, `no-store` — on the next request.
  */
 export const LIVE_EDGE = "public, max-age=10";
+/** The home page's news (SCRBRD-142 §3.2): the second public read with no id. */
+const NEWS = "/api/public/news";
+/** Its one cache entry, under a key no fixture id can be. */
+export const NEWS_KEY = "news";
+/** How many posts the home page is sent: the five it shows (§3.5). */
+export const NEWS_LIMIT = 5;
 /** A published competition's table (SCRBRD-114 phase 3a). */
 const STANDINGS = /^\/api\/public\/competitions\/([^/]+)\/standings$/;
 const SHELL = /^\/(live|scorecard|display|table|fixtures)\/([^/]+)$/;
@@ -140,6 +149,7 @@ export const NOT_FOUND = JSON.stringify({ error: "not_found" });
  * @property {Held<any> | undefined} [shots]
  * @property {Held<any> | undefined} [standings]  a competition's table, keyed by its id
  * @property {Held<any> | undefined} [live]  the home page's list, under LIVE_KEY
+ * @property {Held<any> | undefined} [news]  the home page's news, under NEWS_KEY
  * @property {Set<string>} players   the real player ids its log names
  * @property {Map<string, Promise<any>>} inflight
  */
@@ -194,7 +204,7 @@ export class PublicCache {
    * The cached answer for `part`, or a fresh one from `load()` — one load at
    * a time per fixture and part, however many requests arrive together.
    * @template T
-   * @param {string} matchId @param {"header" | "log" | "shots" | "standings" | "live"} part
+   * @param {string} matchId @param {"header" | "log" | "shots" | "standings" | "live" | "news"} part
    * @param {number} ttl @param {() => Promise<T>} load
    * @returns {Promise<T>}
    */
@@ -227,13 +237,15 @@ export class PublicCache {
    * A change the database announced. A fixture's own change drops it, and
    * the home page's list (SCRBRD-142: a publication, a status, a start — any
    * of them moves a card); a player's drops every fixture whose log names
-   * him (the list names nobody); anything else (a school's names-off or
-   * listing switch, a competition, a message this build does not know) drops
-   * everything, which is always safe.
+   * him (the list names nobody); a news post's or its approval's (db/83)
+   * drops the news and nothing else, which reads nothing but posts; anything
+   * else (a school's names-off or listing switch, a competition, a message
+   * this build does not know) drops everything, which is always safe.
    * @param {{k?: unknown, id?: unknown} | null} note
    */
   drop(note) {
     const id = typeof note?.id === "string" ? note.id.toLowerCase() : null;
+    if (note?.k === "news") { this.entries.delete(NEWS_KEY); return; }
     if (note?.k === "match" && id) { this.entries.delete(id); this.entries.delete(LIVE_KEY); return; }
     if (note?.k === "player" && id) {
       for (const [m, e] of this.entries) if (e.players.has(id)) this.entries.delete(m);
@@ -532,6 +544,22 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
   });
 
   /**
+   * The home page's news (db/83 public_news()): approved, unwithdrawn,
+   * unedited posts of the schools that list, newest first. One entry for
+   * everybody, 60 s, dropped on every post's or approval's notification.
+   * Named field by field: no author, whatever the database hands back.
+   */
+  const news = () => cache.get(NEWS_KEY, "news", SETTLED_TTL_MS, async () => {
+    const { rows } = await asNobody((c) => c.query(`select id, school, team_code, title, body, published_at from public_news($1)`, [NEWS_LIMIT]));
+    return {
+      posts: rows.map((r) => ({
+        id: r.id, school: r.school ?? null, team: r.team_code ?? null, title: r.title, body: r.body,
+        publishedAt: r.published_at ? new Date(r.published_at).toISOString() : null,
+      })),
+    };
+  });
+
+  /**
    * @param {ServerResponse} res @param {number} status @param {string} body
    * @param {{type?: string, cache: string, robots?: string, extra?: Record<string, string>}} h
    * @param {boolean} head
@@ -574,6 +602,18 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     if (path === LIVE) {
       try {
         send(res, 200, JSON.stringify(await live()), { cache: LIVE_EDGE }, head);
+      } catch (/** @type {any} */ err) {
+        console.error(`GET ${path} (public) →`, err.code || "", err.message);
+        send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
+      }
+      return true;
+    }
+    if (path === NEWS) {
+      // Team-level words a school approved, with no label: the edge may hold
+      // them 30 s (§3.4), so a withdrawn post outlives its withdrawal there by
+      // 30 s at most.
+      try {
+        send(res, 200, JSON.stringify(await news()), { cache: TEAM_LEVEL }, head);
       } catch (/** @type {any} */ err) {
         console.error(`GET ${path} (public) →`, err.code || "", err.message);
         send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);

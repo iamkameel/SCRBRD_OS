@@ -80,5 +80,6 @@
   "79_audit_log.sql",
   "80_audit_log_grants.sql",
   "81_signup_google.sql",
-  "82_public_listing.sql"
+  "82_public_listing.sql",
+  "83_public_news.sql"
 ]

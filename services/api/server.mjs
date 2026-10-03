@@ -34,6 +34,7 @@
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
  *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
+ *   POST /api/news/:id/public/{request,approve,withdraw}  a notice on the public home page (db/83)
  *   GET  /api/public/…, /live/:id, /scorecard/:id  the signed-out pages (off unless
  *                                         PUBLIC_PAGES=on — public/public-api.mjs)
  *
@@ -433,7 +434,9 @@ const firebase = (() => {
 })();
 const signIn = signInRoutes({ pool, secret: SECRET, verifier: firebase.verifier,
                               trustProxyHops: Number(process.env.PUBLIC_TRUST_PROXY_HOPS || 0) });
-const news = newsRoutes({ pool, secret: SECRET });
+// A notice's public request, approval or withdrawal — and the author's own
+// withdrawal of a notice — drops the public news before it answers (db/83).
+const news = newsRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
 const load = loadRoutes({ pool, secret: SECRET });
@@ -705,6 +708,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/news$/,                                 "POST", news.publish],
   [/^\/api\/news\/([^/]+)\/publish$/,               "POST", news.send],
   [/^\/api\/news\/([^/]+)\/withdraw$/,              "POST", news.withdraw],
+  // The public home page (SCRBRD-142 §3, db/83). The three functions decide
+  // who: the author asks; a school-wide publisher who is not the author
+  // approves; the author or any publisher at the school takes it down.
+  [/^\/api\/news\/([^/]+)\/public\/request$/,       "POST", news.public_request],
+  [/^\/api\/news\/([^/]+)\/public\/approve$/,       "POST", news.public_approve],
+  [/^\/api\/news\/([^/]+)\/public\/withdraw$/,      "POST", news.public_withdraw],
   [/^\/api\/drills$/,                               "POST", kit.drill],
   [/^\/api\/equipment$/,                            "POST", kit.equipment],
   [/^\/api\/equipment\/([^/]+)\/issue$/,             "POST", kit.issue],
