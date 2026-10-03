@@ -108,7 +108,7 @@ request and copy the `Authorization` value after `Bearer `. It lasts 30 minutes.
 file goes from disk to the request through a pipe and is never written anywhere else.
 
 ```sh
-API=https://<the web app's domain>          # Hosting forwards /api/** to the API
+API=https://scrbrd.onrender.com           # the Render service serves the API and the app
 TOKEN=<pasted from the browser>
 SCHOOL=$(curl -sS "$API/api/schools" | jq -r '.rows[] | select(.name=="<School name>") | .id')
 

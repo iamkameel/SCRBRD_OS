@@ -224,7 +224,9 @@ const BANNED = [
   // the opponent is not known yet.
   ["Michaelhouse", "the opponent is not known: use [opponent]"],
   ["77777777-", "a seed match id is not the pilot's match"],
-  ["your-api-url", "the address is scrbrd-os.web.app (firebase.json, DEPLOYING.md)"],
+  ["your-api-url", "the address is scrbrd.onrender.com (render.yaml)"],
+  // The app runs on Render; Firebase is Google sign-in only, its hosting unused.
+  ["scrbrd-os.web.app", "the app is at scrbrd.onrender.com (render.yaml); Firebase Hosting is not deployed"],
   ["Get Started", "the app opens on the sign-in screen"],
   ["Confirm Wicket", "the wicket sheet's button is Confirm Out"],
   ["Arm handover", "the handover button is Hand over scoring"],

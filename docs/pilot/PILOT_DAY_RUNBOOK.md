@@ -12,7 +12,7 @@ Every button name below is written as the app shows it. The scorers' own one-pag
 
 ### Check the server
 
-1. Open `https://scrbrd-os.web.app/api/health` in a browser. Hosting sends `/api` to the API. If the school has been given a custom domain, use that address instead.
+1. Open `https://scrbrd.onrender.com/api/health` in a browser. The free service sleeps when idle, so the first answer can take up to a minute; open it 30 minutes before the toss.
 2. It must show `"ok":true` and `"db":"ok"`.
 3. It must show `"public":"on"`. If it says `off`, the pavilion screen cannot work: public pages stay off until the information officer has confirmed `docs/policy/PUBLIC_DATA.md` in writing (`DEPLOYING.md`, "Turning the public pages on").
 4. `"auth":"token_only"` is right for the pilot. `"auth":"dev_login_enabled"` means a test server.
@@ -20,7 +20,7 @@ Every button name below is written as the app shows it. The scorers' own one-pag
 ### Phones and accounts
 
 1. Charge both scorers' phones and restart them.
-2. Each scorer opens `https://scrbrd-os.web.app/app` on their own phone (the home page at `https://scrbrd-os.web.app` has a **Log in** link to it). They tap **Continue with Google**, or type their email and the code from the school office in **Sign-in code** and tap **Sign In**. A code works once and expires, so ask the office for a fresh one on the morning if it was used.
+2. Each scorer opens `https://scrbrd.onrender.com/app` on their own phone (the home page at `https://scrbrd.onrender.com` has a **Log in** link to it). They tap **Continue with Google**, or type their email and the code from the school office in **Sign-in code** and tap **Sign In**. A code works once and expires, so ask the office for a fresh one on the morning if it was used.
 3. If the screen says **Waiting for your school office**, the office has not linked that account yet. Ask [who to call].
 4. Tap **Match Centre** (the bottom bar on a phone, or under **More**). The fixture must be listed. While it is upcoming its button reads **Start Scoring →**; once live it reads **Open Live Scorer →**. If there is no button, that account is not offered scoring: tell [who to call].
 5. Rehearse on a practice match, not the real fixture: **Open SCRBRD Scorer**, then **Start Practice Match**. Score a few balls, a **Wicket** and an **Undo**. A practice match stays on the phone and is never counted.

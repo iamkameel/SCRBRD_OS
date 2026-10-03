@@ -11,7 +11,12 @@
 # Both jobs are skipped, not failed, until the secrets exist. A red deploy on
 # every push to main for want of a credential would train everyone to ignore
 # a red deploy.
-name: Deploy
+# NOT THE PILOT'S DEPLOY. Production runs on Render (render.yaml), which
+# deploys main by itself. This workflow targets Firebase Hosting and Cloud Run,
+# which are not set up; without their secrets every step is skipped and the
+# run still shows green. Its name says so, so a green tick here is not read as
+# "deployed".
+name: Deploy to Firebase + Cloud Run (unused; production is Render)
 
 on:
   push:

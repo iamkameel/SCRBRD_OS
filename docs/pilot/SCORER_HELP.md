@@ -4,7 +4,7 @@
 
 ## Sign in
 
-Open `scrbrd-os.web.app/app`. Tap **Continue with Google**, or type your email and the office's code in **Sign-in code**, then **Sign In**. **Waiting for your school office** means the office has not linked you yet.
+Open `scrbrd.onrender.com/app`. Tap **Continue with Google**, or type your email and the office's code in **Sign-in code**, then **Sign In**. **Waiting for your school office** means the office has not linked you yet.
 
 ## Open the match
 
