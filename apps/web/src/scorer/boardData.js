@@ -15,9 +15,15 @@ import { superOverBlock } from "../lib/superOver.js";
  * word — a wide or a no-ball alone is "wd" / "nb", with runs it shows the
  * delivery's runs ("2wd", "5nb"); byes and leg byes their runs ("2b", "1lb").
  * A no-ball's byes or leg byes are byes or leg byes (Law 21.15, db/52), not
- * no-ball runs, so that no-ball says both: "nb+4b", "nb+1lb".
+ * no-ball runs, so that no-ball says both: "nb+4b", "nb+1lb". A wicket on a
+ * wide or a no-ball (Law 22.9, 21.17) is the extra and the wicket: "wd+W",
+ * "2wd+W", "3nb+W" — no ball of the over, and out.
  */
 export function boardBall(b) {
+  if (isOut(b) && (b.type === "Wd" || b.type === "Nb")) {
+    const x = b.type === "Wd" ? "wd" : "nb";
+    return `${b.value ? 1 + b.value : ""}${x}+W`;
+  }
   if (isOut(b)) return "W";
   if (b.type === "Wd") return b.value ? `${1 + b.value}wd` : "wd";
   if (b.type === "Nb" && b.value && (b.nbRuns === "byes" || b.nbRuns === "leg_byes")) return `nb+${b.value}${b.nbRuns === "byes" ? "b" : "lb"}`;

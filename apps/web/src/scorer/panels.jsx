@@ -442,9 +442,15 @@ function detectMilestone(ball,inn){
     if(prev<150&&cur>=150)milestones.push({type:"150",label:"150!",sub:bat.name+" on 150",color:D.amber,icon:"flame"});
     if(prev<200&&cur>=200)milestones.push({type:"200",label:"DOUBLE!",sub:bat.name+" — 200 runs!",color:D.amber,icon:"crown"});
   }
-  if(bow&&isWicketBall(ball)){
+  // A wicket that stood: a W, or one on a wide or a no-ball (isWicketBall()),
+  // not one a free hit saved (a log entry says so; the pad's caller passes
+  // no method then).
+  if(bow&&isWicketBall(ball)&&!ball.freeHitSaved){
     const wkts=(bow.wickets||0)+1; // including this dismissal
-    if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"ball"});
+    // His fifth only when this one is his (chargedToBowler): a run out off a
+    // no-ball, now recordable, is the side's wicket and not the bowler's.
+    const his=ball.dismissal!=null&&chargedToBowler(normaliseDismissal(ball.dismissal));
+    if(wkts===5&&his)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"ball"});
     // A hat-trick is three of the bowler's balls of the over running: a
     // wicket on a wide or a no-ball (Law 22.9, 21.17) neither makes one nor
     // puts him on one, as the commentary and SQL's bowler_hat_trick read it.

@@ -324,7 +324,7 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
         <h3 style={{ ...T.role.title.md, fontSize: "18px", flex: 1, minWidth: 0, margin: 0, color: T.content.primary }}>{question}</h3>
         {canWicket && (
           <Key face={<><Icon name="bails-off"/> Wicket</>} testid="extra-wicket" pressed={wicket} onClick={() => setWicket((w) => !w)}
-            say={kind === "Wd" ? "And a wicket off the wide" : "And a wicket off the no ball"}
+            say={kind === "Wd" ? "Wicket off this wide" : "Wicket off this no ball"}
             style={{ padding: `0 ${T.space.md}`, flexShrink: 0,
               ...(wicket ? { background: T.semantic.critical, color: inkOn(T.semantic.critical), border: `1px solid ${T.semantic.critical}`, fontWeight: 600 } : {}) }}/>
         )}
