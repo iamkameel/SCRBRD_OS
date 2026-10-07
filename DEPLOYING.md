@@ -749,6 +749,26 @@ minted before it names no session and is refused (`401 incomplete_claims`).
 Deploy it outside a match; a pad's resume credential is not a token and keeps
 scoring.
 <!-- ── end GA-I03 ── -->
+<!-- ── db/87: a wicket on a wide or a no-ball ── -->
+#### A wicket on a wide or a no-ball (db/87)
+
+`db/87_wicket_on_extra.sql` adds `ball_is_wicket(type, dismissal)` — a W, a
+wide naming run out, stumped, hit wicket or obstructing the field (Law 22.9),
+or a no-ball naming run out, hit the ball twice or obstructing the field (Law
+21.17) — and asks it wherever SQL asked for a W: `ball_wicket_stands()` (the
+live score, the handover's count, the result), the career readers, the
+keeper's dismissals, the milestone trigger and db/68's keeper door, each
+otherwise exactly as db/71 left it. A new door, `ball_event_out_off_extra`,
+refuses a wide or no-ball naming any other method. No secret, no backfill;
+the paste names how many stored wide or no-ball rows carry a dismissal (none
+should: no client wrote one).
+
+Paste `node tools/bundle-sql.mjs --apply 87` (after 86), then the verify bundle
+(§65 is its proof, and the summary row's "Wickets off a wide or no-ball" reads
+OK). **Schema first**: the API built with it refuses to start without db/87
+(`expected-migrations.json`), and the pad records these wickets only once the
+server's Laws take them.
+<!-- ── end db/87 ── -->
 
 ### 5 · Cloud Run, the first time
 

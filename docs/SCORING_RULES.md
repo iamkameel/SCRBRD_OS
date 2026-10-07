@@ -200,6 +200,7 @@ Refused, with the reason named:
 | Only a batter at the crease can retire, and not once the innings is over or closed; nothing is recorded for an innings nobody opened | new; over/closed SCRBRD-071 |
 | A wicket with no ball is retired out (a batter who is in) or timed out (the batter due in, Law 40) — nothing else | SCRBRD-081 |
 | Runs off a no-ball are off the bat, byes or leg byes — nothing else | SCRBRD-068 |
+| A wicket on a wide is run out, stumped, hit wicket or obstructing the field (Law 22.9); on a no-ball, run out, hit the ball twice or obstructing the field (Law 21.17) — nothing else (`not_out_off_wide`, `not_out_off_no_ball`) | db/87 |
 | The end a batter was out at is the striker's or the bowler's, and only on a wicket | SCRBRD-069 |
 | A live `void` names the latest event that still counts in the innings in play — last in, first out, as the pad's undo. Anything older is an amendment (a second person, `scoring_amendment`) | new, `undo.mjs` |
 
@@ -804,3 +805,33 @@ nothing); `replay.test.mjs` group O and a `smoke-fold-figures` innings hold the 
 
 **To be decided (recorded, not built).** Some primary-school leagues cap an over at a maximum number of balls (for
 example 8), and a free hit earned on the last allowed ball falls away. See SCRBRD-113 in the backlog.
+
+## A wicket on a wide or a no-ball (Law 22.9, Law 21.17; db/87)
+
+Until 7 October 2026 a wicket was its own delivery type, `W`, and a `W` is a ball of the over: a run out off a
+no-ball, or a stumping or run out off a wide, could not be recorded without a ball the over did not have, a lost
+wicket, or a bowler charged a ball he did not bowl. Kameel chose to fix it before the 12 October freeze.
+
+A wide or a no-ball now carries the dismissals the Laws allow off it, and no others:
+
+| Off a | Allowed (`WIDE_DISMISSALS`, `NO_BALL_DISMISSALS`) | The bowler's |
+|---|---|---|
+| Wide (Law 22.9) | run out, stumped, hit wicket, obstructing the field | stumped, hit wicket |
+| No-ball (Law 21.17) | run out, hit the ball twice, obstructing the field | none |
+
+The event is the extra itself (`type: "Wd"` or `"Nb"`) with `dismissal` (and `dismissed`, `fielder`, `outAt`, as on a
+`W`). `isWicketBall()` is the one question every reader asks; SQL asks `ball_is_wicket()` (db/87). Scored as that
+extra: its penalty run and runs count, it is no ball of the over, a no-ball is a ball faced and a wide is not, and a
+no-ball is still followed by a free hit. Scored as a wicket: it is in the wickets and the fall of wickets, at the balls
+of the over before it, and the bowler's only when it is his (`chargedToBowler()`). On a free hit the bowler's own
+dismissals do not stand, a wide on a free hit included (§6). A wicket on an extra neither makes a hat-trick nor breaks
+one: the hat-trick reads the balls of the over alone, in the commentary, the pad and `bowler_hat_trick`.
+
+Any other method off a wide or a no-ball is refused: by `ball()`, by the Laws at commit (`not_out_off_wide`,
+`not_out_off_no_ball`) and by the database (`ball_event_out_off_extra`, 23514). A row stored before db/87 that names
+an allowed method is read as a wicket by the fold and by SQL alike; one naming any other is no wicket, as before.
+
+On the pad, the wide's and the no-ball's runs panel has a **Wicket** toggle (the no-ball sheet asks "And a wicket?");
+with it on, the runs key opens the wicket sheet offering only that extra's ways out, and one event is recorded. Pro
+mode's one-tap WIDE takes no runs and no wicket, as before. `replay.test.mjs` group P, `laws.test.mjs` group S,
+`tools/smoke-fold-figures.mjs`, db/99 §65 and `smoke-browser-wicket-on-extra` prove it.
