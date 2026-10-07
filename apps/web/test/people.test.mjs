@@ -128,6 +128,9 @@ group("A refusal is said in words");
   const unknown = enrolWords("check_violation");
   ok("an unknown code is still a sentence, and not the code", /not saved/.test(unknown) && !/check_violation/.test(unknown), unknown);
   ok("no message is a bare code", Object.values(ENROL_MESSAGE).every((m) => /\s/.test(m) && /[.]$/.test(m)));
+  // db/86: the server's refusal of a platform role at a school, in words.
+  ok("a platform role at a school is refused in words", enrolWords("platform_role_needs_no_school")
+     === "That role belongs to no school, so it cannot be given at one.");
 }
 
 group("The tabs a person has are the capabilities they hold");

@@ -3813,7 +3813,62 @@ EXCEPTION WHEN OTHERS THEN
 END $$ LANGUAGE plpgsql;
 -- └── db/85 (section 64) ──────────────────────────────────────────────
 
--- ┌── db/87 (section 65) ──────────────────────────────────────────────
+-- ┌── db/86 (section 65): a platform role belongs to no school ────────
+-- An account with no school and no role, for an appointment to name.
+CREATE OR REPLACE FUNCTION _v86_person(p_key text) RETURNS uuid AS $$
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v86.' || p_key || '@example.invalid', 'V86 ' || initcap(p_key), 'none') RETURNING id
+$$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An appointment written as whoever calls it: through role_assignment_write,
+-- as the application writes one. 'ok', or the SQLSTATE and the constraint
+-- (or the message, when no constraint was named).
+CREATE OR REPLACE FUNCTION _v86_insert(p_person uuid, p_role text, p_school uuid) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (p_person, p_role, p_school);
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ':' || coalesce(nullif(v_con, ''), SQLERRM);
+END $$ LANGUAGE plpgsql;
+-- The same, as the table's owner, past every policy: the seed's door,
+-- tools/bootstrap.mjs's, and the SQL Editor's. Live or already ended.
+CREATE OR REPLACE FUNCTION _v86_appoint(p_person uuid, p_role text, p_school uuid, p_active boolean DEFAULT true) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, active) VALUES (p_person, p_role, p_school, p_active);
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ':' || coalesce(nullif(v_con, ''), SQLERRM);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What an address left behind: accounts / requests / appointments.
+CREATE OR REPLACE FUNCTION _v86_left(p_email text) RETURNS text AS $$
+  SELECT (SELECT count(*) FROM app_user u WHERE lower(u.email) = lower(p_email)) || '/'
+      || (SELECT count(*) FROM role_request r JOIN app_user u ON u.id = r.person_id WHERE lower(u.email) = lower(p_email)) || '/'
+      || (SELECT count(*) FROM role_assignment a JOIN app_user u ON u.id = a.person_id WHERE lower(u.email) = lower(p_email))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A request's state, and how many appointments a person holds at a school.
+CREATE OR REPLACE FUNCTION _v86_request(p_id uuid) RETURNS text AS $$
+  SELECT state FROM role_request WHERE id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The record as a whole: school-scoped platform appointments (must be 0) /
+-- the seed's two tenant-less keys, live (must be 2) / whether the constraint
+-- is validated / the roles that carry a platform-only capability.
+CREATE OR REPLACE FUNCTION _v86_record() RETURNS text AS $$
+  SELECT (SELECT count(*) FROM role_assignment
+           WHERE role IN ('superadmin', 'platformadmin') AND school_id IS NOT NULL) || '/'
+      || (SELECT count(*) FROM role_assignment
+           WHERE id IN ('a5510000-0000-0000-0000-000000000016', 'a5510000-0000-0000-0000-000000000022')
+             AND school_id IS NULL AND active) || '/'
+      || coalesce((SELECT convalidated::text FROM pg_constraint
+                    WHERE conrelid = 'role_assignment'::regclass AND conname = 'platform_role_needs_no_school'), 'absent') || '/'
+      || (SELECT string_agg(DISTINCT rc.role, ',' ORDER BY rc.role)
+            FROM role_capability rc JOIN capability c ON c.name = rc.capability AND c.platform_only)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/86 (section 65) ──────────────────────────────────────────────
+
+-- ┌── db/87 (section 66) ──────────────────────────────────────────────
 -- A wicket on a wide or a no-ball (Law 22.9, 21.17). One Hilton 1XI fixture,
 -- one innings, Hilton batting and bowling (the fold cares for neither side):
 -- J Whitfield (…01) and T Bekker (…02) open, R Pillay (…05) and K Dlamini
@@ -3824,7 +3879,7 @@ END $$ LANGUAGE plpgsql;
 --   free hit · 7 …06 in · 8 stumped off a wide on the free hit (…06): saved,
 --   and the free hit carries on · 9 a dot (…06): the free hit taken.
 -- packages/scoring/test/replay.test.mjs group P folds the same log ("the log
--- db/87 proves") and holds the fold to the figures §65 reads. Written as the
+-- db/87 proves") and holds the fold to the figures §66 reads. Written as the
 -- owner, one row per statement, as the write path writes.
 CREATE OR REPLACE FUNCTION _seed_87() RETURNS uuid AS $$
 DECLARE m uuid; r record;
@@ -3888,7 +3943,7 @@ CREATE OR REPLACE FUNCTION _careers_87() RETURNS jsonb AS $$
     'bat_wide',    (SELECT jsonb_build_array(s.runs, s.balls_faced) FROM player_batting_since('aaaaaaaa-0000-0000-0000-000000000002', NULL) s),
     'keeping',     (SELECT coalesce(sum(x.stumpings), 0) FROM player_keeping_career x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000004'))
 $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
--- └── db/87 (section 65) ──────────────────────────────────────────────
+-- └── db/87 (section 66) ──────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -16394,7 +16449,127 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 64
-  -- ┌── section 65 · db/87: a wicket on a wide or a no-ball ──
+
+  -- ┌── 65 · A platform role belongs to no school (db/86) ─────────────
+  -- Kameel, 2026-10-07: "a super admin role isn't attached to any school
+  -- and shouldn't be." The RBAC diagnosis that day found POST /api/users
+  -- answering 200 to the platform account for a platformadmin at Westville,
+  -- and to the owner for a superadmin there. Everything below as the
+  -- application role unless it says the owner:
+  --
+  --   (enrol)    enrol_person(), POST /api/users's door: the platform account
+  --              asking for a platformadmin at Westville and at Hilton, the
+  --              owner for a superadmin and a platformadmin at Westville —
+  --              each answered platform_role_needs_no_school, with no
+  --              account, request or appointment left behind
+  --   (decide)   a request for a platform role at a school, filed signed out:
+  --              the platform account's grant is refused by name and the
+  --              request stays pending; declining it still works
+  --   (policy)   the INSERT through role_assignment_write, as the platform
+  --              account and as the owner, at a school: 23514, by name
+  --   (owner)    as the table owner, past every policy, live or ended: the
+  --              same
+  --   (still)    tenant-less still works where it did: the platform account
+  --              appoints a platformadmin and the owner a superadmin through
+  --              the policy; the owner's own SQL (the seed, bootstrap.mjs)
+  --              writes both; the seed's two keys are live; an ordinary role
+  --              at a school still enrols
+  --   (record)   nothing on the record breaks the rule, the constraint is
+  --              validated, and the roles carrying a platform-only capability
+  --              are exactly the two it names
+  --
+  -- Falsified: against a database at db/85 (no db/86), the section goes red
+  -- at its first assertion, "(enrol): the platform account was answered
+  -- ok:" — the 200 the diagnosis found.
+  DECLARE
+    v_ok boolean; v_reason text; v_asg uuid; v_req uuid; v_got text;
+    v_p1 uuid; v_p2 uuid; v_p3 uuid; v_p4 uuid; v_p5 uuid;
+  BEGIN
+    -- (enrol)
+    PERFORM _as(U_PLAT);
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.plat.wes@example.invalid', 'V86 Platwes', 'platformadmin', WES, NULL, NULL, NULL) e;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school',
+      format('§65 (enrol): the platform account was answered %s:%s for a platformadmin at Westville', v_ok, v_reason));
+    PERFORM _assert(_v86_left('v86.plat.wes@example.invalid') = '0/0/0',
+      format('§65 (enrol): the refusal left %s behind (accounts/requests/appointments)', _v86_left('v86.plat.wes@example.invalid')));
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.plat.hil@example.invalid', 'V86 Plathil', 'platformadmin', HIL, NULL, NULL, NULL) e;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school',
+      format('§65 (enrol): the platform account was answered %s:%s for a platformadmin at Hilton', v_ok, v_reason));
+    PERFORM _as(U_OWNER);
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.own.wes@example.invalid', 'V86 Ownwes', 'superadmin', WES, NULL, NULL, NULL) e;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school',
+      format('§65 (enrol): the owner was answered %s:%s for a superadmin at Westville', v_ok, v_reason));
+    PERFORM _assert(_v86_left('v86.own.wes@example.invalid') = '0/0/0',
+      format('§65 (enrol): the owner''s refusal left %s behind', _v86_left('v86.own.wes@example.invalid')));
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.own.plat@example.invalid', 'V86 Ownplat', 'platformadmin', WES, NULL, NULL, NULL) e;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school',
+      format('§65 (enrol): the owner was answered %s:%s for a platformadmin at Westville', v_ok, v_reason));
+
+    -- (decide) filed signed out, as POST /api/onboard files it.
+    PERFORM set_config('app.user_id', '', true);
+    v_req := onboard_request('v86.asker@example.invalid', 'V86 Asker', 'platformadmin', WES, NULL, 'I run the platform.');
+    PERFORM _as(U_PLAT);
+    SELECT d.ok, d.reason, d.assignment_id INTO v_ok, v_reason, v_asg
+      FROM decide_role_request(v_req, true, NULL, NULL, NULL) d;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school' AND v_asg IS NULL,
+      format('§65 (decide): the platform account''s grant was answered %s:%s', v_ok, v_reason));
+    PERFORM _assert(_v86_request(v_req) = 'pending',
+      format('§65 (decide): the refused request is %s, not pending', _v86_request(v_req)));
+    SELECT d.ok, d.reason INTO v_ok, v_reason FROM decide_role_request(v_req, false, 'Not a school''s role.', NULL, NULL) d;
+    PERFORM _assert(v_ok IS TRUE AND _v86_request(v_req) = 'declined',
+      format('§65 (decide): the request could not be declined (%s:%s, %s)', v_ok, v_reason, _v86_request(v_req)));
+
+    -- (policy)
+    PERFORM set_config('app.user_id', '', true);
+    v_p1 := _v86_person('one'); v_p2 := _v86_person('two'); v_p3 := _v86_person('three');
+    v_p4 := _v86_person('four'); v_p5 := _v86_person('five');
+    PERFORM _as(U_PLAT);
+    v_got := _v86_insert(v_p1, 'platformadmin', WES);
+    PERFORM _assert(v_got = '23514:platform_role_needs_no_school',
+      format('§65 (policy): the platform account wrote a platformadmin at Westville (%s)', v_got));
+    PERFORM _as(U_OWNER);
+    v_got := _v86_insert(v_p1, 'superadmin', WES);
+    PERFORM _assert(v_got = '23514:platform_role_needs_no_school',
+      format('§65 (policy): the owner wrote a superadmin at Westville (%s)', v_got));
+
+    -- (owner)
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v86_appoint(v_p1, 'superadmin', HIL);
+    PERFORM _assert(v_got = '23514:platform_role_needs_no_school',
+      format('§65 (owner): the table owner wrote a superadmin at Hilton (%s)', v_got));
+    v_got := _v86_appoint(v_p1, 'platformadmin', HIL, false);
+    PERFORM _assert(v_got = '23514:platform_role_needs_no_school',
+      format('§65 (owner): the table owner wrote an ended platformadmin at Hilton (%s)', v_got));
+
+    -- (still)
+    PERFORM _as(U_PLAT);
+    v_got := _v86_insert(v_p2, 'platformadmin', NULL);
+    PERFORM _assert(v_got = 'ok', format('§65 (still): the platform account could not appoint a platformadmin with no school (%s)', v_got));
+    PERFORM _as(U_OWNER);
+    v_got := _v86_insert(v_p3, 'superadmin', NULL);
+    PERFORM _assert(v_got = 'ok', format('§65 (still): the owner could not appoint a superadmin with no school (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v86_appoint(v_p4, 'superadmin', NULL);
+    PERFORM _assert(v_got = 'ok', format('§65 (still): the owner''s own SQL could not write an owner''s key (%s)', v_got));
+    v_got := _v86_appoint(v_p5, 'platformadmin', NULL);
+    PERFORM _assert(v_got = 'ok', format('§65 (still): the owner''s own SQL could not write a platformadmin (%s)', v_got));
+    PERFORM _as(U_PLAT);
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.coach@example.invalid', 'V86 Coach', 'coach', WES, '1XI', NULL, NULL) e;
+    PERFORM _assert(v_ok IS TRUE, format('§65 (still): the platform account could not enrol a coach at Westville (%s)', v_reason));
+
+    -- (record)
+    v_got := _v86_record();
+    PERFORM _assert(v_got = '0/2/true/platformadmin,superadmin',
+      format('§65 (record): school-scoped platform appointments / the seed''s keys live / validated / platform roles = %s', v_got));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 65
+  -- ┌── section 66 · db/87: a wicket on a wide or a no-ball ──
   -- _seed_87(): a Hilton innings with a stumping off a wide, a run out off a
   -- no-ball, and a stumping off a wide on the free hit that follows (saved).
   -- Every figure below is the fold's for that log (replay.test.mjs group P,
@@ -16431,23 +16606,23 @@ $v49$;
       (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(M, 0::smallint) f))
       INTO got;
     PERFORM _assert(got = '(6,2,2) | (6,2,2)',
-      format('§65 (score): the live score and the handover''s count read %s, where the fold says (6,2,2) | (6,2,2)', got));
+      format('§66 (score): the live score and the handover''s count read %s, where the fold says (6,2,2) | (6,2,2)', got));
     -- (bowler) his innings: one wicket, six conceded (both wides, the no-ball and its two off the bat)
     SELECT row(b.wickets, b.runs_conceded)::text INTO got FROM bowler_innings_figures b WHERE b.match_id = M AND b.player_id = BW;
-    PERFORM _assert(got = '(1,6)', format('§65 (bowler): S Naidoo''s innings reads %s, where the fold says (1,6)', got));
+    PERFORM _assert(got = '(1,6)', format('§66 (bowler): S Naidoo''s innings reads %s, where the fold says (1,6)', got));
     PERFORM _assert(b1->'bowl_since' = jsonb_build_array((b0->'bowl_since'->>0)::int + 2, (b0->'bowl_since'->>1)::int + 2,
                                                          (b0->'bowl_since'->>2)::int + 1, (b0->'bowl_since'->>3)::int + 1,
                                                          (b0->'bowl_since'->>4)::int + 6)
                     AND (b1->>'bowl_career')::int = (b0->>'bowl_career')::int + 1
                     AND (b1->>'bowl_season')::int = (b0->>'bowl_season')::int + 1
                     AND (b1->>'wkt_stumped')::int = (b0->>'wkt_stumped')::int + 1,
-      format('§65 (bowler): his career moved %s → %s; the fold says two balls, two wides, a no-ball, one wicket (stumped), six runs', b0, b1));
+      format('§66 (bowler): his career moved %s → %s; the fold says two balls, two wides, a no-ball, one wicket (stumped), six runs', b0, b1));
     -- (batter) who is out, and what each faced: a no-ball is a ball faced, a wide is not
     SELECT string_agg(CASE x.player_id WHEN A1 THEN 'a1' WHEN A2 THEN 'a2' WHEN A3 THEN 'a3' ELSE 'a4' END
                       || '=' || row(x.runs, x.balls_faced, x.out)::text, ' ' ORDER BY x.player_id)
       INTO got FROM player_innings x WHERE x.match_id = M;
     PERFORM _assert(got = 'a1=(1,1,t) a2=(0,0,t) a3=(2,1,f) a4=(0,1,f)',
-      format('§65 (batter): the innings'' batting reads %s, where the fold says a1=(1,1,t) a2=(0,0,t) a3=(2,1,f) a4=(0,1,f)', got));
+      format('§66 (batter): the innings'' batting reads %s, where the fold says a1=(1,1,t) a2=(0,0,t) a3=(2,1,f) a4=(0,1,f)', got));
     PERFORM _assert(b1->'out_since' = jsonb_build_array((b0->'out_since'->>0)::int + 1, (b0->'out_since'->>1)::int + 1, (b0->'out_since'->>2)::int)
                     AND (b1->>'out_view')::int = (b0->>'out_view')::int + 2
                     AND (b1->>'out_season')::int = (b0->>'out_season')::int + 2
@@ -16455,11 +16630,11 @@ $v49$;
                     AND (b1->>'out_st')::int = (b0->>'out_st')::int + 1
                     AND b1->'bat_since' = jsonb_build_array((b0->'bat_since'->>0)::int + 2, (b0->'bat_since'->>1)::int + 1)
                     AND b1->'bat_wide' = b0->'bat_wide',
-      format('§65 (batter): the careers moved %s → %s; the fold says …01 run out, …02 stumped, …06 not out; …05 2 off a ball; …02 faced nothing', b0, b1));
+      format('§66 (batter): the careers moved %s → %s; the fold says …01 run out, …02 stumped, …06 not out; …05 2 off a ball; …02 faced nothing', b0, b1));
     -- (keeper) the stumping off the wide is M Cele's; the saved one is nobody's
     SELECT string_agg(k.seq || ':' || k.dismissal, ',' ORDER BY k.seq) INTO got FROM keeper_dismissal k WHERE k.match_id = M;
     PERFORM _assert(got = '4:stumped' AND (b1->>'keeping')::int = (b0->>'keeping')::int + 1,
-      format('§65 (keeper): the keeper''s dismissals read %s (career %s → %s), where the fold says 4:stumped', got, b0->'keeping', b1->'keeping'));
+      format('§66 (keeper): the keeper''s dismissals read %s (career %s → %s), where the fold says 4:stumped', got, b0->'keeping', b1->'keeping'));
     -- (door) a bowled off a wide, a stumping or a catch off a no-ball: refused,
     -- as the owner writes (no route, no policy); a run out off either taken
     PERFORM _assert(_owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
@@ -16474,10 +16649,10 @@ $v49$;
         idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
         VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-087',
                 'v87:door:ok', 30, now(), 'ball', 'Nb', 1, 'run_out', '{}')$q$, M)) = 'ok',
-      '§65 (door): a bowled off a wide or a catch off a no-ball was taken, or a run out off a no-ball refused');
+      '§66 (door): a bowled off a wide or a catch off a no-ball was taken, or a run out off a no-ball refused');
   END;
   PERFORM set_config('app.user_id', '', true);
-  -- └── end of section 65
+  -- └── end of section 66
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

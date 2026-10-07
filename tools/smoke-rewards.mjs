@@ -146,15 +146,32 @@ try {
     // capability held through a school-scoped assignment is a contradiction —
     // the assignment says "at this school" and the capability says "there is
     // no school" — and app_holds() refuses the combination.
-    const sneak = await q(
+    //
+    // Since db/86 the row cannot exist at all (platform_role_needs_no_school,
+    // even for the migration user). app_holds() is still asserted on its own:
+    // the constraint lifted inside one transaction, the row written, the read
+    // made as the application, all of it rolled back.
+    const coachId = await idOf("coach@example.invalid");
+    const direct = await q(
       `insert into role_assignment (person_id, role, school_id, active)
-       values ($1, 'platformadmin', $2, true) returning id`,
-      [await idOf("coach@example.invalid"), HIL]);
-    const stillNo = await asPerson(await idOf("coach@example.invalid"),
-      `select count(*)::int c from reward_weight`);
-    ok("a platform role granted AT A SCHOOL does not reach it",
-       stillNo.ok && stillNo.rows[0].c === 0);
-    await q(`update role_assignment set active = false where id = $1`, [sneak[0].id]);
+       values ($1, 'platformadmin', $2, true) returning id`, [coachId, HIL]).then(() => null, (e) => e);
+    ok("a platform role cannot be granted AT A SCHOOL at all (db/86)",
+       direct?.code === "23514" && direct?.constraint === "platform_role_needs_no_school");
+    const c = await pool.connect();
+    let stillNo = null;
+    try {
+      await c.query("BEGIN");
+      await c.query("ALTER TABLE role_assignment DROP CONSTRAINT platform_role_needs_no_school");
+      await c.query(`insert into role_assignment (person_id, role, school_id, active)
+                     values ($1, 'platformadmin', $2, true)`, [coachId, HIL]);
+      await c.query("SET LOCAL ROLE scrbrd_app");
+      await c.query("SELECT set_config('app.user_id', $1, true)", [coachId]);
+      stillNo = (await c.query(`select count(*)::int c from reward_weight`)).rows[0].c;
+    } finally {
+      await c.query("ROLLBACK").catch(() => {});
+      c.release();
+    }
+    ok("...and were one there, it would not reach it", stillNo === 0);
   }
 
   group("There is no way to ask the API for a coefficient");

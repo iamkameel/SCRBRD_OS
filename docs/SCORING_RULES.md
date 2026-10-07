@@ -834,4 +834,4 @@ an allowed method is read as a wicket by the fold and by SQL alike; one naming a
 On the pad, the wide's and the no-ball's runs panel has a **Wicket** toggle (the no-ball sheet asks "And a wicket?");
 with it on, the runs key opens the wicket sheet offering only that extra's ways out, and one event is recorded. Pro
 mode's one-tap WIDE takes no runs and no wicket, as before. `replay.test.mjs` group P, `laws.test.mjs` group S,
-`tools/smoke-fold-figures.mjs`, db/99 §65 and `smoke-browser-wicket-on-extra` prove it.
+`tools/smoke-fold-figures.mjs`, db/99 §66 and `smoke-browser-wicket-on-extra` prove it.

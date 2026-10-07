@@ -5,8 +5,10 @@ import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, KPICard, SectionHeader, Select } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { useLive, useRows, useWeather } from "../lib/live.js";
-import { api } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
+import { holdsCapability } from "../rbac/index.js";
+import { BookBus } from "./transportbook.jsx";
 import { textOn } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
 
@@ -44,8 +46,15 @@ function LogisticsView({ role }) {
   // coordinator all saw an identical "Total Seats" that belonged to nobody's
   // school. These two reads are row-scoped like every other, so the numbers
   // are this reader's.
-  const VEHICLES = useRows("vehicles", role);
-  const TRIPS    = useRows("trips", role);
+  // Read again after a vehicle is added or a trip is booked (views/transportbook.jsx).
+  const [booked, setBooked] = useState(0);
+  const vehiclesRead = useLive("vehicles", role, booked);
+  const tripsRead    = useLive("trips", role, booked);
+  const VEHICLES = vehiclesRead.rows;
+  const TRIPS    = tripsRead.rows;
+  // Offered by the capability the routes ask for, at a school where it is held;
+  // the server decides again on every post. A demonstration is offered none.
+  const mayBook = signedIn() && holdsCapability(role, "transport.manage") && schoolsWhere("transport.manage").length > 0;
   const [manifest,  setManifest]  = useState(null);
 
   const condColor = c => c==="Excellent"||c==="Stocked"||c==="Certified"?D.emerald:c==="Good"?D.sky:c==="Mixed"||c==="Fair"?D.amber:D.rose;
@@ -74,6 +83,11 @@ function LogisticsView({ role }) {
       {/* ── TRANSPORT ── */}
       {tab==="transport"&&(
         <div>
+          {mayBook&&(
+            <BookBus role={role} matches={MATCHES} trips={TRIPS} vehicles={VEHICLES}
+              loading={vehiclesRead.loading||tripsRead.loading} readError={!!(vehiclesRead.error||tripsRead.error)}
+              onChanged={()=>setBooked(n=>n+1)}/>
+          )}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"20px"}}>
             <KPICard label="Upcoming Away Trips" value={upcomingTransport.length} icon="bus" color={D.sky}/>
             <KPICard label="Drivers Available"   value={STAFF.filter(s=>s.role==="driver"&&s.active).length} icon="user" color={D.lime}/>

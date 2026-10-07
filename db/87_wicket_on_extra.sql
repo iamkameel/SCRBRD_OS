@@ -8,7 +8,7 @@
 -- not_out_off_wide, not_out_off_no_ball); this file is what SQL needs of
 -- them, and agrees with the fold by construction: tools/smoke-fold-figures.mjs
 -- holds every figure here to the fold over generated logs with wickets on
--- wides and no-balls, and db/99 §65 proves it under the application role.
+-- wides and no-balls, and db/99 §66 proves it under the application role.
 --
 -- THE DEFECT. A wicket was its own delivery type, W, and a W is a legal
 -- ball. A scorer had no correct way to record a run out off a no-ball, or a

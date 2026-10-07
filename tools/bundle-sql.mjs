@@ -247,6 +247,12 @@ SELECT
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'auth_account_disabled' AND tgenabled = 'O')
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'auth_sign_in_removed' AND tgenabled = 'O')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Sessions end when ended",
+  -- db/86: superadmin and platformadmin are never appointed at a school.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_constraint
+                     WHERE conname = 'platform_role_needs_no_school' AND convalidated)
+        AND NOT EXISTS (SELECT 1 FROM role_assignment
+                         WHERE role IN ('superadmin', 'platformadmin') AND school_id IS NOT NULL)
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Platform roles belong to no school",
   -- db/87: a wide or a no-ball carries only the ways out the Laws allow off
   -- it (Law 22.9, 21.17), and every reader counts that wicket.
   CASE WHEN to_regprocedure('ball_is_wicket(text,text)') IS NOT NULL

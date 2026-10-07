@@ -1749,7 +1749,7 @@ group("P. A wicket on a wide or a no-ball (Law 22.9, Law 21.17)");
        && JSON.stringify(wire.fow) === JSON.stringify(inn.fow));
   }
 
-  // The log db/99 §65 proves in SQL (db/87), folded: a single; a stumping
+  // The log db/99 §66 proves in SQL (db/87), folded: a single; a stumping
   // off a wide; a run out off a no-ball with two off the bat; on the free hit
   // a stumping off a wide (saved), then a dot.
   {
@@ -1765,7 +1765,7 @@ group("P. A wicket on a wide or a no-ball (Law 22.9, Law 21.17)");
     ok("...the bowler 1 for 6, two wides and a no-ball", bow(inn, "w1").wickets === 1 && bow(inn, "w1").runs === 6
        && bow(inn, "w1").wides === 2 && bow(inn, "w1").noBalls === 1 && bow(inn, "w1").balls === 2);
     const line = (/** @type {string} */ id) => { const x = bat(inn, id); return `${x.runs},${x.balls},${x.status === "out" ? "t" : "f"}`; };
-    ok("...p1 1 off 1 out, p2 0 off 0 out, p3 2 off 1, p4 0 off 1 — as §65's player_innings",
+    ok("...p1 1 off 1 out, p2 0 off 0 out, p3 2 off 1, p4 0 off 1 — as §66's player_innings",
        ["p1", "p2", "p3", "p4"].map(line).join(" ") === "1,1,t 0,0,t 2,1,f 0,1,f", ["p1", "p2", "p3", "p4"].map(line));
     ok("...the stumping off the wide is the keeper's; the saved one is nobody's", inn.keepers[0]?.stumpings === 1
        && inn.ballLog.filter((b) => b.freeHitSaved).length === 1);

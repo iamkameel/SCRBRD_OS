@@ -437,7 +437,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // imported and on Squad, and Import is offered only after a clean Check of
   // that same file; Staff is the school's role assignments, checked against
   // role_assignment; 12px, 44px, 390 wide.
-  "browser-import"];
+  "browser-import",
+  // The three screens the solo test could not reach (7 October 2026), each over
+  // a route that already existed: the office verifying a parent's link and
+  // recording the family's agreement (Squad → Edit Profile → Guardian links),
+  // booking a vehicle and a trip (Logistics → transport), and Sign out
+  // everywhere (Settings → Me). The rows each writes, the refusal and the
+  // failure in words with the form kept, who is not offered it, 12px and 44px.
+  "browser-solo"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
