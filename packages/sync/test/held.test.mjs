@@ -173,6 +173,11 @@ group("G. In words");
   ok("a wicket", describeEvent(ball({ type: "W", value: 0, dismissal: "bowled", striker: "p1", bowler: "A Nel" }), innings[0])
      === "Wicket — S Dlamini Bowled (bowling: A Nel)");
   ok("a wide", describeEvent(ball({ type: "Wd", value: 1 }), innings[0]) === "Wide + 1 run");
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17) says so.
+  const stWd = describeEvent(ball({ type: "Wd", value: 0, dismissal: "stumped" }), innings[0]);
+  ok("a stumping off a wide", stWd === "Wide, wicket — Stumped", stWd);
+  const roNb = describeEvent(ball({ type: "Nb", value: 1, dismissal: "run_out", dismissed: "p1", outAt: "striker_end" }), innings[0]);
+  ok("a run out off a no-ball, who and at which end", roNb === "No ball + 1 run, wicket — S Dlamini Run Out at the striker's end", roNb);
   ok("an undo names what it undid", describeEvent(voidEvent({ target: B1.id }), innings[0], (k) => LOG[0].find((e) => e.id === k))
      === "Undo — of \"Ball — 4 runs, K Naidoo facing A Nel\"");
   ok("an unknown player id is shown as itself", describeEvent(bowler({ bowler: "Z Unknown" }), innings[0]) === "Bowler — Z Unknown to bowl");

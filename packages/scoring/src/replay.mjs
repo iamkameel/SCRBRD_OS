@@ -36,7 +36,7 @@
 import { superOverNumber } from "./events.mjs";
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, SUSPENSION_SCOPE, runsOffBat, inningsEnd } from "./events.mjs";
 import { NB_RUNS, runsToBowler } from "./events.mjs";
-import { countsInOver, FACES_NEXT } from "./events.mjs";
+import { countsInOver, FACES_NEXT, isWicketBall } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { conditionsOf, freeHit, oversPerInnings } from "./conditions.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
@@ -990,7 +990,12 @@ function inningsFolder(ctx = {}, carried = 0) {
 
         const entry = logBall(ev, at);
 
-        if (type === BALL_TYPE.WICKET) {
+        // A W, or a wicket on a wide or a no-ball (isWicketBall(), Law 22.9
+        // and 21.17): the extra was scored above as that extra — its penalty
+        // run and runs, not a ball of the over, a no-ball a ball faced — and
+        // the wicket is scored here, as any other.
+        let wicketStood = false;
+        if (isWicketBall(ev)) {
           // A free hit cannot be lost to the bowler's dismissals; the
           // non-delivery ones stand. One set decides that AND the bowler's
           // credit below (events.mjs NON_DELIVERY), so they cannot disagree.
@@ -998,6 +1003,7 @@ function inningsFolder(ctx = {}, carried = 0) {
           // closed still replays under the law.
           const mode = normaliseDismissal(ev.dismissal);
           if (!wasFreeHit || standsOnFreeHit(mode)) {
+            wicketStood = true;
             const outId = ev.dismissed ?? inn.striker;
             const outBat = batterFor(outId);
             inn.wickets += 1;
@@ -1038,8 +1044,10 @@ function inningsFolder(ctx = {}, carried = 0) {
         // rotate: they were run between the wickets like any other. A wicket
         // does not rotate: the survivor's end is set above (from the end the
         // batter was out at, when the event says), and the incoming batter's
-        // by the next `batters` event.
-        if (type !== BALL_TYPE.WICKET && v % 2 === 1) rotate();
+        // by the next `batters` event. That holds for a wicket on a wide or a
+        // no-ball that stood; one a free hit saved is the extra it was, and
+        // its runs rotate as that extra's would.
+        if (type !== BALL_TYPE.WICKET && !wicketStood && v % 2 === 1) rotate();
         if (counts && inn.balls % 6 === 0) { rotate(); inn.bowler = null; }
 
         // Free hit is set by a no-ball — in a match whose format gives one

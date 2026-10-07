@@ -189,9 +189,10 @@ for (const ts of [SEP15, OCT2]) {
   const changed = [...log, ...at(ts, keeper({ keeper: "k2" }))];
   ok(`${ed}: after the gloves change hands, the old keeper's stumping is refused`, refusal(changed, st("Kyle Keeper")) === REFUSAL.STUMPED_NOT_KEEPER);
   ok(`${ed}: ...and the new keeper's taken`, refusal(changed, st("Sam Second")) === null && refusal(changed, st("k2")) === null);
-  // A wide carrying a stumping's method is not a wicket in this model (a
-  // wicket is its own type, W); it is taken as it always was.
-  ok(`${ed}: a wide with "stumped" on it is not refused`, refusal(log, ball({ type: BALL_TYPE.WIDE, value: 0, dismissal: "stumped", fielder: "Fred Fielder", clientTs: ts })) === null);
+  // A stumping off a wide is a wicket (Law 22.9; isWicketBall()), and the
+  // keeper's like any other.
+  ok(`${ed}: a stumping off a wide credited to another fielder — refused`, refusal(log, ball({ type: BALL_TYPE.WIDE, value: 0, dismissal: "stumped", fielder: "Fred Fielder", clientTs: ts })) === REFUSAL.STUMPED_NOT_KEEPER);
+  ok(`${ed}: ...by the keeper — taken`, refusal(log, ball({ type: BALL_TYPE.WIDE, value: 0, dismissal: "stumped", fielder: "Kyle Keeper", clientTs: ts })) === null);
 }
 {
   // The keeper event's own answers.

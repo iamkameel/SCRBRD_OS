@@ -296,6 +296,68 @@ export const chargedToBowler = (d) => DISMISSALS.has(d) && !NON_DELIVERY.has(d);
 /** @param {unknown} d  a dismissal, canonical (normaliseDismissal) or not */
 export const standsOnFreeHit = (d) => NON_DELIVERY.has(d);
 
+/*
+ * A WICKET ON A WIDE OR A NO-BALL.
+ *
+ * A wicket is its own delivery type, W, and a W is a legal ball. That left no
+ * way to record a batter out off a delivery that is not one: a run out off a
+ * wide or a no-ball, a stumping or hit wicket off a wide, hit the ball twice
+ * or obstructing the field off a no-ball. The Laws allow exactly these
+ * (MCC Laws, 2017 Code, 4th Edition 2026 — the same lists in the 3rd):
+ *
+ *   Law 22.9  Out from a Wide: Hit wicket, Obstructing the field, Run out,
+ *             Stumped — nothing else.
+ *   Law 21.17 Out from a No ball (21.18 in the 3rd): Hit the ball twice,
+ *             Obstructing the field, Run out — nothing else.
+ *
+ * Such a wicket is the wide or the no-ball itself, carrying `dismissal` (and
+ * `dismissed`, `fielder`, `outAt`, as a W does). It stays what it was bowled
+ * as: not a ball of the over, its penalty run and runs as for that extra, a
+ * no-ball a ball faced and a wide not, a no-ball still followed by a free hit.
+ * The wicket is scored as any other: in the wickets and the fall of wickets,
+ * the bowler's only when he took it (stumped and hit wicket — chargedToBowler).
+ * Handled the ball is not in either list: since the 2017 Code it is out
+ * Obstructing the field.
+ *
+ * isWicketBall() is the one question every reader asks: a W, or a wide or
+ * no-ball naming one of its own ways out. A method the Law does not allow off
+ * that extra is refused by the constructor, by the Laws at commit
+ * (`not_out_off_wide`, `not_out_off_no_ball`) and by the database's door
+ * (db/87); one stored before is no wicket, as every fold before read it.
+ * SQL asks the same of ball_is_wicket() (db/87).
+ */
+/** @type {ReadonlySet<unknown>} */
+export const WIDE_DISMISSALS = new Set([DISMISSAL.RUN_OUT, DISMISSAL.STUMPED, DISMISSAL.HIT_WICKET, DISMISSAL.OBSTRUCTING_FIELD]);
+/** @type {ReadonlySet<unknown>} */
+export const NO_BALL_DISMISSALS = new Set([DISMISSAL.RUN_OUT, DISMISSAL.HIT_TWICE, DISMISSAL.OBSTRUCTING_FIELD]);
+
+/**
+ * The ways out the Laws allow off a wide or a no-ball, or null for any other
+ * delivery type.
+ * @param {unknown} type
+ * @returns {ReadonlySet<unknown> | null}
+ */
+export function dismissalsOffExtra(type) {
+  if (type === BALL_TYPE.WIDE) return WIDE_DISMISSALS;
+  if (type === BALL_TYPE.NO_BALL) return NO_BALL_DISMISSALS;
+  return null;
+}
+
+/**
+ * Is this delivery a wicket: a W, or a wide or a no-ball whose dismissal is
+ * one the Laws allow off it. Whether the wicket STANDS (a free hit) is the
+ * fold's to say: `freeHitSaved` on its ballLog entry.
+ * @param {{type?: string | null, dismissal?: unknown} | null | undefined} ev
+ * @returns {boolean}
+ */
+export function isWicketBall(ev) {
+  if (ev == null) return false;
+  const t = ev.type ?? BALL_TYPE.RUN;
+  if (t === BALL_TYPE.WICKET) return true;
+  const allowed = dismissalsOffExtra(t);
+  return allowed != null && allowed.has(normaliseDismissal(ev.dismissal));
+}
+
 /** @type {[Dismissal, RegExp][]} */
 const DISMISSAL_SPELLINGS = [
   [DISMISSAL.RUN_OUT,           /^(run[ _-]?out|r\/?o)$/],
@@ -1354,13 +1416,13 @@ const checkedNbRuns = (n, type) => {
 
 /**
  * Reject an `outAt` the model does not define, or one on a delivery that is
- * not a wicket.
- * @param {string | null | undefined} e  @param {BallType} type
+ * not a wicket (a W, or a wicket on a wide or a no-ball: isWicketBall()).
+ * @param {string | null | undefined} e  @param {boolean} wicket
  * @returns {RunOutEnd | null}
  */
-const checkedOutAt = (e, type) => {
+const checkedOutAt = (e, wicket) => {
   if (e == null) return null;
-  if (!RUN_OUT_ENDS.has(e) || type !== BALL_TYPE.WICKET) {
+  if (!RUN_OUT_ENDS.has(e) || !wicket) {
     throw new TypeError(`outAt ${JSON.stringify(e)} is for a wicket, one of ${[...RUN_OUT_ENDS].join(", ")}`);
   }
   return /** @type {RunOutEnd} */ (e);
@@ -1385,12 +1447,12 @@ const checkedNbType = (n, type) => {
  * delivery that is not a wicket (nobody is coming in). Whether the Laws give
  * anyone the choice on this delivery is the server's question
  * (lawsRefusal, `faces_next_not_a_choice`): it needs the match.
- * @param {string | null | undefined} f  @param {BallType} type
+ * @param {string | null | undefined} f  @param {boolean} wicket
  * @returns {FacesNext | null}
  */
-const checkedFacesNext = (f, type) => {
+const checkedFacesNext = (f, wicket) => {
   if (f == null) return null;
-  if (!FACES_NEXT_VALUES.has(f) || (f === FACES_NEXT.INCOMING && type !== BALL_TYPE.WICKET)) {
+  if (!FACES_NEXT_VALUES.has(f) || (f === FACES_NEXT.INCOMING && !wicket)) {
     throw new TypeError(`facesNext ${JSON.stringify(f)} is one of ${[...FACES_NEXT_VALUES].join(", ")} ("incoming" only on a wicket)`);
   }
   return /** @type {FacesNext} */ (f);
@@ -1399,25 +1461,45 @@ const checkedFacesNext = (f, type) => {
 /**
  * Reject a `notInOver` that is not one of NOT_IN_OVER, or one on a wicket:
  * nobody is out off a delivery that does not count (41.4.2, 41.5.4).
- * @param {string | null | undefined} r  @param {BallType} type
+ * @param {string | null | undefined} r  @param {boolean} wicket
  * @returns {PenaltyReason | null}
  */
-const checkedNotInOver = (r, type) => {
+const checkedNotInOver = (r, wicket) => {
   if (r == null) return null;
-  if (!NOT_IN_OVER.has(r) || type === BALL_TYPE.WICKET) {
+  if (!NOT_IN_OVER.has(r) || wicket) {
     throw new TypeError(`notInOver ${JSON.stringify(r)} is one of ${[...NOT_IN_OVER].join(", ")}, never on a wicket`);
   }
   return /** @type {PenaltyReason} */ (r);
 };
 
+/**
+ * Reject a dismissal on a wide or a no-ball that the Laws do not allow off it
+ * (Law 22.9, Law 21.17: WIDE_DISMISSALS, NO_BALL_DISMISSALS) — refused where
+ * the scorer who chose it can still see it. A dismissal on any other delivery
+ * is left as it always was. Returns whether the delivery is a wicket.
+ * @param {unknown} d  @param {BallType} type
+ * @returns {boolean}
+ */
+const checkedWicket = (d, type) => {
+  if (type === BALL_TYPE.WICKET) return true;
+  const allowed = dismissalsOffExtra(type);
+  if (allowed == null || d == null) return false;
+  if (!allowed.has(normaliseDismissal(d))) {
+    const words = [...allowed].map((m) => DISMISSAL_LABEL[/** @type {Dismissal} */ (m)].toLowerCase()).join(", ");
+    throw new TypeError(`dismissal ${JSON.stringify(d)} is not a way out off a ${type === BALL_TYPE.WIDE ? "wide" : "no-ball"}: only ${words}`);
+  }
+  return true;
+};
+
 /** @param {BallInput} o  @returns {BallEvent} */
 export const ball = (o) => {
   const type = checkedType(o.type);
+  const wicket = checkedWicket(o.dismissal, type);
   const nbRuns = checkedNbRuns(o.nbRuns, type);
   const nbType = checkedNbType(o.nbType, type);
-  const outAt = checkedOutAt(o.outAt, type);
-  const facesNext = checkedFacesNext(o.facesNext, type);
-  const notInOver = checkedNotInOver(o.notInOver, type);
+  const outAt = checkedOutAt(o.outAt, wicket);
+  const facesNext = checkedFacesNext(o.facesNext, wicket);
+  const notInOver = checkedNotInOver(o.notInOver, wicket);
   return {
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
