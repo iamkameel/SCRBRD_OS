@@ -431,6 +431,18 @@ try {
   // the whole model was reachable only by curl. A number nobody can open is a
   // number nobody will correct.
   group("A coach can open a rating and see what moved it");
+  // GA-I06: a radar needs three axes, and the seed's assessments are two per group.
+  // Three 20s in a group that no batting or bowling rating reads (agility,
+  // acceleration, balance: fielding and keeping only), so the figures asserted
+  // below do not move.
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    try {
+      for (const metric of ["agility", "acceleration", "balance"]) {
+        await owner.query(`insert into player_skill (player_id, assessed_on, category, metric, score) values ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 1, 'physical', $1, 20)`, [metric]);
+      }
+    } finally { await owner.end().catch(() => {}); }
+  }
   if (await nav(coach.page, /Skills/)) {
     const skillsText = await text(coach.page);
     if (DEBUG) console.log("[debug] skills:\n" + skillsText.slice(0, 900));
@@ -447,6 +459,25 @@ try {
     // Case- and space-tolerant: Badge sets text-transform: uppercase, and
     // innerText reports rendered text, so the DOM string is "BATTING -2".
     ok("...and show a note's signal where it carries one", /batting\s*-2/i.test(skillsText));
+    // GA-I06: the radar's outer ring is 20, the top of the scale; the plan
+    // beside it names no target (none is saved) and nothing above 20.
+    // A category with fewer than three ratings draws no radar and says why.
+    ok("...a category with two ratings draws no radar, and says so", await coach.page.locator('[data-testid="radar"]').count() === 0
+       && /fewer than three/i.test(await coach.page.locator('[data-testid="radar-too-few"]').innerText({ timeout: 3000 }).catch(() => "")));
+    await click(coach.page, /^physical$/i, 4000);
+    const radar = coach.page.locator('[data-testid="radar"]').first();
+    ok("...the radar's outer ring is 20, the top of the scale", await radar.getAttribute("data-max").catch(() => null) === "20");
+    // Three ratings of 20/20: the data polygon IS the outer ring (the fifth of five), not a fifth of the way out.
+    const rings = await radar.locator("polygon").evaluateAll((ps) => ps.map((p) => p.getAttribute("points")));
+    ok("...and 20/20 reaches that ring: the data polygon is drawn on it", rings.length === 6 && rings[5] === rings[4], rings);
+    const focus = await coach.page.locator('[data-testid="focus-areas"]').innerText({ timeout: 4000 }).catch(() => "");
+    const ratingsShown = [...focus.matchAll(/(\d+)\s*\/\s*20/g)].map((m) => Number(m[1]));
+    ok("...the focus areas show ratings out of 20 and no target, because none is saved",
+       ratingsShown.length >= 1 && ratingsShown.every((n) => n >= 1 && n <= 20) && !/→|target \d/i.test(focus), focus.slice(0, 200));
+    ok("...and nothing on the screen is a rating past 20, such as 23 or 24",
+       !/\b(2[1-9]|[3-9]\d)\s*\/\s*20\b/.test(skillsText) && !/\d+\s*→\s*\d+/.test(skillsText));
+    // Back to the group the later steps in this walk assess.
+    await click(coach.page, /^technical$/i, 4000);
   } else {
     ok("the skills screen is reachable for a coach", false);
   }
@@ -2209,6 +2240,80 @@ try {
          && await c.page.locator('[data-testid="availability-asking"]').count() === 0);
       ok("no scoping refusals or console errors for the coach", c.refusals.length === 0 && c.errors.length === 0);
       await c.ctx.close();
+    } finally { await owner.end().catch(() => {}); }
+  }
+
+  // ── GA-I07: the right side by default ──────────────────────────
+  //
+  // Squad and Analytics used to open on "1XI" and filter by it, so a coach
+  // whose only assignment is another side saw an empty roster until he found
+  // the tab, and Analytics offered three sides, none of them his. The seed's
+  // coaches all hold 1XI, so this one is made here: a coach with a SINGLE
+  // assignment, U16B, where the seed's one U16B boy plays.
+  group("A coach who holds only U16B opens on U16B, with the boy in it");
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    try {
+      const HIL = "11111111-1111-1111-1111-111111111111";
+      const KD = "aaaaaaaa-0000-0000-0000-000000000006";
+      const email = "coach-u16b@example.invalid";
+      const uid = (await owner.query(
+        `insert into app_user (school_id, email, name, role, teams) values ($1, $2, 'T Soloside', 'coach', '{U16B}') returning id`, [HIL, email])).rows[0].id;
+      await owner.query(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'coach', $2, 'U16B')`, [uid, HIL]);
+
+      const c = await open();
+      const st = (id) => c.page.locator(`[data-testid="${id}"]`);
+      // Signed in by typing the address: the pick-list is the seeded accounts, and this one is not.
+      await click(c.page, /Get Started|Log In/, 5000);
+      await c.page.waitForTimeout(500);
+      await c.page.locator("#login-email").fill(email);
+      await click(c.page, /^Sign In$/, 5000);
+      await c.page.waitForTimeout(2000);
+      ok("the U16B-only coach signs in", /Match Centre|Dashboard/i.test(await text(c.page)));
+
+      ok("Squad opens", await nav(c.page, /Squad/));
+      ok("...on U16B, the one side he holds, and it is the lit tab",
+         await st("squad-team-U16B").getAttribute("aria-pressed") === "true");
+      ok("...with the side's boy in it, no tap needed", await st("squad-card-" + KD).count() === 1);
+      // The players read is school-wide for staff (the coach's team scope narrows what
+      // he may WRITE and see in full, not the roster), so the other sides are tabs
+      // away. What was wrong was where he LANDED: on a side that is not his.
+      const squadTabs = await c.page.locator('[data-testid="squad-teams"] button').allInnerTexts();
+      ok("...no boy of 1XI is on the screen until he asks for that side", !/Bekker|Naidoo|Cele|Pillay|Whitfield/.test(await text(c.page)));
+
+      ok("Analytics opens", await nav(c.page, /Analytics/));
+      const tabs = await c.page.locator('[data-testid="analytics-teams"] button').allInnerTexts();
+      ok("...offering the sides the rows contain, the same as Squad, in sheet order", tabs.join() === squadTabs.join() && tabs.includes("U16B") && tabs.join() === "1XI,U16B,U13A", tabs);
+      ok("...not the old fixed three: there is no U15A tab where no U15A boy is", !tabs.includes("U15A"), tabs);
+      ok("...on U16B", await st("analytics-team-U16B").getAttribute("aria-pressed") === "true");
+      await click(c.page, /^Table$/i, 4000);
+      const table = await text(c.page);
+      ok("...and the squad table is U16B's, with the boy in it", /Full Squad Stats — U16B/.test(table) && /K Dlamini/.test(table), table.slice(0, 300));
+
+      ok("Skills opens for him", await nav(c.page, /Skills/));
+      ok("no scoping refusals or page errors for him", c.refusals.length === 0 && c.errors.length === 0, c.errors.join(" | "));
+      await c.ctx.close();
+
+      // Sarah is a director of sport, a coach of U16B and a parent: she reads the
+      // whole school, but the side she HOLDS is the one Squad opens on, and
+      // changing side lets go of the boy she had open.
+      const s = await open();
+      const sq = (id) => s.page.locator(`[data-testid="${id}"]`);
+      ok("the director of sport who also coaches U16B signs in", await signIn(s.page, /sarah@example\.invalid/));
+      ok("Squad opens", await nav(s.page, /Squad/));
+      ok("...on U16B, the side she coaches, not 1XI", await sq("squad-team-U16B").getAttribute("aria-pressed") === "true"
+         && await sq("squad-card-" + KD).count() === 1);
+      ok("...and the school's other side is one tap away", await sq("squad-team-1XI").count() === 1);
+      await sq("squad-card-" + KD).click({ timeout: 4000 }).catch(() => {});
+      await s.page.waitForTimeout(800);
+      ok("a boy opened on U16B shows his panel", /SEASON STATS/.test(await text(s.page)));
+      await sq("squad-team-1XI").click({ timeout: 4000 }).catch(() => {});
+      await s.page.waitForTimeout(800);
+      ok("changing side to 1XI clears the open boy, and the 1XI roster shows",
+         !/SEASON STATS/.test(await text(s.page)) && await sq("squad-card-" + KD).count() === 0
+         && await s.page.locator('[data-testid^="squad-card-"]').count() >= 1);
+      ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
+      await s.ctx.close();
     } finally { await owner.end().catch(() => {}); }
   }
 

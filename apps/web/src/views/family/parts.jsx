@@ -15,6 +15,7 @@ import { useState } from "react";
 import { T } from "../../design/tokens.js";
 import { api } from "../../lib/api.js";
 import { useLive, useWeather } from "../../lib/live.js";
+import { observedStamp } from "../../lib/weatherStamp.js";
 import { profile } from "../../lib/session.js";
 import { humanDate, humanDateTime } from "../../lib/format.js";
 import { holds } from "../../lib/family.js";
@@ -339,7 +340,9 @@ export function WeatherLine({ match, role }) {
   const bits = [w.tempC != null ? `${Math.round(w.tempC)}°` : null, w.condition ?? null,
     w.rainChancePct != null ? `rain chance ${w.rainChancePct}%` : null].filter(Boolean);
   if (!bits.length) return null;
-  return <Line quiet testid="weather-line">{bits.join(", ")}</Line>;
+  // When it was observed, so a parent is not shown yesterday's sky as today's.
+  const stamp = observedStamp(w, { status: match.status });
+  return <Line quiet testid="weather-line">{bits.join(", ")}{stamp ? ` · ${stamp.text}` : ""}</Line>;
 }
 
 /** "Sat 3 Oct · 09:00". */

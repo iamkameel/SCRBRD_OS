@@ -109,7 +109,7 @@ function LogisticsView({ role }) {
                         <div style={{display:"flex",gap:"7px",marginBottom:"8px",flexWrap:"wrap"}}>
                           <Badge color={D.sky}>{m.homeTeam.split(" ").pop()}</Badge>
                           {comp&&<Badge color={D.indigo}>{comp.format}</Badge>}
-                          {w&&<WeatherChip w={w} compact/>}
+                          {w&&<WeatherChip w={w} status={m.status} compact/>}
                         </div>
                         <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>
                           {m.homeTeam} <span style={{color:D.textMuted,fontSize:"12px",fontWeight:400}}>vs</span> {m.awayTeam}

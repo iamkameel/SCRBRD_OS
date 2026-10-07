@@ -5,7 +5,7 @@ import { D, T } from "../design/tokens.js";
 import { addDays, dateStr, humanDate, humanDateTime, today } from "../lib/format.js";
 import { api, signedIn } from "../lib/api.js";
 import { useDutyCoverage, useLive, useRows, useWeather } from "../lib/live.js";
-import { canScore, holdsCapability } from "../rbac/index.js";
+import { holdsAsHeld } from "../lib/held.js";
 import { Btn, EmptyState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
@@ -15,6 +15,8 @@ import { seedCompletedMatch } from "../scorer/seed.js";
 import { boardInsights } from "../scorer/signals.js";
 import { parseBalls, parseScore, teamSquad } from "./shared.jsx";
 import { MatchDayCard } from "./cockpit/MatchDayCard.jsx";
+import { weatherWords } from "../lib/cockpit.js";
+import { observedStamp } from "../lib/weatherStamp.js";
 
 // ══════════════════════════════════════════════════════
 //  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
@@ -116,13 +118,15 @@ function useLiveScore(matchId) {
  * this component exactly what it used to hold in local variables.
  *
  * What is decided in here is only what to DRAW: a section the role's
- * capabilities do not reach is not drawn (holdsCapability, which answers from
- * the role alone and reads nothing). Nothing here fetches, and nothing here
+ * capabilities do not reach is not drawn (holdsAsHeld, which answers from the
+ * roles held, or in the demo from the role alone, and reads nothing). Nothing
+ * here fetches, and nothing here
  * is authority: the rows it is given were scoped where they were read.
  *
  *   role         whose day sheet this is (its title, and which sections show)
  *   live         true when the rows came from a server; false draws `demoNote`
  *   demoNote     what the header says when they did not
+ *   held         false when the sheet is drawn for a role that is not the viewer's (the pitch deck): sections then follow `role` alone
  *   liveMatch    the live fixture, or falsy for no "Now" tile
  *   board        the props <Board/> takes for it, or null (then boardState speaks)
  *   boardState   { loading, error } of the read behind `board`
@@ -137,8 +141,11 @@ function useLiveScore(matchId) {
  */
 function DaySheet({ role, live = true, demoNote = "Demonstration — no server connected", liveMatch = null, board = null, boardState = {},
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
-                    onNav, onOpenScorer, matchDay = null }) {
-  const holds = (capability) => holdsCapability(role, capability);
+                    onNav, onOpenScorer, matchDay = null, held = true }) {
+  // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
+  // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
+  // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
+  const holds = (capability) => holdsAsHeld(role, capability, held ? undefined : []);
   const rc = ROLES[role];
   const hasDuty = (key) => dutyRows.some((r) => r.duty === key);
 
@@ -163,7 +170,7 @@ function DaySheet({ role, live = true, demoNote = "Demonstration — no server c
               <>
                 <Board {...board} testid="day-board"/>
                 <div style={{ marginTop: T.space.md }}>
-                  {canScore(role)
+                  {holds("scoring.edit")
                     ? <Btn variant="success" onClick={() => onOpenScorer && onOpenScorer(liveMatch)}>Open scorer</Btn>
                     : <Btn variant="ghost" onClick={() => onNav && onNav("matches")}>Match Centre</Btn>}
                 </div>
@@ -191,10 +198,13 @@ function DaySheet({ role, live = true, demoNote = "Demonstration — no server c
                 <div style={{ display: "flex", flexDirection: "column", gap: T.space.xs, marginTop: T.space.sm }}>
                   {next.venue && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="map-pin"/> {next.venue}</div>}
                   {busTime && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="bus"/> Bus {busTime}</div>}
-                  {weather && (
-                    <div style={{ ...T.role.body, color: T.content.secondary }}>
-                      <Icon name={isIcon(weather.icon) ? weather.icon : "cloud-sun"}/> {weather.tempC}° {String(weather.condition ?? "").toLowerCase()}
-                      {weather.rainChancePct >= 40 ? ", rain likely" : ""}
+                  {weatherWords(weather) && (
+                    <div data-testid="day-weather" style={{ ...T.role.body, color: T.content.secondary }}>
+                      <Icon name={isIcon(weather.icon) ? weather.icon : "cloud-sun"}/> {weatherWords(weather)}
+                      {/* When it was observed: a reading from yesterday is not this morning's. */}
+                      {observedStamp(weather, { status: next.status }) && (
+                        <span data-testid="weather-observed"> · {observedStamp(weather, { status: next.status }).text}</span>
+                      )}
                     </div>
                   )}
                 </div>

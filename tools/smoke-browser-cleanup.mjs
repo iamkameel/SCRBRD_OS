@@ -225,6 +225,10 @@ try {
   // ── 6. Squad → player panel ───────────────────────────────────────
   group("Squad → player panel: Set Availability saves; Edit Profile offers only what routes can change");
   ok("Squad opens", await go(dir.page, "squad"));
+  // She also coaches U16B, so Squad opens on the side she holds (GA-I07); the 1st XI is a tap away.
+  ok("...on the side she coaches", await tid(dir.page, "squad-team-U16B").getAttribute("aria-pressed") === "true");
+  await tid(dir.page, "squad-team-1XI").click();
+  await dir.page.waitForTimeout(400);
   const pick = async (page, id) => {
     const c = tid(page, `squad-card-${id}`);
     try { await c.click({ timeout: 5000 }); } catch { return false; }

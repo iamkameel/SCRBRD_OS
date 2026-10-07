@@ -1,6 +1,7 @@
 import { T } from "../../design/tokens.js";
 import { humanDateTime } from "../../lib/format.js";
 import { Icon } from "../../ui/icons.jsx";
+import { observedStamp } from "../../lib/weatherStamp.js";
 import { CardHead, Panel } from "./bits.jsx";
 
 /**
@@ -26,7 +27,8 @@ export function PreTossCard({ match, weather }) {
   const rows = [
     ["Ground", match?.venue ?? null],
     ["Start", match?.date ? humanDateTime(match.date, match.time ?? null) : null],
-    ["Weather", weather ? [weather.tempC != null ? `${weather.tempC}°` : null, weather.condition ?? null].filter(Boolean).join(" ") || null : null],
+    // The recorded observation, with when it was taken (lib/weatherStamp.js).
+    ["Weather", weather ? [[weather.tempC != null ? `${weather.tempC}°` : null, weather.condition ?? null].filter(Boolean).join(" ") || null, observedStamp(weather, { status: match?.status })?.text ?? null].filter(Boolean).join(" · ") || null : null],
   ].filter(([, v]) => v != null && v !== "");
   return (
     <Panel testid="mc-pretoss">
