@@ -102,3 +102,5 @@ None of these starts without a real data source and Kameel's say.
 - GA-R01/R02 (beta's Firestore rules let a user make himself an administrator): these
   matter only if beta still holds real records. If it does, take it offline or lock its
   rules.
+
+GA-I36 (corrections everywhere) was brought forward to a Fable design pass on 7 Oct by Kameel's decision; the build stays after the pilot unless he says otherwise.
