@@ -841,6 +841,22 @@ group("S. A wicket on a wide or a no-ball: only the ways out the Law allows (Law
   // The fold reads what the Laws take, and nothing they refuse.
   const ro = deriveInnings([...L, at(0, ball({ type: NB, value: 1, dismissal: "run_out", dismissed: "p1", outAt: "striker_end" }))[0]]);
   ok("a run out off a no-ball: a wicket, no ball of the over", ro.wickets === 1 && ro.balls === 1 && ro.runs === 3);
+
+  // After it, as after any wicket: the empty end is filled before the next
+  // ball; the wicket can be undone while it is the latest event, and the
+  // ball recorded again as it happened.
+  const [nbro] = at(0, ball({ type: NB, value: 0, dismissal: "run_out", dismissed: "p1", outAt: "striker_end" }));
+  const afterRo = [...L, nbro];
+  ok("after a run out off a no-ball, the next ball waits for the batter coming in", judge(afterRo, at(0, ball({ value: 0 }))[0]) !== null);
+  const [inComes] = at(0, batters({ striker: "p3" }));
+  ok("...who is taken", judge(afterRo, inComes) === null);
+  ok("...and then the ball", judge([...afterRo, inComes], at(0, ball({ value: 0 }))[0]) === null);
+  const [undo] = at(0, voidEvent({ target: nbro.id }));
+  ok("undo: a void of the run out off the no-ball, the latest event, is taken", judge(afterRo, undo) === null);
+  const [stWd] = at(0, ball({ type: WD, value: 0, dismissal: "stumped" }));
+  ok("...and the ball recorded again as it happened, a stumping off a wide, is taken", judge([...afterRo, undo], stWd) === null);
+  const [undoOld] = at(0, voidEvent({ target: nbro.id }));
+  ok("...but not a void of it once something follows: an amendment's", judge([...afterRo, inComes], undoOld) === REFUSAL.VOID_NOT_LATEST);
 }
 
 console.log("\n" + "─".repeat(52));

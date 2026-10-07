@@ -1711,6 +1711,98 @@ group("P. A wicket on a wide or a no-ball (Law 22.9, Law 21.17)");
     const inn = deriveInnings([...open(), odd]);
     ok("...and a stored wide that says bowled is a wide, no wicket", inn.wickets === 0 && inn.runs === 1 && bat(inn, "p1").status === "batting");
   }
+
+  // Every way out the Laws allow off each, scored in full after two dots
+  // faced by p1: the total, the wickets, the balls of the over, the bowler's
+  // figures (the extra's runs charged; the wicket his only when stumped or
+  // hit wicket), the batter's balls faced, the fall of wickets — and the
+  // server's fold and the wire agree.
+  /** @type {[string, string, number, Partial<BallInput>, {out: string, bowlerRuns: number, mine: boolean, faced: number, batRuns: number}][]} */
+  const CASES = [
+    [W, "run_out", 1, { dismissed: "p2", outAt: "bowler_end", fielder: "K Botha" }, { out: "p2", bowlerRuns: 2, mine: false, faced: 2, batRuns: 0 }],
+    [W, "stumped", 0, {}, { out: "p1", bowlerRuns: 1, mine: true, faced: 2, batRuns: 0 }],
+    [W, "hit_wicket", 0, {}, { out: "p1", bowlerRuns: 1, mine: true, faced: 2, batRuns: 0 }],
+    [W, "obstructing_field", 0, { dismissed: "p2" }, { out: "p2", bowlerRuns: 1, mine: false, faced: 2, batRuns: 0 }],
+    [NB, "run_out", 2, { dismissed: "p2", outAt: "striker_end", fielder: "K Botha" }, { out: "p2", bowlerRuns: 3, mine: false, faced: 3, batRuns: 2 }],
+    [NB, "run_out", 1, { nbRuns: "byes", dismissed: "p1", outAt: "bowler_end" }, { out: "p1", bowlerRuns: 1, mine: false, faced: 3, batRuns: 0 }],
+    [NB, "hit_twice", 0, {}, { out: "p1", bowlerRuns: 1, mine: false, faced: 3, batRuns: 0 }],
+    [NB, "obstructing_field", 0, { dismissed: "p1" }, { out: "p1", bowlerRuns: 1, mine: false, faced: 3, batRuns: 0 }],
+  ];
+  for (const [type, how, v, extra, want] of CASES) {
+    const name = `${how}${extra.nbRuns ? ` (${extra.nbRuns})` : ""} off a ${type === W ? "wide" : "no-ball"}${v ? ` with ${v} run` : ""}`;
+    const log = [...open(), runs(0), runs(0), ball({ type, value: v, dismissal: how, ...extra })];
+    const { inn, agree } = both(log);
+    const b1 = bow(inn, "w1");
+    const outBat = bat(inn, want.out);
+    ok(`${name}: ${1 + v} to the total, ${type === W ? "all wides" : "one no-ball"}`, inn.runs === 1 + v
+       && (type === W ? inn.extras.wide === 1 + v : inn.extras.noBall === 1));
+    ok(`...one wicket, ${want.out} out, still 0.2`, inn.wickets === 1 && outBat.status === "out" && inn.balls === 2 && fmtOvers(inn.balls) === "0.2");
+    ok(`...the bowler: ${want.bowlerRuns} conceded, two balls, ${want.mine ? "the wicket his" : "not his wicket"}`,
+       b1.runs === want.bowlerRuns && b1.balls === 2 && b1.wickets === (want.mine ? 1 : 0)
+       && (type === W ? b1.wides === 1 && b1.noBalls === 0 : b1.noBalls === 1 && b1.wides === 0), b1);
+    ok(`...p1 faced ${want.faced} and scored ${want.batRuns}`, bat(inn, "p1").balls === want.faced && bat(inn, "p1").runs === want.batRuns);
+    ok(`...fall of wickets ${1 + v}-1 at 0.2, ${outBat.name}`, inn.fow.length === 1 && inn.fow[0].runs === 1 + v && inn.fow[0].wickets === 1
+       && inn.fow[0].overs === "0.2" && inn.fow[0].batsman === outBat.name, inn.fow);
+    ok("...the server's fold agrees", agree);
+    const wire = deriveInnings(log.map((e, i) => /** @type {LogEvent} */ (fromRow(toRow({ ...e, innings: 0, seq: i + 1 })))));
+    ok("...and so does the log read back off the wire", wire.runs === inn.runs && wire.wickets === inn.wickets && wire.balls === inn.balls
+       && JSON.stringify(wire.fow) === JSON.stringify(inn.fow));
+  }
+
+  // The log db/99 §65 proves in SQL (db/87), folded: a single; a stumping
+  // off a wide; a run out off a no-ball with two off the bat; on the free hit
+  // a stumping off a wide (saved), then a dot.
+  {
+    const log = [...open(), keeper({ keeper: "w3" }), runs(1),
+      ball({ type: W, value: 0, dismissal: "stumped", fielder: "L Govender" }),
+      batters({ striker: "p3" }),
+      ball({ type: NB, value: 2, dismissal: "run_out", dismissed: "p1", outAt: "striker_end" }),
+      batters({ striker: "p4" }),
+      ball({ type: W, value: 0, dismissal: "stumped" }),
+      runs(0)];
+    const { inn, agree } = both(log);
+    ok("the log db/87 proves: 6/2 off two balls", inn.runs === 6 && inn.wickets === 2 && inn.balls === 2);
+    ok("...the bowler 1 for 6, two wides and a no-ball", bow(inn, "w1").wickets === 1 && bow(inn, "w1").runs === 6
+       && bow(inn, "w1").wides === 2 && bow(inn, "w1").noBalls === 1 && bow(inn, "w1").balls === 2);
+    const line = (/** @type {string} */ id) => { const x = bat(inn, id); return `${x.runs},${x.balls},${x.status === "out" ? "t" : "f"}`; };
+    ok("...p1 1 off 1 out, p2 0 off 0 out, p3 2 off 1, p4 0 off 1 — as §65's player_innings",
+       ["p1", "p2", "p3", "p4"].map(line).join(" ") === "1,1,t 0,0,t 2,1,f 0,1,f", ["p1", "p2", "p3", "p4"].map(line));
+    ok("...the stumping off the wide is the keeper's; the saved one is nobody's", inn.keepers[0]?.stumpings === 1
+       && inn.ballLog.filter((b) => b.freeHitSaved).length === 1);
+    ok("...the server's fold agrees", agree);
+  }
+
+  // Undo and correction. The scorer records a run out off a no-ball and the
+  // batter coming in; undoes both (voids, as once synced); and records what
+  // happened instead, a stumping off a wide. Then the same, never synced:
+  // truncation. Each lands exactly where the corrected log would.
+  {
+    const before = [...open(), runs(0), runs(0)];
+    const nb = ball({ id: "nbx2", type: NB, value: 2, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" });
+    const comes = batters({ id: "btx2", striker: "p3" });
+    let log = [...before, nb, comes];
+    ok("recorded: 3/1, p2 run out off the no-ball", deriveInnings(log).wickets === 1 && deriveInnings(log).runs === 3);
+    const u1 = undoLast(log, { voidId: "v1" });
+    const u2 = undoLast(u1.events, { voidId: "v2" });
+    ok("undo twice: the batter coming in, then the no-ball, each voided", u1.action === "void" && u1.target?.id === "btx2"
+       && u2.action === "void" && u2.target?.id === "nbx2");
+    const undone = deriveInnings(u2.events);
+    const plain = deriveInnings(before);
+    ok("...and the innings is as before it: 0/0 off 2, p2 in, the bowler no no-ball, no free hit",
+       undone.runs === 0 && undone.wickets === 0 && undone.balls === 2 && undone.fow.length === 0
+       && bat(undone, "p2").status === "batting" && bow(undone, "w1").noBalls === 0 && undone.freeHit === false
+       && undone.striker === plain.striker && undone.nonStriker === plain.nonStriker);
+    log = [...u2.events, ball({ type: W, value: 0, dismissal: "stumped" })];
+    const fixed = deriveInnings(log);
+    const direct = deriveInnings([...before, ball({ type: W, value: 0, dismissal: "stumped" })]);
+    ok("corrected to a stumping off a wide: 1/1 off 2, p1 out, the bowler's wicket", fixed.runs === 1 && fixed.wickets === 1 && fixed.balls === 2
+       && bat(fixed, "p1").status === "out" && bow(fixed, "w1").wickets === 1 && bow(fixed, "w1").noBalls === 0 && bow(fixed, "w1").wides === 1);
+    ok("...exactly the innings recorded right the first time, but for its two voids", fixed.voided === 2 && JSON.stringify({ ...fixed, ballLog: null, overLog: null, voided: 0 })
+       === JSON.stringify({ ...direct, ballLog: null, overLog: null, voided: 0 }));
+    const t = undoLast([...before, nb], { isSynced: () => false });
+    ok("never synced: undo truncates it, and the innings is as before it", t.action === "truncate"
+       && JSON.stringify(deriveInnings(t.events).fow) === "[]" && deriveInnings(t.events).runs === 0);
+  }
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);
