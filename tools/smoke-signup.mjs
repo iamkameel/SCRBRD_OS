@@ -157,6 +157,8 @@ try {
   const row = reqs.body?.rows?.find((x) => x.id === asked.body?.id);
   ok("the office sees the request, and who asked, though the account has no school",
      !!row && row.email === NEW_EMAIL && row.name === "Walk Person" && row.decidable === true, row ?? reqs.body);
+  ok("...asked signed in, so not marked as asked before the email was verified (db/84)",
+     row?.asked_unverified === false, row);
   const decided = await api(`/api/requests/${asked.body?.id}/decide`, { method: "POST", token: office, body: { grant: true, note: "Known to the sportsmaster." } });
   ok("the office grants it", decided.status === 200 && decided.body?.state === "granted", decided);
   const squad = await api("/api/read/players", { token: newcomer });
@@ -166,6 +168,21 @@ try {
      session.body?.assignments?.some((a) => a.role === "coach" && a.school === HIL && a.team === "U15A"), session.body);
   const sportsNow = await api("/api/read/sports", { token: newcomer });
   ok("...and the reference data the narrowing hid", sportsNow.body?.rows?.length > 0, sportsNow.body);
+
+  group("3b. A request filed for an address, then Google: still marked as asked unverified (db/84)");
+  // POST /api/onboard is unauthenticated: anybody may file a request in an
+  // address's name. When the address's owner later signs in with Google, the
+  // stub is linked to him — and the request must not start to look like his.
+  const STUB_EMAIL = `walk.stub.${RUN}@example.invalid`;
+  const filed = await api("/api/onboard", { method: "POST",
+    body: { email: STUB_EMAIL, name: "Somebody Typed This", role: "guardian", schoolId: HIL, note: "the boy in the U13A side" } });
+  ok("a request is filed for an address, signed out", filed.status === 200 && filed.body?.requested === true, filed);
+  const linkedIn = await exchange(idToken(`walk-stub-${RUN}`, STUB_EMAIL));
+  ok("the address's Google sign-in links the stub", linkedIn.status === 200 && linkedIn.body?.outcome === "linked", linkedIn);
+  const officeList = await api("/api/read/role_requests", { token: office });
+  const stubRow = officeList.body?.rows?.find((x) => x.email === STUB_EMAIL && x.role === "guardian");
+  ok("the office still sees it marked: asked before the email was verified",
+     !!stubRow && stubRow.state === "pending" && stubRow.asked_unverified === true, stubRow ?? officeList.body);
 
   group("4. An address the office enrolled is a claim, never a link");
   const PARENT_UID = `walk-parent-${RUN}`;

@@ -482,7 +482,7 @@ export default function SCRBRD_OS() {
     logistics:    <LogisticsView     role={role}/>,
     calendar:     <CalendarView      role={role} onNav={setPage}/>,
     fields:       <FieldsView        role={role}/>,
-    readiness:    <ReadinessOverview role={role}/>,
+    readiness:    <ReadinessOverview role={role} onNav={setPage}/>,
     staff:        <StaffView         role={role}/>,
     officials:    <OfficialsView     role={role}/>,
     sponsors:     <SponsorsView      role={role}/>,

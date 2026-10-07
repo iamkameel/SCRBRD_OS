@@ -80,7 +80,8 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
  * step 3c on: the shell and nothing of its own.
  */
 const TYPE_FLOOR_CEILING = {
-  landing:     5,
+  // The public home page (home.html): 0 since the cinematic page (2026-10-07).
+  landing:     0,
   login:       13,
   dashboard:   17,
   matchcentre: 17,

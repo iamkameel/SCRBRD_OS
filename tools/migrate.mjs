@@ -31,8 +31,11 @@
  *                                     the same effect on a MANAGED host, where
  *                                     dropping the schema would take the
  *                                     platform's own objects with it: drops
- *                                     only what this project created in
- *                                     public, leaving extensions and grants
+ *                                     only the objects db/ creates (by name,
+ *                                     tools/reset-objects.mjs), leaving
+ *                                     extensions, grants and anybody else's
+ *                                     objects. Refused off this machine
+ *                                     unless I_UNDERSTAND_THIS_ERASES_EVERY_SCRBRD_RECORD=1
  *   node tools/migrate.mjs --seed     apply, then load 98_seed_pilot.sql
  *   node tools/migrate.mjs --verify   apply, then run 99_rls_verify.sql
  *
@@ -45,6 +48,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ownerUrl } from "./db-url.mjs";
+import { projectObjects, teardownSql } from "./reset-objects.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_DIR = join(ROOT, "db");
@@ -85,6 +89,20 @@ if (args.has("--reset") && !LOCAL_HOSTS.has(hostOf(URL))
   process.exit(2);
 }
 
+// --reset-objects is the managed-host path, and a managed host is exactly
+// where the real records are. It used to have no guard at all (GA-I02): the
+// same host rule now, with its own override, named for what it does — it
+// erases every record this project holds on that database, the owner's real
+// account and key included.
+if (args.has("--reset-objects") && !LOCAL_HOSTS.has(hostOf(URL))
+    && process.env.I_UNDERSTAND_THIS_ERASES_EVERY_SCRBRD_RECORD !== "1") {
+  console.error(`✗ refusing --reset-objects against ${hostOf(URL) || "an unparseable DATABASE_URL"}: not a local database.\n` +
+    `  It erases every record this project holds there. On a real database a schema change is a new db/NN_*.sql\n` +
+    `  (node tools/bundle-sql.mjs --apply NN). On a demonstration database you are certain holds no real record:\n` +
+    `  I_UNDERSTAND_THIS_ERASES_EVERY_SCRBRD_RECORD=1`);
+  process.exit(2);
+}
+
 if (args.has("--reset")) {
   console.log(`Resetting schema on ${URL.replace(/:[^:@]*@/, ":***@")}`);
   psql(["-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"], "reset schema");
@@ -99,81 +117,17 @@ if (args.has("--reset")) {
 // expects to still be there and leaves a project that looks fine until
 // something reaches for pgcrypto.
 //
-// So this drops what WE created and nothing else: every view, table, routine
-// and type owned by this role in `public`, leaving the schema itself, its
-// grants, and anything belonging to an extension exactly as they were. The
-// ledger goes with it — it is one of our tables — so the next run applies
-// every migration from the beginning, which is the point.
-//
-// It is derived from the catalogue rather than from a list written here,
-// because a hand-kept list of "our objects" is wrong the first time somebody
-// adds a table and does not update it, which is the staleness this codebase
-// keeps closing everywhere else.
+// So this drops what WE created and nothing else: the tables, views,
+// routines, types and sequences this repository's migrations create, BY
+// NAME (tools/reset-objects.mjs reads them out of db/), and never anything
+// belonging to an extension. It used to take every such object in public,
+// ours or not (GA-I02); now an object db/ does not name survives, and one of
+// somebody else's that depends on one of ours stops the reset before it
+// starts. The ledger goes with it — it is one of our tables — so the next
+// run applies every migration from the beginning, which is the point.
 if (args.has("--reset-objects")) {
   console.log(`Dropping this project's objects in public on ${URL.replace(/:[^:@]*@/, ":***@")}`);
-  // pg_depend with deptype 'e' is "this object belongs to an extension".
-  // Excluding it is what keeps pgcrypto, pgjwt and friends alive.
-  const NOT_EXTENSION = `NOT EXISTS (SELECT 1 FROM pg_depend d
-      WHERE d.objid = c.oid AND d.deptype = 'e')`;
-  const drop = `
-DO $reset_objects$
-DECLARE r record; rt text; sigs text[]; n int := 0;
-BEGIN
-  -- Views first: a view over a table we are about to drop would go with it
-  -- under CASCADE anyway, but dropping them explicitly keeps the count honest.
-  FOR r IN SELECT c.relname FROM pg_class c
-            JOIN pg_namespace ns ON ns.oid = c.relnamespace
-           WHERE ns.nspname = 'public' AND c.relkind IN ('v','m') AND ${NOT_EXTENSION}
-  LOOP EXECUTE format('DROP VIEW IF EXISTS public.%I CASCADE', r.relname); n := n + 1; END LOOP;
-
-  FOR r IN SELECT c.relname FROM pg_class c
-            JOIN pg_namespace ns ON ns.oid = c.relnamespace
-           WHERE ns.nspname = 'public' AND c.relkind = 'r' AND ${NOT_EXTENSION}
-  LOOP EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', r.relname); n := n + 1; END LOOP;
-
-  -- Routines, by identity rather than by name: this schema overloads
-  -- (app_can has defaults, official_level takes one argument or two), and
-  -- dropping by name alone is ambiguous and fails.
-  --
-  -- The signatures are collected as TEXT up front, before anything is
-  -- dropped. Read lazily from a cursor instead, a routine already taken by
-  -- an earlier CASCADE no longer resolves, and oid::regprocedure renders
-  -- it as a bare number — which then reaches DROP FUNCTION as a syntax
-  -- error and takes the whole teardown down with it. to_regprocedure() on
-  -- the way back in is the matching half: it returns NULL for a signature
-  -- that has since gone, rather than raising.
-  --
-  -- The extension exclusion above is what lets this FINISH, and the failure
-  -- it prevents is worth naming exactly, because it is not the one you
-  -- would guess. Postgres refuses to drop an extension member on its own
-  -- ("cannot drop function pgp_pub_decrypt_bytea(...) because extension
-  -- pgcrypto requires it"), so without the exclusion pgcrypto is not
-  -- destroyed — the teardown ABORTS on it, after the table loop above has
-  -- already run, leaving the database half torn down. Checked by removing
-  -- the exclusion and watching it happen.
-  SELECT coalesce(array_agg(p.oid::regprocedure::text), '{}')
-      INTO sigs
-      FROM pg_proc p
-      JOIN pg_namespace ns ON ns.oid = p.pronamespace
-     WHERE ns.nspname = 'public'
-       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e');
-    FOREACH rt IN ARRAY sigs LOOP
-      IF to_regprocedure(rt) IS NOT NULL THEN
-        EXECUTE format('DROP FUNCTION IF EXISTS %s CASCADE', rt);
-        n := n + 1;
-      END IF;
-    END LOOP;
-
-  FOR r IN SELECT t.typname FROM pg_type t
-            JOIN pg_namespace ns ON ns.oid = t.typnamespace
-           WHERE ns.nspname = 'public' AND t.typtype = 'e'
-             AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = t.oid AND d.deptype = 'e')
-  LOOP EXECUTE format('DROP TYPE IF EXISTS public.%I CASCADE', r.typname); n := n + 1; END LOOP;
-
-  RAISE NOTICE 'dropped % object(s) in public', n;
-END
-$reset_objects$;`;
-  psql(["-c", drop], "drop this project's objects");
+  psql(["-c", teardownSql(projectObjects(DB_DIR))], "drop this project's objects");
 }
 
 // The ledger lives with the schema it describes, so a reset takes it too.

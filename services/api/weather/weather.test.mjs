@@ -5,7 +5,7 @@ import {
   ATTRIBUTION, CACHE_TTL_MS, CONDITIONS, CONDITION_MAP, GOOGLE_BASE,
   mapCondition, roundedPosition, toHint, weatherConfig, weatherRoutes,
 } from "./weather-api.mjs";
-import { signToken } from "../auth/auth.mjs";
+import { principalFromClaims, signToken, verifyToken } from "../auth/auth.mjs";
 
 let pass = 0, fail = 0;
 /** @param {string} n @param {unknown} c @param {unknown} [d] */
@@ -113,13 +113,29 @@ const logged = [];
 /** @type {import("./weather-api.mjs").FetchLike} */
 const fetchImpl = async (url, init) => { calls.push({ url, headers: init.headers }); if (reply instanceof Error) throw reply; return reply; };
 const KEY = "AIza-test-key-not-real";
-const route = weatherRoutes({ secret: SECRET, key: KEY, fetchImpl, now, log: (l) => logged.push(l) });
+// Who is enrolled, as server.mjs asks app_enrolled(): everybody here but
+// "stranger", a Google account that signed up and holds nothing.
+/** @type {string[]} */
+const asked = [];
+const enrolled = async (/** @type {string} */ a) => {
+  const id = principalFromClaims(verifyToken(a.slice(7), SECRET, now)).userId ?? "";
+  asked.push(id);
+  return id !== "stranger";
+};
+const route = weatherRoutes({ secret: SECRET, key: KEY, enrolled, fetchImpl, now, log: (l) => logged.push(l) });
 const q = (/** @type {string} */ lat, /** @type {string} */ lon) => ({ lat, lon });
 
 ok("no token: 401", (await route.hint({ query: q("-29.6", "30.4") })).status === 401 && calls.length === 0);
 ok("a forged token: 401", (await route.hint({ query: q("-29.6", "30.4"), authorization: "Bearer a.b.c" })).status === 401);
 ok("a pad credential is not a bearer: 401 here (server.mjs answers it 403 pad_scope first)",
   (await route.hint({ query: q("-29.6", "30.4"), authorization: "ScrbrdPad x" })).status === 401);
+const stranger = await route.hint({ query: q("-29.6", "30.4"), authorization: token("stranger") });
+ok("signed in but enrolled nowhere (an account with no school): 403 not_enrolled, nothing sent",
+  stranger.status === 403 && /** @type {any} */ (stranger.body).error === "not_enrolled" && calls.length === 0, stranger);
+ok("...and the question was asked of that account", asked.includes("stranger"), asked);
+ok("weatherRoutes refuses to be built without a way to ask", (() => {
+  try { weatherRoutes(/** @type {any} */ ({ secret: SECRET, key: KEY, fetchImpl, now })); return false; } catch { return true; }
+})());
 const bad = await route.hint({ query: q("95", "30.4"), authorization: token("u1") });
 ok("out of range: 400 bad_param, nothing sent", bad.status === 400 && /** @type {any} */ (bad.body).error === "bad_param" && calls.length === 0);
 
@@ -164,7 +180,7 @@ for (let i = 0; i < 40 && !limited; i++) {
 ok("30 a minute each: the 31st is 429 with Retry-After", limited?.i === 30 && limited.r.headers?.["retry-after"] === "2", limited);
 ok("...and somebody else is not held up by it", (await route.hint({ query: q("-29.6", "30.38"), authorization: token("calm") })).status === 200);
 
-const unset = weatherRoutes({ secret: SECRET, key: null, fetchImpl, now });
+const unset = weatherRoutes({ secret: SECRET, key: null, enrolled, fetchImpl, now });
 calls = [];
 const off = await unset.hint({ query: q("-29.6", "30.38"), authorization: token("u1") });
 ok("no key: 503 weather_unavailable, and nothing sent", off.status === 503 && /** @type {any} */ (off.body).error === "weather_unavailable" && calls.length === 0);

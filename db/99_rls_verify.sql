@@ -3702,6 +3702,60 @@ CREATE OR REPLACE FUNCTION _seed_83() RETURNS void AS $$
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/83 (section 62) ──────────────────────────────────────────────
 
+-- ┌── db/84 (section 63) ──────────────────────────────────────────────
+-- Two fixtures, as the owner: Hilton at home to Westville (both sides are
+-- schools on SCRBRD), and Hilton at home to a typed side. Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_84() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  ids jsonb := '{}';
+  m   uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', WES, '1XI', 'Westville Boys'' High 1XI', now() + interval '5 days', 'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO m;
+  ids := ids || jsonb_build_object('both', m);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', 'Verify Eightyfour College 1XI', now() + interval '6 days', 'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO m;
+  ids := ids || jsonb_build_object('typed', m);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A squad row written as the OWNER: no route, no row-level policy, only the
+-- triggers. Answers 'ok', or the SQLSTATE and the sentence the database said.
+CREATE OR REPLACE FUNCTION _v84_pick(p_match uuid, p_player uuid, p_side text, p_withdrawn boolean DEFAULT false) RETURNS text AS $$
+BEGIN
+  INSERT INTO match_squad (match_id, player_id, side, withdrawn) VALUES (p_match, p_player, p_side, p_withdrawn)
+  ON CONFLICT (match_id, player_id) DO UPDATE SET side = EXCLUDED.side, withdrawn = EXCLUDED.withdrawn;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE || ': ' || SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The BEFORE row triggers on match_squad, in the order Postgres fires them.
+CREATE OR REPLACE FUNCTION _v84_squad_trigger_order() RETURNS text[] AS $$
+  SELECT array_agg(t.tgname::text ORDER BY t.tgname COLLATE "C") FROM pg_trigger t
+   WHERE t.tgrelid = 'match_squad'::regclass AND NOT t.tgisinternal AND t.tgenabled <> 'D'
+     AND (t.tgtype & 1) = 1 AND (t.tgtype & 2) = 2
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A post's byline, changed as the owner (db/12's ON DELETE SET NULL is this).
+CREATE OR REPLACE FUNCTION _v84_set_author(p_post uuid, p_author uuid) RETURNS text AS $$
+BEGIN
+  UPDATE news_post SET author_id = p_author WHERE id = p_post;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE || ': ' || SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A request as the owner reads it, past RLS. jsonb, so a database without
+-- the column answers NULL for it rather than failing to compile.
+CREATE OR REPLACE FUNCTION _v84_request(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(r) FROM role_request r WHERE r.id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v84_user_by_email(p_email text) RETURNS uuid AS $$
+  SELECT id FROM app_user WHERE lower(email) = lower(p_email)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/84 (section 63) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -15837,6 +15891,166 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 62
+  -- ┌── section 63 · db/84: the database keeps the routes' rules ──
+  -- The security review of 2026-10-06 fixed three things in a route; db/84
+  -- puts each beneath the route, where every door passes it.
+  --
+  --   (order)    the school-of-side guard is the FIRST BEFORE row trigger on
+  --              match_squad, ahead of the two that name a boy
+  --   (owner)    as the owner — no route, no policy — another school's boy
+  --              is refused 42501 for either side, in words that name
+  --              nobody; his own school's boy goes in; an away side that is
+  --              no school on SCRBRD is refused before anything names him; a
+  --              withdrawn row passes, and un-withdrawing it does not; moving
+  --              a boy to the other side is an UPDATE and is refused
+  --   (route)    as Hilton's director of sport (team.select) under RLS, with
+  --              the route's gate bypassed: Westville's registered adult is
+  --              refused, and Westville's unregistered minor is refused
+  --              without his name or his consent state
+  --   (news)     the author cannot move his post to another school, another
+  --              side, or widen it to the school; he can still edit it and
+  --              withdraw it; the byline may be cleared (ON DELETE SET NULL)
+  --              and never moved
+  --   (asked)    a request filed signed out (POST /api/onboard) is marked;
+  --              Google linking the stub does not clear the mark; a request
+  --              filed signed out AFTER linking is marked; the person's own,
+  --              signed in, is not; the mark cannot be changed by its person
+  --
+  -- Falsified once each, by disabling the trigger (as the owner, before the
+  -- verify ran, then re-enabled) and watching the section go red at its own
+  -- assertion: match_squad_00_school_of_side (order); news_post_anchor_frozen
+  -- (news: moved to Westville); role_request_asked_unverified (asked: the
+  -- signed-out request is not marked).
+  DECLARE
+    U_C2        uuid := '88888888-0000-0000-0000-00000000000a';  -- 2XI coach, Hilton: news.publish.team
+    P_HIL_ADULT uuid := 'aaaaaaaa-0000-0000-0000-000000000003';  -- Hilton 1XI, past eighteen
+    F_BOTH uuid; F_TYPED uuid; v_post uuid; v_stub uuid; R1 uuid; R2 uuid; R3 uuid;
+    v_got text; v_out text; n int; j jsonb; v_order text[];
+  BEGIN
+    j := _seed_84();
+    F_BOTH := (j->>'both')::uuid; F_TYPED := (j->>'typed')::uuid;
+
+    -- (order)
+    v_order := _v84_squad_trigger_order();
+    PERFORM _assert(v_order[1] = 'match_squad_00_school_of_side',
+      format('§63 (order): the first BEFORE row trigger on match_squad is %s', v_order[1]));
+    PERFORM _assert(v_order @> ARRAY['match_squad_is_age_eligible', 'match_squad_is_registered', 'match_squad_side_is_real'],
+      format('§63 (order): the db/08 squad triggers are not all there: %s', v_order));
+
+    -- (owner)
+    v_got := _v84_pick(F_BOTH, P_WES2, 'home');
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (owner): Westville''s adult on Hilton''s side answered %s', v_got));
+    PERFORM _assert(v_got !~* 'botha|mkhize|westville|registered|january|bbbbbbbb',
+      format('§63 (owner): the refusal says who he is: %s', v_got));
+    v_got := _v84_pick(F_BOTH, P_WES, 'home');
+    PERFORM _assert(v_got LIKE '42501:%' AND v_got !~* 'mkhize|registered|consent|bbbbbbbb',
+      format('§63 (owner): Westville''s unregistered minor on Hilton''s side answered %s', v_got));
+    v_got := _v84_pick(F_BOTH, P_HIL_ADULT, 'away');
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (owner): Hilton''s boy on Westville''s side answered %s', v_got));
+    v_got := _v84_pick(F_BOTH, P_HIL_ADULT, 'home');
+    PERFORM _assert(v_got = 'ok', format('§63 (owner): Hilton''s own adult could not be named for Hilton (%s)', v_got));
+    v_got := _v84_pick(F_BOTH, P_WES2, 'away');
+    PERFORM _assert(v_got = 'ok', format('§63 (owner): Westville''s own adult could not be named for Westville (%s)', v_got));
+    v_got := _v84_pick(F_BOTH, P_HIL_ADULT, 'away');
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (owner): moving Hilton''s boy to the away side answered %s', v_got));
+    v_got := _v84_pick(F_TYPED, P_HIL_ADULT, 'away');
+    PERFORM _assert(v_got LIKE '23514:%not a school on SCRBRD%' AND v_got !~* 'naidoo|aaaaaaaa',
+      format('§63 (owner): a typed away side answered %s', v_got));
+    v_got := _v84_pick(F_BOTH, P_WES, 'home', true);
+    PERFORM _assert(v_got = 'ok', format('§63 (owner): a withdrawn row was refused (%s)', v_got));
+    v_got := _v84_pick(F_BOTH, P_WES, 'home', false);
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (owner): un-withdrawing Westville''s boy on Hilton''s side answered %s', v_got));
+
+    -- (route) the API's gate is not here: this is the database alone.
+    PERFORM _as(U_SARAH);
+    BEGIN
+      INSERT INTO match_squad (match_id, player_id, side) VALUES (F_BOTH, P_WES2, 'home')
+      ON CONFLICT (match_id, player_id) DO UPDATE SET side = 'home', withdrawn = false;
+      v_got := 'ok';
+    EXCEPTION WHEN OTHERS THEN v_got := SQLSTATE || ': ' || SQLERRM;
+    END;
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (route): Hilton''s director of sport put Westville''s adult on her side (%s)', v_got));
+    BEGIN
+      INSERT INTO match_squad (match_id, player_id, side) VALUES (F_TYPED, P_WES, 'home');
+      v_got := 'ok';
+    EXCEPTION WHEN OTHERS THEN v_got := SQLSTATE || ': ' || SQLERRM;
+    END;
+    PERFORM _assert(v_got LIKE '42501:%' AND v_got !~* 'mkhize|registered|consent|bbbbbbbb',
+      format('§63 (route): Westville''s minor, posted by Hilton, answered %s', v_got));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (news)
+    PERFORM _as(U_C2);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Nets on Thursday', 'Nets at four, whites please.', now())
+    RETURNING id INTO v_post;
+    BEGIN
+      UPDATE news_post SET school_id = WES WHERE id = v_post;
+      GET DIAGNOSTICS n = ROW_COUNT;
+      v_got := 'ok ' || n;
+    EXCEPTION WHEN OTHERS THEN v_got := SQLSTATE || ': ' || SQLERRM;
+    END;
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (news): the author moved his post to Westville (%s)', v_got));
+    BEGIN
+      UPDATE news_post SET team_code = '1XI' WHERE id = v_post;
+      GET DIAGNOSTICS n = ROW_COUNT;
+      v_got := 'ok ' || n;
+    EXCEPTION WHEN OTHERS THEN v_got := SQLSTATE || ': ' || SQLERRM;
+    END;
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (news): the author moved his post to another side (%s)', v_got));
+    BEGIN
+      UPDATE news_post SET scope = 'school', team_code = NULL WHERE id = v_post;
+      GET DIAGNOSTICS n = ROW_COUNT;
+      v_got := 'ok ' || n;
+    EXCEPTION WHEN OTHERS THEN v_got := SQLSTATE || ': ' || SQLERRM;
+    END;
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (news): the author widened his team post to the school (%s)', v_got));
+    UPDATE news_post SET title = 'Nets on Friday', body = 'Nets at four on Friday instead.' WHERE id = v_post;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, '§63 (news): the author can no longer edit his post');
+    UPDATE news_post SET published_at = NULL WHERE id = v_post;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, '§63 (news): the author can no longer withdraw his post');
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v84_set_author(v_post, U_SARAH);
+    PERFORM _assert(v_got LIKE '42501:%', format('§63 (news): the byline moved to somebody else (%s)', v_got));
+    v_got := _v84_set_author(v_post, NULL);
+    PERFORM _assert(v_got = 'ok', format('§63 (news): the byline could not be cleared, as ON DELETE SET NULL does (%s)', v_got));
+
+    -- (asked) signed out, as POST /api/onboard calls it.
+    PERFORM set_config('app.user_id', '', true);
+    R1 := onboard_request('v84.stub@example.invalid', 'V84 Stub', 'coach', HIL, 'U14A', 'I help with the under-14s.');
+    j := _v84_request(R1);
+    PERFORM _assert((j->>'asked_unverified')::boolean IS TRUE, format('§63 (asked): a request filed signed out is not marked: %s', j));
+    SELECT s.outcome, s.user_id INTO v_out, v_stub
+      FROM auth_identity_sign_in('google.com', 'v84-stub-uid', 'v84.stub@example.invalid', 'V84 Stub') s;
+    PERFORM _assert(v_out = 'linked' AND v_stub = _v84_user_by_email('v84.stub@example.invalid'),
+      format('§63 (asked): the stub was not linked by Google (%s)', v_out));
+    j := _v84_request(R1);
+    PERFORM _assert((j->>'asked_unverified')::boolean IS TRUE AND j->>'state' = 'pending',
+      format('§63 (asked): linking the stub cleared the mark: %s', j));
+    R2 := onboard_request('v84.stub@example.invalid', 'Somebody Else', 'coach', HIL, 'U15A', NULL);
+    j := _v84_request(R2);
+    PERFORM _assert(j->>'person_id' = v_stub::text AND (j->>'asked_unverified')::boolean IS TRUE,
+      format('§63 (asked): a request filed signed out for a linked account is not marked: %s', j));
+    PERFORM _as(v_stub);
+    INSERT INTO role_request (person_id, role, school_id, team_code) VALUES (v_stub, 'coach', HIL, 'U16A')
+    RETURNING id INTO R3;
+    j := _v84_request(R3);
+    PERFORM _assert((j->>'asked_unverified')::boolean IS FALSE, format('§63 (asked): his own request, signed in, is marked: %s', j));
+    -- Withdrawing is the one update he makes; it does not clear the mark.
+    UPDATE role_request SET state = 'withdrawn', asked_unverified = false WHERE id = R2;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    j := _v84_request(R2);
+    PERFORM _assert(n = 1 AND j->>'state' = 'withdrawn' AND (j->>'asked_unverified')::boolean IS TRUE,
+      format('§63 (asked): the requester cleared the mark (%s rows): %s', n, j));
+    -- The office reads the mark where it reads the request.
+    PERFORM _as(U_SARAH);
+    SELECT count(*) INTO n FROM role_request r WHERE r.id = R1 AND (to_jsonb(r)->>'asked_unverified')::boolean;
+    PERFORM _assert(n = 1, '§63 (asked): Hilton''s director of sport cannot read the mark on the stub''s request');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 63
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

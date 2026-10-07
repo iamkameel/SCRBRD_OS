@@ -825,7 +825,7 @@ function asRoleRequest(r) {
   return { id: r.id, personId: r.person_id, name: r.name, email: r.email, role: r.role, school: r.school_id,
            schoolName: r.school_name, team: r.team_code, playerId: r.player_id, note: r.note, state: r.state,
            requestedAt: r.requested_at, decidedAt: r.decided_at, decidedNote: r.decided_note, decidedBy: r.decided_by_name,
-           mine: r.mine === true, decidable: r.decidable === true, live: true };
+           mine: r.mine === true, decidable: r.decidable === true, askedUnverified: r.asked_unverified === true, live: true };
 }
 function asDrill(r) {
   return { id: r.id, school: r.school_id, name: r.name, category: r.category, duration: r.duration_min, desc: r.description, live: true };

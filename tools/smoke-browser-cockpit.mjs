@@ -31,6 +31,13 @@
  *   6. THE DASHBOARD CARD: the next fixture within seven days, its count equal
  *      to the drawer's, one tap into the tab with the drawer open; none for a
  *      scorer, a parent or a pupil.
+ *   6b. THE MATCH-DAY QUEUE, PHASE A0 (docs/design/GA-I09-I11_match_day_queue.md
+ *      §3.1, §7, §8): a coach with one fixture in the week sees one card as
+ *      before; with two, two cards in order, each saying which, a failed read
+ *      said as "Could not read X" (never "Nothing to resolve"), and a tap on
+ *      the second opens THAT fixture's Coach tab; past the first few, the rest
+ *      fold under "Later" and make no read until opened. A Readiness row is a
+ *      44px tap that opens its fixture's duties.
  *   7. Floors: nothing read under 12px, nothing tapped under 44px, at 390
  *      wide, in both themes; reduced motion respected; no page errors.
  *
@@ -192,10 +199,10 @@ const cards = (page) => page.$$eval('[data-testid^="signal-"][data-rule]', (els)
 const byRule = (cs, r) => cs.filter((c) => c.rule === r);
 
 /** §3.2 and §3.5 over what is on screen: the main area and the drawer. */
-async function floors(page) {
-  return page.evaluate(() => {
+async function floors(page, within = '[data-testid="os-main"], [data-testid="signals"]') {
+  return page.evaluate((within) => {
     const small = [], tiny = [];
-    for (const root of document.querySelectorAll('[data-testid="os-main"], [data-testid="signals"]')) {
+    for (const root of document.querySelectorAll(within)) {
       for (const n of [root, ...root.querySelectorAll("*")]) {
         if (n.closest(".sr-only")) continue;
         const cs = getComputedStyle(n);
@@ -208,7 +215,7 @@ async function floors(page) {
       }
     }
     return { small, tiny };
-  });
+  }, within);
 }
 
 /** A reload loses the session on purpose (the token lives in memory): sign in again and come back to the Coach tab. */
@@ -560,7 +567,13 @@ try {
   }
 
   // ══ 6 · The Dashboard card ══════════════════════════════════════════════
-  group("The match-day card on the Dashboard");
+  group("The match-day card on the Dashboard: a coach with one fixture in the week sees one card, as before");
+  // The seed's Michaelhouse fixture is three days off and the coach's: put it
+  // beyond the week for this group, so he has the one fixture, tonight's; it
+  // comes back below, where he has two.
+  const MICH = "77777777-0000-0000-0000-000000000002";
+  const michAt = (await q(`select starts_at from match where id = $1`, [MICH]))[0].starts_at;
+  await q(`update match set starts_at = starts_at + interval '30 days' where id = $1`, [MICH]);
   const d = await open({ viewport: PHONE });
   await signIn(d.page, "coach@example.invalid");
   await go(d.page, "dashboard");
@@ -568,6 +581,10 @@ try {
   const cardText = await inner(d.page, "day-matchday");
   dbg("CARD", cardText);
   ok("the coach's Dashboard carries the card for the fixture today", await tid(d.page, "day-matchday").count() === 1 && /v Verify Cockpit XI/.test(cardText), cardText);
+  ok("...one card is exactly one card: titled Match day, no 'n of m', named 'v the opponent' as it always was, nothing folded under Later",
+     /^MATCH DAY\s/i.test(cardText) && !/\d of \d/.test(cardText) && (await inner(d.page, "matchday-line")).trim() === "v Verify Cockpit XI" && await tid(d.page, "matchday-later").count() === 0, cardText);
+  ok("...the count is 'N to resolve' and every read the card asked for answered, so no 'Could not read'",
+     /^\d+ to resolve$/.test((await inner(d.page, "matchday-count")).trim()) && await tid(d.page, "matchday-unread").count() === 0, `${await inner(d.page, "matchday-count")} | ${await tid(d.page, "matchday-unread").count()}`);
   const cardCount = Number((await inner(d.page, "matchday-count")).match(/\d+/)?.[0]);
   ok("...the side in a line: ten named, five to chase, two restricted", /10 named/.test(await inner(d.page, "matchday-side")) && /2 restricted/.test(await inner(d.page, "matchday-side")), await inner(d.page, "matchday-side"));
   await tid(d.page, "matchday-signals").click({ timeout: 4000 });
@@ -578,6 +595,108 @@ try {
   const f3 = await floors(d.page);
   ok(`the Dashboard and the drawer: nothing under 12px (${f3.small.length}), nothing tapped under 44px (${f3.tiny.length})`, f3.small.length === 0 && f3.tiny.length === 0, [...f3.small, ...f3.tiny].slice(0, 4).join(" · "));
   await d.ctx.close();
+
+  // ══ 6b · The card is a list (match-day queue, phase A0) ═════════════════
+  group("The match-day card is a list: a card for each fixture within the week, the rest under Later (queue A0)");
+  await q(`update match set starts_at = $2 where id = $1`, [MICH, michAt]);       // back within the week: the coach has two fixtures
+  {
+    const l = await open({ viewport: PHONE });
+    // One read of Michaelhouse's card fails: it must say so, and not say there is nothing to resolve.
+    await l.page.route(new RegExp(`/api/read/readiness\\?.*matchId=${MICH}`), (r) => r.abort());
+    await signIn(l.page, "coach@example.invalid");
+    await go(l.page, "dashboard");
+    await l.page.waitForFunction(() => document.querySelectorAll('[data-testid="matchday-count"]').length >= 2, null, { timeout: 15000 }).catch(() => {});
+    const on = await l.page.$$eval('[data-testid="day-matchday"]', (els) => els.map((e) => ({ match: e.getAttribute("data-match"), text: e.innerText })));
+    dbg("CARDS", on.map((x) => x.text).join("\n=====\n"));
+    ok("a coach with two fixtures within the week sees two cards", on.length === 2, on.map((x) => x.match));
+    ok("...tonight's first, then Michaelhouse: starts_at order, today's first", on[0]?.match === DAY && on[1]?.match === MICH, on.map((x) => x.match));
+    ok("...each says which of two it is, and which side of his plays whom", /1 of 2/i.test(on[0]?.text ?? "") && /2 of 2/i.test(on[1]?.text ?? "") && /v Verify Cockpit XI/.test(on[0]?.text ?? "") && /v .*Michaelhouse/.test(on[1]?.text ?? ""), on.map((x) => x.text.slice(0, 80)));
+    ok("...two are within the first few: nothing folded under Later", await tid(l.page, "matchday-later").count() === 0);
+    const c2 = l.page.locator(`[data-testid="day-matchday"][data-match="${MICH}"]`);
+    const c2count = (await c2.locator('[data-testid="matchday-count"]').innerText({ timeout: 3000 }).catch(() => "")).trim();
+    const c2unread = await c2.locator('[data-testid="matchday-unread"]').allInnerTexts();
+    ok("a failed read is said, one line each: 'Could not read who has answered' on the second card", c2unread.join("|") === "Could not read who has answered", c2unread);
+    ok("...and the count beside it is a number, never 'Nothing to resolve'", /^\d+ to resolve$/.test(c2count), c2count);
+    const c1 = l.page.locator(`[data-testid="day-matchday"][data-match="${DAY}"]`);
+    ok("...the first card read everything: no 'Could not read' there, and its own count", await c1.locator('[data-testid="matchday-unread"]').count() === 0 && /^\d+ to resolve$/.test((await c1.locator('[data-testid="matchday-count"]').innerText()).trim()));
+    ok("every card's two buttons are named for its fixture, the visible words first",
+       await c2.locator('[data-testid="matchday-open"]').getAttribute("aria-label") === `Open the Coach tab · ${(await c2.locator('[data-testid="matchday-line"]').innerText()).trim()}`);
+    const f6 = await floors(l.page, '[data-testid="day-matchday"], [data-testid="matchday-later"]');
+    ok(`two cards: nothing under 12px (${f6.small.length}), nothing tapped under 44px (${f6.tiny.length})`, f6.small.length === 0 && f6.tiny.length === 0, [...f6.small, ...f6.tiny].slice(0, 4).join(" · "));
+    await c2.locator('[data-testid="matchday-open"]').click({ timeout: 4000 });
+    await l.page.waitForFunction(() => document.querySelector('[data-testid="mc-coach"]'), null, { timeout: 12000 }).catch(() => {});
+    await l.page.waitForTimeout(800);
+    const mv = await inner(l.page, "match-view");
+    ok("tapping the second card opens THAT fixture's Coach tab", await tid(l.page, "mc-coach").count() === 1 && /Michaelhouse/.test(mv) && !/Verify Cockpit XI/.test(mv), mv.slice(0, 160));
+    await l.ctx.close();
+  }
+  {
+    // More than the first few: three more of his, in the week; five in all.
+    const X = [];
+    for (const [name, days] of [["Verify Wed XI", 1], ["Verify Thu XI", 2], ["Verify Sun XI", 5]]) {
+      X.push((await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+        values ($1, '1XI', $2, (sa_today()::timestamp + make_interval(days => $3::int) + time '10:00') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, name, days]))[0].id);
+    }
+    const f = await open({ viewport: PHONE });
+    const asked = [];
+    f.page.on("request", (r) => asked.push(r.url()));
+    await signIn(f.page, "coach@example.invalid");
+    await go(f.page, "dashboard");
+    await f.page.waitForFunction(() => document.querySelectorAll('[data-testid="matchday-count"]').length >= 3, null, { timeout: 15000 }).catch(() => {});
+    const ids = () => f.page.$$eval('[data-testid="day-matchday"]', (els) => els.map((e) => e.getAttribute("data-match")));
+    ok("five fixtures in the week: three cards, tonight first, in order", (await ids()).join() === [DAY, X[0], X[1]].join(), (await ids()).join());
+    const tog = tid(f.page, "matchday-later-toggle");
+    ok("...and the other two fold under 'Later · 2 fixtures', closed", /Later · 2 fixtures/.test(await tog.innerText()) && await tog.getAttribute("aria-expanded") === "false", await tog.innerText());
+    await f.page.waitForTimeout(1500);
+    ok("...a folded fixture makes none of its reads until it is opened", !asked.some((u) => u.includes(`matchId=${MICH}`) || u.includes(`matchId=${X[2]}`) || u.includes(`/matches/${MICH}/`)));
+    const f7 = await floors(f.page, '[data-testid="day-matchday"], [data-testid="matchday-later"]');
+    ok(`the fold: nothing under 12px (${f7.small.length}), nothing tapped under 44px (${f7.tiny.length})`, f7.small.length === 0 && f7.tiny.length === 0, [...f7.small, ...f7.tiny].slice(0, 4).join(" · "));
+    await tog.click({ timeout: 4000 });
+    await f.page.waitForFunction(() => document.querySelectorAll('[data-testid="day-matchday"]').length === 5, null, { timeout: 15000 }).catch(() => {});
+    ok("a tap opens the fold: all five, in order, and the toggle says it is open", (await ids()).join() === [DAY, X[0], X[1], MICH, X[2]].join() && await tog.getAttribute("aria-expanded") === "true", (await ids()).join());
+    ok("...and now those two are read", asked.some((u) => u.includes(`matchId=${MICH}`)));
+    await tog.click({ timeout: 4000 });
+    await f.page.waitForTimeout(300);
+    ok("a second tap folds them again", (await ids()).length === 3 && await tog.getAttribute("aria-expanded") === "false");
+    ok("no page errors on the Dashboard", f.errors.length === 0 && f.refusals.length === 0, [...f.errors, ...f.refusals].join(" | "));
+    await f.ctx.close();
+    await q(`delete from match where id = any($1::uuid[])`, [X]);
+  }
+
+  // ══ 6c · Readiness: a row opens its fixture's duties ═════════════════════
+  group("Readiness: each row is a 44px tap that opens its fixture's duties (queue A0)");
+  {
+    const r = await open({ viewport: DESK });
+    await signIn(r.page, "sarah@example.invalid");
+    ok("the director reaches Readiness", await go(r.page, "readiness") && await tid(r.page, "os-main").getAttribute("data-page") === "readiness");
+    await r.page.waitForSelector(`[data-testid="readiness-open-${DAY}"]`, { timeout: 8000 }).catch(() => {});
+    ok("tonight's fixture is a row, and the row is one button", await tid(r.page, `readiness-open-${DAY}`).count() === 1 && await tid(r.page, `readiness-fixture-${DAY}`).locator("button").count() === 1);
+    const coveredText = (await inner(r.page, `readiness-covered-${DAY}`)).trim();
+    await r.page.setViewportSize(PHONE);
+    await r.page.waitForTimeout(700);
+    const f8 = await floors(r.page);
+    ok(`at 390: nothing under 12px, chips included (${f8.small.length}), every row at least 44px (${f8.tiny.length})`, f8.small.length === 0 && f8.tiny.length === 0, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
+    const chip = await r.page.$eval(`[data-testid="readiness-slot-${DAY}-umpire"]`, (e) => parseFloat(getComputedStyle(e).fontSize)).catch(() => 0);
+    ok(`...a duty chip is 12px (${chip})`, chip >= 12);
+    ok("...a slot with nothing on record says 'none' in words, not only in colour", /none/.test(await inner(r.page, `readiness-slot-${DAY}-umpire`)) || /none/.test(await inner(r.page, `readiness-slot-${DAY}-scorer`)));
+    await tid(r.page, `readiness-open-${MICH}`).click({ timeout: 4000 });
+    await r.page.waitForTimeout(1500);
+    const box = await tid(r.page, "match-details").boundingBox().catch(() => null);
+    ok("tapping a row opens that fixture's duties, on the Match Centre", await tid(r.page, "os-main").getAttribute("data-page") === "matches"
+       && await tid(r.page, "match-details").getAttribute("data-match") === MICH && await tid(r.page, "duty-roster").count() === 1);
+    ok("...brought into view on a phone, not left under the list (its top is on the screen)", !!box && box.y < 400 && box.y > -20, JSON.stringify(box));
+    await r.page.setViewportSize(DESK);
+    await r.page.waitForTimeout(600);
+    ok("back on Readiness, the other row opens its own fixture", await go(r.page, "readiness"));
+    await r.page.waitForSelector(`[data-testid="readiness-open-${DAY}"]`, { timeout: 8000 }).catch(() => {});
+    await tid(r.page, `readiness-open-${DAY}`).click({ timeout: 4000 });
+    await r.page.waitForTimeout(1500);
+    ok("...tonight's: its details, not Michaelhouse's", await tid(r.page, "match-details").getAttribute("data-match") === DAY && await tid(r.page, "match-details").count() === 1);
+    const rosterText = (await inner(r.page, "duty-covered")).trim();
+    ok(`...and its duty roster says what the row said ("${coveredText}")`, rosterText === coveredText, rosterText);
+    ok("no page errors, no scoping refusals", r.errors.length === 0 && r.refusals.length === 0, [...r.errors, ...r.refusals].join(" | "));
+    await r.ctx.close();
+  }
 
   // ══ 7 · The live tab ════════════════════════════════════════════════════
   group("The live tab: the Board, our bowlers with the cap's own words, the strip, the phases, the wheel");

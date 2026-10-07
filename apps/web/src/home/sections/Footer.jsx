@@ -61,7 +61,14 @@ export function AnalyticsToggle({ prefs }) {
 
 export function Footer({ privacyHref = "/privacy", prefs }) {
   return (
-    <footer style={{ borderTop: `1px solid ${T.line.subtle}`, padding: `${T.space.xl} ${T.space.lg}`, textAlign: "center" }}>
+    <footer style={{ borderTop: `1px solid ${T.line.subtle}`, padding: `${T.space.xxl} ${T.space.lg} ${T.space.xl}`, textAlign: "center" }}>
+      <div aria-hidden="true" style={{ display: "flex", gap: "6px", justifyContent: "center", marginBottom: T.space.lg }}>
+        {"SCRBRD".split("").map((c, i) => (
+          <span key={i} style={{ width: "34px", height: "44px", borderRadius: "6px", background: T.board.face, color: T.board.figure, fontFamily: T.type.head,
+            fontWeight: 800, fontSize: "22px", display: "inline-flex", alignItems: "center", justifyContent: "center",
+            backgroundImage: "linear-gradient(transparent 49%, rgba(0,0,0,0.7) 49%, rgba(0,0,0,0.7) 52%, transparent 52%)" }}>{c}</span>
+        ))}
+      </div>
       <p style={{ margin: 0 }}>
         <a href={privacyHref} style={textLink()}>Privacy</a>
       </p>

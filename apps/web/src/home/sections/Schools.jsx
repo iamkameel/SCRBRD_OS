@@ -1,4 +1,4 @@
-import { T } from "../../design/tokens.js";
+import { T, clr } from "../../design/tokens.js";
 import { LinkButton, Section, homeBody } from "./shared.jsx";
 
 /**
@@ -16,12 +16,17 @@ const SUBJECT = "Bring SCRBRD to our school";
 
 export function Schools({ email }) {
   const href = email ? `mailto:${email}?subject=${encodeURIComponent(SUBJECT)}` : null;
-  const p = { ...homeBody(), fontSize: "16px", color: T.content.secondary, lineHeight: 1.6 };
+  const p = { ...homeBody(), fontSize: "17px", color: T.content.secondary, lineHeight: 1.6 };
   return (
-    <Section id="home-schools" label="Bring SCRBRD to your school" narrow>
-      <p style={p}>{PILOT}</p>
-      <p style={{ ...p, margin: `${T.space.md} 0 ${T.space.lg}` }}>{PROMISE}</p>
-      {href && <LinkButton solid href={href} testId="home-schools-mail">Write to us</LinkButton>}
+    <Section id="home-schools" kicker="For schools" label="Bring SCRBRD to your school"
+      style={{ borderRadius: T.radius.xxl, border: `1px solid ${T.line.normal}`, padding: `${T.space.huge} ${T.space.xl}`, margin: `${T.space.xl} auto`,
+        maxWidth: "min(1088px, calc(100% - 32px))", backgroundColor: T.surface.raised,
+        backgroundImage: `radial-gradient(600px 300px at 90% 0%, ${clr(T.brand.lime, 0.14)}, transparent 70%), radial-gradient(500px 260px at 0% 100%, ${clr(T.brand.cyan, 0.1)}, transparent 70%)` }}>
+      <div style={{ maxWidth: "640px" }}>
+        <p style={p}>{PILOT}</p>
+        <p style={{ ...p, margin: `${T.space.md} 0 ${T.space.xl}` }}>{PROMISE}</p>
+        {href && <LinkButton solid href={href} testId="home-schools-mail">Write to us</LinkButton>}
+      </div>
     </Section>
   );
 }

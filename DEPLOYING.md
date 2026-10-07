@@ -123,17 +123,43 @@ any host that is not `localhost`, `127.0.0.1` or the compose service `db`
 named for what it does.
 
 Use `--reset-objects` instead. It drops only what this project created in
-`public` — every table, view, routine and enum this repository's migrations
-made — and leaves the schema, its grants, and anything belonging to an
-extension exactly as they were. The ledger goes with it, so the next run
-applies every migration from the beginning:
+`public`, **by name**: the tables, views, routines, types and sequences that a
+`db/NN_*.sql` file creates, read out of the files themselves
+(`tools/reset-objects.mjs`), plus the ledger. The schema, its grants, anything
+belonging to an extension, and any object another application keeps in
+`public` are left exactly as they were. (Until GA-I02 it dropped every
+non-extension object in `public`, ours or not.) The ledger goes with it, so
+the next run applies every migration from the beginning.
+
+It refuses a host that is not local, as `--reset` does, with its own override
+named for what it does:
 
 ```sh
+I_UNDERSTAND_THIS_ERASES_EVERY_SCRBRD_RECORD=1 \
 DATABASE_URL='<owner connection string>' node tools/migrate.mjs --reset-objects --seed
 ```
 
+`--reset`'s override does not open it. Two things it cannot do for you:
+
+- **It stops if somebody else's object is built on one of ours** — a view over
+  our table, a function taking our type, a foreign key into our table — and
+  names it, before dropping anything. Remove or detach that object first. A
+  leftover from an older edit of a pilot-era file (a view no current file
+  creates, over a table that one does) stops it the same way.
+- **A name is all it goes by.** Another application's object with exactly the
+  name of one of ours (its own `player` table) is taken for ours, and every
+  overload of one of our routine names goes. Only a separate schema would
+  close that.
+
+`tools/smoke-reset-objects.mjs` proves both paths — this one and section 1 of
+the rebuild bundle, which is the same statement — against a scratch database
+holding somebody else's table, view, function, enum and sequence.
+
 That is the DEMONSTRATION path, and only the demonstration path: it destroys
-everything in the database and reseeds it with invented people.
+everything this project holds in the database and reseeds it with invented
+people. Take and prove a backup first
+([docs/pilot/BACKUP_RESTORE.md](docs/pilot/BACKUP_RESTORE.md)) if there is
+anything in it you would miss.
 
 For a database that already carries the ledger — the demonstration instance
 after its first rebuild included — a new migration does not need a rebuild,
@@ -678,6 +704,28 @@ reads the request state on the newsfeed, and refuses to start without db/83
 (`expected-migrations.json`). With `PUBLIC_PAGES` off the news read is the one
 404 and the home page hides the section.
 <!-- ── end SCRBRD-142 phase 3 ── -->
+<!-- ── security review 2026-10-06: the guards beneath the routes (db/84) ── -->
+#### The database keeps the routes' rules (db/84)
+
+`db/84_row_guards.sql` puts three of the review's route fixes where every door
+passes them. **A squad row's boy must be the side's school's**
+(`match_squad_00_school_of_side`, 42501, naming nobody), and the trigger is
+named to fire before the two db/08 triggers whose refusals name the boy, his
+age and his consent state; the file's own check asserts that order. **A news
+post's scope, school, side, competition and author never change on UPDATE**
+(`news_post_anchor_frozen`, 42501): db/12's policy let an author move his own
+post to another school. **`role_request.asked_unverified`** marks a request not
+asked by its person signed in as himself — `POST /api/onboard` — and the mark
+survives Google linking the stub; the office's Requests list says "Asked
+before the email was verified". Pending requests already in the table are
+marked when no Google sign-in was linked to the account before they were
+asked. No secret.
+
+Paste `node tools/bundle-sql.mjs --apply 84` (after 83), then the verify bundle
+(§63 is its proof). **Schema first**: the API built with it reads
+`role_request.asked_unverified` and refuses to start without db/84
+(`expected-migrations.json`).
+<!-- ── end security review 2026-10-06 ── -->
 
 ### 5 · Cloud Run, the first time
 

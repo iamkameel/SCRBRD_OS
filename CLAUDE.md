@@ -39,7 +39,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   register checked before anyone is linked to a school or a child) and the coach's
   cockpit and intelligence feed (added 2026-10-02, SCRBRD-136/137: what a coach
   sees on match day, each feed signal's source and reader, and what never
-  surfaces about a child). A new problem joins this list
+  surfaces about a child) and the match-day queue and operations home (added
+  2026-10-07, gap analysis GA-I09–I11: one queue across a coach's several
+  squads, the team manager's exceptions, and a director's or office's home of
+  blockers by date and team, each with its source, owner, deadline and exact
+  next action). A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write
@@ -80,3 +84,30 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
 
 When a task spans two tiers, give it to the higher one. When unsure, give it to
 Opus.
+
+## Design skills
+
+Installed 2026-10-07 (Kameel) to raise SCRBRD's design, UI and UX, in
+`.claude/skills/`: Emil Kowalski's (animate, review-animations,
+improve-animations, find-animation-opportunities, emil-design-eng,
+apple-design, mobile-native, break-ui, prototype, …), Jakub Krehel's
+(better-interface and the `better-*` set, interface-review, break, variant,
+state-machine, build-design), Elaya's landing-page-design, and tastemaker
+(with ideagram). Each skill keeps its upstream MIT licence beside it
+(`LICENSE.upstream`); the source commits are in `.claude/skills/SOURCES.md`.
+
+Use them on screens and the public pages: interface-review or better-interface
+on a UI diff before it merges, review-animations on motion, break-ui on a new
+screen. They advise; this repository's rules win where they differ:
+
+- **No photograph of a child, and no child's name, on a public page**
+  (`docs/policy/PUBLIC_DATA.md`). Skip the skills' stock-photo and
+  illustration fetches for any page a child could appear on.
+- **No new runtime dependency** (Tailwind, shadcn, GSAP, Sonner, a component
+  registry) without Kameel's say. The bundle ceilings in
+  `tools/check-bundle.mjs` stand.
+- **The floors stand:** nothing under 12px, nothing tapped under 44px,
+  `prefers-reduced-motion` honoured, and the a11y and browser walks green.
+- The existing tokens (`apps/web/src` theme) are the style lock. Do not write a
+  second one (`.tastemaker/style-lock.md`) beside them.
+- Routing is unchanged: screens and styling go to Sonnet, review to Opus.

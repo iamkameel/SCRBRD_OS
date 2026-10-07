@@ -176,9 +176,17 @@ useLive(resource) ──▶ GET /api/read/<resource> ──▶ SELECT … FROM <
 **Write**
 ```text
 view ──▶ POST /api/<domain> ──▶ withPrincipal() BEGIN ──▶ handler ──▶ INSERT/UPDATE under RLS
-                                                        ├─ ok    ──▶ COMMIT, response stored against the Idempotency-Key
+                                                        ├─ ok    ──▶ COMMIT
                                                         └─ throw ──▶ ROLLBACK (no partial state)
-same key again ──▶ the stored response, no second row (db/15)
+
+with an Idempotency-Key (write/replay.mjs, GA-I01) — ONE transaction, key to receipt:
+POST ──▶ BEGIN ──▶ advisory lock on (person, key) ──▶ receipt?
+                     ├─ same route and request fingerprint ──▶ the stored response, nothing runs
+                     ├─ another route or a changed body     ──▶ 422, nothing runs
+                     └─ none ──▶ handler (its runAsPrincipal calls join as SAVEPOINTs)
+                                 ──▶ receipt INSERT beside the rows ──▶ one COMMIT ──▶ answer
+                                 (a 5xx: ROLLBACK, no rows, no receipt — the retry runs afresh)
+a second copy at the same moment waits on the lock, then replays the first (db/15)
 ```
 
 **Scoring and offline**
@@ -256,7 +264,9 @@ db/NN_*.sql (new) ──▶ migrate.mjs --reset --seed --verify (local, with the
   same three functions, one more liveness line), while `db/01` stays as shipped.
 - `SELECT name FROM schema_migration ORDER BY name;` says where a database
   is when it has fallen behind; apply each missing number in order.
-- `--reset` / `--reset-objects` are the demonstration path only.
+- `--reset` / `--reset-objects` are the demonstration path only. Both refuse a
+  non-local host by default; `--reset-objects` drops only the objects `db/`
+  creates, by name (`tools/reset-objects.mjs`, `smoke-reset-objects`).
 
 The full rule and its reasons: `DEPLOYING.md`, "Changing the schema after
 go-live".
@@ -271,7 +281,7 @@ go-live".
 | A module switch can only narrow access | `smoke-modules` (on → off → on, over HTTP) and `db/99` (in SQL) |
 | A coach sees an injury's nature and return date, never the clinical notes | `db/99` §3, `rbac.test`, `smoke-read`, `smoke-audit` (ADR 0002) |
 | Every disclosure of a restricted field, and every platform-wide read, is on the record and cannot be forged or read by its subject | `smoke-audit` as the real `scrbrd_app` connection |
-| A retry never writes twice | `smoke-idempotency`, `db/15` |
+| A retry never writes twice — not when eight copies arrive at once, not after a crash between the row and its receipt; a changed body under a used key is refused | `smoke-idempotency` (the crash a real SIGKILL), `replay.test`, `db/15` |
 | A 200 means a committed row; a COMMIT that refuses is answered 5xx, and leaves no idempotency receipt | `smoke-commit` (COMMIT slowed, then made to refuse, by deferred constraint triggers) |
 | Support access is one role at one school, stops by itself within its minutes, can be ended by the school, and leaves every read on the school's record | `db/99` (the hour hand wound back, then read again — no job between), `smoke-support` |
 | Offline scoring survives a reload; handover cannot fork the log | `smoke-browser-sync`, `smoke-sync`, `smoke-handover` |
