@@ -181,6 +181,11 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
+  // coach's card one card per admitted fixture, one assignment each, and the
+  // per-fixture count: "N to resolve" and "Could not read X", a failed read
+  // never the same as nothing.
+  ["queue", "apps/web/test/queue.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
   // the route's three pre-write checks in its own codes, the codes as sentences,
   // and which boy a trigger's message names.
