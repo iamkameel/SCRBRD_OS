@@ -247,6 +247,12 @@ SELECT
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'auth_account_disabled' AND tgenabled = 'O')
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'auth_sign_in_removed' AND tgenabled = 'O')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Sessions end when ended",
+  -- db/86: superadmin and platformadmin are never appointed at a school.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_constraint
+                     WHERE conname = 'platform_role_needs_no_school' AND convalidated)
+        AND NOT EXISTS (SELECT 1 FROM role_assignment
+                         WHERE role IN ('superadmin', 'platformadmin') AND school_id IS NOT NULL)
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Platform roles belong to no school",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
