@@ -749,6 +749,68 @@ minted before it names no session and is refused (`401 incomplete_claims`).
 Deploy it outside a match; a pad's resume credential is not a token and keeps
 scoring.
 <!-- ── end GA-I03 ── -->
+<!-- ── RBAC 2026-10-07: a platform role belongs to no school (db/86) ── -->
+#### A platform role belongs to no school (db/86)
+
+`db/86_platform_roles_need_no_school.sql` makes the database refuse a
+`superadmin` or `platformadmin` appointment that names a school (Kameel,
+2026-10-07: "a super admin role isn't attached to any school and shouldn't
+be"). Before it, `POST /api/users` answered 200 to the platform account for a
+platformadmin at a school and to the owner for a superadmin there, and a
+superadmin at a school holds every capability there, medical and PII
+included. The rule is a CHECK on `role_assignment`,
+`platform_role_needs_no_school`, so every door passes it: each function,
+the application's INSERT policy, and the SQL Editor. `enrol_person()` and
+`decide_role_request()` answer it by name (`platform_role_needs_no_school`,
+422 from the API). The tenant-less doors are unchanged: `tools/bootstrap.mjs`
+(both forms), owner recovery (§3b) and the seed. A pending request for a
+platform role can still be declined, and can never be granted. No secret, no
+backfill.
+
+**Before you paste, look for rows it would refuse.** If anybody tried the
+diagnosis's request against this database, or appointed a platform role at a
+school some other way, those appointments are on the record, live or ended,
+and the paste stops and names each one without changing anything. Ask first,
+in the SQL Editor:
+
+```sql
+SELECT a.id, u.email, a.role, s.code AS school, a.active, a.created_at
+  FROM role_assignment a
+  JOIN app_user u ON u.id = a.person_id
+  LEFT JOIN school s ON s.id = a.school_id
+ WHERE a.role IN ('superadmin', 'platformadmin') AND a.school_id IS NOT NULL;
+```
+
+No rows: paste. Rows: each one is an appointment that should never have
+existed, so ending it is not enough (an ended row still breaks the rule).
+Save that query's output first: it is the record of what you remove. Then
+delete those rows by id, in one transaction, as the owner:
+
+```sql
+BEGIN;
+DELETE FROM role_assignment WHERE id IN ('<id>', '<id>')
+   AND role IN ('superadmin', 'platformadmin') AND school_id IS NOT NULL;
+COMMIT;
+```
+
+The delete takes the appointment's subject links, suspensions, ending record
+and support row with it, and clears the pointer to it on any role request,
+access request and match official. An account made only to hold one of
+these rows (an `app_user` with nothing else) stays, holding nothing. Disable
+it from the office (`POST /api/auth/users/:id/disable`) if nobody should sign
+in as it. If somebody really does need platform powers, they get a
+tenant-less appointment from `tools/bootstrap.mjs`, never one at a school.
+
+Paste `node tools/bundle-sql.mjs --apply 86` (after 85), then the verify bundle
+(§65 is its proof, and the summary row's "Platform roles belong to no school"
+reads OK). The paste locks `role_assignment` for the length of one statement,
+which is milliseconds on a table this size, but every request reads that
+table. Paste outside a match. If the lock is not granted within ten seconds
+the paste stops with `lock_timeout` and changes nothing: paste it again.
+**Schema first**: the API built with it refuses to start without db/86
+(`expected-migrations.json`). It needs nothing new from db/86 to run, so the
+order is the procedure's own rule and nothing more.
+<!-- ── end RBAC 2026-10-07 ── -->
 
 ### 5 · Cloud Run, the first time
 
