@@ -89,13 +89,14 @@ const split = (/** @type {string} */ stored) => {
  * @returns {Promise<Outcome>}
  */
 export async function keyedWrite({ pool, secret, bearer, key, route, fp, run }) {
-  return runAsUnit(pool, secret, bearer, async (c, _principal, unit) => {
+  return runAsUnit(pool, secret, bearer, async (c, principal, unit) => {
     // 1. The claim. lock_timeout bounds the wait and is put back at once, so
     //    nothing the handler does inherits it.
     const { rows: [was] } = await c.query(`select current_setting('lock_timeout') as v`);
     await c.query(`select set_config('lock_timeout', $1, true)`, [CLAIM_WAIT]);
     try {
-      await c.query(`select pg_advisory_xact_lock(hashtext('scrbrd.request_replay'), hashtext(app_user_id()::text || ':' || $1))`, [key]);
+      // Keyed on the verified principal, not app_user_id(): a NULL there would make the lock a no-op.
+      await c.query(`select pg_advisory_xact_lock(hashtext('scrbrd.request_replay'), hashtext($2 || ':' || $1))`, [key, String(principal.userId)]);
     } catch (/** @type {any} */ e) {
       if (e.code === "55P03") return { commit: false, value: /** @type {Outcome} */ ({ kind: "refused", answer: { status: 409, body: { error: "idempotency_key_in_flight" } } }) };
       throw e;
