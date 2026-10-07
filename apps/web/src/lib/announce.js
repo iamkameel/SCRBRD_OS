@@ -45,7 +45,10 @@ export function ballWords(item, ev) {
   const v = Number.isInteger(ev?.value) ? ev.value : 0;
   if (item.kind === "wicket") {
     const how = DISMISSAL_LABEL[/** @type {keyof typeof DISMISSAL_LABEL} */ (normaliseDismissal(ev?.dismissal) ?? "")];
-    return how ? `Wicket — ${how.toLowerCase()}` : "Wicket";
+    // A wicket on a wide or a no-ball (Law 22.9, 21.17): the extra first, as
+    // the commentary tells it — the score moved by its run as well.
+    const extra = type === BALL_TYPE.WIDE ? "Wide. " : type === BALL_TYPE.NO_BALL ? "No ball. " : "";
+    return `${extra}${how ? `Wicket — ${how.toLowerCase()}` : "Wicket"}`;
   }
   // A wicket the free hit saved is not a wicket, and is not called one —
   // a W, or a stumping off a wide on a free hit (isWicketBall()).
