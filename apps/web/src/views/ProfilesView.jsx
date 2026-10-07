@@ -4,11 +4,13 @@ import { D, inkOn, textOn, themed } from "../design/tokens.js";
 import { atLeast, bookNote, fitnessColor, humanDate, stat } from "../lib/format.js";
 import { signedIn } from "../lib/api.js";
 import { can, filterRecord, holdsCapability } from "../rbac/index.js";
-import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
 import { MIN_RADAR_AXES, RUBRIC_MAX, categoryMeans } from "../lib/radar.js";
 import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
 import { WagonAnalysisPanel } from "../scorer/wagonAnalysisPanel.jsx";
-import { useLive, usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
+import { useLive, usePlayersWithCareerState, useRows, useSkills } from "../lib/live.js";
+import { combineReads, readStateFor } from "../lib/readState.js";
+import { holdsAsHeld } from "../lib/held.js";
 import { ConductTab } from "./discipline.jsx";
 import { readsConduct } from "../rbac/conduct.js";
 import { Icon } from "../ui/icons.jsx";
@@ -33,8 +35,21 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   // role that reads the injury status tier, never for a pupil looking at a
   // team-mate. His own injury reaches him through selfaccess, on Injuries.
   const seesFitness = holdsCapability(role, "medical.status.read");
-  const PLAYERS = usePlayersWithCareer(role);
-  const SKILLS_MATRIX = useSkills(role);
+  // Retry re-runs the roster, its career figures and the skills read together,
+  // each with the same role and params: it cannot widen what any of them asks.
+  const [nonce, setNonce] = useState(0);
+  const retry = () => setNonce(n => n + 1);
+  const CAREER = usePlayersWithCareerState(role, nonce);
+  const PLAYERS = CAREER.rows;
+  // Two reads behind the roster. A career read that failed beside players who
+  // arrived is said (partial), never drawn as players who have not played.
+  const rosterRead = combineReads([
+    { what: "players", read: CAREER.players },
+    { what: "career figures", read: CAREER.career },
+  ]);
+  const skillsRead = useSkills(role, nonce);
+  const SKILLS_MATRIX = skillsRead.skills;
+  const mayReadSkills = holdsAsHeld(role, "player.development.read");
   const STAFF = useRows("staff", role);
   const TRAINING_SESSIONS = useRows("training", role);
   // How a boy is out, and how a bowler takes his wickets — one fetch, long
@@ -88,6 +103,10 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   // ── Player Profile Panel ──
   const PlayerProfile = ({p}) => {
     const skills = SKILLS_MATRIX[p.id];
+    // What the skills read says about THIS boy: reading, could not read, may
+    // not read, or read and nothing for him: not assessed yet, which is not a
+    // radar of zeros.
+    const skillsSaid = readStateFor(skillsRead, skills ? [skills] : [], { what: "skills assessments", mayRead: mayReadSkills });
     const inj = INJURIES.find(i=>i.player===p.id);
     const rCol = p.role==="BAT"?D.sky:p.role==="BOWL"?D.violet:p.role==="ALL"?D.emerald:D.amber;
     // "conduct" is staff-only by product decision; see rbac/conduct.js.
@@ -174,7 +193,13 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               </div>
 
               {/* Radar + injury side by side */}
-              <div style={{display:"grid",gridTemplateColumns:skills?"1fr 1fr":"1fr",gap:"14px",marginBottom:"14px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"14px"}}>
+                {!skills&&(
+                  <Card sx={{padding:"14px"}}>
+                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
+                    <ReadState testId="profile-skills-read-state" compact icon="target" onRetry={retry} read={skillsSaid}/>
+                  </Card>
+                )}
                 {skills&&(
                   <Card sx={{padding:"14px"}}>
                     <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
@@ -421,9 +446,9 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   ))}
                 </>
               ):(
-                <Card sx={{padding:"32px",textAlign:"center"}}>
-                  <div style={{fontSize:"28px",marginBottom:"10px",color:D.textMuted}}><Icon name="target"/></div>
-                  <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>No skills assessment on file. Coach can add via Skills module.</div>
+                <Card sx={{padding:"16px",textAlign:"center"}}>
+                  <ReadState testId="profile-development-read-state" icon="target" onRetry={retry} read={skillsSaid}/>
+                  {skillsSaid.state==="unassessed"&&<div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>A coach can add one from the Skills screen.</div>}
                 </Card>
               )}
             </div>
@@ -581,6 +606,11 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
 
           {cat==="players"&&(
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+              {/* The roster read, said: still coming, could not be read, not yours
+                  to read, none on record, or players without their career figures. */}
+              {rosterRead.state!=="ok"&&(PLAYERS.length===0||rosterRead.state==="partial")&&(
+                <ReadState testId="profiles-read-state" compact icon="users" read={rosterRead} onRetry={retry}/>
+              )}
               {schoolGroups.map((g,gi)=>(
                 <div key={g.id} data-testid={`roster-school-${gi}`}>
                   {g.label&&<div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:gi?"10px":"4px",textTransform:"uppercase"}}>{g.label}</div>}

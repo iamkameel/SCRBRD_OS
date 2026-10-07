@@ -2,14 +2,15 @@ import { useMemo, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { fitnessColor, roleColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
-import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
 import { SegmentedControl } from "../ui/data.jsx";
 import { RUBRIC_MAX, categoryMeans, categoryMeansOn100, radarSummary } from "../lib/radar.js";
-import { usePlayersWithCareer, useSkills } from "../lib/live.js";
+import { usePlayersWithCareerState, useSkills } from "../lib/live.js";
+import { combineReads, readStateFor } from "../lib/readState.js";
 import { api, signedIn } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
-import { heldTeams } from "../lib/held.js";
+import { heldTeams, holdsAsHeld } from "../lib/held.js";
 import { pickTeam, teamsOf } from "../lib/teamContext.js";
 import { AvailabilityPanel, PlayerAvailability } from "./availability.jsx";
 import { EditProfile, mayEditProfile } from "./playeredit.jsx";
@@ -39,12 +40,22 @@ function SquadView({ role }) {
   const [rosterNonce, setRosterNonce] = useState(0);
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const PLAYERS = usePlayersWithCareer(role, rosterNonce);
+  const CAREER = usePlayersWithCareerState(role, rosterNonce);
+  const PLAYERS = CAREER.rows;
+  // The roster and the career figures are two reads. One that failed is said,
+  // never drawn as a roster of players who have not played (GA-I08, partial).
+  const rosterRead = combineReads([
+    { what: "players", read: CAREER.players },
+    { what: "career figures", read: CAREER.career },
+  ]);
+  const retryRoster = () => setRosterNonce(n => n + 1);
   // A team-mate's fitness is his health (K3, db/55; CSA p52: not in general
   // view to other children). Drawn only for a role that reads the injury
   // status tier itself — staff who pick the side, not a pupil beside him.
   const seesFitness = holdsCapability(role, "medical.status.read");
-  const SKILLS_MATRIX = useSkills(role);
+  // The same nonce as the roster: Retry re-runs both reads with the same role.
+  const skillsRead = useSkills(role, rosterNonce);
+  const SKILLS_MATRIX = skillsRead.skills;
   // The side on show: one the person chose, else the one they actually hold or
   // the first their rows contain. It was "1XI" always, so a U15A coach opened
   // on an empty roster (GA-I07). Derived rather than set in an effect, so the
@@ -139,6 +150,15 @@ function SquadView({ role }) {
       {/* Keyed by the side: changing side drops the old side's panels' own
           state (an open row, a half-typed answer) rather than carrying it
           across. Nothing is drawn until there is a side to name. */}
+      {/* Nothing is said about the squad until the roster read has answered,
+          and a failure, a refusal or an empty answer each says what it is. A
+          career read that failed beside a roster that arrived says so above the
+          cards, whose figures then read "—" for that reason and no other. */}
+      {rosterRead.state!=="ok"&&(PLAYERS.length===0||rosterRead.state==="partial")&&(
+        <Card sx={{marginBottom:"16px"}}>
+          <ReadState testId="squad-read-state" read={rosterRead} onRetry={retryRoster} icon="users"/>
+        </Card>
+      )}
       {team&&<AvailabilityPanel key={team} role={role} team={team}/>}
       {/* Lifts to the same fixture (SCRBRD-124): the offers on the side, a
           seat asked for, the driver's own card, the office's counts. Nothing
@@ -235,6 +255,14 @@ function SquadView({ role }) {
                 })}
               </div>
             </div>
+            {!SKILLS_MATRIX[selected.id]&&(
+              <div>
+                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
+                {/* No assessment is not a radar of zeros: it says so, or says the read did not come. */}
+                <ReadState testId="squad-skills-read-state" onRetry={retryRoster} compact icon="target"
+                  read={readStateFor(skillsRead, [], { what: "skills assessments", mayRead: holdsAsHeld(role, "player.development.read") })}/>
+              </div>
+            )}
             {SKILLS_MATRIX[selected.id]&&(
               <div>
                 <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>

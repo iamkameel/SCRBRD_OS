@@ -227,6 +227,10 @@ const SUITES = [
   // GA-I06: the skills radar's scale is an argument, 20/20 reaches the outer
   // ring, and no target exists without a saved goal.
   ["radar", "apps/web/test/radar.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I08: one read-state contract: loading, empty, unassessed, forbidden,
+  // disabled, failed, stale and partial each say something different, retry
+  // re-runs the same read, and useSkills no longer throws its state away.
+  ["readstate", "apps/web/test/readstate.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I07: Squad and Analytics open on the person's own side, and a gate
   // answers from the roles held, as the menu does.
   ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

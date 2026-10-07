@@ -15,6 +15,7 @@ import { PlayingConditions } from "./playingconditions.jsx";
 // The fixture planner (SCRBRD-123) loads when its tab is first opened.
 const FixturePlanner = lazy(() => import("./planner.jsx").then((m) => ({ default: m.FixturePlanner })));
 import { useLive, usePlayersWithCareerState, useRows, useWeather } from "../lib/live.js";
+import { combineReads, readState } from "../lib/readState.js";
 import { T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { schoolsWhere } from "../lib/session.js";
@@ -98,11 +99,18 @@ function LeagueView({ role }) {
   // season's rows of `career_by_season`. A read that failed or timed out is
   // said, with a way to ask again — never drawn as empty lists, which would
   // read as "nobody has scored a run".
-  const awardsSource = activeSeason === ALL_SEASONS
-    ? { loading: CAREER.players.loading || CAREER.career.loading, error: CAREER.players.error || CAREER.career.error }
-    : { loading: SEASON_CAREER.loading, error: SEASON_CAREER.error };
-  const awardsFailed = !seasonPending && !!awardsSource.error;
-  const awardsLoading = seasonPending || (!awardsFailed && awardsSource.loading);
+  // What the read behind the lists says, in the one vocabulary (GA-I08). Every
+  // season is two reads: a career read that failed beside players who arrived
+  // is `partial`, and the tab ranks nothing from it, because players without
+  // their figures would rank as players who have not played.
+  const awardsRead = activeSeason === ALL_SEASONS
+    ? combineReads([
+        { what: "players", read: CAREER.players },
+        { what: "career figures", read: CAREER.career },
+      ])
+    : readState(SEASON_CAREER, { what: "this season's figures" });
+  const awardsFailed = !seasonPending && ["failed", "partial", "forbidden", "disabled"].includes(awardsRead.state);
+  const awardsLoading = seasonPending || awardsRead.state === "loading";
 
   const NRR = (nrr) => (
     <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:nrr>0?D.emerald:nrr<0?D.rose:D.textMuted}}>
@@ -396,7 +404,7 @@ function LeagueView({ role }) {
                   : `The ${activeSeason} school season: the matches that started in it. The sample floors apply to this season's balls alone.`}
               </div>
               {awardsFailed ? (
-                <AwardsReadFailed onRetry={()=>setCareerNonce(n=>n+1)}/>
+                <AwardsReadFailed read={awardsRead} onRetry={()=>setCareerNonce(n=>n+1)}/>
               ) : awardsLoading ? (
                 <Card data-testid="awards-loading">
                   <div style={{padding:"20px 14px",textAlign:"center",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
@@ -510,20 +518,28 @@ function LiveLadder({ rows, comp }) {
  * failed, or the client gave up on it. Said plainly, with a way to ask again:
  * five empty lists would read as a season in which nobody scored a run.
  */
-function AwardsReadFailed({ onRetry }) {
+function AwardsReadFailed({ read, onRetry }) {
   useTheme();
+  // A role that may not read the figures is not told they "could not be
+  // loaded", and is not offered a second try that cannot change the answer.
+  const refused = read.state === "forbidden" || read.state === "disabled";
   return (
     <Card data-testid="awards-error" role="alert">
       <div style={{padding:`${T.space.xl} ${T.space.lg}`,textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:T.space.md}}>
-        <div style={{...T.role.title.md,color:T.content.primary}}>The figures could not be loaded.</div>
-        <div style={{...T.role.body,color:T.content.secondary,maxWidth:"44ch"}}>
-          Nothing is ranked until they are. This is not a season in which nobody scored a run or took a wicket.
-        </div>
-        <button type="button" onClick={onRetry} data-testid="awards-retry" className="pressBtn" style={{
-          ...T.role.control,minHeight:`${T.floor.target}px`,minWidth:`${T.floor.target}px`,padding:`0 ${T.space.xl}`,
-          borderRadius:T.radius.pill,border:`1px solid ${T.line.normal}`,background:T.surface.interactive,
-          color:T.content.primary,cursor:"pointer",
-        }}>Retry</button>
+        {!refused&&<div style={{...T.role.title.md,color:T.content.primary}}>The figures could not be loaded.</div>}
+        <div data-testid="awards-read-sentence" style={{...T.role.body,color:T.content.secondary,maxWidth:"44ch"}}>{read.sentence}</div>
+        {!refused&&(
+          <div style={{...T.role.body,color:T.content.secondary,maxWidth:"44ch"}}>
+            Nothing is ranked until they are. This is not a season in which nobody scored a run or took a wicket.
+          </div>
+        )}
+        {!refused&&(
+          <button type="button" onClick={onRetry} data-testid="awards-retry" className="pressBtn" style={{
+            ...T.role.control,minHeight:`${T.floor.target}px`,minWidth:`${T.floor.target}px`,padding:`0 ${T.space.xl}`,
+            borderRadius:T.radius.pill,border:`1px solid ${T.line.normal}`,background:T.surface.interactive,
+            color:T.content.primary,cursor:"pointer",
+          }}>Retry</button>
+        )}
       </div>
     </Card>
   );

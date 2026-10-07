@@ -20,6 +20,8 @@ import { profile } from "../../lib/session.js";
 import { humanDate, humanDateTime } from "../../lib/format.js";
 import { holds } from "../../lib/family.js";
 import { Icon } from "../../ui/icons.jsx";
+import { ReadState } from "../../ui/primitives.jsx";
+import { readState } from "../../lib/readState.js";
 
 // ── Layout ─────────────────────────────────────────────
 
@@ -96,6 +98,19 @@ export function Back({ onClick, children = "Back", testid = "family-back" }) {
       <Action onClick={onClick} testid={testid}><Icon name="chevron-left"/> {children}</Action>
     </div>
   );
+}
+
+/**
+ * A "none" line, said only of a read that answered (GA-I08). A read that is
+ * still coming, failed, or may not be read says that instead, with a Retry
+ * where a second read could change the answer. `read` is what useLive()
+ * returned; `onRetry` bumps the screen's own nonce, so the same read runs
+ * again with the same params.
+ */
+export function NoneOr({ read, what, none, onRetry, testid }) {
+  const said = readState(read, { what });
+  if (said.state === "ok" || said.state === "empty") return <Line quiet testid={testid}>{none}</Line>;
+  return <ReadState compact read={said} onRetry={onRetry} testId={testid ? `${testid}-read-state` : "read-state"}/>;
 }
 
 /** "Could not load …" is a different statement from "nothing", and says so. */

@@ -2,9 +2,10 @@
 import { useState } from "react";
 import { D, inkOn, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
-import { Badge, Card, SectionHeader } from "../ui/primitives.jsx";
+import { Badge, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
-import { useRows, useWeather } from "../lib/live.js";
+import { useLive, useWeather } from "../lib/live.js";
+import { combineReads } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -17,9 +18,21 @@ import { Icon } from "../ui/icons.jsx";
 function CalendarView({ role, onNav }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const MATCHES = useRows("matches", role);
-  const TRAINING_SESSIONS = useRows("training", role);
-  const WEATHER = useWeather(role);
+  // Retry bumps the nonce both reads share: the same reads, the same role.
+  const [nonce, setNonce] = useState(0);
+  const matchesRead = useLive("matches", role, nonce);
+  const trainingRead = useLive("training", role, nonce);
+  const MATCHES = matchesRead.rows;
+  const TRAINING_SESSIONS = trainingRead.rows;
+  const WEATHER = useWeather(role, nonce);
+  // "No events on this day" is only said of a calendar that was read. A read
+  // that failed, is refused or is still coming says that instead; one of the two
+  // failing says the calendar is incomplete (GA-I08).
+  const calendarRead = combineReads([
+    { what: "fixtures", read: matchesRead },
+    { what: "training sessions", read: trainingRead },
+  ]);
+  const calendarOk = calendarRead.state === "ok" || calendarRead.state === "empty";
   const [monthOffset, setMonthOffset] = useState(0);
   const [selDay,      setSelDay]      = useState(null);
 
@@ -65,6 +78,8 @@ function CalendarView({ role, onNav }) {
             <button onClick={()=>setMonthOffset(0)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"5px 14px",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"11px"}}>Today</button>
           </div>
         }/>
+
+      {!calendarOk&&<Card sx={{marginBottom:"16px"}}><ReadState read={calendarRead} icon="calendar" testId="calendar-read-state" onRetry={()=>setNonce(n=>n+1)}/></Card>}
 
       {/* Legend */}
       <div style={{display:"flex",gap:"14px",marginBottom:"16px",flexWrap:"wrap"}}>
@@ -151,7 +166,7 @@ function CalendarView({ role, onNav }) {
               </div>
               <button onClick={()=>setSelDay(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
             </div>
-            {selEvents.length===0&&(
+            {selEvents.length===0&&calendarOk&&(
               <div style={{textAlign:"center",padding:"24px",color:D.textMuted,fontFamily:D.body,fontSize:"12px"}}>No events on this day.</div>
             )}
             {selEvents.map((ev,i)=>{

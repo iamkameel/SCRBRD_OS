@@ -21,7 +21,9 @@ import { signedIn } from "../../lib/api.js";
 import { humanDate, stat } from "../../lib/format.js";
 import { ownRecordId } from "../../lib/family.js";
 import { CareerWagonWheel, DismissalMethodCard } from "../ProfilesView.jsx";
-import { Action, Card, Line, Page, Title } from "./parts.jsx";
+import { Action, Card, Line, NoneOr, Page, Title } from "./parts.jsx";
+import { ReadState } from "../../ui/primitives.jsx";
+import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NewsCard, NextFixtureCard, NoticesCard, SeasonCard, TrainingCard } from "./cards.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { Health, TheirRecord } from "./childfile.jsx";
@@ -55,7 +57,10 @@ function NoSelf({ loading, error, testid }) {
 
 export function PupilHome({ role }) {
   const { me, loading, error } = useSelf(role);
-  const { rows: matches } = useLive("matches", role);
+  // Retry bumps this nonce: the same read again, same role, same params.
+  const [nonce, setNonce] = useState(0);
+  const matchesRead = useLive("matches", role, nonce);
+  const { rows: matches } = matchesRead;
   const [open, setOpen] = useState(null);
   if (!me) return <NoSelf loading={loading} error={error} testid="pupil-home"/>;
   if (open?.kind === "match") return <MatchFor match={open.match} child={me} role={role} self matches={matches} onBack={() => setOpen(null)}/>;
@@ -67,7 +72,8 @@ export function PupilHome({ role }) {
         <Title testid="pupil-name">{me.name}</Title>
         <Line quiet>{[me.schoolName, me.team].filter(Boolean).join(" · ")}</Line>
       </header>
-      <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={(m) => setOpen({ kind: "fixture", match: m })}/>
+      <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={(m) => setOpen({ kind: "fixture", match: m })}
+        said={readState(matchesRead, { what: "fixtures" })} onRetry={() => setNonce((n) => n + 1)}/>
       {/* SCRBRD-138 C1: only for a boy who holds the captaincy honour; under his own next fixture, which stays first. */}
       <CaptainCard me={me} role={role} matches={matches} now={now} onOpen={(m, kind) => setOpen({ kind, match: m })}/>
       {/* SCRBRD-124 phase 2 (db/76): his own lifts, for a pupil of eighteen
@@ -115,7 +121,9 @@ function Fig({ k, v, testid }) {
 export function PupilPassport({ role }) {
   const { me, loading, error } = useSelf(role);
   const [tab, setTab] = useState("season");
-  const { rows: career } = useLive("career", role);
+  const [nonce, setNonce] = useState(0);
+  const careerRead = useLive("career", role, nonce);
+  const { rows: career } = careerRead;
   if (!me) return <NoSelf loading={loading} error={error} testid="pupil-passport"/>;
   const c = career.find((r) => r.id === me.id) ?? null;
   return (
@@ -124,7 +132,7 @@ export function PupilPassport({ role }) {
         <h1 style={{ ...T.role.title.lg, color: T.content.primary, margin: 0 }}>{me.name}</h1>
         <Line quiet>{[me.schoolName, me.team, hand(me.batHand)].filter(Boolean).join(" · ")}</Line>
       </header>
-      <PassportBoard me={me} role={role} c={c}/>
+      <PassportBoard me={me} role={role} c={c} careerRead={careerRead} onRetry={() => setNonce((n) => n + 1)}/>
       <div role="tablist" aria-label="Passport" style={{ display: "flex", gap: T.space.xs, overflowX: "auto", borderBottom: `1px solid ${T.line.normal}` }}>
         {TABS.map(([id, label]) => (
           <button key={id} role="tab" type="button" aria-selected={tab === id} data-testid={`passport-tab-${id}`}
@@ -138,7 +146,7 @@ export function PupilPassport({ role }) {
       </div>
       <div role="tabpanel" data-testid={`passport-panel-${tab}`} style={{ display: "grid", gap: T.space.md }}>
         {tab === "season" && <SeasonTab me={me} role={role} career={c}/>}
-        {tab === "career" && <CareerTab me={me} role={role} career={c}/>}
+        {tab === "career" && <CareerTab me={me} role={role} career={c} careerRead={careerRead} onRetry={() => setNonce((n) => n + 1)}/>}
         {tab === "wheel" && <CareerWagonWheel player={{ id: me.id, name: me.name, batHand: me.batHand }} role={role}/>}
         {tab === "honours" && <HonoursTab me={me} role={role}/>}
       </div>
@@ -147,8 +155,12 @@ export function PupilPassport({ role }) {
 }
 
 /** The passport's board: his career, figures first, on the black board (§2.2 S3, §1). His caps line from his side's ledger. */
-function PassportBoard({ me, role, c }) {
+function PassportBoard({ me, role, c, careerRead, onRetry }) {
   const { rows: caps } = useLive("caps", role, 0, { teamCode: me.team });
+  // His figures are drawn only of a career read that answered. A read that
+  // failed is not a boy who has scored nothing, and a figure of 0 would say so.
+  const careerSaid = readState(careerRead, { what: "your career figures" });
+  const careerAnswered = careerSaid.state === "ok" || careerSaid.state === "empty";
   const cap = caps.find((r) => r.playerId === me.id) ?? null;
   return (
       <section data-testid="passport-board" aria-label="Your career, in figures"
@@ -156,19 +168,22 @@ function PassportBoard({ me, role, c }) {
           padding: `${T.space.md} ${T.space.lg}`, display: "grid", gap: T.space.md }}>
         <div style={{ display: "flex", gap: T.space.xl, flexWrap: "wrap" }}>
           {cap && <Fig k="Caps" v={cap.appearances ?? cap.capNo} testid="passport-caps"/>}
-          <Fig k="Runs" v={c ? c.runs : 0} testid="passport-runs"/>
-          <Fig k="Wickets" v={c ? c.wkts : 0} testid="passport-wickets"/>
+          <Fig k="Runs" v={c ? c.runs : careerAnswered ? 0 : "—"} testid="passport-runs"/>
+          <Fig k="Wickets" v={c ? c.wkts : careerAnswered ? 0 : "—"} testid="passport-wickets"/>
         </div>
         <div style={{ display: "flex", gap: T.space.lg, flexWrap: "wrap", ...T.role.figure.md, color: T.board.figure }}>
           <span>AVG {stat(c?.avg)}</span><span>SR {stat(c?.sr)}</span><span>ECON {stat(c?.econ)}</span>
         </div>
+        {!careerAnswered && <ReadState compact read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
         {cap && <span style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>Cap {cap.capNo} · {me.team} · first {humanDate(cap.firstOn)}</span>}
       </section>
   );
 }
 
 function SeasonTab({ me, role, career }) {
-  const { rows } = useLive("career_by_season", role);
+  const [nonce, setNonce] = useState(0);
+  const seasonsRead = useLive("career_by_season", role, nonce);
+  const { rows } = seasonsRead;
   const seasons = rows.filter((r) => r.id === me.id).sort((a, b) => String(b.season ?? "").localeCompare(String(a.season ?? "")));
   return (
     <>
@@ -179,7 +194,7 @@ function SeasonTab({ me, role, career }) {
           </p>
           {s.ballsBowled > 0 && <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{s.wkts} wkts · econ {stat(s.econ)}</p>}
         </Card>
-      )) : <Line quiet>No season on record yet.</Line>}
+      )) : <NoneOr read={seasonsRead} what="your seasons" none="No season on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-season-none"/>}
       {career?.form?.length > 0 && (
         <Card label="Form · last innings first" testid="passport-form">
           <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{career.form.join(" · ")}</p>
@@ -189,7 +204,7 @@ function SeasonTab({ me, role, career }) {
   );
 }
 
-function CareerTab({ me, role, career }) {
+function CareerTab({ me, role, career, careerRead, onRetry }) {
   const breakdown = useLive("dismissal_breakdown", role);
   return (
     <>
@@ -204,7 +219,7 @@ function CareerTab({ me, role, career }) {
               </div>
             ))}
           </dl>
-        ) : <Line quiet>No innings on record yet.</Line>}
+        ) : <NoneOr read={careerRead} what="your career" none="No innings on record yet." onRetry={onRetry} testid="passport-career-none"/>}
       </Card>
       <DismissalMethodCard title="How you're out" testId="passport-how-out" color={T.sport.batting} live={breakdown}
         playerId={me.id} side="batting" emptyMessage="You have not been out yet."/>
@@ -215,7 +230,11 @@ function CareerTab({ me, role, career }) {
 }
 
 function HonoursTab({ me, role }) {
-  const { rows: rec } = useLive("recognition", role, 0, { playerId: me.id });
+  // Retry bumps this nonce; the read keeps its { playerId } param, so it asks
+  // for the same boy again and nobody else.
+  const [nonce, setNonce] = useState(0);
+  const recRead = useLive("recognition", role, nonce, { playerId: me.id });
+  const { rows: rec } = recRead;
   const { rows: lines } = useLive("passport", role, 0, { playerId: me.id });
   const miles = rec.filter((r) => r.family === "milestone");
   const honours = rec.filter((r) => r.family !== "milestone");
@@ -224,12 +243,12 @@ function HonoursTab({ me, role }) {
       <Card label="Milestones" testid="passport-milestones">
         {miles.length ? miles.map((m, i) => (
           <Line key={`${m.kind}-${i}`}>{m.label}{m.opponent ? ` · v ${m.opponent}` : ""}{m.on ? ` · ${humanDate(m.on)}` : ""}</Line>
-        )) : <Line quiet>No milestone yet.</Line>}
+        )) : <NoneOr read={recRead} what="your milestones" none="No milestone yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-milestones-none"/>}
       </Card>
       <Card label="Honours and caps" testid="passport-honours">
         {honours.length ? honours.map((h, i) => (
           <Line key={`${h.family}-${h.kind}-${i}`}>{h.label}{h.season ? ` · ${h.season}` : h.on ? ` · ${humanDate(h.on)}` : ""}</Line>
-        )) : <Line quiet>None on record yet.</Line>}
+        )) : <NoneOr read={recRead} what="your honours" none="None on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-honours-none"/>}
       </Card>
       {lines.length > 0 && (
         <Card label="Passport lines" testid="passport-lines">

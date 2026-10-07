@@ -2,8 +2,9 @@ import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { pctDays, severityColor, today, withheld } from "../lib/format.js";
 import { holdsCapability } from "../rbac/index.js";
-import { Avatar, Badge, Card, KPICard, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
+import { Avatar, Badge, Card, KPICard, ProgressBar, ReadState, SectionHeader } from "../ui/primitives.jsx";
+import { useLive } from "../lib/live.js";
+import { readState } from "../lib/readState.js";
 
 // ══════════════════════════════════════════════════════
 //  INJURIES VIEW
@@ -11,9 +12,20 @@ import { useRows } from "../lib/live.js";
 function InjuryView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const PLAYERS = useRows("players", role);
+  // Retry bumps the nonce both reads share: the same reads, the same role.
+  const [nonce, setNonce] = useState(0);
+  const playersRead = useLive("players", role, nonce);
+  const PLAYERS = playersRead.rows;
   const [sel, setSel] = useState(null);
-  const injV = useRows("injuries", role);
+  const injuriesRead = useLive("injuries", role, nonce);
+  const injV = injuriesRead.rows;
+  // "Active injuries 0" over a read that failed is a count nobody made, and it
+  // is the figure a coach acts on. A count is drawn only of an answer (GA-I08).
+  const injSaid = readState(injuriesRead, { what: "the injury list" });
+  const injAnswered = injSaid.state === "ok" || injSaid.state === "empty";
+  const plSaid = readState(playersRead, { what: "players" });
+  const plAnswered = plSaid.state === "ok" || plSaid.state === "empty";
+  const n = (answered, v) => (answered ? v : "—");
   // A pupil reaches this screen through his own record (selfaccess) and reads
   // his own injuries only; the side's fitness count is the team-mates' health
   // (K3, db/55), drawn only for a role reading the status tier itself.
@@ -29,11 +41,13 @@ function InjuryView({ role }) {
       <p data-testid="injury-writes-coming" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:"0 0 16px"}}>Recording and updating injuries is coming.</p>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"24px"}}>
-        <KPICard label="Active Injuries" value={injV.filter(i=>i.restricted).length}  icon="bandage" color={D.rose}/>
-        <KPICard label="In Rehab"        value={injV.filter(i=>i.phase==="Reconditioning"||i.phase==="Strengthening").length} icon="dumbbell" color={D.orange}/>
-        <KPICard label="Returning Soon"  value={injV.filter(i=>{const d=(new Date(i.rtw)-today)/(1000*60*60*24);return d>=0&&d<=7;}).length} icon="circle-check" color={D.amber}/>
-        {seesSide&&<KPICard label="Available"       value={PLAYERS.filter(p=>p.fitness==="fit").length} icon="footprints" color={D.emerald}/>}
+        <KPICard label="Active Injuries" value={n(injAnswered, injV.filter(i=>i.restricted).length)}  icon="bandage" color={D.rose}/>
+        <KPICard label="In Rehab"        value={n(injAnswered, injV.filter(i=>i.phase==="Reconditioning"||i.phase==="Strengthening").length)} icon="dumbbell" color={D.orange}/>
+        <KPICard label="Returning Soon"  value={n(injAnswered, injV.filter(i=>{const d=(new Date(i.rtw)-today)/(1000*60*60*24);return d>=0&&d<=7;}).length)} icon="circle-check" color={D.amber}/>
+        {seesSide&&<KPICard label="Available"       value={n(plAnswered, PLAYERS.filter(p=>p.fitness==="fit").length)} icon="footprints" color={D.emerald}/>}
       </div>
+      {injSaid.state!=="ok"&&<Card sx={{marginBottom:"16px"}}><ReadState read={injSaid} onRetry={()=>setNonce(x=>x+1)} icon="bandage" testId="injuries-read-state"/></Card>}
+      {injSaid.state==="ok"&&plSaid.state==="failed"&&<Card sx={{marginBottom:"16px"}}><ReadState compact read={plSaid} onRetry={()=>setNonce(x=>x+1)} testId="injuries-players-read-state"/></Card>}
 
       <div style={{display:"grid",gridTemplateColumns:"var(--g-side-r,1fr 340px)",gap:"16px",alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
