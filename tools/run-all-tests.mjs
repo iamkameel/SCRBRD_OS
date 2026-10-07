@@ -186,6 +186,11 @@ const SUITES = [
   // per-fixture count: "N to resolve" and "Could not read X", a failed read
   // never the same as nothing.
   ["queue", "apps/web/test/queue.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The parent's action list, phase A0 (GA-I20): R1 an answer owed and R2
+  // answer again, over a side's worth of rows narrowed to his own; the
+  // fourteen-day fold; "N to do" and "Could not read X", a failed read never
+  // the same as nothing; no reason, no note, no "done".
+  ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
   // the route's three pre-write checks in its own codes, the codes as sentences,
   // and which boy a trigger's message names.
