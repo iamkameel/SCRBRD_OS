@@ -120,11 +120,15 @@ try {
   // smoke-squad's subject, not this walk's — a side half of whose members the
   // registration trigger refuses would fail these assertions for the wrong
   // reason, which is exactly the trap smoke-access fell into once already.
+  // And only the fixture's own school's: a boy from another school is refused
+  // on any team sheet (the squad route's gate). The seed registers four of
+  // Hilton's 1XI, so the side is made up from the school's other registered
+  // boys, playing up into an open-age 1XI as a boy may.
   const xi = await q(
     `select p.id from player p
        join player_guardian_status s on s.player_id = p.id
-      where p.team_code = '1XI' and s.registration_state = 'active'
-      order by p.full_name`);
+      where p.school_id = $1 and s.registration_state = 'active'
+      order by p.team_code <> '1XI', p.full_name`, [HIL]);
 
   // ── BATTING ORDER ────────────────────────────────────────────
   group("A batting order is an order");
