@@ -202,7 +202,7 @@ export function Insight({ lines = [], testid = "board-insight" }) {
 }
 
 export function Board({ team, total, wickets, overs, sub, batters = [], partnership, bowler, thisOver = [], insight, compact = false,
-  size = "pad", testid = "board" }) {
+  size = "pad", testid = "board", extra = null }) {
   // On the pad the total is figure.board, 56 on a phone and 72 on a tablet;
   // the size comes from `.os-board-total` because an inline style cannot say
   // "from 768px". On a card it is figure.lg.
@@ -248,6 +248,8 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
           <Figure value={wickets ?? 0} testid={`${testid}-wickets`}/>
         </div>
       </div>
+      {/* A screen's own row under the second line — the rate track (SCRBRD-133 §3.5). The pad passes none. */}
+      {extra && <div style={{ marginTop: T.space.xs }}>{extra}</div>}
 
       {(batters.length > 0 || partnership || bowler || chips.length > 0) && (
         <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.sm, paddingTop: compact ? T.space.xs : T.space.sm, display: "grid", gap: T.space.xs }}>

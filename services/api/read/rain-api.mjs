@@ -12,6 +12,12 @@
  *         innings has reached (venue.mjs parAt(): the proportion of overs, or
  *         — R2 — the DLS table's resources). For whoever may read the result.
  *
+ *   GET /api/matches/:id/par
+ *       → SCRBRD-133 G2: par and pressure for the innings in play, the same
+ *         report the public read serves (@scrbrd/scoring parReport()), for a
+ *         reader of the match's result over the log he may read — the Match
+ *         Centre's Summary and its big screen. The table stays here (D6).
+ *
  *   GET /api/matches/:id/dls[?chaseOvers=&resumeOvers=&terminate=1]
  *       → the DLS Standard calculator's proposal (R2, dls.mjs dlsTarget()):
  *         the target (or, terminated, the par) beside the umpires' announced
@@ -66,7 +72,7 @@ export function cellsFromCsv(csv, units) {
 }
 // ── end SCRBRD-130 R2 ──
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { deriveMatch, fromRow, parAt, parAtWords, venueParWords } from "@scrbrd/scoring";
+import { deriveMatch, fromRow, parAt, parAtWords, venueParWords, parReport, formatKind } from "@scrbrd/scoring";
 import { dlsTable, dlsTarget, dlsWords, differenceWords, resourcesOf, structuralProblems, DLS_STATUS } from "@scrbrd/scoring";
 import { EVENT_COLUMNS } from "../write/events-api.mjs";
 /** @import { RouteDeps, Handler, IdHandler } from "../api-types.mjs" */
@@ -151,6 +157,33 @@ export function rainRoutes({ pool, secret }) {
         return { venuePar: venue, parAt: at, words: parAtWords(venue, at) };
       });
     }),
+
+    // ── SCRBRD-133 G2: par and pressure, signed in ──
+    // GET /api/matches/:id/par → { matchId, at, venue, dls, track, trackOf, rrr }
+    //   For whoever may read the match's result (venue_par_for_match() and
+    //   dls_table_for_match() both ask match_result_readable()), folded from
+    //   the log he may read under the match's frozen conditions — the fold the
+    //   Match Centre runs, so the report's `at` is the position its board shows.
+    matchPar: handle(async (req) => {
+      const id = idOf(req);
+      return runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows: m } = await client.query(`select format, starts_at from match where id = $1`, [id]);
+        if (!m.length) throw err("not_permitted", 403);
+        const { rows: pc } = await client.query(`select doc, applies from match_playing_conditions($1)`, [id]);
+        const play = pc[0]?.applies && pc[0].doc?.play && typeof pc[0].doc.play === "object" ? pc[0].doc.play : null;
+        const ctx = { startsAt: m[0].starts_at ? new Date(m[0].starts_at).toISOString() : null, format: m[0].format,
+                      ...(play ? { conditions: play } : {}) };
+        const { rows: v } = await client.query(`select * from venue_par_for_match($1)`, [id]);
+        const venue = v[0] ? venueOut(v[0]) : null;
+        const table = await tableFor(client, id);
+        const { rows: log } = await client.query(`select ${EVENT_COLUMNS} from ball_event_live where match_id = $1 order by seq`, [id]);
+        const limited = play?.["format.kind"] != null ? play["format.kind"] === "limited" && play["format.innings_per_side"] !== 2
+          : formatKind(m[0].format) !== "declaration";
+        const g50 = Number.isInteger(play?.["target.g50"]) ? play["target.g50"] : null;
+        return { matchId: id, ...parReport({ events: log.map(fromRow), ctx, venue, table, g50, limited }) };
+      });
+    }),
+    // ── end SCRBRD-133 G2 ──
 
     // ── SCRBRD-130 R2: the DLS proposal, and the operator's routes ──
     // GET /api/matches/:id/dls?chaseOvers=&resumeOvers=&terminate=1

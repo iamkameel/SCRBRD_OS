@@ -1,6 +1,7 @@
 import { formatKind } from "@scrbrd/scoring";
 import { RR, fmtOv, isOut } from "./format.js";
 import { superOverBlock } from "../lib/superOver.js";
+import { parWords } from "../lib/par.js";
 
 /**
  * What the board shows, from the fold — pure, and light enough for any screen
@@ -98,10 +99,11 @@ export function rainLine(inn, target = null) {
 /**
  * Everything the board shows, as Board's props. `inn` is a folded innings
  * (packages/scoring's replay, or the demo's seeded one); `target` and `overs`
- * as the chase line needs them. A part the fold does not have is left out, and
- * Board draws no row for it.
+ * as the chase line needs them; `par` (SCRBRD-133 G2) on the screens that say
+ * par — {report, rates, rained, result, chasing} — and nothing on the pad.
+ * A part the fold does not have is left out, and Board draws no row for it.
  */
-export function boardFromInnings(inn, { target = null, overs = 20, projected = null } = {}) {
+export function boardFromInnings(inn, { target = null, overs = 20, projected = null, par = undefined } = {}) {
   if (!inn) return null;
   const st = inn.batsmen?.find((b) => b.id === inn.striker);
   const ns = inn.batsmen?.find((b) => b.id === inn.nonStriker);
@@ -119,9 +121,20 @@ export function boardFromInnings(inn, { target = null, overs = 20, projected = n
   // sheet do not pass it, and draw the board as before.
   const rates = [crr !== "—" ? `CRR ${crr}` : null, chase?.rrr ? `RRR ${chase.rrr}` : null,
     projected != null ? `At this rate: ${projected}` : null].filter(Boolean).join(" · ");
-  const sub = block ? block.line : ([rainLine(inn, target), chase
+  // SCRBRD-133 G2: a screen that shows par (the Match Centre's Summary, the
+  // public page, the ground display) passes `par` — the server's report as
+  // lib/par.js reportFor() matched it to this innings, the chase's rates and
+  // whether rain touched the match — and the line says where the innings
+  // stands against par, or what is needed and which way the rate is going
+  // (lib/par.js parWords(), design §3.3). Where that has nothing to say the
+  // line is as it was. The pad and the day sheet pass nothing.
+  const said = par === undefined || block ? null : parWords({ inn, chasing: par?.chasing ?? target != null, target, overs,
+    report: par?.report ?? null, rates: par?.rates ?? null, rained: par?.rained === true, result: par?.result ?? null });
+  // A chase's words say "(revised)" or "(DLS)" themselves: of the rain line only "Play stopped" stays.
+  const rain = said && target != null ? (inn.stopped ? "Play stopped" : null) : rainLine(inn, target);
+  const sub = block ? block.line : ([rain, said ?? (chase
     ? [chase.need > 0 ? `Need ${chase.need} off ${chase.balls}` : "Target reached", rates].filter(Boolean).join(" · ")
-    : rates || null].filter(Boolean).join(" · ") || null);
+    : rates || null)].filter(Boolean).join(" · ") || null);
   // The stand in progress — the fold's `curPartner`: runs with the extras in,
   // as partnerships are reported, and legal balls — while both of the pair
   // are in. Between a wicket and the next batter there is no pair, and no row.

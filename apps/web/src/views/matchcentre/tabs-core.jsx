@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
@@ -8,6 +8,10 @@ import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
 import { Highlights, MomentMark, OverSummary } from "./spectator.jsx";
 import { superOverTitle } from "../../lib/superOver.js";
+import { chaseRates, interrupted, rateTrack, reportFor } from "../../lib/par.js";
+import { wormOf } from "../../lib/chartSeries.js";
+import { RateTrack } from "../../ui/parTrack.jsx";
+import { Worm } from "../../ui/charts/worm.jsx";
 
 /**
  * The Match Centre's tabs that the public page (SCRBRD-083, src/public/)
@@ -76,18 +80,33 @@ function InningsBreakCard({ match, innings, overs }) {
 
 // `quietMoments`: the page has a live region of its own (the public page's),
 // so the moment and the over summary are drawn but not announced a second time.
+// `par` (SCRBRD-133 G2): the server's par report — GET /api/public/matches/:id/par
+// on the public page, GET /api/matches/:id/par signed in — with `events` and
+// `fold`, the log and its context, for the chase's rates; `settled`, play has
+// decided it.
 export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
-                             venueLine = null, rainLine = null }) {
-  if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
+                             venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false }) {
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
   const chase = innings.length >= 2 && inn === innings[1];
+  const chasing = chase && inn?.superOver == null;
+  // The chase's two required rates and their direction: the log's own
+  // arithmetic, folded when the log moves, not on every tick of the board.
+  const rates = useMemo(() => (chasing ? chaseRates(events ?? [], fold ?? {}, index) : null), [chasing, events, fold, index]);
+  const worm = useMemo(() => (inn ? wormOf({ match, played: innings, index, events, overs, report: par }) : null),
+    [inn, match, innings, index, events, overs, par]);
+  if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
   const target = chase ? targetOf(innings) : null;
   const inOvers = inn.overs ?? overs;
   // "At this rate", in a first innings still being played (scorer/boardData.js
   // says when it is left off); nothing to project once the match is decided.
   const projected = result || match.status === "complete" ? null : atThisRate(inn, { overs: inOvers, chasing: chase, format: match.format });
-  const props = boardFromInnings(inn, { target, overs: inOvers, projected });
+  // Par and pressure (G2, §3.3): the report only while it speaks for this very position.
+  const pressure = { chasing, report: reportFor(par, inn, index), rates,
+    rained: interrupted(innings.slice(0, 2).filter((i) => i?.superOver == null)), result: settled ? result : null };
+  const props = boardFromInnings(inn, { target, overs: inOvers, projected, par: pressure });
+  const track = rateTrack({ inn, chasing, target, overs: inOvers, report: pressure.report, rates, rained: pressure.rained,
+    side: teamOf(match, inn.battingTeam).short });
   const side = teamOf(match, inn.battingTeam);
   const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
@@ -96,7 +115,9 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
       {props && (
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
-            insight={insight.length ? insight : undefined}/>
+            insight={insight.length ? insight : undefined}
+            extra={track ? <RateTrack track={track} testid="mc-rate-track" textStyle={{ fontFamily: T.type.body, fontSize: "13px" }}
+              palette={{ line: T.board.dim, bar: T.board.lime, dot: T.board.figure, text: T.board.dim, gap: T.board.lime }}/> : null}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
       )}
@@ -117,6 +138,20 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
         </Panel>
       )}
       <OverSummary item={overSummary} announce={!quietMoments}/>
+      {/* The worm, with the par (G2): the innings in play, the target, the
+          ground's par or the DLS par dashed — the server's figures. */}
+      {worm && (
+        <Panel testid="mc-worm-panel">
+          <CardHead icon="trending-up">Worm</CardHead>
+          <div style={{ padding: `0 ${T.space.lg} ${T.space.md}` }}>
+            <Worm lines={worm.lines} balls={worm.balls} target={worm.target} par={worm.par} revised={worm.revised}
+              umpiresPar={worm.umpiresPar} said={worm.said} height="160px" testid="mc-worm"
+              textStyle={{ fontFamily: T.type.body, fontSize: "12px" }}
+              palette={{ main: T.content.primary, dim: T.content.tertiary, target: T.brand.accentText, par: T.brand.accentText,
+                         rule: T.line.normal, text: T.content.secondary, label: T.content.primary }}/>
+          </div>
+        </Panel>
+      )}
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}
       {latest.length > 0 && (
         <Panel testid="mc-latest">

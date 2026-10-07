@@ -3868,6 +3868,42 @@ CREATE OR REPLACE FUNCTION _v86_record() RETURNS text AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/86 (section 65) ──────────────────────────────────────────────
 
+-- ┌── db/88 (section 66). SCRBRD-133 G2: par for the public pages ───────
+-- At Hilton two grounds of the proof's own. "Verify 088 Oval": five 20-over
+-- U15 first innings (Hilton U15A batting first, the match complete) of 100,
+-- 110, 120, 130 and 140, played one to five days ago — par round(600 ÷ 5) =
+-- 120, median 120, range 100–140. "Verify 088 Short": four of 90, below the
+-- floor. Dated from today, so the window (this season and the two before it,
+-- on sa_today()) holds whenever the file runs. Then three live fixtures:
+-- ON at the Oval, Hilton's side published; OFF at the Oval, nobody
+-- published; FEW at the Short ground, published.
+CREATE OR REPLACE FUNCTION _seed_88() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  g uuid; g4 uuid; m uuid; m_on uuid; m_off uuid; m_few uuid;
+  r record;
+BEGIN
+  INSERT INTO ground (school_id, name) VALUES (HIL, 'Verify 088 Oval') RETURNING id INTO g;
+  INSERT INTO ground (school_id, name) VALUES (HIL, 'Verify 088 Short') RETURNING id INTO g4;
+  FOR r IN SELECT * FROM (VALUES (1, 100, g), (2, 110, g), (3, 120, g), (4, 130, g), (5, 140, g),
+                                 (1, 90, g4), (2, 90, g4), (3, 90, g4), (4, 90, g4)) AS x(d, runs, gr) LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+    VALUES (HIL, 'U15A', 'Verify 088 Visitors', now() - make_interval(days => r.d), 'cricket', 'T20', 20, 'complete', r.gr)
+    RETURNING id INTO m;
+    PERFORM _inn_74(m, 0::smallint, 'U15A', 'Verify 088 Visitors', 20, r.runs, 120);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, 'U15A', 'Verify 088 Visitors', now(), 'cricket', 'T20', 20, 'live', g) RETURNING id INTO m_on;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, 'U15A', 'Verify 088 Visitors', now(), 'cricket', 'T20', 20, 'live', g) RETURNING id INTO m_off;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+  VALUES (HIL, 'U15A', 'Verify 088 Visitors', now(), 'cricket', 'T20', 20, 'live', g4) RETURNING id INTO m_few;
+  PERFORM _publish_73(m_on);
+  PERFORM _publish_73(m_few);
+  RETURN jsonb_build_object('g', g, 'g4', g4, 'on', m_on, 'off', m_off, 'few', m_few);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/88 (section 66) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -16492,6 +16528,80 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 65
+
+  -- ── 66. Par for the public pages (SCRBRD-133 G2, db/88) ─────────────
+  -- _seed_88(): a ground of five innings (par 120), a ground of four, and a
+  -- published, an unpublished and a below-the-floor fixture. Read as NOBODY —
+  -- the principal every /api/public/ request runs as — except where a reader
+  -- of the result is the control. The JavaScript half (the words, the track,
+  -- the leak check) is apps/web/test/par.test.mjs and
+  -- services/api/public/public.test.mjs.
+  --
+  -- Each labelled assertion was falsified once — the function replaced in
+  -- the database and this file run — and went red:
+  --   (served)    public_venue_par() without public_fixture_served()
+  --   (floor)     public_venue_par() without `v.sufficient`
+  --   (columns)   public_venue_par() returning the innings list
+  --   (table)     public_dls_table() without public_fixture_served()
+  DECLARE
+    ids  jsonb := _seed_88();
+    M_ON uuid; M_OFF uuid; M_FEW uuid;
+    got  text;
+    v    record;
+  BEGIN
+    M_ON := (ids->>'on')::uuid; M_OFF := (ids->>'off')::uuid; M_FEW := (ids->>'few')::uuid;
+    -- (columns) team-level, by name: no innings list, no breakdown, no id of
+    -- a ground or another match — those name fixtures nobody published
+    PERFORM _assert(pg_get_function_result('public_venue_par(uuid)'::regprocedure)
+                    = 'TABLE(overs integer, age_band text, n integer, floor integer, sufficient boolean, par integer, '
+                      'median numeric, low integer, high integer, first_season integer, last_season integer)',
+      format('§66 (columns): public_venue_par returns %s', pg_get_function_result('public_venue_par(uuid)'::regprocedure)));
+    PERFORM _assert(pg_get_function_result('public_dls_table(uuid)'::regprocedure)
+                    = 'TABLE(id uuid, version smallint, grain text, max_balls smallint, status text, current boolean, cells jsonb)',
+      format('§66 (columns): public_dls_table returns %s', pg_get_function_result('public_dls_table(uuid)'::regprocedure)));
+    -- the application's, and nobody else's: not PUBLIC
+    PERFORM _assert(has_function_privilege('public_venue_par(uuid)', 'EXECUTE') AND has_function_privilege('public_dls_table(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'public_venue_par(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'public_dls_table(uuid)', 'EXECUTE'),
+      '§66: the public par reads are not the application''s alone');
+
+    -- (served) as nobody, a published fixture reads its ground's par and its
+    -- evidence; the signed-in reader's door stays shut to nobody
+    PERFORM set_config('app.user_id', '', true);
+    SELECT row(w.overs, w.age_band, w.n, w.floor, w.sufficient, w.par, w.median, w.low, w.high,
+               w.first_season <= w.last_season AND w.last_season = extract(year FROM sa_today())::integer)::text
+      INTO got FROM public_venue_par(M_ON) w;
+    PERFORM _assert(got = '(20,U15,5,5,t,120,120,100,140,t)', format('§66 (served): the published fixture''s ground reads %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM venue_par_for_match(M_ON)),
+      '§66: nobody read a ground''s par through the signed-in reader');
+    -- (served) nobody published OFF: the same nothing as a fixture that does not exist
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_venue_par(M_OFF)) AND NOT EXISTS (SELECT 1 FROM public_venue_par(gen_random_uuid())),
+      '§66 (served): an unpublished fixture''s ground answered');
+    -- (floor) four innings: nothing at all, not a row with no par
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_venue_par(M_FEW)), '§66 (floor): a ground of four innings answered');
+    -- …while Hilton's director reads that ground as four of five, insufficient:
+    -- the floor hides it, not the lack of a ground
+    PERFORM _as(U_SARAH);
+    SELECT * INTO v FROM venue_par_for_match(M_FEW);
+    PERFORM _assert(v.n = 4 AND NOT v.sufficient AND v.par IS NULL,
+      format('§66 (floor): the director reads the short ground as n %s, sufficient %s', v.n, v.sufficient));
+
+    -- (table) the DLS table goes to the server for a published fixture —
+    -- exactly the one a reader of the result reads (§54 left one published)
+    -- — and for an unpublished one, nothing
+    SELECT string_agg(t.id || ':' || t.version || ':' || t.status || ':' || jsonb_array_length(t.cells), ' ') INTO got
+      FROM dls_table_for_match(M_ON) t;
+    PERFORM _assert(got IS NOT NULL, '§66 (table): the director reads no DLS table for the fixture; §54 left none published');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT string_agg(t.id || ':' || t.version || ':' || t.status || ':' || jsonb_array_length(t.cells), ' ')
+                       FROM public_dls_table(M_ON) t) = got,
+      format('§66 (table): the published fixture''s server reads %s, the director %s',
+             (SELECT string_agg(t.id || ':' || t.version, ' ') FROM public_dls_table(M_ON) t), got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_dls_table(M_OFF)), '§66 (table): an unpublished fixture read the DLS table');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match(M_ON)), '§66: nobody read the table through the signed-in reader');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 66
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

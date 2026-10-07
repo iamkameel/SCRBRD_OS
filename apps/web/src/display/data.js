@@ -3,6 +3,7 @@ import { boardBall, boardFromInnings } from "../scorer/boardData.js";
 import { RR, fmtOv, isOut } from "../scorer/format.js";
 import { boardInnings, inningsBreak, oversOf, revisionNotice, sidesOf, teamOf } from "../lib/matchCentre.js";
 import { chaseOf, matchInningsOf, superOverInPlay, superOverTitle, superOversOf } from "../lib/superOver.js";
+import { chaseRates, interrupted, rateTrack, reportFor } from "../lib/par.js";
 
 /**
  * What the ground display shows, from the fold (SCRBRD-133 §2.2) — pure, so
@@ -44,13 +45,15 @@ export function displayState({ match, innings, settled = false }) {
 
 /**
  * Which panels of the cycle have something true to show (§2.2's "skipped
- * when"): the partnership while a pair is in, the over story once an over is
- * complete, the bowling once a ball has been bowled.
+ * when"): the worm once an over is complete (G2), the partnership while a
+ * pair is in, the over story once an over is complete, the bowling once a
+ * ball has been bowled.
  * @param {any} inn  @returns {Set<string>}
  */
 export function availablePanels(inn) {
   const out = new Set();
   if (!inn) return out;
+  if ((inn.balls ?? 0) >= 6 && inn.summarised == null) out.add("worm");
   if (inn.striker && inn.nonStriker && !inn.complete) out.add("partnership");
   if ((inn.overLog ?? []).some((o) => legalIn(o.balls) >= 6) || inn.balls >= 6) out.add("overs");
   if ((inn.bowlers ?? []).some((b) => b.balls > 0 || b.runs > 0)) out.add("bowling");
@@ -60,10 +63,38 @@ export function availablePanels(inn) {
 /** @param {any[]} balls */
 const legalIn = (balls) => balls.filter((b) => b.type !== "Wd" && b.type !== "Nb" && b.notInOver !== true).length;
 
-/** The Board's props for the innings on it (scorer/boardData.js, as every screen draws it). */
-export function boardOf(state) {
-  return state.inn ? boardFromInnings(state.inn, { target: state.target, overs: state.overs }) : null;
+/** The Board's props for the innings on it (scorer/boardData.js, as every screen draws it), its second line saying par (G2). */
+export function boardOf(state, par = undefined) {
+  return state.inn ? boardFromInnings(state.inn, { target: state.target, overs: state.overs, par }) : null;
 }
+
+// ── Par and pressure (G2, §3) ──
+
+/**
+ * What the Board's second line and the rate track need about par, for the
+ * innings on the board: the server's report when it speaks for exactly this
+ * position (lib/par.js reportFor()), the chase's two required rates and
+ * their direction (the log's own arithmetic, chaseRates()), whether rain
+ * touched the match, and the result's words once play has decided it.
+ * @param {{state: any, events: any[], fold: any, report: any, result?: string | null, settled?: boolean}} o
+ */
+export function parOf({ state, events, fold, report, result = null, settled = false }) {
+  const inn = state.inn;
+  if (!inn) return null;
+  const chasing = state.index === 1 && state.target != null && inn.superOver == null;
+  return {
+    chasing,
+    report: reportFor(report, inn, state.index),
+    rates: chasing ? chaseRates(events ?? [], fold ?? {}, state.index) : null,
+    rained: interrupted(state.played.slice(0, 2).filter((i) => i?.superOver == null)),
+    result: settled ? result : null,
+  };
+}
+
+/** The rate track's ticks (lib/par.js rateTrack()), for the Board band. @param {any} state @param {any} par @param {string | null} side */
+export const trackOf = (state, par, side) => (par && state.inn
+  ? rateTrack({ inn: state.inn, chasing: par.chasing, target: state.target, overs: state.overs, report: par.report,
+                rates: par.rates, rained: par.rained, side }) : null);
 
 // ── Panel 2 · the partnership ──
 
