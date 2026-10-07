@@ -1136,6 +1136,8 @@ const ADAPT = {
   profiles: asCoach,
   staff: asStaff,
   users: asUser,
+  // Every account, disabled ones included: People's read (account lifecycle D5).
+  accounts: asUser,
   grounds: asGround,
   training: asTraining,
   training_attendance: asAttendance,

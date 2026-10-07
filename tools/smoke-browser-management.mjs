@@ -20,7 +20,8 @@
  *   4. A role the caller may not grant is not offered; a post forced past the
  *      picker is refused by the server, and the screen says so in words,
  *      beside the form, never as a code; nothing is written.
- *   5. The fake actions are gone, the plain line is there, and a person who
+ *   5. The fake actions are gone, so is the "coming" line (Disable and Enable
+ *      are smoke-browser-accounts.mjs's), and a person who
  *      cannot assign roles is offered nothing to write with.
  *   6. Nobody signed in (the demonstration): the seeded directory, one role
  *      each, and nothing offered that would write.
@@ -300,7 +301,7 @@ try {
   await off.page.waitForTimeout(300);
 
   // ── 5a. What is no longer there ──────────────────────────────────
-  group("The fake actions are gone, and one plain line says what is coming");
+  group("The fake actions are gone, and so is the line that said disabling was coming");
   const buttons = await off.page.locator('[data-testid="os-main"] button').allInnerTexts();
   ok("no Edit, Promote, Suspend, Restore or Delete anywhere on the screen", !buttons.some((b) => /^(Edit|Promote|Suspend|Restore|Delete)\b/i.test(b.trim())), buttons.join(" | "));
   ok("no per-row status toggle or role dropdown on a row: only Add role, and End role beside each live appointment",
@@ -308,7 +309,8 @@ try {
      && (await sarahRow.locator("button").allInnerTexts()).every((t) => /^(Add role|End role)$/.test(t.trim()))
      && await sarahRow.locator('[data-testid^="add-role-"]').count() === 1,
      (await sarahRow.locator("button").allInnerTexts()).join(" | "));
-  ok("the line is there, word for word", (await tid(off.page, "people-coming").innerText()).trim() === "Suspending an account is coming.");
+  // Disable account and Enable account are real now (smoke-browser-accounts.mjs).
+  ok("the 'coming' line is gone", await tid(off.page, "people-coming").count() === 0);
 
   // ── 7a. The floors, on the list ──────────────────────────────────
   group("The list is on the 12px and 44px floors");
@@ -799,7 +801,9 @@ try {
   ok("no Add user", await tid(demo.page, "add-user").count() === 0);
   ok("no Add role", await demo.page.locator('[data-testid^="add-role-"]').count() === 0);
   ok("it says it is the demonstration", await tid(demo.page, "people-demo").count() === 1);
-  ok("...and the plain line is there", /Suspending an account is coming\./.test(await tid(demo.page, "people-coming").innerText()));
+  ok("...no Disable or Enable, and no 'coming' line",
+     await demo.page.locator('[data-testid^="account-disable-"], [data-testid^="account-enable-"]').count() === 0
+     && await tid(demo.page, "people-coming").count() === 0);
   const demoButtons = await demo.page.locator('[data-testid="os-main"] button').allInnerTexts();
   ok("no Edit, Promote, Suspend or Delete", !demoButtons.some((b) => /^(Edit|Promote|Suspend|Restore|Delete)\b/i.test(b.trim())), demoButtons.join(" | "));
   if (await tid(demo.page, "mgmt-tab-audit").count()) await tid(demo.page, "mgmt-tab-audit").click({ timeout: 5000 });

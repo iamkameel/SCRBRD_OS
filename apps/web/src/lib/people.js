@@ -18,6 +18,8 @@
  * Pure, and the date is an argument: nothing in here reads the clock, so a
  * test names the day it means.
  */
+import { GRANTABLE_ROLES, ROLE_CAPABILITIES, roleGrants } from "@scrbrd/policy/roles";
+import { PLATFORM_ONLY } from "@scrbrd/policy/capabilities";
 
 /** "live" | "paused" | "upcoming" | "ended" for one appointment on `today` (YYYY-MM-DD). */
 export function roleState(a, today) {
@@ -56,9 +58,9 @@ export function peopleWithRoles(users, assignments, today) {
   return (users ?? []).map((u) => {
     const held = by.get(u.id);
     const roles = held?.length
-      ? held.map((a) => ({ key: a.id, role: a.role, team: a.team ?? null, state: roleState(a, today),
+      ? held.map((a) => ({ key: a.id, role: a.role, team: a.team ?? null, school: a.school ?? null, state: roleState(a, today),
                            endedOn: endDayOf(a), from: a.validFrom ?? null, until: a.validUntil ?? null }))
-      : [{ key: `${u.id}:${u.role}`, role: u.role, team: null, state: "live", endedOn: null, from: null, until: null }];
+      : [{ key: `${u.id}:${u.role}`, role: u.role, team: null, school: u.school ?? null, state: "live", endedOn: null, from: null, until: null }];
     // Array.prototype.sort is stable: the read's own order survives inside a rank.
     roles.sort((x, y) => rank[x.state] - rank[y.state]);
     return { ...u, roles };
@@ -84,4 +86,49 @@ export function matchesPerson(p, { role = "all", status = "all", q = "" }, { lab
   const hay = [p.name, p.email, linked(p),
     ...p.roles.flatMap((r) => [r.role, label(r.role), r.team])].filter(Boolean).join(" ").toLowerCase();
   return hay.includes(needle);
+}
+
+/** A role carrying a platform capability: granted only from an assignment that names no school (db/01's floor). */
+const carriesPlatform = (role) => (ROLE_CAPABILITIES[role] ?? []).some((c) => PLATFORM_ONLY.includes(c));
+
+/**
+ * Disable or enable this account: which of the two to OFFER this reader, or
+ * null for neither (account lifecycle D2, slice 1).
+ *
+ * WHAT TO OFFER, NEVER WHETHER. account_set_active() (db/85) asks db/81's
+ * auth_office_refusal() on every post, and that answer is the only one that
+ * counts. This mirrors it over what the reader can see, so the button is not
+ * drawn where the server would say no:
+ *   - never your own account (cannot_disable_yourself);
+ *   - user.invite at the account's school, or on an assignment that names no
+ *     school; an account with no school, only from the latter;
+ *   - an account holding a standing role that names no school (the owner's
+ *     key, a platform administrator): a superadmin only;
+ *   - every standing role the account holds is one the reader could grant at
+ *     its school (GRANTABLE_ROLES, as app_may_grant_at(), db/77); a pupil's
+ *     `selfaccess` counts as `player`; a role carrying a platform capability
+ *     only from an assignment that names no school.
+ * "Standing" is live or paused: a paused role still counts, as on the server.
+ * A role at a school whose appointments this reader cannot read is not on the
+ * list, so the button may be drawn and then refused; the screen shows the
+ * refusal in the server's words.
+ *
+ * `person` is one entry of peopleWithRoles(); `me` the session profile
+ * ({ user: { id }, assignments: [{ role, school }] }).
+ * @returns {"disable" | "enable" | null}
+ */
+export function accountAction(person, me) {
+  if (!person || !me?.user?.id || person.id === me.user.id) return null;
+  const mine = me.assignments ?? [];
+  const at = (a, school) => a.school == null || (school != null && a.school === school);
+  if (!mine.some((a) => at(a, person.school ?? null) && roleGrants(a.role, "user.invite"))) return null;
+  const standing = (person.roles ?? []).filter((r) => r.state === "live" || r.state === "paused");
+  if (standing.some((r) => r.school == null) && !mine.some((a) => a.school == null && a.role === "superadmin")) return null;
+  const mayGrantAt = (role, school) => mine.some((a) => at(a, school)
+    && (GRANTABLE_ROLES[a.role] ?? []).includes(role)
+    && (a.school == null || !carriesPlatform(role)));
+  const all = standing.every((r) => mayGrantAt(r.role, r.school ?? null)
+    || (r.role === "selfaccess" && mayGrantAt("player", r.school ?? null)));
+  if (!all) return null;
+  return person.status === "active" ? "disable" : "enable";
 }

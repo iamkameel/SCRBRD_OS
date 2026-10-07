@@ -175,6 +175,12 @@ const WALKS = [
   // ended with a reason, holding nothing on the next request, on the record,
   // told without the reason; the guardian link's rules and nobody's last key.
   "end-role",
+  // Disabling and enabling an account (account lifecycle slice 1, db/85 and
+  // db/81, no migration): the `accounts` read with disabled ones on it and
+  // its log; the coach's token dead on its next request and every role kept;
+  // enabled, he signs in again; the principal and the DSO refused; nobody
+  // acts on their own account.
+  "accounts",
   // The audit log, read (SCRBRD-132 B2, db/79): under audit.read, one school
   // at a time, a child in initials, never a safeguarding row or a reason,
   // and every read of it on the record. (smoke-audit is access_log's own.)
@@ -390,6 +396,13 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // words, the fake actions gone, tabs by capability, no invented audit or
   // ground tasks, nothing offered signed out; 12px, 44px, phone.
   "browser-management",
+  // Account lifecycle slice 1 (no migration): Disable account and Enable
+  // account on Management → Users, offered only where db/81's rule allows —
+  // the confirmation's words, the coach signed out and still listed as
+  // "Disabled" with his roles, the filter, enabled and signed in again; a
+  // role at another school refused in the server's words; 12px, 44px, 390,
+  // reduced motion.
+  "browser-accounts",
   // The coach's match-day cockpit and the intelligence feed (SCRBRD-136/137
   // phase A): the Coach tab, the Dashboard's match-day card and the feed's
   // drawer, by capability — the coach, the assistant coach, the team manager,

@@ -357,6 +357,27 @@ export const READ_QUERIES = {
             order by name`,
   },
 
+  // EVERY ACCOUNT, DISABLED ONES INCLUDED (account lifecycle D5, slice 1).
+  // `users` keeps its `where active`: Staff, Modules, Guardian link and the
+  // transport book read it to pick a person to act on, and offering a disabled
+  // account as a driver or a module grantee is the wrong default. People alone
+  // needs the whole list — a disabled account it cannot find again is one it
+  // cannot enable. Same table, same policy (db/09's app_user_read: user.read
+  // at the account's school, or your own row), no new reach: the only rows this
+  // adds to `users` are the inactive ones the same reader could already read.
+  //
+  // `mine` marks the reader's own row, so reading only yourself is not logged
+  // (logsReads, as the access log and the support sessions are): a list of
+  // other people's accounts, the disabled ones among them, is on the record,
+  // one row per school, naming the accounts that came back.
+  accounts: {
+    text: `select id, school_id, email, name, role, active, last_seen_at, teams, player_id,
+                  id = app_user_id() as mine
+             from app_user
+            order by name`,
+    logsReads: () => [],
+  },
+
   /**
    * Appointments, and WHO MADE EACH ONE.
    *
@@ -2918,6 +2939,8 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   dismissal_breakdown: [],
   skills:   ["score"],
   users:    ["email"],
+  // The same columns as `users`, disabled accounts included (logsReads).
+  accounts: ["email"],
   // Dotted, because a rating is nested. What is disclosed here is a named
   // coach's judgement of a named child and the number it has moved to — which
   // is the development record, and as restricted as the assessment it is
@@ -2952,7 +2975,7 @@ const pick = (/** @type {any} */ row, /** @type {string} */ path) =>
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
-                     users: "id", ratings: "player_id", notes: "player_id",
+                     users: "id", accounts: "id", ratings: "player_id", notes: "player_id",
                      disciplinary_records: "player_id",
                      opposition_squad: "player_id" };
 
@@ -3038,12 +3061,18 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
       // the reader's own — a person looking at their own sessions or their
       // own reads is not auditing anybody. Platform-wide and support stamps
       // are decided inside log_restricted_read(), as for every other read.
+      // A resource whose rows are each about one person (SUBJECT_ID: the
+      // `accounts` read) names, per school, the people whose rows came back
+      // and the watched columns among them, as every other logged read does.
       const others = rows.filter((r) => r.mine !== true);
-      const ids = def.logsReads(query).filter((id) => UUID_RE.test(id)).slice(0, MAX_LOGGED_IDS);
+      const asked = def.logsReads(query).filter((id) => UUID_RE.test(id));
       for (const school of new Set(others.map((r) => r.school_id ?? null))) {
+        const theirs = others.filter((r) => (r.school_id ?? null) === school);
+        const ids = [...new Set([...asked, ...idsIn(theirs)])].slice(0, MAX_LOGGED_IDS);
+        const disclosed = (watched ?? []).filter((f) => theirs.some((r) => pick(r, f) != null));
         await client.query(
           `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
-          [resource, ids, [], school]);
+          [resource, ids, disclosed, school]);
       }
     } else if ((who?.platform || who?.support) && rows.length) {
       const disclosed = (watched ?? []).filter((f) => rows.some((r) => pick(r, f) != null));
