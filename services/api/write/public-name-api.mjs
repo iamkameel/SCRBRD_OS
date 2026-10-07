@@ -44,6 +44,9 @@ import { initialAndSurname } from "@scrbrd/policy/public";
 const NIL = "00000000-0000-0000-0000-000000000000";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** The longest consent version label and admission-form name a record takes. */
+export const MAX_VERSION = 64;
+export const MAX_FORM_NAME = 200;
 /** db/47's vocabulary for an age group (public_names_off's CHECK). */
 export const AGE_GROUPS = Object.freeze(["U9", "U10", "U11", "U12", "U13", "U14", "U15", "U16", "U17", "U18", "U19", "open"]);
 
@@ -179,6 +182,10 @@ export function publicNameRoutes({ pool, secret, onChange }) {
       const guardian = text(b.guardianId), formDate = text(b.formDate);
       if (guardian != null && !UUID.test(guardian)) return res.status(400).json({ error: "bad_request" });
       if (formDate != null && !DAY.test(formDate)) return res.status(400).json({ error: "form_date_invalid" });
+      // The record is kept for as long as the child is on the books, and the
+      // table bounds neither column: a version is a short label, a form a name.
+      if ((text(b.version) ?? "").length > MAX_VERSION) return res.status(400).json({ error: "version_too_long" });
+      if ((text(b.formName) ?? "").length > MAX_FORM_NAME) return res.status(400).json({ error: "form_name_too_long" });
       try {
         const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => (await client.query(
           `select ok, reason from public_name_consent_set($1, $2, $3, $4, $5, $6)`,
