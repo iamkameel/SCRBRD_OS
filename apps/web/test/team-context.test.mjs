@@ -73,7 +73,7 @@ ok("it agrees with the menu: every destination the held set reaches is one a hel
 })());
 const dash = readFileSync(new URL("../src/views/DashboardView.jsx", import.meta.url), "utf8");
 const skv = readFileSync(new URL("../src/views/SkillsView.jsx", import.meta.url), "utf8");
-ok("Dashboard gates through holdsAsHeld and no longer through the badge role", /holdsAsHeld\(role, capability\)/.test(dash) && !/holdsCapability\(/.test(dash.replace(/\/\*[\s\S]*?\*\//g, "")) && !/canScore\(/.test(dash));
+ok("Dashboard gates through holdsAsHeld and no longer through the badge role", /holdsAsHeld\(role, capability[,)]/.test(dash) && !/holdsCapability\(/.test(dash.replace(/\/\*[\s\S]*?\*\//g, "")) && !/canScore\(/.test(dash));
 ok("Skills edit gate: signed in AND held", /signedIn\(\) && holdsAsHeld\(role,"player\.development\.write"\)/.test(skv) && !/holdsCapability\(/.test(skv));
 
 console.log(`\n${fail ? "✗" : "✓"} team-context: ${pass} passed, ${fail} failed`);

@@ -6,6 +6,7 @@ import { humanDateTime } from "../../lib/format.js";
 import { WeatherChip } from "../shared.jsx";
 import { teamOf } from "../../lib/matchCentre.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart } from "../../scorer/charts.jsx";
+import { projectMatch } from "../../scorer/chartData.js";
 import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { InningsToggle } from "./scorecard.jsx";
@@ -26,7 +27,7 @@ export { SummaryTab, CommentaryTab, PartnershipsTab };
 
 // ── Analytics ───────────────────────────────────────────
 
-export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs, focus = null }) {
+export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs, events = null, focus = null }) {
   const [wheelOf, setWheelOf] = useState(null);
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-analytics-empty">Nothing has been scored yet.</Quiet>;
@@ -39,6 +40,8 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
   const dots = legal.filter((b) => (b.type ?? "run") === "run" && b.value === 0).length;
   const bnds = legal.filter((b) => (b.type ?? "run") === "run" && (b.value === 4 || b.value === 6)).length;
   const cfg = { overs };
+  // The worm and the bars from one projection of the fold and its log (GA-I05).
+  const proj = projectMatch(innings, { events, overs });
   /** @param {{l: string, v: any}} p */
   const Kpi = ({ l, v }) => (
     <div style={{ flex: "1 1 120px", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: `${T.space.sm} ${T.space.md}`, background: T.surface.raised }}>
@@ -56,9 +59,9 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
         <Kpi l="Boundaries" v={bnds}/>
         <Kpi l="Extras" v={Object.values(inn.extras).reduce((a, b) => a + b, 0)}/>
       </div>
-      {innings.length > 1 && (<><H>Match worm</H><WormChart innings={innings} curIn={innings.length - 1} match={cfg}/></>)}
+      {innings.length > 1 && (<><H>Match worm</H><WormChart innings={innings} curIn={innings.length - 1} match={cfg} events={events}/></>)}
       <H>Runs per over</H>
-      <ManhattanChart inn={inn} match={cfg}/>
+      <ManhattanChart inn={inn} match={cfg} projection={proj[inningsSel]}/>
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
         <div><H>Batting impact</H><BatsmanChart inn={inn}/></div>
         <div><H>Bowling economy</H><BowlerChart inn={inn}/></div>

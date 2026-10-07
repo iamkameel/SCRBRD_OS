@@ -40,6 +40,10 @@ const WALKS = [
   "quarantine",
   // A retry writes once: the Idempotency-Key layer over every write route.
   "idempotency",
+  // The managed-host reset drops only what db/ creates (GA-I02): somebody
+  // else's table, view, function, enum and sequence survive it, in a
+  // scratch database of the walk's own, and through the rebuild bundle too.
+  "reset-objects",
   // What a scoring command may be, decided by the server at commit: one key
   // one event (db/36), last-in-first-out undo, and the Laws.
   "laws",
@@ -435,10 +439,15 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
 // the completeness check below knows they are accounted for.
 const NO_DB = ["", "scorer", "persist", "a11y"];
 
+// Run by hand and never here: it needs the 330 invented players, which are
+// kept out of the repository, and the demo cast loaded on top of the seed
+// (docs/pilot/SOLO_TEST.md). Named so the check below knows it is not lost.
+const BY_HAND = ["demo-cast"];
+
 const onDisk = readdirSync("tools")
   .filter((f) => /^smoke.*\.mjs$/.test(f))
   .map((f) => f.replace(/^smoke-?/, "").replace(/\.mjs$/, ""));
-const known = new Set([...WALKS, ...BROWSER_WALKS, ...NO_DB]);
+const known = new Set([...WALKS, ...BROWSER_WALKS, ...NO_DB, ...BY_HAND]);
 const unlisted = onDisk.filter((n) => !known.has(n));
 if (unlisted.length) {
   console.error(`\n✗ smoke walks exist that nothing runs: ${unlisted.map((n) => `smoke-${n}`).join(", ")}`);

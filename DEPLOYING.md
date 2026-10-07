@@ -123,17 +123,43 @@ any host that is not `localhost`, `127.0.0.1` or the compose service `db`
 named for what it does.
 
 Use `--reset-objects` instead. It drops only what this project created in
-`public` — every table, view, routine and enum this repository's migrations
-made — and leaves the schema, its grants, and anything belonging to an
-extension exactly as they were. The ledger goes with it, so the next run
-applies every migration from the beginning:
+`public`, **by name**: the tables, views, routines, types and sequences that a
+`db/NN_*.sql` file creates, read out of the files themselves
+(`tools/reset-objects.mjs`), plus the ledger. The schema, its grants, anything
+belonging to an extension, and any object another application keeps in
+`public` are left exactly as they were. (Until GA-I02 it dropped every
+non-extension object in `public`, ours or not.) The ledger goes with it, so
+the next run applies every migration from the beginning.
+
+It refuses a host that is not local, as `--reset` does, with its own override
+named for what it does:
 
 ```sh
+I_UNDERSTAND_THIS_ERASES_EVERY_SCRBRD_RECORD=1 \
 DATABASE_URL='<owner connection string>' node tools/migrate.mjs --reset-objects --seed
 ```
 
+`--reset`'s override does not open it. Two things it cannot do for you:
+
+- **It stops if somebody else's object is built on one of ours** — a view over
+  our table, a function taking our type, a foreign key into our table — and
+  names it, before dropping anything. Remove or detach that object first. A
+  leftover from an older edit of a pilot-era file (a view no current file
+  creates, over a table that one does) stops it the same way.
+- **A name is all it goes by.** Another application's object with exactly the
+  name of one of ours (its own `player` table) is taken for ours, and every
+  overload of one of our routine names goes. Only a separate schema would
+  close that.
+
+`tools/smoke-reset-objects.mjs` proves both paths — this one and section 1 of
+the rebuild bundle, which is the same statement — against a scratch database
+holding somebody else's table, view, function, enum and sequence.
+
 That is the DEMONSTRATION path, and only the demonstration path: it destroys
-everything in the database and reseeds it with invented people.
+everything this project holds in the database and reseeds it with invented
+people. Take and prove a backup first
+([docs/pilot/BACKUP_RESTORE.md](docs/pilot/BACKUP_RESTORE.md)) if there is
+anything in it you would miss.
 
 For a database that already carries the ledger — the demonstration instance
 after its first rebuild included — a new migration does not need a rebuild,
@@ -700,6 +726,29 @@ Paste `node tools/bundle-sql.mjs --apply 84` (after 83), then the verify bundle
 `role_request.asked_unverified` and refuses to start without db/84
 (`expected-migrations.json`).
 <!-- ── end security review 2026-10-06 ── -->
+<!-- ── GA-I03: a session ends when it is ended (db/85) ── -->
+#### A session ends when it is ended (GA-I03, db/85)
+
+`db/85_session_revocation.sql` gives every account a session epoch
+(`auth_epoch`) and every token a session (`auth_session`), both with no policy
+and no privilege for the application, and `app_session_begin()`, which the API
+now calls to become somebody: the account must be active and the token's
+session live under the current epoch. **Signing out ends the token on that
+device; `POST /api/auth/sign-out-everywhere`, the office disabling an account
+(`POST /api/auth/users/:id/disable`, or a plain `UPDATE app_user SET active =
+false`), and removing a Google sign-in end every token and pad credential the
+account holds**, on their next request. Role revocation is unchanged. No
+secret, no backfill. `docs/AUTH_SPEC.md` has the rule.
+
+Paste `node tools/bundle-sql.mjs --apply 85` (after 84), then the verify bundle
+(§64 is its proof, and the summary row's "Sessions end when ended" reads OK).
+**Schema first**: the API built with it calls `app_session_begin()` on every
+request and refuses to start without db/85 (`expected-migrations.json`).
+**Everybody signed in signs in once more** when that API is deployed: a token
+minted before it names no session and is refused (`401 incomplete_claims`).
+Deploy it outside a match; a pad's resume credential is not a token and keeps
+scoring.
+<!-- ── end GA-I03 ── -->
 
 ### 5 · Cloud Run, the first time
 

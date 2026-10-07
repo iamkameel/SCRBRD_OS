@@ -111,7 +111,7 @@ try {
 
   // ── A ──────────────────────────────────────────────────────────
   group("A. Issued on a claim, to the device holding the token — and only then");
-  const scorerA = await login("scorer@example.invalid", DEV_A);
+  let scorerA = await login("scorer@example.invalid", DEV_A);
   const scorerB = await login("scorer@example.invalid", DEV_B);
   const medic = await login("medical@example.invalid", "pad-resume-medic");
   ok("the scorer signs in on two phones", !!scorerA && !!scorerB && !!medic);
@@ -304,6 +304,11 @@ try {
   ok("...401 pad_revoked signed_out", afterSignOut.status === 401 && afterSignOut.body?.detail === "signed_out");
   const signOutPad = await A2.send("/api/auth/sign-out", { method: "POST", body: {} });
   ok("(a credential cannot call sign-out, or anything else: 403 pad_scope)", signOutPad.status === 403);
+  // GA-I03 (db/85): the phone's bearer token ends with it.
+  const tokenAfter = await api("/api/session", { token: scorerA });
+  ok("...and the phone's token is refused too: 401 session_revoked", tokenAfter.status === 401 && tokenAfter.body?.error === "session_revoked", JSON.stringify(tokenAfter.body));
+  scorerA = await login("scorer@example.invalid", DEV_A);
+  ok("...until the scorer signs in again", (await api("/api/session", { token: scorerA })).status === 200);
 
   group("F4. The school office revokes it — and nobody else can");
   const { dev: A3 } = await issue(scorerA);
@@ -321,6 +326,55 @@ try {
   ok("...401 pad_revoked office", afterOffice.status === 401 && afterOffice.body?.detail === "office");
   const offAudit = await q(`select detail from scoring_audit where match_id = $1 and event = 'pad_resume_revoked' order by at desc limit 1`, [MATCH]);
   ok("...on the scoring audit", offAudit[0]?.detail?.reason === "office");
+
+  group("F4b. The office disables the scorer's account: the credential ends (GA-I03)");
+  const SCORER = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+  /** Phone A holds the match: claimed again, after a lapse when another device holds it. */
+  const holdA = async () => {
+    if ((await claim(scorerA, DEV_A)).body?.ok === true) return true;
+    await lapse();
+    return (await claim(scorerA, DEV_A)).body?.ok === true;
+  };
+  ok("phone A holds the match", await holdA());
+  const { dev: AD } = await issue(scorerA);
+  ok("phone A is issued another, and it works for an active account",
+     !!AD && (await AD.send(`/api/matches/${MATCH}/events?since=0`)).status === 200);
+  const dis = await api(`/api/auth/users/${SCORER}/disable`, { method: "POST", token: registrar });
+  ok("Hilton's office disables the scorer's account", dis.status === 200 && dis.body?.active === false, JSON.stringify(dis.body));
+  const afterDisable = await AD.send(`/api/matches/${MATCH}/events?since=0`);
+  ok("...the credential: 401 pad_revoked account_disabled", afterDisable.status === 401 && afterDisable.body?.error === "pad_revoked"
+     && afterDisable.body?.detail === "account_disabled", JSON.stringify(afterDisable.body));
+  ok("...and the row says so", (await credOf("scorer@example.invalid", DEV_A))?.revoked_reason === "account_disabled");
+  ok("...and the phone's token is refused", (await api("/api/session", { token: scorerA })).status === 401);
+  const en = await api(`/api/auth/users/${SCORER}/enable`, { method: "POST", token: registrar });
+  ok("the office enables the account again", en.status === 200 && en.body?.active === true, JSON.stringify(en.body));
+  ok("...and the revoked credential stays revoked", (await AD.send(`/api/matches/${MATCH}/events?since=0`)).status === 401);
+  scorerA = await login("scorer@example.invalid", DEV_A);
+  ok("the scorer signs in again and holds the match", await holdA());
+  const { dev: AE } = await issue(scorerA);
+  ok("...and a fresh credential works", !!AE && (await AE.send(`/api/matches/${MATCH}/events?since=0`)).status === 200);
+  // The plain-UPDATE door (app_user_update, under user.role.assign) ends it
+  // too: the rule is a trigger on app_user, not a step in the route.
+  await q(`update app_user set active = false where id = $1`, [SCORER]);
+  const afterUpdate = await AE.send(`/api/matches/${MATCH}/events?since=0`);
+  ok("an account disabled by a plain UPDATE: 401 pad_revoked account_disabled", afterUpdate.status === 401
+     && afterUpdate.body?.detail === "account_disabled", JSON.stringify(afterUpdate.body));
+  await q(`update app_user set active = true where id = $1`, [SCORER]);
+
+  group("F4c. Sign out everywhere ends the phone's credential too (GA-I03)");
+  scorerA = await login("scorer@example.invalid", DEV_A);
+  ok("phone A holds the match again", await holdA());
+  const { dev: AF } = await issue(scorerA);
+  const scorerElsewhere = await login("scorer@example.invalid", "pad-resume-laptop");
+  ok("a credential, and the scorer signed in on a laptop", !!AF && (await AF.send(`/api/matches/${MATCH}/events?since=0`)).status === 200);
+  const everywhere = await api("/api/auth/sign-out-everywhere", { method: "POST", token: scorerElsewhere });
+  ok("the scorer signs out everywhere, from the laptop", everywhere.status === 200, JSON.stringify(everywhere.body));
+  const afterEverywhere = await AF.send(`/api/matches/${MATCH}/events?since=0`);
+  ok("...the phone's credential: 401 pad_revoked signed_out_everywhere", afterEverywhere.status === 401
+     && afterEverywhere.body?.detail === "signed_out_everywhere", JSON.stringify(afterEverywhere.body));
+  ok("...and the phone's token", (await api("/api/session", { token: scorerA })).status === 401);
+  scorerA = await login("scorer@example.invalid", DEV_A);
+  ok("the scorer signs in again and holds the match", await holdA());
 
   group("F5. The match day ends");
   const { dev: A4 } = await issue(scorerA);

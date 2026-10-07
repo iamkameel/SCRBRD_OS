@@ -1,5 +1,6 @@
 import { D } from "../design/tokens.js";
 import { useState } from "react";
+import { requestDuties } from "../lib/cockpitNav.js";
 import { useDutyCoverage, useLive } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
 import { Card, EmptyState, ReadState, SectionHeader } from "../ui/primitives.jsx";
@@ -28,7 +29,14 @@ import { SLOTS } from "./duties.jsx";
 // A fixture whose fetch failed shows its own failure rather than being
 // silently dropped or counted as fully covered — the same distinction
 // EmptyState draws between "none" and "we could not ask".
-function ReadinessOverview({ role }) {
+//
+// Each row is one tap target that opens that fixture's duties (match-day
+// queue, phase A0: docs/design/GA-I09-I11_match_day_queue.md §3.2, §7): the
+// shell has no deep links, so the row leaves a note in lib/cockpitNav.js and
+// goes to the Match Centre, which opens the fixture's details panel, where the
+// DutyRoster is. Its words are 12px and its slots say "none" as well as being
+// muted: colour is never the only word.
+function ReadinessOverview({ role, onNav }) {
   // The fixtures read keeps its state: "No upcoming fixtures" is said of a read
   // that answered, never of one that failed or has not come back (GA-I08).
   const [nonce, setNonce] = useState(0);
@@ -40,6 +48,7 @@ function ReadinessOverview({ role }) {
     .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))
     .slice(0, 8);
   const { coverage, loading } = useDutyCoverage(upcoming.map((m) => m.id), role, nonce);
+  const open = (id) => { requestDuties(id); if (onNav) onNav("matches"); };
 
   return (
     <div className="os-page">
@@ -59,39 +68,46 @@ function ReadinessOverview({ role }) {
             const byDuty = new Set(rows.map((r) => r.duty));
             const covered = SLOTS.filter((s) => byDuty.has(s.key)).length;
             return (
-              <Card key={m.id} sx={{ padding: "14px 16px" }} data-testid={`readiness-fixture-${m.id}`}>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
-                  <div style={{ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>
-                    {m.homeTeam} vs {m.awayTeam}
-                  </div>
-                  <div style={{ fontFamily: D.mono, fontSize: "11px", color: D.textMuted }}>{m.date}{m.venue ? ` · ${m.venue}` : ""}</div>
-                </div>
-                {entry?.error ? (
-                  <div style={{ fontFamily: D.body, fontSize: "11px", color: D.roseText, marginTop: "6px" }} data-testid={`readiness-error-${m.id}`}>
-                    Could not load duty coverage for this fixture ({entry.error}).
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, marginTop: "6px" }} data-testid={`readiness-covered-${m.id}`}>
-                      {covered} of {SLOTS.length} on record
-                    </div>
-                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
-                      {SLOTS.map((s) => {
-                        const on = byDuty.has(s.key);
-                        return (
-                          <span key={s.key} data-testid={`readiness-slot-${m.id}-${s.key}`}
-                                style={{ padding: "3px 9px", borderRadius: D.pill,
-                                         fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.04em",
-                                         background: on ? D.emerald + "18" : D.surf2,
-                                         border: `1px solid ${on ? D.emerald + "44" : D.border}`,
-                                         color: on ? D.emerald : D.textMuted }}>
-                            {s.label}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
+              <Card key={m.id} sx={{ padding: 0 }} data-testid={`readiness-fixture-${m.id}`}>
+                {/* The whole row is the tap target (at least 44px) and says where it goes. */}
+                <button type="button" className="os-state" data-testid={`readiness-open-${m.id}`} onClick={() => open(m.id)}
+                        style={{ display: "block", width: "100%", minHeight: "44px", padding: "14px 16px", margin: 0, border: 0, background: "transparent",
+                                 textAlign: "left", cursor: "pointer", color: "inherit", font: "inherit" }}>
+                  <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>
+                      {m.homeTeam} vs {m.awayTeam}
+                    </span>
+                    <span style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }}>{m.date}{m.venue ? ` · ${m.venue}` : ""}</span>
+                  </span>
+                  {entry?.error ? (
+                    <span style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.roseText, marginTop: "6px" }} data-testid={`readiness-error-${m.id}`}>
+                      Could not load duty coverage for this fixture ({entry.error}).
+                    </span>
+                  ) : (
+                    <>
+                      <span style={{ display: "block", fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "6px" }} data-testid={`readiness-covered-${m.id}`}>
+                        {covered} of {SLOTS.length} on record
+                      </span>
+                      <span style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+                        {SLOTS.map((s) => {
+                          const on = byDuty.has(s.key);
+                          return (
+                            <span key={s.key} data-testid={`readiness-slot-${m.id}-${s.key}`}
+                                  style={{ padding: "3px 9px", borderRadius: D.pill,
+                                           fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.04em",
+                                           background: on ? D.emerald + "18" : D.surf2,
+                                           border: `1px solid ${on ? D.emerald + "44" : D.border}`,
+                                           color: on ? D.emerald : D.textMuted }}>
+                              {/* Words as well as colour: a slot with nothing on record says so. */}
+                              {s.label}{on ? <span className="sr-only"> on record</span> : " · none"}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    </>
+                  )}
+                  <span style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "8px" }}>Open duties <span aria-hidden="true">›</span></span>
+                </button>
               </Card>
             );
           })}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { D, T, textOn } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { humanDate } from "../lib/format.js";
@@ -53,10 +53,24 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
     const m = want ? MATCHES.find((x) => x.id === want.matchId) : null;
     if (!want || !m) return;
     clearCoach();
+    if (want.view === "duties") {
+      // The Readiness screen's row: the list with this fixture's details (its duties) open, brought into view.
+      setFilter("all"); setTeamFilter(null);
+      wantDetails.current = true;
+      setSelMatch(m);
+      return;
+    }
     setCoachOn({ tab: "coach", drawer: want.drawer });
     setOpenM(m);
   }, [MATCHES]);
   const [selMatch, setSelMatch] = useState(null);
+  // A fixture opened from Readiness has its details panel scrolled into view once it is drawn (a phone draws it under the list).
+  const wantDetails = useRef(false);
+  useEffect(() => {
+    if (!wantDetails.current || !selMatch) return;
+    wantDetails.current = false;
+    document.querySelector('[data-testid="match-details"]')?.scrollIntoView({ block: "start" });
+  }, [selMatch]);
   // The fixture open in the Match Centre's own view (views/matchcentre/):
   // the board, the scorecard, the commentary and the rest, in six tabs. It
   // replaced the Scorecard modal (step 3c).
@@ -249,7 +263,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
           const ground = selMatch.groundId ? GROUNDS.find(g=>g.id===selMatch.groundId) : null;
           const pitch  = ground?.pitches?.[0];
           return (
-            <Card sx={{padding:"16px",position:"sticky",top:"16px",maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
+            <Card data-testid="match-details" data-match={selMatch.id} sx={{padding:"16px",position:"sticky",top:"16px",maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:"12px"}}>
                 <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Match Details</div>
                 <button onClick={()=>setSelMatch(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>

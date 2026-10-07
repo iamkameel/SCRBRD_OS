@@ -398,7 +398,8 @@ const fakePool = {
     release() {},
     /** @param {string} text @param {any[]} [params] */
     async query(text, params = []) {
-      if (/set_config\('app\.user_id'/.test(text)) { seen.users.push(params[0]); return { rows: [] }; }
+      // Anybody, by either door: the empty identity, or app_session_begin() (db/85).
+      if (/set_config\('app\.user_id'|app_session_begin/.test(text)) { seen.users.push(params[0]); return { rows: [] }; }
       if (/^(BEGIN|COMMIT|ROLLBACK)/.test(text) || /set_config/.test(text)) return { rows: [] };
       const served = params[0] === M1 || seen.alsoServed.has(params[0]);
       seen.reads++;
@@ -599,7 +600,7 @@ console.log("\n── A publish through this API is never served stale ──");
   // path's own drop can make the next read right.
   const site = await serve({});
   const SESSION = "session-secret-for-the-publication-route-0123456789";
-  const token = `Bearer ${signToken({ userId: "bbbbbbbb-0000-0000-0000-00000000b001", deviceId: "t" }, SESSION)}`;
+  const token = `Bearer ${signToken({ userId: "bbbbbbbb-0000-0000-0000-00000000b001", deviceId: "t", sessionId: "5e551011-0000-4000-8000-000000000001", epoch: 0 }, SESSION)}`;
   let refuse = false;
   const writes = {
     connect: async () => ({
@@ -633,8 +634,8 @@ console.log("\n── A publish through this API is never served stale ──");
      && (await site.get(`/api/public/matches/${M2}/log`, ip)).status === 404);
   refuse = true;
   ok("a refused publish changes nothing and drops nothing", await publish(true) === 403 && site.site.cache.entries.get(M2)?.header?.value === null);
-  ok("server.mjs hands the publication route the public cache",
-     /publicationRoutes\(\{[^}]*onChange: \(note\) => publicSite\.changed\(note\)/.test(readFileSync(join(ROOT, "services", "api", "server.mjs"), "utf8")));
+  ok("server.mjs hands the publication route the public cache (after a keyed write commits: afterCommit)",
+     /publicationRoutes\(\{[^}]*onChange: \(note\) => afterCommit\(\(\) => publicSite\.changed\(note\)\)/.test(readFileSync(join(ROOT, "services", "api", "server.mjs"), "utf8")));
   await site.close();
 }
 
@@ -739,7 +740,7 @@ const livePool = {
     release() {},
     /** @param {string} text @param {any[]} [params] */
     async query(text, params = []) {
-      if (/set_config\('app\.user_id'/.test(text)) { L.users.push(params[0]); return { rows: [] }; }
+      if (/set_config\('app\.user_id'|app_session_begin/.test(text)) { L.users.push(params[0]); return { rows: [] }; }
       if (/^(BEGIN|COMMIT|ROLLBACK)/.test(text) || /set_config/.test(text)) return { rows: [] };
       if (/sa_today\(\)/.test(text) && !/public_live_fixtures/.test(text)) return { rows: [{ d: "2026-10-03" }] };
       if (/public_live_fixtures\(\)/.test(text)) {
@@ -864,7 +865,7 @@ const newsPool = {
     release() {},
     /** @param {string} text @param {any[]} [params] */
     async query(text, params = []) {
-      if (/set_config\('app\.user_id'/.test(text)) { N.users.push(params[0]); return { rows: [] }; }
+      if (/set_config\('app\.user_id'|app_session_begin/.test(text)) { N.users.push(params[0]); return { rows: [] }; }
       if (/^(BEGIN|COMMIT|ROLLBACK)/.test(text) || /set_config/.test(text)) return { rows: [] };
       if (/public_news\(\$1\)/.test(text)) {
         N.reads++; N.limits.push(params[0]);

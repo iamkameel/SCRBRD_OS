@@ -25,7 +25,9 @@
  *   GET  /api/matches/:id/toss                    one match's toss
  *   POST /api/matches/:id/session/pad-credential  the pad's resume credential, on a claim (SCRBRD-078)
  *   POST /api/matches/:id/pad-credentials/revoke  the school office ends them
- *   POST /api/auth/sign-out                       this device's credentials end
+ *   POST /api/auth/sign-out                       this device's sessions and credentials end
+ *   POST /api/auth/sign-out-everywhere            every session and credential ends (db/85)
+ *   POST /api/auth/users/:id/disable · /enable    the office ends an account's sessions (db/85)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
@@ -53,8 +55,9 @@ import { join, extname, resolve, sep } from "node:path";
 import pg from "pg";
 import { askStatsMagic, describeDelivery, statsMagicContext, aiConfigured } from "./ai/ai-service.mjs";
 import { readerConfig } from "./ai/scorebook-reader.mjs";
-import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
-import { signToken, AuthError } from "./auth/auth.mjs";
+import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink, mintToken, afterCommit } from "./auth/auth-db.mjs";
+import { keyedWrite, fingerprint } from "./write/replay.mjs";
+import { AuthError } from "./auth/auth.mjs";
 import { isPadAuthorization, padRoute, padPrincipal, padRefusal, padCredentialRoutes } from "./auth/pad-resume.mjs";
 import { signInRoutes, verifierFromEnv } from "./auth/signin-api.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
@@ -373,7 +376,11 @@ async function readJson(req) {
 
 // ── Routes ───────────────────────────────────────────────────────
 const events  = eventRoutes({ pool, secret: SECRET });
-const session = sessionRoutes({ pool, secret: SECRET, hub });
+// The session hub, told only once a keyed write has committed (afterCommit,
+// auth-db.mjs); outside one, at once, as before.
+const session = sessionRoutes({ pool, secret: SECRET, hub: Object.assign(Object.create(hub), {
+  /** @param {string} matchId @param {any} s */
+  broadcastSession: (matchId, s) => afterCommit(() => hub.broadcastSession(matchId, s)) }) });
 const read    = readRoute({ pool, secret: SECRET });
 const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
@@ -439,7 +446,7 @@ const signIn = signInRoutes({ pool, secret: SECRET, verifier: firebase.verifier,
                               trustProxyHops: Number(process.env.PUBLIC_TRUST_PROXY_HOPS || 0) });
 // A notice's public request, approval or withdrawal — and the author's own
 // withdrawal of a notice — drops the public news before it answers (db/83).
-const news = newsRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
+const news = newsRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
 const load = loadRoutes({ pool, secret: SECRET });
@@ -447,9 +454,9 @@ const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
 // A publish or withdrawal drops the public cache's entry before it answers,
 // not when db/59's notification arrives (publication-api.mjs).
-const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
-const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
-const publicName = publicNameRoutes({ pool, secret: SECRET, onChange: (note) => publicSite.changed(note) });
+const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
+const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
+const publicName = publicNameRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
 // The fixture planner, phase 2 (SCRBRD-123, db/67).
 const planner = plannerRoutes({ pool, secret: SECRET });
@@ -495,7 +502,7 @@ async function devLogin(body) {
   // read app_user without an identity, and this route is not an exception.
   const { rows } = await pool.query(`select auth_account_for_email($1) as id`, [email]);
   if (!rows[0]?.id) throw new AuthError("no_such_user");
-  return { token: signToken({ userId: rows[0].id, deviceId }, SECRET) };
+  return { token: await mintToken(pool, SECRET, { userId: rows[0].id, deviceId }) };
 }
 
 // Exact paths, then one pattern for the per-match routes. Kept as a table so
@@ -529,7 +536,8 @@ const EXACT = {
   // (db/81) decides — and never links on an email alone where there is
   // anything to protect (claim_required).
   "POST /api/auth/firebase": signIn.exchange,
-  // Signing out ends this person's pad resume credentials on this device
+  // Signing out ends this person's sessions on this device (db/85: the token
+  // is refused from its next request) and their pad resume credentials here
   // (db/50). The client also forgets the keys, which ends them there even
   // when this cannot reach the server.
   "POST /api/auth/sign-out": padCreds.signOut,
@@ -708,6 +716,11 @@ const PLAYER_ROUTES = [
   [/^\/api\/auth\/sign-ins\/([^/]+)\/revoke$/,       "POST", signIn.revokeOwn],
   [/^\/api\/auth\/users\/([^/]+)\/sign-ins$/,        "GET",  signIn.accountSignIns],
   [/^\/api\/auth\/office\/sign-ins\/([^/]+)\/revoke$/, "POST", signIn.revokeOffice],
+  // GA-I03 (db/85): every session ends — yours, or, by the office or the
+  // owner, an account's. An API route each; no screen calls them yet.
+  [/^\/api\/auth\/sign-out-everywhere$/,          "POST", signIn.signOutEverywhere],
+  [/^\/api\/auth\/users\/([^/]+)\/disable$/,        "POST", signIn.disable],
+  [/^\/api\/auth\/users\/([^/]+)\/enable$/,         "POST", signIn.enable],
   [/^\/api\/auth\/claims\/([^/]+)\/confirm$/,        "POST", signIn.confirmClaim],
   [/^\/api\/auth\/claims\/([^/]+)\/decline$/,        "POST", signIn.declineClaim],
   [/^\/api\/onboard$/,                              "POST", requests.onboard],
@@ -1160,6 +1173,14 @@ async function servePad(req, res) {
   }
 }
 
+/**
+ * The write routes that keep their own once-only rule and stand outside the
+ * Idempotency-Key unit (see the dispatcher): ball events, keyed per event in
+ * the batch; and the push fan-out, a delivery row per device, sent once.
+ * @type {Set<unknown>}
+ */
+const OWN_DEDUP = new Set([events.append, notices.push]);
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
@@ -1292,59 +1313,52 @@ const server = createServer(async (req, res) => {
       const request = { params: { id: m[1], ...(m[2] !== undefined ? { sub: m[2] } : {}) },
                         query: Object.fromEntries(url.searchParams), body, headers: req.headers };
 
-      // A RETRY WRITES ONCE. A write that carries an Idempotency-Key header
-      // is answered from its receipt (db/15_request_replay.sql) when the same
-      // person sends the same key again, and the handler does not run. Done
-      // here, in the one place every write is dispatched, rather than in
-      // fourteen handlers: ball events keep their own key inside the batch,
-      // and everything else gets this for free. The receipt is written after
-      // the handler answers, only for an answer the handler stood behind (not
-      // a 5xx), and only under the person's own session — the table's policy
-      // lets nobody read or write another's receipts.
-      const idem = (req.method === "POST" || req.method === "PATCH") ? String(req.headers["idempotency-key"] ?? "").trim() : "";
-      const keyed = Boolean(idem && req.headers.authorization);
-      const route = keyed
-        ? `${req.method} ${pattern.source.replace(/\\\//g, "/").replace(/\(\[\^\/\]\+\)/g, ":id").replace(/[\^$]/g, "")}${m[1] ? ` ${m[1]}` : ""}${m[2] ? ` ${m[2]}` : ""}`
-        : null;
-      if (keyed) {
-        const seen = await runAsPrincipal(pool, SECRET, req.headers.authorization, async (client) =>
-          (await client.query(`select route, status, body from request_replay where key = $1`, [idem])).rows[0] ?? null);
-        if (seen) {
-          if (seen.route !== route) return json(res, 422, { error: "idempotency_key_reused", route: seen.route });
-          res.setHeader("idempotent-replayed", "true");
-          return json(res, seen.status, seen.body);
-        }
-      }
-
       // THE ANSWER LEAVES AFTER THE HANDLER RESOLVES — see shim(). For a
       // write, that is after withPrincipal() has committed, so a 200 on the
       // wire means a row in the database, and a client that reads the moment
       // it hears back finds what it was told about.
       const out = shim(res);
-      await handler(request, out);
 
-      // The receipt, written from the answer about to be SENT — after COMMIT
-      // (the handler has resolved, so withPrincipal() has committed), never
-      // before it. It used to be written the moment the handler called
-      // json(), inside the transaction: a write whose COMMIT then refused had
-      // already left a 200 receipt behind, and the client's retry with the
-      // same key would have been answered from it, "saved", with nothing
-      // saved. Only an answer the handler stood behind (not a 5xx), only
-      // under the person's own session.
+      // A RETRY WRITES ONCE. A write that carries an Idempotency-Key header
+      // is answered from its receipt (db/15_request_replay.sql) when the same
+      // person sends the same request with the same key again, and the
+      // handler does not run. Done here, in the one place every write is
+      // dispatched, rather than in each handler.
       //
-      // AWAITED, and before the answer leaves. It used to be fired after the
-      // reply and not waited for, so a client that retried the moment it
-      // heard back could arrive before the receipt existed and run the
-      // handler a second time — the idempotency walk caught it as a 400 that
-      // did not replay. A receipt that fails to write costs only the replay,
-      // never the answer: the error is swallowed and the answer still goes.
-      const pending = out._pending;
-      if (keyed && pending && pending.status < 500) {
-        await runAsPrincipal(pool, SECRET, req.headers.authorization, (client) =>
-          client.query(`insert into request_replay (person_id, key, route, status, body)
-                        values (app_user_id(), $1, $2, $3, $4) on conflict do nothing`,
-                       [idem, route, pending.status, JSON.stringify(pending.body ?? null)])).catch(() => {});
+      // ONE TRANSACTION, KEY TO RECEIPT (GA-I01, write/replay.mjs): the key is
+      // claimed under a lock, so a second copy waits for the first and then
+      // replays it; the handler's own writes join that transaction; the
+      // receipt is written beside them and both commit together, before the
+      // answer leaves. A changed body under a used key is refused (422), not
+      // answered from the first. Only an answer the handler stood behind
+      // (not a 5xx) is kept; a 5xx keeps nothing, rows included, and the
+      // retry runs afresh. All under the person's own session — the table's
+      // policy lets nobody read or write another's receipts.
+      //
+      // Two routes stand aside, each because it already writes once on its
+      // own and must not run inside one long transaction: ball events (a key
+      // per event inside the batch, db/36 — the scoring append path is not
+      // this layer's) and the push fan-out (a delivery row per device that
+      // is never sent twice, written as each recipient, with the network in
+      // between). With a key they run exactly as without one.
+      const idem = (req.method === "POST" || req.method === "PATCH") ? String(req.headers["idempotency-key"] ?? "").trim() : "";
+      const keyed = Boolean(idem && req.headers.authorization) && !OWN_DEDUP.has(handler);
+      if (keyed) {
+        const route = `${req.method} ${pattern.source.replace(/\\\//g, "/").replace(/\(\[\^\/\]\+\)/g, ":id").replace(/[\^$]/g, "")}${m[1] ? ` ${m[1]}` : ""}${m[2] ? ` ${m[2]}` : ""}`;
+        const outcome = await keyedWrite({
+          pool, secret: SECRET, bearer: /** @type {string} */ (req.headers.authorization), key: idem, route,
+          fp: fingerprint({ route, query: request.query, body }),
+          run: async () => { await handler(request, out); return out._pending; },
+        });
+        if (outcome.kind === "ran") return void (out.flush() ?? json(res, 500, { error: "no_answer" }));
+        // Replayed or refused: the handler did not run, or its answer was not
+        // kept; either way, what goes back is the receipt's or the refusal.
+        out._pending = null;
+        if (outcome.kind === "replayed") res.setHeader("idempotent-replayed", "true");
+        return json(res, outcome.answer.status, outcome.answer.body);
       }
+
+      await handler(request, out);
       out.flush();
       return;
     }

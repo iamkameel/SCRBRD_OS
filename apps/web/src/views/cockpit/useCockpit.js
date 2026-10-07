@@ -81,6 +81,8 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
         squad, readiness, workload, spells, phases, trips, duties, officials,
         pitch: pitch?.[0] ?? null,
         weather: weather ? weather.find((w) => w.matchId === id) ?? null : null,
+        // The read as it answered (null: it failed), for the card's "could not read the weather"; `weather` above is this fixture's row or none.
+        weatherRows: weather,
         conditionsRaw: conditions, conditions: panels.day ? conditionsState(conditions) : null,
         terms: termsFromConditions(conditions),
         notices, opposition: opposition?.[0] ?? null, directives,
