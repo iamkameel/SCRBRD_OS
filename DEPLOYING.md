@@ -678,6 +678,28 @@ reads the request state on the newsfeed, and refuses to start without db/83
 (`expected-migrations.json`). With `PUBLIC_PAGES` off the news read is the one
 404 and the home page hides the section.
 <!-- ── end SCRBRD-142 phase 3 ── -->
+<!-- ── security review 2026-10-06: the guards beneath the routes (db/84) ── -->
+#### The database keeps the routes' rules (db/84)
+
+`db/84_row_guards.sql` puts three of the review's route fixes where every door
+passes them. **A squad row's boy must be the side's school's**
+(`match_squad_00_school_of_side`, 42501, naming nobody), and the trigger is
+named to fire before the two db/08 triggers whose refusals name the boy, his
+age and his consent state; the file's own check asserts that order. **A news
+post's scope, school, side, competition and author never change on UPDATE**
+(`news_post_anchor_frozen`, 42501): db/12's policy let an author move his own
+post to another school. **`role_request.asked_unverified`** marks a request not
+asked by its person signed in as himself — `POST /api/onboard` — and the mark
+survives Google linking the stub; the office's Requests list says "Asked
+before the email was verified". Pending requests already in the table are
+marked when no Google sign-in was linked to the account before they were
+asked. No secret.
+
+Paste `node tools/bundle-sql.mjs --apply 84` (after 83), then the verify bundle
+(§63 is its proof). **Schema first**: the API built with it reads
+`role_request.asked_unverified` and refuses to start without db/84
+(`expected-migrations.json`).
+<!-- ── end security review 2026-10-06 ── -->
 
 ### 5 · Cloud Run, the first time
 

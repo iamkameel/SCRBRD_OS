@@ -469,7 +469,11 @@ const scorebookFiles = scorebookFileRoutes({ pool, secret: SECRET, store: pageSt
 const lifts = liftRoutes({ pool, secret: SECRET });
 // The key is read once, here, and goes nowhere but Google's header. Unset,
 // the hint answers 503 weather_unavailable and the scorer picks by hand.
-const weather = weatherRoutes({ secret: SECRET, ...weatherConfig(process.env) });
+// Only an enrolled account may spend the quota (db/81's app_enrolled()): a
+// Google account that signed up and holds nothing is answered 403.
+const weather = weatherRoutes({ secret: SECRET, ...weatherConfig(process.env),
+  enrolled: (authorization) => runAsPrincipal(pool, SECRET, authorization,
+    async (c) => (await c.query("select app_enrolled() as ok")).rows[0]?.ok === true) });
 
 /**
  * Development sign-in.
@@ -1198,7 +1202,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/session")
       return json(res, 200, await sessionProfile(pool, SECRET, req.headers.authorization));
 
-    // The weather hint: any signed-in person, 30 a minute each; no-store,
+    // The weather hint: any enrolled person, 30 a minute each; no-store,
     // because it is Google's and briefly true (weather/weather-api.mjs).
     if (req.method === "GET" && path === "/api/weather/hint") {
       const r = await weather.hint({ query: Object.fromEntries(url.searchParams), authorization: req.headers.authorization });

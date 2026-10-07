@@ -351,6 +351,7 @@ function RequestsPanel({ role, players }) {
           <div style={{flex:1,minWidth:"200px"}}>
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:600}}>{r.name} <span style={{color:D.textMuted,fontWeight:400}}>{r.email}</span></div>
             <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{ROLES[r.role]?.label ?? r.role}{r.team?` · ${r.team}`:""}{r.note?` — ${r.note}`:""}</div>
+            {r.askedUnverified&&<div data-testid={`request-unverified-${r.id}`} style={{fontFamily:D.body,fontSize:"11px",color:D.roseText}}>Asked before the email was verified: check with them before granting.</div>}
           </div>
           {needsChild(r)&&(
             <select value={pick[r.id]||r.playerId||""} onChange={(e)=>setPick((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which player"
