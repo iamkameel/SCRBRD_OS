@@ -49,6 +49,19 @@ export function namedSide(rows, end, players = new Map()) {
 }
 
 /**
+ * The twelfth man the coach named for one end, or null. He does not bat and
+ * is not in the side above; the wicket sheet offers him as the substitute
+ * fielder he is there to be (Law 24).
+ * @param {any[] | null | undefined} rows  GET /api/read/match_squad rows
+ * @param {"home" | "away"} end
+ * @returns {{id: string, name: string} | null}
+ */
+export function twelfthOf(rows, end) {
+  const r = (rows ?? []).find((x) => x && x.side === end && x.twelfth === true && x.withdrawn !== true);
+  return r ? { id: r.player_id, name: r.full_name } : null;
+}
+
+/**
  * The roster as the pad has always read it: the team's players, else every
  * player the scorer may read. Null when there is no players read at all.
  * @param {any[] | null | undefined} players  GET /api/read/players rows
@@ -65,18 +78,20 @@ export function rosterOf(players, teamCode) {
  * Both ends' squads, and where each came from.
  * @param {{players: any[] | null, squad: any[] | null, teamCode?: string | null}} reads
  *   `players` the players read (null: it failed); `squad` the match_squad read (null: it failed)
- * @returns {{home: {squad: SquadMember[] | null, source: SideSource, team: boolean},
- *            away: {squad: SquadMember[] | null, source: SideSource}}}
+ * @returns {{home: {squad: SquadMember[] | null, source: SideSource, team: boolean, twelfth?: {id: string, name: string} | null},
+ *            away: {squad: SquadMember[] | null, source: SideSource, twelfth?: {id: string, name: string} | null}}}
+ *   `twelfth` only on a named side: the twelfth man the coach named, or null
  */
 export function sidesFor({ players, squad, teamCode = null }) {
   const byId = new Map((players ?? []).map((p) => [p.id, p]));
   const homeNamed = namedSide(squad, "home", byId);
   const awayNamed = namedSide(squad, "away", byId);
   const roster = rosterOf(players, teamCode);
-  const home = homeNamed ? { squad: homeNamed, source: /** @type {SideSource} */ ("named"), team: true }
+  const home = homeNamed ? { squad: homeNamed, source: /** @type {SideSource} */ ("named"), team: true, twelfth: twelfthOf(squad, "home") }
     : roster ? { squad: roster.squad, source: /** @type {SideSource} */ (squad ? "roster" : "unread"), team: roster.team }
     : { squad: null, source: /** @type {SideSource} */ (null), team: false };
-  const away = awayNamed ? { squad: awayNamed, source: /** @type {SideSource} */ ("named") } : { squad: null, source: /** @type {SideSource} */ (null) };
+  const away = awayNamed ? { squad: awayNamed, source: /** @type {SideSource} */ ("named"), twelfth: twelfthOf(squad, "away") }
+    : { squad: null, source: /** @type {SideSource} */ (null) };
   return { home, away };
 }
 
@@ -94,4 +109,66 @@ export function sideWords(source, teamCode, team = true) {
   if (source === "roster") return `${whole}: no side has been named`;
   if (source === "unread") return `${whole}: the side the coach named could not be read`;
   return null;
+}
+
+/**
+ * WHO MAY BE TYPED IN. A boy typed by name is not linked to his record, so
+ * the age and registration checks the coach's side passed do not follow him:
+ * on an end with a named side the scorer picks from that side, and the typed
+ * name waits behind the deliberate way out below (OFF_SIDE_ASK) — never
+ * offered straight away. Every other end keeps the typed name — an away
+ * school not on SCRBRD, a fixture nobody named a side for, the roster when
+ * the side could not be read, a practice match, the pad's own match.
+ *
+ * A substitute fielder is not this rule's: the Laws let him be someone
+ * outside the eleven (Law 24), and the wicket sheet keeps his typed name.
+ * @param {SideSource | undefined} source
+ * @returns {boolean}
+ */
+export const mayType = (source) => source !== "named";
+
+/**
+ * Which end of the fixture ("home" or "away") one side of an innings is: the
+ * batting side or the bowling side, by the innings' batting team key against
+ * the fixture's home key. Null when either key is missing.
+ * @param {"batting" | "bowling"} side
+ * @param {{battingKey?: string | null, homeKey?: string | null}} keys
+ * @returns {"home" | "away" | null}
+ */
+export function endOf(side, { battingKey, homeKey }) {
+  if (battingKey == null || homeKey == null) return null;
+  const homeBats = battingKey === homeKey;
+  return (side === "batting") === homeBats ? "home" : "away";
+}
+
+/**
+ * What the pad says where a typed name used to be, on a named side's end:
+ * one plain line, the coach's screen named as the coach sees it.
+ * @param {"bat" | "bowl"} what
+ */
+export const onlyNamedWords = (what) =>
+  `Only the side the coach named can ${what}. Ask the coach to change the side in Pick the side.`;
+
+/**
+ * THE WAY OUT (Kameel, 2026-10-07: "block, with a deliberate way out"). A
+ * late change or a concussion replacement can still be typed in on a named
+ * side's end, but only on purpose: the sheet asks "Not in the named side?",
+ * says why the door exists, and only then shows the typed field.
+ */
+export const OFF_SIDE_ASK = "Not in the named side?";
+export const OFF_SIDE_WHY = "For a late change or a concussion replacement. The coach will need to fix this after the match.";
+export const OFF_SIDE_MARK = "typed in — not on the named side";
+
+/**
+ * Who on a named side's end was typed in, not picked. Derived, never
+ * stored: a boy picked from the named side carries his player id (it is in
+ * the squad innings_start holds), and a boy typed in carries only his name,
+ * which is no id in that squad. The log carries both, so a reload tells
+ * them apart as well as the sheet that sent him in did.
+ * @param {Array<{id?: string, name?: string} | string> | null | undefined} squad  the end's squad, from innings_start
+ * @returns {(id: string | null | undefined) => boolean}  true for a player who is not in it
+ */
+export function offSide(squad) {
+  const ids = new Set((squad ?? []).map((p) => (typeof p === "string" ? p : p?.id ?? p?.name)));
+  return (id) => id != null && !ids.has(id);
 }
