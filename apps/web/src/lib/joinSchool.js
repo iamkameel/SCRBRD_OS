@@ -111,6 +111,29 @@ export function joinWords(e) {
 }
 
 /**
+ * What a failed withdraw is called. POST /api/requests/:id/withdraw answers
+ * { withdrawn: 0 } when the request is no longer waiting (it was answered
+ * first, or it is not yours): that is not a withdrawal, and is said as such.
+ */
+export const WITHDRAW_WORDS = {
+  not_waiting: "That request is no longer waiting, so it could not be withdrawn. Your requests have been read again.",
+  missing_token: "You were signed out. Sign in again to withdraw it.",
+  token_expired: "You were signed out. Sign in again to withdraw it.",
+  not_permitted: "You cannot withdraw that request.",
+};
+const WITHDRAW_FALLBACK = "That request was not withdrawn. Try again, or ask your school office.";
+const WITHDRAW_UNREACHABLE = "Could not reach SCRBRD. Check your connection and try again; the request may still be waiting.";
+
+/** @param {any} e */
+export function withdrawWords(e) {
+  if (e?.status === undefined || e?.status === null) return WITHDRAW_UNREACHABLE;
+  return WITHDRAW_WORDS[e?.code] ?? WITHDRAW_FALLBACK;
+}
+
+/** True when the server's reply says a request was really withdrawn. @param {any} r */
+export const withdrew = (r) => Number(r?.withdrawn) > 0;
+
+/**
  * What is said after a request is sent. The same sentence whatever the
  * parent typed: it cannot tell her whether her child is on a list.
  * @param {string} kind  @param {string} schoolName
