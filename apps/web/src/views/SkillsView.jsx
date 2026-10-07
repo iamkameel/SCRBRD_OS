@@ -9,6 +9,8 @@ import { recordAssessment, writeNote, NOTE_ADJUSTMENT_LIMIT } from "../lib/devel
 import { TREE, DISCIPLINES, ANCHOR_POINTS, anchorFor, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
 import { Icon } from "../ui/icons.jsx";
 import { signedIn } from "../lib/api.js";
+import { RUBRIC_MAX } from "../lib/radar.js";
+import { focusAreas } from "../lib/focusAreas.js";
 
 /** A refusal from the assessment or note routes, in words; the code only when there are none. */
 const WRITE_WORDS = {
@@ -125,7 +127,6 @@ function SkillsView({ role }) {
   // 11-15 good, 16-20 excellent. Kept in step with BANDS_OF_SCALE in
   // packages/scoring/src/rubric.mjs.
   const progressColorForScore = v => v>=16?D.emerald:v>=11?D.sky:v>=6?D.amber:D.rose;
-  const SCALE_MAX = 20;
   const BATTING_OR_BOWLING = ["batting", "bowling"];
   const rating = selPlayer ? ratings[selPlayer.id] : null;
   // Notes are read on their own capability, narrower than the ratings above.
@@ -425,7 +426,7 @@ function SkillsView({ role }) {
                 ))}
               </div>
 
-              <div style={{display:"grid",gridTemplateColumns:"1fr 180px",gap:"16px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,240px)",gap:"16px"}}>
                 <Card sx={{padding:"16px"}}>
                   <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"14px",textTransform:"capitalize"}}>{category} Skills</div>
                   {Object.entries(skills[category]).map(([skill, val])=>(
@@ -450,25 +451,33 @@ function SkillsView({ role }) {
                 </Card>
                 <div>
                   <Card sx={{padding:"14px",marginBottom:"12px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",marginBottom:"10px"}}>RADAR</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",marginBottom:"10px"}}>RADAR</div>
                     <div style={{display:"flex",justifyContent:"center"}}>
-                      <RadarChart data={skills[category]} color={SKILL_COLORS[category]||D.indigo} size={150}/>
+                      {/* The outer ring is 20, the top of the rubric: a 20 reaches it. */}
+                      <RadarChart data={skills[category]} max={RUBRIC_MAX} color={SKILL_COLORS[category]||D.indigo} size={110}/>
                     </div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>Outer ring is {RUBRIC_MAX}, the top of the scale.</div>
                   </Card>
-                  <Card sx={{padding:"14px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",marginBottom:"10px"}}>DEV PLAN</div>
-                    {Object.entries(skills[category]).sort(([,a],[,b])=>a-b).slice(0,3).map(([s,v])=>(
-                      <div key={s} style={{padding:"7px 0",borderBottom:`1px solid ${D.border}`}}>
-                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,textTransform:"capitalize",marginBottom:"2px"}}>{s}</div>
+                  <Card sx={{padding:"14px"}} data-testid="focus-areas">
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",marginBottom:"10px"}}>FOCUS AREAS</div>
+                    {/* The lowest ratings in this category, as they stand. A
+                        target is shown only when a coach has saved one; none
+                        can be saved yet, so none is drawn, and none is made
+                        up from the rating. */}
+                    {focusAreas(skills[category]).map(f=>(
+                      <div key={f.skill} data-testid={`focus-${f.skill}`} style={{padding:"7px 0",borderBottom:`1px solid ${D.border}`}}>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginBottom:"3px"}}>{f.label}</div>
                         <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                          <div style={{flex:1,height:"3px",background:D.surf3,borderRadius:"2px",overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${v}%`,background:D.orange,borderRadius:"2px"}}/>
+                          <div style={{flex:1,height:"4px",background:D.surf3,borderRadius:"2px",overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${(f.value/SCALE_MAX)*100}%`,background:D.orange,borderRadius:"2px"}}/>
                           </div>
-                          <span style={{fontFamily:D.mono,fontSize:"9px",color:D.orange}}>{v}→{Math.min(v+10,100)}</span>
+                          <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>
+                            {f.value} / {SCALE_MAX}{f.target!=null?` → target ${f.target}`:""}
+                          </span>
                         </div>
                       </div>
                     ))}
-                    <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px"}}>Focus areas for next quarter</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>Lowest rated in {category}. No target is set; one appears here when a coach saves it.</div>
                   </Card>
                 </div>
               </div>

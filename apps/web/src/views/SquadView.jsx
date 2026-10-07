@@ -1,10 +1,10 @@
-
 import { useMemo, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { fitnessColor, roleColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
 import { SegmentedControl } from "../ui/data.jsx";
+import { RUBRIC_MAX, categoryMeans, categoryMeansOn100, radarSummary } from "../lib/radar.js";
 import { usePlayersWithCareer, useSkills } from "../lib/live.js";
 import { api, signedIn } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
@@ -226,10 +226,8 @@ function SquadView({ role }) {
                       1-20 ratings on the chart's 0-100 scale. Naming a
                       "batting" group that no rating has crashed this panel for
                       any player who had been assessed. */}
-                  <RadarChart color={D.sky} size={140} data={Object.fromEntries(Object.entries(SKILLS_MATRIX[selected.id])
-                    .filter(([,vals])=>vals&&Object.keys(vals).length)
-                    .map(([cat,vals])=>[cat.charAt(0).toUpperCase()+cat.slice(1),
-                      Math.round(5*Object.values(vals).reduce((a,b)=>a+b,0)/Object.values(vals).length)]))}/>
+                  <RadarChart color={D.sky} size={120} max={100} data={categoryMeansOn100(SKILLS_MATRIX[selected.id])}
+                    caption={radarSummary(categoryMeans(SKILLS_MATRIX[selected.id]), RUBRIC_MAX)}/>
                 </div>
               </div>
             )}
