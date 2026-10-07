@@ -44,5 +44,39 @@ const local = run(LOCAL);
 ok("a local DATABASE_URL is not refused by the guard", local.status !== 2 && /Resetting schema/.test(local.stdout),
    `status ${local.status}\n    ${(local.stdout + local.stderr).slice(0, 300)}`);
 
+// --reset-objects is the MANAGED-host path, so a managed host is exactly
+// where it must not run by default (GA-I02). It had no guard at all: against
+// a remote URL it went straight to psql. Same rule as --reset, its own
+// override, named for what it does.
+const runObjects = (url, env = {}) => spawnSync(process.execPath, [MIGRATE, "--reset-objects"], {
+  encoding: "utf8", timeout: 20000,
+  env: { ...process.env, DATABASE_URL: url, I_UNDERSTAND_THIS_DESTROYS_PRODUCTION: "", I_UNDERSTAND_THIS_ERASES_EVERY_SCRBRD_RECORD: "", ...env },
+});
+const remoteObjects = runObjects(REMOTE);
+ok("--reset-objects against a managed host is refused with exit 2", remoteObjects.status === 2, `status ${remoteObjects.status}`);
+ok("...naming the host, not the password", /aws-1-eu-west-1\.pooler\.supabase\.com/.test(remoteObjects.stderr) && !/secret/.test(remoteObjects.stderr + remoteObjects.stdout), remoteObjects.stderr);
+ok("...pointing at apply-NN for a real database", /--apply NN/.test(remoteObjects.stderr), remoteObjects.stderr);
+ok("...with nothing attempted", !/Dropping this project's objects/.test(remoteObjects.stdout));
+ok("--reset's override does not open --reset-objects", runObjects(REMOTE, { I_UNDERSTAND_THIS_DESTROYS_PRODUCTION: "1" }).status === 2);
+const forcedObjects = runObjects(REMOTE, { I_UNDERSTAND_THIS_ERASES_EVERY_SCRBRD_RECORD: "1" });
+ok("its own named override passes the guard", forcedObjects.status !== 2 && /Dropping this project's objects/.test(forcedObjects.stdout),
+   `status ${forcedObjects.status}\n    ${(forcedObjects.stdout + forcedObjects.stderr).slice(0, 300)}`);
+const localObjects = runObjects(LOCAL);
+ok("a local DATABASE_URL is not refused by it", localObjects.status !== 2 && /Dropping this project's objects/.test(localObjects.stdout),
+   `status ${localObjects.status}`);
+
+// What it may drop: read from db/, and nothing it may not.
+{
+  const { projectObjects, teardownSql } = await import("./reset-objects.mjs");
+  const o = projectObjects(join(HERE, "..", "db"));
+  ok("the allowlist holds our tables, views, routines and the enum",
+     o.tables.includes("news_post") && o.tables.includes("request_replay") && o.tables.includes("schema_migration")
+     && o.views.length > 0 && o.routines.includes("app_can") && o.types.includes("session_state"));
+  ok("...and no temporary table a migration made for its own use", !o.tables.includes("_db42_before") && !o.tables.includes("_dls_cells"));
+  const sql = teardownSql(o);
+  ok("the teardown carries the allowlist", /ours_tables\s+text\[\] := ARRAY\[[^\]]*'news_post'/.test(sql));
+  ok("...and refuses first if somebody else's object depends on ours", sql.indexOf("refusing to reset") < sql.indexOf("EXECUTE format('DROP"));
+}
+
 console.log(`\nMIGRATE GUARD: ${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

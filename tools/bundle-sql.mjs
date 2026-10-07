@@ -21,9 +21,9 @@
  * bundle into an empty database and then asking the migrator, which answers
  * "0 applied, 10 already applied".
  *
- * The teardown and the NOT_EXTENSION predicate are lifted out of migrate.mjs
+ * The teardown is tools/reset-objects.mjs's, the same one migrate.mjs runs,
  * rather than retyped: a second copy of a destructive statement is a second
- * thing to get wrong, and this one drops every table in the database.
+ * thing to get wrong, and this one drops every table this project made.
  *
  *   node tools/bundle-sql.mjs
  *     → scrbrd-supabase-rebuild.sql   (paste, Run)
@@ -36,13 +36,13 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { projectObjects, teardownSql } from "./reset-objects.mjs";
 
 // Relative to this file, not a hard-coded checkout: run from a worktree or a
 // clone elsewhere, a fixed path silently bundled a DIFFERENT tree's db/.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "db");
 const sha = (f) => createHash("sha256").update(readFileSync(f)).digest("hex");
-const src = readFileSync(join(ROOT, "tools", "migrate.mjs"), "utf8");
 // SCRBRD-025. A bundle pasted into Supabase's SQL Editor otherwise leaves no
 // record of which commit produced it — the ledger says WHEN and WHAT
 // (sha256 per file), never which git state chose that file set. Best-effort:
@@ -51,18 +51,11 @@ const gitShaResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" 
 const COMMIT = gitShaResult.status === 0 ? gitShaResult.stdout.trim() : null;
 const noteSql = COMMIT ? `'${COMMIT}'` : "NULL";
 
-// Lift the teardown verbatim from the migrator rather than retyping it: a
-// second copy of a destructive statement is a second thing to get wrong.
-const m = src.match(/const drop = `([\s\S]*?)`;\n/);
-if (!m) throw new Error("could not find the teardown block in migrate.mjs");
-// The block is a JS template literal, so resolve its one interpolation from
-// the same file rather than pasting a second copy of the predicate.
-const nx = src.match(/const NOT_EXTENSION = `([\s\S]*?)`;/);
-if (!nx) throw new Error("could not find NOT_EXTENSION in migrate.mjs");
-const teardown = m[1]
-  .replace(/\$\{NOT_EXTENSION\}/g, nx[1])
-  .replace(/\\`/g, "`");
-if (/\$\{/.test(teardown)) throw new Error("unresolved interpolation left in the teardown");
+// The teardown is the migrator's own, from the one module both use: a second
+// copy of a destructive statement is a second thing to get wrong. It drops,
+// by name, only what db/ creates (GA-I02), and refuses before dropping
+// anything if somebody else's object depends on one of ours.
+const teardown = teardownSql(projectObjects(DB));
 
 const migrations = readdirSync(DB).filter(f => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
 
@@ -124,8 +117,13 @@ const parts = [`-- ════════════════════�
 --  does, in one paste, so no terminal, psql or clone is needed.
 --
 --  IT DESTROYS EVERYTHING THIS PROJECT CREATED in the public schema and
---  reseeds with invented demonstration people. Supabase's own objects and
---  anything belonging to an extension are left alone.
+--  reseeds with invented demonstration people. Only objects db/ creates are
+--  dropped, by name: Supabase's own, anything belonging to an extension, and
+--  any other application's are left alone — and if one of those depends on
+--  one of ours, section 1 refuses before it drops anything.
+--
+--  NEVER on a database holding a real record: there, a schema change is
+--  node tools/bundle-sql.mjs --apply NN (DEPLOYING.md).
 --
 --  Files, in order: ${migrations.join(", ")}, 98_seed_pilot.sql
 -- ═══════════════════════════════════════════════════════════════
