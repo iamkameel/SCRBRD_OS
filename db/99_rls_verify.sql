@@ -3813,6 +3813,61 @@ EXCEPTION WHEN OTHERS THEN
 END $$ LANGUAGE plpgsql;
 -- └── db/85 (section 64) ──────────────────────────────────────────────
 
+-- ┌── db/86 (section 65): a platform role belongs to no school ────────
+-- An account with no school and no role, for an appointment to name.
+CREATE OR REPLACE FUNCTION _v86_person(p_key text) RETURNS uuid AS $$
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v86.' || p_key || '@example.invalid', 'V86 ' || initcap(p_key), 'none') RETURNING id
+$$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An appointment written as whoever calls it: through role_assignment_write,
+-- as the application writes one. 'ok', or the SQLSTATE and the constraint
+-- (or the message, when no constraint was named).
+CREATE OR REPLACE FUNCTION _v86_insert(p_person uuid, p_role text, p_school uuid) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (p_person, p_role, p_school);
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ':' || coalesce(nullif(v_con, ''), SQLERRM);
+END $$ LANGUAGE plpgsql;
+-- The same, as the table's owner, past every policy: the seed's door,
+-- tools/bootstrap.mjs's, and the SQL Editor's. Live or already ended.
+CREATE OR REPLACE FUNCTION _v86_appoint(p_person uuid, p_role text, p_school uuid, p_active boolean DEFAULT true) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, active) VALUES (p_person, p_role, p_school, p_active);
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ':' || coalesce(nullif(v_con, ''), SQLERRM);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What an address left behind: accounts / requests / appointments.
+CREATE OR REPLACE FUNCTION _v86_left(p_email text) RETURNS text AS $$
+  SELECT (SELECT count(*) FROM app_user u WHERE lower(u.email) = lower(p_email)) || '/'
+      || (SELECT count(*) FROM role_request r JOIN app_user u ON u.id = r.person_id WHERE lower(u.email) = lower(p_email)) || '/'
+      || (SELECT count(*) FROM role_assignment a JOIN app_user u ON u.id = a.person_id WHERE lower(u.email) = lower(p_email))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A request's state, and how many appointments a person holds at a school.
+CREATE OR REPLACE FUNCTION _v86_request(p_id uuid) RETURNS text AS $$
+  SELECT state FROM role_request WHERE id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The record as a whole: school-scoped platform appointments (must be 0) /
+-- the seed's two tenant-less keys, live (must be 2) / whether the constraint
+-- is validated / the roles that carry a platform-only capability.
+CREATE OR REPLACE FUNCTION _v86_record() RETURNS text AS $$
+  SELECT (SELECT count(*) FROM role_assignment
+           WHERE role IN ('superadmin', 'platformadmin') AND school_id IS NOT NULL) || '/'
+      || (SELECT count(*) FROM role_assignment
+           WHERE id IN ('a5510000-0000-0000-0000-000000000016', 'a5510000-0000-0000-0000-000000000022')
+             AND school_id IS NULL AND active) || '/'
+      || coalesce((SELECT convalidated::text FROM pg_constraint
+                    WHERE conrelid = 'role_assignment'::regclass AND conname = 'platform_role_needs_no_school'), 'absent') || '/'
+      || (SELECT string_agg(DISTINCT rc.role, ',' ORDER BY rc.role)
+            FROM role_capability rc JOIN capability c ON c.name = rc.capability AND c.platform_only)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/86 (section 65) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -16317,6 +16372,126 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 64
+
+  -- ┌── 65 · A platform role belongs to no school (db/86) ─────────────
+  -- Kameel, 2026-10-07: "a super admin role isn't attached to any school
+  -- and shouldn't be." The RBAC diagnosis that day found POST /api/users
+  -- answering 200 to the platform account for a platformadmin at Westville,
+  -- and to the owner for a superadmin there. Everything below as the
+  -- application role unless it says the owner:
+  --
+  --   (enrol)    enrol_person(), POST /api/users's door: the platform account
+  --              asking for a platformadmin at Westville and at Hilton, the
+  --              owner for a superadmin and a platformadmin at Westville —
+  --              each answered platform_role_needs_no_school, with no
+  --              account, request or appointment left behind
+  --   (decide)   a request for a platform role at a school, filed signed out:
+  --              the platform account's grant is refused by name and the
+  --              request stays pending; declining it still works
+  --   (policy)   the INSERT through role_assignment_write, as the platform
+  --              account and as the owner, at a school: 23514, by name
+  --   (owner)    as the table owner, past every policy, live or ended: the
+  --              same
+  --   (still)    tenant-less still works where it did: the platform account
+  --              appoints a platformadmin and the owner a superadmin through
+  --              the policy; the owner's own SQL (the seed, bootstrap.mjs)
+  --              writes both; the seed's two keys are live; an ordinary role
+  --              at a school still enrols
+  --   (record)   nothing on the record breaks the rule, the constraint is
+  --              validated, and the roles carrying a platform-only capability
+  --              are exactly the two it names
+  --
+  -- Falsified: against a database at db/85 (no db/86), the section goes red
+  -- at its first assertion, "(enrol): the platform account was answered
+  -- ok:" — the 200 the diagnosis found.
+  DECLARE
+    v_ok boolean; v_reason text; v_asg uuid; v_req uuid; v_got text;
+    v_p1 uuid; v_p2 uuid; v_p3 uuid; v_p4 uuid; v_p5 uuid;
+  BEGIN
+    -- (enrol)
+    PERFORM _as(U_PLAT);
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.plat.wes@example.invalid', 'V86 Platwes', 'platformadmin', WES, NULL, NULL, NULL) e;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school',
+      format('§65 (enrol): the platform account was answered %s:%s for a platformadmin at Westville', v_ok, v_reason));
+    PERFORM _assert(_v86_left('v86.plat.wes@example.invalid') = '0/0/0',
+      format('§65 (enrol): the refusal left %s behind (accounts/requests/appointments)', _v86_left('v86.plat.wes@example.invalid')));
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.plat.hil@example.invalid', 'V86 Plathil', 'platformadmin', HIL, NULL, NULL, NULL) e;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school',
+      format('§65 (enrol): the platform account was answered %s:%s for a platformadmin at Hilton', v_ok, v_reason));
+    PERFORM _as(U_OWNER);
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.own.wes@example.invalid', 'V86 Ownwes', 'superadmin', WES, NULL, NULL, NULL) e;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school',
+      format('§65 (enrol): the owner was answered %s:%s for a superadmin at Westville', v_ok, v_reason));
+    PERFORM _assert(_v86_left('v86.own.wes@example.invalid') = '0/0/0',
+      format('§65 (enrol): the owner''s refusal left %s behind', _v86_left('v86.own.wes@example.invalid')));
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.own.plat@example.invalid', 'V86 Ownplat', 'platformadmin', WES, NULL, NULL, NULL) e;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school',
+      format('§65 (enrol): the owner was answered %s:%s for a platformadmin at Westville', v_ok, v_reason));
+
+    -- (decide) filed signed out, as POST /api/onboard files it.
+    PERFORM set_config('app.user_id', '', true);
+    v_req := onboard_request('v86.asker@example.invalid', 'V86 Asker', 'platformadmin', WES, NULL, 'I run the platform.');
+    PERFORM _as(U_PLAT);
+    SELECT d.ok, d.reason, d.assignment_id INTO v_ok, v_reason, v_asg
+      FROM decide_role_request(v_req, true, NULL, NULL, NULL) d;
+    PERFORM _assert(v_ok IS FALSE AND v_reason = 'platform_role_needs_no_school' AND v_asg IS NULL,
+      format('§65 (decide): the platform account''s grant was answered %s:%s', v_ok, v_reason));
+    PERFORM _assert(_v86_request(v_req) = 'pending',
+      format('§65 (decide): the refused request is %s, not pending', _v86_request(v_req)));
+    SELECT d.ok, d.reason INTO v_ok, v_reason FROM decide_role_request(v_req, false, 'Not a school''s role.', NULL, NULL) d;
+    PERFORM _assert(v_ok IS TRUE AND _v86_request(v_req) = 'declined',
+      format('§65 (decide): the request could not be declined (%s:%s, %s)', v_ok, v_reason, _v86_request(v_req)));
+
+    -- (policy)
+    PERFORM set_config('app.user_id', '', true);
+    v_p1 := _v86_person('one'); v_p2 := _v86_person('two'); v_p3 := _v86_person('three');
+    v_p4 := _v86_person('four'); v_p5 := _v86_person('five');
+    PERFORM _as(U_PLAT);
+    v_got := _v86_insert(v_p1, 'platformadmin', WES);
+    PERFORM _assert(v_got = '23514:platform_role_needs_no_school',
+      format('§65 (policy): the platform account wrote a platformadmin at Westville (%s)', v_got));
+    PERFORM _as(U_OWNER);
+    v_got := _v86_insert(v_p1, 'superadmin', WES);
+    PERFORM _assert(v_got = '23514:platform_role_needs_no_school',
+      format('§65 (policy): the owner wrote a superadmin at Westville (%s)', v_got));
+
+    -- (owner)
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v86_appoint(v_p1, 'superadmin', HIL);
+    PERFORM _assert(v_got = '23514:platform_role_needs_no_school',
+      format('§65 (owner): the table owner wrote a superadmin at Hilton (%s)', v_got));
+    v_got := _v86_appoint(v_p1, 'platformadmin', HIL, false);
+    PERFORM _assert(v_got = '23514:platform_role_needs_no_school',
+      format('§65 (owner): the table owner wrote an ended platformadmin at Hilton (%s)', v_got));
+
+    -- (still)
+    PERFORM _as(U_PLAT);
+    v_got := _v86_insert(v_p2, 'platformadmin', NULL);
+    PERFORM _assert(v_got = 'ok', format('§65 (still): the platform account could not appoint a platformadmin with no school (%s)', v_got));
+    PERFORM _as(U_OWNER);
+    v_got := _v86_insert(v_p3, 'superadmin', NULL);
+    PERFORM _assert(v_got = 'ok', format('§65 (still): the owner could not appoint a superadmin with no school (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v86_appoint(v_p4, 'superadmin', NULL);
+    PERFORM _assert(v_got = 'ok', format('§65 (still): the owner''s own SQL could not write an owner''s key (%s)', v_got));
+    v_got := _v86_appoint(v_p5, 'platformadmin', NULL);
+    PERFORM _assert(v_got = 'ok', format('§65 (still): the owner''s own SQL could not write a platformadmin (%s)', v_got));
+    PERFORM _as(U_PLAT);
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v86.coach@example.invalid', 'V86 Coach', 'coach', WES, '1XI', NULL, NULL) e;
+    PERFORM _assert(v_ok IS TRUE, format('§65 (still): the platform account could not enrol a coach at Westville (%s)', v_reason));
+
+    -- (record)
+    v_got := _v86_record();
+    PERFORM _assert(v_got = '0/2/true/platformadmin,superadmin',
+      format('§65 (record): school-scoped platform appointments / the seed''s keys live / validated / platform roles = %s', v_got));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 65
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

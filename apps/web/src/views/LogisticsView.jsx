@@ -6,8 +6,10 @@ import { Avatar, Badge, Btn, Card, KPICard, ReadState, SectionHeader, Select } f
 import { WeatherChip } from "./shared.jsx";
 import { useLive, useRows, useWeather } from "../lib/live.js";
 import { api, signedIn } from "../lib/api.js";
-import { combineReads, readState } from "../lib/readState.js";
+import { combineReads } from "../lib/readState.js";
 import { schoolsWhere } from "../lib/session.js";
+import { holdsCapability } from "../rbac/index.js";
+import { BookBus } from "./transportbook.jsx";
 import { textOn } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
 
@@ -46,7 +48,8 @@ function LogisticsView({ role }) {
   // school. These two reads are row-scoped like every other, so the numbers
   // are this reader's.
   // Each read keeps its state (GA-I08): "Vehicles In Service 0" over a read
-  // that failed is a figure nobody counted. Retry re-runs the same two reads.
+  // that failed is a figure nobody counted. Retry re-runs the same two reads,
+  // and so does a vehicle added or a trip booked (views/transportbook.jsx).
   const [nonce, setNonce] = useState(0);
   const vehiclesRead = useLive("vehicles", role, nonce);
   const tripsRead = useLive("trips", role, nonce);
@@ -55,6 +58,9 @@ function LogisticsView({ role }) {
   const fleetRead = combineReads([{ what: "the vehicles", read: vehiclesRead }, { what: "the trips", read: tripsRead }]);
   const fleetAnswered = ["ok", "empty"].includes(fleetRead.state);
   const fig = (v) => (!signedIn() || fleetAnswered ? v : "—");
+  // Offered by the capability the routes ask for, at a school where it is held;
+  // the server decides again on every post. A demonstration is offered none.
+  const mayBook = signedIn() && holdsCapability(role, "transport.manage") && schoolsWhere("transport.manage").length > 0;
   const [manifest,  setManifest]  = useState(null);
 
   const condColor = c => c==="Excellent"||c==="Stocked"||c==="Certified"?D.emerald:c==="Good"?D.sky:c==="Mixed"||c==="Fair"?D.amber:D.rose;
@@ -83,6 +89,11 @@ function LogisticsView({ role }) {
       {/* ── TRANSPORT ── */}
       {tab==="transport"&&(
         <div>
+          {mayBook&&(
+            <BookBus role={role} matches={MATCHES} trips={TRIPS} vehicles={VEHICLES}
+              loading={vehiclesRead.loading||tripsRead.loading} readError={!!(vehiclesRead.error||tripsRead.error)}
+              onChanged={()=>setNonce(n=>n+1)}/>
+          )}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"20px"}}>
             <KPICard label="Upcoming Away Trips" value={fig(upcomingTransport.length)} icon="bus" color={D.sky}/>
             <KPICard label="Drivers Available"   value={STAFF.filter(s=>s.role==="driver"&&s.active).length} icon="user" color={D.lime}/>

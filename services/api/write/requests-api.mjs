@@ -35,6 +35,9 @@ const ENROL_STATUS = {
   no_such_player: 404,
   player_already_has_an_account: 409,
   email_belongs_to_another_school: 409,
+  // db/86: superadmin and platformadmin belong to no school, and an
+  // enrolment is always at one. Not a permission problem: nobody may.
+  platform_role_needs_no_school: 422,
 };
 
 // Ending a role (db/77, role_assignment_end()). Each refusal, its status and
@@ -65,6 +68,9 @@ export function requestRoutes({ pool, secret }) {
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
     catch (/** @type {any} */ e) {
+      // db/86's constraint is named for its refusal code; say it as the
+      // functions do, whichever door reached it.
+      if (e.code === "23514" && e.constraint === "platform_role_needs_no_school") return res.status(422).json({ error: e.constraint });
       if (e.code === "23514") return res.status(422).json({ error: "not_requestable", detail: e.message });
       if (e.code === "23505") return res.status(422).json({ error: "already_pending" });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_school" });
