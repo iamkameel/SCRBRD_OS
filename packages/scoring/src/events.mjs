@@ -323,8 +323,8 @@ export const standsOnFreeHit = (d) => NON_DELIVERY.has(d);
  * no-ball naming one of its own ways out. A method the Law does not allow off
  * that extra is refused by the constructor, by the Laws at commit
  * (`not_out_off_wide`, `not_out_off_no_ball`) and by the database's door
- * (db/86); one stored before is no wicket, as every fold before read it.
- * SQL asks the same of ball_wicket_off_extra() (db/86).
+ * (db/87); one stored before is no wicket, as every fold before read it.
+ * SQL asks the same of ball_is_wicket() (db/87).
  */
 /** @type {ReadonlySet<unknown>} */
 export const WIDE_DISMISSALS = new Set([DISMISSAL.RUN_OUT, DISMISSAL.STUMPED, DISMISSAL.HIT_WICKET, DISMISSAL.OBSTRUCTING_FIELD]);

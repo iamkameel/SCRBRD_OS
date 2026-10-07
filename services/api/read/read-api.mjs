@@ -2032,7 +2032,7 @@ export const READ_QUERIES = {
    * bowler, and against bowling like his.
    *
    * The wicket rule is NOT restated here. A wicket that stood
-   * (ball_wicket_stands(), db/42 and db/86: a W, or one on a wide or a
+   * (ball_wicket_stands(), db/42 and db/87: a W, or one on a wide or a
    * no-ball, that the free hit did not save) with a dismissal that is the
    * bowler's is exactly the predicate
    * player_bowling_career uses, and two definitions of "wicket" that can drift
@@ -2086,7 +2086,7 @@ export const READ_QUERIES = {
                   -- out is the fold's \`dismissed ?? striker\`,
                   -- ball_dismissed_batter() in db/43: a typed-name batter run
                   -- out at the far end is not the striker's dismissal. A
-                  -- wicket is a W, or one on a wide or a no-ball (db/86):
+                  -- wicket is a W, or one on a wide or a no-ball (db/87):
                   -- ball_wicket_stands() answers false for anything else.
                   count(*) filter (
                     where b.dismissal is not null
@@ -2684,7 +2684,7 @@ function ratingsQuery() {
   // under the reader's policy, and the three arms that need the answer would
   // otherwise each ask. It is STABLE — one answer per row within a statement
   // — and for any row not marked W it is false without a lookup.
-  // A wicket on a wide or a no-ball (db/86) stands as a W does: s.stands is
+  // A wicket on a wide or a no-ball (db/87) stands as a W does: s.stands is
   // false for every delivery that is not a wicket, so it alone says so.
   const stoodOut = `case when b.kind = 'ball' and s.stands
                           then ball_dismissed_batter(b.striker_id, b.dismissed_id, b.payload) end`;
