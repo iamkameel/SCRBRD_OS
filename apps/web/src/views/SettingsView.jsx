@@ -23,6 +23,8 @@ import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, grantableFor, issuedFrom } 
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 // SCRBRD-140: the ways a person signs in (Me), and the office's Google claims (People).
 import { WaysToSignIn } from "./signins.jsx";
+// GA-I03 (db/85): ending every sign-in the person holds, this device's last.
+import { SignOutEverywhere } from "./signoutall.jsx";
 import { ClaimsPanel } from "./claims.jsx";
 // SCRBRD-083 C4 (db/47): a school's names-off switch per age group.
 import { NamesOffPanel } from "./publicname.jsx";
@@ -121,7 +123,7 @@ const ago = (t) => {
 };
 const day = (t) => (t ? String(t).slice(0, 10) : "—");
 
-function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, onDirectoryChanged }) {
+function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, onDirectoryChanged, onSignOut }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   // Bumped after a write so the accounts table re-reads instead of showing the
@@ -283,7 +285,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
                      onCapture={openCapture} onIssueCode={issueCodeFor}/>
         )}
         {tab === "roles"    && <RolesTab users={users} grantable={grantable}/>}
-        {tab === "me"       && <MeTab role={role}/>}
+        {tab === "me"       && <MeTab role={role} onSignOut={onSignOut}/>}
         {tab === "passport" && <PassportTab role={role}/>}
         {tab === "school"   && <SchoolTab role={role} users={users} players={PLAYERS} staff={STAFF} coaches={COACHES} canAudit={canAudit}/>}
         {tab === "upgrades" && <RoadmapTab/>}
@@ -694,7 +696,7 @@ function BoundariesSection({ role }) {
   );
 }
 
-function MeTab({ role }) {
+function MeTab({ role, onSignOut }) {
   const me = profile();
   // One answer, two places: the eighteen card and the consent section redraw together.
   const [consentNonce, setConsentNonce] = useState(0);
@@ -739,6 +741,9 @@ function MeTab({ role }) {
 
       {/* SCRBRD-140: the Google accounts on this account, and adding another. */}
       {live && <Panel><WaysToSignIn/></Panel>}
+
+      {/* GA-I03: every sign-in this person holds, ended in one act. */}
+      {live && onSignOut && <Panel><SignOutEverywhere onSignedOut={onSignOut}/></Panel>}
 
       <Panel>
         <CardHead title="My access"

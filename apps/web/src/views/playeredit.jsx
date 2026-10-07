@@ -12,6 +12,9 @@
  *   - his name on public pages    POST /api/players/:id/public-name (the office,
  *                                 on a guardian's word or form) and
  *                                 …/never-public (the mark): publicname.jsx
+ *   - a parent's link to him      POST /api/players/:id/guardians/verify and
+ *                                 …/consent, under guardian.link.manage:
+ *                                 guardianlink.jsx
  *
  * Name, squad number, playing role and the rest have no route, so they have no
  * field here. The first two need player.profile.manage, the third
@@ -30,6 +33,7 @@ import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-bir
 import { compareTeams, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 import { WhoToRing } from "./family/childfile.jsx";
 import { PublicNameStaff } from "./publicname.jsx";
+import { GuardianLinks } from "./guardianlink.jsx";
 import { holds } from "../lib/family.js";
 
 /** Does this person hold anything Edit Profile could offer? Signed out: nothing. */
@@ -80,6 +84,7 @@ export function EditProfile({ role, player, teams, onMoved }) {
           <WhoToRing child={{ id: player.id, name: player.name }} role={role}/>
         </div>
       )}
+      {holdsCapability(role, "guardian.link.manage") && <GuardianLinks role={role} player={player}/>}
       {mayPublicName(role) && <PublicNameStaff player={player}/>}
     </div>
   );
