@@ -151,31 +151,46 @@ try {
     // it used not to look at whether the ASSIGNMENT had a tenant. One row
     // appointing yourself platformadmin AT YOUR OWN SCHOOL then answered true.
     //
-    // Written straight into the table as the migration user, bypassing the
-    // policy that now refuses it, because the question here is what app_holds()
-    // does with such a row and not whether the row can be created.
-    const a = (await q(
+    // Since db/86 that row cannot exist at all, not even written straight into
+    // the table as the migration user: platform_role_needs_no_school refuses
+    // it by name. app_holds() is the second wall, and it is still asserted on
+    // its own: the constraint is lifted inside one transaction, the row
+    // written, the questions asked as the application, and all of it rolled
+    // back.
+    const direct = await q(
       `insert into role_assignment (person_id, role, school_id)
-       values ($1,'platformadmin',$2) returning id`, [who.registrar, HIL]))[0].id;
+       values ($1,'platformadmin',$2) returning id`, [who.registrar, HIL]).then(() => null, (e) => e);
+    ok("a school-scoped platformadmin cannot be written, even past every policy (db/86)",
+       direct?.code === "23514" && direct?.constraint === "platform_role_needs_no_school");
+    const c = await pool.connect();
     try {
-      const r = await asPerson(who.registrar,
+      await c.query("BEGIN");
+      await c.query("ALTER TABLE role_assignment DROP CONSTRAINT platform_role_needs_no_school");
+      await c.query(`insert into role_assignment (person_id, role, school_id) values ($1,'platformadmin',$2)`,
+                    [who.registrar, HIL]);
+      await c.query("SET LOCAL ROLE scrbrd_app");
+      await c.query("SELECT set_config('app.user_id', $1, true)", [who.registrar]);
+      const r = await c.query(
         `select app_holds('platform.feature.manage') as f,
                 app_holds('platform.tenant.manage')  as t,
                 app_holds('scouting.accredit')       as s`);
-      ok("a school-scoped platformadmin holds no platform capability",
+      ok("...and were one there, it would hold no platform capability",
          r.rows[0].f === false && r.rows[0].t === false && r.rows[0].s === false);
       // And therefore cannot reach the thing the capability guards.
-      ok("...and cannot move a platform-wide switch",
-         REFUSED(await asPerson(who.registrar,
-           `update feature_flag set enabled = true, locked = false
-             where key = 'drs_review' returning key`)));
-      // The platform account, whose assignment has no school, still can.
-      ok("the platform account still can",
-         (await asPerson(who.platform, `select app_holds('platform.feature.manage') as f`))
-           .rows[0].f === true);
+      await c.query("SAVEPOINT flag");
+      const moved = await c.query(
+        `update feature_flag set enabled = true, locked = false
+          where key = 'drs_review' returning key`).then((x) => x.rowCount, () => 0);
+      await c.query("ROLLBACK TO SAVEPOINT flag");
+      ok("...and could not move a platform-wide switch", moved === 0);
     } finally {
-      await q(`delete from role_assignment where id = $1`, [a]);
+      await c.query("ROLLBACK").catch(() => {});
+      c.release();
     }
+    // The platform account, whose assignment has no school, still can.
+    ok("the platform account still can",
+       (await asPerson(who.platform, `select app_holds('platform.feature.manage') as f`))
+         .rows[0].f === true);
   }
 
   // ── OUT ───────────────────────────────────────────────────────────
