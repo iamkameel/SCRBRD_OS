@@ -119,6 +119,10 @@ const SUITES = [
   // "At this rate" on the first innings' board: plain arithmetic, left off
   // when it would say nothing (scorer/boardData.js atThisRate).
   ["at-this-rate",      "apps/web/test/at-this-rate.test.mjs"],
+  // GA-I05: the worm, runs per over and the run rate, rendered from real
+  // folds — the worm ends on the total, extras and penalty runs are in, a
+  // finished chase has an end and no NaN (scorer/chartData.js).
+  ["charts",            "apps/web/test/charts.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The ground display (SCRBRD-133 G1): the rotation with a hand-held clock —
   // the dwell, the skip, a wicket's interrupt resuming where it was, the holds
   // — and its panels over built logs (display/rotation.js, display/data.js).
@@ -234,6 +238,9 @@ const SUITES = [
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
   ["auth",     "services/api/auth/auth.test.mjs"],
+  // A keyed write is one transaction (GA-I01): the claim, the fingerprint,
+  // the handler's calls as savepoints, the receipt before the one COMMIT.
+  ["replay",   "services/api/write/replay.test.mjs"],
   // Sign-up with Google (SCRBRD-140): a Firebase ID token verified with no
   // firebase-admin, every refusal by name, keys fetched by an injected fetcher.
   ["firebase-verify", "services/api/auth/firebase-verify.test.mjs"],

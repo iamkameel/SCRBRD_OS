@@ -11,6 +11,7 @@
  * identity before context exists — so they are scoped by hand, read only the
  * columns they need, and are the shortest queries in the codebase on purpose.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   signToken, verifyToken, principalFromClaims, withPrincipal,
   newMagicCode, magicHash, AuthError, CODE_TTL_SEC,
@@ -192,12 +193,153 @@ export async function runAsPrincipal(pool, secret, bearer, fn) {
     if (!token) throw new AuthError("missing_token");
     principal = principalFromClaims(verifyToken(token, secret));
   }
+  // Inside a write unit for this same bearer (runAsUnit below), the work
+  // joins the unit's transaction instead of committing on its own.
+  const unit = units.getStore();
+  if (unit && unit.state.open && unit.pool === pool && typeof bearer === "string" && bearer === unit.bearer) {
+    return unit.nest((/** @type {Db} */ c) => fn(c, principal));
+  }
   const client = await pool.connect();          // one dedicated connection
   try {
     return await withPrincipal(client, principal, (c) => fn(c, principal));
   } finally {
     client.release();
   }
+}
+
+// ── A write unit: one request, one transaction (GA-I01) ──
+//
+// A keyed write (an Idempotency-Key, server.mjs) used to be three
+// transactions: look for a receipt, run the handler (which committed on its
+// own), store the receipt. Two copies of the same post could both find no
+// receipt and both write; a crash after the handler's COMMIT and before the
+// receipt's left a row the retry wrote again. The receipt and the row it
+// vouches for have to commit together, or neither.
+//
+// So the dispatcher opens ONE transaction under the caller (runAsUnit), and
+// every runAsPrincipal() the handler makes with that same bearer, on that
+// same pool, joins it — as a SAVEPOINT, so each still succeeds or fails on its
+// own exactly as its own transaction did: a refusal rolls back to the
+// savepoint and the handler's catch answers it as before. Nothing in any
+// handler changed. What changed is who issues COMMIT: the unit, once, after
+// the receipt is written beside the rows.
+//
+// Three details keep a joined call meaning what its own transaction meant:
+//
+//   DEFERRED CHECKS FIRE AT THE SAVEPOINT. A constraint trigger that is
+//   DEFERRABLE INITIALLY DEFERRED (db/30, db/62, db/70) used to fire at the
+//   call's own COMMIT, inside the handler's try, and its refusal was the
+//   handler's to answer. SET CONSTRAINTS ALL IMMEDIATE before the RELEASE
+//   fires them there instead, then ALL DEFERRED puts the mode back. That is
+//   the initial mode only because every deferrable constraint in this
+//   schema is INITIALLY DEFERRED; smoke-idempotency.mjs fails if one is not.
+//
+//   ONE CALL AT A TIME. A handler that runs two calls side by side would
+//   interleave two savepoints on one connection; they queue instead. A call
+//   made from inside a call is already holding the connection and nests.
+//
+//   AFTER COMMIT MEANS AFTER COMMIT. A handler that tells something outside
+//   the database (the public pages' cache, the session hub) does so after
+//   its call returns — which inside a unit is before anything is committed.
+//   afterCommit() holds such a message until the unit commits, and drops it
+//   if the unit rolls back. Outside a unit it runs at once, as before.
+const units = new AsyncLocalStorage();
+
+/**
+ * @typedef {object} Unit
+ * @property {Pool} pool
+ * @property {string} bearer
+ * @property {{ open: boolean, finished: boolean }} state
+ * @property {(() => void)[]} after
+ * @property {boolean} held  true inside a joined call: it holds the connection
+ * @property {<T>(work: (client: Db) => T | Promise<T>) => Promise<T>} nest
+ * @property {() => Promise<void>} drain
+ */
+
+/**
+ * Run `body` in one transaction under `bearer`; every runAsPrincipal() it
+ * reaches with the same bearer and pool joins that transaction. `body`
+ * returns `{ commit, value }`: commit false rolls everything back (the
+ * value is still returned). A throw rolls back and rethrows. Before `body`
+ * touches the client after its handler, it awaits `unit.close()`, which
+ * waits for any joined call still running and stops new ones joining.
+ * @template T
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string} bearer
+ * @param {(client: Db, principal: Principal, unit: { close: () => Promise<void> }) => Promise<{ commit: boolean, value: T }>} body
+ * @returns {Promise<T>}
+ */
+export async function runAsUnit(pool, secret, bearer, body) {
+  const token = (bearer || "").startsWith("Bearer ") ? bearer.slice(7) : null;
+  if (!token) throw new AuthError("missing_token");
+  const principal = principalFromClaims(verifyToken(token, secret));
+  const client = await pool.connect();
+  /** @type {Promise<unknown>} */
+  let tail = Promise.resolve();
+  let n = 0;
+  /** @type {<T>(work: (client: Db) => T | Promise<T>) => Promise<T>} */
+  const savepoint = async (work) => {
+    const sp = `unit_call_${++n}`;
+    await client.query(`SAVEPOINT ${sp}`);
+    try {
+      const out = await units.run({ ...unit, held: true }, () => work(client));
+      await client.query("SET CONSTRAINTS ALL IMMEDIATE");
+      await client.query("SET CONSTRAINTS ALL DEFERRED");
+      await client.query(`RELEASE SAVEPOINT ${sp}`);
+      return out;
+    } catch (e) {
+      try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch { /* the unit's own ROLLBACK follows */ }
+      throw e;
+    }
+  };
+  /** @type {Unit} */
+  const unit = {
+    pool, bearer, state: { open: true, finished: false }, after: [], held: false,
+    nest(work) {
+      if (units.getStore()?.held) return savepoint(work);
+      const run = tail.then(() => savepoint(work));
+      tail = run.catch(() => {});
+      return run;
+    },
+    async drain() { await tail; },
+  };
+  const close = async () => { await unit.drain(); unit.state.open = false; };
+  /** @type {{ value: T } | null} */
+  let declined = null;
+  try {
+    const value = await withPrincipal(client, principal, (c) => units.run(unit, async () => {
+      const r = await body(c, principal, { close });
+      await close();
+      if (!r.commit) { declined = { value: r.value }; throw ROLLBACK; }
+      return r.value;
+    }));
+    unit.state.finished = true;
+    for (const f of unit.after) {
+      try { f(); } catch (/** @type {any} */ e) { console.error("after commit:", e?.message ?? e); }
+    }
+    return value;
+  } catch (e) {
+    unit.state.finished = true;
+    if (e === ROLLBACK && declined) return /** @type {{ value: T }} */ (declined).value;
+    throw e;
+  } finally {
+    unit.state.open = false;
+    client.release();
+  }
+}
+const ROLLBACK = Symbol("unit declined to commit");
+
+/**
+ * Something to tell the world once the write it describes is committed:
+ * at once outside a write unit, at the unit's COMMIT inside one, never if
+ * the unit rolls back.
+ * @param {() => void} fn
+ */
+export function afterCommit(fn) {
+  const unit = units.getStore();
+  if (unit && !unit.state.finished) unit.after.push(fn);
+  else fn();
 }
 
 // login_code, and the two functions that read and write it, now live in
