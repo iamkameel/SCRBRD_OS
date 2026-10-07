@@ -234,6 +234,9 @@ const SUITES = [
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
   ["auth",     "services/api/auth/auth.test.mjs"],
+  // A keyed write is one transaction (GA-I01): the claim, the fingerprint,
+  // the handler's calls as savepoints, the receipt before the one COMMIT.
+  ["replay",   "services/api/write/replay.test.mjs"],
   // Sign-up with Google (SCRBRD-140): a Firebase ID token verified with no
   // firebase-admin, every refusal by name, keys fetched by an injected fetcher.
   ["firebase-verify", "services/api/auth/firebase-verify.test.mjs"],
