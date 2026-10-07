@@ -114,8 +114,9 @@ export function sideWords(source, teamCode, team = true) {
 /**
  * WHO MAY BE TYPED IN. A boy typed by name is not linked to his record, so
  * the age and registration checks the coach's side passed do not follow him:
- * on an end with a named side the scorer picks from that side, and nobody is
- * typed in to bat or bowl. Every other end keeps the typed name — an away
+ * on an end with a named side the scorer picks from that side, and the typed
+ * name waits behind the deliberate way out below (OFF_SIDE_ASK) — never
+ * offered straight away. Every other end keeps the typed name — an away
  * school not on SCRBRD, a fixture nobody named a side for, the roster when
  * the side could not be read, a practice match, the pad's own match.
  *
@@ -147,3 +148,27 @@ export function endOf(side, { battingKey, homeKey }) {
  */
 export const onlyNamedWords = (what) =>
   `Only the side the coach named can ${what}. Ask the coach to change the side in Pick the side.`;
+
+/**
+ * THE WAY OUT (Kameel, 2026-10-07: "block, with a deliberate way out"). A
+ * late change or a concussion replacement can still be typed in on a named
+ * side's end, but only on purpose: the sheet asks "Not in the named side?",
+ * says why the door exists, and only then shows the typed field.
+ */
+export const OFF_SIDE_ASK = "Not in the named side?";
+export const OFF_SIDE_WHY = "For a late change or a concussion replacement. The coach will need to fix this after the match.";
+export const OFF_SIDE_MARK = "typed in — not on the named side";
+
+/**
+ * Who on a named side's end was typed in, not picked. Derived, never
+ * stored: a boy picked from the named side carries his player id (it is in
+ * the squad innings_start holds), and a boy typed in carries only his name,
+ * which is no id in that squad. The log carries both, so a reload tells
+ * them apart as well as the sheet that sent him in did.
+ * @param {Array<{id?: string, name?: string} | string> | null | undefined} squad  the end's squad, from innings_start
+ * @returns {(id: string | null | undefined) => boolean}  true for a player who is not in it
+ */
+export function offSide(squad) {
+  const ids = new Set((squad ?? []).map((p) => (typeof p === "string" ? p : p?.id ?? p?.name)));
+  return (id) => id != null && !ids.has(id);
+}

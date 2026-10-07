@@ -1865,8 +1865,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     return words?<p data-testid="side-source" data-source={source} style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.secondary,margin:"0 0 12px"}}>{words}</p>:null;
   };
 
-  // Whether a name may be typed in at the batting or the bowling end: not
-  // where the coach named the side (side.js mayType). Every innings of the
+  // Whether a name may be typed in straight away at the batting or the
+  // bowling end: not where the coach named the side (side.js mayType) — there
+  // only behind the sheet's "Not in the named side?". Every innings of the
   // match, super overs too: the sides do not change ends.
   const typedAt=(end)=>{const e=fixtureEnd(end);return mayType(e&&sideSource?sideSource[e]:null);};
   const battingTyped=typedAt("batting"),bowlingTyped=typedAt("bowling");

@@ -26,17 +26,23 @@
  *
  * And the unlisted player (scorer/side.js mayType): a boy typed by name is
  * not linked to his record, so the checks the coach's side passed would not
- * follow him. On a named side's end nobody is typed in:
+ * follow him. On a named side's end the typed field is hidden behind a
+ * deliberate way out ("Not in the named side?", then a confirm that says it
+ * is for a late change or a concussion replacement), never focused:
  *
  *   A. the openers' sheet and the incoming batter's sheet have no "Or Enter
  *      Unlisted Player" field, and say in one line why — after a reload too,
  *      with the log the device saved; the away side's bowler is typed, as
- *      ever (no side named there).
+ *      ever (no side named there). Through the way out a late change walks
+ *      in by name, and the next sheet marks him "typed in — not on the
+ *      named side".
  *   B. no side named: the openers' sheet keeps the field, as before.
- *   C. the opening bowler's sheet for the named side has no typed name; a
- *      catch offers the twelfth man the coach named as the substitute
- *      fielder (Law 24), and the typed substitute's field stays; the away
- *      side's incoming batter is typed in, and works, as before.
+ *   C. the opening bowler's sheet for the named side has no typed name until
+ *      the way out is taken, then a typed bowler takes the ball; a catch
+ *      offers the twelfth man the coach named as the substitute fielder (Law
+ *      24), and the typed substitute's field stays; the away side's incoming
+ *      batter is typed in, and works, as before; the next over's sheet marks
+ *      the typed bowler.
  *
  * Checked against Postgres, not the page.
  *
@@ -188,6 +194,26 @@ async function wicketSheet(mode) {
   if (DEBUG && !(await tid(`wicket-mode-${mode}`).count())) console.log("[debug] no wicket sheet:\n" + (await text()).slice(0, 1200));
   await tap(`wicket-mode-${mode}`);
 }
+/** The way out shut: its ask is there, its confirm and field are not. */
+const wayOutClosed = async () => await tid("off-side-open").count() === 1 && await tid("off-side-confirm-panel").count() === 0;
+/**
+ * Take the deliberate way out: the ask, then the confirm that says why, and
+ * only then the field — which is never focused for the scorer.
+ */
+async function takeWayOut(field) {
+  if (await page.locator(field).count() !== 0 || !(await wayOutClosed())) return false;
+  const ask = await tid("off-side-open").first().boundingBox();
+  if (!ask || ask.height < 44) return false;
+  if ((await tid("off-side-open").first().innerText()).trim() !== "Not in the named side?") return false;
+  await tap("off-side-open");
+  const why = (await tid("off-side-confirm-panel").first().innerText().catch(() => "")).trim();
+  if (DEBUG) console.log("[debug] confirm:", why);
+  if (!why.includes("For a late change or a concussion replacement. The coach will need to fix this after the match.")) return false;
+  if (await page.locator(field).count() !== 0) return false;   // not before the confirm
+  await tap("off-side-confirm");
+  if (await page.locator(field).count() !== 1) return false;
+  return !(await page.locator(field).first().evaluate((el) => el === document.activeElement));
+}
 /** The line said where a typed name used to be, or null. */
 const onlyNamed = async () => (await tid("named-only").count() ? (await tid("named-only").first().innerText()).trim() : null);
 
@@ -284,6 +310,7 @@ try {
   ok("...the twelfth man is not offered to bat", !offered.includes("Verify Side 12"));
   ok("no unlisted player can be typed in to open", await page.locator('input[aria-label="Player name"]').count() === 0);
   ok("...and the pad says why, in one plain line", await onlyNamed() === ONLY_BAT, String(await onlyNamed()));
+  ok("...with the way out closed: \"Not in the named side?\" and no confirm yet", await wayOutClosed());
   // The openers, picked from the side: the first offered twice (each tap takes the next).
   for (let i = 0; i < 2; i++) {
     await page.locator('[data-testid="batter-choice"]').first().click({ timeout: 4000 });
@@ -302,6 +329,7 @@ try {
      String(await page.locator('[data-testid="batter-choice"]').count()));
   ok("...and no unlisted player can be typed in", await page.locator('input[aria-label="Player name"]').count() === 0);
   ok("...said in the same line", await onlyNamed() === ONLY_BAT, String(await onlyNamed()));
+  ok("...the way out closed", await wayOutClosed());
   await exitScorer();
   ok("the fixture opens again from the log this device saved", await openFixture("Verify Named XI"));
   const savedA = await readSaved(NAMED);
@@ -310,6 +338,21 @@ try {
   await page.waitForTimeout(500);
   ok("after the reload the incoming batter's sheet still has no unlisted player",
      await page.locator('[data-testid="batter-choice"]').count() > 0 && await page.locator('input[aria-label="Player name"]').count() === 0 && await onlyNamed() === ONLY_BAT);
+  // The deliberate way out: a late change walks in, typed.
+  ok("the way out: asked, then why, then the field", await takeWayOut('input[aria-label="Player name"]'));
+  await page.locator('input[aria-label="Player name"]').first().fill("Verify Late Change");
+  await page.locator('input[aria-label="Player name"]').first().press("Enter");
+  await page.waitForTimeout(800);
+  const inA = ((await readSaved(NAMED))?.events?.[0] ?? []).filter((e) => e.kind === "batters").at(-1);
+  ok("...and the typed batter walks in, by name only (no player id)", inA && (inA.striker === "Verify Late Change" || inA.nonStriker === "Verify Late Change"), JSON.stringify(inA));
+  // Out next ball: the next sheet lists him with his score, marked.
+  await wicketSheet("bowled");
+  await tap("wicket-confirm");
+  await page.waitForTimeout(900);
+  const marks = await tid("off-side-mark").allTextContents();
+  ok("the batting sheet marks him, and only him: \"typed in — not on the named side\"",
+     marks.length === 1 && marks[0] === "typed in — not on the named side", JSON.stringify(marks));
+  ok("...the way out closed again for the next man", await wayOutClosed());
   await exitScorer();
 
   // ══ B ═════════════════════════════════════════════════════════════════
@@ -348,8 +391,13 @@ try {
   ok("...and offers those eleven to bowl, nobody else", bowlers.length === 11 && bowlers.every((id) => want.includes(id)), JSON.stringify(bowlers));
   ok("...and no bowler can be typed in", await page.locator('input[aria-label="Bowler name"]').count() === 0);
   ok("...said in one line", await onlyNamed() === ONLY_BOWL, String(await onlyNamed()));
-  await page.locator('[data-testid="bowler-choice"]:not([disabled])').first().click({ timeout: 4000 });
-  await page.waitForTimeout(700);
+  ok("...the way out closed", await wayOutClosed());
+  ok("the way out: asked, then why, then the bowler's field", await takeWayOut('input[aria-label="Bowler name"]'));
+  await page.locator('input[aria-label="Bowler name"]').first().fill("Verify Late Bowler");
+  await page.locator('input[aria-label="Bowler name"]').first().press("Enter");
+  await page.waitForTimeout(800);
+  const bowlC = ((await readSaved(AWAY))?.events?.[0] ?? []).filter((e) => e.kind === "bowler").at(-1);
+  ok("...and the typed bowler takes the ball, by name only", bowlC?.bowler === "Verify Late Bowler", JSON.stringify(bowlC));
   await wicketSheet("caught");
   const sub = await tid("wicket-twelfth").count() ? (await tid("wicket-twelfth").first().innerText()) : "";
   ok("a catch: the twelfth man the coach named is offered as the substitute fielder", /Verify Side 12/.test(sub) && /12th Man/i.test(sub), sub);
@@ -365,6 +413,15 @@ try {
   await page.waitForTimeout(700);
   const inC = ((await readSaved(AWAY))?.events?.[0] ?? []).filter((e) => e.kind === "batters").at(-1);
   ok("...and walks in", inC && (inC.striker === "Verify Opener C" || inC.nonStriker === "Verify Opener C"), JSON.stringify(inC));
+  ok("...and nobody on the away side is marked: no side was named there", await tid("off-side-mark").count() === 0);
+  // The over out: five dots, and the next over's sheet lists him with his figures, marked.
+  for (let i = 0; i < 5; i++) await tap("key-dot");
+  await page.waitForSelector('[data-testid="bowler-choices"]', { timeout: 6000 }).catch(() => {});
+  const lateRow = page.locator('[data-testid="bowler-choice"][data-id="Verify Late Bowler"]');
+  ok("the next over's sheet marks the typed bowler: \"typed in — not on the named side\"",
+     await lateRow.count() === 1 && (await lateRow.locator('[data-testid="off-side-mark"]').count()) === 1
+     && await tid("off-side-mark").count() === 1, String(await tid("off-side-mark").count()));
+  ok("...and still offers no typed bowler until asked", await page.locator('input[aria-label="Bowler name"]').count() === 0 && await wayOutClosed());
   await exitScorer();
 
   ok("no console errors", errors.length === 0, errors.slice(0, 3).join(" | "));

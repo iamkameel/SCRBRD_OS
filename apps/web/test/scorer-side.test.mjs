@@ -1,7 +1,7 @@
 // The side the pad scores for a real fixture (scorer/side.js): the side the
 // coach named when there is one, else what the end always had. No DOM, no
 // network. Invented names only.
-import { endOf, mayType, namedSide, onlyNamedWords, rosterOf, sidesFor, sideWords, twelfthOf } from "../src/scorer/side.js";
+import { endOf, mayType, namedSide, offSide, OFF_SIDE_ASK, OFF_SIDE_MARK, OFF_SIDE_WHY, onlyNamedWords, rosterOf, sidesFor, sideWords, twelfthOf } from "../src/scorer/side.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { console.log(`${c ? "✓" : "✗"} ${n}${c || !d ? "" : `\n    ${typeof d === "string" ? d : JSON.stringify(d)}`}`); if (c) pass++; else fail++; };
@@ -93,6 +93,18 @@ ok("none named at that end: null", twelfthOf(sheet, "away") === null && twelfthO
 ok("a withdrawn twelfth man is not offered", twelfthOf([row("p12", "home", null, { twelfth: true, withdrawn: true })], "home") === null);
 ok("sidesFor carries him with the named side", is(both.home.twelfth, { id: "p12", name: "Verify Side 12" }));
 ok("...and an end with no named side carries none", (both.away.twelfth ?? null) === null && (none.home.twelfth ?? null) === null);
+
+console.log("\nG. The deliberate way out, and who came through it");
+ok("the ask", OFF_SIDE_ASK === "Not in the named side?");
+ok("...why it is there, in one line", OFF_SIDE_WHY === "For a late change or a concussion replacement. The coach will need to fix this after the match.");
+ok("...and the marker", OFF_SIDE_MARK === "typed in — not on the named side");
+const isOff = offSide(named);
+ok("a boy picked from the named side is not marked", isOff("p11") === false && isOff("p1") === false);
+ok("a boy typed in (his name is his only id) is marked", isOff("Verify Late Change") === true);
+ok("...even one typed with a named boy's name: a name is not an id", isOff("Verify Side 11") === true);
+ok("nobody at all: nothing to mark", isOff(null) === false && isOff(undefined) === false);
+ok("a squad of bare names (a demonstration team) reads the same way", offSide(["A Name", "B Name"])("A Name") === false && offSide(["A Name"])("C Name") === true);
+ok("no squad: everyone typed is off it", offSide(null)("Verify Away 01") === true);
 
 console.log(`\n${"─".repeat(52)}\nSCORER SIDE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
