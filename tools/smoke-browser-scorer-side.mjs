@@ -24,6 +24,20 @@
  *      from, because none did; and the opening bowler's sheet says "The side
  *      the coach named" and offers those eleven, nobody else.
  *
+ * And the unlisted player (scorer/side.js mayType): a boy typed by name is
+ * not linked to his record, so the checks the coach's side passed would not
+ * follow him. On a named side's end nobody is typed in:
+ *
+ *   A. the openers' sheet and the incoming batter's sheet have no "Or Enter
+ *      Unlisted Player" field, and say in one line why — after a reload too,
+ *      with the log the device saved; the away side's bowler is typed, as
+ *      ever (no side named there).
+ *   B. no side named: the openers' sheet keeps the field, as before.
+ *   C. the opening bowler's sheet for the named side has no typed name; a
+ *      catch offers the twelfth man the coach named as the substitute
+ *      fielder (Law 24), and the typed substitute's field stays; the away
+ *      side's incoming batter is typed in, and works, as before.
+ *
  * Checked against Postgres, not the page.
  *
  *   node tools/migrate.mjs --reset --seed
@@ -161,6 +175,21 @@ async function openersSheet() {
   return { line, names, body: await text() };
 }
 const ids = (xs) => (xs ?? []).map((p) => p?.id ?? p);
+const ONLY_BAT = "Only the side the coach named can bat. Ask the coach to change the side in Pick the side.";
+const ONLY_BOWL = "Only the side the coach named can bowl. Ask the coach to change the side in Pick the side.";
+/** A wicket, from the basic pad (its Wicket key opens the sheet straight away). */
+async function wicketSheet(mode) {
+  if (!(await tid("basic-pad").count())) {
+    await tid("pad-menu").click({ timeout: 2500 }).catch(() => {});
+    await tid("pad-basic-scoring").click({ timeout: 2500 }).catch(() => {});
+    await page.waitForTimeout(400);
+  }
+  await click(/Wicket/, 2500);
+  if (DEBUG && !(await tid(`wicket-mode-${mode}`).count())) console.log("[debug] no wicket sheet:\n" + (await text()).slice(0, 1200));
+  await tap(`wicket-mode-${mode}`);
+}
+/** The line said where a typed name used to be, or null. */
+const onlyNamed = async () => (await tid("named-only").count() ? (await tid("named-only").first().innerText()).trim() : null);
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -205,8 +234,8 @@ try {
   ok("...then the side again: eleven and a twelfth", second.status === 200 && second.body?.selected === 12, JSON.stringify(second.body));
   const held = await dbq(`select player_id, batting_no, twelfth, withdrawn from match_squad where match_id = $1`, [NAMED]);
   ok("the database holds boy 13 withdrawn, not deleted", held.find((r) => r.player_id === boy["13"])?.withdrawn === true && held.filter((r) => !r.withdrawn).length === 12);
-  const third = await call(`/api/matches/${AWAY}/squad`, { method: "POST", token: coach, body: { side: "home", players: side } });
-  ok("the same eleven named for the fixture the away side will bat first in", third.status === 200 && third.body?.selected === 11, JSON.stringify(third.body));
+  const third = await call(`/api/matches/${AWAY}/squad`, { method: "POST", token: coach, body: { side: "home", players: [...side, { playerId: boy["12"], twelfth: true }] } });
+  ok("the same eleven and twelfth named for the fixture the away side will bat first in", third.status === 200 && third.body?.selected === 12, JSON.stringify(third.body));
 
   // The tosses, called the real way by the scorer: U14A bat in NAMED and
   // ROSTER; in AWAY, U14A win and bowl.
@@ -253,6 +282,34 @@ try {
      offered.length === 11 && offered[0] === "Verify Side 11" && offered[10] === "Verify Side 01", offered.join(", "));
   ok("...and never the withdrawn boy", !/Verify Side 13/.test(shA.body));
   ok("...the twelfth man is not offered to bat", !offered.includes("Verify Side 12"));
+  ok("no unlisted player can be typed in to open", await page.locator('input[aria-label="Player name"]').count() === 0);
+  ok("...and the pad says why, in one plain line", await onlyNamed() === ONLY_BAT, String(await onlyNamed()));
+  // The openers, picked from the side: the first offered twice (each tap takes the next).
+  for (let i = 0; i < 2; i++) {
+    await page.locator('[data-testid="batter-choice"]').first().click({ timeout: 4000 });
+    await page.waitForTimeout(500);
+  }
+  await page.waitForSelector('[data-testid="bowler-choices"]', { timeout: 6000 }).catch(() => {});
+  ok("the away side's opening bowler may be typed in, as ever: no side named there",
+     await page.locator('input[aria-label="Bowler name"]').count() === 1 && await tid("named-only").count() === 0);
+  await page.locator('input[aria-label="Bowler name"]').first().fill("Verify Bowler A");
+  await page.locator('input[aria-label="Bowler name"]').first().press("Enter");
+  await page.waitForTimeout(700);
+  await wicketSheet("bowled");
+  await tap("wicket-confirm");
+  await page.waitForTimeout(900);
+  ok("a wicket: the incoming batter's sheet offers the side", await page.locator('[data-testid="batter-choice"]').count() === 9,
+     String(await page.locator('[data-testid="batter-choice"]').count()));
+  ok("...and no unlisted player can be typed in", await page.locator('input[aria-label="Player name"]').count() === 0);
+  ok("...said in the same line", await onlyNamed() === ONLY_BAT, String(await onlyNamed()));
+  await exitScorer();
+  ok("the fixture opens again from the log this device saved", await openFixture("Verify Named XI"));
+  const savedA = await readSaved(NAMED);
+  ok("...which keeps where each side came from", savedA?.sides?.home === "named", JSON.stringify(savedA?.sides));
+  if (await tid("scoring-blocked-fix").count()) await tap("scoring-blocked-fix");
+  await page.waitForTimeout(500);
+  ok("after the reload the incoming batter's sheet still has no unlisted player",
+     await page.locator('[data-testid="batter-choice"]').count() > 0 && await page.locator('input[aria-label="Player name"]').count() === 0 && await onlyNamed() === ONLY_BAT);
   await exitScorer();
 
   // ══ B ═════════════════════════════════════════════════════════════════
@@ -266,6 +323,7 @@ try {
   const shB = await openersSheet();
   ok("the openers' sheet says: the whole U14A roster, no side named",
      shB.line?.words === "The whole U14A roster: no side has been named" && shB.line?.source === "roster", JSON.stringify(shB.line));
+  ok("...and keeps the unlisted player's field, as before", await page.locator('input[aria-label="Player name"]').count() === 1 && await tid("named-only").count() === 0);
   await exitScorer();
 
   // ══ C ═════════════════════════════════════════════════════════════════
@@ -288,6 +346,25 @@ try {
   ok("the opening bowler's sheet says the side the coach named", bowlLine === "The side the coach named", String(bowlLine));
   const bowlers = await page.$$eval('[data-testid="bowler-choice"]', (els) => els.map((e) => e.getAttribute("data-id")));
   ok("...and offers those eleven to bowl, nobody else", bowlers.length === 11 && bowlers.every((id) => want.includes(id)), JSON.stringify(bowlers));
+  ok("...and no bowler can be typed in", await page.locator('input[aria-label="Bowler name"]').count() === 0);
+  ok("...said in one line", await onlyNamed() === ONLY_BOWL, String(await onlyNamed()));
+  await page.locator('[data-testid="bowler-choice"]:not([disabled])').first().click({ timeout: 4000 });
+  await page.waitForTimeout(700);
+  await wicketSheet("caught");
+  const sub = await tid("wicket-twelfth").count() ? (await tid("wicket-twelfth").first().innerText()) : "";
+  ok("a catch: the twelfth man the coach named is offered as the substitute fielder", /Verify Side 12/.test(sub) && /12th Man/i.test(sub), sub);
+  ok("...and a substitute's name may still be typed (Law 24)", await page.locator('input[aria-label="Fielder not in the squad"]').count() === 1);
+  await tap("wicket-twelfth");
+  await tap("wicket-confirm");
+  await page.waitForTimeout(900);
+  const caught = ((await readSaved(AWAY))?.events?.[0] ?? []).filter((e) => e.kind === "ball").at(-1);
+  ok("...the catch is his", caught?.dismissal === "caught" && caught?.fielder === "Verify Side 12", JSON.stringify(caught && { d: caught.dismissal, f: caught.fielder }));
+  ok("the away side's incoming batter is typed in, as before", await page.locator('input[aria-label="Player name"]').count() === 1 && await tid("named-only").count() === 0);
+  await page.locator('input[aria-label="Player name"]').first().fill("Verify Opener C");
+  await page.locator('input[aria-label="Player name"]').first().press("Enter");
+  await page.waitForTimeout(700);
+  const inC = ((await readSaved(AWAY))?.events?.[0] ?? []).filter((e) => e.kind === "batters").at(-1);
+  ok("...and walks in", inC && (inC.striker === "Verify Opener C" || inC.nonStriker === "Verify Opener C"), JSON.stringify(inC));
   await exitScorer();
 
   ok("no console errors", errors.length === 0, errors.slice(0, 3).join(" | "));
