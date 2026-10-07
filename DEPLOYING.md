@@ -700,6 +700,29 @@ Paste `node tools/bundle-sql.mjs --apply 84` (after 83), then the verify bundle
 `role_request.asked_unverified` and refuses to start without db/84
 (`expected-migrations.json`).
 <!-- ── end security review 2026-10-06 ── -->
+<!-- ── GA-I03: a session ends when it is ended (db/85) ── -->
+#### A session ends when it is ended (GA-I03, db/85)
+
+`db/85_session_revocation.sql` gives every account a session epoch
+(`auth_epoch`) and every token a session (`auth_session`), both with no policy
+and no privilege for the application, and `app_session_begin()`, which the API
+now calls to become somebody: the account must be active and the token's
+session live under the current epoch. **Signing out ends the token on that
+device; `POST /api/auth/sign-out-everywhere`, the office disabling an account
+(`POST /api/auth/users/:id/disable`, or a plain `UPDATE app_user SET active =
+false`), and removing a Google sign-in end every token and pad credential the
+account holds**, on their next request. Role revocation is unchanged. No
+secret, no backfill. `docs/AUTH_SPEC.md` has the rule.
+
+Paste `node tools/bundle-sql.mjs --apply 85` (after 84), then the verify bundle
+(§64 is its proof, and the summary row's "Sessions end when ended" reads OK).
+**Schema first**: the API built with it calls `app_session_begin()` on every
+request and refuses to start without db/85 (`expected-migrations.json`).
+**Everybody signed in signs in once more** when that API is deployed: a token
+minted before it names no session and is refused (`401 incomplete_claims`).
+Deploy it outside a match; a pad's resume credential is not a token and keeps
+scoring.
+<!-- ── end GA-I03 ── -->
 
 ### 5 · Cloud Run, the first time
 
