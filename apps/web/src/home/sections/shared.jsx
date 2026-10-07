@@ -19,14 +19,38 @@ export const eyebrow = () => ({
   color: T.content.tertiary,
 });
 
-/** A section's box: a readable width and the 16px gutter at phone width. */
-export function Section({ id, label, narrow, children }) {
+/** The big heading of a section that has a kicker over it. */
+export const displayHead = () => ({
+  ...homeHead(), fontSize: "clamp(26px,4.6vw,42px)", fontWeight: 700, lineHeight: 1.1, letterSpacing: "-0.015em",
+  color: T.content.primary,
+});
+
+/**
+ * A section's box: a readable width and the 16px gutter at phone width.
+ * `label` is its h2: the small uppercase eyebrow, or with `kicker` (a line
+ * over it) a display heading. The section arrives as it scrolls in (`.rv`,
+ * home/fx.js): from a visible state, and not at all with reduced motion.
+ * `reveal={false}` when its own parts arrive one by one instead.
+ */
+export function Section({ id, label, kicker, narrow, children, style, reveal = true }) {
   return (
-    <section id={id} aria-labelledby={id ? `${id}-h` : undefined}
-      style={{ padding: `${T.space.xl} ${T.space.lg}`, maxWidth: narrow ? "760px" : "1040px", margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
-      {label && <h2 id={id ? `${id}-h` : undefined} style={{ ...eyebrow(), marginBottom: T.space.lg }}>{label}</h2>}
+    <section id={id} aria-labelledby={id ? `${id}-h` : undefined} className={reveal ? "rv" : undefined}
+      style={{ padding: `${T.space.xl} ${T.space.lg}`, maxWidth: narrow ? "760px" : "1120px", margin: "0 auto", width: "100%", boxSizing: "border-box", ...style }}>
+      {kicker && <p style={{ ...eyebrow(), color: T.brand.accentText, marginBottom: T.space.md }}>{kicker}</p>}
+      {label && <h2 id={id ? `${id}-h` : undefined} style={kicker ? { ...displayHead(), marginBottom: T.space.xl } : { ...eyebrow(), marginBottom: T.space.lg }}>{label}</h2>}
       {children}
     </section>
+  );
+}
+
+/** A stitched seam between two parts of the page, drawn as it scrolls into view. Decorative. */
+export function Seam() {
+  return (
+    <div aria-hidden="true" className="rv-seam" style={{ maxWidth: "1120px", margin: "0 auto", padding: `0 ${T.space.lg}` }}>
+      <svg viewBox="0 0 1000 24" preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "24px", overflow: "visible" }}>
+        <path pathLength="1" d="M0 12 C 250 2, 750 22, 1000 12" fill="none" stroke={T.semantic.criticalText} strokeOpacity="0.55" strokeWidth="1.5" strokeDasharray="0.012 0.008" />
+      </svg>
+    </div>
   );
 }
 
@@ -36,11 +60,17 @@ const btn = () => ({
   display: "inline-flex", alignItems: "center", justifyContent: "center",
 });
 
-/** A link drawn as a button: `solid` is the one call to action, `ghost` the quieter one. */
-export function LinkButton({ href, solid, children, testId, rel }) {
+/**
+ * A link drawn as a button: `solid` is the one call to action, the default
+ * the quieter one. `tone="night"` is the quiet one on the film, which is
+ * night in both themes, so it does not take the theme's ink.
+ */
+export function LinkButton({ href, solid, children, testId, rel, tone }) {
   const style = solid
     ? { ...btn(), background: T.light.action, border: "none", color: T.light.ink, boxShadow: `0 4px 20px ${clr(T.brand.blue, 0.4)}` }
-    : { ...btn(), background: "transparent", border: `1px solid ${T.line.strong}`, color: T.content.secondary };
+    : tone === "night"
+      ? { ...btn(), background: "rgba(5,8,13,0.5)", border: "1px solid rgba(255,255,255,0.32)", color: "#f4f6f3" }
+      : { ...btn(), background: "transparent", border: `1px solid ${T.line.strong}`, color: T.content.secondary };
   return <a href={href} rel={rel} data-testid={testId} className="pressBtn" style={style}>{children}</a>;
 }
 

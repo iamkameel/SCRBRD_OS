@@ -10,6 +10,7 @@ import { Select } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { batterChoices, bowlerChoices, unavailableWords } from "./prompts.js";
 import { KeeperRow } from "./keeperSheet.jsx";
+import { OFF_SIDE_ASK, OFF_SIDE_MARK, OFF_SIDE_WHY, offSide } from "./side.js";
 import { Proposal, useProposal } from "./rainSheet.jsx";
 
 /* ═══════════════════════════════════════════════════════
@@ -514,7 +515,12 @@ const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?
  * 25.4.3). A tap asks the scorer to confirm the captain agreed; only the
  * confirm sends, as onSend(id, {captainConsent: true}).
  */
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[],resumableWithConsent=[],noteFor=null,footer=null}){
+// `typed` (scorer/side.js mayType): whether a name may be typed in straight
+// away. False on an end whose coach named the side: a typed boy is not linked
+// to his record, so the checks the side passed would not follow him. There
+// `onlyNamed` is said, the typed field waits behind OffSideEntry, and a boy
+// typed in is marked where his figures are shown.
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[],resumableWithConsent=[],noteFor=null,footer=null,typed=true,onlyNamed=null}){
   const[timedOut,setTimedOut]=useState(false);
   const[consentFor,setConsentFor]=useState(/** @type {string|null} */(null));
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
@@ -528,6 +534,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
     return teamInfo.players.find(p=>p.name===name)||null;
   };
   const dismissed=batsmen.filter(b=>b.status==="out");
+  const typedIn=typed?()=>false:offSide(squad);
   const atCrease=batsmen.filter(b=>b.status==="batting");
   // Retired hurt — "retired, not out" — may come back, on the same line:
   // the fold carries his runs and balls on (SCRBRD-071). Whom, and when, is
@@ -550,7 +557,10 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
                 <div key={b.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",
                   background:`${D.emerald}0a`,border:`1px solid ${D.emerald}22`,borderRadius:D.md,marginBottom:"5px"}}>
                   <div className="liveDot" style={{width:"6px",height:"6px",borderRadius:"50%",background:D.emerald,flexShrink:0}}/>
-                  <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,color:D.textPrimary,flex:1}}>{b.name}</span>
+                  <span style={{flex:1,minWidth:0,display:"grid",gap:"2px"}}>
+                    <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,color:D.textPrimary}}>{b.name}</span>
+                    {typedIn(b.id)&&<OffSideMark/>}
+                  </span>
                   {ri&&<Badge color={ROLE_COLORS[ri.role]}>{ri.role}</Badge>}
                   <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{b.runs}({b.balls})</span>
                 </div>
@@ -672,7 +682,10 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
               {dismissed.map(b=>(
                 <div key={b.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"6px 10px",
                   borderRadius:D.md,background:`${D.rose}08`,border:`1px solid ${D.rose}15`}}>
-                  <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,flex:1}}>{b.name}</span>
+                  <span style={{flex:1,minWidth:0,display:"grid",gap:"2px"}}>
+                    <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{b.name}</span>
+                    {typedIn(b.id)&&<OffSideMark/>}
+                  </span>
                   <span style={{fontFamily:D.mono,fontSize:"12px",color:D.roseText}}>{b.runs}({b.balls})</span>
                 </div>
               ))}
@@ -680,11 +693,44 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
           </details>
         )}
         <Sep sx={{marginBottom:"12px"}}/>
-        <CustomBatEntry onSend={send}/>
+        {typed?<CustomBatEntry onSend={send}/>
+          :<OffSideEntry line={onlyNamed}><CustomBatEntry onSend={send}/></OffSideEntry>}
         {footer&&<p data-testid="batting-footer" style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.secondary,margin:"12px 0 0"}}>{footer}</p>}
       </div>
     </Sheet>
   );
+}
+
+/**
+ * On a named side's end (scorer/side.js): the one line, then the deliberate
+ * way out — "Not in the named side?", a confirm that says why it is there,
+ * and only then the typed field (`children`). Closed by default; nothing is
+ * focused for the scorer.
+ */
+function OffSideEntry({line,children}){
+  const[step,setStep]=useState(0); // 0 closed, 1 asked, 2 open
+  const quiet={minHeight:"44px",padding:"8px 12px",borderRadius:D.md,cursor:"pointer",fontFamily:T.type.body,fontSize:"13px",fontWeight:500,
+    border:`1px solid ${T.line.normal}`,background:"transparent",color:T.content.secondary};
+  return (
+    <div data-testid="off-side" style={{display:"grid",gap:"8px"}}>
+      {line&&<p data-testid="named-only" style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.secondary,margin:0}}>{line}</p>}
+      {step===0&&<button type="button" data-testid="off-side-open" onClick={()=>setStep(1)} className="pressBtn" style={{...quiet,justifySelf:"start"}}>{OFF_SIDE_ASK}</button>}
+      {step===1&&(
+        <div data-testid="off-side-confirm-panel" role="group" aria-label={OFF_SIDE_ASK} style={{display:"grid",gap:"8px",padding:"10px 12px",borderRadius:D.md,border:`1px solid ${T.line.normal}`}}>
+          <p style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.primary,margin:0}}>{OFF_SIDE_WHY}</p>
+          <div style={{display:"flex",gap:"8px"}}>
+            <button type="button" data-testid="off-side-confirm" onClick={()=>setStep(2)} className="pressBtn" style={{...quiet,flex:1,color:T.content.primary,fontWeight:600}}>Type a name in</button>
+            <button type="button" data-testid="off-side-cancel" onClick={()=>setStep(0)} className="pressBtn" style={{...quiet,flex:1}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {step===2&&children}
+    </div>
+  );
+}
+/** The marker for a player typed in on a named side's end. */
+function OffSideMark(){
+  return <span data-testid="off-side-mark" style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:600,color:T.semantic.warningText}}>{OFF_SIDE_MARK}</span>;
 }
 
 function CustomBatEntry({onSend}){
@@ -709,7 +755,11 @@ function CustomBatEntry({onSend}){
 /* ═══════════════════════════════════════════════════════
    WICKET SHEET
 ═══════════════════════════════════════════════════════ */
-function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,keeper=null,onClose,onConfirm}){
+// `twelfth` ({id, name} or null): the twelfth man the coach named for the
+// fielding side (scorer/side.js). A substitute fielder may be someone outside
+// the eleven (Law 24), so a typed name stays; the twelfth man, when the pad
+// knows him, is offered before it.
+function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,keeper=null,twelfth=null,onClose,onConfirm}){
   const[mode,setMode]=useState(DISMISSAL.BOWLED);
   // An obstruction that stopped a catch (4th Edition, from 1 October 2026;
   // SCRBRD-113): no runs count, and the fielding captain chooses whether the
@@ -868,8 +918,17 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
               </button>
             ))}
           </div>
-          {!fielder&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"6px"}}>Or type name below:</div>}
-          <input value={!fieldingSquad.find(p=>p.name===fielder)&&fielder?fielder:""} 
+          {twelfth&&(
+            <button type="button" data-testid="wicket-twelfth" onClick={()=>setFielder(twelfth.name)} className="pressBtn" style={{
+              display:"flex",alignItems:"center",gap:"8px",width:"100%",minHeight:"44px",marginTop:"6px",padding:"8px 12px",borderRadius:D.md,
+              border:"1px solid "+(fielder===twelfth.name?D.sky+"55":D.border),
+              background:fielder===twelfth.name?D.sky+"12":D.surf2,cursor:"pointer",textAlign:"left"}}>
+              <span style={{fontFamily:D.body,fontSize:"13px",color:fielder===twelfth.name?D.sky:D.textPrimary,fontWeight:500,flex:1}}>{twelfth.name}</span>
+              <Badge color={D.violet}>12th Man</Badge>
+            </button>
+          )}
+          {!fielder&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"6px"}}>{twelfth?"Or type a substitute's name below:":"Or type name below:"}</div>}
+          <input value={!fieldingSquad.find(p=>p.name===fielder)&&fielder!==twelfth?.name&&fielder?fielder:""} 
             onChange={e=>setFielder(e.target.value)} placeholder="Type any name…" aria-label="Fielder not in the squad"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,marginTop:"6px",
               color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px"}}/>
@@ -903,7 +962,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
  * anyone, and passes it on: onConfirm(id, reason).
  */
 function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false,capWordsFor=null,
-  keeper=null,keeperChoices=[],onKeeper=null,noteFor=null,footer=null,header=null}){
+  keeper=null,keeperChoices=[],onKeeper=null,noteFor=null,footer=null,header=null,typed=true,onlyNamed=null}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
   const[reason,setReason]=useState(null);
@@ -932,6 +991,8 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
   // cannot bowl, and why, in words. A suggestion: one tap on anyone confirms.
   const choices=bowlerChoices({inn:inn??{bowlers:prevBowlers},roster:allBowlers,midOver,
     refuses:(id)=>refusalOf(id,allBowlers.find(p=>p.id===id)?.name??prevBowlers.find(p=>p.id===id)?.name??id)});
+  // A bowler typed in on a named side's end, marked where his figures are.
+  const typedIn=typed?()=>false:offSide(bowlingSquad);
   const rows=filter
     ? choices.rows.filter(p=>String(p.name).toLowerCase().includes(filter.toLowerCase()))
     : choices.rows;
@@ -996,6 +1057,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
                 <span style={{flex:1,minWidth:0,display:"grid",gap:"2px"}}>
                   <span style={{fontFamily:D.body,fontSize:"15px",fontWeight:p.figures?600:500,
                     color:dis?D.textMuted:D.textPrimary}}>{p.name}</span>
+                  {p.figures&&typedIn(p.id)&&<OffSideMark/>}
                   {p.likely&&<span data-testid="bowler-likely" style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:T.content.secondary}}>Likely next · bowled the over before last</span>}
                   {/* A super over (SCRBRD-114 phase 3b, D4): the bowler of an earlier one — words, and he can still be chosen. */}
                   {noteFor&&noteFor(p.id)&&<span data-testid="bowler-superover-note" style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:T.semantic.warningText}}>{noteFor(p.id)}</span>}
@@ -1018,12 +1080,15 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
           })}
           {rows.length===0&&(
             <div style={{color:D.textMuted,fontSize:"13px",fontFamily:D.body,padding:"12px",textAlign:"center"}}>
-              {filter?`No bowlers match "${filter}"`:"Nobody listed: type a name below."}
+              {filter?`No bowlers match "${filter}"`:typed?"Nobody listed: type a name below.":"Nobody listed."}
             </div>
           )}
         </div>
         {footer&&<p data-testid="bowling-footer" style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.secondary,margin:"0 0 12px"}}>{footer}</p>}
-        {/* Manual entry fallback */}
+        {/* Manual entry fallback. On an end whose coach named the side
+            (scorer/side.js mayType) it waits behind the deliberate way out:
+            a late change or a concussion replacement only. */}
+        {(()=>{const field=<>
         <Sep sx={{marginBottom:"12px"}}/>
         <Lbl sx={{marginBottom:"7px",color:D.textMuted}}>Or Type Name</Lbl>
         <div style={{display:"flex",gap:"8px"}}>
@@ -1034,6 +1099,8 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
             onKeyDown={e=>{if(e.key==="Enter"&&name.trim()&&canBowl({name:name.trim()}))onConfirm(name.trim());}}/>
           <Btn variant="amber" disabled={!name.trim()||!canBowl({name:name.trim()})} onClick={()=>name.trim()&&canBowl({name:name.trim()})&&onConfirm(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px",minHeight:"44px"}}>Go</Btn>
         </div>
+        </>;
+        return typed?field:<OffSideEntry line={onlyNamed}>{field}</OffSideEntry>;})()}
       </div>
     </Sheet>
   );

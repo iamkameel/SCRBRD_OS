@@ -1,5 +1,5 @@
 import { T } from "../../design/tokens.js";
-import { Icon } from "../../ui/icons.jsx";
+import { Glyph } from "./glyphs.jsx";
 import { Section, homeBody, homeHead } from "./shared.jsx";
 
 /**
@@ -12,6 +12,9 @@ import { Section, homeBody, homeHead } from "./shared.jsx";
  * that is only designed (the scorebook photo import, the sign-up). Add a
  * line only when the screen or route behind it exists. Nothing here names a
  * gender or a child.
+ *
+ * Laid out as a numbered card per tile, the first two (what the film just
+ * showed) wider on a wide screen; each arrives as it scrolls in.
  */
 export const LEAD = [
   { icon: "scorebook", title: "Live scoring that works offline",
@@ -44,19 +47,24 @@ export const ALSO = [
 export function Tiles() {
   return (
     <>
-      <Section id="home-tiles" label="What makes SCRBRD different">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,250px),1fr))", gap: T.space.md }}>
-          {LEAD.map((f) => (
-            <article key={f.title} style={{ borderRadius: T.radius.lg, border: `1px solid ${T.line.subtle}`, background: T.fill.panel, padding: T.space.xl }}>
-              <div aria-hidden="true" style={{ fontSize: "26px", marginBottom: T.space.md, color: T.brand.blueText, display: "flex" }}><Icon name={f.icon} /></div>
-              <h3 style={{ ...homeHead(), fontSize: "16px", fontWeight: 700, color: T.content.primary, marginBottom: T.space.sm, lineHeight: 1.3 }}>{f.title}</h3>
-              <p style={{ ...homeBody(), fontSize: "14px", color: T.content.secondary, lineHeight: 1.55 }}>{f.desc}</p>
-            </article>
+      <Section id="home-tiles" reveal={false} kicker="What SCRBRD does, today" label="What makes SCRBRD different">
+        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,250px),1fr))", gap: T.space.md }}>
+          {LEAD.map((f, i) => (
+            <li key={f.title} className="rv hb-tile" style={{ "--i": i % 4, gridColumn: i < 2 || i >= 6 ? "span var(--wide, 1)" : undefined, borderRadius: T.radius.xl, border: `1px solid ${T.line.normal}`,
+              background: T.surface.raised, padding: T.space.xl, boxShadow: T.elevation.sm, position: "relative", overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: T.space.lg }}>
+                <span aria-hidden="true" style={{ width: "44px", height: "44px", borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  color: T.brand.accentText, background: T.fill.track }}><Glyph name={f.icon} /></span>
+                <span aria-hidden="true" style={{ fontFamily: T.type.mono, fontSize: "13px", color: T.content.tertiary, letterSpacing: "0.08em" }}>{String(i + 1).padStart(2, "0")}</span>
+              </div>
+              <h3 style={{ ...homeHead(), fontSize: i < 2 ? "20px" : "17px", fontWeight: 700, color: T.content.primary, marginBottom: T.space.sm, lineHeight: 1.25 }}>{f.title}</h3>
+              <p style={{ ...homeBody(), fontSize: "15px", color: T.content.secondary, lineHeight: 1.55 }}>{f.desc}</p>
+            </li>
           ))}
-        </div>
+        </ol>
       </Section>
       <Section id="home-also" label="Also in the pilot" narrow>
-        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexWrap: "wrap", gap: T.space.sm, justifyContent: "center" }}>
+        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexWrap: "wrap", gap: T.space.sm }}>
           {ALSO.map((a) => (
             <li key={a} style={{ ...homeBody(), fontSize: "14px", color: T.content.secondary, padding: "8px 14px", borderRadius: T.radius.pill, border: `1px solid ${T.line.normal}`, background: T.fill.panel }}>{a}</li>
           ))}
