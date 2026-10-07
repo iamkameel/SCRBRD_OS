@@ -5,6 +5,8 @@ import { fitnessColor, stat } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useLive } from "../lib/live.js";
 import { Metric, MetricGroup, dash } from "../ui/data.jsx";
+import { heldTeams } from "../lib/held.js";
+import { pickTeam, teamsOf } from "../lib/teamContext.js";
 
 // ══════════════════════════════════════════════════════
 //  ANALYTICS VIEW  — upgraded
@@ -13,7 +15,12 @@ function AnalyticsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const PLAYERS = usePlayersWithCareer(role);
-  const [teamFilter, setTeamFilter] = useState("1XI");
+  // The sides to choose between are the ones the rows contain, not a fixed three
+  // (1XI, U15A, U13A), and the one on show is the person's own, else the first
+  // of those. A U16B coach was offered three sides that were not his (GA-I07).
+  const teams = teamsOf(PLAYERS);
+  const [chosenTeam, setChosenTeam] = useState(null);
+  const teamFilter = pickTeam({ teams, held: heldTeams(), chosen: chosenTeam });
   const [subView,    setSubView]    = useState("performance");
   const players = PLAYERS.filter(p=>p.team===teamFilter);
 
@@ -45,12 +52,12 @@ function AnalyticsView({ role }) {
     <div className="os-page">
       <SectionHeader title="Analytics" sub="Performance insights · KZN head-to-head · Phase analysis" color={D.sky}/>
       <div style={{display:"flex",gap:"6px",marginBottom:"16px",flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:"6px"}}>
-          {["1XI","U15A","U13A"].map(t=>(
-            <button key={t} onClick={()=>setTeamFilter(t)} className="pressBtn" style={{
-              padding:"6px 16px",borderRadius:D.pill,border:`1px solid ${teamFilter===t?D.sky+"55":D.border}`,
+        <div role="group" aria-label="Team" data-testid="analytics-teams" style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+          {teams.map(t=>(
+            <button key={t} onClick={()=>setChosenTeam(t)} className="pressBtn" aria-pressed={teamFilter===t} data-testid={`analytics-team-${t}`} style={{
+              minHeight:"44px",padding:"6px 16px",borderRadius:D.pill,border:`1px solid ${teamFilter===t?D.sky+"55":D.border}`,
               background:teamFilter===t?D.sky+"14":"transparent",cursor:"pointer",
-              fontFamily:D.head,fontSize:"11px",fontWeight:700,color:teamFilter===t?D.sky:D.textMuted,
+              fontFamily:D.head,fontSize:"12px",fontWeight:700,color:teamFilter===t?D.sky:D.textMuted,
             }}>{t}</button>
           ))}
         </div>
@@ -145,12 +152,13 @@ function AnalyticsView({ role }) {
 
       {subView==="h2h"&&<HeadToHead role={role} teamFilter={teamFilter}/>}
 
-      {subView==="matchups"&&<Matchups role={role}/>}
+      {/* Keyed by the side: a batter picked for one side is not carried to another. */}
+      {subView==="matchups"&&<Matchups key={teamFilter??"none"} role={role}/>}
 
       {subView==="table"&&(
         <Card>
           <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
-            <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Full Squad Stats — {teamFilter}</span>
+            <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Full Squad Stats — {teamFilter ?? "no side in view"}</span>
           </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -234,12 +242,12 @@ function HeadToHead({ role, teamFilter }) {
   if (loading) return <EmptyState loading/>;
   if (disabled) return <EmptyState icon="ban" message="Analytics is switched off for this school."/>;
   if (error) return <EmptyState error/>;
-  if (!rows.length) return <EmptyState icon="bat" message={`No completed fixtures for ${teamFilter} that you may see — a record is derived from them, so there is nothing to derive one from yet.`}/>;
+  if (!rows.length) return <EmptyState icon="bat" message={`No completed fixtures for ${teamFilter ?? "your sides"} that you may see — a record is derived from them, so there is nothing to derive one from yet.`}/>;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}} data-testid="h2h">
       <Card sx={{padding:"14px 16px",background:`linear-gradient(135deg,${D.indigo}08,${D.surf1})`,border:`1px solid ${D.indigo}22`}}>
-        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.indigoText,marginBottom:"4px"}}>Head-to-head record ({teamFilter})</div>
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.indigoText,marginBottom:"4px"}}>Head-to-head record ({teamFilter ?? "all your sides"})</div>
         <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
           {live ? "Derived from completed fixtures you may see, and from the toss that decided each one. Nothing here is stored."
                 : "Demonstration figures — no server connected."}

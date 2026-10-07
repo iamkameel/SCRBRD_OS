@@ -145,7 +145,7 @@ export function DetailsTab({ match, result, weather, competition }) {
           ))}
         </dl>
       </Panel>
-      {weather && <WeatherChip w={weather}/>}
+      {weather && <WeatherChip w={weather} status={match.status}/>}
     </section>
   );
 }

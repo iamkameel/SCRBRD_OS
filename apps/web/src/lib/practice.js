@@ -353,6 +353,20 @@ export function applyHint(w, hint, at = Date.now()) {
 }
 
 /**
+ * The venue moved, so a hint kept from the old place is not this place's
+ * weather (GA-I18): it is dropped rather than left under a new position. What
+ * the scorer chose himself stays, as a plain manual observation; a condition
+ * only the hint had filled in goes with it.
+ * @param {{condition: string | null, playable: boolean | null, observation?: any}} w
+ */
+export function dropHint(w) {
+  const cur = w.observation ?? null;
+  if (!cur || cur.source !== WEATHER_SOURCE) return w;
+  if (cur.edited_by_scorer && w.condition) return { ...w, observation: manualObservation(w.condition) };
+  return { ...w, condition: null, observation: null };
+}
+
+/**
  * The scorer's observation, in the shape of db/08's match_weather. Filled from
  * the observation when there is one (temperature, humidity, wind, the chance
  * of rain, the time it was taken).

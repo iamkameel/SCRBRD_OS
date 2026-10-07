@@ -238,11 +238,18 @@ function asCompetition(r) {
            table: undefined, live: true };
 }
 
-function asWeather(r) {
+/**
+ * A recorded observation, for one fixture (match_weather). `observedAt` is the
+ * time the scorer took it, which this adapter used to drop (GA-I18): without it
+ * a reading from yesterday reads as this morning's. Null when the row has none.
+ * Nothing here is the provider's hint; that is lib/weatherHint.js.
+ */
+export function asWeather(r) {
   return { matchId: r.match_id, condition: r.condition, tempC: r.temp_c,
            humidity: r.humidity_pct, windKph: r.wind_kph, windDir: r.wind_dir,
            uvIndex: r.uv_index, rainChancePct: r.rain_chance_pct,
-           forecast: r.forecast, playable: r.playable, live: true };
+           forecast: r.forecast, playable: r.playable,
+           observedAt: r.observed_at == null ? null : String(r.observed_at), live: true };
 }
 
 /**
