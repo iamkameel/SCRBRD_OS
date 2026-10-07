@@ -810,7 +810,7 @@ example 8), and a free hit earned on the last allowed ball falls away. See SCRBR
 
 Until 7 October 2026 a wicket was its own delivery type, `W`, and a `W` is a ball of the over: a run out off a
 no-ball, or a stumping or run out off a wide, could not be recorded without a ball the over did not have, a lost
-wicket, or a bowler charged a ball he did not bowl. Kameel chose to fix it before the 12 October freeze.
+wicket, or a bowler charged a ball he did not bowl. Kameel chose to fix it before the 15 October pilot freeze.
 
 A wide or a no-ball now carries the dismissals the Laws allow off it, and no others:
 

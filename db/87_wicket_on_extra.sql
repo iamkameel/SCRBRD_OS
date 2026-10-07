@@ -2,7 +2,7 @@
 --  87 · A wicket on a wide or a no-ball (Law 22.9, Law 21.17)
 -- ══════════════════════════════════════════════════════════════════
 --
--- HAND-WRITTEN. Kameel chose to fix it before the 12 October freeze. The
+-- HAND-WRITTEN. Kameel chose to fix it before the 15 October pilot freeze. The
 -- event, the fold and the Laws are packages/scoring (events.mjs
 -- isWicketBall(), WIDE_DISMISSALS, NO_BALL_DISMISSALS; replay.mjs; laws.mjs
 -- not_out_off_wide, not_out_off_no_ball); this file is what SQL needs of
