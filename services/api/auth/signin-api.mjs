@@ -24,15 +24,24 @@
  *   POST /api/auth/office/sign-ins/:id/revoke    the office ends one
  *   POST /api/auth/claims/:id/confirm            the office confirms a claim
  *   POST /api/auth/claims/:id/decline            the office declines one
+ *   POST /api/auth/sign-out-everywhere           every session you hold ends (GA-I03)
+ *   POST /api/auth/users/:id/disable · /enable   the office or the owner (GA-I03)
  * and two reads on the governed read path: my_sign_ins, sign_in_claims.
+ *
+ * ENDING A SESSION (GA-I03, db/85). Removing a way to sign in — yours, or the
+ * office removing one of an account's — signing out everywhere, and the
+ * office disabling an account each bump the account's session epoch, and
+ * every token minted before it is refused on its next request. Removing one
+ * of your own answers with a fresh token for this device, so the person who
+ * removed it stays signed in here and nowhere else.
  *
  * A REFUSAL ON THESE IS { error, detail }: a code and the sentence a screen
  * shows (SIGN_IN_REFUSALS). None says more about an account than the caller
  * may already know.
  */
 import { readFileSync } from "node:fs";
-import { signToken, AuthError } from "./auth.mjs";
-import { runAsPrincipal } from "./auth-db.mjs";
+import { AuthError } from "./auth.mjs";
+import { runAsPrincipal, mintToken } from "./auth-db.mjs";
 import { firebaseVerifier, keysFromJwks, FIREBASE_PROJECT, FRESH_SEC } from "./firebase-verify.mjs";
 import { RateLimit, clientAddress } from "../public/public-api.mjs";
 /** @import { Pool, Handler, ApiRequest, ApiResponse, ExactHandler } from "../api-types.mjs" */
@@ -106,6 +115,7 @@ export const SIGN_IN_REFUSALS = {
   no_such_claim:          [404, "That request is not on the list."],
   already_resolved:       [409, "Somebody has already answered that request."],
   cannot_confirm_your_own:[403, "You cannot confirm a sign-in to your own account. Ask a colleague."],
+  cannot_disable_yourself:[403, "You cannot disable or enable your own account. Ask a colleague at the office."],
   stale_sign_in:          [401, "For your security, sign in with Google again, then add it."],
   refused:                [409, "The database refused this."],
 };
@@ -129,12 +139,12 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
   /**
    * A signed-in route: run `fn` under the caller's identity, and turn a
    * function's (ok, reason) into an answer.
-   * @param {(req: ApiRequest, client: import("../api-types.mjs").Db) => Promise<{ ok: boolean, reason?: string | null } & Record<string, unknown>>} fn
+   * @param {(req: ApiRequest, client: import("../api-types.mjs").Db, principal: import("./auth.mjs").Principal) => Promise<{ ok: boolean, reason?: string | null } & Record<string, unknown>>} fn
    * @returns {Handler}
    */
   const signedIn = (fn) => async (req, res) => {
     try {
-      const out = await runAsPrincipal(pool, secret, req.headers?.authorization, (client) => fn(req, client));
+      const out = await runAsPrincipal(pool, secret, req.headers?.authorization, (client, principal) => fn(req, client, principal));
       if (!out.ok) return refuse(out.reason || "refused", res);
       const { ok: _ok, reason: _r, ...rest } = out;
       return res.json(rest);
@@ -167,7 +177,7 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
     const r = rows[0] ?? { outcome: "refused" };
     switch (r.outcome) {
       case "signed_in": case "new_account": case "linked":
-        return { token: signToken({ userId: r.user_id, deviceId }, secret), outcome: r.outcome };
+        return { token: await mintToken(pool, secret, { userId: r.user_id, deviceId }), outcome: r.outcome };
       case "claim_required": throw err("claim_required", 409);
       case "revoked": throw err("identity_revoked", 401);
       case "account_inactive": throw err("account_inactive", 403);
@@ -193,10 +203,16 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
                    : { ok: false, reason: r?.reason };
     }),
 
-    // POST /api/auth/sign-ins/:id/revoke — one of your own (§3.7).
-    revokeOwn: signedIn(async (req, client) => {
+    // POST /api/auth/sign-ins/:id/revoke — one of your own (§3.7). The
+    // removal bumps the epoch (db/85), which ends this session with the
+    // rest; the answer carries a fresh one for this device, minted in the
+    // same transaction under the new epoch, so the person stays signed in
+    // here. The client adopts it (apps/web/src/views/signins.jsx).
+    revokeOwn: signedIn(async (req, client, principal) => {
       const { rows: [r] } = await client.query(`select * from auth_identity_revoke_self($1)`, [idOf(req)]);
-      return r?.ok ? { ok: true, revoked: true } : { ok: false, reason: r?.reason };
+      if (!r?.ok) return { ok: false, reason: r?.reason };
+      const token = await mintToken(client, secret, { userId: /** @type {string} */ (principal.userId), deviceId: principal.deviceId });
+      return { ok: true, revoked: true, token };
     }),
 
     // GET /api/auth/users/:id/sign-ins — the office's view of one account.
@@ -221,6 +237,27 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
     declineClaim: signedIn(async (req, client) => {
       const { rows: [r] } = await client.query(`select * from pending_claim_decline($1)`, [idOf(req)]);
       return r?.ok ? { ok: true, declined: true } : { ok: false, reason: r?.reason };
+    }),
+
+    // POST /api/auth/sign-out-everywhere — every token and pad credential
+    // this person holds ends, this one included (db/85). An API route; no
+    // screen calls it yet.
+    signOutEverywhere: signedIn(async (_req, client) => {
+      const { rows: [r] } = await client.query(`select * from auth_sign_out_everywhere()`);
+      return r?.ok ? { ok: true, signedOut: true } : { ok: false, reason: r?.reason };
+    }),
+
+    // POST /api/auth/users/:id/disable · /enable — the office or the owner,
+    // under db/81's rule for acting on somebody else's account. Disabling
+    // ends every session and pad credential the account holds; enabling
+    // brings none back (db/85).
+    disable: signedIn(async (req, client) => {
+      const { rows: [r] } = await client.query(`select * from account_set_active($1, false)`, [idOf(req)]);
+      return r?.ok ? { ok: true, active: r.active } : { ok: false, reason: r?.reason };
+    }),
+    enable: signedIn(async (req, client) => {
+      const { rows: [r] } = await client.query(`select * from account_set_active($1, true)`, [idOf(req)]);
+      return r?.ok ? { ok: true, active: r.active } : { ok: false, reason: r?.reason };
     }),
   };
 }

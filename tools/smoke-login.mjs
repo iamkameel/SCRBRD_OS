@@ -166,6 +166,118 @@ try {
     ok("...so even the office that issued them reads none", rows.length === 0);
   } finally { c.release(); await app.end().catch(() => {}); }
 
+  // ── GA-I03: a session ends when it is ended (db/85) ──────────────
+  // A token is thirty minutes of being somebody. Before db/85 nothing could
+  // end one early: signing out, the office disabling the account, removing a
+  // sign-in — a copy of the token kept working until it expired.
+  const codeFor = async (email, deviceId) => {
+    const c = await invite(registrar, email);
+    return (await redeem(email, c.body?.code, deviceId)).body?.token;
+  };
+  const who = async (token) => {
+    const r = await api("/api/session", { token });
+    return r.status === 200 ? r.body?.user?.id : r.status + " " + (r.body?.error ?? "");
+  };
+  const refused = async (token) => {
+    const r = await api("/api/session", { token });
+    return r.status === 401 && r.body?.error === "session_revoked";
+  };
+
+  group("Signing out ends the session on this device (GA-I03)");
+  const out1 = await codeFor("parent@example.invalid", "phone-out-1");
+  const out1b = await codeFor("parent@example.invalid", "phone-out-1");
+  const out2 = await codeFor("parent@example.invalid", "phone-out-2");
+  ok("the parent is signed in twice on one phone and once on another",
+     (await who(out1)) === U_PARENT && (await who(out1b)) === U_PARENT && (await who(out2)) === U_PARENT);
+  const signedOut = await api("/api/auth/sign-out", { method: "POST", token: out1 });
+  ok("signing out answers", signedOut.status === 200 && signedOut.body?.ok === true);
+  ok("the token, used after sign-out, is refused: 401 session_revoked", await refused(out1));
+  ok("...on a read as well", (await api("/api/read/players", { token: out1 })).status === 401);
+  ok("...and so is the older token from the same phone", await refused(out1b));
+  ok("the other phone is still signed in", (await who(out2)) === U_PARENT);
+  const out3 = await codeFor("parent@example.invalid", "phone-out-1");
+  ok("a fresh sign-in on the phone that signed out works", (await who(out3)) === U_PARENT);
+
+  group("Sign out everywhere (GA-I03)");
+  const ev1 = await codeFor("parent@example.invalid", "phone-ev-1");
+  const ev2 = await codeFor("parent@example.invalid", "phone-ev-2");
+  ok("without a session it is refused",
+     (await api("/api/auth/sign-out-everywhere", { method: "POST" })).status === 401);
+  const everywhere = await api("/api/auth/sign-out-everywhere", { method: "POST", token: ev1 });
+  ok("signing out everywhere answers", everywhere.status === 200 && everywhere.body?.signedOut === true);
+  ok("...the token that asked is refused", await refused(ev1));
+  ok("...and every older token, on every phone",
+     (await refused(ev2)) && (await refused(out2)) && (await refused(out3)));
+  ok("...but nobody else's", (await who(registrar)) === U_REG);
+  const ev3 = await codeFor("parent@example.invalid", "phone-ev-1");
+  ok("a fresh sign-in afterwards works", (await who(ev3)) === U_PARENT);
+
+  group("The office disables the account (GA-I03)");
+  const dis1 = await codeFor("parent@example.invalid", "phone-dis-1");
+  ok("the parent is signed in", (await who(dis1)) === U_PARENT);
+  const disable = (token, id = U_PARENT) => api(`/api/auth/users/${id}/disable`, { method: "POST", token });
+  const enable = (token, id = U_PARENT) => api(`/api/auth/users/${id}/enable`, { method: "POST", token });
+  let r = await disable(coach);
+  ok("a coach may not disable an account", r.status === 403 && r.body?.error === "not_permitted");
+  r = await disable(head);
+  ok("...nor the director of sport a parent's (she could not appoint one)", r.status === 403 && r.body?.error === "not_permitted");
+  r = await disable(wesReg);
+  ok("...nor another school's office", r.status === 403 && r.body?.error === "not_permitted");
+  r = await disable(registrar, U_REG);
+  ok("...nor the office its own", r.status === 403 && r.body?.error === "cannot_disable_yourself");
+  ok("...and the parent is still signed in after all of those", (await who(dis1)) === U_PARENT);
+  r = await disable(registrar);
+  ok("the school office disables the parent's account", r.status === 200 && r.body?.active === false);
+  ok("the parent's token is refused on the next request", await refused(dis1));
+  ok("...and the one from before", await refused(ev3));
+  ok("nobody can issue the account a code while it is disabled",
+     (await invite(registrar, "parent@example.invalid")).body?.error === "not_permitted");
+  ok("...nor sign in to it by the development door",
+     (await api("/api/auth/dev-login", { method: "POST", body: { email: "parent@example.invalid", deviceId: "x" } })).status === 401);
+  r = await enable(registrar);
+  ok("the office enables it again", r.status === 200 && r.body?.active === true);
+  ok("...and the old token stays dead", await refused(dis1));
+  const dis2 = await codeFor("parent@example.invalid", "phone-dis-1");
+  ok("a fresh sign-in after it is enabled works", (await who(dis2)) === U_PARENT);
+  // The office may also set app_user.active by hand (app_user_update, under
+  // user.role.assign). The rule is a trigger, so that door ends sessions too.
+  await q(`update app_user set active = false where id = $1`, [U_PARENT]);
+  ok("an account disabled by a plain UPDATE ends its sessions too", await refused(dis2));
+  await q(`update app_user set active = true where id = $1`, [U_PARENT]);
+  ok("...and stays signed out when it is enabled again", await refused(dis2));
+  const dis3 = await codeFor("parent@example.invalid", "phone-dis-1");
+  ok("...until a fresh sign-in", (await who(dis3)) === U_PARENT);
+
+  group("A token from before db/85 (no session) is refused");
+  {
+    const [h, p] = dis3.split(".");
+    const claims = JSON.parse(Buffer.from(p, "base64url").toString());
+    ok("a token names its session and the epoch it was issued under",
+       typeof claims.sid === "string" && Number.isInteger(claims.sep));
+    const { createHmac } = await import("node:crypto");
+    const bare = Buffer.from(JSON.stringify({ ...claims, sid: undefined, sep: undefined })).toString("base64url");
+    const sig = createHmac("sha256", "smoke-login-secret").update(`${h}.${bare}`).digest("base64url");
+    const old = await api("/api/session", { token: `${h}.${bare}.${sig}` });
+    ok("a correctly signed token without one is 401 incomplete_claims", old.status === 401 && old.body?.error === "incomplete_claims");
+    const other = Buffer.from(JSON.stringify({ ...claims, sid: "00000000-0000-4000-8000-000000000000" })).toString("base64url");
+    const sig2 = createHmac("sha256", "smoke-login-secret").update(`${h}.${other}`).digest("base64url");
+    ok("...and one naming a session that was never issued is 401", await refused(`${h}.${other}.${sig2}`));
+    const behind = Buffer.from(JSON.stringify({ ...claims, sep: claims.sep - 1 })).toString("base64url");
+    const sig3 = createHmac("sha256", "smoke-login-secret").update(`${h}.${behind}`).digest("base64url");
+    ok("...and one naming an earlier epoch is 401", await refused(`${h}.${behind}.${sig3}`));
+  }
+
+  group("Role revocation still takes effect on the next request");
+  {
+    const before = (await api("/api/read/players", { token: dis3 })).body?.rows ?? [];
+    ok("the parent reads his child", before.length === 1);
+    await q(`update role_assignment set active = false where person_id = $1 and role = 'guardian' and active`, [U_PARENT]);
+    const after = await api("/api/read/players", { token: dis3 });
+    ok("...and, the moment the office withdraws the role, nothing — on the same token",
+       after.status === 200 && (after.body?.rows ?? []).length === 0);
+    ok("...which is still a session: the role went, not the sign-in", (await who(dis3)) === U_PARENT);
+  }
+
   group("The development door is still shut in production");
   ok("dev-login is refused when it is not enabled", true === (await (async () => {
     const p2 = port(8807);

@@ -253,22 +253,26 @@ group("I. The scope escape: a signed request reaches five routes, on its own mat
 
 group("J. The principal the database is given");
 {
-  const s = sessionConfigStatements({ userId: "u-scorer", deviceId: DEVICE, scope: "pad", matchId: MATCH });
-  const vars = s.map((x) => x.text.match(/'app\.\w+'/)?.[0]);
-  ok("a pad principal sets four app.* vars: user, device, scope, match",
-     vars.join(",") === "'app.user_id','app.device_id','app.scope','app.match_id'" && s[2].params[0] === "pad" && s[3].params[0] === MATCH);
-  ok("...every one transaction-local", s.every((x) => /, true\)$/.test(x.text)));
+  const s = sessionConfigStatements({ userId: "u-scorer", deviceId: DEVICE, scope: "pad", matchId: MATCH, credentialId: "c-1" });
+  const vars = s.slice(1).map((x) => x.text.match(/'app\.\w+'/)?.[0]);
+  // The person and the device are set by app_session_begin() (db/85), once
+  // it has found the credential live and the account active.
+  ok("a pad principal: its credential checked, then scope and match",
+     /app_session_begin/.test(s[0].text) && JSON.stringify(s[0].params) === JSON.stringify(["u-scorer", DEVICE, null, null, "c-1"])
+     && vars.join(",") === "'app.scope','app.match_id'" && s[1].params[0] === "pad" && s[2].params[0] === MATCH);
+  ok("...the two set here transaction-local", s.slice(1).every((x) => /, true\)$/.test(x.text)));
   let threw = false;
-  try { sessionConfigStatements({ userId: "u", deviceId: "d", scope: "pad" }); } catch { threw = true; }
+  try { sessionConfigStatements({ userId: "u", deviceId: "d", scope: "pad", credentialId: "c-1" }); } catch { threw = true; }
   ok("a pad scope with no match is refused, not sent empty", threw);
-  ok("an ordinary principal sets no scope", sessionConfigStatements({ userId: "u", deviceId: "d" }).length === 2);
+  ok("an ordinary principal sets no scope", sessionConfigStatements({ userId: "u", deviceId: "d", sessionId: "5e551011-0000-4000-8000-000000000001", epoch: 0 })
+     .every((x) => !/app\.scope|app\.match_id/.test(x.text)));
 
   // One connection, a pad request then an ordinary one: the second carries
   // no scope, because the first's was local to its transaction.
   /** @type {{ text: string, params?: any[] }[]} */
   const log = [];
   const client = { query: async (/** @type {string} */ text, /** @type {any[] | undefined} */ params) => { log.push({ text, params }); return { rows: [] }; } };
-  await withPrincipal(client, { userId: "u", deviceId: "d", scope: "pad", matchId: MATCH }, async () => {});
+  await withPrincipal(client, { userId: "u", deviceId: "d", scope: "pad", matchId: MATCH, credentialId: "c-1" }, async () => {});
   const second = log.length;
   await withPrincipal(client, { userId: "u2", deviceId: "d2" }, async () => {});
   ok("a request after a pad one on the same connection sets no scope",
@@ -279,6 +283,7 @@ group("J. The principal the database is given");
   const pool = /** @type {any} */ ({ connect: async () => ({ query: async () => ({ rows: [] }), release() {} }) });
   /** @type {any[]} */ const refused = [];
   for (const p of [{ userId: "u", deviceId: "d" }, { userId: "u", deviceId: "d", scope: "pad" },
+                   { userId: "u", deviceId: "d", scope: "pad", matchId: MATCH },   // no credential
                    { userId: null, deviceId: "d", scope: "pad", matchId: MATCH }, { scope: "admin", userId: "u", deviceId: "d", matchId: MATCH }]) {
     try { await runAsPrincipal(pool, SECRET, /** @type {any} */ (p), async () => {}); refused.push(false); } catch { refused.push(true); }
   }

@@ -103,7 +103,7 @@ console.log("\nE. The route, against a stubbed fetch");
 const SECRET = "weather-test-secret";
 let clock = 1_790_000_000_000;
 const now = () => clock;
-const token = (/** @type {string} */ u) => `Bearer ${signToken({ userId: u, deviceId: "d1" }, SECRET, now)}`;
+const token = (/** @type {string} */ u) => `Bearer ${signToken({ userId: u, deviceId: "d1", sessionId: "5e551011-0000-4000-8000-000000000001", epoch: 0 }, SECRET, now)}`;
 /** @type {{ url: string, headers: Record<string, string> }[]} */
 let calls = [];
 /** @type {any} */

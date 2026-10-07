@@ -28,7 +28,7 @@ const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, 
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 const SECRET = "planner-drafts-secret";
-const bearer = `Bearer ${signToken({ userId: "00000000-0000-4000-8000-0000000000aa", deviceId: "desk" }, SECRET)}`;
+const bearer = `Bearer ${signToken({ userId: "00000000-0000-4000-8000-0000000000aa", deviceId: "desk", sessionId: "5e551011-0000-4000-8000-000000000001", epoch: 0 }, SECRET)}`;
 
 /**
  * A pool whose one statement of interest is the insert: it records the

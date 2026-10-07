@@ -23,7 +23,7 @@
  * buildPayload().
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { withPrincipal } from "../auth/auth.mjs";
+import { withPrincipal, AuthError } from "../auth/auth.mjs";
 import { transportFromEnv } from "./fcm.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler, Pool } from "../api-types.mjs" */
 /** @import { PushTransport } from "./fcm.mjs" */
@@ -196,6 +196,11 @@ export async function fanOut({ pool, secret, bearer, notificationId, transport }
           `select 1 from notification where id = $1`, [notificationId]);
         return rows.length === 1;
       });
+    } catch (/** @type {any} */ e) {
+      // A disabled account is nobody (db/85's app_session_begin() refuses
+      // it): told nothing, like anybody else the notice is not for.
+      if (!(e instanceof AuthError)) throw e;
+      visible = false;
     } finally { conn.release(); }
 
     if (!visible) { refused += devices.length; continue; }

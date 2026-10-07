@@ -20,7 +20,7 @@ const SECRET = "step4-secret";
 // The device is bound INTO the token, not sent alongside it: the ball_event
 // INSERT policy compares device_id against the live lease, so a device named in
 // a header would let a second device write under the first one's lease.
-const bearer = (userId = "uScorer", deviceId = "devA") => `Bearer ${signToken({ userId, deviceId }, SECRET)}`;
+const bearer = (userId = "uScorer", deviceId = "devA") => `Bearer ${signToken({ userId, deviceId, sessionId: "5e551011-0000-4000-8000-000000000001", epoch: 0 }, SECRET)}`;
 
 // ── Fake Postgres tuned for the write path ──
 // The log the match already has, as ball_event rows. By default an innings
@@ -243,7 +243,7 @@ group("A. Empty / read");
   ok("empty batch rejected", threw);
   await readEvents(db.pool, SECRET, bearer("uSpectator"), "m3", 5);
   ok("readEvents queries since seq under principal",
-     db.log.some(l => /seq > \$2/.test(l.text)) && db.log.some(l => l.text.includes("app.user_id")));
+     db.log.some(l => /seq > \$2/.test(l.text)) && db.log.some(l => l.text.includes("app_session_begin") && l.params?.[0] === "uSpectator"));
 }
 
 // ── A. One identity per event ──
