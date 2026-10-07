@@ -438,7 +438,7 @@ try {
   ok("...arranged by the coordinator who booked it, with no driver named", trip?.arranged_by === COORD && trip?.driver_id === null);
   ok("...and the departure is the minute typed", trip && Math.abs(new Date(trip.depart_at) - new Date(`${d2}T10:00`)) < 1000 && Math.abs(new Date(trip.return_at) - new Date(`${d2}T17:00`)) < 1000, JSON.stringify(trip));
   ok("the fixture has left the 'no bus yet' list", await tid(co.page, `trip-fixture-${M2}`).count() === 0);
-  await co.page.waitForFunction((id) => /SOLO WALK 1/.test(document.querySelector('[data-testid="os-main"]')?.innerText ?? ""), M2, { timeout: 8000 }).catch(() => {});
+  await co.page.waitForFunction(() => /SOLO WALK 1/.test(document.querySelector('[data-testid="os-main"]')?.innerText ?? ""), undefined, { timeout: 8000 }).catch(() => {});
   ok("...and its trip is on the page, from the server's re-read", /SOLO WALK 1/.test(await inner(co.page, "os-main")), (await inner(co.page, "os-main")).slice(0, 400));
   const dupe = await call(`/api/matches/${M2}/trip`, { method: "POST", token: await login(COORD_EMAIL, "device-solo-coord"), body: { vehicleId: v1.id, departAt: new Date().toISOString() } });
   ok("...forced, it is a 409 vehicle_already_on_this_fixture", dupe.status === 409 && dupe.body?.error === "vehicle_already_on_this_fixture", JSON.stringify(dupe));
