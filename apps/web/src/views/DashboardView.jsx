@@ -6,7 +6,6 @@ import { addDays, dateStr, humanDate, humanDateTime, today } from "../lib/format
 import { api, signedIn } from "../lib/api.js";
 import { useDutyCoverage, useLive, useRows, useWeather } from "../lib/live.js";
 import { holdsAsHeld } from "../lib/held.js";
-import { holdsCapability } from "../rbac/index.js";
 import { Btn, EmptyState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
@@ -146,7 +145,7 @@ function DaySheet({ role, live = true, demoNote = "Demonstration — no server c
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
   // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
-  const holds = (capability) => held ? holdsAsHeld(role, capability) : holdsCapability(role, capability);
+  const holds = (capability) => holdsAsHeld(role, capability, held ? undefined : []);
   const rc = ROLES[role];
   const hasDuty = (key) => dutyRows.some((r) => r.duty === key);
 
