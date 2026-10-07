@@ -233,6 +233,10 @@ BEGIN
   IF EXISTS (SELECT 1 FROM app_user WHERE email = ${q(email("coach", "wes", "1XI"))}) THEN
     RAISE EXCEPTION 'The demo cast is already loaded here. Nothing was changed.';
   END IF;
+  -- Every write below takes its identity from app_session_begin(), which db/85 adds.
+  IF NOT EXISTS (SELECT 1 FROM schema_migration WHERE name = '85_session_revocation.sql') THEN
+    RAISE EXCEPTION 'db/85 is not in this database yet. Paste scrbrd-supabase-apply-85.sql (the paste kit) here first. Nothing was changed.';
+  END IF;
 END $demo_only$;
 
 -- The SQL Editor connects as the table owner, which row-level security does
