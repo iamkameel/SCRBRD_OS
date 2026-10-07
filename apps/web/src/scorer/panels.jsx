@@ -624,6 +624,15 @@ function buildEventCfg(ballValue,milestone){
   if(ballValue==="W")return{label:"WICKET!",sub:"Out",color:D.roseText,glow:clr(D.rose,.5),bg:clr(D.rose,.06)};
   return null;
 }
+// The moment a wicket ball plays. One the free hit saved (only a run out and
+// the like stand on a free hit; the fold decides) is no wicket: the batter is
+// not out, and the board and the screen reader say that, never WICKET!. The
+// same lime frame as every moment (pad.jsx BoardFlash), no colour of its own.
+function wicketMomentCfg(stood){
+  return stood?buildEventCfg("W",null):{label:"NOT OUT: FREE HIT",sub:null};
+}
+/** A moment in words, for the live region: "FOUR. Boundary", "HAT-TRICK BALL. K Naidoo — two in two". */
+const momentWords=(cfg)=>`${cfg.label.replace(/!+$/,"")}${cfg.sub?`. ${cfg.sub}`:""}`;
 
 /* ═══════════════════════════════════════════════════════
    INNINGS OVER BANNER — SCRBRD-038
@@ -771,4 +780,4 @@ function PartnershipCard({inn}){
   );
 }
 
-export { CommentaryCard, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone };
+export { CommentaryCard, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone, momentWords, wicketMomentCfg };
