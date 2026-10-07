@@ -5,7 +5,7 @@ import { readLive } from "../../lib/live.js";
 import { profile } from "../../lib/session.js";
 import { cockpitGate, shortDate } from "../../lib/cockpit.js";
 import { sidesOf } from "../../lib/matchCentre.js";
-import { SIDE_SIZE, candidates, checkDraft, draftFoot, draftFrom, drop, emptyDraft, payload, pick, refusalWords, REFUSAL_WORDS, setNo, setTwelfth } from "../../lib/pickSide.js";
+import { AWAY_AVAILABILITY_WORDS, SIDE_SIZE, candidates, checkDraft, draftFoot, draftFrom, drop, emptyDraft, findOthers, payload, pick, refusalWords, REFUSAL_WORDS, setNo, setTwelfth } from "../../lib/pickSide.js";
 
 /**
  * PICK THE SIDE: the coach names the XI for a fixture, with a batting order and
@@ -24,6 +24,16 @@ import { SIDE_SIZE, candidates, checkDraft, draftFoot, draftFrom, drop, emptyDra
  * stands (`match_squad`) and this fixture's answers (`readiness`, where the
  * reader's grant reaches it: the status tier only, never a reason, D4).
  *
+ * PLAYING UP: the list is the fixture team's own boys, and a quiet "Add a boy
+ * from another team" finds any other boy of the SAME SCHOOL in the `players`
+ * read the list already uses (lib/pickSide.js findOthers; no new read) and puts
+ * him in the draft marked "from U13A". Whether he may play up is the database's
+ * answer, shown beside him like any other refusal.
+ *
+ * AWAY SIDE: `readiness` answers for the fixture's home team only, and no other
+ * read gives the away end's answers, so for an away coach nothing is read and
+ * one line says availability shows for the home side only for now.
+ *
  * A dialog: Escape closes it, focus moves in and Tab stays inside, and focus
  * returns to the button that opened it. Nothing animates.
  *
@@ -35,27 +45,42 @@ export function PickSide({ match, gate, onClose, onSaved }) {
   const [draft, setDraft] = useState(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [said, setSaid] = useState(/** @type {{words: string, boyId: string | null} | null} */ (null));
+  // Boys the coach has added from another team this sitting, and the finder that adds them.
+  const [added, setAdded] = useState(/** @type {string[]} */ ([]));
+  const [finding, setFinding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [focusId, setFocusId] = useState(/** @type {string | null} */ (null));
   const q = useMemo(() => ({ matchId: match.id }), [match.id]);
   const sides = sidesOf(match);
+  // The readiness read answers for the fixture's home team only (see AWAY_AVAILABILITY_WORDS):
+  // for the away end nothing is read, and the screen says so.
+  const awayBlind = gate.end === "away" && gate.panels.side;
+  const wantsReadiness = gate.panels.side && gate.end === "home";
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const [players, squad, readiness] = await Promise.all([
-        readLive("players"), readLive("match_squad", q), gate.panels.side ? readLive("readiness", q) : null]);
+        readLive("players"), readLive("match_squad", q), wantsReadiness ? readLive("readiness", q) : null]);
       if (cancelled) return;
       setRead({ players, squad, readiness });
       setDraft(draftFrom(squad, gate.end));
     })();
     return () => { cancelled = true; };
-  }, [q, gate.end, gate.panels.side]);
+  }, [q, gate.end, wantsReadiness]);
+
+  useEffect(() => {
+    if (!focusId) return;
+    panel.current?.querySelector(`[data-testid="pick-xi-${focusId}"]`)?.focus();
+    setFocusId(null);
+  }, [focusId, added]);
 
   useEffect(() => {
     panel.current?.focus();
     const onKey = (/** @type {KeyboardEvent} */ e) => {
       if (e.key === "Escape") { e.stopPropagation(); onClose(); return; }
       if (e.key !== "Tab" || !panel.current) return;
-      const f = [...panel.current.querySelectorAll("button:not([disabled]), select")];
+      const f = [...panel.current.querySelectorAll("button:not([disabled]), select, input")];
       if (!f.length) return;
       const first = f[0], last = f[f.length - 1];
       if (e.shiftKey && (document.activeElement === first || document.activeElement === panel.current)) { e.preventDefault(); /** @type {HTMLElement} */ (last).focus(); }
@@ -66,12 +91,20 @@ export function PickSide({ match, gate, onClose, onSaved }) {
   }, [onClose]);
 
   const boys = useMemo(() => read?.players == null ? []
-    : candidates(read.players, read.readiness, read.squad, { school: gate.school, teamCode: gate.teamCode, end: gate.end, may: { status: gate.panels.status === true } }),
-  [read, gate.school, gate.teamCode, gate.end, gate.panels.status]);
+    : candidates(read.players, read.readiness, read.squad, { school: gate.school, teamCode: gate.teamCode, end: gate.end, may: { status: gate.panels.status === true }, added }),
+  [read, gate.school, gate.teamCode, gate.end, gate.panels.status, added]);
   const names = useMemo(() => new Map(boys.map((b) => [b.id, b.name])), [boys]);
+  const found = useMemo(() => findOthers(read?.players ?? null, query, { school: gate.school, teamCode: gate.teamCode, have: boys.map((b) => b.id) }),
+    [read, query, gate.school, gate.teamCode, boys]);
   const check = checkDraft(draft);
   const full = draft.xi.length >= SIDE_SIZE;
   const edit = (/** @type {(d: typeof draft) => typeof draft} */ f) => { setSaid(null); setDraft(f); };
+  /** Adds a boy from another team to the list, and to the XI if there is room. The database still decides whether he may play. */
+  const addOther = (/** @type {string} */ id) => {
+    setAdded((a) => (a.includes(id) ? a : [...a, id]));
+    edit((d) => pick(d, id));
+    setFinding(false); setQuery(""); setFocusId(id);
+  };
 
   async function save() {
     if (saving) return;
@@ -110,9 +143,10 @@ export function PickSide({ match, gate, onClose, onSaved }) {
           {read == null && <p data-testid="pick-side-loading" style={quiet()}>Reading the team…</p>}
           {read != null && read.players == null && <p data-testid="pick-side-unread" style={quiet()}>The team could not be read just now. Nothing has been changed.</p>}
           {read != null && read.players != null && boys.length === 0 && <p style={quiet()}>There is nobody on this team's list to pick from.</p>}
-          {read != null && read.players != null && gate.panels.side && read.readiness == null && (
+          {read != null && read.players != null && wantsReadiness && read.readiness == null && (
             <p style={quiet()}>Who has said they are available could not be read just now. That is not the same as everyone being free.</p>
           )}
+          {read != null && read.players != null && awayBlind && <p data-testid="pick-side-away-note" style={quiet()}>{AWAY_AVAILABILITY_WORDS}</p>}
 
           {boys.length > 0 && (
             <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: T.space.sm }}>
@@ -128,7 +162,9 @@ export function PickSide({ match, gate, onClose, onSaved }) {
                       background: x || twelfth ? T.surface.raised : "transparent", padding: T.space.md, display: "grid", gap: T.space.sm }}>
                     <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap", alignItems: "baseline" }}>
                       <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>{b.name}</span>
-                      {b.words && <span data-testid={`pick-state-${b.id}`} style={quiet()}>{b.words}{b.back ? ` · back ${shortDate(b.back)}` : ""}</span>}
+                      {b.from && <span data-testid={`pick-from-${b.id}`} style={quiet()}>from {b.from}</span>}
+                      {b.from && wantsReadiness && !b.words && <span data-testid={`pick-nostate-${b.id}`} style={quiet()}>availability not shown</span>}
+                      {b.words &&<span data-testid={`pick-state-${b.id}`} style={quiet()}>{b.words}{b.back ? ` · back ${shortDate(b.back)}` : ""}</span>}
                     </div>
                     <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap", alignItems: "center" }}>
                       <button type="button" data-testid={`pick-xi-${b.id}`} className="os-state" aria-pressed={!!x}
@@ -155,6 +191,41 @@ export function PickSide({ match, gate, onClose, onSaved }) {
                 );
               })}
             </ul>
+          )}
+
+          {read != null && read.players != null && gate.teamCode && (
+            <div data-testid="pick-other" style={{ display: "grid", gap: T.space.sm, marginTop: T.space.md, paddingTop: T.space.md, borderTop: `1px solid ${T.line.normal}` }}>
+              {!finding ? (
+                <button type="button" data-testid="pick-other-open" className="os-state" onClick={() => setFinding(true)} style={{ ...btn(), justifySelf: "start" }}>
+                  Add a boy from another team
+                </button>
+              ) : (
+                <>
+                  <label style={{ ...quiet(), display: "grid", gap: T.space.xs }}>
+                    Find a boy from another of your teams
+                    <input type="search" data-testid="pick-other-search" value={query} autoFocus autoComplete="off" onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Type part of his name" style={{ ...select(), width: "100%", minWidth: 0 }}/>
+                  </label>
+                  {query.trim() !== "" && found.rows.length === 0 && <p data-testid="pick-other-none" style={quiet()}>Nobody on your other teams matches that.</p>}
+                  {found.rows.length > 0 && (
+                    <ul data-testid="pick-other-results" style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: T.space.xs }}>
+                      {found.rows.map((r) => (
+                        <li key={r.id}>
+                          <button type="button" data-testid={`pick-other-add-${r.id}`} className="os-state" onClick={() => addOther(r.id)}
+                            style={{ ...btn(), width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", gap: T.space.sm }}>
+                            <span>{r.name}</span><span style={{ fontWeight: 400 }}>{r.team ? `from ${r.team}` : "no team"}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {found.more > 0 && <p style={quiet()}>{found.more} more match. Type more of his name to narrow the list.</p>}
+                  <button type="button" data-testid="pick-other-cancel" className="os-state" onClick={() => { setFinding(false); setQuery(""); }} style={{ ...btn(), justifySelf: "start" }}>
+                    Cancel
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
 

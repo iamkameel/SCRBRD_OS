@@ -48,28 +48,66 @@ export function draftFrom(squad, end) {
 /**
  * Who can be picked: the team's boys as the roster read gave them, with this
  * fixture's answer beside each where the readiness read has one. A boy already
- * on the sheet who is not on the roster (picked from another side) is kept, so
- * saving never quietly drops him.
+ * on the sheet who is not on the roster (picked from another side), and a boy
+ * the coach has added from another team (`added`), are kept, so saving never
+ * quietly drops him. Each carries `team` (his own team, where the roster read
+ * knows it) and `from`: that team's code when it is not this fixture's, so the
+ * screen can say "from U13A". Null for the fixture team's own boys.
+ *
+ * A boy from another school is never added: an `added` id is taken only if the
+ * roster read puts him at this school. A sheet row is kept as it stood.
  *
  * Health is the status tier only (D4): the word, and the date he is back where
  * he is restricted and this reader may see the tier. Never a reason.
  * @param {{id: string, name: string, school?: string | null, team?: string | null}[] | null} players  the `players` read, adapted
  * @param {any[] | null} readiness  the `readiness` read, adapted
  * @param {{playerId: string, name: string, side: string | null}[] | null} squad  the `match_squad` read, adapted
- * @param {{school: string | null, teamCode: string | null, end: "home" | "away", may: {status: boolean}}} o
- * @returns {{id: string, name: string, state: string | null, words: string | null, back: string | null}[]}
+ * @param {{school: string | null, teamCode: string | null, end: "home" | "away", may: {status: boolean}, added?: Iterable<string>}} o
+ * @returns {{id: string, name: string, team: string | null, from: string | null, state: string | null, words: string | null, back: string | null}[]}
  */
-export function candidates(players, readiness, squad, { school, teamCode, end, may }) {
+export function candidates(players, readiness, squad, { school, teamCode, end, may, added = [] }) {
   const answer = new Map((readiness ?? []).map((r) => [r.playerId, r]));
-  const roster = (players ?? []).filter((p) => (!school || p.school === school) && (!teamCode || p.team === teamCode));
+  const known = new Map((players ?? []).map((p) => [p.id, p]));
+  const atSchool = (/** @type {{school?: string | null}} */ p) => !school || p.school === school;
+  const roster = (players ?? []).filter((p) => atSchool(p) && (!teamCode || p.team === teamCode));
   const rows = roster.map((p) => ({ id: p.id, name: p.name }));
   const have = new Set(rows.map((r) => r.id));
   for (const r of squad ?? []) if (r.side === end && !have.has(r.playerId)) { rows.push({ id: r.playerId, name: r.name }); have.add(r.playerId); }
+  for (const id of added) { const p = known.get(id); if (p && atSchool(p) && !have.has(id)) { rows.push({ id, name: p.name }); have.add(id); } }
   return rows.sort((a, b) => a.name.localeCompare(b.name)).map((r) => {
     const a = answer.get(r.id);
     const state = a ? stateOf(a, may) : null;
-    return { ...r, state, words: state ? STATE_WORDS[state] ?? state : null, back: state === "restricted" ? (a.returnDate ?? null) : null };
+    const p = known.get(r.id);
+    const team = p && atSchool(p) ? p.team ?? null : null;
+    return { ...r, team, from: team && teamCode && team !== teamCode ? team : null,
+      state, words: state ? STATE_WORDS[state] ?? state : null, back: state === "restricted" ? (a.returnDate ?? null) : null };
   });
+}
+
+/** How many names the finder lists at once; the rest are reached by typing more. */
+export const FIND_LIMIT = 8;
+
+/**
+ * The finder for "a boy from another team": the school's boys the `players`
+ * read already returns, who are on a team other than this fixture's and are
+ * not already in the list, whose name holds every word typed (any case). Only
+ * this school's: a boy from another school is never offered, whatever the read
+ * returned. Nothing is offered until something is typed, so the screen never
+ * lists the whole school. Sorted by team, then name; `more` counts what
+ * FIND_LIMIT left out.
+ * @param {{id: string, name: string, school?: string | null, team?: string | null}[] | null} players
+ * @param {string} query
+ * @param {{school: string | null, teamCode: string | null, have: Iterable<string>}} o  `have`: the ids already in the list
+ * @returns {{rows: {id: string, name: string, team: string | null}[], more: number}}
+ */
+export function findOthers(players, query, { school, teamCode, have }) {
+  const words = String(query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!school || !teamCode || !words.length) return { rows: [], more: 0 };
+  const skip = new Set(have);
+  const hits = (players ?? [])
+    .filter((p) => p.school === school && p.team !== teamCode && !skip.has(p.id) && words.every((w) => p.name.toLowerCase().includes(w)))
+    .sort((a, b) => (a.team == null) - (b.team == null) || String(a.team).localeCompare(String(b.team)) || a.name.localeCompare(b.name));
+  return { rows: hits.slice(0, FIND_LIMIT).map((p) => ({ id: p.id, name: p.name, team: p.team ?? null })), more: Math.max(0, hits.length - FIND_LIMIT) };
 }
 
 /** The lowest batting number nobody holds, or null when all eleven are held. @param {Draft} d */
@@ -197,3 +235,12 @@ export function draftFoot(d, names) {
   const nameOf = (/** @type {string} */ id) => (names instanceof Map ? names.get(id) : names[id]) ?? "a boy";
   return [`${d.xi.length} in the XI`, d.twelfth ? `twelfth man: ${nameOf(d.twelfth)}` : null].filter(Boolean).join(" · ");
 }
+
+/**
+ * Said, for the away side's coach, where the picker has no availability to
+ * show: the `readiness` read answers for the fixture's home team only (its
+ * query joins `player` on the fixture's own school and team), and no other
+ * read gives the away end's answers. Nothing is read for the away end rather
+ * than reading the home team's rows and showing none.
+ */
+export const AWAY_AVAILABILITY_WORDS = "Availability shows for the home side only for now.";
