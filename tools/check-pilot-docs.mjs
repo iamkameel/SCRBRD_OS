@@ -45,6 +45,8 @@ const DOCS = [
   "docs/pilot/PARENT_HELP.md",
   "docs/pilot/OFFICE_HELP.md",
   "docs/pilot/REHEARSAL.md",
+  // The solo test on the demo copy (Kameel, 7 October): every screen, one person.
+  "docs/pilot/SOLO_TEST.md",
 ];
 
 /**
