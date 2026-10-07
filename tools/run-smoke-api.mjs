@@ -40,6 +40,10 @@ const WALKS = [
   "quarantine",
   // A retry writes once: the Idempotency-Key layer over every write route.
   "idempotency",
+  // The managed-host reset drops only what db/ creates (GA-I02): somebody
+  // else's table, view, function, enum and sequence survive it, in a
+  // scratch database of the walk's own, and through the rebuild bundle too.
+  "reset-objects",
   // What a scoring command may be, decided by the server at commit: one key
   // one event (db/36), last-in-first-out undo, and the Laws.
   "laws",

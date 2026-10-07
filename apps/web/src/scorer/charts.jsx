@@ -6,8 +6,9 @@ import { RR, SR, isOut } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
-import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, DISMISSAL_LABEL, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
+import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
 import { Icon } from "../ui/icons.jsx";
+import { chaseEndWords, projectInnings, projectMatch, runRates } from "./chartData.js";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -15,28 +16,17 @@ import { Icon } from "../ui/icons.jsx";
 /* ──────────────────────────────
    ANALYSIS CHARTS
 ────────────────────────────── */
-function WormChart({innings,curIn,match}){
-  const overs=match?.overs||20;
-  const maxBalls=overs*6;
+function WormChart({innings,match,events=null}){
+  // One projection of the fold for every chart (chartData.js, GA-I05): each
+  // delivery at the legal balls bowled, a wide or no-ball a step up at the
+  // same x, penalty runs where they were awarded, the fold's fall of wickets.
+  const proj=projectMatch(innings,{events,overs:match?.overs});
+  const p1=proj[0],p2=proj[1];
   const inn1=innings[0];const inn2=innings[1];
-  // Build worm data points per ball from each innings
-  const mkWorm=(inn)=>{
-    if(!inn||!inn.ballLog.length)return{pts:[],wkts:[]};
-    const pts=[{ball:0,runs:0}];const wkts=[];
-    let runs=0;
-    inn.ballLog.filter(b=>b.type!=="Wd"&&b.type!=="Nb"&&b.type!=="Pen").forEach((b,i)=>{
-      runs+=(b.value||0);
-      const ball=i+1;
-      pts.push({ball,runs});
-      if(isOut(b)){
-        const bat=inn.batsmen.find(x=>x.id===b.striker);
-        wkts.push({ball,runs,n:wkts.length+1,name:bat?bat.name:(DISMISSAL_LABEL[b.dismissal]||b.dismissal||"Wicket"),mode:DISMISSAL_LABEL[b.dismissal]||b.dismissal||""});
-      }
-    });
-    return{pts,wkts};
-  };
-  const d1=mkWorm(inn1),d2=mkWorm(inn2);
-  const w1=d1.pts,w2=d2.pts;const wk1=d1.wkts,wk2=d2.wkts;
+  const w1=p1?.points??[],w2=p2?.points??[];const wk1=p1?.wickets??[],wk2=p2?.wickets??[];
+  // The x axis holds the longest allotment, or every ball bowled where more were.
+  const maxBalls=Math.max(6,...proj.filter(Boolean).map(p=>Math.max(p.allotment*6,p.balls)));
+  const overs=Math.ceil(maxBalls/6);
   const maxR=Math.max(20,...w1.map(p=>p.runs),...w2.map(p=>p.runs));
   const W=500,H=160,PAD={t:16,r:12,b:28,l:40};
   const cw=W-PAD.l-PAD.r,ch=H-PAD.t-PAD.b;
@@ -61,8 +51,10 @@ function WormChart({innings,curIn,match}){
             <text key={v} x={xScale(v*6)} y={ch+16} textAnchor="middle" fill={D.textMuted} fontSize={9} fontFamily={D.mono}>{v}</text>
           ))}
           {/* Worm lines */}
-          {w1.length>1&&<path d={mkPath(w1)} fill="none" stroke={D.sky} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.9}/>}
-          {w2.length>1&&<path d={mkPath(w2)} fill="none" stroke={D.amber} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.9}/>}
+          {w1.length>1&&<path d={mkPath(w1)} fill="none" stroke={D.sky} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
+            data-testid="worm-line" data-innings={0} data-end-runs={w1[w1.length-1].runs} data-end-balls={w1[w1.length-1].ball}/>}
+          {w2.length>1&&<path d={mkPath(w2)} fill="none" stroke={D.amber} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
+            data-testid="worm-line" data-innings={1} data-end-runs={w2[w2.length-1].runs} data-end-balls={w2[w2.length-1].ball}/>}
           {/* Area fills */}
           {w1.length>1&&<path d={mkPath(w1)+"L"+xScale(w1[w1.length-1].ball)+","+ch+"L0,"+ch+"Z"} fill={D.sky} opacity={0.06}/>}
           {w2.length>1&&<path d={mkPath(w2)+"L"+xScale(w2[w2.length-1].ball)+","+ch+"L0,"+ch+"Z"} fill={D.amber} opacity={0.06}/>}
@@ -74,7 +66,7 @@ function WormChart({innings,curIn,match}){
             <g key={gi+"-"+i}>
               <line x1={xScale(m.ball)} y1={yScale(m.runs)} x2={xScale(m.ball)} y2={ch} stroke={D.rose} strokeWidth={1} strokeDasharray="2 3" opacity={0.4}/>
               <circle cx={xScale(m.ball)} cy={yScale(m.runs)} r={4.5} fill={D.rose} stroke={col} strokeWidth={1.5}>
-                <title>{"W"+m.n+" · "+m.runs+" ("+m.name+(m.mode?", "+m.mode:"")+")"}</title>
+                <title>{"W"+m.n+" · "+m.runs+" ("+m.name+(m.how?", "+m.how:"")+")"}</title>
               </circle>
             </g>
           )))}
@@ -85,7 +77,7 @@ function WormChart({innings,curIn,match}){
           <div style={{width:"18px",height:"2px",background:D.sky,borderRadius:"1px"}}/>
           <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{inn1.battingTeam}</span>
         </div>}
-        {inn2&&inn2.ballLog.length>0&&<div style={{display:"flex",alignItems:"center",gap:"5px"}}>
+        {inn2&&w2.length>1&&<div style={{display:"flex",alignItems:"center",gap:"5px"}}>
           <div style={{width:"18px",height:"2px",background:D.amber,borderRadius:"1px"}}/>
           <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{inn2.battingTeam}</span>
         </div>}
@@ -98,27 +90,26 @@ function WormChart({innings,curIn,match}){
   );
 }
 
-function ManhattanChart({inn,match}){
-  const overs=match?.overs||20;
-  if(!inn||!inn.overLog.length)return(
+function ManhattanChart({inn,match,events=null,projection=null}){
+  // The fold's runs per over (chartData.js, GA-I05): a wide's and a no-ball's
+  // own run in, penalty runs in the over they were awarded, every over
+  // bowled — the one in progress, or the one the innings ended in, too.
+  const p=projection??projectInnings(inn,{events,overs:match?.overs});
+  if(!p||!p.overs.length)return(
     <Card style={{padding:"14px 16px"}}>
       <Lbl sx={{marginBottom:"8px"}}>Manhattan — Runs per Over</Lbl>
       <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px",padding:"16px 0"}}>No completed overs yet.</div>
     </Card>
   );
-  const ovData=Array.from({length:overs},(_,i)=>{
-    const ov=inn.overLog.find(o=>o.over===i);
-    if(!ov)return{over:i,runs:0,wickets:0,complete:false};
-    const runs=ov.balls.reduce((s,b)=>s+(b.value||0),0);
-    const wickets=ov.balls.filter(isOut).length;
-    const complete=ov.balls.filter(b=>b.type!=="Wd"&&b.type!=="Nb").length===6;
-    return{over:i,runs,wickets,complete};
-  });
+  const ovData=p.overs;
+  const overs=Math.max(p.allotment,ovData[ovData.length-1].over+1);
+  const unplaced=p.opening+p.closing;
   const maxR=Math.max(1,...ovData.map(o=>o.runs));
   const W=500,H=150,PAD={t:12,r:8,b:28,l:32};
   const cw=W-PAD.l-PAD.r,ch=H-PAD.t-PAD.b;
   const barW=Math.max(4,cw/overs-2);
   const barColor=(r,w)=>w>0?D.rose:r>=12?D.amber:r>=8?D.sky:D.indigo;
+  const live=!inn?.complete;
   return (
     <Card style={{padding:"14px 16px"}}>
       <Lbl sx={{marginBottom:"10px"}}>Manhattan — Runs per Over</Lbl>
@@ -130,14 +121,18 @@ function ManhattanChart({inn,match}){
               <text x={-5} y={ch-(v/maxR)*ch+4} textAnchor="end" fill={D.textMuted} fontSize={8} fontFamily={D.mono}>{v}</text>
             </g>
           ))}
-          {ovData.filter(o=>o.complete||o.over<Math.floor((inn.balls||0)/6)).map((o,i)=>{
+          {ovData.map(o=>{
             const bh=(o.runs/maxR)*ch;
-            const bx=(i/overs)*cw+(cw/overs-barW)/2;
+            const bx=(o.over/overs)*cw+(cw/overs-barW)/2;
             const by=ch-bh;
+            // The over still being bowled is drawn lighter: its bar can grow.
+            const inPlay=live&&!o.complete&&o===ovData[ovData.length-1];
             return (
-              <g key={i}>
+              <g key={o.over}>
                 <rect x={bx} y={by} width={barW} height={Math.max(1,bh)}
-                  fill={barColor(o.runs,o.wickets)} opacity={0.8} rx={2}/>
+                  fill={barColor(o.runs,o.wickets)} opacity={inPlay?0.45:0.8} rx={2} data-over={o.over+1} data-runs={o.runs}>
+                  <title>{"Over "+(o.over+1)+": "+o.runs+" run"+(o.runs===1?"":"s")+(o.wickets?", "+o.wickets+" wicket"+(o.wickets===1?"":"s"):"")+(inPlay?" so far":"")}</title>
+                </rect>
                 {o.wickets>0&&<text x={bx+barW/2} y={Math.max(by-3,2)} textAnchor="middle" fill={D.rose} fontSize={8} fontFamily={D.mono}>{"W".repeat(o.wickets)}</text>}
                 {overs<=20&&<text x={bx+barW/2} y={ch+14} textAnchor="middle" fill={D.textMuted} fontSize={8} fontFamily={D.mono}>{o.over+1}</text>}
               </g>
@@ -146,6 +141,9 @@ function ManhattanChart({inn,match}){
           <line x1={0} y1={ch} x2={cw} y2={ch} stroke={D.border} strokeWidth={1}/>
         </g>
       </svg>
+      {unplaced!==0&&(
+        <p data-testid="manhattan-unplaced" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:"6px 0 0"}}>{"Plus "+unplaced+" penalty run"+(Math.abs(unplaced)===1?"":"s")+" not placed in an over."}</p>
+      )}
       <div style={{display:"flex",gap:"12px",marginTop:"6px",flexWrap:"wrap"}}>
         {[{c:D.indigo,l:"0–7"},{c:D.sky,l:"8–11"},{c:D.amber,l:"12+"},{c:D.rose,l:"Wicket"}].map(({c,l})=>(
           <div key={l} style={{display:"flex",alignItems:"center",gap:"4px"}}>
@@ -158,32 +156,26 @@ function ManhattanChart({inn,match}){
   );
 }
 
-function RunRateChart({inn,match,target}){
-  const overs=match?.overs||20;
-  if(!inn||!inn.overLog.length)return null;
-  // Build RR per over and required RR per over
-  const pts=[];let cumRuns=0;
-  for(let ov=0;ov<overs;ov++){
-    const ovLog=inn.overLog.find(o=>o.over===ov);
-    if(!ovLog)break;
-    const legalBalls=ovLog.balls.filter(b=>b.type!=="Wd"&&b.type!=="Nb").length;
-    if(legalBalls<6)break;
-    cumRuns+=ovLog.balls.reduce((s,b)=>s+(b.value||0),0);
-    const rr=cumRuns/((ov+1));
-    const ballsDone=(ov+1)*6;
-    const reqRr=target?Math.max(0,(target-cumRuns)/((overs*6-ballsDone)/6)):null;
-    pts.push({over:ov+1,rr,reqRr});
-  }
-  if(pts.length<2)return null;
-  const maxRR=Math.max(12,...pts.map(p=>Math.max(p.rr,p.reqRr||0)));
+function RunRateChart({inn,match,target,events=null,projection=null}){
+  // The run rate and the rate required from the same projection as the worm
+  // and the bars (chartData.js, GA-I05). The required rate exists only while
+  // balls are left and runs still needed; after that the chase has an end —
+  // the target reached, the scores level, or how far short — and no rate.
+  const p=projection??projectInnings(inn,{events,overs:match?.overs});
+  const{pts,end}=runRates(p,target,inn);
+  if(pts.length<2&&!end)return null;
+  const overs=Math.max(p.allotment,p.balls/6);
+  const req=pts.filter(q=>q.reqRr!=null);
+  const maxRR=Math.max(12,...pts.map(q=>Math.max(q.rr,q.reqRr??0)));
   const W=500,H=130,PAD={t:12,r:8,b:26,l:36};
   const cw=W-PAD.l-PAD.r,ch=H-PAD.t-PAD.b;
   const xS=v=>(v/overs)*cw;const yS=v=>ch-Math.min(1,v/maxRR)*ch;
-  const mkP=(pts,key)=>pts.map((p,i)=>(i===0?"M":"L")+xS(p.over)+","+yS(p[key]).toFixed(1)).join(" ");
+  const mkP=(list,key)=>list.map((q,i)=>(i===0?"M":"L")+xS(q.over).toFixed(1)+","+yS(q[key]).toFixed(1)).join(" ");
+  const endWords=chaseEndWords(end);
   return (
     <Card style={{padding:"14px 16px"}}>
       <Lbl sx={{marginBottom:"10px"}}>Run Rate</Lbl>
-      <svg width="100%" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}}>
+      {pts.length>=2&&<svg width="100%" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}}>
         <g transform={"translate("+PAD.l+","+PAD.t+")"}>
           {[0,Math.round(maxRR/2),maxRR].map(v=>(
             <g key={v}>
@@ -192,23 +184,25 @@ function RunRateChart({inn,match,target}){
             </g>
           ))}
           <path d={mkP(pts,"rr")} fill="none" stroke={D.emerald} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
-          <path d={mkP(pts,"rr")+"L"+xS(pts[pts.length-1].over)+","+ch+"L0,"+ch+"Z"} fill={D.emerald} opacity={0.06}/>
-          {target&&<path d={mkP(pts.filter(p=>p.reqRr!=null),"reqRr")} fill="none" stroke={D.rose} strokeWidth={1.5} strokeDasharray="4 3" strokeLinecap="round" strokeLinejoin="round"/>}
+          <path d={mkP(pts,"rr")+"L"+xS(pts[pts.length-1].over).toFixed(1)+","+ch+"L0,"+ch+"Z"} fill={D.emerald} opacity={0.06}/>
+          {req.length>1&&<path d={mkP(req,"reqRr")} fill="none" stroke={D.rose} strokeWidth={1.5} strokeDasharray="4 3" strokeLinecap="round" strokeLinejoin="round"/>}
           <line x1={0} y1={0} x2={0} y2={ch} stroke={D.border} strokeWidth={1}/>
           <line x1={0} y1={ch} x2={cw} y2={ch} stroke={D.border} strokeWidth={1}/>
-          {pts.filter((_,i)=>i%5===4||(i===pts.length-1)).map(p=>(
-            <text key={p.over} x={xS(p.over)} y={ch+14} textAnchor="middle" fill={D.textMuted} fontSize={8} fontFamily={D.mono}>{p.over}</text>
-          ))}
+          {pts.filter((_,i)=>i%5===4||(i===pts.length-1)).map((q,i)=>{
+            const balls=Math.round(q.over*6);
+            return <text key={i} x={xS(q.over).toFixed(1)} y={ch+14} textAnchor="middle" fill={D.textMuted} fontSize={8} fontFamily={D.mono}>{balls%6?Math.floor(balls/6)+"."+(balls%6):balls/6}</text>;
+          })}
         </g>
-      </svg>
+      </svg>}
+      {endWords&&<p data-testid="rr-end" data-state={end.state} style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:end.state==="reached"?D.emerald:D.textSecondary,margin:"8px 0 0"}}>{endWords}</p>}
       <div style={{display:"flex",gap:"14px",marginTop:"6px"}}>
         <div style={{display:"flex",alignItems:"center",gap:"5px"}}>
           <div style={{width:"16px",height:"2px",background:D.emerald,borderRadius:"1px"}}/>
-          <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Run Rate</span>
+          <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Run Rate</span>
         </div>
-        {target&&<div style={{display:"flex",alignItems:"center",gap:"5px"}}>
+        {req.length>1&&<div style={{display:"flex",alignItems:"center",gap:"5px"}}>
           <div style={{width:"16px",height:"2px",background:D.rose,borderRadius:"1px",borderTop:"2px dashed "+D.rose}}/>
-          <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Required RR</span>
+          <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Required RR</span>
         </div>}
       </div>
     </Card>
@@ -549,9 +543,12 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
   );
 }
 
-function AnalysisDashboard({inn,match,curIn,innings}){
+function AnalysisDashboard({inn,match,curIn,innings,events=null}){
   const overs=match?.overs||20;
-  const target=curIn===1?(innings[0]?.runs||0)+1:null;
+  // The target the fold has (the innings break's, or the umpires' revision),
+  // else the first innings' runs and one.
+  const target=inn?.target??(curIn===1?(innings[0]?.runs||0)+1:null);
+  const proj=projectMatch(innings,{events,overs:match?.overs})[curIn]??null;
   const isChase=curIn===1;
   const sig=buildSignals(inn,overs,target,isChase);
   const[activeView,setActiveView]=useState("charts");
@@ -574,11 +571,11 @@ function AnalysisDashboard({inn,match,curIn,innings}){
       {activeView==="charts"&&(
         <div className="sc-grid-2">
           <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-            <WormChart innings={innings} curIn={curIn} match={match}/>
-            <RunRateChart inn={inn} match={match} target={target}/>
+            <WormChart innings={innings} curIn={curIn} match={match} events={events}/>
+            <RunRateChart inn={inn} match={match} target={target} projection={proj}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-            <ManhattanChart inn={inn} match={match}/>
+            <ManhattanChart inn={inn} match={match} projection={proj}/>
             <BatsmanChart inn={inn}/>
             <BowlerChart inn={inn}/>
             <ShotHeatMap inn={inn}/>

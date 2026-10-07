@@ -634,8 +634,8 @@ console.log("\n── A publish through this API is never served stale ──");
      && (await site.get(`/api/public/matches/${M2}/log`, ip)).status === 404);
   refuse = true;
   ok("a refused publish changes nothing and drops nothing", await publish(true) === 403 && site.site.cache.entries.get(M2)?.header?.value === null);
-  ok("server.mjs hands the publication route the public cache",
-     /publicationRoutes\(\{[^}]*onChange: \(note\) => publicSite\.changed\(note\)/.test(readFileSync(join(ROOT, "services", "api", "server.mjs"), "utf8")));
+  ok("server.mjs hands the publication route the public cache (after a keyed write commits: afterCommit)",
+     /publicationRoutes\(\{[^}]*onChange: \(note\) => afterCommit\(\(\) => publicSite\.changed\(note\)\)/.test(readFileSync(join(ROOT, "services", "api", "server.mjs"), "utf8")));
   await site.close();
 }
 

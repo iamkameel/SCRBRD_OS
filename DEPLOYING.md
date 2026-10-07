@@ -123,17 +123,43 @@ any host that is not `localhost`, `127.0.0.1` or the compose service `db`
 named for what it does.
 
 Use `--reset-objects` instead. It drops only what this project created in
-`public` — every table, view, routine and enum this repository's migrations
-made — and leaves the schema, its grants, and anything belonging to an
-extension exactly as they were. The ledger goes with it, so the next run
-applies every migration from the beginning:
+`public`, **by name**: the tables, views, routines, types and sequences that a
+`db/NN_*.sql` file creates, read out of the files themselves
+(`tools/reset-objects.mjs`), plus the ledger. The schema, its grants, anything
+belonging to an extension, and any object another application keeps in
+`public` are left exactly as they were. (Until GA-I02 it dropped every
+non-extension object in `public`, ours or not.) The ledger goes with it, so
+the next run applies every migration from the beginning.
+
+It refuses a host that is not local, as `--reset` does, with its own override
+named for what it does:
 
 ```sh
+I_UNDERSTAND_THIS_ERASES_EVERY_SCRBRD_RECORD=1 \
 DATABASE_URL='<owner connection string>' node tools/migrate.mjs --reset-objects --seed
 ```
 
+`--reset`'s override does not open it. Two things it cannot do for you:
+
+- **It stops if somebody else's object is built on one of ours** — a view over
+  our table, a function taking our type, a foreign key into our table — and
+  names it, before dropping anything. Remove or detach that object first. A
+  leftover from an older edit of a pilot-era file (a view no current file
+  creates, over a table that one does) stops it the same way.
+- **A name is all it goes by.** Another application's object with exactly the
+  name of one of ours (its own `player` table) is taken for ours, and every
+  overload of one of our routine names goes. Only a separate schema would
+  close that.
+
+`tools/smoke-reset-objects.mjs` proves both paths — this one and section 1 of
+the rebuild bundle, which is the same statement — against a scratch database
+holding somebody else's table, view, function, enum and sequence.
+
 That is the DEMONSTRATION path, and only the demonstration path: it destroys
-everything in the database and reseeds it with invented people.
+everything this project holds in the database and reseeds it with invented
+people. Take and prove a backup first
+([docs/pilot/BACKUP_RESTORE.md](docs/pilot/BACKUP_RESTORE.md)) if there is
+anything in it you would miss.
 
 For a database that already carries the ledger — the demonstration instance
 after its first rebuild included — a new migration does not need a rebuild,
