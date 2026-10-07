@@ -275,6 +275,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   "browser-cleanup",
   // SCRBRD-068/069/080/081: the pad's four new Laws questions.
   "browser-pad-laws",
+  // db/87 (Law 22.9, 21.17): a run out off a no-ball and a stumping off a
+  // wide through the pad; the board, the server's fold, match_live_score,
+  // the scorecard, the career read and the public page say the same score.
+  "browser-wicket-on-extra",
   // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
   // reloads with none, says "sign in to send", retries its claim, sends the
   // toss first, matches the server id for id, and clears its outbox at the end.

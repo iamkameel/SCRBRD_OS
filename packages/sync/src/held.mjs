@@ -55,7 +55,7 @@
  * held under its new key — the count stays, nothing doubles.
  */
 import { deriveInnings, deriveInningsList, lawsRefusal, undoLast, LOCAL_ONLY, REFUSAL_TEXT, DISMISSAL_LABEL,
-  penaltyReasonWords, normalisePenaltyReason } from "@scrbrd/scoring";
+  penaltyReasonWords, normalisePenaltyReason, isWicketBall } from "@scrbrd/scoring";
 
 /**
  * An event the server refused or conflicted on, as the engine holds it.
@@ -305,6 +305,19 @@ const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {s
   `${n} ${n === 1 ? one : many}`;
 
 /**
+ * ", wicket — T Bekker run out at the striker's end" for a wide or a no-ball
+ * that carries a wicket (isWicketBall()), else nothing.
+ * @param {any} ev  @param {(id: any) => string} n
+ */
+function offExtra(ev, n) {
+  if (!isWicketBall(ev)) return "";
+  const how = /** @type {Record<string, string>} */ (DISMISSAL_LABEL)[ev.dismissal] ?? ev.dismissal;
+  const who = ev.dismissed ?? ev.striker;
+  const end = ev.outAt === "striker_end" ? " at the striker's end" : ev.outAt === "bowler_end" ? " at the bowler's end" : "";
+  return `, wicket — ${who != null ? `${n(who)} ` : ""}${how}${end}`;
+}
+
+/**
  * What an event was, in a line a scorer reads: "Ball — 4 runs, J Smith
  * facing A Nel". `inn` supplies the names; `find` looks up another event by
  * id (for an undo, to say what it undid).
@@ -326,8 +339,9 @@ export function describeEvent(ev, inn, find) {
           const end = ev.outAt === "striker_end" ? " at the striker's end" : ev.outAt === "bowler_end" ? " at the bowler's end" : "";
           return `Wicket — ${who != null ? `${n(who)} ` : ""}${how}${end}${v ? `, ${plural(v, "run")}` : ""}${ev.bowler != null ? ` (bowling: ${n(ev.bowler)})` : ""}`;
         }
-        case "Wd": return `Wide${v ? ` + ${plural(v, "run")}` : ""}${face}`;
-        case "Nb": return `No ball${v ? ` + ${ev.nbRuns === "byes" ? plural(v, "bye") : ev.nbRuns === "leg_byes" ? plural(v, "leg bye") : plural(v, "run")}` : ""}${face}`;
+        // A wicket on a wide or a no-ball (Law 22.9, 21.17) says so.
+        case "Wd": return `Wide${v ? ` + ${plural(v, "run")}` : ""}${offExtra(ev, n)}${face}`;
+        case "Nb": return `No ball${v ? ` + ${ev.nbRuns === "byes" ? plural(v, "bye") : ev.nbRuns === "leg_byes" ? plural(v, "leg bye") : plural(v, "run")}` : ""}${offExtra(ev, n)}${face}`;
         case "B":  return `${plural(v, "bye")}${face}`;
         case "LB": return `${plural(v, "leg bye")}${face}`;
         default:   return `Ball — ${v ? plural(v, "run") : "dot ball"}${face}`;

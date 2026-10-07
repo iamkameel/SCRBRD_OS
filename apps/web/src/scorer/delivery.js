@@ -60,10 +60,38 @@ export function deliveryEvents({ curIn, before, freeHit, type, value, shot, seg,
  * and sector (null on the pad). `nbType` is passed on as it always was;
  * ball() keeps only the fields the record has.
  */
-export function noBallEvent({ inn, nbType, runs, nbRuns, selShot, selSeg }) {
+export function noBallEvent({ inn, nbType, runs, nbRuns, selShot, selSeg, wicket = null }) {
   return ballEvent({type:"Nb",value:runs,shot:selShot,
     seg:selSeg?.seg??null,zone:selSeg?.zone??null,nbType,...(nbRuns?{nbRuns}:{}),
-    ...crease(inn)});
+    ...crease(inn),...wicketFields(wicket)});
+}
+
+/**
+ * The wicket a wide or a no-ball carries (Law 22.9, 21.17), as the wicket
+ * sheet asked it: the method, the fielder, who was out when it was not the
+ * striker, and the end when runs were completed. Nothing when there is none,
+ * so every other extra is the event it always was.
+ * @param {{dismissal: string, fielder?: string | null, dismissed?: string | null, outAt?: string | null} | null} w
+ */
+const wicketFields = (w) => (w ? {
+  dismissal: w.dismissal, fielder: w.fielder || null,
+  ...(w.dismissed ? { dismissed: w.dismissed } : {}),
+  ...(w.outAt ? { outAt: w.outAt } : {}),
+} : {});
+
+/**
+ * A wicket on a wide or a no-ball: the extra exactly as the pad records it
+ * without one — a wide as commitBall() builds it (recordWide), a no-ball as
+ * the no-ball question does (noBallEvent) — carrying the wicket.
+ * @param {{inn: object, extra: {type: "Wd" | "Nb", runs: number, nbType?: string | null, nbRuns?: string | null},
+ *          wicket: {dismissal: string, fielder?: string | null, dismissed?: string | null, outAt?: string | null},
+ *          freeHit?: boolean, approach?: string | null}} o
+ */
+export function extraWicketEvent({ inn, extra, wicket, freeHit = false, approach = null }) {
+  if (extra.type === "Nb") {
+    return noBallEvent({ inn, nbType: extra.nbType ?? null, runs: extra.runs, nbRuns: extra.nbRuns ?? null, selShot: null, selSeg: null, wicket });
+  }
+  return ballEvent({ ...deliveryOf({ type: "Wd", value: extra.runs, approach, freeHit, crease: crease(inn) }), ...wicketFields(wicket) });
 }
 
 /**

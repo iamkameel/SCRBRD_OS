@@ -1,5 +1,5 @@
 import { fetchCommentary } from "../lib/ai.js";
-import { batHandOf } from "@scrbrd/scoring";
+import { batHandOf, isWicketBall } from "@scrbrd/scoring";
 import { D, themed } from "../design/tokens.js";
 import { areaWords } from "./field.js";
 
@@ -115,6 +115,7 @@ async function fetchAICommentary(ball,inn,milestone){
   // Build rich context
   let eventDesc="";
   if(ball.type==="W")eventDesc=`WICKET — ${batsman?.name||"batter"} dismissed ${ball.dismissal}${bowler?" bowled by "+bowler.name:""}`;
+  else if(isWicketBall(ball))eventDesc=`${ball.type==="Wd"?"Wide":"No ball"}, and a WICKET — ${batsman?.name||"batter"} dismissed ${ball.dismissal}`;
   else if(ball.type==="Wd")eventDesc="Wide delivery, sloppy line";
   else if(ball.type==="Nb")eventDesc=`No ball (${(ball.nbType||"front foot").replace("_"," ")}), ${ball.value||0} ${ball.nbRuns?(ball.nbRuns==="leg_byes"?"leg byes":"byes"):"runs off bat"}`;
   else if(ball.type==="B")eventDesc=`Byes — ${ball.value} run${ball.value!==1?"s":""}`;

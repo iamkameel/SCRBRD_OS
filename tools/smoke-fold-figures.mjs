@@ -64,8 +64,15 @@
  * for a boy with no other record, never nought; the dossier with his runs and
  * no dot; the matchups untouched; voided, all of it gone.
  *
- * And the door itself: a new ball with no type, or a wicket with no
- * method, is refused by the database — and through the API, one event
+ * And a wicket on a wide or a no-ball (Law 22.9, 21.17; db/87): stumped,
+ * hit wicket, run out and obstructing off a wide; run out, hit twice and
+ * obstructing off a no-ball — the striker's or the non-striker's, a run out
+ * with runs and the end it fell at, a stumping off a wide on a free hit
+ * saved. Every reader above counts each as the fold does.
+ *
+ * And the door itself: a new ball with no type, a wicket with no method, or
+ * a wide or no-ball naming a way out the Law does not allow off it (db/87),
+ * is refused by the database — and through the API, one event
  * refused and named, the batch written.
  *
  * The rows go into ball_event as toRow() writes them, as the migration owner
@@ -82,7 +89,7 @@ import {
   MatchFold, deriveInnings, deriveMatch, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
   inningsStart, inningsEnd, inningsSummary, batters, bowler, ball, newEventId, retire, RETIRE_REASON, lawsRefusal,
 } from "@scrbrd/scoring";
-import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef } from "@scrbrd/scoring";
+import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef, isWicketBall } from "@scrbrd/scoring";
 import { resultFromRow } from "@scrbrd/scoring";   // SCRBRD-130 R1
 import { baseCard, TYPED as BOOK_TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
 // SCRBRD-114 phase 3a: the logs a result is proved on (result.test.mjs folds the same).
@@ -118,6 +125,8 @@ const OTHER_FIELDER = "X Other-Fielder";
 // db/43's door: a BEFORE INSERT trigger raising 23514 under these two names.
 const DOOR = "ball_event_names_its_delivery";
 const DOORS = ["ball_event_ball_has_type", "ball_event_wicket_has_method"];
+// db/87's: a wide or a no-ball naming a way out the Law does not allow off it.
+const DOOR_OFF_EXTRA = "ball_event_out_off_extra";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
@@ -159,9 +168,15 @@ const NOT_IN_OVER_LIST = [...NOT_IN_OVER];
 // change no other figure, so every innings is otherwise the one it was.
 let s7 = 6868;
 const rnd7 = () => (s7 = (s7 * 1103515245 + 12345) % 2147483648) / 2147483648;
+// A wicket on a wide or a no-ball (Law 22.9, 21.17; db/87) draws on an eighth.
+let s8 = 8686;
+const rnd8 = () => (s8 = (s8 * 1103515245 + 12345) % 2147483648) / 2147483648;
+const OFF_WIDE = ["run_out", "stumped", "hit_wicket", "obstructing_field"];
+const OFF_NO_BALL = ["run_out", "hit_twice", "obstructing_field"];
 const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0,
               consentReturns: 0, notInOver: 0, keepers: 0, keeperChanges: 0, keeperMidOver: 0, keeperUndone: 0,
-              catchByRef: 0, catchByName: 0, catchOther: 0, stumpByRef: 0, stumpByName: 0, stumpNobody: 0 };
+              catchByRef: 0, catchByName: 0, catchOther: 0, stumpByRef: 0, stumpByName: 0, stumpNobody: 0,
+              offWide: 0, offNoBall: 0 };
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -261,7 +276,7 @@ function builder(no, overs, o = {}) {
       // his name, another fielder, or nobody; a stumping never another
       // fielder while a keeper is recorded (the Laws refuse it, Law 39).
       let fielder = {};
-      const how = e.type === "W" ? normaliseDismissal(e.dismissal) : null;
+      const how = isWicketBall(e) ? normaliseDismissal(e.dismissal) : null;
       if (o.keepers && (how === "caught" || how === "stumped") && e.fielder === undefined) {
         const k = keeperOf(at);
         const r7 = rnd7();
@@ -409,6 +424,25 @@ function builder(no, overs, o = {}) {
      * (notInOverDelivery()). After a fielder obstructs a batter the batters
      * may choose who faces.
      */
+    /**
+     * A wicket on a wide or a no-ball (Law 22.9, 21.17; db/87): a method the
+     * Law allows off it, the striker's or (a run out, an obstruction) the
+     * non-striker's, a run out with runs completed and the end it fell at.
+     */
+    offExtra() {
+      const at = now();
+      if (at.striker == null || at.nonStriker == null) return;
+      const type = rnd8() < 0.5 ? "Wd" : "Nb";
+      const list = type === "Wd" ? OFF_WIDE : OFF_NO_BALL;
+      const how = list[Math.floor(rnd8() * list.length)];
+      const runs = how === "run_out" ? [0, 1, 1, 2][Math.floor(rnd8() * 4)] : 0;
+      const ns = (how === "run_out" || how === "obstructing_field") && rnd8() < 0.5;
+      const d = b.deliver({ type, value: runs, dismissal: how,
+                            ...(type === "Nb" && runs > 0 && rnd8() < 0.3 ? { nbRuns: "byes" } : {}),
+                            ...(ns ? { dismissed: at.nonStriker } : {}),
+                            ...(runs > 0 ? { outAt: rnd8() < 0.5 ? "striker_end" : "bowler_end" } : {}) });
+      if (d) { if (type === "Wd") gen.offWide++; else gen.offNoBall++; }
+    },
     notInOver() {
       const at = now();
       if (at.striker == null || at.nonStriker == null) return;
@@ -483,6 +517,8 @@ function generated(no, overs, legacy = false, start = undefined, awardFirst = fa
     if (rnd5() < 0.012 && b.now().wickets < 8) b.retireOut();
     // A delivery that does not count in the over (SCRBRD-113).
     if (rnd6() < 0.04) b.notInOver();
+    // A wicket on a wide or a no-ball (db/87).
+    if (rnd8() < 0.03) b.offExtra();
     if (start) {
       const p = rnd2();
       if (p < 0.02) b.award(false, rnd2() < 0.3 ? undefined : 5);
@@ -496,7 +532,8 @@ function generated(no, overs, legacy = false, start = undefined, awardFirst = fa
 /**
  * A hand-written innings. Steps: "run:v", "Nb:v", "Nb:v:byes", "Wd:v", "B:v",
  * "LB:v", "W:method[:v]", "RO:ns|st:runs[:end]", "noType:v", "noMethod",
- * "void". The next batter comes in after a wicket that stood.
+ * "void", and a wicket on a wide or a no-ball (db/87) "XWd|XNb:method:runs[:ns][:end]".
+ * The next batter comes in after a wicket that stood.
  */
 function scripted(/** @type {number} */ no, /** @type {string[]} */ steps, /** @type {string[] | undefined} */ order,
                   /** @type {Record<string, any>} */ ctx = {}) {
@@ -513,6 +550,12 @@ function scripted(/** @type {number} */ no, /** @type {string[]} */ steps, /** @
                   ...(a === "ns" ? { dismissed: at.nonStriker } : {}), ...(d ? { outAt: d } : {}) });
     } else if (k === "noType") b.deliver({ value: Number(a) });
     else if (k === "noMethod") b.deliver({ type: "W", value: 0 });
+    else if (k === "XWd" || k === "XNb") {
+      const at = b.now();
+      const [, , , who, end] = step.split(":");
+      b.deliver({ type: k.slice(1), value: Number(c), dismissal: a,
+                  ...(who === "ns" ? { dismissed: at.nonStriker } : {}), ...(end ? { outAt: end } : {}) });
+    }
     else if (k === "void") b.undo();
     if (b.now().wickets > before) b.fill();
   }
@@ -538,6 +581,10 @@ const EDGES = [
   [["noType:2", "noType:4", "noType:0", "noType:6"], [P1, P2, P3], "balls with no type: runs, a four, a dot and a six"],
   [["run:0", "noMethod"],                         [P1, P2, P3], "a wicket with no method: the batter out, nobody's wicket"],
   [["Nb:0", "noMethod", "run:0"],                 [P1, P2, P3], "...and on a free hit it is saved"],
+  [["run:1", "XWd:stumped:0", "XNb:run_out:2:ns:striker_end", "XWd:stumped:0", "run:0"], [P1, P2, P3, HIL_1XI[4]],
+   "stumped off a wide; run out off a no-ball with two run; stumped off a wide on the free hit, saved (Law 22.9, 21.17)"],
+  [["XWd:run_out:1:st:bowler_end", "XNb:hit_twice:0", "XWd:obstructing_field:0:ns", "XWd:hit_wicket:0"], [P1, P2, P3, HIL_1XI[4], TYPED[0]],
+   "run out off a wide with a run; hit twice off a no-ball; the non-striker obstructing off a wide; hit wicket off a wide"],
 ];
 
 /**
@@ -652,7 +699,8 @@ function expected(byInnings) {
     totals: { runs: 0, wickets: 0, balls: 0 },
     cases: { nsRunOut: 0, nsBeforeFacing: 0, typedOut: 0, nbBoundaryOffBat: 0, nbByesToRope: 0, nbByesRun: 0, nbLegByesRun: 0,
              nbLegByesToRope: 0, nbByesOnFreeHit: 0, wideFour: 0, byeFour: 0,
-             wicketWithRuns: 0, noType: 0, noMethod: 0, noMethodSaved: 0, saved: 0, voids: 0 },
+             wicketWithRuns: 0, noType: 0, noMethod: 0, noMethodSaved: 0, saved: 0, voids: 0,
+             offWide: 0, offNoBall: 0, offExtraSaved: 0, offExtraNs: 0 },
   };
   const oppOf = (/** @type {string} */ p) => at(e.opp, p, () => ({ innings: 0, balls: 0, runs: 0, dismissals: 0, fours: 0, sixes: 0,
                                                                   dots: 0, ballsBowled: 0, runsConceded: 0, wickets: 0 }));
@@ -704,8 +752,14 @@ function expected(byInnings) {
       if (type === "Nb" && runsOffBat(x) === 0 && value >= 4) e.cases.nbByesToRope++;
       if (type === "Wd" && value === 4) e.cases.wideFour++;
       if ((type === "B" || type === "LB") && value === 4) e.cases.byeFour++;
-      if (type === "W") {
+      // A W, or a wicket on a wide or a no-ball (isWicketBall(), db/87).
+      if (isWicketBall(x)) {
         const mode = normaliseDismissal(x.dismissal);
+        if (type === "Wd" || type === "Nb") {
+          if (x.freeHitSaved) e.cases.offExtraSaved++;
+          else if (type === "Wd") e.cases.offWide++; else e.cases.offNoBall++;
+          if (!x.freeHitSaved && (x.dismissed ?? x.strikerId) !== x.strikerId) e.cases.offExtraNs++;
+        }
         if (mode == null) { e.cases.noMethod++; if (x.freeHitSaved) e.cases.noMethodSaved++; }
         if (x.freeHitSaved) e.cases.saved++;
         if (!x.freeHitSaved) {
@@ -1050,7 +1104,8 @@ try {
               `(${c.noMethodSaved} saved by a free hit), ${c.saved} saved in all; ${c.noType} balls with no type; ` +
               `no-balls ${c.nbBoundaryOffBat} to the rope off the bat, ${c.nbByesToRope} in byes, ${c.nbLegByesToRope} of them leg byes; ` +
               `${c.nbByesRun} no-balls with byes run and ${c.nbLegByesRun} with leg byes run, ${c.nbByesOnFreeHit} of all those on a free hit; ${c.wideFour} wides and ` +
-              `${c.byeFour} byes worth four; ${c.voids} voids`);
+              `${c.byeFour} byes worth four; ${c.voids} voids; wickets on a wide ${c.offWide}, on a no-ball ${c.offNoBall} ` +
+              `(${c.offExtraNs} of the non-striker, ${c.offExtraSaved} saved by a free hit)`);
   // Not vacuous: the logs hold every case db/43 is about.
   ok(`...run outs at the non-striker's end (${c.nsRunOut}), before he faced (${c.nsBeforeFacing})`, c.nsRunOut >= 20 && c.nsBeforeFacing >= 3);
   ok(`...a typed name run out at the other end (${c.typedOut})`, c.typedOut >= 1);
@@ -1058,6 +1113,11 @@ try {
   ok(`...no-ball byes run (${c.nbByesRun}), leg byes run (${c.nbLegByesRun}) and to the rope (${c.nbLegByesToRope}), on a free hit (${c.nbByesOnFreeHit})`,
      c.nbByesRun >= 5 && c.nbLegByesRun >= 5 && c.nbLegByesToRope >= 3 && c.nbByesOnFreeHit >= 3);
   ok(`...wides worth four (${c.wideFour}), byes worth four (${c.byeFour})`, c.wideFour >= 5 && c.byeFour >= 5);
+  // db/87: wickets on wides (stumped, hit wicket, run out, obstructing) and
+  // no-balls (run out, hit twice, obstructing) — some of the batter at the
+  // other end, some saved by a free hit (a stumping off a wide on one).
+  ok(`...wickets on a wide (${c.offWide}) and a no-ball (${c.offNoBall}), ${c.offExtraNs} of the non-striker, ${c.offExtraSaved} saved by a free hit (${gen.offWide} + ${gen.offNoBall} generated)`,
+     c.offWide >= 5 && c.offNoBall >= 5 && c.offExtraNs >= 2);
   ok(`...balls with no type (${c.noType}), wickets with no method (${c.noMethod}, ${c.noMethodSaved} on a free hit)`,
      c.noType >= 10 && c.noMethod >= 5 && c.noMethodSaved >= 1);
   const stored = (await q(`select count(*) filter (where kind = 'ball' and ball_type is null) t,
@@ -1824,6 +1884,17 @@ try {
   const t5 = await tryInsert(M_DOOR, 5, { kind: "ball", ball_type: "W", value: 0, dismissal: "bowled", striker: PLAYERS[1] }, scorer);
   ok("...and nothing else is: a batters row, a retirement marked W, a wicket that names its method",
      t3.ok && t4.ok && t5.ok, JSON.stringify([t3, t4, t5]));
+  // db/87's door: a wide or a no-ball names only a way out the Law allows
+  // off it (Law 22.9, Law 21.17); one it allows is taken.
+  const offExtra = await Promise.all([
+    ["Wd", "bowled"], ["Wd", "caught"], ["Wd", "lbw"], ["Nb", "bowled"], ["Nb", "caught"], ["Nb", "lbw"], ["Nb", "stumped"],
+  ].map(([bt, d], i) => tryInsert(M_DOOR, 10 + i, { kind: "ball", ball_type: bt, value: 0, dismissal: d, striker: PLAYERS[1] }, scorer)));
+  ok("bowled, caught or lbw off a wide, and those or a stumping off a no-ball, are refused by the database (db/87)",
+     offExtra.every((t) => !t.ok && t.code === "23514" && t.table === "ball_event" && t.constraint === DOOR_OFF_EXTRA),
+     JSON.stringify(offExtra));
+  const takenOff = await Promise.all([["Wd", "stumped"], ["Wd", "run_out"], ["Nb", "run_out"], ["Nb", "hit_twice"]]
+    .map(([bt, d], i) => tryInsert(M_DOOR, 20 + i, { kind: "ball", ball_type: bt, value: 0, dismissal: d, striker: PLAYERS[1] }, scorer)));
+  ok("...a stumping or a run out off a wide, a run out or hit twice off a no-ball, taken", takenOff.every((t) => t.ok), JSON.stringify(takenOff));
 
   // The API: a ball with no type from a client that sends one is refused on
   // its own, named, and the rest of the batch written (SCRBRD-077).
@@ -1852,6 +1923,15 @@ try {
      JSON.stringify(res));
   ok("...writes the ball after it", res?.accepted?.length === 1 && res.accepted[0].idempotencyKey === typed.id);
   ok("...and stores nothing with no type", stored1.length === 1 && stored1[0].ball_type === "run", JSON.stringify(stored1));
+  // A wicket on a wide the Law does not allow, as an older build or a
+  // hand-written request could send it: the Laws refuse it on its own, by
+  // name, before the door; the batch's next ball is written.
+  const caughtOffWide = { ...stampEv(ball({ type: "Wd", value: 0 })), dismissal: "caught", fielder: "Player 9" };
+  const dot = stampEv(ball({ type: "run", value: 0 }));
+  const res2 = await post(caughtOffWide, dot);
+  ok("the API refuses a catch off a wide by the Laws' name (not_out_off_wide), and writes the ball after it",
+     res2?.refused?.length === 1 && res2.refused[0].idempotencyKey === caughtOffWide.id && res2.refused[0].reason === "not_out_off_wide"
+     && res2?.accepted?.length === 1 && res2.accepted[0].idempotencyKey === dot.id, JSON.stringify(res2));
 } catch (err) {
   ok(`the walk threw: ${/** @type {any} */ (err).message?.slice(0, 200)}`, false);
   console.log(/** @type {any} */ (err).stack?.split("\n").slice(0, 5).join("\n"));

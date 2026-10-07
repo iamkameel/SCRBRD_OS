@@ -143,6 +143,15 @@ group("From the fold: one function for the pad and the day sheet");
        .map(boardBall).join(" ") === "nb+4b nb+1lb nb");
   ok("a wicket the free hit saved is drawn as its runs, not a W (the batter is not out)",
      [{ type: "W", value: 0, freeHitSaved: true }, { type: "W", value: 2, freeHitSaved: true }, { type: "W", value: 0 }].map(boardBall).join(" ") === "· 2 W");
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17): the extra and the
+  // wicket; one the free hit saved, the extra alone.
+  const xw = [{ type: "Wd", value: 0, dismissal: "stumped" }, { type: "Wd", value: 1, dismissal: "run_out" },
+    { type: "Nb", value: 2, dismissal: "run_out" }, { type: "Wd", value: 0, dismissal: "stumped", freeHitSaved: true }].map(boardBall).join(" ");
+  ok("a wicket on a wide or a no-ball is drawn as both: wd+W, 2wd+W, 3nb+W; saved, the wide alone", xw === "wd+W 2wd+W 3nb+W wd", xw);
+  const { chipFor } = await import("../src/ui/board.jsx");
+  const said = ["wd+W", "2wd+W", "nb+W", "3nb+W"].map((m) => `${chipFor(m).kind}:${chipFor(m).text}:${chipFor(m).say}`).join("|");
+  ok("...each the wicket's chip, showing both and saying both", said
+     === "wicket:wd+W:wide, and a wicket|wicket:2wd+W:2 wides, and a wicket|wicket:nb+W:no ball, and a wicket|wicket:3nb+W:no ball, 3 runs, and a wicket", said);
   const inn = {
     battingTeam: "Hilton 1st XI", runs: 142, wickets: 3, balls: 86, striker: "a", nonStriker: "b", bowler: "k",
     batsmen: [{ id: "a", name: "D Erasmus", runs: 5, balls: 1 }, { id: "b", name: "R Pillay", runs: 17, balls: 12 }],
@@ -208,6 +217,44 @@ group("Tier 3: the hat-trick ball joins the pad's own interrupt (§10)");
   ok("not another bowler's", detectMilestone(now("bowled"), before([W("bowled", { bowler: "x" })]))?.type !== "hattrickball");
   ok("three in three is the hat-trick itself",
      detectMilestone(now("bowled"), { ...before([W(), W()]), bowlers: [{ ...bow, wickets: 2 }] })?.type === "hattrick");
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17): his when stumped or
+  // hit wicket; no ball of the over, so it neither makes a hat-trick nor puts
+  // him on one; a free hit's save is no wicket at all.
+  const on4 = (log) => ({ ...before(log), bowlers: [{ ...bow, wickets: 4 }] });
+  const xw = (type, dismissal, extra = {}) => ({ type, value: 0, striker: "s", bowler: "k", dismissal, ...extra });
+  ok("a stumping off a wide for his fifth: FIFER", detectMilestone(xw("Wd", "stumped"), on4([]))?.type === "fifer");
+  ok("...a run out off a no-ball is not his fifth", detectMilestone(xw("Nb", "run_out"), on4([]))?.type !== "fifer");
+  ok("...nor is a run out off a W (it never was his)", detectMilestone(now("run_out"), on4([]))?.type !== "fifer");
+  ok("...nor a stumping off a wide the free hit saved", detectMilestone(xw("Wd", "stumped", { freeHitSaved: true }), on4([]))?.type !== "fifer");
+  ok("a stumping off a wide after two in two is no hat-trick",
+     detectMilestone(xw("Wd", "stumped"), { ...before([W(), W()]), bowlers: [{ ...bow, wickets: 2 }] })?.type !== "hattrick");
+  ok("...nor a hat-trick ball after one", detectMilestone(xw("Wd", "stumped"), before([{ type: "run", value: 1 }, W()]))?.type !== "hattrickball");
+  // The hat-trick itself asks what the hat-trick ball asks: three of his,
+  // each standing. A run out among them, or a free hit's save, is none.
+  const on2 = (log) => ({ ...before(log), bowlers: [{ ...bow, wickets: 2 }] });
+  ok("no hat-trick when the first of the three was a run out",
+     detectMilestone(now("bowled"), on2([W("run_out"), W()]))?.type !== "hattrick");
+  ok("...nor when this one is a run out", detectMilestone(now("run_out"), on2([W(), W()]))?.type !== "hattrick");
+  ok("...nor when this one the free hit saved", detectMilestone({ ...now(null), freeHitSaved: true }, on2([W(), W()]))?.type !== "hattrick");
+  ok("a free hit's save with nine down is not ALL OUT",
+     detectMilestone({ ...now(null), freeHitSaved: true }, { ...before([]), wickets: 9 })?.type !== "allout");
+
+  // The scorer's scorecard: a batter stumped off a wide before he faced a
+  // legal ball is out on the card, 0 off 0, as the fold has him.
+  const { ScorecardPanel } = await import("../src/scorer/panels.jsx");
+  const { deriveInnings, inningsStart, batters, bowler, ball } = await import("@scrbrd/scoring");
+  const sq = [{ id: "a1", name: "Opener One" }, { id: "a2", name: "Opener Two" }, { id: "a3", name: "Third Man In" }];
+  const inn = deriveInnings([inningsStart({ battingTeam: "Hilton", bowlingTeam: "Visitors", squad: sq, bowlingSquad: [{ id: "k", name: "K Bowler" }], overs: 20 }),
+    batters({ striker: "a1", nonStriker: "a2" }), bowler({ bowler: "k" }), ball({ type: "run", value: 0 }),
+    ball({ type: "Wd", value: 0, dismissal: "stumped" }), batters({ striker: "a3" })]);
+  const card = html(h(ScorecardPanel, { innings: [inn], idx: 0 }));
+  ok("the scorecard lists the batter stumped off a wide, 0 off 0, and the fall of the wicket", /Opener One/.test(card) && /st .*b K Bowler/.test(card)
+     && /1\/1/.test(card) && inn.batsmen.find((b) => b.id === "a1")?.balls === 1, card.slice(0, 200));
+  const inn2 = deriveInnings([inningsStart({ battingTeam: "Hilton", bowlingTeam: "Visitors", squad: sq, bowlingSquad: [{ id: "k", name: "K Bowler" }], overs: 20 }),
+    batters({ striker: "a1", nonStriker: "a2" }), bowler({ bowler: "k" }), ball({ type: "Wd", value: 0, dismissal: "stumped" }), batters({ striker: "a3" })]);
+  const card2 = html(h(ScorecardPanel, { innings: [inn2], idx: 0 }));
+  ok("...also when he is out before facing a legal ball at all", /Opener One/.test(card2) && /st .*b K Bowler/.test(card2)
+     && inn2.batsmen.find((b) => b.id === "a1")?.balls === 0);
 }
 
 group("It is always black (decision 6)");

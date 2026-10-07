@@ -61,7 +61,7 @@
  * worth more than one that says "par: 48" and cannot say why.
  */
 import { isLegal, BALL_TYPE, runsOffBat } from "./events.mjs";
-import { countsInOver } from "./events.mjs";
+import { countsInOver, isWicketBall } from "./events.mjs";
 
 /** @import { Innings } from "./replay.mjs" */
 
@@ -250,11 +250,12 @@ export function derivePhases(inn, { opposing = null } = {}) {
       if (offBat === 4) acc.fours += 1;
       if (offBat === 6) acc.sixes += 1;
     }
-    // A wicket is a W ball the fold let stand. Not "a ball with a dismissal
-    // on it": a free hit saves the batter from the bowler's dismissals, the
-    // fold says so on the entry (`freeHitSaved`), and a phase that counted
-    // the ball anyway had a wicket the innings did not. SCRBRD-072.
-    if (type === BALL_TYPE.WICKET && !b.freeHitSaved) acc.wickets += 1;
+    // A wicket is a W ball the fold let stand, or a wicket on a wide or a
+    // no-ball (isWicketBall(), Law 22.9 and 21.17). Not "a ball with a
+    // dismissal on it": a free hit saves the batter from the bowler's
+    // dismissals, the fold says so on the entry (`freeHitSaved`), and a phase
+    // that counted the ball anyway had a wicket the innings did not. SCRBRD-072.
+    if (isWicketBall(b) && !b.freeHitSaved) acc.wickets += 1;
 
     // Control, which runs do not measure. An edge for four and a cover drive
     // for four are the same row on a scorecard and opposite events in a net.
