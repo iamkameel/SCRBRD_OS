@@ -20,7 +20,8 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 const SECRET = "test-secret-do-not-use-in-prod";
-const ID = { userId: "u1", deviceId: "dev-a" };
+const SID = "5e551011-0000-4000-8000-000000000001";
+const ID = { userId: "u1", deviceId: "dev-a", sessionId: SID, epoch: 3 };
 
 // ── Token integrity ──
 group("Token integrity");
@@ -28,6 +29,7 @@ group("Token integrity");
   const t = signToken(ID, SECRET);
   const claims = verifyToken(t, SECRET);
   ok("roundtrip preserves identity", claims.sub === "u1" && claims.did === "dev-a");
+  ok("...and the session it was minted in, under its epoch (db/85)", claims.sid === SID && claims.sep === 3);
   ok("carries iss/aud/exp", claims.iss === TOKEN.iss && claims.aud === TOKEN.aud && typeof claims.exp === "number");
 
   // tamper: re-encode the payload with an added claim
@@ -58,6 +60,24 @@ group("Token integrity");
   // An unbound token is one that any device can score with — see auth.mjs (2).
   // @ts-expect-error — the point of the test: a call with no deviceId.
   ok("signToken demands a device", (() => { try { signToken({ userId: "u1" }, SECRET); return false; } catch { return true; } })());
+  // A token the server cannot end is the defect db/85 closed (GA-I03).
+  // @ts-expect-error — the point of the test: a call with no session.
+  ok("signToken demands a session", (() => { try { signToken({ userId: "u1", deviceId: "d" }, SECRET); return false; } catch { return true; } })());
+  ok("...and an epoch", (() => { try { signToken({ userId: "u1", deviceId: "d", sessionId: SID, epoch: /** @type {any} */ ("1") }, SECRET); return false; } catch { return true; } })());
+
+  // A correctly signed token with no session — every token minted before
+  // db/85 — is refused, and so is one whose sid is not a session id.
+  const { createHmac } = await import("node:crypto");
+  const forge = (/** @type {Record<string, unknown>} */ extra) => {
+    const [h2, p2] = t.split(".");
+    const body = { ...JSON.parse(Buffer.from(p2, "base64url").toString()), ...extra };
+    const pp = Buffer.from(JSON.stringify(body)).toString("base64url");
+    return `${h2}.${pp}.${createHmac("sha256", SECRET).update(`${h2}.${pp}`).digest("base64url")}`;
+  };
+  const code = (/** @type {string} */ tok) => { try { verifyToken(tok, SECRET); return "accepted"; } catch (/** @type {any} */ e) { return e.code; } };
+  ok("a signed token with no session is incomplete_claims", code(forge({ sid: undefined, sep: undefined })) === "incomplete_claims");
+  ok("...nor with a sid that is not a session id", code(forge({ sid: "x' or 1=1" })) === "incomplete_claims");
+  ok("...nor with an epoch that is not a whole number", code(forge({ sep: 1.5 })) === "incomplete_claims" && code(forge({ sep: -1 })) === "incomplete_claims");
 }
 
 // ── Trust boundary ──
@@ -66,7 +86,7 @@ group("Trust boundary — the token says WHO, never WHAT");
   const t = signToken(ID, SECRET);
   const body = JSON.parse(Buffer.from(t.split(".")[1], "base64url").toString("utf8"));
   const keys = Object.keys(body).sort().join(",");
-  ok("claims are identity only", keys === "aud,did,exp,iat,iss,sub");
+  ok("claims are identity only (who, which device, which session)", keys === "aud,did,exp,iat,iss,sep,sid,sub");
   for (const banned of ["role", "school_id", "teams", "child_ids", "capabilities"])
     ok(`no ${banned} claim`, !(banned in body));
 
@@ -75,31 +95,42 @@ group("Trust boundary — the token says WHO, never WHAT");
   // A cast, not a claims object: the test hands over what a forged token would.
   const forged = /** @type {Record<string, unknown>} */ (principalFromClaims(/** @type {any} */ ({ sub: "u1", did: "dev-a", role: "superadmin", school_id: "X" })));
   ok("a role in the claims is ignored", forged.role === undefined && forged.schoolId === undefined);
-  ok("principal is exactly userId + deviceId",
-     Object.keys(forged).sort().join(",") === "deviceId,userId");
+  ok("principal is exactly userId + deviceId + its session",
+     Object.keys(forged).sort().join(",") === "deviceId,epoch,sessionId,userId");
+  const fromToken = principalFromClaims(verifyToken(signToken(ID, SECRET), SECRET));
+  ok("a token's principal carries its session and epoch", fromToken.sessionId === SID && fromToken.epoch === 3);
 }
 
 // ── Session config = exactly what the database reads, transaction-LOCAL ──
 group("Session config statements");
 {
-  const stmts = sessionConfigStatements({ userId: "u1", deviceId: "dev-a" });
-  const vars = stmts.map(s => s.text.match(/'app\.\w+'/)?.[0]);
-  ok("sets exactly two app.* vars", vars.length === 2);
-  ok("sets app.user_id and app.device_id",
-     vars.includes("'app.user_id'") && vars.includes("'app.device_id'"));
+  // Somebody: ONE statement, app_session_begin() (db/85), which checks the
+  // session and then sets app.user_id and app.device_id transaction-locally
+  // (db/85's own check and db/99 §64 prove the database half).
+  const stmts = sessionConfigStatements({ userId: "u1", deviceId: "dev-a", sessionId: SID, epoch: 3 });
+  ok("a signed-in principal is one statement: app_session_begin()", stmts.length === 1 && /^select app_session_begin\(\$1, \$2, \$3, \$4, \$5\)$/.test(stmts[0].text));
+  ok("...with who, which device, which session, its epoch and no credential",
+     JSON.stringify(stmts[0].params) === JSON.stringify(["u1", "dev-a", SID, 3, null]));
   // The variables the old model set. Each was a self-assertion; app_can() now
   // resolves all of them from role_assignment.
-  for (const gone of ["'app.role'", "'app.school_id'", "'app.player_id'", "'app.child_ids'", "'app.teams'"])
-    ok(`no longer sets ${gone}`, !vars.includes(gone));
-
-  ok("EVERY statement is transaction-local (, true)", stmts.every(s => /, true\)$/.test(s.text)));
+  const all = JSON.stringify(stmts);
+  for (const gone of ["app.role", "app.school_id", "app.player_id", "app.child_ids", "app.teams"])
+    ok(`no longer sets '${gone}'`, !all.includes(gone));
   ok("no statement uses session scope (, false)", stmts.every(s => !/, false\)/.test(s.text)));
-  ok("identity is parameterised, never interpolated", stmts.every(s => /\$1/.test(s.text)));
+  ok("identity is parameterised, never interpolated", stmts.every(s => /\$1/.test(s.text)) && !all.includes("'u1'"));
 
   // Anonymous: empty string → app_user_id() is NULL → matches no assignment.
   const anon = sessionConfigStatements(null);
   ok("null principal → empty user id", anon.find(s => s.text.includes("app.user_id"))?.params[0] === "");
+  ok("...set transaction-local (, true), both", anon.length === 2 && anon.every(s => /, true\)$/.test(s.text)));
   ok("ANON carries no identity", ANON.userId === null && ANON.deviceId === null);
+
+  // The pad: the credential, then its narrowing — all transaction-local.
+  const pad = sessionConfigStatements({ userId: "u1", deviceId: "dev-a", scope: "pad", matchId: "m1", credentialId: "c1" });
+  ok("a pad principal names its credential to app_session_begin()", pad[0].params[2] === null && pad[0].params[4] === "c1");
+  ok("...then sets app.scope and app.match_id, transaction-local",
+     pad.length === 3 && pad.slice(1).every(s => /, true\)$/.test(s.text)) && pad[1].params[0] === "pad" && pad[2].params[0] === "m1");
+  ok("a pad principal with no credential is refused here", (() => { try { sessionConfigStatements({ userId: "u1", deviceId: "d", scope: "pad", matchId: "m1" }); return false; } catch (/** @type {any} */ e) { return e.code === "pad_scope_without_credential"; } })());
 }
 
 // ── The pooling-leak guard: prove context cannot bleed ──
@@ -112,8 +143,8 @@ group("No context bleed across a shared (pooled) connection");
   /** @type {import("../api-types.mjs").Db} */
   const client = { query: async (text, params) => { log.push({ text: text.trim(), params }); return { rows: [] }; } };
 
-  const A = { userId: "uA", deviceId: "dev-a" };
-  const B = { userId: "uB", deviceId: "dev-b" };
+  const A = { userId: "uA", deviceId: "dev-a", sessionId: SID, epoch: 0 };
+  const B = { userId: "uB", deviceId: "dev-b", sessionId: SID, epoch: 0 };
 
   await withPrincipal(client, A, async c => { await c.query("select * from player"); });
   await withPrincipal(client, B, async c => { await c.query("select * from player"); });
@@ -122,15 +153,38 @@ group("No context bleed across a shared (pooled) connection");
   const commits = log.filter(l => l.text === "COMMIT").length;
   ok("each request has its own transaction", begins === 2 && commits === 2);
 
-  const aId = log.find(l => l.text.includes("app.user_id") && l.params?.[0] === "uA");
-  const bId = log.find(l => l.text.includes("app.user_id") && l.params?.[0] === "uB");
+  const aId = log.find(l => l.text.includes("app_session_begin") && l.params?.[0] === "uA");
+  const bId = log.find(l => l.text.includes("app_session_begin") && l.params?.[0] === "uB");
   ok("A sets uA, B sets uB (context re-established per txn)", !!aId && !!bId);
   ok("all config is LOCAL so it dies at COMMIT (no leak)", log.filter(l => l.text.includes("set_config")).every(l => /, true\)/.test(l.text)));
 
-  // ordering: BEGIN before any set_config before the query before COMMIT
+  // ordering: BEGIN before the identity before the query before COMMIT
   const idx = (/** @type {string} */ t) => log.findIndex(l => l.text === t || l.text.includes(t));
-  ok("ordering BEGIN → set_config → query → COMMIT",
-     idx("BEGIN") < idx("set_config") && idx("set_config") < idx("select * from player") && idx("select * from player") < idx("COMMIT"));
+  ok("ordering BEGIN → app_session_begin → query → COMMIT",
+     idx("BEGIN") < idx("app_session_begin") && idx("app_session_begin") < idx("select * from player") && idx("select * from player") < idx("COMMIT"));
+}
+
+// ── A refused session is a 401, and nothing runs ──
+group("A session the database refuses (db/85)");
+{
+  /** @type {string[]} */
+  const log = [];
+  const client = { query: async (/** @type {string} */ t) => {
+    log.push(t.trim());
+    if (t.includes("app_session_begin")) throw Object.assign(new Error("session_revoked"), { code: "28000" });
+    return { rows: [] };
+  } };
+  let caught = null, ran = false;
+  try { await withPrincipal(client, { userId: "uA", deviceId: "dev-a", sessionId: SID, epoch: 0 }, async () => { ran = true; }); }
+  catch (/** @type {any} */ e) { caught = e; }
+  ok("it is an AuthError, 401 session_revoked", caught instanceof AuthError && caught.code === "session_revoked" && caught.status === 401);
+  ok("...the handler never ran", !ran);
+  ok("...and the transaction is rolled back", log.includes("ROLLBACK") && !log.includes("COMMIT"));
+  // Any other failure there is not dressed up as a sign-out.
+  const other = { query: async (/** @type {string} */ t) => { if (t.includes("app_session_begin")) throw Object.assign(new Error("x"), { code: "42883" }); return { rows: [] }; } };
+  let e2 = null;
+  try { await withPrincipal(other, { userId: "uA", deviceId: "dev-a", sessionId: SID, epoch: 0 }, async () => {}); } catch (/** @type {any} */ e) { e2 = e; }
+  ok("another database error stays itself", e2 && !(e2 instanceof AuthError) && /** @type {any} */ (e2).code === "42883");
 }
 
 // ── Rollback releases context even on error ──
@@ -140,7 +194,7 @@ group("Rollback on error");
   const log = [];
   const client = { query: async (/** @type {string} */ t) => { log.push(t.trim()); if (t.includes("boom")) throw new Error("boom"); return { rows: [] }; } };
   let caught = false;
-  try { await withPrincipal(client, { userId: "uA", deviceId: "dev-a" }, async c => c.query("boom")); }
+  try { await withPrincipal(client, { userId: "uA", deviceId: "dev-a", sessionId: SID, epoch: 0 }, async c => c.query("boom")); }
   catch { caught = true; }
   ok("error propagates", caught);
   ok("ROLLBACK issued (context discarded)", log.includes("ROLLBACK"));
@@ -162,7 +216,7 @@ group("Auth middleware");
     await mw(req, res, () => { nexted = true; });
     return { req, status, body, nexted };
   };
-  const good = signToken({ userId: "uCoach", deviceId: "dev-a" }, SECRET);
+  const good = signToken({ userId: "uCoach", deviceId: "dev-a", sessionId: SID, epoch: 0 }, SECRET);
   let r = await run({ authorization: `Bearer ${good}` });
   ok("valid token → principal attached + next()",
      r.nexted && r.req.principal.userId === "uCoach" && r.req.principal.deviceId === "dev-a");

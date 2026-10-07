@@ -36,6 +36,16 @@
  *      ..., true) inside the same txn as the query. With a connection pool,
  *      session-level config would leak one user's context onto the next
  *      request on that pooled connection. This is the classic RLS footgun.
+ *
+ *   4. A SESSION ENDS WHEN IT IS ENDED (GA-I03, db/85) — a token also names
+ *      its session (sid) and the account's session epoch it was minted under
+ *      (sep). Identity still, never authority. The identity is set by ONE
+ *      database function, app_session_begin(), which first checks that the
+ *      account is active, that the session is this person's on this device
+ *      and not signed out, and that its epoch is the account's current one;
+ *      a refusal is 401 session_revoked. So signing out, signing out
+ *      everywhere, the office disabling the account and removing a way to
+ *      sign in each end tokens already issued, on their next request.
  */
 import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 /** @import { Db, ApiResponse } from "../api-types.mjs" */
@@ -46,12 +56,16 @@ const b64urlJson = (/** @type {unknown} */ obj) => b64url(JSON.stringify(obj));
 const fromB64url = (/** @type {string} */ s) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
 
 /**
- * A verified token's claims. `sub` is the person, `did` the device.
+ * A verified token's claims. `sub` is the person, `did` the device, `sid`
+ * the session (auth_session, db/85) and `sep` the account's session epoch
+ * when it was minted.
  * @typedef {object} Claims
  * @property {string} iss
  * @property {string} aud
  * @property {string} sub
  * @property {string} did
+ * @property {string} sid
+ * @property {number} sep
  * @property {number} iat
  * @property {number} exp
  */
@@ -64,14 +78,22 @@ const fromB64url = (/** @type {string} */ s) => Buffer.from(s.replace(/-/g, "+")
  * the same person on the same device, narrowed by the database to one match
  * (app.scope = 'pad', app.match_id; db/50). A principal from a token never
  * carries either, and sets neither.
- * @typedef {{ userId: string | null, deviceId: string | null, scope?: "pad", matchId?: string, credentialId?: string }} Principal
+ *
+ * `sessionId` and `epoch` are a token's sid and sep, and a principal from a
+ * token always carries both; app_session_begin() (db/85) checks them. A
+ * principal with neither and no credential is the server acting as somebody
+ * (the push fan-out asks as the recipient), checked for an active account.
+ * @typedef {{ userId: string | null, deviceId: string | null, sessionId?: string | null, epoch?: number | null, scope?: "pad", matchId?: string, credentialId?: string }} Principal
  */
 
 // ── Token claims contract ──
-// Identity only: who (sub) and on what device (did). Authority is not in here
-// and never should be — see the header. The short TTL is what bounds a stolen
-// token, since there is no longer any scope in it to narrow.
+// Identity only: who (sub), on what device (did), in which session (sid,
+// under epoch sep). Authority is not in here and never should be — see the
+// header. The short TTL bounds a stolen token; the session check (db/85)
+// ends one early.
 export const TOKEN = { iss: "scrbrd", aud: "scrbrd-api", ttlSec: 30 * 60 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Mint a token after a successful login/DB check. `secret` is server-only.
@@ -79,16 +101,23 @@ export const TOKEN = { iss: "scrbrd", aud: "scrbrd-api", ttlSec: 30 * 60 };
  * deviceId is required, not optional: an unbound token is one that any device
  * can score with. Callers that genuinely have no device (a server-side job)
  * should say so explicitly by passing one.
- * @param {{ userId: string, deviceId: string }} who
+ *
+ * sessionId and epoch are required too: a token the server cannot end is
+ * the defect db/85 closed. They come from auth_session_open(), through
+ * mintToken() in auth-db.mjs — the one way a route should get a token.
+ * @param {{ userId: string, deviceId: string, sessionId: string, epoch: number }} who
  * @param {string} secret
  * @param {() => number} [now]
  * @returns {string}
  */
-export function signToken({ userId, deviceId }, secret, now = Date.now) {
+export function signToken({ userId, deviceId, sessionId, epoch }, secret, now = Date.now) {
   if (!userId || !deviceId) throw new Error("signToken: userId and deviceId required");
+  if (typeof sessionId !== "string" || !UUID.test(sessionId) || !Number.isInteger(epoch) || epoch < 0)
+    throw new Error("signToken: a session (sessionId, epoch) is required");
   const iat = Math.floor(now() / 1000);
   const header = { alg: "HS256", typ: "JWT" };
-  const payload = { iss: TOKEN.iss, aud: TOKEN.aud, sub: userId, did: deviceId, iat, exp: iat + TOKEN.ttlSec };
+  const payload = { iss: TOKEN.iss, aud: TOKEN.aud, sub: userId, did: deviceId, sid: sessionId, sep: epoch,
+                    iat, exp: iat + TOKEN.ttlSec };
   const signingInput = `${b64urlJson(header)}.${b64urlJson(payload)}`;
   const sig = b64url(createHmac("sha256", secret).update(signingInput).digest());
   return `${signingInput}.${sig}`;
@@ -114,6 +143,9 @@ export function verifyToken(token, secret, now = Date.now) {
   const nowSec = Math.floor(now() / 1000);
   if (typeof payload.exp !== "number" || payload.exp <= nowSec) throw new AuthError("token_expired");
   if (!payload.sub || !payload.did) throw new AuthError("incomplete_claims");
+  // A token from before db/85 names no session, and nothing could end it.
+  if (typeof payload.sid !== "string" || !UUID.test(payload.sid) || !Number.isInteger(payload.sep) || payload.sep < 0)
+    throw new AuthError("incomplete_claims");
   return payload;
 }
 
@@ -133,12 +165,12 @@ export class AuthError extends Error {
  *
  * Kept as a function rather than inlined because it is the one place that
  * decides what a principal IS, and callers should not be reaching into claims.
- * @param {{ sub?: string, did?: string } | null | undefined} claims
+ * @param {{ sub?: string, did?: string, sid?: string, sep?: number } | null | undefined} claims
  * @returns {Principal}
  */
 export function principalFromClaims(claims) {
   if (!claims?.sub) return ANON;
-  return { userId: claims.sub, deviceId: claims.did || null };
+  return { userId: claims.sub, deviceId: claims.did || null, sessionId: claims.sid ?? null, epoch: claims.sep ?? null };
 }
 
 /** The anonymous principal — app_can() finds no assignments, so RLS denies everything. */
@@ -153,6 +185,12 @@ export const ANON = Object.freeze(/** @type {Principal} */ ({ userId: null, devi
  * turns into NULL, which matches no role_assignment row. Default deny falls
  * out of the data model rather than out of a branch someone has to remember.
  *
+ * Anybody else is set by app_session_begin() (db/85), which sets the same
+ * two variables, transaction-locally, only once the account is active and
+ * the token's session — or the pad's credential — is live under the
+ * account's current epoch. It raises 28000 otherwise; withPrincipal() turns
+ * that into a 401.
+ *
  * A resume-credential principal sets two more, app.scope and app.match_id,
  * and the database narrows it to that match (db/50). They are set ONLY for
  * such a principal, and only transaction-locally like the rest, so no other
@@ -163,9 +201,14 @@ export const ANON = Object.freeze(/** @type {Principal} */ ({ userId: null, devi
  */
 export function sessionConfigStatements(principal) {
   const p = principal || ANON;
+  if (!p.userId) return [
+    { text: "select set_config('app.user_id',   $1, true)", params: [""] },
+    { text: "select set_config('app.device_id', $1, true)", params: [""] },
+  ];
+  if (p.scope === "pad" && !p.credentialId) throw new AuthError("pad_scope_without_credential");
   const statements = [
-    { text: "select set_config('app.user_id',   $1, true)", params: [p.userId || ""] },
-    { text: "select set_config('app.device_id', $1, true)", params: [p.deviceId || ""] },
+    { text: "select app_session_begin($1, $2, $3, $4, $5)",
+      params: [p.userId, p.deviceId || "", p.sessionId ?? null, p.epoch ?? null, p.scope === "pad" ? p.credentialId : null] },
   ];
   if (p.scope === "pad") {
     if (!p.matchId) throw new AuthError("pad_scope_without_match");
@@ -190,7 +233,14 @@ export function sessionConfigStatements(principal) {
 export async function withPrincipal(client, principal, fn) {
   await client.query("BEGIN");
   try {
-    for (const s of sessionConfigStatements(principal)) await client.query(s.text, s.params);
+    try {
+      for (const s of sessionConfigStatements(principal)) await client.query(s.text, s.params);
+    } catch (/** @type {any} */ e) {
+      // app_session_begin() refused (db/85): signed out, signed out
+      // everywhere, disabled, a sign-in removed. Said the same way for each.
+      if (e?.code === "28000") throw new AuthError("session_revoked");
+      throw e;
+    }
     const result = await fn(client);
     await client.query("COMMIT");
     return result;

@@ -25,7 +25,9 @@
  *   GET  /api/matches/:id/toss                    one match's toss
  *   POST /api/matches/:id/session/pad-credential  the pad's resume credential, on a claim (SCRBRD-078)
  *   POST /api/matches/:id/pad-credentials/revoke  the school office ends them
- *   POST /api/auth/sign-out                       this device's credentials end
+ *   POST /api/auth/sign-out                       this device's sessions and credentials end
+ *   POST /api/auth/sign-out-everywhere            every session and credential ends (db/85)
+ *   POST /api/auth/users/:id/disable · /enable    the office ends an account's sessions (db/85)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
@@ -53,9 +55,9 @@ import { join, extname, resolve, sep } from "node:path";
 import pg from "pg";
 import { askStatsMagic, describeDelivery, statsMagicContext, aiConfigured } from "./ai/ai-service.mjs";
 import { readerConfig } from "./ai/scorebook-reader.mjs";
-import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink, afterCommit } from "./auth/auth-db.mjs";
+import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink, mintToken, afterCommit } from "./auth/auth-db.mjs";
 import { keyedWrite, fingerprint } from "./write/replay.mjs";
-import { signToken, AuthError } from "./auth/auth.mjs";
+import { AuthError } from "./auth/auth.mjs";
 import { isPadAuthorization, padRoute, padPrincipal, padRefusal, padCredentialRoutes } from "./auth/pad-resume.mjs";
 import { signInRoutes, verifierFromEnv } from "./auth/signin-api.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
@@ -500,7 +502,7 @@ async function devLogin(body) {
   // read app_user without an identity, and this route is not an exception.
   const { rows } = await pool.query(`select auth_account_for_email($1) as id`, [email]);
   if (!rows[0]?.id) throw new AuthError("no_such_user");
-  return { token: signToken({ userId: rows[0].id, deviceId }, SECRET) };
+  return { token: await mintToken(pool, SECRET, { userId: rows[0].id, deviceId }) };
 }
 
 // Exact paths, then one pattern for the per-match routes. Kept as a table so
@@ -534,7 +536,8 @@ const EXACT = {
   // (db/81) decides — and never links on an email alone where there is
   // anything to protect (claim_required).
   "POST /api/auth/firebase": signIn.exchange,
-  // Signing out ends this person's pad resume credentials on this device
+  // Signing out ends this person's sessions on this device (db/85: the token
+  // is refused from its next request) and their pad resume credentials here
   // (db/50). The client also forgets the keys, which ends them there even
   // when this cannot reach the server.
   "POST /api/auth/sign-out": padCreds.signOut,
@@ -713,6 +716,11 @@ const PLAYER_ROUTES = [
   [/^\/api\/auth\/sign-ins\/([^/]+)\/revoke$/,       "POST", signIn.revokeOwn],
   [/^\/api\/auth\/users\/([^/]+)\/sign-ins$/,        "GET",  signIn.accountSignIns],
   [/^\/api\/auth\/office\/sign-ins\/([^/]+)\/revoke$/, "POST", signIn.revokeOffice],
+  // GA-I03 (db/85): every session ends — yours, or, by the office or the
+  // owner, an account's. An API route each; no screen calls them yet.
+  [/^\/api\/auth\/sign-out-everywhere$/,          "POST", signIn.signOutEverywhere],
+  [/^\/api\/auth\/users\/([^/]+)\/disable$/,        "POST", signIn.disable],
+  [/^\/api\/auth\/users\/([^/]+)\/enable$/,         "POST", signIn.enable],
   [/^\/api\/auth\/claims\/([^/]+)\/confirm$/,        "POST", signIn.confirmClaim],
   [/^\/api\/auth\/claims\/([^/]+)\/decline$/,        "POST", signIn.declineClaim],
   [/^\/api\/onboard$/,                              "POST", requests.onboard],

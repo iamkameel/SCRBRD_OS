@@ -47,7 +47,7 @@ function fakePool(rowsByPattern = {}, { moduleOn = true } = {}) {
 // which is why the tests below that once varied the role now vary the user id
 // instead. What each of them may read is decided by the database from their
 // assignments, and is simulated here by the canned rows.
-const bearer = (userId = "u1") => `Bearer ${signToken({ userId, deviceId: "devA" }, SECRET)}`;
+const bearer = (userId = "u1") => `Bearer ${signToken({ userId, deviceId: "devA", sessionId: "5e551011-0000-4000-8000-000000000001", epoch: 0 }, SECRET)}`;
 
 // ── A. Server read layer ──
 group("A. Reads run under a principal transaction");
@@ -57,8 +57,10 @@ group("A. Reads run under a principal transaction");
   ok("returns rows", rows.length === 1 && rows[0].id === "m1");
   const texts = log.map(l => l.text);
   ok("wrapped in BEGIN/COMMIT", texts.includes("BEGIN") && texts.includes("COMMIT"));
-  ok("sets identity before querying", log.findIndex(l => l.text.includes("app.user_id")) < log.findIndex(l => l.text.includes("from match")));
-  ok("app.user_id is the token's subject", log.find(l => l.text.includes("app.user_id"))?.params?.[0] === "uSpectator");
+  // app_session_begin() (db/85) checks the token's session and sets app.user_id.
+  const begin = log.findIndex(l => l.text.includes("app_session_begin"));
+  ok("sets identity before querying", begin >= 0 && begin < log.findIndex(l => l.text.includes("from match")));
+  ok("app.user_id is the token's subject", log[begin]?.params?.[0] === "uSpectator");
   // The session states identity and nothing else; authority is looked up.
   ok("no app.role is set at all", !log.some(l => l.text.includes("app.role")));
   ok("all config transaction-local", log.filter(l => l.text.includes("set_config")).every(l => /, true\)/.test(l.text)));

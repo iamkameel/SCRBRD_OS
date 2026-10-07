@@ -210,8 +210,11 @@ try {
   // auth_identity and pending_claim (db/81, SCRBRD-140) are login_code's
   // shape for Google sign-in: read and written only through db/81's
   // functions, the provider's uid never returned to anybody.
+  // auth_epoch and auth_session (db/85, GA-I03) are the same shape for the
+  // session check: read and written only through db/85's functions; whoever
+  // could write the epoch could bring a stolen token back.
   const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
-                                          "auth_identity", "pending_claim"]);
+                                          "auth_identity", "pending_claim", "auth_epoch", "auth_session"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

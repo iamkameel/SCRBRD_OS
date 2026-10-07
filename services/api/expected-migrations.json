@@ -82,5 +82,6 @@
   "81_signup_google.sql",
   "82_public_listing.sql",
   "83_public_news.sql",
-  "84_row_guards.sql"
+  "84_row_guards.sql",
+  "85_session_revocation.sql"
 ]

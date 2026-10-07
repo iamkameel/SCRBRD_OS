@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { D, inkOn, textOn } from "../design/tokens.js";
-import { api } from "../lib/api.js";
+import { api, setToken } from "../lib/api.js";
 import { addSignIn, googleAvailable, googleIdToken, GOOGLE_FAILURE_WORDS } from "../lib/google.js";
 import { profile } from "../lib/session.js";
 import { describeSignIn, isLastLive, ordered, signInWords } from "../lib/signins.js";
@@ -62,7 +62,7 @@ export function SignInRow({ row, accountEmail, confirming, last, busy, onAskRemo
       {d.live && confirming && (
         <div role="group" aria-label={`Remove ${d.provider} ${d.email}?`} data-testid="sign-in-remove-confirm" style={{ marginTop: "10px", display: "grid", gap: "8px" }}>
           <div style={{ ...sub(), color: D.textPrimary }}>
-            Remove {d.provider} ({d.email}) from this account? You stay signed in until your session ends.
+            Remove {d.provider} ({d.email}) from this account? You stay signed in on this device; every other device is signed out.
             {last ? " It is your only Google sign-in: after this you sign in with a code from your school office, and you can add Google again here." : ""}
           </div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -76,9 +76,13 @@ export function SignInRow({ row, accountEmail, confirming, last, busy, onAskRemo
 }
 
 /**
- * The panel's content. `post`, `getToken` and `available` are injectable for a test.
+ * The panel's content. `post`, `getToken`, `available` and `adopt` are injectable for a test.
+ *
+ * Removing a sign-in ends every session the account holds, this one
+ * included (GA-I03, db/85); the server answers with a fresh token for this
+ * device, which `adopt` keeps in memory as every other token is kept.
  */
-export function WaysToSignIn({ post = api, getToken = googleIdToken, available = googleAvailable() }) {
+export function WaysToSignIn({ post = api, getToken = googleIdToken, available = googleAvailable(), adopt = setToken }) {
   const [rows, setRows] = useState(null);       // null = asking
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(null);       // "add" | an id being removed
@@ -107,9 +111,10 @@ export function WaysToSignIn({ post = api, getToken = googleIdToken, available =
   const remove = async (id) => {
     setBusy(id); setNote(null);
     try {
-      await post(`/api/auth/sign-ins/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+      const r = await post(`/api/auth/sign-ins/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+      if (typeof r?.token === "string") adopt(r.token);
       setConfirm(null);
-      setNote({ tone: "ok", text: "Removed. That Google account no longer signs in to this account." });
+      setNote({ tone: "ok", text: "Removed. That Google account no longer signs in to this account, and every other device is signed out." });
       await load();
     } catch (e) { setNote({ tone: "error", text: signInWords(e) }); }
     setBusy(null);

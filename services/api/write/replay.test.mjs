@@ -17,8 +17,8 @@ let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 const SECRET = "replay-test-secret";
-const BEARER = `Bearer ${signToken({ userId: "00000000-0000-0000-0000-0000000000a1", deviceId: "dev-a" }, SECRET)}`;
-const OTHER = `Bearer ${signToken({ userId: "00000000-0000-0000-0000-0000000000b2", deviceId: "dev-b" }, SECRET)}`;
+const BEARER = `Bearer ${signToken({ userId: "00000000-0000-0000-0000-0000000000a1", deviceId: "dev-a", sessionId: "5e551011-0000-4000-8000-000000000001", epoch: 0 }, SECRET)}`;
+const OTHER = `Bearer ${signToken({ userId: "00000000-0000-0000-0000-0000000000b2", deviceId: "dev-b", sessionId: "5e551011-0000-4000-8000-000000000002", epoch: 0 }, SECRET)}`;
 
 /**
  * A pool whose connections log every statement. `seen` is the receipt the

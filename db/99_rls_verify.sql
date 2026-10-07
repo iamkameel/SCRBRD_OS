@@ -3756,6 +3756,63 @@ CREATE OR REPLACE FUNCTION _v84_user_by_email(p_email text) RETURNS uuid AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/84 (section 63) ──────────────────────────────────────────────
 
+-- ┌── db/85 (section 64) ──────────────────────────────────────────────
+-- Become somebody the way the API does (app_session_begin), as the caller —
+-- not a definer — answering 'ok:<app_user_id()>' or the SQLSTATE and the
+-- sentence. A refusal rolls back its own subtransaction, identity included.
+CREATE OR REPLACE FUNCTION _v85_begin(p_user uuid, p_device text, p_session uuid, p_epoch integer, p_pad uuid DEFAULT NULL) RETURNS text AS $$
+BEGIN
+  PERFORM app_session_begin(p_user, p_device, p_session, p_epoch, p_pad);
+  RETURN 'ok:' || coalesce(app_user_id()::text, '') || ':' || coalesce(app_device_id(), '');
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE || ': ' || SQLERRM;
+END $$ LANGUAGE plpgsql;
+-- What the owner sees of an account's sessions, past the no-privilege tables.
+CREATE OR REPLACE FUNCTION _v85_state(p_user uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'epoch',  coalesce((SELECT e.epoch FROM auth_epoch e WHERE e.user_id = p_user), 0),
+    'reason', (SELECT e.reason FROM auth_epoch e WHERE e.user_id = p_user),
+    'by',     (SELECT e.bumped_by FROM auth_epoch e WHERE e.user_id = p_user),
+    'active', (SELECT u.active FROM app_user u WHERE u.id = p_user),
+    'live',   (SELECT count(*) FROM auth_session s WHERE s.user_id = p_user AND s.revoked_at IS NULL))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The plain-UPDATE door, as the owner: no route, no function, only the trigger.
+CREATE OR REPLACE FUNCTION _v85_set_active(p_user uuid, p_active boolean) RETURNS void AS $$
+  UPDATE app_user SET active = p_active WHERE id = p_user
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A Google sign-in on an account, as the owner.
+CREATE OR REPLACE FUNCTION _v85_identity(p_user uuid) RETURNS uuid AS $$
+  INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how)
+  VALUES (p_user, 'google.com', 'v85-' || gen_random_uuid(), 'v85.walk@example.invalid', 'self_added')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A live pad credential for (person, device) on a fixture of its own.
+CREATE OR REPLACE FUNCTION _v85_pad(p_user uuid, p_device text) RETURNS uuid AS $$
+DECLARE m uuid; c uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify Eightyfive College 1XI', now() + interval '5 days', 'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO m;
+  INSERT INTO pad_resume_credential (id_hash, user_id, device_id, match_id, school_id, public_jwk, jkt, expires_at)
+  VALUES (encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'hex'), p_user, p_device, m, match_school(m),
+          '{"kty":"EC","crv":"P-256","x":"MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4","y":"4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"}',
+          repeat('A', 43), now() + interval '1 hour')
+  RETURNING id INTO c;
+  RETURN c;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v85_pad_reason(p_id uuid) RETURNS text AS $$
+  SELECT coalesce(revoked_reason, 'live') FROM pad_resume_credential WHERE id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Whether the application role may touch a table or a function, as an answer.
+CREATE OR REPLACE FUNCTION _v85_try(p_sql text) RETURNS text AS $$
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql;
+-- └── db/85 (section 64) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -16051,6 +16108,215 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 63
+
+  -- ┌── 64 · A session ends when it is ended (db/85, GA-I03) ──────────
+  -- Everything below as the application role, through app_session_begin()
+  -- — the one call the API makes to become somebody — and the db/85 doors:
+  --
+  --   (mint)       with no identity, a session for an active account; none
+  --                for an inactive one; signed in, only for yourself
+  --   (begin)      a live session sets app.user_id and app.device_id; the
+  --                wrong device, a session never issued, or the wrong epoch
+  --                is 28000 session_revoked, and the identity is not set
+  --   (anon)       no person: the empty identity, as before
+  --   (signed_out) auth_sign_out() ends this device's sessions, not another
+  --                device's
+  --   (everywhere) auth_sign_out_everywhere() bumps the epoch: every older
+  --                session is refused; a session minted after it works
+  --   (disable)    the office (account_set_active) disables the account:
+  --                every session refused, no new one minted; never your own;
+  --                not by a coach or another school's office; enabling
+  --                brings nothing back, a fresh session works
+  --   (update)     the plain-UPDATE door (no function, the owner) ends
+  --                sessions just the same: the rule is a trigger
+  --   (sign-in)    removing a Google sign-in ends the account's sessions
+  --   (pad)        a pad credential begins while live, for a live account;
+  --                disabling the account and signing out everywhere end it,
+  --                with the reason on the row
+  --   (server)     the server acting as a person: active only
+  --   (privilege)  the application reads neither table and cannot bump
+  --
+  -- Falsified, as the owner before the verify ran: with the
+  -- auth_account_disabled trigger disabled, (disable) went red at "the epoch
+  -- row says"; with both epoch comparisons taken out of app_session_begin(),
+  -- (begin) went red at "a session began under an epoch it was not minted
+  -- in". Each restored, and green again.
+  DECLARE
+    U_C       uuid := '88888888-0000-0000-0000-000000000004';  -- coach of 1XI
+    s1 uuid; s2 uuid; s3 uuid; s4 uuid; s5 uuid; c1 uuid; c2 uuid; v_id uuid;
+    e0 int; e1 int; e2 int;
+    v_got text; n int; j jsonb;
+  BEGIN
+    -- (anon)
+    v_got := _v85_begin(NULL, NULL, NULL, NULL);
+    PERFORM _assert(v_got = 'ok::', format('§64 (anon): nobody did not set the empty identity (%s)', v_got));
+
+    -- (mint)
+    e0 := (_v85_state(U_PARENT)->>'epoch')::int;
+    SELECT o.session_id, o.epoch INTO s1, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    PERFORM _assert(s1 IS NOT NULL AND e1 = e0, format('§64 (mint): no session minted for an active account (%s, epoch %s of %s)', s1, e1, e0));
+    PERFORM _v85_set_active(U_BURSAR, false);
+    SELECT o.session_id INTO v_id FROM auth_session_open(U_BURSAR, 'v85-phone', 1800) o;
+    PERFORM _assert(v_id IS NULL, '§64 (mint): a session was minted for an inactive account');
+    PERFORM _v85_set_active(U_BURSAR, true);
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.session_id INTO v_id FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    PERFORM _assert(v_id IS NULL, '§64 (mint): a signed-in person minted a session for somebody else');
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (begin)
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s1, e1);
+    PERFORM _assert(v_got = 'ok:' || U_PARENT || ':v85-phone', format('§64 (begin): a live session did not begin (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-other-phone', s1, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (begin): a session began on another device (%s)', v_got));
+    v_got := _v85_begin(U_PARENT, 'v85-phone', gen_random_uuid(), e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (begin): a session never issued began (%s)', v_got));
+    v_got := _v85_begin(U_COACH, 'v85-phone', s1, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (begin): the parent''s session began as the coach (%s)', v_got));
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s1, e1 + 1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (begin): a session began under an epoch it was not minted in (%s)', v_got));
+    PERFORM _assert(app_user_id() IS NULL, '§64 (begin): a refused session left an identity behind');
+
+    -- (signed_out)
+    SELECT o.session_id INTO s2 FROM auth_session_open(U_PARENT, 'v85-laptop', 1800) o;
+    PERFORM _v85_begin(U_PARENT, 'v85-phone', s1, e1);
+    n := auth_sign_out();
+    PERFORM _assert(n = 1, format('§64 (signed_out): the phone''s sign-out ended %s sessions (expected 1)', n));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s1, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (signed_out): the signed-out session still began (%s)', v_got));
+    v_got := _v85_begin(U_PARENT, 'v85-laptop', s2, e1);
+    PERFORM _assert(v_got LIKE 'ok:%', format('§64 (signed_out): the laptop was signed out with the phone (%s)', v_got));
+
+    -- (everywhere)
+    SELECT o.ok, o.epoch INTO STRICT v_got, e2 FROM auth_sign_out_everywhere() o;
+    PERFORM _assert(v_got = 'true' AND e2 = e1 + 1, format('§64 (everywhere): signing out everywhere answered %s, epoch %s (expected %s)', v_got, e2, e1 + 1));
+    j := _v85_state(U_PARENT);
+    PERFORM _assert(j->>'reason' = 'signed_out_everywhere' AND (j->>'by')::uuid = U_PARENT, format('§64 (everywhere): the epoch row says %s', j));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-laptop', s2, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (everywhere): a session from before still began (%s)', v_got));
+    v_got := _v85_begin(U_PARENT, 'v85-laptop', s2, e2);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (everywhere): an old session claiming the new epoch began (%s)', v_got));
+    SELECT o.session_id, o.epoch INTO s3, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s3, e1);
+    PERFORM _assert(e1 = e2 AND v_got LIKE 'ok:%', format('§64 (everywhere): a session minted after it did not begin (%s, epoch %s)', v_got, e1));
+
+    -- (disable)
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.reason INTO v_got FROM account_set_active(U_REGISTRAR, false) o;
+    PERFORM _assert(v_got = 'cannot_disable_yourself', format('§64 (disable): the office disabled itself (%s)', v_got));
+    PERFORM _as(U_C);
+    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false) o;
+    PERFORM _assert(v_got = 'not_permitted', format('§64 (disable): a coach disabled a parent (%s)', v_got));
+    PERFORM _as(U_WES_ADM);
+    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false) o;
+    PERFORM _assert(v_got = 'not_permitted', format('§64 (disable): Westville''s office disabled Hilton''s parent (%s)', v_got));
+    PERFORM _assert((_v85_state(U_PARENT)->>'active')::boolean, '§64 (disable): a refused disable disabled the account');
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false) o;
+    PERFORM _assert(v_got = 'true:false', format('§64 (disable): Hilton''s office could not disable its parent (%s)', v_got));
+    j := _v85_state(U_PARENT);
+    PERFORM _assert(j->>'reason' = 'account_disabled' AND (j->>'epoch')::int = e2 + 1 AND (j->>'by')::uuid = U_REGISTRAR,
+      format('§64 (disable): the epoch row says %s', j));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s3, e2);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (disable): a disabled account''s session began (%s)', v_got));
+    SELECT o.session_id INTO v_id FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    PERFORM _assert(v_id IS NULL, '§64 (disable): a disabled account was minted a session');
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true) o;
+    PERFORM _assert(v_got = 'true:true', format('§64 (disable): Hilton''s office could not enable its parent (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s3, e2);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (disable): enabling brought an old session back (%s)', v_got));
+    -- The owner's key may do what the office may.
+    PERFORM _as(U_OWNER);
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false) o;
+    PERFORM _assert(v_got = 'true:false', format('§64 (disable): the owner could not disable a parent (%s)', v_got));
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true) o;
+    PERFORM _assert(v_got = 'true:true', format('§64 (disable): the owner could not enable a parent (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT o.session_id, o.epoch INTO s4, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s4, e1);
+    PERFORM _assert(v_got LIKE 'ok:%', format('§64 (disable): a fresh session after enabling did not begin (%s)', v_got));
+
+    -- (update)
+    PERFORM _v85_set_active(U_PARENT, false);
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s4, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (update): a plain UPDATE left the session working (%s)', v_got));
+    PERFORM _v85_set_active(U_PARENT, true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s4, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (update): the session came back with the account (%s)', v_got));
+    PERFORM _assert((_v85_state(U_PARENT)->>'reason') = 'account_disabled' AND (_v85_state(U_PARENT)->>'epoch')::int = e1 + 1,
+      format('§64 (update): the plain UPDATE did not bump the epoch: %s', _v85_state(U_PARENT)));
+
+    -- (sign-in)
+    v_id := _v85_identity(U_PARENT);
+    SELECT o.session_id, o.epoch INTO s5, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    PERFORM _v85_begin(U_PARENT, 'v85-phone', s5, e1);
+    SELECT o.ok::text INTO v_got FROM auth_identity_revoke_self(v_id) o;
+    PERFORM _assert(v_got = 'true', format('§64 (sign-in): the parent could not remove his Google sign-in (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s5, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (sign-in): a session from before the removal still began (%s)', v_got));
+    PERFORM _assert((_v85_state(U_PARENT)->>'reason') = 'sign_in_removed', format('§64 (sign-in): the epoch row says %s', _v85_state(U_PARENT)));
+
+    -- (pad)
+    c1 := _v85_pad(U_SCORER, 'v85-pad-1');
+    v_got := _v85_begin(U_SCORER, 'v85-pad-1', NULL, NULL, c1);
+    PERFORM _assert(v_got LIKE 'ok:%', format('§64 (pad): a live credential did not begin (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_SCORER, 'v85-pad-2', NULL, NULL, c1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (pad): a credential began on another device (%s)', v_got));
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.ok::text INTO v_got FROM account_set_active(U_SCORER, false) o;
+    PERFORM _assert(v_got = 'true', format('§64 (pad): Hilton''s office could not disable its scorer (%s)', v_got));
+    PERFORM _assert(_v85_pad_reason(c1) = 'account_disabled', format('§64 (pad): the credential reads %s after the account was disabled', _v85_pad_reason(c1)));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_SCORER, 'v85-pad-1', NULL, NULL, c1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (pad): a disabled scorer''s credential began (%s)', v_got));
+    PERFORM _as(U_REGISTRAR);
+    PERFORM account_set_active(U_SCORER, true);
+    PERFORM _assert(_v85_pad_reason(c1) = 'account_disabled', '§64 (pad): enabling the account brought the credential back');
+    c2 := _v85_pad(U_SCORER, 'v85-pad-2');
+    PERFORM _as(U_SCORER);
+    PERFORM auth_sign_out_everywhere();
+    PERFORM _assert(_v85_pad_reason(c2) = 'signed_out_everywhere', format('§64 (pad): signing out everywhere left the credential %s', _v85_pad_reason(c2)));
+    PERFORM set_config('app.user_id', '', true);
+    -- A pad's own request cannot sign out everywhere.
+    c2 := _v85_pad(U_SCORER, 'v85-pad-3');
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT o.reason INTO v_got FROM auth_sign_out_everywhere() o;
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(v_got = 'not_permitted' AND _v85_pad_reason(c2) = 'live', format('§64 (pad): a credential signed out everywhere (%s)', v_got));
+
+    -- (server)
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, NULL, NULL, NULL);
+    PERFORM _assert(v_got LIKE 'ok:%', format('§64 (server): the server could not act as an active account (%s)', v_got));
+    PERFORM _v85_set_active(U_PARENT, false);
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, NULL, NULL, NULL);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (server): the server acted as a disabled account (%s)', v_got));
+    PERFORM _v85_set_active(U_PARENT, true);
+
+    -- (privilege)
+    PERFORM _as(U_OWNER);
+    v_got := _v85_try('SELECT count(*) FROM auth_session');
+    PERFORM _assert(v_got = '42501', format('§64 (privilege): the application read auth_session (%s)', v_got));
+    v_got := _v85_try('SELECT count(*) FROM auth_epoch');
+    PERFORM _assert(v_got = '42501', format('§64 (privilege): the application read auth_epoch (%s)', v_got));
+    v_got := _v85_try(format('UPDATE auth_epoch SET epoch = 1 WHERE user_id = %L', U_PARENT));
+    PERFORM _assert(v_got = '42501', format('§64 (privilege): the application wrote auth_epoch (%s)', v_got));
+    v_got := _v85_try(format('SELECT auth_epoch_bump(%L, %L)', U_PARENT, 'signed_out_everywhere'));
+    PERFORM _assert(v_got = '42501', format('§64 (privilege): the application bumped an epoch directly (%s)', v_got));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 64
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

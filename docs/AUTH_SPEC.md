@@ -25,6 +25,64 @@ until this populates `app.*` correctly.**
 4. Token TTL is 30 min. There is no refresh of this token. The one thing that
    outlives it is the scoring pad's resume credential (below), which is not a
    refresh: it signs five routes of one match and nothing else.
+5. Every token is minted by `mintToken()` (`auth-db.mjs`), which records a
+   session first (`auth_session_open()`, db/85). The token names that session
+   and the account's session epoch; see "A session ends when it is ended".
+
+## A session ends when it is ended (GA-I03, db/85)
+
+Until db/85 a token was checked for its signature and its expiry and nothing
+else, so nothing could end one early: a copy kept working after a sign-out,
+after the account was disabled, and after the Google sign-in it came from was
+removed, for up to thirty minutes, as long as the person's assignments stood.
+
+**The token** carries `sub`, `did`, `sid` (its session, a row in
+`auth_session`) and `sep` (the account's session epoch when it was minted).
+A signed token without `sid` and `sep` — every token from before db/85 — is
+`401 incomplete_claims`; everybody signed in at the deploy signs in once more.
+
+**Every request** becomes somebody through ONE database function,
+`app_session_begin(person, device, session, epoch, credential)`, called by
+`sessionConfigStatements()` inside the request's own transaction. It sets
+`app.user_id` and `app.device_id` (transaction-local, as before) only once:
+
+- the account is active (`app_user.active`);
+- for a token: the session is this person's, on this device, not signed out,
+  minted under the token's epoch, and that epoch is the account's current one
+  (`auth_epoch`, no row = 0);
+- for the pad's resume credential: the credential is this person's, on this
+  device, and still working (`pad_resume_ended()`).
+
+Otherwise it raises `28000`, which `withPrincipal()` answers `401
+session_revoked` — the same words for every reason. One indexed lookup per
+request, not per row: `app_user_id()` is unchanged and still only reads the
+setting. The server acting as somebody with no token (the push fan-out asks
+"may this person read the notice" as them) is checked for an active account
+only, and a disabled one is simply not told.
+
+**What ends what:**
+
+| Act | Route | Effect |
+|---|---|---|
+| Sign out on this device | `POST /api/auth/sign-out` | this person's sessions on this device are revoked (`auth_sign_out()`), and their pad credentials here, as before |
+| Sign out everywhere | `POST /api/auth/sign-out-everywhere` (no screen yet) | the epoch moves: every token and pad credential the person holds ends, this one included |
+| The office or the owner disables the account | `POST /api/auth/users/:id/disable` (`/enable` undoes it) | the epoch moves (a trigger on `app_user.active`, so a plain `UPDATE` does it too); no new session is minted while disabled; enabling brings nothing back |
+| A way to sign in is removed | `POST /api/auth/sign-ins/:id/revoke`, `…/office/sign-ins/:id/revoke` | the epoch moves (a trigger on `auth_identity.revoked_at`). Your own removal answers with a fresh token for this device, which the Me screen adopts |
+| A role is withdrawn | (unchanged) | `app_can()` reads the live assignment on the next statement; the session stands, with nothing to read |
+
+Disabling and enabling use db/81's rule for acting on somebody else's account
+(`auth_office_refusal()`): `user.invite` at the account's school, every standing
+assignment one the caller could grant there, a platform-wide one only by a
+superadmin, never your own (`cannot_disable_yourself`). Each act is on
+`access_log`; each pad credential an epoch move ends is on the scoring audit
+with its reason (`signed_out_everywhere`, `account_disabled`,
+`sign_in_removed`).
+
+`auth_epoch` and `auth_session` are `login_code`'s shape: row-level security on,
+no policy, no privilege for the application. Whoever could write the epoch
+could bring a stolen token back. db/99 §64 asserts all of the above live;
+`tools/smoke-login.mjs`, `smoke-signup.mjs` and `smoke-pad-resume.mjs` walk it
+through the API.
 
 ## The trust boundary
 
@@ -145,7 +203,9 @@ proves each of these live, and each assertion there was falsified once.
 **It ends** at midnight (Africa/Johannesburg) of the day it was issued, and
 before that when the match completes or is abandoned (trigger on
 `match.status`), when the token moves — a handover, a claim by another device,
-a force-release (trigger on `scoring_session`) — when the device signs out
+a force-release (trigger on `scoring_session`) — when the account's session
+epoch moves (db/85: signing out everywhere, the account disabled, a sign-in
+removed; `revoked_reason` says which) — when the device signs out
 (`POST /api/auth/sign-out` → `pad_resume_sign_out()`; the client also forgets
 every key it holds, which ends them on the device even offline), and when the
 school office revokes it (`POST /api/matches/:id/pad-credentials/revoke` →
@@ -180,6 +240,9 @@ and says so on the pad.
 | `app.school_id` | token claim | `school` scope |
 | `app.user_id` | token claim | scoring session ownership |
 | `app.device_id` | token claim (or resume credential) | the scoring lease, `ball_event.device_id` |
+
+Both are set by `app_session_begin()` (db/85) once the session is checked; only
+the anonymous principal sets them directly, to the empty string.
 | `app.scope` | `'pad'` for a resume credential only | db/50's narrowing (`app_pad_scoped()`) |
 | `app.match_id` | the resume credential's match only | db/50's narrowing (`app_pad_match()`) |
 | `app.player_id` | linkage (player only) | `own` scope |
