@@ -26,15 +26,16 @@ import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } fro
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { ChildFileCard } from "./childfile.jsx";
 import { LiftsToday } from "../lifts.jsx";
+import { TodoCard } from "./todo.jsx";
 
 /** The children this parent answers for, the one chosen, and the fixture list the cards share. */
 function useChildren(role) {
   const { rows: kids, loading, error } = useLive("my_children", role);
-  const { rows: matches } = useLive("matches", role);
+  const { rows: matches, loading: matchesLoading, error: matchesError } = useLive("matches", role);
   const [picked, setPicked] = useState(recallChild);
   const child = chooseChild(kids, matches, picked, Date.now());
   const choose = (c) => { rememberChild(c.id); setPicked(c.id); };
-  return { kids, child, choose, loading, error, matches };
+  return { kids, child, choose, loading, error, matches, matchesRead: { loading: matchesLoading, error: matchesError } };
 }
 
 /** What a family screen says when there is no child to show — and why, honestly. */
@@ -57,7 +58,7 @@ const schoolLine = (c) => [c.schoolName, c.team].filter(Boolean).join(" · ");
 // ── P1 · Home — one child ──────────────────────────────
 
 export function FamilyHome({ role, onNav }) {
-  const { kids, child, choose, loading, error, matches } = useChildren(role);
+  const { kids, child, choose, loading, error, matches, matchesRead } = useChildren(role);
   const nav = useNav(role);
   const [open, setOpen] = useState(null);
   if (!child) return <NoChild loading={loading} error={error} testid="family-home"/>;
@@ -79,6 +80,10 @@ export function FamilyHome({ role, onNav }) {
         <NextFixtureCard child={child} matches={matches} role={role} now={now}
           onOpen={(m) => setOpen({ kind: "fixture", match: m })}
           onMatches={nav.includes("fixtures") ? () => onNav?.("fixtures") : null}/>
+        {/* GA-I20 A0: what is owed for him, under the next fixture: his fixtures'
+            answers, narrowed to him, and the one door of each row. */}
+        <TodoCard child={child} matches={matches} matchesRead={matchesRead} now={now}
+          onOpen={(m) => setOpen({ kind: "fixture", match: m })}/>
         {/* SCRBRD-124 phase 2 (db/76): his lifts on the day — the driver's
             number and car, the marks, "confirm collected"; her own card when
             she drives. */}
