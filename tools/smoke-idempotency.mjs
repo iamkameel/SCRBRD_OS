@@ -8,6 +8,15 @@
  * one that showed a parent the same post twice — and reads how many rows
  * there are.
  *
+ * And the three ways the first version of that layer still wrote twice or
+ * answered wrongly (GA-I01): eight copies of one keyed post sent AT ONCE,
+ * which all found no receipt and all wrote; the same key sent with a changed
+ * body, which was answered from the first body's receipt as if saved; and a
+ * crash after the post committed but before its receipt did, which left the
+ * post and no receipt, so the retry wrote a second. The crash is real: the
+ * walk holds request_replay so the receipt cannot be written, waits until
+ * the server is stuck exactly there, and SIGKILLs it.
+ *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-idempotency.mjs
  */
@@ -21,12 +30,17 @@ let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
-const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-idempotency-secret" },
-  stdio: ["ignore", "pipe", "pipe"],
-});
 const serverErr = [];
-server.stderr.on("data", (d) => serverErr.push(d.toString()));
+// Started twice: once, and again after the crash below kills it.
+const start = () => {
+  const s = spawn(process.execPath, ["services/api/server.mjs"], {
+    env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-idempotency-secret" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  s.stderr.on("data", (d) => serverErr.push(d.toString()));
+  return s;
+};
+let server = start();
 const api = async (path, { method = "GET", token, body, headers = {} } = {}) => {
   const res = await fetch(BASE + path, {
     method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers },
@@ -41,8 +55,11 @@ const stamp = Date.now();
 const post = (token, key, title, teamCode = "1XI") => api("/api/news", { method: "POST", token, headers: key ? { "idempotency-key": key } : {},
   body: { scope: "team", schoolId: "11111111-1111-1111-1111-111111111111", teamCode, title, body: "Bus leaves 07:00.", publish: true } });
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const up = async () => { for (let i = 0; i < 60; i++) { try { const r = await api("/api/health"); if (r.body?.db === "ok") return; } catch { /* not up */ } await sleep(250); } };
+
 try {
-  for (let i = 0; i < 60; i++) { try { const r = await api("/api/health"); if (r.body?.db === "ok") break; } catch { /* not up */ } await new Promise((r) => setTimeout(r, 250)); }
+  await up();
   const coach = await login("coach@example.invalid");
   const coach2 = await login("coach2@example.invalid");
   const rows = (title) => q(`select id from news_post where title = $1`, [title]);
@@ -81,7 +98,95 @@ try {
   group("The receipt is stored under the person, and only they can read it");
   const receipts = await q(`select person_id, route, status from request_replay where key = $1`, [`idem-${stamp}-1`]);
   ok("two receipts for the shared key text — one per person", receipts.length === 2 && new Set(receipts.map((r) => r.person_id)).size === 2, JSON.stringify(receipts));
-  ok("...each naming the route", receipts.every((r) => r.route === "POST /api/news"), JSON.stringify(receipts.map((r) => r.route)));
+  // The route, then the request's fingerprint: what the key was spent on.
+  ok("...each naming the route and the request's fingerprint",
+     receipts.every((r) => /^POST \/api\/news sha256:[0-9a-f]{64}$/.test(r.route)), JSON.stringify(receipts.map((r) => r.route)));
+
+  group("Eight copies of one keyed post, sent at once, are one post");
+  {
+    const t = `Burst ${stamp}`;
+    // The race made certain rather than likely: each insert takes 300 ms, so
+    // all eight are in flight together. Without this the first could finish
+    // while the other seven were still opening connections, and the walk
+    // passed against the code it exists to catch.
+    await q(`create or replace function _slow_news() returns trigger as $$ begin perform pg_sleep(0.3); return new; end $$ language plpgsql`);
+    await q(`create trigger slow_news before insert on news_post for each row execute function _slow_news()`);
+    const burst = await Promise.all(Array.from({ length: 8 }, () => post(coach, `idem-${stamp}-burst`, t)));
+    await q(`drop trigger slow_news on news_post; drop function _slow_news()`);
+    const n = (await rows(t)).length;
+    ok("exactly one notice", n === 1, `${n} notices`);
+    const ids = new Set(burst.map((r) => r.body?.id));
+    ok("all eight answered 200 with the same notice", burst.every((r) => r.status === 200) && ids.size === 1,
+       JSON.stringify(burst.map((r) => [r.status, r.body?.id ?? r.body?.error])));
+    ok("...one of them written, seven replayed", burst.filter((r) => !r.replayed).length === 1,
+       `${burst.filter((r) => !r.replayed).length} not replayed`);
+  }
+
+  group("The same key with a changed body is refused, not answered from the first");
+  {
+    const key = `idem-${stamp}-changed`, t = `Original ${stamp}`, t2 = `Changed ${stamp}`;
+    const first = await post(coach, key, t);
+    ok("the first post lands", first.status === 200 && first.body?.id);
+    const changed = await post(coach, key, t2);
+    ok("422 idempotency_key_payload_mismatch", changed.status === 422 && changed.body?.error === "idempotency_key_payload_mismatch",
+       `${changed.status} ${JSON.stringify(changed.body)}`);
+    ok("...not passed off as a replay of the first", changed.replayed === false);
+    ok("...and the changed post was not written", (await rows(t2)).length === 0);
+    // The fingerprint is of the request, not of its spelling: the same fields
+    // in another order are the same post.
+    const reordered = await api("/api/news", { method: "POST", token: coach, headers: { "idempotency-key": key },
+      body: { publish: true, body: "Bus leaves 07:00.", title: t, teamCode: "1XI", schoolId: "11111111-1111-1111-1111-111111111111", scope: "team" } });
+    ok("the same body with its fields reordered replays the first answer",
+       reordered.status === 200 && reordered.replayed && reordered.body?.id === first.body?.id, JSON.stringify(reordered.body));
+    ok("...one row", (await rows(t)).length === 1);
+  }
+
+  group("Every deferrable check starts deferred (a keyed write puts ALL DEFERRED back after each call)");
+  {
+    const early = await q(`select conrelid::regclass::text t, conname from pg_constraint where condeferrable and not condeferred`);
+    ok("no DEFERRABLE INITIALLY IMMEDIATE constraint or constraint trigger in the schema", early.length === 0,
+       `${JSON.stringify(early)} — auth-db.mjs runAsUnit must restore these by name instead`);
+  }
+
+  group("A crash between the post and its receipt: nothing saved, nothing acknowledged, the retry writes once");
+  {
+    const key = `idem-${stamp}-crash`, t = `Crash ${stamp}`;
+    // Hold request_replay so no receipt can be written. EXCLUSIVE lets a
+    // SELECT through (the receipt lookup) and stops an INSERT.
+    const holder = await pool.connect();
+    await holder.query("begin");
+    await holder.query("lock table request_replay in exclusive mode");
+    const sent = post(coach, key, t).then((r) => ({ r }), (e) => ({ e }));
+    let stuck = false;
+    for (let i = 0; i < 80 && !stuck; i++) {
+      stuck = (await q(`select count(*)::int n from pg_locks l join pg_class c on c.oid = l.relation
+                         where c.relname = 'request_replay' and not l.granted`))[0].n > 0;
+      if (!stuck) await sleep(100);
+    }
+    ok("the server reached the receipt (the post is written, the receipt is not)", stuck);
+    const died = new Promise((r) => server.once("exit", r));
+    server.kill("SIGKILL");
+    await died;
+    await holder.query("rollback");
+    holder.release();
+    const answer = await sent;
+    ok("the client was never told it was saved", !answer.r || answer.r.status >= 500, JSON.stringify(answer.r?.body));
+    // The dead server's backend ends its transaction once it finds its
+    // client gone; wait for that before counting.
+    for (let i = 0; i < 50; i++) {
+      if (!(await q(`select 1 from pg_stat_activity where datname = current_database() and usename = 'scrbrd_app'`)).length) break;
+      await sleep(100);
+    }
+    ok("no notice outlived the crash without its receipt", (await rows(t)).length === 0, `${(await rows(t)).length} notices`);
+    server = start();
+    await up();
+    const retry = await post(coach, key, t);
+    ok("the retry writes it", retry.status === 200 && retry.body?.id && !retry.replayed, JSON.stringify(retry.body));
+    ok("...once", (await rows(t)).length === 1, `${(await rows(t)).length} notices`);
+    const again = await post(coach, key, t);
+    ok("...and the next retry is answered from its receipt", again.replayed && again.body?.id === retry.body?.id);
+    ok("...still one notice", (await rows(t)).length === 1);
+  }
 } catch (e) {
   ok(`the idempotency walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {
