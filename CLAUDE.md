@@ -101,6 +101,29 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
 When a task spans two tiers, give it to the higher one. When unsure, give it to
 Opus.
 
+### Haiku's standing steps in the workflow
+
+Added 2026-10-07 (Kameel): Haiku is part of every build, not an occasional
+helper. Use it at these points, so the expensive tiers spend their budget on
+the work itself:
+
+1. **Before a build starts:** Haiku maps the ground. It lists the files, routes,
+   tables, tests and walks the task will touch, with `file:line`, and which
+   design doc and decisions govern it. That map goes into the Opus or Sonnet
+   brief, which then names exactly what to read.
+2. **After Kameel decides:** Haiku records the decision in the design doc, the
+   backlog, the roadmap and the gap analysis plan, word for word as decided.
+3. **After a merge:** Haiku updates the status rows the merge closes (roadmap,
+   gap analysis plan, `DEPLOYING.md`'s paste list where a migration shipped).
+   It doesn't touch `db/SHIPPED.sha256`; that stays with the lead.
+4. **Gap lists:** where a plan says "gaps to list" (for example, acceptance
+   evidence against the walks we have), Haiku lists them and Opus decides what
+   to build.
+
+Haiku's output is reviewed by the lead before it lands on a branch that goes
+to `main`. Its limits above still stand: no code, tests, SQL, policy or minors'
+data.
+
 ## Design skills
 
 Installed 2026-10-07 (Kameel) to raise SCRBRD's design, UI and UX, in
