@@ -94,6 +94,28 @@ try {
     ok("...nor a school that does not exist", (await onboard({ email: "who@example.invalid", name: "X Y", role: "coach", schoolId: "00000000-0000-0000-0000-00000000dead" })).status === 404);
   }
 
+  group("A platform role is refused when it is filed (db/86)");
+  {
+    // superadmin and platformadmin belong to no school; a request is always
+    // at one, and decide_role_request() would never grant it. So it is refused
+    // at the door, with the enrol path's code, rather than left pending — and
+    // on /api/onboard before any account is opened for the stranger.
+    for (const role of ["superadmin", "platformadmin"]) {
+      const email = `platform.${role}@example.invalid`;
+      const r = await onboard({ email, name: "X Platform", role, schoolId: HIL });
+      ok(`a stranger cannot onboard as ${role}`, r.status === 422 && r.body?.error === "platform_role_needs_no_school");
+      ok("...and no account was opened for them", !(await idOf(email)));
+      ok("...and no request was filed", (await q(`select count(*)::int c from role_request where role = $1`, [role]))[0].c === 0);
+
+      const before = (await q(`select count(*)::int c from role_request where person_id = $1`, [await idOf("coach@example.invalid")]))[0].c;
+      const a = await ask(coach, { role, schoolId: HIL });
+      ok(`a signed-in person cannot ask for ${role}`, a.status === 422 && a.body?.error === "platform_role_needs_no_school");
+      ok("...and nothing was filed", (await q(`select count(*)::int c from role_request where person_id = $1`, [await idOf("coach@example.invalid")]))[0].c === before);
+    }
+    // Refused before the token is read: the role alone decides it.
+    ok("...whoever asks, signed in or not", (await ask(null, { role: "superadmin", schoolId: HIL })).body?.error === "platform_role_needs_no_school");
+  }
+
   group("A request is read by its owner and by whoever could answer it");
   {
     const reg = await requests(registrar);

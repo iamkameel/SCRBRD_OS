@@ -98,6 +98,7 @@ export const JOIN_WORDS = {
   role_invalid: "Say who you are first.",
   not_requestable: "That cannot be asked for from here. Ask your school office.",
   not_permitted: "You cannot ask for that. Ask your school office.",
+  platform_role_needs_no_school: "That role belongs to SCRBRD, not to a school, so it cannot be asked for here. Choose what you do at the school.",
   missing_token: "You were signed out. Sign in again to ask.",
   token_expired: "You were signed out. Sign in again to ask.",
 };

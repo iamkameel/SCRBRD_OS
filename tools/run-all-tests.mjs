@@ -280,6 +280,9 @@ const SUITES = [
   // The signed-out read path (SCRBRD-083): the projection, the router, the shell.
   ["public-api", "services/api/public/public.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
+  // Notifications S0 (docs/design/NOTIFICATIONS.md D6, D12): the publish
+  // route's lock, every push a pointer, an expired notice never sent.
+  ["push-api", "services/api/notify/push-api.test.mjs"],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an
   // email two people share; the templates clean; and it sends nothing.

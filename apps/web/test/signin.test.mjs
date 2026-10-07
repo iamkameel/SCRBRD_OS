@@ -200,6 +200,11 @@ group("Joining a school never says found or not found, and never looks a child u
   ok("...which says nothing is linked automatically", /nothing is linked automatically/.test(sentWords("parent", "Test School")));
   ok("a request the server refused is told in words", joinWords(apiError(422, "already_pending")) === JOIN_WORDS.already_pending);
   ok("a request that never arrived says nothing was sent", /nothing was sent/.test(joinWords(new TypeError("x"))));
+  // db/86: the server refuses a platform role when it is filed, with the
+  // enrol path's code. Its own words, not the fallback.
+  ok("a platform role refused at filing is told in its own words",
+     joinWords(apiError(422, "platform_role_needs_no_school")) === JOIN_WORDS.platform_role_needs_no_school
+     && /school/.test(JOIN_WORDS.platform_role_needs_no_school));
   ok("a code nobody wrote words for still says something", /\s/.test(joinWords(apiError(422, "weird_code"))) && !joinWords(apiError(422, "weird_code")).includes("weird_code"));
 
   const screen = src("../src/auth/NoSchool.jsx");
