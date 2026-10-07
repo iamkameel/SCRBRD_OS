@@ -289,6 +289,8 @@ async function browserCheck() {
     ok("the Match day card is drawn for today's fixture", (await card.count()) === 1);
     const line = (await card.locator('[data-testid="matchday-line"]').first().innerText({ timeout: 4000 }).catch(() => "")).trim();
     ok(`...against Kearsney ("${line}")`, /Kearsney/.test(line));
+    const side = (await card.locator('[data-testid="matchday-side"]').first().innerText({ timeout: 8000 }).catch(() => "")).trim();
+    ok(`...with the minibus the cast booked ("${side}")`, /bus 22 seats/.test(side));
     ok("no page errors", coach.errors.length === 0, coach.errors.join(" | "));
     await coach.ctx.close();
 
