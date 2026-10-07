@@ -457,10 +457,13 @@ function detectMilestone(ball,inn){
     // A hat-trick is three of the bowler's balls of the over running: a
     // wicket on a wide or a no-ball (Law 22.9, 21.17) neither makes one nor
     // puts him on one, as the commentary and SQL's bowler_hat_trick read it.
+    // And each of the three his (chargedToBowler) and standing: a run out
+    // or a free hit's save between makes no hat-trick.
     const ofOver=ball.type!=="Wd"&&ball.type!=="Nb";
-    if(wkts>=3&&ofOver){
+    const mine=(b)=>b?.type==="W"&&!b.freeHitSaved&&b.bowler===bow.id&&chargedToBowler(normaliseDismissal(b.dismissal));
+    if(wkts>=3&&ofOver&&his){
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
-      if(legal.length===2&&legal.every(b=>b.type==="W"&&b.bowler===bow.id))
+      if(legal.length===2&&legal.every(mine))
         milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"sparkles"});
     }
     if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"bails-off"});
@@ -471,7 +474,6 @@ function detectMilestone(ball,inn){
     // bowler's counts: a run out on the second ball puts no one on a hat-trick.
     // A caller that does not say how the batter was out is not trusted with it.
     else if(ofOver){
-      const mine=(b)=>b?.type==="W"&&!b.freeHitSaved&&b.bowler===bow.id&&chargedToBowler(normaliseDismissal(b.dismissal));
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
       if(ball.dismissal!=null&&chargedToBowler(normaliseDismissal(ball.dismissal))&&mine(legal.at(-1))&&!mine(legal.at(-2)))
         milestones.push({type:"hattrickball",label:"HAT-TRICK BALL",sub:bow.name+" — two in two",color:D.roseText,icon:"sparkles"});

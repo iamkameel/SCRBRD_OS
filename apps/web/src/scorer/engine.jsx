@@ -1709,7 +1709,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       const wicketCfg={...buildEventCfg("W",null),noBlur:true};
       // The method rides along only when the wicket stood (a free hit can
       // save the batter), so a hat-trick ball is never called off a not-out.
-      const mile=isSuperOver(before)?null:detectMilestone({type:ev.type,value:offExtra?ev.value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{})},before);
+      const mile=isSuperOver(before)?null:detectMilestone({type:ev.type,value:offExtra?ev.value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{freeHitSaved:true})},before);
       milestoneQRef.current=(mile?[mile]:[]).map(m=>({...buildEventCfg(null,m),noBlur:true}));
       playMoment(wicketCfg);
     }

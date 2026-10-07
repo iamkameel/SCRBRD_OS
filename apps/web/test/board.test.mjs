@@ -229,6 +229,15 @@ group("Tier 3: the hat-trick ball joins the pad's own interrupt (§10)");
   ok("a stumping off a wide after two in two is no hat-trick",
      detectMilestone(xw("Wd", "stumped"), { ...before([W(), W()]), bowlers: [{ ...bow, wickets: 2 }] })?.type !== "hattrick");
   ok("...nor a hat-trick ball after one", detectMilestone(xw("Wd", "stumped"), before([{ type: "run", value: 1 }, W()]))?.type !== "hattrickball");
+  // The hat-trick itself asks what the hat-trick ball asks: three of his,
+  // each standing. A run out among them, or a free hit's save, is none.
+  const on2 = (log) => ({ ...before(log), bowlers: [{ ...bow, wickets: 2 }] });
+  ok("no hat-trick when the first of the three was a run out",
+     detectMilestone(now("bowled"), on2([W("run_out"), W()]))?.type !== "hattrick");
+  ok("...nor when this one is a run out", detectMilestone(now("run_out"), on2([W(), W()]))?.type !== "hattrick");
+  ok("...nor when this one the free hit saved", detectMilestone({ ...now(null), freeHitSaved: true }, on2([W(), W()]))?.type !== "hattrick");
+  ok("a free hit's save with nine down is not ALL OUT",
+     detectMilestone({ ...now(null), freeHitSaved: true }, { ...before([]), wickets: 9 })?.type !== "allout");
 
   // The scorer's scorecard: a batter stumped off a wide before he faced a
   // legal ball is out on the card, 0 off 0, as the fold has him.
