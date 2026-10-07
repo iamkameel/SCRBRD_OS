@@ -144,24 +144,28 @@ console.log("A. Wides and no-balls with runs");
 }
 
 // ── B. A wicket off an illegal delivery ──────────────────────────────────
-// The model writes no wicket ON a wide or a no-ball: a wicket is its own type,
-// W, a legal ball (laws.mjs). What follows an illegal delivery is the free
-// hit, where only a run out (and the other non-bowler modes) stands, and the
-// fold says which wickets stood. A no-ball the pad sent with a dismissal on it
-// is a no-ball to the fold, and its runs count.
+// What follows a no-ball is the free hit, where only a run out (and the other
+// non-bowler modes) stands, and the fold says which wickets stood. Since
+// 2026-10-07 a wicket can also fall ON a wide or a no-ball (Law 22.9, 21.17:
+// a run out off a no-ball here, and a stumping off a wide): the extra's runs
+// count, it is no ball of the over, and the worm marks the wicket where it
+// fell, at the legal-ball x of the ball before it.
 console.log("\nB. A wicket off an illegal delivery");
 {
   const e = [...open(0, { overs: 2 }),
     b(0, BALL_TYPE.NO_BALL, 2, { nbType: "front_foot" }),              // free hit next
     b(0, BALL_TYPE.WICKET, 0, { dismissal: DISMISSAL.BOWLED }),         // saved by the free hit
-    b(0, BALL_TYPE.NO_BALL, 1, { nbType: "front_foot", dismissal: DISMISSAL.RUN_OUT }), // a no-ball; the fold takes no wicket
-    b(0, BALL_TYPE.WICKET, 1, { dismissal: DISMISSAL.RUN_OUT, dismissed: "p2" }), // on the free hit: stands
-    batters({ innings: 0, ...at(), striker: "p1", nonStriker: "p3" }),
-    run(0, 4), b(0, BALL_TYPE.WIDE, 1), dot(0), dot(0),
+    b(0, BALL_TYPE.NO_BALL, 1, { nbType: "front_foot", dismissal: DISMISSAL.RUN_OUT, dismissed: "p2", outAt: "striker_end" }), // run out off a no-ball: stands
+    batters({ innings: 0, ...at(), nonStriker: "p3" }),
+    b(0, BALL_TYPE.WICKET, 1, { dismissal: DISMISSAL.RUN_OUT, dismissed: "p3" }), // on the free hit: stands
+    batters({ innings: 0, ...at(), nonStriker: "p4" }),
+    run(0, 4), b(0, BALL_TYPE.WIDE, 0, { dismissal: DISMISSAL.STUMPED }),  // stumped off a wide: stands
+    batters({ innings: 0, ...at(), striker: "p5" }),
+    dot(0), dot(0),
     next(0, "y"),
     b(0, BALL_TYPE.WICKET, 0, { dismissal: DISMISSAL.BOWLED }), run(0, 2)];
   const [inn] = deriveInningsList([e]);
-  ok(`the fold: two of the three W deliveries stood, the free hit saving one, and the no-ball took none (${inn.wickets} down, ${inn.runs} runs)`, inn.wickets === 2 && inn.fow.length === 2);
+  ok(`the fold: two of the three W deliveries stood, the free hit saving one, and both wickets on extras (${inn.wickets} down, ${inn.runs} runs)`, inn.wickets === 4 && inn.fow.length === 4 && inn.balls === 7);
   const m = render(WormChart, { innings: [inn], curIn: 0, match: { overs: 2 }, events: [e] });
   const w = wormOf(m);
   const want = inn.fow.map((f) => ({ ball: Number(f.overs.split(".")[0]) * 6 + Number(f.overs.split(".")[1] ?? 0), runs: f.runs }));

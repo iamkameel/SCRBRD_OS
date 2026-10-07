@@ -23,7 +23,7 @@ import {
   CAPTURE_PROFILE, PLACEMENT_FIELD, NOT_CAPTURED, evidenceLabel, placementEvidence, profileCollects,
   MatchFold, deriveInningsList, penaltyCredits, shortRunning, bowlerSuspended, suspensionWords,
 } from "../src/index.mjs";
-import { runsToBowler } from "../src/index.mjs";
+import { runsToBowler, keeper } from "../src/index.mjs";
 
 /** @import { LogEvent, Loose, BallEvent, BallInput, BattersEvent, BowlerEvent, InningsStartEvent, InningsStartInput } from "../src/events.mjs" */
 /** @import { Innings } from "../src/replay.mjs" */
@@ -1567,6 +1567,150 @@ group("O. Rows the Laws refuse, as the database can still hold them: what the fo
   // since db/54).
   const pen = deriveInnings([...open(), runs(1), /** @type {any} */ ({ ...penalty({ runs: 2 }), value: 3 })]);
   ok("a penalty row's value is not runs: 1 + 2, not 1 + 3 + 2", pen.runs === 3);
+}
+
+group("P. A wicket on a wide or a no-ball (Law 22.9, Law 21.17)");
+{
+  const W = BALL_TYPE.WIDE, NB = BALL_TYPE.NO_BALL;
+  /** @param {Innings} i  @param {string} id */
+  const bat = (i, id) => must(i.batsmen.find((b) => b.id === id));
+  /** @param {Innings} i  @param {string} id */
+  const bow = (i, id) => must(i.bowlers.find((b) => b.id === id));
+  /** Both folds of one log, the pad's and the server's, must agree. @param {LogEvent[]} log */
+  const both = (log) => {
+    const inn = deriveInnings(log);
+    const srv = must(new MatchFold(log.map((e) => ({ ...e, innings: 0 }))).view().innings[0]);
+    return { inn, agree: srv.runs === inn.runs && srv.wickets === inn.wickets && srv.balls === inn.balls
+      && JSON.stringify(srv.fow) === JSON.stringify(inn.fow) && JSON.stringify(srv.bowlers) === JSON.stringify(inn.bowlers) };
+  };
+
+  // Stumped off a wide: the wide's run, a wicket, the bowler's; no ball of the over, no ball faced.
+  {
+    const { inn, agree } = both([...open(), ball({ type: W, value: 0, dismissal: "stumped", fielder: "K Botha" })]);
+    ok("stumped off a wide: the side scores the wide's run", inn.runs === 1 && inn.extras.wide === 1);
+    ok("...a wicket falls", inn.wickets === 1);
+    ok("...and it is no ball of the over", inn.balls === 0 && bow(inn, "w1").balls === 0);
+    ok("...the striker is out, stumped, credited to the bowler", bat(inn, "p1").status === "out" && bat(inn, "p1").dismissal === "st K Botha b D Mkhize");
+    ok("...a wide is no ball faced", bat(inn, "p1").balls === 0 && bat(inn, "p1").runs === 0);
+    ok("...the bowler: the wide's run, a wide, and the wicket", bow(inn, "w1").runs === 1 && bow(inn, "w1").wides === 1 && bow(inn, "w1").wickets === 1);
+    ok("...fall of wickets 1-1 at 0.0", inn.fow.length === 1 && inn.fow[0].runs === 1 && inn.fow[0].wickets === 1
+       && inn.fow[0].batsman === "James Whitfield" && inn.fow[0].overs === "0.0", inn.fow);
+    ok("...the striker's end is empty, the non-striker stays", inn.striker === null && inn.nonStriker === "p2");
+    ok("...the server's fold agrees", agree);
+  }
+
+  // Hit wicket off a wide: the bowler's too.
+  {
+    const { inn } = both([...open(), ball({ type: W, value: 0, dismissal: "hit_wicket" })]);
+    ok("hit wicket off a wide: a wicket, the bowler's", inn.wickets === 1 && bow(inn, "w1").wickets === 1
+       && bat(inn, "p1").dismissal === "hit wicket b D Mkhize");
+  }
+
+  // Run out off a wide, one run completed, out at the bowler's end.
+  {
+    const { inn, agree } = both([...open(), ball({ type: W, value: 1, dismissal: "run_out", fielder: "L Govender", dismissed: "p1", outAt: "bowler_end" })]);
+    ok("run out off a wide, one run completed: 1 wide + 1 run, all wides", inn.runs === 2 && inn.extras.wide === 2);
+    ok("...a wicket, not the bowler's", inn.wickets === 1 && bow(inn, "w1").wickets === 0);
+    ok("...the bowler is charged the wide and the run", bow(inn, "w1").runs === 2 && bow(inn, "w1").wides === 1);
+    ok("...no ball of the over, no ball faced", inn.balls === 0 && bat(inn, "p1").balls === 0 && bat(inn, "p2").balls === 0);
+    ok("...p1 run out", bat(inn, "p1").status === "out" && bat(inn, "p1").dismissal === "run out (L Govender)");
+    ok("...fall of wickets 2-1 at 0.0", inn.fow.length === 1 && inn.fow[0].runs === 2 && inn.fow[0].overs === "0.0");
+    ok("...out at the bowler's end: the survivor has crossed to the striker's", inn.striker === "p2" && inn.nonStriker === null);
+    ok("...the server's fold agrees", agree);
+  }
+
+  // Obstructing the field off a wide: not the bowler's.
+  {
+    const { inn } = both([...open(), ball({ type: W, value: 0, dismissal: "obstructing_field" })]);
+    ok("obstructing the field off a wide: a wicket, not the bowler's", inn.wickets === 1 && bow(inn, "w1").wickets === 0 && inn.runs === 1);
+  }
+
+  // Run out off a no-ball: two off the bat, then the non-striker out at the striker's end going for a third.
+  {
+    const log = [...open(), ball({ type: NB, value: 2, dismissal: "run_out", fielder: "K Botha", dismissed: "p2", outAt: "striker_end" })];
+    const { inn, agree } = both(log);
+    ok("run out off a no-ball with two run: 1 no-ball + 2", inn.runs === 3 && inn.extras.noBall === 1);
+    ok("...the two off the bat are the striker's, and a no-ball is a ball he faced", bat(inn, "p1").runs === 2 && bat(inn, "p1").balls === 1);
+    ok("...the run-out batter faced nothing", bat(inn, "p2").balls === 0 && bat(inn, "p2").status === "out");
+    ok("...a wicket, not the bowler's; he is charged 3", inn.wickets === 1 && bow(inn, "w1").wickets === 0 && bow(inn, "w1").runs === 3 && bow(inn, "w1").noBalls === 1);
+    ok("...no ball of the over", inn.balls === 0 && bow(inn, "w1").balls === 0);
+    ok("...fall of wickets 3-1 at 0.0", inn.fow.length === 1 && inn.fow[0].runs === 3 && inn.fow[0].batsman === "T Bekker");
+    ok("...out at the striker's end: the survivor is at the bowler's", inn.striker === null && inn.nonStriker === "p1");
+    ok("...and the free hit still follows the no-ball", inn.freeHit === true);
+    ok("...the server's fold agrees", agree);
+    const next = deriveInnings([...log, batters({ striker: "p3" }), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })]);
+    ok("...so a bowled off the next ball does not stand", next.wickets === 1 && next.ballLog.at(-1)?.freeHitSaved === true);
+  }
+
+  // Run out off a no-ball whose runs were byes: the byes are not the striker's.
+  {
+    const { inn } = both([...open(), ball({ type: NB, value: 1, nbRuns: "byes", dismissal: "run_out", dismissed: "p1", outAt: "bowler_end" })]);
+    ok("run out off a no-ball after a bye: 1 nb + 1 bye", inn.runs === 2 && inn.extras.noBall === 1 && inn.extras.bye === 1);
+    ok("...the striker's: a ball faced, no run; the bowler's: the no-ball only", bat(inn, "p1").balls === 1 && bat(inn, "p1").runs === 0 && bow(inn, "w1").runs === 1);
+  }
+
+  // Hit the ball twice off a no-ball: a wicket, not the bowler's.
+  {
+    const { inn } = both([...open(), ball({ type: NB, value: 0, dismissal: "hit_twice" })]);
+    ok("hit the ball twice off a no-ball: a wicket, not the bowler's, a ball faced", inn.wickets === 1 && bow(inn, "w1").wickets === 0
+       && bat(inn, "p1").balls === 1 && bat(inn, "p1").dismissal === "hit the ball twice");
+  }
+
+  // The over's ball count is unchanged: six legal balls, whatever the extras wicket.
+  {
+    const dots = Array.from({ length: 5 }, () => runs(0));
+    const log = [...open(), ...dots, ball({ type: W, value: 0, dismissal: "stumped" }), batters({ striker: "p3" })];
+    const mid = deriveInnings(log);
+    ok("five balls and a stumping off a wide: still 0.5, the bowler still on", mid.balls === 5 && mid.bowler === "w1" && fmtOvers(mid.balls) === "0.5");
+    const end = deriveInnings([...log, runs(0)]);
+    ok("...the sixth legal ball ends the over", end.balls === 6 && end.bowler === null && end.overLog[0].balls.length === 7);
+    ok("...the bowler bowled six balls, and a wicket-maiden is not his: the wide is charged", bow(end, "w1").balls === 6 && bow(end, "w1").maidens === 0 && bow(end, "w1").wickets === 1);
+  }
+
+  // A stumping off a wide on a free hit is saved (only a no-ball's ways out stand on one); the free hit carries on.
+  {
+    const log = [...open(), ball({ type: NB, value: 0 }), ball({ type: W, value: 0, dismissal: "stumped" })];
+    const inn = deriveInnings(log);
+    ok("stumped off a wide on a free hit: saved, and the free hit carries on", inn.wickets === 0 && inn.ballLog.at(-1)?.freeHitSaved === true
+       && inn.freeHit === true && bat(inn, "p1").status === "batting");
+    const ro = deriveInnings([...open(), ball({ type: NB, value: 0 }), ball({ type: W, value: 0, dismissal: "run_out", dismissed: "p2" })]);
+    ok("...a run out off a wide on a free hit stands", ro.wickets === 1 && bat(ro, "p2").status === "out");
+  }
+
+  // The keeper's stumping is his.
+  {
+    const inn = deriveInnings([...open(), keeper({ keeper: "w3" }), ball({ type: W, value: 0, dismissal: "stumped" })]);
+    ok("a stumping off a wide is the keeper's", inn.keepers[0]?.stumpings === 1 && bat(inn, "p1").dismissal === "st L Govender b D Mkhize");
+  }
+
+  // Undo: a void of it, and the innings is as before it.
+  {
+    const w = ball({ id: "wx1", type: W, value: 1, dismissal: "run_out", dismissed: "p1", outAt: "bowler_end" });
+    const inn = deriveInnings([...open(), w, voidEvent({ target: "wx1" })]);
+    ok("a void of a wicket off a wide takes it all back", inn.wickets === 0 && inn.runs === 0 && inn.fow.length === 0 && inn.striker === "p1" && inn.nonStriker === "p2");
+  }
+
+  // The wire: the dismissal, the batter out and the end ride through toRow/fromRow.
+  {
+    const ev = { ...ball({ id: "nbx1", type: NB, value: 2, dismissal: "run_out", fielder: "K Botha", dismissed: "p2", outAt: "striker_end" }), innings: 0, seq: 4 };
+    const back = /** @type {any} */ (fromRow(toRow(ev)));
+    ok("the wire keeps a no-ball's run out", back.type === NB && back.dismissal === "run_out" && back.dismissed === "p2" && back.outAt === "striker_end" && back.value === 2);
+  }
+
+  // Refused: a method the Laws do not allow off that extra.
+  {
+    let threw = 0;
+    for (const [type, how] of [[W, "bowled"], [W, "caught"], [W, "lbw"], [W, "hit_twice"], [W, "handled_ball"],
+                               [NB, "bowled"], [NB, "caught"], [NB, "stumped"], [NB, "hit_wicket"], [NB, "lbw"]]) {
+      try { ball({ type, dismissal: how }); } catch { threw++; }
+    }
+    ok("the constructor refuses bowled, caught, lbw, hit twice off a wide; bowled, caught, stumped, hit wicket, lbw off a no-ball", threw === 10, threw);
+    // A row the Laws refuse that the table may still hold (an old build):
+    // no wicket, as every fold before read it.
+    const odd = /** @type {LogEvent} */ ({ ...ball({ type: W, value: 0 }), dismissal: "bowled" });
+    const inn = deriveInnings([...open(), odd]);
+    ok("...and a stored wide that says bowled is a wide, no wicket", inn.wickets === 0 && inn.runs === 1 && bat(inn, "p1").status === "batting");
+  }
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);

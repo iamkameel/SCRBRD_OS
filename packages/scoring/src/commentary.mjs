@@ -61,7 +61,7 @@
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
   penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers, isKeeperRef, keeperOf } from "./replay.mjs";
-import { countsInOver } from "./events.mjs";
+import { countsInOver, isWicketBall } from "./events.mjs";
 import { positionName, sectorOf, batHandOf, SECTORS } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
 import { revisedTargetSuffix } from "./result.mjs";   // SCRBRD-130 R1
@@ -652,7 +652,7 @@ export function deriveCommentary(events = [], options = {}) {
             // row: one that does not count (a wide, a no-ball, 17.3.2.5)
             // neither makes nor breaks it, as SQL's bowler_hat_trick reads it.
             if (countsInOver(ev)) {
-              const mine = ev.type === BALL_TYPE.WICKET && !entry.freeHitSaved && chargedToBowler(normaliseDismissal(ev.dismissal));
+              const mine = isWicketBall(ev) && !entry.freeHitSaved && chargedToBowler(normaliseDismissal(ev.dismissal));
               const run = bowlerRun.get(bowlerId) ?? [];
               run.push(mine);
               bowlerRun.set(bowlerId, run);
@@ -878,7 +878,10 @@ function deliveryLine(ev, entry, c) {
       text: `${line(join(sa, "they run, but the umpire calls deliberate short running and no runs count"))}.${free}` };
   }
 
-  switch (type) {
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17) is told as a wicket,
+  // the extra first: "wide, and out, stumped".
+  const offExtra = type === BALL_TYPE.WIDE ? "wide, " : type === BALL_TYPE.NO_BALL ? "no-ball, " : "";
+  switch (isWicketBall(ev) ? BALL_TYPE.WICKET : type) {
     case BALL_TYPE.WIDE: {
       const body = v === 0 ? choose(key, "wd", ["wide", "a wide", "that's a wide"])
         : `wide, and ${words(v)} more: ${v + 1} wides`;
@@ -942,7 +945,7 @@ function deliveryLine(ev, entry, c) {
         default: method = "out";
       }
       if (entry.freeHitSaved) {
-        return { kind: COMMENTARY_KIND.BALL, text: `${line(`${method}, but it's a free hit: not out`)}.` };
+        return { kind: COMMENTARY_KIND.BALL, text: `${line(`${offExtra}${method}, but it's a free hit: not out`)}.${free}` };
       }
       const D = who(outId, "batter");
       const f = outId != null ? cur.bat.get(outId) : undefined;
@@ -951,8 +954,8 @@ function deliveryLine(ev, entry, c) {
         ? `${cap(D)} is out for a duck, from ${b} ${plural(b, "ball")}.`
         : choose(key, "gone", [`${cap(D)} goes for ${r} from ${b} ${plural(b, "ball")}.`, `${cap(D)} is out for ${r}, from ${b} ${plural(b, "ball")}.`]);
       const leadWord = choose(key, "out", ["out", "and that's out"]);
-      const body = mode === DISMISSAL.RUN_OUT ? `${leadWord}: ${method}` : `${leadWord}, ${method}`;
-      return { kind: COMMENTARY_KIND.WICKET, text: `${line(body)}. ${gone} ${score}` };
+      const body = mode === DISMISSAL.RUN_OUT ? `${offExtra}${leadWord}: ${method}` : `${offExtra}${leadWord}, ${method}`;
+      return { kind: COMMENTARY_KIND.WICKET, text: `${line(body)}. ${gone} ${score}${free}` };
     }
     default: {
       if (v === 4 || v === 6) {

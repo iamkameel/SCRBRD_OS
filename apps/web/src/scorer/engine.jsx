@@ -8,7 +8,7 @@ import {
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
   lastUndoableIndex, likelyCause, keeper as keeperEvent, keeperOf,
 } from "@scrbrd/scoring";
-import { lawsEdition, conditionsOf, describeResult } from "@scrbrd/scoring";
+import { lawsEdition, conditionsOf, describeResult, isWicketBall } from "@scrbrd/scoring";
 import {
   chaseOf, eligibilityNotes, isSuperOver, pairPlace, superOverChaseStart, superOverFirstStart, superOverInPlay,
   superOverOffer, superOversOf, superOverTitle, NOT_RECORDED_WORDS, UMPIRES_DECIDE_WORDS,
@@ -37,7 +37,7 @@ import { refusalWords } from "../lib/handover.js";
 import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, withOrphans } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
 import { awardEvent, awardRefusal, foldPad, pendingCredits, projectPad } from "./penalty.js";
-import { crease, deliveryEvents, noBallEvent } from "./delivery.js";
+import { crease, deliveryEvents, noBallEvent, extraWicketEvent } from "./delivery.js";
 import { PenaltySheet } from "./penaltySheet.jsx";
 import { ReportOffer, SuspendSheet } from "./suspendSheet.jsx";
 import { RetireSheet } from "./retireSheet.jsx";
@@ -65,6 +65,11 @@ import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { hapticTick } from "./haptic.js";
 import { undoWords, entry } from "./prompts.js";
 import { KeeperSheet } from "./keeperSheet.jsx";
+
+/** " — WICKET: Stumped" after a wide or a no-ball that carries a wicket (Law 22.9, 21.17), else nothing; a free hit's save says so. */
+const extraWicketWords=(b)=>!isWicketBall(b)?"":b.freeHitSaved
+  ?` — free hit: not out (${DISMISSAL_LABEL[b.dismissal]??b.dismissal} does not count)`
+  :` — WICKET: ${DISMISSAL_LABEL[b.dismissal]??b.dismissal}${b.outAt?` at the ${b.outAt==="bowler_end"?"bowler's":"striker's"} end`:""}`;
 
 /** A moment in words, for the live region: "FOUR. Boundary", "HAT-TRICK BALL. K Naidoo — two in two". */
 const momentWords=(cfg)=>`${cfg.label.replace(/!+$/,"")}${cfg.sub?`. ${cfg.sub}`:""}`;
@@ -1285,6 +1290,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     setFreeHit(project(nb).freeHit);
   };
 
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17): the extra's own
+  // questions are answered (its runs; a no-ball's kind and whose the runs
+  // were), and the wicket sheet asks the rest, offering only the ways out the
+  // Law allows off it. Nothing is recorded until it confirms: one event, the
+  // extra carrying the wicket (confirmWicket).
+  const openExtraWicket=(type,runs,nbType=null,nbRuns=null)=>{
+    if(!guardReady())return;
+    setModalCtx({extra:{type,runs,nbType,nbRuns}});
+    setModal("wicket");
+  };
+
   // Reset hub back to stage 0
   const resetHub=()=>{
     setHubStage(0);setHubShot(null);setSelSeg(null);setScoringCtx(null);setSelShot(null);
@@ -1664,7 +1680,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // wicket was put down at (SCRBRD-069), which the fold empties.
     // Where the ball went: the whole placement when the pad or the hub captured
     // one (a point, or "didn't travel"), else the bare seg and zone as before.
-    const ev=ballEvent({type:"W",value:extra.runs??0,shot:modalCtx?.shot||null,
+    const offExtra=modalCtx?.extra??null;
+    const ev=offExtra?extraWicketEvent({inn,extra:offExtra,freeHit,approach:hubApproach,
+      wicket:{dismissal:mode,fielder,dismissed:extra.dismissed??null,outAt:extra.outAt??null}})
+    :ballEvent({type:"W",value:extra.runs??0,shot:modalCtx?.shot||null,
       ...(modalCtx?.placement??{seg:modalCtx?.seg??null,zone:modalCtx?.zone??null}),
       dismissal:mode,fielder:fielder||null,freeHit,
       ...crease(inn),
@@ -1690,13 +1709,16 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       const wicketCfg={...buildEventCfg("W",null),noBlur:true};
       // The method rides along only when the wicket stood (a free hit can
       // save the batter), so a hat-trick ball is never called off a not-out.
-      const mile=isSuperOver(before)?null:detectMilestone({type:"W",value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{})},before);
+      const mile=isSuperOver(before)?null:detectMilestone({type:ev.type,value:offExtra?ev.value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{})},before);
       milestoneQRef.current=(mile?[mile]:[]).map(m=>({...buildEventCfg(null,m),noBlur:true}));
       playMoment(wicketCfg);
     }
     setFreeHit(after.freeHit);
     if(endedInnings)setModal("inningsReview");
-    else if(!stood){if(endedOver){setModalCtx({lastBowlerId:before?.bowler||null});setModal("newOver");}}
+    // A free hit saved the batter: nobody comes in. The sheet closes (it
+    // stayed open, a second Confirm away from a second ball), or the over's
+    // end opens the bowler sheet.
+    else if(!stood){if(endedOver){setModalCtx({lastBowlerId:before?.bowler||null});setModal("newOver");}else setModal(null);}
     else if(endedOver)setModal("newBatsmanThenOver");
     else setModal("newBatsman");
   };
@@ -1890,7 +1912,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     if(modal==="noBall")return (
       <NoBallSheet
         edition={lawsEdition({innings,events})} freeHits={inn?.freeHits!==false}
-        onConfirm={recordNoBall}
+        onConfirm={(nbType,runs,nbRuns,wicket)=>wicket?openExtraWicket("Nb",runs,nbType,nbRuns):recordNoBall(nbType,runs,nbRuns)}
         onClose={()=>setModal(null)}/>
     );
 
@@ -2067,8 +2089,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           nonStriker={inn?.nonStriker!=null?{id:inn.nonStriker,name:inn.batsmen.find(b=>b.id===inn.nonStriker)?.name??String(inn.nonStriker)}:null}
           fieldingSquad={fieldingSquad}
           edition={lawsEdition({innings,events})}
-          keeper={keeperNow} twelfth={fieldingTwelfth}
-          onClose={()=>{setModal(null);setScoringCtx(null);setSelShot(null);resetHub();}}
+          keeper={keeperNow} twelfth={fieldingTwelfth} extra={modalCtx?.extra??null}
+          onClose={()=>{setModal(null);setModalCtx({});setScoringCtx(null);setSelShot(null);resetHub();}}
           onConfirm={(mode,fielder,extra)=>{confirmWicket(mode,fielder,extra);}}/>
       );
     }
@@ -2500,7 +2522,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
               style={{border:0,padding:0,margin:0,minWidth:0,opacity:stopped?0.45:1}}>
               <Pad inn={inn} basic={basic}
                 onCommitDetailed={onCommitDetailed} onWicketCtx={onWicketCtx}
-                onWide={recordWide} onNoBall={recordNoBall} onUndo={undoLastBall}
+                onWide={recordWide} onNoBall={recordNoBall} onExtraWicket={openExtraWicket} onUndo={undoLastBall}
                 guard={guardReady} undoWhat={undoWhat}/>
             </fieldset>
           )}
@@ -2599,8 +2621,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>
                             {b.type==="W"&&b.freeHitSaved?`Free hit: not out (${DISMISSAL_LABEL[b.dismissal]??b.dismissal} does not count)${b.value?`, ${b.value} run${b.value!==1?"s":""}`:""}`:
                              b.type==="W"?"WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal)+(b.outAt?` at the ${b.outAt==="bowler_end"?"bowler's":"striker's"} end`:"")+(b.value?`, ${b.value} run${b.value!==1?"s":""}`:""):
-                             b.type==="Wd"?"Wide ball":
-                             b.type==="Nb"?`No Ball (${b.nbType?.replace("_"," ")||""}), ${b.value||0}+1 runs${b.nbRuns?` (${b.nbRuns==="leg_byes"?"leg byes":"byes"})`:""}`:
+                             b.type==="Wd"?`Wide ball${b.value?`, ${b.value}+1 runs`:""}${extraWicketWords(b)}`:
+                             b.type==="Nb"?`No Ball (${b.nbType?.replace("_"," ")||""}), ${b.value||0}+1 runs${b.nbRuns?` (${b.nbRuns==="leg_byes"?"leg byes":"byes"})`:""}${extraWicketWords(b)}`:
                              b.type==="Pen"?`Penalty ${b.value} runs to ${b.to} team — ${b.reason}`:
                              b.type==="B"?`Bye, ${b.value} run${b.value!==1?"s":""}`:
                              b.type==="LB"?`Leg Bye, ${b.value} run${b.value!==1?"s":""}`:

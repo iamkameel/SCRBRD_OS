@@ -10,10 +10,11 @@
  *     saves the batter (SCORING_RULES.md §6), so it is accepted and the wicket
  *     does not stand.
  *   - AG models a wicket ON a no-ball or a wide (extraType + isWicket). Here a
- *     wicket is its own delivery type, W, which is legal; "caught off a
- *     no-ball" and "stumped off a wide" cannot be written, so there is nothing
- *     to refuse. "A single bye off a no-ball" can be written since SCRBRD-068
- *     (`nbRuns: "byes"`) — group M.
+ *     wicket is its own delivery type, W, which is legal — or, since
+ *     2026-10-07, a wide or a no-ball carrying one of the ways out the Laws
+ *     allow off it (Law 22.9, 21.17): "stumped off a wide" is taken, "caught
+ *     off a no-ball" is refused — group S. "A single bye off a no-ball" can be
+ *     written since SCRBRD-068 (`nbRuns: "byes"`) — group M.
  *
  * Groups E onwards are the lifecycle and undo rules this repository adds.
  *
@@ -803,6 +804,43 @@ group("J. Every reason has words for the person who has to clear it");
 {
   const missing = Object.values(REFUSAL).filter((r) => typeof REFUSAL_TEXT[r] !== "string");
   ok("REFUSAL_TEXT covers every REFUSAL", missing.length === 0, missing);
+}
+
+group("S. A wicket on a wide or a no-ball: only the ways out the Law allows (Law 22.9, Law 21.17)");
+{
+  const L = [...open(0), ...runs(0, 1)];
+  const WD = BALL_TYPE.WIDE, NB = BALL_TYPE.NO_BALL;
+  // A wide or no-ball carrying a method, as an older build or a hand-written
+  // POST could send it: the constructor refuses these, so they are written raw.
+  /** @param {string} type  @param {string} how  @param {object} [o] */
+  const raw = (type, how, o = {}) => at(0, /** @type {LogEvent} */ ({ ...ball({ type, value: 0 }), dismissal: how, ...o }))[0];
+  for (const how of ["run_out", "stumped", "hit_wicket", "obstructing_field"]) {
+    ok(`${how} off a wide is taken`, judge(L, raw(WD, how)) === null, judge(L, raw(WD, how)));
+  }
+  for (const how of ["run_out", "hit_twice", "obstructing_field"]) {
+    ok(`${how} off a no-ball is taken`, judge(L, raw(NB, how)) === null);
+  }
+  for (const how of ["bowled", "caught", "lbw", "hit_twice", "handled_ball", "retired_out", "timed_out"]) {
+    ok(`${how} off a wide is refused — not_out_off_wide`, judge(L, raw(WD, how)) === REFUSAL.NOT_OUT_OFF_WIDE);
+  }
+  for (const how of ["bowled", "caught", "lbw", "stumped", "hit_wicket", "handled_ball"]) {
+    ok(`${how} off a no-ball is refused — not_out_off_no_ball`, judge(L, raw(NB, how)) === REFUSAL.NOT_OUT_OFF_NO_BALL);
+  }
+  ok("...a spelling the vocabulary does not know is refused too", judge(L, raw(WD, "nonsense")) === REFUSAL.NOT_OUT_OFF_WIDE);
+  ok("...and the words say which ways out there are", /run out, stumped, hit wicket or obstructing the field/.test(REFUSAL_TEXT.not_out_off_wide)
+     && /run out, hit the ball twice or obstructing the field/.test(REFUSAL_TEXT.not_out_off_no_ball));
+  ok("a plain wide and no-ball are taken as always", judge(L, at(0, ball({ type: WD, value: 2 }))[0]) === null
+     && judge(L, at(0, ball({ type: NB, value: 1 }))[0]) === null);
+  // The rules every wicket answers to.
+  ok("a run out off a no-ball of a batter not in — not_at_crease", judge(L, raw(NB, "run_out", { dismissed: "p5" })) === REFUSAL.NOT_AT_CREASE);
+  ok("...the end he was out at is taken on it", judge(L, raw(NB, "run_out", { dismissed: "p2", outAt: "bowler_end" })) === null);
+  ok("...but not on a no-ball with no wicket — out_at_unknown", judge(L, at(0, /** @type {LogEvent} */ ({ ...ball({ type: NB, value: 1 }), outAt: "bowler_end" }))[0]) === REFUSAL.OUT_AT_UNKNOWN);
+  const kept = [...L, ...at(0, /** @type {LogEvent} */ ({ kind: "keeper", keeper: "w3" }))];
+  ok("a stumping off a wide credited to a fielder not keeping — stumped_not_keeper", judge(kept, raw(WD, "stumped", { fielder: "w4" })) === REFUSAL.STUMPED_NOT_KEEPER);
+  ok("...by the keeper — taken", judge(kept, raw(WD, "stumped", { fielder: "w3" })) === null);
+  // The fold reads what the Laws take, and nothing they refuse.
+  const ro = deriveInnings([...L, at(0, ball({ type: NB, value: 1, dismissal: "run_out", dismissed: "p1", outAt: "striker_end" }))[0]]);
+  ok("a run out off a no-ball: a wicket, no ball of the over", ro.wickets === 1 && ro.balls === 1 && ro.runs === 3);
 }
 
 console.log("\n" + "─".repeat(52));

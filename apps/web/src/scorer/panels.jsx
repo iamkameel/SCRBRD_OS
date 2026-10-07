@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { batHandOf, chargedToBowler, normaliseDismissal, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
+import { batHandOf, chargedToBowler, isWicketBall, normaliseDismissal, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { rulesOf } from "@scrbrd/scoring";
 import { nameBook } from "../lib/matchCentre.js";
@@ -442,10 +442,14 @@ function detectMilestone(ball,inn){
     if(prev<150&&cur>=150)milestones.push({type:"150",label:"150!",sub:bat.name+" on 150",color:D.amber,icon:"flame"});
     if(prev<200&&cur>=200)milestones.push({type:"200",label:"DOUBLE!",sub:bat.name+" — 200 runs!",color:D.amber,icon:"crown"});
   }
-  if(bow&&ball.type==="W"){
+  if(bow&&isWicketBall(ball)){
     const wkts=(bow.wickets||0)+1; // including this dismissal
     if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"ball"});
-    if(wkts>=3){
+    // A hat-trick is three of the bowler's balls of the over running: a
+    // wicket on a wide or a no-ball (Law 22.9, 21.17) neither makes one nor
+    // puts him on one, as the commentary and SQL's bowler_hat_trick read it.
+    const ofOver=ball.type!=="Wd"&&ball.type!=="Nb";
+    if(wkts>=3&&ofOver){
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
       if(legal.length===2&&legal.every(b=>b.type==="W"&&b.bowler===bow.id))
         milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"sparkles"});
@@ -457,7 +461,7 @@ function detectMilestone(ball,inn){
     // itself), with the innings still going. Only a wicket that is the
     // bowler's counts: a run out on the second ball puts no one on a hat-trick.
     // A caller that does not say how the batter was out is not trusted with it.
-    else{
+    else if(ofOver){
       const mine=(b)=>b?.type==="W"&&!b.freeHitSaved&&b.bowler===bow.id&&chargedToBowler(normaliseDismissal(b.dismissal));
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
       if(ball.dismissal!=null&&chargedToBowler(normaliseDismissal(ball.dismissal))&&mine(legal.at(-1))&&!mine(legal.at(-2)))

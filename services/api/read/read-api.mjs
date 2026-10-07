@@ -2031,9 +2031,10 @@ export const READ_QUERIES = {
    * coach asks out loud before a fixture: how has this boy gone against this
    * bowler, and against bowling like his.
    *
-   * The wicket rule is NOT restated here. `ball_type = 'W'` with a dismissal
-   * that is the bowler's, and that the free hit did not save
-   * (ball_wicket_stands(), db/42), is exactly the predicate
+   * The wicket rule is NOT restated here. A wicket that stood
+   * (ball_wicket_stands(), db/42 and db/86: a W, or one on a wide or a
+   * no-ball, that the free hit did not save) with a dismissal that is the
+   * bowler's is exactly the predicate
    * player_bowling_career uses, and two definitions of "wicket" that can drift
    * apart is precisely what this schema keeps removing. The dismissed player is
    * checked against the striker as well, because a run out at the far end
@@ -2084,10 +2085,11 @@ export const READ_QUERIES = {
                   -- bowler's (chargedToBowler(null) is false), and who is
                   -- out is the fold's \`dismissed ?? striker\`,
                   -- ball_dismissed_batter() in db/43: a typed-name batter run
-                  -- out at the far end is not the striker's dismissal.
+                  -- out at the far end is not the striker's dismissal. A
+                  -- wicket is a W, or one on a wide or a no-ball (db/86):
+                  -- ball_wicket_stands() answers false for anything else.
                   count(*) filter (
-                    where b.ball_type = 'W'
-                      and b.dismissal is not null
+                    where b.dismissal is not null
                       and b.dismissal not in (${NOT_THE_BOWLERS})
                       and ball_dismissed_batter(b.striker_id, b.dismissed_id, b.payload) = b.striker_id
                       and ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal)
@@ -2682,7 +2684,9 @@ function ratingsQuery() {
   // under the reader's policy, and the three arms that need the answer would
   // otherwise each ask. It is STABLE — one answer per row within a statement
   // — and for any row not marked W it is false without a lookup.
-  const stoodOut = `case when b.kind = 'ball' and b.ball_type = 'W' and s.stands
+  // A wicket on a wide or a no-ball (db/86) stands as a W does: s.stands is
+  // false for every delivery that is not a wicket, so it alone says so.
+  const stoodOut = `case when b.kind = 'ball' and s.stands
                           then ball_dismissed_batter(b.striker_id, b.dismissed_id, b.payload) end`;
   return `with r as materialized (
              select p.id as player_id, p.full_name, p.team_code, p.school_id,
@@ -2707,7 +2711,7 @@ function ratingsQuery() {
                           ball_runs_to_bowler(b.ball_type, b.value, b.payload),
                           -- the balls of the over, as db/54 counts them (17.3.2.5)
                           case when ball_counts_in_over(b.ball_type, b.payload) then 1 else 0 end,
-                          case when b.ball_type = 'W' and dismissal_is_bowlers(b.dismissal)
+                          case when dismissal_is_bowlers(b.dismissal)
                                 and s.stands then 1 else 0 end)
                ) as who(fam, player_id, runs, balls, wickets)
               where who.player_id is not null

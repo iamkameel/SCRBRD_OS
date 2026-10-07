@@ -344,6 +344,14 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
   // a refusal is a 400 naming the value and nothing was written.
   for (const ev of events) {
     const p = ev.payload || {};
+    // A wide or a no-ball carrying a wicket (Law 22.9, 21.17) has its method
+    // written canonically too; one the vocabulary does not know, or one the
+    // Law does not allow off that extra, is the Laws' to refuse, per event
+    // (not_out_off_wide, not_out_off_no_ball) — never a 400 for the batch.
+    if ((p.kind ?? "ball") === "ball" && (p.type === "Wd" || p.type === "Nb") && p.dismissal != null) {
+      p.dismissal = normaliseDismissal(p.dismissal) ?? p.dismissal;
+      continue;
+    }
     if ((p.kind ?? "ball") !== "ball" || p.type !== "W") continue;
     const d = normaliseDismissal(p.dismissal);
     if (!d) {
@@ -933,6 +941,10 @@ export function quarantineRoutes({ pool, secret }) {
         let row = null;
         if (accept) {
           const payload = q[0].body?.payload || {};
+          // A wide or a no-ball's wicket, as on the live path; the Laws judge it below.
+          if ((payload.kind ?? "ball") === "ball" && (payload.type === "Wd" || payload.type === "Nb") && payload.dismissal != null) {
+            payload.dismissal = normaliseDismissal(payload.dismissal) ?? payload.dismissal;
+          }
           if ((payload.kind ?? "ball") === "ball" && payload.type === "W") {
             const d = normaliseDismissal(payload.dismissal);
             if (!d) { const e = /** @type {DressedError} */ (new Error("dismissal_unknown")); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
