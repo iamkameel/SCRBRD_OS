@@ -1,4 +1,4 @@
-import { RRR_TREND, chaseRates, interrupted, rrrTrend } from "@scrbrd/scoring";
+import { RRR_TREND, chaseRates, rainTouched, rrrTrend } from "@scrbrd/scoring";
 
 /**
  * PAR AND PRESSURE, IN WORDS (SCRBRD-133 G2, design §3.3, §3.5) — pure, so
@@ -23,7 +23,7 @@ import { RRR_TREND, chaseRates, interrupted, rrrTrend } from "@scrbrd/scoring";
  * function the server runs, so it needs no read at all.
  */
 
-export { RRR_TREND, chaseRates, interrupted, rrrTrend };
+export { RRR_TREND, chaseRates, rainTouched, rrrTrend };
 
 /** What the line calls the ground's par. */
 export const VENUE_PAR = "par for this ground";
@@ -78,7 +78,7 @@ const crrOf = (inn) => ((inn?.balls ?? 0) > 0 ? ((inn.runs / inn.balls) * 6).toF
  * @param {number} o.overs       its allotment
  * @param {any} o.report         reportFor()'s answer: the report, or null
  * @param {{trend: string | null} | null} [o.rates]  chaseRates()'s answer
- * @param {boolean} [o.rained]   rain touched the match's own innings (interrupted())
+ * @param {boolean} [o.rained]   rain touched the match's chase (rainTouched())
  * @param {string | null} [o.result]  the result's words, once play has decided it
  * @returns {string | null}
  */
@@ -135,9 +135,11 @@ export function rateTrack({ inn, chasing, target, overs, report, rates = null, r
              gap: gapFigure(r, p), scale: Math.max(1, p, r) * 1.15,
              said: `${label} ${p}, ${who} ${r}: ${gapWords(r, p, label === "par" ? VENUE_PAR : DLS_PAR)}` };
   }
-  if (!chasing || target == null || rained) return null;
+  // After rain with no DLS par to hold the side to, the rates are what the
+  // line says (§3.3: "(revised) · RRR 7.94, climbing"), so they are drawn.
+  if (!chasing || target == null) return null;
   const balls = inn.balls ?? 0, left = overs * 6 - balls, need = target - inn.runs;
-  if (balls < TWO_OVERS || left <= 0 || need <= 0) return null;
+  if (inn.complete || balls < TWO_OVERS || left <= 0 || need <= 0) return null;
   const crr = (inn.runs / balls) * 6, rrr = (need / left) * 6;
   const trend = rates?.trend ?? null;
   return { kind: "rate", from: { label: "CRR", value: crr, text: crr.toFixed(2), mark: "dot" }, to: { label: "RRR", value: rrr, text: rrr.toFixed(2), mark: "bar" },

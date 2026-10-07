@@ -36,7 +36,7 @@
  *
  * Pure: the log in, figures out. No clock, no I/O.
  */
-import { deriveMatch } from "./replay.mjs";
+import { deriveMatch, revisedTargetMethod } from "./replay.mjs";
 import { countsInOver } from "./events.mjs";
 import { parAt } from "./venue.mjs";
 import { dlsParAt, resourcesOf, DLS_STATUS } from "./dls.mjs";
@@ -151,7 +151,9 @@ export function chaseRates(events, ctx, n) {
   // Two folds, not one an over: a TV's browser runs this on every read.
   const ends = inningsAtOverEnds(evs, ctx, n, { only: [k, k - 3] });
   const last = ends.find((e) => e.over === k)?.innings?.[n];
-  const back = k >= 3 ? ends.find((e) => e.over === k - 3)?.innings?.[n] : inningsAtStart(evs, ctx, n, inn)?.[n] ?? { runs: 0, balls: 0 };
+  // Three overs back is an over's end from the fourth over on; at the third
+  // (and before it) it is the chase's start, nought for nought.
+  const back = k > 3 ? ends.find((e) => e.over === k - 3)?.innings?.[n] : inningsAtStart(evs, ctx, n, inn)?.[n] ?? { runs: 0, balls: 0 };
   if (!last || !back) return null;
   const N = (inn.overs ?? 0) * 6, t = inn.target;
   const pt = (/** @type {any} */ x) => ({ target: t, runs: x.runs ?? 0, left: N - (x.balls ?? 0) });
@@ -171,6 +173,26 @@ const round2 = (x) => Math.round(x * 100) / 100;
  */
 export function interrupted(own) {
   return (own ?? []).some((i) => i && ((i.interruptions?.length ?? 0) > 0 || i.revised != null || (i.overCuts?.length ?? 0) > 0));
+}
+
+/**
+ * Has rain (or the umpires) touched this match's chase: an interruption or a
+ * cut in either innings; a chase target the umpires set other than one more
+ * than the first innings, or a par (replay.mjs revisedTargetMethod(), the
+ * rule the result's suffix reads); or a chase that starts with fewer overs
+ * than the first innings did (the interval lost, SCRBRD-130 §3.3 case 4).
+ * Then the DLS par is the par (§3.3), and the ground's is not said.
+ * @param {any[]} innings  the match's innings, super overs aside or not
+ * @param {Readonly<Record<string, unknown>> | null} [conditions]  the frozen play part
+ */
+export function rainTouched(innings, conditions = null) {
+  const own = (innings ?? []).filter((i) => i != null && i.superOver == null).slice(0, 2);
+  if (interrupted(own)) return true;
+  const [a, b] = own;
+  if (!a || !b) return false;
+  if (revisedTargetMethod([a, b], conditions ?? b.conditions ?? {}) != null) return true;
+  const n1 = a.startOvers ?? a.overs, n2 = b.startOvers ?? b.overs;
+  return Number.isInteger(n1) && Number.isInteger(n2) && n2 < n1;
 }
 
 /**
@@ -225,9 +247,8 @@ export function parReport({ events, ctx = {}, venue = null, table = null, g50 = 
   // A super over has no par and no trend (3b); a scorebook's innings has no
   // deliveries to place a point on; a declaration match has no overs to scale by.
   if (!limited || inn.superOver != null || inn.summarised != null) return empty(at);
-  const own = list.filter((i) => i && i.superOver == null);
   const chasing = n === 1 && inn.target != null;
-  const rained = interrupted(own.slice(0, 2));
+  const rained = rainTouched(list, ctx?.conditions ?? null);
   const resources = table ? (/** @type {number} */ b, /** @type {number} */ w) => resourcesOf(table, b, w) : null;
   /** @type {ParReport} */
   const out = empty(at);
@@ -255,7 +276,12 @@ export function parReport({ events, ctx = {}, venue = null, table = null, g50 = 
     }
   } else if (venue?.sufficient && Number.isInteger(venue.par)) {
     const P = /** @type {number} */ (venue.par);
-    const now = parAt(P, { allottedBalls: (inn.overs ?? 0) * 6, balls: at.balls, wickets: at.wickets }, { resources });
+    // Measured over the allotment the innings STARTED with (§3.3: "the par
+    // line to P at the original N"): a first innings the umpires cut is held
+    // to a full innings' par here, the only pool there is (130 §6.5), and the
+    // words say so ("of a full innings here"). Uncut, it is the allotment.
+    const full = (/** @type {any} */ x) => ((x?.startOvers ?? x?.overs ?? 0) * 6);
+    const now = parAt(P, { allottedBalls: full(inn), balls: at.balls, wickets: at.wickets }, { resources });
     if (now) {
       out.venue = {
         par: P, n: venue.n, sufficient: true,
@@ -269,7 +295,7 @@ export function parReport({ events, ctx = {}, venue = null, table = null, g50 = 
       const points = [{ balls: 0, parAt: 0 }];
       for (const e of ends()) {
         const p = e.innings[n];
-        const q = p ? parAt(P, { allottedBalls: (p.overs ?? 0) * 6, balls: p.balls, wickets: p.wickets }, { resources }) : null;
+        const q = p ? parAt(P, { allottedBalls: full(p), balls: p.balls, wickets: p.wickets }, { resources }) : null;
         if (q) points.push({ balls: p.balls, parAt: q.runs });
       }
       if (points[points.length - 1].balls !== at.balls) points.push({ balls: at.balls, parAt: now.runs });

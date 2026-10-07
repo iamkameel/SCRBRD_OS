@@ -66,10 +66,14 @@ export function wormOf({ match, played, index, events = null, overs = 20, report
   const balls = Math.max(allotted, (inn.startOvers ?? 0) * 6, ...pair.map(({ x }) => x?.balls ?? 0), so ? 6 : 0);
   const target = inn.target != null && index > 0 ? { runs: inn.target, label: `Target ${inn.target}` } : null;
   const sameInnings = report?.at?.innings === index;
-  const par = !so && sameInnings ? parLine(report, allotted) : null;
+  const umpiresPar = !so && inn.par != null && inn.complete ? { balls: inn.balls, runs: inn.par, label: `Par (umpires) ${inn.par}` } : null;
+  // The ground's par runs to P at the allotment the innings STARTED with
+  // (§3.3: a cut first innings is held to a full innings here, the revised
+  // allotment a rule of its own). A chase the umpires ended on a par shows
+  // their par as a mark, and no calculated line beside it.
+  const par = !so && sameInnings && !umpiresPar ? parLine(report, (inn.startOvers ?? inn.overs ?? overs) * 6) : null;
   const revised = !so && inn.startOvers != null && inn.overs != null && inn.overs < inn.startOvers
     ? { balls: inn.overs * 6, label: `${inn.overs} overs (revised)` } : null;
-  const umpiresPar = !so && inn.par != null && inn.complete ? { balls: inn.balls, runs: inn.par, label: `Par (umpires) ${inn.par}` } : null;
   const side = teamOf(match, inn.battingTeam).full;
   const said = [`Worm: ${side} ${inn.runs} for ${inn.wickets} after ${oversOf(inn.balls)} overs`,
     target ? target.label : null,

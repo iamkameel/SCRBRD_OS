@@ -8,7 +8,7 @@ import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
 import { Highlights, MomentMark, OverSummary } from "./spectator.jsx";
 import { superOverTitle } from "../../lib/superOver.js";
-import { chaseRates, interrupted, rateTrack, reportFor } from "../../lib/par.js";
+import { chaseRates, rainTouched, rateTrack, reportFor } from "../../lib/par.js";
 import { wormOf } from "../../lib/chartSeries.js";
 import { RateTrack } from "../../ui/parTrack.jsx";
 import { Worm } from "../../ui/charts/worm.jsx";
@@ -103,7 +103,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const projected = result || match.status === "complete" ? null : atThisRate(inn, { overs: inOvers, chasing: chase, format: match.format });
   // Par and pressure (G2, §3.3): the report only while it speaks for this very position.
   const pressure = { chasing, report: reportFor(par, inn, index), rates,
-    rained: interrupted(innings.slice(0, 2).filter((i) => i?.superOver == null)), result: settled ? result : null };
+    rained: rainTouched(innings, inn.conditions ?? null), result: settled ? result : null };
   const props = boardFromInnings(inn, { target, overs: inOvers, projected, par: pressure });
   const track = rateTrack({ inn, chasing, target, overs: inOvers, report: pressure.report, rates, rained: pressure.rained,
     side: teamOf(match, inn.battingTeam).short });
@@ -121,8 +121,10 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
       )}
-      {/* SCRBRD-130 R3: venue par at this point, the server's; the signed-in page passes it. */}
-      {venueLine && (
+      {/* SCRBRD-130 R3: venue par at this point, the server's; the signed-in page passes it.
+          Once the Board's second line says the gap to the ground's par (G2), this
+          line would say the same thing a second time, so it gives way. */}
+      {venueLine && !pressure.report?.venue && (
         <p data-testid="mc-venue-par" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>
           {venueLine.words}{venueLine.label ? <span style={{ fontSize: "13px" }}> ({venueLine.label})</span> : null}
         </p>

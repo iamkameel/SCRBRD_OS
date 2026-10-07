@@ -3,7 +3,7 @@ import { boardBall, boardFromInnings } from "../scorer/boardData.js";
 import { RR, fmtOv, isOut } from "../scorer/format.js";
 import { boardInnings, inningsBreak, oversOf, revisionNotice, sidesOf, teamOf } from "../lib/matchCentre.js";
 import { chaseOf, matchInningsOf, superOverInPlay, superOverTitle, superOversOf } from "../lib/superOver.js";
-import { chaseRates, interrupted, rateTrack, reportFor } from "../lib/par.js";
+import { chaseRates, rainTouched, rateTrack, reportFor } from "../lib/par.js";
 
 /**
  * What the ground display shows, from the fold (SCRBRD-133 §2.2) — pure, so
@@ -86,7 +86,7 @@ export function parOf({ state, events, fold, report, result = null, settled = fa
     chasing,
     report: reportFor(report, inn, state.index),
     rates: chasing ? chaseRates(events ?? [], fold ?? {}, state.index) : null,
-    rained: interrupted(state.played.slice(0, 2).filter((i) => i?.superOver == null)),
+    rained: rainTouched(state.played, inn.conditions ?? null),
     result: settled ? result : null,
   };
 }
