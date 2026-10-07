@@ -43,7 +43,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   2026-10-07, gap analysis GA-I09–I11: one queue across a coach's several
   squads, the team manager's exceptions, and a director's or office's home of
   blockers by date and team, each with its source, owner, deadline and exact
-  next action). A new problem joins this list
+  next action) and the parent's action list (added 2026-10-07, gap analysis
+  GA-I20: one list per child of what a parent must do, from consents with
+  their exact version and time, availability, lifts and collection handovers;
+  two children at two schools kept apart, a pending or revoked link said
+  plainly). A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write

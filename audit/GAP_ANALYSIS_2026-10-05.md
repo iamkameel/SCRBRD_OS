@@ -54,7 +54,7 @@ ticket takes a SCRBRD number, and that number is noted here.
 | I14–I16 | Acceptance evidence on a real database: cross-school and child refusals, two-device offline scoring, the deployed revision, a backup restore | Opus | partly covered by the API and browser walks and BACKUP_RESTORE.md; gaps to list |
 | I17 | Push: a supported FCM token refresh, or "unavailable" stated plainly | Opus | open |
 | I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | Kameel to decide scope |
-| I20 | The parent's action list per child | Fable (redesign step 4) | open |
+| I20 | The parent's action list per child | Fable (redesign step 4); design started 7 Oct | in design |
 | I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | open |
 
 ## Phase C: enrich verified information (after the pilot)
