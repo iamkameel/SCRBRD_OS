@@ -133,6 +133,20 @@ export function schoolsWhere(capability) {
 }
 
 /**
+ * Does this person hold the capability on an assignment that names NO school?
+ *
+ * The platform account and the owner's key do: their assignments are
+ * tenant-less, so schoolsWhere() above — which lists the schools an
+ * assignment names — finds none for them, and a form built on it alone has no
+ * school to post to. Server-side a tenant-less assignment reaches every school
+ * (app_can(), app_may_grant_at()), so the form offers every school instead and
+ * asks which. Same caveat as schoolsWhere(): what to offer, never whether.
+ */
+export function reachesEverySchool(capability) {
+  return (_profile?.assignments ?? []).some((a) => a.school == null && roleGrants(a.role, capability));
+}
+
+/**
  * Which of this person's assignments could score this match.
  *
  * Used to decide whether to OFFER the scorer, not whether to allow it: the

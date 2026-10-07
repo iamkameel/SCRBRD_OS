@@ -33,6 +33,19 @@ Tap **Squad**, your side, then the boy, then **Edit Profile**. Under **Public ma
 
 For a boy who must never be named: under **Never show this child publicly** type the **Reason**, then tap **Never show this child publicly**. It beats every consent, on every public page. Only people who may set it can read the reason. To undo it, tap **Remove the mark**.
 
+## A parent's link, and the family's agreement
+
+Tap **Squad**, your side, the boy, then **Edit Profile**. Under **Guardian links**, choose the parent under **Parent or guardian**.
+
+- A link not yet checked: tap **Verify the link**, then **Yes, verify**.
+- The family signed the terms: tap **Record the agreement**, then **Yes, record it**. Verify first.
+
+The page answers in words.
+
+## Book a bus
+
+Tap **Logistics**. Under **Book a bus**, tap **Add a vehicle**, then **Save the vehicle**. For a fixture your school hosts, tap **Book a trip**, fill it in, tap **Book this trip**, then **Yes, book it**. A booked trip cannot be changed here yet.
+
 ## Publish a fixture's public page
 
 Tap **Match Centre**, then the fixture's card to open **Match Details**. Under **Public page** tap **Publish** beside your school's side. Only your own school's side shows the button. Players are named only where the family has said yes: everyone else is shown by position. The link is on the panel. To take it down, tap **Withdraw**.

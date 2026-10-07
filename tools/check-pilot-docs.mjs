@@ -225,6 +225,21 @@ const PIN = new Map([
   ["Never show this child publicly", { in: ["views/publicname.jsx"] }],
   ["Reason", { in: ["views/publicname.jsx"] }],
   ["Remove the mark", { in: ["views/publicname.jsx"] }],
+  // A parent's link and the family's agreement (views/guardianlink.jsx), on Edit Profile.
+  ["Guardian links", { in: ["views/guardianlink.jsx"] }],
+  ["Parent or guardian", { in: ["views/guardianlink.jsx"] }],
+  ["Verify the link", { in: ["views/guardianlink.jsx"] }],
+  ["Yes, verify", { in: ["views/guardianlink.jsx"] }],
+  ["Record the agreement", { in: ["views/guardianlink.jsx"] }],
+  ["Yes, record it", { in: ["views/guardianlink.jsx"] }],
+  // Booking a vehicle and a trip (views/transportbook.jsx), on Logistics.
+  ["Logistics", { in: ["design/roles.js"] }],                 // the nav label
+  ["Book a bus", { in: ["views/transportbook.jsx"] }],
+  ["Add a vehicle", { in: ["views/transportbook.jsx"] }],
+  ["Save the vehicle", { in: ["views/transportbook.jsx"] }],
+  ["Book a trip", { in: ["views/transportbook.jsx"] }],
+  ["Book this trip", { in: ["views/transportbook.jsx"] }],
+  ["Yes, book it", { in: ["views/transportbook.jsx"] }],
   ["Match Details", { in: ["views/MatchCentreView.jsx"] }],
   ["Public page", { in: ["views/publication.jsx"] }],
 ]);

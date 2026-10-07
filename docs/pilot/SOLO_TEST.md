@@ -139,15 +139,19 @@ Sign in as `registrar.wes`.
 1. Tap **Settings**, then **People**. You see Westville's accounts, and the boys with no account.
 2. Tap **+ Enrol a person**. Enrol an invented parent for a Westville boy: **Full name** "Test Parent", **Email** `test.parent@example.invalid`, **Role** Parent / Guardian, **Which child** any boy. Tap **Enrol**.
 3. Sign out. Sign in as `test.parent`. Tap **Family**. You see that boy, and the line saying his terms are not agreed yet.
-4. Back as `registrar.wes`: **Squad**, a side, a boy, **Edit Profile**. Under **Public match pages**, tap **Record a yes from a signed form** and record it.
-5. Tap **Staff**. Tap **Everyone**, then **Clearance register**. The cast is listed. Most checks are missing: that is right for invented people.
-6. Under **Settings**, **People**, look for **Google sign-ins waiting for you**.
+4. Back as `registrar.wes`: **Squad**, a side, that boy, **Edit Profile**. Under **Public match pages**, tap **Record a yes from a signed form** and record it.
+5. On the same **Edit Profile**, under **Guardian links**, choose "Test Parent" under **Parent or guardian**. Tap **Record the agreement**. The page asks, naming the boy, "Test Parent" and the terms version `popia-2026-01`. Tap **Yes, record it**. The page says "Recorded." Sign in as `test.parent` again: the line saying his terms are not agreed is gone.
+6. Back on **Guardian links**, choose another parent and tap **Verify the link**, then **Yes, verify**. That parent has no link to this boy waiting, so the page refuses in words and changes nothing. That is the right answer. (A link waiting to be verified exists only after the office re-links a parent in **Settings**, **People**, once a boy's date of birth is captured.)
+7. Tap **Staff**. Tap **Everyone**, then **Clearance register**. The cast is listed. Most checks are missing: that is right for invented people.
+8. Under **Settings**, **People**, look for **Google sign-ins waiting for you**.
 
 You should see: only Westville's people and boys. Never a Kearsney boy.
 
-A failure: a Kearsney name anywhere; the new parent seeing any boy but his own; the enrolment refused.
+A failure: a Kearsney name anywhere; the new parent seeing any boy but his own; the enrolment refused; "Recorded" said before the page has answered; the terms still "not agreed" for `test.parent` after it.
 
-Not testable on the demo: Google sign-in is not set up for the demo address, so the claims list is always empty. The office has no screen yet to verify a pending link or to record a family's agreement to the terms. See "What the demo cannot test".
+The list under **Parent or guardian** is every Westville parent, by name and address, because no read says which parents are linked to which boy. Type the first letters to jump to one.
+
+Not testable on the demo: Google sign-in is not set up for the demo address, so the claims list is always empty. See "What the demo cannot test".
 
 ### 2. The coach
 
@@ -254,10 +258,14 @@ A failure: anyone but Westville's DSO reading the account.
 2. `transport.wes`: **Logistics** shows today's minibus, `WES DEMO 1`, and its trip.
 3. `driver.wes`: today's trip, with its two buttons. Tap "We've left", then "We've arrived".
 4. `coach.wes.1xi`: the **Match day** card says the bus and its seats.
+5. As `registrar.wes`: **Logistics**. Under **Book a bus** tap **Add a vehicle**. Fill in **Registration** (an invented one), **Description** and **Seats**, then tap **Save the vehicle**. The page says "Added." only after the server answered. Add the same registration again with other seats: it says it was updated, not added twice.
+6. Still on **Fixtures with no bus yet**, tap **Book a trip** beside a Westville fixture. Choose the **Vehicle** and a **Driver**, set **Leaves**, and tap **Book this trip**. The page asks first and says a booked trip cannot be changed here yet. Tap **Yes, book it**: the trip appears with the other trips, and `driver.wes` sees it if he is the driver.
+7. Book a trip with more **Seats taken** than the vehicle has seats: the page refuses in the database's words and writes nothing. That is the right answer.
+8. `transport.wes` is offered the same, with no **Driver** to choose: a transport coordinator cannot read the school's accounts. `coach.wes.1xi` and `dos.wes` see Logistics and no **Book a bus**.
 
-A failure: the driver seeing a trip that is not his; `driver.kea` seeing Westville's.
+A failure: the driver seeing a trip that is not his; `driver.kea` seeing Westville's; "Booked." said before the page has answered; a refused booking that left a trip behind.
 
-Kearsney cannot book its own bus to a Westville fixture: a trip belongs to the host school. Expected for now.
+`transport.kea` is not offered a Westville fixture to book: the page says a trip belongs to the host school. Expected.
 
 ### 11. The director of sport
 
@@ -283,21 +291,21 @@ A failure: a full name, a photo or a date of birth of any boy; a page that names
 
 1. Two tabs in one browser, both `coach.wes.1xi`. **Sign out** in one. The other is signed out on its next step.
 2. A second browser profile as the same coach stays signed in: it is another device.
-3. "Sign out everywhere" has no button yet. `tools/smoke-demo-cast.mjs` proves the server side.
+3. In the first tab: **Settings**, then **Me**, then **Sign out everywhere**. The page asks "This signs you out on every device, including this one." Tap **Stay signed in** first: nothing changes. Tap **Sign out everywhere** again and **Yes, sign out everywhere**. This tab goes to the sign-in screen. The second browser profile is signed out on its next step. Sign in again as the coach: it works.
 
-A failure: a signed-out tab still reading data.
+A failure: a signed-out tab still reading data; this tab still signed in after the page said it was done; someone else signed out.
 
 ## What the demo cannot test
 
 Each needs a change to the app, not to the data:
 
 - Claims: Google sign-in is not set up for the demo address. Setting it up is configuration (Firebase and the demo domain), not code.
-- Verifying a link and recording a family's agreement: the routes exist (`/api/players/:id/guardians/verify`, `…/consent`). There is no screen.
 - Recording an injury: no route and no screen. "Recording and updating injuries is coming."
-- Adding a vehicle or booking a trip: the routes exist. There is no screen. The cast booked today's trip for you.
+- Changing or cancelling a booked trip: no route. A trip booked by mistake stays on the list.
 - Approving a correction: the director has no screen to decide it.
-- Sign out everywhere: the route exists. There is no button.
-- The away school's bus: a trip belongs to the host school, so Kearsney cannot book one to Westville.
+- Disable account and Enable account: the routes exist (`/api/auth/users/:id/disable`, `…/enable`). There is no screen: People lists only active accounts, so a disabled one could not be enabled again from it.
+- A list of a boy's guardian links, with their state: no read. The office picks the parent and the server answers.
+- The away school's bus: a trip belongs to the host school, so Kearsney cannot book one to Westville, and the page says so.
 - The away team sheet on the pad: the host's scorer cannot read the visitors' named XI. He types their names.
 
 ## The log

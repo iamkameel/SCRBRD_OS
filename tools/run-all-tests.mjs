@@ -186,6 +186,11 @@ const SUITES = [
   // per-fixture count: "N to resolve" and "Could not read X", a failed read
   // never the same as nothing.
   ["queue", "apps/web/test/queue.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The parent's action list, phase A0 (GA-I20): R1 an answer owed and R2
+  // answer again, over a side's worth of rows narrowed to his own; the
+  // fourteen-day fold; "N to do" and "Could not read X", a failed read never
+  // the same as nothing; no reason, no note, no "done".
+  ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
   // the route's three pre-write checks in its own codes, the codes as sentences,
   // and which boy a trigger's message names.
@@ -204,6 +209,13 @@ const SUITES = [
   // Ending a role (SCRBRD-132 C1, db/77): EndRoleButton asks for the reason,
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The three solo-test screens, over routes that already existed: the office
+  // verifying a parent's link and recording the family's agreement, booking a
+  // vehicle and a trip, and signing out everywhere. Who is offered, what is
+  // asked, the order of the sign-out, and a refusal in words for every code.
+  ["guardian-link-screen", "apps/web/test/guardian-link.test.mjs"],
+  ["transport-book", "apps/web/test/transport-book.test.mjs"],
+  ["sign-out-everywhere", "apps/web/test/sign-out-everywhere.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,
   // its source, "N of M confirmed", a version's standing, a refusal in words.
   ["playing-conditions-screen", "apps/web/test/playing-conditions.test.mjs"],

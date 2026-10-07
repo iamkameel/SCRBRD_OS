@@ -43,7 +43,7 @@ const DEBUG = !!process.env.BROWSER_READ_DEBUG;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)?.slice(0, 400)}`); } };
 const group = (t) => console.log("\n" + t);
 
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -2315,6 +2315,157 @@ try {
       ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
       await s.ctx.close();
     } finally { await owner.end().catch(() => {}); }
+  }
+
+  // ── GA-I20 A0: the parent's action list ─────────────────────────
+  //
+  // "To do for R Pillay", the second card on the Home, from the answers the
+  // family app already reads (docs/design/GA-I20_parent_action_list.md §7).
+  // Written last, for the state it needs: every other fixture of his side is
+  // parked as answered, so ONE is owed and the card says "1 to do". The seed's
+  // people only: R Pillay and his parent; Sarah's K Dlamini and D Mkhize.
+  group("The parent's action list: what is owed for the child, and nothing the app did not read");
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    const HIL = "11111111-1111-1111-1111-111111111111", WES = "22222222-2222-2222-2222-222222222222";
+    const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005", WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001";
+    const KD = "aaaaaaaa-0000-0000-0000-000000000006", DM = "bbbbbbbb-0000-0000-0000-000000000001";
+    const KEARSNEY = "77777777-0000-0000-0000-000000000003";
+    const OTHERS = /Bekker|Naidoo|Cele|Whitfield|Mkhize|Dlamini|Botha|Khumalo|Mahlangu|Sithole/;
+    const REASONS = /\bill(ness)?\b|\bfamily\b|\bwedding\b|school work|travelling|religious|another sport|\breason\b|\bnote\b/i;
+    const todo = (p) => p.locator('[data-testid="todo-card"]');
+    // The card has made every read it asked for: the count no longer says "Reading…".
+    const settled = async (p) => {
+      await p.waitForFunction(() => { const e = document.querySelector('[data-testid="todo-count"]'); return !!e && !/^Reading/.test(e.innerText); }, null, { timeout: 9000 }).catch(() => {});
+      return (await p.locator('[data-testid="todo-count"]').first().innerText({ timeout: 2000 }).catch(() => "")).trim();
+    };
+    let restoreWhitfield = false;
+    try {
+      const parentId = (await owner.query(`select id from app_user where email = 'parent@example.invalid'`)).rows[0].id;
+      const T = (await owner.query(
+        `insert into match (school_id, team_code, opponent, starts_at, format, overs, status, ground_id)
+         values ($1, '1XI', 'Verify GA-I20 XI', now() + interval '4 days', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001') returning id`, [HIL])).rows[0].id;
+      // Every other fixture of his side still to come is answered (by his parent): only T is owed.
+      await owner.query(
+        `insert into match_availability (match_id, player_id, school_id, status, declared_by)
+         select m.id, $1, m.school_id, 'available', $2 from match m
+          where m.school_id = $3 and m.team_code = '1XI' and m.status = 'scheduled' and m.id <> $4 and m.starts_at > now() - interval '6 hours'
+         on conflict (match_id, player_id) do nothing`, [PILLAY, parentId, HIL, T]);
+      const owed = (await owner.query(
+        `select count(*)::int as n from match m left join match_availability a on a.match_id = m.id and a.player_id = $1
+          where m.school_id = $2 and m.team_code = '1XI' and m.status = 'scheduled' and m.starts_at > now() - interval '6 hours' and a.player_id is null`, [PILLAY, HIL])).rows[0].n;
+      ok("the setup leaves exactly one fixture of his side unanswered", owed === 1, owed);
+
+      // ── The card, on his Home, under the next fixture ──
+      const A = await open();
+      const at = (id) => A.page.locator(`[data-testid="${id}"]`);
+      ok("the guardian signs in", await signIn(A.page, /parent@example\.invalid/));
+      const first = await settled(A.page);
+      const order = await A.page.$$eval('[data-testid="family-home-body"] > *', (els) => els.map((e) => e.getAttribute("data-testid")));
+      ok("the card is on Home, directly under the next fixture", order.indexOf("todo-card") !== -1 && order.indexOf("todo-card") === order.indexOf("next-fixture") + 1, order.join());
+      ok("it is about him: 'To do for R Pillay'", /^To do for R Pillay$/i.test((await todo(A.page).locator("h2").first().innerText().catch(() => "")).trim()));
+      ok("it counts the one fixture owed: '1 to do'", first === "1 to do", first);
+      const rowText = await at(`todo-row-${T}`).innerText({ timeout: 4000 }).catch(() => "");
+      ok("...as a row for that fixture, with who answers it, by when, and where it came from",
+         /Answer for \w{3} v Verify GA-I20 XI/.test(rowText) && /you or R Pillay/.test(rowText) && /by \w{3} \d\d:\d\d/.test(rowText)
+         && /from the fixture's answers/.test(rowText), rowText);
+      ok("...with its one door to the fixture, and nothing to mark it done", /Answer/.test(rowText) && await todo(A.page).locator("button", { hasText: /done|dismiss|snooze|mark|clear/i }).count() === 0);
+      const cardText = await todo(A.page).innerText();
+      ok("it names no other child and says no reason, no 'done' and no percentage",
+         !OTHERS.test(cardText) && !REASONS.test(cardText) && !/\b(done|ready|complete|cleared)\b|%/i.test(cardText), cardText);
+      ok("it says what the by-when is", /By-when is 48 hours before the start/.test(cardText));
+      await A.page.setViewportSize({ width: 390, height: 844 });
+      await A.page.waitForTimeout(400);
+      const f = await floors(A.page);
+      ok(`on a phone: nothing in the card under 12px (${f.small.length}) and nothing tapped under 44px (${f.tiny.length})`, f.small.length === 0 && f.tiny.length === 0, [...f.small, ...f.tiny].slice(0, 4).join(" · "));
+      await A.page.setViewportSize({ width: 1280, height: 800 });
+
+      // ── A second signed-in tab, reading the same record ──
+      const B = await open();
+      ok("a second tab signs in", await signIn(B.page, /parent@example\.invalid/));
+      ok("...and it says '1 to do' too: the list is read, never kept on the device", await settled(B.page) === "1 to do");
+
+      // ── Declaring at the door drops the row ──
+      await at(`todo-row-${T}`).click({ timeout: 4000 }).catch(() => {});
+      await A.page.waitForTimeout(1200);
+      ok("the row's door opens the fixture, where she answers today", /Verify GA-I20 XI/.test(await at("fixture-title").innerText().catch(() => ""))
+         && await at(`availability-set-${PILLAY}-available`).count() === 1);
+      await at(`availability-set-${PILLAY}-available`).click({ timeout: 4000 }).catch(() => {});
+      await at(`availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+      await A.page.waitForTimeout(1500);
+      ok("she declares him available", /^available$/i.test((await at(`availability-state-${PILLAY}`).innerText().catch(() => "")).trim())
+         && (await owner.query(`select status from match_availability where match_id = $1 and player_id = $2`, [T, PILLAY])).rows[0]?.status === "available");
+      await at("family-back").click({ timeout: 4000 }).catch(() => {});
+      await A.page.waitForTimeout(400);
+      const after = await settled(A.page);
+      ok("back on Home the row is gone, and the card says so: 'Nothing to do for R Pillay'", after === "Nothing to do for R Pillay" && await at(`todo-row-${T}`).count() === 0, after);
+      ok("...the next fixture's own card still names his answer (the one record, said once)", /Available/.test(await at("next-fixture").innerText().catch(() => "")));
+      await B.page.reload({ waitUntil: "networkidle" });
+      // The token is held in memory only, so a reload is a demonstration until she signs in again.
+      ok("a reload drops the token: the demonstration, with nothing of the family's", /Sign in to see your family/.test(await text(B.page)) && await B.page.locator('[data-testid="todo-card"]').count() === 0);
+      await click(B.page, /^Sign in$/i, 4000);
+      ok("the second tab signs in again after a reload", await signIn(B.page, /parent@example\.invalid/));
+      const second = await settled(B.page);
+      ok("...and its list has dropped the row too: 'Nothing to do for R Pillay'", second === "Nothing to do for R Pillay" && await B.page.locator(`[data-testid="todo-row-${T}"]`).count() === 0, second);
+      ok("no scoping refusals or page errors in either tab", A.refusals.length === 0 && B.refusals.length === 0 && A.errors.length === 0 && B.errors.length === 0, [...A.errors, ...B.errors].join(" | "));
+      await A.ctx.close(); await B.ctx.close();
+
+      // ── With the answers read killed, it never says nothing is owed ──
+      for (const [what, glob, words] of [["availability", "**/api/read/availability*", /Could not read the answers for/], ["fixtures", "**/api/read/matches*", /Could not read the fixtures/]]) {
+        const C = await open();
+        await C.page.route(glob, (r) => r.abort());
+        ok(`${what} read killed: the guardian signs in`, await signIn(C.page, /parent@example\.invalid/));
+        const seen = [];
+        for (let i = 0; i < 14; i++) { seen.push((await C.page.locator('[data-testid="todo-card"]').first().innerText({ timeout: 800 }).catch(() => "")).trim()); await C.page.waitForTimeout(250); }
+        const last = seen.at(-1) ?? "";
+        ok(`...the card is drawn, and at no moment (${seen.length} looks) reads "Nothing to do"`, seen.some((s) => s) && seen.every((s) => !/Nothing to do/i.test(s)), seen.find((s) => /Nothing to do/i.test(s)));
+        ok(`...it says which read it could not make, and counts it: "· N read failed"`, words.test(last) && /\d+ to do · \d+ reads? failed/.test(last), last);
+        ok("...and a way to try again, only where a retry can be made", what === "availability" ? await C.page.locator('[data-testid="todo-retry"]').count() >= 1 : await C.page.locator('[data-testid="todo-retry"]').count() === 0);
+        await C.ctx.close();
+      }
+
+      // ── Two children at two schools; and a coach who is a parent ──
+      // D Mkhize gets a fixture of his own (Westville 1XI), unanswered. K
+      // Dlamini's is the seed's Kearsney fixture (U16B, ten days off). The
+      // coach's read of K Dlamini's side is made a side by moving one of the
+      // seed's other boys into U16B for the length of this walk.
+      const DMF = (await owner.query(
+        `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+         values ($1, '1XI', 'Verify GA-I20 Westville XI', now() + interval '6 days', 'T20', 20, 'scheduled') returning id`, [WES])).rows[0].id;
+      await owner.query(`update player set team_code = 'U16B' where id = $1`, [WHITFIELD]);
+      restoreWhitfield = true;
+      // Both boys unanswered for Kearsney, whatever an earlier walk wrote: the coach's read returns the side, silent.
+      await owner.query(`delete from match_availability where match_id = $1 and player_id in ($2, $3)`, [KEARSNEY, KD, WHITFIELD]);
+      const sideRows = [];
+      const S = await open();
+      S.page.on("response", async (r) => { if (r.url().includes(`/api/read/availability?matchId=${KEARSNEY}`)) { try { sideRows.push((await r.json()).rows ?? []); } catch { /* not json */ } } });
+      const st = (id) => S.page.locator(`[data-testid="${id}"]`);
+      ok("the two-school guardian signs in", await signIn(S.page, /sarah@example\.invalid/));
+      await st("nav-children").click({ timeout: 6000 }).catch(() => {});
+      await S.page.waitForTimeout(1500);
+      await st(`child-chip-${KD}`).click({ timeout: 4000 }).catch(() => {});
+      const kd = await settled(S.page);
+      const kdCard = await todo(S.page).innerText().catch(() => "");
+      ok("K Dlamini's card: 'To do for K Dlamini', one row, for his own side's Kearsney fixture", /To do for K Dlamini/i.test(kdCard) && kd === "1 to do"
+         && await st(`todo-row-${KEARSNEY}`).count() === 1 && /v Kearsney/.test(kdCard), kdCard);
+      ok("...and no row of D Mkhize's: not his Westville fixture, not his name", await st(`todo-row-${DMF}`).count() === 0 && !/Westville|Mkhize/.test(kdCard), kdCard);
+      ok("COACH-PARENT: her coach's read of K Dlamini's fixture returned the side (more than one boy), yet the card shows one row and no other boy",
+         sideRows.some((rows) => rows.length >= 2 && rows.some((x) => x.player_id === WHITFIELD)) && !/Whitfield/.test(kdCard) && await todo(S.page).locator('[data-testid^="todo-row-"]').count() === 1,
+         sideRows.map((r) => r.length));
+      await st(`child-chip-${DM}`).click({ timeout: 4000 }).catch(() => {});
+      await S.page.waitForTimeout(600);
+      const dm = await settled(S.page);
+      const dmCard = await todo(S.page).innerText().catch(() => "");
+      ok("D Mkhize's card is his own list: 'To do for D Mkhize', one row, for his Westville fixture", /To do for D Mkhize/i.test(dmCard) && dm === "1 to do"
+         && await st(`todo-row-${DMF}`).count() === 1 && /Verify GA-I20 Westville XI/.test(dmCard), dmCard);
+      ok("...and no row of K Dlamini's: not the Kearsney fixture, not his name; the two counts are never one", await st(`todo-row-${KEARSNEY}`).count() === 0
+         && !/Kearsney|Dlamini|Whitfield/.test(dmCard) && !/2 to do/.test(await st("family-home-body").innerText().catch(() => "")), dmCard);
+      ok("no scoping refusals or page errors for her", S.refusals.length === 0 && S.errors.length === 0, S.errors.join(" | "));
+      await S.ctx.close();
+    } finally {
+      if (restoreWhitfield) await owner.query(`update player set team_code = '1XI' where id = $1`, [WHITFIELD]).catch(() => {});
+      await owner.end().catch(() => {});
+    }
   }
 
 } catch (e) {
