@@ -2,7 +2,7 @@
 // makes before it writes, the route's codes in words, and which boy a trigger's
 // message is about. No DOM, no network. Invented names only.
 import {
-  SIDE_SIZE, boyNamed, candidates, checkDraft, draftFoot, draftFrom, drop, emptyDraft, freeNo, payload, pick, refusalWords, REFUSAL_WORDS, setNo, setTwelfth,
+  AWAY_AVAILABILITY_WORDS, FIND_LIMIT, SIDE_SIZE, findOthers, boyNamed, candidates, checkDraft, draftFoot, draftFrom, drop, emptyDraft, freeNo, payload, pick, refusalWords, REFUSAL_WORDS, setNo, setTwelfth,
 } from "../src/lib/pickSide.js";
 
 let pass = 0, fail = 0;
@@ -97,6 +97,35 @@ for (const code of ["side_must_be_home_or_away", "players_required", "duplicate_
 ok("the race between two coaches (409) is the duplicate-number sentence", refusalWords({ status: 409, code: "duplicate_batting_no" }, boys).words === REFUSAL_WORDS.duplicate_batting_no);
 ok("an unnamed code says what the server said", /The server said teapot/.test(refusalWords({ status: 418, code: "teapot" }, boys).words));
 ok("no answer is not 'nothing was saved'", !/Nothing was saved/.test(refusalWords(null, boys).words) && /may not have been saved/.test(refusalWords(null, boys).words));
+
+console.log("\nH. Playing a boy up");
+const school = [
+  { id: "a1", name: "A Dummy One", school: "S", team: "U14A" },
+  { id: "y1", name: "Young Dummy One", school: "S", team: "U13A" },
+  { id: "y2", name: "Young Dummy Two", school: "S", team: "U13B" },
+  { id: "e1", name: "Elder Dummy", school: "S", team: "1XI" },
+  { id: "n1", name: "Young Nameless", school: "S", team: null },
+  { id: "x1", name: "Young Stranger", school: "T", team: "U13A" },
+];
+const find = (query, have = ["a1"]) => findOthers(school, query, { school: "S", teamCode: "U14A", have });
+ok("nothing is offered until something is typed", find("").rows.length === 0 && find("   ").rows.length === 0);
+ok("a typed name finds the school's boys on other teams, by team then name", is(find("young").rows.map((r) => r.id), ["y1", "y2", "n1"]), find("young"));
+ok("another school's boy is never offered", !find("young").rows.some((r) => r.id === "x1") && !find("stranger").rows.length, find("stranger"));
+ok("the fixture team's own boys are not offered (they are already listed)", !find("dummy one").rows.some((r) => r.id === "a1"));
+ok("every word typed must be in the name, in any case", is(find("DUMMY two").rows.map((r) => r.id), ["y2"]) && find("dummy zzz").rows.length === 0);
+ok("a boy already in the list is not offered again", !find("young", ["a1", "y1"]).rows.some((r) => r.id === "y1"));
+ok("a boy with no team is offered, with no team named", find("nameless").rows[0]?.team === null);
+ok("no school or no fixture team offers nobody", findOthers(school, "young", { school: null, teamCode: "U14A", have: [] }).rows.length === 0 && findOthers(school, "young", { school: "S", teamCode: null, have: [] }).rows.length === 0);
+const many = Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, name: `Many Dummy ${String(i).padStart(2, "0")}`, school: "S", team: "U13A" }));
+const lim = findOthers(many, "many", { school: "S", teamCode: "U14A", have: [] });
+ok("the finder lists at most FIND_LIMIT and says how many it left out", lim.rows.length === FIND_LIMIT && lim.more === 12 - FIND_LIMIT, lim);
+const up = candidates(school, null, null, { school: "S", teamCode: "U14A", end: "home", may: { status: true }, added: ["y1", "x1", "ghost"] });
+ok("an added boy joins the list marked with his own team; the team's own boys carry none", is(up.map((u) => [u.id, u.from]), [["a1", null], ["y1", "U13A"]]), up);
+ok("an added boy from another school, or unknown, is dropped", !up.some((u) => u.id === "x1" || u.id === "ghost"));
+ok("a boy on the sheet from another team is marked too, and his name stays", is(candidates(school, null, [{ playerId: "e1", side: "home", name: "Elder Dummy" }], { school: "S", teamCode: "U14A", end: "home", may: { status: true } }).find((u) => u.id === "e1")?.from, "1XI"));
+ok("a sheet boy the roster read does not know is kept, with no team", is(candidates(school, null, [{ playerId: "zz", side: "home", name: "Z Unknown" }], { school: "S", teamCode: "U14A", end: "home", may: { status: true } }).find((u) => u.id === "zz")?.from, null));
+ok("the refusal for an added boy is found by his name, in the list the screen uses", boyNamed("Young Dummy One is 14 on 1 January and cannot play U13A: the limit is 13", up) === "y1");
+ok("the away side's line is said plainly", AWAY_AVAILABILITY_WORDS === "Availability shows for the home side only for now.");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

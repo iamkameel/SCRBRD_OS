@@ -3,7 +3,8 @@
  * The pilot documents say only what the app says.
  *
  * docs/pilot/SCORER_HELP.md, PILOT_DAY_RUNBOOK.md and the coach's, parent's
- * and office's help sheets (COACH_HELP.md, PARENT_HELP.md, OFFICE_HELP.md)
+ * and office's help sheets (COACH_HELP.md, PARENT_HELP.md, OFFICE_HELP.md) and
+ * the dress-rehearsal script (REHEARSAL.md)
  * quote every button, tab and sheet by writing it in **bold**. This checks each bold label
  * against apps/web/src: the label must appear there, word for word, as JSX
  * text, a string literal, a template literal or an aria-label. A label that was
@@ -29,7 +30,7 @@
  *
  * Also checked: banned phrases that an earlier draft invented, and each
  * one-page help sheet (scorer, coach, parent, office) staying under its word
- * budget.
+ * budget. REHEARSAL.md (the 8 October script) has its own, larger limit.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
@@ -43,6 +44,7 @@ const DOCS = [
   "docs/pilot/COACH_HELP.md",
   "docs/pilot/PARENT_HELP.md",
   "docs/pilot/OFFICE_HELP.md",
+  "docs/pilot/REHEARSAL.md",
 ];
 
 /**
@@ -156,6 +158,13 @@ const PIN = new Map([
   ["Commentary", { in: ["views/matchcentre/MatchView.jsx"] }],
   ["Open SCRBRD Scorer", { in: ["views/MatchCentreView.jsx"] }],
   ["Start Practice Match", { in: ["scorer/setup.jsx"] }],
+  ["Practice Matches", { in: ["scorer/setup.jsx"] }],         // the start screen's link to the list
+  ["Delete all practice matches", { in: ["scorer/practice.jsx"] }],
+  ["Use my location", { in: ["scorer/practice.jsx"] }],       // the practice setup's weather hint
+  // The coach's Pick the side dialog (REHEARSAL.md looks at it, never saves).
+  ["Pick the side", { in: ["views/cockpit/PickSide.jsx"] }],
+  ["Save the side", { in: ["views/cockpit/PickSide.jsx"] }],
+  ["Close", { in: ["views/cockpit/PickSide.jsx"] }],
   ["Training", { in: ["design/roles.js"] }],                  // the nav label
   ["Bowling & training load", { in: ["views/TrainingView.jsx"] }],
   // The parent's sheet: the family app, the consent switch, the Safeguarding screen.
@@ -244,6 +253,8 @@ const WORD_LIMIT = new Map([
   ["COACH_HELP.md", 650],
   ["PARENT_HELP.md", 650],
   ["OFFICE_HELP.md", 650],
+  // A script for Kameel on 8 October, not a page for a phone: longer than a help sheet.
+  ["REHEARSAL.md", 1400],
 ]);
 
 // ── The corpus: apps/web/src, comments removed ──
