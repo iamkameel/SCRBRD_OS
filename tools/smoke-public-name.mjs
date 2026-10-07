@@ -224,6 +224,14 @@ try {
     ok("a parent's form: 422 form_is_for_the_office", (await call(T.erasmusMum, `/api/players/${ids.erasmus}/public-name`,
       { yes: true, version: VERSION, formName: "x", formDate: "2026-01-01" })).body?.error === "form_is_for_the_office");
     ok("signed out: 401", (await fetch(`${BASE}/api/players/${ids.erasmus}/public-name`)).status === 401);
+    // A record kept for as long as the child is on the books: the words that
+    // go into it are bounded, not whatever a 256 KB body holds.
+    const before = (await q(`select count(*)::int n from public_name_consent`, []))[0].n;
+    ok("a version of 100 KB: 400 version_too_long", (await call(T.erasmusMum, `/api/players/${ids.erasmus}/public-name`,
+      { yes: true, version: "v".repeat(100_000) })).body?.error === "version_too_long");
+    ok("a form name of 100 KB: 400 form_name_too_long", (await call(T.registrar, `/api/players/${ids.botha}/public-name`,
+      { yes: true, version: VERSION, guardianId: guardians.botha, formName: "f".repeat(100_000), formDate: "2026-01-20" })).body?.error === "form_name_too_long");
+    ok("...and neither wrote a record", (await q(`select count(*)::int n from public_name_consent`, []))[0].n === before);
   }
 } catch (e) {
   fail++;
