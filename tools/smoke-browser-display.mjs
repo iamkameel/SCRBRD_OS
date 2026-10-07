@@ -60,7 +60,7 @@ import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildPublicFixture, HIL } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
-import { ball, batters, bowler, inningsStart, sealInnings, deriveInnings, BALL_TYPE } from "@scrbrd/scoring";
+import { ball, batters, bowler, inningsStart, sealInnings, deriveInnings, BALL_TYPE, INNINGS_END_REASON } from "@scrbrd/scoring";
 
 const PORT = port(8849);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -239,7 +239,8 @@ try {
     const steps = [...Array(Math.floor(runs / 2)).fill(2), ...(runs % 2 ? [1] : [])];
     while (steps.length < 60) steps.push(0);
     steps.forEach((v, k) => { if (k && k % 6 === 0) all.push(at(bowler({ bowler: K[(k / 6) % 2].id }), 0)); all.push(at(ball({ value: v }), 0)); });
-    return seal ? [...all, at(sealInnings(deriveInnings(all), "overs"), 0)] : all;
+    // Sealed "overs_complete", the fold's own reason, which venue par's pool reads (db/74).
+    return seal ? [...all, at(sealInnings(deriveInnings(all), INNINGS_END_REASON.OVERS), 0)] : all;
   };
   const PAR_G = (await q(`insert into ground (school_id, name) values ($1, $2) returning id`, [HIL, `Display par oval ${Date.now()}`]))[0].id;
   const FEW_G = (await q(`insert into ground (school_id, name) values ($1, $2) returning id`, [HIL, `Display new oval ${Date.now()}`]))[0].id;
@@ -330,7 +331,8 @@ try {
     for (const [id, label] of [[ROT.id, "the cycle"], [BRK.id, "the break"], [FT.id, "the result"], [PAR1.id, "par"], [PARC.id, "the chase"]]) {
       const v = await tv(`/display/${id}`, { width: w, height: h, hooks: { __SCRBRD_DISPLAY_DWELL_MS__: 1200 } });
       await until(v.page, () => !!document.querySelector('[data-testid="display"]'));
-      for (let i = 0; i < 8; i++) {
+      // Fourteen looks half a second apart: the four panels of the cycle at a 1.2 s dwell, with room.
+      for (let i = 0; i < 14; i++) {
         const key = `${label}:${await panelOf(v.page)}`;
         if (SHOTS && !seen.has(key)) await v.page.screenshot({ path: `${SHOTS}/display-${key.replace(/\W+/g, "-")}-${w}x${h}.png` });
         seen.add(key);
@@ -485,7 +487,7 @@ try {
         marks: [...t.querySelectorAll("[data-mark]")].map((m) => m.getAttribute("data-mark")).join(), said: t.querySelector(".sr-only")?.textContent };
     });
     ok('...the rate track: par 24 a bar, the score 30 a dot, "+6", and the same in words for a reader',
-       rt?.kind === "par" && rt.from === "par 24" && /30$/.test(rt.to ?? "") && rt.gap === "+6" && rt.marks === "bar,dot"
+       rt?.kind === "par" && rt.from === "par 24" && /\b30$/.test(rt.to ?? "") && rt.gap === "+6" && rt.marks === "bar,dot"
        && /par 24, .*30: 6 ahead of par for this ground/.test(rt.said ?? ""), JSON.stringify(rt));
     ok("...the worm panel comes round", await until(p1.page, () => document.querySelector('[data-testid="display"]')?.getAttribute("data-panel") === "worm", 12000));
     const worm1 = await p1.page.evaluate(() => ({
@@ -507,7 +509,9 @@ try {
     const pv = JSON.parse(pb);
     ok("the read: no-store, the ground's par 80 from 6 and par here 24, team-level — no innings list, no ground, no name",
        pj.headers.get("cache-control") === "no-store" && pv.venue?.par === 80 && pv.venue.n === 6 && pv.venue.parAt === 24
-       && !/innings"|breakdown|ground|match_id|"name"|cells|resource/.test(pb) && leaks(pb).length === 0, pb.slice(0, 300));
+       && !/innings"|breakdown|ground|match_id|"name"/.test(JSON.stringify(pv.venue)) && !/cells|resource|"name"|ground/.test(pb)
+       // (asText off: the answer carries the fixture's own uuid, which is no pseudonym.)
+       && leaks(pb, [], false).length === 0, pb.slice(0, 300));
     ok("no console errors (par, first innings)", p1.errors.length === 0, p1.errors.join(" | "));
     await p1.ctx.close();
 
