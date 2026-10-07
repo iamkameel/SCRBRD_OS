@@ -92,6 +92,7 @@ const EXTRA_WORD = { wd: ["wide", "wides"], nb: ["no ball", "no ball"], b: ["bye
  *   W           a solid white chip, a black W — the strongest mark in every palette
  *   wd nb b lb  the wide's colour, with the word: "2wd", "nb", "5nb", "2b", "1lb"
  *   nb+4b       a no-ball and the byes or leg byes run off it (Law 21.15): "nb+4b", "nb+1lb"
+ *   wd+W nb+W   a wicket on a wide or a no-ball (Law 22.9, 21.17): the wicket's chip, the extra on it
  *
  * Every chip carries its figure or its word, so colour is never the only
  * signal (WCAG 1.4.1).
@@ -100,6 +101,15 @@ export function chipFor(mark) {
   const m = String(mark ?? "").trim();
   if (m === "" || m === "·" || m === "0") return { kind: "dot", text: "·", say: "dot" };
   if (/^w$/i.test(m)) return { kind: "wicket", text: "W", say: "wicket" };
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17): the wicket's chip,
+  // the extra on it — "wd+W", "2wd+W", "3nb+W".
+  const xw = m.match(/^(\d*)(wd|nb)\+w$/i);
+  if (xw) {
+    const n = xw[1] === "" ? null : Number(xw[1]);
+    const wd = xw[2].toLowerCase() === "wd";
+    const what = wd ? (n ? `${n} wides` : "wide") : (n ? `no ball, ${n} runs` : "no ball");
+    return { kind: "wicket", text: `${xw[1]}${xw[2].toLowerCase()}+W`, say: `${what}, and a wicket` };
+  }
   if (/^\d+$/.test(m)) {
     const n = Number(m);
     const kind = n === 1 ? "one" : n === 2 ? "two" : n === 3 ? "three" : n === 6 ? "six" : "four";

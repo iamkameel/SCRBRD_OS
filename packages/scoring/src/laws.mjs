@@ -58,6 +58,7 @@ import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_
 import { WITHDRAWN_PENALTY_REASONS } from "./events.mjs";
 import { INNINGS_END_REASON } from "./events.mjs";   // SCRBRD-130 R1
 import { FACES_NEXT, FACES_NEXT_VALUES, NOT_IN_OVER, suspensionScope, normaliseDismissal } from "./events.mjs";
+import { dismissalsOffExtra, isWicketBall } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { retirementDismissal, isMidOver, isKeeperRef, keeperOf, pairState, PAIR_STATE } from "./replay.mjs";
 import { superOverNumber } from "./events.mjs";
@@ -97,6 +98,9 @@ export const REFUSAL = Object.freeze({
   MID_OVER_NO_REASON:     "mid_over_no_reason",     // Law 17.7.1: a change during an over says why (SCRBRD-080)
   // A dismissal with no delivery (SCRBRD-081).
   NEEDS_A_DELIVERY:       "needs_a_delivery",       // only retired out and timed out happen without a ball
+  // A wicket on a wide or a no-ball (Law 22.9, Law 21.17).
+  NOT_OUT_OFF_WIDE:       "not_out_off_wide",       // off a wide: run out, stumped, hit wicket, obstructing the field — nothing else
+  NOT_OUT_OFF_NO_BALL:    "not_out_off_no_ball",    // off a no-ball: run out, hit the ball twice, obstructing the field — nothing else
   NOT_NEXT_IN:            "not_next_in",            // timed out: the batter was not the one due in
   // Whose the runs off a no-ball were (SCRBRD-068).
   NB_RUNS_UNKNOWN:        "nb_runs_unknown",        // not off the bat, byes or leg byes, or not on a no-ball
@@ -173,6 +177,9 @@ export const REFUSAL_TEXT = Object.freeze({
   // Law 17.7.1. No clause number in the words: Kameel is verifying them against the current Code.
   mid_over_no_reason: "the bowler was changed during an over without saying why — injury or suspension",
   needs_a_delivery: "only retired out and timed out are recorded without a ball — every other way out needs a delivery",
+  // Law 22.9 and Law 21.17. No clause number in the words.
+  not_out_off_wide: "off a wide a batter can be out only run out, stumped, hit wicket or obstructing the field",
+  not_out_off_no_ball: "off a no ball a batter can be out only run out, hit the ball twice or obstructing the field",
   not_next_in: "a batter can be timed out only while an end is empty and he is the one due in",
   nb_runs_unknown: "runs off a no-ball were said to be something other than off the bat, byes or leg byes",
   out_at_unknown: "the end the batter was out at was not the striker's or the bowler's",
@@ -594,17 +601,28 @@ function ballRefusal(innings, inn, i, ev, edition) {
     return REFUSAL.NB_RUNS_UNKNOWN;
   }
 
+  // A wicket on a wide or a no-ball (Law 22.9, Law 21.17): only the ways
+  // out the Law allows off that delivery. The fold would read any other as
+  // no wicket at all, and the scorer would see a batter he gave out still in.
+  const type = ev.type ?? BALL_TYPE.RUN;
+  const offExtra = dismissalsOffExtra(type);
+  if (offExtra != null && ev.dismissal != null && !offExtra.has(normaliseDismissal(ev.dismissal))) {
+    return type === BALL_TYPE.WIDE ? REFUSAL.NOT_OUT_OFF_WIDE : REFUSAL.NOT_OUT_OFF_NO_BALL;
+  }
+  const wicket = isWicketBall(ev);
+
   // The end a batter was out at is the striker's or the bowler's, and only
-  // a wicket has one (SCRBRD-069). The fold ignores anything else — and would
-  // leave the survivor where the scorer said he was not.
-  if (ev.outAt != null && ((ev.type ?? BALL_TYPE.RUN) !== BALL_TYPE.WICKET || !RUN_OUT_ENDS.has(ev.outAt))) {
+  // a wicket has one (SCRBRD-069) — a W, or a wicket on a wide or a no-ball.
+  // The fold ignores anything else — and would leave the survivor where the
+  // scorer said he was not.
+  if (ev.outAt != null && (!wicket || !RUN_OUT_ENDS.has(ev.outAt))) {
     return REFUSAL.OUT_AT_UNKNOWN;
   }
 
   // Whoever is out must be one of the two batting. `dismissed` defaults to
   // the striker at replay; one that names anyone else would record a wicket
   // for a boy who was not at the crease and leave the real pair untouched.
-  if ((ev.type ?? BALL_TYPE.RUN) === BALL_TYPE.WICKET && ev.dismissed != null
+  if (wicket && ev.dismissed != null
       && ev.dismissed !== inPlay.striker && ev.dismissed !== inPlay.nonStriker) {
     return REFUSAL.NOT_AT_CREASE;
   }
@@ -615,9 +633,8 @@ function ballRefusal(innings, inn, i, ev, edition) {
   // card. With no keeper recorded — every log before SCRBRD-126, a pad
   // that skipped the question — nothing changes; nor for a stumping with no
   // fielder named, which the fold gives to the keeper. A stumping off a wide
-  // is not a delivery type this model writes (a wicket is its own type, W),
-  // so nothing about a wide changes.
-  if ((ev.type ?? BALL_TYPE.RUN) === BALL_TYPE.WICKET && normaliseDismissal(ev.dismissal) === DISMISSAL.STUMPED
+  // is a wicket like any other, and the same rule holds.
+  if (wicket && normaliseDismissal(ev.dismissal) === DISMISSAL.STUMPED
       && typeof ev.fielder === "string" && ev.fielder !== "") {
     const k = keeperOf(inPlay);
     if (k != null && !isKeeperRef(k.id, k.name, ev.fielder)) return REFUSAL.STUMPED_NOT_KEEPER;
@@ -628,7 +645,7 @@ function ballRefusal(innings, inn, i, ev, edition) {
   // is out off one. The fold ignores a reason it does not know, and would
   // count the ball the scorer said did not.
   if (ev.notInOver != null
-      && (!NOT_IN_OVER.has(ev.notInOver) || (ev.type ?? BALL_TYPE.RUN) === BALL_TYPE.WICKET)) {
+      && (!NOT_IN_OVER.has(ev.notInOver) || wicket)) {
     return REFUSAL.NOT_IN_OVER_UNKNOWN;
   }
   if (ev.facesNext != null) return facesNextRefusal(inPlay, ev, edition);
@@ -662,11 +679,11 @@ function ballRefusal(innings, inn, i, ev, edition) {
  * @returns {Refusal | null}
  */
 function facesNextRefusal(inn, ev, edition) {
-  const type = ev.type ?? BALL_TYPE.RUN;
   const choice = ev.facesNext;
   if (!FACES_NEXT_VALUES.has(choice)) return REFUSAL.FACES_NEXT_UNKNOWN;
   const noRuns = (ev.value ?? 0) === 0;
-  if (type === BALL_TYPE.WICKET) {
+  // A wicket on a wide or a no-ball (isWicketBall()) is a wicket here too.
+  if (isWicketBall(ev)) {
     const outId = ev.dismissed ?? inn.striker;
     const outRole = outId === inn.striker ? FACES_NEXT.STRIKER : FACES_NEXT.NON_STRIKER;
     if (choice === outRole) return REFUSAL.FACES_NEXT_UNKNOWN;

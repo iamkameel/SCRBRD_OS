@@ -1,4 +1,4 @@
-import { BALL_TYPE, DISMISSAL_LABEL, normaliseDismissal } from "@scrbrd/scoring";
+import { BALL_TYPE, DISMISSAL_LABEL, normaliseDismissal, isWicketBall } from "@scrbrd/scoring";
 
 /**
  * A ball, said aloud (WCAG 4.1.3) — the words the spectator pages share.
@@ -45,10 +45,14 @@ export function ballWords(item, ev) {
   const v = Number.isInteger(ev?.value) ? ev.value : 0;
   if (item.kind === "wicket") {
     const how = DISMISSAL_LABEL[/** @type {keyof typeof DISMISSAL_LABEL} */ (normaliseDismissal(ev?.dismissal) ?? "")];
-    return how ? `Wicket — ${how.toLowerCase()}` : "Wicket";
+    // A wicket on a wide or a no-ball (Law 22.9, 21.17): the extra first, as
+    // the commentary tells it — the score moved by its run as well.
+    const extra = type === BALL_TYPE.WIDE ? "Wide. " : type === BALL_TYPE.NO_BALL ? "No ball. " : "";
+    return `${extra}${how ? `Wicket — ${how.toLowerCase()}` : "Wicket"}`;
   }
-  // A wicket the free hit saved is not a wicket, and is not called one.
-  if (type === BALL_TYPE.WICKET) return "Free hit: not out";
+  // A wicket the free hit saved is not a wicket, and is not called one —
+  // a W, or a stumping off a wide on a free hit (isWicketBall()).
+  if (isWicketBall(ev)) return type === BALL_TYPE.WIDE ? "Wide. Free hit: not out" : "Free hit: not out";
   if (type === BALL_TYPE.WIDE) return v > 0 ? `Wide, and ${num(v)} more` : "Wide";
   if (type === BALL_TYPE.NO_BALL) return item.kind === "four" || item.kind === "six" ? `No ball, ${runs(item.kind === "six" ? 6 : 4)}` : "No ball";
   if (type === BALL_TYPE.BYE) return v > 0 ? `${cap(num(v))} ${v === 1 ? "bye" : "byes"}` : "Dot ball";

@@ -253,6 +253,12 @@ SELECT
         AND NOT EXISTS (SELECT 1 FROM role_assignment
                          WHERE role IN ('superadmin', 'platformadmin') AND school_id IS NOT NULL)
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Platform roles belong to no school",
+  -- db/87: a wide or a no-ball carries only the ways out the Laws allow off
+  -- it (Law 22.9, 21.17), and every reader counts that wicket.
+  CASE WHEN to_regprocedure('ball_is_wicket(text,text)') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'ball_event_out_off_extra' AND tgenabled = 'O')
+        AND pg_get_functiondef('ball_wicket_stands(uuid,smallint,integer,text,text,text)'::regprocedure) LIKE '%ball_is_wicket(%'
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Wickets off a wide or no-ball",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

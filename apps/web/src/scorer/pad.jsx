@@ -304,9 +304,14 @@ const segment = (on) => ({ minHeight: "44px", padding: `0 ${T.space.xs}`, fontSi
  * asks its type — a height no-ball or a beamer is a free hit — and whose the
  * runs are, each already on its commonest answer, as the no-ball sheet asked.
  */
-function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true }) {
+function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wicketable = false }) {
   const x = extraOf(kind);
   const [nb, setNb] = useState(NB_DEFAULT);
+  // And a wicket? (Law 22.9, 21.17): off by default, so a runs key records
+  // in one tap as it always did; on, the runs key moves on to the wicket
+  // sheet, which offers only the ways out the Law allows off this extra.
+  const [wicket, setWicket] = useState(false);
+  const canWicket = wicketable && (kind === "Wd" || kind === "Nb");
   const likelyRef = useRef(null);
   useEffect(() => { try { likelyRef.current?.focus({ preventScroll: true }); } catch { /* focus is a courtesy */ } }, [kind]);
   if (!x) return null;
@@ -316,7 +321,13 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true }) 
     <div role="group" aria-label={question} data-testid="extra-panel" data-kind={kind}
       style={{ display: "grid", gap: T.space.sm, background: T.surface.canvas }}>
       <div style={{ display: "flex", alignItems: "center", gap: T.space.sm }}>
-        <h3 style={{ ...T.role.title.md, fontSize: "18px", flex: 1, margin: 0, color: T.content.primary }}>{question}</h3>
+        <h3 style={{ ...T.role.title.md, fontSize: "18px", flex: 1, minWidth: 0, margin: 0, color: T.content.primary }}>{question}</h3>
+        {canWicket && (
+          <Key face={<><Icon name="bails-off"/> Wicket</>} testid="extra-wicket" pressed={wicket} onClick={() => setWicket((w) => !w)}
+            say={kind === "Wd" ? "Wicket off this wide" : "Wicket off this no ball"}
+            style={{ padding: `0 ${T.space.md}`, flexShrink: 0,
+              ...(wicket ? { background: T.semantic.critical, color: inkOn(T.semantic.critical), border: `1px solid ${T.semantic.critical}`, fontWeight: 600 } : {}) }}/>
+        )}
         <Key face="Cancel" testid="extra-cancel" onClick={onCancel} style={{ padding: `0 ${T.space.md}`, flexShrink: 0 }}/>
       </div>
       {isNb && (
@@ -362,8 +373,8 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true }) 
           const likely = n === x.likely;
           return (
             <button key={n} ref={likely ? likelyRef : undefined} type="button" data-testid={`extra-run-${n}`} data-likely={likely || undefined}
-              aria-label={`${runsWords(kind, n)}${likely ? " (the usual)" : ""}`}
-              className="pressBtn os-state" onClick={() => onRuns(n, nb)}
+              aria-label={`${runsWords(kind, n)}${wicket ? ", then the wicket" : likely ? " (the usual)" : ""}`}
+              className="pressBtn os-state" onClick={() => onRuns(n, nb, wicket)}
               style={{ ...keyBase("56px"), ...T.role.figure.md, fontSize: "24px",
                 ...(likely ? { background: T.content.primary, color: T.surface.canvas, border: `2px solid ${T.content.primary}` } : {}) }}>
               {n}
@@ -429,7 +440,7 @@ function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null 
  * tap on No ball always asked it: a pad that cannot score opens the fix, not
  * the runs. `undoWhat` is what undo will take back, in words (prompts.js).
  */
-export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBall, onUndo, guard, undoWhat = null, preset = null }) {
+export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBall, onExtraWicket = null, onUndo, guard, undoWhat = null, preset = null }) {
   // `preset` is where the pad opens, for the pitch deck's showcase (views/pitchdeck/):
   // a ball part-way through, drawn by this pad and not by a picture of it. The
   // scorer never passes it, so every pad on a ground opens on Shot as before.
@@ -456,7 +467,15 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
     if (guard && !guard()) return;
     setExtra(kind);
   };
-  const recordExtra = (n, nb) => {
+  const recordExtra = (n, nb, wicket = false) => {
+    // A wicket on the wide or the no-ball: the engine opens the wicket
+    // sheet with the extra's answers, and records nothing until it confirms.
+    if (wicket && onExtraWicket && (extra === "Wd" || extra === "Nb")) {
+      if (extra === "Nb") onExtraWicket("Nb", n, nb.type, n > 0 ? nb.from : null);
+      else onExtraWicket("Wd", n);
+      if (basic) setExtra(null); else reset();
+      return;
+    }
     const call = extraCall(extra, n, { basic, shot, area, nb });
     if (!call) return;
     if (call.to === "wide") onWide(...call.args);
@@ -474,7 +493,7 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
     : shot === "missed" ? "Runs after a miss are recorded as byes." : null;
 
   const runs = extra && <ExtraRuns key={extra} kind={extra} onRuns={recordExtra} onCancel={() => setExtra(null)}
-    fourth={inn?.lawsEdition === 4} freeHits={inn?.freeHits !== false}/>;
+    fourth={inn?.lawsEdition === 4} freeHits={inn?.freeHits !== false} wicketable={!!onExtraWicket}/>;
   const strip = (
     <Strip extra={extra} onExtra={openExtra} undoWhat={undoWhat} midBall={extra != null || (!basic && phase > 1)} panel={runs}
       // A dot mid-ball carries what the scorer has told the pad so far — the

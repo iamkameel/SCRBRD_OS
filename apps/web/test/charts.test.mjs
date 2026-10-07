@@ -144,24 +144,28 @@ console.log("A. Wides and no-balls with runs");
 }
 
 // ── B. A wicket off an illegal delivery ──────────────────────────────────
-// The model writes no wicket ON a wide or a no-ball: a wicket is its own type,
-// W, a legal ball (laws.mjs). What follows an illegal delivery is the free
-// hit, where only a run out (and the other non-bowler modes) stands, and the
-// fold says which wickets stood. A no-ball the pad sent with a dismissal on it
-// is a no-ball to the fold, and its runs count.
+// What follows a no-ball is the free hit, where only a run out (and the other
+// non-bowler modes) stands, and the fold says which wickets stood. Since
+// 2026-10-07 a wicket can also fall ON a wide or a no-ball (Law 22.9, 21.17:
+// a run out off a no-ball here, and a stumping off a wide): the extra's runs
+// count, it is no ball of the over, and the worm marks the wicket where it
+// fell, at the legal-ball x of the ball before it.
 console.log("\nB. A wicket off an illegal delivery");
 {
   const e = [...open(0, { overs: 2 }),
     b(0, BALL_TYPE.NO_BALL, 2, { nbType: "front_foot" }),              // free hit next
     b(0, BALL_TYPE.WICKET, 0, { dismissal: DISMISSAL.BOWLED }),         // saved by the free hit
-    b(0, BALL_TYPE.NO_BALL, 1, { nbType: "front_foot", dismissal: DISMISSAL.RUN_OUT }), // a no-ball; the fold takes no wicket
-    b(0, BALL_TYPE.WICKET, 1, { dismissal: DISMISSAL.RUN_OUT, dismissed: "p2" }), // on the free hit: stands
-    batters({ innings: 0, ...at(), striker: "p1", nonStriker: "p3" }),
-    run(0, 4), b(0, BALL_TYPE.WIDE, 1), dot(0), dot(0),
+    b(0, BALL_TYPE.NO_BALL, 1, { nbType: "front_foot", dismissal: DISMISSAL.RUN_OUT, dismissed: "p2", outAt: "striker_end" }), // run out off a no-ball: stands
+    batters({ innings: 0, ...at(), nonStriker: "p3" }),
+    b(0, BALL_TYPE.WICKET, 1, { dismissal: DISMISSAL.RUN_OUT, dismissed: "p3" }), // on the free hit: stands
+    batters({ innings: 0, ...at(), nonStriker: "p4" }),
+    run(0, 4), b(0, BALL_TYPE.WIDE, 0, { dismissal: DISMISSAL.STUMPED }),  // stumped off a wide: stands
+    batters({ innings: 0, ...at(), striker: "p5" }),
+    dot(0), dot(0),
     next(0, "y"),
     b(0, BALL_TYPE.WICKET, 0, { dismissal: DISMISSAL.BOWLED }), run(0, 2)];
   const [inn] = deriveInningsList([e]);
-  ok(`the fold: two of the three W deliveries stood, the free hit saving one, and the no-ball took none (${inn.wickets} down, ${inn.runs} runs)`, inn.wickets === 2 && inn.fow.length === 2);
+  ok(`the fold: two of the three W deliveries stood, the free hit saving one, and both wickets on extras (${inn.wickets} down, ${inn.runs} runs)`, inn.wickets === 4 && inn.fow.length === 4 && inn.balls === 7);
   const m = render(WormChart, { innings: [inn], curIn: 0, match: { overs: 2 }, events: [e] });
   const w = wormOf(m);
   const want = inn.fow.map((f) => ({ ball: Number(f.overs.split(".")[0]) * 6 + Number(f.overs.split(".")[1] ?? 0), runs: f.runs }));
@@ -172,6 +176,32 @@ console.log("\nB. A wicket off an illegal delivery");
   ok(`...which ends on the total (${line[line.length - 1]?.runs} / ${inn.runs})`, line[line.length - 1]?.runs === inn.runs);
   const bars = barsOf(render(ManhattanChart, { inn, match: { overs: 2 }, events: e }));
   ok(`runs per over are the fold's (${JSON.stringify(bars)} / ${JSON.stringify(foldByOver(e))})`, JSON.stringify(bars) === JSON.stringify(foldByOver(e)));
+  // The run rate, as the chart draws it (runRates over the shared
+  // projection): at each over's end, the fold's runs over the fold's balls of
+  // the over — the wides and no-balls with a wicket on them no ball of it.
+  const p = projectInnings(inn, { events: e });
+  const rates = runRates(p, null, inn).pts;
+  const byOver = foldByOver(e);
+  // (Each completed over; the innings is still going, at 1.1.)
+  const want2 = byOver.map((_, k) => {
+    const runsTo = byOver.slice(0, k + 1).reduce((s, x) => s + x, 0);
+    const ballsTo = Math.min(inn.balls, (k + 1) * 6);
+    return { over: ballsTo / 6, rr: (runsTo / ballsTo) * 6, complete: ballsTo === (k + 1) * 6 };
+  }).filter((q) => q.complete);
+  ok(`the run rate at each completed over is the fold's (${JSON.stringify(rates.map((q) => [q.over, q.rr]))} / ${JSON.stringify(want2.map((q) => [q.over, q.rr]))})`,
+     want2.length === 1 && rates.length === want2.length && rates.every((q, k) => Math.abs(q.over - want2[k].over) < 1e-9 && Math.abs(q.rr - want2[k].rr) < 1e-9));
+  // The same innings to its end (the last ball a stumping off a wide is no
+  // ball of it; three dots and two more see the overs out): the last point is
+  // the innings' own rate.
+  const ended = [...e, b(0, BALL_TYPE.WIDE, 0, { dismissal: DISMISSAL.STUMPED }), batters({ innings: 0, ...at(), striker: "p6" }),
+    dot(0), dot(0), dot(0), dot(0), dot(0)];
+  const innE = deriveInnings(ended);
+  const ratesE = runRates(projectInnings(innE, { events: ended }), null, innE).pts;
+  ok(`...and to the innings' end, on its own rate (${ratesE.at(-1)?.rr} / ${(innE.runs / innE.balls) * 6}; ${innE.wickets} down off ${innE.balls})`,
+     innE.complete && innE.balls === 12 && innE.wickets === 5 && Math.abs((ratesE.at(-1)?.rr ?? NaN) - (innE.runs / innE.balls) * 6) < 1e-9);
+  ok(`...and each over's wickets sum to the fold's (${p.overs.map((o) => o.wickets).join("+")} / ${inn.wickets})`,
+     p.overs.reduce((s, o) => s + o.wickets, 0) === inn.wickets && p.wickets.length === inn.wickets);
+  ok("...the run-rate chart draws it, every number finite", clean(render(RunRateChart, { inn, match: { overs: 2 }, target: null, events: e })));
 }
 
 // ── C. Penalty runs, and events that are not deliveries ──────────────────
@@ -310,14 +340,21 @@ console.log("\nF. The shared projection, over generated innings");
         if (r < 0.1) ev = b(i, BALL_TYPE.WIDE, pick([0, 0, 1, 4]));
         else if (r < 0.2) ev = b(i, BALL_TYPE.NO_BALL, pick([0, 1, 4, 6]), rnd() < 0.3 ? { nbRuns: "leg_byes" } : {});
         else if (r < 0.27) ev = b(i, pick([BALL_TYPE.BYE, BALL_TYPE.LEG_BYE]), pick([1, 2, 4]));
-        else if (r < 0.32) ev = b(i, BALL_TYPE.WICKET, 0, { dismissal: DISMISSAL.CAUGHT });
+        // A W, or (since 2026-10-07) a wicket on a wide or a no-ball: the
+        // striker stumped off a wide, or run out off a no-ball with a run.
+        else if (r < 0.32) {
+          const w = rnd();
+          ev = w < 0.6 ? b(i, BALL_TYPE.WICKET, 0, { dismissal: DISMISSAL.CAUGHT })
+            : w < 0.8 ? b(i, BALL_TYPE.WIDE, 0, { dismissal: DISMISSAL.STUMPED })
+            : b(i, BALL_TYPE.NO_BALL, 1, { dismissal: DISMISSAL.RUN_OUT, outAt: "striker_end", dismissed: deriveInnings(e).nonStriker });
+        }
         else if (r < 0.36) { e.push(penalty({ innings: i, ...at(), ...id(), runs: 5, toBattingTeam: rnd() < 0.5, reason: rnd() < 0.5 ? "helmet_struck" : "pitch_damage" })); continue; }
         else if (r < 0.38 && last) { e.push(voidEvent({ innings: i, ...at(), target: last.id })); last = null; continue; }
         else ev = run(i, pick([0, 0, 1, 1, 2, 3, 4, 6]));
         e.push(ev); last = ev;
         const f = deriveInnings(e);
         legal = f.balls;
-        if (ev.type === BALL_TYPE.WICKET && f.striker == null && f.nonStriker != null && striker <= 11) e.push(batters({ innings: i, ...at(), striker: `p${striker++}`, nonStriker: f.nonStriker }));
+        if (f.striker == null && f.nonStriker != null && striker <= 11) e.push(batters({ innings: i, ...at(), striker: `p${striker++}`, nonStriker: f.nonStriker }));
         if (f.balls > 0 && f.balls % 6 === 0 && f.bowler == null) e.push(next(i, f.balls / 6 % 2 ? "y" : "x"));
       }
       return e;
