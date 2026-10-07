@@ -351,8 +351,11 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
           </div>
         </div>
 
-        {/* Accounts. Which list depends on whether there is a server. */}
-        <div style={{marginTop:"20px",borderRadius:"14px",border:`1px solid ${clr(T.brand.blue,0.2)}`,background:clr(T.brand.blue,0.05),padding:"16px"}}>
+        {/* Accounts. Which list depends on whether there is a server, and the
+            seeded list shows only where that server accepts development
+            sign-in: on production every one of them is refused, and a coach
+            who taps one is told to find a code instead. */}
+        {(live === false || devLogin) && <div style={{marginTop:"20px",borderRadius:"14px",border:`1px solid ${clr(T.brand.blue,0.2)}`,background:clr(T.brand.blue,0.05),padding:"16px"}}>
           <div style={{fontFamily:"'Syne',sans-serif",fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.brand.blueText,marginBottom:"10px"}}>
             {live ? "✦ Pilot accounts — click to fill" : "✦ Demo accounts — click to fill"}
           </div>
@@ -372,7 +375,7 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
               : live ? "Signed in against the live API. Data is real and permission-checked."
                      : "No server reachable — demonstration data only. Nothing is saved beyond this device."}
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

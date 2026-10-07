@@ -8,11 +8,11 @@ A practice match is scored on the real pad, with typed teams and names. It is ke
 
 So a practice match cannot show **Sent**, a handover, the ground display or a public page: none of these exist for it. Steps marked P use a practice match, on production, with invented names only. Never type a real child's name.
 
-Steps marked S need a fixture on a server. Production has no seed, and its roster holds the school's real boys after the 6 October load. A test fixture there would put real children in the ball log, which cannot be deleted. So do S steps only on a demonstration copy (a separate database with the seed, per DEPLOYING.md, "A demonstration is not a pilot"). If there is none, skip them: they are first seen on 15 October.
+Steps marked S need a fixture on a server. Production has no seed, and its roster holds the school's real boys after the 6 October load. A test fixture there would put real children in the ball log, which cannot be deleted. So do S steps only on a demonstration copy (a separate database with the seed: DEMO_COPY.md). If there is none, skip them: they are first seen on 15 October.
 
 ## 1. Wake the service (P)
 
-☐ On phone A, open `https://scrbrd.onrender.com/api/health` with a stopwatch. See `"ok":true`, `"db":"ok"`, `"public":"on"`, `"auth":"token_only"`. Time to the answer: ______ (up to a minute is expected).
+☐ On phone A, open `https://scrbrd.onrender.com/api/health` with a stopwatch. See `"ok":true`, `"db":"ok"`, `"auth":"token_only"`, and `"public":"on"` if you turned the public pages on (otherwise `"off"`). Time to the answer: ______ (up to a minute is expected).
 
 ☐ Then open `https://scrbrd.onrender.com/app`. Time to the sign-in screen: ______.
 
