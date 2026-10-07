@@ -84,6 +84,28 @@ export function describeUrl(url) {
 }
 
 /**
+ * A connection string split for a child process: the string WITHOUT its
+ * password, for --dbname, and the password alone, for PGPASSWORD in the
+ * child's environment. A process's arguments are readable by every user on
+ * the machine (`ps`, /proc/<pid>/cmdline) for as long as it runs — a dump of
+ * production runs for minutes — and its environment only by its own user.
+ * The password comes out of the userinfo and out of a `password=` parameter
+ * alike. A string that is not a postgres URL is passed as it is.
+ * @param {string} url
+ * @returns {{ dbname: string, env: Record<string, string> }}
+ */
+export function childConnection(url) {
+  let u;
+  try { u = new URL(url); } catch { return { dbname: url, env: {} }; }
+  if (!/^postgres(ql)?:$/.test(u.protocol)) return { dbname: url, env: {} };
+  let password = u.password ? decodeURIComponent(u.password) : "";
+  const param = u.searchParams.get("password");
+  if (param != null) { password = param; u.searchParams.delete("password"); }
+  u.password = "";
+  return { dbname: u.toString(), env: password ? { PGPASSWORD: password } : {} };
+}
+
+/**
  * db/SHIPPED.sha256 → Map of migration file name (no `db/`) → sha256.
  * @param {string} text
  */
@@ -286,6 +308,10 @@ async function takeCounts(opts, withDump) {
     if (p && existsSync(p)) { console.error(`✗ ${p} already exists; refusing to overwrite a backup`); process.exit(2); }
   }
 
+  // Every file this writes is the owner's alone from the moment it exists:
+  // pg_dump inherits the mask, so the dump is never readable by anybody else,
+  // not even while it is being written (the chmod below is the belt).
+  process.umask(0o077);
   const client = await connect(url);
   try {
     await beginReadOnly(client);
@@ -300,8 +326,11 @@ async function takeCounts(opts, withDump) {
       }
       const { rows: [{ snap }] } = await client.query("SELECT pg_export_snapshot() AS snap");
       console.log(`Dumping ${describeUrl(url)} (schema public, custom format) in snapshot ${snap}…`);
+      // The password goes in the child's environment, never its arguments.
+      const conn = childConnection(url);
       const r = spawnSync("pg_dump", ["--format=custom", "--schema=public", `--snapshot=${snap}`,
-        "--no-password", "--file", opts.out, "--dbname", url], { encoding: "utf8", stdio: ["ignore", "inherit", "pipe"] });
+        "--no-password", "--file", opts.out, "--dbname", conn.dbname],
+        { encoding: "utf8", stdio: ["ignore", "inherit", "pipe"], env: { ...process.env, ...conn.env } });
       if (r.status !== 0) {
         console.error(`✗ pg_dump failed (exit ${r.status})`);
         // pg_dump names objects, not rows; a connection failure names the host,
@@ -369,8 +398,10 @@ async function restore(opts) {
   writeFileSync(listFile, withoutPublicSchema(toc.stdout), { mode: 0o600 });
 
   console.log(`Restoring ${basename(opts.from)} into ${describeUrl(url)}…`);
+  const conn = childConnection(url);
   const r = spawnSync("pg_restore", ["--no-owner", "--exit-on-error", "--single-transaction", "--no-password",
-    "--use-list", listFile, "--dbname", url, opts.from], { encoding: "utf8", stdio: ["ignore", "inherit", "pipe"] });
+    "--use-list", listFile, "--dbname", conn.dbname, opts.from],
+    { encoding: "utf8", stdio: ["ignore", "inherit", "pipe"], env: { ...process.env, ...conn.env } });
   rmSync(dir, { recursive: true, force: true });
   if (r.status !== 0) { console.error(`✗ pg_restore failed (exit ${r.status}); nothing was restored (one transaction)\n${r.stderr}`); process.exit(1); }
   console.log("✓ restored");

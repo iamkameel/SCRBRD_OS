@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   isLocalUrl, describeUrl, parseShipped, compareLedgers, compareCounts, rolesInAcl, parseCounts, majorOf, withoutPublicSchema,
+  childConnection,
 } from "./backup-verify.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -118,6 +119,18 @@ for (const [why, bad] of /** @type {[string, object][]} */ ([
   ok(`a counts file with ${why} is refused`, t);
 }
 ok("majorOf reads server and client versions", majorOf("16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)") === 16 && majorOf("17.4") === 17 && majorOf("15.8.1.093") === 15);
+
+// ── childConnection: the password in the environment, never in argv ──
+{
+  const a = childConnection("postgres://owner:s%40cret%2Fpw@127.0.0.1:6543/scrbrd_bk?sslmode=require");
+  ok("the password leaves the connection string pg_dump is given",
+     !/s%40cret|s@cret/.test(a.dbname) && a.dbname === "postgres://owner@127.0.0.1:6543/scrbrd_bk?sslmode=require", a.dbname);
+  ok("...and arrives, decoded, as PGPASSWORD", a.env.PGPASSWORD === "s@cret/pw");
+  const b = childConnection("postgresql://owner@db.example.invalid/scrbrd?password=pw2&sslmode=require");
+  ok("a password= parameter is moved too", !b.dbname.includes("pw2") && /sslmode=require/.test(b.dbname) && b.env.PGPASSWORD === "pw2", b.dbname);
+  const c = childConnection("postgres://owner@127.0.0.1/scrbrd");
+  ok("no password: no PGPASSWORD, the string unchanged", c.dbname === "postgres://owner@127.0.0.1/scrbrd" && !("PGPASSWORD" in c.env));
+}
 
 // ── the guard, as a process ──
 const run = (/** @type {string[]} */ args, /** @type {Record<string,string>} */ env) =>
