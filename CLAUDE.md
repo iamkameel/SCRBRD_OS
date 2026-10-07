@@ -47,7 +47,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   GA-I20: one list per child of what a parent must do, from consents with
   their exact version and time, availability, lifts and collection handovers;
   two children at two schools kept apart, a pending or revoked link said
-  plainly). A new problem joins this list
+  plainly) and corrections everywhere (added 2026-10-07, gap analysis GA-I36:
+  a corrected ball or an approved amendment reaching every place the score is
+  shown, the pad, the Match Centre, the public page, careers, reports and the
+  charts, with derived figures refreshed and both versions kept in the audit).
+  A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write
