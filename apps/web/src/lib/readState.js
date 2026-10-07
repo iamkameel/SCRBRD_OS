@@ -74,6 +74,8 @@ export const READ_STATES = Object.freeze(["loading", "empty", "unassessed", "for
 const PRIVILEGE = "42501";
 
 const lower = (s) => String(s ?? "").trim();
+/** The noun phrase without its article, for "No … on record": "the fixtures" → "fixtures". */
+const bare = (s) => lower(s).replace(/^(the|your|this|these|a|an)\s+/i, "");
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const codeOf = (error) => (typeof error === "string" ? error : null);
 
@@ -110,19 +112,29 @@ export function agoWords(ms) {
   return `${d} days ago`;
 }
 
+/**
+ * The two phrases the list modules (lib/todo.js, lib/queue.js) put inside a
+ * row or a count, with no full stop, in the forms this file's sentences use:
+ * "Could not read the fixtures" and "2 reads failed". One wording, here.
+ * @param {string} what
+ */
+export const couldNotRead = (what) => `Could not read ${lower(what) || "this"}`;
+/** @param {number} n */
+export const readsFailed = (n) => `${n} read${n === 1 ? "" : "s"} failed`;
+
 /** The sentence for one state. `what` is the reader's own noun phrase. */
 export function sentenceFor(state, what, extra = {}) {
   const named = lower(what);
   const w = named || "this";
   switch (state) {
     case "loading":    return named ? `Reading ${w}…` : "Reading…";
-    case "empty":      return named ? `No ${w} on record.` : "Nothing on record.";
+    case "empty":      return named ? `No ${bare(named)} on record.` : "Nothing on record.";
     case "unassessed": return "Not assessed yet.";
     case "forbidden":  return `Your role may not read ${w}.`;
     case "disabled":   return named ? `Your school has switched off ${w}.` : "Your school has switched this off.";
     case "failed":     return extra.signedOut
-      ? `Could not read ${w}: sign in again.`
-      : `Could not read ${w}.`;
+      ? `${couldNotRead(w)}: sign in again.`
+      : `${couldNotRead(w)}.`;
     case "stale":      return `${cap(w)} last observed ${agoWords(extra.ageMs ?? 0)}; it may be out of date.`;
     case "partial":    return `Could not read ${(extra.failed ?? [w]).join(" and ")}, so what is shown is incomplete.`;
     default:           return null;

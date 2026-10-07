@@ -29,8 +29,8 @@ function CalendarView({ role, onNav }) {
   // that failed, is refused or is still coming says that instead; one of the two
   // failing says the calendar is incomplete (GA-I08).
   const calendarRead = combineReads([
-    { what: "fixtures", read: matchesRead },
-    { what: "training sessions", read: trainingRead },
+    { what: "the fixtures", read: matchesRead },
+    { what: "the training sessions", read: trainingRead },
   ]);
   const calendarOk = calendarRead.state === "ok" || calendarRead.state === "empty";
   const [monthOffset, setMonthOffset] = useState(0);

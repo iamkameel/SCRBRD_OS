@@ -15,7 +15,7 @@ function NotificationsView({ role }) {
   const NOTIFICATIONS = notificationsRead.rows;
   // "0 unread alerts" over a read that failed, or one that is still coming, is
   // a figure nobody counted. The count is said only of an answer (GA-I08).
-  const said = readState(notificationsRead, { what: "notices" });
+  const said = readState(notificationsRead, { what: "the notices" });
   const answered = said.state === "ok" || said.state === "empty";
   // Hold only what this screen CHANGES — which notices have been opened — and
   // derive the list from the server's rows every render.

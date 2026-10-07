@@ -2,10 +2,11 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
-import { Avatar, Badge, Btn, Card, KPICard, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, KPICard, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { useLive, useRows, useWeather } from "../lib/live.js";
-import { api } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
+import { combineReads, readState } from "../lib/readState.js";
 import { schoolsWhere } from "../lib/session.js";
 import { textOn } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
@@ -44,8 +45,16 @@ function LogisticsView({ role }) {
   // coordinator all saw an identical "Total Seats" that belonged to nobody's
   // school. These two reads are row-scoped like every other, so the numbers
   // are this reader's.
-  const VEHICLES = useRows("vehicles", role);
-  const TRIPS    = useRows("trips", role);
+  // Each read keeps its state (GA-I08): "Vehicles In Service 0" over a read
+  // that failed is a figure nobody counted. Retry re-runs the same two reads.
+  const [nonce, setNonce] = useState(0);
+  const vehiclesRead = useLive("vehicles", role, nonce);
+  const tripsRead = useLive("trips", role, nonce);
+  const VEHICLES = vehiclesRead.rows;
+  const TRIPS    = tripsRead.rows;
+  const fleetRead = combineReads([{ what: "the vehicles", read: vehiclesRead }, { what: "the trips", read: tripsRead }]);
+  const fleetAnswered = ["ok", "empty"].includes(fleetRead.state);
+  const fig = (v) => (!signedIn() || fleetAnswered ? v : "—");
   const [manifest,  setManifest]  = useState(null);
 
   const condColor = c => c==="Excellent"||c==="Stocked"||c==="Certified"?D.emerald:c==="Good"?D.sky:c==="Mixed"||c==="Fair"?D.amber:D.rose;
@@ -75,16 +84,20 @@ function LogisticsView({ role }) {
       {tab==="transport"&&(
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"20px"}}>
-            <KPICard label="Upcoming Away Trips" value={upcomingTransport.length} icon="bus" color={D.sky}/>
+            <KPICard label="Upcoming Away Trips" value={fig(upcomingTransport.length)} icon="bus" color={D.sky}/>
             <KPICard label="Drivers Available"   value={STAFF.filter(s=>s.role==="driver"&&s.active).length} icon="user" color={D.lime}/>
-            <KPICard label="Vehicles In Service" value={VEHICLES.filter(v=>v.active).length} icon="van" color={D.teal}/>
-            <KPICard label="Total Seats"         value={VEHICLES.filter(v=>v.active).reduce((a,v)=>a+(v.capacity||0),0)} icon="armchair" color={D.violet}/>
+            <KPICard label="Vehicles In Service" value={fig(VEHICLES.filter(v=>v.active).length)} icon="van" color={D.teal}/>
+            <KPICard label="Total Seats"         value={fig(VEHICLES.filter(v=>v.active).reduce((a,v)=>a+(v.capacity||0),0))} icon="armchair" color={D.violet}/>
             {/* Only vehicles with a recorded service date can be counted. A bus
                 nobody has booked in is not "due today" — it is unknown, and the
                 mock version counted it as due because an absent date parsed to
                 the epoch. */}
-            <KPICard label="Services Due"        value={VEHICLES.filter(v=>v.nextService&&(new Date(v.nextService)-today)/86400000<=14).length} icon="wrench" color={D.amber} sub="Within 14 days"/>
+            <KPICard label="Services Due"        value={fig(VEHICLES.filter(v=>v.nextService&&(new Date(v.nextService)-today)/86400000<=14).length)} icon="wrench" color={D.amber} sub="Within 14 days"/>
           </div>
+
+          {signedIn()&&!["ok","empty"].includes(fleetRead.state)&&(
+            <Card sx={{marginBottom:"16px"}}><ReadState read={fleetRead} icon="van" testId="transport-read-state" onRetry={()=>setNonce(n=>n+1)}/></Card>
+          )}
 
           <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
             {upcomingTransport.map(m=>{
@@ -289,7 +302,8 @@ function LogisticsView({ role }) {
 // whether to offer it on permission grounds would be an access one.
 function KitRegister({ role }) {
   const [nonce, setNonce] = useState(0);
-  const { rows: KIT, live } = useLive("equipment", role, nonce);
+  const kitRead = useLive("equipment", role, nonce);
+  const { rows: KIT, live } = kitRead;
   const ISSUES = useLive("equipment_issues", role, nonce).rows;
   const PLAYERS = useRows("players", role);
   const [pick, setPick] = useState({});
@@ -297,11 +311,16 @@ function KitRegister({ role }) {
   const canKeep = schoolsWhere("team.manage").length > 0;
   // Nothing invented in its place: signed out there is no register to show,
   // and a school that has entered no kit has none to list.
+  // Signed in, a register that did not come is said as that (Could not read…,
+  // with Retry); only a signed-out screen is told to sign in (GA-I08).
+  const kitSaid = readState(kitRead, { what: "the kit register" });
   if (!live || KIT.length === 0) return (
     <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="kit-register-empty">
-      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
-        {live ? "No kit is on the register yet." : "Sign in to see the kit register."}
-      </div>
+      {signedIn()&&!["ok","empty"].includes(kitSaid.state)
+        ? <ReadState compact read={kitSaid} testId="kit-read-state" onRetry={()=>setNonce(n=>n+1)}/>
+        : <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
+            {signedIn()||live ? "No kit is on the register yet." : "Sign in to see the kit register."}
+          </div>}
     </Card>
   );
   const act = async (path) => {

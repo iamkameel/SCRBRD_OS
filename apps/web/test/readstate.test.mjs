@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { setToken, resetApi } from "../src/lib/api.js";
 import {
-  READ_STATES, agoWords, combineReads, isForbidden, isModuleOff, readState, readStateFor, sentenceFor,
+  READ_STATES, agoWords, combineReads, couldNotRead, isForbidden, readsFailed, isModuleOff, readState, readStateFor, sentenceFor,
 } from "../src/lib/readState.js";
 import {
   readOnce, readQuery, useLive, usePlayersWithCareerState, useRatings, useSkills, useWeather, useWeatherState,
@@ -199,6 +199,9 @@ group("The sentences: the reader's words, no name, no 'done', no percentage");
     sentenceFor("loading", "x") === "Reading x…" && sentenceFor("failed", "x") === "Could not read x." && sentenceFor("empty", "x") === "No x on record.");
   const withNames = [state({ rows: ROWS }), state({}), readStateFor(read(), []), state({ error: "unreachable" }), combineReads([{ what: "players", read: read({ rows: ROWS }) }, { what: "career figures", read: read({ error: "x" }) }])];
   ok("a child's name in the rows never reaches a sentence", withNames.every((r) => !/Bekker|Naidoo/.test(JSON.stringify(r))));
+  ok("an article is kept for 'Could not read the fixtures' but dropped for 'No fixtures on record'",
+    sentenceFor("failed", "the fixtures") === "Could not read the fixtures." && sentenceFor("empty", "the fixtures") === "No fixtures on record."
+    && sentenceFor("empty", "your notices") === "No notices on record." && sentenceFor("loading", "the fixtures") === "Reading the fixtures…");
   ok("without a name for the thing, the sentences still read", sentenceFor("loading") === "Reading…" && sentenceFor("failed") === "Could not read this." && sentenceFor("empty") === "Nothing on record.");
 }
 
@@ -367,17 +370,17 @@ group("The screens draw it");
   ok("Skills: a failed rating or notes read is said, not hidden as none", /rating-read-state/.test(skills) && /notes-read-state/.test(skills));
 
   const squad = src("../src/views/SquadView.jsx");
-  ok("Squad: reads the roster and its career figures as two reads, and says when one failed", /usePlayersWithCareerState\(role, rosterNonce\)/.test(squad) && /combineReads\(\[/.test(squad) && /squad-read-state/.test(squad));
+  ok("Squad: reads the roster and its career figures as two reads, and says when one failed", /usePlayersWithCareerState\(role, rosterNonce\)/.test(squad) && /const rosterRead = CAREER\.read/.test(squad) && /squad-read-state/.test(squad));
   ok("Squad: a player with no assessment is said, beside where the radar would be", /squad-skills-read-state/.test(squad) && /readStateFor\(skillsRead/.test(squad));
   ok("Squad: the skills read carries the roster's nonce", /useSkills\(role, rosterNonce\)/.test(squad));
 
   const prof = src("../src/views/ProfilesView.jsx");
   ok("Profiles: the radar and the development tab say Not assessed yet, never an empty radar", /profile-skills-read-state/.test(prof) && /profile-development-read-state/.test(prof) && !/No skills assessment on file/.test(prof));
-  ok("Profiles: a roster whose career figures did not come is partial", /combineReads\(\[/.test(prof) && /profiles-read-state/.test(prof));
+  ok("Profiles: a roster whose career figures did not come is partial", /const rosterRead = CAREER\.read/.test(prof) && /profiles-read-state/.test(prof));
 
   const lg = src("../src/views/LeagueView.jsx");
   ok("Awards: a failed career read beside players is `partial`, in the figures' own words, with the old Retry",
-    /combineReads\(\[/.test(lg) && /awards-read-sentence/.test(lg) && /data-testid="awards-retry"/.test(lg));
+    /\? CAREER\.read/.test(lg) && /awards-read-sentence/.test(lg) && /data-testid="awards-retry"/.test(lg));
   ok("Awards: a role refused the figures is not told they 'could not be loaded', and gets no Retry", /const refused = read\.state === "forbidden"/.test(lg));
 
   const dash = src("../src/views/DashboardView.jsx");
@@ -390,6 +393,36 @@ group("The screens draw it");
   ok("Injuries: a count is drawn only of a read that answered", /const n = \(answered, v\) => \(answered \? v : "—"\)/.test(src("../src/views/InjuryView.jsx")));
   ok("Family and pupil: the next-fixture 'none' and the passport's zero are said only of reads that answered",
     /said=\{matchesSaid\}/.test(src("../src/views/family/family.jsx")) && /careerAnswered \? 0 : "—"/.test(src("../src/views/family/pupil.jsx")) && /!loading && !error && <Line quiet>/.test(src("../src/views/family/matches.jsx")));
+}
+
+
+group("One wording for the list modules: todo.js and queue.js take it from here");
+{
+  ok("couldNotRead is the failed sentence without its full stop", couldNotRead("the fixtures") === "Could not read the fixtures" && sentenceFor("failed", "the fixtures") === `${couldNotRead("the fixtures")}.`);
+  ok("readsFailed counts in the To-do card's words", readsFailed(1) === "1 read failed" && readsFailed(2) === "2 reads failed");
+  const todo = src("../src/lib/todo.js"), queue = src("../src/lib/queue.js");
+  ok("todo.js builds its failed row and its '· N read failed' with them", /fact: couldNotRead\(label\)/.test(todo) && /readsFailed\(unread\)/.test(todo) && /from "\.\/readState\.js"/.test(todo));
+  ok("queue.js builds its 'Could not read X' with it", /text: couldNotRead\(r\.label\)/.test(queue) && /from "\.\/readState\.js"/.test(queue));
+  ok("...and neither keeps a private copy of the sentence", !/`Could not read \$\{/.test(todo) && !/`Could not read \$\{/.test(queue));
+}
+
+group("The roster read as one statement, and the screens that were still claiming 'none'");
+{
+  const probe = (fn) => { setToken("test-token"); let out; const C = () => { out = fn(); return null; }; renderToStaticMarkup(h(C)); resetApi(); return out; };
+  const pc = probe(() => usePlayersWithCareerState("coach"));
+  ok("usePlayersWithCareerState carries `read`, the two reads combined: loading while they are", pc.read && pc.read.state === "loading" && Array.isArray(pc.read.parts) && pc.read.parts.length === 2, pc.read);
+  ok("...`rows` is unchanged beside it", Array.isArray(pc.rows) && "players" in pc && "career" in pc);
+  ok("...and `partial` is what the combination says of a career read that failed beside players",
+    combineReads([{ what: "players", read: { rows: ROWS, loading: false, error: null, live: true } }, { what: "career figures", read: { rows: [], loading: false, error: "unreachable", status: null } }]).state === "partial");
+  const logi = src("../src/views/LogisticsView.jsx");
+  ok("Logistics: the fleet figures are '—' over a read that did not answer, and it says which read", /const fig = \(v\) => \(!signedIn\(\) \|\| fleetAnswered \? v : "—"\)/.test(logi) && /transport-read-state/.test(logi));
+  ok("Logistics: a kit register that failed is not 'Sign in to see the kit register'", /kit-read-state/.test(logi) && /signedIn\(\)\|\|live \? "No kit is on the register yet\."/.test(logi));
+  const av = src("../src/views/availability.jsx"), fm = src("../src/views/family/matches.jsx");
+  ok("Availability (coach): 'No one to show for this fixture' is said only of a read that answered, and a failed one has a Retry on the same matchId",
+    /availability-read-state/.test(av) && /readState\(read, \{ what: "the availability answers" \}\)/.test(av) && /useLive\("availability", role, nonce, \{ matchId: match\.id \}\)/.test(av));
+  ok("Matches (parent): the fixture row's chip says 'No answer' only of an availability read that answered", /const answered = \["ok", "empty"\]\.includes\(said\.state\)/.test(fm) && /the answer/.test(fm));
+  const fields = src("../src/views/FieldsView.jsx");
+  ok("Fields: 'No fixtures are recorded at this ground' is said only of a fixtures read that answered", /pitch-report-read-state/.test(fields) && /useLive\("matches", role, groundsNonce\)/.test(fields));
 }
 
 console.log(`\n${"─".repeat(52)}\nREAD STATE: ${pass} passed, ${fail} failed`);

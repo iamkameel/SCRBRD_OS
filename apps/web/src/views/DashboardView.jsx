@@ -385,11 +385,11 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const weather = next ? WEATHER[next.id] : null;
 
   const reads = signedIn() ? {
-    matches: readState(matchesRead, { what: "fixtures" }),
+    matches: readState(matchesRead, { what: "the fixtures" }),
     out: readState(injuriesRead, { what: "the injury list" }),
-    week: combineReads([{ what: "fixtures", read: matchesRead }, { what: "training sessions", read: trainingRead }]),
-    alerts: readState(notificationsRead, { what: "alerts" }),
-    weather: readState(weatherRead, { what: "weather" }),
+    week: combineReads([{ what: "the fixtures", read: matchesRead }, { what: "the training sessions", read: trainingRead }]),
+    alerts: readState(notificationsRead, { what: "the alerts" }),
+    weather: readState(weatherRead, { what: "the weather" }),
   } : null;
 
   return (

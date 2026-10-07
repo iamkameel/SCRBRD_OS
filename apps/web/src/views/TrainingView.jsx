@@ -23,7 +23,7 @@ function TrainingView({ role }) {
   const TRAINING_SESSIONS = trainingRead.rows;
   // The schedule, said: still coming, could not be read, or none on record. A
   // blank list reads as "nothing is planned", which is a thing people plan around (GA-I08).
-  const scheduleSaid = readState(trainingRead, { what: "training sessions" });
+  const scheduleSaid = readState(trainingRead, { what: "the training sessions" });
   // The register is its own read, behind player.profile.read, because it is a
   // list of named minors and the session row is a noticeboard fact. A parent
   // who may read "training moved to four" must not receive every child who

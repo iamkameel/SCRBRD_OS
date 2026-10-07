@@ -73,7 +73,7 @@ export function PupilHome({ role }) {
         <Line quiet>{[me.schoolName, me.team].filter(Boolean).join(" · ")}</Line>
       </header>
       <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={(m) => setOpen({ kind: "fixture", match: m })}
-        said={readState(matchesRead, { what: "fixtures" })} onRetry={() => setNonce((n) => n + 1)}/>
+        said={readState(matchesRead, { what: "the fixtures" })} onRetry={() => setNonce((n) => n + 1)}/>
       {/* SCRBRD-138 C1: only for a boy who holds the captaincy honour; under his own next fixture, which stays first. */}
       <CaptainCard me={me} role={role} matches={matches} now={now} onOpen={(m, kind) => setOpen({ kind, match: m })}/>
       {/* SCRBRD-124 phase 2 (db/76): his own lifts, for a pupil of eighteen

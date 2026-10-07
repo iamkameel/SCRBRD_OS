@@ -30,11 +30,16 @@ const now = () => Date.now();
 
 /** An upcoming row: when, who, home or away — and his answer, as a word. */
 function UpcomingRow({ m, child, role, onOpen }) {
-  const { rows } = useLive("availability", role, 0, { matchId: m.id });
-  const row = rows.find((r) => r.playerId === child.id) ?? null;
+  const read = useLive("availability", role, 0, { matchId: m.id });
+  const row = read.rows.find((r) => r.playerId === child.id) ?? null;
+  // "No answer" is said only of a read that answered; one that is coming or
+  // failed says that instead, in the chip's place (GA-I08).
+  const said = readState(read, { what: "the answer" });
+  const answered = ["ok", "empty"].includes(said.state);
   return (
     <OpenRow onClick={() => onOpen(m)} testid={`fixture-row-${m.id}`}
-      aside={<StateChip status={row?.status ?? null} testid={`fixture-chip-${m.id}`}/>}>
+      aside={answered ? <StateChip status={row?.status ?? null} testid={`fixture-chip-${m.id}`}/>
+        : <span data-testid={`fixture-chip-${m.id}`} data-state={said.state} style={{ ...T.role.body, fontSize: "14px", fontWeight: 600, color: T.content.secondary }}>{(said.sentence ?? "").replace(/…$|\.$/, "")}</span>}>
       <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>v {opponentOf(m, child)} ({endOf(m, child)})</span>
       <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{whenOf(m)}</span>
     </OpenRow>

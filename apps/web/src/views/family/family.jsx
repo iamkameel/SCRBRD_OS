@@ -40,7 +40,7 @@ function useChildren(role) {
   const child = chooseChild(kids, matches, picked, Date.now());
   const choose = (c) => { rememberChild(c.id); setPicked(c.id); };
   // "No fixture is arranged" is said only of a fixtures read that answered.
-  const matchesSaid = readState(matchesRead, { what: "fixtures" });
+  const matchesSaid = readState(matchesRead, { what: "the fixtures" });
   // matchesRead is the whole read: the To-do card takes { loading, error } from it, the next-fixture card the sentence.
   return { kids, child, choose, loading, error, matches, matchesRead, matchesSaid, retry: () => setNonce((n) => n + 1) };
 }
@@ -142,7 +142,7 @@ export function FamilyNotices({ role }) {
     <Page testid="family-notices">
       <Title>Notices</Title>
       {/* "Nothing unread" is a count; it is said of notices that were read. */}
-      {["ok", "empty"].includes(readState(notesRead, { what: "notices" }).state) && <Line quiet>{unread ? `${unread} unread` : "Nothing unread"}</Line>}
+      {["ok", "empty"].includes(readState(notesRead, { what: "the notices" }).state) && <Line quiet>{unread ? `${unread} unread` : "Nothing unread"}</Line>}
       {!items.length && <Card label="Notices"><NoneOr read={notesRead} what="notices" none="No notices yet." onRetry={() => setNonce((n) => n + 1)} testid="notices-none"/></Card>}
       {items.map((i) => (
         <article key={i.key} data-testid="notice" data-unread={i.unread ? "true" : undefined}

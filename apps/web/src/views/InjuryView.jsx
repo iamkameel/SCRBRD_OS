@@ -23,7 +23,7 @@ function InjuryView({ role }) {
   // is the figure a coach acts on. A count is drawn only of an answer (GA-I08).
   const injSaid = readState(injuriesRead, { what: "the injury list" });
   const injAnswered = injSaid.state === "ok" || injSaid.state === "empty";
-  const plSaid = readState(playersRead, { what: "players" });
+  const plSaid = readState(playersRead, { what: "the players" });
   const plAnswered = plSaid.state === "ok" || plSaid.state === "empty";
   const n = (answered, v) => (answered ? v : "—");
   // A pupil reaches this screen through his own record (selfaccess) and reads

@@ -33,6 +33,7 @@
  */
 import { fixturesOf, opponentOf } from "./family.js";
 import { startMs } from "./cockpit.js";
+import { couldNotRead, readsFailed } from "./readState.js";
 
 /** How far ahead the list looks, in days (design D4); later fixtures fold. */
 export const WINDOW_DAYS = 14;
@@ -128,7 +129,7 @@ function unreadRow(key, label, matchId) {
     matchId,
     key,
     label,
-    fact: `Could not read ${label}`,
+    fact: couldNotRead(label),
     source: key.split(":")[0],
     door: matchId ? { kind: /** @type {"retry"} */ ("retry"), matchId, label: "Try again" } : null,
   };
@@ -180,7 +181,7 @@ export function todoOf({ child, matches, answers = {}, now }) {
   const line = reading ? "Reading…"
     : clear ? `Nothing to do for ${first}`
     : open === 0 && unread === 0 ? `Nothing to do for ${first} in the next ${WINDOW_DAYS} days`
-    : `${open} to do${unread ? ` · ${unread} read${unread === 1 ? "" : "s"} failed` : ""}`;
+    : `${open} to do${unread ? ` · ${readsFailed(unread)}` : ""}`;
   return {
     childId: child.id,
     label: `To do for ${first}`,

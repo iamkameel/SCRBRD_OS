@@ -9,7 +9,7 @@ import { MIN_RADAR_AXES, RUBRIC_MAX, categoryMeans } from "../lib/radar.js";
 import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
 import { WagonAnalysisPanel } from "../scorer/wagonAnalysisPanel.jsx";
 import { useLive, usePlayersWithCareerState, useRows, useSkills } from "../lib/live.js";
-import { combineReads, readStateFor } from "../lib/readState.js";
+import { readStateFor } from "../lib/readState.js";
 import { holdsAsHeld } from "../lib/held.js";
 import { ConductTab } from "./discipline.jsx";
 import { readsConduct } from "../rbac/conduct.js";
@@ -43,10 +43,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   const PLAYERS = CAREER.rows;
   // Two reads behind the roster. A career read that failed beside players who
   // arrived is said (partial), never drawn as players who have not played.
-  const rosterRead = combineReads([
-    { what: "players", read: CAREER.players },
-    { what: "career figures", read: CAREER.career },
-  ]);
+  const rosterRead = CAREER.read;
   const skillsRead = useSkills(role, nonce);
   const SKILLS_MATRIX = skillsRead.skills;
   const mayReadSkills = holdsAsHeld(role, "player.development.read");

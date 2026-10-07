@@ -6,7 +6,7 @@ import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, ReadState, SectionH
 import { SegmentedControl } from "../ui/data.jsx";
 import { RUBRIC_MAX, categoryMeans, categoryMeansOn100, radarSummary } from "../lib/radar.js";
 import { usePlayersWithCareerState, useSkills } from "../lib/live.js";
-import { combineReads, readStateFor } from "../lib/readState.js";
+import { readStateFor } from "../lib/readState.js";
 import { api, signedIn } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
@@ -44,10 +44,7 @@ function SquadView({ role }) {
   const PLAYERS = CAREER.rows;
   // The roster and the career figures are two reads. One that failed is said,
   // never drawn as a roster of players who have not played (GA-I08, partial).
-  const rosterRead = combineReads([
-    { what: "players", read: CAREER.players },
-    { what: "career figures", read: CAREER.career },
-  ]);
+  const rosterRead = CAREER.read;
   const retryRoster = () => setRosterNonce(n => n + 1);
   // A team-mate's fitness is his health (K3, db/55; CSA p52: not in general
   // view to other children). Drawn only for a role that reads the injury

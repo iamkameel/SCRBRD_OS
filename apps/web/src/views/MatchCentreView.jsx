@@ -44,7 +44,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // What the fixtures read said (GA-I08). "No fixtures yet" is a claim about the
   // season; it is made only of a read that answered. Retry bumps the nonce this
   // read already carries, so it asks the same question again.
-  const matchesSaid = readState(matchesRead, { what: "fixtures" });
+  const matchesSaid = readState(matchesRead, { what: "the fixtures" });
   const STAFF = useRows("staff", role);
   const WEATHER = useWeather(role);
   const [filter, setFilter] = useState("all");

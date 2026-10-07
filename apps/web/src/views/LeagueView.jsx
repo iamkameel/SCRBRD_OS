@@ -15,7 +15,7 @@ import { PlayingConditions } from "./playingconditions.jsx";
 // The fixture planner (SCRBRD-123) loads when its tab is first opened.
 const FixturePlanner = lazy(() => import("./planner.jsx").then((m) => ({ default: m.FixturePlanner })));
 import { useLive, usePlayersWithCareerState, useRows, useWeather } from "../lib/live.js";
-import { combineReads, readState } from "../lib/readState.js";
+import { readState } from "../lib/readState.js";
 import { T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { schoolsWhere } from "../lib/session.js";
@@ -104,10 +104,7 @@ function LeagueView({ role }) {
   // is `partial`, and the tab ranks nothing from it, because players without
   // their figures would rank as players who have not played.
   const awardsRead = activeSeason === ALL_SEASONS
-    ? combineReads([
-        { what: "players", read: CAREER.players },
-        { what: "career figures", read: CAREER.career },
-      ])
+    ? CAREER.read
     : readState(SEASON_CAREER, { what: "this season's figures" });
   const awardsFailed = !seasonPending && ["failed", "partial", "forbidden", "disabled"].includes(awardsRead.state);
   const awardsLoading = seasonPending || awardsRead.state === "loading";

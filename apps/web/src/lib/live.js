@@ -25,6 +25,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
+import { combineReads } from "./readState.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
@@ -1573,6 +1574,10 @@ export function usePlayersWithCareerState(role, nonce = 0) {
     // career figures from a read that failed.
     players: { loading: players.loading, error: players.error, status: players.status ?? null, disabled: players.disabled ?? null, rows: players.rows, live: players.live },
     career: { loading: career.loading, error: career.error, status: career.status ?? null, disabled: career.disabled ?? null, rows: career.rows, live: career.live },
+    // The two reads as ONE statement (lib/readState.js): `partial` when the
+    // career read failed while players are present, so a screen ranks nothing
+    // from players who merely lack their figures. `rows` above is unchanged.
+    read: combineReads([{ what: "the players", read: players }, { what: "the career figures", read: career }]),
   };
 }
 

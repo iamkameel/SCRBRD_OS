@@ -42,7 +42,7 @@ function ReadinessOverview({ role, onNav }) {
   const [nonce, setNonce] = useState(0);
   const matchesRead = useLive("matches", role, nonce);
   const matches = matchesRead.rows;
-  const matchesSaid = readState(matchesRead, { what: "fixtures" });
+  const matchesSaid = readState(matchesRead, { what: "the fixtures" });
   const upcoming = matches
     .filter((m) => m.status === "upcoming")
     .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))
