@@ -490,7 +490,7 @@ export default function SCRBRD_OS() {
     news:         <NewsView          role={role}/>,
     notifications:<NotificationsView role={role}/>,
     safeguarding: <SafeguardingView  role={role}/>,
-    settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory}/>,
+    settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory} onSignOut={handleSignOut}/>,
     management:   <ManagementView    role={role} onDirectoryChanged={refreshDirectory}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,

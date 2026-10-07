@@ -204,6 +204,13 @@ const SUITES = [
   // Ending a role (SCRBRD-132 C1, db/77): EndRoleButton asks for the reason,
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The three solo-test screens, over routes that already existed: the office
+  // verifying a parent's link and recording the family's agreement, booking a
+  // vehicle and a trip, and signing out everywhere. Who is offered, what is
+  // asked, the order of the sign-out, and a refusal in words for every code.
+  ["guardian-link-screen", "apps/web/test/guardian-link.test.mjs"],
+  ["transport-book", "apps/web/test/transport-book.test.mjs"],
+  ["sign-out-everywhere", "apps/web/test/sign-out-everywhere.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,
   // its source, "N of M confirmed", a version's standing, a refusal in words.
   ["playing-conditions-screen", "apps/web/test/playing-conditions.test.mjs"],
