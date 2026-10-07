@@ -205,7 +205,10 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
     // Widest first. Every policy role has an identity now, so an unranked one
     // still lands somewhere real rather than on ROLES[undefined] — which is
     // what an empty shell looked like: signed in, no navigation, no name.
-    const RANK = ["platformadmin","principal","directorofsport","schooladmin","sportsadmin",
+    // The owner's key is the widest of all and was missing, so an account
+    // holding it beside the platform's landed as the platform and was never
+    // offered the roles only the owner may appoint.
+    const RANK = ["superadmin","platformadmin","principal","directorofsport","schooladmin","sportsadmin",
                   "coach","assistantcoach","teammanager","analyst","scorer","medical",
                   "guardian","player"];
     return RANK.find(r => held.includes(r)) ?? held[0] ?? "spectator";
