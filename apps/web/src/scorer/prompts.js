@@ -1,4 +1,4 @@
-import { DISMISSAL_LABEL, REFUSAL_TEXT, foldName } from "@scrbrd/scoring";
+import { DISMISSAL_LABEL, REFUSAL_TEXT, foldName, isWicketBall } from "@scrbrd/scoring";
 
 /**
  * What the pad's prompts offer first, and what its undo says (SCRBRD-100
@@ -121,6 +121,13 @@ export function undoWords(ev, inn) {
   switch (ev.kind) {
     case "ball": {
       const v = Number(ev.value ?? 0);
+      // A wicket on a wide or a no-ball (Law 22.9, 21.17): undo takes back
+      // the extra and the wicket, and says both.
+      if ((ev.type === "Wd" || ev.type === "Nb") && isWicketBall(ev)) {
+        const how = DISMISSAL_LABEL[ev.dismissal];
+        const out = who(ev.dismissed ?? ev.striker, "the batter");
+        return `${ev.type === "Wd" ? "wide" : "no ball"}${v ? ` and ${plural(v, "run")}` : ""}, wicket, ${out}${how ? ` ${how.toLowerCase()}` : " out"}`;
+      }
       switch (ev.type ?? "run") {
         case "W": {
           const how = DISMISSAL_LABEL[ev.dismissal];

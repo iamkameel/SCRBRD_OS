@@ -274,6 +274,11 @@ group("3. Undo says what it will take back");
      && words(ball({ type: "Nb", value: 2, nbRuns: "byes" })) === "no ball and 2 byes" && words(ball({ type: "Nb", value: 1, nbRuns: "leg_byes" })) === "no ball and 1 leg bye");
   ok("byes and leg byes", words(ball({ type: "B", value: 1 })) === "1 bye" && words(ball({ type: "LB", value: 3 })) === "3 leg byes");
   ok("a wicket", words(ball({ type: "W", dismissal: "caught", ...at })) === "wicket, D Erasmus caught");
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17): undo takes both, and says both.
+  const stWd = words(ball({ type: "Wd", value: 0, dismissal: "stumped", ...at }));
+  const roNb = words(ball({ type: "Nb", value: 1, dismissal: "run_out", dismissed: "a1", outAt: "striker_end", ...at }));
+  ok(`a stumping off a wide, a run out off a no-ball ("${stWd}", "${roNb}")`,
+     stWd === "wide, wicket, D Erasmus stumped" && roNb === "no ball and 1 run, wicket, R Pillay run out");
   const inAndOn = [...evs, ball({ type: "W", dismissal: "bowled" }), batters({ striker: "a3" }), ...[0, 0, 0, 0].map(run), bowler({ bowler: "b2" })];
   const io = deriveInnings(inAndOn);
   ok("a batter in, a bowler on", words(batters({ striker: "a3" }), io) === "S Mokoena in" && words(bowler({ bowler: "b2" }), io) === "M Botha to bowl");
