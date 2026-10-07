@@ -27,6 +27,9 @@
  *                           15 October's, an umpire today, and Kearsney's XI
  *                           named for today's
  *   lift clubs              switched on for Westville, with a signed policy
+ *   transport               a Westville minibus, and a trip on today's fixture
+ *                           with the cast driver (the app has no screen to add
+ *                           either yet, so the driver's day screen would be empty)
  *
  * NOTHING HERE IS WRITTEN AS THE TABLE OWNER. Every write runs as scrbrd_app,
  * the role the API connects as, under the identity of the person whose job it
@@ -48,6 +51,8 @@
  *                             fixture-scoped authority (duty_link())
  *   KEA's 1XI coach           names Kearsney's XI for today's fixture (the
  *                             team-sheet route's own check and insert)
+ *   WES's transport coordinator  adds the minibus and books today's trip
+ *                             (POST /api/vehicles and /api/matches/:id/trip)
  *
  * The identity is set by app_session_begin(), the one door db/85 gives a
  * request. The SQL Editor connects as the owner, so the file grants itself
@@ -155,6 +160,8 @@ const PRINCIPAL_WES = `(ids->>${q(email("principal", "wes"))})::uuid`;
 const SCORER1_WES = `(ids->>${q(email("scorer1", "wes"))})::uuid`;
 const OFFICIAL_WES = `(ids->>${q(email("official", "wes"))})::uuid`;
 const COACH_KEA_1XI = `(ids->>${q(email("coach", "kea", "1XI"))})::uuid`;
+const TRANSPORT_WES = `(ids->>${q(email("transport", "wes"))})::uuid`;
+const DRIVER_WES = `(ids->>${q(email("driver", "wes"))})::uuid`;
 
 const fixtureSql = (side, startsExpr, label = side) => `${actAs(DOS_WES)}
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at,
@@ -256,6 +263,7 @@ DECLARE
   h      uuid;
   today  uuid;
   season uuid;
+  v      uuid;
   n      integer;
 BEGIN
   -- ── 1 · The cast: principals first, then those they appoint ──
@@ -315,6 +323,23 @@ ${actAs(PRINCIPAL_WES)}
   SELECT * INTO l FROM lift_policy_sign(${q(WES.id)}, ${q(LIFT_POLICY)}, false, true, 'The pavilion car park');
   IF NOT coalesce(l.ok, false) THEN RAISE EXCEPTION 'The principal could not sign the lift policy: %. Nothing was changed.', l.reason; END IF;
 
+  -- ── 8 · A minibus and today's trip, so the driver's day screen has one ──
+  -- The app has no screen for these yet: POST /api/vehicles and
+  -- POST /api/matches/:id/trip, by the transport coordinator, as the routes insert them.
+${actAs(TRANSPORT_WES)}
+  INSERT INTO vehicle (school_id, registration, description, kind, capacity, condition, next_service_on, active, notes,
+                       insurance_expires_on, roadworthy_expires_on)
+  VALUES (${q(WES.id)}, 'WES DEMO 1', 'Demo minibus, 22 seats', 'minibus', 22, 'good', NULL, true, ${q(MARK)},
+          date '2027-03-31', date '2027-01-31')
+  RETURNING id INTO v;
+  IF v IS NULL THEN RAISE EXCEPTION 'The transport coordinator could not add the minibus. Nothing was changed.'; END IF;
+  INSERT INTO trip (match_id, school_id, vehicle_id, driver_id, depart_at, return_at, pickup, seats_taken, notes, arranged_by, arranged_at)
+  SELECT today, match_school(today), v, ${DRIVER_WES}, mt.starts_at - interval '60 minutes', mt.starts_at + interval '4 hours',
+         'The junior school gate', 15, ${q(MARK)}, app_user_id(), now()
+    FROM match mt WHERE mt.id = today
+  RETURNING id INTO d;
+  IF d IS NULL THEN RAISE EXCEPTION 'The transport coordinator could not book today''s trip. Nothing was changed.'; END IF;
+
   PERFORM set_config('app.user_id', '', true);
   PERFORM set_config('app.device_id', '', true);
 END $cast$;
@@ -323,7 +348,7 @@ RESET ROLE;
 
 -- ── The check, as the owner: everything above is there, or nothing is ──
 DO $check$
-DECLARE a int; f int; f15 int; ft int; du int; sq int; cap int; pu int;
+DECLARE a int; f int; f15 int; ft int; du int; sq int; cap int; pu int; tr int;
 BEGIN
   SELECT count(*) INTO a FROM app_user u
     JOIN role_assignment ra ON ra.person_id = u.id AND ra.active AND ra.fixture_id IS NULL
@@ -343,9 +368,12 @@ BEGIN
    WHERE mt.away_school_id = ${q(KEA.id)} AND ms.side = 'away' AND NOT ms.withdrawn;
   SELECT count(*) INTO cap FROM honour WHERE kind = 'captain' AND withdrawn_at IS NULL
      AND player_id IN (SELECT player_id FROM app_user WHERE email = ${q(PUPILS[0].email)});
-  IF a <> ${CAST.length} OR pu <> ${PUPILS.length} OR f < ${FIXTURES.length} OR f15 < 2 OR ft < 1 OR du <> 4 OR sq <> 11 OR cap <> 1 THEN
-    RAISE EXCEPTION 'The cast is incomplete (% of ${CAST.length} staff, % of ${PUPILS.length} pupils, % fixtures, % on 15 Oct, % today, % of 4 duties, % of 11 named, % captain). Rolled back.',
-      a, pu, f, f15, ft, du, sq, cap;
+  SELECT count(*) INTO tr FROM trip t JOIN match mt ON mt.id = t.match_id
+   WHERE mt.away_school_id = ${q(KEA.id)} AND t.driver_id = (SELECT id FROM app_user WHERE email = ${q(email("driver", "wes"))});
+  IF a <> ${CAST.length} OR pu <> ${PUPILS.length} OR f < ${FIXTURES.length} OR f15 < 2 OR ft < 1 OR du <> 4 OR sq <> 11
+     OR cap <> 1 OR tr <> 1 THEN
+    RAISE EXCEPTION 'The cast is incomplete (% of ${CAST.length} staff, % of ${PUPILS.length} pupils, % fixtures, % on 15 Oct, % today, % of 4 duties, % of 11 named, % captain, % of 1 trip). Rolled back.',
+      a, pu, f, f15, ft, du, sq, cap, tr;
   END IF;
 END $check$;
 COMMIT;
@@ -377,7 +405,9 @@ SELECT to_char(m.starts_at AT TIME ZONE 'Africa/Johannesburg', 'Dy DD Mon HH24:M
        'WES ' || m.team_code || ' v KEA ' || m.away_team_code AS fixture, g.name AS ground,
        (SELECT string_agg(mo.duty || ': ' || u.email, ', ' ORDER BY mo.duty) FROM match_official mo
           JOIN app_user u ON u.id = mo.person_id WHERE mo.match_id = m.id AND NOT mo.withdrawn) AS duties,
-       (SELECT count(*) FROM match_squad ms WHERE ms.match_id = m.id AND NOT ms.withdrawn) AS named
+       (SELECT count(*) FROM match_squad ms WHERE ms.match_id = m.id AND NOT ms.withdrawn) AS named,
+       (SELECT string_agg(v.registration || ', driver ' || u.email, '; ') FROM trip t
+          JOIN vehicle v ON v.id = t.vehicle_id JOIN app_user u ON u.id = t.driver_id WHERE t.match_id = m.id) AS trip
   FROM match m LEFT JOIN ground g ON g.id = m.ground_id
  WHERE m.school_id = ${q(WES.id)} AND m.away_school_id = ${q(KEA.id)}
  ORDER BY m.starts_at;

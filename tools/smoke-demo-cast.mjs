@@ -215,6 +215,13 @@ async function apiCheck() {
   ok(`the 1XI pupil reads his captaincy (${hon.filter((h) => h.kind === "captain").length})`,
      hon.some((h) => h.kind === "captain" && h.player_id === capt.player_id));
 
+  group("Transport: today's minibus, for the coordinator and the driver (GET /api/read/trips)");
+  const tripsOf = async (t) => ((await rows(t, "trips")) ?? []).filter((r) => r.match_id === today);
+  const [tc, dr, kd] = [await tripsOf(who["transport.wes"]), await tripsOf(who["driver.wes"]), await tripsOf(await login("driver.kea@example.invalid"))];
+  ok(`the WES transport coordinator reads today's trip (${tc.length})`, tc.length === 1);
+  ok(`the WES driver reads it, his own (${dr.length})`, dr.length === 1);
+  ok(`Kearsney's driver does not (${kd.length})`, kd.length === 0);
+
   group("A concern reaches the school's DSO and nobody else");
   const cards = (await call("/api/safeguarding/contacts", { token: who["parent.106"] })).body?.rows ?? [];
   ok("a Westville parent is shown Westville's DSO by name", cards.some((c) => c.schoolId === WES && /Safeguarding Officer/.test(c.name)));
