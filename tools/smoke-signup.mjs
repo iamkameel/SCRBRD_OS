@@ -23,7 +23,9 @@
  *      the Google account added in the same session links as `code`
  *   6. adding a second Google account needs a fresh sign-in; a uid is one
  *      account's; removing one's own, and the office removing one, and either
- *      way the exchange refuses it after
+ *      way the exchange refuses it after — and every session issued before
+ *      the removal is refused (GA-I03, db/85), the remover's own answered
+ *      with a fresh token for its device
  *   7. the limits: per address, and per Google account
  *
  *   node tools/migrate.mjs --reset --seed
@@ -117,7 +119,9 @@ try {
   const claims = JSON.parse(Buffer.from(String(newcomer).split(".")[1] ?? "", "base64url").toString() || "{}");
   ok("...with the ordinary token: who and which device, thirty minutes, nothing else",
      claims.iss === "scrbrd" && claims.did === "device-signup" && claims.exp - claims.iat === 1800
-       && JSON.stringify(Object.keys(claims).sort()) === JSON.stringify(["aud", "did", "exp", "iat", "iss", "sub"]), claims);
+       && JSON.stringify(Object.keys(claims).sort()) === JSON.stringify(["aud", "did", "exp", "iat", "iss", "sep", "sid", "sub"])
+       // sid and sep (db/85, GA-I03): which session, and the epoch it was issued under. Identity still, never authority.
+       && typeof claims.sid === "string" && Number.isInteger(claims.sep), claims);
   const again = await exchange(idToken(NEW_UID, NEW_EMAIL));
   ok("the same Google account again is the same account", again.status === 200 && again.body?.outcome === "signed_in", again);
   let session = await api("/api/session", { token: newcomer });
@@ -187,6 +191,7 @@ try {
   group("4. An address the office enrolled is a claim, never a link");
   const PARENT_UID = `walk-parent-${RUN}`;
   let r = await exchange(idToken(PARENT_UID, "Parent@Example.invalid"));
+  let r2;
   ok("a parent's address answers claim_required, no token", r.status === 409 && r.body?.error === "claim_required" && !r.body?.token, r);
   r = await exchange(idToken(PARENT_UID, "parent@example.invalid"));
   ok("...and asking again, the same", r.status === 409 && r.body?.error === "claim_required", r);
@@ -237,22 +242,47 @@ try {
   r = await exchange(idToken(ALT_UID, `walk.alt.${RUN}@example.invalid`));
   ok("the added one signs in to the same account", r.status === 200 && r.body?.outcome === "signed_in"
      && JSON.parse(Buffer.from(r.body.token.split(".")[1], "base64url").toString()).sub === claims.sub, r.body?.outcome);
+  const altToken = r.body?.token;
+  ok("(and the newcomer is signed in with it)", (await api("/api/session", { token: altToken })).status === 200);
   r = await api(`/api/auth/sign-ins/${altId}/revoke`, { method: "POST", token: parentIn.body?.token });
   ok("the parent cannot remove the newcomer's", r.status === 404 && r.body?.error === "no_such_sign_in", r);
   r = await api(`/api/auth/sign-ins/${altId}/revoke`, { method: "POST", token: newcomer });
   ok("the newcomer removes his own", r.status === 200 && r.body?.revoked === true, r);
+  r2 = r;
   r = await exchange(idToken(ALT_UID, `walk.alt.${RUN}@example.invalid`));
   ok("...and it signs in to nothing", r.status === 401 && r.body?.error === "identity_revoked", r);
+  // GA-I03 (db/85): removing a way to sign in ends every session issued
+  // before it — the one that removed it included. That one is answered with
+  // a fresh token for its own device, so the person stays signed in here.
+  ok("the session it signed in with is refused from now on",
+     (await api("/api/session", { token: altToken })).status === 401);
+  ok("...and so is every older token of the account", (await api("/api/session", { token: newcomer })).status === 401
+     && (await api("/api/session", { token: again.body?.token })).status === 401);
+  ok("the removal answers with a fresh token for this device, which works",
+     typeof r2.body?.token === "string" && (await api("/api/session", { token: r2.body.token })).body?.user?.email === NEW_EMAIL, r2.body);
+  const newcomerNow = r2.body?.token;
+  const viaGoogle = await exchange(idToken(NEW_UID, NEW_EMAIL));
+  ok("a fresh sign-in with the Google account that is left works", viaGoogle.status === 200
+     && (await api("/api/session", { token: viaGoogle.body?.token })).status === 200, viaGoogle);
   const parentId = parentSession.body?.user?.id;
   const theirs = await api(`/api/auth/users/${parentId}/sign-ins`, { token: office });
   ok("the office reads the parent's sign-ins, without the uid", theirs.status === 200 && theirs.body?.rows?.length === 1
      && !JSON.stringify(theirs.body).includes(PARENT_UID), theirs);
-  r = await api(`/api/auth/users/${parentId}/sign-ins`, { token: newcomer });
+  r = await api(`/api/auth/users/${parentId}/sign-ins`, { token: newcomerNow });
   ok("a coach does not", r.status === 403 || (r.status === 200 && r.body?.rows?.length === 0), r);
   r = await api(`/api/auth/office/sign-ins/${theirs.body?.rows?.[0]?.id}/revoke`, { method: "POST", token: office });
   ok("the office removes it", r.status === 200 && r.body?.revoked === true, r);
   r = await exchange(idToken(PARENT_UID, "parent@example.invalid"));
   ok("...and the parent's Google account signs in to nothing", r.status === 401 && r.body?.error === "identity_revoked", r);
+  ok("...and the parent's session from it is refused (GA-I03)",
+     (await api("/api/session", { token: parentIn.body?.token })).status === 401);
+  ok("...but the office's own is not", (await api("/api/session", { token: office })).status === 200);
+  {
+    const c = await api("/api/auth/invite", { method: "POST", token: office, body: { email: "parent@example.invalid" } });
+    const back = await api("/api/auth/redeem", { method: "POST", body: { email: "parent@example.invalid", code: c.body?.code, deviceId: "device-signup" } });
+    ok("a fresh sign-in by the office's code works", back.status === 200
+       && (await api("/api/session", { token: back.body?.token })).body?.user?.email === "parent@example.invalid", back);
+  }
 
   group("7. The limits");
   {

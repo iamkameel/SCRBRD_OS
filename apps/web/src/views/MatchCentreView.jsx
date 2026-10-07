@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { D, T, textOn } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { humanDate } from "../lib/format.js";
@@ -47,10 +47,24 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
     const m = want ? MATCHES.find((x) => x.id === want.matchId) : null;
     if (!want || !m) return;
     clearCoach();
+    if (want.view === "duties") {
+      // The Readiness screen's row: the list with this fixture's details (its duties) open, brought into view.
+      setFilter("all"); setTeamFilter(null);
+      wantDetails.current = true;
+      setSelMatch(m);
+      return;
+    }
     setCoachOn({ tab: "coach", drawer: want.drawer });
     setOpenM(m);
   }, [MATCHES]);
   const [selMatch, setSelMatch] = useState(null);
+  // A fixture opened from Readiness has its details panel scrolled into view once it is drawn (a phone draws it under the list).
+  const wantDetails = useRef(false);
+  useEffect(() => {
+    if (!wantDetails.current || !selMatch) return;
+    wantDetails.current = false;
+    document.querySelector('[data-testid="match-details"]')?.scrollIntoView({ block: "start" });
+  }, [selMatch]);
   // The fixture open in the Match Centre's own view (views/matchcentre/):
   // the board, the scorecard, the commentary and the rest, in six tabs. It
   // replaced the Scorecard modal (step 3c).
@@ -175,7 +189,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                     <StatusDot status={m.status}/>
                     <span style={{...T.role.label,color:isLive?T.brand.accentText:T.content.secondary}}>{m.status}</span>
                     {comp&&<span style={{...T.role.body,fontSize:"12px",color:T.content.secondary}}>{comp.name}</span>}
-                    {w&&<WeatherChip w={w} compact/>}
+                    {w&&<WeatherChip w={w} status={m.status} compact/>}
                     <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{humanDate(m.date)}</span>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"12px",alignItems:"center"}}>
@@ -241,12 +255,12 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
           const ground = selMatch.groundId ? GROUNDS.find(g=>g.id===selMatch.groundId) : null;
           const pitch  = ground?.pitches?.[0];
           return (
-            <Card sx={{padding:"16px",position:"sticky",top:"16px",maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
+            <Card data-testid="match-details" data-match={selMatch.id} sx={{padding:"16px",position:"sticky",top:"16px",maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:"12px"}}>
                 <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Match Details</div>
                 <button onClick={()=>setSelMatch(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
               </div>
-              {w&&<div style={{marginBottom:"12px"}}><WeatherChip w={w}/></div>}
+              {w&&<div style={{marginBottom:"12px"}}><WeatherChip w={w} status={selMatch.status}/></div>}
               {/* Rescheduling and calling off — fixture.update, at the HOST's
                   own school. amendSchools is a courtesy filter, not the gate:
                   match_update() in db/09 refuses an away school's attempt

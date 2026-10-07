@@ -2,15 +2,17 @@
 
 A second SCRBRD, separate from production, filled with invented people. It is
 for the steps in REHEARSAL.md marked S (Sent, handover, the ground display,
-the public match page) and for showing SCRBRD to someone without opening the
-school's real records. It follows DEPLOYING.md, "A demonstration is not a
+the public match page), for the solo test (SOLO_TEST.md: one person testing
+every role, end to end), and for showing SCRBRD to someone without opening
+the school's real records. It follows DEPLOYING.md, "A demonstration is not a
 pilot".
 
 Three rules, none negotiable:
 
 1. **Its own database.** A second Supabase project. Never the production
    project, and never a second schema inside it.
-2. **Invented people only.** Its only data is the seed in `db/98_seed_pilot.sql`.
+2. **Invented people only.** Its only data is the seed in `db/98_seed_pilot.sql`,
+   and for the solo test the 330 invented players and the cast (section 5).
    Never type a real child's name into it, and never import a school list.
 3. **Its own secrets.** New values for every secret. Do not copy any secret
    from the production service.
@@ -130,8 +132,14 @@ in without a code (section 4).
    | Tap | Address | Use for |
    |---|---|---|
    | Scorer | `scorer@example.invalid` | scoring, Sent, handover |
-   | Head Coach | `coach@example.invalid` | Pick the side, publishing the public page |
+   | Head Coach | `coach@example.invalid` | Pick the side |
    | Parent | `parent@example.invalid` | the parent's view |
+
+   A public page is published by a director of sport (`sarah@example.invalid`
+   at Hilton), not a coach.
+
+   You can also type any other account's address in the email box, with the
+   code left blank. That is how the solo test switches role (SOLO_TEST.md).
 
    Production does not show that box, and it refuses these addresses.
 
@@ -139,7 +147,30 @@ in without a code (section 4).
    High. Every person in it is invented. Score the 1st XI fixture against
    Michaelhouse. The seed dates it three days after the database was built.
 
-## 5. After the rehearsal
+## 5. The solo-test cast
+
+For the solo test, two more pastes go into `scrbrd-demo`, after section 2 and
+in this order. Check the project name reads `scrbrd-demo` before each.
+
+1. `demo-players-330.sql`: 330 invented boys at Westville and Kearsney, and a
+   parent for each. Kameel has the file. It is not in the repository.
+2. `demo-cast.sql`: a coach and a team manager for every side at both
+   schools, each school's principal, director of sport, DSO, physio, scorers,
+   umpire, transport and driver, three Westville pupils (one the captain), and
+   Westville v Kearsney fixtures from 8 to 18 October with one on the day of
+   the paste. Make it from the repository:
+
+   ```sh
+   node tools/demo-cast.mjs demo-cast.sql
+   ```
+
+   Paste it on the morning of a test day. It refuses to run twice, without
+   the 330, or outside the demo. It ends with three tables: keep them.
+
+Then follow `SOLO_TEST.md`. It lists every address, the device set-up, and
+the scenarios.
+
+## 6. After the rehearsal
 
 Withdraw any public page you published on the demo. Then, in Render,
 **Settings → Suspend Web Service**. Do this so a public demo page naming

@@ -14,10 +14,34 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   signToken, verifyToken, principalFromClaims, withPrincipal,
-  newMagicCode, magicHash, AuthError, CODE_TTL_SEC,
+  newMagicCode, magicHash, AuthError, CODE_TTL_SEC, TOKEN,
 } from "./auth.mjs";
 /** @import { Db, Pool } from "../api-types.mjs" */
 /** @import { Principal } from "./auth.mjs" */
+
+// ── A token, with a session behind it (GA-I03, db/85) ──
+//
+// THE ONE WAY A ROUTE GETS A TOKEN. auth_session_open() records the session
+// and answers the account's current epoch, or nothing for an account that is
+// not active; the token names both, and app_session_begin() checks them on
+// every request. A redeemed code, the Google exchange and the development
+// sign-in call it with no identity (`db` is the pool); a signed-in person
+// may call it for himself inside his own transaction (the fresh token a
+// removed sign-in is answered with), and the function refuses anybody else.
+/**
+ * @param {Db} db
+ * @param {string} secret
+ * @param {{ userId: string, deviceId: unknown }} who
+ * @returns {Promise<string>}
+ */
+export async function mintToken(db, secret, { userId, deviceId }) {
+  // The same bounds as auth_session.device_id and the pad's credential.
+  if (typeof deviceId !== "string" || !deviceId.trim() || deviceId.length > 200) throw new AuthError("missing_device");
+  const { rows } = await db.query(`select * from auth_session_open($1, $2, $3)`, [userId, deviceId, TOKEN.ttlSec]);
+  const s = rows[0];
+  if (!s?.session_id) throw new AuthError("account_inactive");
+  return signToken({ userId, deviceId, sessionId: s.session_id, epoch: s.epoch }, secret);
+}
 
 // ── Login: issue a code, at the office ──
 //
@@ -97,7 +121,7 @@ export async function redeemMagicLink(db, secret, { email, code, deviceId }) {
     `select login_code_redeem($1, $2) as user_id`, [email, magicHash(code, secret)]);
   const userId = rows[0]?.user_id || null;
   if (!userId) throw new AuthError("invalid_or_expired_code");
-  return { token: signToken({ userId, deviceId }, secret) };
+  return { token: await mintToken(db, secret, { userId, deviceId }) };
 }
 
 /**
@@ -185,12 +209,14 @@ export async function runAsPrincipal(pool, secret, bearer, fn) {
   /** @type {Principal} */
   let principal;
   if (typeof bearer === "object" && bearer !== null) {
-    if (bearer.scope !== "pad" || !bearer.userId || !bearer.deviceId || !bearer.matchId) throw new AuthError("unauthorized");
+    if (bearer.scope !== "pad" || !bearer.userId || !bearer.deviceId || !bearer.matchId || !bearer.credentialId) throw new AuthError("unauthorized");
     principal = bearer;
   } else {
     // startsWith() on (bearer || "") was true, so bearer is a string here.
     const token = (bearer || "").startsWith("Bearer ") ? /** @type {string} */ (bearer).slice(7) : null;
     if (!token) throw new AuthError("missing_token");
+    // verifyToken() refuses a token with no session, so this principal always
+    // carries one for app_session_begin() to check.
     principal = principalFromClaims(verifyToken(token, secret));
   }
   // Inside a write unit for this same bearer (runAsUnit below), the work

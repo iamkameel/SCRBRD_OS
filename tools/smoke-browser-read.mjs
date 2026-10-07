@@ -43,7 +43,7 @@ const DEBUG = !!process.env.BROWSER_READ_DEBUG;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)?.slice(0, 400)}`); } };
 const group = (t) => console.log("\n" + t);
 
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -431,6 +431,18 @@ try {
   // the whole model was reachable only by curl. A number nobody can open is a
   // number nobody will correct.
   group("A coach can open a rating and see what moved it");
+  // GA-I06: a radar needs three axes, and the seed's assessments are two per group.
+  // Three 20s in a group that no batting or bowling rating reads (agility,
+  // acceleration, balance: fielding and keeping only), so the figures asserted
+  // below do not move.
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    try {
+      for (const metric of ["agility", "acceleration", "balance"]) {
+        await owner.query(`insert into player_skill (player_id, assessed_on, category, metric, score) values ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 1, 'physical', $1, 20)`, [metric]);
+      }
+    } finally { await owner.end().catch(() => {}); }
+  }
   if (await nav(coach.page, /Skills/)) {
     const skillsText = await text(coach.page);
     if (DEBUG) console.log("[debug] skills:\n" + skillsText.slice(0, 900));
@@ -447,6 +459,25 @@ try {
     // Case- and space-tolerant: Badge sets text-transform: uppercase, and
     // innerText reports rendered text, so the DOM string is "BATTING -2".
     ok("...and show a note's signal where it carries one", /batting\s*-2/i.test(skillsText));
+    // GA-I06: the radar's outer ring is 20, the top of the scale; the plan
+    // beside it names no target (none is saved) and nothing above 20.
+    // A category with fewer than three ratings draws no radar and says why.
+    ok("...a category with two ratings draws no radar, and says so", await coach.page.locator('[data-testid="radar"]').count() === 0
+       && /fewer than three/i.test(await coach.page.locator('[data-testid="radar-too-few"]').innerText({ timeout: 3000 }).catch(() => "")));
+    await click(coach.page, /^physical$/i, 4000);
+    const radar = coach.page.locator('[data-testid="radar"]').first();
+    ok("...the radar's outer ring is 20, the top of the scale", await radar.getAttribute("data-max").catch(() => null) === "20");
+    // Three ratings of 20/20: the data polygon IS the outer ring (the fifth of five), not a fifth of the way out.
+    const rings = await radar.locator("polygon").evaluateAll((ps) => ps.map((p) => p.getAttribute("points")));
+    ok("...and 20/20 reaches that ring: the data polygon is drawn on it", rings.length === 6 && rings[5] === rings[4], rings);
+    const focus = await coach.page.locator('[data-testid="focus-areas"]').innerText({ timeout: 4000 }).catch(() => "");
+    const ratingsShown = [...focus.matchAll(/(\d+)\s*\/\s*20/g)].map((m) => Number(m[1]));
+    ok("...the focus areas show ratings out of 20 and no target, because none is saved",
+       ratingsShown.length >= 1 && ratingsShown.every((n) => n >= 1 && n <= 20) && !/→|target \d/i.test(focus), focus.slice(0, 200));
+    ok("...and nothing on the screen is a rating past 20, such as 23 or 24",
+       !/\b(2[1-9]|[3-9]\d)\s*\/\s*20\b/.test(skillsText) && !/\d+\s*→\s*\d+/.test(skillsText));
+    // Back to the group the later steps in this walk assess.
+    await click(coach.page, /^technical$/i, 4000);
   } else {
     ok("the skills screen is reachable for a coach", false);
   }
@@ -2210,6 +2241,231 @@ try {
       ok("no scoping refusals or console errors for the coach", c.refusals.length === 0 && c.errors.length === 0);
       await c.ctx.close();
     } finally { await owner.end().catch(() => {}); }
+  }
+
+  // ── GA-I07: the right side by default ──────────────────────────
+  //
+  // Squad and Analytics used to open on "1XI" and filter by it, so a coach
+  // whose only assignment is another side saw an empty roster until he found
+  // the tab, and Analytics offered three sides, none of them his. The seed's
+  // coaches all hold 1XI, so this one is made here: a coach with a SINGLE
+  // assignment, U16B, where the seed's one U16B boy plays.
+  group("A coach who holds only U16B opens on U16B, with the boy in it");
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    try {
+      const HIL = "11111111-1111-1111-1111-111111111111";
+      const KD = "aaaaaaaa-0000-0000-0000-000000000006";
+      const email = "coach-u16b@example.invalid";
+      const uid = (await owner.query(
+        `insert into app_user (school_id, email, name, role, teams) values ($1, $2, 'T Soloside', 'coach', '{U16B}') returning id`, [HIL, email])).rows[0].id;
+      await owner.query(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'coach', $2, 'U16B')`, [uid, HIL]);
+
+      const c = await open();
+      const st = (id) => c.page.locator(`[data-testid="${id}"]`);
+      // Signed in by typing the address: the pick-list is the seeded accounts, and this one is not.
+      await click(c.page, /Get Started|Log In/, 5000);
+      await c.page.waitForTimeout(500);
+      await c.page.locator("#login-email").fill(email);
+      await click(c.page, /^Sign In$/, 5000);
+      await c.page.waitForTimeout(2000);
+      ok("the U16B-only coach signs in", /Match Centre|Dashboard/i.test(await text(c.page)));
+
+      ok("Squad opens", await nav(c.page, /Squad/));
+      ok("...on U16B, the one side he holds, and it is the lit tab",
+         await st("squad-team-U16B").getAttribute("aria-pressed") === "true");
+      ok("...with the side's boy in it, no tap needed", await st("squad-card-" + KD).count() === 1);
+      // The players read is school-wide for staff (the coach's team scope narrows what
+      // he may WRITE and see in full, not the roster), so the other sides are tabs
+      // away. What was wrong was where he LANDED: on a side that is not his.
+      const squadTabs = await c.page.locator('[data-testid="squad-teams"] button').allInnerTexts();
+      ok("...no boy of 1XI is on the screen until he asks for that side", !/Bekker|Naidoo|Cele|Pillay|Whitfield/.test(await text(c.page)));
+
+      ok("Analytics opens", await nav(c.page, /Analytics/));
+      const tabs = await c.page.locator('[data-testid="analytics-teams"] button').allInnerTexts();
+      ok("...offering the sides the rows contain, the same as Squad, in sheet order", tabs.join() === squadTabs.join() && tabs.includes("U16B") && tabs.join() === "1XI,U16B,U13A", tabs);
+      ok("...not the old fixed three: there is no U15A tab where no U15A boy is", !tabs.includes("U15A"), tabs);
+      ok("...on U16B", await st("analytics-team-U16B").getAttribute("aria-pressed") === "true");
+      await click(c.page, /^Table$/i, 4000);
+      const table = await text(c.page);
+      ok("...and the squad table is U16B's, with the boy in it", /Full Squad Stats — U16B/.test(table) && /K Dlamini/.test(table), table.slice(0, 300));
+
+      ok("Skills opens for him", await nav(c.page, /Skills/));
+      ok("no scoping refusals or page errors for him", c.refusals.length === 0 && c.errors.length === 0, c.errors.join(" | "));
+      await c.ctx.close();
+
+      // Sarah is a director of sport, a coach of U16B and a parent: she reads the
+      // whole school, but the side she HOLDS is the one Squad opens on, and
+      // changing side lets go of the boy she had open.
+      const s = await open();
+      const sq = (id) => s.page.locator(`[data-testid="${id}"]`);
+      ok("the director of sport who also coaches U16B signs in", await signIn(s.page, /sarah@example\.invalid/));
+      ok("Squad opens", await nav(s.page, /Squad/));
+      ok("...on U16B, the side she coaches, not 1XI", await sq("squad-team-U16B").getAttribute("aria-pressed") === "true"
+         && await sq("squad-card-" + KD).count() === 1);
+      ok("...and the school's other side is one tap away", await sq("squad-team-1XI").count() === 1);
+      await sq("squad-card-" + KD).click({ timeout: 4000 }).catch(() => {});
+      await s.page.waitForTimeout(800);
+      ok("a boy opened on U16B shows his panel", /SEASON STATS/.test(await text(s.page)));
+      await sq("squad-team-1XI").click({ timeout: 4000 }).catch(() => {});
+      await s.page.waitForTimeout(800);
+      ok("changing side to 1XI clears the open boy, and the 1XI roster shows",
+         !/SEASON STATS/.test(await text(s.page)) && await sq("squad-card-" + KD).count() === 0
+         && await s.page.locator('[data-testid^="squad-card-"]').count() >= 1);
+      ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
+      await s.ctx.close();
+    } finally { await owner.end().catch(() => {}); }
+  }
+
+  // ── GA-I20 A0: the parent's action list ─────────────────────────
+  //
+  // "To do for R Pillay", the second card on the Home, from the answers the
+  // family app already reads (docs/design/GA-I20_parent_action_list.md §7).
+  // Written last, for the state it needs: every other fixture of his side is
+  // parked as answered, so ONE is owed and the card says "1 to do". The seed's
+  // people only: R Pillay and his parent; Sarah's K Dlamini and D Mkhize.
+  group("The parent's action list: what is owed for the child, and nothing the app did not read");
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    const HIL = "11111111-1111-1111-1111-111111111111", WES = "22222222-2222-2222-2222-222222222222";
+    const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005", WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001";
+    const KD = "aaaaaaaa-0000-0000-0000-000000000006", DM = "bbbbbbbb-0000-0000-0000-000000000001";
+    const KEARSNEY = "77777777-0000-0000-0000-000000000003";
+    const OTHERS = /Bekker|Naidoo|Cele|Whitfield|Mkhize|Dlamini|Botha|Khumalo|Mahlangu|Sithole/;
+    const REASONS = /\bill(ness)?\b|\bfamily\b|\bwedding\b|school work|travelling|religious|another sport|\breason\b|\bnote\b/i;
+    const todo = (p) => p.locator('[data-testid="todo-card"]');
+    // The card has made every read it asked for: the count no longer says "Reading…".
+    const settled = async (p) => {
+      await p.waitForFunction(() => { const e = document.querySelector('[data-testid="todo-count"]'); return !!e && !/^Reading/.test(e.innerText); }, null, { timeout: 9000 }).catch(() => {});
+      return (await p.locator('[data-testid="todo-count"]').first().innerText({ timeout: 2000 }).catch(() => "")).trim();
+    };
+    let restoreWhitfield = false;
+    try {
+      const parentId = (await owner.query(`select id from app_user where email = 'parent@example.invalid'`)).rows[0].id;
+      const T = (await owner.query(
+        `insert into match (school_id, team_code, opponent, starts_at, format, overs, status, ground_id)
+         values ($1, '1XI', 'Verify GA-I20 XI', now() + interval '4 days', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001') returning id`, [HIL])).rows[0].id;
+      // Every other fixture of his side still to come is answered (by his parent): only T is owed.
+      await owner.query(
+        `insert into match_availability (match_id, player_id, school_id, status, declared_by)
+         select m.id, $1, m.school_id, 'available', $2 from match m
+          where m.school_id = $3 and m.team_code = '1XI' and m.status = 'scheduled' and m.id <> $4 and m.starts_at > now() - interval '6 hours'
+         on conflict (match_id, player_id) do nothing`, [PILLAY, parentId, HIL, T]);
+      const owed = (await owner.query(
+        `select count(*)::int as n from match m left join match_availability a on a.match_id = m.id and a.player_id = $1
+          where m.school_id = $2 and m.team_code = '1XI' and m.status = 'scheduled' and m.starts_at > now() - interval '6 hours' and a.player_id is null`, [PILLAY, HIL])).rows[0].n;
+      ok("the setup leaves exactly one fixture of his side unanswered", owed === 1, owed);
+
+      // ── The card, on his Home, under the next fixture ──
+      const A = await open();
+      const at = (id) => A.page.locator(`[data-testid="${id}"]`);
+      ok("the guardian signs in", await signIn(A.page, /parent@example\.invalid/));
+      const first = await settled(A.page);
+      const order = await A.page.$$eval('[data-testid="family-home-body"] > *', (els) => els.map((e) => e.getAttribute("data-testid")));
+      ok("the card is on Home, directly under the next fixture", order.indexOf("todo-card") !== -1 && order.indexOf("todo-card") === order.indexOf("next-fixture") + 1, order.join());
+      ok("it is about him: 'To do for R Pillay'", /^To do for R Pillay$/i.test((await todo(A.page).locator("h2").first().innerText().catch(() => "")).trim()));
+      ok("it counts the one fixture owed: '1 to do'", first === "1 to do", first);
+      const rowText = await at(`todo-row-${T}`).innerText({ timeout: 4000 }).catch(() => "");
+      ok("...as a row for that fixture, with who answers it, by when, and where it came from",
+         /Answer for \w{3} v Verify GA-I20 XI/.test(rowText) && /you or R Pillay/.test(rowText) && /by \w{3} \d\d:\d\d/.test(rowText)
+         && /from the fixture's answers/.test(rowText), rowText);
+      ok("...with its one door to the fixture, and nothing to mark it done", /Answer/.test(rowText) && await todo(A.page).locator("button", { hasText: /done|dismiss|snooze|mark|clear/i }).count() === 0);
+      const cardText = await todo(A.page).innerText();
+      ok("it names no other child and says no reason, no 'done' and no percentage",
+         !OTHERS.test(cardText) && !REASONS.test(cardText) && !/\b(done|ready|complete|cleared)\b|%/i.test(cardText), cardText);
+      ok("it says what the by-when is", /By-when is 48 hours before the start/.test(cardText));
+      await A.page.setViewportSize({ width: 390, height: 844 });
+      await A.page.waitForTimeout(400);
+      const f = await floors(A.page);
+      ok(`on a phone: nothing in the card under 12px (${f.small.length}) and nothing tapped under 44px (${f.tiny.length})`, f.small.length === 0 && f.tiny.length === 0, [...f.small, ...f.tiny].slice(0, 4).join(" · "));
+      await A.page.setViewportSize({ width: 1280, height: 800 });
+
+      // ── A second signed-in tab, reading the same record ──
+      const B = await open();
+      ok("a second tab signs in", await signIn(B.page, /parent@example\.invalid/));
+      ok("...and it says '1 to do' too: the list is read, never kept on the device", await settled(B.page) === "1 to do");
+
+      // ── Declaring at the door drops the row ──
+      await at(`todo-row-${T}`).click({ timeout: 4000 }).catch(() => {});
+      await A.page.waitForTimeout(1200);
+      ok("the row's door opens the fixture, where she answers today", /Verify GA-I20 XI/.test(await at("fixture-title").innerText().catch(() => ""))
+         && await at(`availability-set-${PILLAY}-available`).count() === 1);
+      await at(`availability-set-${PILLAY}-available`).click({ timeout: 4000 }).catch(() => {});
+      await at(`availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+      await A.page.waitForTimeout(1500);
+      ok("she declares him available", /^available$/i.test((await at(`availability-state-${PILLAY}`).innerText().catch(() => "")).trim())
+         && (await owner.query(`select status from match_availability where match_id = $1 and player_id = $2`, [T, PILLAY])).rows[0]?.status === "available");
+      await at("family-back").click({ timeout: 4000 }).catch(() => {});
+      await A.page.waitForTimeout(400);
+      const after = await settled(A.page);
+      ok("back on Home the row is gone, and the card says so: 'Nothing to do for R Pillay'", after === "Nothing to do for R Pillay" && await at(`todo-row-${T}`).count() === 0, after);
+      ok("...the next fixture's own card still names his answer (the one record, said once)", /Available/.test(await at("next-fixture").innerText().catch(() => "")));
+      await B.page.reload({ waitUntil: "networkidle" });
+      // The token is held in memory only, so a reload is a demonstration until she signs in again.
+      ok("a reload drops the token: the demonstration, with nothing of the family's", /Sign in to see your family/.test(await text(B.page)) && await B.page.locator('[data-testid="todo-card"]').count() === 0);
+      await click(B.page, /^Sign in$/i, 4000);
+      ok("the second tab signs in again after a reload", await signIn(B.page, /parent@example\.invalid/));
+      const second = await settled(B.page);
+      ok("...and its list has dropped the row too: 'Nothing to do for R Pillay'", second === "Nothing to do for R Pillay" && await B.page.locator(`[data-testid="todo-row-${T}"]`).count() === 0, second);
+      ok("no scoping refusals or page errors in either tab", A.refusals.length === 0 && B.refusals.length === 0 && A.errors.length === 0 && B.errors.length === 0, [...A.errors, ...B.errors].join(" | "));
+      await A.ctx.close(); await B.ctx.close();
+
+      // ── With the answers read killed, it never says nothing is owed ──
+      for (const [what, glob, words] of [["availability", "**/api/read/availability*", /Could not read the answers for/], ["fixtures", "**/api/read/matches*", /Could not read the fixtures/]]) {
+        const C = await open();
+        await C.page.route(glob, (r) => r.abort());
+        ok(`${what} read killed: the guardian signs in`, await signIn(C.page, /parent@example\.invalid/));
+        const seen = [];
+        for (let i = 0; i < 14; i++) { seen.push((await C.page.locator('[data-testid="todo-card"]').first().innerText({ timeout: 800 }).catch(() => "")).trim()); await C.page.waitForTimeout(250); }
+        const last = seen.at(-1) ?? "";
+        ok(`...the card is drawn, and at no moment (${seen.length} looks) reads "Nothing to do"`, seen.some((s) => s) && seen.every((s) => !/Nothing to do/i.test(s)), seen.find((s) => /Nothing to do/i.test(s)));
+        ok(`...it says which read it could not make, and counts it: "· N read failed"`, words.test(last) && /\d+ to do · \d+ reads? failed/.test(last), last);
+        ok("...and a way to try again, only where a retry can be made", what === "availability" ? await C.page.locator('[data-testid="todo-retry"]').count() >= 1 : await C.page.locator('[data-testid="todo-retry"]').count() === 0);
+        await C.ctx.close();
+      }
+
+      // ── Two children at two schools; and a coach who is a parent ──
+      // D Mkhize gets a fixture of his own (Westville 1XI), unanswered. K
+      // Dlamini's is the seed's Kearsney fixture (U16B, ten days off). The
+      // coach's read of K Dlamini's side is made a side by moving one of the
+      // seed's other boys into U16B for the length of this walk.
+      const DMF = (await owner.query(
+        `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+         values ($1, '1XI', 'Verify GA-I20 Westville XI', now() + interval '6 days', 'T20', 20, 'scheduled') returning id`, [WES])).rows[0].id;
+      await owner.query(`update player set team_code = 'U16B' where id = $1`, [WHITFIELD]);
+      restoreWhitfield = true;
+      // Both boys unanswered for Kearsney, whatever an earlier walk wrote: the coach's read returns the side, silent.
+      await owner.query(`delete from match_availability where match_id = $1 and player_id in ($2, $3)`, [KEARSNEY, KD, WHITFIELD]);
+      const sideRows = [];
+      const S = await open();
+      S.page.on("response", async (r) => { if (r.url().includes(`/api/read/availability?matchId=${KEARSNEY}`)) { try { sideRows.push((await r.json()).rows ?? []); } catch { /* not json */ } } });
+      const st = (id) => S.page.locator(`[data-testid="${id}"]`);
+      ok("the two-school guardian signs in", await signIn(S.page, /sarah@example\.invalid/));
+      await st("nav-children").click({ timeout: 6000 }).catch(() => {});
+      await S.page.waitForTimeout(1500);
+      await st(`child-chip-${KD}`).click({ timeout: 4000 }).catch(() => {});
+      const kd = await settled(S.page);
+      const kdCard = await todo(S.page).innerText().catch(() => "");
+      ok("K Dlamini's card: 'To do for K Dlamini', one row, for his own side's Kearsney fixture", /To do for K Dlamini/i.test(kdCard) && kd === "1 to do"
+         && await st(`todo-row-${KEARSNEY}`).count() === 1 && /v Kearsney/.test(kdCard), kdCard);
+      ok("...and no row of D Mkhize's: not his Westville fixture, not his name", await st(`todo-row-${DMF}`).count() === 0 && !/Westville|Mkhize/.test(kdCard), kdCard);
+      ok("COACH-PARENT: her coach's read of K Dlamini's fixture returned the side (more than one boy), yet the card shows one row and no other boy",
+         sideRows.some((rows) => rows.length >= 2 && rows.some((x) => x.player_id === WHITFIELD)) && !/Whitfield/.test(kdCard) && await todo(S.page).locator('[data-testid^="todo-row-"]').count() === 1,
+         sideRows.map((r) => r.length));
+      await st(`child-chip-${DM}`).click({ timeout: 4000 }).catch(() => {});
+      await S.page.waitForTimeout(600);
+      const dm = await settled(S.page);
+      const dmCard = await todo(S.page).innerText().catch(() => "");
+      ok("D Mkhize's card is his own list: 'To do for D Mkhize', one row, for his Westville fixture", /To do for D Mkhize/i.test(dmCard) && dm === "1 to do"
+         && await st(`todo-row-${DMF}`).count() === 1 && /Verify GA-I20 Westville XI/.test(dmCard), dmCard);
+      ok("...and no row of K Dlamini's: not the Kearsney fixture, not his name; the two counts are never one", await st(`todo-row-${KEARSNEY}`).count() === 0
+         && !/Kearsney|Dlamini|Whitfield/.test(dmCard) && !/2 to do/.test(await st("family-home-body").innerText().catch(() => "")), dmCard);
+      ok("no scoping refusals or page errors for her", S.refusals.length === 0 && S.errors.length === 0, S.errors.join(" | "));
+      await S.ctx.close();
+    } finally {
+      if (restoreWhitfield) await owner.query(`update player set team_code = '1XI' where id = $1`, [WHITFIELD]).catch(() => {});
+      await owner.end().catch(() => {});
+    }
   }
 
 } catch (e) {

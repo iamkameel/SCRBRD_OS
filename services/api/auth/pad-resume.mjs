@@ -283,13 +283,15 @@ export function padCredentialRoutes({ pool, secret, now = Date.now }) {
       }
     },
 
-    // POST /api/auth/sign-out — this person's credentials on this device end.
-    // The client also forgets its keys, which ends them on the device even
-    // when this request cannot reach the server.
+    // POST /api/auth/sign-out — this person's credentials on this device end,
+    // and so do their sessions here (db/85, GA-I03): the token that asked,
+    // and any older one this device was given, are refused from now on. The
+    // client also forgets its keys, which ends them on the device even when
+    // this request cannot reach the server.
     signOut: async (_body, req) => {
-      const n = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
-        (await client.query(`select pad_resume_sign_out() as n`)).rows[0]?.n ?? 0);
-      return { ok: true, revoked: n };
+      const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
+        (await client.query(`select pad_resume_sign_out() as n, auth_sign_out() as s`)).rows[0]);
+      return { ok: true, revoked: r?.n ?? 0, sessions: r?.s ?? 0 };
     },
   };
 }

@@ -3756,82 +3756,62 @@ CREATE OR REPLACE FUNCTION _v84_user_by_email(p_email text) RETURNS uuid AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/84 (section 63) ──────────────────────────────────────────────
 
--- ┌── db/86 (section 64) ──────────────────────────────────────────────
--- A wicket on a wide or a no-ball (Law 22.9, 21.17). One Hilton 1XI fixture,
--- one innings, Hilton batting and bowling (the fold cares for neither side):
--- J Whitfield (…01) and T Bekker (…02) open, R Pillay (…05) and K Dlamini
--- (…06) come in; S Naidoo (…03) bowls; M Cele (…04) keeps.
---   seq 1 start · 2 keeper …04 · 3 a single (…01) · 4 stumped off a wide
---   (…02), "M Cele": the keeper's, the bowler's · 5 …05 in · 6 a no-ball, 2
---   off the bat (…05), …01 run out at the striker's end: not the bowler's; a
---   free hit · 7 …06 in · 8 stumped off a wide on the free hit (…06): saved,
---   and the free hit carries on · 9 a dot (…06): the free hit taken.
--- packages/scoring/test/replay.test.mjs group P folds the same log ("the log
--- db/86 proves") and holds the fold to the figures §64 reads. Written as the
--- owner, one row per statement, as the write path writes.
-CREATE OR REPLACE FUNCTION _seed_86() RETURNS uuid AS $$
-DECLARE m uuid; r record;
-  HIL uuid := '11111111-1111-1111-1111-111111111111';
-  A1 uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
-  A2 uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
-  BW uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
-  KP uuid := 'aaaaaaaa-0000-0000-0000-000000000004';
-  A3 uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
-  A4 uuid := 'aaaaaaaa-0000-0000-0000-000000000006';
+-- ┌── db/85 (section 64) ──────────────────────────────────────────────
+-- Become somebody the way the API does (app_session_begin), as the caller —
+-- not a definer — answering 'ok:<app_user_id()>' or the SQLSTATE and the
+-- sentence. A refusal rolls back its own subtransaction, identity included.
+CREATE OR REPLACE FUNCTION _v85_begin(p_user uuid, p_device text, p_session uuid, p_epoch integer, p_pad uuid DEFAULT NULL) RETURNS text AS $$
+BEGIN
+  PERFORM app_session_begin(p_user, p_device, p_session, p_epoch, p_pad);
+  RETURN 'ok:' || coalesce(app_user_id()::text, '') || ':' || coalesce(app_device_id(), '');
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE || ': ' || SQLERRM;
+END $$ LANGUAGE plpgsql;
+-- What the owner sees of an account's sessions, past the no-privilege tables.
+CREATE OR REPLACE FUNCTION _v85_state(p_user uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'epoch',  coalesce((SELECT e.epoch FROM auth_epoch e WHERE e.user_id = p_user), 0),
+    'reason', (SELECT e.reason FROM auth_epoch e WHERE e.user_id = p_user),
+    'by',     (SELECT e.bumped_by FROM auth_epoch e WHERE e.user_id = p_user),
+    'active', (SELECT u.active FROM app_user u WHERE u.id = p_user),
+    'live',   (SELECT count(*) FROM auth_session s WHERE s.user_id = p_user AND s.revoked_at IS NULL))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The plain-UPDATE door, as the owner: no route, no function, only the trigger.
+CREATE OR REPLACE FUNCTION _v85_set_active(p_user uuid, p_active boolean) RETURNS void AS $$
+  UPDATE app_user SET active = p_active WHERE id = p_user
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A Google sign-in on an account, as the owner.
+CREATE OR REPLACE FUNCTION _v85_identity(p_user uuid) RETURNS uuid AS $$
+  INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how)
+  VALUES (p_user, 'google.com', 'v85-' || gen_random_uuid(), 'v85.walk@example.invalid', 'self_added')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A live pad credential for (person, device) on a fixture of its own.
+CREATE OR REPLACE FUNCTION _v85_pad(p_user uuid, p_device text) RETURNS uuid AS $$
+DECLARE m uuid; c uuid;
 BEGIN
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-  VALUES (HIL, '1XI', 'Verify 086 wickets off extras', now() - interval '2 days', 'cricket', 'T20', 20, 'complete')
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify Eightyfive College 1XI', now() + interval '5 days', 'cricket', 'T20', 20, 'scheduled')
   RETURNING id INTO m;
-  FOR r IN
-    SELECT * FROM (VALUES
-      (1, 'innings_start', NULL, NULL::int, NULL, jsonb_build_object('battingTeam', 'Hilton 1XI', 'bowlingTeam', 'Hilton 2XI',
-            'squad', jsonb_build_array(jsonb_build_object('id', A1, 'name', 'J Whitfield'), jsonb_build_object('id', A2, 'name', 'T Bekker')),
-            'bowlingSquad', jsonb_build_array(jsonb_build_object('id', BW, 'name', 'S Naidoo'), jsonb_build_object('id', KP, 'name', 'M Cele'))),
-            NULL::uuid, NULL::uuid, NULL::uuid),
-      (2, 'keeper', NULL, NULL, NULL, jsonb_build_object('keeper', KP), NULL, NULL, NULL),
-      (3, 'ball', 'run', 1, NULL, '{}'::jsonb, A1, BW, NULL),
-      (4, 'ball', 'Wd', 0, 'stumped', '{"fielder":"M Cele"}', A2, BW, NULL),
-      (5, 'batters', NULL, NULL, NULL, jsonb_build_object('striker', A3), NULL, NULL, NULL),
-      (6, 'ball', 'Nb', 2, 'run_out', '{"outAt":"striker_end"}', A3, BW, A1),
-      (7, 'batters', NULL, NULL, NULL, jsonb_build_object('striker', A4), NULL, NULL, NULL),
-      (8, 'ball', 'Wd', 0, 'stumped', '{}', A4, BW, NULL),
-      (9, 'ball', 'run', 0, NULL, '{}', A4, BW, NULL)
-    ) AS x(seq, kind, bt, v, dis, payload, striker, bowler, dismissed)
-  LOOP
-    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
-                            client_seq, client_ts, kind, ball_type, value, dismissal, payload, striker_id, bowler_id, dismissed_id)
-    VALUES (m, HIL, r.seq, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-086', 'v86:' || m || ':' || r.seq,
-            r.seq, now() - interval '2 days' + r.seq * interval '20 seconds', r.kind, r.bt, r.v, r.dis, r.payload,
-            r.striker, r.bowler, r.dismissed);
-  END LOOP;
-  RETURN m;
+  INSERT INTO pad_resume_credential (id_hash, user_id, device_id, match_id, school_id, public_jwk, jkt, expires_at)
+  VALUES (encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'hex'), p_user, p_device, m, match_school(m),
+          '{"kty":"EC","crv":"P-256","x":"MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4","y":"4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"}',
+          repeat('A', 43), now() + interval '1 hour')
+  RETURNING id INTO c;
+  RETURN c;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- Every career figure a wicket on an extra moves, for the six boys, in one
--- line, as the reader may see them: compared before and after _seed_86().
-CREATE OR REPLACE FUNCTION _careers_86() RETURNS jsonb AS $$
-  SELECT jsonb_build_object(
-    'bowl_since',  (SELECT jsonb_build_array(s.legal_balls, s.wides, s.no_balls, s.wickets, s.runs_conceded)
-                      FROM player_bowling_since('aaaaaaaa-0000-0000-0000-000000000003', NULL) s),
-    'bowl_career', (SELECT coalesce(sum(x.wickets), 0) FROM player_bowling_career x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
-    'bowl_season', (SELECT coalesce(sum(x.wickets), 0) FROM player_bowling_by_season x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
-    'wkt_stumped', (SELECT coalesce(sum(x.wickets), 0) FROM player_wicket_breakdown x
-                     WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003' AND x.dismissal = 'stumped'),
-    'out_since',   (SELECT jsonb_build_array(player_dismissals_since('aaaaaaaa-0000-0000-0000-000000000001', NULL),
-                                             player_dismissals_since('aaaaaaaa-0000-0000-0000-000000000002', NULL),
-                                             player_dismissals_since('aaaaaaaa-0000-0000-0000-000000000006', NULL))),
-    'out_view',    (SELECT coalesce(sum(x.dismissals), 0) FROM player_dismissals x
-                     WHERE x.player_id IN ('aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002')),
-    'out_season',  (SELECT coalesce(sum(x.dismissals), 0) FROM player_dismissals_by_season x
-                     WHERE x.player_id IN ('aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002')),
-    'out_ro',      (SELECT coalesce(sum(x.dismissals), 0) FROM player_dismissal_breakdown x
-                     WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000001' AND x.dismissal = 'run_out'),
-    'out_st',      (SELECT coalesce(sum(x.dismissals), 0) FROM player_dismissal_breakdown x
-                     WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000002' AND x.dismissal = 'stumped'),
-    'bat_since',   (SELECT jsonb_build_array(s.runs, s.balls_faced) FROM player_batting_since('aaaaaaaa-0000-0000-0000-000000000005', NULL) s),
-    'bat_wide',    (SELECT jsonb_build_array(s.runs, s.balls_faced) FROM player_batting_since('aaaaaaaa-0000-0000-0000-000000000002', NULL) s),
-    'keeping',     (SELECT coalesce(sum(x.stumpings), 0) FROM player_keeping_career x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000004'))
-$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
--- └── db/86 (section 64) ──────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION _v85_pad_reason(p_id uuid) RETURNS text AS $$
+  SELECT coalesce(revoked_reason, 'live') FROM pad_resume_credential WHERE id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Whether the application role may touch a table or a function, as an answer.
+CREATE OR REPLACE FUNCTION _v85_try(p_sql text) RETURNS text AS $$
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql;
+-- └── db/85 (section 64) ──────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -16128,87 +16108,212 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 63
-  -- ┌── section 64 · db/86: a wicket on a wide or a no-ball ──
-  -- _seed_86(): a Hilton innings with a stumping off a wide, a run out off a
-  -- no-ball, and a stumping off a wide on the free hit that follows (saved).
-  -- Every figure below is the fold's for that log (replay.test.mjs group P,
-  -- "the log db/86 proves"); tools/smoke-fold-figures.mjs holds every reader
-  -- to the fold over generated logs with wickets on extras.
+
+  -- ┌── 64 · A session ends when it is ended (db/85, GA-I03) ──────────
+  -- Everything below as the application role, through app_session_begin()
+  -- — the one call the API makes to become somebody — and the db/85 doors:
   --
-  -- With db/86 left out (the database as db/84 left it) this section went
-  -- red at its first assertion: the live score read (6,0,2) — no wicket on
-  -- either extra. What each label holds:
-  --   (score)   the live score and the handover's count: 2 wickets, not 0
-  --   (bowler)  the bowler's innings and career: the stumping is his
-  --   (batter)  who is out: …01 run out off the no-ball, …02 stumped off the wide
-  --   (keeper)  the stumping off the wide is the keeper's
-  --   (door)    a method the Law does not allow off the extra is refused
+  --   (mint)       with no identity, a session for an active account; none
+  --                for an inactive one; signed in, only for yourself
+  --   (begin)      a live session sets app.user_id and app.device_id; the
+  --                wrong device, a session never issued, or the wrong epoch
+  --                is 28000 session_revoked, and the identity is not set
+  --   (anon)       no person: the empty identity, as before
+  --   (signed_out) auth_sign_out() ends this device's sessions, not another
+  --                device's
+  --   (everywhere) auth_sign_out_everywhere() bumps the epoch: every older
+  --                session is refused; a session minted after it works
+  --   (disable)    the office (account_set_active) disables the account:
+  --                every session refused, no new one minted; never your own;
+  --                not by a coach or another school's office; enabling
+  --                brings nothing back, a fresh session works
+  --   (update)     the plain-UPDATE door (no function, the owner) ends
+  --                sessions just the same: the rule is a trigger
+  --   (sign-in)    removing a Google sign-in ends the account's sessions
+  --   (pad)        a pad credential begins while live, for a live account;
+  --                disabling the account and signing out everywhere end it,
+  --                with the reason on the row
+  --   (server)     the server acting as a person: active only
+  --   (privilege)  the application reads neither table and cannot bump
+  --
+  -- Falsified, as the owner before the verify ran: with the
+  -- auth_account_disabled trigger disabled, (disable) went red at "the epoch
+  -- row says"; with both epoch comparisons taken out of app_session_begin(),
+  -- (begin) went red at "a session began under an epoch it was not minted
+  -- in". Each restored, and green again.
   DECLARE
-    M    uuid;
-    b0   jsonb;
-    b1   jsonb;
-    got  text;
-    A1 uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
-    A2 uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
-    BW uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
-    A3 uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
-    A4 uuid := 'aaaaaaaa-0000-0000-0000-000000000006';
+    U_C       uuid := '88888888-0000-0000-0000-000000000004';  -- coach of 1XI
+    s1 uuid; s2 uuid; s3 uuid; s4 uuid; s5 uuid; c1 uuid; c2 uuid; v_id uuid;
+    e0 int; e1 int; e2 int;
+    v_got text; n int; j jsonb;
   BEGIN
-    PERFORM _as(U_SARAH);
-    b0 := _careers_86();
-    M := _seed_86();
-    PERFORM _as(U_SARAH);
-    b1 := _careers_86();
-    -- (score) runs 1 + 1 + 3 + 1 + 0; two wickets (the saved stumping is none); two balls of the over
-    SELECT concat_ws(' | ',
-      (SELECT row(l.runs, l.wickets, l.legal_balls)::text FROM match_live_score l WHERE l.match_id = M),
-      (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(M, 0::smallint) f))
-      INTO got;
-    PERFORM _assert(got = '(6,2,2) | (6,2,2)',
-      format('§64 (score): the live score and the handover''s count read %s, where the fold says (6,2,2) | (6,2,2)', got));
-    -- (bowler) his innings: one wicket, six conceded (both wides, the no-ball and its two off the bat)
-    SELECT row(b.wickets, b.runs_conceded)::text INTO got FROM bowler_innings_figures b WHERE b.match_id = M AND b.player_id = BW;
-    PERFORM _assert(got = '(1,6)', format('§64 (bowler): S Naidoo''s innings reads %s, where the fold says (1,6)', got));
-    PERFORM _assert(b1->'bowl_since' = jsonb_build_array((b0->'bowl_since'->>0)::int + 2, (b0->'bowl_since'->>1)::int + 2,
-                                                         (b0->'bowl_since'->>2)::int + 1, (b0->'bowl_since'->>3)::int + 1,
-                                                         (b0->'bowl_since'->>4)::int + 6)
-                    AND (b1->>'bowl_career')::int = (b0->>'bowl_career')::int + 1
-                    AND (b1->>'bowl_season')::int = (b0->>'bowl_season')::int + 1
-                    AND (b1->>'wkt_stumped')::int = (b0->>'wkt_stumped')::int + 1,
-      format('§64 (bowler): his career moved %s → %s; the fold says two balls, two wides, a no-ball, one wicket (stumped), six runs', b0, b1));
-    -- (batter) who is out, and what each faced: a no-ball is a ball faced, a wide is not
-    SELECT string_agg(CASE x.player_id WHEN A1 THEN 'a1' WHEN A2 THEN 'a2' WHEN A3 THEN 'a3' ELSE 'a4' END
-                      || '=' || row(x.runs, x.balls_faced, x.out)::text, ' ' ORDER BY x.player_id)
-      INTO got FROM player_innings x WHERE x.match_id = M;
-    PERFORM _assert(got = 'a1=(1,1,t) a2=(0,0,t) a3=(2,1,f) a4=(0,1,f)',
-      format('§64 (batter): the innings'' batting reads %s, where the fold says a1=(1,1,t) a2=(0,0,t) a3=(2,1,f) a4=(0,1,f)', got));
-    PERFORM _assert(b1->'out_since' = jsonb_build_array((b0->'out_since'->>0)::int + 1, (b0->'out_since'->>1)::int + 1, (b0->'out_since'->>2)::int)
-                    AND (b1->>'out_view')::int = (b0->>'out_view')::int + 2
-                    AND (b1->>'out_season')::int = (b0->>'out_season')::int + 2
-                    AND (b1->>'out_ro')::int = (b0->>'out_ro')::int + 1
-                    AND (b1->>'out_st')::int = (b0->>'out_st')::int + 1
-                    AND b1->'bat_since' = jsonb_build_array((b0->'bat_since'->>0)::int + 2, (b0->'bat_since'->>1)::int + 1)
-                    AND b1->'bat_wide' = b0->'bat_wide',
-      format('§64 (batter): the careers moved %s → %s; the fold says …01 run out, …02 stumped, …06 not out; …05 2 off a ball; …02 faced nothing', b0, b1));
-    -- (keeper) the stumping off the wide is M Cele's; the saved one is nobody's
-    SELECT string_agg(k.seq || ':' || k.dismissal, ',' ORDER BY k.seq) INTO got FROM keeper_dismissal k WHERE k.match_id = M;
-    PERFORM _assert(got = '4:stumped' AND (b1->>'keeping')::int = (b0->>'keeping')::int + 1,
-      format('§64 (keeper): the keeper''s dismissals read %s (career %s → %s), where the fold says 4:stumped', got, b0->'keeping', b1->'keeping'));
-    -- (door) a bowled off a wide, a stumping or a catch off a no-ball: refused,
-    -- as the owner writes (no route, no policy); a run out off either taken
-    PERFORM _assert(_owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-        idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
-        VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-086',
-                'v86:door:wd', 30, now(), 'ball', 'Wd', 0, 'bowled', '{}')$q$, M)) = '23514'
-                    AND _owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-        idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
-        VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-086',
-                'v86:door:nb', 30, now(), 'ball', 'Nb', 0, 'caught', '{}')$q$, M)) = '23514'
-                    AND _owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-        idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
-        VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-086',
-                'v86:door:ok', 30, now(), 'ball', 'Nb', 1, 'run_out', '{}')$q$, M)) = 'ok',
-      '§64 (door): a bowled off a wide or a catch off a no-ball was taken, or a run out off a no-ball refused');
+    -- (anon)
+    v_got := _v85_begin(NULL, NULL, NULL, NULL);
+    PERFORM _assert(v_got = 'ok::', format('§64 (anon): nobody did not set the empty identity (%s)', v_got));
+
+    -- (mint)
+    e0 := (_v85_state(U_PARENT)->>'epoch')::int;
+    SELECT o.session_id, o.epoch INTO s1, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    PERFORM _assert(s1 IS NOT NULL AND e1 = e0, format('§64 (mint): no session minted for an active account (%s, epoch %s of %s)', s1, e1, e0));
+    PERFORM _v85_set_active(U_BURSAR, false);
+    SELECT o.session_id INTO v_id FROM auth_session_open(U_BURSAR, 'v85-phone', 1800) o;
+    PERFORM _assert(v_id IS NULL, '§64 (mint): a session was minted for an inactive account');
+    PERFORM _v85_set_active(U_BURSAR, true);
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.session_id INTO v_id FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    PERFORM _assert(v_id IS NULL, '§64 (mint): a signed-in person minted a session for somebody else');
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (begin)
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s1, e1);
+    PERFORM _assert(v_got = 'ok:' || U_PARENT || ':v85-phone', format('§64 (begin): a live session did not begin (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-other-phone', s1, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (begin): a session began on another device (%s)', v_got));
+    v_got := _v85_begin(U_PARENT, 'v85-phone', gen_random_uuid(), e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (begin): a session never issued began (%s)', v_got));
+    v_got := _v85_begin(U_COACH, 'v85-phone', s1, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (begin): the parent''s session began as the coach (%s)', v_got));
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s1, e1 + 1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (begin): a session began under an epoch it was not minted in (%s)', v_got));
+    PERFORM _assert(app_user_id() IS NULL, '§64 (begin): a refused session left an identity behind');
+
+    -- (signed_out)
+    SELECT o.session_id INTO s2 FROM auth_session_open(U_PARENT, 'v85-laptop', 1800) o;
+    PERFORM _v85_begin(U_PARENT, 'v85-phone', s1, e1);
+    n := auth_sign_out();
+    PERFORM _assert(n = 1, format('§64 (signed_out): the phone''s sign-out ended %s sessions (expected 1)', n));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s1, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (signed_out): the signed-out session still began (%s)', v_got));
+    v_got := _v85_begin(U_PARENT, 'v85-laptop', s2, e1);
+    PERFORM _assert(v_got LIKE 'ok:%', format('§64 (signed_out): the laptop was signed out with the phone (%s)', v_got));
+
+    -- (everywhere)
+    SELECT o.ok, o.epoch INTO STRICT v_got, e2 FROM auth_sign_out_everywhere() o;
+    PERFORM _assert(v_got = 'true' AND e2 = e1 + 1, format('§64 (everywhere): signing out everywhere answered %s, epoch %s (expected %s)', v_got, e2, e1 + 1));
+    j := _v85_state(U_PARENT);
+    PERFORM _assert(j->>'reason' = 'signed_out_everywhere' AND (j->>'by')::uuid = U_PARENT, format('§64 (everywhere): the epoch row says %s', j));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-laptop', s2, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (everywhere): a session from before still began (%s)', v_got));
+    v_got := _v85_begin(U_PARENT, 'v85-laptop', s2, e2);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (everywhere): an old session claiming the new epoch began (%s)', v_got));
+    SELECT o.session_id, o.epoch INTO s3, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s3, e1);
+    PERFORM _assert(e1 = e2 AND v_got LIKE 'ok:%', format('§64 (everywhere): a session minted after it did not begin (%s, epoch %s)', v_got, e1));
+
+    -- (disable)
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.reason INTO v_got FROM account_set_active(U_REGISTRAR, false) o;
+    PERFORM _assert(v_got = 'cannot_disable_yourself', format('§64 (disable): the office disabled itself (%s)', v_got));
+    PERFORM _as(U_C);
+    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false) o;
+    PERFORM _assert(v_got = 'not_permitted', format('§64 (disable): a coach disabled a parent (%s)', v_got));
+    PERFORM _as(U_WES_ADM);
+    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false) o;
+    PERFORM _assert(v_got = 'not_permitted', format('§64 (disable): Westville''s office disabled Hilton''s parent (%s)', v_got));
+    PERFORM _assert((_v85_state(U_PARENT)->>'active')::boolean, '§64 (disable): a refused disable disabled the account');
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false) o;
+    PERFORM _assert(v_got = 'true:false', format('§64 (disable): Hilton''s office could not disable its parent (%s)', v_got));
+    j := _v85_state(U_PARENT);
+    PERFORM _assert(j->>'reason' = 'account_disabled' AND (j->>'epoch')::int = e2 + 1 AND (j->>'by')::uuid = U_REGISTRAR,
+      format('§64 (disable): the epoch row says %s', j));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s3, e2);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (disable): a disabled account''s session began (%s)', v_got));
+    SELECT o.session_id INTO v_id FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    PERFORM _assert(v_id IS NULL, '§64 (disable): a disabled account was minted a session');
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true) o;
+    PERFORM _assert(v_got = 'true:true', format('§64 (disable): Hilton''s office could not enable its parent (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s3, e2);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (disable): enabling brought an old session back (%s)', v_got));
+    -- The owner's key may do what the office may.
+    PERFORM _as(U_OWNER);
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false) o;
+    PERFORM _assert(v_got = 'true:false', format('§64 (disable): the owner could not disable a parent (%s)', v_got));
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true) o;
+    PERFORM _assert(v_got = 'true:true', format('§64 (disable): the owner could not enable a parent (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT o.session_id, o.epoch INTO s4, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s4, e1);
+    PERFORM _assert(v_got LIKE 'ok:%', format('§64 (disable): a fresh session after enabling did not begin (%s)', v_got));
+
+    -- (update)
+    PERFORM _v85_set_active(U_PARENT, false);
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s4, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (update): a plain UPDATE left the session working (%s)', v_got));
+    PERFORM _v85_set_active(U_PARENT, true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s4, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (update): the session came back with the account (%s)', v_got));
+    PERFORM _assert((_v85_state(U_PARENT)->>'reason') = 'account_disabled' AND (_v85_state(U_PARENT)->>'epoch')::int = e1 + 1,
+      format('§64 (update): the plain UPDATE did not bump the epoch: %s', _v85_state(U_PARENT)));
+
+    -- (sign-in)
+    v_id := _v85_identity(U_PARENT);
+    SELECT o.session_id, o.epoch INTO s5, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
+    PERFORM _v85_begin(U_PARENT, 'v85-phone', s5, e1);
+    SELECT o.ok::text INTO v_got FROM auth_identity_revoke_self(v_id) o;
+    PERFORM _assert(v_got = 'true', format('§64 (sign-in): the parent could not remove his Google sign-in (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, 'v85-phone', s5, e1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (sign-in): a session from before the removal still began (%s)', v_got));
+    PERFORM _assert((_v85_state(U_PARENT)->>'reason') = 'sign_in_removed', format('§64 (sign-in): the epoch row says %s', _v85_state(U_PARENT)));
+
+    -- (pad)
+    c1 := _v85_pad(U_SCORER, 'v85-pad-1');
+    v_got := _v85_begin(U_SCORER, 'v85-pad-1', NULL, NULL, c1);
+    PERFORM _assert(v_got LIKE 'ok:%', format('§64 (pad): a live credential did not begin (%s)', v_got));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_SCORER, 'v85-pad-2', NULL, NULL, c1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (pad): a credential began on another device (%s)', v_got));
+    PERFORM _as(U_REGISTRAR);
+    SELECT o.ok::text INTO v_got FROM account_set_active(U_SCORER, false) o;
+    PERFORM _assert(v_got = 'true', format('§64 (pad): Hilton''s office could not disable its scorer (%s)', v_got));
+    PERFORM _assert(_v85_pad_reason(c1) = 'account_disabled', format('§64 (pad): the credential reads %s after the account was disabled', _v85_pad_reason(c1)));
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_SCORER, 'v85-pad-1', NULL, NULL, c1);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (pad): a disabled scorer''s credential began (%s)', v_got));
+    PERFORM _as(U_REGISTRAR);
+    PERFORM account_set_active(U_SCORER, true);
+    PERFORM _assert(_v85_pad_reason(c1) = 'account_disabled', '§64 (pad): enabling the account brought the credential back');
+    c2 := _v85_pad(U_SCORER, 'v85-pad-2');
+    PERFORM _as(U_SCORER);
+    PERFORM auth_sign_out_everywhere();
+    PERFORM _assert(_v85_pad_reason(c2) = 'signed_out_everywhere', format('§64 (pad): signing out everywhere left the credential %s', _v85_pad_reason(c2)));
+    PERFORM set_config('app.user_id', '', true);
+    -- A pad's own request cannot sign out everywhere.
+    c2 := _v85_pad(U_SCORER, 'v85-pad-3');
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT o.reason INTO v_got FROM auth_sign_out_everywhere() o;
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(v_got = 'not_permitted' AND _v85_pad_reason(c2) = 'live', format('§64 (pad): a credential signed out everywhere (%s)', v_got));
+
+    -- (server)
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, NULL, NULL, NULL);
+    PERFORM _assert(v_got LIKE 'ok:%', format('§64 (server): the server could not act as an active account (%s)', v_got));
+    PERFORM _v85_set_active(U_PARENT, false);
+    PERFORM set_config('app.user_id', '', true);
+    v_got := _v85_begin(U_PARENT, NULL, NULL, NULL);
+    PERFORM _assert(v_got = '28000: session_revoked', format('§64 (server): the server acted as a disabled account (%s)', v_got));
+    PERFORM _v85_set_active(U_PARENT, true);
+
+    -- (privilege)
+    PERFORM _as(U_OWNER);
+    v_got := _v85_try('SELECT count(*) FROM auth_session');
+    PERFORM _assert(v_got = '42501', format('§64 (privilege): the application read auth_session (%s)', v_got));
+    v_got := _v85_try('SELECT count(*) FROM auth_epoch');
+    PERFORM _assert(v_got = '42501', format('§64 (privilege): the application read auth_epoch (%s)', v_got));
+    v_got := _v85_try(format('UPDATE auth_epoch SET epoch = 1 WHERE user_id = %L', U_PARENT));
+    PERFORM _assert(v_got = '42501', format('§64 (privilege): the application wrote auth_epoch (%s)', v_got));
+    v_got := _v85_try(format('SELECT auth_epoch_bump(%L, %L)', U_PARENT, 'signed_out_everywhere'));
+    PERFORM _assert(v_got = '42501', format('§64 (privilege): the application bumped an epoch directly (%s)', v_got));
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 64

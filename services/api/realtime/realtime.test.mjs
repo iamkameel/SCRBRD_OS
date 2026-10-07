@@ -18,7 +18,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 const SECRET = "step5-secret";
-const bearer = (userId = "uS", deviceId = "devA") => `Bearer ${signToken({ userId, deviceId }, SECRET)}`;
+const bearer = (userId = "uS", deviceId = "devA") => `Bearer ${signToken({ userId, deviceId, sessionId: "5e551011-0000-4000-8000-000000000001", epoch: 0 }, SECRET)}`;
 const nextTick = () => new Promise(r => setTimeout(r, 0));
 
 // ── A. Hub ──

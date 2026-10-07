@@ -5,6 +5,7 @@ import { atLeast, bookNote, fitnessColor, humanDate, stat } from "../lib/format.
 import { signedIn } from "../lib/api.js";
 import { can, filterRecord, holdsCapability } from "../rbac/index.js";
 import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
+import { MIN_RADAR_AXES, RUBRIC_MAX, categoryMeans } from "../lib/radar.js";
 import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
 import { WagonAnalysisPanel } from "../scorer/wagonAnalysisPanel.jsx";
 import { useLive, usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
@@ -182,11 +183,9 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                           groups by batting/bowling/fielding/fitness; live ratings by
                           technical/mental/tactical/physical. Naming four axes here
                           crashed the profile on every live player. */}
-                      <RadarChart data={Object.fromEntries(Object.entries(skills)
-                        .filter(([,vals])=>vals&&Object.keys(vals).length)
-                        .map(([cat,vals])=>[cat.charAt(0).toUpperCase()+cat.slice(1),
-                          Math.round(Object.values(vals).reduce((a,b)=>a+b,0)/Object.values(vals).length)]))}
-                        color={rCol} size={160}/>
+                      {Object.keys(categoryMeans(skills)).length>=MIN_RADAR_AXES
+                        ? <RadarChart data={categoryMeans(skills)} max={RUBRIC_MAX} color={rCol} size={130}/>
+                        : <div data-testid="radar-too-few" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5}}>Rated in fewer than three groups so far, too few for a radar. The Skills tab has every rating.</div>}
                     </div>
                   </Card>
                 )}

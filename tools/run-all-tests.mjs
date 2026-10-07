@@ -181,6 +181,16 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
+  // coach's card one card per admitted fixture, one assignment each, and the
+  // per-fixture count: "N to resolve" and "Could not read X", a failed read
+  // never the same as nothing.
+  ["queue", "apps/web/test/queue.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The parent's action list, phase A0 (GA-I20): R1 an answer owed and R2
+  // answer again, over a side's worth of rows narrowed to his own; the
+  // fourteen-day fold; "N to do" and "Could not read X", a failed read never
+  // the same as nothing; no reason, no note, no "done".
+  ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
   // the route's three pre-write checks in its own codes, the codes as sentences,
   // and which boy a trigger's message names.
@@ -225,6 +235,15 @@ const SUITES = [
   // The client's side of the weather hint (lib/weatherHint.js): null on any
   // failure, a mocked fetch.
   ["weather-hint", "apps/web/test/weather-hint.test.mjs"],
+  // GA-I18: the weather observation keeps its time, a provider hint is a hint,
+  // and a reading is never another ground's.
+  ["weather-stamp", "apps/web/test/weather-stamp.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I06: the skills radar's scale is an argument, 20/20 reaches the outer
+  // ring, and no target exists without a saved goal.
+  ["radar", "apps/web/test/radar.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I07: Squad and Analytics open on the person's own side, and a gate
+  // answers from the roles held, as the menu does.
+  ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The public home page's sections (SCRBRD-142 phase 1): signed out, the
   // strip and news hidden on a 404, the analytics toggle writes the pref and

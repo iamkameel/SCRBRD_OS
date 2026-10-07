@@ -83,5 +83,5 @@
   "82_public_listing.sql",
   "83_public_news.sql",
   "84_row_guards.sql",
-  "86_wicket_on_extra.sql"
+  "85_session_revocation.sql"
 ]
