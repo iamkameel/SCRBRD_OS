@@ -91,8 +91,17 @@ export function useAssignableSchools() {
   return { schools: all ?? [], everywhere: true, ready: all !== null };
 }
 
-/** The roles this role may grant, from the policy's own table. */
-export const grantableFor = (role) => GRANTABLE_ROLES[canonicalRole(role)] ?? [];
+/**
+ * The keys that belong to no school: the owner's and the platform's. Every
+ * appointment these screens make is AT a school, so neither is ever offered
+ * here — a school-scoped "super admin" would hold every capability at that
+ * school (Kameel, 7 Oct: "a super admin role isn't attached to any school and
+ * shouldn't be"). The server refuses it as well (db/86).
+ */
+export const PLATFORM_ROLES = ["superadmin", "platformadmin"];
+
+/** The roles this role may grant at a school, from the policy's own table. */
+export const grantableFor = (role) => (GRANTABLE_ROLES[canonicalRole(role)] ?? []).filter((r) => !PLATFORM_ROLES.includes(r));
 
 // The pupil's own account: a team role that is also a person on the roster.
 const PUPIL_ROLES = ["player"];

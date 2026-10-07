@@ -620,8 +620,10 @@ try {
   ok("...and picks none for it: a tenant-less account is never guessed into a school",
      await tid(pf1.page, "enrol-school").inputValue().catch(() => "x") === "");
   const pfOffered = await tid(pf1.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
-  ok("the roles offered are the platform's own list: every role but the owner's key",
-     JSON.stringify([...pfOffered].sort()) === JSON.stringify([...GRANTABLE_ROLES.platformadmin].sort()) && !pfOffered.includes("superadmin"), pfOffered.join());
+  const atSchool = (list) => [...list].filter((r) => r !== "superadmin" && r !== "platformadmin").sort();
+  ok("the roles offered are the platform's own list at a school: every school role, and neither platform key",
+     JSON.stringify([...pfOffered].sort()) === JSON.stringify(atSchool(GRANTABLE_ROLES.platformadmin))
+     && !pfOffered.includes("superadmin") && !pfOffered.includes("platformadmin"), pfOffered.join());
   const pfCoach = `walk.platform.coach.${Date.now()}@example.invalid`;
   await tid(pf1.page, "enrol-name").fill("P Walkcoach").catch(() => {});
   await tid(pf1.page, "enrol-email").fill(pfCoach).catch(() => {});
@@ -682,8 +684,9 @@ try {
   await tid(own.page, "add-user").click({ timeout: 5000 }).catch(() => {});
   await own.page.waitForTimeout(800);
   const ownOffered = await tid(own.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
-  ok("every role is offered, the owner's key included",
-     JSON.stringify([...ownOffered].sort()) === JSON.stringify([...GRANTABLE_ROLES.superadmin].sort()) && ownOffered.includes("superadmin") && ownOffered.includes("medical"), ownOffered.join());
+  ok("every school role is offered, and neither platform key: those belong to no school",
+     JSON.stringify([...ownOffered].sort()) === JSON.stringify(atSchool(GRANTABLE_ROLES.superadmin))
+     && !ownOffered.includes("superadmin") && !ownOffered.includes("platformadmin") && ownOffered.includes("medical"), ownOffered.join());
   await tid(own.page, "enrol-school").selectOption(WES).catch(() => {});
   await tid(own.page, "enrol-role").selectOption("player").catch(() => {});
   const kids = await tid(own.page, "enrol-player").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
@@ -702,7 +705,7 @@ try {
   await own.ctx.close();
 
   // One account holding both platform keys lands as the wider of the two, so
-  // its picker is the owner's — the sign-in ranking had no place for superadmin.
+  // the sign-in ranking had no place for superadmin. Neither key is offered at a school.
   const BOTH = "walk.both.keys@example.invalid";
   await q(`with u as (insert into app_user (school_id, email, name, role) values (null, $1, 'B Bothkeys', 'superadmin') returning id)
            insert into role_assignment (person_id, role, school_id, team_code)
@@ -713,7 +716,8 @@ try {
   await tid(both.page, "add-user").click({ timeout: 5000 }).catch(() => {});
   await both.page.waitForTimeout(600);
   const bothOffered = await tid(both.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
-  ok("...and is offered the owner's key, as the wider of its two roles", bothOffered.includes("superadmin"), bothOffered.join());
+  ok("...and is offered every school role, and no platform key at a school",
+     bothOffered.includes("medical") && !bothOffered.includes("superadmin") && !bothOffered.includes("platformadmin"), bothOffered.join());
   await both.ctx.close();
 
   group("The office at Westville: its own school only, and still not a clinical role");
