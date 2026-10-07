@@ -326,7 +326,10 @@ function IntelPanel({inn,overs,target,isChase}){
 
 function ScorecardPanel({innings,idx}){
   const i=innings[idx];if(!i)return null;
-  const batted=i.batsmen.filter(b=>b.balls>0||b.status==="batting"||b.status==="dnb");
+  // Out or retired is on the card whether or not he faced a ball: a batter
+  // stumped off a wide first ball (Law 22.9), run out off a no-ball before
+  // facing, or timed out has none, and is out all the same.
+  const batted=i.batsmen.filter(b=>b.balls>0||b.status==="batting"||b.status==="dnb"||b.status==="out"||b.status==="retired");
   const bowled=i.bowlers.filter(b=>b.balls>0);
   const xtra=i.extras.wide+i.extras.noBall+i.extras.bye+i.extras.legBye+i.extras.penalty;
   const thRow=(cols,colDefs)=>(

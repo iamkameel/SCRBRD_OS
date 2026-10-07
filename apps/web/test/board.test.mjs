@@ -229,6 +229,23 @@ group("Tier 3: the hat-trick ball joins the pad's own interrupt (§10)");
   ok("a stumping off a wide after two in two is no hat-trick",
      detectMilestone(xw("Wd", "stumped"), { ...before([W(), W()]), bowlers: [{ ...bow, wickets: 2 }] })?.type !== "hattrick");
   ok("...nor a hat-trick ball after one", detectMilestone(xw("Wd", "stumped"), before([{ type: "run", value: 1 }, W()]))?.type !== "hattrickball");
+
+  // The scorer's scorecard: a batter stumped off a wide before he faced a
+  // legal ball is out on the card, 0 off 0, as the fold has him.
+  const { ScorecardPanel } = await import("../src/scorer/panels.jsx");
+  const { deriveInnings, inningsStart, batters, bowler, ball } = await import("@scrbrd/scoring");
+  const sq = [{ id: "a1", name: "Opener One" }, { id: "a2", name: "Opener Two" }, { id: "a3", name: "Third Man In" }];
+  const inn = deriveInnings([inningsStart({ battingTeam: "Hilton", bowlingTeam: "Visitors", squad: sq, bowlingSquad: [{ id: "k", name: "K Bowler" }], overs: 20 }),
+    batters({ striker: "a1", nonStriker: "a2" }), bowler({ bowler: "k" }), ball({ type: "run", value: 0 }),
+    ball({ type: "Wd", value: 0, dismissal: "stumped" }), batters({ striker: "a3" })]);
+  const card = html(h(ScorecardPanel, { innings: [inn], idx: 0 }));
+  ok("the scorecard lists the batter stumped off a wide, 0 off 0, and the fall of the wicket", /Opener One/.test(card) && /st .*b K Bowler/.test(card)
+     && /1\/1/.test(card) && inn.batsmen.find((b) => b.id === "a1")?.balls === 1, card.slice(0, 200));
+  const inn2 = deriveInnings([inningsStart({ battingTeam: "Hilton", bowlingTeam: "Visitors", squad: sq, bowlingSquad: [{ id: "k", name: "K Bowler" }], overs: 20 }),
+    batters({ striker: "a1", nonStriker: "a2" }), bowler({ bowler: "k" }), ball({ type: "Wd", value: 0, dismissal: "stumped" }), batters({ striker: "a3" })]);
+  const card2 = html(h(ScorecardPanel, { innings: [inn2], idx: 0 }));
+  ok("...also when he is out before facing a legal ball at all", /Opener One/.test(card2) && /st .*b K Bowler/.test(card2)
+     && inn2.batsmen.find((b) => b.id === "a1")?.balls === 0);
 }
 
 group("It is always black (decision 6)");
