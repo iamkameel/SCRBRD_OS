@@ -257,6 +257,55 @@ try {
   ok("the pad reports that the balls have been sent", /\bSent\b/i.test(pill));
 
   if (errors.length !== errsBefore && DEBUG) console.log(errors.slice(0, 5));
+
+  // GA-I05. The worm used to drop every wide and no-ball, so after an over
+  // of extras it ended runs short of the board. A wide-heavy over, then the
+  // Analysis tab: the worm's last point is the board's total — by the line's
+  // own end and by where it is drawn against the chart's axis.
+  group("The worm ends on the board's total after a wide-heavy over (GA-I05)");
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const extra = async (kind, runs) => {
+    await clearBlockers();
+    await tid(kind).first().click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await tid(`extra-run-${runs}`).first().click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(400);
+  };
+  await extra("key-wide", 0);
+  await extra("key-wide", 2);
+  await extra("key-noball", 4);
+  await extra("key-wide", 0);
+  // One dot, not two: a sixth ball would end the over, and the next
+  // bowler is a second story this walk does not need.
+  for (let i = 0; i < 1; i++) { await clearBlockers(); await tid("key-dot").first().click({ timeout: 3000 }).catch(() => {}); await page.waitForTimeout(400); }
+  await clearBlockers();
+  const boardText = ((await page.locator('[role="status"][aria-live="polite"]').filter({ hasText: / for \d+, / })
+    .first().textContent().catch(() => "")) || "").trim();
+  const boardRuns = Number((/^(\d+) for /.exec(boardText) || [])[1]);
+  // 1 + 4 + 2 + 6, then a wide (1), a wide run two (3), a no-ball hit for
+  // four (5) and a wide (1): the fold's 23. The old worm said 13.
+  ok(`the board counts the extras (${boardText})`, boardRuns === 23);
+  await page.locator('[data-testid="pad-tabs"] button', { hasText: /Analysis/ }).first().click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const worm = await page.evaluate(() => {
+    const line = document.querySelector('[data-testid="worm-line"][data-innings="0"]');
+    if (!line) return null;
+    const svg = line.closest("svg");
+    const ticks = [...svg.querySelectorAll('text[x="-6"]')].map((t) => ({ y: Number(t.getAttribute("y")) - 4, v: Number(t.textContent) }));
+    const lo = ticks.find((t) => t.v === 0);
+    const hi = ticks.reduce((a, t) => (t.v > a.v ? t : a), ticks[0]);
+    const last = line.getAttribute("d").trim().split(/[ML]/).filter((s) => s.trim()).pop().split(",").map(Number);
+    return { endRuns: Number(line.getAttribute("data-end-runs")), endBalls: Number(line.getAttribute("data-end-balls")),
+             drawnRuns: lo && hi ? Math.round(((lo.y - last[1]) / (lo.y - hi.y)) * hi.v) : null,
+             clean: !/NaN|Infinity/.test(svg.outerHTML) };
+  });
+  if (DEBUG) console.log("[debug] worm:", JSON.stringify(worm), "board:", boardText);
+  ok(`the Analysis tab draws the worm (${JSON.stringify(worm)})`, !!worm);
+  ok(`...whose last point is the board's total (${worm?.endRuns} / ${boardRuns})`, worm?.endRuns === boardRuns);
+  ok(`...drawn at that height against its own axis (${worm?.drawnRuns})`, worm?.drawnRuns === boardRuns);
+  ok(`...at the legal balls bowled, five: the extras at the x of the ball before them (${worm?.endBalls})`, worm?.endBalls === 5);
+  ok("...and nothing in it is NaN or Infinity", worm?.clean === true);
+  ok("no errors while scoring the extras", errors.length === errsBefore);
 } catch (e) {
   ok(`the browser walk threw: ${e.message?.slice(0, 110)}`, false);
   if (DEBUG) console.log(e.stack?.split("\n").slice(0, 5).join("\n"));

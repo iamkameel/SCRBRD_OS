@@ -52,6 +52,7 @@ import { deliveryOf } from "./delivery.js";
 import { fmtOv, isOut } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
+import { projectMatch } from "./chartData.js";
 import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
@@ -475,6 +476,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [events, ctxVersion],
   );
+  // What the charts draw, from that fold and this log (chartData.js, GA-I05).
+  const chartProj = useMemo(() => projectMatch(innings, { events, overs: match?.overs }), [innings, events, match?.overs]);
   eventsRef.current = events;
 
   // What the pill says, from what PadSync last said. `local` is a pad that
@@ -2501,7 +2504,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                   );
                   if(cardId==="commentary")return (
                     <div key="commentary" {...dragProps}>
-                      <ErrorBoundary name="runs per over"><ManhattanChart inn={inn} match={match}/></ErrorBoundary>
+                      <ErrorBoundary name="runs per over"><ManhattanChart inn={inn} match={match} projection={chartProj[curIn]}/></ErrorBoundary>
                     </div>
                   );
                   return null;
@@ -2532,7 +2535,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
             ))}
             </>
           )}
-          {activeTab==="analysis"&&<ErrorBoundary name="analysis"><AnalysisDashboard inn={inn} match={match} curIn={curIn} innings={innings}/></ErrorBoundary>}
+          {activeTab==="analysis"&&<ErrorBoundary name="analysis"><AnalysisDashboard inn={inn} match={match} curIn={curIn} innings={innings} events={events}/></ErrorBoundary>}
           {activeTab==="history"&&(
             <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
               {/* Commentary log — shows shot type per ball */}
