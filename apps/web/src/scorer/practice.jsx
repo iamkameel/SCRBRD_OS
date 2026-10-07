@@ -6,11 +6,13 @@ import { OpeningSetupStep, TossStep } from "./setup.jsx";
 import { PracticeLabel } from "./practiceLabel.jsx";
 import {
   CLASSES, DIVISIONS, MAX_OVERS, MAX_SQUAD, MIN_SQUAD, OVERS_PRESETS, WEATHER_ATTRIBUTION, WEATHER_CONDITIONS, WEATHER_SOURCE, WEATHER_UNAVAILABLE,
-  addNames, applyHint, blankDraft, chooseCondition, conditionLabel, fetchWeather, clearDraft, deleteAllPractice, deletePractice, isRepeated, lineUp, listPractice, loadDraft, loadPractice,
+  addNames, applyHint, blankDraft, chooseCondition, conditionLabel, dropHint, fetchWeather, clearDraft, deleteAllPractice, deletePractice, isRepeated, lineUp, listPractice, loadDraft, loadPractice,
   locate, moveAt, newPracticeId, oversOf, parseSquadText, practiceCfg, practiceRecord, removeAt, saveDraft, savedWords,
   sharedNames, sameTeam, practiceTeamName, teamProblems, toggleTwelfth, validateSquad, weatherChange, weatherChangeWords, weatherRecord, weatherStartWords,
   withoutDuplicates,
 } from "../lib/practice.js";
+import { hintStamp } from "../lib/weatherStamp.js";
+import { roundedCoord } from "../lib/weatherHint.js";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { loadMatch } from "../lib/persist.js";
 
@@ -154,6 +156,18 @@ function observationWords(o) {
   ].filter(Boolean).join(", ");
 }
 
+/**
+ * A provider's reading, introduced as a hint and not as the match's weather:
+ * "Weather hint, not the match's record: Overcast, 18°C · Weather by Google,
+ * as of 09:15." What the scorer taps or records is the weather; this only
+ * suggests it (lib/weatherStamp.js).
+ * @param {string} words @param {string} attribution @param {{observed_at?: string | null}} at
+ */
+function hintLine(words, attribution, at) {
+  const { lead, asOf } = hintStamp(at);
+  return `${lead}: ${words} · ${attribution}${asOf ? `, ${asOf}` : ""}.`;
+}
+
 const hasContent = (d) =>
   d.step > 0 || !!d.venue?.name || d.venue?.lat != null || !!d.weather?.condition
   || d.teams.some((t) => t.school.trim() || t.division || t.cls) || d.squads.some((s) => s.length > 0);
@@ -210,14 +224,23 @@ export function PracticeSetup({ onStart, onCancel }) {
   const observation = draft.weather?.observation ?? null;
   const haveHint = useRef(false);
   haveHint.current = observation?.source === WEATHER_SOURCE;
+  // The place the kept hint was read for. If the position changes, the hint
+  // belongs to the old ground and is dropped, never left standing under the new
+  // one (GA-I18); a hint reloaded from the saved draft is taken to be its own.
+  const hintAt = useRef(/** @type {string | null} */ (null));
   useEffect(() => {
     let off = false;
     if (!ready || typeof lat !== "number" || typeof lon !== "number") { setWx("idle"); return undefined; }
-    if (haveHint.current) { setWx("ok"); return undefined; }
+    const here = `${roundedCoord(lat)},${roundedCoord(lon)}`;
+    if (haveHint.current) {
+      if (hintAt.current == null || hintAt.current === here) { hintAt.current = here; setWx("ok"); return undefined; }
+      hintAt.current = null;
+      setDraft((d) => ({ ...d, weather: dropHint(d.weather) }));
+    }
     setWx("loading");
     fetchWeather(lat, lon).then((r) => {
       if (off) return;
-      if (r.status === "ok") setDraft((d) => ({ ...d, weather: applyHint(d.weather, r.hint) }));
+      if (r.status === "ok") { hintAt.current = here; setDraft((d) => ({ ...d, weather: applyHint(d.weather, r.hint) })); }
       setWx(r.status);
     });
     return () => { off = true; };
@@ -334,7 +357,7 @@ export function PracticeSetup({ onStart, onCancel }) {
             )}
             {observation?.source === WEATHER_SOURCE && (
               <p data-testid="practice-weather-hint" style={S.note("ok")}>
-                {`${observationWords(observation)} · ${observation.attribution || WEATHER_ATTRIBUTION}${observation.edited_by_scorer ? ". The condition is yours." : ""}`}
+                {hintLine(observationWords(observation), observation.attribution || WEATHER_ATTRIBUTION, { observed_at: observation.captured_at })}{observation.edited_by_scorer ? " The condition is yours." : ""}
               </p>
             )}
           </section>
@@ -630,7 +653,7 @@ export function PracticeWeatherSheet({ record, innings, balls, position, onSave,
           <input value={note} onChange={(e) => setNote(e.target.value.slice(0, 140))} data-testid="pw-note" aria-label="Weather note" autoComplete="off"
             placeholder="Rain stopped play" style={S.field()}/>
         </Field>
-        {hint && <p data-testid="practice-weather-hint" style={S.note("ok")}>{`Now: ${observationWords({ conditions: hint.condition, temperature_c: hint.temp_c, wind_kph: hint.wind_kph, wind_dir: hint.wind_dir, precip_probability_pct: hint.rain_chance_pct })} · ${hint.attribution}`}</p>}
+        {hint && <p data-testid="practice-weather-hint" style={S.note("ok")}>{hintLine(observationWords({ conditions: hint.condition, temperature_c: hint.temp_c, wind_kph: hint.wind_kph, wind_dir: hint.wind_dir, precip_probability_pct: hint.rain_chance_pct }), hint.attribution, hint)}</p>}
         <button type="button" className="pressBtn" style={S.primary(can)} disabled={!can} data-testid="pw-save"
           onClick={() => onSave(weatherChange({ condition, playable, innings, balls, note }))}>Record this weather change</button>
         {(start || changes.length > 0) && (

@@ -7,6 +7,7 @@ import {
   LOAD_SENTENCE, busOf, limitWords, liftCounts, ourInnings, saDay, saTime, shortDate, sideFoot, sideRows, spellLines, weatherWords, weekRows, weekWords,
 } from "../../lib/cockpit.js";
 import { MATCHUP_FLOOR } from "../../lib/signals.js";
+import { observedStamp } from "../../lib/weatherStamp.js";
 import { humanDateTime } from "../../lib/format.js";
 import { Board } from "../../ui/board.jsx";
 import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
@@ -166,7 +167,7 @@ function TheDay({ match, gate, reads, terms, sheet, sides }) {
       {words.length > 0 && <p data-testid="coach-day-conditions" style={body()}>{words.join(" · ")}</p>}
       {band_ && <p data-testid="coach-day-band" style={body()}>{band_}{directive?.clauseCode ? ` · ${directive.clauseCode}` : ""}</p>}
       {pitch && <p style={quiet()}>Pitch: {pitch}</p>}
-      {weather && <p style={quiet()}>Weather: {weather}</p>}
+      {weather && <p style={quiet()}>Weather: {weather}{observedStamp(reads.weather, { status: match.status }) ? ` · ${observedStamp(reads.weather, { status: match.status }).text}` : ""}</p>}
       <p style={quiet()}>Umpires: {umpires.length ? umpires.join(", ") : "none on record"}{scorerOnRecord ? "" : " · no scorer on record"}</p>
       {p.bus && (reads.trips == null ? <Unread what="The bus"/>
         : bus ? (

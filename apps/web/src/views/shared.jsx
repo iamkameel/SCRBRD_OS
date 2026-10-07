@@ -5,6 +5,7 @@ import { can, holdsCapability } from "../rbac/index.js";
 import { Modal, Pill } from "../ui/primitives.jsx";
 import { teamCodeIn } from "@scrbrd/policy/teams";
 import { Icon, isIcon } from "../ui/icons.jsx";
+import { observedStamp } from "../lib/weatherStamp.js";
 
 // ══════════════════════════════════════════════════════
 //  MATCH CENTRE VIEW
@@ -12,44 +13,65 @@ import { Icon, isIcon } from "../ui/icons.jsx";
 // ══════════════════════════════════════════════════════
 //  WEATHER CHIP — reusable
 // ══════════════════════════════════════════════════════
-function WeatherChip({ w, compact }) {
+/**
+ * One fixture's recorded weather. `status` is the fixture's, so a finished
+ * match's reading is shown as the record it is and an old one for a match still
+ * to come is flagged (lib/weatherStamp.js). Only what the row holds is drawn:
+ * a reading that carries a condition and no temperature does not print "°C".
+ */
+function WeatherChip({ w, compact, status }) {
   if (!w) return null;
   // `w.icon` is a name from ui/icons.jsx; anything else falls back to the
   // neutral sky rather than printing itself.
   const sky = isIcon(w.icon) ? w.icon : "cloud-sun";
   const bc = w.playable ? D.emerald : D.rose;
+  const stamp = observedStamp(w, { status });
+  const temp = w.tempC != null ? `${w.tempC}°C` : null;
   if (compact) return (
-    <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 8px",borderRadius:D.pill,
-      background:bc+"14",border:`1px solid ${bc}28`}}>
+    <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:"5px",padding:"3px 8px",borderRadius:D.pill,
+      background:bc+"14",border:`1px solid ${bc}28`}} data-testid="weather-chip">
       <span style={{fontSize:"13px",color:bc}}><Icon name={sky}/></span>
-      <span style={{fontFamily:D.mono,fontSize:"12px",color:textOn(bc),fontWeight:600}}>{w.tempC}°C</span>
+      {temp&&<span style={{fontFamily:D.mono,fontSize:"12px",color:textOn(bc),fontWeight:600}}>{temp}</span>}
       <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{w.condition}</span>
       {!w.playable && <span style={{fontFamily:D.body,fontSize:"12px",color:D.roseText,fontWeight:700}}><Icon name="triangle-alert"/> Not playable</span>}
+      {stamp&&<span data-testid="weather-observed" style={{fontFamily:D.body,fontSize:"12px",color:stamp.stale?D.textPrimary:D.textMuted,fontWeight:stamp.stale?700:400}}>{stamp.stale&&<Icon name="triangle-alert"/>} {stamp.text}</span>}
     </div>
   );
+  // The tiles a row has a value for; a null is left out, not printed.
+  const tiles = [
+    ["droplet","Humidity",w.humidity!=null?`${w.humidity}%`:null],
+    ["wind","Wind",w.windKph!=null?`${w.windKph} km/h${w.windDir?` ${w.windDir}`:""}`:null],
+    ["umbrella","Rain",w.rainChancePct!=null?`${w.rainChancePct}%`:null],
+    ["sun","UV",w.uvIndex!=null?`${w.uvIndex}/11`:null],
+  ].filter(([,,v])=>v!=null);
   return (
-    <div style={{background:D.surf2,borderRadius:D.lg,padding:"14px 16px",border:`1px solid ${bc}22`}}>
+    <div style={{background:D.surf2,borderRadius:D.lg,padding:"14px 16px",border:`1px solid ${bc}22`}} data-testid="weather-chip">
       <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
         <span style={{fontSize:"32px",color:D.textSecondary}}><Icon name={sky}/></span>
         <div>
-          <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:D.textPrimary}}>{w.tempC}°C</div>
+          {temp&&<div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:D.textPrimary}}>{temp}</div>}
           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{w.condition}</div>
         </div>
         <div style={{marginLeft:"auto",padding:"5px 12px",borderRadius:D.pill,background:bc+"18",border:`1px solid ${bc}30`}}>
           <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:700,color:textOn(bc)}}>{w.playable?<><Icon name="circle-check"/> Playable</>:<><Icon name="triangle-alert"/> Not playable</>}</span>
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"var(--g-4,repeat(4,1fr))",gap:"8px",marginBottom:"10px"}}>
-        {[["droplet","Humidity",`${w.humidity}%`],["wind","Wind",`${w.windKph} km/h ${w.windDir}`],["umbrella","Rain",`${w.rainChancePct}%`],["sun","UV",`${w.uvIndex}/11`]].map(([ic,l,v])=>(
-          <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf3,borderRadius:D.sm}}>
-            <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{v}</div>
-            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}><Icon name={ic}/> {l}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,background:D.surf3,padding:"8px 10px",borderRadius:D.sm,fontStyle:"italic"}}>
-        <Icon name="clipboard-list"/> {w.forecast}
-      </div>
+      {stamp&&<div data-testid="weather-observed" style={{fontFamily:D.body,fontSize:"12px",color:stamp.stale?D.textPrimary:D.textMuted,fontWeight:stamp.stale?700:400,marginBottom:"10px"}}>{stamp.stale&&<Icon name="triangle-alert"/>} {stamp.text}</div>}
+      {tiles.length>0&&(
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${tiles.length},1fr)`,gap:"8px",marginBottom:"10px"}}>
+          {tiles.map(([ic,l,v])=>(
+            <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf3,borderRadius:D.sm}}>
+              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{v}</div>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}><Icon name={ic}/> {l}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {w.forecast&&(
+        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,background:D.surf3,padding:"8px 10px",borderRadius:D.sm,fontStyle:"italic"}}>
+          <Icon name="clipboard-list"/> {w.live===true?"Forecast note: ":""}{w.forecast}
+        </div>
+      )}
     </div>
   );
 }
