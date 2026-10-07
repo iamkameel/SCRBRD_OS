@@ -1780,6 +1780,7 @@ group("P. A wicket on a wide or a no-ball (Law 22.9, Law 21.17)");
     const before = [...open(), runs(0), runs(0)];
     const nb = ball({ id: "nbx2", type: NB, value: 2, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" });
     const comes = batters({ id: "btx2", striker: "p3" });
+    /** @type {LogEvent[]} */
     let log = [...before, nb, comes];
     ok("recorded: 3/1, p2 run out off the no-ball", deriveInnings(log).wickets === 1 && deriveInnings(log).runs === 3);
     const u1 = undoLast(log, { voidId: "v1" });
