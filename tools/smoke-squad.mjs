@@ -25,6 +25,7 @@ const DB = ownerUrl();
 const HIL     = "11111111-1111-1111-1111-111111111111";
 const P_1XI   = "aaaaaaaa-0000-0000-0000-000000000001";  // James Whitfield, far too old for U13
 const GUARDIAN = "88888888-0000-0000-0000-0000000000e1";
+const SARAH    = "88888888-0000-0000-0000-000000000007";  // director of sport: team.select at Hilton
 // Westville's boys (the seed's second school): one too old for U13, one not.
 const WES_OLD = "bbbbbbbb-0000-0000-0000-000000000002";
 const WES_BOY = "bbbbbbbb-0000-0000-0000-000000000001";
@@ -168,6 +169,31 @@ try {
   }
   ok("...and the U13 side is untouched", JSON.stringify(await live(m.id)) === before);
   ok("no row for another school's boy was written",
+     (await q(`select count(*)::int n from match_squad where match_id = any($1::uuid[]) and player_id = any($2::uuid[])`,
+              [[m.id, open.id], [WES_OLD, WES_BOY]]))[0].n === 0);
+
+  group("The database refuses it too, with the route's gate bypassed (db/84)");
+  // The insert the route would make, as the director of sport, straight
+  // into the application role: her policy (team.select) passes it, so only
+  // the trigger stands between another school's boy and this team sheet.
+  const app = new pg.Client({ connectionString: appUrl() });
+  await app.connect();
+  try {
+    for (const [what, match, id] of [["over-age boy (U13 side)", m.id, WES_OLD], ["registered boy (1XI side)", open.id, WES_BOY]]) {
+      await app.query("begin");
+      await app.query("select set_config('app.user_id', $1, true)", [SARAH]);
+      const e = await app.query(
+        `insert into match_squad (match_id, player_id, side, batting_no) values ($1, $2, 'home', 1)`, [match, id])
+        .then(() => null, (x) => x);
+      await app.query("rollback");
+      ok(`another school's ${what}, inserted under her own policy, is refused 42501`, e?.code === "42501", e?.code);
+      ok("...in words that name nobody and give no age",
+         !!e && !/on 1 January|registered|consent|Botha|Mkhize|bbbbbbbb/.test(e.message));
+    }
+  } finally {
+    await app.end().catch(() => {});
+  }
+  ok("...and still no row for another school's boy",
      (await q(`select count(*)::int n from match_squad where match_id = any($1::uuid[]) and player_id = any($2::uuid[])`,
               [[m.id, open.id], [WES_OLD, WES_BOY]]))[0].n === 0);
 
