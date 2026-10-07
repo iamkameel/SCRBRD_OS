@@ -166,7 +166,7 @@ function CalendarView({ role, onNav }) {
                     <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary,marginBottom:"3px"}}>{ev.homeTeam}</div>
                     <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"3px"}}>vs {ev.awayTeam}</div>
                     <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}><Icon name="map-pin"/> {ev.venue}</div>
-                    {w&&<WeatherChip w={w} compact/>}
+                    {w&&<WeatherChip w={w} status={ev.status} compact/>}
                     {ev.transport?.bus&&(
                       <div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:textOn(D.lime)}}><Icon name="bus"/> Bus {ev.transport.depart}</div>
                     )}

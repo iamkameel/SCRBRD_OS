@@ -189,7 +189,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                     <StatusDot status={m.status}/>
                     <span style={{...T.role.label,color:isLive?T.brand.accentText:T.content.secondary}}>{m.status}</span>
                     {comp&&<span style={{...T.role.body,fontSize:"12px",color:T.content.secondary}}>{comp.name}</span>}
-                    {w&&<WeatherChip w={w} compact/>}
+                    {w&&<WeatherChip w={w} status={m.status} compact/>}
                     <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{humanDate(m.date)}</span>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"12px",alignItems:"center"}}>
@@ -260,7 +260,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                 <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Match Details</div>
                 <button onClick={()=>setSelMatch(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
               </div>
-              {w&&<div style={{marginBottom:"12px"}}><WeatherChip w={w}/></div>}
+              {w&&<div style={{marginBottom:"12px"}}><WeatherChip w={w} status={selMatch.status}/></div>}
               {/* Rescheduling and calling off — fixture.update, at the HOST's
                   own school. amendSchools is a courtesy filter, not the gate:
                   match_update() in db/09 refuses an away school's attempt

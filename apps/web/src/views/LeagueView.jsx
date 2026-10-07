@@ -276,7 +276,7 @@ function LeagueView({ role }) {
                         <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>{m.homeTeam} <span style={{color:D.textMuted,fontSize:"12px",fontWeight:400}}>vs</span> {m.awayTeam}</div>
                         <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="calendar"/> {m.date} · <Icon name="map-pin"/> {m.venue}</div>
                       </div>
-                      {w&&<WeatherChip w={w} compact/>}
+                      {w&&<WeatherChip w={w} status={m.status} compact/>}
                       {m.transport?.bus&&<Pill color={D.lime}><Icon name="bus"/> {m.transport.depart}</Pill>}
                       {canEdit&&<Btn size="sm" variant="ghost">Enter Result</Btn>}
                     </div>

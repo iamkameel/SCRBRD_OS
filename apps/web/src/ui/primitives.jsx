@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import { D, T, inkOn, px, textOn } from "../design/tokens.js";
 import { initials } from "../lib/format.js";
+import { radarGeometry, radarSummary } from "../lib/radar.js";
 import { Icon, isIcon } from "./icons.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -252,37 +253,44 @@ const Select = ({ label, value, onChange, options, ...rest }) => {
 };
 
 // ── RADAR / SPIDER CHART ───────────────────────────────
-function RadarChart({ data, color=D.indigo, size=160 }) {
-  const keys = Object.keys(data);
-  const n = keys.length;
-  const cx = size/2, cy = size/2, r = size*0.38;
-  const angle = i => (i/n)*2*Math.PI - Math.PI/2;
-  const pt = (i,v) => [cx + r*(v/100)*Math.cos(angle(i)), cy + r*(v/100)*Math.sin(angle(i))];
-  const grid = [20,40,60,80,100];
-  const pts = keys.map((k,i)=>pt(i,data[k]));
-  const polyPts = pts.map(p=>p.join(",")).join(" ");
+/**
+ * `max` is the value that reaches the OUTER ring, and it has no default: a
+ * rubric rating is 1-20, a caller that has already scaled its figures says 100,
+ * and one that says nothing is drawn nothing (lib/radar.js). A hidden 0-100
+ * once drew a 20 out of 20 a fifth of the way out.
+ *
+ * `size` is the width of the plot; axis labels (12px, never smaller) are drawn
+ * around it when there are few enough axes to keep them apart, so the whole
+ * chart is a little wider than `size`. `caption` is the words for a screen
+ * reader; without it they are made from the data.
+ */
+function RadarChart({ data, max, color=D.indigo, size=160, caption }) {
+  const g = radarGeometry({ data, max, size });
+  if (!g) return null;
+  const words = caption ?? radarSummary(data, max);
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} style={{width:px(size),height:px(size)}}>
-      {/* Grid */}
-      {grid.map(g=>(
-        <polygon key={g} points={keys.map((_,i)=>{const[x,y]=pt(i,g);return`${x},${y}`}).join(" ")}
-          fill="none" stroke={D.surf3} strokeWidth="0.8"/>
+    <svg viewBox={`0 0 ${g.width} ${g.height}`} role="img" aria-label={`Skills radar. ${words}`}
+      data-testid="radar" data-max={max}
+      style={{width:px(g.width),height:px(g.height),maxWidth:"100%",display:"block"}}>
+      {/* Grid: the last ring is the outer one, the value of `max`. */}
+      {g.rings.map((points,i)=>(
+        <polygon key={i} points={points} fill="none" stroke={D.surf3} strokeWidth="0.8"/>
       ))}
       {/* Spokes */}
-      {keys.map((_,i)=>{
-        const[x,y]=pt(i,100);
-        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke={D.surf3} strokeWidth="0.8"/>;
-      })}
+      {g.spokes.map(([x,y],i)=>(
+        <line key={i} x1={g.cx} y1={g.cy} x2={x} y2={y} stroke={D.surf3} strokeWidth="0.8"/>
+      ))}
       {/* Data polygon */}
-      <polygon points={polyPts} fill={color+"28"} stroke={color} strokeWidth="1.5"/>
+      <polygon points={g.polygon} fill={color+"28"} stroke={color} strokeWidth="1.5"/>
       {/* Dots */}
-      {pts.map(([x,y],i)=><circle key={i} cx={x} cy={y} r="3" fill={color} stroke={D.surf1} strokeWidth="1.5"/>)}
+      {g.dots.map(([x,y],i)=><circle key={i} cx={x} cy={y} r="3" fill={color} stroke={D.surf1} strokeWidth="1.5"/>)}
       {/* Labels */}
-      {keys.map((k,i)=>{
-        const[x,y]=pt(i,118);
-        return <text key={k} x={x} y={y} textAnchor="middle" dominantBaseline="middle"
-          fontSize="7.5" fontFamily={D.body} fill={D.textMuted} fontWeight="500">{k}</text>;
-      })}
+      {g.labels.map(l=>(
+        <text key={l.key} x={l.x} y={l.y} textAnchor={l.anchor}
+          fontSize="12" fontFamily={D.body} fill={D.textMuted} fontWeight="500">
+          {l.lines.map((t,i)=><tspan key={i} x={l.x} dy={i?12:0}>{t}</tspan>)}
+        </text>
+      ))}
     </svg>
   );
 }
