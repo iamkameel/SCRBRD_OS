@@ -50,7 +50,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   plainly) and corrections everywhere (added 2026-10-07, gap analysis GA-I36:
   a corrected ball or an approved amendment reaching every place the score is
   shown, the pad, the Match Centre, the public page, careers, reports and the
-  charts, with derived figures refreshed and both versions kept in the audit).
+  charts, with derived figures refreshed and both versions kept in the audit)
+  and recognition (added 2026-10-07, Kameel's spec `docs/design/RECOGNITION_spec_v0.2.md`:
+  awards, achievements and records; what a child's honours may show and to
+  whom, guardian consent and its revoking, a pupil captain choosing Player of
+  the Match, and a corrected score taking an honour back).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
