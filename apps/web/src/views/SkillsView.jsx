@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { holdsCapability } from "../rbac/index.js";
+import { holdsAsHeld } from "../lib/held.js";
 import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, SectionHeader } from "../ui/primitives.jsx";
@@ -9,7 +9,7 @@ import { recordAssessment, writeNote, NOTE_ADJUSTMENT_LIMIT } from "../lib/devel
 import { TREE, DISCIPLINES, ANCHOR_POINTS, anchorFor, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
 import { Icon } from "../ui/icons.jsx";
 import { signedIn } from "../lib/api.js";
-import { RUBRIC_MAX } from "../lib/radar.js";
+import { MIN_RADAR_AXES, RUBRIC_MAX } from "../lib/radar.js";
 import { focusAreas } from "../lib/focusAreas.js";
 
 /** A refusal from the assessment or note routes, in words; the code only when there are none. */
@@ -118,7 +118,7 @@ function SkillsView({ role }) {
   // Writing needs a session: the demo (nobody signed in, a role picked to look
   // around) reads the seeded matrix and offers no write it cannot make — the
   // save would reach the API with no token and fail (missing_token).
-  const canEdit = signedIn() && holdsCapability(role,"player.development.write");
+  const canEdit = signedIn() && holdsAsHeld(role,"player.development.write");
   const cats = skills ? Object.keys(skills) : [];
   // Technical / mental / physical — the craft, the head, the body.
   const SKILL_COLORS = { technical:D.sky, mental:D.violet, tactical:D.amber, physical:D.emerald };
@@ -452,11 +452,20 @@ function SkillsView({ role }) {
                 <div>
                   <Card sx={{padding:"14px",marginBottom:"12px"}}>
                     <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",marginBottom:"10px"}}>RADAR</div>
-                    <div style={{display:"flex",justifyContent:"center"}}>
-                      {/* The outer ring is 20, the top of the rubric: a 20 reaches it. */}
-                      <RadarChart data={skills[category]} max={RUBRIC_MAX} color={SKILL_COLORS[category]||D.indigo} size={110}/>
-                    </div>
-                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>Outer ring is {RUBRIC_MAX}, the top of the scale.</div>
+                    {Object.keys(skills[category]).length>=MIN_RADAR_AXES?(
+                      <>
+                        <div style={{display:"flex",justifyContent:"center"}}>
+                          {/* The outer ring is 20, the top of the rubric: a 20 reaches it. */}
+                          <RadarChart data={skills[category]} max={RUBRIC_MAX} color={SKILL_COLORS[category]||D.indigo} size={110}/>
+                        </div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>Outer ring is {RUBRIC_MAX}, the top of the scale.</div>
+                      </>
+                    ):(
+                      /* Assessments are partial by design. Two ratings are a line, not a shape. */
+                      <div data-testid="radar-too-few" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5}}>
+                        Rated on fewer than three {category} skills so far, too few for a radar. The bars show what has been rated.
+                      </div>
+                    )}
                   </Card>
                   <Card sx={{padding:"14px"}} data-testid="focus-areas">
                     <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",marginBottom:"10px"}}>FOCUS AREAS</div>

@@ -9,6 +9,8 @@ import { usePlayersWithCareer, useSkills } from "../lib/live.js";
 import { api, signedIn } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
+import { heldTeams } from "../lib/held.js";
+import { pickTeam, teamsOf } from "../lib/teamContext.js";
 import { AvailabilityPanel, PlayerAvailability } from "./availability.jsx";
 import { EditProfile, mayEditProfile } from "./playeredit.jsx";
 // SCRBRD-124 (db/70): lifts on the side's fixture.
@@ -43,17 +45,29 @@ function SquadView({ role }) {
   // status tier itself — staff who pick the side, not a pupil beside him.
   const seesFitness = holdsCapability(role, "medical.status.read");
   const SKILLS_MATRIX = useSkills(role);
-  const [team, setTeam]           = useState("1XI");
-  const [selected, setSelected]   = useState(null);
+  // The side on show: one the person chose, else the one they actually hold or
+  // the first their rows contain. It was "1XI" always, so a U15A coach opened
+  // on an empty roster (GA-I07). Derived rather than set in an effect, so the
+  // rows arriving late, or the chosen team leaving them, cannot strand it.
+  const teams = teamsOf(PLAYERS);
+  const [chosenTeam, setChosenTeam] = useState(null);
+  const team = pickTeam({ teams, held: heldTeams(), chosen: chosenTeam });
+  const [selectedId, setSelectedId] = useState(null);
+  // The panel's player is looked up in the CURRENT side, so changing side, or a
+  // move to another side, can never leave a boy of the old one on show.
+  const selected = PLAYERS.find(p=>p.id===selectedId && p.team===team) ?? null;
+  const setSelected = (p) => setSelectedId(p ? p.id : null);
+  const chooseTeam = (t) => { setChosenTeam(t); setSelectedId(null); setAct(null); };
   // Which of the player panel's two actions is open: "edit" | "availability".
   const [act, setAct]             = useState(null);
   const [addModal, setAddModal]   = useState(false);
-  const [np, setNp] = useState({ fullName:"", teamCode:"1XI", playingRole:"batter",
+  const [np, setNp] = useState({ fullName:"", teamCode:"", playingRole:"batter",
     battingStyle:"R", bowlingArm:"", bowlingStyle:"", squadNo:"", born:"", idNumber:"" });
   const [npSaid, setNpSaid] = useState("");
   const addSchools = schoolsWhere("player.profile.manage");
   const players = PLAYERS.filter(p=>p.team===team);
-  const teams = [...new Set(PLAYERS.map(p=>p.team))];
+  // A new boy goes to the side on show unless the form says otherwise.
+  const npTeam = np.teamCode || team || "1XI";
   // The same capability the insert policy on `player` actually checks —
   // player.profile.manage, held by directorofsport, schooladmin and
   // sportsadmin. The role-name list this replaced was wrong in both
@@ -97,23 +111,23 @@ function SquadView({ role }) {
     });
   }, [teams, npAge]);
 
-  const npEligible = npAge == null ? null : isEligible(npAge, np.teamCode);
+  const npEligible = npAge == null ? null : isEligible(npAge, npTeam);
 
   // A squad number is a real, visible clash on a team sheet, not a database
   // constraint — two boys can share one for a day while it gets sorted out —
   // so this warns rather than blocks, the same posture as the age note above.
   const squadClash = np.squadNo !== "" && PLAYERS.find(
-    (p) => p.team === np.teamCode && String(p.squadNo ?? "") === String(np.squadNo) && p.squadNo != null);
+    (p) => p.team === npTeam && String(p.squadNo ?? "") === String(np.squadNo) && p.squadNo != null);
 
   const showBowling = np.playingRole === "bowler" || np.playingRole === "allrounder";
   return (
     <div className="os-page">
       <SectionHeader title="Squad Management" sub="Player rosters, profiles and availability" color={D.sky}
-        actions={canEdit&&<Btn size="sm" onClick={()=>setAddModal(true)}>+ Add Player</Btn>}/>
-      <div style={{display:"flex",gap:"8px",marginBottom:"20px"}}>
+        actions={canEdit&&<Btn size="sm" onClick={()=>{setNp(n=>({...n,teamCode:""}));setAddModal(true);}}>+ Add Player</Btn>}/>
+      <div role="group" aria-label="Team" data-testid="squad-teams" style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
         {teams.map(t=>(
-          <button key={t} onClick={()=>{setTeam(t);setSelected(null);}} className="pressBtn" style={{
-            padding:"7px 18px",borderRadius:D.pill,border:`1px solid ${team===t?D.sky+"55":D.border}`,
+          <button key={t} onClick={()=>chooseTeam(t)} className="pressBtn" aria-pressed={team===t} data-testid={`squad-team-${t}`} style={{
+            minHeight:"44px",padding:"7px 18px",borderRadius:D.pill,border:`1px solid ${team===t?D.sky+"55":D.border}`,
             background:team===t?D.sky+"14":"transparent",cursor:"pointer",
             fontFamily:D.head,fontSize:"12px",fontWeight:700,color:team===t?D.sky:D.textMuted,
           }}>{t}</button>
@@ -122,14 +136,17 @@ function SquadView({ role }) {
       {/* The side's next fixture: who has answered, who has not, and who is
           asked again because the fixture moved (SCRBRD-122). A guardian's
           rows are his own child's, by the read's own policy. */}
-      <AvailabilityPanel role={role} team={team}/>
+      {/* Keyed by the side: changing side drops the old side's panels' own
+          state (an open row, a half-typed answer) rather than carrying it
+          across. Nothing is drawn until there is a side to name. */}
+      {team&&<AvailabilityPanel key={team} role={role} team={team}/>}
       {/* Lifts to the same fixture (SCRBRD-124): the offers on the side, a
           seat asked for, the driver's own card, the office's counts. Nothing
           where the module is not live. */}
-      <LiftsPanel role={role} team={team}/>
+      {team&&<LiftsPanel key={team} role={role} team={team}/>}
       {/* The day (SCRBRD-124 phase 2, db/76): the office's lift exceptions,
           by name, to resolve; the coach's expected list with "with us". */}
-      <LiftDayStaff role={role} team={team}/>
+      {team&&<LiftDayStaff key={team} role={role} team={team}/>}
       <div style={{display:"grid",gridTemplateColumns:selected?"1fr 320px":"1fr",gap:"16px"}}>
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>
@@ -254,7 +271,7 @@ function SquadView({ role }) {
                     {mayAvail&&tab("availability","Set Availability","player-set-availability")}
                   </div>
                   {act==="edit"&&mayEdit&&<EditProfile role={role} player={selected} teams={teams}
-                    onMoved={(to)=>{ setRosterNonce(x=>x+1); setTeam(to); setSelected(null); setAct(null); }}/>}
+                    onMoved={(to)=>{ setRosterNonce(x=>x+1); chooseTeam(to); }}/>}
                   {act==="availability"&&mayAvail&&<div style={{marginTop:"12px"}}><PlayerAvailability role={role} team={selected.team} player={selected}/></div>}
                 </div>
               );
@@ -276,7 +293,7 @@ function SquadView({ role }) {
                 {np.fullName.trim()||"His name, as it will appear"}
               </div>
               <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}>
-                {teamLabel(np.teamCode)}
+                {teamLabel(npTeam)}
                 {npAge!=null&&` · ${npAge}y (${npBand})`}
                 {np.battingStyle&&` · ${np.battingStyle}HB`}
                 {showBowling&&np.bowlingArm&&np.bowlingStyle&&` · ${np.bowlingArm==="L"?"LA":"RA"}${np.bowlingStyle}`}
@@ -334,18 +351,18 @@ function SquadView({ role }) {
               options={[{value:"",label:"—"},...Array.from({length:99},(_,i)=>({value:String(i+1),label:String(i+1)}))]}/>
           </div>
 
-          <Select label="Team" value={np.teamCode} onChange={(v)=>setNp(n=>({...n,teamCode:v}))} options={teamOptions}/>
+          <Select label="Team" value={npTeam} onChange={(v)=>setNp(n=>({...n,teamCode:v}))} options={teamOptions}/>
           {npEligible===false&&(
             <div role="alert" data-testid="age-eligibility-note" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.amber),
               background:D.amber+"14",border:`1px solid ${D.amber}33`,borderRadius:D.sm,padding:"8px 10px",marginTop:"-8px",marginBottom:"14px"}}>
-              He turns {npAge} before the season's cut-off, which is too old for {teamLabel(np.teamCode)} — the office may still
+              He turns {npAge} before the season's cut-off, which is too old for {teamLabel(npTeam)} — the office may still
               enter him here, but he will not be eligible when this team is picked for a fixture.
             </div>
           )}
           {squadClash&&(
             <div role="alert" data-testid="squad-no-clash-note" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.amber),
               background:D.amber+"14",border:`1px solid ${D.amber}33`,borderRadius:D.sm,padding:"8px 10px",marginTop:"-8px",marginBottom:"14px"}}>
-              No {np.squadNo} is already {squadClash.name}'s on {teamLabel(np.teamCode)}.
+              No {np.squadNo} is already {squadClash.name}'s on {teamLabel(npTeam)}.
             </div>
           )}
 
@@ -384,7 +401,7 @@ function SquadView({ role }) {
               try {
                 await api("/api/players", { method:"POST", body:{
                   schoolId: np.schoolId || addSchools[0]?.id,
-                  fullName: np.fullName, teamCode: np.teamCode, squadNo: np.squadNo || null,
+                  fullName: np.fullName, teamCode: npTeam, squadNo: np.squadNo || null,
                   playingRole: np.playingRole, battingStyle: np.battingStyle,
                   bowlingArm: showBowling ? (np.bowlingArm || null) : null,
                   bowlingStyle: showBowling ? (np.bowlingStyle || null) : null,
@@ -392,7 +409,7 @@ function SquadView({ role }) {
                   idNumber: np.idNumber || null,
                 }});
                 setAddModal(false);
-                setNp({ fullName:"", teamCode:"1XI", playingRole:"batter", battingStyle:"R",
+                setNp({ fullName:"", teamCode:"", playingRole:"batter", battingStyle:"R",
                   bowlingArm:"", bowlingStyle:"", squadNo:"", born:"", idNumber:"" });
                 setRosterNonce(x=>x+1);
               } catch (e) { setNpSaid(e.message || "Refused."); }

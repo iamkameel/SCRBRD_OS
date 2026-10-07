@@ -25,6 +25,9 @@ export const RADAR_RINGS = Object.freeze([0.2, 0.4, 0.6, 0.8, 1]);
 /** Above this many axes the labels would collide, so none are drawn on the chart. */
 export const MAX_LABELLED_AXES = 6;
 
+/** Fewer axes than this is a line or a dot, not a shape, so no chart is drawn. */
+export const MIN_RADAR_AXES = 3;
+
 const FONT = 12;                 // the floor: nothing under 12px
 const CHAR = 6.6;                // a generous 12px advance, so a label is never clipped
 const GAP = 8;                   // between the outer ring and a label
@@ -63,7 +66,7 @@ export function radarGeometry({ data, max, size = 160 }) {
   if (!Number.isFinite(max) || max <= 0) return null;
   const keys = Object.keys(data ?? {});
   const n = keys.length;
-  if (n < 3) return null;
+  if (n < MIN_RADAR_AXES) return null;
 
   const labelled = n <= MAX_LABELLED_AXES;
   const lines = keys.map((k) => wrap(radarLabelOf(k)));
