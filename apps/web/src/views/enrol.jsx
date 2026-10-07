@@ -47,6 +47,7 @@ export const ENROL_MESSAGE = {
   player_date_of_birth_required: "Capture this person's date of birth first — guardian access is worked out from it.",
   team_required: "Choose the side this person coaches or manages.",
   team_code_invalid: "That is not a side this platform knows.",
+  platform_role_needs_no_school: "That role belongs to no school, so it cannot be given at one.",
   not_requestable: "That role cannot be given this way.",
   already_pending: "A request for this is already waiting for an answer.",
   already_decided: "That request has already been answered.",

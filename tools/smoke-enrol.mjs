@@ -23,6 +23,10 @@
  *      subtransaction
  *   4. the login code is issued once and is the only moment it is readable
  *   5. the enrolled boy can actually sign in with it and read his own record
+ *   6. a platform role is never given at a school (db/86): the platform
+ *      account and the owner are refused platformadmin and superadmin there,
+ *      by name, with nothing left behind — the 200 the RBAC diagnosis of
+ *      2026-10-07 found
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-enrol.mjs
@@ -181,6 +185,36 @@ try {
                                                 body: { email: "b.khumalo@example.invalid" } });
   ok("...and a code can be issued for it afterwards, through the route that already existed",
      later.status === 200 && typeof later.body?.code === "string");
+
+  group("A platform role belongs to no school (db/86)");
+  // The RBAC diagnosis of 2026-10-07: each of these answered 200, and wrote
+  // a platform role scoped to a school — a superadmin there holds every
+  // school capability, medical and PII included.
+  const platform = await login("platform@example.invalid");   // platformadmin, no school
+  const owner    = await login("owner@example.invalid");      // superadmin, no school
+  const platformAt = (token, email, role, schoolId) => enrol(token, { email, name: "V86 Platform", role, schoolId });
+  const refusals = [
+    ["the platform account, a platformadmin at Westville", await platformAt(platform, "v86.p.wes@example.invalid", "platformadmin", WES)],
+    ["the platform account, a platformadmin at Hilton",    await platformAt(platform, "v86.p.hil@example.invalid", "platformadmin", HIL)],
+    ["the owner, a superadmin at Westville",                await platformAt(owner,    "v86.o.wes@example.invalid", "superadmin",    WES)],
+    ["the owner, a platformadmin at Westville",             await platformAt(owner,    "v86.o.pla@example.invalid", "platformadmin", WES)],
+  ];
+  for (const [who, r] of refusals) {
+    ok(`${who} is refused, 422 platform_role_needs_no_school (was ${r.status} ${r.body?.error ?? ""})`,
+       r.status === 422 && r.body?.error === "platform_role_needs_no_school");
+  }
+  ok("...and none of those left an account behind",
+     (await accounts("v86.p.wes@example.invalid")) + (await accounts("v86.p.hil@example.invalid"))
+     + (await accounts("v86.o.wes@example.invalid")) + (await accounts("v86.o.pla@example.invalid")) === 0);
+  ok("no platform role on the record names a school",
+     (await q(`select count(*)::int n from role_assignment
+                where role in ('superadmin', 'platformadmin') and school_id is not null`))[0].n === 0);
+  ok("the two tenant-less keys the seed writes are still live",
+     (await q(`select count(*)::int n from role_assignment
+                where role in ('superadmin', 'platformadmin') and school_id is null and active`))[0].n === 2);
+  const coachWes = await enrol(platform, { email: "v86.coach@example.invalid", name: "V86 Coach", role: "coach",
+                                           schoolId: WES, teamCode: "U14A" });
+  ok("the platform account still enrols an ordinary role at a school", coachWes.status === 200 && !!coachWes.body?.userId);
 
   group("The roster gap actually closes");
   const after = await q(
