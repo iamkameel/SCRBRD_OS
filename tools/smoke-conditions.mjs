@@ -253,6 +253,17 @@ try {
   const parentHint = await hint(HINT_BASE, "lat=-29.6049&lon=30.3751", `Bearer ${parent}`);
   ok("anybody signed in may ask; the same rounded place is the cache, not Google again",
      parentHint.status === 200 && parentHint.body?.condition === "drizzle" && upstream.length === 1, upstream.length);
+  // Signed in is not enrolled since open sign-up: an account with no school
+  // and no role (what a new Google sign-in makes, db/81) holds nothing, and
+  // must not spend the school's quota with Google.
+  const nobodyEmail = `walk.noschool.${Date.now().toString(36)}@example.invalid`;
+  await q(`insert into app_user (school_id, email, name, role) values (null, $1, 'Walk Noschool', 'none')`, [nobodyEmail]);
+  const nobody = await login(nobodyEmail);
+  const before = upstream.length;
+  const nobodyHint = await hint(HINT_BASE, "lat=-28.11&lon=29.99", `Bearer ${nobody}`);
+  ok("an account enrolled nowhere is refused 403 not_enrolled", !!nobody && nobodyHint.status === 403
+     && nobodyHint.body?.error === "not_enrolled", JSON.stringify(nobodyHint));
+  ok("...and nothing went to Google for it", upstream.length === before, upstream.length);
   ok("the hint writes nothing: match_weather is untouched",
      (await q(`select count(*)::int as n from match_weather`))[0].n === weatherRows);
   ok("the server never printed the key", !hintOut.join("").includes(STUB_KEY));

@@ -15,9 +15,13 @@
  * kilometre), and nothing else — no name, no match, no user. The key goes in
  * the X-Goog-Api-Key header, so it is in no URL that anything could log.
  *
- * WHO: any signed-in principal, limited per person (RATE). A pad's resume
- * credential never arrives here — server.mjs answers it 403 pad_scope before
- * any route that is not one of its five.
+ * WHO: any ENROLLED principal (app_enrolled(), db/81: signed in and holding an
+ * assignment app_can() honours), limited per person (RATE). Signed in is not
+ * enough since open sign-up: a Google account with no school would otherwise
+ * spend the school's quota. The rate limit is taken first, so an account
+ * refused 403 not_enrolled cannot turn the check into a database flood
+ * either. A pad's resume credential never arrives here — server.mjs answers
+ * it 403 pad_scope before any route that is not one of its five.
  *
  * WITHOUT GOOGLE_WEATHER_API_KEY the route answers 503 weather_unavailable,
  * and the app falls back to the scorer's buttons. Tests and walks run with it
@@ -213,10 +217,14 @@ export function weatherConfig(env) {
  */
 
 /**
- * @param {{ secret: string, key: string | null, baseUrl?: string, fetchImpl?: FetchLike,
- *           now?: () => number, log?: (line: string) => void }} opts
+ * `enrolled(authorization)` answers whether the bearer's account is enrolled
+ * (server.mjs asks app_enrolled() as that principal). Required: a route with
+ * no way to ask would have to guess, and guessing yes is the hole this closes.
+ * @param {{ secret: string, key: string | null, enrolled: (authorization: string) => Promise<boolean>,
+ *           baseUrl?: string, fetchImpl?: FetchLike, now?: () => number, log?: (line: string) => void }} opts
  */
-export function weatherRoutes({ secret, key, baseUrl = GOOGLE_BASE, fetchImpl = globalThis.fetch, now = Date.now, log = console.error }) {
+export function weatherRoutes({ secret, key, enrolled, baseUrl = GOOGLE_BASE, fetchImpl = globalThis.fetch, now = Date.now, log = console.error }) {
+  if (typeof enrolled !== "function") throw new TypeError("weatherRoutes: enrolled(authorization) is required");
   const limit = new RateLimit(now, RATE);
   /** @type {Map<string, { at: number, hint: Hint }>} */
   const cache = new Map();
@@ -253,6 +261,7 @@ export function weatherRoutes({ secret, key, baseUrl = GOOGLE_BASE, fetchImpl = 
 
       const wait = limit.take(userId);
       if (wait) return { status: 429, body: { error: "rate_limited" }, headers: { "retry-after": String(wait) } };
+      if (!(await enrolled(/** @type {string} */ (authorization)))) return { status: 403, body: { error: "not_enrolled" } };
 
       const pos = roundedPosition(query);
       if (!pos) return { status: 400, body: { error: "bad_param" } };
