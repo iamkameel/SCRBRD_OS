@@ -4,7 +4,7 @@ import { D, textOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive } from "../lib/live.js";
 import { signedIn } from "../lib/api.js";
-import { schoolsWhere } from "../lib/session.js";
+import { reachesEverySchool, schoolsWhere } from "../lib/session.js";
 import { humanDate } from "../lib/format.js";
 import { liveRoles, matchesPerson, peopleWithRoles } from "../lib/people.js";
 import { Avatar } from "../ui/primitives.jsx";
@@ -99,10 +99,14 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
   // server decides again on every post; this decides what to offer.
   const canAssign = holdsCapability(role, "user.role.assign");
   const schools = schoolsWhere("user.role.assign");
-  const canWrite = live && canAssign && schools.length > 0 && grantableFor(role).length > 0;
+  // The platform account and the owner's key assign from an assignment that
+  // names no school, which reaches every school (lib/session.js). Counting only
+  // named schools left both with nothing offered here at all.
+  const everywhere = reachesEverySchool("user.role.assign");
+  const canWrite = live && canAssign && (everywhere || schools.length > 0) && grantableFor(role).length > 0;
   // A role is added at the person's own school, and only where this reader may
   // assign. An account with no school (the platform's own) is not a school's to add to.
-  const mayAddTo = (p) => canWrite && !!p.school && schools.some((s) => s.id === p.school);
+  const mayAddTo = (p) => canWrite && !!p.school && (everywhere || schools.some((s) => s.id === p.school));
 
   const people = peopleWithRoles(accounts.rows, appointments.rows, today());
   const linkedName = (p) => (p.player ? players.find((x) => x.id === p.player)?.name ?? null : null);

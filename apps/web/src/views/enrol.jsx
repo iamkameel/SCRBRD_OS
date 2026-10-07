@@ -1,11 +1,11 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { GRANTABLE_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { compareTeams, teamsForLevel } from "@scrbrd/policy/teams";
 import { ROLES, canonicalRole } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { Modal } from "../ui/primitives.jsx";
 import { api } from "../lib/api.js";
-import { schoolsWhere } from "../lib/session.js";
+import { reachesEverySchool, schoolsWhere } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
 //  ENROLMENT, SHARED
@@ -57,6 +57,39 @@ export const ENROL_MESSAGE = {
 const UNSAID = "This was not saved. The server refused it for a reason that has no words yet, and nothing was changed.";
 /** The words for a refusal code; a sentence even for a code nobody has written one for. */
 export const enrolWords = (code) => ENROL_MESSAGE[code] || UNSAID;
+
+/**
+ * The schools this person may appoint at, for the form's school picker.
+ *
+ * A school office, a principal or a director of sport holds user.role.assign
+ * at a NAMED school, and schoolsWhere() lists those. The platform account and
+ * the owner's key hold it on an assignment that names no school, which the
+ * server reads as every school (app_may_grant_at(), db/77). schoolsWhere()
+ * finds nothing for them, so the form used to have no school to post to and
+ * neither account could appoint anybody from a screen. For them: every school
+ * on the platform, by the names public_schools() already gives a stranger at
+ * sign-up (GET /api/schools), and nothing more.
+ *
+ *   { schools: [{ id, name }], everywhere, ready }
+ *
+ * `everywhere` also tells the form not to pre-choose: a tenant-less account is
+ * asked which school, never put in the first one on the list.
+ */
+export function useAssignableSchools() {
+  const named = schoolsWhere("user.role.assign");
+  const everywhere = reachesEverySchool("user.role.assign");
+  const [all, setAll] = useState(null);
+  useEffect(() => {
+    if (!everywhere) return undefined;
+    let off = false;
+    api("/api/schools")
+      .then((r) => { if (!off) setAll((r?.rows ?? []).map((x) => ({ id: x.id, name: x.name }))); })
+      .catch(() => { if (!off) setAll([]); });
+    return () => { off = true; };
+  }, [everywhere]);
+  if (!everywhere) return { schools: named, everywhere: false, ready: true };
+  return { schools: all ?? [], everywhere: true, ready: all !== null };
+}
 
 /** The roles this role may grant, from the policy's own table. */
 export const grantableFor = (role) => GRANTABLE_ROLES[canonicalRole(role)] ?? [];
@@ -125,14 +158,20 @@ export function FormBtn({ children, variant = "primary", style, ...rest }) {
  *   onEnrolled  ({ out, name }) once the server has said yes
  *
  * `fixed.school` is where the role is added. Otherwise the school is the one
- * the caller holds user.role.assign at — a choice only if there is more than one.
+ * the caller holds user.role.assign at — a choice only if there is more than one,
+ * and always a choice, with none made for them, for an account whose
+ * assignment names no school (useAssignableSchools above).
  */
 export function EnrolModal({ role, players = [], accountless, initial = {}, fixed = null, title = "Enrol a person",
                              intro, submitLabel = "Enrol", codeByDefault = true, onClose, onEnrolled }) {
   const grantable = grantableFor(role);
-  const schools = schoolsWhere("user.role.assign");
-  const [school, setSchool] = useState(fixed?.school ?? null);
-  const schoolId = fixed?.school || school || schools[0]?.id || null;
+  const { schools, everywhere } = useAssignableSchools();
+  // Opened from a roster person (Settings' "no account" chips), the school is
+  // that person's own: a reader at several schools is not asked again.
+  const fromRoster = players.find((p) => p.id === initial.player)?.school ?? null;
+  const [school, setSchool] = useState(fixed?.school
+    ?? (fromRoster && (everywhere || schools.some((s) => s.id === fromRoster)) ? fromRoster : null));
+  const schoolId = fixed?.school || school || (everywhere ? null : schools[0]?.id) || null;
   const [f, setF] = useState({
     name: fixed?.name ?? initial.name ?? "",
     email: fixed?.email ?? initial.email ?? "",
@@ -152,8 +191,12 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
   // offered only the roster people who have none yet.
   const forChild = SUBJECT_SCOPED_ROLES.includes(f.role);
   const subjectScoped = forChild || PUPIL_ROLES.includes(f.role);
-  const teams = [...new Set([...teamsForLevel("school"), ...players.map((p) => p.team).filter(Boolean)])].sort(compareTeams);
-  const choices = forChild ? players : (accountless ?? players);
+  // The roster at the chosen school only. A reader at more than one school (the
+  // owner's key reads every roster) would otherwise be offered a boy the server
+  // refuses as player_not_at_that_school. A row naming no school is kept.
+  const here = (p) => !p.school || !schoolId || p.school === schoolId;
+  const teams = [...new Set([...teamsForLevel("school"), ...players.filter(here).map((p) => p.team).filter(Boolean)])].sort(compareTeams);
+  const choices = (forChild ? players : (accountless ?? players)).filter(here);
   const linked = players.find((p) => p.id === f.player) || null;
 
   const ready = !!schoolId && f.name.trim().length >= 2 && EMAIL.test(f.email.trim()) && !!f.role
@@ -187,9 +230,11 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
       <div style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted, lineHeight: 1.5, marginBottom: "14px" }}>
         {intro ?? "This opens a real account and links it to their record. There is no email yet — ask for a sign-in code and hand it over in person."}
       </div>
-      {!fixed && schools.length > 1 && (
-        <SelectField label="School" value={schoolId || ""} onChange={setSchool}
-                     options={schools.map((sc) => ({ value: sc.id, label: sc.name }))}/>
+      {!fixed && (everywhere || schools.length > 1) && (
+        <SelectField label="School" value={schoolId || ""} data-testid="enrol-school"
+                     onChange={(v) => { setSchool(v || null); setF((p) => ({ ...p, player: "" })); }}
+                     options={[...(everywhere ? [{ value: "", label: "Choose a school…" }] : []),
+                               ...schools.map((sc) => ({ value: sc.id, label: sc.name }))]}/>
       )}
       <TextField label="Full name" value={f.name} onChange={set("name")} placeholder="First Last" readOnly={!!fixed}
                  data-testid="enrol-name" autoComplete="off"/>
@@ -209,6 +254,14 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
                      data-testid="enrol-player"
                      options={[{ value: "", label: "Choose from the roster…" },
                                ...choices.map((p) => ({ value: p.id, label: `${p.name} (${p.team})` }))]}/>
+      )}
+      {subjectScoped && schoolId && choices.length === 0 && (
+        <div data-testid="enrol-no-roster" role="note" style={{ margin: "-6px 0 14px", fontFamily: D.body, fontSize: "13px",
+          color: D.textMuted, lineHeight: 1.5 }}>
+          {players.some((p) => p.school === schoolId)
+            ? "Everyone on this school's roster that you can see already has an account."
+            : "You cannot read this school's roster, so a role for a child cannot be given from here. The school office can give it, or you can under support access."}
+        </div>
       )}
       <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "44px", cursor: "pointer",
                       fontFamily: D.body, fontSize: "13px", color: D.textSecondary }}>

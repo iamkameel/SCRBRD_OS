@@ -35,6 +35,11 @@
  *      demonstration only "Sign in to see the audit log" — and Ground tasks are
  *      the fixtures at the grounds the reader may see, with the pitch report's
  *      standing from the database — and one plain line when there are none.
+ *  10. The platform account and the owner's key, whose assignments name no
+ *      school, are asked which school and appoint there — a coach at
+ *      Westville from Management and from Settings, any role for the owner,
+ *      a child only from that school's roster — and Westville's office is
+ *      still offered its own school only, and refused `medical`.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-management.mjs
@@ -48,7 +53,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
-import { roleGrants } from "../packages/policy/src/roles.mjs";
+import { GRANTABLE_ROLES, roleGrants } from "../packages/policy/src/roles.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const WEB_PORT = port(4372);
@@ -589,6 +594,155 @@ try {
   ok("...and none of the invented tasks", !INVENTED.test(await tid(gk.page, "os-main").innerText()));
   ok("...and it claims nothing about pitch reports: the demonstration has none to read", !/Pitch report/.test(await tid(gk.page, "ground-duties").innerText().catch(() => "Pitch report (no list at all)")));
   await gk.ctx.close();
+
+  // ── 10. The platform account and the owner's key, at a school ────
+  //
+  // Both hold user.role.assign on an assignment that names NO school (the
+  // recovery path: GRANTABLE_ROLES in packages/policy/src/roles.mjs). The
+  // server took their grants all along; the screens did not, because the
+  // school the form would post to was taken only from assignments that name
+  // one — so neither account had a school to choose, Management offered them
+  // nothing, and Settings' Enrol never enabled. These are the checks that were
+  // red before the fix (Kameel, 7 Oct: "unable to assign roles ... despite
+  // being the super admin and platform admin").
+  group("The platform account appoints a coach at Westville, from Management and from Settings");
+  const [{ id: PLATFORM_ID }] = await q(`select id from app_user where email = 'platform@example.invalid'`);
+  const [{ s: WES }] = await q(`select id::text as s from school where name like 'Westville%'`);
+  const pf1 = await open();
+  ok("the platform account signs in", await signIn(pf1.page, "platform@example.invalid"));
+  ok("...and reaches Management → Users", await toUsers(pf1.page));
+  ok("Add user is offered to it", await tid(pf1.page, "add-user").count() === 1);
+  ok("...and it is not told it cannot assign roles", await tid(pf1.page, "people-readonly").count() === 0);
+  await tid(pf1.page, "add-user").click({ timeout: 5000 }).catch(() => {});
+  await pf1.page.waitForTimeout(800);
+  const pfSchools = await tid(pf1.page, "enrol-school").locator("option").evaluateAll((os) => os.map((o) => o.textContent.trim()).filter((t) => !/^Choose/.test(t))).catch(() => []);
+  ok("the form asks which school, offering every school on the platform", pfSchools.includes("Hilton College") && pfSchools.includes("Westville Boys' High"), pfSchools.join());
+  ok("...and picks none for it: a tenant-less account is never guessed into a school",
+     await tid(pf1.page, "enrol-school").inputValue().catch(() => "x") === "");
+  const pfOffered = await tid(pf1.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
+  ok("the roles offered are the platform's own list: every role but the owner's key",
+     JSON.stringify([...pfOffered].sort()) === JSON.stringify([...GRANTABLE_ROLES.platformadmin].sort()) && !pfOffered.includes("superadmin"), pfOffered.join());
+  const pfCoach = `walk.platform.coach.${Date.now()}@example.invalid`;
+  await tid(pf1.page, "enrol-name").fill("P Walkcoach").catch(() => {});
+  await tid(pf1.page, "enrol-email").fill(pfCoach).catch(() => {});
+  await tid(pf1.page, "enrol-role").selectOption("coach").catch(() => {});
+  await tid(pf1.page, "enrol-team").selectOption("U15A").catch(() => {});
+  await tid(pf1.page, "enrol-code").uncheck().catch(() => {});
+  ok("...Add user waits for a school", await tid(pf1.page, "enrol-submit").isDisabled().catch(() => false));
+  await tid(pf1.page, "enrol-school").selectOption(WES).catch(() => {});
+  ok("...and is enabled once Westville is chosen", await tid(pf1.page, "enrol-submit").isEnabled().catch(() => false));
+  await tid(pf1.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
+  await pf1.page.waitForTimeout(2200);
+  ok("the server says yes and the dialog closes", await pf1.page.locator('[role="dialog"]').count() === 0
+     && /Opened an account for P Walkcoach as Coach \(U15A\)/.test(await tid(pf1.page, "people-notice").innerText().catch(() => "")));
+  const pfDb = await q(`select a.role, a.team_code, a.school_id::text as school, a.active, a.created_by from role_assignment a
+                          join app_user u on u.id = a.person_id where u.email = $1`, [pfCoach]);
+  ok("Postgres: a coach of Westville's U15A, live, appointed by the platform account",
+     pfDb.length === 1 && pfDb[0].role === "coach" && pfDb[0].team_code === "U15A" && pfDb[0].school === WES && pfDb[0].active && pfDb[0].created_by === PLATFORM_ID, JSON.stringify(pfDb));
+  ok("...and the new coach's row offers the platform account Add role and End role",
+     await rowOf(pf1.page, pfCoach).locator('[data-testid^="add-role-"]').count() === 1
+     && await rowOf(pf1.page, pfCoach).locator('[data-testid="end-role"]').count() === 1);
+  // A pupil's or a parent's role names a child, and the platform does not read
+  // a school's roster (that is support access, db/22). The form says so rather
+  // than offering an empty list.
+  await tid(pf1.page, "add-user").click({ timeout: 5000 }).catch(() => {});
+  await pf1.page.waitForTimeout(600);
+  await tid(pf1.page, "enrol-school").selectOption(WES).catch(() => {});
+  await tid(pf1.page, "enrol-role").selectOption("guardian").catch(() => {});
+  ok("a role for a child, with no roster it may read, is said plainly", /cannot read this school's roster/i.test(await tid(pf1.page, "enrol-no-roster").innerText().catch(() => "")));
+  await click(pf1.page, /^Cancel$/, 4000);
+  ok("no console errors on the platform account's session", pf1.errors.length === 0, pf1.errors.join(" | "));
+  await pf1.ctx.close();
+
+  const pf2 = await open();
+  ok("the platform account, again, in Settings → People", await signIn(pf2.page, "platform@example.invalid"));
+  await tid(pf2.page, "nav-settings").first().click({ timeout: 6000 }).catch(() => {});
+  await pf2.page.waitForTimeout(1200);
+  await tid(pf2.page, "enrol-person").click({ timeout: 6000 }).catch(() => {});
+  await pf2.page.waitForTimeout(800);
+  const pfScorer = `walk.platform.scorer.${Date.now()}@example.invalid`;
+  await tid(pf2.page, "enrol-school").selectOption(WES).catch(() => {});
+  await tid(pf2.page, "enrol-name").fill("P Walkscorer").catch(() => {});
+  await tid(pf2.page, "enrol-email").fill(pfScorer).catch(() => {});
+  await tid(pf2.page, "enrol-role").selectOption("scorer").catch(() => {});
+  await tid(pf2.page, "enrol-code").uncheck().catch(() => {});
+  ok("Settings' Enrol is enabled for it once a school is chosen", await tid(pf2.page, "enrol-submit").isEnabled().catch(() => false));
+  await tid(pf2.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
+  await pf2.page.waitForTimeout(2200);
+  ok("...and the scorer is appointed at Westville",
+     (await q(`select a.role from role_assignment a join app_user u on u.id = a.person_id where u.email = $1 and a.school_id = $2 and a.active`, [pfScorer, WES])).some((a) => a.role === "scorer"));
+  ok("no console errors in Settings", pf2.errors.length === 0, pf2.errors.join(" | "));
+  await pf2.ctx.close();
+
+  group("The owner's key may appoint any role, and a child is chosen from that school's roster only");
+  const own = await open();
+  ok("the owner signs in", await signIn(own.page, "owner@example.invalid"));
+  ok("...and reaches Management → Users", await toUsers(own.page));
+  ok("Add user is offered", await tid(own.page, "add-user").count() === 1);
+  await tid(own.page, "add-user").click({ timeout: 5000 }).catch(() => {});
+  await own.page.waitForTimeout(800);
+  const ownOffered = await tid(own.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
+  ok("every role is offered, the owner's key included",
+     JSON.stringify([...ownOffered].sort()) === JSON.stringify([...GRANTABLE_ROLES.superadmin].sort()) && ownOffered.includes("superadmin") && ownOffered.includes("medical"), ownOffered.join());
+  await tid(own.page, "enrol-school").selectOption(WES).catch(() => {});
+  await tid(own.page, "enrol-role").selectOption("player").catch(() => {});
+  const kids = await tid(own.page, "enrol-player").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
+  const wesKids = (await q(`select id::text as id from player where school_id = $1`, [WES])).map((r) => r.id);
+  ok("...a pupil's account is offered Westville's boys and nobody from Hilton", kids.length > 0 && kids.every((k) => wesKids.includes(k)), `${kids.length} offered`);
+  const ownMedic = `walk.owner.medic.${Date.now()}@example.invalid`;
+  await tid(own.page, "enrol-role").selectOption("medical").catch(() => {});
+  await tid(own.page, "enrol-name").fill("O Walkmedic").catch(() => {});
+  await tid(own.page, "enrol-email").fill(ownMedic).catch(() => {});
+  await tid(own.page, "enrol-code").uncheck().catch(() => {});
+  await tid(own.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
+  await own.page.waitForTimeout(2200);
+  ok("a clinical appointment the office may not make is made, at Westville",
+     (await q(`select a.role from role_assignment a join app_user u on u.id = a.person_id where u.email = $1 and a.school_id = $2 and a.active`, [ownMedic, WES])).some((a) => a.role === "medical"));
+  ok("no console errors on the owner's session", own.errors.length === 0, own.errors.join(" | "));
+  await own.ctx.close();
+
+  // One account holding both platform keys lands as the wider of the two, so
+  // its picker is the owner's — the sign-in ranking had no place for superadmin.
+  const BOTH = "walk.both.keys@example.invalid";
+  await q(`with u as (insert into app_user (school_id, email, name, role) values (null, $1, 'B Bothkeys', 'superadmin') returning id)
+           insert into role_assignment (person_id, role, school_id, team_code)
+           select id, r, null, null from u, unnest(array['platformadmin', 'superadmin']) r`, [BOTH]);
+  const both = await open();
+  ok("an account holding both the platform and the owner's key signs in", await signIn(both.page, BOTH));
+  ok("...and reaches Management → Users", await toUsers(both.page));
+  await tid(both.page, "add-user").click({ timeout: 5000 }).catch(() => {});
+  await both.page.waitForTimeout(600);
+  const bothOffered = await tid(both.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
+  ok("...and is offered the owner's key, as the wider of its two roles", bothOffered.includes("superadmin"), bothOffered.join());
+  await both.ctx.close();
+
+  group("The office at Westville: its own school only, and still not a clinical role");
+  const wes = await open();
+  ok("Westville's registrar signs in", await signIn(wes.page, NDLOVU_B));
+  ok("...and reaches Management → Users", await toUsers(wes.page));
+  await tid(wes.page, "add-user").click({ timeout: 5000 }).catch(() => {});
+  await wes.page.waitForTimeout(600);
+  ok("no school picker: it is her one school", await tid(wes.page, "enrol-school").count() === 0);
+  const wesOffered = await tid(wes.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
+  ok("...the office's own list, without medical", JSON.stringify([...wesOffered].sort()) === JSON.stringify([...GRANTABLE_ROLES.schooladmin].sort()) && !wesOffered.includes("medical"), wesOffered.join());
+  const wesTry = `walk.wes.medic.${Date.now()}@example.invalid`;
+  await tid(wes.page, "enrol-name").fill("W Notamedic");
+  await tid(wes.page, "enrol-email").fill(wesTry);
+  await tid(wes.page, "enrol-role").selectOption("scorer");
+  await wes.page.route("**/api/users", async (route) => {
+    const req = route.request();
+    if (req.method() !== "POST") return route.continue();
+    await route.continue({ postData: JSON.stringify({ ...JSON.parse(req.postData() || "{}"), role: "medical" }) });
+  });
+  await tid(wes.page, "enrol-submit").click({ timeout: 5000 });
+  await wes.page.waitForTimeout(1800);
+  ok("a medical appointment forced past the picker is refused by the server, in words",
+     (await tid(wes.page, "enrol-error").getAttribute("data-code").catch(() => "")) === "not_permitted"
+     && /you may not do that here/i.test(await tid(wes.page, "enrol-error").innerText().catch(() => "")));
+  ok("...and nothing was written", (await accountsFor(wesTry)).length === 0);
+  await wes.page.unroute("**/api/users");
+  ok("no console errors on the office's session", wes.errors.length === 0, wes.errors.join(" | "));
+  await wes.ctx.close();
 
   // ── 7b. Phone width ──────────────────────────────────────────────
   group("At 390 wide: no sideways scroll, and the floors hold");

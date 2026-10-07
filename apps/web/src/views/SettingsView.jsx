@@ -476,7 +476,7 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
 
       <Panel>
         <CardHead title="Accounts"
-          sub="Everyone who can sign in at a school you manage. Issuing a code is the one account action that is real end to end; there is no suspend or delete here because neither did anything."
+          sub="Everyone who can sign in at a school you manage. Enrol a person and issue a sign-in code here; to add a role to an account that already exists, or end one, use Management → Users. Suspending an account is coming."
           aside={canEdit && <Btn size="sm" data-testid="enrol-person" onClick={onEnrol}>+ Enrol a person</Btn>}/>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "10px" }}>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email or role…" aria-label="Search accounts"
