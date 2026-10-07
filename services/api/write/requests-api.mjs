@@ -18,6 +18,7 @@
  * writing the assignment itself.
  */
 import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
+import { SELF_REGISTRABLE_ROLES } from "@scrbrd/policy/roles";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
@@ -107,6 +108,10 @@ export function requestRoutes({ pool, secret }) {
       const b = req.body || {};
       const f = fields(b);
       refusePlatformRole(f.role);
+      // A stranger asks only for what the sign-up screens offer. onboard_request()
+      // labels the new account with this role, so anything else (`principal`,
+      // `dso`, …) is refused here, before the database is asked anything.
+      if (!SELF_REGISTRABLE_ROLES.includes(f.role)) throw err("role_not_self_registrable", 422);
       const email = String(b.email ?? "").trim();
       const name = String(b.name ?? "").trim();
       if (name.length < 2) throw err("name_required");

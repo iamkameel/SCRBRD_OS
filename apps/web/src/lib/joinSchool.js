@@ -26,11 +26,14 @@
  *      office names his roster row. (Under 13, Google will not give him an
  *      account at all: he signs in with a code.)
  */
+import { SELF_REGISTRABLE_STAFF_ROLES } from "@scrbrd/policy/roles";
 
-/** Roles a member of staff may ask for here. The server also checks each one (role_request_grantable). */
-export const STAFF_ROLES = Object.freeze([
-  "coach", "assistantcoach", "teammanager", "scorer", "medical", "facilities", "directorofsport", "schooladmin",
-]);
+/**
+ * Roles a member of staff may ask for here, from the policy's self-registrable
+ * list, which /api/onboard also holds a stranger to. The server also checks
+ * each one (role_request_grantable).
+ */
+export const STAFF_ROLES = SELF_REGISTRABLE_STAFF_ROLES;
 
 /** The four kinds of person, in the order the screen offers them. */
 export const KINDS = Object.freeze([
@@ -99,6 +102,7 @@ export const JOIN_WORDS = {
   not_requestable: "That cannot be asked for from here. Ask your school office.",
   not_permitted: "You cannot ask for that. Ask your school office.",
   platform_role_needs_no_school: "That role belongs to SCRBRD, not to a school, so it cannot be asked for here. Choose what you do at the school.",
+  role_not_self_registrable: "That role is given by the school, not asked for when you sign up. Choose what you do at the school, or ask your school office.",
   missing_token: "You were signed out. Sign in again to ask.",
   token_expired: "You were signed out. Sign in again to ask.",
 };
