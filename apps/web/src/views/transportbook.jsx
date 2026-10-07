@@ -226,7 +226,10 @@ export function BookBus({ role, matches, trips, vehicles, loading, readError, on
   const first = loading && !ready;
   const accounts = useLive("users", role);
   const mySchools = schoolsWhere("transport.manage").map((s) => s.id);
-  const { bookable, elsewhere } = unbookedFixtures({ matches, trips, mySchools });
+  // A fixture just booked stays off the list until the trips are read again, so the
+  // same fixture is not offered for a second booking in that moment.
+  const [justBooked, setJustBooked] = useState(() => new Set());
+  const { bookable, elsewhere } = unbookedFixtures({ matches: matches.filter((m) => !justBooked.has(m.id)), trips, mySchools });
   const driversAt = (school) => driversFor(accounts.rows, school);
 
   return (
@@ -256,7 +259,7 @@ export function BookBus({ role, matches, trips, vehicles, loading, readError, on
               {openId === m.id && (
                 <BookOne match={m} vehicles={vehicles} drivers={driversAt(m.schoolId)} driversLoading={accounts.loading}
                   onClose={() => setOpenId(null)}
-                  onBooked={(text) => { setOpenId(null); setOutcome({ kind: "ok", text }); onChanged(); }}/>
+                  onBooked={(text) => { setOpenId(null); setJustBooked((x) => new Set(x).add(m.id)); setOutcome({ kind: "ok", text }); onChanged(); }}/>
               )}
             </div>
           ))}
