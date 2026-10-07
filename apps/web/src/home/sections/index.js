@@ -3,9 +3,10 @@
  * The entry (src/home/main.jsx) composes them; every one is pure, takes props
  * and fetches nothing. Prop shapes are in each file's header.
  *
- *   Header                          logo, Log in
+ *   Header                          logo, the over, Live (while one is), Log in
+ *   Hero                            the film of one delivery: the sentence and
+ *                                   the call to action, then five shots
  *   LiveStrip show="live"           Live now: only when a listed fixture is live
- *   Hero                            the sentence and the call to action
  *   LiveStrip show="today"          Today: the rest, or "No matches listed today"
  *   Tiles                           what SCRBRD does
  *   News                            the five latest public posts
@@ -25,5 +26,6 @@ import { Families } from "./Families.jsx";
 import { Schools } from "./Schools.jsx";
 import { Footer, AnalyticsToggle, ANALYTICS_PREF, setAnalyticsPref } from "./Footer.jsx";
 import { Privacy } from "./Privacy.jsx";
+import { Seam } from "./shared.jsx";
 
-export { Header, LiveStrip, Hero, Tiles, News, Families, Schools, Footer, AnalyticsToggle, ANALYTICS_PREF, setAnalyticsPref, Privacy };
+export { Header, LiveStrip, Hero, Tiles, News, Families, Schools, Footer, AnalyticsToggle, ANALYTICS_PREF, setAnalyticsPref, Privacy, Seam };

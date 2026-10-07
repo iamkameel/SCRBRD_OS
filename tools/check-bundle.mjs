@@ -352,6 +352,12 @@ const HOME_HTML = join(DIST, "home.html");
  * 222 KB — React, the tokens and ui/icons.jsx (the Tiles' icons, ~44 KB) —
  * the home chunk 23 KB and lib/persist.js 3 KB. Over A9's ~220 KB guess by the
  * icon vocabulary; a home-only icon set is the lever if it must come down.
+ *
+ * 2026-10-07, the cinematic page: that lever pulled (sections/glyphs.jsx,
+ * eight glyphs drawn for the tiles, in place of ui/icons.jsx and Lucide, ~60
+ * KB), and the film of one delivery added (film/draw.js and film/engine.js,
+ * a lazy chunk of ~25 KB, counted here because the whole graph is). Measured
+ * 235 KB. The ceiling stays where it was: the film fits inside it.
  */
 const HOME_LIMIT_KB = 260;
 const HOME_HTML_LIMIT_KB = 15;
