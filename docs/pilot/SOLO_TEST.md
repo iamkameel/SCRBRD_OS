@@ -9,7 +9,7 @@ The demo copy is the `scrbrd-demo` Supabase project and its own Render service (
 1. Paste the two cast files into `scrbrd-demo`, in this order. Check that the dashboard says `scrbrd-demo` first.
    - `demo-players-330.sql`: the 330 invented boys and their parents. It is file 10 on the demo copy kit. It is not in the repository.
    - `demo-cast.sql`: everyone else, and the fixtures. It is file 11 on the demo copy kit (or, with the repository: `node tools/demo-cast.mjs demo-cast.sql`). It is about 70 KB, one paste.
-   - Paste `demo-cast.sql` on the morning of your first test day. It makes one fixture for that day, and one for each day after it to 17 October. A second paste is refused.
+   - Paste `demo-cast.sql` on the morning of your first test day. It makes one fixture for that day, and the fortnight's fixtures to 17 October (the list is in the last table). A second paste is refused.
    - Each file ends with tables. Keep the last three of `demo-cast.sql`: the people, the pupils and the fixtures.
 2. Create the demo Render service, as in `DEMO_COPY.md` section 3. `NODE_ENV` is `development` and `ALLOW_DEV_LOGIN` is `1`. Set `PUBLIC_PAGES` to `on` for the ground display and the public pages.
 3. Run the health check, as in `DEMO_COPY.md` section 4. The demo says `"auth":"dev_login_enabled"`. Production still says `"auth":"token_only"`.
