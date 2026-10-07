@@ -23,6 +23,13 @@
  *      post to the route is a 403 with the side untouched; signed out, a 401.
  *   7. Floors: nothing read under 12px, nothing tapped under 44px, at 1280
  *      (Floodlit) and 390 (Daylight), nothing wider than the screen.
+ *   8. PLAYING UP: "Add a boy from another team" finds the school's boys on other
+ *      teams. A U13 boy added to the U14A side is saved (the database holds him,
+ *      marked from U13A when reopened); a boy too old, added from another team,
+ *      is refused in the trigger's words beside him and nothing is saved; another
+ *      school's boy is never offered.
+ *   9. THE AWAY SIDE: the picker makes no readiness read for the away end and
+ *      says in one line that availability shows for the home side only.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-pick-side.mjs
@@ -43,7 +50,8 @@ const API = `http://127.0.0.1:${API_PORT}`;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 const HIL = "11111111-1111-1111-1111-111111111111";
 const U14_COACH = "88888888-0000-0000-0000-00000000000b";   // T Ndlovu, coach of U14A at Hilton
-const GUARDIAN = "88888888-0000-0000-0000-0000000000f5";
+const WES = "22222222-2222-2222-2222-222222222222";
+const GUARDIAN ="88888888-0000-0000-0000-0000000000f5";
 const PRIVATE = "A private reason the family gave";
 
 let pass = 0, fail = 0;
@@ -374,7 +382,144 @@ try {
   ok("no page errors on the phone", ph.errors.length === 0, ph.errors.join(" | "));
   await ph.ctx.close();
 
-  ok("the API raised nothing unexpected", !apiErr.join("").match(/Unhandled|TypeError|ReferenceError/), apiErr.join("").slice(0, 300));
+  // ══ 8. Playing a boy up ════════════════════════════════════════════════
+  group("8. Playing up: a U13 boy added to the U14A side and saved; a boy too old is refused beside him; another school's boy is never offered");
+  const mkBoy = async (schoolId, team, name, born, no) => {
+    const id = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born) values ($1, $2, $3, $4, 'batter', current_date - interval '${born}') returning id`, [schoolId, team, name, no]))[0].id;
+    if (born.startsWith("12")) {
+      await call(`/api/players/${id}/guardians`, { method: "POST", token: registrar, body: { guardianId: GUARDIAN, relationship: "parent" } });
+      await call(`/api/players/${id}/guardians/verify`, { method: "POST", token: registrar, body: { guardianId: GUARDIAN, consentVersion: "popia-2026-01" } });
+    }
+    return id;
+  };
+  const UP = await mkBoy(HIL, "U13A", "Verify Up Young", "12 years 6 months", 71);
+  const ELDER = await mkBoy(HIL, "1XI", "Verify Up Elder", "20 years", 72);
+  const STRANGER = await mkBoy(WES, "U13A", "Verify Up Stranger", "12 years 6 months", 73);
+  const M2 = (await q(
+    `insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+     values ($1, 'U14A', 'Verify Up XI', now() + interval '4 days', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL]))[0].id;
+  ok("the stage is set: three boys on other teams, one at another school, and an empty U14A fixture", !!UP && !!ELDER && !!STRANGER && !!M2 && (await side(M2)).length === 0);
+  const coachTok = await login("u14coach@example.invalid");
+  const roster = (await call("/api/read/players", { token: coachTok })).body?.rows ?? [];
+  console.log(`  (info) the U14A coach's own players read ${roster.some((r) => r.id === STRANGER) ? "DOES" : "does not"} return the other school's boy`);
+
+  const u = await open();
+  ok("the U14A coach signs in", await signIn(u.page, "u14coach@example.invalid"));
+  await go(u.page, "matches");
+  await tid(u.page, `match-card-${M2}`).click();
+  await u.page.waitForTimeout(800);
+  await tid(u.page, "pick-side-entry").click();
+  ok("the dialog opens", await dialog(u.page));
+  ok("the other team's boys are not in the list until the coach asks", await tid(u.page, `pick-${UP}`).count() === 0 && await tid(u.page, `pick-${ELDER}`).count() === 0);
+  const openBtn = (await inner(u.page, "pick-other-open")).trim();
+  ok("a secondary control says what it does", openBtn === "Add a boy from another team", openBtn);
+  await tid(u.page, "pick-other-open").click();
+  await tid(u.page, "pick-other-search").fill("verify up");
+  await u.page.waitForTimeout(300);
+  const offered = await u.page.$$eval('[data-testid^="pick-other-add-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("pick-other-add-", "")));
+  ok("the finder offers the school's boys on other teams, with their team", offered.length === 2 && offered.includes(UP) && offered.includes(ELDER)
+    && /from U13A/.test(await inner(u.page, `pick-other-add-${UP}`)) && /from 1XI/.test(await inner(u.page, `pick-other-add-${ELDER}`)), offered.join(","));
+  ok("another school's boy is never offered", !offered.includes(STRANGER) && !/Stranger/.test(await inner(u.page, "pick-side")));
+  await tid(u.page, "pick-other-search").fill("stranger");
+  await u.page.waitForTimeout(300);
+  ok("...not even when searched for by name", await tid(u.page, `pick-other-add-${STRANGER}`).count() === 0 && await tid(u.page, "pick-other-none").count() === 1);
+  await tid(u.page, "pick-other-search").fill("verify up");
+  await u.page.waitForTimeout(300);
+  const f8 = await floors(u.page, "pick-side");
+  ok(`1280, finder open: nothing under 12px (${f8.small.length}), nothing under 44px (${f8.tiny.length}), nothing wider (${f8.wide})`, !f8.small.length && !f8.tiny.length && !f8.wide, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
+  await tid(u.page, `pick-other-add-${UP}`).click();
+  await u.page.waitForTimeout(300);
+  ok("the U13 boy is in the list, in the XI, marked with his own side", await tid(u.page, `pick-${UP}`).getAttribute("data-picked") === "xi"
+    && (await inner(u.page, `pick-from-${UP}`)).trim() === "from U13A");
+  ok("...no availability is claimed for him", await tid(u.page, `pick-state-${UP}`).count() === 0 && /availability not shown/.test(await inner(u.page, `pick-nostate-${UP}`)));
+  ok("...the finder has closed, and focus is on his Pick button", await tid(u.page, "pick-other-search").count() === 0
+    && await u.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === `pick-xi-${UP}`);
+  ok("the team's own boys carry no mark", await tid(u.page, `pick-from-${boy["01"]}`).count() === 0);
+  await tid(u.page, `pick-xi-${boy["01"]}`).click();
+  await tid(u.page, "pick-side-save").click();
+  await u.page.waitForFunction(() => !document.querySelector('[data-testid="pick-side"]'), null, { timeout: 8000 }).catch(() => {});
+  const up1 = await side(M2);
+  ok("saved: the database holds the U13 boy in the U14A side", up1.length === 2 && up1.includes("Verify Up Young|1|false") && up1.includes("Verify Pick 01|2|false"), up1.join(" ; "));
+  ok("...registered to U13A still", (await q(`select team_code t from player where id = $1`, [UP]))[0].t === "U13A");
+
+  await tid(u.page, "pick-side-entry").click();
+  ok("reopened: he stands in the side, still marked from U13A", await dialog(u.page) && await tid(u.page, `pick-${UP}`).getAttribute("data-picked") === "xi"
+    && (await inner(u.page, `pick-from-${UP}`)).trim() === "from U13A");
+  const before8 = await side(M2);
+  await tid(u.page, "pick-other-open").click();
+  await tid(u.page, "pick-other-search").fill("elder");
+  await u.page.waitForTimeout(300);
+  ok("the boy already in the list is not offered again, the elder is", await tid(u.page, `pick-other-add-${UP}`).count() === 0 && await tid(u.page, `pick-other-add-${ELDER}`).count() === 1);
+  await tid(u.page, `pick-other-add-${ELDER}`).click();
+  await u.page.waitForTimeout(300);
+  ok("the elder is in the draft, marked from 1XI", await tid(u.page, `pick-${ELDER}`).getAttribute("data-picked") === "xi" && (await inner(u.page, `pick-from-${ELDER}`)).trim() === "from 1XI");
+  u.posts.length = 0;
+  await tid(u.page, "pick-side-save").click();
+  await u.page.waitForTimeout(1200);
+  const refused8 = await inner(u.page, `pick-note-${ELDER}`);
+  ok("the trigger's own words are beside him", /Verify Up Elder is \d+ on 1 January and cannot play U14A: the limit is 14/.test(refused8), refused8);
+  ok("...nobody else carries a note, the screen stays open, one request was made", await u.page.locator('[data-testid^="pick-note-"]').count() === 1 && await tid(u.page, "pick-side").count() === 1 && u.posts.length === 1);
+  ok("...and the foot says nothing was saved", /Nothing was saved/.test(await inner(u.page, "pick-side-said")));
+  ok("nothing was saved or withdrawn: the side stands row for row", JSON.stringify(await side(M2)) === JSON.stringify(before8)
+    && (await q(`select count(*)::int n from match_squad where match_id = $1 and withdrawn`, [M2]))[0].n === 0);
+  ok("the elder never reached the database", (await q(`select count(*)::int n from match_squad where player_id = $1`, [ELDER]))[0].n === 0);
+  const f8b = await floors(u.page, "pick-side");
+  ok(`with the refusal beside him: nothing under 12px (${f8b.small.length}), nothing under 44px (${f8b.tiny.length})`, !f8b.small.length && !f8b.tiny.length, [...f8b.small, ...f8b.tiny].slice(0, 4).join(" · "));
+  ok("no page errors", u.errors.length === 0, u.errors.join(" | "));
+  await u.ctx.close();
+
+  group("8b. At 390 wide, in Daylight, with the finder open");
+  const uph = await open({ width: 390, height: 844, theme: "daylight" });
+  await signIn(uph.page, "u14coach@example.invalid");
+  await go(uph.page, "matches");
+  await tid(uph.page, `match-card-${M2}`).click();
+  await uph.page.waitForTimeout(800);
+  await tid(uph.page, "pick-side-entry").click();
+  await dialog(uph.page);
+  await tid(uph.page, "pick-other-open").click();
+  await tid(uph.page, "pick-other-search").fill("verify up");
+  await uph.page.waitForTimeout(300);
+  const f8c = await floors(uph.page, "pick-side");
+  ok(`the finder: nothing under 12px (${f8c.small.length}), nothing under 44px (${f8c.tiny.length}), nothing wider than the screen (${f8c.wide})`, !f8c.small.length && !f8c.tiny.length && !f8c.wide, [...f8c.small, ...f8c.tiny].slice(0, 4).join(" · "));
+  ok("Daylight draws it on a light page", /rgb\((2[0-9]{2}|1[89][0-9]), /.test(f8c.bg), f8c.bg);
+  await uph.ctx.close();
+
+  group("9. The away side: no availability read, and one plain line");
+  const MA = (await q(
+    `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+     values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', now() + interval '5 days', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, WES]))[0].id;
+  const aw = await open();
+  const reads = [];
+  aw.page.on("request", (r) => { const p = new URL(r.url()).pathname; if (/\/api\/read\/readiness$/.test(p)) reads.push(p); });
+  ok("the away school's coach signs in", await signIn(aw.page, "coach.wes@example.invalid"));
+  const opened = await openMatch(aw.page, MA);
+  ok("he opens the shared fixture", opened);
+  if (opened) {
+    await coachTab(aw.page);
+    const opener = (await tid(aw.page, "pick-side-open").count()) ? "pick-side-open" : null;
+    ok("the Coach tab offers him Pick the side", opener !== null);
+    if (opener) {
+      reads.length = 0;   // the Coach tab's own panels read what they read; only the picker's reads count
+      await tid(aw.page, opener).click();
+      ok("the dialog opens", await dialog(aw.page));
+      ok("one plain line says availability shows for the home side only for now", /^Availability shows for the home side only for now\.$/.test((await inner(aw.page, "pick-side-away-note")).trim()));
+      ok("no availability word is drawn beside any boy", await aw.page.locator('[data-testid^="pick-state-"]').count() === 0);
+      ok("the readiness read was not made for the away end", reads.length === 0, reads.join(","));
+      await aw.page.keyboard.press("Escape");
+    }
+  }
+  await aw.ctx.close();
+  const homeCoach = await open();
+  await signIn(homeCoach.page, "u14coach@example.invalid");
+  await go(homeCoach.page, "matches");
+  await tid(homeCoach.page, `match-card-${M2}`).click();
+  await homeCoach.page.waitForTimeout(800);
+  await tid(homeCoach.page, "pick-side-entry").click();
+  await dialog(homeCoach.page);
+  ok("the home coach is not told availability is missing", await tid(homeCoach.page, "pick-side-away-note").count() === 0);
+  await homeCoach.ctx.close();
+
+  ok("the API raised nothing unexpected",!apiErr.join("").match(/Unhandled|TypeError|ReferenceError/), apiErr.join("").slice(0, 300));
 } catch (e) {
   fail++;
   console.log("  ✗ the walk itself threw", e?.stack ?? e);
