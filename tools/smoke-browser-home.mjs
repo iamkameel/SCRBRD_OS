@@ -18,6 +18,14 @@
  *      starts nothing on the home page; the app's next boot at /app is what
  *      starts the SDK (lib/firebase.js); off again, the app starts nothing.
  *
+ * The cinematic page (2026-10):
+ *   4b. The hero's heading is whole and visible in the first screen at 390;
+ *      the film's canvas is drawn and scrolling plays it to the last shot;
+ *      no horizontal scroll at 390 through the film and after it; no text
+ *      under 12px and nothing tapped under 44px; with reduced motion the film
+ *      is five drawn stills with their captions, every section visible and
+ *      at rest, nothing animating.
+ *
  * Phase 2 — the strip (db/82):
  *   5. Nothing is listed until the school lists: a published fixture is not
  *      on the page. Listed, its card appears: the schools, live, a link to
@@ -184,6 +192,107 @@ try {
     await w.ctx.close();
   }
   await v.ctx.close();
+
+  group("4b. The film, the floors, and reduced motion (the cinematic page, 2026-10)");
+  {
+    /** Is the page wider than the screen? */
+    const wide = (/** @type {any} */ page) => page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    /** A cheap fingerprint of what a canvas shows, and whether it shows anything. */
+    const ink = (/** @type {any} */ page, /** @type {string} */ sel) => page.$$eval(sel, (/** @type {HTMLCanvasElement[]} */ cs) => cs.map((c) => {
+      const x = c.getContext("2d"); if (!x || !c.width || !c.height) return { inked: false, sum: 0 };
+      const d = x.getImageData(0, 0, c.width, c.height).data; let sum = 0, inked = 0;
+      for (let i = 0; i < d.length; i += 4 * 97) { sum = (sum + d[i] * 3 + d[i + 1] * 5 + d[i + 2] * 7 + d[i + 3]) % 1e9; if (d[i + 3] > 0) inked++; }
+      return { inked: inked > 50, sum };
+    }));
+    /** Text under 12px, and anything tapped under 44px, among what is drawn on the page. */
+    const floors = (/** @type {any} */ page) => page.evaluate(() => {
+      const small = [], tiny = [];
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        const el = n.parentElement; if (!el || !n.nodeValue?.trim() || el.closest("svg, style, script, .sr-only")) continue;
+        const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+        if (cs.display === "none" || cs.visibility === "hidden" || r.width < 1 || r.height < 1) continue;
+        if (parseFloat(cs.fontSize) < 12) small.push(`${cs.fontSize} "${n.nodeValue.trim().slice(0, 24)}"`);
+      }
+      for (const el of document.querySelectorAll("a[href], button, [role=switch]")) {
+        if (el.closest("[aria-hidden=true]")) continue;
+        const r = el.getBoundingClientRect(); if (r.width < 1 || r.height < 1) continue;
+        if (r.width < 44 || r.height < 44) tiny.push(`${Math.round(r.width)}x${Math.round(r.height)} "${(el.textContent ?? "").trim().slice(0, 24)}"`);
+      }
+      return { small, tiny };
+    });
+
+    const f = await visitor();
+    await f.page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    await f.page.waitForTimeout(600);
+    const h1 = await f.page.evaluate(() => {
+      const el = document.querySelector("h1"); if (!el) return null;
+      const r = el.getBoundingClientRect();
+      let o = 1; for (let e = /** @type {Element | null} */ (el); e; e = e.parentElement) o *= Number(getComputedStyle(e).opacity);
+      return { top: r.top, bottom: r.bottom, h: innerHeight, o, text: el.textContent };
+    });
+    ok("the hero's heading is real text, whole and visible in the first screen at 390 × 844",
+       !!h1 && h1.top >= 0 && h1.bottom <= h1.h && h1.o > 0.99 && /School cricket, scored live/.test(h1.text ?? ""), JSON.stringify(h1));
+    ok("...and the film's stage is drawn: the canvas has ink", (await ink(f.page, ".film-canvas"))[0]?.inked === true);
+    const before = (await ink(f.page, ".film-canvas"))[0]?.sum;
+    const film = await f.page.evaluate(() => { const r = /** @type {HTMLElement} */ (document.getElementById("home-film")).getBoundingClientRect(); return { top: r.top + scrollY, h: r.height, vh: innerHeight }; });
+    let overflow = await wide(f.page);
+    for (const s of [0.5, 1.2, 2.0, 3.0, 4.0, 4.9]) {
+      await f.page.evaluate((/** @type {number} */ y) => window.scrollTo({ top: y, behavior: "instant" }), film.top + s * film.vh);
+      await f.page.waitForTimeout(700);
+      overflow = overflow || await wide(f.page);
+    }
+    const shot = await f.page.evaluate(() => document.getElementById("home-film")?.dataset.shot);
+    ok("scrolling plays the film: five screens on, the last shot, and a different frame", shot === "5" && (await ink(f.page, ".film-canvas"))[0]?.sum !== before, `shot ${shot}`);
+    const total = await f.page.evaluate(() => document.documentElement.scrollHeight);
+    for (let y = film.top + film.h - film.vh; y < total; y += film.vh * 0.6) {
+      await f.page.evaluate((/** @type {number} */ yy) => window.scrollTo({ top: yy, behavior: "instant" }), y);
+      await f.page.waitForTimeout(120);
+      overflow = overflow || await wide(f.page);
+    }
+    ok("no horizontal scroll at 390 px, through the film and the page after it", !overflow);
+    const fl = await floors(f.page);
+    ok("no text under 12px anywhere on the page", fl.small.length === 0, fl.small.slice(0, 4).join(" · "));
+    ok("nothing tapped under 44px", fl.tiny.length === 0, fl.tiny.slice(0, 4).join(" · "));
+    ok("Skip the film lands on what follows it", await f.page.evaluate(() => {
+      const a = document.querySelector('[data-testid="home-skip-film"]');
+      return !!a && !!document.getElementById((a.getAttribute("href") ?? "").slice(1));
+    }));
+    ok("the film names no child", namesIn(await text(f.page)).length === 0, namesIn(await text(f.page)).join(", "));
+    ok("no console errors through the film", f.errors.length === 0, f.errors.join(" | "));
+    await f.ctx.close();
+
+    // Reduced motion: the storyboard, everything visible, nothing moving.
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce", extraHTTPHeaders: { "x-forwarded-for": `10.85.0.${++ipN}` } });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    const errors = /** @type {string[]} */ ([]);
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(800);
+    const still = await page.evaluate(() => {
+      const hidden = [];
+      for (const el of document.querySelectorAll("main section, main li, main article, main figure, main h1, main h2, main p")) {
+        const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+        if (cs.display === "none") continue;
+        if (Number(cs.opacity) < 1 || cs.transform !== "none" || cs.visibility === "hidden" || r.height < 1) hidden.push(`${el.tagName.toLowerCase()}#${el.id || el.className || ""}: ${cs.opacity} ${cs.transform}`);
+      }
+      return {
+        hidden,
+        stage: getComputedStyle(/** @type {Element} */ (document.querySelector(".film-stage"))).display,
+        frames: document.querySelectorAll(".film-shots .film-still").length,
+        moving: document.getAnimations().filter((a) => a.playState === "running").length,
+      };
+    });
+    ok("reduced motion: every section, card and caption visible, at rest, none moved", still.hidden.length === 0, still.hidden.slice(0, 4).join(" · "));
+    ok("...the film is not played: no stage, and nothing animating", still.stage === "none" && still.moving === 0, `${still.stage}, ${still.moving} running`);
+    const frames = await ink(page, ".film-shots .film-still");
+    ok("...five stills instead, each drawn, each with its caption", still.frames === 5 && frames.length === 5 && frames.every((x) => x.inked)
+       && (await page.locator(".film-shots .film-cap h2").count()) === 5, JSON.stringify(frames.map((x) => x.inked)));
+    ok("...and no horizontal scroll", !(await wide(page)));
+    ok("no console errors with reduced motion", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
 
   group("5. The strip: a listed school's published fixture, team facts only (db/82)");
   {

@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import { GLOBAL_CSS, T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
-import { Header, LiveStrip, Hero, Tiles, News, Families, Schools, Footer, Privacy } from "./sections/index.js";
+import { Header, LiveStrip, Hero, Tiles, News, Families, Schools, Footer, Privacy, Seam } from "./sections/index.js";
+import { homeCss } from "./fx.js";
 import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
 
 /**
@@ -23,10 +24,19 @@ import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
  * a score. A 404 or a failure leaves the section hidden.
  *
  * Schools write to SCHOOLS_EMAIL (A8: the address Kameel named, 3 October 2026).
+ *
+ * The page opens on the film of one delivery (sections/Hero.jsx, film/), and
+ * the real content follows it: the strip, the pitch, the news, the promise to
+ * families, the schools. While a fixture is live the header carries a link
+ * to the strip on every screen, and the hero offers "Follow a match", so a
+ * parent who came for the score is one tap from it however far the film is.
+ * HERO_PHOTO is the photo slot (Hero's `photo`): null until there is one.
  */
 const APP = "/app";
 const SCHOOLS_EMAIL = "kameel@maverickdesign.co.za";
 const PRIVACY = "/privacy";
+/** The first screen's photograph, { src, alt }, when there is one. See Hero.jsx before filling it. */
+const HERO_PHOTO = null;
 
 /** Today's listed fixtures: null until answered, and on a 404 or a failure. */
 function useLive() {
@@ -64,20 +74,45 @@ function useNews() {
   return news;
 }
 
+/**
+ * The reveals' fallback: where CSS has no view() timeline (Firefox today), an
+ * IntersectionObserver marks each `.rv` as it comes into view. <html> gets
+ * `rv-io` first, and only that class lets a reveal start faded, so without
+ * this script, or with reduced motion, nothing is ever held back.
+ */
+function useRevealFallback(key) {
+  useEffect(() => {
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (still || globalThis.CSS?.supports?.("animation-timeline: view()") || !("IntersectionObserver" in window)) return;
+    document.documentElement.classList.add("rv-io");
+    const io = new IntersectionObserver((es) => es.forEach((e) => {
+      if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+    }), { rootMargin: "0px 0px -6% 0px" });
+    document.querySelectorAll(".rv:not(.in)").forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [key]);
+}
+
 function Home() {
   const live = useLive();
   const news = useNews();
+  useRevealFallback(`${live ? live.fixtures.length : -1}:${news ? news.posts.length : -1}`);
+  const liveNow = live ? live.fixtures.filter((f) => f?.status === "live").length : 0;
   return (
     <>
-      <Header appHref={APP} logo={SCRBRD_LOGO}/>
+      <Header appHref={APP} logo={SCRBRD_LOGO} live={liveNow} over/>
       <main>
-        <LiveStrip data={live} show="live"/>
-        <Hero appHref={APP} hasStrip={!!live}/>
-        <LiveStrip data={live} show="today"/>
-        <Tiles/>
-        <News data={news}/>
-        <Families privacyHref={PRIVACY}/>
-        <Schools email={SCHOOLS_EMAIL}/>
+        <Hero appHref={APP} hasStrip={!!live} photo={HERO_PHOTO}/>
+        <div id="home-after-film" tabIndex={-1} style={{ outline: "none", paddingTop: "24px" }}>
+          <LiveStrip data={live} show="live"/>
+          <LiveStrip data={live} show="today"/>
+          <Seam/>
+          <Tiles/>
+          <News data={news}/>
+          <Seam/>
+          <Families privacyHref={PRIVACY}/>
+          <Schools email={SCHOOLS_EMAIL}/>
+        </div>
       </main>
       <Footer privacyHref={PRIVACY}/>
     </>
@@ -89,7 +124,7 @@ function Page({ privacy }) {
   useTheme();
   return (
     <div data-testid="home-page" style={{ minHeight: "100vh", background: T.surface.canvas, color: T.content.primary }}>
-      <style>{GLOBAL_CSS}</style>
+      <style>{GLOBAL_CSS + homeCss()}</style>
       {privacy ? <Privacy homeHref="/" appHref={APP} logo={SCRBRD_LOGO}/> : <Home/>}
     </div>
   );
