@@ -300,6 +300,17 @@ Two consequences, both small, both for Opus:
 - `PUBLIC_PAGES` off: both reads 404; the sections hide; the page is complete without them. The home page therefore ships **before** the public pages go live.
 - Works signed out by construction: the bundle has no token to send.
 
+### 6.4 The cinematic page (Kameel, 2026-10-03; built 2026-10-07)
+
+Kameel found the built page "very vanilla" and asked for a scroll-driven film of one delivery as its centrepiece. As built (`apps/web/src/home/sections/Hero.jsx`, `film/`, `fx.js`):
+
+- **The hero is the film's first screen.** The heading, the sentence, *Log in*, *Follow a match* (when the strip is on the page) and *Skip the film* sit over the opening shot. Scrolling on plays five shots on a pinned stage (side-on run-up, over the shoulder, overhead bounce, the six, the cut to the scoreboard), five screens of scroll, drawn in code on one canvas. Each shot has a caption that is a claim §5.1 allows.
+- **Live now follows the film, not the header (a change to §6.1 item 2).** While a fixture is live, the header carries a "*N* live" link to the strip on every screen and the hero offers *Follow a match*, so a parent is one tap from the score however far the film has played.
+- **What the film shows.** Silhouettes, nobody in particular: no face, no name, no number, no kit colours, no crest. The only score is the board in shot 5, *U14A 87/3 → 93/3*, marked "SAMPLE · NOT A REAL MATCH" on the board and in its caption.
+- **Reduced motion.** The stage is not drawn. The five shots become a storyboard of stills with their captions, and nothing on the page moves. Elsewhere, sections arrive as they scroll in, starting from a visible state (CSS `animation-timeline: view()`, with an IntersectionObserver fallback).
+- **The photo slot.** `HERO_PHOTO` in `main.jsx` (Hero's `photo`) is empty. A photograph of children needs the school's and a parent's say (PUBLIC_DATA §3: no photograph is public) before it goes in.
+- **Weight.** Removing the app's icon set from the home graph (eight home-only glyphs replace it) paid for the film: 235 KB, under the 260 KB ceiling.
+
 ---
 
 ## 7 · Phasing and tiers

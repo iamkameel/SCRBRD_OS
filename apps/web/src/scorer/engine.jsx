@@ -57,7 +57,7 @@ import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
-import { sidesFor, sideWords } from "./side.js";
+import { endOf, mayType, onlyNamedWords, sidesFor, sideWords } from "./side.js";
 import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
@@ -138,6 +138,15 @@ async function liveSides(cfg) {
   ]);
   return sidesFor({ players, squad, teamCode: cfg.teamCode ?? null });
 }
+
+/**
+ * What the pad keeps of the sides read (sidesFor): each end's source, the
+ * home roster's reach, and each named side's twelfth man. Not the squads:
+ * those are in the log, on innings_start.
+ * @param {ReturnType<typeof sidesFor>} sides
+ */
+const sideSourceOf = (sides) => ({ home: sides.home.source, away: sides.away.source, team: sides.home.team,
+  twelfth: { home: sides.home.twelfth ?? null, away: sides.away.twelfth ?? null } });
 
 /**
  * The toss for a fixture, as the server recorded it. SCRBRD-067.
@@ -436,8 +445,18 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   const awaySquadRef = useRef(null);
   const tossRef = useRef(null);
   // Where each end's squad came from (scorer/side.js), for the one line the
-  // openers' and opening bowler's sheets say it in. Null: nothing was read.
-  const [sideSource, setSideSource] = useState(null);
+  // openers' and opening bowler's sheets say it in, and for whether a name
+  // may be typed in at that end (mayType); with each named side's twelfth
+  // man, for the wicket sheet. Null: nothing was read. Saved with the log, so
+  // a reload — with no signal to read the side again — still knows it.
+  const [sideSource, setSideSourceState] = useState(null);
+  const sideSourceRef = useRef(null);
+  const setSideSource = (v) => { sideSourceRef.current = v; setSideSourceState(v); };
+  // The sides read again, for a log the pad did not open itself: only where
+  // each came from is taken — the squads are the log's.
+  const learnSides = (cfg, gone) => {
+    liveSides(cfg).then((sides) => { if (sides && !gone()) setSideSource(sideSourceOf(sides)); }, () => {});
+  };
 
 
   // ── Derivation ──────────────────────────────────────────
@@ -650,6 +669,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
             .forEach(e => e?.id && serverKnownRef.current.add(e.id)));
         }
         eventsRef.current = saved.events;
+        // Where each end's side came from, as saved; a log saved before it
+        // was kept asks the server, when there is one to ask.
+        if (saved.sides) setSideSource(saved.sides);
+        else if (live) learnSides(resume.cfg, () => cancelled);
         setEvents(saved.events);
         setCurIn(saved.curIn ?? 0);
         setSaveState({ kind: await storageKind(), restored: true, savedAt: saved.savedAt ?? null });
@@ -667,6 +690,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         if (server?.length) {
           for (const e of server) if (e?.id) { serverKnownRef.current.add(e.id); adoptedRef.current.push(e.id); }
           const log = padLogFrom(server);
+          // The log is the server's; where its sides came from is asked again.
+          learnSides(resume.cfg, () => cancelled);
           eventsRef.current = log;
           setEvents(log);
           setCurIn(resumeAt(log, scoringCtxRef.current));
@@ -690,7 +715,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           if (cancelled) return;
           homeSquadRef.current = sides?.home.squad ?? null;
           awaySquadRef.current = sides?.away.squad ?? null;
-          if (sides) setSideSource({ home: sides.home.source, away: sides.away.source, team: sides.home.team });
+          if (sides) setSideSource(sideSourceOf(sides));
           tossRef.current = toss;
           const openId = newEventId(deviceIdRef.current, id ?? "local");
           const log = [toss ? [inningsStart({
@@ -821,7 +846,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         ...(serverHasRef.current ? { serverHas: serverHasRef.current } : {}),
         // The playing conditions the log is folded under (SCRBRD-114), for a
         // reload with no session to ask.
-        ...(foldRef.current ? { fold: foldRef.current } : {}) });
+        ...(foldRef.current ? { fold: foldRef.current } : {}),
+        // Where each end's side came from (scorer/side.js), for a reload.
+        ...(sideSourceRef.current ? { sides: sideSourceRef.current } : {}) });
       if (!cancelled && ok) setSaveState(s => ({ ...s, savedAt: Date.now() }));
     })();
     return () => { cancelled = true; };
@@ -1823,6 +1850,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     if(!inn)return[];
     return inn.squad||[];
   };
+  // Which end of the fixture the batting or the bowling side is (side.js).
+  const fixtureEnd=(end)=>endOf(end,{battingKey:inn?.teamKey??inn?.battingTeam,homeKey:match?.teamKey1??match?.team1});
   // Where the squad on a setup sheet came from, in one line (scorer/side.js):
   // the side the coach named, or the roster because none was. Said while the
   // first innings is being set up — the openers and the opening bowler — and
@@ -1830,12 +1859,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // nothing to say. `end` is the batting or the bowling side of this innings.
   const sideLine=(end)=>{
     if(!sideSource||curIn!==0||!inn||isSuperOver(inn)||(inn.ballLog?.length??0)>0)return null;
-    const homeBats=(inn.teamKey??inn.battingTeam)===(match?.teamKey1??match?.team1);
-    const home=(end==="batting")===homeBats;
+    const home=fixtureEnd(end)==="home";
     const source=home?sideSource.home:sideSource.away;
     const words=sideWords(source,match?.teamCode??match?.team1,home?sideSource.team:true);
     return words?<p data-testid="side-source" data-source={source} style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.4,color:T.content.secondary,margin:"0 0 12px"}}>{words}</p>:null;
   };
+
+  // Whether a name may be typed in straight away at the batting or the
+  // bowling end: not where the coach named the side (side.js mayType) — there
+  // only behind the sheet's "Not in the named side?". Every innings of the
+  // match, super overs too: the sides do not change ends.
+  const typedAt=(end)=>{const e=fixtureEnd(end);return mayType(e&&sideSource?sideSource[e]:null);};
+  const battingTyped=typedAt("batting"),bowlingTyped=typedAt("bowling");
+  const fieldingTwelfth=(()=>{const e=fixtureEnd("bowling");return !bowlingTyped&&e?(sideSource?.twelfth?.[e]??null):null;})();
 
   /* ── Modal router ── */
   const renderModal=()=>{
@@ -1977,6 +2013,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         batsmen={inn?.batsmen||[]}
         teamKey={inn?.teamKey}
         twelfthMan={inn?.twelfthMan}
+        typed={battingTyped} onlyNamed={battingTyped?null:onlyNamedWords("bat")}
         header={(()=>{const line=sideLine("batting");return line||canDeclare?<>{line}{canDeclare&&<CaptureProfilePicker value={inn.declaredProfile} onChange={declareCapture}/>}</>:null;})()}
         onTimedOut={canTimeOut?recordTimedOut:null}
         resumable={resumeChoices({innings,events},curIn)}
@@ -1999,6 +2036,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           prevBowlers={inn?.bowlers||[]}
           bowlingSquad={inn?.bowlingSquad||[]}
           bowlingTeamKey={inn?.bowlingTeamKey}
+          typed={bowlingTyped} onlyNamed={bowlingTyped?null:onlyNamedWords("bowl")}
           lastBowlerName={lastBowler?.name||null}
           refuses={bowlerRefusal}
           capWordsFor={conditionsInfo?(balls)=>bowlerCapWords(conditionsInfo,balls):null}
@@ -2026,7 +2064,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           nonStriker={inn?.nonStriker!=null?{id:inn.nonStriker,name:inn.batsmen.find(b=>b.id===inn.nonStriker)?.name??String(inn.nonStriker)}:null}
           fieldingSquad={fieldingSquad}
           edition={lawsEdition({innings,events})}
-          keeper={keeperNow}
+          keeper={keeperNow} twelfth={fieldingTwelfth}
           onClose={()=>{setModal(null);setScoringCtx(null);setSelShot(null);resetHub();}}
           onConfirm={(mode,fielder,extra)=>{confirmWicket(mode,fielder,extra);}}/>
       );
@@ -2040,6 +2078,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           batsmen={inn?.batsmen||[]}
           teamKey={inn?.teamKey}
           twelfthMan={inn?.twelfthMan}
+          typed={battingTyped} onlyNamed={battingTyped?null:onlyNamedWords("bat")}
           onTimedOut={canTimeOut?recordTimedOut:null}
           resumable={resumeChoices({innings,events},curIn)}
           resumableWithConsent={consentChoices({innings,events},curIn)}
@@ -2068,6 +2107,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           prevBowlers={inn?.bowlers||[]}
           bowlingSquad={inn?.bowlingSquad||[]}
           bowlingTeamKey={inn?.bowlingTeamKey}
+          typed={bowlingTyped} onlyNamed={bowlingTyped?null:onlyNamedWords("bowl")}
           lastBowlerName={lastBowler?.name||null}
           refuses={bowlerRefusal}
           capWordsFor={conditionsInfo?(balls)=>bowlerCapWords(conditionsInfo,balls):null}
@@ -2181,6 +2221,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         batsmen={inn?.batsmen||[]}
         teamKey={inn?.teamKey}
         twelfthMan={inn?.twelfthMan}
+        typed={battingTyped} onlyNamed={battingTyped?null:onlyNamedWords("bat")}
         resumable={resumeChoices({innings,events},curIn,true)}
         resumableWithConsent={consentChoices({innings,events},curIn,true)}
         onSend={(name,opts)=>{addBatsman(name,true,opts);setModal(null);}}
