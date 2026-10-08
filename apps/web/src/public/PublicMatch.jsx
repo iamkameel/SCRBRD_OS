@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { boardInnings, inningsPhase, matchLine, revisionNotice, sidesOf } from "../lib/matchCentre.js";
@@ -67,34 +67,19 @@ function usePhone(px = 640) {
 
 /**
  * The header and the log, polled while the match is live — and the par report
- * read after the log (SCRBRD-133 G2). Once it is not live, the log's head is
- * still asked after (`?since=last`, the cache's own answer) so a correction
- * made after the match is said — "Updated · refresh" — and folded only on the
- * reader's tap (GA-I36 §7).
+ * read after the log (SCRBRD-133 G2). Once it is not live, the corrections
+ * half (./corrections.jsx, on demand) asks after the head and `note`s what it
+ * saw; the figures change only on `refresh` (GA-I36 §7).
  */
 function usePublicMatch(matchId) {
   const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null, okAt: null, stale: false, refreshing: false });
   const [tick, setTick] = useState(0);
   const live = state.header?.status === "live";
-  const settledHead = state.header && !live ? state.last : null;
   useEffect(() => {
     if (!live) return undefined;
     const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, Math.max(5000, liveRefreshMs()));
     return () => clearInterval(t);
   }, [live]);
-  useEffect(() => {
-    if (settledHead == null) return undefined;
-    const t = setInterval(async () => {
-      if (document.hidden) return;
-      try {
-        const log = await read(`/api/public/matches/${matchId}/log?since=${settledHead}`);
-        setState((s) => ({ ...s, error: null, stale: s.stale || (log.last ?? 0) > settledHead }));
-      } catch (e) {
-        setState((s) => ({ ...s, error: e.status === 429 ? "busy" : "unreachable" }));
-      }
-    }, liveRefreshMs());
-    return () => clearInterval(t);
-  }, [matchId, settledHead]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -116,7 +101,8 @@ function usePublicMatch(matchId) {
     return () => { cancelled = true; };
   }, [matchId, tick]);
   const refresh = () => { setState((s) => ({ ...s, refreshing: true })); setTick((x) => x + 1); };
-  return { ...state, refresh };
+  const note = useCallback((/** @type {any} */ r) => setState((s) => ({ ...s, ...r })), []);
+  return { ...state, refresh, note };
 }
 
 /** The team's shot sectors, read when the Analytics tab opens. */
@@ -288,12 +274,12 @@ export function PublicMatch({ matchId, view }) {
   const bi = boardInnings(played, folded?.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${matchId}:${bi.index}`);
-  // GA-I36: the corrections half (views/matchcentre/corrected.jsx), loaded
-  // once the log has a void in it or the page has a stale or failed read to
-  // say; until then the page pays nothing for it.
+  // GA-I36: the corrections half (./corrections.jsx), loaded once the match
+  // is not live (its head is still asked after), its log has a void, or a
+  // read failed; a live page with nothing corrected pays nothing for it.
   const [fx, setFx] = useState(/** @type {any} */ (null));
-  const need = data.events.some((e) => e.kind === "void") || data.stale || data.refreshing || !!data.error;
-  useEffect(() => { if (need && !fx) import("../views/matchcentre/corrected.jsx").then(setFx, () => {}); }, [need, fx]);
+  const need = (!!data.header && data.header.status !== "live") || data.events.some((e) => e.kind === "void") || !!data.error;
+  useEffect(() => { if (need && !fx) import("./corrections.jsx").then(setFx, () => {}); }, [need, fx]);
   const fixes = useMemo(() => (fx && story ? fx.publicFixes(data.events, story) : null), [fx, story, data.events]);
 
   if (data.loading) return <Frame><Quiet testid="public-loading">Loading the match…</Quiet></Frame>;
@@ -341,6 +327,7 @@ export function PublicMatch({ matchId, view }) {
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
           {/* GA-I36 §5: when, team-level — never who asked, who approved or why. */}
           {fx && fixes && <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/>}
+          {fx && !isLive && <fx.SettledWatch matchId={matchId} last={data.last} note={data.note}/>}
           <div role="status" aria-live="polite" data-testid="mc-stale-region">
             {fx && <fx.StaleLine bare stale={data.stale} refreshing={data.refreshing} failed={!!data.error} okAt={data.okAt} onRefresh={data.refresh}/>}
           </div>

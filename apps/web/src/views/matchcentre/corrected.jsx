@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { T } from "../../design/tokens.js";
-import { clockWords, correctedAt, correctionsOf, correctionText, inningsWords, withCorrectionLines } from "../../lib/corrections.js";
+import { clockWords } from "../../lib/corrections.js";
 
 /**
  * The two lines a correction gives a reader (GA-I36 §5, §7), shared by the
@@ -64,23 +64,4 @@ export function StaleLine({ stale, refreshing, failed, okAt, onRefresh, testid =
           </p>
         ) : null;
   return bare ? words : <div role="status" aria-live="polite" data-testid={`${testid}-region`}>{words}</div>;
-}
-
-/**
- * THE PUBLIC PAGE'S HALF, loaded only once the page has something to say (a
- * void in its log, a head beyond its own, a failed read): the public static
- * bundle has a ceiling (tools/check-bundle.mjs), and a page with nothing
- * corrected should not pay for the words. Given the raw public log (a void
- * there is its kind, seq, time and a pseudonymous target, nothing else) and
- * the page's story (public/reads.js publicStory), what the page draws of its
- * corrections: the chip's time and line, the innings words, and the
- * commentary with one quiet `correction` line each. When, team-level: never
- * who asked, who approved, why, or a boy's name.
- * @param {any[]} events  @param {{commentary: any[], folded: any, settled: boolean, match: any}} story
- */
-export function publicFixes(events, story) {
-  const list = correctionsOf(events);
-  const after = story.settled || story.match.status === "complete";
-  return { at: correctedAt(list), line: correctionText(after), corrected: inningsWords(events, list, story.folded.innings),
-    commentary: withCorrectionLines(story.commentary, events, list, after) };
 }

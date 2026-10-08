@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { inningsStart, batters, bowler, ball, voidEvent, deriveMatch, deriveInnings, MatchFold, BALL_TYPE } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { afterTheMatch, clockWords, correctedAt, correctedInnings, correctionsOf, correctionText, inningsWords, withCorrectionLines } from "../src/lib/corrections.js";
-import { publicFixes } from "../src/views/matchcentre/corrected.jsx";
+import { publicFixes } from "../src/public/corrections.jsx";
 import { applied, ballLine, effectOf, headOf } from "../src/lib/correctionEffect.js";
 import { pendingWords, refusalWords } from "../src/views/matchcentre/corrections.jsx";
 import { agoWords } from "../src/views/ReadinessOverview.jsx";
@@ -227,9 +227,10 @@ group("The public page carries no reason, requester or approver");
   const reads = readFileSync(new URL("../src/public/reads.js", import.meta.url), "utf8");
   ok("the public page imports nothing of the signed-in correction code", !/correctionEffect|matchcentre\/corrections\.jsx/.test(pub + reads));
   ok("...and loads its corrections half only on demand (a dynamic import, never a static one)",
-    /import\("\.\.\/views\/matchcentre\/corrected\.jsx"\)/.test(pub) && !/^import [^\n]*corrected\.jsx/m.test(pub) && !/lib\/corrections\.js/.test(pub + reads));
-  const half = readFileSync(new URL("../src/views/matchcentre/corrected.jsx", import.meta.url), "utf8");
-  ok("the half reads no reason, requester or approver either", !/\.reason\b|requester|approved_by|approvedBy|decidedNote|\/api\//.test(half));
+    /import\("\.\/corrections\.jsx"\)/.test(pub) && !/^import [^\n]*corrections?\.jsx?"/m.test(pub) && !/lib\/corrections\.js/.test(pub + reads));
+  const half = readFileSync(new URL("../src/views/matchcentre/corrected.jsx", import.meta.url), "utf8")
+    + readFileSync(new URL("../src/public/corrections.jsx", import.meta.url), "utf8");
+  ok("the half reads no reason, requester or approver either", !/\.reason\b|requester|approved_by|approvedBy|decidedNote|\/api\/(?!public\/)/.test(half));
   ok("...and reads no reason, requester or approver field", !/\.reason\b|requester|approved_by|approvedBy|decidedNote/.test(pub + reads));
 }
 
