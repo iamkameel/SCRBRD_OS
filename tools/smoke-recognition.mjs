@@ -199,7 +199,10 @@ try {
     const fifty = (await recog(WHITFIELD, coach)).find((x) => x.family === "milestone" && x.match_id === m);
     ok("fifty-two is", fifty?.kind === "fifty" && fifty?.value === 52 && fifty?.opponent === "Glenwood");
     const n1 = (await notices(coach)).filter((x) => /Fifty for James Whitfield/.test(x.title));
-    ok("...and the side is told, the ball it lands on", n1.length === 1 && /against Glenwood/.test(n1[0].body) && n1[0].is_public === false);
+    // is_public is dormant and no longer in the list read (NOTIFICATIONS.md D6,
+    // db/89): the row itself says false, as every row does.
+    ok("...and the side is told, the ball it lands on", n1.length === 1 && /against Glenwood/.test(n1[0].body)
+       && (await q(`select is_public from notification where id = $1`, [n1[0].id]))[0]?.is_public === false);
     await feed(m, 0, fours(WHITFIELD, null, 5));
     ok("seventy-two is still one fifty and one notice", (await notices(coach)).filter((x) => /Fifty for James Whitfield/.test(x.title)).length === 1);
     await feed(m, 0, fours(WHITFIELD, null, 7));
