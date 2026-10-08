@@ -474,5 +474,64 @@ group("db/39. Fixture anchors through match_school()/match_team()");
   ok("db/39 is a migration the API expects", expected.includes(REANCHOR_FILE));
 }
 
+// ── K. Notifications S1 (db/89) ──────────────────────────
+// Hand-written, so held here by what it says: nothing in it widens who reads
+// a notice. The view and the opener run as the caller; the one function that
+// writes a retraction is the application's to call never; a receipt stays the
+// reader's own. db/99 §68 proves each of these in Postgres.
+group("K. Notifications S1: the contract and read state (db/89)");
+{
+  const here = dirname(fileURLToPath(import.meta.url));
+  const F = "89_notification_contract.sql";
+  const raw = readFileSync(join(here, "../../../db", F), "utf8");
+  // Comments out, so a sentence about a statement is not taken for one.
+  const sql89 = raw.replace(/--[^\n]*/g, "");
+  const expected = JSON.parse(readFileSync(join(here, "../expected-migrations.json"), "utf8"));
+  ok("db/89 is a migration the API expects", expected.includes(F));
+  ok("my_notifications runs as the CALLER (security_invoker)",
+     /CREATE OR REPLACE VIEW my_notifications WITH \(security_invoker = true\)/.test(sql89));
+  ok("...is read-only for the application, and nobody else's",
+     /REVOKE ALL ON my_notifications FROM PUBLIC;/.test(sql89) && /REVOKE ALL ON my_notifications FROM scrbrd_app;/.test(sql89)
+     && /GRANT SELECT ON my_notifications TO scrbrd_app;/.test(sql89) && !/GRANT (INSERT|UPDATE|ALL)[^;]*my_notifications/.test(sql89));
+  ok("...and leaves out the retracted and the expired",
+     /WHERE n\.retracted_at IS NULL\s+AND \(n\.expires_at IS NULL OR n\.expires_at > now\(\)\)/.test(sql89));
+  ok("...holding a tiered notice's body back", /CASE WHEN n\.required_capability = 'news\.read' THEN n\.body END AS body/.test(sql89));
+  const fn = (/** @type {string} */ name) => {
+    const at = sql89.indexOf(`CREATE OR REPLACE FUNCTION ${name}(`);
+    return at === -1 ? "" : sql89.slice(at, sql89.indexOf("$$ LANGUAGE", sql89.indexOf("$$", at) + 2) + 120);
+  };
+  const byId = fn("notification_by_id");
+  ok("notification_by_id() runs as the caller: RLS decides what it opens",
+     !!byId && !/SECURITY DEFINER/.test(byId.slice(byId.lastIndexOf("$$ LANGUAGE"))));
+  ok("...logs a tiered open", /PERFORM log_restricted_read\('notification\.open', ARRAY\[n\.id\], ARRAY\['body'\], n\.school_id\)/.test(byId));
+  ok("...and is granted to the application alone",
+     /REVOKE ALL ON FUNCTION notification_by_id\(uuid\) FROM PUBLIC;/.test(sql89) && /GRANT EXECUTE ON FUNCTION notification_by_id\(uuid\) TO scrbrd_app;/.test(sql89));
+  ok("notification_retract() is granted to nobody: no route retracts a notice",
+     /REVOKE ALL ON FUNCTION notification_retract\(uuid, text, boolean\) FROM PUBLIC;/.test(sql89)
+     && !/GRANT EXECUTE ON FUNCTION notification_retract/.test(sql89));
+  ok("...and refuses a safeguarding notice", /IF n\.kind = 'safeguarding' THEN\s+RAISE EXCEPTION 'a safeguarding notice is never retracted/.test(fn("notification_retract")));
+  const door = fn("notification_retraction_door");
+  ok("the retraction door is not a definer: it asks who is writing",
+     !!door && !/SECURITY DEFINER/.test(door.slice(door.lastIndexOf("$$ LANGUAGE"))) && /current_user/.test(door));
+  ok("every SECURITY DEFINER in db/89 pins its search_path",
+     (sql89.match(/SECURITY DEFINER(?! SET search_path = pg_catalog, public, pg_temp)/g) || []).length === 0
+     && (sql89.match(/SECURITY DEFINER/g) || []).length >= 4);
+  ok("no permissive policy is added: the one policy narrows, and only milestone_notice",
+     (sql89.match(/CREATE POLICY/g) || []).length === 1
+     && /CREATE POLICY milestone_notice_not_retracted ON milestone_notice AS RESTRICTIVE\s+FOR SELECT USING \(retracted_at IS NULL\);/.test(sql89));
+  ok("no data is dropped: no DROP TABLE, DROP COLUMN, DELETE or TRUNCATE",
+     !/DROP TABLE|DROP COLUMN|DELETE FROM|TRUNCATE/i.test(sql89));
+  // The receipt's own policy (db/08) is what makes the two routes safe; it is
+  // untouched, and still demands the reader's own id and a notice he can see.
+  const db08 = readFileSync(join(here, "../../../db/08_schema_programme.sql"), "utf8");
+  ok("a receipt is still the reader's own, for a notice he can see (db/08)",
+     /CREATE POLICY notification_read_insert ON notification_read\s+FOR INSERT WITH CHECK \(\s+person_id = app_user_id\(\)\s+AND EXISTS \(SELECT 1 FROM notification n WHERE n\.id = notification_read\.notification_id\)/.test(db08)
+     && !/notification_read_(insert|read)/.test(sql89));
+  // It can fail.
+  const widened = sql89.replace("REVOKE ALL ON FUNCTION notification_retract(uuid, text, boolean) FROM PUBLIC;",
+                                "GRANT EXECUTE ON FUNCTION notification_retract(uuid, text, boolean) TO scrbrd_app;");
+  ok("a grant of notification_retract() to the application is seen", widened !== sql89 && /GRANT EXECUTE ON FUNCTION notification_retract/.test(widened));
+}
+
 console.log(`\n${"─".repeat(52)}\nRLS SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

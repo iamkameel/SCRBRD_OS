@@ -5,6 +5,7 @@ import { D, T, clr, textOn, themeName, themed } from "../design/tokens.js";
 import { ROLE_FAMILIES, ROLE_IDENTITY } from "../design/roles.js";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { useSummary } from "../lib/live.js";
+import { useNotifications } from "../lib/notifications.js";
 import { profile } from "../lib/session.js";
 import { signedIn } from "../lib/api.js";
 import { seedCompletedMatch } from "../scorer/seed.js";
@@ -572,6 +573,8 @@ function AccessSlide() {
 const SCHOOL_LEDE = "The dashboard counts nothing in the browser. These figures come from one server-side read scoped to the person asking, so a coach sees their squads and a director of sport sees the school.";
 function SchoolSlide({ role }) {
   const { summary, live, loading, error } = useSummary(role);
+  // Unread alerts from the notices' one store, as every badge reads them (D17).
+  const { unread } = useNotifications(role);
   const me = profile();
   const schools = [...new Map((me?.assignments ?? []).filter((a) => a.school).map((a) => [a.school, a.schoolName || "This school"])).values()];
   const pct = (n) => (n == null ? "—" : `${Math.round(Number(n))}%`);
@@ -592,7 +595,7 @@ function SchoolSlide({ role }) {
             <Stat i={2} n={summary?.sessionsThisWeek ?? "—"} cap="Sessions this week"/>
             <Stat i={3} n={summary?.injuriesActive ?? "—"} cap="Injuries open" tone={summary?.injuriesActive ? D.amber : undefined}/>
             <Stat i={4} n={pct(summary?.winRatePct)} cap="Win rate" sub={summary?.scopeMatches ? `${summary.scopeMatches} matches in scope` : undefined}/>
-            <Stat i={5} n={summary?.unreadAlerts ?? "—"} cap="Unread alerts"/>
+            <Stat i={5} n={unread ?? "—"} cap="Unread alerts"/>
           </>
         )}
       </div>

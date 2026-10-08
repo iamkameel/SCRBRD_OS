@@ -288,7 +288,7 @@ try {
   await q(`insert into match_availability (match_id, player_id, school_id, status, declared_by) values ($1, $2, $3, 'available', $4), ($1, $5, $3, 'available', $4)`,
     [DAY, SEVEN, HIL, coachId, SIX]);
   await q(`insert into notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability, subject_kind, subject_id)
-           values ($1, '1XI', 'team', 'selection', 'low', 'The sheet has changed', 'The sheet for tonight was changed by the selector.', 'news.read', 'match', $2)`, [HIL, DAY]);
+           values ($1, '1XI', 'team', 'notice', 'low', 'The sheet has changed', 'The sheet for tonight was changed by the selector.', 'news.read', 'match', $2)`, [HIL, DAY]);
   // The bus: a four-seater, and a big one to swap to.
   const SMALL = (await q(`insert into vehicle (school_id, registration, description, kind, capacity) values ($1, 'KZN 4 SEAT', 'Verify four-seater', 'van', 4) returning id`, [HIL]))[0].id;
   const BIG = "4e111111-0000-0000-0000-000000000001";
@@ -492,7 +492,7 @@ try {
   ok(`S11: a card for each pace bowler on the sheet whose word is rising or spike (${wantS11.length})`, s11.length === wantS11.length && wantS11.length >= 2, `${s11.length} v ${wantS11.length}`);
   ok("S11: the word and the fixed sentence, never a ratio", s11.every((x) => x.text.includes(LOAD_SENTENCE) && /this week · (rising|spike)/.test(x.text) && !/\d\.\d\d|ratio|risk/i.test(SAFE_WORDS(x.text))), s11[0]?.text);
   const s12 = byRule(cs, "S12");
-  const wantS12 = rawNotes.filter((n) => n.subject_kind === "match" && n.subject_id === DAY && ["welfare", "selection", "transport"].includes(n.kind));
+  const wantS12 = rawNotes.filter((n) => n.subject_kind === "match" && n.subject_id === DAY && ["welfare", "notice", "lift"].includes(n.kind));
   ok("S12: the notice for this fixture, as published", s12.length === wantS12.length && wantS12.length === 1 && s12[0].text.includes(wantS12[0].title) && s12[0].text.includes(wantS12[0].body), JSON.stringify(s12));
   ok("S2a, S2b, S5: nothing yet (nobody has bowled; no matchup has thirty balls)", byRule(cs, "S2a").length === 0 && byRule(cs, "S2b").length === 0 && byRule(cs, "S5").length === 0);
   ok("every card says where it came from and which capability let him see it", cs.every((x) => /From .+\. You see it through coach with /.test(x.text)));

@@ -7,6 +7,7 @@
  */
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
+import { useNotifications } from "../../lib/notifications.js";
 import { ReadState } from "../../ui/primitives.jsx";
 import { resultText, teamOf } from "../../lib/matchCentre.js";
 import { humanDate } from "../../lib/format.js";
@@ -136,9 +137,13 @@ export function SeasonCard({ child, role, self = false }) {
   );
 }
 
-/** Unread notices about this child or about nobody in particular, last (§2.1). */
+/**
+ * Unread notices about this child or about nobody in particular, last (§2.1).
+ * From the notices' one store (lib/notifications.js, D17): a notice opened in
+ * Notices, on this device or another, is read here too.
+ */
 export function NoticesCard({ child, role, onOpen }) {
-  const { rows } = useLive("notifications", role);
+  const { rows } = useNotifications(role);
   const mine = noticesFor(rows, child);
   const unread = mine.filter((n) => !n.read);
   if (!unread.length) return null;

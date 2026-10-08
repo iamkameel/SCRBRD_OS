@@ -632,16 +632,22 @@ export const READ_QUERIES = {
   // needs no filter of its own beyond ordering, and MUST NOT grow one that
   // looks like an authorization check. If a row comes back, the database
   // decided this person may have it.
+  //
+  // FROM my_notifications (db/89, NOTIFICATIONS.md D17): the policy read as
+  // the caller, less what expired or was retracted, with the reader's own
+  // receipt. The summary's unread_alerts counts the same view, so the badge
+  // and the list cannot disagree. A tiered row (behind more than news.read)
+  // comes with its title and no body: the body is read on open
+  // (POST /api/notifications/:id/read), which logs it.
+  //
+  // LIMIT 200 bounds the list; the count is never taken from it.
   notifications: {
     text: `select n.id, n.school_id, n.team_code, n.scope_level, n.kind,
-                  n.urgency, n.title, n.body, n.subject_kind, n.subject_id,
-                  n.published_at, n.is_public, n.subject_person_id,
-                  (r.person_id is not null) as read
-             from notification n
-             left join notification_read r
-                    on r.notification_id = n.id and r.person_id = app_user_id()
-            where n.expires_at is null or n.expires_at > now()
-            order by n.published_at desc`,
+                  n.urgency, n.title, n.body, n.tiered, n.subject_kind, n.subject_id,
+                  n.published_at, n.subject_person_id, n.retracts_id, n.read
+             from my_notifications n
+            order by n.published_at desc, n.id
+            limit 200`,
   },
 
   // The league ladder. Readable whole by anyone who can reach the competition,
@@ -724,11 +730,8 @@ export const READ_QUERIES = {
              (case when my_feature_enabled('injuries')
                    then (select count(*)::int from injury_masked where restricted)
               end)                                                        as injuries_active,
-             (select count(*)::int from notification n
-                left join notification_read r
-                       on r.notification_id = n.id and r.person_id = app_user_id()
-               where r.person_id is null
-                 and (n.expires_at is null or n.expires_at > now()))      as unread_alerts,
+             -- my_notifications, as the notifications read: one view, one count.
+             (select count(*)::int from my_notifications where not read) as unread_alerts,
              (case when my_feature_enabled('training')
                    then (select count(*)::int from training_session
                           where starts_at >= date_trunc('week', now())

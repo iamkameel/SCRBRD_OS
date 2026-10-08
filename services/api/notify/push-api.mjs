@@ -25,7 +25,7 @@
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { withPrincipal, AuthError } from "../auth/auth.mjs";
 import { transportFromEnv } from "./fcm.mjs";
-import { SUBJECT_KINDS, SUBJECT_KINDS_NOT_YET_STORED } from "@scrbrd/policy/notifications";
+import { SUBJECT_KINDS } from "@scrbrd/policy/notifications";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler, Pool } from "../api-types.mjs" */
 /** @import { PushTransport } from "./fcm.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
@@ -63,8 +63,6 @@ export const LOCKED_FIELDS = Object.freeze({
   recipientId:        ["recipient_id_not_accepted",
     "A notice for one person is not published here. It goes to everybody in its scope."],
 });
-const notYetStored = (/** @type {string} */ k) =>
-  `"${k}" notices cannot be stored yet: the database learns that subject in notifications slice S1. Nothing was published.`;
 
 /**
  * What a notice says on a lock screen, which is: almost nothing.
@@ -432,28 +430,19 @@ export function notificationRoutes({ pool, secret, transport = transportFor() })
         // required_capability, is_public, subject_person_id and recipient_id
         // are not named: the table's defaults (news.read, false, null, null)
         // are the only values the lock allows.
-        /** @type {any[]} */
-        let rows;
-        try {
-          ({ rows } = await client.query(
-            `insert into notification
-               (school_id, team_code, scope_level, kind, urgency, title, body,
-                subject_kind, subject_id, published_by, expires_at)
-             values ($1, $2, $3, $4, $5, btrim($6), btrim($7), $8, $9, app_user_id(), $10)
-             returning id, school_id, scope_level, required_capability, is_public,
-                       published_at`,
-            [b.schoolId, b.teamCode ?? null, b.scopeLevel, PUBLISH_KIND,
-             urgency, b.title, b.body, subjectKind, b.subjectId ?? null,
-             b.expiresAt ?? null]));
-        } catch (/** @type {any} */ e) {
-          // The shared list runs ahead of the database's CHECK until S1 (D5).
-          // Said in words, not as the constraint's name.
-          if (e.code === "23514" && subjectKind && SUBJECT_KINDS_NOT_YET_STORED.includes(subjectKind)
-              && /subject_kind/.test(String(e.constraint ?? ""))) {
-            throw err("subject_kind_not_yet_stored", 422, notYetStored(subjectKind));
-          }
-          throw e;
-        }
+        // The database's own contract (db/89, D4) holds the same shape: a
+        // `notice` names no child, has no recipient, is never high and is
+        // never public, whatever reaches it.
+        const { rows } = await client.query(
+          `insert into notification
+             (school_id, team_code, scope_level, kind, urgency, title, body,
+              subject_kind, subject_id, published_by, expires_at)
+           values ($1, $2, $3, $4, $5, btrim($6), btrim($7), $8, $9, app_user_id(), $10)
+           returning id, school_id, scope_level, required_capability, is_public,
+                     published_at`,
+          [b.schoolId, b.teamCode ?? null, b.scopeLevel, PUBLISH_KIND,
+           urgency, b.title, b.body, subjectKind, b.subjectId ?? null,
+           b.expiresAt ?? null]);
         if (!rows.length) throw err("not_permitted", 403);
         const n = rows[0];
         return { id: n.id, school: n.school_id, scopeLevel: n.scope_level,

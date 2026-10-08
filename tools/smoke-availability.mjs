@@ -211,8 +211,11 @@ try {
   // was given; when the fixture moves, "available" is no longer a yes.
   group("A moved fixture asks again");
   {
-    const notices = async (token) =>
-      ((await api("/api/read/notifications", { token })).body?.rows ?? []).filter((n) => n.subject_id === m);
+    // An availability notice is tiered (availability.read): listed with its
+    // title, its body read on open (NOTIFICATIONS.md D17), as the person would.
+    const notices = async (token) => Promise.all(
+      ((await api("/api/read/notifications", { token })).body?.rows ?? []).filter((n) => n.subject_id === m).map(async (n) =>
+        n.tiered ? { ...n, body: (await api(`/api/notifications/${n.id}/read`, { method: "POST", token, body: {} })).body?.notice?.body ?? null } : n));
     ok("the boy's own answer stands before the fixture moves",
        (await sheet(m, coach)).find((r) => r.player_id === CHILD)?.status === "available");
     const moved = await api(`/api/fixtures/${m}`, { method: "POST", token: head, body: {

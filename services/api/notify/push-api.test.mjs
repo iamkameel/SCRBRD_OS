@@ -16,7 +16,7 @@
 import { readFileSync } from "node:fs";
 import { buildPayload, fanOut, echoTransport, notificationRoutes,
          LOCKED_FIELDS, PUBLISH_KIND, PUBLISH_URGENCY } from "./push-api.mjs";
-import { SUBJECT_KINDS, SUBJECT_KINDS_NOT_YET_STORED } from "@scrbrd/policy/notifications";
+import { SUBJECT_KINDS } from "@scrbrd/policy/notifications";
 import { signToken } from "../auth/auth.mjs";
 
 let pass = 0, fail = 0;
@@ -147,7 +147,7 @@ group("B. The publish route is locked, before any connection (D12)");
      anon.status === 401 && anon.body?.error === "missing_token");
 }
 
-group("C. What a locked notice writes, and welfare said in words");
+group("C. What a locked notice writes, and the database's refusal");
 {
   const pool = fakePool();
   const publish = notificationRoutes({ pool: /** @type {any} */ (pool), secret: SECRET, transport: null }).publish;
@@ -159,31 +159,28 @@ group("C. What a locked notice writes, and welfare said in words");
      !!ins && !/required_capability\s*,|is_public\s*,|subject_person_id|recipient_id/.test(ins.sql.split("values")[0]));
   ok("...and writes the kind itself, not the body's", ins?.params[3] === "notice");
 
-  // Until S1 the database's CHECK does not know welfare.
+  // Since S1 (db/89) the database stores welfare; a CHECK it raises is its
+  // own refusal, said as one, and the transaction rolls back.
   const refusing = fakePool({ insert: () => { throw Object.assign(new Error("violates check constraint"),
-    { code: "23514", constraint: "notification_subject_kind_check" }); } });
+    { code: "23514", constraint: "notification_subject_kind_known" }); } });
   const p2 = notificationRoutes({ pool: /** @type {any} */ (refusing), secret: SECRET, transport: null }).publish;
   const w = await call(p2, good({ subjectKind: "welfare" }), { authorization: BEARER });
-  ok("a welfare notice refused by the database is said so", w.status === 422 && w.body?.error === "subject_kind_not_yet_stored");
-  ok("...in words that name the slice", /welfare/.test(w.body?.detail ?? "") && /S1/.test(w.body?.detail ?? ""));
+  ok("a CHECK the database raises is an invalid notice", w.status === 422 && w.body?.error === "invalid_notice");
   ok("...and the transaction rolled back", refusing.asked.some((a) => a.sql.trim() === "ROLLBACK"));
-  // Any other CHECK is the database's own refusal, unchanged.
-  const other = await call(p2, good({ subjectKind: "match" }), { authorization: BEARER });
-  ok("another subject kind's refusal is not dressed as welfare's", other.body?.error === "invalid_notice");
+  const okWelfare = await call(publish, good({ subjectKind: "welfare" }), { authorization: BEARER });
+  ok("a welfare subject reaches the database (S1 stores it)", okWelfare.status === 200);
 }
 
 group("D. The shared list (D1, D5)");
 {
-  ok("welfare is a subject kind", SUBJECT_KINDS.includes("welfare"));
-  ok("...that the database does not store yet", SUBJECT_KINDS_NOT_YET_STORED.join() === "welfare");
-  // The CHECK in db/08 (frozen) is what the database holds until S1 re-adds it.
-  const sql = readFileSync(new URL("../../../db/08_schema_programme.sql", import.meta.url), "utf8");
-  const m = sql.match(/subject_kind text CHECK \(subject_kind IN \(([^)]*)\)\)/);
+  ok("welfare and news are subject kinds", SUBJECT_KINDS.includes("welfare") && SUBJECT_KINDS.includes("news"));
+  // The CHECK db/89 re-added is what the database holds now
+  // (packages/policy/test/notifications.test.mjs holds the two equal).
+  const sql = readFileSync(new URL("../../../db/89_notification_contract.sql", import.meta.url), "utf8");
+  const m = sql.match(/notification_subject_kind_known\s+CHECK \(subject_kind IN \(([^)]*)\)\)/);
   const stored = m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]) : [];
-  ok("db/08's CHECK was found", stored.length > 0);
-  ok("every kind the database stores is in the shared list", stored.every((k) => SUBJECT_KINDS.includes(k)));
-  ok("...and the list is the database's plus what waits for S1",
-     [...stored, ...SUBJECT_KINDS_NOT_YET_STORED].sort().join() === [...SUBJECT_KINDS].sort().join());
+  ok("db/89's CHECK was found", stored.length > 0);
+  ok("...and the route's list is the database's", stored.sort().join() === [...SUBJECT_KINDS].sort().join());
 }
 
 group("E. An expired notice is not sent");

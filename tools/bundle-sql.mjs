@@ -259,6 +259,15 @@ SELECT
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'ball_event_out_off_extra' AND tgenabled = 'O')
         AND pg_get_functiondef('ball_wicket_stands(uuid,smallint,integer,text,text,text)'::regprocedure) LIKE '%ball_is_wicket(%'
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Wickets off a wide or no-ball",
+  -- db/89: notices are one of nine kinds, none public, the contract a trigger,
+  -- retraction one door the application cannot open (NOTIFICATIONS.md S1).
+  CASE WHEN EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notification_kind_known' AND convalidated)
+        AND NOT EXISTS (SELECT 1 FROM notification WHERE is_public)
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'notification_contract' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'notification_retraction_door' AND tgenabled = 'O')
+        AND to_regclass('my_notifications') IS NOT NULL
+        AND NOT has_function_privilege('scrbrd_app', 'notification_retract(uuid,text,boolean)', 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Notices keep their contract",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
