@@ -204,3 +204,19 @@ export function pendingWords(requests, now) {
       };
     });
 }
+
+/**
+ * A door from the Home's To-do list into one child's card on Family (GA-I20
+ * A1): which panel to open there, Consents or Who to ring. Held in memory for
+ * the one hop and taken once, never stored on the device.
+ */
+let _door = /** @type {{childId: string, panel: string} | null} */ (null);
+/** @param {string} childId  @param {string} panel */
+export function doorTo(childId, panel) { _door = { childId, panel }; }
+/** The panel the last door asked for on this child's card, once. @param {string} childId */
+export function takeDoor(childId) {
+  if (_door?.childId !== childId) return null;
+  const p = _door.panel;
+  _door = null;
+  return p;
+}

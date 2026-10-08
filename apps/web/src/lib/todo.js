@@ -452,7 +452,7 @@ export function fixturesToRead(matches, child, now) {
  */
 export function dayFixtures(matches, child, now) {
   return (Array.isArray(matches) ? matches : []).filter((m) => {
-    const t = startMs(m);
+    const t = msOf(m.startsAt);
     return isTheirs(m, child) && t != null && Math.abs(t - now) < DAY_HOURS * HOUR;
   });
 }
