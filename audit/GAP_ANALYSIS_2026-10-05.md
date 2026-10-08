@@ -58,7 +58,7 @@ ticket takes a SCRBRD number, and that number is noted here.
 
 | GA | What | Tier | Status |
 |---|---|---|---|
-| I09–I11 | The match-day queue: readiness rows open the exact fixture and action; a multi-squad coach day queue; a director/admin operations home with owner and deadline | Fable design check (coach cockpit, SCRBRD-136/137), then Opus | design approved; slice A0 merged #78; the rest after the pilot; A1 onwards pulled forward 8 Oct |
+| I09–I11 | The match-day queue: readiness rows open the exact fixture and action; a multi-squad coach day queue; a director/admin operations home with owner and deadline | Fable design check (coach cockpit, SCRBRD-136/137), then Opus | design approved; slice A0 merged #78; A1 onwards pulled forward 8 Oct (was: after the pilot) |
 | I12 | Notification read receipts persist per person, and counts agree everywhere | Sonnet + Opus review | open |
 | I13 | The scorer's preparation and resume home, with appointments | Opus | building (decision 4 recorded) |
 | I14–I16 | Acceptance evidence on a real database: cross-school and child refusals, two-device offline scoring, the deployed revision, a backup restore | Opus | partly covered by the API and browser walks and BACKUP_RESTORE.md; gaps listed 8 Oct: 13 of 18 covered (claim 15 by the ledger check); 9, 12, 14 building; 16, 17 with the backup drill |
