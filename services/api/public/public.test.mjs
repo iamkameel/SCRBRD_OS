@@ -243,7 +243,7 @@ ok("a void keeps its target, pseudonymised as its target's id, and no reason", v
   const am = projectLog({ rows: [asLogRow({ ...voidEvent({ target: undone.id }), innings: 0, id: "amendment:abc", clientTs: 0 }, 1),
     asLogRow({ ...voidEvent({ target: undone.id }), innings: 0, id: `${DEVICE}:${M1}:99`, clientTs: 0 }, 2)], people: PEOPLE, secret: SECRET, matchId: M1, on: ON });
   ok("a void from an amendment carries amendment: true, a scorer's undo does not, and the id is not on the wire",
-     am.events[0].amendment === true && !("amendment" in am.events[1]) && !JSON.stringify(am.events).includes("abc") && !("amendment" in v));
+     am.events[0].amendment === true && !("amendment" in am.events[1]) && !JSON.stringify(am.events).includes("abc") && !!v && !("amendment" in v));
 }
 ok("the real player ids behind it are kept for the cache, never on the wire", out.playerIds.has(P.erasmus) && !wire.includes(P.erasmus));
 
