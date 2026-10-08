@@ -3999,6 +3999,8 @@ The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/
 
 **Decided (Kameel, 2026-10-02):** D1–D16 as the design recommends. Build G1 (the ground display, no migration) first, then G2 (par and pressure), then G3 (moving charts, moment cards, the over strip).
 
+**Built: G2, par and pressure, merged #88 (2026-10-08), with db/88.**
+
 Kameel: the app should be "dynamic, data-rich, informative, immersive, interesting and visually stimulating". The build order is confirmed. Fable designs first, in `docs/design/SCRBRD-133_immersive_match_centre.md`; Fable's list gained this topic with Kameel's say.
 
 1. **Ground display mode:** the pavilion screen.
