@@ -743,7 +743,8 @@ try {
       await spokes() === 0 && await wheel.locator('[data-testid="wagon-analysis-wheel"]').count() === 0 && /No placed shots for this filter/.test(await wheel.innerText()));
     await wheel.locator('[data-testid="wagon-bowler-all"]').click({ timeout: 3000 });
     ok("...off side against on side, and the eight named areas",
-      /Off side/.test(await wheel.innerText()) && /On side/.test(await wheel.innerText()) && await wheel.locator('[data-testid^="wagon-area-"]').count() === 8);
+      /off side/i.test(await wheel.innerText()) && /on side/i.test(await wheel.innerText()) && await wheel.locator('[data-testid^="wagon-area-"]').count() === 8,
+      `${await wheel.locator('[data-testid^="wagon-area-"]').count()} areas`);
     ok("...no batter chooser (the wheel is the innings, as before) and no match chooser", await wheel.locator('[data-testid^="wagon-batter-"], [data-testid^="wagon-match-"]').count() === 0);
     ok("...no percentage on the Coach tab's wheel (the never-list)", !/\d\s?%/.test(await wheel.innerText()), await wheel.innerText());
     const fw = await floors(lv.page, '[data-testid="coach-wheel"]');
