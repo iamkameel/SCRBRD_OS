@@ -482,7 +482,7 @@ try {
   // the signed-in names — the Board band and a panel beneath it.
   ok("...it is the ground display's view: the Board and a panel in its turn",
      await L.locator('[data-testid="mc-bigscreen"] [data-testid="display-board"]').count() === 1
-     && /^(partnership|overs|bowling|break|result|stopped|fow)$/.test(await tid(L, "mc-bigscreen").getAttribute("data-panel") ?? ""),
+     && /^(worm|partnership|overs|bowling|break|result|stopped|fow)$/.test(await tid(L, "mc-bigscreen").getAttribute("data-panel") ?? ""),
      await tid(L, "mc-bigscreen").getAttribute("data-panel"));
   await L.keyboard.press("Space");
   ok("...Space pauses the rotation, and Space again resumes it", await tid(L, "mc-bigscreen").getAttribute("data-paused") === "true"

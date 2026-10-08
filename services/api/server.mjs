@@ -856,6 +856,7 @@ const PLAYER_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/venue-par$/,                     "GET",  rain.matchVenuePar],
   // ── SCRBRD-130 R2 (db/75): the DLS proposal; the operator's table routes ──
   [/^\/api\/matches\/([^/]+)\/dls$/,                           "GET",  rain.matchDls],
+  [/^\/api\/matches\/([^/]+)\/par$/,                           "GET",  rain.matchPar],   // SCRBRD-133 G2
   [/^\/api\/admin\/dls-tables$/,                               "GET",  rain.dlsTables],
   [/^\/api\/admin\/dls-tables$/,                               "POST", rain.dlsLoad],
   [/^\/api\/admin\/dls-tables\/([^/]+)\/publish$/,             "POST", rain.dlsPublish],
