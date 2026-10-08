@@ -60,6 +60,10 @@ function asMatch(r) {
     // decides the Edition of the Laws the match is scored under (SCRBRD-113).
     startsAt: r.starts_at ?? null,
     status: MATCH_STATUS[r.status] ?? "upcoming",
+    // 'abandoned' is read as "complete" above, so a fixture called off before it
+    // was played cannot be told from one that was: the match-day queue's O5
+    // (called off with work still on record) asks, and only for this.
+    calledOff: r.status === "abandoned",
     result: null,
     competition: null,
     // The competition it is played under, or null for a friendly (SCRBRD-114):
