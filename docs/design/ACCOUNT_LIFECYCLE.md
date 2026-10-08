@@ -1,6 +1,6 @@
 # Account lifecycle: the design
 
-**Decided 2026-10-07 (Kameel): approved as recommended, D1–D24 and Q1–Q13; slice 1 (Disable and Enable on People, no migration) built now, the rest after the pilot.**
+**Decided 2026-10-07 (Kameel): approved as recommended, D1–D24 and Q1–Q13; slice 1 (Disable and Enable on People, no migration) built now, the rest after the pilot.** Pulled forward 2026-10-08 (Kameel): slices 2–7 now, not after the pilot.
 
 **Status:** for Kameel's review. Designed by Fable, 2026-10-07. Slice 1 (Disable and Enable on People) is built: #87, merged 2026-10-08. The rest is not built.
 **Source:** `CLAUDE.md`; `docs/policy/PUBLIC_DATA.md`, `docs/policy/SIGNIN_PRIVACY_NOTICE.md`; `docs/AUTH_SPEC.md`,

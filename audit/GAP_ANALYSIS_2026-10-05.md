@@ -30,6 +30,13 @@ GA-Rnn are the report's risk register entries and GA-Inn its backlog entries. Th
 the report's numbers so the two can be read side by side. A GA item that becomes a
 ticket takes a SCRBRD number, and that number is noted here.
 
+## Decided 2026-10-08 (Kameel)
+
+1. The solo pilot run planned for 8 October is postponed, with no new date. Kameel: "Ignore the solo run. It's postponed. Let's go as far as we can with production."
+2. Pulled forward from after the pilot, to build now: notifications S1–S5, corrections everywhere (GA-I36), account lifecycle slices 2–7, and the recognition build. Four build agents at once.
+3. Live updates: keep polling (public page and ground display every 5 s, Match Centre every 15 s). The realtime hub (`services/api/realtime`) is not mounted and stays parked. For corrections, an approved amendment or a released ball drops the public cache after commit; screens learn of it on their next poll ("Updated · refresh"). This replaces the hub broadcast in the corrections design's N2. GA-I36 is pulled forward 8 Oct; A0+A1 building, polling (decision 3).
+4. Scorer claim (GA-I13): claiming a fixture stays as it is. A scorer with the team's scoring assignment may claim any fixture of that team. The appointment shapes the scorer home's list (appointed fixtures first, then the team's others); it is not required to claim.
+
 ## Phase A: repair and establish trust (before or around the pilot)
 
 | GA | What | Tier | Status |
@@ -50,7 +57,7 @@ ticket takes a SCRBRD number, and that number is noted here.
 |---|---|---|---|
 | I09–I11 | The match-day queue: readiness rows open the exact fixture and action; a multi-squad coach day queue; a director/admin operations home with owner and deadline | Fable design check (coach cockpit, SCRBRD-136/137), then Opus | design approved; slice A0 merged #78; the rest after the pilot |
 | I12 | Notification read receipts persist per person, and counts agree everywhere | Sonnet + Opus review | open |
-| I13 | The scorer's preparation and resume home, with appointments | Opus | open |
+| I13 | The scorer's preparation and resume home, with appointments | Opus | building (decision 4 recorded) |
 | I14–I16 | Acceptance evidence on a real database: cross-school and child refusals, two-device offline scoring, the deployed revision, a backup restore | Opus | partly covered by the API and browser walks and BACKUP_RESTORE.md; gaps to list |
 | I17 | Push: a supported FCM token refresh, or "unavailable" stated plainly | Opus | open |
 | I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | Kameel to decide scope |
