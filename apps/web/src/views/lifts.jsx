@@ -39,7 +39,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { D, inkOn, textOn } from "../design/tokens.js";
 import { Badge, Card } from "../ui/primitives.jsx";
 import { useLive } from "../lib/live.js";
-import { api } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { humanDateTime } from "../lib/format.js";
 import { roleGrants } from "@scrbrd/policy/roles";
@@ -829,15 +829,21 @@ function useContacts(offerId, nonce) {
  * and "confirm collected" on the way home. `childId` narrows a family's card
  * to one boy (a family Home is about one child). Nothing off the day.
  */
-export function LiftDayCards({ match, childId = null }) {
+export function LiftDayCards({ match, childId = null, read = undefined, onReload = undefined }) {
   const [nonce, setNonce] = useState(0);
-  const [rows, setRows] = useState([]);
-  const reload = () => setNonce((n) => n + 1);
+  const [own, setRows] = useState([]);
+  // `read` given: the caller made the day's read (the family Home, which
+  // shares it with the To-do list so the day is read once, GA-I20 A1);
+  // `undefined` while it is out, `null` if it failed. Otherwise this reads.
+  const held = read !== undefined || onReload !== undefined;
+  const reload = held ? (onReload ?? (() => {})) : () => setNonce((n) => n + 1);
   useEffect(() => {
+    if (held) return undefined;
     let gone = false;
     api(`/api/matches/${match.id}/lifts/day`).then((r) => { if (!gone) setRows(r.rows ?? []); }).catch(() => { if (!gone) setRows([]); });
     return () => { gone = true; };
-  }, [match.id, nonce]);
+  }, [match.id, nonce, held]);
+  const rows = held ? (read ?? []) : own;
   const shown = rows
     .map((e) => (e.as === "family" && childId ? { ...e, seats: e.seats.filter((s) => s.playerId === childId) } : e))
     .filter((e) => e.as === "driver" || e.seats.length);
@@ -1077,11 +1083,44 @@ export function LiftDayStaff({ role, team }) {
  * side's fixtures in the window. The pupil of eighteen reads his own line
  * (MyLiftLine) instead.
  */
-export function LiftsToday({ child, matches }) {
+export function LiftsToday({ child, matches, day = undefined, onReload = undefined }) {
   const family = schoolsWhere("transport.lift.arrange");
   const today = (matches ?? []).filter((m) => isTheirs(m, child) && inLiftDay(m.startsAt));
   if (!family.length || !today.length) return null;
-  return <>{today.map((m) => <LiftDayCards key={m.id} match={m} childId={child.id}/>)}</>;
+  // `day` (matchId → the day's read), when the Home made the reads itself.
+  return <>{today.map((m) => (day
+    ? <LiftDayCards key={m.id} match={m} childId={child.id} read={day[m.id]} onReload={onReload}/>
+    : <LiftDayCards key={m.id} match={m} childId={child.id}/>))}</>;
+}
+
+/**
+ * The day's reads for one child's Home (GA-I20 A1): `lift_my_day()` for each
+ * of his side's fixtures within the day, once, shared by the day cards and the
+ * To-do list's R7. `null` when the day does not apply (no lift capability, or
+ * no fixture today); otherwise matchId → rows, `undefined` while out, `null`
+ * if the read failed. `reload` reads them again.
+ */
+export function useLiftDay(child, matches, now) {
+  const [nonce, setNonce] = useState(0);
+  const family = schoolsWhere("transport.lift.arrange").length > 0;
+  const ids = family ? (matches ?? []).filter((m) => isTheirs(m, child) && inLiftDay(m.startsAt, now)).map((m) => m.id) : [];
+  const key = ids.join(",");
+  const [state, setState] = useState({ key: "", day: {} });
+  useEffect(() => {
+    if (!key || !signedIn()) return undefined;
+    let gone = false;
+    // A new set of fixtures starts afresh; reading the same set again keeps
+    // what was read until the new answer comes, so a card does not blink.
+    setState((s) => (s.key === key ? s : { key, day: {} }));
+    for (const id of key.split(",")) {
+      api(`/api/matches/${id}/lifts/day`)
+        .then((r) => { if (!gone) setState((s) => (s.key === key ? { ...s, day: { ...s.day, [id]: r.rows ?? [] } } : s)); })
+        .catch(() => { if (!gone) setState((s) => (s.key === key ? { ...s, day: { ...s.day, [id]: null } } : s)); });
+    }
+    return () => { gone = true; };
+  }, [key, nonce]);
+  if (!key) return { day: null, reload: () => {} };
+  return { day: state.key === key ? state.day : {}, reload: () => setNonce((n) => n + 1) };
 }
 
 /**

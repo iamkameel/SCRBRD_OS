@@ -5,7 +5,7 @@
  *   B. client getData() serves mock when a resource is not flagged live, and
  *      hits the API (with bearer) when it is; failures never silently fall back.
  */
-import { readResource, READ_QUERIES, liveResources } from "./read-api.mjs";
+import { readResource, READ_QUERIES, RESTRICTED_FIELDS, liveResources } from "./read-api.mjs";
 import { createDataClient } from "./data-client.mjs";
 import { signToken } from "../auth/auth.mjs";
 
@@ -177,6 +177,7 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
      /s\.verification_state = 'verified'/.test(t) && /s\.valid_from <= current_date/.test(t)
      && /\(s\.valid_until is null or s\.valid_until > current_date\)/.test(t));
   ok("carries the link's end date (G11) and its consent state", /s\.valid_until/.test(t) && /s\.consent_state/.test(t));
+  ok("carries the wording and the time her own link's terms were agreed under (GA-I20 A1, R8a)", /s\.consent_version/.test(t) && /s\.consent_at/.test(t));
   ok("takes no parameter a caller could widen it with", !READ_QUERIES.my_children.params && !/\$1/.test(t));
   ok("reads no masked column of the child: no born, no address, no id number", !/\b(born|address|id_number|phone|email)\b/.test(t));
   // db/99 §49 runs the read's own text as a temporary view, as each persona.
@@ -188,6 +189,19 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
   const src = readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8");
   ok("db/99 §49 proves this exact read, not a copy that has drifted",
      norm(between(sql)).length > 100 && norm(between(sql)) === norm(between(src)) && norm(between(src)) === norm(t));
+}
+
+group("A. emergency_contact_count (GA-I20 A1, N2): a count, never a contact, and only where the contacts may be read");
+{
+  const d = READ_QUERIES.emergency_contact_count;
+  const cols = (d.text.match(/^select\s+([\s\S]*?)\s+from player p/i)?.[1] ?? "");
+  ok("returns the child's id, his school and a count of live numbers, nothing else",
+     /p\.id as player_id/.test(cols) && /p\.school_id/.test(cols) && /count\(\*\)/.test(cols) && /c\.active/.test(d.text) && /as active_count/.test(cols));
+  ok("no name, relationship, phone, email or note of any contact leaves it", !/\b(c\.name|relationship|phone|email|note)\b/.test(d.text));
+  ok("asks the emergency_contact policy's own question before a row exists (no false zero for a reader without the right)",
+     /app_can\('player\.emergency\.read', p\.school_id, p\.team_code, p\.id,/.test(d.text));
+  ok("one child, named by the caller", /where p\.id = \$1/.test(d.text) && typeof d.params === "function");
+  ok("is NOT a logged read: no contact comes back, so nothing is disclosed", !Object.hasOwn(RESTRICTED_FIELDS, "emergency_contact_count"));
 }
 
 group("A. accounts (account lifecycle D5): every account, disabled ones included, under the same policy as users");

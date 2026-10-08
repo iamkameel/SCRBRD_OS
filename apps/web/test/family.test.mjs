@@ -13,7 +13,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { inningsStart, batters, bowler, ball, deriveInnings, BALL_TYPE } from "@scrbrd/scoring";
 import {
   howOutWord, lineFor, fixturesOf, isTheirs, opponentOf, chooseChild, noticesFor, linkEndWords, longDate,
+  pendingWords, doorTo, takeDoor,
 } from "../src/lib/family.js";
+import { todoOf, countWords } from "../src/lib/todo.js";
 import { tenantWords } from "../src/lib/words.js";
 import { ChildSwitcher, stateWords } from "../src/views/family/parts.jsx";
 import { ScorecardTab } from "../src/views/matchcentre/scorecard.jsx";
@@ -314,6 +316,49 @@ group("Which innings are his side's: by the side the innings names, else by his 
     me, [mk("Westville 1XI", [], []), mk("Hilton College 1XI", [], [])], ours);
   ok("at the away end the sides turn over", away.map((x) => x.side).join() === "bowling,batting");
   ok("a super over is no part of it", inningsOf(match, me, [{ ...mk("1XI", [], []), superOver: 1 }], ours)[0].side === null);
+}
+
+
+group("GA-I20 A1: a pending link is said as pending, never as approved, and names no child (§3.3)");
+{
+  const NOW_P = Date.parse("2026-10-08T10:00:00Z");
+  const req = (o = {}) => ({ id: "rq-1", mine: true, state: "pending", role: "guardian", schoolName: "Hilton College", requestedAt: "2026-10-04T08:00:00Z",
+    note: "For my son in the U15A", name: "N Mother", playerId: null, ...o });
+  const p = pendingWords([req()], NOW_P);
+  ok("her own pending request: one sentence, the school's name and how long ago",
+     p.length === 1 && p[0].words === "Your request to be linked to a child at Hilton College is with the office · asked 4 days ago. "
+       + "This does not mean it was approved. When the office verifies the link, your child appears here.", p[0]?.words);
+  ok("...her own note beside it, as she wrote it", p[0].note === "For my son in the U15A");
+  ok("asked today, and asked one day ago", pendingWords([req({ requestedAt: "2026-10-08T07:00:00Z" })], NOW_P)[0].words.includes("· asked today.")
+     && pendingWords([req({ requestedAt: "2026-10-07T08:00:00Z" })], NOW_P)[0].words.includes("· asked 1 day ago."));
+  ok("the sentence names no child and no person, even where the row carries a player or her own name",
+     !/N Mother|Pillay|player/i.test(pendingWords([req({ playerId: "aaaaaaaa-0000-0000-0000-000000000005" })], NOW_P)[0].words));
+  ok("a request decided, withdrawn or rejected is not pending: nothing said here (the revoked and rejected words are A2's)",
+     ["granted", "declined", "withdrawn", "rejected"].every((st) => pendingWords([req({ state: st })], NOW_P).length === 0));
+  ok("a request that is not hers (the office's read lists others'), or not for a guardian's link, is not said",
+     pendingWords([req({ mine: false }), req({ role: "coach" })], NOW_P).length === 0);
+  ok("a read that has not answered says nothing", pendingWords(null, NOW_P).length === 0 && pendingWords(undefined, NOW_P).length === 0);
+  ok("the words pass the never-words of the tab (no reason, no 'why')", p.every((x) => !NEVER_ON_THE_TAB.test(x.words)), p.map((x) => x.words));
+}
+
+group("GA-I20 A1: a door from the list opens one panel on his card, once, and only his");
+{
+  doorTo("p-rohan", "ring");
+  ok("another child's card takes nothing", takeDoor("p-anika") === null);
+  ok("his card takes the panel the door asked for", takeDoor("p-rohan") === "ring");
+  ok("...once: a second look takes nothing", takeDoor("p-rohan") === null);
+}
+
+group("GA-I20 A1: each child's count on Family is his own; nothing sums them (D1, D10)");
+{
+  const at = (iso, o) => ({ id: iso, schoolId: HIL, homeTeam: "1XI", awayTeamCode: null, awaySchoolId: null, homeLabel: "Hilton College 1st XI",
+    awayLabel: "Kearsney College 1st XI", status: "upcoming", startsAt: `${iso}.000Z`, date: iso.slice(0, 10), time: iso.slice(11, 16), ...o });
+  const hil = at("2026-10-07T07:00:00", { id: "hil" }), wes = at("2026-10-07T08:00:00", { id: "wes", schoolId: WES });
+  const answers = { hil: [{ playerId: ROHAN.id, status: null }], wes: [{ playerId: ANIKA.id, status: null }] };
+  const reads = { matches: [hil, wes], answers, now: NOW, contacts: [{ playerId: ROHAN.id, active: 0 }, { playerId: ANIKA.id, active: 2 }] };
+  const a = todoOf({ ...reads, child: ROHAN }), b = todoOf({ ...reads, child: ANIKA });
+  ok("R Pillay '2 to do' (his answer and his missing number); D Mkhize '1 to do' (his answer)", countWords(a) === "2 to do" && countWords(b) === "1 to do", [countWords(a), countWords(b)]);
+  ok("...and the words of each count are his own: no '3 to do' anywhere", ![countWords(a), countWords(b)].includes("3 to do"));
 }
 
 console.log(`\n${"─".repeat(52)}\nFAMILY APPS: ${pass} passed, ${fail} failed`);

@@ -9,14 +9,14 @@
  * a child's contacts or record is a disclosure the server logs, and a parent
  * glancing at the Family screen has not asked for one.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { T } from "../../design/tokens.js";
 import { PERSONA_NAV, ROLE_IDENTITY } from "../../design/roles.js";
 import { api } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
 import { humanDate } from "../../lib/format.js";
-import { holds, linkEndWords, longDate } from "../../lib/family.js";
+import { holds, linkEndWords, longDate, takeDoor } from "../../lib/family.js";
 import { PassportTab } from "../SettingsView.jsx";
 import { PublicNameSwitch } from "../publicname.jsx";
 import { Action, Card, Line, OpenRow, Unread } from "./parts.jsx";
@@ -38,18 +38,23 @@ export function whoElseHolds(capability) {
     .map((r) => ROLE_IDENTITY[r]?.label ?? r);
 }
 
-export function ChildFileCard({ child, role, w }) {
-  const [panel, setPanel] = useState(null);
+export function ChildFileCard({ child, role, w, todo = null }) {
+  // A door from his Home's To-do list (GA-I20 A1) opens one panel here, once.
+  const [panel, setPanel] = useState(() => takeDoor(child.id));
+  const opened = useRef(/** @type {HTMLDivElement | null} */ (null));
+  useEffect(() => { if (panel) opened.current?.scrollIntoView?.({ block: "start" }); }, []);  // eslint-disable-line react-hooks/exhaustive-deps -- on arrival only
   const name = child.knownAs || child.name;
   const toggle = (p) => setPanel((x) => (x === p ? null : p));
   return (
     <Card label={child.name} testid={`family-child-${child.id}`}>
       <Line quiet>{[child.schoolName, child.team, child.verification === "verified" ? "link verified" : null].filter(Boolean).join(" · ")}</Line>
+      {/* His own count, opening his Home (GA-I20 A1, D1): never a sum across children. */}
+      {todo}
       {child.consent !== "granted" && (
         <Line testid="family-consent-pending">The {w.place}'s terms for {name} are not agreed yet. The office will ask you.</Line>
       )}
       <Line testid={`family-link-end-${child.id}`}>{linkEndWords(child, w)}</Line>
-      <div style={{ display: "grid", gap: T.space.xs }}>
+      <div ref={opened} style={{ display: "grid", gap: T.space.xs }}>
         <OpenRow onClick={() => toggle("ring")} testid={`family-open-ring-${child.id}`}>
           <span style={{ ...T.role.body, fontWeight: 600 }}>Who to ring</span>
           <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>The numbers the {w.place} calls if {name} is hurt</span>
