@@ -146,7 +146,10 @@ function SquadView({ role }) {
           rows are his own child's, by the read's own policy. */}
       {/* Keyed by the side: changing side drops the old side's panels' own
           state (an open row, a half-typed answer) rather than carrying it
-          across. Nothing is drawn until there is a side to name. */}
+          across. Nothing is drawn until there is a side to name. The three
+          panels below carry DIFFERENT keys: siblings that share one key are
+          unsupported by React, and with the read-state card above them coming
+          and going it drew the availability panel twice. */}
       {/* Nothing is said about the squad until the roster read has answered,
           and a failure, a refusal or an empty answer each says what it is. A
           career read that failed beside a roster that arrived says so above the
@@ -156,14 +159,14 @@ function SquadView({ role }) {
           <ReadState testId="squad-read-state" read={rosterRead} onRetry={retryRoster} icon="users"/>
         </Card>
       )}
-      {team&&<AvailabilityPanel key={team} role={role} team={team}/>}
+      {team&&<AvailabilityPanel key={`avail-${team}`} role={role} team={team}/>}
       {/* Lifts to the same fixture (SCRBRD-124): the offers on the side, a
           seat asked for, the driver's own card, the office's counts. Nothing
           where the module is not live. */}
-      {team&&<LiftsPanel key={team} role={role} team={team}/>}
+      {team&&<LiftsPanel key={`lifts-${team}`} role={role} team={team}/>}
       {/* The day (SCRBRD-124 phase 2, db/76): the office's lift exceptions,
           by name, to resolve; the coach's expected list with "with us". */}
-      {team&&<LiftDayStaff key={team} role={role} team={team}/>}
+      {team&&<LiftDayStaff key={`day-${team}`} role={role} team={team}/>}
       <div style={{display:"grid",gridTemplateColumns:selected?"1fr 320px":"1fr",gap:"16px"}}>
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>
