@@ -13,7 +13,7 @@ import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { CorrectedChip, StaleLine } from "../views/matchcentre/corrected.jsx";
 import { correctionText } from "../lib/corrections.js";
-import { publicStory, read } from "./reads.js";
+import { publicStory, read, readPar } from "./reads.js";
 
 /**
  * THE PUBLIC MATCH PAGE — /live/:match and /scorecard/:match (SCRBRD-083
@@ -68,13 +68,14 @@ function usePhone(px = 640) {
 }
 
 /**
- * The header and the log, polled while the match is live. Once it is not, the
- * log's head is still asked after (`?since=last`, the cache's own answer) so a
- * correction made after the match is said — "Updated · refresh" — and folded
- * only on the reader's tap (GA-I36 §7).
+ * The header and the log, polled while the match is live — and the par report
+ * read after the log (SCRBRD-133 G2). Once it is not live, the log's head is
+ * still asked after (`?since=last`, the cache's own answer) so a correction
+ * made after the match is said — "Updated · refresh" — and folded only on the
+ * reader's tap (GA-I36 §7).
  */
 function usePublicMatch(matchId) {
-  const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, okAt: null, stale: false, refreshing: false });
+  const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null, okAt: null, stale: false, refreshing: false });
   const [tick, setTick] = useState(0);
   const live = state.header?.status === "live";
   const settledHead = state.header && !live ? state.last : null;
@@ -104,7 +105,9 @@ function usePublicMatch(matchId) {
           read(`/api/public/matches/${matchId}`),
           read(`/api/public/matches/${matchId}/log`),
         ]);
-        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0, okAt: Date.now(), stale: false, refreshing: false });
+        const par = await readPar(`/api/public/matches/${matchId}`);
+        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0, par,
+          okAt: Date.now(), stale: false, refreshing: false });
       } catch (e) {
         if (cancelled) return;
         // Not found is one answer: unpublished and no such fixture read alike.
@@ -297,7 +300,8 @@ export function PublicMatch({ matchId, view }) {
   const phase = inningsPhase(played, folded?.result);
   const line = matchLine({ match, competition: null, weather: null, phase });
   const notice = revisionNotice(boardInn);
-  const ctx = { match, innings: played, result, commentary, events, demo: false, overs: match.overs || 20,
+  const ctx = { match, innings: played, result, commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
+    demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
     quietMoments: true };   // the region below says it; the moment is drawn, not said twice
 

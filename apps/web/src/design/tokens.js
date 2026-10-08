@@ -931,6 +931,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   .os-insight-in{animation:none!important}
   .mc-moment,.mc-moment-big{animation:none!important}
   .os-panel-in{animation:none!important}
+  .os-tick{transition:none!important}
 }
 /* The same block, by the ground display's own setting (SCRBRD-133 §4.3): a
    TV's browser has no system setting anybody can reach, so the setup's
@@ -940,6 +941,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important}
 :root[data-reduce-motion] .os-board-flip,:root[data-reduce-motion] .os-insight-in,:root[data-reduce-motion] .mc-moment,
 :root[data-reduce-motion] .mc-moment-big,:root[data-reduce-motion] .os-panel-in{animation:none!important}
+:root[data-reduce-motion] .os-tick{transition:none!important}
 
 /* ── ScrbrdOS responsive layer — mobile first ── */
 html{-webkit-text-size-adjust:100%}

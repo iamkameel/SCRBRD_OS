@@ -131,6 +131,10 @@ const SUITES = [
   // the dwell, the skip, a wicket's interrupt resuming where it was, the holds
   // — and its panels over built logs (display/rotation.js, display/data.js).
   ["rotation",          "apps/web/test/rotation.test.mjs"],
+  // Par and pressure (SCRBRD-133 G2): every row of §3.3 against hand figures —
+  // the server's report (@scrbrd/scoring parReport()), the Board's words, the
+  // rate track and the worm's par line — and no resource computed by a page.
+  ["par",               "apps/web/test/par.test.mjs"],
   // The ground display's QR code (lib/qr.js) against an independent encoder.
   ["qr",                "apps/web/test/qr.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.

@@ -26,7 +26,7 @@ import {
 } from "@scrbrd/scoring";
 import { PUBLIC_EVENT_FIELDS, PUBLIC_EVENT_COMMON, projectLog, playerPseudonym, eventPseudonym, nameFor, RETIRED_NOT_OUT, areasOf } from "./redact.mjs";
 import {
-  publicPages, PublicCache, RateLimit, clientAddress, shellHtml, THEME_BOOT, NOT_FOUND, LIVE_TTL_MS, SETTLED_TTL_MS, RATE,
+  publicPages, PublicCache, RateLimit, clientAddress, shellHtml, THEME_BOOT, NOT_FOUND, LIVE_TTL_MS, SETTLED_TTL_MS, RATE, parLeaks,
 } from "./public-api.mjs";
 import { publicationRoutes } from "../write/publication-api.mjs";
 import { signToken } from "../auth/auth.mjs";
@@ -421,6 +421,11 @@ const fakePool = {
       if (/public_match_people/.test(text)) return { rows: served ? PEOPLE : [] };
       if (/public_match_log/.test(text)) return { rows: served ? ROWS : [] };
       if (/public_shot_sectors/.test(text)) return { rows: served ? [{ innings: 0, sector: 9, shots: 1, runs: 4 }] : [] };
+      // SCRBRD-133 G2 (db/88): the ground's par for a published fixture — six
+      // innings, par 80 — and no DLS table loaded.
+      if (/public_venue_par/.test(text)) return { rows: served ? [{ overs: 10, age_band: "open", n: 6, floor: 5, sufficient: true, par: 80,
+        median: "79.5", low: 61, high: 104, first_season: 2025, last_season: 2026 }] : [] };
+      if (/public_dls_table/.test(text)) return { rows: [] };
       throw new Error(`unexpected query ${text}`);
     },
   }),
@@ -479,6 +484,39 @@ const on = await serve({});
   ok("?since= returns only what came after", JSON.parse(since.body).events.every((/** @type {any} */ e) => e.seq > 20) && JSON.parse(since.body).events.length > 0);
   const sh = await on.get(`/api/public/matches/${M1}/shots`);
   ok("the sectors answer 200, team level", sh.status === 200 && JSON.parse(sh.body).sectors[0].runs === 4);
+
+  // SCRBRD-133 G2: par and pressure — the server's figures, held to their shape.
+  const pr = await on.get(`/api/public/matches/${M1}/par`);
+  const pj = pr.status === 200 ? JSON.parse(pr.body) : null;
+  const pin = deriveMatch(LOG, {}).innings;
+  const pinn = /** @type {any} */ (pin[pin.length - 1]);
+  // The ground's par 80 over the allotment the innings started with (this log
+  // cuts it from 10 overs to 8: a full innings here, §3.3), by the proportion
+  // of overs (no table): round(80 × 10 ÷ 60) = 13.
+  const want = Math.round(80 * pinn.balls / ((pinn.startOvers ?? pinn.overs) * 6));
+  ok(`the par read answers 200: the ground's par 80 from 6, par here ${want} at ${pinn.balls} balls, the track to it`,
+     pr.status === 200 && pj?.venue?.par === 80 && pj.venue.n === 6 && pj.venue.parAt === want && pj.venue.method === "proportion"
+     && pj.trackOf === "venue" && pj.track.at(-1).parAt === want && pj.at?.balls === pinn.balls && want === 13 && pj.venue.shortened === true, pr.body.slice(0, 300));
+  ok("...the evidence team-level: the seasons, the median, the range; no innings list, no ground, no other fixture",
+     pj?.venue?.median === 79.5 && pj.venue.range.low === 61 && pj.venue.range.high === 104 && pj.venue.seasons.first === 2025
+     && !/innings"|breakdown|ground|match_id|home|away/.test(JSON.stringify(pj.venue)), pj?.venue);
+  ok("...no-store (its words move with every ball), noindex, and nobody named", pr.headers["cache-control"] === "no-store"
+     && /noindex/.test(pr.headers["x-robots-tag"] ?? "") && leaks(pr.body).length === 0, [pr.headers["cache-control"], leaks(pr.body)]);
+  ok("...and it is exactly the shape parLeaks() allows", pj != null && parLeaks(pj).length === 0, pj && parLeaks(pj));
+  ok("an unpublished fixture's par read is the one 404", (await on.get(`/api/public/matches/${M2}/par`)).body === NOT_FOUND);
+  {
+    const base = /** @type {any} */ (pj ?? {});
+    const leak = (/** @type {(b: any) => void} */ f) => { const b = structuredClone(base); f(b); return parLeaks(b); };
+    ok("parLeaks: a name riding in a key nobody listed is found", leak((b) => { b.venue.name = "D Erasmus"; }).some((x) => /venue\.name: not on the list/.test(x)));
+    ok("...a cell of the table, a resource, R₁ beside the DLS par",
+       leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, cells: [[60, 2, 160]] }; }).some((x) => /dls\.cells/.test(x))
+       && leak((b) => { b.track[0].resource = 400; }).some((x) => /track\[0\]\.resource/.test(x))
+       && leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, resources: { first: 400 } }; }).some((x) => /dls\.resources/.test(x)));
+    ok("...a word where a figure belongs, and a word nobody listed", leak((b) => { b.venue.parAt = "Erasmus"; }).length > 0
+       && leak((b) => { b.rrr = { now: 1, threeOversAgo: 1, trend: "D Erasmus" }; }).length > 0 && leak((b) => { b.trackOf = "names"; }).length > 0);
+    ok("...a table id that is not an id", leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: "Hilton College" }; }).length > 0);
+    ok("...and a fraction where a whole run belongs", leak((b) => { b.venue.parAt = 12.5; }).length > 0 && leak((b) => { b.track[0].parAt = 0.5; }).length > 0);
+  }
 
   console.log("\n── One answer for nothing ──");
   const nf = [await on.get(`/api/public/matches/${M2}`), await on.get("/api/public/matches/77777777-0000-0000-0000-00000000dead"),

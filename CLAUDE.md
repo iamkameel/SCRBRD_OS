@@ -57,7 +57,10 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   the Match, and a corrected score taking an honour back) and account
   lifecycle (added 2026-10-07: disabling and re-enabling an account, a pupil
   leaving or changing school, a parent's link ending, staff leaving, and
-  retention under POPIA).
+  retention under POPIA) and notifications (added 2026-10-07: one model for
+  every notice, who receives what, push to phones with no child's name on a
+  lock screen, one read count, a correction taking a notice back, and quiet
+  hours for children).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
