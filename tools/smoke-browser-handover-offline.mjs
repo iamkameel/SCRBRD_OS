@@ -13,7 +13,7 @@
  *
  * The day, in two real browser contexts and two real logins:
  *
- *   A  (the scorer) scores three balls with signal; they reach the server
+ *   A  (the scorer) scores two balls with signal; they reach the server
  *   A  arms the handover and reads the code — then closes the sheet and, the
  *      signal gone (ctx.setOffline), scores two more balls. A handover cannot
  *      be armed with a ball unsent, so this is the only order it can happen in
@@ -26,7 +26,7 @@
  * here, not changed: A's first flush on reconnect asks the server before it
  * sends anything, is told the token has moved, and stops — "token_moved". So
  * A's two balls are neither merged nor counted: they stay queued on A's disk,
- * the server's log is A's three, then B's one, each once, and nothing is in
+ * the server's log is A's two, then B's one, each once, and nothing is in
  * quarantine because nothing was sent. A's pad says, in words, that another
  * device holds the match; a ball tapped on A afterwards is saved there and
  * goes nowhere.
@@ -257,22 +257,23 @@ try {
              select id, school_id, 'home', 'bat' from match where id = $1
              on conflict (match_id) do nothing`, [MATCH]);
 
-  group("A scores three balls with signal; they reach the server");
+  group("A scores two balls with signal; they reach the server");
   A = await openAs(/Scorer/);
   ok("the scorer signs in", /Match Centre|Dashboard/i.test(await A.text()));
   ok("opened the real fixture", await openPad(A));
   await clearBlockers(A.page);
   // The first tap on a pad that has only just opened can be spent on a sheet
-  // (openers, bowler): tap until the server has three balls, never more than six taps.
+  // (openers, bowler): tap until the server has two balls, never more than six taps.
+  // (Two, not more: a sixth ball on A would open the next-over sheet and hide its banner.)
   const ballsOnServer = async () => (await serverLog()).filter((r) => r.kind === "ball").length;
   let tapped = 0;
   for (const face of ["1", "4", "1", "1", "1", "1"]) {
-    if (await ballsOnServer() >= 3) break;
+    if (await ballsOnServer() >= 2) break;
     if (await tapFace(A.page, face)) tapped++;
-    await until(A.page, async () => (await ballsOnServer()) >= Math.min(3, tapped), 4000);
+    await until(A.page, async () => (await ballsOnServer()) >= Math.min(2, tapped), 4000);
   }
-  ok("deliveries tapped", tapped >= 3 && tapped <= 6, tapped);
-  ok("exactly three reach the server", await until(A.page, async () => (await ballsOnServer()) === 3, 12000),
+  ok("deliveries tapped", tapped >= 2 && tapped <= 6, tapped);
+  ok("exactly two reach the server", await until(A.page, async () => (await ballsOnServer()) === 2, 12000),
      (await serverLog()).map((r) => r.kind).join(","));
   const deviceA = await A.page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
   const synced = await serverLog();
@@ -361,7 +362,7 @@ try {
   const log = await serverLog();
   const ids = log.map((r) => r.id);
   ok("every key in the server's log is there once", new Set(ids).size === ids.length);
-  ok("the server's log is A's three, then B's one", log.length === nSynced + 1
+  ok("the server's log is A's two, then B's one", log.length === nSynced + 1
      && same(ids.slice(0, nSynced), synced.map((r) => r.id)) && log.at(-1).device_id === deviceB);
   ok("none of A's offline balls is in the log", offIds.every((id) => !ids.includes(id)));
   ok("none of them was sent to quarantine either: nothing left A", (await quarantine()).length === 0, JSON.stringify(await quarantine()));
@@ -370,7 +371,7 @@ try {
   ok("A still has both, queued and untouched, in order", same(qAfter.map((e) => e.id), offIds), JSON.stringify(qAfter));
   ok("...still stamped with the generation A held, not restamped to B's", qAfter.every((e) => e.epoch === sess0.epoch), JSON.stringify(qAfter));
   const figs = await figures();
-  ok("the score is the server's fold of its own log: A's three and B's one", figs.b === before.b + 1 && figs.r === before.r + 1,
+  ok("the score is the server's fold of its own log: A's two and B's one", figs.b === before.b + 1 && figs.r === before.r + 1,
      `${JSON.stringify(figs)} v ${JSON.stringify(before)}`);
   ok("...unchanged by A's reconnecting", same(figs, atTakeover), `${JSON.stringify(figs)} v ${JSON.stringify(atTakeover)}`);
   const sess1 = await sessionRow();
@@ -384,11 +385,8 @@ try {
   ok("...queued behind the other two", qMore.length === 3 && same(qMore.slice(0, 2).map((e) => e.id), offIds), JSON.stringify(qMore));
   ok("...and the server's log did not move", same((await serverLog()).map((r) => r.id), ids));
   ok("...and nothing is in quarantine", (await quarantine()).length === 0);
-  // The sixth ball of the over opens the next-over sheet, which covers the banner:
-  // name a bowler (one more event, queued on A like the rest), and the banner is back.
-  await clearBlockers(A.page);
-  await A.page.waitForTimeout(3000);
-  ok("A still says another device holds the match", await until(A.page, async () => (await banner(A.page)).reason === "token_moved", 8000), JSON.stringify(await banner(A.page)));
+  ok("A still says another device holds the match", await until(A.page, async () => (await banner(A.page)).reason === "token_moved", 8000),
+     `${JSON.stringify(await banner(A.page))} | ${(await A.text()).replace(/\s+/g, " ").slice(0, 500)}`);
   ok("...with everything it recorded since still saved on A and nowhere else",
      (await queued(A.page)).length >= 3 && same((await serverLog()).map((r) => r.id), ids) && (await quarantine()).length === 0);
 
