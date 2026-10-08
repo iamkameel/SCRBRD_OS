@@ -58,7 +58,15 @@ function constFn(text, name) {
   const start = m.index + m[0].length;
   const params = balanced(text, start);
   const arrow = text.indexOf("=>", start + params.length) + 2;
-  return `${params}=>${balanced(text, arrow)}`;
+  if (/^\s*\{/.test(text.slice(arrow))) return `${params}=>${balanced(text, arrow)}`;
+  // An expression body: up to the statement's `;`.
+  let depth = 0, j = arrow;
+  for (; j < text.length; j++) {
+    if ("({[".includes(text[j])) depth++;
+    else if (")}]".includes(text[j])) depth--;
+    else if (text[j] === ";" && depth === 0) break;
+  }
+  return `${params}=>${text.slice(arrow, j)}`;
 }
 /** A JSX prop's expression on the first <Tag …> in the source. */
 function prop(text, tag, name) {
