@@ -20,7 +20,7 @@ SET client_min_messages = warning;
 BEGIN;
 
 -- Everything below runs as scrbrd_app — the SAME role the API connects as,
--- created and granted by db/05_app_role.sql rather than invented here. That
+-- created and granted by db/06_app_role.sql rather than invented here. That
 -- matters: a verifier that builds its own lookalike role proves the policies
 -- are correct for a role nothing uses. A table's OWNER bypasses row-level
 -- security entirely, so testing as the owner would pass every assertion below
@@ -28,7 +28,7 @@ BEGIN;
 DO $role_exists$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'scrbrd_app') THEN
-    RAISE EXCEPTION 'scrbrd_app does not exist — apply db/05_app_role.sql first';
+    RAISE EXCEPTION 'scrbrd_app does not exist — apply db/06_app_role.sql first';
   END IF;
 END $role_exists$;
 

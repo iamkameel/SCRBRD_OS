@@ -313,6 +313,8 @@ const SUITES = [
   // grants name, and a restore aimed anywhere else refused with exit 2.
   ["backup-verify", "tools/backup-verify.test.mjs"],
   ["schema-guard", "services/api/schema-guard.test.mjs"],
+  // Which commit /api/health says the process was built from (GA I14).
+  ["revision", "services/api/revision.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
   // The typecheck strict list only grows, and names nothing that is not there.

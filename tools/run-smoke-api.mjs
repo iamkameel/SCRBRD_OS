@@ -234,6 +234,10 @@ const WALKS = [
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
+  // The API refuses to start as the owner, a superuser or a BYPASSRLS role,
+  // starts as scrbrd_app, and /api/health names the commit it was built from
+  // (gap analysis I14–I16, claims 12 and 14).
+  "owner-refusal",
   "public",
   // A child's name on the public pages over HTTP (SCRBRD-083 C1–C5, PILOT_LOAD
   // gap 5): a guardian's consent for his own child and no other, the office's
