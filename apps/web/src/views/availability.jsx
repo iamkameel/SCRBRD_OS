@@ -16,7 +16,8 @@
  */
 import { useMemo, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
-import { Badge, Btn, Card, Select } from "../ui/primitives.jsx";
+import { Badge, Btn, Card, ReadState, Select } from "../ui/primitives.jsx";
+import { readState } from "../lib/readState.js";
 import { useLive } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { humanDateTime } from "../lib/format.js";
@@ -130,7 +131,11 @@ function PlayerAnswer({ role, match, upcoming, onPick, player }) {
 function AvailabilityList({ role, match, upcoming, onPick }) {
   const [nonce, setNonce] = useState(0);
   const [said, setSaid] = useState({ id: null, text: "" });
-  const { rows: answers, loading } = useLive("availability", role, nonce, { matchId: match.id });
+  const read = useLive("availability", role, nonce, { matchId: match.id });
+  const { rows: answers } = read;
+  // "No one to show" is said only of a read that answered (GA-I08). Retry bumps
+  // this panel's nonce: the same read, with the same matchId.
+  const readSaid = readState(read, { what: "the availability answers" });
   const mayDeclare = holdsCapability(role, "availability.declare");
   const asking = answers.filter((r) => r.needsReconfirming).length;
 
@@ -165,7 +170,10 @@ function AvailabilityList({ role, match, upcoming, onPick }) {
             options={upcoming.map((m) => ({ value: m.id, label: `v ${m.awayTeam} · ${humanDateTime(m.date, m.time)}` }))}/>
         </div>
       )}
-      {!loading && answers.length === 0 && (
+      {answers.length === 0 && !["ok", "empty"].includes(readSaid.state) && (
+        <ReadState compact read={readSaid} testId="availability-read-state" onRetry={() => setNonce((n) => n + 1)}/>
+      )}
+      {answers.length === 0 && ["ok", "empty"].includes(readSaid.state) && (
         <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "10px" }}>No one to show for this fixture.</div>
       )}
       <div style={{ display: "grid", gap: "8px", marginTop: "12px" }}>

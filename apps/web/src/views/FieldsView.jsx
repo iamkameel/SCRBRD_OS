@@ -2,9 +2,10 @@
 import { useEffect, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { D, T, textOn } from "../design/tokens.js";
-import { Avatar, Badge, Btn, Card, EmptyState, Modal, Select, SectionHeader } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, EmptyState, Modal, ReadState, Select, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { api, signedIn } from "../lib/api.js";
+import { readState } from "../lib/readState.js";
 import { schoolsWhere } from "../lib/session.js";
 import { Icon } from "../ui/icons.jsx";
 import { GroundOffers } from "./groundoffers.jsx";
@@ -34,7 +35,8 @@ function FieldsView({ role }) {
   // the ground's NAME (the matches read joins it in; there is no ground_id
   // on the client's match shape yet), which is what a fixture list actually
   // carries and is enough to tell two grounds apart.
-  const MATCHES = useRows("matches", role);
+  const matchesRead = useLive("matches", role, groundsNonce);
+  const MATCHES = matchesRead.rows;
   const [reportOpen, setReportOpen] = useState(false);
   // The groundsman's own record, per ground. Everything below this line that
   // is NOT drawn from it — orientation, dimensions, lights, the pitch strips —
@@ -147,6 +149,7 @@ function FieldsView({ role }) {
       {reportOpen&&(
         <PitchReportModal ground={selGround} role={role}
           fixtures={MATCHES.filter(m=>m.venue===selGround.name)}
+          said={readState(matchesRead, { what: "the fixtures" })} onRetry={()=>setGroundsNonce(n=>n+1)}
           onClose={()=>setReportOpen(false)}/>
       )}
 
@@ -404,7 +407,7 @@ const PITCH_FIELDS = {
   favours:  { label: "Favours",  values: ["seam", "spin", "batting", "even"] },
   outfield: { label: "Outfield", values: ["fast", "medium", "slow"] },
 };
-function PitchReportModal({ ground, fixtures, role, onClose }) {
+function PitchReportModal({ ground, fixtures, role, onClose, said = null, onRetry }) {
   const [matchId, setMatchId] = useState(fixtures[0]?.id ?? "");
   const [form, setForm] = useState({});
   const [busy, setBusy] = useState(false);
@@ -451,7 +454,9 @@ function PitchReportModal({ ground, fixtures, role, onClose }) {
 
   return (
     <Modal title={`Pitch report — ${ground.name}`} onClose={onClose} width="560px">
-      {!fixtures.length ? (
+      {!fixtures.length && said && !["ok","empty"].includes(said.state) ? (
+        <ReadState compact read={said} onRetry={onRetry} testId="pitch-report-read-state"/>
+      ) : !fixtures.length ? (
         <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>
           No fixtures are recorded at this ground yet — there is nothing to file a report against.
         </div>

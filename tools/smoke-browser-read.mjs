@@ -2468,6 +2468,115 @@ try {
     }
   }
 
+  // ── GA-I08: one read-state contract ─────────────────────────────
+  // A read that fails is not an empty answer. These two walks abort a read from
+  // the browser, see the sentence for it ("Could not read …") where an empty
+  // radar and "No fixture is arranged" used to be, press Retry, and see it
+  // recover with the SAME request (same path and params). Each was seen red
+  // against the code before the change (the report records the counts).
+  // A read-state check that finds nothing must fail on its own line, not throw the walk: short timeouts.
+  const attr = (l, n) => l.getAttribute(n, { timeout: 2500 }).catch(() => null);
+  group("A skills read that fails says so; it is not 'no assessments' (GA-I08)");
+  {
+    const C = await open();
+    let failing = true;
+    const asked = [];
+    await C.page.route(/\/api\/read\/skills(\?.*)?$/, (r) => { asked.push(r.request().url()); return failing ? r.abort("timedout") : r.continue(); });
+    ok("a coach signs in", await signIn(C.page, /Coach/));
+    ok("the skills screen opens", await nav(C.page, /Skills/));
+    const at = (id) => C.page.locator(`[data-testid="${id}"]`);
+    const said = async () => (await at("skills-read-state").innerText({ timeout: 4000 }).catch(() => "")).trim();
+    await C.page.waitForTimeout(800);
+    const body = await text(C.page);
+    ok("the detail says 'Could not read skills assessments.'", /Could not read skills assessments\./.test(await said()), await said());
+    ok("...it is an alert, and says which state it is", await attr(at("skills-read-state"), "data-state") === "failed" && await attr(at("skills-read-state"), "role") === "alert");
+    ok("...no radar is drawn, empty or otherwise", await C.page.locator('[data-testid="radar"], [data-testid="radar-too-few"]').count() === 0);
+    ok("...and it does not say there are no assessments, or that anyone is not assessed",
+       !/No skills assessment|Not assessed yet|no assessments/i.test(body) && await C.page.locator('[data-testid^="unassessed-"]').count() === 0, body.slice(0, 200));
+    const retry = at("skills-read-state-retry");
+    const box = await retry.boundingBox({ timeout: 2500 }).catch(() => null);
+    ok("a Retry is offered, and it is at least 44px tall", !!box && box.height >= 44 && box.width >= 44, box);
+    const before = asked.length;
+    await retry.click({ timeout: 4000 }).catch(() => {});
+    await C.page.waitForTimeout(1200);
+    ok("a retry while it still fails asks again and still says so", asked.length > before && /Could not read skills assessments\./.test(await said()), asked.length - before);
+    failing = false;
+    await at("skills-read-state-retry").click({ timeout: 4000 }).catch(() => {});
+    await C.page.waitForTimeout(1800);
+    const firstUrl = asked[0], lastUrl = asked.at(-1);
+    ok("RETRY KEEPS THE QUESTION: the request that recovered is the first one, path and params", !!firstUrl && firstUrl === lastUrl, [firstUrl, lastUrl]);
+    ok("...the failure sentence is gone", !/Could not read skills assessments/.test(await text(C.page)));
+    ok("...and the screen now draws what was read: the seeded assessments (RATING)", /RATING|Not assessed yet/.test(await text(C.page)) && await at("skills-read-state").count() <= 1);
+    // A boy with no assessment is 'Not assessed yet', not a zero and not an empty radar.
+    const un = C.page.locator('[data-testid^="unassessed-"]').first();
+    ok("a player with none is listed as 'Not assessed yet'", await un.count() === 1 && /Not assessed yet/.test(await un.innerText().catch(() => "")));
+    const row = un.locator("xpath=ancestor::button[1]");
+    ok("...with no overall figure beside him: not a 0", await row.count() === 1 && !/OVR|\b0\b/.test(await row.innerText().catch(() => "")), await row.innerText().catch(() => ""));
+    await row.click({ timeout: 4000 }).catch(() => {});
+    await C.page.waitForTimeout(600);
+    ok("...and his detail says 'Not assessed yet.' with no radar, no failure",
+       /^Not assessed yet\.$/.test(await said()) && await C.page.locator('[data-testid="radar"]').count() === 0 && !/Could not read/.test(await text(C.page)), await said());
+    ok("...nor Retry, which could not change that", await at("skills-read-state-retry").count() === 0);
+    const fl = await floors(C.page);
+    ok(`nothing in the read states under 12px (${fl.small.filter((x) => /Not assessed|Could not|Reading/.test(x)).length}) or tapped under 44px (${fl.tiny.filter((x) => /Retry/.test(x)).length})`,
+       fl.small.every((x) => !/Not assessed|Could not|Reading/.test(x)) && fl.tiny.every((x) => !/Retry/.test(x)), [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
+    ok("no scoping refusals or page errors", C.refusals.length === 0 && C.errors.length === 0, C.errors.join(" | ").slice(0, 300));
+    await C.ctx.close();
+  }
+
+  group("A fixtures read that fails does not say 'No fixture is arranged' (GA-I08)");
+  {
+    const C = await open();
+    let failing = true;
+    const asked = [];
+    await C.page.route("**/api/read/matches*", (r) => { asked.push(r.request().url()); return failing ? r.abort("timedout") : r.continue(); });
+    ok("the guardian signs in", await signIn(C.page, /parent@example\.invalid/));
+    await C.page.waitForTimeout(1500);
+    const card = C.page.locator('[data-testid="next-fixture"]');
+    const cardText = async () => (await card.innerText({ timeout: 4000 }).catch(() => "")).trim();
+    const t0 = await cardText();
+    ok("the next-fixture card says 'Could not read the fixtures.'", /Could not read the fixtures\./.test(t0), t0);
+    ok("...and not 'No fixture is arranged'", !/No fixture is arranged/.test(t0) && await C.page.locator('[data-testid="next-fixture-none"]').count() === 0, t0);
+    const rs = C.page.locator('[data-testid="next-fixture-read-state"]');
+    ok("...as an alert, in the state 'failed'", await attr(rs, "data-state") === "failed" && await attr(rs, "role") === "alert");
+    const retry = C.page.locator('[data-testid="next-fixture-read-state-retry"]');
+    const box = await retry.boundingBox({ timeout: 2500 }).catch(() => null);
+    ok("a Retry is offered, at least 44px tall", !!box && box.height >= 44, box);
+    failing = false;
+    await retry.click({ timeout: 4000 }).catch(() => {});
+    await C.page.waitForTimeout(1800);
+    const t1 = await cardText();
+    ok("after Retry the card draws the fixture it read (no failure sentence, no 'none')", !/Could not read/.test(t1) && !/No fixture is arranged/.test(t1) && /\bv\b|Verify|vs/i.test(t1), t1);
+    ok("...the retried read is the first one, same path and params", asked.length >= 2 && asked[0] === asked.at(-1), asked.slice(0, 2));
+    ok("the To-do card, which shares the fixtures read, now reads too: no failed-read row", !/Could not read the fixtures/.test(await C.page.locator('[data-testid="todo-card"]').innerText({ timeout: 3000 }).catch(() => "")));
+    ok("no page errors", C.errors.length === 0, C.errors.join(" | ").slice(0, 300));
+    await C.ctx.close();
+  }
+
+  group("An availability read that fails does not say 'No answer' (GA-I08)");
+  {
+    const C = await open();
+    let failing = true;
+    await C.page.route("**/api/read/availability*", (r) => (failing ? r.abort("timedout") : r.continue()));
+    ok("the guardian signs in", await signIn(C.page, /parent@example\.invalid/));
+    await C.page.locator('[data-testid="nav-fixtures"]').first().click({ timeout: 6000 }).catch(() => {});
+    await C.page.waitForTimeout(2000);
+    const chips = C.page.locator('[data-testid^="fixture-chip-"]');
+    const n = await chips.count();
+    const words = [];
+    for (let i = 0; i < n; i++) words.push((await chips.nth(i).innerText().catch(() => "")).trim());
+    ok(`the coming fixtures are listed (${n}), each with a chip`, n > 0, n);
+    ok("...every chip says 'Could not read the answer', and none says 'No answer'", words.length > 0 && words.every((w) => /^Could not read the answer$/.test(w)) && !words.some((w) => /No answer/i.test(w)), words);
+    failing = false;
+    await C.page.locator('[data-testid="nav-children"]').first().click({ timeout: 6000 }).catch(() => {});
+    await C.page.locator('[data-testid="nav-fixtures"]').first().click({ timeout: 6000 }).catch(() => {});
+    await C.page.waitForTimeout(2000);
+    const after = [];
+    for (let i = 0; i < await chips.count(); i++) after.push((await chips.nth(i).innerText().catch(() => "")).trim());
+    ok("read again (the same path), the chips say what was answered, and none says 'Could not read'", after.length > 0 && !after.some((w) => /Could not read/.test(w)), after);
+    await C.ctx.close();
+  }
+
 } catch (e) {
   ok(`the browser read walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {
