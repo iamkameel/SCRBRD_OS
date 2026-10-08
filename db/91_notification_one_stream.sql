@@ -53,8 +53,9 @@
 -- notices on the day this is pasted. Withdrawing such a post retracts
 -- nothing (it has no notice) and works as before.
 --
--- NO DROP. The apply tool hangs on DROP, so nothing here drops: the trigger
--- is CREATE OR REPLACE TRIGGER; every function is new; each policy is
+-- NOTHING IS REMOVED. The tool that applies this to production hangs on a
+-- statement that removes an object, so there is none: the trigger is CREATE
+-- OR REPLACE TRIGGER; every function is new; each policy is
 -- created inside a DO block only when pg_policies does not have it.
 --
 -- WHO MAY CALL WHAT
