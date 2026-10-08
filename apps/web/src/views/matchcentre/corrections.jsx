@@ -4,7 +4,7 @@ import { api } from "../../lib/api.js";
 import { clockWords } from "../../lib/corrections.js";
 import { effectOf } from "../../lib/correctionEffect.js";
 import { Modal } from "../../ui/primitives.jsx";
-import { describeBall } from "../quarantine.jsx";
+import { describeEvent } from "../quarantine.jsx";
 
 /**
  * THE CORRECTIONS SHEET (GA-I36 A1, design D5, §5 "the approver", §7): inside
@@ -61,7 +61,8 @@ const btn = (tone = "plain") => ({
   background: tone === "go" ? T.brand.green : "transparent",
   color: tone === "go" ? T.surface.canvas : T.content.primary,
 });
-const small = { ...T.role.body, fontSize: "13px", margin: 0 };
+// A function, not a constant: a token read at import time would not follow a theme switch.
+const small = () => ({ ...T.role.body, fontSize: "13px", margin: 0 });
 
 /**
  * The count a staff reader sees on the fixture, or null for nothing to say:
@@ -142,10 +143,10 @@ export function CorrectionsSheet({ match, events, fold, commentary, list, onClos
   // would be a new type each render, and the note field would lose its focus
   // on every keystroke.
   const saidLine = (/** @type {string} */ k) => said[k] ? (
-    <p role="alert" data-testid={`corr-said-${k}`} style={{ ...small, color: said[k].ok ? T.semantic.positive : (T.semantic.criticalText ?? T.semantic.critical) }}>{said[k].text}</p>
+    <p role="alert" data-testid={`corr-said-${k}`} style={{ ...small(), color: said[k].ok ? T.semantic.positive : (T.semantic.criticalText ?? T.semantic.critical) }}>{said[k].text}</p>
   ) : null;
   const noteField = (/** @type {string} */ k) => (
-    <label style={{ display: "grid", gap: "2px", ...small, color: T.content.secondary }}>
+    <label style={{ display: "grid", gap: "2px", ...small(), color: T.content.secondary }}>
       A note for the record (optional)
       <textarea data-testid={`corr-note-${k}`} value={notes[k] ?? ""} onChange={(e) => setNotes((n) => ({ ...n, [k]: e.target.value }))}
         style={{ minHeight: "44px", padding: T.space.sm, borderRadius: T.radius.md, border: `1px solid ${T.line.normal}`,
@@ -165,7 +166,7 @@ export function CorrectionsSheet({ match, events, fold, commentary, list, onClos
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, fold, list, lineOf]);
   const effectList = (/** @type {string} */ k) => effects.has(k) ? (
-    <ul data-testid={`corr-effect-${k}`} style={{ ...small, color: T.content.primary, paddingLeft: T.space.lg, display: "grid", gap: "2px" }}>
+    <ul data-testid={`corr-effect-${k}`} style={{ ...small(), color: T.content.primary, paddingLeft: T.space.lg, display: "grid", gap: "2px" }}>
       {/** @type {string[]} */ (effects.get(k)).map((w) => <li key={w}>{w}</li>)}
     </ul>
   ) : null;
@@ -175,30 +176,30 @@ export function CorrectionsSheet({ match, events, fold, commentary, list, onClos
   return (
     <Modal title="Corrections" onClose={onClose} width="600px">
       <div data-testid="corrections-sheet" style={{ display: "grid", gap: T.space.xs }}>
-        {!list ? <p style={{ ...small, color: T.content.secondary }}>Loading…</p>
+        {!list ? <p style={{ ...small(), color: T.content.secondary }}>Loading…</p>
           : !pending.length && !held.length && !decided.length
-            ? <p data-testid="corr-none" style={{ ...small, color: T.content.secondary }}>Nothing waiting on this match.</p> : null}
+            ? <p data-testid="corr-none" style={{ ...small(), color: T.content.secondary }}>Nothing waiting on this match.</p> : null}
 
         {pending.length > 0 && <h3 style={h2}>Awaiting approval</h3>}
         {pending.map((a) => {
           const line = lineOf.get(a.targetKey);
           return (
             <section key={a.id} data-testid={`corr-amend-${a.id}`} style={row}>
-              <p style={{ ...small, fontWeight: 600, color: T.content.primary }}>
+              <p style={{ ...small(), fontWeight: 600, color: T.content.primary }}>
                 {line ? `${line.over}.${line.ball} · ${line.text}` : "A delivery not in the scorecard as it stands"}
               </p>
-              <p style={{ ...small, color: T.content.secondary }}>
+              <p style={{ ...small(), color: T.content.secondary }}>
                 Asked by the scorer{a.requesterName ? ` (${a.requesterName})` : ""} · {at(a.requestedAt)}
               </p>
-              {a.reason && <p data-testid={`corr-reason-${a.id}`} style={{ ...small, color: T.content.primary, borderLeft: `3px solid ${T.line.normal}`, paddingLeft: T.space.sm }}>{a.reason}</p>}
-              <p style={{ ...small, color: T.content.secondary }}>Approving removes this ball; nothing replaces it.</p>
+              {a.reason && <p data-testid={`corr-reason-${a.id}`} style={{ ...small(), color: T.content.primary, borderLeft: `3px solid ${T.line.normal}`, paddingLeft: T.space.sm }}>{a.reason}</p>}
+              <p style={{ ...small(), color: T.content.secondary }}>Approving removes this ball; nothing replaces it.</p>
               {effectList(a.id)}
               {a.mine && (
-                <p data-testid={`corr-mine-${a.id}`} style={{ ...small, color: T.content.secondary }}>
+                <p data-testid={`corr-mine-${a.id}`} style={{ ...small(), color: T.content.secondary }}>
                   Your request is with the director of sport · asked {at(a.requestedAt)} · this does not change the score until it is approved.
                 </p>
               )}
-              {!a.mine && !a.canDecide && <p style={{ ...small, color: T.content.secondary }}>Waiting for the director of sport.</p>}
+              {!a.mine && !a.canDecide && <p style={{ ...small(), color: T.content.secondary }}>Waiting for the director of sport.</p>}
               {a.canDecide && !said[a.id]?.ok && (
                 <>
                   {noteField(a.id)}
@@ -218,13 +219,13 @@ export function CorrectionsSheet({ match, events, fold, commentary, list, onClos
           const key = `h${h.id}`;
           return (
             <section key={key} data-testid={`corr-held-${h.id}`} style={row}>
-              <p style={{ ...small, fontWeight: 600, color: T.content.primary }}>{describeBall({ payload: h.event })}</p>
-              <p style={{ ...small, color: T.content.secondary }}>
+              <p style={{ ...small(), fontWeight: 600, color: T.content.primary }}>{describeEvent(h.event)}</p>
+              <p style={{ ...small(), color: T.content.secondary }}>
                 Held {at(h.heldAt)} · sent from a device one handover behind (epoch {h.submittedEpoch}, now {h.currentEpoch ?? "—"})
               </p>
-              <p style={{ ...small, color: T.content.secondary }}>A released ball is written at the end of the log, not where it was bowled.</p>
+              <p style={{ ...small(), color: T.content.secondary }}>A released ball is written at the end of the log, not where it was bowled.</p>
               {effectList(key)}
-              {h.mine && <p style={{ ...small, color: T.content.secondary }}>You sent this ball; somebody else decides it.</p>}
+              {h.mine && <p style={{ ...small(), color: T.content.secondary }}>You sent this ball; somebody else decides it.</p>}
               {h.canDecide && !said[key]?.ok && (
                 <>
                   {noteField(key)}
@@ -245,13 +246,13 @@ export function CorrectionsSheet({ match, events, fold, commentary, list, onClos
         {decided.length > 0 && <h3 style={h2}>Decided</h3>}
         {decided.map((a) => (
           <section key={a.id} data-testid={`corr-decided-${a.id}`} style={row}>
-            <p style={{ ...small, color: T.content.primary }}>
+            <p style={{ ...small(), color: T.content.primary }}>
               {a.state === "approved" ? `Approved ${at(a.decidedAt)} · the ball was removed`
                 : a.state === "declined" ? `Declined ${at(a.decidedAt)}${a.decidedNote ? `: ${a.decidedNote}` : ""}`
                 : `Withdrawn by the scorer`}
             </p>
-            <p style={{ ...small, color: T.content.secondary }}>Asked by the scorer · {at(a.requestedAt)}</p>
-            {a.reason && <p style={{ ...small, color: T.content.secondary }}>{a.reason}</p>}
+            <p style={{ ...small(), color: T.content.secondary }}>Asked by the scorer · {at(a.requestedAt)}</p>
+            {a.reason && <p style={{ ...small(), color: T.content.secondary }}>{a.reason}</p>}
             {saidLine(a.id)}
           </section>
         ))}

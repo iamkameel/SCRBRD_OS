@@ -52,8 +52,11 @@ const lawsSaid = (res) => `The Laws refuse this ball: ${res.text ?? res.law}. No
   + "Discard it, or leave it held until the scorecard allows it.";
 
 /** What was actually sitting in quarantine, for a decision made with eyes open. */
-function describeBall(body) {
-  const p = body?.payload ?? {};
+function describeBall(body) { return describeEvent(body?.payload); }
+
+/** The same, from the event itself (the Corrections sheet's held rows, GA-I36). */
+function describeEvent(ev) {
+  const p = ev ?? {};
   if ((p.kind ?? "ball") !== "ball") return p.kind ?? "event";
   switch (p.type) {
     case "W":  return `Wicket — ${DISMISSAL_LABEL[p.dismissal] ?? p.dismissal ?? "unspecified"}${p.fielder ? ` (${p.fielder})` : ""}`;
@@ -178,4 +181,4 @@ function QuarantinePanel({ matchId, role }) {
   );
 }
 
-export { QuarantinePanel, describeBall };
+export { QuarantinePanel, describeBall, describeEvent };
