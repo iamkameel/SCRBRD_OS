@@ -5,6 +5,7 @@ import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { useLive, useRows } from "../lib/live.js";
 import { EmptyState } from "../ui/primitives.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 import {
   KEY_WORDS, PARTS, bandDefault, confirmedCount, figureSlots, formatDay, labelOf, platformDefaultWords, refusalWords, valueWords,
 } from "../lib/playingConditions.js";
@@ -693,6 +694,7 @@ export function LeagueWizard({ role, competitionId = null, onClose }) {
     return (
       <div data-testid="lw-root" style={S.card}>
         {header}
+        <StateLabel kind="demo"/>
         <p data-testid="lw-demo" style={S.body}>This is a demonstration, and nothing here is saved. Sign in as a league administrator to make a league.</p>
         <div><button type="button" data-testid="lw-cancel" onClick={() => onClose()} style={S.secondary}>Back to competitions</button></div>
       </div>

@@ -223,7 +223,7 @@ async function backTo(page, email, id, drawer = true) {
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
   // The reload drops the token: the app comes back as its demonstration, and the coach signs in again.
-  if (/Demonstration\./.test(await text(page))) { await click(page, /^Sign in$/i); await page.waitForTimeout(500); await signIn(page, email); }
+  if ((await tid(page, "demo-banner").count()) > 0) { await click(page, /^Sign in$/i); await page.waitForTimeout(500); await signIn(page, email); }
   const opened = await openMatch(page, id);
   await coachTab(page);
   if (!opened || (await tid(page, "coach-signals-open").count()) === 0) throw new Error(`could not come back to the Coach tab (opened=${opened}): ${(await text(page)).slice(0, 400).replace(/\s+/g, " ")}`);

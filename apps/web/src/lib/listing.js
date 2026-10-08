@@ -23,7 +23,8 @@ export const LISTING_WORDS = [
 ];
 
 /** Why a reader who may read the setting may not change it. */
-export const LISTING_READ_ONLY = "You can see this setting but not change it: only someone who may publish for the whole school can.";
+export const LISTING_READ_ONLY_WHY = "only someone who may publish for the whole school can change it";
+export const LISTING_READ_ONLY = `You can see this setting but not change it: ${LISTING_READ_ONLY_WHY}.`;
 
 const LISTING_REFUSAL = {
   not_signed_in: "Your session has ended. Sign in again; nothing was changed.",

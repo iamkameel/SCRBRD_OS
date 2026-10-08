@@ -21,6 +21,8 @@ import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx
 import { useRows, useWeather } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
+import { signedIn } from "../lib/api.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
 import { clearCoach, peekCoach } from "../lib/cockpitNav.js";
@@ -40,7 +42,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // scoped in Postgres rather than in the browser. Falls back to the demo
   // fixtures otherwise, and says which it is showing.
   const matchesRead = useLive("matches", role, matchesNonce);
-  const { rows: MATCHES, live: matchesAreLive } = matchesRead;
+  const { rows: MATCHES } = matchesRead;
   // What the fixtures read said (GA-I08). "No fixtures yet" is a claim about the
   // season; it is made only of a read that answered. Retry bumps the nonce this
   // read already carries, so it asks the same question again.
@@ -137,7 +139,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   return (
     <div className="os-page">
       <SectionHeader title="Match Centre"
-        sub={matchesAreLive ? "Live scores, results, fixtures & weather" : "Demonstration fixtures — no server connected"}
+        sub={signedIn() ? "Live scores, results, fixtures & weather" : <StateLabel kind="demo" compact why="sample fixtures, no server connected"/>}
         color={D.emerald}
         actions={
           <>

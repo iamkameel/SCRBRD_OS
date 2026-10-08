@@ -407,7 +407,7 @@ try {
   const r = rd.page;
   ok("the director of sport signs in", await signIn(r, "sarah@example.invalid"));
   ok("Leagues → the competition → Playing conditions", await toConditions(r));
-  ok("she is told it is read-only", /Only this competition's organiser can change these/.test(await said(r, "pc-readonly")));
+  ok("she is told it is read-only", /only this competition's organiser can change these/i.test(await said(r, "pc-readonly")));
   ok("she sees what is in force, from when, and the count", /In force today: Screen walk 2026\/27/.test(await said(r, "pc-in-force")) && (await said(r, "pc-count")) === `2 of ${M} figures confirmed`, await said(r, "pc-count"));
   ok("...the figures, each with its source or the chip", /clause 7\.3/.test(await said(r, "pc-figure-bowling.max_overs_per_bowler_innings")) && /platform default, unconfirmed/i.test(await said(r, "pc-figure-points.win"))
      && /6 overs.*12 overs.*clause 7\.4/.test(await said(r, "pc-figure-bowling.limit-U15")));

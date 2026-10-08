@@ -16,7 +16,8 @@
 import { useEffect, useState } from "react";
 import { D, T, inkOn } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
-import { LISTING_READ_ONLY, LISTING_WORDS, listingRefusal } from "../lib/listing.js";
+import { LISTING_READ_ONLY_WHY, LISTING_WORDS, listingRefusal } from "../lib/listing.js";
+import { StateLabel } from "../ui/stateLabel.jsx";
 import { dHead, dNote } from "./publicname.jsx";
 
 /**
@@ -71,7 +72,7 @@ export function ListingPanel({ schoolId }) {
           List our matches on the SCRBRD home page: {on ? "listed" : "not listed"}
         </button>
       </div>
-      {!data.mayChange && <p id={`listing-why-${schoolId}`} data-testid="listing-why" style={dNote(false)}>{LISTING_READ_ONLY}</p>}
+      {!data.mayChange && <StateLabel kind="readonly" id={`listing-why-${schoolId}`} testid="listing-why" why={LISTING_READ_ONLY_WHY}/>}
       {said && <p role="alert" data-testid="listing-refused" style={dNote(true)}>{said}</p>}
     </section>
   );
