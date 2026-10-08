@@ -16,7 +16,8 @@
 import { readFileSync } from "node:fs";
 import { inningsStart, batters, bowler, ball, voidEvent, deriveMatch, deriveInnings, MatchFold, BALL_TYPE } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
-import { afterTheMatch, clockWords, correctedAt, correctedInnings, correctionsOf, correctionText, withCorrectionLines } from "../src/lib/corrections.js";
+import { afterTheMatch, clockWords, correctedAt, correctedInnings, correctionsOf, correctionText, inningsWords, withCorrectionLines } from "../src/lib/corrections.js";
+import { publicFixes } from "../src/views/matchcentre/corrected.jsx";
 import { applied, ballLine, effectOf, headOf } from "../src/lib/correctionEffect.js";
 import { pendingWords, refusalWords } from "../src/views/matchcentre/corrections.jsx";
 import { agoWords } from "../src/views/ReadinessOverview.jsx";
@@ -200,11 +201,35 @@ group("The sheet's words");
   ok("refusalWords: the self-approval guard", /Somebody else has to decide it/.test(refusalWords({ reason: "cannot_approve_your_own" })));
 }
 
+group("The public page's half: what it draws of a correction, from the redacted log");
+{
+  const { log, put } = randomLog(rng(31), { undo: false });
+  const t = log.find((e) => e.kind === "ball" && e.innings === 1 && e.value > 0);
+  const v = put(voidEvent({ target: t.id }), 1);
+  v.clientTs = Date.parse("2026-10-03T16:42:00Z");
+  // The public log's void: kind, innings, seq, id, time and target, nothing else.
+  const pub = log.map((e) => (e.kind === "void" ? { kind: e.kind, innings: e.innings, seq: e.seq, id: e.id, clientTs: e.clientTs, target: e.target } : e));
+  const folded = deriveMatch(pub);
+  const story = { commentary: deriveCommentary(pub), folded, settled: !!folded.result, match: { status: "complete" } };
+  const f = publicFixes(pub, story);
+  ok("the chip's time is the void's", f.at === v.clientTs);
+  ok("the line is team-level: after the match", f.line === "The scorecard was corrected after the match.");
+  ok("the innings it moved has its words", f.corrected.get(folded.innings[1]) === `corrected ${clockWords(v.clientTs)}` && !f.corrected.has(folded.innings[0]), [...f.corrected.values()]);
+  ok("the commentary gains the one line", f.commentary.length === story.commentary.length + 1 && f.commentary.filter((c) => c.kind === "correction").length === 1);
+  ok("inningsWords is correctedInnings in words", [...inningsWords(pub, correctionsOf(pub), folded.innings).values()].every((w) => /^corrected \d\d:\d\d/.test(w)));
+  const none = publicFixes(log.filter((e) => e !== v), { ...story, commentary: deriveCommentary(log.filter((e) => e !== v)) });
+  ok("no correction: no time, no words, the commentary as it was", none.at === null && none.corrected.size === 0 && none.commentary.every((c) => c.kind !== "correction"));
+}
+
 group("The public page carries no reason, requester or approver");
 {
   const pub = readFileSync(new URL("../src/public/PublicMatch.jsx", import.meta.url), "utf8");
   const reads = readFileSync(new URL("../src/public/reads.js", import.meta.url), "utf8");
   ok("the public page imports nothing of the signed-in correction code", !/correctionEffect|matchcentre\/corrections\.jsx/.test(pub + reads));
+  ok("...and loads its corrections half only on demand (a dynamic import, never a static one)",
+    /import\("\.\.\/views\/matchcentre\/corrected\.jsx"\)/.test(pub) && !/^import [^\n]*corrected\.jsx/m.test(pub) && !/lib\/corrections\.js/.test(pub + reads));
+  const half = readFileSync(new URL("../src/views/matchcentre/corrected.jsx", import.meta.url), "utf8");
+  ok("the half reads no reason, requester or approver either", !/\.reason\b|requester|approved_by|approvedBy|decidedNote|\/api\//.test(half));
   ok("...and reads no reason, requester or approver field", !/\.reason\b|requester|approved_by|approvedBy|decidedNote/.test(pub + reads));
 }
 
