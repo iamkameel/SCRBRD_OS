@@ -255,7 +255,9 @@ try {
   const expected = deriveCommentary(evs, { nameOf: (r) => byId[r] ?? r, teamName: (_k, n) => FULL[n] ?? n });
   // GA-I36: the Match Centre tells each correction in one quiet line of its
   // own (lib/corrections.js); the match is live, so "The scorecard was corrected."
-  const told = withCorrectionLines(expected, evs, correctionsOf(evs), false);
+  // The fixture's events carry no seq: writeEvents() gave them 1, 2, 3… in order.
+  const seqd = evs.map((e, i) => ({ ...e, seq: e.seq ?? i + 1 }));
+  const told = withCorrectionLines(expected, seqd, correctionsOf(seqd), false);
   ok("the first innings is ten overs, sealed", inn1.balls === 60 && inn1.sealed, `${inn1.balls} ${inn1.sealed}`);
   ok("the second is under way", inn2.balls > 0 && !inn2.complete);
   ok("Westville start on the five they were awarded while fielding", inn2.extras.penalty === 5);
