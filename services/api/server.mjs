@@ -62,7 +62,7 @@ import { isPadAuthorization, padRoute, padPrincipal, padRefusal, padCredentialRo
 import { signInRoutes, verifierFromEnv } from "./auth/signin-api.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
-import { eventRoutes, amendmentRoutes, quarantineRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { disciplineRoutes } from "./write/discipline-api.mjs";
@@ -386,8 +386,14 @@ const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
 const conduct = disciplineRoutes({ pool, secret: SECRET });
-const amend   = amendmentRoutes({ pool, secret: SECRET });
-const quarantine = quarantineRoutes({ pool, secret: SECRET });
+// GA-I36 N2: an approved amendment's void and a released held ball drop the
+// fixture's public cache once committed (afterCommit, as the publication
+// route's), so the public log answers the new head at once. No hub: nothing
+// subscribes to it, and every screen polls (Kameel, 8 Oct).
+const amend   = amendmentRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
+const quarantine = quarantineRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
+// GA-I36 N1: the corrections waiting on a match, and across the reader's matches.
+const corrections = correctionRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
@@ -575,6 +581,8 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/amendments$/,        "POST", amend.request],
   // The way out of quarantine: list what is waiting, then accept or reject.
   [/^\/api\/matches\/([^/]+)\/quarantine$/,         "GET",  quarantine.list],
+  // GA-I36 N1: the amendments and held balls on a match, under their own policies.
+  [/^\/api\/matches\/([^/]+)\/corrections$/,        "GET",  corrections.forMatch],
   // Naming the side. The two safeguarding triggers on match_squad fire here,
   // and had no way to fire at all before this route existed.
   [/^\/api\/matches\/([^/]+)\/squad$/,             "POST", squad.select],
@@ -922,6 +930,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/discipline\/([^/]+)$/,               "PATCH", conduct.progress],
   [/^\/api\/amendments\/([^/]+)\/decide$/,       "POST", amend.decide],
   [/^\/api\/quarantine\/([^/]+)\/resolve$/,       "POST", quarantine.resolve],
+  // GA-I36 N1: every match with a correction open that the reader may see (O7).
+  [/^\/api\/corrections$/,                       "GET",  corrections.open],
 ];
 
 // Scouting: keyed on the scout, not on a match or a child. Registration takes
