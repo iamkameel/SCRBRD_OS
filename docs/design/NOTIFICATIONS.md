@@ -1,5 +1,7 @@
 # Notifications — one model for the whole app
 
+**Decided 2026-10-07 (Kameel): approved as recommended; S0 (lock the hand-written notice route) built now, S1–S5 after the pilot.** S0 built (#90, merged 2026-10-08).
+
 Design for Kameel's review (Fable, 2026-10-07). Nothing here is built. Opus
 builds from it; Sonnet takes the screens over the routes once they exist.
 

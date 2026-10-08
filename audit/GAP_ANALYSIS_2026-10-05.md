@@ -41,7 +41,7 @@ ticket takes a SCRBRD number, and that number is noted here.
 | I05 | One shared projection for the scorer's charts. The worm ends on the innings total; per-over runs include wides, no-balls and penalties; no NaN or Infinity after a completed chase | Opus | done · merged #75 |
 | I06 | The skills radar draws the 1–20 rubric on its own scale, and no target appears unless a coach saved one | Sonnet | done · merged #77 |
 | I07 | Context: Squad and Analytics open on the coach's actual team, not `1XI`; view gates use the same role set as navigation; changing context clears stale selections | Sonnet | done · merged #77 |
-| I08 | One read-state contract: loading, empty, unassessed, forbidden, failed, stale and partial stay distinct | Sonnet | built; being tested |
+| I08 | One read-state contract: loading, empty, unassessed, forbidden, failed, stale and partial stay distinct | Sonnet | done · merged #92 (2026-10-08) |
 | I18 | Weather keeps the manual observation time, and the provider hint is labelled as such | Sonnet | done · merged #77 |
 
 ## Phase B: complete the pilot work
@@ -55,7 +55,7 @@ ticket takes a SCRBRD number, and that number is noted here.
 | I17 | Push: a supported FCM token refresh, or "unavailable" stated plainly | Opus | open |
 | I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | Kameel to decide scope |
 | I20 | The parent's action list per child | Fable (redesign step 4); design started 7 Oct | design approved; slice A0 merged #81; the rest after the pilot |
-| I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | open |
+| I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | done · merged #91 (2026-10-08) |
 
 ## Phase C: enrich verified information (after the pilot)
 
