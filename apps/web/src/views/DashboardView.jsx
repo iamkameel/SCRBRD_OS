@@ -12,6 +12,7 @@ import { Btn, EmptyState, ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
 import { Icon, isIcon } from "../ui/icons.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 import { boardFromInnings } from "../scorer/boardData.js";
 import { seedCompletedMatch } from "../scorer/seed.js";
 import { boardInsights } from "../scorer/signals.js";
@@ -149,7 +150,7 @@ function useLiveScore(matchId) {
  *   onRetry      the one Retry: it re-runs these reads, the same ones, with the same role
  *   onNav, onOpenScorer         the two buttons' handlers
  */
-function DaySheet({ role, live = true, demoNote = "Demonstration — no server connected", liveMatch = null, board = null, boardState = {},
+function DaySheet({ role, live = true, demoNote = "sample fixtures, no server connected", liveMatch = null, board = null, boardState = {},
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
                     reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
@@ -170,10 +171,10 @@ function DaySheet({ role, live = true, demoNote = "Demonstration — no server c
           <Icon name={rc?.icon ?? "layout-dashboard"} style={{ color: rc?.color }}/>
           {rc?.label ?? "Today"}
         </h1>
-        <p style={{ ...T.role.body, color: T.content.secondary }}>
-          {new Date().toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-          {!live && ` · ${demoNote}`}
-        </p>
+        <div style={{ ...T.role.body, color: T.content.secondary, display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
+          <span>{new Date().toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
+          {!live && <StateLabel kind="demo" compact why={demoNote}/>}
+        </div>
       </div>
 
       <Bento>
@@ -396,7 +397,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   } : null;
 
   return (
-    <DaySheet role={role} live={matchesAreLive} liveMatch={liveMatch} board={board} boardState={liveScore}
+    <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} onRetry={() => setNonce((n) => n + 1)}

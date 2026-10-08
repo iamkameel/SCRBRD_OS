@@ -110,6 +110,7 @@ import { PAGE_MAX_BYTES } from "./io/page-image.mjs";
 import { publicPages } from "./public/public-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 import { schemaRefusal } from "./schema-guard.mjs";
+import { revisionFromEnv } from "./revision.mjs";
 import { appUrl, port } from "../../tools/db-url.mjs";
 /** @import { IncomingMessage, ServerResponse } from "node:http" */
 /** @import { Handler, IdHandler, ExactHandler } from "./api-types.mjs" */
@@ -132,7 +133,7 @@ const DEV = process.env.NODE_ENV !== "production";
 // The application connects as scrbrd_app, NOT as the schema owner. Row-level
 // security does not apply to a table's owner, so an owner connection runs with
 // every policy in db/ silently inert. assertRlsApplies() below refuses to start
-// on such a connection; see db/05_app_role.sql for how this was found.
+// on such a connection; see db/06_app_role.sql for how this was found.
 // DATABASE_URL first: it is how every deployment names the application role
 // (DEPLOYING.md, Cloud Run). appUrl() is only the local default — this
 // worktree's database when SCRBRD_DB is set, the plain local one otherwise.
@@ -173,7 +174,7 @@ async function assertRlsApplies() {
       problems.map((p) => `  problem:      ${p}`).join("\n") +
       `\n\nEvery policy in db/ would be inert and every request would be answered in\n` +
       `full, with nothing reporting a fault. Point DATABASE_URL at scrbrd_app\n` +
-      `(see db/05_app_role.sql) rather than at the schema owner.\n`);
+      `(see db/06_app_role.sql) rather than at the schema owner.\n`);
     process.exit(1);
   }
 }
@@ -1236,6 +1237,10 @@ const server = createServer(async (req, res) => {
       reader: readerConfig().mode,
       // The weather hint (Practice Match): configured | unconfigured. Never the key.
       weather: weather.configured() ? "configured" : "unconfigured",
+      // The commit this process was built from (RENDER_GIT_COMMIT, else
+      // GIT_COMMIT), or null: how a running revision is tied to a reviewed
+      // commit (DEPLOYING.md, "The deployed revision"). A commit id only.
+      revision: revisionFromEnv(process.env),
     });
   }
 

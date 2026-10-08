@@ -161,7 +161,7 @@ export function buildDaySheet(d) {
     live: false,
     // The coach's sheet, whoever is presenting: not the signed-in viewer's own roles (GA-I07's holdsAsHeld).
     held: false,
-    demoNote: "Demonstration: invented fixtures and players",
+    demoNote: "invented fixtures and players",
     liveMatch: d.match,
     board: props ? { ...props, team: props.team || d.match.homeTeam, insight: insight.length ? insight : undefined } : null,
     boardState: { loading: false, error: null },
