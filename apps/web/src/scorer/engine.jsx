@@ -1259,7 +1259,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
 
   // Wide / No Ball — bypass hub entirely
   // A wide and the runs taken off it (SCRBRD-100 item 3: the pad asks the
-  // runs as its second tap). 0 is the one-tap wide it always was.
+  // runs as its second tap; Pro Mode's wide sheet asks the same).
   const recordWide=(runs)=>{
     if(!guardReady())return;
     commitBall("Wd",runs,null,null,null,hubApproach);
