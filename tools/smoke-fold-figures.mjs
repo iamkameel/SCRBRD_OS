@@ -1718,7 +1718,10 @@ try {
     const unmoved = HIL_1XI.filter((p) => String(oppS0.get(p)?.dotPct) !== String(oppS1.get(p)?.dotPct));
     ok("...and no boy's dot percentage moved for a book innings", unmoved.length === 0, unmoved.join(","));
     const muS1 = coach ? await matchups(coach) : new Map();
-    ok("the matchups read has nothing from the book", JSON.stringify([...muS0]) === JSON.stringify([...muS1]));
+    // As sets: the read orders by balls then batter, so a batter's two
+    // bowlers on equal balls may come back in either order.
+    const byKey = (/** @type {Map<string, any>} */ m) => JSON.stringify([...m].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+    ok("the matchups read has nothing from the book", byKey(muS0) === byKey(muS1));
 
     // Voided by an approved amendment (as scoring_amendment_decide() writes
     // the void), the book is in no reader: every figure back where it stood.
