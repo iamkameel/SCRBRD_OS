@@ -39,6 +39,8 @@ ticket takes a SCRBRD number, and that number is noted here.
 5. Phase B pulled forward (Kameel, 8 Oct, "Pull forward the rest of Phase B": yes). The match-day queue's later slices (GA-I09–I11 A1 onwards) and the parent action list's later slices (GA-I20 A1 onwards) are built now, not after the pilot.
 6. I14–I16 (Kameel, 8 Oct: yes). Haiku listed the evidence gaps: 18 claims, 12 covered, 2 partly, 4 gaps. Claim 15 (production's ledger matches db/SHIPPED.sha256) was then closed by the lead's read-only check at 07:40 UTC: all 88 migrations match, hash for hash. Claims 9, 12 and 14 are being built (Sonnet). Claims 16 and 17 close with Kameel's backup drill (due 10 Oct).
 7. I19 medical review worklist (Kameel, 8 Oct: in scope for this release). Fable's design (`docs/design/GA-I19_medical_review.md`) is approved as recommended at 08:01. Slice 0 (InjuryView's phase words, no migration) builds now. Slice A waits on two answers from outside the app: Q0 (will the school have a physio, the medical role) and Q2 (the information officer's written confirmation that injury records stand on guardian consent).
+8. Official result (Kameel, 8 Oct, 12:49: "approved as recommended"; `docs/design/OFFICIAL_RESULT.md`): Q1 the organiser confirms a competition result; Q2 a 7-day dispute window per competition; Q3 "Under review" is never public; Q4 records wait for official, the family card and Player of the Match don't; Q5 a confirmer may withdraw within the window; Q6 abandoned matches may be confirmed; Q7 no pre-freeze slice; Q8 the home school's confirmation stands alone when the away side isn't on SCRBRD. Slice 1 (Opus, one migration) is queued after the gap-analysis items.
+9. Corrections (GA-I36, Kameel, 8 Oct, 13:03): trim the public bundle rather than raise its 470 KB ceiling (Kameel: "use the ponytail skill"). The "Corrected" chip shows only for approved amendments and released balls, not for a scorer's undo during play.
 
 ## Phase A: repair and establish trust (before or around the pilot)
 
@@ -59,13 +61,13 @@ ticket takes a SCRBRD number, and that number is noted here.
 | GA | What | Tier | Status |
 |---|---|---|---|
 | I09–I11 | The match-day queue: readiness rows open the exact fixture and action; a multi-squad coach day queue; a director/admin operations home with owner and deadline | Fable design check (coach cockpit, SCRBRD-136/137), then Opus | design approved; slice A0 merged #78; A1 onwards pulled forward 8 Oct (was: after the pilot) |
-| I12 | Notification read receipts persist per person, and counts agree everywhere | Sonnet + Opus review | open |
+| I12 | Notification read receipts persist per person, and counts agree everywhere | Sonnet + Opus review | done · merged #97 (2026-10-08), db/89 live |
 | I13 | The scorer's preparation and resume home, with appointments | Opus | building (decision 4 recorded) |
-| I14–I16 | Acceptance evidence on a real database: cross-school and child refusals, two-device offline scoring, the deployed revision, a backup restore | Opus | partly covered by the API and browser walks and BACKUP_RESTORE.md; gaps listed 8 Oct: 13 of 18 covered (claim 15 by the ledger check); 9, 12, 14 building; 16, 17 with the backup drill |
+| I14–I16 | Acceptance evidence on a real database: cross-school and child refusals, two-device offline scoring, the deployed revision, a backup restore | Opus | 13 of 18 covered, plus 9, 12, 14 closed by #99 (2026-10-08); 16 and 17 wait for the backup drill |
 | I17 | Push: a supported FCM token refresh, or "unavailable" stated plainly | Opus | open |
-| I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | in scope (8 Oct); design approved; slice 0 building; slice A waits on Q0 and Q2 |
+| I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | in scope; design approved; slice 0 in review (#101); slice A waits on Q0 and Q2 |
 | I20 | The parent's action list per child | Fable (redesign step 4); design started 7 Oct | design approved; slice A0 merged #81; the rest after the pilot |
-| I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | partly done · #91 (2026-10-08): success lines wait for the server and refusals are shown; the honesty labels (demo / practice / read-only / official) are still open |
+| I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | done · merged #91 and #98 (2026-10-08); "official" waits for the official result design's slice 1 |
 
 ## Phase C: enrich verified information (after the pilot)
 
@@ -81,7 +83,7 @@ GA-I22–I36:
 - grounds, transport and competition homes;
 - full-name chart tables;
 - the narrow-screen, keyboard and daylight pass;
-- lineage and correction refresh.
+- lineage and correction refresh (GA-I36: A0+A1 in review, #102).
 
 Each one is built over existing reads, with its source, unit, window and denominator
 shown.
