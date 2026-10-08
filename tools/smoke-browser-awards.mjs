@@ -217,6 +217,12 @@ async function signIn(page, who) {
   return until(page, () => /Match Centre|Dashboard/i.test(document.body.innerText));
 }
 async function nav(page, label) {
+  // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.
+  if (/Leagues/.test(String(label))) {
+    if (!(await press(page, /^Competitions\d*$/, "nav button"))) return false;
+    if (!(await press(page, /^Leagues$/, '[data-testid="home-competitions-sections"] button'))) return false;
+    return until(page, () => /League Management/.test(document.body.innerText));
+  }
   if (!(await press(page, label, "nav button"))) return false;
   return until(page, () => /League Management/.test(document.body.innerText));
 }

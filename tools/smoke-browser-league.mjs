@@ -149,6 +149,15 @@ async function signIn(page, email) {
 /** Every read the page has asked for has come back (and a moment for what it did with it). */
 const settled = async (page) => { await page.waitForLoadState("networkidle").catch(() => {}); await page.waitForTimeout(500); };
 async function nav(page, label) {
+  // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.
+  if (/Leagues/.test(String(label))) {
+    if (!(await nav(page, /^Competitions\d*$/))) return false;
+    const s = page.locator('[data-testid="home-competitions-section-leagues"]');
+    if (!(await s.count())) return false;
+    try { await s.click({ timeout: 6000 }); } catch { return false; }
+    await page.waitForTimeout(1500);
+    return true;
+  }
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }

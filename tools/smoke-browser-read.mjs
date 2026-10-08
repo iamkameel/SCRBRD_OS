@@ -1077,7 +1077,8 @@ try {
   {
     const c = await open();
     await signIn(c.page, /Coach/);
-    await c.page.locator('[data-testid="nav-leagues"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1800);
+    await c.page.locator('[data-testid="nav-competitions"]').click({ timeout: 6000 }); await c.page.waitForTimeout(800);
+    await c.page.locator('[data-testid="home-competitions-section-leagues"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1800);
     const ladder = c.page.locator('[data-testid="live-ladder"]');
     ok("the coach sees a ladder from the server", await ladder.count() === 1);
     const t = await ladder.innerText().catch(() => "");
@@ -1097,7 +1098,8 @@ try {
   {
     const c = await open();
     await signIn(c.page, /Director of Sport/);
-    await c.page.locator('[data-testid="nav-leagues"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+    await c.page.locator('[data-testid="nav-competitions"]').click({ timeout: 6000 }); await c.page.waitForTimeout(800);
+    await c.page.locator('[data-testid="home-competitions-section-leagues"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
     ok("the form opens", await click(c.page, /\+ Add Fixture/, 4000));
     await c.page.waitForTimeout(500);
     const preview = c.page.locator('[data-testid="fixture-preview"]');
@@ -1738,6 +1740,140 @@ try {
     ok("...and More now reads as the active place", await mid("mnav-more").getAttribute("aria-expanded") === "false");
     ok("no console errors on the phone", errors.length === 0, errors.join(" | "));
     await ctx.close();
+  }
+
+  // ── One home per domain (GA-I30) ────────────────────────────────
+  //
+  // Competitions and Leagues were two menu entries; Logistics carried the ground
+  // schedule and Fields the pitches. A home is one entry that shows its sections
+  // to those who held the destinations they came from, and nothing more. The unit
+  // suite (apps/web/test/homes.test.mjs) derives every role's sections from the
+  // capability data; this proves the drawn screens agree, for the people the
+  // pilot's sign-in offers: the coach and the director of sport (all three), the
+  // principal (Fields, no Logistics), the league admin (Competitions only) and the
+  // safeguarding officer (Logistics only, who holds transport.read and nothing else
+  // of the three).
+  group("One home per domain: Competitions, Transport, Grounds");
+  {
+    const menuOf = async (page) => page.$$eval('[data-testid^="nav-"]:not([data-testid^="nav-group-"]):not([data-testid="nav-alerts-badge"]):not([data-testid="nav-invites-badge"])',
+                                              (els) => els.map((e) => e.getAttribute("data-testid").slice(4)));
+    const asRole = async (who) => { const c = await open(); const signed = await signIn(c.page, who); return { c, signed, tid: (id) => c.page.locator(`[data-testid="${id}"]`) }; };
+    const pressed = async (tid, id) => (await tid(id).getAttribute("aria-pressed").catch(() => null)) === "true";
+
+    // The coach holds all three.
+    {
+      const { c, signed, tid } = await asRole(/Coach/);
+      ok("the coach signs in (homes)", signed);
+      const m = await menuOf(c.page);
+      ok("one entry each for Competitions, Logistics and Fields, and none for Leagues",
+         ["competitions", "logistics", "fields"].every((k) => m.filter((x) => x === k).length === 1) && !m.includes("leagues"), m.join());
+      await tid("nav-competitions").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("Competitions opens on its first section", await tid("os-main").getAttribute("data-page") === "competitions" && await pressed(tid, "home-competitions-section-competitions"));
+      ok("...with the Leagues section beside it", await tid("home-competitions-section-leagues").count() === 1 && await tid("home-competitions-sections").getAttribute("role") === "group");
+      ok("...the competitions screen's own test ids still there", await c.page.locator('[data-testid^="competition-"]').count() > 0);
+      await tid("home-competitions-section-leagues").click({ timeout: 6000 }); await c.page.waitForTimeout(1800);
+      ok("Leagues is the same home, with the league screen under it", /League Management/.test(await text(c.page)) && await tid("league-tab-table").count() === 1
+         && await tid("os-main").getAttribute("data-page") === "competitions");
+      ok("...the menu entry stays the current page", await tid("nav-competitions").getAttribute("aria-current") === "page");
+      ok("...and the section says it is the one open", await pressed(tid, "home-competitions-section-leagues") && !(await pressed(tid, "home-competitions-section-competitions")));
+      await tid("home-competitions-section-competitions").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("back to Competitions", await c.page.locator('[data-testid^="competition-"]').count() > 0 && !/League Management/.test(await text(c.page)));
+      const small = await c.page.$$eval('[data-testid="home-competitions"] button', (bs) => bs.map((b) => [b.getBoundingClientRect().height, parseFloat(getComputedStyle(b).fontSize)]));
+      ok("the bar's buttons are 44px tall and 12px or more", small.length === 2 && small.every(([h, f]) => h >= 44 && f >= 12), JSON.stringify(small));
+
+      await tid("nav-logistics").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("Transport shows its three sections", (await Promise.all(["transport", "equipment", "grounds"].map((s) => tid(`home-logistics-section-${s}`).count()))).every((n) => n === 1) && await tid("home-logistics-sections").locator("button").count() === 3);
+      ok("...opens on Transport", await pressed(tid, "home-logistics-section-transport"));
+      ok("...and offers the way to Fields, because she holds it", await tid("home-logistics-link-fields").count() === 1);
+      await tid("home-logistics-section-equipment").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+      ok("the Equipment section is the kit register, as before", await tid("kit-register").count() === 1 || await tid("kit-register-empty").count() === 1);
+      await tid("home-logistics-link-fields").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("the link lands on Fields", await tid("os-main").getAttribute("data-page") === "fields" && await tid("nav-fields").getAttribute("aria-current") === "page");
+      ok("...which links back to the ground schedule", await tid("home-fields-link-logistics-grounds").count() === 1);
+      await tid("home-fields-link-logistics-grounds").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("...and that opens Logistics on its Grounds section", await tid("os-main").getAttribute("data-page") === "logistics" && await pressed(tid, "home-logistics-section-grounds"));
+      await tid("nav-fields").click({ timeout: 6000 }); await c.page.waitForTimeout(1000);
+      await tid("nav-logistics").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+      ok("a menu choice afterwards opens Logistics on Transport again, not the section a link asked for", await pressed(tid, "home-logistics-section-transport"));
+      ok("no console errors on the coach's homes", c.errors.length === 0, c.errors.join(" | "));
+      await c.ctx.close();
+    }
+
+    // The director of sport: all three, and every section.
+    {
+      const { c, signed, tid } = await asRole(/Director of Sport/);
+      ok("the director of sport signs in (homes)", signed);
+      const m = await menuOf(c.page);
+      ok("she has all three homes and no Leagues entry", ["competitions", "logistics", "fields"].every((k) => m.includes(k)) && !m.includes("leagues"), m.join());
+      await tid("nav-competitions").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("Competitions has both sections", await tid("home-competitions-sections").locator("button").count() === 2);
+      ok("...and the New Competition button, held by her capability", await tid("new-competition").count() === 1);
+      await c.ctx.close();
+    }
+
+    // The principal: Fields (facility.read) and Competitions, no Logistics.
+    {
+      const { c, signed, tid } = await asRole(/Principal/);
+      ok("the principal signs in (homes)", signed);
+      const m = await menuOf(c.page);
+      ok("she has Fields and Competitions, and no Logistics", m.includes("fields") && m.includes("competitions") && !m.includes("logistics") && !m.includes("leagues"), m.join());
+      await tid("nav-fields").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("Fields has no link to the ground schedule: she cannot read it", await tid("os-main").getAttribute("data-page") === "fields" && await c.page.locator('[data-testid^="home-fields-link"]').count() === 0);
+      await c.ctx.close();
+    }
+
+    // The league admin: Competitions only.
+    {
+      const { c, signed, tid } = await asRole(/League Admin/);
+      ok("the league admin signs in (homes)", signed);
+      const m = await menuOf(c.page);
+      ok("only Competitions of the three, and no Leagues entry", m.includes("competitions") && !["logistics", "fields", "leagues"].some((k) => m.includes(k)), m.join());
+      await tid("nav-competitions").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("...with both sections", await tid("home-competitions-sections").locator("button").count() === 2);
+      await c.ctx.close();
+    }
+
+    // The safeguarding officer holds transport.read and neither of the others.
+    {
+      const { c, signed, tid } = await asRole(/Safeguarding Officer/);
+      ok("the safeguarding officer signs in (homes)", signed);
+      const m = await menuOf(c.page);
+      ok("Logistics only of the three", m.includes("logistics") && !["competitions", "fields", "leagues"].some((k) => m.includes(k)), m.join());
+      await tid("nav-logistics").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      ok("...three sections and no link to Fields", await tid("home-logistics-sections").locator("button").count() === 3 && await c.page.locator('[data-testid^="home-logistics-link"]').count() === 0);
+      await c.ctx.close();
+    }
+
+    // Someone who holds none of the three has none of them.
+    {
+      const { c, signed } = await asRole(/Medical/);
+      ok("the medic signs in (homes)", signed);
+      const m = await menuOf(c.page);
+      ok("none of the three homes", !["competitions", "logistics", "fields", "leagues"].some((k) => m.includes(k)), m.join());
+      await c.ctx.close();
+    }
+
+    // A phone: the same entries in the drawer, the bar wrapping inside the viewport.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+      await offline(ctx);
+      const page = await ctx.newPage();
+      const errors = []; page.on("pageerror", (e) => { errors.push(e.message); });
+      await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+      await signIn(page, /Coach/);
+      const mid = (id) => page.locator(`[data-testid="${id}"]`);
+      await mid("mnav-more").click({ timeout: 4000 }); await page.waitForTimeout(500);
+      ok("on a phone the drawer has Competitions and no Leagues", await mid("drawer-competitions").count() === 1 && await mid("drawer-leagues").count() === 0);
+      await mid("drawer-logistics").click({ timeout: 4000 }); await page.waitForTimeout(1500);
+      ok("Logistics opens on the phone, with its bar", await mid("home-logistics-sections").count() === 1);
+      const fit = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+      ok("...and nothing is wider than the phone", fit);
+      const f = await page.$$eval('[data-testid="home-logistics"] button', (bs) => bs.map((b) => [b.getBoundingClientRect().height, parseFloat(getComputedStyle(b).fontSize)]));
+      ok("...the bar's buttons are 44px and 12px at that width", f.length >= 3 && f.every(([h, fs]) => h >= 44 && fs >= 12), JSON.stringify(f));
+      ok("no console errors on the phone's homes", errors.length === 0, errors.join(" | "));
+      await ctx.close();
+    }
   }
 
   // ── A dialog can be left ────────────────────────────────────────
