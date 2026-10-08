@@ -96,7 +96,12 @@ group("The screens use it");
   const settings = read("../src/views/SettingsView.jsx");
   ok("Settings: the badge is the Demo label", /<StateLabel kind="demo" compact\/>/.test(settings) && !/"Demo"\}<\/Badge>/.test(settings));
   ok("the day sheet says Demo, and the dashboard does not call a signed-in read a demonstration", /<StateLabel kind="demo" compact why=\{demoNote\}\/>/.test(read("../src/views/DashboardView.jsx")) && /live=\{matchesAreLive \|\| signedIn\(\)\}/.test(read("../src/views/DashboardView.jsx")));
-  ok("Analytics' illustrative tab carries the Demo label, not a Badge of its own", /<StateLabel kind="demo" compact\/>/.test(read("../src/views/AnalyticsView.jsx")) && !/<Badge color=\{D\.amber\}>demonstration/.test(read("../src/views/AnalyticsView.jsx")));
+  // GA-I23: the performance tab's invented figures are gone from a signed-in screen; what is
+  // still a demonstration (the sample worm, the sample season bars) says Demo through the shared
+  // line, which draws the StateLabel, and never as a Badge of its own.
+  ok("Analytics' demonstrations carry the Demo label through the shared line, not a Badge of its own",
+     /<SourceLine testid="source-line-worm" demo /.test(read("../src/views/demoworm.jsx")) && /<SourceLine testid="source-line-season-bars" demo=\{demo\}/.test(read("../src/views/seasonbars.jsx"))
+       && !/<Badge color=\{D\.amber\}>demonstration/.test(read("../src/views/AnalyticsView.jsx")));
   ok("the scorer's home says Demo, not its own sentence", /<StateLabel kind="demo" compact why="no server connected"\/>/.test(read("../src/views/ScorerHomeView.jsx")) && !/Demonstration — no server/.test(read("../src/views/ScorerHomeView.jsx")));
   for (const [f, id] of [["planner", "pl-readonly"], ["people", "people-readonly"], ["playingconditions", "pc-readonly"]]) {
     const s = read(`../src/views/${f}.jsx`);

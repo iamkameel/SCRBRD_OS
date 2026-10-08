@@ -48,7 +48,7 @@ export const SEASON_LIMIT = 8;
 export const tookPart = (r, metric) => (metric === "runs" ? (r.innings ?? 0) > 0 : (r.ballsBowled ?? 0) > 0);
 
 /** The figure for a bar, or null where he did not take part. @param {any} r @param {"runs"|"wkts"} metric */
-export function figure(r, metric) {
+export function barValue(r, metric) {
   if (!tookPart(r, metric)) return null;
   const v = r[METRICS[metric].key];
   return typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -108,7 +108,7 @@ export function whoIs(picked, players) {
 export function squadBars(rows, { team, season, metric, limit = SQUAD_LIMIT }) {
   const ranked = rows
     .filter((r) => r && r.season === season && (team == null || r.team === team))
-    .map((r) => ({ id: r.id, name: r.name ?? "", v: figure(r, metric), row: r }))
+    .map((r) => ({ id: r.id, name: r.name ?? "", v: barValue(r, metric), row: r }))
     .filter((b) => b.v != null && b.v > 0)
     .sort((a, b) => b.v - a.v || a.name.localeCompare(b.name));
   const bars = ranked.slice(0, limit);
@@ -127,7 +127,7 @@ export function playerBars(rows, playerId, metric) {
     .filter((r) => r && r.id === playerId && typeof r.season === "string" && r.season)
     .sort((a, b) => a.season.localeCompare(b.season))
     .slice(-SEASON_LIMIT);
-  return { bars: mine.map((r) => ({ season: r.season, v: figure(r, metric), current: r.currentSeason === true, row: r })), rows: mine };
+  return { bars: mine.map((r) => ({ season: r.season, v: barValue(r, metric), current: r.currentSeason === true, row: r })), rows: mine };
 }
 
 /**

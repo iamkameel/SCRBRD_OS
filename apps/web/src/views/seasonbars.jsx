@@ -7,7 +7,7 @@ import { useLive } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
 import { SRC_RECORD, seasonWindow } from "../lib/sourceWords.js";
 import {
-  METRICS, SQUAD_LIMIT, basisFor, demoSeasonRows, playerBars, seasonChoice, seasonsWindow, sidePlayers, squadBars, whoIs,
+  METRICS, basisFor, demoSeasonRows, playerBars, seasonChoice, seasonsWindow, sidePlayers, squadBars, whoIs,
 } from "../lib/seasonBars.js";
 
 /**
@@ -79,9 +79,9 @@ export function SeasonBarsView({ demo, rows, said, team, onRetry, initial = {} }
   const behind = squad ? squad.rows : (one?.rows ?? []);
   const shown = squad ? squad.bars.length : 0;
 
-  const scope = who
-    ? `One player: ${name}`
-    : `${team ?? "Every side you can see"}, ${squad && squad.eligible > shown ? `top ${shown} of ${squad.eligible}` : `${shown} player${shown === 1 ? "" : "s"}`} by ${m.label.toLowerCase()}`;
+  const side = team ?? "Every side in view";
+  const howMany = squad && squad.eligible > shown ? `top ${shown} of ${squad.eligible}` : `${shown} player${shown === 1 ? "" : "s"}`;
+  const scope = who ? `One player: ${name}` : `${side}, ${howMany} by ${m.label.toLowerCase()}`;
   const window = who ? seasonsWindow(one?.bars.map((b) => b.season) ?? []) : seasonWindow(season);
   // One sentence that belongs to this panel alone: why these players, or why this one.
   const note = alone ? "The read shows you one player of this side, so these are their seasons."

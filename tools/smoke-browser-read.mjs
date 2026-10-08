@@ -2348,6 +2348,30 @@ try {
       ok("changing side to 1XI clears the open boy, and the 1XI roster shows",
          !/SEASON STATS/.test(await text(s.page)) && await sq("squad-card-" + KD).count() === 0
          && await s.page.locator('[data-testid^="squad-card-"]').count() >= 1);
+      // GA-I23: Analytics' performance tab draws career_by_season, the same read
+      // the Awards tab uses, for the side on screen — and no invented figure.
+      ok("Analytics opens for her", await nav(s.page, /Analytics/));
+      await sq("analytics-team-1XI").click({ timeout: 4000 }).catch(() => {});
+      const sarahTok = (await (await fetch(`${API}/api/auth/dev-login`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "sarah@example.invalid", deviceId: "browser-read-i23" }) })).json())?.token;
+      const seasonRows = (await (await fetch(`${API}/api/read/career_by_season`, { headers: { authorization: `Bearer ${sarahTok}` } })).json())?.rows ?? [];
+      const curSeason = seasonRows.find((r) => r.current_season)?.season;
+      const expected = seasonRows.filter((r) => r.team_code === "1XI" && r.season === curSeason && Number(r.bat_matches) > 0 && Number(r.runs) > 0)
+        .map((r) => ({ key: r.player_id, name: r.full_name, v: Number(r.runs) }))
+        .sort((a, b) => b.v - a.v || a.name.localeCompare(b.name)).slice(0, 6).map((b) => ({ key: b.key, value: String(b.v) }));
+      ok("the seed has 1XI run-scorers this season to compare with", expected.length >= 3, JSON.stringify(expected));
+      const drawn = async () => s.page.evaluate(() => [...document.querySelectorAll('[data-testid="season-bar"]')]
+        .map((e) => ({ key: e.getAttribute("data-key"), value: e.getAttribute("data-value") })));
+      await s.page.waitForFunction((n) => document.querySelectorAll('[data-testid="season-bar"]').length === n, expected.length, { timeout: 9000 }).catch(() => {});
+      ok("the performance tab's season bars are exactly the read's rows for 1XI, highest first", JSON.stringify(await drawn()) === JSON.stringify(expected),
+         JSON.stringify(await drawn()) + " vs " + JSON.stringify(expected));
+      const panel = (await sq("season-bars-panel").innerText().catch(() => "")).replace(/\s+/g, " ");
+      ok("...with the source line (source, scope, window, basis)", /Source Scored balls and scorebook imports/.test(panel) && /Scope 1XI, \d+ players? by runs/.test(panel)
+         && new RegExp(`Window The ${curSeason} school season`).test(panel) && /Basis From \d+ innings/.test(panel), panel.slice(0, 300));
+      const bodyText = await text(s.page);
+      ok("...signed in: no Demo label, no demonstration worm, no invented 'Season Scores — Last 8 Matches'",
+         !/\bDemo\b/.test(bodyText) && await sq("demo-worm").count() === 0 && !/Last 8 Matches/i.test(bodyText) && !/illustrative/i.test(bodyText));
       ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
       await s.ctx.close();
     } finally { await owner.end().catch(() => {}); }
