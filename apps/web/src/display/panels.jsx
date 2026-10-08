@@ -3,13 +3,15 @@ import { T, contrast } from "../design/tokens.js";
 import { chipFill, chipFor } from "../ui/board.jsx";
 import { oversOf } from "../lib/matchCentre.js";
 import { bowlingPanel, breakPanel, fallOfWicket, overRows, partnershipPanel, pretossPanel, resultPanel, stoppedPanel } from "./data.js";
+import { wormOf } from "../lib/chartSeries.js";
+import { Worm } from "../ui/charts/worm.jsx";
 
 /**
- * The ground display's panels (SCRBRD-133 §2.2): 2 the partnership, 3 the over
- * story (static rows, §6.2's display form), 4 bowling, 7 the fall of a wicket
- * (an interrupt), 8 the innings break, 9 the result, 10 stopped, 11 before the
- * toss. 1, 5 and 6 (the worm, runs per over, where the runs went) are G2's
- * and G3's.
+ * The ground display's panels (SCRBRD-133 §2.2): 1 the worm with the par
+ * (G2), 2 the partnership, 3 the over story (static rows, §6.2's display
+ * form), 4 bowling, 7 the fall of a wicket (an interrupt), 8 the innings
+ * break, 9 the result, 10 stopped, 11 before the toss. 5 and 6 (runs per
+ * over, where the runs went) are G3's.
  *
  * Drawn in the board's own colours (the display's CSS variables: Daylight
  * lifts the dim one, D14), every size max(floor, vmin) from DisplayView's
@@ -41,6 +43,27 @@ export function Chips({ marks, label }) {
 const Bar = ({ of, value }) => (
   <span className="dv-bar" aria-hidden="true"><span style={{ width: `${of > 0 ? Math.max(2, Math.round((value / of) * 100)) : 0}%` }}/></span>
 );
+
+/** The board's own colours for a chart on the display (Daylight lifts the dim one). */
+const BOARD_PALETTE = Object.freeze({ main: "var(--dv-figure)", dim: "var(--dv-dim)", target: "var(--dv-lime)", par: "var(--dv-lime)",
+  rule: "var(--dv-rule)", text: "var(--dv-dim)", label: "var(--dv-figure)" });
+
+/**
+ * Panel 1: the worm (§2.2, §3.3's worm column) — the innings in play, the
+ * other dim in a chase, wickets as W, the target solid and the par dashed,
+ * every line named in the legend. The par is the server's (GET …/par).
+ */
+function WormPanel({ match, played, index, events, report }) {
+  const w = useMemo(() => wormOf({ match, played, index, events, overs: match?.overs ?? 20, report }), [match, played, index, events, report]);
+  if (!w) return null;
+  return (
+    <section data-testid="display-panel-worm" aria-label="Worm">
+      <h2 className="dv-title">Worm</h2>
+      <Worm lines={w.lines} balls={w.balls} target={w.target} par={w.par} revised={w.revised} umpiresPar={w.umpiresPar}
+        palette={BOARD_PALETTE} said={w.said} height="max(110px, 30vmin)" textClass="dv-small" testid="display-worm"/>
+    </section>
+  );
+}
 
 function Partnership({ inn }) {
   const p = partnershipPanel(inn);
@@ -223,10 +246,11 @@ function PreToss({ match }) {
 
 /**
  * One panel, by id.
- * @param {{panel: string | null, match: any, played: any[], inn: any, index: number, events: any[], fold: any, result: string | null, commentary: any[]}} p
+ * @param {{panel: string | null, match: any, played: any[], inn: any, index: number, events: any[], fold: any, result: string | null, commentary: any[], par?: any}} p
  */
-export function DisplayPanel({ panel, match, played, inn, index, events, fold, result, commentary }) {
+export function DisplayPanel({ panel, match, played, inn, index, events, fold, result, commentary, par = null }) {
   switch (panel) {
+    case "worm": return <WormPanel match={match} played={played} index={index} events={events} report={par}/>;
     case "partnership": return <Partnership inn={inn}/>;
     case "overs": return <OverStory inn={inn} events={events} fold={fold} n={index}/>;
     case "bowling": return <Bowling inn={inn}/>;

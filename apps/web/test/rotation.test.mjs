@@ -26,10 +26,13 @@ function run(state, { from, ms = 250, ticks, available, hold = null, dwellMs = D
   }
   return { state: s, now, seen };
 }
-const ALL = new Set(CYCLE);
+// G1's three panels, the worm (G2) not yet drawable: before an over is
+// complete it has nothing, and is skipped like any empty panel. Section A2
+// below runs the whole cycle with the worm in it.
+const ALL = new Set(["partnership", "overs", "bowling"]);
 
 console.log("A. The cycle and its dwell");
-ok("G1's cycle is the partnership, the over story and bowling, in §2.2's order", CYCLE.join() === "partnership,overs,bowling");
+ok("the cycle is the worm (G2), the partnership, the over story and bowling, in §2.2's order", CYCLE.join() === "worm,partnership,overs,bowling");
 ok("Normal is 12 s a panel, Long 24 s", DWELL_MS.normal === 12_000 && DWELL_MS.long === 24_000);
 {
   let s = startRotation(0);
@@ -46,12 +49,19 @@ ok("Normal is 12 s a panel, Long 24 s", DWELL_MS.normal === 12_000 && DWELL_MS.l
   ok("Normal: five turns in a minute, wrapping round", normal.seen.join() === "partnership,overs,bowling,partnership,overs", normal.seen.join());
 }
 
+console.log("\nA2. With the worm (G2): it heads the cycle once an over is complete");
+{
+  const all = new Set(CYCLE);
+  const r = run(startRotation(0), { from: 0, ms: 1000, ticks: 60, available: all });
+  ok("Normal, the worm in: five turns in a minute, the worm first and again after bowling", r.seen.join() === "worm,partnership,overs,bowling,worm", r.seen.join());
+}
+
 console.log("\nB. A panel with nothing to show is skipped");
 {
   const noPair = new Set(["overs", "bowling"]);
   const r = run(startRotation(0), { from: 0, ms: 1000, ticks: 72, available: noPair });
   ok("no pair in: the partnership never shows", !r.seen.includes("partnership") && r.seen.join() === "overs,bowling,overs,bowling,overs,bowling", r.seen.join());
-  ok("nextAvailable wraps and skips", nextAvailable(2, noPair) === 1 && nextAvailable(0, new Set(["partnership"])) === 0 && nextAvailable(0, new Set()) === -1);
+  ok("nextAvailable wraps and skips", nextAvailable(3, noPair) === 2 && nextAvailable(1, new Set(["partnership"])) === 1 && nextAvailable(0, new Set()) === -1);
   // A panel that empties while it is up gives way at once.
   let s = stepRotation(startRotation(0), { now: 0, available: ALL }).state;
   const gone = stepRotation(s, { now: 3_000, available: noPair });

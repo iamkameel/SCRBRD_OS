@@ -75,7 +75,7 @@ export function PublicDisplay({ matchId }) {
       <DisplayGlobals/>
       <DisplayView match={story.match} events={story.events} fold={data.fold} innings={story.played} result={story.result}
         settled={story.settled} commentary={story.commentary} ready={!data.loading} settings={settings}
-        status={{ stale, okAt: data.okAt, gone: data.gone, sleeping }}/>
+        status={{ stale, okAt: data.okAt, gone: data.gone, sleeping }} par={data.par}/>
     </>
   );
 }

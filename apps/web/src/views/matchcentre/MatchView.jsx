@@ -158,6 +158,29 @@ function useVenueLine(match, seen) {
 }
 // ── end SCRBRD-130 R3 ──
 
+// ── SCRBRD-133 G2: par and pressure (GET /api/matches/:id/par) ──
+/**
+ * The server's par report for the innings in play — the same one the public
+ * read and the ground display serve, for a reader of the result: the ground's
+ * par at this point and its track, the DLS par after rain in a chase. The
+ * Board shows it only while it speaks for the position the fold stands at
+ * (lib/par.js reportFor()). Null signed out and for a demonstration fixture.
+ * @param {any} match  @param {boolean} demo  @param {unknown} seen  what the log has grown to
+ */
+function useParReport(match, demo, seen) {
+  const [report, setReport] = useState(/** @type {any} */ (null));
+  useEffect(() => {
+    if (!signedIn() || demo) { setReport(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${match.id}/par`)
+      .then((d) => { if (!cancelled) setReport(d ?? null); })
+      .catch(() => { if (!cancelled) setReport(null); });
+    return () => { cancelled = true; };
+  }, [match.id, demo, seen]);
+  return report;
+}
+// ── end SCRBRD-133 G2 ──
+
 // ── SCRBRD-130 R2: the rain panel's calculated line (db/75, dls.mjs) ──
 /**
  * The server's DLS proposal beside the umpires' figure (GET /api/matches/:id/dls),
@@ -294,6 +317,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const liveSO = liveSuperOverLine(played, match.status);
   const venueLine = useVenueLine(match, log.events?.length ?? 0);   // SCRBRD-130 R3
   const rainLine = useRainLine(match, played, log.events?.length ?? 0);   // SCRBRD-130 R2
+  const par = useParReport(match, !!log.demo, log.events?.length ?? 0);   // SCRBRD-133 G2
   const result = liveSO ?? (server && server.outcome !== "in_progress" ? server.text : null)
     ?? resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
   // The result stands once play has decided it: not mid super over, and not
@@ -340,7 +364,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
-    focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine,
+    focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine, par, fold: log.fold, settled,
     captain, terms: captain || staff ? termsOf(log.fold) : null,
     staff, eventCount: log.events?.length ?? 0, initialDrawer };
 
@@ -372,7 +396,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
         </span>
       </div>
       {big && <BigScreen match={match} events={log.events} fold={log.fold} innings={played} result={result} settled={settled}
-        commentary={commentary} onClose={() => setBig(false)}/>}
+        commentary={commentary} par={par} onClose={() => setBig(false)}/>}
 
       <header style={{ display: "grid", gap: T.space.sm }}>
         <div style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>

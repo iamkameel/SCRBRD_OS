@@ -85,5 +85,6 @@
   "84_row_guards.sql",
   "85_session_revocation.sql",
   "86_platform_roles_need_no_school.sql",
-  "87_wicket_on_extra.sql"
+  "87_wicket_on_extra.sql",
+  "88_public_venue_par.sql"
 ]
