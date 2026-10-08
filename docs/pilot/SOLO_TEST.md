@@ -144,6 +144,7 @@ Sign in as `registrar.wes`.
 6. Back on **Guardian links**, choose another parent and tap **Verify the link**, then **Yes, verify**. That parent has no link to this boy waiting, so the page refuses in words and changes nothing. That is the right answer. (A link waiting to be verified exists only after the office re-links a parent in **Settings**, **People**, once a boy's date of birth is captured.)
 7. Tap **Staff**. Tap **Everyone**, then **Clearance register**. The cast is listed. Most checks are missing: that is right for invented people.
 8. Under **Settings**, **People**, look for **Google sign-ins waiting for you**.
+9. **People** → a coach → **Disable account**. The sheet says it signs him out of every device and keeps his roles. Confirm. On phone 2, signed in as that coach, the next tap asks him to sign in again. Back on People, he is listed as **Disabled**; **Enable account** brings him back.
 
 You should see: only Westville's people and boys. Never a Kearsney boy.
 
@@ -303,7 +304,6 @@ Each needs a change to the app, not to the data:
 - Recording an injury: no route and no screen. "Recording and updating injuries is coming."
 - Changing or cancelling a booked trip: no route. A trip booked by mistake stays on the list.
 - Approving a correction: the director has no screen to decide it.
-- Disable account and Enable account: the routes exist (`/api/auth/users/:id/disable`, `…/enable`). There is no screen: People lists only active accounts, so a disabled one could not be enabled again from it.
 - A list of a boy's guardian links, with their state: no read. The office picks the parent and the server answers.
 - The away school's bus: a trip belongs to the host school, so Kearsney cannot book one to Westville, and the page says so.
 - The away team sheet on the pad: the host's scorer cannot read the visitors' named XI. He types their names.

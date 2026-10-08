@@ -14,8 +14,9 @@
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
-import { liveRoles, matchesPerson, peopleWithRoles, roleState } from "../src/lib/people.js";
+import { accountAction, liveRoles, matchesPerson, peopleWithRoles, roleState } from "../src/lib/people.js";
 import { PeoplePanel } from "../src/views/people.jsx";
+import { AccountButton, DisableConfirm, accountRefusalWords, setAccountActive, ACCOUNT_WORDS } from "../src/views/accountactive.jsx";
 import { ManagementView } from "../src/views/ManagementView.jsx";
 import { ENROL_MESSAGE, EnrolModal, enrolWords, grantableFor } from "../src/views/enrol.jsx";
 
@@ -92,6 +93,81 @@ group("The filters look across all of a person's roles");
   ok("nothing matches nothing", who({ q: "zzzz" }) === "");
 }
 
+group("Disable or Enable is offered only where db/81's rule would allow it (account lifecycle D2)");
+{
+  // Two schools; the office (registrar) at s1, the director of sport at s1,
+  // the owner's key and the platform account belonging to no school.
+  const S1 = "s1", S2 = "s2";
+  const me = (id, ...as) => ({ user: { id }, assignments: as.map(([role, school]) => ({ role, school })) });
+  const office = me("off", ["schooladmin", S1]);
+  const dos = me("dos", ["directorofsport", S1]);
+  const coach = me("co", ["coach", S1]);
+  const owner = me("own", ["superadmin", null]);
+  const platform = me("plat", ["platformadmin", null]);
+  const role = (r, school = S1, state = "live") => ({ key: `${r}-${school}`, role: r, school, state });
+  const person = (id, roles, { school = S1, status = "active" } = {}) => ({ id, name: id, school, status, roles });
+
+  const coachP = person("c1", [role("coach")]);
+  const parent = person("g1", [role("guardian")]);
+  const pupil = person("p1", [role("player"), role("selfaccess")]);
+  const principal = person("pr", [role("principal")]);
+  const dso = person("ds", [role("dso")]);
+  const physio = person("ph", [role("medical")]);
+  const twoSchools = person("x2", [role("coach"), role("guardian", S2)]);
+  const plat = person("pa", [role("platformadmin", null)], { school: null });
+
+  ok("the office may disable a coach, a parent and a pupil (selfaccess with player)",
+     accountAction(coachP, office) === "disable" && accountAction(parent, office) === "disable" && accountAction(pupil, office) === "disable");
+  ok("...a disabled one is offered Enable instead", accountAction({ ...coachP, status: "inactive" }, office) === "enable");
+  ok("...but never its principal, its DSO or its physio", [principal, dso, physio].every((p) => accountAction(p, office) === null));
+  ok("...nor somebody who holds a role at a second school", accountAction(twoSchools, office) === null);
+  ok("...nor an account at another school", accountAction(person("w1", [role("coach", S2)], { school: S2 }), office) === null);
+  ok("...nor its own account (cannot_disable_yourself)", accountAction(person("off", [role("schooladmin")]), office) === null);
+  ok("a paused role still counts; an ended or upcoming one does not",
+     accountAction(person("q1", [role("coach"), role("medical", S1, "paused")]), office) === null
+     && accountAction(person("q2", [role("coach"), role("medical", S1, "ended"), role("principal", S1, "upcoming")]), office) === "disable");
+  ok("the director of sport may disable the physio she appoints, not a parent she cannot",
+     accountAction(physio, dos) === "disable" && accountAction(parent, dos) === null);
+  ok("a coach (no user.invite) is offered nothing", [coachP, parent, pupil].every((p) => accountAction(p, coach) === null));
+  ok("a platform-wide account: the owner's key only", accountAction(plat, owner) === "disable" && accountAction(plat, office) === null
+     && accountAction(plat, platform) === null);
+  ok("the platform account (no user.invite) gains no school authority (db/86)", accountAction(coachP, platform) === null);
+  ok("the owner's key reaches a school's account from no school", accountAction(principal, owner) === "disable");
+  ok("signed out (no profile), nothing", accountAction(coachP, null) === null);
+}
+
+group("Disable and Enable, drawn and posted");
+{
+  const p = { id: "c1", name: "C Example" };
+  const closed = renderToStaticMarkup(h(AccountButton, { person: p, action: "disable" }));
+  ok("Disable account is a 44px button naming whose account", /Disable account/.test(closed) && /min-height:44px/.test(closed)
+     && /aria-label="Disable C Example&#x27;s account"/.test(closed), closed);
+  ok("Enable account, for a disabled one", /Enable account/.test(renderToStaticMarkup(h(AccountButton, { person: p, action: "enable" }))));
+  ok("nothing for an action of null", renderToStaticMarkup(h(AccountButton, { person: p, action: null })) === "");
+  const form = renderToStaticMarkup(h(DisableConfirm, { name: "C Example", busy: false, refusal: "", onConfirm: () => {}, onCancel: () => {} }));
+  ok("the confirmation says every device is signed out now, and the roles stay",
+     /signs C Example out of every device now and stops them signing in\. Their roles stay\./.test(form), form);
+  ok("...with two 44px buttons, the safe one first and focused, the destructive one not the default",
+     (form.match(/min-height:44px/g) ?? []).length === 2 && form.indexOf("Keep it active") < form.indexOf("Disable account")
+     && /autofocus=""[^>]*>Keep it active|data-testid="account-disable-cancel"[^>]*autofocus/i.test(form.replace(/\n/g, "")), form);
+  ok("...nothing under 12px in it", ![...form.matchAll(/font-size:(\d+)px/g)].some((m) => Number(m[1]) < 12));
+  const refused = renderToStaticMarkup(h(DisableConfirm, { name: "C Example", busy: false, refusal: "You cannot do this for that account. The school office that enrolled them can.", onConfirm: () => {}, onCancel: () => {} }));
+  ok("a refusal is said in words, as an alert", /role="alert"[^>]*>You cannot do this for that account\./.test(refused));
+
+  const calls = [];
+  const yes = async (url, opts) => { calls.push([url, opts?.method]); return { ok: true, active: url.endsWith("/enable") }; };
+  const d = await setAccountActive("c1", false, yes);
+  const e = await setAccountActive("c1", true, yes);
+  ok("disable posts to /api/auth/users/:id/disable, enable to /enable",
+     calls[0][0] === "/api/auth/users/c1/disable" && calls[1][0] === "/api/auth/users/c1/enable" && calls.every((c) => c[1] === "POST"));
+  ok("...and answers what the server says the account now is", d.ok && d.active === false && e.ok && e.active === true);
+  const no = await setAccountActive("pr", false, async () => { throw Object.assign(new Error("x"), { status: 403, code: "not_permitted", detail: "You cannot do this for that account. The school office that enrolled them can." }); });
+  ok("a refusal carries the server's sentence", !no.ok && no.code === "not_permitted" && /school office that enrolled them/.test(no.words));
+  ok("cannot_disable_yourself and an unanswered post have words too",
+     accountRefusalWords({ status: 403, detail: "You cannot disable or enable your own account. Ask a colleague at the office." }).startsWith("You cannot disable")
+     && accountRefusalWords(new TypeError("fetch failed")) === ACCOUNT_WORDS.unreachable);
+}
+
 group("Signed out: the seeded directory, and nothing that writes");
 {
   const out = renderToStaticMarkup(h(PeoplePanel, { role: "superadmin", players: [], onDirectoryChanged: () => {} }));
@@ -100,7 +176,8 @@ group("Signed out: the seeded directory, and nothing that writes");
   ok("...each with a role chip", (out.match(/data-testid="role-chip"/g) ?? []).length >= rows);
   ok("no Add user", !/Add user/.test(out));
   ok("no Add role", !/Add role|Add a role/.test(out));
-  ok("the plain line is there, word for word", /Suspending an account is coming\./.test(out));
+  ok("the 'coming' line is gone: disabling is real now", !/Suspending an account is coming/.test(out) && !/people-coming/.test(out));
+  ok("no Disable or Enable signed out (db/85 is a write)", !/Disable account|Enable account|account-disable-|account-enable-/.test(out));
   ok("no End role signed out (db/77 is a write)", !/data-testid="end-role"/.test(out));
   ok("it says it is the demonstration", /demonstration directory/.test(out));
   ok("no Edit, Promote, Suspend or Delete", !/>(Edit|Promote|Suspend|Delete|Restore)</.test(out));

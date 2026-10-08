@@ -66,7 +66,7 @@ only, and a disabled one is simply not told.
 |---|---|---|
 | Sign out on this device | `POST /api/auth/sign-out` | this person's sessions on this device are revoked (`auth_sign_out()`), and their pad credentials here, as before |
 | Sign out everywhere | `POST /api/auth/sign-out-everywhere` (Settings, Me, Sign out everywhere) | the epoch moves: every token and pad credential the person holds ends, this one included |
-| The office or the owner disables the account | `POST /api/auth/users/:id/disable` (`/enable` undoes it; no screen yet) | the epoch moves (a trigger on `app_user.active`, so a plain `UPDATE` does it too); no new session is minted while disabled; enabling brings nothing back |
+| The office or the owner disables the account | `POST /api/auth/users/:id/disable` (`/enable` undoes it; People has the Disable account and Enable account buttons, lifecycle slice 1, 7 Oct) | the epoch moves (a trigger on `app_user.active`, so a plain `UPDATE` does it too); no new session is minted while disabled; enabling brings nothing back |
 | A way to sign in is removed | `POST /api/auth/sign-ins/:id/revoke`, `…/office/sign-ins/:id/revoke` | the epoch moves (a trigger on `auth_identity.revoked_at`). Your own removal answers with a fresh token for this device, which the Me screen adopts |
 | A role is withdrawn | (unchanged) | `app_can()` reads the live assignment on the next statement; the session stands, with nothing to read |
 
