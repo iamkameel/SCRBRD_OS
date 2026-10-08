@@ -56,7 +56,7 @@ import { projectMatch } from "./chartData.js";
 import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone, momentWords, wicketMomentCfg } from "./panels.jsx";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
-import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
+import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet, WideSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
 import { endOf, mayType, onlyNamedWords, sidesFor, sideWords } from "./side.js";
 import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
@@ -1259,12 +1259,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
 
   // Wide / No Ball — bypass hub entirely
   // A wide and the runs taken off it (SCRBRD-100 item 3: the pad asks the
-  // runs as its second tap). 0 is the one-tap wide it always was.
+  // runs as its second tap; Pro Mode's wide sheet asks the same).
   const recordWide=(runs)=>{
     if(!guardReady())return;
     commitBall("Wd",runs,null,null,null,hubApproach);
   };
-  const onWide=()=>recordWide(0);
+  // Pro Mode's WIDE (the hub): it asks what the pad asks — the runs taken,
+  // and a wicket on it — on the wide sheet, which confirms through
+  // recordWide or openExtraWicket as the pad's two taps do. It was one tap
+  // that always recorded a wide of no runs (Kameel, 8 Oct 2026).
+  const onWide=()=>{
+    if(!guardReady())return;
+    setModal("wide");
+  };
 
   const onNoBall=()=>{
     if(!guardReady())return;
@@ -1911,6 +1918,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       <NoBallSheet
         edition={lawsEdition({innings,events})} freeHits={inn?.freeHits!==false}
         onConfirm={(nbType,runs,nbRuns,wicket)=>wicket?openExtraWicket("Nb",runs,nbType,nbRuns):recordNoBall(nbType,runs,nbRuns)}
+        onClose={()=>setModal(null)}/>
+    );
+
+    if(modal==="wide")return (
+      <WideSheet
+        edition={lawsEdition({innings,events})}
+        onConfirm={(runs,wicket)=>{if(wicket)openExtraWicket("Wd",runs);else{setModal(null);recordWide(runs);}}}
         onClose={()=>setModal(null)}/>
     );
 
