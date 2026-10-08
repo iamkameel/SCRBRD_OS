@@ -170,6 +170,20 @@ export async function clearMatch(matchId) {
   try { await (await backend()).del(matchKey(matchId)); return true; } catch { return false; }
 }
 
+/**
+ * Every fixture's saved log on this device, for the scorer's home (GA-I13):
+ * what it can offer to resume. Only `match:` keys, so never a practice match
+ * (those are `practice:log:`, and stay the pad's). Null when the store could
+ * not be read at all, which the home says as that, never as "nothing saved".
+ */
+export async function savedMatchLogs() {
+  try {
+    const b = await backend();
+    const keys = (await b.keys()).filter((k) => typeof k === "string" && k.startsWith("match:"));
+    return (await Promise.all(keys.map((k) => b.get(k)))).filter((v) => v && v.matchId);
+  } catch { return null; }
+}
+
 // ── Plain records, for the stores built on this backend ──────────────
 //
 // A thin door onto the same backend (IndexedDB, then localStorage, then
