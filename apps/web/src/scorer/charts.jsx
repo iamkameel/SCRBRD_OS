@@ -6,7 +6,7 @@ import { RR, SR, isOut } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
-import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, placementEvidence, thetaFromScreen, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
+import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
 import { Icon } from "../ui/icons.jsx";
 import { ChartTable } from "../ui/ChartTable.jsx";
 import { chaseEndWords, projectInnings, projectMatch, runRates } from "./chartData.js";
@@ -503,12 +503,14 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
   // is a single ramp. The amber is the ground's own colour on the wheel.
   const cells=d.cells.filter(c=>c.density>=0.04);
   // The cells drawn, hottest first, each named for the fielding position it
-  // sits at (read back through the frame's hand) and how far out it is.
+  // sits at and how far out it is. The mirror for a left-hander is its own
+  // inverse, so screenAngle() reads a screen angle back to the batter's theta
+  // (and, unlike thetaFromScreen, is already in the public graph's chunk).
   const heatTable=[{caption:`${title}: the cells drawn, hottest first`,columns:["Where","Distance, % of the rope","Density, % of the peak"],
     rows:[...cells].sort((a,b)=>b.density-a.density).map(c=>{
       const r=Math.min(1,Math.hypot(c.x,c.y));
       const ang=(Math.atan2(c.x,-c.y)*180/Math.PI+360)%360;
-      return[placeWords({theta:thetaFromScreen(ang,frame.hand),radius:r})??"Around the pitch",Math.round(r*100),Math.round(Math.min(1,c.density)*100)];
+      return[placeWords({theta:screenAngle(ang,frame.hand),radius:r})??"Around the pitch",Math.round(r*100),Math.round(Math.min(1,c.density)*100)];
     })}];
   return (
     <div data-testid="shot-heat-map">
