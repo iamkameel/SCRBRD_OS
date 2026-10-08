@@ -1073,7 +1073,7 @@ export function asCareer(r) {
  * screen ever works out a season from a date or a clock. No form guide rides
  * along; it is an empty array, as for a player who has not batted.
  */
-function asSeasonCareer(r) {
+export function asSeasonCareer(r) {
   return { ...asCareer(r), season: r.season ?? null, currentSeason: r.current_season === true };
 }
 
