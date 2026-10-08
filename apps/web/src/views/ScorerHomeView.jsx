@@ -12,6 +12,7 @@ import {
 import { EmptyState, ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Icon } from "../ui/icons.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 
 // ══════════════════════════════════════════════════════
 //  THE SCORER'S HOME (GA-I13)
@@ -163,10 +164,10 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
         <h1 style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", alignItems: "center", gap: T.space.sm }}>
           <Icon name="notebook-pen"/> Scoring
         </h1>
-        <p style={line()}>
-          {new Date(now).toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-          {!live && " · Demonstration — no server connected"}
-        </p>
+        <div style={{ ...line(), display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
+          <span>{new Date(now).toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
+          {!live && <StateLabel kind="demo" compact why="no server connected"/>}
+        </div>
       </div>
 
       <Bento>

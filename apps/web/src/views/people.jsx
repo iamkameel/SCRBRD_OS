@@ -8,6 +8,7 @@ import { profile, reachesEverySchool, schoolsWhere } from "../lib/session.js";
 import { humanDate } from "../lib/format.js";
 import { accountAction, liveRoles, matchesPerson, peopleWithRoles } from "../lib/people.js";
 import { Avatar } from "../ui/primitives.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { EnrolModal, FormBtn, IssuedCodeModal, grantableFor, issuedFrom } from "./enrol.jsx";
 // SCRBRD-132 C1 (db/77): ending one appointment, with a reason, decided by the server.
@@ -270,15 +271,17 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
         ))}
       </ul>
 
+      {!live && <StateLabel kind="demo"/>}
       {!live && (
         <p data-testid="people-demo" style={{ margin: 0, fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
           This is the demonstration directory, one role each. Sign in to see everyone's roles and to add people or roles.
         </p>
       )}
       {live && !canWrite && (
-        <p data-testid="people-readonly" style={{ margin: 0, fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
-          You can see who holds which roles. Adding people or roles needs permission to assign roles at a school.
-        </p>
+        <div data-testid="people-readonly" style={{ display: "grid", gap: "4px" }}>
+          <StateLabel kind="readonly" why="adding people or roles needs permission to assign roles at a school"/>
+          <p style={{ margin: 0, fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>You can see who holds which roles.</p>
+        </div>
       )}
 
       {dialog?.kind === "user" && (

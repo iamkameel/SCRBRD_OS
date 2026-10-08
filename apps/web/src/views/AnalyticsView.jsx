@@ -3,6 +3,7 @@ import { useState } from "react";
 import { D, px, textOn, themed } from "../design/tokens.js";
 import { fitnessColor, stat } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 import { usePlayersWithCareer, useLive } from "../lib/live.js";
 import { Metric, MetricGroup, dash } from "../ui/data.jsx";
 import { heldTeams } from "../lib/held.js";
@@ -85,8 +86,8 @@ function AnalyticsView({ role }) {
            season, which is not one of this module's reads yet. */
         <Card sx={{padding:"10px 14px",marginBottom:"12px",border:`1px solid ${D.amber}33`,background:`${D.amber}0c`}}>
           <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>
-            <Badge color={D.amber}>demonstration</Badge>{" "}
-            {"These figures are illustrative, not your school's. Phases, Head-to-Head and Match-ups are derived from the database; this tab is not yet."}
+            <StateLabel kind="demo" compact/>
+            <div style={{marginTop:"4px"}}>{"These figures are illustrative, not your school's. Phases, Head-to-Head and Match-ups are derived from the database; this tab is not yet."}</div>
           </div>
         </Card>
       )}
@@ -250,7 +251,7 @@ function HeadToHead({ role, teamFilter }) {
         <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.indigoText,marginBottom:"4px"}}>Head-to-head record ({teamFilter ?? "all your sides"})</div>
         <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
           {live ? "Derived from completed fixtures you may see, and from the toss that decided each one. Nothing here is stored."
-                : "Demonstration figures — no server connected."}
+                : "Demo figures, no server connected."}
         </div>
       </Card>
       {rows.map(r=>(

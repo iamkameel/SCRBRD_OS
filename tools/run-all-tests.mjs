@@ -214,6 +214,9 @@ const SUITES = [
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["decide-words", "apps/web/test/decide-words.test.mjs"],
+  // GA-I21: one label for demo / practice / read only (no "official": a result
+  // is read from the log, not stored), and the bowling-ceiling refusal in words.
+  ["state-label", "apps/web/test/state-label.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The three solo-test screens, over routes that already existed: the office
   // verifying a parent's link and recording the family's agreement, booking a
   // vehicle and a trip, and signing out everywhere. Who is offered, what is
@@ -257,6 +260,9 @@ const SUITES = [
   // disabled, failed, stale and partial each say something different, retry
   // re-runs the same read, and useSkills no longer throws its state away.
   ["readstate", "apps/web/test/readstate.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I19 slice 0 (D7): the Injuries screen's phase and severity words are the
+  // database's (the CHECKs read from db/00), and its counts follow phase.
+  ["injuries", "apps/web/test/injuries.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I13: the scorer's home — who lands on it (the scorer's bundle alone),
   // his fixtures appointed first, each one's state for this device, what this
   // device has to resume with its unsent events, and the lines before the toss.
@@ -324,6 +330,8 @@ const SUITES = [
   // grants name, and a restore aimed anywhere else refused with exit 2.
   ["backup-verify", "tools/backup-verify.test.mjs"],
   ["schema-guard", "services/api/schema-guard.test.mjs"],
+  // Which commit /api/health says the process was built from (GA I14).
+  ["revision", "services/api/revision.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
   // The typecheck strict list only grows, and names nothing that is not there.

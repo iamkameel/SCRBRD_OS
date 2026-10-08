@@ -584,11 +584,11 @@ const LEAGUE_TEAMS = [
 ];
 
 const INJURIES = [
-  { id:"i1", player:"p5",  type:"Hamstring Strain",    severity:"moderate", dateInj:dateStr(addDays(today,-14)), rtw:dateStr(addDays(today,7)),  phase:"Reconditioning", notes:"Grade 2 right hamstring. Physio 3x/week with Dr Khumalo. No running until clearance.", physio:"Dr S. Khumalo", restricted:true },
-  { id:"i2", player:"p8",  type:"Shoulder Impingement",severity:"mild",     dateInj:dateStr(addDays(today,-7)),  rtw:dateStr(addDays(today,14)), phase:"Strengthening",  notes:"Bowling restriction enforced. Batting allowed. Rotator cuff programme with Sr Dube.", physio:"Sr N. Dube",    restricted:true },
-  { id:"i3", player:"p13", type:"Finger Fracture",     severity:"severe",   dateInj:dateStr(addDays(today,-21)), rtw:dateStr(addDays(today,21)), phase:"Immobilisation", notes:"Ring finger right hand. Cast removed next week. Full rest from cricket.", physio:"Dr S. Khumalo", restricted:true },
-  { id:"i4", player:"p2",  type:"Side Strain",         severity:"mild",     dateInj:dateStr(addDays(today,-5)),  rtw:dateStr(addDays(today,3)),  phase:"Return to bowl", notes:"Monitoring ongoing. Light bowling only — max 2 overs per session.", physio:"Sr N. Dube",    restricted:true },
-  { id:"i5", player:"p4",  type:"Knee Bruising",       severity:"mild",     dateInj:dateStr(addDays(today,-3)),  rtw:dateStr(addDays(today,2)),  phase:"Cleared",        notes:"Full training. Wear knee brace for next 2 games.", physio:"Sr N. Dube",    restricted:false },
+  { id:"i1", player:"p5",  type:"Hamstring Strain",    severity:"moderate", dateInj:dateStr(addDays(today,-14)), rtw:dateStr(addDays(today,7)),  phase:"rehab", notes:"Grade 2 right hamstring. Physio 3x/week with Dr Khumalo. No running until clearance.", physio:"Dr S. Khumalo", restricted:true },
+  { id:"i2", player:"p8",  type:"Shoulder Impingement",severity:"minor",    dateInj:dateStr(addDays(today,-7)),  rtw:dateStr(addDays(today,14)), phase:"rehab",  notes:"Bowling restriction enforced. Batting allowed. Rotator cuff programme with Sr Dube.", physio:"Sr N. Dube",    restricted:true },
+  { id:"i3", player:"p13", type:"Finger Fracture",     severity:"severe",   dateInj:dateStr(addDays(today,-21)), rtw:dateStr(addDays(today,21)), phase:"active", notes:"Ring finger right hand. Cast removed next week. Full rest from cricket.", physio:"Dr S. Khumalo", restricted:true },
+  { id:"i4", player:"p2",  type:"Side Strain",         severity:"minor",    dateInj:dateStr(addDays(today,-5)),  rtw:dateStr(addDays(today,3)),  phase:"rehab", notes:"Monitoring ongoing. Light bowling only — max 2 overs per session.", physio:"Sr N. Dube",    restricted:true },
+  { id:"i5", player:"p4",  type:"Knee Bruising",       severity:"minor",    dateInj:dateStr(addDays(today,-3)),  rtw:dateStr(addDays(today,2)),  phase:"cleared",        notes:"Full training. Wear knee brace for next 2 games.", physio:"Sr N. Dube",    restricted:false },
 ];
 
 const TRAINING_SESSIONS = [

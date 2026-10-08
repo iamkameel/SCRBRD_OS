@@ -28,6 +28,7 @@ import { scorerLanding } from "./lib/scorerHome.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut } from "./lib/session.js";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
+import { StateLabel } from "./ui/stateLabel.jsx";
 
 // ── Route-level code splitting (SCRBRD-020) ─────────────────────────────
 //
@@ -547,8 +548,8 @@ export default function SCRBRD_OS() {
               everything, for as long as there is no token. */}
           {!signedIn() && (
             <div role="status" data-testid="demo-banner" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"12px",padding:"6px 16px",background:clr(D.amber,0.14),borderBottom:`1px solid ${D.amber}`,fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>
-              <span><strong>Demonstration.</strong> Nothing on these screens is a school's, and nothing is saved.</span>
-              <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"11px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
+              <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:"0 8px"}}><StateLabel kind="demo" compact/><span>Nothing on these screens is a school's, and nothing is saved.</span></div>
+              <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"12px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
             </div>
           )}
           {personaHeader

@@ -10,6 +10,7 @@ import { profile, schoolsWhere } from "../lib/session.js";
 import { useSports } from "../lib/features.js";
 import { holdsCapability } from "../rbac/index.js";
 import { api, signedIn } from "../lib/api.js";
+import { ceilingWords } from "../lib/ceilingWords.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
@@ -34,6 +35,7 @@ import { ListingPanel } from "./listing.jsx";
 import { LiftDeclarationPanel, LiftPolicyPanel, LiftPurgePanel } from "./lifts.jsx";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 import { Icon } from "../ui/icons.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS & ACCESS CONTROL
@@ -709,10 +711,10 @@ function MeTab({ role, onSignOut }) {
         <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
           <Avatar name={me?.user?.name || ROLES[role]?.label || "You"} size={48} color={ROLES[role]?.color || D.violet}/>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ ...H(), fontSize: "15px" }}>{me?.user?.name || (live ? "Signed in" : "Demonstration")}</div>
+            <div style={{ ...H(), fontSize: "15px" }}>{me?.user?.name || (live ? "Signed in" : "Not signed in")}</div>
             <div style={MONO()}>{me?.user?.email || (live ? "" : "Nothing on these screens is yours, and nothing is saved.")}</div>
           </div>
-          <Badge color={live ? D.emerald : D.amber}>{live ? "Signed in" : "Demo"}</Badge>
+          {live ? <Badge color={D.emerald}>Signed in</Badge> : <StateLabel kind="demo" compact/>}
         </div>
       </Panel>
 
@@ -1166,7 +1168,7 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "10px" }}>
           {[
             ["SCRBRD", `v${pkg.version}`],
-            ["Data", live ? "Live — your school's database" : "Demonstration — nothing is saved"],
+            ["Data", live ? "Live — your school's database" : "Demo — nothing is saved"],
             ["Roles known", String(Object.values(ROLE_FAMILIES).flat().length)],
             ["Capabilities", String(new Set(Object.values(ROLE_CAPABILITIES).flat()).size)],
           ].map(([l, v]) => (
@@ -1281,7 +1283,7 @@ function OpenCeiling() {
         maxOversPerDay: dayCap === "" ? null : Number(dayCap),
       } });
       setDone(`Set: ${r.maxOversPerSpell ?? "no"} per spell, ${r.maxOversPerDay ?? "no"} per day.`);
-    } catch (e) { setSaid(e.message || "Refused."); }
+    } catch (e) { setSaid(ceilingWords(e)); }
   };
   return (
     <Panel data-testid="open-ceiling">
@@ -1294,8 +1296,8 @@ function OpenCeiling() {
           <Input label="Overs per spell" value={spell} onChange={setSpell} type="number" placeholder="e.g. 7"/>
           <Input label="Overs per day" value={dayCap} onChange={setDayCap} type="number" placeholder="e.g. 18"/>
         </div>
-        {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
-        {done && <div role="status" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.emerald), marginBottom: "8px" }}>{done}</div>}
+        {said && <div role="alert" data-testid="ceiling-said" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
+        {done && <div role="status" data-testid="ceiling-done" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.emerald), marginBottom: "8px" }}>{done}</div>}
         <Btn size="sm" onClick={save} disabled={!schoolId || (spell === "" && dayCap === "")}>Set the ceiling</Btn>
       </div>
     </Panel>

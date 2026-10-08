@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { T } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { EmptyState } from "../ui/primitives.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 import { formatWhen } from "../lib/playingConditions.js";
 import {
   OUTCOME_WORDS, PLAN_FORMATS, PLAN_STATE_WORDS, RULE_FIELDS, addDays, bracketRounds, dayWords, formOfRules, leagueRefusal, outcomeWords,
@@ -505,6 +506,7 @@ export function FixturePlanner({ competition, onBack }) {
     return (
       <div data-testid="pl-root" style={S.card}>
         <h2 style={S.h3}>Fixture planner</h2>
+        <StateLabel kind="demo"/>
         <p data-testid="pl-demo" style={S.body}>This is a demonstration. Sign in as the league's organiser to plan fixtures.</p>
         {onBack && <div><button type="button" onClick={onBack} style={S.secondary}>Back</button></div>}
       </div>
@@ -526,9 +528,10 @@ export function FixturePlanner({ competition, onBack }) {
       <Alert words={listing.error} testid="pl-error"/>
 
       {!canManage && (
-        <p data-testid="pl-readonly" style={S.body}>
-          Only this league's organiser plans its fixtures. {listing.plans.length ? "The published versions are below." : "Nothing has been published yet."}
-        </p>
+        <div data-testid="pl-readonly" style={{ display: "grid", gap: T.space.xs }}>
+          <StateLabel kind="readonly" why="only this league's organiser plans its fixtures"/>
+          <p style={S.body}>{listing.plans.length ? "The published versions are below." : "Nothing has been published yet."}</p>
+        </div>
       )}
 
       {canManage && (

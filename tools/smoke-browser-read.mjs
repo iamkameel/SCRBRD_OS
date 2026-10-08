@@ -1005,6 +1005,15 @@ try {
     const nums = card.locator('input[type="number"]');
     await nums.nth(0).fill("7");
     await nums.nth(1).fill("18");
+    // A refusal is in words, never the code and the path (GA-I21). 31 overs is past the route's 30.
+    await nums.nth(0).fill("31");
+    ok("she tries a spell past the limit", await click(head.page, /Set the ceiling/, 4000));
+    await head.page.waitForSelector('[data-testid="ceiling-said"]', { timeout: 6000 }).catch(() => {});
+    const refusal = (await head.page.locator('[data-testid="ceiling-said"]').innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+    ok("...and is told in words: whole number from 1 to 30", /Overs per spell must be a whole number from 1 to 30/.test(refusal), refusal);
+    ok("...not the code or the path", !/max_overs_per_spell_invalid|\/api\/|\(/.test(refusal), refusal);
+    ok("...and nothing was said as set", await head.page.locator('[data-testid="ceiling-done"]').count() === 0);
+    await nums.nth(0).fill("7");
     ok("she sets it", await click(head.page, /Set the ceiling/, 4000));
     await head.page.waitForTimeout(1800);
     ok("...and the screen reports the school's own numbers back", /7 per spell, 18 per day/.test(await card.innerText()));
