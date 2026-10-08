@@ -505,6 +505,11 @@ try {
        && !/All-time results vs KZN school opponents/.test(h2h),
        h2h.replace(/\s+/g, " ").slice(0, 200));
     ok("...and the record says it is derived", /Derived from completed fixtures/i.test(h2h));
+    // GA-I22: the one shared line, with all four parts and a plain count.
+    const h2hLine = (await coach.page.locator('[data-testid="source-line-h2h"]').innerText().catch(() => "")).replace(/\s+/g, " ");
+    ok("...under the shared source line: source, scope, window and basis",
+       /Source/.test(h2hLine) && /Scope/.test(h2hLine) && /Window/.test(h2hLine) && /Basis From \d+ completed fixtures?/.test(h2hLine), h2hLine);
+    ok("...and it is at least 12px", await coach.page.locator('[data-testid="source-line-h2h"]').evaluate((el) => parseFloat(getComputedStyle(el).fontSize) >= 12).catch(() => false));
     ok("the Westville rivalry is there, from the fixtures", /Westville/i.test(h2h));
     // The honest column. The seeded past fixture has no toss recorded, so its
     // winner is not attributable and the screen must say so rather than
@@ -521,6 +526,9 @@ try {
     if (DEBUG) console.log("[debug] matchups:\n" + mu.slice(0, 900));
     ok("the coverage is stated", /Deliveries attributed/i.test(mu));
     ok("...including what cannot be attributed", /Not attributable/i.test(mu));
+    const muLine = (await coach.page.locator('[data-testid="source-line-matchups"]').innerText().catch(() => "")).replace(/\s+/g, " ");
+    ok("...under the shared source line, with its denominator in the log's own terms",
+       /Source Scored balls/.test(muLine) && /Scope Every batter you may see/.test(muLine) && /Basis (From \d+ attributed balls?, of \d+ deliveries in the log|No attributed balls on record yet)/.test(muLine), muLine);
     // Hilton's boy faced Botha for 36 balls, so a pair exists to draw.
     ok("a batter-against-bowler pair is drawn",
        (await coach.page.locator('[data-testid^="matchup-"]').count()) > 0);
@@ -545,6 +553,9 @@ try {
        !/Powerplay \(1–6\)/.test(ph) && !/Net RPO/.test(ph) && !/Wkts Batting/.test(ph),
        ph.replace(/\s+/g, " ").slice(0, 220));
     ok("...and it says the fold is the scorer's own reducer", /same reducer/i.test(ph));
+    const phLine = (await coach.page.locator('[data-testid="source-line-phases"]').innerText().catch(() => "")).replace(/\s+/g, " ");
+    ok("...under the shared source line: the fixture, its date and the balls folded",
+       /Source Scored balls/.test(phLine) && /Scope .+ v .+, both innings/.test(phLine) && /Window \d{1,2} [A-Z][a-z]{2} \d{4}/.test(phLine) && /Basis (From \d+ balls?\.|No balls on record yet)/.test(phLine), phLine);
     ok("a fixture is offered to fold", (await coach.page.locator('[data-testid^="phases-match-"]').count()) > 0);
     ok("an innings is drawn", (await coach.page.locator('[data-testid^="phases-innings-"]').count()) > 0);
     ok("...with the three phases named", /Powerplay/.test(ph) && /Middle overs/.test(ph) && /Death overs/.test(ph));

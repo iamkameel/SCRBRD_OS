@@ -1084,6 +1084,9 @@ try {
     ok("...under its division", /division 1/i.test(t));   // innerText carries the CSS upper-casing
     ok("...with both pilot sides in it", /Hilton 1st XI/.test(t) && /Westville 1st XI/.test(t));
     ok("...and the season the competition belongs to", /2026/.test(t) && !/2026\/27/.test(t));
+    const ll = (await c.page.locator('[data-testid="source-line-ladder"]').innerText().catch(() => "")).replace(/\s+/g, " ");
+    ok("...under the shared source line, saying what the ladder is worked out from and over how many teams (GA-I22)",
+       /Source (Match results|The schools' own entries)/.test(ll) && /Scope Every team in this competition/.test(ll) && /Basis From \d+ teams?\./.test(ll), ll);
     ok("no console errors", c.errors.length === 0);
     await c.ctx.close();
   }
@@ -1246,7 +1249,8 @@ try {
       if (!(await wheel.count())) return null;
       const xs = await wheel.locator("line").evaluateAll(
         (els) => els.map((e) => Number(e.getAttribute("x2"))).filter(Number.isFinite));
-      return { wheel, xs, text: await wheel.innerText().catch(() => "") };
+      return { wheel, xs, text: await wheel.innerText().catch(() => ""),
+               line: (await c.page.locator('[data-testid="source-line-wagon"]').innerText().catch(() => "")).replace(/\s+/g, " ") };
     };
 
     // T Bekker — right-handed, seeded through the covers (theta ~300-330).
@@ -1254,6 +1258,8 @@ try {
     ok("the wheel is drawn on the career tab", bekker !== null);
     ok("...and it actually drew his shots", bekker && bekker.xs.length > 10);
     ok("...saying how many it drew", bekker && /\d+ shown/.test(bekker.text));
+    ok("...under the shared source line: scored balls, the dates, and how many shots (GA-I22)",
+       bekker && /Source Scored balls/.test(bekker.line) && /Window \d{1,2} [A-Z][a-z]{2}/.test(bekker.line) && /Basis From \d+ shots with a position\./.test(bekker.line), bekker && bekker.line);
     // Off side for a right-hander is screen-left of the centre line.
     const bekkerLeft = bekker ? bekker.xs.filter((x) => x < 150).length / bekker.xs.length : 0;
     ok(`...predominantly to one side of the ground (${Math.round(bekkerLeft * 100)}% left)`,

@@ -14,6 +14,9 @@ import { holdsAsHeld } from "../lib/held.js";
 import { ConductTab } from "./discipline.jsx";
 import { readsConduct } from "../rbac/conduct.js";
 import { Icon } from "../ui/icons.jsx";
+import { SourceLine } from "../ui/sourceLine.jsx";
+import { SRC_BALLS, SRC_RECORD, WINDOW_ALL, dateWindow } from "../lib/sourceWords.js";
+import { MIN_BALLS_BOWLED, MIN_BALLS_FACED } from "@scrbrd/scoring";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS / RBAC VIEW
@@ -256,6 +259,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
           {/* CAREER TAB */}
           {tab==="career"&&(
             <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+              <SourceLine testid="source-line-career" demo={!signedIn()} demoWhy="sample career"
+                source={SRC_RECORD} scope="This player, every team" window={WINDOW_ALL}/>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
                 <Card sx={{padding:"14px"}}>
                   <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>BATTING CAREER</div>
@@ -282,6 +287,15 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     </div>
                   ))}
                   {bookNote(p)&&<div data-testid="career-book-note" style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px"}}>{bookNote(p)}</div>}
+                  {p.live&&"ballsFaced" in p&&(
+                    <div style={{marginTop:"10px"}}>
+                      {/* Balls where the scorebooks gave them; the innings where they did not (an innings imported with no balls column). */}
+                      <SourceLine testid="source-line-batting"
+                        denominator={typeof p.ballsFaced==="number"
+                          ? { n: p.ballsFaced, unit: "ball faced", plural: "balls faced", floor: MIN_BALLS_FACED }
+                          : { n: p.innings, unit: "innings", plural: "innings", detail: "no balls recorded in them" }}/>
+                    </div>
+                  )}
                 </Card>
                 {/* How he's out, by method (up48). Long-form rows filtered to
                     this player, client-side — the read is the same one shot
@@ -312,6 +326,12 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                         <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{v}</span>
                       </div>
                     ))}
+                    {p.live&&typeof p.ballsBowled==="number"&&(
+                      <div style={{marginTop:"10px"}}>
+                        <SourceLine testid="source-line-bowling"
+                          denominator={{ n: p.ballsBowled, unit: "ball bowled", plural: "balls bowled", floor: MIN_BALLS_BOWLED }}/>
+                      </div>
+                    )}
                   </Card>
                 )}
                 {/* How he takes wickets, by method (up48). Same guard as the
@@ -757,6 +777,11 @@ function CareerWagonWheel({ player, role }) {
 
   return (
     <>
+      {!loading&&!error&&(
+        <SourceLine testid="source-line-wagon" source={SRC_BALLS} scope="This player, every shot placed on the field"
+          window={dateWindow(rows.map((b) => b.startsAt))}
+          denominator={{ n: rows.length, unit: "shot with a position", plural: "shots with a position" }}/>
+      )}
       <div data-testid="career-wagon-wheel">
         {loading ? <EmptyState loading/>
          : error ? <EmptyState error/>
@@ -892,7 +917,7 @@ function DismissalMethodCard({ title, testId, color, live, playerId, side, empty
       {loading ? <EmptyState loading/>
        : error ? <EmptyState error/>
        : !sorted.length ? <EmptyState message={emptyMessage}/>
-       : sorted.map((r)=>{
+       : <>{sorted.map((r)=>{
           const pct = total>0 ? Math.round((r.count/total)*100) : 0;
           return (
             <div key={r.method ?? "unrecorded"} style={{marginBottom:"9px"}}>
@@ -906,6 +931,8 @@ function DismissalMethodCard({ title, testId, color, live, playerId, side, empty
             </div>
           );
         })}
+        <SourceLine testid={`${testId}-source`} source={SRC_BALLS} window={WINDOW_ALL}
+          denominator={{ n: total, unit: side==="bowling" ? "wicket" : "dismissal" }}/></>}
     </Card>
   );
 }

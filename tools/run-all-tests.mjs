@@ -221,6 +221,7 @@ const SUITES = [
   // GA-I21: one label for demo / practice / read only (no "official": a result
   // is read from the log, not stored), and the bowling-ceiling refusal in words.
   ["state-label", "apps/web/test/state-label.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["source-line", "apps/web/test/source-line.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The three solo-test screens, over routes that already existed: the office
   // verifying a parent's link and recording the family's agreement, booking a
   // vehicle and a trip, and signing out everywhere. Who is offered, what is

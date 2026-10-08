@@ -83,12 +83,12 @@ try {
     { playerId: PLAYER, side: "batting", method: null,     count: 1 },
     // Not this player, and not this side — neither should appear.
     { playerId: "someone-else", side: "batting", method: "lbw", count: 7 },
-    { playerId: PLAYER, side: "bowling", method: "bowled", count: 5 },
+    { playerId: PLAYER, side: "bowling", method: "bowled", count: 9 },
   ];
   const out2 = card({ rows, loading: false, error: null }, "batting");
   ok("this player's batting methods are on the card", /Bowled/.test(out2) && /Caught/.test(out2));
   ok("another player's row never appears", !/\b7\b/.test(out2));
-  ok("this player's OWN bowling row does not leak onto the batting card", !/\b5\b/.test(out2));
+  ok("this player's OWN bowling row does not leak onto the batting card", !/\b9\b/.test(out2));
 
   group("The NULL-method row is kept, not dropped, and the total still adds up");
   ok("\"Method not recorded\" is on the card", /Method not recorded/.test(out2));
