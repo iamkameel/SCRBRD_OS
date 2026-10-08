@@ -487,6 +487,8 @@ try {
     const seen = tid(s.page, "signal-seen-S7");
     const had = await seen.count();
     if (had) await seen.click({ timeout: 3000 }).catch(() => {});
+    await s.page.keyboard.press("Escape");                  // the drawer is over the navigation
+    await s.page.waitForTimeout(400);
     await queue(s.page);
     ok("A signal marked Seen on the Coach tab is still a row here: a blocker is open until its fact changes (D7)", had === 1 && (await rowsOf(s.page, A)).some((r) => r.rule === "S7"), `seen button: ${had}`);
     // The sheet made whole (an eleventh named), as if published from another phone: both sessions' next open drops the sheet row.

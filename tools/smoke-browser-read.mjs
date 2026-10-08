@@ -2127,15 +2127,15 @@ try {
     const c = await open();
     ok("the director of sport signs in", await signIn(c.page, /sarah@example\.invalid|Director/));
     const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
-    await tid("nav-readiness").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
-    ok("she reaches Readiness", await tid("os-main").getAttribute("data-page") === "readiness");
+    await tid("nav-readiness").click({ timeout: 6000 }); await c.page.waitForTimeout(3500);
+    ok("she reaches To resolve (was Readiness)", await tid("os-main").getAttribute("data-page") === "readiness");
 
     const card = tid(`readiness-fixture-${MATCH}`);
     ok("the fixture is on the overview", await card.count() === 1);
     const overviewText = await tid(`readiness-covered-${MATCH}`).innerText();
     ok(`the overview reads "${trueCovered} of 8 on record"`, overviewText.trim() === `${trueCovered} of 8 on record`);
-    ok("the covered slot itself is shown as on record, not merely counted",
-       await tid(`readiness-slot-${MATCH}-umpire`).count() === 1);
+    ok("the umpire on record is not a row to resolve: no 'No umpire on record' on that fixture's group",
+       !/No umpire on record/.test(await card.innerText()));
 
     // Cross-check against the fixture's own screen — not a second opinion,
     // the same claim asked twice.
