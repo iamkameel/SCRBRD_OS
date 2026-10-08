@@ -22,7 +22,7 @@
  */
 import { api, signedIn } from "./api.js";
 import { MODULE_OF_NAV } from "@scrbrd/policy/modules";
-import { ROLES, navForRoles, personaFor } from "../design/roles.js";
+import { ROLES, collapseHomes, homeParts, personaFor, reachForRoles } from "../design/roles.js";
 import { profile } from "./session.js";
 import { useEffect, useState } from "react";
 
@@ -82,16 +82,17 @@ export function useFeatures() {
 }
 
 /**
- * The destinations to draw: the role's navigation, narrowed by what is on.
+ * Every destination this session reaches, homes' members included: the
+ * role's reach, narrowed by what is on.
  *
- * AN AND, in that order, and the order is the whole point. `navFor` has
+ * AN AND, in that order, and the order is the whole point. `reachForRoles` has
  * already filtered to the capabilities this role holds; this only removes
  * more. There is no path through this function that adds a destination a role
  * did not already have — switching a module on for somebody who cannot hold
  * its capability gives them nothing, which is what makes the settings screen
  * safe to hand to a school administrator.
  */
-export function useNav(role) {
+export function useReach(role) {
   const { features } = useFeatures();
   // A signed-in person's menu comes from the assignments they actually hold
   // — a pupil is `player` and `selfaccess`, a coach who is also a parent is
@@ -100,11 +101,32 @@ export function useNav(role) {
   // either way: a destination drawn here is still refused by the API if the
   // person may not read what is behind it.
   const held = profile()?.assignments?.map((a) => a.role) ?? [];
-  const nav = held.length ? navForRoles([...new Set(held)]) : (ROLES[role]?.nav ?? []);
-  return nav.filter((k) => {
+  const reach = held.length ? reachForRoles([...new Set(held)]) : (ROLES[role]?.reach ?? []);
+  return reach.filter((k) => {
     const module = MODULE_OF_NAV[k];
     return !module || features[module] !== false;
   });
+}
+
+/**
+ * The destinations to draw: the reach above, with each home drawn once
+ * (GA-I30). A home is offered when ANY of its sections is reached, so
+ * switching a module off removes that section and never the whole home while
+ * another remains; and no home is offered to a reader who reaches none.
+ */
+export function useNav(role) {
+  return collapseHomes(useReach(role));
+}
+
+/**
+ * What a home shows this reader: `{ sections, links }`, each only where the
+ * destination it came from is in the reader's reach. The same narrowing as
+ * the menu, asked of the same list, so a home can never show more than the
+ * menu would have.
+ */
+export function useHome(role, homeKey) {
+  const { sections, links } = homeParts(homeKey, useReach(role));
+  return { sections, links };
 }
 
 /**

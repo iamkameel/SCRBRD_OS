@@ -28,7 +28,7 @@ import { Icon } from "../ui/icons.jsx";
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
 // ══════════════════════════════════════════════════════
-function LeagueView({ role }) {
+function LeagueView({ role, homeBar = null }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const COMPETITIONS = useRows("competitions", role);
@@ -119,6 +119,7 @@ function LeagueView({ role }) {
     <div className="os-page">
       <SectionHeader title="League Management" sub="Standings · Fixtures · Results · Top Performers" color={D.amber}
         actions={fixtureSchools.length>0&&<Btn size="sm" onClick={()=>setAddFixture(true)}>+ Add Fixture</Btn>}/>
+      {homeBar}
 
       {/* Competition selector */}
       <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
