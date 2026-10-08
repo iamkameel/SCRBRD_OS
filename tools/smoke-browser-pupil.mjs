@@ -191,6 +191,9 @@ try {
 
   group("The pupil's app: Home · Matches · Passport · Me");
   const s = await open();
+  // GA-I20 A1 (D12): what his own To-do list asks the server for.
+  const asked = [];
+  s.page.on("request", (r) => { if (r.url().includes("/api/")) asked.push(new URL(r.url()).pathname); });
   ok("the pupil signs in, to his own app's header", await signIn(s.page));
   ok("...and lands on his Home", await tid(s.page, "os-main").getAttribute("data-page") === "myhome");
   const bar = await s.page.$$eval('[data-testid^="mnav-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
@@ -209,6 +212,28 @@ try {
   const fh = await floors(s.page);
   ok(`Home at phone width: nothing read under 12px (${fh.small.length})`, fh.small.length === 0, fh.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fh.tiny.length})`, fh.tiny.length === 0, fh.tiny.slice(0, 4).join(" · "));
+
+  group("His own To-do list (GA-I20 A1, D12): his answers, and no lift, consent or contact row");
+  {
+    await s.page.waitForFunction(() => { const e = document.querySelector('[data-testid="todo-count"]'); return !!e && !/^Reading/.test(e.innerText); }, null, { timeout: 9000 }).catch(() => {});
+    const card = await inner(s.page, "todo-card");
+    const order = await s.page.$$eval('[data-testid="pupil-home"] > *', (els) => els.map((e) => e.getAttribute("data-testid")).filter(Boolean));
+    ok("'To do for you', under his next fixture", /To do for you/i.test(card) && order.indexOf("todo-card") === order.indexOf("next-fixture") + 1, order.join());
+    // Every fixture of his side is months away (dated so above): the window is fourteen days, and the rest fold.
+    ok("nothing inside fourteen days, said for the window; his unanswered fixtures folded under 'Later'",
+       /Nothing to do for you in the next 14 days/.test(card) && /Later · \d+ to answer/.test(card), card);
+    await tid(s.page, "todo-later").click({ timeout: 4000 }).catch(() => {});
+    await s.page.waitForTimeout(300);
+    const rows = await s.page.$$eval('[data-testid="todo-card"] [data-testid^="todo-row-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
+    ok("...unfolded: one row per fixture, each his own answer (R1), worded to him", rows.includes(`todo-row-${NEXT}`) && rows.every((r) => !/^todo-row-R\d/.test(r))
+       && /Answer for \w{3} v Verify Pupil XI/.test(await inner(s.page, `todo-row-${NEXT}`)) && /you or your parents/.test(await inner(s.page, `todo-row-${NEXT}`)), rows);
+    ok("no lift, consent or contact row, and no 'What you have agreed' card", !/seat|lift|consent|public pages|Health monitoring|number|ring/i.test(await inner(s.page, "todo-card"))
+       && await tid(s.page, "todo-record").count() === 0);
+    ok("...and his list never asked for a contact count, a lift, a driver's requests or the public-name answer",
+       !asked.some((p) => /emergency_contact|\/matches\/[^/]+\/lifts|lifts\/requests|public-name/.test(p)), asked.filter((p) => /emergency_contact|\/matches\/[^/]+\/lifts|lifts\/requests|public-name/.test(p)));
+    ok("no team-mate's name on it", !/Whitfield|Bekker|Naidoo/.test(await inner(s.page, "todo-card")));
+    await tid(s.page, "todo-later").click({ timeout: 4000 }).catch(() => {});
+  }
 
   group("He answers for himself, from the fixture");
   await tid(s.page, "next-fixture-open").click({ timeout: 4000 }).catch(() => {});

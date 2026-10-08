@@ -62,6 +62,8 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
       setSelMatch(m);
       return;
     }
+    // GA-I36 O7: the fixture opens on its Corrections sheet.
+    if (want.view === "corrections") { setCoachOn({ tab: null, drawer: false, corrections: true }); setOpenM(m); return; }
     setCoachOn({ tab: "coach", drawer: want.drawer });
     setOpenM(m);
   }, [MATCHES]);
@@ -82,7 +84,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   const [sbOpen,   setSbOpen]   = useState(null);
   // The Dashboard's match-day card sends the coach to a fixture's Coach tab
   // (SCRBRD-136): taken once the fixtures have loaded, then forgotten.
-  const [coachOn, setCoachOn] = useState(/** @type {{tab: string, drawer: boolean} | null} */ (null));
+  const [coachOn, setCoachOn] = useState(/** @type {{tab: string | null, drawer: boolean, corrections?: boolean} | null} */ (null));
   // The Post-Match Report (SCRBRD-082) — a fixture's own screen, opened from
   // its card the same way the Scorecard is. Offered only once a match is
   // complete: a live fixture's report would be reporting on a game still
@@ -131,7 +133,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
     const fresh = MATCHES.find((m) => m.id === openM.id) ?? openM;
     return (
       <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={canScore(role)}
-        initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false}
+        initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false} initialCorrections={coachOn?.corrections ?? false}
         onOpenScorer={onOpenScorer} onNavProfile={onNavProfile}
         matches={MATCHES} onOpenFixture={openFixture} onTeamResults={teamResults}/>
     );

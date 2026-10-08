@@ -110,6 +110,10 @@ const SUITES = [
   // The Match Centre's own derivations (redesign step 3c): sides named in
   // full and by code, the match line, the scorecard's parts, the break.
   ["match-centre",      "apps/web/test/match-centre.test.mjs"],
+  // GA-I36 A0/A1: a correction read off the log (the chip, the line, the
+  // innings it moved), the effect folded before a decision, and 300 random
+  // logs whose fold with voids equals the fold without the voided rows.
+  ["corrections",       "apps/web/test/corrections.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The public page (SCRBRD-083): the redacted log made foldable, no
   // pseudonym ever shown as a name.
   ["public-page",       "apps/web/test/public-page.test.mjs"],
@@ -260,6 +264,9 @@ const SUITES = [
   // disabled, failed, stale and partial each say something different, retry
   // re-runs the same read, and useSkills no longer throws its state away.
   ["readstate", "apps/web/test/readstate.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I19 slice 0 (D7): the Injuries screen's phase and severity words are the
+  // database's (the CHECKs read from db/00), and its counts follow phase.
+  ["injuries", "apps/web/test/injuries.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I13: the scorer's home — who lands on it (the scorer's bundle alone),
   // his fixtures appointed first, each one's state for this device, what this
   // device has to resume with its unsent events, and the lines before the toss.

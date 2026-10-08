@@ -295,6 +295,30 @@ export function liftRoutes({ pool, secret }) {
         name: r.full_name, driverName: r.driver_name, meetAt: r.meet_at, since: r.since })) };
     }),
 
+    // GET /api/lifts/requests-mine — the driver's own open lifts with seats
+    // still only asked for, as COUNTS (GA-I20 A1, N3; the parent's list, R5).
+    // Not a function: a plain read as the caller, under db/70's own policies.
+    // lift_offer_read and lift_seat_read admit the offer's driver
+    // (lift_my_offers()), the RESTRICTIVE cuts (support, platform, pupil)
+    // stand, and `o.id in (select lift_my_offers())` keeps it to the lifts
+    // she DRIVES — not the offers on her son's side that a guardian also
+    // reads. No player_id, no name leaves: nothing to log, so it is safe on
+    // a glance at Home. The names stay behind /passengers, read on the tap.
+    requestsMine: handle(async (client) => {
+      const { rows } = await client.query(
+        `select o.id as offer_id, o.match_id, o.school_id, o.team_code, o.leg, o.meet_at,
+                count(*)::int as requested_count
+           from lift_offer o
+           join lift_seat s on s.offer_id = o.id
+          where o.id in (select lift_my_offers())
+            and o.state = 'open'
+            and s.state = 'requested'
+          group by o.id, o.match_id, o.school_id, o.team_code, o.leg, o.meet_at
+          order by o.meet_at, o.id`);
+      return { rows: rows.map((/** @type {any} */ r) => ({ offerId: r.offer_id, matchId: r.match_id, schoolId: r.school_id,
+        team: r.team_code, leg: r.leg, meetAt: r.meet_at, requested: r.requested_count })) };
+    }),
+
     // GET /api/lifts/mine — the boy of eighteen at school: his own lifts, no number.
     mine: handle(async (client) => {
       const { rows } = await client.query(`select * from my_lifts()`);
