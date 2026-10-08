@@ -127,6 +127,10 @@ const SUITES = [
   // the dwell, the skip, a wicket's interrupt resuming where it was, the holds
   // — and its panels over built logs (display/rotation.js, display/data.js).
   ["rotation",          "apps/web/test/rotation.test.mjs"],
+  // Par and pressure (SCRBRD-133 G2): every row of §3.3 against hand figures —
+  // the server's report (@scrbrd/scoring parReport()), the Board's words, the
+  // rate track and the worm's par line — and no resource computed by a page.
+  ["par",               "apps/web/test/par.test.mjs"],
   // The ground display's QR code (lib/qr.js) against an independent encoder.
   ["qr",                "apps/web/test/qr.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
@@ -256,6 +260,10 @@ const SUITES = [
   // disabled, failed, stale and partial each say something different, retry
   // re-runs the same read, and useSkills no longer throws its state away.
   ["readstate", "apps/web/test/readstate.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I13: the scorer's home — who lands on it (the scorer's bundle alone),
+  // his fixtures appointed first, each one's state for this device, what this
+  // device has to resume with its unsent events, and the lines before the toss.
+  ["scorer-home", "apps/web/test/scorer-home.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I07: Squad and Analytics open on the person's own side, and a gate
   // answers from the roles held, as the menu does.
   ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

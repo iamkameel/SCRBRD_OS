@@ -28,6 +28,16 @@
  *      no further request.
  *   8. Daylight lifts the dim token, rules the rows at 2px; Reduce motion
  *      marks the root; nothing on the page can be tapped or focused.
+ *   8b. Par and pressure (G2, design §3): at a ground of the walk's own with
+ *      six innings (par 80), a first innings 6 ahead says so on the Board's
+ *      second line, the rate track draws par and score with "+6", and the
+ *      worm panel draws the par dashed and labelled "Par here 80 (6
+ *      innings)"; a chase says what it needs and that the required rate is
+ *      climbing, its track the two rates, its worm the target solid; at a
+ *      ground with no par nothing is said about par and no track or par line
+ *      is drawn; the /par read is no-store, team-level, and an unpublished
+ *      fixture's is the one 404; Reduce motion makes the ticks a cut. No
+ *      pressure percentage anywhere.
  *   9. The setup section on the fixture's Publication panel, signed in as
  *      the director of sport: the link and its QR code, the three settings
  *      in the link, and "N of M named on public surfaces · K shown by
@@ -50,7 +60,7 @@ import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildPublicFixture, HIL } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
-import { ball, batters, bowler, inningsStart, sealInnings, deriveInnings, BALL_TYPE } from "@scrbrd/scoring";
+import { ball, batters, bowler, inningsStart, sealInnings, deriveInnings, BALL_TYPE, INNINGS_END_REASON } from "@scrbrd/scoring";
 
 const PORT = port(8849);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -175,11 +185,12 @@ try {
 
   /** A fixture of this walk's own, Hilton at home, published, with typed sides. */
   let n = 0;
-  const fixture = async (/** @type {string} */ status, /** @type {(at: (ev: any, inn: number) => any) => any[]} */ build) => {
+  const fixture = async (/** @type {string} */ status, /** @type {(at: (ev: any, inn: number) => any) => any[]} */ build,
+                         { ground = GROUND, ago = "1 hour", publish = true } = {}) => {
     const id = (await q(
       `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
-       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - interval '1 hour', 'cricket', 'T10', 10, $3) returning id`, [HIL, GROUND, status]))[0].id;
-    await as(SARAH, `select * from fixture_publish($1, 'home', true)`, [id]);
+       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - $4::interval, 'cricket', 'T10', 10, $3) returning id`, [HIL, ground, status, ago]))[0].id;
+    if (publish) await as(SARAH, `select * from fixture_publish($1, 'home', true)`, [id]);
     const at = (/** @type {any} */ ev, /** @type {number} */ inn) => ({ ...ev, innings: inn, id: `disp-${++n}`, clientTs: Date.parse("2026-09-30T08:00:00Z") + n * 30_000 });
     await writeEvents(q, id, build(at));
     return { id, at };
@@ -217,6 +228,56 @@ try {
     }
     return [...first, ...chase];
   });
+
+  // ── G2: par and pressure. Two grounds of this walk's own, new each run so
+  // a database walked before cannot move the figures. PAR_G: five complete
+  // T10 matches with first innings of 70, 75, 80, 85 and 90, and PARC's
+  // sealed 80 — six innings, par round(480 ÷ 6) = 80. FEW_G: none.
+  /** Hilton's first innings of `runs` off 60 balls (twos, a one when odd, dots), the bowlers turning about. */
+  const innings60 = (/** @type {any} */ at, /** @type {number} */ runs, seal = true) => {
+    const all = [...open0(at)];
+    const steps = [...Array(Math.floor(runs / 2)).fill(2), ...(runs % 2 ? [1] : [])];
+    while (steps.length < 60) steps.push(0);
+    steps.forEach((v, k) => { if (k && k % 6 === 0) all.push(at(bowler({ bowler: K[(k / 6) % 2].id }), 0)); all.push(at(ball({ value: v }), 0)); });
+    // Sealed "overs_complete", the fold's own reason, which venue par's pool reads (db/74).
+    return seal ? [...all, at(sealInnings(deriveInnings(all), INNINGS_END_REASON.OVERS), 0)] : all;
+  };
+  const PAR_G = (await q(`insert into ground (school_id, name) values ($1, $2) returning id`, [HIL, `Display par oval ${Date.now()}`]))[0].id;
+  const FEW_G = (await q(`insert into ground (school_id, name) values ($1, $2) returning id`, [HIL, `Display new oval ${Date.now()}`]))[0].id;
+  for (const [k, runs] of [70, 75, 80, 85, 90].entries()) {
+    await fixture("complete", (at) => innings60(at, runs), { ground: PAR_G, ago: `${k + 2} days`, publish: false });
+  }
+  // PAR1: a first innings at three overs, 30 (ten an over): par here
+  // round(80 × 18 ÷ 60) = 24, so "6 ahead"; CRR 10.00.
+  const PAR1 = await fixture("live", (at) => {
+    const all = [...open0(at)];
+    for (let o = 0; o < 3; o++) {
+      if (o) all.push(at(bowler({ bowler: K[o % 2].id }), 0));
+      for (const v of [2, 2, 2, 2, 1, 1]) all.push(at(ball({ value: v }), 0));
+    }
+    return all;
+  }, { ground: PAR_G });
+  // PARC: Hilton 80 sealed; Kearsney need 81 and have 12 off three overs:
+  // 69 off 42 — RRR 69 × 6 ÷ 42 = 9.86, against 81 × 6 ÷ 60 = 8.10 at the
+  // start: climbing.
+  const PARC = await fixture("live", (at) => {
+    const chase = [at(inningsStart({ battingTeam: "Kearsney College 1XI", bowlingTeam: "1XI", teamKey: "Kearsney College 1XI", bowlingTeamKey: "1XI",
+      squad: K, bowlingSquad: H, overs: 10, target: 81 }), 1), at(batters({ striker: K[0].id, nonStriker: K[1].id }), 1), at(bowler({ bowler: H[0].id }), 1)];
+    for (let o = 0; o < 3; o++) {
+      if (o) chase.push(at(bowler({ bowler: H[o % 2].id }), 1));
+      for (const v of [2, 2, 0, 0, 0, 0]) chase.push(at(ball({ value: v }), 1));
+    }
+    return [...innings60(at, 80), ...chase];
+  }, { ground: PAR_G });
+  // FEW: the same first innings at a ground with no record: nothing about par.
+  const FEW = await fixture("live", (at) => {
+    const all = [...open0(at)];
+    for (let o = 0; o < 3; o++) {
+      if (o) all.push(at(bowler({ bowler: K[o % 2].id }), 0));
+      for (const v of [2, 2, 2, 2, 1, 1]) all.push(at(ball({ value: v }), 0));
+    }
+    return all;
+  }, { ground: FEW_G });
 
   group("1. Names only under the rule, at three sizes");
   for (const [w, h] of SIZES) {
@@ -267,10 +328,11 @@ try {
   for (const [w, h] of SIZES) {
     const small = new Set();
     const seen = new Set();
-    for (const [id, label] of [[ROT.id, "the cycle"], [BRK.id, "the break"], [FT.id, "the result"]]) {
+    for (const [id, label] of [[ROT.id, "the cycle"], [BRK.id, "the break"], [FT.id, "the result"], [PAR1.id, "par"], [PARC.id, "the chase"]]) {
       const v = await tv(`/display/${id}`, { width: w, height: h, hooks: { __SCRBRD_DISPLAY_DWELL_MS__: 1200 } });
       await until(v.page, () => !!document.querySelector('[data-testid="display"]'));
-      for (let i = 0; i < 8; i++) {
+      // Fourteen looks half a second apart: the four panels of the cycle at a 1.2 s dwell, with room.
+      for (let i = 0; i < 14; i++) {
         const key = `${label}:${await panelOf(v.page)}`;
         if (SHOTS && !seen.has(key)) await v.page.screenshot({ path: `${SHOTS}/display-${key.replace(/\W+/g, "-")}-${w}x${h}.png` });
         seen.add(key);
@@ -287,6 +349,8 @@ try {
     ok(`${w}×${h}: no text under 12px across ${[...seen].join(", ")}`, small.size === 0, [...small].slice(0, 8).join(" · "));
     ok(`${w}×${h}: the walk saw all three panels of the cycle and both holds`,
        ["the cycle:partnership", "the cycle:overs", "the cycle:bowling", "the break:break", "the result:result"].every((p) => seen.has(p)), [...seen].join(", "));
+    ok(`${w}×${h}: ...and the worm, with its par line and the rate track, in the sweep (G2)`,
+       ["par:worm", "the chase:worm"].every((p) => seen.has(p)), [...seen].join(", "));
   }
 
   group("4. Not published is not found");
@@ -299,6 +363,9 @@ try {
        && ta === tb && tb === tc, `${a.res?.status()} ${b.res?.status()}`);
     ok("...noindex, no-store", /noindex/.test(a.res?.headers()["x-robots-tag"] ?? "") && a.res?.headers()["cache-control"] === "no-store");
     ok("...and no bundle was loaded for it", !a.requests.some((r) => /public-app\.js/.test(r.url)));
+    const pu = await fetch(`${BASE}/api/public/matches/${unpub}/par`, { headers: { "x-forwarded-for": "10.85.2.9" } });
+    const pm = await fetch(`${BASE}/api/public/matches/${MISSING}/par`, { headers: { "x-forwarded-for": "10.85.2.9" } });
+    ok("...its par read (G2) is the same 404 as a missing fixture's", pu.status === 404 && pm.status === 404 && (await pu.text()) === (await pm.text()));
     for (const x of [a, b, c]) await x.ctx.close();
   }
 
@@ -404,6 +471,93 @@ try {
       ok(`...a click goes nowhere (${x.got.theme})`, x.v.page.url() === url);
       await x.v.ctx.close();
     }
+  }
+
+  group("8b. Par and pressure (G2): the second line, the rate track, the worm's par");
+  {
+    const sub = (/** @type {any} */ page) => tid(page, "display-sub").innerText().catch(() => "");
+    const p1 = await tv(`/display/${PAR1.id}`, { hooks: { __SCRBRD_DISPLAY_DWELL_MS__: 1500 } });
+    const want1 = "6 ahead of par for this ground · CRR 10.00";
+    ok(`a first innings at 30 after three overs, par here 24: "${want1}"`,
+       await until(p1.page, (/** @type {string} */ w) => document.querySelector('[data-testid="display-sub"]')?.textContent === w, 15000, want1), await sub(p1.page));
+    const rt = await p1.page.evaluate(() => {
+      const t = document.querySelector('[data-testid="display-rate-track"]');
+      return t && { kind: t.getAttribute("data-kind"), from: t.querySelector('[data-testid="display-rate-track-from"]')?.textContent,
+        to: t.querySelector('[data-testid="display-rate-track-to"]')?.textContent, gap: t.querySelector('[data-testid="display-rate-track-gap"]')?.textContent,
+        marks: [...t.querySelectorAll("[data-mark]")].map((m) => m.getAttribute("data-mark")).join(), said: t.querySelector(".sr-only")?.textContent };
+    });
+    ok('...the rate track: par 24 a bar, the score 30 a dot, "+6", and the same in words for a reader',
+       rt?.kind === "par" && rt.from === "par 24" && /\b30$/.test(rt.to ?? "") && rt.gap === "+6" && rt.marks === "bar,dot"
+       && /par 24, .*30: 6 ahead of par for this ground/.test(rt.said ?? ""), JSON.stringify(rt));
+    ok("...the worm panel comes round", await until(p1.page, () => document.querySelector('[data-testid="display"]')?.getAttribute("data-panel") === "worm", 12000));
+    const worm1 = await p1.page.evaluate(() => ({
+      par: !!document.querySelector('[data-testid="display-worm-par"]'),
+      dash: document.querySelector('[data-testid="display-worm-par"]')?.getAttribute("stroke-dasharray"),
+      label: document.querySelector('[data-testid="display-worm-par-label"]')?.textContent,
+      legend: document.querySelector('[data-testid="display-worm-legend"]')?.textContent,
+      said: document.querySelector('[data-testid="display-worm"] [role="img"]')?.getAttribute("aria-label"),
+    }));
+    ok('...the par dashed, "Par here 80 (6 innings)", the legend saying what it is',
+       worm1.par && !!worm1.dash && worm1.label === "Par here 80 (6 innings)" && /Par: this ground, 6 innings \(dashed\) · proportion of overs; no DLS table loaded/.test(worm1.legend ?? "")
+       && /Par here 80 \(6 innings\), dashed/.test(worm1.said ?? ""), JSON.stringify(worm1));
+    const body1 = await text(p1.page);
+    ok("...no pressure figure and no percentage anywhere (D4)", !/pressure|\d\s?%/i.test(body1) && leaks(body1).length === 0, body1.slice(0, 300));
+    const parRead = p1.requests.find((r) => /\/api\/public\/matches\/[^/]+\/par$/.test(r.url));
+    ok("...read from /api/public/…/par, with no Authorization header", !!parRead && parRead.auth == null);
+    const pj = await fetch(`${BASE}/api/public/matches/${PAR1.id}/par`, { headers: { "x-forwarded-for": "10.85.2.8" } });
+    const pb = await pj.text();
+    const pv = JSON.parse(pb);
+    ok("the read: no-store, the ground's par 80 from 6 and par here 24, team-level — no innings list, no ground, no name",
+       pj.headers.get("cache-control") === "no-store" && pv.venue?.par === 80 && pv.venue.n === 6 && pv.venue.parAt === 24
+       && !/innings"|breakdown|ground|match_id|"name"/.test(JSON.stringify(pv.venue)) && !/cells|resource|"name"|ground/.test(pb)
+       // (asText off: the answer carries the fixture's own uuid, which is no pseudonym.)
+       && leaks(pb, [], false).length === 0, pb.slice(0, 300));
+    ok("no console errors (par, first innings)", p1.errors.length === 0, p1.errors.join(" | "));
+    await p1.ctx.close();
+
+    const pc = await tv(`/display/${PARC.id}`, { hooks: { __SCRBRD_DISPLAY_DWELL_MS__: 1500 } });
+    const wantC = "Need 69 off 42 · RRR 9.86, climbing";
+    ok(`a chase of 81 at 12 after three overs: "${wantC}"`,
+       await until(pc.page, (/** @type {string} */ w) => document.querySelector('[data-testid="display-sub"]')?.textContent === w, 15000, wantC), await sub(pc.page));
+    const rc = await pc.page.evaluate(() => {
+      const t = document.querySelector('[data-testid="display-rate-track"]');
+      return t && { kind: t.getAttribute("data-kind"), from: t.querySelector('[data-testid="display-rate-track-from"]')?.textContent,
+        to: t.querySelector('[data-testid="display-rate-track-to"]')?.textContent, gap: t.querySelector('[data-testid="display-rate-track-gap"]')?.textContent };
+    });
+    ok('...the rate track: CRR 4.00 against RRR 9.86, "climbing"', rc?.kind === "rate" && rc.from === "CRR 4.00" && rc.to === "RRR 9.86" && rc.gap === "climbing", JSON.stringify(rc));
+    ok("...the worm comes round", await until(pc.page, () => document.querySelector('[data-testid="display"]')?.getAttribute("data-panel") === "worm", 12000));
+    const wormC = await pc.page.evaluate(() => ({
+      target: document.querySelector('[data-testid="display-worm-target-label"]')?.textContent,
+      lines: [...document.querySelectorAll('[data-testid="display-worm-line"]')].map((l) => l.getAttribute("data-tone")).join(),
+      par: document.querySelector('[data-testid="display-worm-par-label"]')?.textContent,
+    }));
+    ok('...the target solid, "Target 81"; the first innings dim; the ground\'s par dashed (drawn, not said)',
+       wormC.target === "Target 81" && wormC.lines === "dim,main" && wormC.par === "Par here 80 (6 innings)", JSON.stringify(wormC));
+    ok("no console errors (par, the chase)", pc.errors.length === 0, pc.errors.join(" | "));
+    await pc.ctx.close();
+
+    const pf = await tv(`/display/${FEW.id}`, { hooks: { __SCRBRD_DISPLAY_DWELL_MS__: 1500 } });
+    ok('a ground with no record: the line as it was — "CRR 10.00 · At this rate: 100" — nothing about par',
+       await until(pf.page, () => /^CRR 10\.00/.test(document.querySelector('[data-testid="display-sub"]')?.textContent ?? ""), 15000)
+       && !/par/i.test(await sub(pf.page)), await sub(pf.page));
+    ok("...no rate track", await tid(pf.page, "display-rate-track").count() === 0);
+    ok("...the worm draws no par line", await until(pf.page, () => document.querySelector('[data-testid="display"]')?.getAttribute("data-panel") === "worm", 12000)
+       && await tid(pf.page, "display-worm-par").count() === 0 && await tid(pf.page, "display-worm-line").count() === 1);
+    const fj = await (await fetch(`${BASE}/api/public/matches/${FEW.id}/par`, { headers: { "x-forwarded-for": "10.85.2.8" } })).json();
+    ok("...its read says nothing of par: no venue, no track", fj.venue === null && fj.track.length === 0 && fj.trackOf === null, JSON.stringify(fj));
+    await pf.ctx.close();
+
+    // Reduce motion: the ticks are a cut, not a slide (§3.5, §4.3).
+    const tick = async (/** @type {string} */ qs) => {
+      const v = await tv(`/display/${PAR1.id}${qs}`);
+      await until(v.page, () => !!document.querySelector('[data-testid="display-rate-track"] .os-tick'));
+      const t = await v.page.evaluate(() => { const c = getComputedStyle(document.querySelector('[data-testid="display-rate-track"] .os-tick')); return `${c.transitionProperty} ${c.transitionDuration}`; });
+      await v.ctx.close();
+      return t;
+    };
+    const moving = await tick(""), still = await tick("?motion=reduce");
+    ok(`the ticks slide by transform (${moving}); under Reduce motion they cut (${still})`,
+       /transform/.test(moving) && !/^(none|all) 0s$/.test(moving) && (/^none\b/.test(still) || / 0s$/.test(still)), `${moving} | ${still}`);
   }
 
   group("9. The setup section, signed in as the director of sport");

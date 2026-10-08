@@ -20,13 +20,13 @@
  *   PAUSE    the signed-in big screen's Space: the current panel's clock
  *            stops. The ground display has no pause: nothing on it is pressed.
  *
- * G1 rotates panels 2, 3 and 4 (§2.2: partnership, over story, bowling). The
- * worm (1), runs per over (5) and where the runs went (6) join in G2 and G3,
- * at their places in CYCLE.
+ * G1 rotated panels 2, 3 and 4 (§2.2: partnership, over story, bowling); G2
+ * puts the worm (1) at the head of the cycle. Runs per over (5) and where the
+ * runs went (6) join in G3, at their places in CYCLE.
  */
 
-/** The cycle, in §2.2's order — G1's three. */
-export const CYCLE = Object.freeze(["partnership", "overs", "bowling"]);
+/** The cycle, in §2.2's order — the worm (G2), then G1's three. */
+export const CYCLE = Object.freeze(["worm", "partnership", "overs", "bowling"]);
 
 /** How long a panel stays (§2.3): Normal 12 s, Long 24 s (the setup's choice, D14). */
 export const DWELL_MS = Object.freeze({ normal: 12_000, long: 24_000 });

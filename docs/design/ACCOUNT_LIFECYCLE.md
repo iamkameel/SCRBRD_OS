@@ -1,8 +1,8 @@
 # Account lifecycle: the design
 
-**Decided 2026-10-07 (Kameel): approved as recommended, D1–D24 and Q1–Q13; slice 1 (Disable and Enable on People, no migration) built now, the rest after the pilot.**
+**Decided 2026-10-07 (Kameel): approved as recommended, D1–D24 and Q1–Q13; slice 1 (Disable and Enable on People, no migration) built now, the rest after the pilot.** Pulled forward 2026-10-08 (Kameel): slices 2–7 now, not after the pilot.
 
-**Status:** for Kameel's review. Designed by Fable, 2026-10-07. Nothing here is built.
+**Status:** for Kameel's review. Designed by Fable, 2026-10-07. Slice 1 (Disable and Enable on People) is built: #87, merged 2026-10-08. The rest is not built.
 **Source:** `CLAUDE.md`; `docs/policy/PUBLIC_DATA.md`, `docs/policy/SIGNIN_PRIVACY_NOTICE.md`; `docs/AUTH_SPEC.md`,
 `docs/spec-rbac-reconciliation.md` (G1, W1, A1); `docs/design/SCRBRD-132_end_a_role.md`,
 `SCRBRD-140_signup_and_school_linking.md` (§3.3, §3.7, §3.8, §4), `STEP4_parent_pupil.md` (§3.3, §4, §9),

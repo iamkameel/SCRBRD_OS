@@ -9,11 +9,13 @@ import { asPublicMatch, foldable, unnamedToPositions } from "./publicLog.js";
  * The public reads, shared by the live page (PublicMatch.jsx) and the ground
  * display (display/PublicDisplay.jsx) — SCRBRD-133 §7.2, lifted so the two
  * read one way. Signed out, always: same origin, `credentials: "omit"`, no
- * token, no API client. Three paths only:
+ * token, no API client. Four paths only:
  *
  *   /api/public/matches/:id           the header (team facts)
  *   /api/public/matches/:id/log       the redacted log; ?since=<seq> for what is new
  *   /api/public/matches/:id/shots     the side's sectors (L7)
+ *   /api/public/matches/:id/par       par and pressure (SCRBRD-133 G2): the
+ *                                     server's figures, never computed here
  *
  * The rule is applied on the server before any of it is sent; nothing here
  * decides who is named, and nothing here can ask for more.
@@ -58,6 +60,16 @@ export function publicStory({ header, fold = {}, events = [], people = {} }) {
   return { match, events: evs, folded, played, commentary, liveSO, result, settled };
 }
 
+/**
+ * The par report (SCRBRD-133 G2), read right after the log it is made from so
+ * the two speak for one position; null when there is none or it could not be
+ * read — the Board then says what it said before, never an old gap.
+ * @param {string} base  /api/public/matches/:id
+ */
+export async function readPar(base) {
+  try { return await read(`${base}/par`); } catch { return null; }
+}
+
 /** The same names for the same pseudonyms? @param {Record<string, string>} a @param {Record<string, string>} b */
 const samePeople = (a = {}, b = {}) => {
   const ka = Object.keys(a), kb = Object.keys(b);
@@ -99,7 +111,7 @@ export function usePublicFeed(matchId, { stop = false } = {}) {
   const [state, setState] = useState(() => ({
     loading: true, missing: false, gone: false, error: /** @type {string | null} */ (null),
     header: /** @type {any} */ (null), fold: {}, events: /** @type {any[]} */ ([]), people: /** @type {Record<string, string>} */ ({}),
-    last: 0, okAt: /** @type {number | null} */ (null),
+    last: 0, okAt: /** @type {number | null} */ (null), par: /** @type {any} */ (null),
   }));
   const held = useRef(state);
   held.current = state;
@@ -113,7 +125,7 @@ export function usePublicFeed(matchId, { stop = false } = {}) {
     const full = async () => {
       const [{ match, fold }, log] = await Promise.all([read(base), read(`${base}/log`)]);
       headerAt = Date.now();
-      return { header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0 };
+      return { header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0, par: await readPar(base) };
     };
     const step = async (/** @type {boolean} */ whole) => {
       const cur = held.current;
@@ -133,8 +145,12 @@ export function usePublicFeed(matchId, { stop = false } = {}) {
         header = (await read(base)).match;
         headerAt = Date.now();
       }
+      // The par is read again only when the log moved: with it, in the same
+      // state change, so the Board's second line never shows a gap for the
+      // ball before (SCRBRD-133 G2).
       return { ...cur, header, events: fresh.length ? [...cur.events, ...fresh] : cur.events,
-               last: Math.max(cur.last, log.last ?? 0, ...fresh.map((/** @type {any} */ e) => e.seq)) };
+               last: Math.max(cur.last, log.last ?? 0, ...fresh.map((/** @type {any} */ e) => e.seq)),
+               par: fresh.length ? await readPar(base) : cur.par };
     };
     // One read at a time: a tab coming back mid-read asks for a whole read
     // once this one is in, rather than starting a second chain of reads.

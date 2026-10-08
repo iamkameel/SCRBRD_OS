@@ -11,7 +11,7 @@ import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
-import { publicStory, read } from "./reads.js";
+import { publicStory, read, readPar } from "./reads.js";
 
 /**
  * THE PUBLIC MATCH PAGE — /live/:match and /scorecard/:match (SCRBRD-083
@@ -65,9 +65,9 @@ function usePhone(px = 640) {
   return phone;
 }
 
-/** The header and the log, polled while the match is live. */
+/** The header and the log, polled while the match is live — and the par report read after the log (SCRBRD-133 G2). */
 function usePublicMatch(matchId) {
-  const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0 });
+  const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null });
   const [tick, setTick] = useState(0);
   const live = state.header?.status === "live";
   useEffect(() => {
@@ -83,7 +83,8 @@ function usePublicMatch(matchId) {
           read(`/api/public/matches/${matchId}`),
           read(`/api/public/matches/${matchId}/log`),
         ]);
-        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0 });
+        const par = await readPar(`/api/public/matches/${matchId}`);
+        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0, par });
       } catch (e) {
         if (cancelled) return;
         // Not found is one answer: unpublished and no such fixture read alike.
@@ -275,7 +276,8 @@ export function PublicMatch({ matchId, view }) {
   const phase = inningsPhase(played, folded?.result);
   const line = matchLine({ match, competition: null, weather: null, phase });
   const notice = revisionNotice(boardInn);
-  const ctx = { match, innings: played, result, commentary, events, demo: false, overs: match.overs || 20,
+  const ctx = { match, innings: played, result, commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
+    demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
     quietMoments: true };   // the region below says it; the moment is drawn, not said twice
 
