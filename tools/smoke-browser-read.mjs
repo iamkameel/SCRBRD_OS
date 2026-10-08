@@ -418,7 +418,15 @@ try {
   const medic = await open();
   ok("the medical officer signs in", await signIn(medic.page, /Medical|Physio/));
   if (await nav(medic.page, /Notifications|Alerts/)) {
-    ok("the medical officer does receive it", /hamstring/i.test(await text(medic.page)));
+    // Since notifications S1 (D17) the list holds a tiered notice's title and
+    // not its body: the body is read on open, and the open is logged.
+    const listed = await text(medic.page);
+    ok("the medical officer's list holds the injury notice, by its title", /Injury recorded/i.test(listed));
+    ok("...and not its words until it is opened", !/hamstring/i.test(listed));
+    const row = medic.page.locator('[data-testid="notice-open"]', { hasText: /Injury recorded/i }).first();
+    await row.click().catch(() => {});
+    await medic.page.locator('[data-testid="notice-body"]', { hasText: /hamstring/i }).first().waitFor({ timeout: 5000 }).catch(() => {});
+    ok("the medical officer does receive it, on open", /hamstring/i.test(await text(medic.page)));
   } else {
     ok("the medical officer's feed is not on their nav (API assertion covers it)", true);
   }

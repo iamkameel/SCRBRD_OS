@@ -831,6 +831,35 @@ OK). **Schema first**: the API built with it refuses to start without db/87
 (`expected-migrations.json`), and the pad records these wickets only once the
 server's Laws take them.
 <!-- ── end db/87 ── -->
+<!-- ── db/89: notifications S1, the contract and read state ── -->
+#### Notices: the contract and read state (db/89)
+
+`db/89_notification_contract.sql` is notifications slice S1
+(`docs/design/NOTIFICATIONS.md` D1, D4, D5, D17–D19). `notification.kind` is
+one of nine (CHECK `notification_kind_known`), `subject_kind` gains `welfare`
+and `news`, and a trigger holds the contract: a default expiry by kind, and a
+person's `notice` names no child, has no recipient, is never high and asks
+news.read alone; no notice is public. Four retraction columns, written only by
+`notification_retract()` (granted to nobody: the system's own triggers call it
+from S2 and S5). `my_notifications`, a view as the caller, is what the notices
+list and the summary's unread count both read; `notification_by_id()` opens one
+(a tiered notice's open goes on `access_log` as `notification.open`).
+`milestone_notice` and `recognition()` leave out a retracted mark.
+
+Two backfills, both printed by the paste: every row's `is_public` becomes false
+(nothing has read it since S0), and the pilot seed's one `training` notice
+becomes a `notice` (only where that seed row exists). No row is refused or
+deleted. If the paste WARNs that stored notices sit outside the nine kinds,
+they stay as written and the CHECK stays NOT VALID — it still holds every new
+row — and §68's (stored) assertion names them: that is a decision to take with
+Kameel, not a reason to edit the file.
+
+Paste `node tools/bundle-sql.mjs --apply 89` (after 88), then the verify bundle
+(§68 is its proof, and the summary row's "Notices keep their contract" reads
+OK). **Schema first**: the API built with it reads `my_notifications` and
+refuses to start without db/89 (`expected-migrations.json`); the two receipt
+routes, `POST /api/notifications/:id/read` and `/read-all`, are on that API.
+<!-- ── end db/89 ── -->
 
 ### 5 · Cloud Run, the first time
 

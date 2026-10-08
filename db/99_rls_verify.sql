@@ -16993,6 +16993,12 @@ $v49$;
                     AND NOT has_function_privilege('public', 'notification_retract(uuid,text,boolean)', 'EXECUTE')
                     AND _app_89(format('SELECT notification_retract(%L, ''withdrawn'', true)', N)) = '42501',
       '§68 (door): the application can call notification_retract()');
+    PERFORM _assert(has_table_privilege('scrbrd_app', 'my_notifications', 'SELECT')
+                    AND NOT has_table_privilege('scrbrd_app', 'my_notifications', 'INSERT')
+                    AND NOT has_table_privilege('scrbrd_app', 'my_notifications', 'UPDATE')
+                    AND NOT has_table_privilege('public', 'my_notifications', 'SELECT')
+                    AND (SELECT c.reloptions FROM pg_class c WHERE c.oid = 'my_notifications'::regclass) @> ARRAY['security_invoker=true'],
+      '§68 (door): my_notifications is not a read, as the caller, for the application alone');
 
     -- (retract) the word must fit the kind (D2)
     SELECT concat_ws(' ', _retract_89(SG, 'correction', true, NULL), _retract_89(N, 'correction', true, NULL),

@@ -237,7 +237,8 @@ CREATE TRIGGER notification_contract
 CREATE OR REPLACE FUNCTION notification_retraction_door() RETURNS trigger AS $$
 DECLARE
   v_door  text := nullif(current_setting('scrbrd.notification_retract', true), '');
-  v_owner boolean := current_user::text = (SELECT c.relowner::regrole::text FROM pg_class c WHERE c.oid = 'notification'::regclass);
+  v_owner boolean := (SELECT c.relowner FROM pg_class c WHERE c.oid = 'notification'::regclass)
+                     = (SELECT r.oid FROM pg_roles r WHERE r.rolname = current_user);
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW.retracted_at IS NOT NULL OR NEW.retracted_by IS NOT NULL OR NEW.retraction_kind IS NOT NULL THEN
@@ -382,7 +383,10 @@ SELECT n.id, n.school_id, n.team_code, n.scope_level, n.kind, n.urgency, n.title
   LEFT JOIN notification_read r ON r.notification_id = n.id AND r.person_id = app_user_id()
  WHERE n.retracted_at IS NULL
    AND (n.expires_at IS NULL OR n.expires_at > now());
+-- Read only: the default privileges (db/06) would hand the application
+-- INSERT and UPDATE on it too.
 REVOKE ALL ON my_notifications FROM PUBLIC;
+REVOKE ALL ON my_notifications FROM scrbrd_app;
 GRANT SELECT ON my_notifications TO scrbrd_app;
 
 -- ── 9 · One notice, by id (D16, D19) ───────────────────────────────

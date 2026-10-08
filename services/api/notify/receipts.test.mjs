@@ -47,7 +47,7 @@ function fakePool({ notice = null, unread = 3, marked = 2 } = {}) {
 const untouchable = { touched: false,
   async connect() { this.touched = true; throw new Error("touched"); }, async query() { this.touched = true; throw new Error("touched"); } };
 
-async function call(/** @type {any} */ handler, /** @type {any} */ params, headers = { authorization: BEARER }) {
+async function call(/** @type {any} */ handler, /** @type {any} */ params, /** @type {Record<string, string>} */ headers = { authorization: BEARER }) {
   const out = { status: 200, body: /** @type {any} */ (null) };
   const res = {
     status(/** @type {number} */ s) { out.status = s; return res; },
