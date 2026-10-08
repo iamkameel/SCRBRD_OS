@@ -179,11 +179,12 @@ group("What this module says: counts and the names of reads, never a reason, nev
   ok("the module fetches nothing and writes nothing, and reads no clock", !/\bapi\(|fetch\(|localStorage|sessionStorage|Date\.now|new Date\(\)|XMLHttpRequest/i.test(code));
   ok("it imports no screen and no react", !/from "\.\.\/(views|ui)\//.test(code) && !/from "react"/.test(code));
   // A1: the card reads the design's §5.1 sources and nothing else, and writes nothing.
+  const D = "$";   // the card's own template text, spelt without a template here
   const paths = [...card.matchAll(/api\(`([^`]*)`/g)].map((m) => m[1]).concat([...card.matchAll(/api\("([^"]*)"/g)].map((m) => m[1]));
   const reads = [...card.matchAll(/readLive\("([a-z_]+)"/g)].map((m) => m[1]);
   ok("the card makes no write: no POST, no useLive of its own", !/method:\s*"POST"|useLive\(/.test(card));
   ok(`its routes are the fixture's lifts, her lifts' request counts and the public-name answer (${paths.join(" ")})`,
-     paths.length === 3 && paths.every((p) => ["/api/matches/${id}/lifts", "/api/lifts/requests-mine", "/api/players/${child.id}/public-name"].includes(p)), paths);
+     paths.length === 3 && paths.every((p) => ["/api/matches/" + D + "{id}/lifts", "/api/lifts/requests-mine", "/api/players/" + D + "{child.id}/public-name"].includes(p)), paths);
   ok(`its reads are the answers, the consents and the COUNT of numbers (${reads.join(" ")})`,
      reads.sort().join() === "availability,consents,emergency_contact_count", reads);
   ok("it never asks for a contact, a passenger's name or the driver's number (the logged doors)",
