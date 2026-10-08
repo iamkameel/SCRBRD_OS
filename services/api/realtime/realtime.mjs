@@ -12,6 +12,10 @@
  */
 /** One connection's way to be told something. @typedef {(msg: unknown) => void} Send */
 
+// NOT MOUNTED (Kameel, 8 Oct 2026): no WebSocket or SSE route serves this hub,
+// so nothing subscribes and every publish reaches nobody. Every screen polls
+// (the Match Centre 15 s, the public page and the ground display 5 s), and a
+// correction reaches them on their next poll (GA-I36 N2). Kept, not deleted.
 export class MatchHub {
   constructor() { /** @type {Map<string, Set<Send>>} */ this.rooms = new Map(); } // matchId -> Set<send>
 

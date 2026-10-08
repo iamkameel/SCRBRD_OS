@@ -5,6 +5,7 @@ import { holdsCapability } from "../rbac/index.js";
 import { Avatar, Badge, Card, KPICard, ProgressBar, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { useLive } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
+import { injuryCounts, phaseWord, severityWord } from "../lib/injury.js";
 
 // ══════════════════════════════════════════════════════
 //  INJURIES VIEW
@@ -30,6 +31,11 @@ function InjuryView({ role }) {
   // his own injuries only; the side's fitness count is the team-mates' health
   // (K3, db/55), drawn only for a role reading the status tier itself.
   const seesSide = holdsCapability(role, "medical.status.read");
+  // Phase and severity are the nature tier; a status-only reader gets them NULL
+  // from the view, so for that reader the first tile counts who is out
+  // (restricted) and there is no phase tile (GA-I19 D7).
+  const seesNature = holdsCapability(role, "medical.nature.read");
+  const counts = injuryCounts(injV, { natureTier: seesNature, now: today });
 
   return (
     <div className="os-page">
@@ -41,9 +47,11 @@ function InjuryView({ role }) {
       <p data-testid="injury-writes-coming" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:"0 0 16px"}}>Recording and updating injuries is coming.</p>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"24px"}}>
-        <KPICard label="Active Injuries" value={n(injAnswered, injV.filter(i=>i.restricted).length)}  icon="bandage" color={D.rose}/>
-        <KPICard label="In Rehab"        value={n(injAnswered, injV.filter(i=>i.phase==="Reconditioning"||i.phase==="Strengthening").length)} icon="dumbbell" color={D.orange}/>
-        <KPICard label="Returning Soon"  value={n(injAnswered, injV.filter(i=>{const d=(new Date(i.rtw)-today)/(1000*60*60*24);return d>=0&&d<=7;}).length)} icon="circle-check" color={D.amber}/>
+        {seesNature
+          ? <KPICard label="Injured"        value={n(injAnswered, counts.injured)} icon="bandage" color={D.rose}/>
+          : <KPICard label="Out"            value={n(injAnswered, counts.out)}     icon="bandage" color={D.rose}/>}
+        {seesNature&&<KPICard label="Rehabilitating" value={n(injAnswered, counts.rehab)} icon="dumbbell" color={D.orange}/>}
+        <KPICard label="Returning Soon"  value={n(injAnswered, counts.returningSoon)} icon="circle-check" color={D.amber}/>
         {seesSide&&<KPICard label="Available"       value={n(plAnswered, PLAYERS.filter(p=>p.fitness==="fit").length)} icon="footprints" color={D.emerald}/>}
       </div>
       {injSaid.state!=="ok"&&<Card sx={{marginBottom:"16px"}}><ReadState read={injSaid} onRetry={()=>setNonce(x=>x+1)} icon="bandage" testId="injuries-read-state"/></Card>}
@@ -67,12 +75,12 @@ function InjuryView({ role }) {
                   <div style={{flex:1}}>
                     <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px"}}>
                       <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{player?.name}</span>
-                      {inj.severity&&<Badge color={sc}>{inj.severity}</Badge>}
+                      {severityWord(inj.severity)&&<Badge color={sc}>{severityWord(inj.severity)}</Badge>}
                       <Badge color={inj.restricted?D.rose:D.emerald}>{inj.restricted?"Restricted":"Cleared"}</Badge>
                     </div>
                     <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:inj.type?sc:D.textMuted,marginBottom:"4px",fontStyle:inj.type?"normal":"italic"}}>{withheld(inj.type,"Details withheld")}</div>
                     <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}>
-                      Phase: <span style={{color:D.textSecondary,fontWeight:500}}>{inj.phase}</span> · Physio: {inj.physio}
+                      Phase: <span style={{color:D.textSecondary,fontWeight:500}}>{withheld(phaseWord(inj.phase),"—")}</span> · Physio: {inj.physio}
                     </div>
                     <div style={{marginBottom:"4px"}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
@@ -108,10 +116,10 @@ function InjuryView({ role }) {
                 <Avatar name={player?.name||"?"} size={56} color={sc}/>
                 <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary,marginTop:"10px"}}>{player?.name}</div>
                 <div style={{fontFamily:D.body,fontSize:"12px",color:sel.type?sc:D.textMuted,marginTop:"3px",fontWeight:500,fontStyle:sel.type?"normal":"italic"}}>{withheld(sel.type,"Details withheld")}</div>
-                {sel.severity&&<Badge color={sc} style={{marginTop:"6px"}}>{sel.severity}</Badge>}
+                {severityWord(sel.severity)&&<Badge color={sc} style={{marginTop:"6px"}}>{severityWord(sel.severity)}</Badge>}
               </div>
 
-              {[["Phase",withheld(sel.phase,"—")],["Physio",withheld(sel.physio,"—")],["Date Injured",sel.dateInj],["Est. RTW",sel.rtw],["Days Remaining",`${daysLeft} days`]].map(([l,v])=>(
+              {[["Phase",withheld(phaseWord(sel.phase),"—")],["Physio",withheld(sel.physio,"—")],["Date Injured",sel.dateInj],["Est. RTW",sel.rtw],["Days Remaining",`${daysLeft} days`]].map(([l,v])=>(
                 <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${D.border}`}}>
                   <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
                   <span style={{fontFamily:D.mono,fontSize:"11px",color:l==="Days Remaining"&&daysLeft<=3?D.emerald:D.textPrimary,fontWeight:500}}>{v}</span>

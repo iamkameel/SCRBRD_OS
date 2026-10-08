@@ -9,19 +9,28 @@ import { SideName } from "./bits.jsx";
  * over (SCRBRD-114 phase 3b, §4). Shared by the signed-in Match Centre and
  * the public page, so the two cannot say it differently.
  *
- * @param {{match: any, played: any[]}} p  `played` is the fold's innings, null-free
+ * An innings a correction moved says so beside its figure, "· corrected
+ * 18:42" (GA-I36 §5): `corrected` is lib/corrections.js inningsWords(),
+ * keyed by the fold's own innings, so this file imports nothing for it.
+ *
+ * @param {{match: any, played: any[], corrected?: Map<any, string> | null}} p  `played` is the fold's innings, null-free
  */
-export function HeaderScores({ match, played }) {
+export function HeaderScores({ match, played, corrected = null }) {
   const own = played.filter((inn) => !isSuperOver(inn));
   const pairs = superOversOf(played);
   const line = (inn, k) => (
-    <div key={k} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.md, maxWidth: "520px" }}>
+    <div key={k} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", columnGap: T.space.md, maxWidth: "520px" }}>
       <span style={{ ...T.role.body, color: T.content.secondary, minWidth: 0 }}>
         <SideName side={teamOf(match, inn.battingTeam)}/>
       </span>
       <span style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, whiteSpace: "nowrap" }}>
         {inn.runs}/{inn.wickets} <span style={{ color: T.content.tertiary }}>({oversOf(inn.balls)})</span>
       </span>
+      {corrected?.has(inn) && (
+        <span data-testid="mc-score-corrected" style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary, flexBasis: "100%", textAlign: "right" }}>
+          {corrected.get(inn)}
+        </span>
+      )}
     </div>
   );
   return (
