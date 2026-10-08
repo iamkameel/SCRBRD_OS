@@ -247,6 +247,7 @@ const SUITES = [
   // event the pad always sent, byte for byte; the likely bowler and the next
   // batter first; undo in words; dot and 1 the biggest keys; the haptic tick.
   ["pad-feel", "apps/web/test/pad-feel.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["pro-extras-parity", "apps/web/test/pro-extras-parity.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the Board — always black, figures that flip (DESIGN_DIRECTION §1).
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No emoji in the client outside a reasoned allow-list, every icon name
