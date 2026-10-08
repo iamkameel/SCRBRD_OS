@@ -2,6 +2,7 @@ import { useState } from "react";
 import { T } from "../../design/tokens.js";
 import { api } from "../../lib/api.js";
 import { humanDateTime } from "../../lib/format.js";
+import { clockWords } from "../../lib/corrections.js";
 import { holdsCapability } from "../../rbac/index.js";
 import { deliveryOptions, nextFixtureOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
@@ -109,7 +110,7 @@ const REQUEST_REFUSAL = {
  * decides it with `scoring.amend.approve`, on a screen this product does not
  * yet have — see the report for that gap).
  */
-export function ConfirmScorecardPrompt({ match, role, commentary, innings }) {
+export function ConfirmScorecardPrompt({ match, role, commentary, innings, onFiled = null }) {
   const canFinalise = holdsCapability(role, "scoring.finalise");
   const canRequest = holdsCapability(role, "scoring.amend.request");
   const [hidden, setHidden] = useState(() => isDismissed(match.id));
@@ -128,8 +129,12 @@ export function ConfirmScorecardPrompt({ match, role, commentary, innings }) {
     setBusy(true); setSaid(null);
     try {
       const res = await api(`/api/matches/${match.id}/amendments`, { method: "POST", body: { targetKey, reason: reason.trim() } });
-      setSaid({ ok: true, text: `Filed — ${res?.state ?? "pending"}, waiting on an approval.` });
+      // GA-I36 §5, the scorer's words: pending is not approved.
+      setSaid({ ok: true, text: res?.state === "pending" || !res?.state
+        ? `Your request is with the director of sport · asked ${clockWords(Date.now())} · this does not change the score until it is approved.`
+        : `Filed: ${res.state}.` });
       setTargetKey(""); setReason("");
+      onFiled?.();
     } catch (e) {
       setSaid({ ok: false, text: REQUEST_REFUSAL[e.code] ?? e.message ?? "Could not file the correction." });
     } finally { setBusy(false); }
@@ -175,7 +180,7 @@ export function ConfirmScorecardPrompt({ match, role, commentary, innings }) {
             <button type="button" data-testid="mc-confirm-submit" disabled={busy || !targetKey || !reason.trim()} onClick={submit}
               className="pressBtn os-state" style={{ ...linkStyle(), opacity: busy || !targetKey || !reason.trim() ? 0.5 : 1,
                 cursor: busy || !targetKey || !reason.trim() ? "not-allowed" : "pointer" }}>
-              File a correction
+              Ask for a correction
             </button>
             {said && (
               <p role="alert" data-testid="mc-confirm-said" style={{ ...T.role.body, fontSize: "13px", margin: 0,

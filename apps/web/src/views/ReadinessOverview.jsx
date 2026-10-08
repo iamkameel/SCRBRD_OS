@@ -1,6 +1,8 @@
 import { D } from "../design/tokens.js";
-import { useState } from "react";
-import { requestDuties } from "../lib/cockpitNav.js";
+import { useEffect, useState } from "react";
+import { requestCorrections, requestDuties } from "../lib/cockpitNav.js";
+import { api, signedIn } from "../lib/api.js";
+import { holdsCapability } from "../rbac/index.js";
 import { useDutyCoverage, useLive } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
 import { Card, EmptyState, ReadState, SectionHeader } from "../ui/primitives.jsx";
@@ -36,6 +38,79 @@ import { SLOTS } from "./duties.jsx";
 // goes to the Match Centre, which opens the fixture's details panel, where the
 // DutyRoster is. Its words are 12px and its slots say "none" as well as being
 // muted: colour is never the only word.
+/**
+ * "2 days ago", "3 hours ago", "just now": how long a correction has waited.
+ * @param {string | null | undefined} ts  @param {number} [now]
+ */
+export function agoWords(ts, now = Date.now()) {
+  const ms = now - Date.parse(ts ?? "");
+  if (!Number.isFinite(ms) || ms < 60_000) return "just now";
+  const m = Math.floor(ms / 60_000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return d >= 1 ? `${d} ${d === 1 ? "day" : "days"} ago` : h >= 1 ? `${h} ${h === 1 ? "hour" : "hours"} ago` : `${m} ${m === 1 ? "minute" : "minutes"} ago`;
+}
+
+/**
+ * O7 (GA-I36 D5; GA-I09 §3.2): the corrections waiting on any fixture this
+ * reader's policies show him — an amendment to approve, a held ball to
+ * release — one row a fixture, a count and its age, and a door into that
+ * fixture's Corrections sheet. Counts only: no reason, no requester, no
+ * child's name on a school-wide row (GET /api/corrections answers none).
+ * Asked only by a reader who holds the approval or the audit read (a
+ * courtesy; the tables' policies decide what comes back). A read that failed
+ * is said as one; nothing open draws nothing.
+ */
+function CorrectionsWaiting({ role, matches, onOpen }) {
+  const asks = signedIn() && (holdsCapability(role, "scoring.amend.approve") || holdsCapability(role, "audit.read"));
+  const [nonce, setNonce] = useState(0);
+  const [read, setRead] = useState(/** @type {{rows: any[] | null, error: string | null}} */ ({ rows: null, error: null }));
+  useEffect(() => {
+    if (!asks) return undefined;
+    let cancelled = false;
+    api("/api/corrections")
+      .then((d) => { if (!cancelled) setRead({ rows: d?.matches ?? [], error: null }); })
+      .catch((e) => { if (!cancelled) setRead({ rows: null, error: e.code || "unreachable" }); });
+    return () => { cancelled = true; };
+  }, [asks, nonce]);
+  if (!asks) return null;
+  if (read.error) {
+    return (
+      <Card sx={{ padding: "14px 16px", marginBottom: "10px" }} data-testid="o7-error">
+        <span style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText }}>Could not read the corrections waiting ({read.error}).</span>{" "}
+        <button type="button" className="os-state" onClick={() => setNonce((n) => n + 1)}
+          style={{ minHeight: "44px", padding: "0 12px", border: `1px solid ${D.border}`, borderRadius: D.pill, background: "transparent",
+                   color: D.textPrimary, fontFamily: D.body, fontSize: "12px", cursor: "pointer" }}>Try again</button>
+      </Card>
+    );
+  }
+  if (!read.rows?.length) return null;
+  return (
+    <div style={{ display: "grid", gap: "10px", marginBottom: "10px" }} data-testid="o7">
+      {read.rows.map((r) => {
+        const m = matches.find((x) => x.id === r.matchId);
+        const what = [
+          r.amendments ? `${r.amendments} ${r.amendments === 1 ? "correction" : "corrections"} awaiting approval` : null,
+          r.held ? `${r.held} held ${r.held === 1 ? "ball" : "balls"} awaiting a decision` : null,
+        ].filter(Boolean).join(" · ");
+        return (
+          <Card key={r.matchId} sx={{ padding: 0 }}>
+            <button type="button" className="os-state" data-testid={`o7-open-${r.matchId}`} onClick={() => onOpen(r.matchId)}
+                    style={{ display: "block", width: "100%", minHeight: "44px", padding: "14px 16px", margin: 0, border: 0, background: "transparent",
+                             textAlign: "left", cursor: "pointer", color: "inherit", font: "inherit" }}>
+              <span style={{ display: "block", fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>
+                {m ? `${m.homeTeam} vs ${m.awayTeam}` : "A fixture"}{m?.date ? ` · ${m.date}` : ""}
+              </span>
+              <span style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "6px" }}>
+                {what} · asked {agoWords(r.oldest)}
+              </span>
+              <span style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "8px" }}>Open corrections <span aria-hidden="true">›</span></span>
+            </button>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 function ReadinessOverview({ role, onNav }) {
   // The fixtures read keeps its state: "No upcoming fixtures" is said of a read
   // that answered, never of one that failed or has not come back (GA-I08).
@@ -49,10 +124,12 @@ function ReadinessOverview({ role, onNav }) {
     .slice(0, 8);
   const { coverage, loading } = useDutyCoverage(upcoming.map((m) => m.id), role, nonce);
   const open = (id) => { requestDuties(id); if (onNav) onNav("matches"); };
+  const openCorrections = (id) => { requestCorrections(id); if (onNav) onNav("matches"); };
 
   return (
     <div className="os-page">
       <SectionHeader title="Readiness" sub="Duty-roster coverage across the coming fixtures — one glance instead of one screen each" color={D.sky}/>
+      <CorrectionsWaiting role={role} matches={matches} onOpen={openCorrections}/>
 
       {upcoming.length === 0 && !["ok", "empty"].includes(matchesSaid.state) ? (
         <ReadState read={matchesSaid} icon="shield-check" testId="readiness-read-state" onRetry={() => setNonce((n) => n + 1)}/>

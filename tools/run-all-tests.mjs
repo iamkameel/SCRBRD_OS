@@ -110,6 +110,10 @@ const SUITES = [
   // The Match Centre's own derivations (redesign step 3c): sides named in
   // full and by code, the match line, the scorecard's parts, the break.
   ["match-centre",      "apps/web/test/match-centre.test.mjs"],
+  // GA-I36 A0/A1: a correction read off the log (the chip, the line, the
+  // innings it moved), the effect folded before a decision, and 300 random
+  // logs whose fold with voids equals the fold without the voided rows.
+  ["corrections",       "apps/web/test/corrections.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The public page (SCRBRD-083): the redacted log made foldable, no
   // pseudonym ever shown as a name.
   ["public-page",       "apps/web/test/public-page.test.mjs"],
