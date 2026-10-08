@@ -3,12 +3,13 @@
  * docs/design/GA-I36_corrections_everywhere.md §2, §5, §7).
  *
  * There is no stored "corrected" flag. A correction is in the log already: a
- * `void` naming the event it undoes (a scorer's undo, or an approved
- * amendment, whose time is its approval), or a held ball released into it
- * (`recovered`). So "Corrected 18:42" is read off the log the reader already
- * has, by the same rule the fold uses for what counts (a void counts when its
- * target is an event of this log that is not itself a void). Nothing here
- * folds, and nothing in @scrbrd/scoring changed for it.
+ * `void` from an APPROVED amendment (it carries `amendment`; its time is the
+ * approval), or a held ball released into it (`recovered`). A scorer's own
+ * undo during play is not one: it is the scorer taking back a tap, not a
+ * correction to a record anyone has read. So "Corrected 18:42" is read off the
+ * log the reader already has, by the same rule the fold uses for what counts
+ * (a void counts when its target is an event of this log that is not itself a
+ * void). Nothing here folds, and nothing in @scrbrd/scoring changed for it.
  *
  * Shared by the signed-in Match Centre and the public page, so both say a
  * correction the same way. On the public page the log is the redacted one: a
@@ -24,7 +25,7 @@ const ZONE = "Africa/Johannesburg";
 
 /**
  * @typedef {{seq: number, at: number | null, kind: "void" | "recovered", innings: number,
- *            target?: string, approved?: boolean}} Correction
+ *            target?: string}} Correction
  */
 
 /**
@@ -42,7 +43,7 @@ export function correctionsOf(events = [], recovered = null) {
   for (const e of events) {
     if (!e) continue;
     if (e.kind === "void") {
-      if (counted.has(e.target)) out.push({ seq: e.seq, at: e.clientTs ?? null, kind: "void", innings: e.innings ?? 0, target: e.target, approved: e.amendment != null });
+      if (e.amendment != null && counted.has(e.target)) out.push({ seq: e.seq, at: e.clientTs ?? null, kind: "void", innings: e.innings ?? 0, target: e.target });
     } else if (recovered?.has(e.seq)) {
       out.push({ seq: e.seq, at: recovered.get(e.seq) ?? null, kind: "recovered", innings: e.innings ?? 0 });
     }
@@ -98,7 +99,7 @@ export function clockWords(ms, now = Date.now()) {
 
 /**
  * Was this correction made after the match: on a settled match, with no play
- * logged after it (an amendment, a release, an undo with nothing bowled since).
+ * logged after it (an amendment, a release).
  * @param {any[]} events  @param {Correction} c  @param {boolean} settled
  */
 export function afterTheMatch(events, c, settled) {

@@ -26,7 +26,7 @@ import { termsOf } from "../../lib/captain.js";
 import { cockpitGate } from "../../lib/cockpit.js";
 import { profile } from "../../lib/session.js";
 import { CoachTab } from "../cockpit/CoachTab.jsx";
-import { afterTheMatch, clockWords, correctedAt, correctionsOf, inningsWords, correctionText, withCorrectionLines } from "../../lib/corrections.js";
+import { clockWords, correctedAt, correctionsOf, inningsWords, correctionText, withCorrectionLines } from "../../lib/corrections.js";
 import { ballLine } from "../../lib/correctionEffect.js";
 import { CorrectedChip, StaleLine } from "./corrected.jsx";
 import { CorrectionsSheet, pendingWords } from "./corrections.jsx";
@@ -408,8 +408,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
       const when = clockWords(c.at);
       if (c.kind === "recovered") return `${when} · a held ball was released and written at the end of the log`;
       const b = ballLine({ events: log.events ?? [], fold: log.fold, target: c.target, nameOf: (ref) => nameOf(ref), teamName });
-      const who = c.approved ? "asked by the scorer and approved" : afterTheMatch(log.events ?? [], c, over) ? "taken back by the scorer" : "taken back by the scorer during play";
-      return `${when} · ${who} · removed: ${b ? b.words : "a ball"}`;
+      return `${when} · asked by the scorer and approved · removed: ${b ? b.words : "a ball"}`;
     });
   };
 

@@ -146,7 +146,7 @@ const DETAIL_KEYS = [
 const PLACE_BODY = logBody.match(/'place',\s+CASE WHEN b\.kind = 'ball' THEN ([\s\S]*?) END,/)?.[1] ?? "";
 const PLACE_KEYS = [...PLACE_BODY.matchAll(/'(\w+)',\s+coalesce\(/g)].map((m) => m[1]);
 /** The fields the API makes and the SQL does not select: the word for where a ball went. */
-const MADE_HERE = new Set(["area"]);
+const MADE_HERE = new Set(["area", "amendment"]);
 /** @param {any} ev @param {number} seq */
 const asLogRow = (ev, seq) => {
   const row = toRow(ev);
@@ -180,7 +180,7 @@ ok("PUBLIC_EVENT_FIELDS is exactly the reviewed list", JSON.stringify(PUBLIC_EVE
   retire: ["batter", "reason", "type", "dismissal"],
   innings_end: ["reason", "confirmed"],
   revision: ["overs", "target", "reason", "par"],
-  void: ["target"],
+  void: ["target", "amendment"],
   innings_summary: ["card"],
   // SCRBRD-130 R1 (db/73): rain — the reason code and the time, never the note.
   play_stopped: ["reason", "at"],
@@ -238,6 +238,13 @@ ok("the typed fielder is a pseudonym, and not named anywhere", w?.fielder === pl
 const v = out.events.find((e) => e.kind === "void");
 ok("a void keeps its target, pseudonymised as its target's id, and no reason", v && v.target === eventPseudonym(SECRET, M1, undone.id) && !("reason" in v)
    && out.events.some((e) => e.id === v.target));
+{
+  // An approved amendment's void (key "amendment:<id>") says so, and only so; a scorer's undo does not.
+  const am = projectLog({ rows: [asLogRow({ ...voidEvent({ target: undone.id }), innings: 0, id: "amendment:abc", clientTs: 0 }, 1),
+    asLogRow({ ...voidEvent({ target: undone.id }), innings: 0, id: `${DEVICE}:${M1}:99`, clientTs: 0 }, 2)], people: PEOPLE, secret: SECRET, matchId: M1, on: ON });
+  ok("a void from an amendment carries amendment: true, a scorer's undo does not, and the id is not on the wire",
+     am.events[0].amendment === true && !("amendment" in am.events[1]) && !JSON.stringify(am.events).includes("abc") && !("amendment" in v));
+}
 ok("the real player ids behind it are kept for the cache, never on the wire", out.playerIds.has(P.erasmus) && !wire.includes(P.erasmus));
 
 // An innings from a paper scorebook (SCRBRD-120): the card, its refs as

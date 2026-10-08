@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "description": "SCRBRD authorization: capabilities, role bundles, and the scoped-assignment decision. One definition, shared by the web client and the generated Postgres RLS.",
   "main": "./src/authorize.mjs",
   "exports": {
