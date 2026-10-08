@@ -262,10 +262,17 @@ try {
   ok("the scorer signs in", /Match Centre|Dashboard/i.test(await A.text()));
   ok("opened the real fixture", await openPad(A));
   await clearBlockers(A.page);
+  // The first tap on a pad that has only just opened can be spent on a sheet
+  // (openers, bowler): tap until the server has three balls, never more than six taps.
+  const ballsOnServer = async () => (await serverLog()).filter((r) => r.kind === "ball").length;
   let tapped = 0;
-  for (const face of ["1", "4", "1"]) if (await tapFace(A.page, face)) tapped++;
-  ok("three deliveries tapped", tapped === 3, tapped);
-  ok("they reach the server", await until(A.page, async () => (await serverLog()).filter((r) => r.kind === "ball").length >= 3, 12000),
+  for (const face of ["1", "4", "1", "1", "1", "1"]) {
+    if (await ballsOnServer() >= 3) break;
+    if (await tapFace(A.page, face)) tapped++;
+    await until(A.page, async () => (await ballsOnServer()) >= Math.min(3, tapped), 4000);
+  }
+  ok("deliveries tapped", tapped >= 3 && tapped <= 6, tapped);
+  ok("exactly three reach the server", await until(A.page, async () => (await ballsOnServer()) === 3, 12000),
      (await serverLog()).map((r) => r.kind).join(","));
   const deviceA = await A.page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
   const synced = await serverLog();
@@ -377,7 +384,13 @@ try {
   ok("...queued behind the other two", qMore.length === 3 && same(qMore.slice(0, 2).map((e) => e.id), offIds), JSON.stringify(qMore));
   ok("...and the server's log did not move", same((await serverLog()).map((r) => r.id), ids));
   ok("...and nothing is in quarantine", (await quarantine()).length === 0);
-  ok("A still says another device holds the match", (await banner(A.page)).reason === "token_moved", JSON.stringify(await banner(A.page)));
+  // The sixth ball of the over opens the next-over sheet, which covers the banner:
+  // name a bowler (one more event, queued on A like the rest), and the banner is back.
+  await clearBlockers(A.page);
+  await A.page.waitForTimeout(3000);
+  ok("A still says another device holds the match", await until(A.page, async () => (await banner(A.page)).reason === "token_moved", 8000), JSON.stringify(await banner(A.page)));
+  ok("...with everything it recorded since still saved on A and nowhere else",
+     (await queued(A.page)).length >= 3 && same((await serverLog()).map((r) => r.id), ids) && (await quarantine()).length === 0);
 
   group("B's screen is the server's, and B goes on scoring");
   const wantBoard = `${figs.r} for ${figs.w}, ${Math.floor(figs.b / 6)}.${figs.b % 6} overs`;
