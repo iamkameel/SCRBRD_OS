@@ -58,6 +58,9 @@ function asMatch(r) {
     status: MATCH_STATUS[r.status] ?? "upcoming",
     result: null,
     competition: null,
+    // The competition it is played under, or null for a friendly (SCRBRD-114):
+    // the scorer's home asks whether its playing conditions are published.
+    competitionId: r.competition_id ?? null,
     // The school season this fixture falls in, from the same season_for()
     // rule the calendar uses — never derived again here from the date, so a
     // season history view and the database can never name a fixture into two
@@ -871,6 +874,10 @@ function asDuty(r) {
   // derives a lifecycle of its own.
   return { duty: r.duty, who: r.who || null, state: r.state,
            status: r.status ?? null,
+           // The scoring row only: whose the token is, for this reader
+           // (this_device, you, another, lapsed), worked out by the server
+           // against the reader's own token (GA-I13). Null everywhere else.
+           held: r.held ?? null,
            detail: r.detail || null,
            at: r.at ? String(r.at).slice(0, 10) : null, live: true };
 }
