@@ -4698,7 +4698,7 @@ BEGIN
 
   -- ...and the team notice they may publish goes through.
   INSERT INTO notification (school_id, team_code, scope_level, kind, title, body)
-  VALUES (HIL, '1XI', 'team', 'training', 'Nets moved', 'Nets 1-3 at 14:30.');
+  VALUES (HIL, '1XI', 'team', 'notice', 'Nets moved', 'Nets 1-3 at 14:30.');
 
   -- The catalogue must not be writable by the application role: a row here
   -- would let a notice declare a capability the model never defined.
@@ -9443,9 +9443,9 @@ BEGIN
     -- (notice) SG-9: a private notice to a pupil is the system's alone; and
     -- nobody publishes a safeguarding notice through the publish route
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _assert(_notice_57(U_SELF, 'news') = 'refused', 'db/57 (notice): a private news notice to a pupil was written');
+    PERFORM _assert(_notice_57(U_SELF, 'lift') = 'refused', 'db/57 (notice): a private lift notice to a pupil was written');
     PERFORM _assert(_notice_57(U_SELF, 'system') = 'ok', 'db/57 (notice): the system''s own notice to a pupil was refused');
-    PERFORM _assert(_notice_57(U_SARAH, 'news') = 'ok', 'db/57 (notice): a private notice to an adult was refused');
+    PERFORM _assert(_notice_57(U_SARAH, 'lift') = 'ok', 'db/57 (notice): a private notice to an adult was refused');
     PERFORM _as(U_SARAH);
     BEGIN
       INSERT INTO notification (school_id, scope_level, kind, title, body, required_capability)
@@ -9453,8 +9453,8 @@ BEGIN
       v_err := NULL;
     EXCEPTION WHEN insufficient_privilege THEN v_err := SQLERRM; END;
     PERFORM _assert(v_err IS NOT NULL, 'db/57 (notice): the director of sport published a safeguarding notice');
-    INSERT INTO notification (school_id, scope_level, kind, title, body) VALUES (HIL, 'school', 'news', 'Verify 057', 'Ordinary');
-    SELECT count(*) INTO n FROM notification WHERE title = 'Verify 057' AND kind = 'news' AND recipient_id IS NULL;
+    INSERT INTO notification (school_id, scope_level, kind, title, body) VALUES (HIL, 'school', 'notice', 'Verify 057', 'Ordinary');
+    SELECT count(*) INTO n FROM notification WHERE title = 'Verify 057' AND kind = 'notice' AND recipient_id IS NULL;
     PERFORM _assert(n = 1, 'db/57 (notice): the director of sport cannot publish an ordinary notice — the refusal above proves nothing');
 
     -- (guard) the principal, named in an open leadership concern, cannot end a
