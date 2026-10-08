@@ -1019,6 +1019,9 @@ const LIFT_ROUTES = [
   [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/expected$/, "GET", lifts.expected],
   [/^\/api\/lifts\/exceptions$/,                      "GET",  lifts.exceptions],
   [/^\/api\/lifts\/mine$/,                            "GET",  lifts.mine],
+  // GA-I20 A1 (N3): her own open lifts' requests, counted; no name. Gated:
+  // it reads an arrangement, and a module switched off is no row, not a fault.
+  [/^\/api\/lifts\/requests-mine$/,                   "GET",  lifts.requestsMine, "lift_club"],
   [/^\/api\/lifts\/watch$/,                           "POST", lifts.watch],
   [/^\/api\/lifts\/purge$/,                           "GET",  lifts.purgeDue],
   [/^\/api\/lifts\/([0-9a-f-]{36})\/purge$/,            "POST", lifts.purge],

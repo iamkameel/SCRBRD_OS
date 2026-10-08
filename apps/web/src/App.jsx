@@ -514,7 +514,7 @@ export default function SCRBRD_OS() {
     children:     <FamilyHome        role={role} onNav={setPage}/>,
     fixtures:     <FamilyMatches     role={role}/>,
     notices:      <FamilyNotices     role={role}/>,
-    family:       <FamilyFile        role={role}/>,
+    family:       <FamilyFile        role={role} onNav={setPage}/>,
     myhome:       <PupilHome         role={role}/>,
     mymatches:    <PupilMatches      role={role}/>,
     passport:     <PupilPassport     role={role}/>,

@@ -21,14 +21,14 @@ import { signedIn } from "../../lib/api.js";
 import { useNav } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { tenantWords } from "../../lib/words.js";
-import { chooseChild, recallChild, rememberChild } from "../../lib/family.js";
+import { chooseChild, doorTo, pendingWords, recallChild, rememberChild } from "../../lib/family.js";
 import { Action, Card, ChildSwitcher, Line, NoneOr, Page, Title } from "./parts.jsx";
 import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { ChildFileCard } from "./childfile.jsx";
-import { LiftsToday } from "../lifts.jsx";
-import { TodoCard } from "./todo.jsx";
+import { LiftsToday, useLiftDay } from "../lifts.jsx";
+import { TodoCard, TodoCount } from "./todo.jsx";
 
 /** The children this parent answers for, the one chosen, and the fixture list the cards share. */
 function useChildren(role) {
@@ -48,12 +48,23 @@ function useChildren(role) {
 
 /** What a family screen says when there is no child to show — and why, honestly. */
 function NoChild({ loading, error, testid }) {
+  // Her own requests to be linked (GA-I20 A1, §3.3): said as pending, and
+  // never as approved. Her own rows only (`mine`); no child is named, because
+  // the player row is not hers to read until the office verifies the link.
+  const asked = useLive("role_requests", "guardian");
+  const pending = signedIn() && !loading && !error ? pendingWords(asked.rows, Date.now()) : [];
   return (
     <Page testid={testid}>
       <Card label="Family" testid="family-none">
         {!signedIn() ? <Line>Sign in to see your family. The demonstration holds no family's records.</Line>
           : loading ? <Line quiet>Reading your family…</Line>
           : error ? <Line quiet>Could not load your family just now. This is not the same as there being nobody.</Line>
+          : pending.length ? pending.map((p) => (
+            <div key={p.id} data-testid="family-pending" style={{ display: "grid", gap: "2px" }}>
+              <Line>{p.words}</Line>
+              {p.note && <Line quiet>Your note to the office: {p.note}</Line>}
+            </div>
+          ))
           : <Line>No child is linked to your account yet. The school office verifies each link; ask them if one is missing.</Line>}
       </Card>
     </Page>
@@ -74,7 +85,17 @@ export function FamilyHome({ role, onNav }) {
   if (open?.kind === "fixture") {
     return <Page testid="family-home"><FixtureDetail match={open.match} child={child} role={role} onBack={() => setOpen(null)}/></Page>;
   }
+  return <FamilyHomeBody role={role} onNav={onNav} kids={kids} child={child} choose={choose} matches={matches}
+    matchesRead={matchesRead} matchesSaid={matchesSaid} retry={retry} nav={nav} setOpen={setOpen}/>;
+}
+
+/** The Home for the chosen child: its own component, so the day's reads (a hook) are made for him alone. */
+function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead, matchesSaid, retry, nav, setOpen }) {
   const now = Date.now();
+  // The day's lift cards, read once and shared by the list (R7) and the day cards (GA-I20 A1, D8).
+  const { day, reload: reloadDay } = useLiftDay(child, matches, now);
+  // A door from the list into his card on Family: Consents, or Who to ring.
+  const toFamily = (panel) => { doorTo(child.id, panel); onNav?.("family"); };
   return (
     <Page testid="family-home">
       <ChildSwitcher kids={kids} chosen={child} onChoose={(c) => { setOpen(null); choose(c); }}/>
@@ -91,11 +112,12 @@ export function FamilyHome({ role, onNav }) {
         {/* GA-I20 A0: what is owed for him, under the next fixture: his fixtures'
             answers, narrowed to him, and the one door of each row. */}
         <TodoCard child={child} matches={matches} matchesRead={matchesRead} now={now}
-          onOpen={(m) => setOpen({ kind: "fixture", match: m })}/>
+          onOpen={(m) => setOpen({ kind: "fixture", match: m })} day={day} onDayRetry={reloadDay}
+          onDoor={onNav ? toFamily : undefined}/>
         {/* SCRBRD-124 phase 2 (db/76): his lifts on the day — the driver's
             number and car, the marks, "confirm collected"; her own card when
             she drives. */}
-        <LiftsToday child={child} matches={matches}/>
+        <LiftsToday child={child} matches={matches} day={day ?? undefined} onReload={reloadDay}/>
         <LiveCard child={child} matches={matches} now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>
         <LastMatchCard child={child} matches={matches} now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
         <SeasonCard child={child} role={role}/>
@@ -212,13 +234,21 @@ export function FamilyNotices({ role }) {
  * (§3.1). Each child's card is its own component (childfile.jsx), so a later
  * card — lifts, consents, the account — is added beside it, not into it.
  */
-export function FamilyFile({ role }) {
+export function FamilyFile({ role, onNav }) {
   const { rows: kids, loading, error } = useLive("my_children", role);
+  // The fixtures, for each child's count (GA-I20 A1): the same read the Home makes.
+  const matchesRead = useLive("matches", role);
   if (!kids.length) return <NoChild loading={loading} error={error} testid="family-file"/>;
+  const now = Date.now();
+  // His count opens his Home: the child is chosen as the switcher chooses him.
+  const openHome = (c) => { rememberChild(c.id); onNav?.("children"); };
   return (
     <Page testid="family-file">
       <Title>Family</Title>
-      {kids.map((c) => <ChildFileCard key={c.id} child={c} role={role} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })}/>)}
+      {kids.map((c) => (
+        <ChildFileCard key={c.id} child={c} role={role} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })}
+          todo={<TodoCount child={c} matches={matchesRead.rows} matchesRead={matchesRead} now={now} onOpen={() => openHome(c)}/>}/>
+      ))}
     </Page>
   );
 }
