@@ -38,8 +38,10 @@ import { isOut } from "./format.js";
  * @param {{id: string, name: string}[]} [p.bowlers]
  * @param {{id: string, label: string}[] | null} [p.matches]
  * @param {string} [p.title]
+ * @param {boolean} [p.showPercent]  false drops the "%" under each side's bar
+ *   (the Coach tab, whose never-list bars a percentage: SCRBRD-136 3.7).
  */
-function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fixedBatter = null, bowlers = [], matches = null, title = "Wagon-wheel analysis" }) {
+function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fixedBatter = null, bowlers = [], matches = null, title = "Wagon-wheel analysis", showPercent = true }) {
   const [selBatter, setSelBatter] = useState(null);
   const [selBowler, setSelBowler] = useState(null);
   const [selMatch, setSelMatch] = useState(null);
@@ -96,7 +98,7 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
       <div aria-hidden="true" style={{ height: "6px", borderRadius: T.radius.pill, background: T.fill.track, overflow: "hidden", marginTop: T.space.xs }}>
         <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: T.radius.pill }}/>
       </div>
-      <div style={{ ...T.role.figure.sm, fontSize: "12px", color: T.content.secondary, marginTop: "2px" }}>{a.sides.total ? `${pct}%` : "—"}</div>
+      {showPercent && <div style={{ ...T.role.figure.sm, fontSize: "12px", color: T.content.secondary, marginTop: "2px" }}>{a.sides.total ? `${pct}%` : "—"}</div>}
     </div>
   );
 

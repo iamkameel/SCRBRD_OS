@@ -194,5 +194,32 @@ group("The never-list is held, in the words and in the code");
   ok("...the load sentence is the one thing with 'diagnosis' in it (the walks strip it before the check)", rule(LOAD_SENTENCE) && !rule(LOAD_SENTENCE.replace(LOAD_SENTENCE, "")));
 }
 
+group("The Coach tab's wheel is the Match Centre's analysis panel (GA-I28), inside the never-list");
+{
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+  const tab = strip(readFileSync(new URL("../src/views/cockpit/CoachTab.jsx", import.meta.url), "utf8"));
+  const call = tab.match(/<WagonAnalysisPanel[\s\S]*?\/>/)?.[0] ?? "";
+  ok("CoachTab draws WagonAnalysisPanel, the one component, and no longer the plain ShotWheel", call !== "" && !/ShotWheel/.test(tab));
+  ok("...from the innings' own log and its bowlers, the rows the tab already holds", /balls=\{shown\.ballLog\}/.test(call) && /bowlers=\{\(o\.bowlers/.test(call));
+  ok("...with no batter chooser and no match chooser", !/\b(batters|fixedBatter|matches)=/.test(call));
+  ok("...and with the percentage off (§3.7 bars a % beside a figure)", /showPercent=\{false\}/.test(call));
+  ok("...with no read of its own", !/\bfetch\(|useRows|useLive/.test(tab));
+
+  const { createElement: h } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { WagonAnalysisPanel } = await import("../src/scorer/wagonAnalysisPanel.jsx");
+  const { placementFromTap } = await import("@scrbrd/scoring");
+  const balls = [4, 4, 1, 6].map((value, i) => ({ strikerId: "x", bowlerId: i % 2 ? "b2" : "b1", value, type: "run", ...placementFromTap({ angle: 90 + i * 40, radius: 0.8 }) }));
+  const render = (extra) => renderToStaticMarkup(h(WagonAnalysisPanel, { balls, handOf: () => "R", bowlers: [{ id: "b1", name: "Bowler One" }, { id: "b2", name: "Bowler Two" }], title: "Where they have scored", ...extra }));
+  const withPct = render({}), noPct = render({ showPercent: false });
+  const textOf = (html) => html.replace(/<title>.*?<\/title>/g, "").replace(/<[^>]+>/g, " ");
+  ok("the panel still shows its percentage by default (Profiles and the Match Centre are unchanged)", /\d\s?%/.test(textOf(withPct)));
+  ok("...showPercent={false} drops every % and the never-words find nothing else in it", !/\d\s?%/.test(textOf(noPct)) && !NEVER_ON_THE_COCKPIT.test(textOf(noPct)), textOf(noPct).replace(/\s+/g, " ").slice(0, 300));
+  ok("...the run chips (all, 1, 2, 3, 4, 6), a bowler filter and the eight areas are all there",
+    ["all", "1", "2", "3", "4", "6"].every((k) => noPct.includes(`data-testid="wagon-chip-${k}"`)) && noPct.includes('data-testid="wagon-bowler-b1"')
+    && (noPct.match(/data-testid="wagon-area-/g) ?? []).length === 8);
+  ok("...and no batter or match chooser when the caller gives none", !/wagon-batter-|wagon-match-/.test(noPct));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
