@@ -2,8 +2,9 @@ import { useEffect } from "react";
 import { correctedAt, correctionsOf, correctionText, inningsWords, withCorrectionLines } from "../lib/corrections.js";
 import { liveRefreshMs } from "../views/matchcentre/live.js";
 import { read } from "./reads.js";
+import { CorrectedChip, StaleLine } from "../views/matchcentre/corrected.jsx";
 
-export { CorrectedChip, StaleLine } from "../views/matchcentre/corrected.jsx";
+export { CorrectedChip, StaleLine };
 
 /**
  * THE PUBLIC PAGE'S CORRECTIONS HALF (GA-I36 A0/A1), loaded on demand: by a
