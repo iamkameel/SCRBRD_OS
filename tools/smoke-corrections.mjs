@@ -135,9 +135,13 @@ try {
   const v = after.body?.events?.find((e) => e.seq === after.body.last);
   ok("...and the new row is the void", v?.kind === "void" && typeof v?.target === "string", JSON.stringify(v));
   ok("...with its time", Number.isFinite(v?.clientTs));
-  ok("...and nothing else: no reason, no amendment, no approver", Object.keys(v ?? {}).sort().join() === "clientTs,id,innings,kind,seq,target", Object.keys(v ?? {}).join());
-  ok("the public answer carries no reason, note, requester or approver anywhere",
-    !after.raw.includes(REASON) && !after.raw.includes("Checked against the book") && !/approved_by|amendment|requested/.test(after.raw));
+  // `amendment: true` says an approved amendment wrote it, so the page tells it
+  // from a scorer's undo (GA-I36, Kameel 8 Oct); never the amendment's id.
+  ok("...and nothing else: no reason, no amendment id, no approver", Object.keys(v ?? {}).sort().join() === "amendment,clientTs,id,innings,kind,seq,target"
+    && v?.amendment === true, Object.keys(v ?? {}).join());
+  ok("the public answer carries no reason, note, requester, approver or amendment id anywhere",
+    !after.raw.includes(REASON) && !after.raw.includes("Checked against the book") && !after.raw.includes(asked.body.id)
+    && !/approved_by|requested|"amendment":(?!true)/.test(after.raw));
   const since = await api(`/api/public/matches/${pub2}/log?since=${lastBefore}`);
   ok("a poll with ?since= gets the void alone (the page's stale check)", since.body?.events?.length === 1 && since.body.last === lastBefore + 1, since.raw);
   const decided = await api(`/api/matches/${pub2}/corrections`, { token: scorer });

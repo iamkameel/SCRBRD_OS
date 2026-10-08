@@ -91,7 +91,9 @@ export const PUBLIC_EVENT_FIELDS = Object.freeze({
   retire:        Object.freeze(["batter", "reason", "type", "dismissal"]),
   innings_end:   Object.freeze(["reason", "confirmed"]),
   revision:      Object.freeze(["overs", "target", "reason", "par"]),
-  void:          Object.freeze(["target"]),
+  // amendment: `true` on a void an approved amendment wrote (made here from its
+  // key, "amendment:<id>"), so the page tells it from a scorer's undo. Never the id.
+  void:          Object.freeze(["target", "amendment"]),
   // An innings from a paper scorebook (SCRBRD-120, db/63): its card, every
   // figure checked and every ref pseudonymised (publicCard()). The typed
   // names, who checked and who confirmed, and a reviewer's note never reach
@@ -331,6 +333,7 @@ export function projectLog({ rows, people, secret, matchId, on, ctx = {} }) {
     const src = {
       ...d,
       area: areas[i],
+      amendment: String(row.event_key).startsWith("amendment:") || undefined,
       type: row.ball_type, value: row.value, dismissal: row.dismissal,
       striker: row.striker_id ?? d.striker, nonStriker: row.non_striker_id ?? d.nonStriker,
       bowler: row.bowler_id ?? d.bowler, dismissed: row.dismissed_id ?? d.dismissed,
@@ -410,6 +413,8 @@ function keep(kind, f, src, { who, squadOf, secret, matchId }) {
     // one of the words areaOf() can say. Anything else, nothing.
     case "shot":
       return kind === "ball" && typeof v === "string" && Object.hasOwn(SHOT_WORDS, v) ? v : undefined;
+    case "amendment":
+      return kind === "void" && v === true ? true : undefined;
     case "area":
       return kind === "ball" && typeof v === "string" && AREA_WORDS.has(v) ? v : undefined;
     default:

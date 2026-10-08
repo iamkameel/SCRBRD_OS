@@ -176,7 +176,7 @@ export async function buildMatchCentreFixture(q) {
   // idempotency key is "amendment:<id>"), and the innings reads as if it had
   // never been recorded — three runs fewer, the same ten overs.
   const wrong = first.find((e) => e.kind === KIND.BALL && e.type === BALL_TYPE.WIDE && e.value === 2);
-  first.push({ ...voidEvent({ target: wrong.id, reason: "amendment" }), innings: 0, id: "amendment:mc-live-7", clientTs: Date.now() });
+  first.push({ ...voidEvent({ target: wrong.id, reason: "amendment" }), amendment: "mc-live-7", innings: 0, id: "amendment:mc-live-7", clientTs: Date.now() });
   const sealed = deriveInnings(first);
   first.push({ ...sealInnings(sealed, sealed.endReason ?? "overs_complete"), innings: 0, id: "mc-live-0-seal", clientTs: Date.now() });
 
