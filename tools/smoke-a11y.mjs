@@ -1243,8 +1243,12 @@ async function scorerHomeWalk(theme) {
     }));
     const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
     if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
-    await page.locator("button:not([disabled])", { hasText: /Scorer/ }).first().click({ timeout: 4000 }).catch(() => {});
+    // The demonstration's sign-in has no scorer; its role switcher does.
+    await page.locator("button:not([disabled])", { hasText: "Head Coach" }).first().click({ timeout: 4000 }).catch(() => {});
     await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="topbar-role"]', { timeout: 8000 }).catch(() => {});
+    await page.locator('[data-testid="topbar-role"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.locator('[data-testid="role-option-scorer"]').first().click({ timeout: 4000 }).catch(() => {});
     await page.waitForSelector(REGION, { timeout: 8000 }).catch(() => {});
     await page.waitForSelector('[data-testid="resume-a11y-live-match"]', { timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(600);
