@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
-import { useNotifications } from "../../lib/notifications.js";
+import { useNotifications, report, reportable } from "../../lib/notifications.js";
 import { signedIn } from "../../lib/api.js";
 import { useNav } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
@@ -121,38 +121,47 @@ export function FamilyMatches({ role }) {
 // ── P5 · Notices ───────────────────────────────────────
 
 /**
- * Notices and the newsfeed in one list, newest first, unread first-lit, each
- * saying which child it is about when it names one. What arrives is what RLS
- * delivered (§2.1 P5): nothing is filtered here, because for a parent nothing
- * needs to be — a medical notice about another child cannot reach her.
+ * One list of notices, newest first, unread first-lit, each saying which
+ * child it is about when it names one. What arrives is what RLS delivered
+ * (§2.1 P5): nothing is filtered here, because for a parent nothing needs to
+ * be — a medical notice about another child cannot reach her.
+ *
+ * ONE STREAM (NOTIFICATIONS.md D10, S2): a post the side or the school sends
+ * is a notice of its own now, written by the post's trigger (db/91), so this
+ * list reads the notices alone; the newsfeed is News's. A post's notice has
+ * read state like any other, and carries "Report" (D11): one tap sends it to
+ * the school's safeguarding officer.
  *
  * The notices come from the one store every badge reads (lib/notifications.js,
  * NOTIFICATIONS.md D17): read state is the server's, on every device. Opening
  * a notice marks it read; a notice behind more than news.read lists its title
- * and is read on open. "Mark all read" marks every notice. A news post has no
- * read state until it is a notice of its own (S2), so it is never "New".
+ * and is read on open. "Mark all read" marks every notice.
  */
 export function FamilyNotices({ role }) {
   const [nonce, setNonce] = useState(0);
   const { list: notesRead, rows: notes, unread: counted, opened, open, markAll } = useNotifications(role, nonce, { fresh: true });
-  const { rows: news } = useLive("news", role, nonce);
   const { rows: kids } = useLive("my_children", role);
   const [openKey, setOpenKey] = useState(/** @type {string | null} */ (null));
   const [got, setGot] = useState(/** @type {Record<string, any>} */ ({}));
-  const items = [
-    ...notes.map((n) => ({ key: `n-${n.id}`, id: n.id, at: n.time, title: n.title, body: n.body, unread: !n.read, tiered: n.tiered,
-      about: kids.find((k) => k.id === n.subjectPerson) ?? null })),
-    ...news.filter((p) => !p.draft).map((p) => ({ key: `p-${p.id}`, id: null, at: p.at, title: p.title, body: p.body, unread: false, tiered: false,
-      from: p.audience, about: null })),
-  ].sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")));
+  const [reported, setReported] = useState(/** @type {Record<string, { done: boolean, words: string }>} */ ({}));
+  const [reporting, setReporting] = useState(/** @type {string | null} */ (null));
+  const items = notes.map((n) => ({ key: `n-${n.id}`, id: n.id, at: n.time, title: n.title, body: n.body, unread: !n.read, tiered: n.tiered,
+    about: kids.find((k) => k.id === n.subjectPerson) ?? null, reportable: reportable(n) }))
+    .sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")));
   // "Nothing unread" is a count; it is said of notices the server counted.
   const answered = ["ok", "empty"].includes(readState(notesRead, { what: "the notices" }).state) && counted != null;
   const toggle = async (/** @type {any} */ i) => {
     if (openKey === i.key) { setOpenKey(null); return; }
     setOpenKey(i.key);
-    if (!i.id || (opened[i.id] && !opened[i.id].failed) || (!i.unread && !i.tiered)) return;
+    if ((opened[i.id] && !opened[i.id].failed) || (!i.unread && !i.tiered)) return;
     const r = await open(i.id);
     setGot((m) => ({ ...m, [i.id]: r }));
+  };
+  const sendReport = async (/** @type {string} */ id) => {
+    setReporting(id);
+    const r = await report(id);
+    setReporting(null);
+    setReported((m) => ({ ...m, [id]: r }));
   };
   return (
     <Page testid="family-notices">
@@ -162,7 +171,7 @@ export function FamilyNotices({ role }) {
       {!items.length && <Card label="Notices"><NoneOr read={notesRead} what="notices" none="No notices yet." onRetry={() => setNonce((n) => n + 1)} testid="notices-none"/></Card>}
       {items.map((i) => {
         const isOpen = openKey === i.key;
-        const o = i.id ? (got[i.id] ?? opened[i.id]) : null;
+        const o = got[i.id] ?? opened[i.id];
         const body = i.body ?? (o && !o.gone && !o.withdrawn && !o.failed ? o.body : null);
         const sentence = o && (o.gone || o.withdrawn || o.failed) ? o.sentence : null;
         return (
@@ -173,21 +182,22 @@ export function FamilyNotices({ role }) {
               {i.unread && <span style={{ ...T.role.label, color: T.content.primary }}>New</span>}
               <span style={{ ...T.role.label, color: T.content.secondary }}>{humanDate(String(i.at ?? "").slice(0, 10))}</span>
               {i.about && <span data-testid="notice-about" style={{ ...T.role.label, color: T.content.secondary }}>About {i.about.knownAs || i.about.name}</span>}
-              {i.from && <span style={{ ...T.role.label, color: T.content.secondary }}>{i.from}</span>}
             </div>
-            {i.id ? (
-              // The title is the control: opening the notice reads it and marks it read.
-              <button type="button" onClick={() => { void toggle(i); }} aria-expanded={isOpen} data-testid="notice-open"
-                style={{ ...T.role.body, fontWeight: i.unread ? 700 : 600, color: T.content.primary, margin: 0, padding: 0, minHeight: "44px",
-                  background: "none", border: "none", textAlign: "left", cursor: "pointer" }}>
-                {i.title}
-              </button>
-            ) : (
-              <h2 style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{i.title}</h2>
-            )}
+            {/* The title is the control: opening the notice reads it and marks it read. */}
+            <button type="button" onClick={() => { void toggle(i); }} aria-expanded={isOpen} data-testid="notice-open"
+              style={{ ...T.role.body, fontWeight: i.unread ? 700 : 600, color: T.content.primary, margin: 0, padding: 0, minHeight: "44px",
+                background: "none", border: "none", textAlign: "left", cursor: "pointer" }}>
+              {i.title}
+            </button>
             {body && (isOpen || !i.tiered) && <p data-testid="notice-body" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{body}</p>}
             {!body && i.tiered && !isOpen && <p style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>Open to read.</p>}
             {isOpen && sentence && <p data-testid="notice-sentence" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{sentence}</p>}
+            {i.reportable && !reported[i.id]?.done && (
+              <div><Action onClick={() => { void sendReport(i.id); }} testid="notice-report" disabled={reporting === i.id}>
+                {reporting === i.id ? "Reporting…" : "Report"}
+              </Action></div>
+            )}
+            {reported[i.id] && <p role="status" data-testid="notice-reported" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{reported[i.id].words}</p>}
           </article>
         );
       })}
