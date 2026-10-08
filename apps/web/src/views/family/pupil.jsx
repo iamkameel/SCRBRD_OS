@@ -29,6 +29,7 @@ import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { Health, TheirRecord } from "./childfile.jsx";
 import { MyLiftLine } from "../lifts.jsx";
 import { CaptainCard } from "./captain.jsx";
+import { TodoCard } from "./todo.jsx";
 
 /** The pupil himself, in the shape the shared cards take: his own player row. */
 function useSelf(role) {
@@ -74,6 +75,10 @@ export function PupilHome({ role }) {
       </header>
       <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={(m) => setOpen({ kind: "fixture", match: m })}
         said={readState(matchesRead, { what: "the fixtures" })} onRetry={() => setNonce((n) => n + 1)}/>
+      {/* GA-I20 A1 (D12): his own list, under his next fixture: his answers,
+          and a consent only where the server says it is his to give. */}
+      <TodoCard child={me} matches={matches} matchesRead={matchesRead} now={now} self
+        onOpen={(m) => setOpen({ kind: "fixture", match: m })}/>
       {/* SCRBRD-138 C1: only for a boy who holds the captaincy honour; under his own next fixture, which stays first. */}
       <CaptainCard me={me} role={role} matches={matches} now={now} onOpen={(m, kind) => setOpen({ kind, match: m })}/>
       {/* SCRBRD-124 phase 2 (db/76): his own lifts, for a pupil of eighteen

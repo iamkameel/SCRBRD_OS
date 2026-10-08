@@ -219,8 +219,10 @@ try {
   ok("...and says so", /Appointed to score/i.test(await tid(`fixture-${APPT}-appointed`).innerText().catch(() => "")));
   ok("then his side's fixtures, by start: the live one before today's later one",
      at(OTHER) > 0 && at(OTHER) < at(MINE) && order.slice(1).every((o) => o.group === "team"), JSON.stringify(order));
-  ok("the live fixture another device holds says so", (await attr(`fixture-${OTHER}`, "data-state")) === "held_other"
-     && /another device is scoring/.test(await tid(`fixture-${OTHER}-state`).innerText().catch(() => "")));
+  // The list draws before each fixture's scoring-session read answers: wait for
+  // the state the read gives, rather than reading the first paint.
+  ok("the live fixture another device holds says so", await until(async () => (await attr(`fixture-${OTHER}`, "data-state")) === "held_other"
+     && /another device is scoring/.test(await tid(`fixture-${OTHER}-state`).innerText().catch(() => "")), 10000));
   ok("...and offers the pad, whose take-over is the route, not a claim from here",
      /Open the pad/.test(await tid(`fixture-${OTHER}-open`).innerText().catch(() => "")) && /hands over/.test(await tid(`fixture-${OTHER}`).innerText().catch(() => "")));
   ok("no claim was made by drawing the home",
