@@ -239,6 +239,29 @@ group("A. accounts (account lifecycle D5): every account, disabled ones included
      && logged[0]?.params?.[0] === "accounts");
 }
 
+group("A. The physio's half is null, not false, for a reader without medical.status.read");
+{
+  // injury_read (db/09) hides every injury row from a reader without the
+  // status tier, so "no restricted row" proves nothing for him; false would
+  // read as "cleared" (K3, db/55). Both reads that carry the column ask the
+  // same app_can() call the policy makes, per boy, and say null otherwise.
+  // The live proof is tools/smoke-readiness.mjs and smoke-availability.mjs.
+  const flat = (/** @type {string} */ t) => t.replace(/\s+/g, " ");
+  const gate = "app_can('medical.status.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)";
+  const policy = flat((await import("node:fs")).readFileSync(new URL("../../../db/09_rls_policies.sql", import.meta.url), "utf8"))
+    .match(/CREATE POLICY injury_read ON injury FOR SELECT USING \((app_can\('medical\.status\.read'[^;]*)\);/)?.[1] ?? "";
+  ok("the gate is the injury_read policy's own call, with the boy for the injury row",
+     policy.replaceAll("injury.school_id", "p.school_id").replace(/\(SELECT p\.team_code FROM player p WHERE p\.id = injury\.player_id\)/, "p.team_code")
+       .replaceAll("injury.player_id", "p.id") === gate);
+  const r = flat(READ_QUERIES.readiness.text), a = flat(READ_QUERIES.availability.text);
+  ok("readiness: asked per boy", r.includes(`cross join lateral (select ${gate} as may) k`));
+  ok("readiness: the coalesce to false only where the tier fills it",
+     /\(case when my_feature_enabled\('injuries'\) and k\.may then coalesce\(c\.restricted, false\) end\) as clinically_restricted/.test(r));
+  ok("readiness: no other coalesce of the clinical half", (r.match(/coalesce\(c\.restricted/g) ?? []).length === 1);
+  ok("availability: exists() only where the tier fills it",
+     a.includes(`(case when my_feature_enabled('injuries') and ${gate} then exists (select 1 from injury_masked i where i.player_id = p.id and i.restricted) end) as clinically_restricted`));
+}
+
 // ── B. Client accessor ──
 group("B. Feature flags: mock vs live per resource");
 {
