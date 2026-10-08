@@ -4,20 +4,24 @@ import { D, textOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive } from "../lib/live.js";
 import { signedIn } from "../lib/api.js";
-import { reachesEverySchool, schoolsWhere } from "../lib/session.js";
+import { profile, reachesEverySchool, schoolsWhere } from "../lib/session.js";
 import { humanDate } from "../lib/format.js";
-import { liveRoles, matchesPerson, peopleWithRoles } from "../lib/people.js";
+import { accountAction, liveRoles, matchesPerson, peopleWithRoles } from "../lib/people.js";
 import { Avatar } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { EnrolModal, FormBtn, IssuedCodeModal, grantableFor, issuedFrom } from "./enrol.jsx";
 // SCRBRD-132 C1 (db/77): ending one appointment, with a reason, decided by the server.
 import { EndRoleButton } from "./endrole.jsx";
+// Account lifecycle slice 1 (db/85): disabling and enabling an account, decided by the server.
+import { AccountButton } from "./accountactive.jsx";
 
 // ══════════════════════════════════════════════════════
 //  PEOPLE — Management's user list, on the real directory
 //
-//  One row per account, with EVERY role it holds: the `users` read says who
-//  the accounts are, the `assignments` read (withdrawn rows included on
+//  One row per account, with EVERY role it holds: the `accounts` read says who
+//  the accounts are, disabled ones included (account lifecycle D5: `users`
+//  keeps `where active`, for the screens that pick a person to act on), and
+//  the `assignments` read (withdrawn rows included on
 //  purpose — it is the audit surface) says what each one holds or held. A
 //  person who coaches the 1st XI and is also a parent is one account and two
 //  chips; a list with one role each told the office something false.
@@ -27,9 +31,13 @@ import { EndRoleButton } from "./endrole.jsx";
 //  form). An email that already belongs to someone at the school gets the new
 //  role on the existing account — that is how a person gets a second role.
 //
-//  What this screen does NOT do is end a role or suspend an account. Neither
-//  has a server behind it yet, and a button that changed React state and
-//  nothing else is what this replaced. The line at the foot says so.
+//  Ending a role is real (db/77, endrole.jsx), and so are Disable account and
+//  Enable account (db/85, accountactive.jsx): disabling signs the person out
+//  of every device and stops them signing in, and keeps every role. Each is
+//  offered only where the server would allow it (lib/people.js
+//  accountAction(), db/81's rule) and decided again by the server, whose
+//  refusal is shown in its own words. A disabled account stays on the list,
+//  marked "Disabled" in words.
 //
 //  Nobody signed in (the demonstration): the seeded directory is read, one
 //  role each, and nothing is offered that would write.
@@ -85,7 +93,7 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
   const live = signedIn();
   // Bumped after a write, so the list re-reads instead of showing the roster as it was.
   const [nonce, setNonce] = useState(0);
-  const accounts = useLive("users", role, nonce);
+  const accounts = useLive("accounts", role, nonce);
   const appointments = useLive("assignments", role, nonce);
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -107,6 +115,16 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
   // A role is added at the person's own school, and only where this reader may
   // assign. An account with no school (the platform's own) is not a school's to add to.
   const mayAddTo = (p) => canWrite && !!p.school && (everywhere || schools.some((s) => s.id === p.school));
+  // Disable or Enable: drawn only where db/81's rule would let this reader act
+  // (lib/people.js accountAction()); the server asks it again on every post.
+  const me = live ? profile() : null;
+  const accountChanged = (p, active) => {
+    setNotice(active
+      ? `Enabled ${p.name}'s account. They can sign in again; each device signs in afresh.`
+      : `Disabled ${p.name}'s account. They are signed out of every device and cannot sign in. Their roles stay.`);
+    setNonce((n) => n + 1);
+    onDirectoryChanged?.();
+  };
 
   const people = peopleWithRoles(accounts.rows, appointments.rows, today());
   const linkedName = (p) => (p.player ? players.find((x) => x.id === p.player)?.name ?? null : null);
@@ -132,6 +150,7 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
   const stats = [
     { label: "People", value: people.length },
     { label: "Active", value: people.filter((p) => p.status === "active").length },
+    { label: "Disabled", value: people.filter((p) => p.status !== "active").length },
     { label: "With more than one role", value: people.filter((p) => liveRoles(p).length > 1).length },
     { label: "Showing", value: shown.length },
   ];
@@ -150,7 +169,7 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
                 data-testid="people-status-filter" style={ctl()}>
           <option value="all">All statuses</option>
           <option value="active">Active</option>
-          <option value="inactive">Not active</option>
+          <option value="inactive">Disabled</option>
         </select>
         {canWrite && <FormBtn data-testid="add-user" onClick={() => { setNotice(null); setDialog({ kind: "user" }); }}>Add user</FormBtn>}
       </div>
@@ -190,15 +209,19 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
           </li>
         )}
         {!loading && shown.map((p, i) => (
-          <li key={p.id} data-testid={`person-row-${p.id}`} data-email={p.email}
+          <li key={p.id} data-testid={`person-row-${p.id}`} data-email={p.email} data-status={p.status}
               style={{ listStyle: "none", display: "flex", gap: "14px", alignItems: "flex-start", flexWrap: "wrap",
                        padding: "14px 16px", borderTop: i ? `1px solid ${D.border}` : "none" }}>
-            <Avatar name={p.name} size={40} color={ROLES[liveRoles(p)[0]?.role ?? p.role]?.color ?? D.indigo}/>
+            <Avatar name={p.name} size={40} color={p.status === "active" ? (ROLES[liveRoles(p)[0]?.role ?? p.role]?.color ?? D.indigo) : D.textMuted}/>
             <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-              <div style={{ fontFamily: D.body, fontSize: "15px", fontWeight: 600, color: D.textPrimary }}>{p.name}</div>
+              <div style={{ fontFamily: D.body, fontSize: "15px", fontWeight: 600, color: p.status === "active" ? D.textPrimary : D.textMuted }}>{p.name}</div>
               <div style={{ fontFamily: D.mono, fontSize: "13px", color: D.textMuted, overflowWrap: "anywhere" }}>{p.email}</div>
               <div style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted, marginTop: "2px" }}>
-                {p.status === "active" ? "Active" : "Not active"} · {lastSeen(p.lastLogin)}
+                {/* The state in words, never by colour alone: a disabled account
+                    cannot sign in, and keeps every role it holds. */}
+                {p.status === "active" ? "Active"
+                  : <span data-testid="account-disabled" style={{ fontWeight: 700, color: D.textPrimary }}>Disabled</span>}
+                {" · "}{lastSeen(p.lastLogin)}
                 {linkedName(p) ? ` · account for ${linkedName(p)}` : ""}
               </div>
             </div>
@@ -224,13 +247,12 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
               <FormBtn variant="ghost" data-testid={`add-role-${p.id}`} aria-label={`Add a role for ${p.name}`}
                        onClick={() => { setNotice(null); setDialog({ kind: "role", person: p }); }}>Add role</FormBtn>
             )}
+            <AccountButton person={p} action={live ? accountAction(p, me) : null}
+                           onChanged={(active) => accountChanged(p, active)}/>
           </li>
         ))}
       </ul>
 
-      <p data-testid="people-coming" style={{ margin: 0, fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
-        Suspending an account is coming.
-      </p>
       {!live && (
         <p data-testid="people-demo" style={{ margin: 0, fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
           This is the demonstration directory, one role each. Sign in to see everyone's roles and to add people or roles.

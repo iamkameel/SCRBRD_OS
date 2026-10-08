@@ -21,7 +21,8 @@ import { useNav } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { tenantWords } from "../../lib/words.js";
 import { chooseChild, recallChild, rememberChild } from "../../lib/family.js";
-import { Card, ChildSwitcher, Line, Page, Title } from "./parts.jsx";
+import { Card, ChildSwitcher, Line, NoneOr, Page, Title } from "./parts.jsx";
+import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { ChildFileCard } from "./childfile.jsx";
@@ -30,12 +31,18 @@ import { TodoCard } from "./todo.jsx";
 
 /** The children this parent answers for, the one chosen, and the fixture list the cards share. */
 function useChildren(role) {
-  const { rows: kids, loading, error } = useLive("my_children", role);
-  const { rows: matches, loading: matchesLoading, error: matchesError } = useLive("matches", role);
+  // Retry bumps this nonce: the same two reads again, same role, same params.
+  const [nonce, setNonce] = useState(0);
+  const { rows: kids, loading, error } = useLive("my_children", role, nonce);
+  const matchesRead = useLive("matches", role, nonce);
+  const { rows: matches } = matchesRead;
   const [picked, setPicked] = useState(recallChild);
   const child = chooseChild(kids, matches, picked, Date.now());
   const choose = (c) => { rememberChild(c.id); setPicked(c.id); };
-  return { kids, child, choose, loading, error, matches, matchesRead: { loading: matchesLoading, error: matchesError } };
+  // "No fixture is arranged" is said only of a fixtures read that answered.
+  const matchesSaid = readState(matchesRead, { what: "the fixtures" });
+  // matchesRead is the whole read: the To-do card takes { loading, error } from it, the next-fixture card the sentence.
+  return { kids, child, choose, loading, error, matches, matchesRead, matchesSaid, retry: () => setNonce((n) => n + 1) };
 }
 
 /** What a family screen says when there is no child to show — and why, honestly. */
@@ -58,7 +65,7 @@ const schoolLine = (c) => [c.schoolName, c.team].filter(Boolean).join(" · ");
 // ── P1 · Home — one child ──────────────────────────────
 
 export function FamilyHome({ role, onNav }) {
-  const { kids, child, choose, loading, error, matches, matchesRead } = useChildren(role);
+  const { kids, child, choose, loading, error, matches, matchesRead, matchesSaid, retry } = useChildren(role);
   const nav = useNav(role);
   const [open, setOpen] = useState(null);
   if (!child) return <NoChild loading={loading} error={error} testid="family-home"/>;
@@ -77,7 +84,7 @@ export function FamilyHome({ role, onNav }) {
           <Title testid="family-child">{child.knownAs || child.name}</Title>
           <Line quiet testid="family-child-school">{schoolLine(child)}</Line>
         </header>
-        <NextFixtureCard child={child} matches={matches} role={role} now={now}
+        <NextFixtureCard child={child} matches={matches} role={role} now={now} said={matchesSaid} onRetry={retry}
           onOpen={(m) => setOpen({ kind: "fixture", match: m })}
           onMatches={nav.includes("fixtures") ? () => onNav?.("fixtures") : null}/>
         {/* GA-I20 A0: what is owed for him, under the next fixture: his fixtures'
@@ -119,8 +126,10 @@ export function FamilyMatches({ role }) {
  * needs to be — a medical notice about another child cannot reach her.
  */
 export function FamilyNotices({ role }) {
-  const { rows: notes, loading } = useLive("notifications", role);
-  const { rows: news } = useLive("news", role);
+  const [nonce, setNonce] = useState(0);
+  const notesRead = useLive("notifications", role, nonce);
+  const { rows: notes } = notesRead;
+  const { rows: news } = useLive("news", role, nonce);
   const { rows: kids } = useLive("my_children", role);
   const items = [
     ...notes.map((n) => ({ key: `n-${n.id}`, at: n.time, title: n.title, body: n.body, unread: !n.read,
@@ -132,8 +141,9 @@ export function FamilyNotices({ role }) {
   return (
     <Page testid="family-notices">
       <Title>Notices</Title>
-      <Line quiet>{unread ? `${unread} unread` : "Nothing unread"}</Line>
-      {!items.length && <Card label="Notices"><Line quiet>{loading ? "Reading your notices…" : "No notices yet."}</Line></Card>}
+      {/* "Nothing unread" is a count; it is said of notices that were read. */}
+      {["ok", "empty"].includes(readState(notesRead, { what: "the notices" }).state) && <Line quiet>{unread ? `${unread} unread` : "Nothing unread"}</Line>}
+      {!items.length && <Card label="Notices"><NoneOr read={notesRead} what="notices" none="No notices yet." onRetry={() => setNonce((n) => n + 1)} testid="notices-none"/></Card>}
       {items.map((i) => (
         <article key={i.key} data-testid="notice" data-unread={i.unread ? "true" : undefined}
           style={{ background: T.surface.raised, border: `1px solid ${i.unread ? T.line.strong : T.line.normal}`,

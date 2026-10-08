@@ -84,7 +84,7 @@ try {
   // would be the same class of test as the fake pool: green, and blind.
   for (const resource of [
     "matches", "players", "injuries", "competitions",
-    "coaches", "staff", "users", "grounds",
+    "coaches", "staff", "users", "accounts", "grounds",
     "training", "training_attendance", "skills", "notifications",
     "league", "weather", "career", "career_by_season",
   ]) {

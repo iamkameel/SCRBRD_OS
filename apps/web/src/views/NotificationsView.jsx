@@ -1,14 +1,22 @@
 
 import { useState } from "react";
 import { D, textOn } from "../design/tokens.js";
-import { Badge, Btn, Card, SectionHeader } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
+import { Badge, Btn, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
+import { useLive } from "../lib/live.js";
+import { readState } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
 
 function NotificationsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const NOTIFICATIONS = useRows("notifications", role);
+  // Retry bumps the read's own nonce: the same read, the same role, nothing wider.
+  const [nonce, setNonce] = useState(0);
+  const notificationsRead = useLive("notifications", role, nonce);
+  const NOTIFICATIONS = notificationsRead.rows;
+  // "0 unread alerts" over a read that failed, or one that is still coming, is
+  // a figure nobody counted. The count is said only of an answer (GA-I08).
+  const said = readState(notificationsRead, { what: "the notices" });
+  const answered = said.state === "ok" || said.state === "empty";
   // Hold only what this screen CHANGES — which notices have been opened — and
   // derive the list from the server's rows every render.
   //
@@ -26,8 +34,9 @@ function NotificationsView({ role }) {
   const uc = u => u==="high"?D.rose:u==="medium"?D.amber:D.textMuted;
   return (
     <div className="os-page">
-      <SectionHeader title="Notifications" sub={`${unread} unread alerts`} color={D.rose}
+      <SectionHeader title="Notifications" sub={answered ? `${unread} unread alerts` : "Unread alerts not counted"} color={D.rose}
         actions={unread>0&&<Btn size="sm" variant="ghost" onClick={markAll}>Mark all read</Btn>}/>
+      {said.state!=="ok"&&<Card><ReadState read={said} onRetry={()=>setNonce(n=>n+1)} icon="bell" testId="notifications-read-state"/></Card>}
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {notifs.map(n=>(
           <Card key={n.id} sx={{padding:"14px 16px",background:n.read?"transparent":D.indigo+"08",border:`1px solid ${n.read?D.border:D.indigo+"22"}`}}

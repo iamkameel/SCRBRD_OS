@@ -49,7 +49,14 @@ const an = readFileSync(new URL("../src/views/AnalyticsView.jsx", import.meta.ur
 ok("Squad: the open player and his action are cleared by the one function every tab and a move go through",
   /const chooseTeam = \(t\) => \{ setChosenTeam\(t\); setSelectedId\(null\); setAct\(null\); \}/.test(sq) && !/setTeam\(/.test(sq));
 ok("Squad: the player on show is looked up IN the current side", /PLAYERS\.find\(p=>p\.id===selectedId && p\.team===team\)/.test(sq));
-ok("Squad: the side's own panels are keyed by it, so their state does not cross", /<AvailabilityPanel key=\{team\}/.test(sq) && /<LiftsPanel key=\{team\}/.test(sq) && /<LiftDayStaff key=\{team\}/.test(sq));
+// Keyed by the side, and each by its own prefix: siblings sharing one key
+// made React draw the availability panel twice (GA-I08).
+const panelKeys = ["AvailabilityPanel", "LiftsPanel", "LiftDayStaff"]
+  .map((c) => (sq.match(new RegExp(`<${c} key=\\{\`([a-z]+)-\\$\\{team\\}\`\\}`)) || [])[1]);
+ok("Squad: the side's own panels are keyed by it, so their state does not cross",
+  panelKeys.every(Boolean));
+ok("Squad: the three panels' keys are distinct, so React draws each once",
+  new Set(panelKeys).size === 3);
 ok("Squad: a new player goes to the side on show, not 1XI", /const npTeam = np\.teamCode \|\| team \|\| "1XI"/.test(sq) && !/teamCode:"1XI"/.test(sq));
 ok("Analytics: the fixed three are gone and the tabs are the rows' own", !/\["1XI","U15A","U13A"\]/.test(an) && /teams\.map\(t=>/.test(an) && /useState\(null\)/.test(an) && !/useState\("1XI"\)/.test(an));
 ok("Analytics: the match-up batter picked for one side is not carried to another", /<Matchups key=\{teamFilter\?\?"none"\}/.test(an));

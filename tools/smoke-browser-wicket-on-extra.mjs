@@ -14,7 +14,7 @@
  *   1. a single;
  *   2. a run out off a no-ball: one run completed off the bat, the
  *      non-striker run out at the striker's end;
- *   3. the free hit, a dot;
+ *   3. the free hit, bowled: the batter not out, the board saying so;
  *   4. a stumping off a wide.
  * At each step the board, the server's fold of its own rows and
  * match_live_score (the SQL fold the public score and the handover read)
@@ -274,11 +274,35 @@ try {
   ok("...the survivor at the bowler's end, the new man at the striker's", ro.inn.nonStriker === S && ro.inn.striker != null && ro.inn.striker !== N);
   ok("...and a free hit to come", ro.inn.freeHit === true);
 
-  // ── The free hit ──────────────────────────────────────────────
+  // ── The free hit: bowled, and not out ─────────────────────────
+  group("The free hit, bowled: the batter is not out, and the pad says so");
   await makeReady();
-  await click(/^·/, 2000);
-  const fh = await agree("the free hit, a dot");
-  ok("...the free hit is taken", fh.inn.freeHit === false && fh.inn.balls === 2);
+  // Every word the board's flash shows, however briefly (it is gone in 600ms).
+  await page.evaluate(() => {
+    const w = /** @type {any} */ (window);
+    w.__flashes = [];
+    new MutationObserver(() => {
+      for (const el of document.querySelectorAll('[data-testid="board-flash-label"]')) {
+        if (w.__flashes.at(-1) !== el.textContent) w.__flashes.push(el.textContent);
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
+  await tap("key-wicket");
+  await tap("wicket-mode-bowled");
+  await tap("wicket-confirm");
+  const flashes = /** @type {string[]} */ (await page.evaluate(() => /** @type {any} */ (window).__flashes));
+  const heard = ((await tid("pad-moment").first().textContent().catch(() => "")) || "").trim();
+  ok(`no WICKET! on the board (${flashes.join(" | ")})`, !flashes.some((f) => /WICKET/i.test(f)));
+  ok("...it says not out, the free hit", flashes.some((f) => f === "NOT OUT: FREE HIT"));
+  ok(`...and so does the screen reader's line ("${heard}")`, heard === "NOT OUT: FREE HIT");
+  ok("...nobody is asked to come in", !/Available to Bat/i.test(await text()));
+  const fh = await agree("the free hit, bowled and not out");
+  ok("...the free hit is taken: 3 for 1 still, two balls", fh.inn.freeHit === false && fh.inn.balls === 2
+     && fh.inn.wickets === ro.inn.wickets && fh.inn.runs === ro.inn.runs, boardOf(fh.inn));
+  const fhRow = fh.rows.filter((r) => r.kind === "ball").at(-1);
+  ok("...the server stored the bowled, which the fold says the free hit saved",
+     fhRow?.ball_type === "W" && fhRow?.dismissal === "bowled" && fh.inn.ballLog.at(-1)?.freeHitSaved === true,
+     JSON.stringify(fhRow && { type: fhRow.ball_type, d: fhRow.dismissal }));
 
   // ── 2. A stumping off a wide ───────────────────────────────────
   group("A stumping off a wide (Law 22.9): the wide's runs, then the wicket");

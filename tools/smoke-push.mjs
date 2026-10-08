@@ -13,10 +13,15 @@
  *      an hour ago means the phone stays silent.
  *   2. REGISTERING A DEVICE GRANTS NOTHING. A subscription can only reduce
  *      what somebody receives; it can never widen what they may know.
- *   3. WHAT TRAVELS IS AS LITTLE AS POSSIBLE. Only an already-public notice
- *      goes out in clear text. Everything else is a pointer and an id.
+ *   3. WHAT TRAVELS IS AS LITTLE AS POSSIBLE. Every notice is a pointer and
+ *      an id, a row marked public included (NOTIFICATIONS.md D6, D14).
  *   4. A PHONE THAT CHANGES HANDS stops receiving the last person's alerts.
  *   5. NOBODY ENROLS SOMEBODY ELSE'S PHONE, and nobody reads their list.
+ *   6. THE PUBLISH ROUTE IS LOCKED (D12, slice S0): a `notice`, at most
+ *      `medium`, with no capability, no public flag, no child and no single
+ *      recipient. A notice about a child is the system's to write, so this
+ *      walk writes those rows directly, as notify_injury() does.
+ *   7. AN EXPIRED NOTICE IS NOT SENT.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-push.mjs
@@ -93,6 +98,21 @@ async function asPerson(personId, sql, params = []) {
     return { ok: false, code: e.code, message: e.message };
   } finally { c.release(); }
 }
+/**
+ * A restricted notice, written as the system writes one (notify_injury(),
+ * db/08) — the publish route no longer takes a capability or a child (D12).
+ * Stamped with the publisher, so the push gate (news.publish.school) is hers.
+ */
+const systemNotice = async (publisherEmail, { title, body, requiredCapability, subjectPersonId,
+                                              kind = "injury", subjectKind = "injury", expiresAt = null }) =>
+  (await q(`insert into notification
+              (school_id, scope_level, kind, urgency, title, body, required_capability,
+               subject_kind, subject_person_id, published_by, expires_at)
+            values ($1, 'school', $2, 'medium', $3, $4, $5, $6, $7,
+                    (select id from app_user where email = $8), $9)
+            returning id`,
+           [HIL, kind, title, body, requiredCapability, subjectKind, subjectPersonId,
+            publisherEmail, expiresAt]))[0];
 const deliveries = (noticeId) => q(
   `select d.payload_kind, d.state, d.attempts, u.email
      from notification_delivery d join app_user u on u.id = d.person_id
@@ -187,45 +207,78 @@ try {
   group("Publishing, which had a policy and no route at all");
   {
     const good = await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "fixture",
-      title: "Saturday's fixtures", body: "All age groups at home.", isPublic: true });
+      schoolId: HIL, scopeLevel: "school", kind: "notice",
+      title: "Saturday's fixtures", body: "All age groups at home." });
     ok("somebody holding news.publish.school can publish", good.status === 200);
     ok("...and it is stamped with the publisher",
        (await q(`select published_by from notification where id = $1`, [good.body.id]))[0]
          .published_by === await idOf("sarah@example.invalid"));
+    ok("...as news.read, not public", good.body?.requiredCapability === "news.read"
+       && good.body?.isPublic === false);
 
     // published_by is never taken from the request, exactly as declared_by on
     // an availability row is not.
     const spoofed = await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "fixture", title: "T", body: "B",
+      schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B",
       publishedBy: await idOf("coach@example.invalid") });
     ok("published_by cannot be spoofed",
        (await q(`select published_by from notification where id = $1`, [spoofed.body.id]))[0]
          .published_by === await idOf("sarah@example.invalid"));
 
     ok("a spectator cannot publish", [403, 401].includes((await publish(watcher, {
-      schoolId: HIL, scopeLevel: "school", kind: "fixture", title: "T", body: "B" })).status));
+      schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B" })).status));
     // The medical officer holds every medical capability and no publishing one.
     ok("holding a subject-matter capability is not holding a publishing one",
        [403, 401].includes((await publish(medic, {
-         schoolId: HIL, scopeLevel: "school", kind: "injury", title: "T", body: "B" })).status));
+         schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B" })).status));
 
     ok("an unknown scope is refused", (await publish(head, {
-      schoolId: HIL, scopeLevel: "province", kind: "x", title: "T", body: "B" })).status === 400);
+      schoolId: HIL, scopeLevel: "province", kind: "notice", title: "T", body: "B" })).status === 400);
     ok("a team notice with no team is refused", (await publish(head, {
-      schoolId: HIL, scopeLevel: "team", kind: "x", title: "T", body: "B" })).status === 400);
+      schoolId: HIL, scopeLevel: "team", kind: "notice", title: "T", body: "B" })).status === 400);
     ok("an unknown urgency is refused", (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "x", title: "T", body: "B",
+      schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B",
       urgency: "screaming" })).status === 400);
     ok("an unknown subject kind is refused", (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "x", title: "T", body: "B",
+      schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B",
       subjectKind: "gossip" })).status === 400);
-    // The database's own belt-and-braces: a notice going on a public screen
-    // may not also declare a restricted capability.
-    ok("a public notice may not carry a restricted capability",
-       (await publish(head, {
-         schoolId: HIL, scopeLevel: "school", kind: "injury", title: "T", body: "B",
-         isPublic: true, requiredCapability: "medical.status.read" })).status === 422);
+  }
+
+  group("The publish route is locked until S2 (D12)");
+  {
+    const count = async () => (await q(`select count(*)::int c from notification`))[0].c;
+    const before = await count();
+    const base = { schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B" };
+    const refusals = [
+      ["a kind other than notice", { kind: "fixture" }, "kind_must_be_notice"],
+      ["an injury kind", { kind: "injury" }, "kind_must_be_notice"],
+      ["urgency high", { urgency: "high" }, "urgency_too_high"],
+      ["a required capability", { requiredCapability: "medical.status.read" }, "required_capability_not_accepted"],
+      ["...even news.read itself", { requiredCapability: "news.read" }, "required_capability_not_accepted"],
+      ["a public flag", { isPublic: true }, "is_public_not_accepted"],
+      ["...even false", { isPublic: false }, "is_public_not_accepted"],
+      ["a child", { subjectPersonId: CHILD }, "subject_person_id_not_accepted"],
+      ["one recipient", { recipientId: await idOf("parent@example.invalid") }, "recipient_id_not_accepted"],
+    ];
+    for (const [what, extra, code] of refusals) {
+      const r = await publish(head, { ...base, ...extra });
+      ok(`${what} is refused (${code})`, r.status === 422 && r.body?.error === code);
+      ok("...in words", typeof r.body?.detail === "string" && r.body.detail.length > 20);
+    }
+    ok("...and none of them wrote a row", await count() === before);
+
+    const medium = await publish(head, { ...base, urgency: "medium", title: "Nets", body: "B field this week." });
+    ok("a medium notice is published", medium.status === 200);
+    ok("...as a notice",
+       (await q(`select kind, urgency from notification where id = $1`, [medium.body.id]))[0]
+         ?.kind === "notice");
+
+    // The shared list knows welfare (S0); the database's CHECK learns it in S1.
+    const welfare = await publish(head, { ...base, subjectKind: "welfare" });
+    ok("welfare passes the route and is refused by the database, said in words",
+       welfare.status === 422 && welfare.body?.error === "subject_kind_not_yet_stored"
+       && /S1/.test(welfare.body?.detail ?? ""));
+    ok("...and nothing was written", await count() === before + 1);
   }
 
   group("A cached notification is not permission");
@@ -233,11 +286,9 @@ try {
     await register(tk("watcher"), watcher);
     // A notice about ONE CHILD, requiring a medical capability. The person
     // anchor is what keeps it off every other family's phone.
-    const notice = (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "injury",
+    const notice = await systemNotice("sarah@example.invalid", {
       title: "Player update", body: "R Pillay is out with a hamstring strain.",
-      requiredCapability: "medical.status.read",
-      subjectKind: "injury", subjectPersonId: CHILD })).body;
+      requiredCapability: "medical.status.read", subjectPersonId: CHILD });
     ok("the notice was published", !!notice?.id);
 
     const out = (await push(notice.id, head)).body;
@@ -264,11 +315,9 @@ try {
     // next notice. Nothing is cached, so nothing has to be invalidated.
     await q(`update role_assignment set active = false
               where person_id = $1 and role = 'coach'`, [await idOf("coach@example.invalid")]);
-    const second = (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "injury",
+    const second = await systemNotice("sarah@example.invalid", {
       title: "Player update", body: "Still out.",
-      requiredCapability: "medical.status.read",
-      subjectKind: "injury", subjectPersonId: CHILD })).body;
+      requiredCapability: "medical.status.read", subjectPersonId: CHILD });
     await push(second.id, head);
     const after = (await deliveries(second.id)).map((r) => r.email);
     ok("a role withdrawn an hour ago means the phone stays silent",
@@ -316,11 +365,9 @@ try {
 
   group("What travels is as little as possible");
   {
-    const restricted = (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "injury",
+    const restricted = await systemNotice("sarah@example.invalid", {
       title: "Player update", body: "A hamstring strain, grade 2.",
-      requiredCapability: "medical.status.read",
-      subjectKind: "injury", subjectPersonId: CHILD })).body;
+      requiredCapability: "medical.status.read", subjectPersonId: CHILD });
     await push(restricted.id, head);
     const r1 = await deliveries(restricted.id);
     ok("a restricted notice reached somebody", r1.length > 0);
@@ -329,15 +376,28 @@ try {
     ok("...and every device got a pointer, not the text",
        r1.every((d) => d.payload_kind === "pointer"));
 
-    const open = (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "fixture",
-      title: "Fixtures", body: "All age groups at home on Saturday.",
-      isPublic: true })).body;
-    await push(open.id, head);
+    // A row marked public. The route no longer writes one (D12) and S1's
+    // trigger will refuse it (D4), but rows from before may say so — and the
+    // flag chooses nothing (D6): it travels as a pointer like every other.
+    const open = (await q(
+      `insert into notification (school_id, scope_level, kind, urgency, title, body, is_public, published_by)
+       values ($1, 'school', 'fixture', 'medium', 'Fixtures', 'All age groups at home on Saturday.', true,
+               (select id from app_user where email = 'sarah@example.invalid'))
+       returning id`, [HIL]))[0];
+    const echoOpen = echoTransport();
+    const outOpen = await fanOut({ pool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
+                                   notificationId: open.id, transport: echoOpen });
     const r2 = await deliveries(open.id);
-    ok("a public notice reached more people than the restricted one", r2.length > r1.length);
-    ok("...and travels in full, because the school already made it public",
-       r2.every((d) => d.payload_kind === "full"));
+    ok("a public notice reached more people than the restricted one", r2.length > r1.length && outOpen.delivered > 0);
+    ok("...and travels as a pointer all the same", r2.every((d) => d.payload_kind === "pointer"));
+    ok("...its words never on the wire",
+       echoOpen.sent.length > 0 && echoOpen.sent.every((s) => !JSON.stringify(s.payload).includes("All age groups")
+         && s.payload?.notification?.body === "You have a new notice."
+         && Object.keys(s.payload?.data ?? {}).join() === "notificationId"));
+
+    // Nothing in the delivery log says "full" any more.
+    ok("no delivery anywhere was sent in full",
+       (await q(`select count(*)::int c from notification_delivery where payload_kind = 'full'`))[0].c === 0);
 
     // The payload builder, asserted directly: the pointer carries the id and
     // nothing else — not the kind, because "you have an INJURY notice" on a
@@ -387,8 +447,8 @@ try {
   group("Told once, and only when there is a wire");
   {
     const n = (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "fixture",
-      title: "Reminder", body: "Kit inspection Friday.", isPublic: true })).body;
+      schoolId: HIL, scopeLevel: "school", kind: "notice",
+      title: "Reminder", body: "Kit inspection Friday." })).body;
     const first = (await push(n.id, head)).body;
     const before = (await deliveries(n.id)).length;
     await push(n.id, head);
@@ -407,6 +467,38 @@ try {
                      notificationId: n.id, transport: null });
     } catch (e) { refusedCode = e.message; }
     ok("an unconfigured transport refuses the fan-out", refusedCode === "push_not_configured");
+  }
+
+  group("An expired notice is not sent");
+  {
+    // Published with an expiry already past (the route takes expiresAt as
+    // given; S1's trigger sets a default by kind).
+    const gone = await publish(head, {
+      schoolId: HIL, scopeLevel: "school", kind: "notice",
+      title: "Yesterday", body: "Nets cancelled.", expiresAt: new Date(Date.now() - 3600_000).toISOString() });
+    ok("a notice with a past expiry is on record", gone.status === 200);
+    const r = await push(gone.body.id, head);
+    ok("pushing it is refused as expired", r.status === 410 && r.body?.error === "notice_expired");
+    ok("...in words", typeof r.body?.detail === "string");
+    ok("...and nobody was told", (await deliveries(gone.body.id)).length === 0);
+
+    const echo = echoTransport();
+    let code = null;
+    try {
+      await fanOut({ pool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
+                     notificationId: gone.body.id, transport: echo });
+    } catch (e) { code = e.message; }
+    ok("the fan-out itself refuses it", code === "notice_expired" && echo.sent.length === 0);
+
+    // The gate is asked first: somebody who may not push it is not told it expired.
+    ok("a spectator is refused for permission, not told it expired",
+       (await push(gone.body.id, watcher)).body?.error === "not_permitted");
+
+    // A notice expiring in the future still goes.
+    const later = await publish(head, {
+      schoolId: HIL, scopeLevel: "school", kind: "notice",
+      title: "Tomorrow", body: "Nets on.", expiresAt: new Date(Date.now() + 86400_000).toISOString() });
+    ok("a notice not yet expired is sent", (await push(later.body.id, head)).body?.delivered > 0);
   }
 
   group("Signing out is a retirement, not a deletion");
@@ -462,8 +554,8 @@ try {
 
     // A retired phone is not in the address book any more.
     const n = (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "fixture",
-      title: "Later", body: "Bus leaves at seven.", isPublic: true })).body;
+      schoolId: HIL, scopeLevel: "school", kind: "notice",
+      title: "Later", body: "Bus leaves at seven." })).body;
     await push(n.id, head);
     ok("a retired device receives nothing",
        (await q(`select count(*)::int c from notification_delivery

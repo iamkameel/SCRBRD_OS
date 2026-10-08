@@ -25,6 +25,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
+import { combineReads } from "./readState.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
@@ -1136,6 +1137,8 @@ const ADAPT = {
   profiles: asCoach,
   staff: asStaff,
   users: asUser,
+  // Every account, disabled ones included: People's read (account lifecycle D5).
+  accounts: asUser,
   grounds: asGround,
   training: asTraining,
   training_attendance: asAttendance,
@@ -1307,8 +1310,55 @@ function asMatter(r) {
   };
 }
 
+/**
+ * The query string a read carries. One function for useLive() and readLive(), so
+ * a retry that bumps the nonce asks the SAME question: the same params, the same
+ * scope, never a wider read and never one with a param dropped.
+ * @param {Record<string, string | number | null | undefined> | null | undefined} params
+ */
+export function readQuery(params) {
+  const q = params ? new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== "")).toString() : "";
+  return q ? `?${q}` : "";
+}
+
 /** Resources the client knows how to read live. Used by the wiring tests. */
 export function liveResources() { return Object.keys(ADAPT); }
+
+/**
+ * One read of one resource, as the state useLive() holds it. The effect below
+ * is a call to this, and a retry is the same call again: the effect's
+ * dependencies are [resource, role, nonce, query], so bumping `nonce` re-runs it
+ * with the same resource and the same query, and nothing a retry does can ask
+ * for more than the first read did. Exported so the suites can run it.
+ *
+ * Deliberately NOT falling back to mock. See useLive().
+ *
+ * A SWITCHED-OFF MODULE IS NOT A FAILURE, and reporting it as one is how a
+ * setting becomes a support ticket. The API answers 403 module_disabled and
+ * names the module; that arrives here as `disabled` with `error` left null, so
+ * every view that already draws an empty state draws one, and a view that
+ * wants to say which module is off has the key to say it with.
+ *
+ * `live: true` on that branch, deliberately: the server answered. This is not a
+ * session that fell back to the demo fixture, and a screen that said "sign in
+ * to see your school's data" here would be wrong.
+ *
+ * `status` is the refusal's HTTP status, kept so a screen can tell "you may
+ * not" (403) from "it did not work" (a 5xx, a timeout: no status at all)
+ * without guessing from the code. lib/readState.js decides.
+ * @param {string} resource  @param {string} [query]  the string readQuery() made
+ */
+export async function readOnce(resource, query = "") {
+  try {
+    const { rows } = await api(`/api/read/${resource}${query}`);
+    return { rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null, status: null };
+  } catch (/** @type {any} */ e) {
+    if (e.status === 403 && e.code === "module_disabled") {
+      return { rows: [], live: true, loading: false, error: null, status: 403, disabled: resource };
+    }
+    return { rows: [], live: false, loading: false, error: e.code || "unreachable", status: e.status ?? null };
+  }
+}
 
 /**
  * Rows for a resource, from the server when there is one.
@@ -1331,8 +1381,9 @@ export function liveResources() { return Object.keys(ADAPT); }
  * identical to the real thing. An empty list with an error beside it is a
  * worse screen and a true one.
  *
- * Returns { rows, live, loading, error } so a view can tell the three states
- * apart. `loading` matters: an empty array during the first fetch is not the
+ * Returns { rows, live, loading, error, status } (and `disabled` for a module
+ * switched off) so a view can tell the states apart; lib/readState.js turns them
+ * into the nine a screen draws. `loading` matters: an empty array during the first fetch is not the
  * same statement as an empty array after it, and "no fixtures today" is a
  * claim the UI should only make once the server has actually said so.
  */
@@ -1341,50 +1392,24 @@ export function useLive(resource, role, nonce = 0, params = null) {
   // `params` narrows a read — one boy's recognition, one side's caps — and
   // is serialised into the effect's dependencies so a new object with the
   // same keys does not refetch, and a changed value does.
-  const query = params && Object.keys(params).length
-    ? "?" + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== "")).toString()
-    : "";
+  const query = readQuery(params);
   const [state, setState] = useState(() =>
     demo
-      ? { rows: scoped(resource, role), live: false, loading: false, error: null }
-      : { rows: [], live: false, loading: true, error: null });
+      ? { rows: scoped(resource, role), live: false, loading: false, error: null, status: null }
+      : { rows: [], live: false, loading: true, error: null, status: null });
 
   useEffect(() => {
     if (!signedIn()) {
-      setState({ rows: scoped(resource, role), live: false, loading: false, error: null });
+      setState({ rows: scoped(resource, role), live: false, loading: false, error: null, status: null });
       return;
     }
     if (!ADAPT[resource]) {
-      setState({ rows: [], live: false, loading: false, error: "no_adapter" });
+      setState({ rows: [], live: false, loading: false, error: "no_adapter", status: null });
       return;
     }
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
-    (async () => {
-      try {
-        const { rows } = await api(`/api/read/${resource}${query}`);
-        if (!cancelled) setState({ rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null });
-      } catch (e) {
-        // Deliberately NOT falling back to mock. See above.
-        //
-        // A SWITCHED-OFF MODULE IS NOT A FAILURE, and reporting it as one is
-        // how a setting becomes a support ticket. The API answers 403
-        // module_disabled and names the module; that arrives here as
-        // `disabled` with `error` left null, so every view that already draws
-        // an empty state draws one — and a view that wants to say which module
-        // is off has the key to say it with.
-        //
-        // `live: true` on this branch, deliberately: the server answered. This
-        // is not a session that fell back to the demo fixture, and a screen
-        // that said "sign in to see your school's data" here would be wrong.
-        if (cancelled) return;
-        if (e.status === 403 && e.code === "module_disabled") {
-          setState({ rows: [], live: true, loading: false, error: null, disabled: resource });
-          return;
-        }
-        setState({ rows: [], live: false, loading: false, error: e.code || "unreachable" });
-      }
-    })();
+    readOnce(resource, query).then((next) => { if (!cancelled) setState(next); });
     return () => { cancelled = true; };
   }, [resource, role, nonce, query]);
 
@@ -1402,9 +1427,7 @@ export function useLive(resource, role, nonce = 0, params = null) {
  */
 export async function readLive(resource, params = null) {
   if (!signedIn() || !ADAPT[resource]) return null;
-  const query = params && Object.keys(params).length
-    ? "?" + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== "")).toString()
-    : "";
+  const query = readQuery(params);
   try {
     const { rows } = await api(`/api/read/${resource}${query}`);
     return (rows ?? []).map(ADAPT[resource]);
@@ -1476,28 +1499,43 @@ export function useSummary(role, nonce = 0) {
  * written against, and only the most recent assessment of each metric wins.
  */
 export function useSkills(role, nonce = 0) {
-  const { rows, live, loading, error } = useLive("skills", role, nonce);
-  const demo = !signedIn();
-  if (demo) return scopedSkills(role);
-  const out = {};
+  const read = useLive("skills", role, nonce);
+  const { rows, live, loading, error, status, disabled } = read;
+  // Demo: the seeded matrix, and nothing to say about a read that never ran.
+  if (!signedIn()) return { skills: scopedSkills(role), live: false, loading: false, error: null, status: null, disabled: null, rows: [] };
+  const skills = {};
   const seen = new Set();
   // Rows arrive newest first (assessed_on desc), so the first one wins.
   for (const r of rows) {
     const key = `${r.playerId}:${r.category}:${r.metric}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    (out[r.playerId] ??= {})[r.category] ??= {};
-    out[r.playerId][r.category][r.metric] = r.score;
+    (skills[r.playerId] ??= {})[r.category] ??= {};
+    skills[r.playerId][r.category][r.metric] = r.score;
   }
-  void live; void loading; void error;
-  return out;
+  // `skills` is the pivot the screens index by player id; the rest is the
+  // read's own state. This used to return the pivot alone and `void` the state,
+  // so a failed read drew as "no assessments" and a slow one as nothing (audit
+  // R15). `rows` is the read's, for lib/readState.js: a player with no key in
+  // `skills` is `unassessed`, which is not a zero and not an empty radar.
+  return { skills, rows, live, loading, error, status, disabled: disabled ?? null };
 }
 
-/** Weather, keyed by match id — the shape the fixture screens index into. */
-export function useWeather(role) {
-  const { rows } = useLive("weather", role);
-  if (!signedIn()) return scopedWeather(role);
-  return Object.fromEntries(rows.map((w) => [w.matchId, w]));
+/**
+ * Weather, keyed by match id — the shape the fixture screens index into — with
+ * the state of the read beside it. `useWeather` keeps its old shape for the
+ * callers that only want the map; a screen that must tell a read that failed
+ * from a fixture with no reading calls this.
+ */
+export function useWeatherState(role, nonce = 0) {
+  const { rows, live, loading, error, status, disabled } = useLive("weather", role, nonce);
+  if (!signedIn()) return { weather: scopedWeather(role), live: false, loading: false, error: null, status: null, disabled: null, rows: [] };
+  return { weather: Object.fromEntries(rows.map((w) => [w.matchId, w])), rows, live, loading, error, status, disabled: disabled ?? null };
+}
+
+/** Weather, keyed by match id. The map alone: see useWeatherState() for the read's state. */
+export function useWeather(role, nonce = 0) {
+  return useWeatherState(role, nonce).weather;
 }
 
 /**
@@ -1533,8 +1571,15 @@ export function usePlayersWithCareerState(role, nonce = 0) {
   });
   return {
     rows,
-    players: { loading: players.loading, error: players.error },
-    career: { loading: career.loading, error: career.error },
+    // Each read's whole state (rows, status, disabled), for lib/readState.js:
+    // `{ loading, error }` alone could not tell a role that may not read
+    // career figures from a read that failed.
+    players: { loading: players.loading, error: players.error, status: players.status ?? null, disabled: players.disabled ?? null, rows: players.rows, live: players.live },
+    career: { loading: career.loading, error: career.error, status: career.status ?? null, disabled: career.disabled ?? null, rows: career.rows, live: career.live },
+    // The two reads as ONE statement (lib/readState.js): `partial` when the
+    // career read failed while players are present, so a screen ranks nothing
+    // from players who merely lack their figures. `rows` above is unchanged.
+    read: combineReads([{ what: "the players", read: players }, { what: "the career figures", read: career }]),
   };
 }
 
@@ -1548,10 +1593,10 @@ export function usePlayersWithCareerState(role, nonce = 0) {
  * next to a real name. Signed out, this is empty and the screens say so.
  */
 export function useRatings(role, nonce = 0) {
-  const { rows, live, loading, error } = useLive("ratings", role, nonce);
+  const { rows, live, loading, error, status, disabled } = useLive("ratings", role, nonce);
   const byPlayer = {};
   for (const r of rows) byPlayer[r.id] = r;
-  return { ratings: byPlayer, live, loading, error };
+  return { ratings: byPlayer, rows, live, loading, error, status, disabled: disabled ?? null };
 }
 
 /**
@@ -1562,8 +1607,8 @@ export function useRatings(role, nonce = 0) {
  * one. Signed out this is empty.
  */
 export function useNotes(role, playerId, nonce = 0) {
-  const { rows, live, loading, error } = useLive("notes", role, nonce);
-  return { notes: rows.filter((n) => !playerId || n.playerId === playerId), live, loading, error };
+  const { rows, live, loading, error, status, disabled } = useLive("notes", role, nonce);
+  return { notes: rows.filter((n) => !playerId || n.playerId === playerId), rows, live, loading, error, status, disabled: disabled ?? null };
 }
 
 export function useRows(resource, role, nonce = 0) { return useLive(resource, role, nonce).rows; }

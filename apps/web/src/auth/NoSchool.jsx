@@ -6,7 +6,7 @@ import { useLive } from "../lib/live.js";
 import { profile } from "../lib/session.js";
 import {
   KINDS, PUPIL_UNDER_18, RELATIONSHIPS, REQUEST_STATE_WORDS, STAFF_ROLES,
-  EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords,
+  EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, withdrawWords, withdrew,
 } from "../lib/joinSchool.js";
 
 // ══════════════════════════════════════════════════════
@@ -241,7 +241,17 @@ export function NoSchool({ name, onSignOut }) {
     return () => { off = true; };
   }, []);
 
-  const withdraw = async (id) => { await api(`/api/requests/${id}/withdraw`, { method: "POST" }).catch(() => {}); setNudge((n) => n + 1); };
+  // A withdraw that did not happen is said in words, above the list, because a
+  // request that was answered first leaves the pending row (and its words) behind.
+  const [withdrawProblem, setWithdrawProblem] = useState("");
+  const withdraw = async (id) => {
+    setWithdrawProblem("");
+    try {
+      const r = await api(`/api/requests/${id}/withdraw`, { method: "POST" });
+      if (!withdrew(r)) setWithdrawProblem(withdrawWords({ status: 200, code: "not_waiting" }));
+    } catch (e) { setWithdrawProblem(withdrawWords(e)); }
+    setNudge((n) => n + 1);
+  };
 
   // A reload drops the session token on purpose (lib/api.js), and this screen
   // is restored from the saved shell state. Say so, rather than show an empty list.
@@ -267,6 +277,7 @@ export function NoSchool({ name, onSignOut }) {
         {rows.length > 0 && (
           <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
             <h2 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary }}>Your requests</h2>
+            {withdrawProblem && <div role="alert" data-testid="withdraw-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "8px" }}>{withdrawProblem}</div>}
             {rows.map((r) => (
               <div key={r.id} data-testid={`request-${r.state}`} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px" }}>
                 <div style={{ flex: 1, minWidth: "180px" }}>

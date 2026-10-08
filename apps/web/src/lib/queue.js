@@ -28,6 +28,7 @@
  */
 import { roleGrants } from "@scrbrd/policy/roles";
 import { cockpitGate, isMatchDay, isWithin, startMs } from "./cockpit.js";
+import { couldNotRead } from "./readState.js";
 
 /** The window the card looks across, in days (design D5). */
 export const WINDOW_DAYS = 7;
@@ -111,7 +112,7 @@ export function unreadOf(reads, gate, { lifts = false } = {}) {
  * @returns {{open: number, unread: {key: string, label: string, text: string}[], line: string, clear: boolean}}
  */
 export function countOf({ open, reads = null, gate, lifts = false }) {
-  const unread = unreadOf(reads, gate, { lifts }).map((r) => ({ ...r, text: `Could not read ${r.label}` }));
+  const unread = unreadOf(reads, gate, { lifts }).map((r) => ({ ...r, text: couldNotRead(r.label) }));
   const clear = open === 0 && unread.length === 0;
   return { open, unread, clear, line: clear ? "Nothing to resolve" : `${open} to resolve` };
 }

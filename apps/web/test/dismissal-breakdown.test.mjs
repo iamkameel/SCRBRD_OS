@@ -71,8 +71,8 @@ try {
   setToken("fixture-token");
 
   group("Loading and error, told apart from an honest empty answer");
-  ok("loading says loading", /Loading…/.test(card({ rows: [], loading: true, error: null })));
-  ok("error is not the same claim as empty", /Could not load this/.test(card({ rows: [], loading: false, error: "unreachable" })));
+  ok("loading says loading", /Reading…/.test(card({ rows: [], loading: true, error: null })));
+  ok("error is not the same claim as empty", /Could not read this/.test(card({ rows: [], loading: false, error: "unreachable" })));
   ok("a real empty answer says so in the card's own words",
      /No dismissals yet\./.test(card({ rows: [], loading: false, error: null })));
 

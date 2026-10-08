@@ -328,10 +328,22 @@ try {
     await tid(P, "join-send").click();
     await P.waitForSelector('[data-testid="join-sent"]', { timeout: 6000 }).catch(() => {});
     ok("a staff request is a request too", h.posts.at(-1)?.role === "coach" && /Somebody there will answer it/.test(await tid(P, "join-sent").innerText()), h.posts.at(-1));
+    // The office answers the parent's request while this page still shows it
+    // waiting. Withdrawing it now changes nothing on the server, and the screen
+    // says so in words instead of looking as though nothing happened.
+    const parentReq = (await call("/api/read/role_requests", { token: office })).body?.rows?.find((x) => x.email === NEW_EMAIL && x.role === "guardian" && x.state === "pending");
+    ok("the office can see the parent's request", !!parentReq?.id, parentReq);
+    await call(`/api/requests/${parentReq?.id}/decide`, { method: "POST", token: office, body: { grant: false } });
+    await P.locator('[data-testid="request-pending"]', { hasNotText: /Coach/ }).locator('[data-testid="request-withdraw"]').click();
+    await P.waitForSelector('[data-testid="withdraw-problem"]', { timeout: 6000 }).catch(() => {});
+    const wp = tid(P, "withdraw-problem");
+    ok("withdrawing a request that was answered first is said in words, as an alert",
+       (await wp.count()) === 1 && (await wp.getAttribute("role")) === "alert" && /no longer waiting/.test(await wp.innerText().catch(() => "")), await wp.innerText().catch(() => "(none)"));
+    ok("...with no code in it", !/_|http_|\bnot_waiting\b/.test(await wp.innerText().catch(() => "")));
     await tid(P, "join-another").click();
     await tid(P, `join-school-${HIL}`).click();
     await tid(P, "join-kind-parent").click();
-    const fl = await floors(P, '[data-testid="pending-requests"]');
+    const fl =await floors(P, '[data-testid="pending-requests"]');
     ok("the no-school screen: nothing under 12px, nothing under 44px (390 wide)", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].join(" | "));
     ok("...and no sideways scroll", (await P.evaluate(() => document.documentElement.scrollWidth)) <= 390);
     ok("no page errors on the new account's screens", h.errors.length === 0, h.errors.join(" | "));
