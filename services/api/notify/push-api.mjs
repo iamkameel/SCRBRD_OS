@@ -25,34 +25,62 @@
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { withPrincipal, AuthError } from "../auth/auth.mjs";
 import { transportFromEnv } from "./fcm.mjs";
+import { SUBJECT_KINDS, SUBJECT_KINDS_NOT_YET_STORED } from "@scrbrd/policy/notifications";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler, Pool } from "../api-types.mjs" */
 /** @import { PushTransport } from "./fcm.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+/** @param {string} code @param {number} [status] @param {string} [detail]  the words a screen may show */
+const err = (code, status = 400, detail = undefined) =>
+  Object.assign(new Error(code), { status, ...(detail ? { detail } : {}) });
 
 const PLATFORMS = ["web", "android", "ios"];
 const SCOPES = ["school", "team", "competition"];
 const URGENCY = ["low", "medium", "high"];
-const SUBJECT_KINDS = ["match", "injury", "training", "transport", "facility",
-                       "skills", "system", "competition", "selection"];
+
+// ── THE LOCK (docs/design/NOTIFICATIONS.md D12, slice S0) ──
+//
+// Until S2 closes this route, it publishes one thing: words a person wrote to
+// a side, a school or a competition. A `notice`, at most `medium`, readable by
+// whoever holds news.read in its scope, about nobody in particular and for
+// nobody in particular. A notice about a child, behind a capability or for
+// one person is written by the database's own triggers (notify_injury(),
+// db/57, db/70, …), never typed through here. No web screen calls this route.
+export const PUBLISH_KIND = "notice";
+export const PUBLISH_URGENCY = Object.freeze(["low", "medium"]);
+// Refused when PRESENT, whatever the value: a body that names one of these is
+// asking for something the lock does not give, and quietly dropping it would
+// publish a notice its author did not mean. [code, words]
+/** @type {Readonly<Record<string, readonly [string, string]>>} */
+export const LOCKED_FIELDS = Object.freeze({
+  requiredCapability: ["required_capability_not_accepted",
+    "A notice published here is for everybody with news.read in its scope. One that needs more is written by the record it comes from."],
+  isPublic:           ["is_public_not_accepted",
+    "Nothing published here is public. A notice reaches the people its school, side or competition admits."],
+  subjectPersonId:    ["subject_person_id_not_accepted",
+    "A notice about one child is not published here. It is written by the record it comes from."],
+  recipientId:        ["recipient_id_not_accepted",
+    "A notice for one person is not published here. It goes to everybody in its scope."],
+});
+const notYetStored = (/** @type {string} */ k) =>
+  `"${k}" notices cannot be stored yet: the database learns that subject in notifications slice S1. Nothing was published.`;
 
 /**
- * What a restricted notice says on a lock screen, which is: almost nothing.
+ * What a notice says on a lock screen, which is: almost nothing.
  *
  * A push payload is handed to Google, cached on the device, and rendered
  * without anybody signing in. At a school gate on a Saturday the person
- * holding the phone is not reliably the parent, and "R Pillay is out with a
- * hamstring strain" on a lock screen has disclosed a child's medical
- * information to a bystander — one screen after every masking view in this
- * codebase prevented exactly that.
+ * holding the phone is not reliably the parent, and a child's name and a
+ * diagnosis on a lock screen has disclosed his medical information to a
+ * bystander — one screen after every masking view in this codebase prevented
+ * exactly that.
  *
- * So the real text travels ONLY for a notice the school has already marked
- * public, and `notification_public_is_general` guarantees such a row requires
- * nothing beyond news.read. Everything else travels as a POINTER: a generic
- * line and an id, with the content fetched through the governed read when the
- * app opens and the person is authenticated again.
+ * So EVERY notice travels as a POINTER (docs/design/NOTIFICATIONS.md D6, D14):
+ * a generic line and an id, with the content fetched through the governed
+ * read when the app opens and the person is authenticated again. A second
+ * branch used to send the full text of a row marked `is_public`; it is gone,
+ * and `is_public` chooses nothing here whatever the row says.
  *
  * The pointer carries the id and NOTHING else — not the kind, not the urgency.
  * "You have a notice" is safe; "you have an INJURY notice" names the subject
@@ -61,22 +89,11 @@ const SUBJECT_KINDS = ["match", "injury", "training", "transport", "facility",
  * @param {any} notice  a notification row
  */
 export function buildPayload(notice) {
-  const id = String(notice.id);
-  if (notice.is_public) {
-    return {
-      kind: "full",
-      message: {
-        notification: { title: notice.title, body: notice.body },
-        data: { notificationId: id, kind: String(notice.kind || ""),
-                urgency: String(notice.urgency || "low") },
-      },
-    };
-  }
   return {
     kind: "pointer",
     message: {
       notification: { title: "SCRBRD", body: "You have a new notice." },
-      data: { notificationId: id },
+      data: { notificationId: String(notice.id) },
     },
   };
 }
@@ -141,7 +158,9 @@ export async function fanOut({ pool, secret, bearer, notificationId, transport }
   const notice = await runAsPrincipal(pool, secret, bearer, async (client) => {
     const { rows } = await client.query(
       `select id, school_id, team_code, scope_level, kind, urgency, title, body,
-              is_public, subject_person_id
+              is_public, subject_person_id, expires_at,
+              -- The database's clock decides, not this process's.
+              coalesce(expires_at <= now(), false) as expired
          from notification where id = $1`, [notificationId]);
     const n = rows[0];
     if (!n) throw err("no_such_notification", 404);
@@ -156,6 +175,9 @@ export async function fanOut({ pool, secret, bearer, notificationId, transport }
                       '00000000-0000-0000-0000-000000000000'::uuid) as ok`,
       [n.scope_level, n.school_id, n.team_code, n.subject_person_id]);
     if (!gate?.ok) throw err("not_permitted", 403);
+    // An expired notice is not sent (S0). Asked after the gate, so a caller
+    // who may not publish it learns nothing more about it here.
+    if (n.expired) throw err("notice_expired", 410, "This notice has expired. Nothing was sent.");
     return n;
   });
 
@@ -370,40 +392,68 @@ export function notificationRoutes({ pool, secret, transport = transportFor() })
       if (e.code === "23514") return res.status(422).json({ error: "invalid_notice", detail: e.message });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_school_or_subject" });
       const status = e.code === "42501" ? 403 : (e.status || 500);
-      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error"),
+                                ...(e.status && e.detail ? { detail: e.detail } : {}) });
     }
   };
 
   return {
-    // POST /api/notifications { … }
+    // POST /api/notifications { schoolId, scopeLevel, teamCode?, kind: "notice",
+    //                           title, body, urgency?, subjectKind?, subjectId?, expiresAt? }
+    //
+    // Locked (D12): PUBLISH_KIND, PUBLISH_URGENCY and LOCKED_FIELDS above.
+    // Every refusal but the database's own is decided before a connection is
+    // taken, so none of them depends on who is asking.
     publish: handle(async (req) => {
       const b = req.body || {};
+      for (const [field, [code, words]] of Object.entries(LOCKED_FIELDS)) {
+        if (Object.hasOwn(b, field)) throw err(code, 422, words);
+      }
       if (!b.schoolId) throw err("school_required");
       if (!SCOPES.includes(b.scopeLevel)) throw err("scope_level_invalid");
       if (b.scopeLevel === "team" && !b.teamCode) throw err("team_required_for_team_scope");
       if (!b.kind || !String(b.kind).trim()) throw err("kind_required");
+      if (String(b.kind).trim() !== PUBLISH_KIND) {
+        throw err("kind_must_be_notice", 422,
+          `Only a "${PUBLISH_KIND}" is published here. Every other kind is written by the record it is about.`);
+      }
       if (!b.title || !String(b.title).trim()) throw err("title_required");
       if (!b.body || !String(b.body).trim()) throw err("body_required");
       const urgency = b.urgency ?? "low";
       if (!URGENCY.includes(urgency)) throw err("urgency_invalid");
+      if (!PUBLISH_URGENCY.includes(urgency)) {
+        throw err("urgency_too_high", 422,
+          "A notice published here is low or medium. High is kept for what the system raises.");
+      }
       const subjectKind = b.subjectKind == null || b.subjectKind === "" ? null : String(b.subjectKind);
       if (subjectKind && !SUBJECT_KINDS.includes(subjectKind)) throw err("subject_kind_invalid");
 
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
-        const { rows } = await client.query(
-          `insert into notification
-             (school_id, team_code, scope_level, kind, urgency, title, body,
-              required_capability, is_public, subject_kind, subject_id,
-              subject_person_id, published_by, expires_at)
-           values ($1, $2, $3, $4, $5, btrim($6), btrim($7),
-                   coalesce($8, 'news.read'), coalesce($9, false), $10, $11,
-                   $12, app_user_id(), $13)
-           returning id, school_id, scope_level, required_capability, is_public,
-                     published_at`,
-          [b.schoolId, b.teamCode ?? null, b.scopeLevel, String(b.kind).trim(),
-           urgency, b.title, b.body, b.requiredCapability ?? null,
-           b.isPublic ?? false, subjectKind, b.subjectId ?? null,
-           b.subjectPersonId ?? null, b.expiresAt ?? null]);
+        // required_capability, is_public, subject_person_id and recipient_id
+        // are not named: the table's defaults (news.read, false, null, null)
+        // are the only values the lock allows.
+        /** @type {any[]} */
+        let rows;
+        try {
+          ({ rows } = await client.query(
+            `insert into notification
+               (school_id, team_code, scope_level, kind, urgency, title, body,
+                subject_kind, subject_id, published_by, expires_at)
+             values ($1, $2, $3, $4, $5, btrim($6), btrim($7), $8, $9, app_user_id(), $10)
+             returning id, school_id, scope_level, required_capability, is_public,
+                       published_at`,
+            [b.schoolId, b.teamCode ?? null, b.scopeLevel, PUBLISH_KIND,
+             urgency, b.title, b.body, subjectKind, b.subjectId ?? null,
+             b.expiresAt ?? null]));
+        } catch (/** @type {any} */ e) {
+          // The shared list runs ahead of the database's CHECK until S1 (D5).
+          // Said in words, not as the constraint's name.
+          if (e.code === "23514" && subjectKind && SUBJECT_KINDS_NOT_YET_STORED.includes(subjectKind)
+              && /subject_kind/.test(String(e.constraint ?? ""))) {
+            throw err("subject_kind_not_yet_stored", 422, notYetStored(subjectKind));
+          }
+          throw e;
+        }
         if (!rows.length) throw err("not_permitted", 403);
         const n = rows[0];
         return { id: n.id, school: n.school_id, scopeLevel: n.scope_level,

@@ -94,6 +94,47 @@ try {
     ok("...nor a school that does not exist", (await onboard({ email: "who@example.invalid", name: "X Y", role: "coach", schoolId: "00000000-0000-0000-0000-00000000dead" })).status === 404);
   }
 
+  group("A platform role is refused when it is filed (db/86)");
+  {
+    // superadmin and platformadmin belong to no school; a request is always
+    // at one, and decide_role_request() would never grant it. So it is refused
+    // at the door, with the enrol path's code, rather than left pending — and
+    // on /api/onboard before any account is opened for the stranger.
+    for (const role of ["superadmin", "platformadmin"]) {
+      const email = `platform.${role}@example.invalid`;
+      const r = await onboard({ email, name: "X Platform", role, schoolId: HIL });
+      ok(`a stranger cannot onboard as ${role}`, r.status === 422 && r.body?.error === "platform_role_needs_no_school");
+      ok("...and no account was opened for them", !(await idOf(email)));
+      ok("...and no request was filed", (await q(`select count(*)::int c from role_request where role = $1`, [role]))[0].c === 0);
+
+      const before = (await q(`select count(*)::int c from role_request where person_id = $1`, [await idOf("coach@example.invalid")]))[0].c;
+      const a = await ask(coach, { role, schoolId: HIL });
+      ok(`a signed-in person cannot ask for ${role}`, a.status === 422 && a.body?.error === "platform_role_needs_no_school");
+      ok("...and nothing was filed", (await q(`select count(*)::int c from role_request where person_id = $1`, [await idOf("coach@example.invalid")]))[0].c === before);
+    }
+    // Refused before the token is read: the role alone decides it.
+    ok("...whoever asks, signed in or not", (await ask(null, { role: "superadmin", schoolId: HIL })).body?.error === "platform_role_needs_no_school");
+  }
+
+  group("A stranger asks only for what the sign-up screens offer");
+  {
+    // onboard_request() labels the new account with the asked-for role. A
+    // stranger is held to SELF_REGISTRABLE_ROLES (@scrbrd/policy/roles), the
+    // list the sign-up screens draw from; a signed-in person is not.
+    for (const role of ["principal", "dso", "finance"]) {
+      const email = `walk.selfreg.${role}@example.invalid`;
+      const before = (await q(`select count(*)::int c from role_request where role = $1`, [role]))[0].c;
+      const r = await onboard({ email, name: "X Selfreg", role, schoolId: HIL });
+      ok(`onboarding as ${role} is refused`, r.status === 422 && r.body?.error === "role_not_self_registrable");
+      ok("...with no account opened", !(await idOf(email)));
+      ok("...and no request filed", (await q(`select count(*)::int c from role_request where role = $1`, [role]))[0].c === before);
+    }
+    // The signed-in route is unchanged: the database decides what may be asked.
+    ok("a signed-in person may still ask for a principal's role", (await ask(coach, { role: "principal", schoolId: HIL })).status === 200);
+    ok("...and a role nobody may grant is still refused by the database there",
+       (await ask(coach, { role: "systemarchitect", schoolId: HIL })).body?.error === "not_requestable");
+  }
+
   group("A request is read by its owner and by whoever could answer it");
   {
     const reg = await requests(registrar);

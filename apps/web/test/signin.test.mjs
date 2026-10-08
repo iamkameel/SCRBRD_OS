@@ -25,7 +25,7 @@
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { GRANTABLE_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
+import { GRANTABLE_ROLES, SUBJECT_SCOPED_ROLES, SELF_REGISTRABLE_ROLES, SELF_REGISTRABLE_STAFF_ROLES } from "@scrbrd/policy/roles";
 import { exchangeGoogle, exchangeState, EXCHANGE_WORDS, CLAIM_STEPS } from "../src/lib/signin.js";
 import { googleConfig, signInConfig, googleFailure, GOOGLE_FAILURE_WORDS, addSignIn, authReady } from "../src/lib/google.js";
 import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../src/lib/signinNotice.js";
@@ -200,6 +200,11 @@ group("Joining a school never says found or not found, and never looks a child u
   ok("...which says nothing is linked automatically", /nothing is linked automatically/.test(sentWords("parent", "Test School")));
   ok("a request the server refused is told in words", joinWords(apiError(422, "already_pending")) === JOIN_WORDS.already_pending);
   ok("a request that never arrived says nothing was sent", /nothing was sent/.test(joinWords(new TypeError("x"))));
+  // db/86: the server refuses a platform role when it is filed, with the
+  // enrol path's code. Its own words, not the fallback.
+  ok("a platform role refused at filing is told in its own words",
+     joinWords(apiError(422, "platform_role_needs_no_school")) === JOIN_WORDS.platform_role_needs_no_school
+     && /school/.test(JOIN_WORDS.platform_role_needs_no_school));
   ok("a code nobody wrote words for still says something", /\s/.test(joinWords(apiError(422, "weird_code"))) && !joinWords(apiError(422, "weird_code")).includes("weird_code"));
 
   const screen = src("../src/auth/NoSchool.jsx");
@@ -286,6 +291,38 @@ group("Where it sits in the app");
   ok("...and counts it on the People tab", /\(canClaims \? claims\.rows\.length : 0\)/.test(settings));
   const app = src("../src/App.jsx");
   ok("a signed-in account with no assignment goes to the no-school screen", /assignments\.length === 0/.test(app) && /<NoSchool /.test(app) && !/PendingRequests/.test(app));
+}
+
+group("What a stranger may register for is one list, the screens' and the route's (E1)");
+{
+  // POST /api/onboard refuses any role outside SELF_REGISTRABLE_ROLES. Each
+  // sign-up screen draws from the same list, so neither can offer what the
+  // route refuses, and the route refuses nothing a screen offers.
+  ok("the join screen's staff list is the policy's", STAFF_ROLES === SELF_REGISTRABLE_STAFF_ROLES);
+  const joinOffers = new Set([
+    ...STAFF_ROLES,
+    ...["parent", "pupil", "follower"].map((k) => buildRequest(k, "s", { child: "A Child", relationship: "Mother", adult: "yes" }))
+      .map((r) => r.ok ? r.body.role : null).filter(Boolean),
+  ]);
+  const onboarding = src("../src/auth/OnboardingFlow.jsx");
+  const onboardingOffers = new Set([...onboarding.matchAll(/\{\s*id:"([a-z]+)",\s*icon:/g)].map((m) => m[1]));
+  ok("the onboarding screen's roles were found", onboardingOffers.size >= 8);
+  ok("...and it filters them through the same list",
+     /SELF_REGISTRABLE_ROLES\.includes\(/.test(onboarding) && /from "@scrbrd\/policy\/roles"/.test(onboarding));
+  const offered = new Set([...joinOffers, ...onboardingOffers]);
+  ok("every role a screen offers is self-registrable",
+     [...offered].every((r) => SELF_REGISTRABLE_ROLES.includes(r)), [...offered].filter((r) => !SELF_REGISTRABLE_ROLES.includes(r)));
+  ok("...and every self-registrable role is offered by a screen",
+     SELF_REGISTRABLE_ROLES.every((r) => offered.has(r)), SELF_REGISTRABLE_ROLES.filter((r) => !offered.has(r)));
+  ok("parent or guardian, pupil and follower are on it",
+     ["guardian", "player", "spectator"].every((r) => SELF_REGISTRABLE_ROLES.includes(r)));
+  ok("no platform role, principal or DSO is on it",
+     !["superadmin", "platformadmin", "principal", "dso"].some((r) => SELF_REGISTRABLE_ROLES.includes(r)));
+  ok("every one is a role somebody at a school may grant",
+     SELF_REGISTRABLE_ROLES.every((r) => ["schooladmin", "principal", "directorofsport"].some((g) => GRANTABLE_ROLES[g].includes(r))));
+  ok("the route's refusal has its words",
+     joinWords(apiError(422, "role_not_self_registrable")) === JOIN_WORDS.role_not_self_registrable
+     && !FOUND.test(JOIN_WORDS.role_not_self_registrable));
 }
 
 console.log(`\n${"─".repeat(52)}\nSIGN-IN SCREENS: ${pass} passed, ${fail} failed`);
