@@ -180,7 +180,7 @@ function ReadinessOverview({ role, onNav }) {
             {header.loading ? "Reading the week…" : headerWords(header)}
           </p>
           <p data-testid="queue-clock-note" style={{ ...body, margin: "0 0 16px", color: D.textMuted, maxWidth: "70ch" }}>
-            Deadlines are the queue's clock, worked from each fixture's start, not the school's rule. A row goes when its record changes; nothing here is marked done.
+            Deadlines are the queue's clock, worked from each fixture's start, not the school's rule. A row goes when its record changes; nobody closes one by hand.
           </p>
           {matchesSaid.state === "failed" && <ReadState read={matchesSaid} compact testId="readiness-read-state" onRetry={() => setNonce((n) => n + 1)}/>}
           <div style={{ display: "grid", gap: "16px", gridTemplateColumns: q.offices.length ? "repeat(auto-fit, minmax(min(100%, 340px), 1fr))" : "1fr", alignItems: "start" }}>

@@ -270,6 +270,19 @@ export const entersQueue = (role) => !SUBJECT_SCOPED_ROLES.includes(role) && rol
   && (entersAs(role) || OFFICE_CAPS.some((c) => roleGrants(role, c)));
 
 /**
+ * Is this person a reader of the school-wide screen at all: one assignment
+ * that names a school and no person or single fixture, held in a role that
+ * reads fixtures on the queue or holds an office capability. A coach with a
+ * side that has nothing in the week is a reader with nothing to read; a
+ * scorer, a parent and a pupil are not readers.
+ * @param {Parameters<typeof cockpitGate>[0]} assignments
+ */
+export function isQueueReader(assignments) {
+  return (assignments ?? []).some((/** @type {any} */ a) => !!a?.role && !!a.school && !a.fixture && (a.subjects?.length ?? 0) === 0
+    && (entersQueue(a.role) || OFFICE_CAPS.some((c) => roleGrants(a.role, c))));
+}
+
+/**
  * The gate for one fixture on the school-wide screen: cockpitGate's own rule
  * with the queue's entry. One assignment, never a union (ADR 0001), school- or
  * team-scoped, never one that names a person or a single fixture; the one
@@ -325,6 +338,9 @@ export function chooseSchoolFixtures(matches, assignments, now, { days = WINDOW_
 }
 
 // ── One fixture's rows ──────────────────────────────────────────────────
+/** The other arms of the duties read: a trip, the pitch report, the sheet, the scoring session. None of them is somebody appointed. */
+const NOT_AN_APPOINTMENT = new Set(["transport", "ground", "squad", "scoring"]);
+
 /** The reads the school-wide screen makes of a fixture: the cockpit's, less the bowlers' week, the notices and the lift exceptions. */
 const QUEUE_READ_KEYS = new Set(["squad", "readiness", "trips", "lifts", "duties", "conditions", "weatherRows"]);
 
@@ -376,7 +392,8 @@ export function fixtureRows({ match, gate, reads, now, errors = {} }) {
 
   if (base.calledOff) {
     // O5, first clause: called off with work still on record.
-    const duties = (reads.duties ?? []).length;
+    // The duties read also carries the trip, the pitch report, the sheet and the scoring session as rows of their own: only an appointment is a duty.
+    const duties = (reads.duties ?? []).filter((/** @type {any} */ r) => !NOT_AN_APPOINTMENT.has(r.duty)).length;
     const bus = busOf(reads.trips ?? [], gate.school)?.vehicles ?? 0;
     if (duties || bus) {
       rows.push(mk({ id: `${id}:O5`, rule: "O5", count: duties + bus,

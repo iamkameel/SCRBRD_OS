@@ -18,7 +18,7 @@ import { panelsOf } from "../src/lib/cockpit.js";
 import { FORBIDDEN_FIELDS, NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
 import { isSoon } from "../src/lib/cockpit.js";
 import { CLOCK, SHOWN, WINDOW_DAYS, chooseFixtures, chooseSchoolFixtures, countOf, deadlineAt, entersQueue, fixtureRows, groupByDay, headerOf, headerWords, isDue,
-  liftExceptionRows, officeReader, officeRows, queueGate, unreadOf } from "../src/lib/queue.js";
+  isQueueReader, liftExceptionRows, officeReader, officeRows, queueGate, unreadOf } from "../src/lib/queue.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -213,6 +213,10 @@ group("Who enters the school-wide screen: the cockpit's entry or an office capab
   const nPanels = (role) => Object.values(panelsOf(role)).filter(Boolean).length;
   ok("with a coach's and a director's assignment, ONE admits the fixture: the one granting the most panels, the first on a tie (never both)",
      queueGate([A("coach", HIL, "U15A"), A("directorofsport", HIL, null)], SAT)?.role === (nPanels("directorofsport") > nPanels("coach") ? "directorofsport" : "coach"));
+  ok("a reader is anyone whose assignment names a school and who enters the queue or holds an office capability: a coach whose side has nothing in the week is one, a scorer, a parent and a pupil are not",
+     isQueueReader([A("coach", HIL, "5XI")]) && isQueueReader([A("directorofsport", HIL, null)]) && isQueueReader([A("principal", HIL, null)]) && isQueueReader([A("transportcoordinator", HIL, null)])
+     && !isQueueReader([A("scorer", HIL, null)]) && !isQueueReader([A("guardian", HIL, null, { subjects: ["p1"] })]) && !isQueueReader([A("player", HIL, null), A("selfaccess", HIL, null, { subjects: ["p1"] })])
+     && !isQueueReader([A("coach", HIL, "U15A", { fixture: "x" })]) && !isQueueReader([]) && !isQueueReader(null));
   ok("no assignments, none", queueGate([], SAT) === null && queueGate(null, SAT) === null && queueGate(undefined, SAT) === null);
   const all = [SAT, SAT_B, SUN, NEXT_WEEK, PLAYED, AT_KES, at("2026-10-09T07:00:00", { id: "off", calledOff: true, status: "complete" }), at("2026-10-09T09:00:00", { id: "live", status: "live" }), at("2026-10-30T07:00:00", { id: "far" }), at("2026-10-25T07:00:00", { id: "off-far", calledOff: true, status: "complete" })];
   const got = chooseSchoolFixtures(all, [A("directorofsport", HIL, null)], NOW);

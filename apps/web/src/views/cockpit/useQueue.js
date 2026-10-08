@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, signedIn } from "../../lib/api.js";
 import { conditionsState, isMatchDay } from "../../lib/cockpit.js";
 import { readOnce, readQuery } from "../../lib/live.js";
-import { chooseSchoolFixtures, fixtureRows, groupByDay, headerOf, liftExceptionRows, officeReader, officeRows } from "../../lib/queue.js";
+import { chooseSchoolFixtures, fixtureRows, groupByDay, headerOf, isQueueReader, liftExceptionRows, officeReader, officeRows } from "../../lib/queue.js";
 import { isForbidden, isModuleOff } from "../../lib/readState.js";
 
 /**
@@ -181,6 +181,6 @@ export function useQueue({ matches, assignments, now }) {
     lifts,
     checkLifts,
     /** Is there anything this reader can be shown at all. */
-    reader: picks.inWindow.length > 0 || picks.later.length > 0 || offices.length > 0,
+    reader: isQueueReader(assignments),
   };
 }
