@@ -57,6 +57,19 @@ instance-hours a month. Set the repository variable `SCRBRD_HEALTH_URL`
 `/api/health` address; unset, the job does nothing. Run it once by hand from
 the Actions tab to see it answer 200.
 
+### The deployed revision
+
+`GET /api/health` carries `"revision"`: the full commit id the process was
+built from, read from `RENDER_GIT_COMMIT` (Render sets it), else `GIT_COMMIT`
+(set it yourself on Cloud Run or a hand-built image), else `null`. After each
+deploy, `curl -s <service url>/api/health` and compare it with the commit the
+merge put on `main` (the merged PR's "merged commit" link; `git rev-parse
+origin/main` while nothing newer has landed). A fast-forward merge makes that
+the PR's own head; a merge or squash commit is a new id, and the PR's last
+commit is then an ancestor of it (`git merge-base --is-ancestor <pr head>
+<revision>`). `null` means the host did not say; it is not a pass. Only a hex
+commit id is ever reported, never a path or a secret.
+
 ### A demonstration is not a pilot
 
 The fixtures in `98_seed_pilot.sql` are invented people at invented schools,

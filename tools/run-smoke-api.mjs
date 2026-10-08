@@ -234,6 +234,10 @@ const WALKS = [
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
+  // The API refuses to start as the owner, a superuser or a BYPASSRLS role,
+  // starts as scrbrd_app, and /api/health names the commit it was built from
+  // (gap analysis I14–I16, claims 12 and 14).
+  "owner-refusal",
   "public",
   // A child's name on the public pages over HTTP (SCRBRD-083 C1–C5, PILOT_LOAD
   // gap 5): a guardian's consent for his own child and no other, the office's
@@ -259,7 +263,7 @@ const WALKS = [
 // browser-innings-end scores an innings to its end, which nothing else does:
 // browser-sync taps four deliveries of twenty overs, so the review gate between
 // the last ball and a closed innings was never exercised end to end.
-const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held", "browser-toss", "browser-offline-undo", "browser-dayof",
+const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-handover-offline", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held", "browser-toss", "browser-offline-undo", "browser-dayof",
   // SCRBRD-082 / SCRBRD-084: the Post-Match Report and the Season Awards tab.
   "browser-report", "browser-awards",
   // Redesign step 3c / SCRBRD-098: the Match Centre's six tabs, the
@@ -502,7 +506,7 @@ const WEIGHTS = {
   "browser-cockpit": 100, "browser-management": 90, "browser-rain": 80,
   "browser-offline-day": 80, "browser-playing-conditions-screen": 70,
   "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,
-  "browser-laws4": 70, "browser-handover": 60, "browser-support": 60,
+  "browser-laws4": 70, "browser-handover": 60, "browser-handover-offline": 70, "browser-support": 60,
   "browser-pad-resume": 60, "browser-dossier": 60, "browser-offline-undo": 50,
   "browser-wagonwheel": 50, "browser-results": 50, "browser-drs": 50,
   "browser-safeguarding": 50, "browser-playing-conditions": 50,
