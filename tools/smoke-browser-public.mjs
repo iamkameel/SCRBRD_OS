@@ -270,7 +270,10 @@ try {
     ok("a new four is announced: \"Four runs\"", await heard("Four runs"), await said());
     heardAll.push(await said());
     ok("...and it is the only live region on the page speaking (the moment on the board is drawn, not said again)",
-       await lv.page.evaluate(() => document.querySelectorAll('[data-testid="public-match"] [role="status"], [data-testid="public-match"] [aria-live]').length) === 1);
+       // Speaking: a region with words in it. The page's other region (the
+       // "Updated · refresh" line, GA-I36) is there and silent while current.
+       await lv.page.evaluate(() => [...document.querySelectorAll('[data-testid="public-match"] [role="status"], [data-testid="public-match"] [aria-live]')]
+         .filter((el) => el.textContent.trim() !== "").length) === 1);
 
     await mark();
     await put(2, ball({ type: BALL_TYPE.RUN, value: 4 }));

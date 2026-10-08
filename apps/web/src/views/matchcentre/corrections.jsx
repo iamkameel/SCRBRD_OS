@@ -110,6 +110,8 @@ export function CorrectionsSheet({ match, events, fold, commentary, list, onClos
       let now = null;
       try { now = (await api(`/api/matches/${match.id}/result`))?.result?.text ?? null; } catch { /* said below as unknown */ }
       setSaid((s) => ({ ...s, [key]: { ok: true, text: `${okText} Result as the server reads it: ${serverBefore ?? "none yet"} → ${now ?? "none yet"}.` } }));
+      // The next decision's "before" is this one's "after".
+      setServerBefore(now);
       onDecided();
     } else {
       setSaid((s) => ({ ...s, [key]: { ok: false, text: refusalWords(res) } }));
