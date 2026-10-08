@@ -17205,7 +17205,15 @@ $v49$;
   --
   -- Falsified once each, by replacing the object in the database and running
   -- this file; each went red at its label:
-  --   FALSIFIED
+  --   (publish)  news_post_notice() without its INSERT
+  --   (edit)     news_post_notice() without its re-sync UPDATE
+  --   (urgency)  news_post_notice() without its sent-urgency refusal
+  --   (withdraw) news_post_notice() without its notification_retract() call;
+  --              news_post_withdraw() without its news.publish.school arm
+  --   (report)   notification_report() without its already-reported check;
+  --              without its DSO INSERT; without its app_can() reader test
+  --   (app)      notification_notice_insert_system dropped (red first at
+  --              §68 (shape), whose application insert now expects 42501)
   DECLARE
     V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
     V_WES    uuid := '22222222-2222-2222-2222-222222222222';
