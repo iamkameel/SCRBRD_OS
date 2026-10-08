@@ -20,8 +20,11 @@
  *      office taps).
  *   3. THE SPORTS ADMIN holds the register and the lifts and not the
  *      requests or the claims (no user.role.assign, no user.invite).
- *   4. THE PRINCIPAL: readiness gives no rows (no availability.read);
- *      match_duties does.
+ *   4. THE PRINCIPAL: readiness gives him the roster and no family answer
+ *      (no availability.read; db/09 row-level security) and, because he holds
+ *      medical.status.read, the physio's tier; match_duties gives rows. That
+ *      the read answers a roster at all is why the queue asks it only of a
+ *      reader whose own assignment grants the side panel.
  *   5. A COACH OF TWO SIDES (2XI and 3XI): readiness answers for both
  *      fixtures and gives nothing for a third side's at the same school.
  *   6. THE SCORER, THE PUPIL AND A PARENT: none of the office's reads gives
