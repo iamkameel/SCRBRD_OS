@@ -386,7 +386,7 @@ group("The screens draw it");
   const dash = src("../src/views/DashboardView.jsx");
   ok("Day sheet: 'Nobody is out', 'Nothing scheduled' and 'Nothing unread' are said only of reads that answered",
     /draw\(reads\?\.out/.test(dash) && /draw\(reads\?\.week/.test(dash) && /draw\(reads\?\.alerts/.test(dash) && /draw\(reads\?\.matches/.test(dash));
-  ok("Day sheet: its Retry bumps the nonce every one of those reads carries", /useLive\("injuries", role, nonce\)/.test(dash) && /useLive\("notifications", role, nonce\)/.test(dash) && /useLive\("training", role, nonce\)/.test(dash));
+  ok("Day sheet: its Retry bumps the nonce every one of those reads carries", /useLive\("injuries", role, nonce\)/.test(dash) && /useNotifications\(role, nonce/.test(dash) && /useLive\("training", role, nonce\)/.test(dash));
   ok("Notifications, Injuries, Calendar, Training and Readiness keep their reads' state",
     [["NotificationsView", "notifications-read-state"], ["InjuryView", "injuries-read-state"], ["CalendarView", "calendar-read-state"], ["TrainingView", "training-read-state"], ["ReadinessOverview", "readiness-read-state"], ["MatchCentreView", "mc-read-state"]]
       .every(([f, id]) => src(`../src/views/${f}.jsx`).includes(id)));

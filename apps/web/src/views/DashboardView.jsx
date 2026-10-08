@@ -5,6 +5,7 @@ import { D, T } from "../design/tokens.js";
 import { addDays, dateStr, humanDate, humanDateTime, today } from "../lib/format.js";
 import { api, signedIn } from "../lib/api.js";
 import { useDutyCoverage, useLive, useWeatherState } from "../lib/live.js";
+import { useNotifications } from "../lib/notifications.js";
 import { combineReads, readState } from "../lib/readState.js";
 import { holdsAsHeld } from "../lib/held.js";
 import { Btn, EmptyState, ReadState } from "../ui/primitives.jsx";
@@ -302,7 +303,8 @@ function DaySheet({ role, live = true, demoNote = "Demonstration — no server c
               {unread.slice(0, 6).map((n) => (
                 <div key={n.id} data-testid={`alert-${n.id}`}>
                   <div style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>{n.title}</div>
-                  <div style={{ ...T.role.body, color: T.content.secondary }}>{n.body}</div>
+                  {/* A tiered notice lists its title only; its body is read in Notices, on open (D17). */}
+                  {n.body && <div style={{ ...T.role.body, color: T.content.secondary }}>{n.body}</div>}
                 </div>
               ))}
             </div>
@@ -326,8 +328,9 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const { rows: MATCHES, live: matchesAreLive } = matchesRead;
   const injuriesRead = useLive("injuries", role, nonce);
   const INJURIES = injuriesRead.rows;
-  const notificationsRead = useLive("notifications", role, nonce);
-  const NOTIFICATIONS = notificationsRead.rows;
+  // The notices' one store (lib/notifications.js): the same rows and read
+  // state every badge reads, so a notice opened in Notices leaves this list too.
+  const { list: notificationsRead, rows: NOTIFICATIONS } = useNotifications(role, nonce, { fresh: true });
   const trainingRead = useLive("training", role, nonce);
   const TRAINING = trainingRead.rows;
   const PLAYERS = useLive("players", role, nonce).rows;

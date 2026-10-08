@@ -322,11 +322,23 @@ export function ruleS11(c) {
 
 // ── S12 · A notice for this fixture ────────────────────
 
-/** Welfare, selection and transport notices about this match, as published. Nothing here is derived. @param {Ctx} c @returns {Card[]} */
+/** The kinds S12 shows, in D1's list (db/89). */
+export const S12_KINDS = Object.freeze(["welfare", "notice", "lift"]);
+
+/**
+ * Welfare, selection and transport notices about this match, as published.
+ * Nothing here is derived. In NOTIFICATIONS.md D1's closed list of kinds
+ * (db/89) those are `welfare`, a person's `notice` (a selector's word about
+ * the sheet) and `lift` (the transport notices db/70 and db/76 write); the
+ * free-text `selection` and `transport` were never written by anything.
+ * A tiered notice (welfare, lift) lists its title only, so its card is the
+ * title; the body is read in Notices, on open, and logged (D17).
+ * @param {Ctx} c @returns {Card[]}
+ */
 export function ruleS12(c) {
   if (!c.notices) return [];
-  return c.notices.filter((n) => ["welfare", "selection", "transport"].includes(n.type) && n.subjectKind === "match" && n.subjectId === c.match?.id)
-    .map((n) => card("S12", `S12:${n.id}`, `S12:${n.id}`, [n.title, n.body], 1));
+  return c.notices.filter((n) => S12_KINDS.includes(n.type) && n.subjectKind === "match" && n.subjectId === c.match?.id)
+    .map((n) => card("S12", `S12:${n.id}`, `S12:${n.id}`, [n.title, n.body].filter((x) => x != null && x !== ""), 1));
 }
 
 /** Every rule, in the fixed order. */

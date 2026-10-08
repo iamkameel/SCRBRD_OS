@@ -2,18 +2,20 @@ import { useState, useEffect } from "react";
 import { ROLES, ROLE_FAMILIES, canonicalRole } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { GlobalSearch } from "./GlobalSearch.jsx";
-import { useRows } from "../lib/live.js";
+import { useNotifications } from "../lib/notifications.js";
 import { Icon } from "../ui/icons.jsx";
 
 function TopBar({ role, onRoleChange, onNav, userName }) {
-  // The unread badge is built from the notices the SERVER agreed to send.
-  // Counting client-side over rows the browser filtered would put a number in
-  // the chrome that no policy ever produced — and a count discloses as surely
-  // as a list does.
-  const NOTIFICATIONS = useRows("notifications", role);
+  // The unread badge is the SERVER's count of the notices it agreed to send
+  // this person (my_notifications, db/89), from the one store every badge
+  // reads (lib/notifications.js). Counting client-side over rows the browser
+  // filtered would put a number in the chrome that no policy ever produced —
+  // and a count discloses as surely as a list does. Null while uncounted: no
+  // badge rather than a number nobody counted.
+  const { unread: counted } = useNotifications(role);
   const [roleOpen, setRoleOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const unread = NOTIFICATIONS.filter(n=>!n.read).length;
+  const unread = counted ?? 0;
 
   // Keyboard shortcut: Cmd/Ctrl+K
   useEffect(()=>{

@@ -68,6 +68,7 @@ import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianL
 import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
+import { receiptRoutes } from "./notify/receipts-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
 import { ownerRecoveryRoutes } from "./write/owner-recovery-api.mjs";
@@ -420,6 +421,8 @@ const padCreds = padCredentialRoutes({ pool, secret: SECRET });
 const pushOut  = transportFor();
 const devices  = deviceRoutes({ pool, secret: SECRET });
 const notices  = notificationRoutes({ pool, secret: SECRET, transport: pushOut });
+// Opening a notice and marking notices read (NOTIFICATIONS.md D17).
+const receipts = receiptRoutes({ pool, secret: SECRET });
 // The rewards algorithm's coefficients. Write-only by design — see
 // services/api/rewards/weights-api.mjs for why there is no matching read.
 const rewards  = rewardWeightRoutes({ pool, secret: SECRET });
@@ -655,6 +658,10 @@ const MATCH_ROUTES = [
   // Putting a published notice in front of people. Keyed on the notice, so it
   // rides the id-bearing table rather than SCOUT_ROUTES.
   [/^\/api\/notifications\/([^/]+)\/push$/,       "POST", notices.push],
+  // Opening a notice: its body (a tiered one's open is logged) and its
+  // receipt, as the reader. NOT module-gated: a person's own notices are not
+  // a module (modules.mjs).
+  [/^\/api\/notifications\/([^/]+)\/read$/,       "POST", receipts.open],
   [/^\/api\/fixtures\/([^/]+)$/,                  "POST", fixtures.amend],
   // A side of the fixture on the public pages (SCRBRD-083). fixture_publish()
   // (db/47) decides who: broadcast.publish at THAT side's school and team.
@@ -1033,6 +1040,8 @@ const SCOUT_ROUTES = [
   [/^\/api\/devices\/retire$/,                             "POST", devices.retire],
   // Publishing a notice, which until now had a policy and no route at all.
   [/^\/api\/notifications$/,                               "POST", notices.publish],
+  // Every notice in the reader's list, marked read: his own receipts only.
+  [/^\/api\/notifications\/read-all$/,                      "POST", receipts.readAll],
   // The fixture itself. NOT module-gated: arranging a match is the product,
   // not a module somebody may switch off — and the sport it is in is gated in
   // the database, which catches a seed and an import too.
