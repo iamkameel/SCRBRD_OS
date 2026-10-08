@@ -196,7 +196,7 @@ group("The queue's clock: constants, each firing at its threshold and not one sh
   const dutyRow = fixtureRows({ match: SAT, gate: DIRECTOR_G, now: THU_AT, reads: answered({ duties: [{ duty: "umpire" }] }) }).rows.find((x) => x.rule === "O4");
   ok("duties run to the first ball", dutyRow?.deadline?.at === SAT_AT && dutyRow.deadline.words === "by first ball (Sat 09:00)", dutyRow?.deadline);
   ok("requests and claims carry no deadline, only an age (the office decides its own pace); a clearance its own date",
-     officeRows({ school: HIL, can: { requests: true, claims: true, register: false }, requests: [{ state: "pending", decidable: true, school: HIL, requestedAt: new Date(NOW - 4 * 24 * H).toISOString() }],
+     officeRows({ school: HIL, may: { requests: true, claims: true, register: false }, requests: [{ state: "pending", decidable: true, school: HIL, requestedAt: new Date(NOW - 4 * 24 * H).toISOString() }],
        claims: [{ school_id: HIL, requested_at: new Date(NOW - 2 * 24 * H).toISOString() }], now: NOW }).rows.every((x) => x.deadline === null && /^oldest \d+ days?$/.test(x.age)));
 }
 
@@ -332,7 +332,7 @@ group("Grouping: date, then team; nothing ranked (§2.5)");
 
 group("The office list: who holds which row, and O1, O2, O3 (§2.3, §3.3)");
 {
-  const school = (role, team = null, o = {}) => officeReader([A(role, HIL, team, o)])[0]?.can ?? null;
+  const school = (role, team = null, o = {}) => officeReader([A(role, HIL, team, o)])[0]?.may ?? null;
   const caps = (c) => c ? Object.entries(c).filter(([, v]) => v).map(([k]) => k).join() : "none";
   ok("the director: requests, claims, the register; no lifts (he holds neither lift capability)", caps(school("directorofsport")) === "requests,claims,register", caps(school("directorofsport")));
   ok("the principal: requests and the register; no claims (no user.invite)", caps(school("principal")) === "requests,register", caps(school("principal")));
@@ -346,36 +346,36 @@ group("The office list: who holds which row, and O1, O2, O3 (§2.3, §3.3)");
 
   const day = 24 * H;
   const req = (o) => ({ state: "pending", decidable: true, school: HIL, askedUnverified: false, requestedAt: new Date(NOW - 1 * day).toISOString(), ...o });
-  const can = { requests: true, claims: true, register: true };
-  const o1 = officeRows({ school: HIL, can, requests: [req({}), req({ askedUnverified: true, requestedAt: new Date(NOW - 4 * day).toISOString() }), req({ id: "x" }),
+  const may = { requests: true, claims: true, register: true };
+  const o1 = officeRows({ school: HIL, may, requests: [req({}), req({ askedUnverified: true, requestedAt: new Date(NOW - 4 * day).toISOString() }), req({ id: "x" }),
     req({ state: "approved" }), req({ decidable: false }), req({ school: KES })], now: NOW });
   ok("O1: '3 requests waiting · 1 asked before the email was verified', oldest 4 days: the unverified one is counted in the three, never dropped",
      o1.rows[0]?.fact === "3 requests waiting · 1 asked before the email was verified" && o1.rows[0].count === 3 && o1.rows[0].age === "oldest 4 days", o1.rows[0]);
   ok("...an answered one, one this reader cannot decide, and another school's are not on it", o1.rows[0].count === 3);
   ok("...its door is Decide, its owner the office, its source the requests read", o1.rows[0].action.kind === "requests" && o1.rows[0].action.label === "Decide" && o1.rows[0].owner === "the office" && o1.rows[0].source === "the requests read");
   ok("...a request asked before the email was verified is a request all the same: one such alone is a row",
-     officeRows({ school: HIL, can, requests: [req({ askedUnverified: true })], now: NOW }).rows[0]?.fact === "1 request waiting · 1 asked before the email was verified");
-  ok("...nothing waiting is no row, and a request none of which is decidable by this reader is no row", officeRows({ school: HIL, can, requests: [] , now: NOW }).rows.length === 0 && officeRows({ school: HIL, can, requests: [req({ decidable: false })], now: NOW }).rows.length === 0);
+     officeRows({ school: HIL, may, requests: [req({ askedUnverified: true })], now: NOW }).rows[0]?.fact === "1 request waiting · 1 asked before the email was verified");
+  ok("...nothing waiting is no row, and a request none of which is decidable by this reader is no row", officeRows({ school: HIL, may, requests: [] , now: NOW }).rows.length === 0 && officeRows({ school: HIL, may, requests: [req({ decidable: false })], now: NOW }).rows.length === 0);
   const claim = (o) => ({ school_id: HIL, requested_at: new Date(NOW - 2 * day).toISOString(), ...o });
-  const o2 = officeRows({ school: HIL, can, claims: [claim({}), claim({ requested_at: new Date(NOW - 3 * day).toISOString() }), claim({ school_id: KES })], now: NOW });
+  const o2 = officeRows({ school: HIL, may, claims: [claim({}), claim({ requested_at: new Date(NOW - 3 * day).toISOString() }), claim({ school_id: KES })], now: NOW });
   ok("O2: '2 Google sign-ins match an enrolled account', oldest 3 days, door Confirm", o2.rows[0]?.fact === "2 Google sign-ins match an enrolled account" && o2.rows[0].age === "oldest 3 days" && o2.rows[0].action.label === "Confirm", o2.rows[0]);
-  ok("...one is '1 Google sign-in matches an enrolled account'", officeRows({ school: HIL, can, claims: [claim({})], now: NOW }).rows[0]?.fact === "1 Google sign-in matches an enrolled account");
+  ok("...one is '1 Google sign-in matches an enrolled account'", officeRows({ school: HIL, may, claims: [claim({})], now: NOW }).rows[0]?.fact === "1 Google sign-in matches an enrolled account");
   const reg = (o) => ({ personId: "p", name: "Mr Khoza", role: "official", school: HIL, kindLabel: "Police clearance", status: "current", expiresOn: null, ...o });
-  const o3 = officeRows({ school: HIL, can, register: [reg({ personId: "p1", status: "expired", expiresOn: "2026-10-03" }), reg({ personId: "p2", name: "Ms Dube", status: "expiring", expiresOn: "2026-10-20" }),
+  const o3 = officeRows({ school: HIL, may, register: [reg({ personId: "p1", status: "expired", expiresOn: "2026-10-03" }), reg({ personId: "p2", name: "Ms Dube", status: "expiring", expiresOn: "2026-10-20" }),
     reg({ personId: "p3", status: "current", expiresOn: "2027-01-01" }), reg({ personId: "p1", status: "missing", kindLabel: "Child protection" }), reg({ personId: "p4", name: "Mr Pillay", status: "missing" }),
     reg({ personId: "p5", status: "expired", school: KES, expiresOn: "2026-09-01" })], now: NOW });
   ok("O3: each adult once, by his worst gap: '3 adults without a current clearance: 2 missing, 1 expiring' (p1's two gaps are one adult; a current check is none; another school's is not here)",
      o3.rows[0]?.fact === "3 adults without a current clearance: 2 missing, 1 expiring", o3.rows[0]?.fact);
   ok("...the earliest date on any gap is its deadline, the record's own: 'expired 3 Oct'", o3.rows[0].deadline?.words === "expired 3 Oct" && o3.rows[0].deadline.due === true, o3.rows[0].deadline);
   ok("...it carries the adults' own rows (the register names adults, never children), worst first", o3.rows[0].items.map((r) => r.status).join() === "missing,missing,expiring" && o3.rows[0].items.length === 3, o3.rows[0].items.map((r) => r.status));
-  const o3b = officeRows({ school: HIL, can, register: [reg({ personId: "p1", status: "expired", expiresOn: "2026-10-03" }), reg({ personId: "p2", status: "expiring", expiresOn: "2026-10-20" })], now: NOW });
+  const o3b = officeRows({ school: HIL, may, register: [reg({ personId: "p1", status: "expired", expiresOn: "2026-10-03" }), reg({ personId: "p2", status: "expiring", expiresOn: "2026-10-20" })], now: NOW });
   ok("O3 as the design words it: '2 adults without a current clearance: 1 expired, 1 expiring', the earlier date first", o3b.rows[0].fact === "2 adults without a current clearance: 1 expired, 1 expiring" && o3b.rows[0].deadline.words === "expired 3 Oct");
-  ok("...nothing owed is no row", officeRows({ school: HIL, can, register: [reg({ status: "current", expiresOn: "2027-01-01" })], now: NOW }).rows.length === 0);
-  const down = officeRows({ school: HIL, can, requests: null, claims: null, register: null, now: NOW, errors: { requests: "unreachable" } });
+  ok("...nothing owed is no row", officeRows({ school: HIL, may, register: [reg({ status: "current", expiresOn: "2027-01-01" })], now: NOW }).rows.length === 0);
+  const down = officeRows({ school: HIL, may, requests: null, claims: null, register: null, now: NOW, errors: { requests: "unreachable" } });
   ok("a failed office read is a row that says so, in the read's own name; an empty one is none",
      down.unread.map((r) => r.fact).join("|") === "Could not read the requests (unreachable)|Could not read the sign-ins|Could not read the clearance register" && down.rows.length === 0 && down.failed === 3);
   ok("a read the capability does not cover is never asked for, so a null there is not a failure",
-     officeRows({ school: HIL, can: { requests: false, claims: false, register: true }, requests: null, claims: null, register: [], now: NOW }).unread.length === 0);
+     officeRows({ school: HIL, may: { requests: false, claims: false, register: true }, requests: null, claims: null, register: [], now: NOW }).unread.length === 0);
   ok("the lift exceptions are S4b's own five sentences, by name, on a tap",
      liftExceptionRows([{ seatId: "s1", kind: "not_collected", name: "Ben Fictional", leg: "back", driverName: "Mrs Fictional", since: "2026-10-10T12:15:00Z" }])[0]?.fact === "Ben Fictional · Not collected"
      && liftExceptionRows([]).length === 0 && liftExceptionRows(null).length === 0);
@@ -404,7 +404,7 @@ group("Everything the school-wide screen says passes the never-list (§5)");
     const n = fixtureRows({ match: SAT, gate, reads: { ...rich, readiness: null, duties: null, squad: null, trips: null, conditions: { state: "failed" } }, errors: { duties: "unreachable" }, now: THU });
     said.push(...n.unread.map((r) => r.fact), n.line);
   }
-  const o = officeRows({ school: HIL, can: { requests: true, claims: true, register: true }, requests: [{ state: "pending", decidable: true, school: HIL, askedUnverified: true, requestedAt: new Date(NOW).toISOString() }],
+  const o = officeRows({ school: HIL, may: { requests: true, claims: true, register: true }, requests: [{ state: "pending", decidable: true, school: HIL, askedUnverified: true, requestedAt: new Date(NOW).toISOString() }],
     claims: [{ school_id: HIL, requested_at: new Date(NOW).toISOString() }], register: [{ personId: "p", status: "expiring", expiresOn: "2026-10-20", school: HIL }], now: NOW });
   said.push(...o.rows.flatMap((r) => [r.fact, r.owner, r.age, r.deadline?.words, r.source, r.action?.label]));
   said.push(headerWords(headerOf([{ open: 1, failed: 1, loading: false }])));

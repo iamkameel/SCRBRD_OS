@@ -481,19 +481,19 @@ export function groupByDay(groups) {
  * rows each may read. Each row checks its own capability (§1.1); layout, not
  * authority: the reads decide again.
  * @param {Parameters<typeof cockpitGate>[0]} assignments
- * @returns {{school: string, schoolName: string | null, can: {requests: boolean, claims: boolean, register: boolean, lifts: boolean}}[]}
+ * @returns {{school: string, schoolName: string | null, may: {requests: boolean, claims: boolean, register: boolean, lifts: boolean}}[]}
  */
 export function officeReader(assignments) {
-  /** @type {Map<string, {school: string, schoolName: string | null, can: {requests: boolean, claims: boolean, register: boolean, lifts: boolean}}>} */
+  /** @type {Map<string, {school: string, schoolName: string | null, may: {requests: boolean, claims: boolean, register: boolean, lifts: boolean}}>} */
   const bySchool = new Map();
   for (const a of /** @type {any[]} */ (assignments ?? [])) {
     if (!a?.role || !a.school || a.team != null || a.fixture || (a.subjects?.length ?? 0) > 0 || SUBJECT_SCOPED_ROLES.includes(a.role)) continue;
-    const can = { requests: roleGrants(a.role, "user.role.assign"), claims: roleGrants(a.role, "user.invite"),
+    const may = { requests: roleGrants(a.role, "user.role.assign"), claims: roleGrants(a.role, "user.invite"),
       register: roleGrants(a.role, "clearance.read"), lifts: roleGrants(a.role, "transport.lift.oversee") };
-    if (!Object.values(can).some(Boolean)) continue;
+    if (!Object.values(may).some(Boolean)) continue;
     const had = bySchool.get(a.school);
     bySchool.set(a.school, { school: a.school, schoolName: a.schoolName ?? had?.schoolName ?? null,
-      can: { requests: !!had?.can.requests || can.requests, claims: !!had?.can.claims || can.claims, register: !!had?.can.register || can.register, lifts: !!had?.can.lifts || can.lifts } });
+      may: { requests: !!had?.may.requests || may.requests, claims: !!had?.may.claims || may.claims, register: !!had?.may.register || may.register, lifts: !!had?.may.lifts || may.lifts } });
   }
   return [...bySchool.values()];
 }
@@ -513,15 +513,15 @@ const GAPS = Object.freeze(["missing", "expired", "revoked", "expiring"]);
  * row carries the adults' own rows (`items`): the register names adults, never
  * children; nothing here reads a name.
  *
- * @param {{school: string, can: {requests: boolean, claims: boolean, register: boolean}, requests?: any[] | null, claims?: any[] | null, register?: any[] | null, now: number, errors?: Record<string, string | null>}} o
+ * @param {{school: string, may: {requests: boolean, claims: boolean, register: boolean}, requests?: any[] | null, claims?: any[] | null, register?: any[] | null, now: number, errors?: Record<string, string | null>}} o
  * @returns {{rows: Row[], unread: Row[], open: number, failed: number}}
  */
-export function officeRows({ school, can, requests = [], claims = [], register = [], now, errors = {} }) {
+export function officeRows({ school, may, requests = [], claims = [], register = [], now, errors = {} }) {
   /** @type {Row[]} */ const rows = [];
   /** @type {Row[]} */ const unread = [];
   const here = (/** @type {any} */ r) => r.school == null || r.school === school;
 
-  if (can.requests) {
+  if (may.requests) {
     if (requests == null) unread.push(unreadRow(`office:${school}:read:requests`, "requests", "the requests", errors.requests ?? null, school));
     else {
       const waiting = requests.filter((r) => r.state === "pending" && r.decidable === true && here(r));
@@ -532,7 +532,7 @@ export function officeRows({ school, can, requests = [], claims = [], register =
         action: { kind: "requests", label: "Decide", school } }));
     }
   }
-  if (can.claims) {
+  if (may.claims) {
     if (claims == null) unread.push(unreadRow(`office:${school}:read:claims`, "claims", "the sign-ins", errors.claims ?? null, school));
     else {
       const waiting = claims.filter((c) => c.school_id == null || c.school_id === school);
@@ -542,7 +542,7 @@ export function officeRows({ school, can, requests = [], claims = [], register =
         action: { kind: "claims", label: "Confirm", school } }));
     }
   }
-  if (can.register) {
+  if (may.register) {
     if (register == null) unread.push(unreadRow(`office:${school}:read:register`, "register", "the clearance register", errors.register ?? null, school));
     else {
       const gaps = register.filter((r) => GAPS.includes(r.status) && here(r));

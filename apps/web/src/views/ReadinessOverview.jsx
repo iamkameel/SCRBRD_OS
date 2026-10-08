@@ -223,7 +223,7 @@ function ReadinessOverview({ role, onNav }) {
                             )}
                           </ul>
                         )}
-                        {o.can.lifts && (
+                        {o.may.lifts && (
                           <div style={{ padding: "0 16px 12px" }}>
                             {/* O6: read only on this tap, because every call is logged against the children it names (D6). */}
                             <button type="button" className="os-state" data-testid="queue-lifts-check" disabled={state?.loading}

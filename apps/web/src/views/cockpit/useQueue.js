@@ -113,9 +113,9 @@ export function useQueue({ matches, assignments, now }) {
   // ── The office's three reads ──
   const [office, setOffice] = useState(/** @type {{loaded: boolean, requests?: any[] | null, claims?: any[] | null, register: Record<string, any[] | null>, errors: Record<string, string | null>}} */ ({ loaded: false, register: {}, errors: {} }));
   const [officeAgain, setOfficeAgain] = useState(0);
-  const needRequests = offices.some((o) => o.can.requests);
-  const needClaims = offices.some((o) => o.can.claims);
-  const registerKey = offices.filter((o) => o.can.register).map((o) => o.school).join(",");
+  const needRequests = offices.some((o) => o.may.requests);
+  const needClaims = offices.some((o) => o.may.claims);
+  const registerKey = offices.filter((o) => o.may.register).map((o) => o.school).join(",");
   useEffect(() => {
     if (!signedIn() || !offices.length) return undefined;
     let cancelled = false;
@@ -123,10 +123,10 @@ export function useQueue({ matches, assignments, now }) {
       const [requests, claims, ...registers] = await Promise.all([
         needRequests ? ask("role_requests") : NOT_ASKED,
         needClaims ? ask("sign_in_claims") : NOT_ASKED,
-        ...offices.filter((o) => o.can.register).map((o) => ask("clearance_register", { schoolId: o.school })),
+        ...offices.filter((o) => o.may.register).map((o) => ask("clearance_register", { schoolId: o.school })),
       ]);
       if (cancelled) return;
-      const schools = offices.filter((o) => o.can.register).map((o) => o.school);
+      const schools = offices.filter((o) => o.may.register).map((o) => o.school);
       setOffice({ loaded: true, requests: requests.rows, claims: claims.rows,
         register: Object.fromEntries(schools.map((s, i) => [s, registers[i].rows])),
         errors: { requests: requests.error, claims: claims.error, ...Object.fromEntries(schools.map((s, i) => [`register:${s}`, registers[i].error])) } });
@@ -155,8 +155,8 @@ export function useQueue({ matches, assignments, now }) {
   const officeLists = useMemo(() => offices.map((o) => ({
     ...o,
     ...(office.loaded
-      ? { loading: false, ...officeRows({ school: o.school, can: o.can, requests: o.can.requests ? office.requests ?? null : [], claims: o.can.claims ? office.claims ?? null : [],
-          register: o.can.register ? office.register[o.school] ?? null : [], now,
+      ? { loading: false, ...officeRows({ school: o.school, may: o.may, requests: o.may.requests ? office.requests ?? null : [], claims: o.may.claims ? office.claims ?? null : [],
+          register: o.may.register ? office.register[o.school] ?? null : [], now,
           errors: { requests: office.errors.requests ?? null, claims: office.errors.claims ?? null, register: office.errors[`register:${o.school}`] ?? null } }) }
       : { loading: true, rows: [], unread: [], open: 0, failed: 0 }),
   })), [offices, office, now]);
