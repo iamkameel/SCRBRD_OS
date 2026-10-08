@@ -119,7 +119,7 @@ group("Disable, enable and the preview (account lifecycle slice 2, db/90)");
      && /at least ten characters/.test(r.body?.detail ?? ""));
   f = fake(() => []);
   r = await call(f.pool, "enable", {});
-  ok("no body at all: the reason goes as null, and the database decides", setCall(f.log)?.params?.[2] === null);
+  ok("no body at all: the reason goes as null, and the database decides", setCall(f.log)?.params?.[2] === null && r.status === 409);
   for (const [code, status] of /** @type {[string, number][]} */ ([["reason_too_long", 422], ["not_permitted", 403],
                                                                    ["superadmin_only", 403], ["cannot_disable_yourself", 403]])) {
     f = fake((q) => q.includes("account_set_active") ? [{ ok: false, reason: code, active: null }] : []);

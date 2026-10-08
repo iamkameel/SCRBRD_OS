@@ -4092,6 +4092,17 @@ CREATE OR REPLACE FUNCTION _v90_plant(p_user uuid, p_by uuid) RETURNS uuid AS $$
   SELECT u.id, u.school_id, u.active, 'Verify 090: planted about the reader', p_by FROM app_user u WHERE u.id = p_user
   RETURNING id
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- account_set_active() as the CALLER, its refusal as text, or the SQLSTATE
+-- of whatever raised instead of answering (a missing check shows here as the
+-- table's CHECK, not as a pass). Not a definer.
+CREATE OR REPLACE FUNCTION _v90_set(p_user uuid, p_active boolean, p_reason text) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  SELECT coalesce(o.reason, 'ok') INTO v FROM account_set_active(p_user, p_active, p_reason) o;
+  RETURN v;
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- An account at Hilton holding nothing at all: no news.read, so a notice
 -- reaches it only through a door of its own.
 CREATE OR REPLACE FUNCTION _v90_bare() RETURNS uuid AS $$
@@ -17243,16 +17254,16 @@ $v49$;
     -- (reason)
     PERFORM _as(V_OFFICE);
     n0 := _v90_changes(V_SCORER);
-    SELECT o.reason INTO v_got FROM account_set_active(V_SCORER, false, NULL) o;
+    v_got := _v90_set(V_SCORER, false, NULL);
     PERFORM _assert(v_got = 'reason_required', format('§69 (reason): no reason answered %s', v_got));
-    SELECT o.reason INTO v_got FROM account_set_active(V_SCORER, false, '   too short   ') o;
+    v_got := _v90_set(V_SCORER, false, '   too short   ');
     PERFORM _assert(v_got = 'reason_required', format('§69 (reason): nine characters, padded, answered %s', v_got));
-    SELECT o.reason INTO v_got FROM account_set_active(V_SCORER, false, repeat('x', 2001)) o;
+    v_got := _v90_set(V_SCORER, false, repeat('x', 2001));
     PERFORM _assert(v_got = 'reason_too_long', format('§69 (reason): 2,001 characters answered %s', v_got));
     PERFORM _assert((_v85_state(V_SCORER)->>'active')::boolean AND _v90_changes(V_SCORER) = n0,
       '§69 (reason): a refused disable disabled the account, or wrote a row');
     PERFORM _as(V_COACH);
-    SELECT o.reason INTO v_got FROM account_set_active(V_SCORER, false, NULL) o;
+    v_got := _v90_set(V_SCORER, false, NULL);
     PERFORM _assert(v_got = 'not_permitted', format('§69 (reason): a coach with no reason was told %s, not not_permitted', v_got));
 
     -- (preview), before: what the scorer holds now
