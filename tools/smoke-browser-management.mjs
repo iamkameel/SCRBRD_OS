@@ -748,6 +748,95 @@ try {
   ok("no console errors on the office's session", wes.errors.length === 0, wes.errors.join(" | "));
   await wes.ctx.close();
 
+  // ── 7a. Requests to answer: a refusal is said, a grant is said after the reply ──
+  group("Requests to answer: Grant and Decline say what the server said");
+  {
+    const stranger = async (tag, role, team) => {
+      const email = `walk.req.${tag}.${Date.now()}@example.invalid`;
+      const [{ id: person }] = await q(`insert into app_user (school_id, email, name, role) values (null, $1, $2, 'spectator') returning id`, [email, `Q ${tag}`]);
+      const [{ id }] = await q(`insert into role_request (person_id, role, school_id, team_code) values ($1, $2, $3, $4) returning id`, [person, role, HILTON, team]);
+      return { id, person, email };
+    };
+    const noSide = await stranger("noside", "coach", null);     // asks to coach and names no side: the office names one
+    const named = await stranger("named", "coach", "1XI");      // names one: a plain grant
+    const answered = await stranger("answered", "coach", "1XI"); // answered by somebody else after the page loaded
+    const vanished = await stranger("vanished", "coach", "1XI"); // withdrawn and deleted after the page loaded
+    const toDecline = await stranger("decline", "coach", "1XI");
+    const [{ id: registrarId }] = await q(`select id from app_user where email = 'registrar@example.invalid'`);
+    const heldBy = (person) => q(`select role, team_code from role_assignment where person_id = $1 and active`, [person]);
+    const stateOf = async (id) => (await q(`select state from role_request where id = $1`, [id]))[0]?.state ?? null;
+
+    const rq = await open();
+    ok("the registrar signs in", await signIn(rq.page, "registrar@example.invalid"));
+    await tid(rq.page, "nav-management").first().click({ timeout: 6000 });
+    await tid(rq.page, "requests-panel").waitFor({ timeout: 10000 }).catch(() => {});
+    await rq.page.locator(`[data-testid="request-row-${vanished.id}"]`).waitFor({ timeout: 10000 }).catch(() => {});
+    ok("all five requests are in the panel", (await Promise.all([noSide, named, answered, vanished, toDecline].map((r) => tid(rq.page, `request-row-${r.id}`).count()))).every((n) => n === 1));
+    const floorsRq = await floors(rq.page, '[data-testid="requests-panel"]');
+    ok("the panel holds the floors: nothing under 12px", floorsRq.small.length === 0, floorsRq.small.slice(0, 4).join(" | "));
+    ok("...and nothing tapped under 44px", floorsRq.taps.length === 0, floorsRq.taps.slice(0, 4).join(" | "));
+
+    // 1. A refusal the database gives: the side the office chose is dropped on
+    //    the way, so decide_role_request() answers team_required.
+    await tid(rq.page, `request-row-${noSide.id}`).locator('select[aria-label="Which side"]').selectOption("1XI");
+    await rq.page.route(`**/api/requests/${noSide.id}/decide`, async (route) => {
+      const req = route.request();
+      await route.continue({ postData: JSON.stringify({ ...JSON.parse(req.postData() || "{}"), teamCode: null }) });
+    });
+    await tid(rq.page, `request-grant-${noSide.id}`).click({ timeout: 5000 });
+    const refused = tid(rq.page, `request-refused-${noSide.id}`);
+    await refused.waitFor({ timeout: 6000 }).catch(() => {});
+    ok("a refused grant is said on its own row, as an alert", await refused.count() === 1 && (await refused.getAttribute("role")) === "alert"
+       && await tid(rq.page, `request-row-${noSide.id}`).locator(`[data-testid="request-refused-${noSide.id}"]`).count() === 1);
+    const refusedText = (await refused.innerText().catch(() => "")).trim();
+    ok("...in words, not a code", /Choose which side/.test(refusedText) && !/team_required/.test(refusedText), refusedText);
+    ok("...and the database agrees: still pending, nothing granted", await stateOf(noSide.id) === "pending" && (await heldBy(noSide.person)).length === 0);
+    ok("...with no success line anywhere", await tid(rq.page, `request-done-${noSide.id}`).count() === 0);
+    await rq.page.unroute(`**/api/requests/${noSide.id}/decide`);
+
+    // 2. A request somebody else answered while this page was open.
+    await q(`update role_request set state = 'declined', decided_by = $2, decided_at = now() where id = $1`, [answered.id, registrarId]);
+    await tid(rq.page, `request-decline-${answered.id}`).click({ timeout: 5000 });
+    const late = tid(rq.page, `request-refused-${answered.id}`);
+    await late.waitFor({ timeout: 6000 }).catch(() => {});
+    // The refusal is drawn at once; the row leaves when the list has been read again.
+    await tid(rq.page, `request-row-${answered.id}`).waitFor({ state: "detached", timeout: 6000 }).catch(() => {});
+    ok("a request answered first is refused in words, as an alert, though its row has left the list",
+       await late.count() === 1 && (await late.getAttribute("role")) === "alert" && /already answered/.test(await late.innerText().catch(() => ""))
+       && await tid(rq.page, `request-row-${answered.id}`).count() === 0, await late.innerText().catch(() => "(none)"));
+
+    // 3. A request that is gone altogether.
+    await q(`delete from role_request where id = $1`, [vanished.id]);
+    await tid(rq.page, `request-grant-${vanished.id}`).click({ timeout: 5000 });
+    const lost = tid(rq.page, `request-refused-${vanished.id}`);
+    await lost.waitFor({ timeout: 6000 }).catch(() => {});
+    ok("a request that no longer exists is said so",
+       await lost.count() === 1 && /could not be found/.test(await lost.innerText().catch(() => "")), await lost.innerText().catch(() => "(none)"));
+
+    // 4. A grant that goes through: the line comes after the server's reply.
+    await tid(rq.page, `request-grant-${named.id}`).click({ timeout: 5000 });
+    const done = tid(rq.page, `request-done-${named.id}`);
+    await done.waitFor({ timeout: 6000 }).catch(() => {});
+    ok("a grant says what happened, in a status line", await done.count() === 1 && (await done.getAttribute("role")) === "status"
+       && (await done.innerText().catch(() => "")).trim() === "Granted: Coach at 1XI.", await done.innerText().catch(() => "(none)"));
+    const grantedTo = await heldBy(named.person);
+    ok("...and the database holds what it says: a live coach of 1XI, the request granted",
+       grantedTo.length === 1 && grantedTo[0].role === "coach" && grantedTo[0].team_code === "1XI" && await stateOf(named.id) === "granted", JSON.stringify(grantedTo));
+
+    // 5. The one that was refused, granted properly this time; and a decline.
+    await tid(rq.page, `request-grant-${noSide.id}`).click({ timeout: 5000 });
+    await tid(rq.page, `request-done-${noSide.id}`).waitFor({ timeout: 6000 }).catch(() => {});
+    ok("the refused request, tried again with its side, is granted and the refusal is gone",
+       (await tid(rq.page, `request-done-${noSide.id}`).innerText().catch(() => "")).trim() === "Granted: Coach at 1XI."
+       && await tid(rq.page, `request-refused-${noSide.id}`).count() === 0 && await stateOf(noSide.id) === "granted");
+    await tid(rq.page, `request-decline-${toDecline.id}`).click({ timeout: 5000 }).catch(() => {});
+    await tid(rq.page, `request-done-${toDecline.id}`).waitFor({ timeout: 6000 }).catch(() => {});
+    ok("a decline says 'Declined.' after the reply, and the database agrees",
+       (await tid(rq.page, `request-done-${toDecline.id}`).innerText().catch(() => "")).trim() === "Declined." && await stateOf(toDecline.id) === "declined" && (await heldBy(toDecline.person)).length === 0);
+    ok("no console errors", rq.errors.length === 0, rq.errors.join(" | "));
+    await rq.ctx.close();
+  }
+
   // ── 7b. Phone width ──────────────────────────────────────────────
   group("At 390 wide: no sideways scroll, and the floors hold");
   // Signed in at desktop width, then narrowed: the shell chooses its navigation

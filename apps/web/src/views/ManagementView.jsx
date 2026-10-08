@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { ROLES } from "../design/roles.js";
-import { D, inkOn } from "../design/tokens.js";
+import { D, inkOn, textOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive, useRows } from "../lib/live.js";
 import { api, signedIn } from "../lib/api.js";
 import { humanDate } from "../lib/format.js";
+import { decideWords, decidedWords } from "../lib/decideWords.js";
 import { Icon } from "../ui/icons.jsx";
 import { PeoplePanel } from "./people.jsx";
 
@@ -330,45 +331,69 @@ function RequestsPanel({ role, players }) {
   const [nudge, setNudge] = useState(0);
   const [pick, setPick] = useState({});
   const [side, setSide] = useState({});
+  // What the server said to each answer, by request: { ok, text }. Said
+  // only after its reply; a refusal stays on the row, and a line whose row has
+  // gone from the list (answered, so no longer waiting) is shown under the heading.
+  const [said, setSaid] = useState({});
+  const [busy, setBusy] = useState(null);
   const rows = useLive("role_requests", role, nudge).rows.filter((r) => r.decidable);
+  const gone = Object.entries(said).filter(([id]) => !rows.some((r) => r.id === id));
   // Every hook above this line, always: a hook after a conditional return
   // changes the hook count between renders and takes the screen down.
-  if (!rows.length) return null;
+  if (!rows.length && !gone.length) return null;
   const teams = [...new Set(players.map((p) => p.team).filter(Boolean))].sort();
   const decide = async (r, grant) => {
-    await api(`/api/requests/${r.id}/decide`, { method: "POST", body: { grant, playerId: pick[r.id] || r.playerId || null, teamCode: side[r.id] || r.team || null } }).catch(() => {});
+    if (busy) return;
+    const team = side[r.id] || r.team || null;
+    const label = ROLES[r.role]?.label ?? r.role;
+    setBusy(r.id);
+    setSaid((m) => { const { [r.id]: _dropped, ...rest } = m; return rest; });
+    try {
+      await api(`/api/requests/${r.id}/decide`, { method: "POST", body: { grant, playerId: pick[r.id] || r.playerId || null, teamCode: team } });
+      setSaid((m) => ({ ...m, [r.id]: { ok: true, text: decidedWords(grant, label, team) } }));
+    } catch (e) {
+      setSaid((m) => ({ ...m, [r.id]: { ok: false, text: decideWords(e) } }));
+    }
+    setBusy(null);
     setNudge((n) => n + 1);
   };
   const needsChild = (r) => ["guardian", "player", "selfaccess", "enquiry"].includes(r.role);
   // A coach is a coach of a side; a request that named none is granted by naming one here.
   const needsSide = (r) => ["coach", "assistantcoach", "teammanager"].includes(r.role) && !r.team;
   const ready = (r) => (!needsChild(r) || pick[r.id] || r.playerId) && (!needsSide(r) || side[r.id]);
+  const line = (id, x) => (
+    <div key={id} role={x.ok ? "status" : "alert"} data-testid={x.ok ? `request-done-${id}` : `request-refused-${id}`}
+      style={{width:"100%",fontFamily:D.body,fontSize:"13px",lineHeight:1.4,color:textOn(x.ok ? D.emerald : D.rose)}}>
+      {x.text}
+    </div>
+  );
+  const sel = {background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 8px",minHeight:"44px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary};
   return (
     <div data-testid="requests-panel" style={{border:`1px solid ${D.border}`,borderRadius:D.lg,background:D.surf1,padding:"14px"}}>
-      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>Requests to answer · {rows.length}</div>
+      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>{rows.length ? `Requests to answer · ${rows.length}` : "Requests answered"}</div>
+      {gone.map(([id, x]) => line(id, x))}
       {rows.map((r)=>(
         <div key={r.id} data-testid={`request-row-${r.id}`} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 0",borderTop:`1px solid ${D.border}`,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:"200px"}}>
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:600}}>{r.name} <span style={{color:D.textMuted,fontWeight:400}}>{r.email}</span></div>
-            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{ROLES[r.role]?.label ?? r.role}{r.team?` · ${r.team}`:""}{r.note?` — ${r.note}`:""}</div>
-            {r.askedUnverified&&<div data-testid={`request-unverified-${r.id}`} style={{fontFamily:D.body,fontSize:"11px",color:D.roseText}}>Asked before the email was verified: check with them before granting.</div>}
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{ROLES[r.role]?.label ?? r.role}{r.team?` · ${r.team}`:""}{r.note?` — ${r.note}`:""}</div>
+            {r.askedUnverified&&<div data-testid={`request-unverified-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.roseText}}>Asked before the email was verified: check with them before granting.</div>}
           </div>
           {needsChild(r)&&(
-            <select value={pick[r.id]||r.playerId||""} onChange={(e)=>setPick((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which player"
-              style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 6px",fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>
+            <select value={pick[r.id]||r.playerId||""} onChange={(e)=>setPick((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which player" style={sel}>
               <option value="">Which player?</option>
               {players.map((p)=><option key={p.id} value={p.id}>{p.name} · {p.team}</option>)}
             </select>
           )}
           {needsSide(r)&&(
-            <select value={side[r.id]||""} onChange={(e)=>setSide((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which side"
-              style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 6px",fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>
+            <select value={side[r.id]||""} onChange={(e)=>setSide((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which side" style={sel}>
               <option value="">Which side?</option>
               {teams.map((t)=><option key={t} value={t}>{t}</option>)}
             </select>
           )}
-          <button onClick={()=>decide(r,true)} disabled={!ready(r)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,border:"none",cursor:"pointer",background:D.emerald+"22",color:D.emerald,fontFamily:D.head,fontSize:"10px",fontWeight:700}}>Grant</button>
-          <button onClick={()=>decide(r,false)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,border:`1px solid ${D.border}`,cursor:"pointer",background:"transparent",color:D.textMuted,fontFamily:D.head,fontSize:"10px",fontWeight:700}}>Decline</button>
+          <button onClick={()=>decide(r,true)} disabled={!ready(r)||!!busy} data-testid={`request-grant-${r.id}`} className="pressBtn" style={{padding:"5px 16px",minHeight:"44px",borderRadius:D.pill,border:"none",cursor:"pointer",background:D.emerald+"22",color:D.emerald,fontFamily:D.head,fontSize:"12px",fontWeight:700}}>Grant</button>
+          <button onClick={()=>decide(r,false)} disabled={!!busy} data-testid={`request-decline-${r.id}`} className="pressBtn" style={{padding:"5px 16px",minHeight:"44px",borderRadius:D.pill,border:`1px solid ${D.border}`,cursor:"pointer",background:"transparent",color:D.textMuted,fontFamily:D.head,fontSize:"12px",fontWeight:700}}>Decline</button>
+          {said[r.id]&&line(r.id, said[r.id])}
         </div>
       ))}
     </div>
