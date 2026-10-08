@@ -55,7 +55,7 @@ ticket takes a SCRBRD number, and that number is noted here.
 | I17 | Push: a supported FCM token refresh, or "unavailable" stated plainly | Opus | open |
 | I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | Kameel to decide scope |
 | I20 | The parent's action list per child | Fable (redesign step 4); design started 7 Oct | design approved; slice A0 merged #81; the rest after the pilot |
-| I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | done · merged #91 (2026-10-08) |
+| I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | partly done · #91 (2026-10-08): success lines wait for the server and refusals are shown; the honesty labels (demo / practice / read-only / official) are still open |
 
 ## Phase C: enrich verified information (after the pilot)
 
