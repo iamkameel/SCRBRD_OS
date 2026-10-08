@@ -416,7 +416,7 @@ group("Everything the school-wide screen says passes the never-list (§5)");
   ok("the module's source reads no child's field (the static check holds the A1 code too, comments removed)", !/\.(name|playerId|returnDate|rtw\w*|reason\w*|note|injury\w*|severity|phase)\b/.test(code) && !/\b(rtw_date|reason_kind|injury_type|open_flag)\b/.test(code));
   ok("...it fetches nothing, keeps nothing in storage and tells no time of its own (the caller passes `now`)", !/\bapi\(|fetch\(|localStorage|sessionStorage|Date\.now|new Date\(\)/i.test(code));
   const view = readFileSync(new URL("../src/views/ReadinessOverview.jsx", import.meta.url), "utf8");
-  ok("the screen has no 'Seen' control and no 'done' button (D7, §2.6), and its queue reads are the hook's, not its own", !/\bseen\b|markSeen|dismiss/i.test(view.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")) && !/\bapi\(|readLive\(/.test(view));
+  ok("the screen has no 'Seen' control and no 'done' button (D7, §2.6), and its queue reads are the hook's, not its own", !/\bseen\b|markSeen|dismiss/i.test(view.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")) && !/readLive\(|"(role_requests|sign_in_claims|clearance_register|lifts)/.test(view));   // O7 (GA-I36) is the corrections screen's own read, not the queue's
   const hook = readFileSync(new URL("../src/views/cockpit/useQueue.js", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   ok("the hook asks for no workload, no spells, no notices and no opposition, and the lift exceptions only through its tap",
      !/workload|bowling_spells|opposition|notifications|directives/.test(hook) && (hook.match(/lifts\/exceptions/g) ?? []).length === 1 && /checkLifts/.test(hook));
