@@ -177,3 +177,30 @@ export function noticesFor(notices, child) {
     && (n.school == null || n.school === child.school)
     && (n.team == null || n.team === child.team));
 }
+
+/**
+ * The family screen's empty state for a parent whose request is with the
+ * office (§3.3): her own pending guardian requests, each said as pending, with
+ * the school's name from the public list and her own note. Never a child's
+ * name from the platform: the player row is not hers to read until the link
+ * is verified. "This does not mean it was approved."
+ *
+ * @param {any[] | null | undefined} requests  the role_requests read
+ * @param {number} now
+ * @returns {{id: string, words: string, note: string | null}[]}
+ */
+export function pendingWords(requests, now) {
+  return (Array.isArray(requests) ? requests : [])
+    .filter((r) => r.mine && r.state === "pending" && r.role === "guardian")
+    .map((r) => {
+      const asked = Date.parse(r.requestedAt ?? "");
+      const days = !Number.isFinite(asked) ? null : Math.max(0, Math.floor((now - asked) / 864e5));
+      const ago = days == null ? "" : days === 0 ? " · asked today" : ` · asked ${days} day${days === 1 ? "" : "s"} ago`;
+      return {
+        id: r.id,
+        words: `Your request to be linked to a child at ${r.schoolName || "the school"} is with the office${ago}. `
+          + "This does not mean it was approved. When the office verifies the link, your child appears here.",
+        note: r.note ? String(r.note) : null,
+      };
+    });
+}
