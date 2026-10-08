@@ -257,6 +257,10 @@ try {
   ok("a Print action is offered", await printBtn.count() === 1);
   const printHideCount = await dos.page.evaluate(() => document.querySelectorAll(".os-print-hide").length);
   ok("the print action itself is marked to stay off the printed page", printHideCount >= 1, String(printHideCount));
+  // GA-I36 N7 (D11): a printed report says which log it was folded from.
+  const asAt = await dos.page.locator('[data-testid="pmr-asat"]').innerText().catch(() => "");
+  ok("the report says the revision it was folded from: 'As at HH:MM · head N'", /^As at \d\d:\d\d · head \d+/.test(asAt.trim()), asAt);
+  ok("...inside the printed area", await dos.page.evaluate(() => !!document.querySelector('.os-print-area [data-testid="pmr-asat"]')));
 
   ok("no console errors on the director of sport's session", dos.errors.length === 0, dos.errors.join(" | "));
   await dos.ctx.close().catch(() => {});

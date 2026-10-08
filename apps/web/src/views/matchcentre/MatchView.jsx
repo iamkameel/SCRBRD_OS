@@ -482,7 +482,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
         {!log.demo && <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/>}
         {!log.demo && <StaleLine stale={log.stale} refreshing={log.refreshing} failed={log.failed} okAt={log.okAt} onRefresh={log.refresh}/>}
         {corrections.words && (
-          <button type="button" data-testid="mc-corrections-open" onClick={() => setSheet(true)} className="pressBtn os-state"
+          <button type="button" data-testid="mc-corrections-open" onClick={() => { corrections.reload(); setSheet(true); }} className="pressBtn os-state"
             style={{ minHeight: "44px", padding: `0 ${T.space.md}`, justifySelf: "start", display: "inline-flex", alignItems: "center", gap: T.space.xs,
               background: "transparent", border: `1px solid ${T.semantic.warning}`, borderRadius: T.radius.pill, cursor: "pointer",
               color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>

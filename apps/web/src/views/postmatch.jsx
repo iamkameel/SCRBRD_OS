@@ -8,6 +8,7 @@ import { sidesOf } from "../lib/matchCentre.js";
 import { OnwardLinks } from "./matchcentre/fulltime.jsx";
 import { Badge, Modal } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
+import { clockWords, correctedAt, correctionsOf } from "../lib/corrections.js";
 
 /**
  * SCRBRD-082 — the Post-Match Report.
@@ -46,7 +47,12 @@ function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFi
         const evs = (rows || []).map(fromRow);
         // Folded as the server folds it: the fixture's start and format (SCRBRD-113).
         const { innings, result } = deriveMatch(evs, fold ?? {});
-        setReplay({ loading: false, error: null, innings, result });
+        // GA-I36 N7 (D11): a printed report is a snapshot, so it says which
+        // log it was folded from: the head (the largest seq) and when it was
+        // read, and the latest correction's time where there was one.
+        const head = (rows || []).reduce((m, r) => Math.max(m, r.seq), 0);
+        const recovered = new Map((rows || []).filter((r) => r.recovered).map((r) => [r.seq, Date.parse(r.server_ts)]));
+        setReplay({ loading: false, error: null, innings, result, head, readAt: Date.now(), correctedAt: correctedAt(correctionsOf(evs, recovered)) });
       } catch (e) {
         if (!cancelled) setReplay({ loading: false, error: e.code || "unreachable", innings: null, result: null });
       }
@@ -123,6 +129,10 @@ function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFi
             <OnwardLinks match={match} sides={sidesOf(match)} matches={matches} onOpenFixture={onOpenFixture} onTeamResults={onTeamResults}/>
           </div>
         )}
+
+        <p data-testid="pmr-asat" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, textAlign: "center", margin: "0 0 12px" }}>
+          As at {clockWords(replay.readAt)} · head {replay.head}{replay.correctedAt != null ? ` · corrected ${clockWords(replay.correctedAt)}` : ""}
+        </p>
 
         {(bestBat || bestBowl) && (
           <Section title="Best performances">
