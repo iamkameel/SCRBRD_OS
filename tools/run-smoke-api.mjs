@@ -249,6 +249,13 @@ const WALKS = [
   // lift by version, the fixture moving under it, names and numbers through
   // the logged doors only, and a family's "no" never switched off.
   "lifts",
+  // The parent's action list, A1 (GA-I20): every read it makes, per child and
+  // per reader — the version and time of her own terms, a count of numbers
+  // that is never a contact (N2), the public-name answer's version and time
+  // (N5), the requests on the lifts she drives as counts with no name (N3),
+  // two children at two schools kept apart, a pending request and an ended
+  // link that read no child.
+  "family-todo",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
