@@ -14,7 +14,7 @@ import { DisplayView, useWakeLock } from "../../display/DisplayView.jsx";
  * again resumes it. It holds a screen wake lock where the browser allows one.
  * It is fed by the Match Centre's own live read, so it refreshes itself.
  */
-export function BigScreen({ match, events, fold, innings, result, settled, commentary, onClose }) {
+export function BigScreen({ match, events, fold, innings, result, settled, commentary, onClose, par = null }) {
   const [paused, setPaused] = useState(false);
   // Held, not watched: the view re-renders on every live read, and the keys
   // are listened for once, when it opens.
@@ -32,6 +32,6 @@ export function BigScreen({ match, events, fold, innings, result, settled, comme
   return (
     <DisplayView match={match} events={events ?? []} fold={fold ?? {}} innings={innings} result={result} settled={settled}
       commentary={commentary} ready settings={{ theme: "floodlit", dwell: "normal", reduceMotion: false }}
-      onClose={() => leave.current()} paused={paused}/>
+      onClose={() => leave.current()} paused={paused} par={par}/>
   );
 }

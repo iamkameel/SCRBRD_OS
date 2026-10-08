@@ -26,3 +26,4 @@ export * from "./conditions.mjs";
 export * from "./summary.mjs";
 export * from "./venue.mjs";   // SCRBRD-130 R3
 export * from "./dls.mjs";     // SCRBRD-130 R2
+export * from "./pressure.mjs";   // SCRBRD-133 G2: par and pressure at a point

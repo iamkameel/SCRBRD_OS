@@ -5,7 +5,8 @@ import { boardInsights } from "../scorer/signals.js";
 import { teamOf, sidesOf } from "../lib/matchCentre.js";
 import { MomentMark, OverSummary } from "../views/matchcentre/spectator.jsx";
 import { useArrivals, useMoments, useTicker } from "../views/matchcentre/live.js";
-import { DAYLIGHT_DIM, boardOf, clockAt, displayState } from "./data.js";
+import { DAYLIGHT_DIM, boardOf, clockAt, displayState, parOf, trackOf } from "./data.js";
+import { RateTrack } from "../ui/parTrack.jsx";
 import { Chips, DisplayPanel } from "./panels.jsx";
 import { useRotation } from "./Rotation.jsx";
 import { FOW_MS } from "./rotation.js";
@@ -24,7 +25,9 @@ import { FOW_MS } from "./rotation.js";
  *
  * It reads nothing itself: what it is given is all it can show. No sponsor
  * (D13), no broadcast_state() (083 §5.2), no retirement card and no reason
- * (D8), no pressure figure (D4).
+ * (D8), no pressure figure (D4): the second line says the gap to par or the
+ * required rate's direction, and the rate track draws the two figures it
+ * compares (G2, §3), from the par report it is given.
  *
  * SIZES (§2.6): every one is max(floor, vmin) — the 12px floor is the max()'s
  * first argument everywhere, so a phone in portrait never goes under it and a
@@ -132,8 +135,8 @@ function DisplayInsight({ lines, paused }) {
 }
 
 /** The Board band (§2.2 B): team, total, overs, the second line, the pair, the stand, the bowler, this over. */
-function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, announce, tp }) {
-  const props = boardOf(state);
+function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, announce, tp, par }) {
+  const props = boardOf(state, par);
   if (!props) {
     const sides = sidesOf(match);
     return (
@@ -154,6 +157,8 @@ function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, an
           <div className="dv-team" data-testid="display-team">{side.full}</div>
           <div className="dv-overs"><Figure value={props.overs} testid="display-overs"/><small>overs</small></div>
           {props.sub && <div className="dv-sub" data-testid={`${tp}-sub`}>{props.sub}</div>}
+          <RateTrack track={trackOf(state, par, side.short)} textClass="dv-small" testid={`${tp}-rate-track`}
+            palette={{ line: "var(--dv-dim)", bar: "var(--dv-lime)", dot: "var(--dv-figure)", text: "var(--dv-dim)", gap: "var(--dv-lime)" }}/>
         </div>
         <div className="dv-total" data-testid={`${tp}-total`}>
           <Figure value={shownRuns ?? props.total}/><span className="dv-slash">/</span><Figure value={props.wickets}/>
@@ -209,9 +214,13 @@ const GAP = 6;
  * @param {{stale?: boolean, okAt?: number | null, gone?: boolean, sleeping?: boolean}} [p.status]
  * @param {(() => void) | null} [p.onClose]  the signed-in big screen's way out; none on the ground display
  * @param {boolean} [p.paused]     the signed-in big screen's Space
+ * @param {any} [p.par]            the par report (GET …/par, G2), or null
  */
-export function DisplayView({ match, events, fold, innings, result, settled, commentary, ready, settings, status = {}, onClose = null, paused = false }) {
+export function DisplayView({ match, events, fold, innings, result, settled, commentary, ready, settings, status = {}, onClose = null, paused = false,
+                              par = null }) {
   const state = useMemo(() => displayState({ match, innings, settled }), [match, innings, settled]);
+  // Par and pressure for the Board (G2): folded once per read, not per paint.
+  const pressure = useMemo(() => parOf({ state, events, fold, report: par, result, settled }), [state, events, fold, par, result, settled]);
   // The result, as one moment, only once play has decided it — through the
   // same "only while the page is open" gate as every other (MatchView's line).
   const feed = useMemo(() => (settled && result && commentary.length
@@ -247,12 +256,12 @@ export function DisplayView({ match, events, fold, innings, result, settled, com
       {onClose && <ExitButton onClose={onClose}/>}
       <DisplayBoard match={match} state={state} shownRuns={shownRuns} moment={status.sleeping ? null : moment}
         overSummary={status.sleeping ? null : overSummary} paused={paused || !!status.sleeping} announce={announce}
-        tp={onClose ? "mc-bigscreen" : "display"}/>
+        tp={onClose ? "mc-bigscreen" : "display"} par={pressure}/>
       <div className="dv-panel" data-testid="display-panel">
         {panel && (
           <div key={panel} className="os-panel-in">
             <DisplayPanel panel={panel} match={match} played={state.played} inn={state.inn} index={state.index}
-              events={events} fold={fold} result={result} commentary={commentary}/>
+              events={events} fold={fold} result={result} commentary={commentary} par={par}/>
           </div>
         )}
       </div>

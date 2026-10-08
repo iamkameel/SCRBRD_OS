@@ -14,6 +14,12 @@
  *   GET /api/public/matches/:id           the header (team level)
  *   GET /api/public/matches/:id/log       the redacted log (?since=seq)
  *   GET /api/public/matches/:id/shots     the team's sectors (L7)
+ *   GET /api/public/matches/:id/par       par and pressure for the innings in play
+ *                                         (SCRBRD-133 G2, db/88): the ground's par at
+ *                                         this point and its track, the DLS par after
+ *                                         rain in a chase, the required rate's trend.
+ *                                         Team figures; never a name, a cell or a
+ *                                         resource (parLeaks() holds the shape)
  *   GET /api/public/live                  the home page's strip (SCRBRD-142, db/82):
  *                                         today's fixtures of the schools that list,
  *                                         each published by a listing school —
@@ -78,7 +84,7 @@ import pg from "pg";
 import { ANON, withPrincipal } from "../auth/auth.mjs";
 import { ROBOTS } from "@scrbrd/policy/public";
 import { projectLog } from "./redact.mjs";
-import { resultFromRow, resultWords } from "@scrbrd/scoring";
+import { resultFromRow, resultWords, parReport, formatKind, dlsTable, DLS_STATUS, PAR_AT_LABEL, PAR_AT_METHOD, PAR_TRACK, RRR_TREND } from "@scrbrd/scoring";
 /** @import { IncomingMessage, ServerResponse } from "node:http" */
 /** @import { Pool, Db } from "../api-types.mjs" */
 /** @import { PublicLog, PersonRow, LogRow } from "./redact.mjs" */
@@ -89,7 +95,7 @@ export const HOT_PER_MINUTE = 2_000;
 export const RATE = Object.freeze({ perMinute: 360, burst: 60 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const API = /^\/api\/public\/matches\/([^/]+)(\/log|\/shots)?$/;
+const API = /^\/api\/public\/matches\/([^/]+)(\/log|\/shots|\/par)?$/;
 /** The home page's strip (SCRBRD-142 §2.2): the one public read with no id. */
 const LIVE = "/api/public/live";
 /** Its one cache entry, under a key no fixture id can be. */
@@ -150,6 +156,8 @@ export const NOT_FOUND = JSON.stringify({ error: "not_found" });
  * @property {Held<any> | undefined} [standings]  a competition's table, keyed by its id
  * @property {Held<any> | undefined} [live]  the home page's list, under LIVE_KEY
  * @property {Held<any> | undefined} [news]  the home page's news, under NEWS_KEY
+ * @property {Held<any> | undefined} [parInputs]  the ground's par and the DLS table (db/88), server-side only
+ * @property {Held<any> | undefined} [par]  the par report, with the log's `last` it was made from
  * @property {Set<string>} players   the real player ids its log names
  * @property {Map<string, Promise<any>>} inflight
  */
@@ -204,7 +212,7 @@ export class PublicCache {
    * The cached answer for `part`, or a fresh one from `load()` — one load at
    * a time per fixture and part, however many requests arrive together.
    * @template T
-   * @param {string} matchId @param {"header" | "log" | "shots" | "standings" | "live" | "news"} part
+   * @param {string} matchId @param {"header" | "log" | "shots" | "standings" | "live" | "news" | "parInputs" | "par"} part
    * @param {number} ttl @param {() => Promise<T>} load
    * @returns {Promise<T>}
    */
@@ -494,6 +502,51 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     return rows.map((r) => ({ innings: Number(r.innings), sector: Number(r.sector), shots: Number(r.shots), runs: Number(r.runs) }));
   });
 
+  /**
+   * SCRBRD-133 G2: what the par read is made from — the ground's par
+   * (db/88 public_venue_par(): a published fixture's, team-level, nothing
+   * below the floor) and the DLS table the fixture reads (public_dls_table():
+   * its cells, to this process and no further, D6). A minute at a time: a
+   * ground's record moves when an innings there is sealed, not with a ball.
+   * @param {string} id @param {boolean} hot
+   */
+  const parInputs = (id, hot) => cache.get(id, "parInputs", SETTLED_TTL_MS * (hot ? 2 : 1), async () => {
+    const { venueRows, tableRows } = await asNobody(async (c) => ({
+      venueRows: (await c.query(`select * from public_venue_par($1)`, [id])).rows,
+      tableRows: (await c.query(`select * from public_dls_table($1)`, [id])).rows,
+    }));
+    const v = venueRows[0], t = tableRows[0];
+    return {
+      venue: v ? { par: v.par ?? null, n: Number(v.n), sufficient: v.sufficient === true, median: v.median == null ? null : Number(v.median),
+                   low: v.low ?? null, high: v.high ?? null, firstSeason: v.first_season ?? null, lastSeason: v.last_season ?? null } : null,
+      table: t ? dlsTable({ id: t.id, version: t.version, grain: t.grain, maxBalls: t.max_balls, rows: t.cells ?? [] }) : null,
+    };
+  });
+
+  /**
+   * The par report for the innings in play (@scrbrd/scoring parReport()),
+   * folded from the SAME cached log the page folds — so its `at` is the
+   * position the page's own fold stands at — and made again only when that
+   * log has grown. Its words change with every ball: no-store at the edge.
+   * @param {string} id @param {any} h @param {boolean} hot
+   */
+  const parOf = async (id, h, hot) => {
+    const l = await log(id, h, hot);
+    const load = async () => {
+      const { venue, table } = await parInputs(id, hot);
+      const ctx = foldContext(h);
+      const g50 = Number.isInteger(h.conditions?.["target.g50"]) ? h.conditions["target.g50"] : null;
+      return { last: l.last, report: parReport({ events: l.events, ctx, venue, table, g50, limited: limitedFormat(h) }) };
+    };
+    let held = await cache.get(id, "par", ttlFor(h, hot), load);
+    if (held.last !== l.last) {
+      const e = cache.entry(id);
+      if (e.par?.value === held) e.par = undefined;
+      held = await cache.get(id, "par", ttlFor(h, hot), load);
+    }
+    return held.report;
+  };
+
   /** A published competition's table, or null. @param {string} id @param {boolean} hot */
   const standings = (id, hot) => cache.get(id, "standings", SETTLED_TTL_MS * (hot ? 2 : 1), async () => {
     const { rows } = await asNobody((c) => c.query(`select * from public_competition_standing($1)`, [id]));
@@ -662,6 +715,15 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
           events: since ? l.events.filter((e) => e.seq > since) : l.events,
           people: l.people,
         }), { cache: NO_STORE }, head);
+      } else if (apiMatch[2] === "/par") {
+        // SCRBRD-133 G2. Held to its shape before it is sent: a key nobody
+        // listed — a name, a cell, a resource — and nothing is sent at all.
+        const body = { matchId: id, ...(await parOf(id, h, hot)) };
+        const leaked = parLeaks(body);
+        if (leaked.length) {
+          console.error(`GET ${path} (public) → par refused: ${leaked.join("; ")}`);
+          send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
+        } else send(res, 200, JSON.stringify(body), { cache: NO_STORE }, head);
       } else {
         send(res, 200, JSON.stringify({ matchId: id, sectors: await shots(id, h, hot) }), { cache: TEAM_LEVEL }, head);
       }
@@ -697,6 +759,73 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
 export function foldContext(h) {
   return { startsAt: h.startsAt, format: h.format,
     ...(h.conditions ? { conditions: h.conditions, conditionsHash: h.conditionsHash } : {}) };
+}
+
+/**
+ * Is this a limited-overs match, one innings a side — the only kind a par is
+ * reckoned for (venue par's pool is; SCRBRD-130 §6.2)? The frozen conditions'
+ * word where the match has them, else its format's.
+ * @param {any} h  the cached header
+ */
+export function limitedFormat(h) {
+  const c = h?.conditions ?? {};
+  if (c["format.kind"] != null) return c["format.kind"] === "limited" && c["format.innings_per_side"] !== 2;
+  return formatKind(h?.format) !== "declaration";
+}
+
+const UUID_OR_NULL = (/** @type {unknown} */ v) => v === null || (typeof v === "string" && UUID.test(v));
+const INT = (/** @type {unknown} */ v) => Number.isInteger(v);
+const INT_OR_NULL = (/** @type {unknown} */ v) => v === null || Number.isInteger(v);
+const NUM = (/** @type {unknown} */ v) => typeof v === "number" && Number.isFinite(v);
+const NUM_OR_NULL = (/** @type {unknown} */ v) => v === null || NUM(v);
+const ONE_OF = (/** @type {readonly unknown[]} */ xs) => (/** @type {unknown} */ v) => xs.includes(v);
+/**
+ * Every key the par read may send, and what each may hold (SCRBRD-133 G2,
+ * §3.2). A figure is a number, a word is one of a closed list, an id is the
+ * table's; nothing else is a string, so no name can ride in one.
+ * @type {Record<string, any>}
+ */
+export const PAR_SHAPE = Object.freeze({
+  matchId: (/** @type {unknown} */ v) => typeof v === "string" && UUID.test(v),
+  at: { nullable: true, keys: { innings: INT, balls: INT, wickets: INT, overs: INT_OR_NULL, stops: INT } },
+  venue: { nullable: true, keys: {
+    par: INT, n: INT, sufficient: (/** @type {unknown} */ v) => v === true,
+    seasons: { keys: { first: INT_OR_NULL, last: INT_OR_NULL } },
+    median: NUM_OR_NULL, range: { keys: { low: INT_OR_NULL, high: INT_OR_NULL } },
+    parAt: INT, method: ONE_OF(Object.values(PAR_AT_METHOD)), label: ONE_OF(Object.values(PAR_AT_LABEL)),
+    shortened: (/** @type {unknown} */ v) => typeof v === "boolean",
+  } },
+  dls: { nullable: true, keys: { parAt: INT_OR_NULL, status: ONE_OF(Object.values(DLS_STATUS)), tableId: UUID_OR_NULL } },
+  track: { list: { keys: { balls: INT, parAt: INT } } },
+  trackOf: (/** @type {unknown} */ v) => v === null || Object.values(PAR_TRACK).includes(/** @type {any} */ (v)),
+  rrr: { nullable: true, keys: { now: NUM, threeOversAgo: NUM, trend: (/** @type {unknown} */ v) => v === null || Object.values(RRR_TREND).includes(/** @type {any} */ (v)) } },
+});
+
+/**
+ * What in a par answer is not on PAR_SHAPE — a key nobody listed, a value of
+ * the wrong kind — as a list of paths; empty when nothing is. The route sends
+ * nothing at all rather than an answer this finds anything in.
+ * @param {unknown} body
+ * @returns {string[]}
+ */
+export function parLeaks(body) {
+  /** @type {string[]} */
+  const out = [];
+  /** @param {unknown} v @param {any} rule @param {string} at */
+  const walk = (v, rule, at) => {
+    if (typeof rule === "function") { if (!rule(v)) out.push(`${at}: ${JSON.stringify(v)?.slice(0, 40)}`); return; }
+    if (v === null && rule.nullable) return;
+    if (rule.list) {
+      if (!Array.isArray(v)) { out.push(`${at}: not a list`); return; }
+      v.forEach((x, i) => walk(x, rule.list, `${at}[${i}]`));
+      return;
+    }
+    if (v === null || typeof v !== "object" || Array.isArray(v)) { out.push(`${at}: not an object`); return; }
+    for (const k of Object.keys(v)) if (!(k in rule.keys)) out.push(`${at}.${k}: not on the list`);
+    for (const [k, r] of Object.entries(rule.keys)) walk(/** @type {any} */ (v)[k], r, `${at}.${k}`);
+  };
+  walk(body, { keys: PAR_SHAPE }, "par");
+  return out;
 }
 
 /**
