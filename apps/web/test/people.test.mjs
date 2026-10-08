@@ -16,7 +16,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { accountAction, liveRoles, matchesPerson, peopleWithRoles, roleState } from "../src/lib/people.js";
 import { PeoplePanel } from "../src/views/people.jsx";
-import { AccountButton, DisableConfirm, accountRefusalWords, setAccountActive, ACCOUNT_WORDS } from "../src/views/accountactive.jsx";
+import { AccountButton, AccountSheet, DisableConfirm, accountRefusalWords, loadPreview, previewLines, reasonProblem, setAccountActive, ACCOUNT_WORDS } from "../src/views/accountactive.jsx";
 import { ManagementView } from "../src/views/ManagementView.jsx";
 import { ENROL_MESSAGE, EnrolModal, enrolWords, grantableFor } from "../src/views/enrol.jsx";
 
@@ -142,30 +142,85 @@ group("Disable and Enable, drawn and posted");
   const closed = renderToStaticMarkup(h(AccountButton, { person: p, action: "disable" }));
   ok("Disable account is a 44px button naming whose account", /Disable account/.test(closed) && /min-height:44px/.test(closed)
      && /aria-label="Disable C Example&#x27;s account"/.test(closed), closed);
-  ok("Enable account, for a disabled one", /Enable account/.test(renderToStaticMarkup(h(AccountButton, { person: p, action: "enable" }))));
+  const enableBtn = renderToStaticMarkup(h(AccountButton, { person: p, action: "enable" }));
+  ok("Enable account, for a disabled one, a 44px button that opens its own confirmation (slice 2: it asks why)",
+     /Enable account/.test(enableBtn) && /min-height:44px/.test(enableBtn) && /data-testid="account-enable-c1"/.test(enableBtn)
+     && !/account-enable-form/.test(enableBtn));
   ok("nothing for an action of null", renderToStaticMarkup(h(AccountButton, { person: p, action: null })) === "");
-  const form = renderToStaticMarkup(h(DisableConfirm, { name: "C Example", busy: false, refusal: "", onConfirm: () => {}, onCancel: () => {} }));
+  const base = { name: "C Example", busy: false, refusal: "", reason: "", onReason: () => {}, onConfirm: () => {}, onCancel: () => {} };
+  const form = renderToStaticMarkup(h(DisableConfirm, base));
   ok("the confirmation says every device is signed out now, and the roles stay",
      /signs C Example out of every device now and stops them signing in\. Their roles stay\./.test(form), form);
   ok("...with two 44px buttons, the safe one first and focused, the destructive one not the default",
      (form.match(/min-height:44px/g) ?? []).length === 2 && form.indexOf("Keep it active") < form.indexOf("Disable account")
      && /autofocus=""[^>]*>Keep it active|data-testid="account-disable-cancel"[^>]*autofocus/i.test(form.replace(/\n/g, "")), form);
   ok("...nothing under 12px in it", ![...form.matchAll(/font-size:(\d+)px/g)].some((m) => Number(m[1]) < 12));
-  const refused = renderToStaticMarkup(h(DisableConfirm, { name: "C Example", busy: false, refusal: "You cannot do this for that account. The school office that enrolled them can.", onConfirm: () => {}, onCancel: () => {} }));
+  ok("...a reason field, labelled, 64px tall, 16px text, that says the person is not told",
+     /data-testid="account-reason"/.test(form) && /<label[^>]*>Why\? \(the school&#x27;s record; they are not told\)<\/label>/.test(form)
+     && /min-height:64px/.test(form) && /font-size:16px/.test(form));
+  ok("...and Disable account waits for a reason", /data-testid="account-disable-confirm"[^>]*disabled=""|disabled=""[^>]*data-testid="account-disable-confirm"/.test(form));
+  const ready = renderToStaticMarkup(h(DisableConfirm, { ...base, reason: "Phone lost at the away fixture" }));
+  ok("...offered once the reason will do", !/disabled=""[^>]*data-testid="account-disable-confirm"|data-testid="account-disable-confirm"[^>]*disabled=""/.test(ready));
+  const refused = renderToStaticMarkup(h(DisableConfirm, { ...base, refusal: "You cannot do this for that account. The school office that enrolled them can." }));
   ok("a refusal is said in words, as an alert", /role="alert"[^>]*>You cannot do this for that account\./.test(refused));
 
+  // The preview, drawn: lines in words; a refused one stops the act.
+  const lines = previewLines({ active: true, sessions: 2, padCredentials: 1, scoringTokens: ["Hilton College 1XI v Kearsney 1XI · 10 Oct 2026"],
+                               duties: 3, lifts: 1, children: 2 });
+  ok("the preview's lines: the token by its fixture, the phone, the duties, the lift, the children, the devices",
+     lines.length === 6 && /^Holds the scoring token for Hilton College 1XI v Kearsney 1XI · 10 Oct 2026, live now\./.test(lines[0])
+     && /^1 phone can still score without signing in; disabling ends it\.$/.test(lines[1])
+     && /^3 match-day duties this fortnight/.test(lines[2]) && /^1 lift offered this fortnight; .*Nothing is cancelled by this/.test(lines[3])
+     && /^Linked to 2 children at this school\. The links stay/.test(lines[4]) && /^2 devices signed in; all are signed out now\.$/.test(lines[5]), lines.join(" | "));
+  const quiet = previewLines({ active: true, sessions: 0, padCredentials: 0, scoringTokens: [], duties: 0, lifts: 0, children: 0 });
+  ok("...an account with nothing open says so", quiet.length === 2 && /no device/.test(quiet[0]) && /^Nothing else is open/.test(quiet[1]), quiet.join(" | "));
+  ok("...and never a child's name: the counts are all it has", !lines.some((l) => /Pillay|Whitfield|Dlamini/.test(l)));
+  const withPreview = renderToStaticMarkup(h(DisableConfirm, { ...base, preview: { lines } }));
+  ok("the sheet lists them above the reason", /data-testid="account-preview"/.test(withPreview)
+     && withPreview.indexOf("account-preview") < withPreview.indexOf("account-reason") && (withPreview.match(/<li>/g) ?? []).length === 6);
+  ok("...reading, it says so", /data-testid="account-preview-loading"[^>]*>Reading what this account has open/.test(
+     renderToStaticMarkup(h(DisableConfirm, { ...base, preview: { loading: true } }))));
+  const blocked = renderToStaticMarkup(h(DisableConfirm, { ...base, preview: { refused: true, words: "Also holds roles at another school. This account cannot be disabled from here." } }));
+  ok("a refused preview is said before the tap, and the act is not offered",
+     /role="alert"[^>]*>Also holds roles at another school\./.test(blocked) && !/account-disable-confirm/.test(blocked)
+     && !/account-reason/.test(blocked) && /account-disable-cancel/.test(blocked));
+  const unread = renderToStaticMarkup(h(DisableConfirm, { ...base, preview: { refused: false, words: ACCOUNT_WORDS.preview_unreachable } }));
+  ok("an unanswered preview is said, and the act still offered", /could not be read just now/.test(unread) && /account-disable-confirm/.test(unread));
+  const en = renderToStaticMarkup(h(AccountSheet, { ...base, mode: "enable" }));
+  ok("the enable confirmation: signs nobody in, tells them, not why; a reason; Keep it disabled first and focused; no preview",
+     /data-testid="account-enable-form"/.test(en) && /can sign in again; each device signs in afresh\. They are told the account was re-enabled, not why\./.test(en)
+     && /account-reason/.test(en) && en.indexOf("Keep it disabled") < en.indexOf("Enable account") && /autofocus/i.test(en)
+     && !/account-preview/.test(en) && (en.match(/min-height:44px/g) ?? []).length === 2
+     && ![...en.matchAll(/font-size:(\d+)px/g)].some((m) => Number(m[1]) < 12));
+
+  ok("a reason of nine characters is not enough; ten is", !!reasonProblem(" too short ") && reasonProblem("Phone lost") === null);
   const calls = [];
-  const yes = async (url, opts) => { calls.push([url, opts?.method]); return { ok: true, active: url.endsWith("/enable") }; };
-  const d = await setAccountActive("c1", false, yes);
-  const e = await setAccountActive("c1", true, yes);
-  ok("disable posts to /api/auth/users/:id/disable, enable to /enable",
-     calls[0][0] === "/api/auth/users/c1/disable" && calls[1][0] === "/api/auth/users/c1/enable" && calls.every((c) => c[1] === "POST"));
+  const yes = async (url, opts) => { calls.push([url, opts?.method, opts?.body]); return { ok: true, active: url.endsWith("/enable") }; };
+  const d = await setAccountActive("c1", false, "  Phone lost at the away fixture ", yes);
+  const e = await setAccountActive("c1", true, "Phone recovered by the coach", yes);
+  ok("disable posts { reason } to /api/auth/users/:id/disable, enable to /enable, the reason trimmed",
+     calls[0][0] === "/api/auth/users/c1/disable" && calls[1][0] === "/api/auth/users/c1/enable" && calls.every((c) => c[1] === "POST")
+     && calls[0][2]?.reason === "Phone lost at the away fixture" && calls[1][2]?.reason === "Phone recovered by the coach");
   ok("...and answers what the server says the account now is", d.ok && d.active === false && e.ok && e.active === true);
-  const no = await setAccountActive("pr", false, async () => { throw Object.assign(new Error("x"), { status: 403, code: "not_permitted", detail: "You cannot do this for that account. The school office that enrolled them can." }); });
+  const short = await setAccountActive("c1", false, "lost", yes);
+  ok("a short reason is refused here, in words, and nothing is posted",
+     !short.ok && short.code === "reason_required" && short.words === ACCOUNT_WORDS.reason_required && calls.length === 2);
+  const no = await setAccountActive("pr", false, "Phone lost at the away fixture", async () => { throw Object.assign(new Error("x"), { status: 403, code: "not_permitted", detail: "You cannot do this for that account. The school office that enrolled them can." }); });
   ok("a refusal carries the server's sentence", !no.ok && no.code === "not_permitted" && /school office that enrolled them/.test(no.words));
   ok("cannot_disable_yourself and an unanswered post have words too",
      accountRefusalWords({ status: 403, detail: "You cannot disable or enable your own account. Ask a colleague at the office." }).startsWith("You cannot disable")
      && accountRefusalWords(new TypeError("fetch failed")) === ACCOUNT_WORDS.unreachable);
+  ok("reason_required with no sentence still has words", accountRefusalWords({ status: 422, code: "reason_required" }) === ACCOUNT_WORDS.reason_required);
+  ok("a dead session is told \"You were signed out. Sign in again.\" (D21)",
+     accountRefusalWords({ status: 401, code: "session_revoked" }) === "You were signed out. Sign in again.");
+
+  const got = [];
+  const pv = await loadPreview("c1", async (url) => { got.push(url); return { active: true, sessions: 1 }; });
+  ok("the preview reads GET /api/auth/users/:id/preview", got[0] === "/api/auth/users/c1/preview" && pv.ok && pv.preview.sessions === 1);
+  const pr = await loadPreview("s7", async () => { throw Object.assign(new Error("x"), { status: 403, code: "other_school", detail: "Also holds roles at another school. This account cannot be disabled from here." }); });
+  ok("...a refused preview is a refusal, in the server's words", !pr.ok && pr.refused && /another school/.test(pr.words));
+  const gone = await loadPreview("c1", async () => { throw new TypeError("fetch failed"); });
+  ok("...an unanswered one is not", !gone.ok && !gone.refused && gone.words === ACCOUNT_WORDS.preview_unreachable);
 }
 
 group("Signed out: the seeded directory, and nothing that writes");
