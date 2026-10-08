@@ -26,6 +26,7 @@
 import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
 import { combineReads } from "./readState.js";
+import { asNotification } from "./notifications.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
@@ -189,25 +190,9 @@ function asTraining(r) {
   };
 }
 
-function asNotification(r) {
-  return {
-    id: r.id, type: r.kind, urgency: r.urgency, title: r.title, body: r.body,
-    time: r.published_at, read: r.read, team: r.team_code, school: r.school_id,
-    isPublic: r.is_public,
-    // What the notice is about (SCRBRD-137 S12): a fixture, say, by its id. The
-    // cockpit's notices lane shows only those about the match it is open on.
-    subjectKind: r.subject_kind ?? null, subjectId: r.subject_id ?? null,
-    // The child a notice is about, when it is about one (step 4 P1/P5): a
-    // family screen says whose it is, and a parent who is also staff sees on
-    // a child's Home only the notices about that child or about nobody.
-    subjectPerson: r.subject_person_id ?? null,
-    // The mock carried a `roles: [...]` list, and it was never security — it
-    // was a filter the browser applied to rows it already held. The server
-    // does not send a notice this person may not have, so there is nothing
-    // left to filter and no list to carry.
-    live: true,
-  };
-}
+// asNotification lives with the notices' store (lib/notifications.js, D17),
+// which every badge and the Notices screens read; the cockpit's lane reads
+// the same adapter through readLive().
 
 function asLadderRow(r) {
   return { id: r.id ?? `${r.competition_id}:${r.school_id}:${r.team_code ?? ""}`,

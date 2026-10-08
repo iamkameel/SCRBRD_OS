@@ -16,6 +16,7 @@ import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
 import { useRows } from "./lib/live.js";
+import { useNotifications } from "./lib/notifications.js";
 import { useWaitingInvitations } from "./lib/invitations.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
@@ -381,11 +382,12 @@ export default function SCRBRD_OS() {
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
 
-  // Counted over the notices the SERVER agreed to send this person. A badge is
-  // a disclosure: "3 unread" built from rows nobody authorised states a fact
-  // about data the reader may not have.
-  const notifications = useRows("notifications", role);
-  const unreadCount = notifications.filter(n=>!n.read).length;
+  // Counted by the SERVER over the notices it agreed to send this person
+  // (my_notifications, db/89), from the one store every badge reads. A badge
+  // is a disclosure: "3 unread" built from rows nobody authorised states a
+  // fact about data the reader may not have.
+  const { unread: unreadCounted } = useNotifications(role);
+  const unreadCount = unreadCounted ?? 0;
   // Invitations to leagues waiting for this person's answer. The API writes no
   // notification for one yet, so the navigation says so (lib/invitations.js).
   const invitesWaiting = useWaitingInvitations(`${appState}:${role}:${page}`);

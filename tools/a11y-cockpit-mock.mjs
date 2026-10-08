@@ -97,7 +97,7 @@ export function cockpitApi() {
     weather: () => [{ match_id: MATCH.day, condition: "Showers", temp_c: 18, humidity_pct: 70, wind_kph: 10, wind_dir: "SW", uv_index: 4, rain_chance_pct: 70, forecast: "Rain likely from 14:00", playable: true, observed_at: new Date().toISOString() }],
     pitch_report: (q) => (q.get("matchId") === MATCH.day ? [{ match_id: MATCH.day, surface: "firm", grass: "covered", bounce: "even", pace: "quick", favours: "seam", covers_on: false, notes: null,
       bounce_rating: null, pace_rating: null, outfield: null, reported_at: new Date().toISOString() }] : []),
-    notifications: () => [{ id: "cc000000-0000-0000-0000-0000000000c1", school_id: HIL, team_code: "1XI", scope_level: "team", kind: "selection", urgency: "low", title: "The sheet has changed",
+    notifications: () => [{ id: "cc000000-0000-0000-0000-0000000000c1", school_id: HIL, team_code: "1XI", scope_level: "team", kind: "notice", urgency: "low", title: "The sheet has changed",
       body: "The sheet for tonight was changed by the selector.", subject_kind: "match", subject_id: MATCH.day, published_at: new Date().toISOString(), is_public: false, subject_person_id: null, read: false }],
     bowling_directives: () => [{ age_band: "open", max_overs_per_spell: 6, max_overs_per_day: 12, clause_code: "PACE-OPEN" }],
     opposition_context: () => [],

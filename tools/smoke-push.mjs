@@ -273,12 +273,15 @@ try {
        (await q(`select kind, urgency from notification where id = $1`, [medium.body.id]))[0]
          ?.kind === "notice");
 
-    // The shared list knows welfare (S0); the database's CHECK learns it in S1.
+    // The shared list knew welfare in S0; the database's CHECK learned it in
+    // S1 (db/89, D5), so it is stored now — and the database's own contract
+    // keeps the notice a person's: news.read, about nobody, never public.
     const welfare = await publish(head, { ...base, subjectKind: "welfare" });
-    ok("welfare passes the route and is refused by the database, said in words",
-       welfare.status === 422 && welfare.body?.error === "subject_kind_not_yet_stored"
-       && /S1/.test(welfare.body?.detail ?? ""));
-    ok("...and nothing was written", await count() === before + 1);
+    ok("a notice about welfare is stored (S1)", welfare.status === 200);
+    ok("...as a person's notice, news.read and not public",
+       (await q(`select kind, subject_kind, required_capability, is_public from notification where id = $1`, [welfare.body?.id]))
+         .filter((r) => r.kind === "notice" && r.subject_kind === "welfare" && r.required_capability === "news.read" && r.is_public === false).length === 1);
+    ok("...one row more", await count() === before + 2);
   }
 
   group("A cached notification is not permission");
@@ -376,19 +379,27 @@ try {
     ok("...and every device got a pointer, not the text",
        r1.every((d) => d.payload_kind === "pointer"));
 
-    // A row marked public. The route no longer writes one (D12) and S1's
-    // trigger will refuse it (D4), but rows from before may say so — and the
-    // flag chooses nothing (D6): it travels as a pointer like every other.
+    // A row marked public. The route no longer writes one (D12), and since
+    // S1 the database refuses one from anybody, its owner included (D4, D6:
+    // the flag is dormant and every stored row says false).
+    const publicRefused = await q(
+      `insert into notification (school_id, scope_level, kind, urgency, title, body, is_public)
+       values ($1, 'school', 'fixture', 'medium', 'Fixtures', 'All age groups at home on Saturday.', true)
+       returning id`, [HIL]).then(() => "stored", (e) => e.constraint ?? e.code);
+    ok("the database refuses a public notice (D4)", publicRefused === "notification_never_public", publicRefused);
+    ok("...and no stored notice is public", (await q(`select count(*)::int c from notification where is_public`))[0].c === 0);
+    // The same school-wide notice, as it may be stored: it travels as a
+    // pointer like every other.
     const open = (await q(
-      `insert into notification (school_id, scope_level, kind, urgency, title, body, is_public, published_by)
-       values ($1, 'school', 'fixture', 'medium', 'Fixtures', 'All age groups at home on Saturday.', true,
+      `insert into notification (school_id, scope_level, kind, urgency, title, body, published_by)
+       values ($1, 'school', 'fixture', 'medium', 'Fixtures', 'All age groups at home on Saturday.',
                (select id from app_user where email = 'sarah@example.invalid'))
        returning id`, [HIL]))[0];
     const echoOpen = echoTransport();
     const outOpen = await fanOut({ pool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
                                    notificationId: open.id, transport: echoOpen });
     const r2 = await deliveries(open.id);
-    ok("a public notice reached more people than the restricted one", r2.length > r1.length && outOpen.delivered > 0);
+    ok("a school-wide notice reached more people than the restricted one", r2.length > r1.length && outOpen.delivered > 0);
     ok("...and travels as a pointer all the same", r2.every((d) => d.payload_kind === "pointer"));
     ok("...its words never on the wire",
        echoOpen.sent.length > 0 && echoOpen.sent.every((s) => !JSON.stringify(s.payload).includes("All age groups")
