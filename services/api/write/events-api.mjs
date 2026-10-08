@@ -790,8 +790,17 @@ function amendmentRefusal(match, voidEv) {
  * @property {string | null} [void_key]
  */
 
-/** @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/amendments, /amendments/:id/decide */
-export function amendmentRoutes({ pool, secret }) {
+/**
+ * `onChange` (GA-I36 N2): told `{k: "match", id}` once an approval that wrote
+ * a void has committed, so the public page's cache for that fixture drops at
+ * once instead of at its TTL (server.mjs passes it through afterCommit, as
+ * the publication route's is). A decline, a refusal and a request change no
+ * log, and tell nobody. Screens learn of the void on their next poll: there
+ * is no push (Kameel, 8 Oct; realtime/realtime.mjs's hub is not mounted).
+ * @param {RouteDeps & {onChange?: (note: {k: string, id: string}) => void}} deps
+ * @returns {Record<string, IdHandler>}  /matches/:id/amendments, /amendments/:id/decide
+ */
+export function amendmentRoutes({ pool, secret, onChange }) {
   const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   /** @param {(req: IdRequest) => Promise<unknown>} fn @returns {IdHandler} */
   const handle = (fn) => async (req, res) => {
@@ -827,7 +836,9 @@ export function amendmentRoutes({ pool, secret }) {
     //   | { ok: false, reason: "laws_refused", law, text }   (nothing written; still pending)
     decide: handle(async (req) => {
       const approve = req.body?.approve === true;
-      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+      /** @type {string | null} the match a void was written to, once it stood */
+      let changed = null;
+      const answer = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         await client.query("savepoint amendment_decide");
         const { rows } = await client.query(
           `select * from scoring_amendment_decide($1, $2, $3)`,
@@ -860,8 +871,12 @@ export function amendmentRoutes({ pool, secret }) {
             : { ok: false, reason: "laws_refused", law: why, text: REFUSAL_TEXT[why] ?? why };
         }
         await client.query("release savepoint amendment_decide");
+        changed = owner[0]?.match_id ?? null;
         return out;
       });
+      // Committed (runAsPrincipal has returned): the public entry drops now.
+      if (changed) onChange?.({ k: "match", id: String(changed).toLowerCase() });
+      return answer;
     }),
   };
 }
@@ -904,9 +919,13 @@ export function amendmentRoutes({ pool, secret }) {
  *      then has two honest choices, both theirs to make: discard it, or leave
  *      it held until the log changes (a bowler named, a batter in) and try
  *      again. Neither is taken for them.
- * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/quarantine, /quarantine/:id/resolve
+ *
+ * `onChange` (GA-I36 N2): as amendmentRoutes' — told `{k: "match", id}` once
+ * a release that wrote a ball has committed. A discard writes no ball.
+ * @param {RouteDeps & {onChange?: (note: {k: string, id: string}) => void}} deps
+ * @returns {Record<string, IdHandler>}  /matches/:id/quarantine, /quarantine/:id/resolve
  */
-export function quarantineRoutes({ pool, secret }) {
+export function quarantineRoutes({ pool, secret, onChange }) {
   /** @param {(req: IdRequest) => Promise<unknown>} fn @returns {IdHandler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
@@ -932,7 +951,9 @@ export function quarantineRoutes({ pool, secret }) {
     //   | { ok: false, reason: "laws_refused", law, text }   (nothing written; still held)
     resolve: handle(async (req) => {
       const accept = req.body?.accept === true;
-      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+      /** @type {string | null} the match a released ball was written to, once it stood */
+      let changed = null;
+      const answer = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         // The row is read under RLS first: a caller who may not see it may not
         // resolve it, and the function then applies the stricter rule.
         const { rows: q } = await client.query(
@@ -1009,12 +1030,104 @@ export function quarantineRoutes({ pool, secret }) {
             : { ok: false, reason: "laws_refused", law: why, text: REFUSAL_TEXT[why] ?? why };
         }
         await client.query("release savepoint quarantine_release");
+        changed = q[0].match_id;
         return out;
       });
+      if (changed) onChange?.({ k: "match", id: String(changed).toLowerCase() });
+      return answer;
     }),
   };
 }
 
+
+/**
+ * The corrections on a match, as a list (GA-I36 N1). Until this there were
+ * only the request and the decision: no screen could show what was waiting.
+ *
+ * NOTHING HERE WIDENS A READ. Every row comes through a policy that exists:
+ * `scoring_amendment` under scoring_amendment_read (the requester, an
+ * approver over the match, `audit.read`) and `ball_event_quarantine` under
+ * its three (scoring.correct, the approver, the submitting scorer). A reader
+ * none of them admits gets two empty lists, which is the same answer as a
+ * match with nothing waiting; the public never reaches this route.
+ *
+ * The reason is returned with every amendment row the policy returns: the
+ * policy is exactly D9's audience for it. The requester is a role word on the
+ * screen ("the scorer"); his name is returned only to a reader who may decide
+ * the match (`requesterName`), and only where app_user lets that reader see
+ * it. `canDecide` is a courtesy for drawing the buttons: the decide and
+ * resolve functions check their own authority, and refuse the requester or
+ * the submitting scorer whatever this says.
+ *
+ *   GET /api/matches/:id/corrections → {amendments: [...], held: [...]}
+ *   GET /api/corrections             → {matches: [{matchId, amendments, held, oldest}]}
+ *       every match with something open that the reader's policies show
+ *       him: the To-resolve screen's O7 row (counts only, never a reason or
+ *       a name).
+ * @param {RouteDeps} deps @returns {{forMatch: IdHandler, open: Handler}}
+ */
+export function correctionRoutes({ pool, secret }) {
+  /** @param {any} e @param {ApiResponse} res */
+  const fail = (e, res) => {
+    if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
+    if (e.code === "22P02") return res.status(404).json({ error: "not_found" });
+    res.status(e.status || 500).json({ error: e.code || e.message });
+  };
+  /** May this reader decide the row's match? (the approval capability, as the policies ask it) @param {string} t */
+  const decides = (t) => "app_can('scoring.amend.approve', " + t + ".school_id, match_team(" + t + ".match_id), NULL, " + t + ".match_id)";
+  return {
+    forMatch: async (req, res) => {
+      try {
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          const { rows: a } = await client.query(
+            `select a.id, a.target_key, a.reason, a.state, a.requested_at, a.decided_at, a.decided_note, a.applied_key,
+                    (a.requested_by = app_user_id()) as mine,
+                    (a.requested_by <> app_user_id() and ${decides("a")}) as can_decide,
+                    case when ${decides("a")} then u.name end as requester_name,
+                    b.innings as target_innings, b.seq as target_seq, b.kind as target_kind
+               from scoring_amendment a
+               left join app_user u on u.id = a.requested_by
+               left join ball_event b on b.match_id = a.match_id and b.idempotency_key = a.target_key
+              where a.match_id = $1
+              order by (a.state <> 'pending'), a.requested_at desc, a.id`, [req.params.id]);
+          const { rows: h } = await client.query(
+            `select q.id, q.body, q.quarantined_at, q.submitted_epoch, q.current_epoch,
+                    (q.scorer_user_id = app_user_id()) as mine,
+                    (q.scorer_user_id <> app_user_id() and ${decides("q")}) as can_decide
+               from ball_event_quarantine q
+              where q.match_id = $1 and q.resolved_at is null
+              order by q.quarantined_at, q.id`, [req.params.id]);
+          return {
+            amendments: a.map((r) => ({
+              id: r.id, targetKey: r.target_key, reason: r.reason, state: r.state,
+              requestedAt: r.requested_at, decidedAt: r.decided_at, decidedNote: r.decided_note, appliedKey: r.applied_key,
+              mine: r.mine === true, canDecide: r.can_decide === true,
+              ...(r.requester_name ? { requesterName: r.requester_name } : {}),
+              target: r.target_seq == null ? null : { innings: r.target_innings, seq: r.target_seq, kind: r.target_kind },
+            })),
+            held: h.map((r) => ({
+              id: r.id, event: r.body?.payload ?? null, heldAt: r.quarantined_at,
+              submittedEpoch: r.submitted_epoch, currentEpoch: r.current_epoch,
+              mine: r.mine === true, canDecide: r.can_decide === true,
+            })),
+          };
+        });
+        res.json({ matchId: req.params.id, ...out });
+      } catch (/** @type {any} */ e) { fail(e, res); }
+    },
+    open: async (req, res) => {
+      try {
+        const rows = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => (await client.query(
+          `select match_id, sum(a)::int as amendments, sum(h)::int as held, min(at) as oldest from (
+             select match_id, 1 as a, 0 as h, requested_at as at from scoring_amendment where state = 'pending'
+             union all
+             select match_id, 0, 1, quarantined_at from ball_event_quarantine where resolved_at is null
+           ) x group by match_id order by min(at), match_id`)).rows);
+        res.json({ matches: rows.map((r) => ({ matchId: r.match_id, amendments: r.amendments, held: r.held, oldest: r.oldest })) });
+      } catch (/** @type {any} */ e) { fail(e, res); }
+    },
+  };
+}
 
 /**
  * Naming the side, which is where the safeguarding checks actually live.

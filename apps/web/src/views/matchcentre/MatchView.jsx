@@ -26,6 +26,10 @@ import { termsOf } from "../../lib/captain.js";
 import { cockpitGate } from "../../lib/cockpit.js";
 import { profile } from "../../lib/session.js";
 import { CoachTab } from "../cockpit/CoachTab.jsx";
+import { afterTheMatch, clockWords, correctedAt, correctionsOf, inningsWords, correctionText, withCorrectionLines } from "../../lib/corrections.js";
+import { ballLine } from "../../lib/correctionEffect.js";
+import { CorrectedChip, StaleLine } from "./corrected.jsx";
+import { CorrectionsSheet, pendingWords } from "./corrections.jsx";
 import { StateLabel } from "../../ui/stateLabel.jsx";
 
 /**
@@ -66,9 +70,19 @@ const TABS = [
  * The match's log and its fold. A signed-in session reads the real log and
  * never falls back to a reconstruction (a fabricated number beside a real
  * name reads exactly like a true one); the demonstration seeds one.
+ *
+ * While the match is live the log is read again on every poll and the
+ * figures follow it, as a live board should. Once it is not, the poll asks
+ * only whether the log has grown past the head on screen (`?since=head`): a
+ * correction made after the match — an approved amendment, a released ball —
+ * then says "Updated · refresh", and the figures change on the reader's tap,
+ * never under his finger (GA-I36 §7; there is no push, Kameel 8 Oct). A
+ * failed poll keeps the match on screen and says so, with the time of the
+ * read it is showing (I08).
  */
 function useMatchLog(match, players) {
-  const [state, setState] = useState(() => ({ loading: signedIn(), error: null, events: null }));
+  const [state, setState] = useState(() => ({ loading: signedIn(), error: null, events: null, recovered: new Map(), head: 0,
+    okAt: null, stale: false, refreshing: false, failed: false }));
   const live = match.status === "live";
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -76,8 +90,23 @@ function useMatchLog(match, players) {
     const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, liveRefreshMs());
     return () => clearInterval(t);
   }, [live]);
+  // Settled: is there a head beyond ours? Asked only once a read is on screen.
+  const settledHead = !live && signedIn() && state.events ? state.head : null;
   useEffect(() => {
-    if (!signedIn()) { setState({ loading: false, error: null, events: null }); return undefined; }
+    if (settledHead == null) return undefined;
+    const t = setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const { events: rows } = await api(`/api/matches/${match.id}/events?since=${settledHead}`);
+        setState((s) => ({ ...s, failed: false, stale: s.stale || (rows ?? []).some((r) => r.seq > settledHead) }));
+      } catch {
+        setState((s) => ({ ...s, failed: true }));
+      }
+    }, liveRefreshMs());
+    return () => clearInterval(t);
+  }, [match.id, settledHead]);
+  useEffect(() => {
+    if (!signedIn()) { setState((s) => ({ ...s, loading: false, error: null, events: null })); return undefined; }
     let cancelled = false;
     setState((s) => ({ ...s, loading: s.events == null, error: null }));
     (async () => {
@@ -85,13 +114,22 @@ function useMatchLog(match, players) {
         // `fold`: how the server folds this match — the fixture's start and
         // format (SCRBRD-113) — so the scorecard here folds it alike.
         const { events: rows, fold } = await api(`/api/matches/${match.id}/events`);
-        if (!cancelled) setState({ loading: false, error: null, events: (rows || []).map(fromRow), fold: fold ?? {} });
+        // A released held ball says so on its row (db/14); when it was
+        // released is the row's server time.
+        const recovered = new Map((rows || []).filter((r) => r.recovered).map((r) => [r.seq, Date.parse(r.server_ts)]));
+        const head = (rows || []).reduce((m, r) => Math.max(m, r.seq), 0);
+        if (!cancelled) setState({ loading: false, error: null, events: (rows || []).map(fromRow), fold: fold ?? {}, recovered, head,
+          okAt: Date.now(), stale: false, refreshing: false, failed: false });
       } catch (e) {
-        if (!cancelled) setState((s) => ({ ...s, loading: false, error: e.code || "unreachable" }));
+        // A read that fails with a match already on screen keeps it there and
+        // says so; only a first read that fails has nothing to show.
+        if (!cancelled) setState((s) => (s.events ? { ...s, loading: false, refreshing: false, failed: true }
+          : { ...s, loading: false, error: e.code || "unreachable" }));
       }
     })();
     return () => { cancelled = true; };
   }, [match.id, tick]);
+  const refresh = () => { setState((s) => ({ ...s, refreshing: true })); setTick((x) => x + 1); };
 
   const demo = useMemo(() => {
     if (signedIn()) return null;
@@ -110,6 +148,7 @@ function useMatchLog(match, players) {
   const folded = useMemo(() => (state.events ? deriveMatch(state.events, state.fold ?? {}) : null), [state.events, state.fold]);
   return {
     loading: state.loading, error: state.error, events: state.events, fold: state.fold ?? {}, demo: !!demo,
+    recovered: state.recovered, okAt: state.okAt, stale: state.stale, refreshing: state.refreshing, failed: state.failed, refresh,
     innings: folded ? folded.innings : (demo?.innings ?? []),
     result: folded ? folded.result : null,
     overs: match.overs || folded?.innings?.[0]?.overs || demo?.cfg?.overs || 20,
@@ -211,6 +250,28 @@ function useRainLine(match, innings, seen) {
 // ── end SCRBRD-130 R2 ──
 
 /**
+ * The corrections on this match a staff reader's policies show him (GA-I36
+ * N1: GET /api/matches/:id/corrections), re-read when the log grows and
+ * after a decision. `words` is the fixture's line ("1 correction awaiting
+ * approval"), or null with nothing to say — and for a reader no policy
+ * admits, that is always (the read answers two empty lists).
+ * @param {any} match  @param {boolean} on  @param {unknown} seen  what the log has grown to
+ */
+function useCorrections(match, on, seen) {
+  const [list, setList] = useState(/** @type {any} */ (null));
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!on) { setList(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${match.id}/corrections`)
+      .then((d) => { if (!cancelled) setList({ amendments: d?.amendments ?? [], held: d?.held ?? [] }); })
+      .catch(() => { if (!cancelled) setList(null); });
+    return () => { cancelled = true; };
+  }, [match.id, on, seen, n]);
+  return { list, words: pendingWords(list), reload: () => setN((x) => x + 1) };
+}
+
+/**
  * The captain's tab (SCRBRD-138 C3 to C5): after the Summary, only for a boy
  * who holds the honour (the `captain` prop, which the pupil app's match screen
  * passes). Anybody else has the six tabs and nothing suggests one is missing.
@@ -268,7 +329,7 @@ function TabBar({ tab, setTab, tabs = TABS }) {
  * not one this reader may open (§2.1 P4). Everything else is the Match Centre
  * as every signed-in reader has it.
  */
-function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false }) {
+function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
@@ -279,6 +340,10 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const staff = useMemo(() => (signedIn() && !captain && !focus?.length ? cockpitGate(profile()?.assignments, match) : null),
     [match, captain, focus]);
   const [tab, setTab] = useState(initialTab === "coach" && staff ? "coach" : "summary");
+  // The staff screen: signed in, not a family's or the captain's view.
+  const staffScreen = signedIn() && !captain && !focus?.length;
+  const corrections = useCorrections(match, staffScreen && !log.demo, log.events?.length ?? 0);
+  const [sheet, setSheet] = useState(!!initialCorrections);
   const played = log.innings.filter(Boolean);
   // The innings the Scorecard, Partnerships and Analytics tabs are on: the
   // one in play, until the reader picks another.
@@ -309,6 +374,10 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     // `played` is derived from log.events; PLAYERS is the roster read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.events, PLAYERS, match.id]);
+  // GA-I36: the corrections the log carries (voids that undid something, and
+  // released balls), the latest one's time for the chip, and the innings each
+  // moved. Read off the log on screen: nothing stored, nothing fetched.
+  const fixes = useMemo(() => (log.events ? correctionsOf(log.events, log.recovered) : []), [log.events, log.recovered]);
 
   // The server's words where it has a result (SCRBRD-114 phase 3a: a no
   // result, a draw, a decision beside play); the fold's while it has none.
@@ -325,6 +394,24 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   // a cup tie nobody has yet settled.
   const settled = !!log.result && !liveSO
     && !(log.result.outcome === "tie" && log.result.decidedBy === null && log.fold?.conditions?.["result.tie_break"] === "super_over");
+  const over = settled || match.status === "complete";
+  // One quiet `correction` line each, team-level, never a moment card.
+  const told = useMemo(() => withCorrectionLines(commentary, log.events ?? [], fixes, over), [commentary, log.events, fixes, over]);
+  const corrected = useMemo(() => inningsWords(log.events ?? [], fixes, log.innings), [log.events, fixes, log.innings]);
+  // The staff screen names the ball and who signed (by role); a family's or
+  // the captain's says what the public page says: when, never who or why.
+  const correctionLines = () => {
+    if (!staffScreen) return [correctionText(over)];
+    const nameOf = nameBook(played, PLAYERS);
+    const teamName = (_key, name) => teamOf(match, name).full;
+    return [...fixes].reverse().slice(0, 5).map((c) => {
+      const when = clockWords(c.at);
+      if (c.kind === "recovered") return `${when} · a held ball was released and written at the end of the log`;
+      const b = ballLine({ events: log.events ?? [], fold: log.fold, target: c.target, nameOf: (ref) => nameOf(ref), teamName });
+      const who = c.approved ? "asked by the scorer and approved" : afterTheMatch(log.events ?? [], c, over) ? "taken back by the scorer" : "taken back by the scorer during play";
+      return `${when} · ${who} · removed: ${b ? b.words : "a ball"}`;
+    });
+  };
 
   // The result, in one clear moment (SCRBRD-100 item 3): a synthetic line,
   // added only once the fold has actually decided the match, so it arrives
@@ -332,10 +419,10 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   // does — a reload never replays it. Its key is stable per match, so it can
   // only ever fire once.
   const momentsFeed = useMemo(() => {
-    if (!settled || !commentary.length) return commentary;
-    return [...commentary, { innings: Math.max(0, played.length - 1), over: 0, ball: 0, kind: "result", text: result, key: `result:${match.id}` }];
+    if (!settled || !told.length) return told;
+    return [...told, { innings: Math.max(0, played.length - 1), over: 0, ball: 0, kind: "result", text: result, key: `result:${match.id}` }];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commentary, settled, result, match.id]);
+  }, [told, settled, result, match.id]);
 
   // The spectator's moments: only what arrives while the page is open, so a
   // reload replays nothing. And the board's run count, ticking up to a new
@@ -362,7 +449,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     return p ? () => setProf(filterRecord(role, "players", p)) : null;
   };
 
-  const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
+  const ctx = { match, role, innings: played, result, commentary: told, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
     focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine, par, fold: log.fold, settled,
@@ -414,10 +501,24 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
         <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
           {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
         </h1>
-        {played.length > 0 && <HeaderScores match={match} played={played}/>}
+        {played.length > 0 && <HeaderScores match={match} played={played} corrected={corrected}/>}
         {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
+        {!log.demo && <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/>}
+        {!log.demo && <StaleLine stale={log.stale} refreshing={log.refreshing} failed={log.failed} okAt={log.okAt} onRefresh={log.refresh}/>}
+        {corrections.words && (
+          <button type="button" data-testid="mc-corrections-open" onClick={() => { corrections.reload(); setSheet(true); }} className="pressBtn os-state"
+            style={{ minHeight: "44px", padding: `0 ${T.space.md}`, justifySelf: "start", display: "inline-flex", alignItems: "center", gap: T.space.xs,
+              background: "transparent", border: `1px solid ${T.semantic.warning}`, borderRadius: T.radius.pill, cursor: "pointer",
+              color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+            {corrections.words} <span aria-hidden="true">›</span>
+          </button>
+        )}
       </header>
+      {sheet && staffScreen && !log.demo && log.events && (
+        <CorrectionsSheet match={match} events={log.events} fold={log.fold} commentary={commentary} list={corrections.list}
+          onClose={() => setSheet(false)} onDecided={() => { corrections.reload(); log.refresh(); }}/>
+      )}
 
       {!log.loading && !log.error && (
         <div style={{ display: "grid", gap: T.space.md, margin: `${T.space.md} 0` }}>
@@ -431,7 +532,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           {match.status === "complete" && !log.demo && (
             <>
               <OnwardLinks match={match} sides={sides} matches={matches} onOpenFixture={onOpenFixture} onTeamResults={onTeamResults}/>
-              <ConfirmScorecardPrompt match={match} role={role} commentary={commentary} innings={played}/>
+              <ConfirmScorecardPrompt match={match} role={role} commentary={commentary} innings={played} onFiled={corrections.reload}/>
             </>
           )}
         </div>
