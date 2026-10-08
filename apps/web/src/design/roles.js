@@ -269,9 +269,9 @@ const NAV_CAPABILITY = {
    nothing here adds a destination the capability map withheld.
 */
 const NAV_GROUPS = [
-  // `leagues` is still a destination here (it has its own capability, its own
-  // module and its own view), but it is drawn inside the Competitions home
-  // (HOMES below), not as a second entry in the menu.
+  // `leagues` is still a destination here (its own capability, module and view),
+  // but the menu draws it inside the Competitions home, not as a second entry
+  // (design/homes.js, lib/homeNav.js).
   { key:"play",    label:"Play",       items:["dashboard","news","matches","calendar","competitions","leagues","officials"] },
   { key:"people",  label:"People",     items:["squad","profiles","injuries","staff"] },
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
@@ -339,91 +339,8 @@ const personaFor = (roles) => {
   return hit ? hit[0] : null;
 };
 
-/* ── Homes (GA-I30) ──────────────────────────────────────────────────
-   One place per domain. A HOME is a menu entry that gathers destinations which
-   already exist, so a person lands in one place for grounds, transport or
-   competitions instead of hunting through the menu.
-
-   A home decides NOTHING about who may see what. Each section (and each link)
-   names the destination it came from (`from`), and is drawn only when the
-   reader reaches that destination today: the same capability check
-   (NAV_CAPABILITY, through roleGrants) and then the same module switch
-   (useNav). There is no second list of roles anywhere in this block. A reader
-   who reaches none of a home's sections is not offered the home.
-
-   `key` is the nav key the home is drawn under, and it is a destination that
-   existed before homes did, so every `nav-<key>` test id, every saved session
-   and every walk that names it still lands where it did. `absorbs` lists
-   destinations that were their own menu entries and now live inside the home;
-   they are still routes (App renders them as the home opened on that
-   section), they are just not a second item in the menu.
-
-   Nothing here is a read. A section is the view that was already there, with
-   the reads it already makes.
-*/
-const HOMES = {
-  competitions: {
-    key: "competitions", title: "Competitions", color: "amber", absorbs: ["leagues"],
-    sections: [
-      { key: "competitions", label: "Competitions", from: "competitions" },
-      { key: "leagues",      label: "Leagues",      from: "leagues"      },
-    ],
-    links: [],
-  },
-  // Transport: the trips and the fleet, the kit register, and the ground
-  // schedule that has always sat on the Logistics screen under its capability.
-  logistics: {
-    key: "logistics", title: "Logistics", color: "orange", absorbs: [],
-    sections: [
-      { key: "transport", label: "Transport", from: "logistics" },
-      { key: "equipment", label: "Equipment", from: "logistics" },
-      { key: "grounds",   label: "Grounds",   from: "logistics" },
-    ],
-    links: [{ to: "fields", label: "Fields & pitch profiles", from: "fields" }],
-  },
-  // Grounds: the fields and their pitches. The ground schedule is on the
-  // Logistics screen under transport.read; it is linked to, not copied, so a
-  // reader sees it exactly where, and only if, they did before.
-  fields: {
-    key: "fields", title: "Fields & Pitch Profiles", color: "teal", absorbs: [],
-    sections: [
-      { key: "fields", label: "Fields & pitches", from: "fields" },
-    ],
-    links: [{ to: "logistics", section: "grounds", label: "Ground schedule", from: "logistics" }],
-  },
-};
-
-/** absorbed destination → the home it is drawn inside */
-const HOME_OF = Object.fromEntries(Object.values(HOMES).flatMap((h) => h.absorbs.map((k) => [k, h.key])));
-
-/**
- * What a reach (the destinations a reader holds, capability- and module-
- * narrowed) shows of one home: the sections and links whose `from` is in it.
- * `visible` is false when no section is, and then the home is not offered.
- */
-const homeParts = (homeKey, reach) => {
-  const h = HOMES[homeKey];
-  const sections = h.sections.filter((s) => reach.includes(s.from));
-  return { sections, links: h.links.filter((l) => reach.includes(l.from)), visible: sections.length > 0 };
-};
-
-/**
- * Reach, collapsed to what the menu draws: an absorbed destination becomes its
- * home (at the place it held, once), and a home none of whose sections is in
- * the reach is dropped. Order is the reach's own.
- */
-const collapseHomes = (reach) => {
-  const out = [];
-  for (const k of reach) {
-    const h = HOME_OF[k] ?? k;
-    if (HOMES[h] && !homeParts(h, reach).visible) continue;
-    if (!out.includes(h)) out.push(h);
-  }
-  return out;
-};
-
-/** Every destination a SET of roles reaches, homes' members included: what any of them holds. */
-const reachForRoles = (roles) => {
+/** The destinations a SET of roles reaches: what any of them holds. */
+const navForRoles = (roles) => {
   const held = [...new Set(roles)];
   const holds = (k) => { const cap = NAV_CAPABILITY[k]; return cap === null || held.some((r) => roleGrants(r, cap)); };
   const persona = personaFor(held);
@@ -434,13 +351,8 @@ const reachForRoles = (roles) => {
   return NAV_ORDER.filter((k) => (!PERSONA_ONLY.has(k) || beside.has(k)) && holds(k));
 };
 
-/** The menu for a SET of roles: their reach, with each home drawn once. */
-const navForRoles = (roles) => collapseHomes(reachForRoles(roles));
-
 /** A persona's destinations: its role, plus the roles it always comes with. */
 const navFor = (role) => navForRoles([role, ...(ROLE_IDENTITY[role]?.also ?? [])]);
-/** ...and everything that persona reaches, homes' members included. */
-const reachFor = (role) => reachForRoles([role, ...(ROLE_IDENTITY[role]?.also ?? [])]);
 
 /* ── Legacy names — retired (SCRBRD-027) ─────────────────────────────
    The demonstration accounts, the seeded fixtures and the onboarding persona
@@ -466,7 +378,7 @@ const canonicalRole = (r) => r;
 // Descriptors, not a spread: `{ ...id }` would copy the colour getter's
 // VALUE at import time, and every role would keep the theme it loaded in.
 const ROLES = Object.fromEntries(
-  Object.entries(ROLE_IDENTITY).map(([r, id]) => [r, Object.defineProperties({ nav: navFor(r), reach: reachFor(r) }, Object.getOwnPropertyDescriptors(id))]),
+  Object.entries(ROLE_IDENTITY).map(([r, id]) => [r, Object.defineProperties({ nav: navFor(r) }, Object.getOwnPropertyDescriptors(id))]),
 );
 
 /** Roles grouped by access domain — for a legend, or a role picker. */
@@ -513,4 +425,4 @@ const NAV_META = {
   me:           { icon:"id-card", label:"Me"           },
 };
 
-export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, HOMES, HOME_OF, canonicalRole, collapseHomes, groupNav, homeParts, navFor, navForRoles, personaFor, reachFor, reachForRoles };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, personaFor };

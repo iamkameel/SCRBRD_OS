@@ -10,7 +10,8 @@ import { LoginPage } from "./auth/LoginPage.jsx";
 import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
 // Somebody signed in who holds nothing yet: their requests, and how to ask (SCRBRD-140).
 import { NoSchool } from "./auth/NoSchool.jsx";
-import { HOME_OF, NAV_META, ROLES } from "./design/roles.js";
+import { NAV_META, ROLES } from "./design/roles.js";
+import { HOME_OF } from "./design/homes.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";

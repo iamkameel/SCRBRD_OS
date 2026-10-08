@@ -22,11 +22,10 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ROLES as POLICY_ROLES, roleGrants } from "@scrbrd/policy/roles";
 import { MODULE_OF_NAV } from "@scrbrd/policy/modules";
-import {
-  HOMES, HOME_OF, NAV_CAPABILITY, NAV_ORDER, PERSONA_ONLY, ROLE_IDENTITY, ROLES,
-  collapseHomes, homeParts, navFor, personaFor, reachFor,
-} from "../src/design/roles.js";
+import { NAV_CAPABILITY, NAV_ORDER, PERSONA_ONLY, ROLE_IDENTITY, ROLES, personaFor } from "../src/design/roles.js";
+import { HOMES, HOME_OF, collapseHomes, homeParts } from "../src/design/homes.js";
 import { HomeBar } from "../src/shell/HomeBar.jsx";
+import { useMenu } from "../src/lib/homeNav.js";
 import { CompetitionsView } from "../src/views/CompetitionsView.jsx";
 import { LeagueView } from "../src/views/LeagueView.jsx";
 import { LogisticsView } from "../src/views/LogisticsView.jsx";
@@ -40,6 +39,10 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const heldBy = (r) => [r, ...(ROLE_IDENTITY[r].also ?? [])];
 /** The capability check, written out from the data: null is everyone's. */
 const holds = (roles, k) => NAV_CAPABILITY[k] === null || roles.some((r) => roleGrants(r, NAV_CAPABILITY[k]));
+/** What a role reaches: the menu as it has always been (ROLES[r].nav, Leagues its own entry). */
+const reachFor = (r) => ROLES[r].nav;
+/** What the shell now draws: that reach with each home once (lib/homeNav.js useMenu, on the capability stage). */
+const menu = (r) => collapseHomes(ROLES[r].nav);
 const STAFF_ROLES = POLICY_ROLES.filter((r) => personaFor(heldBy(r)) === null);
 
 group("The homes are built from destinations that exist, under the capability they always had");
@@ -75,23 +78,23 @@ group("For every role: a section is shown exactly when the menu would have shown
       if (!eq(got.sections.map((s) => s.key), want)) bad.push(`${r}/${hm.key} sections ${got.sections.map((s) => s.key)} != ${want}`);
       if (!eq(got.links.map((l) => l.to), wantLinks)) bad.push(`${r}/${hm.key} links`);
       if (got.visible !== (want.length > 0)) bad.push(`${r}/${hm.key} visible`);
-      if (navFor(r).includes(hm.key) !== (want.length > 0)) bad.push(`${r}/${hm.key} in nav`);
+      if (menu(r).includes(hm.key) !== (want.length > 0)) bad.push(`${r}/${hm.key} in nav`);
     }
   }
   ok(`${STAFF_ROLES.length} roles x 3 homes: sections, links and the menu entry match the capability data`, bad.length === 0, bad.join(" | "));
 
   const none = STAFF_ROLES.filter((r) => Object.values(HOMES).every((hm) => !homeParts(hm.key, reachFor(r)).visible));
   ok("a role that reaches none of a home's parts has no entry for it", STAFF_ROLES.every((r) =>
-    Object.values(HOMES).every((hm) => hm.sections.some((s) => holds(heldBy(r), s.from)) || !ROLES[r].nav.includes(hm.key))));
+    Object.values(HOMES).every((hm) => hm.sections.some((s) => holds(heldBy(r), s.from)) || !menu(r).includes(hm.key))));
   ok("...for example a groundskeeper has no Competitions, a transport coordinator neither Competitions nor Fields",
-     !ROLES.facilities.nav.includes("competitions") && !ROLES.transportcoordinator.nav.includes("competitions") && !ROLES.transportcoordinator.nav.includes("fields"));
-  ok(`${none.length} roles reach none of the three, and so get none`, none.every((r) => !["competitions", "logistics", "fields"].some((k) => ROLES[r].nav.includes(k))), none.join());
+     !menu("facilities").includes("competitions") && !menu("transportcoordinator").includes("competitions") && !menu("transportcoordinator").includes("fields"));
+  ok(`${none.length} roles reach none of the three, and so get none`, none.every((r) => !["competitions", "logistics", "fields"].some((k) => menu(r).includes(k))), none.join());
 
   // The old menu, rebuilt: the reach (every destination, Leagues its own entry).
   const diff = [];
   for (const r of STAFF_ROLES) {
     const old = NAV_ORDER.filter((k) => holds(heldBy(r), k) && !PERSONA_ONLY.has(k));
-    const now = ROLES[r].nav;
+    const now = menu(r);
     const lost = old.filter((k) => !now.includes(k) && !(k in HOME_OF));
     const gained = now.filter((k) => !old.includes(k));
     const leaguesOnly = old.includes("leagues") && !now.includes("leagues") && now.includes("competitions");
@@ -101,9 +104,9 @@ group("For every role: a section is shown exactly when the menu would have shown
   }
   ok("against the old menu, no role gained an entry and none lost one but Leagues, which moved into Competitions", diff.length === 0, diff.join(" | "));
   ok("every entry a role is offered is one whose capability it holds",
-     STAFF_ROLES.every((r) => ROLES[r].nav.every((k) => holds(heldBy(r), k))));
-  ok("a parent's and a pupil's bars carry no home", ["guardian", "player"].every((r) => !Object.keys(HOMES).some((k) => ROLES[r].nav.includes(k))));
-  ok("Leagues is never a menu entry of its own", STAFF_ROLES.every((r) => !ROLES[r].nav.includes("leagues")));
+     STAFF_ROLES.every((r) => menu(r).every((k) => holds(heldBy(r), k))));
+  ok("a parent's and a pupil's bars carry no home", ["guardian", "player"].every((r) => !Object.keys(HOMES).some((k) => menu(r).includes(k))));
+  ok("Leagues is never a menu entry of its own", STAFF_ROLES.every((r) => !menu(r).includes("leagues")));
 }
 
 group("Modules: switching a module off removes that section, and the home only when none is left");
@@ -138,14 +141,14 @@ group("The role → sections table (what each home shows, by capability)");
      eq(who("logistics"), STAFF_ROLES.filter((r) => roleGrants(r, "transport.read"))) && who("logistics").every((r) => eq(homeParts("logistics", reachFor(r)).sections.map((s) => s.key), ["transport", "equipment", "grounds"])));
   ok("Grounds: Fields for every role that holds facility.read, and only those",
      eq(who("fields"), STAFF_ROLES.filter((r) => roleGrants(r, "facility.read"))));
-  ok("a driver sees Transport and no Competitions or Fields", ROLES.driver.nav.includes("logistics") && !ROLES.driver.nav.includes("competitions") && !ROLES.driver.nav.includes("fields"));
+  ok("a driver sees Transport and no Competitions or Fields", menu("driver").includes("logistics") && !menu("driver").includes("competitions") && !menu("driver").includes("fields"));
   ok("a groundskeeper sees Fields, with no link to the ground schedule (no transport.read)",
-     ROLES.facilities.nav.includes("fields") && homeParts("fields", reachFor("facilities")).links.length === 0);
+     menu("facilities").includes("fields") && homeParts("fields", reachFor("facilities")).links.length === 0);
   ok("a coach sees Fields with the link to the ground schedule", homeParts("fields", reachFor("coach")).links.map((l) => l.to).join() === "logistics");
   ok("a competition admin sees Competitions and neither Transport nor Fields",
-     ROLES.competitionadmin.nav.includes("competitions") && !ROLES.competitionadmin.nav.includes("logistics") && !ROLES.competitionadmin.nav.includes("fields"));
+     menu("competitionadmin").includes("competitions") && !menu("competitionadmin").includes("logistics") && !menu("competitionadmin").includes("fields"));
   ok("a principal sees Fields without the link (no transport.read), and no Transport",
-     ROLES.principal.nav.includes("fields") && !ROLES.principal.nav.includes("logistics") && homeParts("fields", reachFor("principal")).links.length === 0);
+     menu("principal").includes("fields") && !menu("principal").includes("logistics") && homeParts("fields", reachFor("principal")).links.length === 0);
 }
 
 group("The bar, drawn");
@@ -195,6 +198,29 @@ group("The screens carry the bar, with the same test ids as before");
      /home-fields-link-logistics-grounds/.test(fv) && !/home-fields-link/.test(draw(FieldsView, { role: "facilities", onNav: () => {} })));
   ok("no contact detail came with the home: the bar's markup holds no phone, email or name",
      !/phone|email|@|\+27/.test(draw(HomeBar, { home: "logistics", role: "coach", section: "transport", onSection: () => {}, onNav: () => {} })));
+}
+
+group("The menu the shell draws (useMenu, which Sidebar and MobileNav both read), signed out, for every role");
+{
+  const drawn = (role) => renderToStaticMarkup(h(function Menu() { return h("i", null, useMenu(role).join(",")); })).replace(/<\/?i>/g, "").split(",").filter(Boolean);
+  ok("for every role it is exactly the capability-stage menu: the reach with each home once", STAFF_ROLES.every((r) => eq(drawn(r), menu(r))),
+     STAFF_ROLES.filter((r) => !eq(drawn(r), menu(r))).join());
+  const coach = drawn("coach");
+  ok("a coach's menu has Competitions, Logistics and Fields once each, and no Leagues", ["competitions", "logistics", "fields"].every((k) => coach.filter((x) => x === k).length === 1) && !coach.includes("leagues"), coach.join());
+  const tc = drawn("transportcoordinator");
+  ok("a transport coordinator's has Logistics and neither Competitions nor Fields", tc.includes("logistics") && !tc.includes("competitions") && !tc.includes("fields"), tc.join());
+  const gk = drawn("facilities");
+  ok("a groundskeeper's has Fields and neither Competitions nor Logistics", gk.includes("fields") && !gk.includes("competitions") && !gk.includes("logistics"), gk.join());
+  const ca = drawn("competitionadmin");
+  ok("a competition admin's has Competitions and no Leagues, Logistics or Fields", ca.includes("competitions") && !["leagues", "logistics", "fields"].some((k) => ca.includes(k)), ca.join());
+  ok("the phone's bar reads the same menu", /useMenu/.test(readFileSync(new URL("../src/shell/MobileNav.jsx", import.meta.url), "utf8")) && /useMenu/.test(readFileSync(new URL("../src/shell/Sidebar.jsx", import.meta.url), "utf8")));
+}
+
+group("The home module imports nothing, so the public graph does not grow");
+{
+  const src = (f) => readFileSync(new URL(f, import.meta.url), "utf8");
+  ok("design/homes.js has no import", !/^\s*import\s/m.test(src("../src/design/homes.js")));
+  ok("design/roles.js and lib/features.js (in the public graph) do not import it", !/homes\.js|homeNav\.js/.test(src("../src/design/roles.js").replace(/\/\/.*$/gm, "")) && !/homes\.js|homeNav\.js/.test(src("../src/lib/features.js")));
 }
 
 group("The shell routes the folded destination to its home");

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { HOMES } from "../design/roles.js";
-import { useHome } from "../lib/features.js";
+import { HOMES } from "../design/homes.js";
+import { useHome } from "../lib/homeNav.js";
 import { D } from "../design/tokens.js";
 
 /* ══════════════════════════════════════════════════════
