@@ -1511,7 +1511,10 @@ try {
     ok("...and says so in words", /Hilton College has your request/.test(await text(s.page)));
     await click(s.page, /Back to sign in/, 4000); await s.page.waitForTimeout(500);
     await s.page.locator("#login-email").fill("n.zulu@example.invalid");
-    await click(s.page, /^Sign In$/, 5000); await s.page.waitForTimeout(2000);
+    await click(s.page, /^Sign In$/, 5000);
+    // Wait for the state the step asserts (the pending request drawn), not a fixed pause: under load the sign-in round trip can outlast any guess.
+    await s.page.locator('[data-testid="pending-requests"]').waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    await s.page.locator('[data-testid="request-pending"]').waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
     ok("signing in shows the pending request and no shell", await s.page.locator('[data-testid="pending-requests"]').count() === 1
        && await s.page.locator('[data-testid="request-pending"]').count() === 1 && await s.page.locator('[data-testid="os-main"]').count() === 0);
     ok("no console errors (stranger)", s.errors.length === 0);
@@ -2372,6 +2375,24 @@ try {
     let restoreWhitfield = false;
     try {
       const parentId = (await owner.query(`select id from app_user where email = 'parent@example.invalid'`)).rows[0].id;
+      // A1's rows are this list's too: the seed answers no public-name consent
+      // (R8b) and records no number for Sarah's two (R9). They are given here,
+      // through the same doors a parent uses, so A0's counts are about the
+      // answers alone; the A1 walk below takes them away and puts them back.
+      for (const [email, kids] of [["parent@example.invalid", [PILLAY]], ["sarah@example.invalid", [KD, DM]]]) {
+        const tok = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email, deviceId: "browser-read-a0" }) })).json().then((j) => j.token);
+        for (const kid of kids) {
+          const said = await fetch(`${API}/api/players/${kid}/public-name`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${tok}` },
+            body: JSON.stringify({ yes: true, version: "public-names-2026-10" }) });
+          ok(`setup: ${email} answers the public-name question for ${kid.slice(-4)}`, said.status === 200, said.status);
+        }
+      }
+      for (const kid of [KD, DM]) {
+        await owner.query(`insert into emergency_contact (player_id, school_id, priority, name, relationship, phone)
+                           select p.id, p.school_id, 1, 'Verify Contact', 'mother', '082 555 0100' from player p
+                            where p.id = $1 and not exists (select 1 from emergency_contact c where c.player_id = p.id and c.active)`, [kid]);
+      }
       const T = (await owner.query(
         `insert into match (school_id, team_code, opponent, starts_at, format, overs, status, ground_id)
          values ($1, '1XI', 'Verify GA-I20 XI', now() + interval '4 days', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001') returning id`, [HIL])).rows[0].id;
@@ -2494,6 +2515,193 @@ try {
       await S.ctx.close();
     } finally {
       if (restoreWhitfield) await owner.query(`update player set team_code = '1XI' where id = $1`, [WHITFIELD]).catch(() => {});
+      await owner.end().catch(() => {});
+    }
+  }
+
+  // ── GA-I20 A1: the rest of the list, the record, the count on Family ──
+  //
+  // docs/design/GA-I20_parent_action_list.md §7 A1, with the seed's people:
+  // retiring R Pillay's last number adds "No number is on record to ring"
+  // (R9) and adding one through its door takes it away; "What you have
+  // agreed" carries the version and the time; a seat to confirm again (R3)
+  // appears after the fixture moves under a lift and leaves after "Confirm
+  // again"; the driver reads her requests as a count with no name (R5); a
+  // parent whose link has ended and whose request is with the office reads it
+  // as pending, never approved; Sarah's two children carry a count each on
+  // Family, and nothing sums them.
+  group("The parent's action list, A1: every row from a read, and each one's door");
+  {
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    const HIL = "11111111-1111-1111-1111-111111111111";
+    const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005", JAMES = "aaaaaaaa-0000-0000-0000-000000000001";
+    const KD = "aaaaaaaa-0000-0000-0000-000000000006", DM = "bbbbbbbb-0000-0000-0000-000000000001";
+    const OTHERS = /Bekker|Naidoo|Cele|Whitfield|Mkhize|Dlamini|Botha|Khumalo|Mahlangu|Sithole/;
+    const todo = (p) => p.locator('[data-testid="todo-card"]');
+    const settled = async (p) => {
+      await p.waitForFunction(() => { const e = document.querySelector('[data-testid="todo-count"]'); return !!e && !/^Reading/.test(e.innerText); }, null, { timeout: 9000 }).catch(() => {});
+      return (await p.locator('[data-testid="todo-count"]').first().innerText({ timeout: 2000 }).catch(() => "")).trim();
+    };
+    const tokOf = async (email) => (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, deviceId: "browser-read-a1" }) })).json()).token;
+    const call = async (tok, path, body) => {
+      const r = await fetch(`${API}${path}`, { method: body === undefined ? "GET" : "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${tok}` }, body: body === undefined ? undefined : JSON.stringify(body) });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    };
+    const grant = (on) => owner.query(`insert into feature_grant (key, school_id, granted, note) values ('lift_club', $1, $2, 'browser-read-a1')
+                                       on conflict (key, school_id) do update set granted = excluded.granted`, [HIL, on]);
+    // The pilot login lists some of the seed's accounts; the others are typed in, as a parent would.
+    const signInAs = async (page, email) => {
+      await click(page, /Get Started|Log In/, 5000);
+      await page.waitForTimeout(500);
+      if (!(await click(page, new RegExp(email.replace(/[.]/g, "\\.")), 3000))) await page.fill("#login-email", email).catch(() => {});
+      await click(page, /^Sign In$/, 5000);
+      await page.waitForTimeout(2000);
+      return (await page.locator('[data-testid="persona-bar"]').count()) === 1;
+    };
+    const logRowsFor = async (id) => (await owner.query(`select count(*)::int n from access_log where resource in ('emergency_contacts', 'emergency_contact_count') and $1 = any(record_ids)`, [id])).rows[0].n;
+    let lifted = false;
+    try {
+      // Every fixture of R Pillay's side still to come is answered (A0 left them so).
+      const P = await open();
+      const at = (id) => P.page.locator(`[data-testid="${id}"]`);
+      ok("A1: the guardian signs in", await signIn(P.page, /parent@example\.invalid/));
+      ok("...and with every source answered and nothing owed, the list says so", await settled(P.page) === "Nothing to do for R Pillay");
+      const rec = await at("todo-record").innerText({ timeout: 4000 }).catch(() => "");
+      ok("'What you have agreed': the terms, with the version her link records",
+         /The school's terms: agreed/.test(rec) && /popia-2026-01/.test(rec), rec);
+      ok("...his name on public pages: on, given by you, with the wording's version and the time it was recorded",
+         /Name on public pages: on/.test(rec) && /given by you · \d{1,2} \w{3} \d{4} \d\d:\d\d · public-names-2026-10/.test(rec), rec);
+      ok("...health monitoring said once as not in use at his school (the module is off), and no other person named",
+         /Health monitoring: not in use at Hilton College/.test(rec) && !OTHERS.test(rec), rec);
+
+      // ── R9: the last number retired, then one added through the row's door ──
+      await owner.query(`update emergency_contact set active = false where player_id = $1 and active`, [PILLAY]);
+      const logged = await logRowsFor(PILLAY);
+      await at("nav-family").first().click({ timeout: 6000 }).catch(() => {});
+      await P.page.waitForTimeout(1500);
+      await at("nav-children").first().click({ timeout: 6000 }).catch(() => {});
+      const r9 = await settled(P.page);
+      const r9Row = await at(`todo-row-R9-${PILLAY}`).innerText({ timeout: 4000 }).catch(() => "");
+      ok("every number retired: 'No number is on record to ring if R Pillay is hurt', counted, and no number on the card",
+         r9 === "1 to do" && /No number is on record to ring if R Pillay is hurt/.test(r9Row) && /Who to ring/.test(r9Row)
+         && !/\d{3} \d{3} \d{4}|\+27/.test(await todo(P.page).innerText()), [r9, r9Row]);
+      ok("...and the count it came from wrote nothing to the access log (no number was read)", await logRowsFor(PILLAY) === logged);
+      await at(`todo-row-R9-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+      await P.page.waitForTimeout(1800);
+      ok("its door opens Family with Who to ring open on his card, saying nobody is on record", await at("family-file").count() === 1 && await at("who-to-ring").count() === 1
+         && /No one is on record to ring/.test(await at("who-to-ring").innerText().catch(() => "")));
+      ok("his card on Family carries his own count: '1 to do'", /1 to do/.test(await at(`family-todo-count-${PILLAY}`).innerText({ timeout: 6000 }).catch(() => "")));
+      await at("contact-add").click({ timeout: 4000 }).catch(() => {});
+      await at("contact-name").fill("Verify Contact").catch(() => {});
+      await at("contact-phone").fill("082 555 0199").catch(() => {});
+      await at("contact-save").click({ timeout: 4000 }).catch(() => {});
+      await P.page.waitForTimeout(1500);
+      ok("she adds a number there", (await owner.query(`select count(*)::int n from emergency_contact where player_id = $1 and active`, [PILLAY])).rows[0].n === 1);
+      await at(`family-todo-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+      await P.page.waitForTimeout(800);
+      const back = await settled(P.page);
+      ok("his count opens his Home, and the row is gone: 'Nothing to do for R Pillay'", await at("family-home").count() === 1 && back === "Nothing to do for R Pillay"
+         && await at(`todo-row-R9-${PILLAY}`).count() === 0, back);
+
+      // ── R3 and R5: a lift, the fixture moving under it, and the family's yes again ──
+      await grant(true);
+      lifted = true;
+      const head = await tokOf("principal@example.invalid"), driverTok = await tokOf("parent.whitfield@example.invalid"), parentTok = await tokOf("parent@example.invalid");
+      ok("A1 lifts: the principal signs the policy", (await call(head, "/api/lifts/policy", { schoolId: HIL, requiresClearance: false, allowOneToOne: true, meetNote: "the Chapel car park",
+        body: "Lifts to fixtures are arranged between families; the school facilitates and does not operate them, and does not inspect or insure any car. A driver undertakes that she holds a licence, that the car is insured and roadworthy, and that every boy wears a belt." })).status === 200);
+      const card = (await owner.query(`select id from emergency_contact where player_id = $1 and active order by priority limit 1`, [JAMES])).rows[0];
+      ok("...H Whitfield declares", (await call(driverTok, "/api/lifts/declaration", { schoolId: HIL, vehicle: "silver Toyota Fortuner", registration: "nd 123-456", seats: 3,
+        licenceHeld: true, insured: true, roadworthy: true, belts: true, codeAcknowledged: true, contactId: card?.id })).status === 200);
+      const L = (await owner.query(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status, ground_id)
+         values ($1, '1XI', 'Verify GA-I20 Lift XI', now() + interval '3 days', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001') returning id, starts_at`, [HIL])).rows[0];
+      // Both boys answered for it (each by his own parent), so the list is about the lift alone.
+      await owner.query(`insert into match_availability (match_id, player_id, school_id, status, declared_by)
+                         select $1, p.id, p.school_id, 'available', u.id from player p
+                           join app_user u on u.email = case p.id when $2 then 'parent@example.invalid' else 'parent.whitfield@example.invalid' end
+                          where p.id in ($2, $3)`, [L.id, PILLAY, JAMES]);
+      const offered = await call(driverTok, `/api/matches/${L.id}/lifts`, { legs: [{ leg: "out", seats: 3, meetKind: "school",
+        meetAt: new Date(new Date(L.starts_at).getTime() - 90 * 60_000).toISOString() }] });
+      const OUT = offered.body?.offers?.[0]?.id;
+      ok("...and offers a lift there", offered.status === 200 && Boolean(OUT), offered.body);
+      const asked = await call(parentTok, `/api/lifts/${OUT}/seats`, { playerId: PILLAY });
+      ok("R Pillay's parent asks for a seat for him", asked.status === 200, asked.body);
+      const D = await open();
+      ok("the driver signs in", await signInAs(D.page, "parent.whitfield@example.invalid"));
+      await D.page.waitForTimeout(800);
+      const dCount = await settled(D.page);
+      const dCard = await todo(D.page).innerText().catch(() => "");
+      ok("the driver's list: '1 request for a seat on your lift there for … v Verify GA-I20 Lift XI', counted, and no boy's name (R5)",
+         /1 request for a seat on your lift there for \w{3} v Verify GA-I20 Lift XI/.test(dCard) && /you, as the driver/.test(dCard) && !/Pillay/.test(dCard) && /^\d+ to do/.test(dCard.split("\n").find((l) => /to do/.test(l)) ?? ""), [dCount, dCard]);
+      await D.ctx.close();
+      ok("the driver accepts him", (await call(driverTok, `/api/lifts/${OUT}/accept`, { seatIds: [asked.body?.seatId] })).status === 200);
+      await owner.query(`update match set starts_at = starts_at + interval '1 hour' where id = $1`, [L.id]);
+      // The answers stand for the new time (as "Still available" would say), so the one row owed is the seat's.
+      await owner.query(`update match_availability a set fixture_starts_at = m.starts_at from match m where m.id = a.match_id and a.match_id = $1`, [L.id]);
+      const v = (await call(driverTok, `/api/matches/${L.id}/lifts`)).body?.rows?.find((o) => o.id === OUT)?.version;
+      ok("the fixture moves; the driver still offers the lift", (await call(driverTok, `/api/lifts/${OUT}/reaffirm`, { version: v })).status === 200);
+      await P.page.reload({ waitUntil: "networkidle" });
+      await click(P.page, /^Sign in$/i, 4000);
+      ok("R Pillay's parent signs in again", await signIn(P.page, /parent@example\.invalid/));
+      const r3 = await settled(P.page);
+      const r3Row = await at(`todo-row-R3-${asked.body?.seatId}`).innerText({ timeout: 6000 }).catch(() => "");
+      ok("a seat to confirm again: 'R Pillay's seat with H Whitfield there for … v Verify GA-I20 Lift XI: confirm again', by the meeting time",
+         r3 === "1 to do" && /R Pillay's seat with H Whitfield there for \w{3} v Verify GA-I20 Lift XI: confirm again/.test(r3Row)
+         && /you or R Pillay's other parent · by \w{3} \d\d:\d\d/.test(r3Row) && /Lifts/.test(r3Row), [r3, r3Row]);
+      ok("...and the list says what a lift's by-when is", /For a lift, it is the meeting time/.test(await at("todo-clock").innerText().catch(() => "")));
+      await at(`todo-row-R3-${asked.body?.seatId}`).click({ timeout: 4000 }).catch(() => {});
+      await P.page.waitForTimeout(1800);
+      ok("its door opens the fixture, where the lifts block asks her to confirm again", /Verify GA-I20 Lift XI/.test(await at("fixture-title").innerText().catch(() => ""))
+         && await at(`lift-reconfirm-${OUT}-${PILLAY}`).count() === 1);
+      await at(`lift-reconfirm-${OUT}-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+      await P.page.waitForTimeout(1500);
+      ok("she confirms again", (await owner.query(`select state, guardian_ok_version = (select version from lift_offer where id = $1) ok from lift_seat where offer_id = $1`, [OUT])).rows[0]?.ok === true);
+      await at("family-back").click({ timeout: 4000 }).catch(() => {});
+      const r3After = await settled(P.page);
+      ok("back on Home the row is gone: 'Nothing to do for R Pillay'", r3After === "Nothing to do for R Pillay" && await at(`todo-row-R3-${asked.body?.seatId}`).count() === 0, r3After);
+      await P.page.setViewportSize({ width: 390, height: 844 });
+      await P.page.waitForTimeout(400);
+      const f = await floors(P.page);
+      ok(`A1 on a phone: nothing under 12px (${f.small.length}) and nothing tapped under 44px (${f.tiny.length})`, f.small.length === 0 && f.tiny.length === 0, [...f.small, ...f.tiny].slice(0, 4).join(" · "));
+      ok("no scoping refusals or page errors for her", P.refusals.length === 0 && P.errors.length === 0, P.errors.join(" | "));
+      await P.ctx.close();
+
+      // ── Sarah's two: a count each on Family, nothing summed ──
+      const S = await open();
+      const st = (id) => S.page.locator(`[data-testid="${id}"]`);
+      ok("the two-school guardian signs in", await signIn(S.page, /sarah@example\.invalid/));
+      await st("nav-family").first().click({ timeout: 6000 }).catch(() => {});
+      await S.page.waitForTimeout(1500);
+      await S.page.waitForFunction((ids) => ids.every((id) => { const e = document.querySelector(`[data-testid="family-todo-count-${id}"]`); return e && !/^Reading/.test(e.innerText); }), [KD, DM], { timeout: 12000 }).catch(() => {});
+      const kd = (await st(`family-todo-count-${KD}`).innerText().catch(() => "")).trim(), dm = (await st(`family-todo-count-${DM}`).innerText().catch(() => "")).trim();
+      ok("K Dlamini's card and D Mkhize's each carry their own count ('1 to do' each: one fixture owed), and nothing sums them",
+         kd === "1 to do" && dm === "1 to do" && !/2 to do/.test(await st("family-file").innerText()), [kd, dm]);
+      await st(`family-todo-${DM}`).click({ timeout: 4000 }).catch(() => {});
+      await S.page.waitForSelector('[data-testid="family-child"]', { timeout: 8000 }).catch(() => {});
+      await settled(S.page);
+      const dmHome = [(await st("family-child").innerText().catch(() => "")).trim(), (await todo(S.page).locator("h2").first().innerText().catch(() => "")).trim()];
+      ok("D Mkhize's count opens D Mkhize's Home", dmHome[0] === "D Mkhize" && /To do for D Mkhize/i.test(dmHome[1]), [...dmHome, (await text(S.page)).slice(0, 300)]);
+      ok("no scoping refusals or page errors for her", S.refusals.length === 0 && S.errors.length === 0, S.errors.join(" | "));
+      await S.ctx.close();
+
+      // ── A link that has ended, and a request with the office ──
+      const naidooId = (await owner.query(`select id from app_user where email = 'parent.naidoo@example.invalid'`)).rows[0].id;
+      await owner.query(`insert into role_request (person_id, role, school_id, note, requested_at) values ($1, 'guardian', $2, 'For my younger son', now() - interval '4 days')`, [naidooId, HIL]);
+      const N = await open();
+      ok("the parent whose link has ended signs in", await signInAs(N.page, "parent.naidoo@example.invalid"));
+      await N.page.waitForTimeout(1500);
+      const none = await N.page.locator('[data-testid="family-none"]').innerText({ timeout: 6000 }).catch(() => "");
+      ok("her request is said as pending, with the school and how long ago, and never as approved",
+         /Your request to be linked to a child at Hilton College is with the office · asked 4 days ago\. This does not mean it was approved\./.test(none)
+         && /Your note to the office: For my younger son/.test(none), none);
+      // Her own name is a Naidoo too; her son's, S Naidoo, is never on the screen.
+      ok("...and nothing of her son: no name, no list, no record", !/S Naidoo/.test(await text(N.page)) && await N.page.locator('[data-testid="todo-card"]').count() === 0
+         && await N.page.locator('[data-testid="todo-record"]').count() === 0);
+      ok("no scoping refusals or page errors for her", N.refusals.length === 0 && N.errors.length === 0, N.errors.join(" | "));
+      await N.ctx.close();
+    } finally {
+      if (lifted) await grant(false).catch(() => {});
       await owner.end().catch(() => {});
     }
   }

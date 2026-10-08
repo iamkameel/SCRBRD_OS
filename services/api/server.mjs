@@ -27,7 +27,8 @@
  *   POST /api/matches/:id/pad-credentials/revoke  the school office ends them
  *   POST /api/auth/sign-out                       this device's sessions and credentials end
  *   POST /api/auth/sign-out-everywhere            every session and credential ends (db/85)
- *   POST /api/auth/users/:id/disable · /enable    the office ends an account's sessions (db/85)
+ *   POST /api/auth/users/:id/disable · /enable { reason }   the office ends an account's sessions, saying why (db/85, db/90)
+ *   GET  /api/auth/users/:id/preview              what disabling an account would cut (db/90)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
@@ -737,6 +738,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/auth\/sign-out-everywhere$/,          "POST", signIn.signOutEverywhere],
   [/^\/api\/auth\/users\/([^/]+)\/disable$/,        "POST", signIn.disable],
   [/^\/api\/auth\/users\/([^/]+)\/enable$/,         "POST", signIn.enable],
+  // Account lifecycle slice 2 (db/90): what disabling would cut, before the tap.
+  [/^\/api\/auth\/users\/([^/]+)\/preview$/,        "GET",  signIn.preview],
   [/^\/api\/auth\/claims\/([^/]+)\/confirm$/,        "POST", signIn.confirmClaim],
   [/^\/api\/auth\/claims\/([^/]+)\/decline$/,        "POST", signIn.declineClaim],
   [/^\/api\/onboard$/,                              "POST", requests.onboard],
@@ -1015,6 +1018,9 @@ const LIFT_ROUTES = [
   [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/expected$/, "GET", lifts.expected],
   [/^\/api\/lifts\/exceptions$/,                      "GET",  lifts.exceptions],
   [/^\/api\/lifts\/mine$/,                            "GET",  lifts.mine],
+  // GA-I20 A1 (N3): her own open lifts' requests, counted; no name. Gated:
+  // it reads an arrangement, and a module switched off is no row, not a fault.
+  [/^\/api\/lifts\/requests-mine$/,                   "GET",  lifts.requestsMine, "lift_club"],
   [/^\/api\/lifts\/watch$/,                           "POST", lifts.watch],
   [/^\/api\/lifts\/purge$/,                           "GET",  lifts.purgeDue],
   [/^\/api\/lifts\/([0-9a-f-]{36})\/purge$/,            "POST", lifts.purge],

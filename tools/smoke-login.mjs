@@ -215,8 +215,9 @@ try {
   group("The office disables the account (GA-I03)");
   const dis1 = await codeFor("parent@example.invalid", "phone-dis-1");
   ok("the parent is signed in", (await who(dis1)) === U_PARENT);
-  const disable = (token, id = U_PARENT) => api(`/api/auth/users/${id}/disable`, { method: "POST", token });
-  const enable = (token, id = U_PARENT) => api(`/api/auth/users/${id}/enable`, { method: "POST", token });
+  // A reason on each (account lifecycle slice 2, db/90).
+  const disable = (token, id = U_PARENT) => api(`/api/auth/users/${id}/disable`, { method: "POST", token, body: { reason: "Login walk: a phone left on the bus" } });
+  const enable = (token, id = U_PARENT) => api(`/api/auth/users/${id}/enable`, { method: "POST", token, body: { reason: "Login walk: the phone came back" } });
   let r = await disable(coach);
   ok("a coach may not disable an account", r.status === 403 && r.body?.error === "not_permitted");
   r = await disable(head);
@@ -239,8 +240,9 @@ try {
   ok("...and the old token stays dead", await refused(dis1));
   const dis2 = await codeFor("parent@example.invalid", "phone-dis-1");
   ok("a fresh sign-in after it is enabled works", (await who(dis2)) === U_PARENT);
-  // The office may also set app_user.active by hand (app_user_update, under
-  // user.role.assign). The rule is a trigger, so that door ends sessions too.
+  // The owner may also set app_user.active by hand in the SQL editor (since
+  // db/90 the application cannot). The rule is a trigger, so that ends
+  // sessions too.
   await q(`update app_user set active = false where id = $1`, [U_PARENT]);
   ok("an account disabled by a plain UPDATE ends its sessions too", await refused(dis2));
   await q(`update app_user set active = true where id = $1`, [U_PARENT]);

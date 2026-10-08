@@ -163,7 +163,10 @@ function asUser(r) {
            // A coach's account links to nobody; a pupil's links to the child
            // whose passport, squad entry and profile are all keyed on it.
            player: r.player_id ?? null,
-           lastLogin: r.last_seen_at, teams: r.teams, live: true };
+           lastLogin: r.last_seen_at, teams: r.teams, live: true,
+           // `accounts` only (db/90): when it last changed state, for those who
+           // may read why. `users` has no such column: undefined, never shown.
+           statusChangedAt: r.status_changed_at ?? null };
 }
 
 function asGround(r) {
@@ -659,6 +662,15 @@ function asContact(r) {
            phone: r.phone, phoneAlt: r.phone_alt, email: r.email, note: r.note, live: true };
 }
 
+/**
+ * How many numbers are on record to ring for one child (GA-I20 A1, N2): the
+ * child's id and a count, never a contact. No row for a reader who may not
+ * read his contacts.
+ */
+function asContactCount(r) {
+  return { playerId: r.player_id, active: Number(r.active_count), live: true };
+}
+
 /** One row of the clearance register, or one adult's clearance. The word is the server's. */
 function asClearance(r) {
   const d = (v) => (v ? String(v).slice(0, 10) : null);
@@ -980,6 +992,8 @@ function asChild(r) {
   return { id: r.player_id, name: r.full_name, knownAs: r.known_as ?? null, team: r.team_code,
            school: r.school_id, schoolName: r.school_name ?? null, schoolKind: r.school_kind ?? null,
            relationship: r.relationship, verification: r.verification_state, consent: r.consent_state,
+           // GA-I20 A1 (R8a): the wording of the terms her own link was agreed under, and when.
+           consentVersion: r.consent_version ?? null, consentAt: r.consent_at ?? null,
            from: d10(r.valid_from), until: d10(r.valid_until), live: true };
 }
 
@@ -1161,6 +1175,7 @@ const ADAPT = {
   availability: asAvailability,
   readiness: asReadiness,
   emergency_contacts: asContact,
+  emergency_contact_count: asContactCount,
   trip_contacts: asContact,
   clearance_register: asClearance,
   clearances: asClearance,

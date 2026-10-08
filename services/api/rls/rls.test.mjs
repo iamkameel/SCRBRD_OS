@@ -533,5 +533,69 @@ group("K. Notifications S1: the contract and read state (db/89)");
   ok("a grant of notification_retract() to the application is seen", widened !== sql89 && /GRANT EXECUTE ON FUNCTION notification_retract/.test(widened));
 }
 
+group("L. Account lifecycle slice 2: the reason, the preview, the notice (db/90)");
+{
+  const here = dirname(fileURLToPath(import.meta.url));
+  const F = "90_account_status_change.sql";
+  const raw = readFileSync(join(here, "../../../db", F), "utf8");
+  const sql90 = raw.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const expected = JSON.parse(readFileSync(join(here, "../expected-migrations.json"), "utf8"));
+  ok("db/90 is a migration the API expects", expected.includes(F));
+  ok("account_status_change is under RLS, read-only for the application",
+     /ALTER TABLE account_status_change ENABLE ROW LEVEL SECURITY;/.test(sql90)
+     && /GRANT SELECT ON account_status_change TO scrbrd_app;/.test(sql90)
+     && /REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON account_status_change FROM scrbrd_app;/.test(sql90)
+     && !/GRANT (INSERT|UPDATE|DELETE|ALL)[^;]*account_status_change/.test(sql90));
+  const readPolicy = sql90.slice(sql90.indexOf("CREATE POLICY account_status_change_read"), sql90.indexOf("END $read$"));
+  ok("...read by user.invite or audit.read at the account's school (D4, §7), never by the person",
+     /FOR SELECT USING/.test(readPolicy) && /app_can\('user\.invite', school_id/.test(readPolicy)
+     && /app_can\('audit\.read', school_id/.test(readPolicy) && /coalesce\(user_id <> app_user_id\(\), false\)\s+AND/.test(readPolicy));
+  ok("...and a pad credential reads none of it (db/50)", /SELECT pad_scope_guard_install\('account_status_change'::regclass\);/.test(sql90));
+  ok("the reason is ten to 2,000 characters, as db/77's",
+     /reason\s+text NOT NULL CHECK \(length\(btrim\(reason\)\) >= 10 AND length\(reason\) <= 2000\)/.test(sql90));
+  ok("Q3: UPDATE on app_user is revoked from the application and given back for every column but id and active",
+     /REVOKE UPDATE ON app_user FROM scrbrd_app;/.test(sql90)
+     && /a\.attname NOT IN \('id', 'active'\)/.test(sql90) && /GRANT UPDATE \(%s\) ON app_user TO scrbrd_app/.test(sql90));
+  const drops = sql90.match(/\bDROP\s+\w+[^;]*;/gi) ?? [];
+  ok("the file's one DROP is the two-argument account_set_active()",
+     drops.length === 1 && drops[0] === "DROP FUNCTION IF EXISTS account_set_active(uuid, boolean);");
+  ok("its policies are created only when missing (no DROP POLICY)",
+     (sql90.match(/CREATE POLICY/g) || []).length === 2 && !/DROP POLICY/.test(sql90)
+     && ["account_status_change_read", "notification_account_enabled"].every((n) =>
+          new RegExp(`IF NOT EXISTS \\(SELECT 1 FROM pg_policies[^;]*policyname = '${n}'\\) THEN\\s+CREATE POLICY ${n} `).test(sql90)));
+  const fn = (/** @type {string} */ name) => {
+    const at = sql90.indexOf(`CREATE OR REPLACE FUNCTION ${name}(`);
+    return at === -1 ? "" : sql90.slice(at, sql90.indexOf("$$ LANGUAGE", sql90.indexOf("$$", at) + 2) + 120);
+  };
+  const act = fn("account_set_active");
+  ok("account_set_active(uuid, boolean, text) asks authority before the reason, so a stranger learns nothing",
+     /account_set_active\(p_user uuid, p_active boolean, p_reason text\)/.test(act)
+     && act.indexOf("auth_office_refusal(p_user)") > 0 && act.indexOf("auth_office_refusal(p_user)") < act.indexOf("'reason_required'")
+     && act.indexOf("'cannot_disable_yourself'") < act.indexOf("auth_office_refusal(p_user)"));
+  const notice = act.slice(act.indexOf("INSERT INTO notification"), act.indexOf("RETURNING id INTO v_notice"));
+  ok("...its notice is 'system', to the person, and never carries the reason",
+     /'system', 'medium', 'Your account was re-enabled'/.test(notice) && /v_change, p_user\)/.test(notice) && !/v_why|p_reason/.test(notice));
+  ok("...and writes the audit row with the reason", /INSERT INTO account_status_change \(id, user_id, school_id, active, reason, changed_by, notice_id\)\s+VALUES \(v_change, p_user, v_school, p_active, v_why, v_me, v_notice\)/.test(act));
+  const prev = fn("account_offboard_preview");
+  ok("the preview refuses by auth_office_refusal() before it counts anything",
+     prev.indexOf("auth_office_refusal(p_user)") > 0 && prev.indexOf("auth_office_refusal(p_user)") < prev.indexOf("FROM auth_session"));
+  ok("...and reads no child's name: no player table, only a count of links",
+     !/\bFROM player\b|\bJOIN player\b|full_name|\.name\b/.test(prev) && /count\(DISTINCT g\.player_id\)/.test(prev));
+  const door = sql90.slice(sql90.indexOf("CREATE POLICY notification_account_enabled"), sql90.indexOf("END $door$"));
+  ok("the notice's door admits a 'system' notice to its recipient, keyed on the audit row",
+     /kind = 'system' AND recipient_id = app_user_id\(\) AND account_enable_notice_is_mine\(id\)/.test(door)
+     && /c\.notice_id = p_notice AND c\.user_id = app_user_id\(\) AND c\.active/.test(fn("account_enable_notice_is_mine")));
+  ok("every SECURITY DEFINER in db/90 pins its search_path",
+     (sql90.match(/LANGUAGE \w+ (STABLE |VOLATILE )?SECURITY DEFINER(?! SET search_path = pg_catalog, public, pg_temp)/g) || []).length === 0
+     && (sql90.match(/LANGUAGE \w+ (STABLE |VOLATILE )?SECURITY DEFINER/g) || []).length === 3);
+  ok("the three functions are revoked from PUBLIC and granted to the application",
+     /FOREACH f IN ARRAY ARRAY\['account_set_active\(uuid,boolean,text\)', 'account_offboard_preview\(uuid\)',\s+'account_enable_notice_is_mine\(uuid\)'\] LOOP\s+EXECUTE format\('REVOKE ALL ON FUNCTION %s FROM PUBLIC'/.test(sql90));
+  ok("no data is dropped: no DROP TABLE, DROP COLUMN, DELETE FROM or TRUNCATE TABLE",
+     !/DROP TABLE|DROP COLUMN|DELETE FROM|TRUNCATE TABLE/i.test(sql90));
+  // It can fail.
+  const widened = sql90.replace("REVOKE UPDATE ON app_user FROM scrbrd_app;", "");
+  ok("a file that kept the table-level UPDATE is seen", widened !== sql90 && !/REVOKE UPDATE ON app_user FROM scrbrd_app;/.test(widened));
+}
+
 console.log(`\n${"─".repeat(52)}\nRLS SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

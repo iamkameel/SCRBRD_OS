@@ -98,7 +98,10 @@ function useMatchLog(match, players) {
       if (document.hidden) return;
       try {
         const { events: rows } = await api(`/api/matches/${match.id}/events?since=${settledHead}`);
-        setState((s) => ({ ...s, failed: false, stale: s.stale || (rows ?? []).some((r) => r.seq > settledHead) }));
+        // Against the head on screen NOW, not the one this poll was asked
+        // from: a poll still in flight when the reader taps refresh answers
+        // after the new read, and would otherwise call it stale again.
+        setState((s) => ({ ...s, failed: false, stale: s.stale || (rows ?? []).some((r) => r.seq > s.head) }));
       } catch {
         setState((s) => ({ ...s, failed: true }));
       }
