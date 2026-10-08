@@ -2,7 +2,6 @@ import { T } from "../../design/tokens.js";
 import { oversOf, teamOf } from "../../lib/matchCentre.js";
 import { isSuperOver, superOverTitle, superOversOf } from "../../lib/superOver.js";
 import { SideName } from "./bits.jsx";
-import { clockWords } from "../../lib/corrections.js";
 
 /**
  * The scores under a match's title, one line a side: the match's own
@@ -11,9 +10,10 @@ import { clockWords } from "../../lib/corrections.js";
  * the public page, so the two cannot say it differently.
  *
  * An innings a correction moved says so beside its figure, "· corrected
- * 18:42" (GA-I36 §5): `corrected` is lib/corrections.js correctedInnings().
+ * 18:42" (GA-I36 §5): `corrected` is lib/corrections.js inningsWords(),
+ * keyed by the fold's own innings, so this file imports nothing for it.
  *
- * @param {{match: any, played: any[], corrected?: Map<any, number> | null}} p  `played` is the fold's innings, null-free
+ * @param {{match: any, played: any[], corrected?: Map<any, string> | null}} p  `played` is the fold's innings, null-free
  */
 export function HeaderScores({ match, played, corrected = null }) {
   const own = played.filter((inn) => !isSuperOver(inn));
@@ -28,7 +28,7 @@ export function HeaderScores({ match, played, corrected = null }) {
       </span>
       {corrected?.has(inn) && (
         <span data-testid="mc-score-corrected" style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary, flexBasis: "100%", textAlign: "right" }}>
-          corrected {clockWords(corrected.get(inn))}
+          {corrected.get(inn)}
         </span>
       )}
     </div>

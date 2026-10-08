@@ -11,8 +11,6 @@ import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
-import { CorrectedChip, StaleLine } from "../views/matchcentre/corrected.jsx";
-import { correctionText } from "../lib/corrections.js";
 import { publicStory, read, readPar } from "./reads.js";
 
 /**
@@ -290,6 +288,13 @@ export function PublicMatch({ matchId, view }) {
   const bi = boardInnings(played, folded?.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${matchId}:${bi.index}`);
+  // GA-I36: the corrections half (views/matchcentre/corrected.jsx), loaded
+  // once the log has a void in it or the page has a stale or failed read to
+  // say; until then the page pays nothing for it.
+  const [fx, setFx] = useState(/** @type {any} */ (null));
+  const need = data.events.some((e) => e.kind === "void") || data.stale || data.refreshing || !!data.error;
+  useEffect(() => { if (need && !fx) import("../views/matchcentre/corrected.jsx").then(setFx, () => {}); }, [need, fx]);
+  const fixes = useMemo(() => (fx && story ? fx.publicFixes(data.events, story) : null), [fx, story, data.events]);
 
   if (data.loading) return <Frame><Quiet testid="public-loading">Loading the match…</Quiet></Frame>;
   if (data.missing) return <Frame><Quiet testid="public-missing">This page is not available. The link may be wrong, or the match may not be public.</Quiet></Frame>;
@@ -300,7 +305,7 @@ export function PublicMatch({ matchId, view }) {
   const phase = inningsPhase(played, folded?.result);
   const line = matchLine({ match, competition: null, weather: null, phase });
   const notice = revisionNotice(boardInn);
-  const ctx = { match, innings: played, result, commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
+  const ctx = { match, innings: played, result, commentary: fixes?.commentary ?? commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
     demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
     quietMoments: true };   // the region below says it; the moment is drawn, not said twice
@@ -331,12 +336,14 @@ export function PublicMatch({ matchId, view }) {
           <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
-          {played.length > 0 && <HeaderScores match={match} played={played} corrected={story.corrected}/>}
+          {played.length > 0 && <HeaderScores match={match} played={played} corrected={fixes?.corrected}/>}
           {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
           {/* GA-I36 §5: when, team-level — never who asked, who approved or why. */}
-          <CorrectedChip at={story.correctedAt} lines={() => [correctionText(match.status === "complete" || story.settled)]}/>
-          <StaleLine stale={data.stale} refreshing={data.refreshing} failed={!!data.error} okAt={data.okAt} onRefresh={data.refresh}/>
+          {fx && fixes && <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/>}
+          <div role="status" aria-live="polite" data-testid="mc-stale-region">
+            {fx && <fx.StaleLine bare stale={data.stale} refreshing={data.refreshing} failed={!!data.error} okAt={data.okAt} onRefresh={data.refresh}/>}
+          </div>
         </header>
         </ErrorBoundary>
         <ErrorBoundary name="match notices">

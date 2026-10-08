@@ -26,7 +26,7 @@ import { termsOf } from "../../lib/captain.js";
 import { cockpitGate } from "../../lib/cockpit.js";
 import { profile } from "../../lib/session.js";
 import { CoachTab } from "../cockpit/CoachTab.jsx";
-import { afterTheMatch, clockWords, correctedAt, correctedInnings, correctionsOf, correctionText, withCorrectionLines } from "../../lib/corrections.js";
+import { afterTheMatch, clockWords, correctedAt, correctionsOf, inningsWords, correctionText, withCorrectionLines } from "../../lib/corrections.js";
 import { ballLine } from "../../lib/correctionEffect.js";
 import { CorrectedChip, StaleLine } from "./corrected.jsx";
 import { CorrectionsSheet, pendingWords } from "./corrections.jsx";
@@ -396,7 +396,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const over = settled || match.status === "complete";
   // One quiet `correction` line each, team-level, never a moment card.
   const told = useMemo(() => withCorrectionLines(commentary, log.events ?? [], fixes, over), [commentary, log.events, fixes, over]);
-  const corrected = useMemo(() => correctedInnings(log.events ?? [], fixes, log.innings), [log.events, fixes, log.innings]);
+  const corrected = useMemo(() => inningsWords(log.events ?? [], fixes, log.innings), [log.events, fixes, log.innings]);
   // The staff screen names the ball and who signed (by role); a family's or
   // the captain's says what the public page says: when, never who or why.
   const correctionLines = () => {

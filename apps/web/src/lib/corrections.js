@@ -76,6 +76,16 @@ export function correctedInnings(events = [], list = [], innings = []) {
 }
 
 /**
+ * The innings line's words, "corrected 18:42", for each innings a correction
+ * moved (HeaderScores draws them as given).
+ * @param {any[]} events  @param {Correction[]} list  @param {any[]} innings
+ * @returns {Map<any, string>}
+ */
+export function inningsWords(events = [], list = [], innings = []) {
+  return new Map([...correctedInnings(events, list, innings)].map(([inn, at]) => [inn, `corrected ${clockWords(at)}`]));
+}
+
+/**
  * "18:42" today, "18:42, 11 Oct" on any other day: the fixture's time zone.
  * @param {number | null} ms  @param {number} [now]
  */
