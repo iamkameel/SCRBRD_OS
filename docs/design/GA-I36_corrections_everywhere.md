@@ -1,6 +1,6 @@
 # GA-I36 — Corrections everywhere: the design
 
-**Status:** for Kameel's review (Fable, 2026-10-07). Nothing built. For after the 15 Oct solo test; §8 A0 is the one slice small enough for before the 12 Oct freeze, only if Kameel wants it.
+**Status:** approved by Kameel on 2026-10-07 for after the pilot; A0 and A1 pulled forward on 2026-10-08 (Kameel). Written by Fable, 2026-10-07. For after the 15 Oct solo test; §8 A0 is the one slice small enough for before the 12 Oct freeze, only if Kameel wants it.
 **Source:** `audit/GAP_ANALYSIS_2026-10-05.md` (I36, phase C; the private report's exit test: "same input revision reconciles pad/public/career/report/charts; edits invalidate derived caches and preserve audit; NULL stays distinct from zero"); `db/02` (`ball_event`, `ball_event_live`, `scoring_amendment`, `scoring_amendment_decide`), `db/14` (`quarantine_resolve`), `db/24`, `db/33`, `db/36`, `db/38`/`db/69` (the decide function as it stands, with the result audit), `db/40`, `db/51`, `db/59` §6 (`public_data_changed`), `db/72` §5; `packages/scoring/src/replay.mjs` (`voidedTargets`, `foldSteps`, `MatchFold._refold`), `events.mjs` (`voidEvent`, `KIND`), `laws.mjs` (the `void_*` refusals); `services/api/write/events-api.mjs` (`appendEvents`, `eventRoutes`, `amendmentRoutes`, `quarantineRoutes`), `replay.mjs`, `results-api.mjs`, `publication-api.mjs`, `public/public-api.mjs`, `realtime/realtime.mjs`, `read/read-api.mjs` (`career`, `live_score`, `milestones`, `audit_log`); `apps/web/src/scorer/chartData.js`, `scorer/engine.jsx` (undo), `views/matchcentre/MatchView.jsx`, `live.js`, `public/reads.js`; `docs/design/SCRBRD-114_phase3…` §2.6, §6; `SCRBRD-120` §2.2–2.7, §4.5; `SCRBRD-133` §2.4, §5.
 **Reader:** Kameel on a phone first; then the Opus lead; then whoever builds a slice.
 
@@ -42,6 +42,8 @@ Three readers may legitimately show three different numbers for one match and al
 | **D11** | Exports and downloads | **Every file says the revision and the time it was computed** ("as at 18:42, 11 Oct · head 412") in its footer | nothing (today): a PDF is a snapshot that cannot say so |
 | **D12** | A pending amendment | **Changes nothing anywhere.** Staff the policy admits see "1 correction awaiting approval"; the public never learns one exists | a public "under review" badge (no: it names a dispute about a child's innings) |
 | **D13** | The pre-freeze slice | **A0: the two `afterCommit` hooks and the "Corrected HH:MM" chip, only if the solo test will exercise an amendment; otherwise nothing before 12 Oct** | — |
+
+Decided 2026-10-08 (Kameel): keep polling. The realtime hub is not mounted and stays parked; N2 drops the public cache after commit (publicSite.changed) and screens learn of a correction on their next poll ('Updated · refresh'). No hub broadcast.
 
 ---
 
