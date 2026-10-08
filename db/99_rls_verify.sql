@@ -12610,6 +12610,7 @@ BEGIN
 select s.player_id, p.full_name, p.known_as, p.team_code,
                   p.school_id, sc.name as school_name, sc.kind as school_kind,
                   s.relationship, s.verification_state, s.consent_state,
+                  s.consent_version, s.consent_at,
                   s.valid_from, s.valid_until
              from role_assignment a
              join assignment_subject s on s.assignment_id = a.id
@@ -12641,6 +12642,12 @@ $v49$;
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE valid_until IS NOT NULL OR relationship <> 'parent'
                                   OR verification_state <> 'verified' OR consent_state <> 'granted'),
       '§49: Sarah''s links are not the open, verified, consented parent links the seed made');
+    -- (GA-I20 A1, R8a) Each link carries the wording of the school's terms
+    -- it was agreed under, and when, as the link holds them (the seed
+    -- records popia-2026-01 on every granted link).
+    PERFORM _assert((SELECT count(*) FROM _v49_my_children
+                      WHERE consent_version = 'popia-2026-01' AND consent_at IS NOT NULL) = 2,
+      '§49 (A1): Sarah''s granted links do not carry their own consent version and time');
 
     -- (G11) The end date rides along, and is the link's own.
     PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date + 400);
@@ -12687,8 +12694,9 @@ $v49$;
     -- under is a live link (app_can() reads verification, not consent), and
     -- says which it is.
     PERFORM _as(U_CELE);
-    SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending';
-    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, or does not say consent is pending');
+    SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending'
+                                                   AND consent_version IS NULL AND consent_at IS NULL;
+    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, does not say consent is pending, or claims a version or time no one recorded');
     -- A link the school has not verified is no link at all.
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE verification_state <> 'verified'),
       '§49 (pending): an unverified link is listed');

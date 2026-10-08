@@ -64,16 +64,22 @@ const text = (v) => (v == null || String(v).trim() === "" ? null : String(v).tri
  * last act on it as one word — "you", "guardian" (the giver himself) or
  * "office" — and whether a "yes" came from a form. Never who recorded it by
  * name, nor through which link (N4).
+ *
+ * `version` and `recordedAt` (GA-I20 A1, N5): the wording the answer was
+ * given to and the moment the record was made, as the record holds them, so
+ * "What you have agreed" can say "v… · 14 Jan 2026 14:02". Both null when
+ * nobody has answered.
  * @param {any} r  a public_name_consent row, or undefined
  * @param {string|null} me  the reader's own id
  * @param {string|null} giver  the giver's own id
  */
 function answer(r, me, giver) {
-  if (!r) return { state: "not_answered", givenOn: null, endedOn: null, fromForm: false, actor: null };
+  if (!r) return { state: "not_answered", givenOn: null, endedOn: null, fromForm: false, actor: null, version: null, recordedAt: null };
   const state = r.ended_on == null ? "given" : r.end_reason;
   const actorId = state === "withdrawn" ? r.ended_by : r.recorded_by;
   return { state, givenOn: r.given_on, endedOn: r.ended_on, fromForm: r.form_name != null,
-           actor: actorId === me ? "you" : actorId === giver ? "guardian" : "office" };
+           actor: actorId === me ? "you" : actorId === giver ? "guardian" : "office",
+           version: r.version ?? null, recordedAt: r.recorded_at ?? null };
 }
 
 /** A refusal from one of the doors, as an answer. */
@@ -153,7 +159,12 @@ export function publicNameRoutes({ pool, secret, onChange }) {
                   and s.valid_from <= current_date
                   and (s.valid_until is null or s.valid_until > current_date)
                 order by s.id, c.seq desc nulls last`, [id]);
-            guardians = rows.map((r) => ({ guardianId: r.person_id, name: r.name, ...answer(r.id ? r : undefined, me, r.person_id) }))
+            // The office's list is as it was: where each answer stands, not the
+            // wording or the moment (those are the giver's own, on `mine`).
+            guardians = rows.map((r) => {
+              const { version: _v, recordedAt: _t, ...a } = answer(r.id ? r : undefined, me, r.person_id);
+              return { guardianId: r.person_id, name: r.name, ...a };
+            })
               .sort((a, b) => String(a.name).localeCompare(String(b.name)));
           }
           // The mark: asked only of a holder, and read under its own policy.
