@@ -159,7 +159,10 @@ function asUser(r) {
            // A coach's account links to nobody; a pupil's links to the child
            // whose passport, squad entry and profile are all keyed on it.
            player: r.player_id ?? null,
-           lastLogin: r.last_seen_at, teams: r.teams, live: true };
+           lastLogin: r.last_seen_at, teams: r.teams, live: true,
+           // `accounts` only (db/90): when it last changed state, for those who
+           // may read why. `users` has no such column: undefined, never shown.
+           statusChangedAt: r.status_changed_at ?? null };
 }
 
 function asGround(r) {

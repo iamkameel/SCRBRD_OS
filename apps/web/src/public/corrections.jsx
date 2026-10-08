@@ -41,16 +41,19 @@ export function publicFixes(events, story) {
  */
 export function SettledWatch({ matchId, last, note }) {
   useEffect(() => {
+    // An answer to a poll asked from an older head is dropped: after the
+    // reader's tap it would call the fresh read stale again.
+    let on = true;
     const t = setInterval(async () => {
       if (document.hidden) return;
       try {
         const log = await read(`/api/public/matches/${matchId}/log?since=${last}`);
-        note((log.last ?? 0) > last ? { stale: true, error: null } : { error: null });
+        if (on) note((log.last ?? 0) > last ? { stale: true, error: null } : { error: null });
       } catch (/** @type {any} */ e) {
-        note({ error: e.status === 429 ? "busy" : "unreachable" });
+        if (on) note({ error: e.status === 429 ? "busy" : "unreachable" });
       }
     }, liveRefreshMs());
-    return () => clearInterval(t);
+    return () => { on = false; clearInterval(t); };
   }, [matchId, last, note]);
   return null;
 }
