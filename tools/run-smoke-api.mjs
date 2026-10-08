@@ -38,6 +38,9 @@ const WALKS = [
   "bootstrap",
   // The way out of quarantine: who may open it, and what a released ball is.
   "quarantine",
+  // Corrections everywhere (GA-I36 N1, N2): who may list a correction, and
+  // an approval or a release reaching the public log on its next read.
+  "corrections",
   // A retry writes once: the Idempotency-Key layer over every write route.
   "idempotency",
   // The managed-host reset drops only what db/ creates (GA-I02): somebody
@@ -274,6 +277,8 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Redesign step 3c / SCRBRD-098: the Match Centre's six tabs, the
   // scorecard's layout and the shared commentary, on a real scored match.
   "browser-matchcentre",
+  // GA-I36: a correction approved from the sheet reaches two watchers on their next poll.
+  "browser-corrections",
   // SCRBRD-133 G1: the ground display, signed out, at 1920×1080, 1024×768
   // and 390×844 — names only under the rule (and a withdrawal reaching an
   // open display), no token, the 12px floor, the 404, the rotation's skip and

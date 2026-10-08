@@ -1,9 +1,10 @@
 import { D } from "../design/tokens.js";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ROLES } from "../design/roles.js";
-import { signedIn } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
+import { holdsCapability } from "../rbac/index.js";
 import { cockpitGate } from "../lib/cockpit.js";
-import { requestCoach, requestDuties } from "../lib/cockpitNav.js";
+import { requestCoach, requestCorrections, requestDuties } from "../lib/cockpitNav.js";
 import { useLive } from "../lib/live.js";
 import { clockTime, headerWords } from "../lib/queue.js";
 import { readState } from "../lib/readState.js";
@@ -44,17 +45,22 @@ import { SLOTS } from "./duties.jsx";
 // The shell has no deep links, so a door leaves a note in lib/cockpitNav.js
 // (the Match Centre takes it when it mounts) or just goes to the screen.
 
-const body = { fontFamily: D.body, fontSize: "12px", lineHeight: 1.45 };
-const rowBtn = { display: "block", width: "100%", minHeight: "44px", padding: "12px 16px", margin: 0, border: 0, borderTop: `1px solid ${D.border}`,
-  background: "transparent", textAlign: "left", cursor: "pointer", color: "inherit", font: "inherit", boxSizing: "border-box" };
-const small = (/** @type {boolean} */ muted) => ({ ...body, display: "block", color: muted ? D.textMuted : D.textSecondary });
-const tryBtn = { minHeight: "44px", minWidth: "44px", padding: "0 20px", margin: "0 16px 12px", borderRadius: D.pill, border: `1px solid ${D.border}`, background: D.surf3,
-  color: D.textPrimary, fontFamily: D.head, fontSize: "13px", fontWeight: 700, cursor: "pointer" };
+// A function, not constants: the theme's tokens are read when drawn, never at import.
+const styles = () => {
+  const body = { fontFamily: D.body, fontSize: "12px", lineHeight: 1.45 };
+  const rowBtn = { display: "block", width: "100%", minHeight: "44px", padding: "12px 16px", margin: 0, border: 0, borderTop: `1px solid ${D.border}`,
+    background: "transparent", textAlign: "left", cursor: "pointer", color: "inherit", font: "inherit", boxSizing: "border-box" };
+  const small = (/** @type {boolean} */ muted) => ({ ...body, display: "block", color: muted ? D.textMuted : D.textSecondary });
+  const tryBtn = { minHeight: "44px", minWidth: "44px", padding: "0 20px", margin: "0 16px 12px", borderRadius: D.pill, border: `1px solid ${D.border}`, background: D.surf3,
+    color: D.textPrimary, fontFamily: D.head, fontSize: "13px", fontWeight: 700, cursor: "pointer" };
+  return { body, rowBtn, small, tryBtn };
+};
 
 /** @typedef {(row: import("../lib/queue.js").Row) => {label: string, go: () => void} | null} DoorOf */
 
 /** @param {{row: import("../lib/queue.js").Row, door: {label: string, go: () => void} | null, onRetry?: () => void}} p */
 function Row({ row, door, onRetry }) {
+    const { body, rowBtn, small, tryBtn } = styles();
     if (row.state === "could_not_read") {
       return (
         <li data-testid="queue-unread" data-read={row.read} style={{ borderTop: `1px solid ${D.border}`, listStyle: "none" }}>
@@ -88,6 +94,7 @@ function Row({ row, door, onRetry }) {
 
 /** One fixture: its header, its rows, its failed reads. @param {{g: import("../lib/queue.js").FixtureGroup, doorOf: DoorOf, retry: (id: string) => void}} p */
 function Group({ g, doorOf, retry }) {
+    const { body, small } = styles();
     const covered = g.dutyKeys ? SLOTS.filter((s) => g.dutyKeys?.includes(s.key)).length : null;
     const headId = `queue-group-${g.id}-head`;
     return (
@@ -130,7 +137,81 @@ function Days({ days, doorOf, retry }) {
   ));
 }
 
+/**
+ * "2 days ago", "3 hours ago", "just now": how long a correction has waited.
+ * @param {string | null | undefined} ts  @param {number} [now]
+ */
+export function agoWords(ts, now = Date.now()) {
+  const ms = now - Date.parse(ts ?? "");
+  if (!Number.isFinite(ms) || ms < 60_000) return "just now";
+  const m = Math.floor(ms / 60_000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return d >= 1 ? `${d} ${d === 1 ? "day" : "days"} ago` : h >= 1 ? `${h} ${h === 1 ? "hour" : "hours"} ago` : `${m} ${m === 1 ? "minute" : "minutes"} ago`;
+}
+
+/**
+ * O7 (GA-I36 D5; GA-I09 §3.2): the corrections waiting on any fixture this
+ * reader's policies show him — an amendment to approve, a held ball to
+ * release — one row a fixture, a count and its age, and a door into that
+ * fixture's Corrections sheet. Counts only: no reason, no requester, no
+ * child's name on a school-wide row (GET /api/corrections answers none).
+ * Asked only by a reader who holds the approval or the audit read (a
+ * courtesy; the tables' policies decide what comes back). A read that failed
+ * is said as one; nothing open draws nothing.
+ */
+function CorrectionsWaiting({ role, matches, onOpen }) {
+  const asks = signedIn() && (holdsCapability(role, "scoring.amend.approve") || holdsCapability(role, "audit.read"));
+  const [nonce, setNonce] = useState(0);
+  const [read, setRead] = useState(/** @type {{rows: any[] | null, error: string | null}} */ ({ rows: null, error: null }));
+  useEffect(() => {
+    if (!asks) return undefined;
+    let cancelled = false;
+    api("/api/corrections")
+      .then((d) => { if (!cancelled) setRead({ rows: d?.matches ?? [], error: null }); })
+      .catch((e) => { if (!cancelled) setRead({ rows: null, error: e.code || "unreachable" }); });
+    return () => { cancelled = true; };
+  }, [asks, nonce]);
+  if (!asks) return null;
+  if (read.error) {
+    return (
+      <Card sx={{ padding: "14px 16px", marginBottom: "10px" }} data-testid="o7-error">
+        <span style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText }}>Could not read the corrections waiting ({read.error}).</span>{" "}
+        <button type="button" className="os-state" onClick={() => setNonce((n) => n + 1)}
+          style={{ minHeight: "44px", padding: "0 12px", border: `1px solid ${D.border}`, borderRadius: D.pill, background: "transparent",
+                   color: D.textPrimary, fontFamily: D.body, fontSize: "12px", cursor: "pointer" }}>Try again</button>
+      </Card>
+    );
+  }
+  if (!read.rows?.length) return null;
+  return (
+    <div style={{ display: "grid", gap: "10px", marginBottom: "10px" }} data-testid="o7">
+      {read.rows.map((r) => {
+        const m = matches.find((x) => x.id === r.matchId);
+        const what = [
+          r.amendments ? `${r.amendments} ${r.amendments === 1 ? "correction" : "corrections"} awaiting approval` : null,
+          r.held ? `${r.held} held ${r.held === 1 ? "ball" : "balls"} awaiting a decision` : null,
+        ].filter(Boolean).join(" · ");
+        return (
+          <Card key={r.matchId} sx={{ padding: 0 }}>
+            <button type="button" className="os-state" data-testid={`o7-open-${r.matchId}`} onClick={() => onOpen(r.matchId)}
+                    style={{ display: "block", width: "100%", minHeight: "44px", padding: "14px 16px", margin: 0, border: 0, background: "transparent",
+                             textAlign: "left", cursor: "pointer", color: "inherit", font: "inherit" }}>
+              <span style={{ display: "block", fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>
+                {m ? `${m.homeTeam} vs ${m.awayTeam}` : "A fixture"}{m?.date ? ` · ${m.date}` : ""}
+              </span>
+              <span style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "6px" }}>
+                {what} · asked {agoWords(r.oldest)}
+              </span>
+              <span style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "8px" }}>Open corrections <span aria-hidden="true">›</span></span>
+            </button>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 function ReadinessOverview({ role, onNav }) {
+  const { body, rowBtn, small, tryBtn } = styles();
   // The fixtures read keeps its state: "No upcoming fixtures" is said of a read
   // that answered, never of one that failed or has not come back (GA-I08).
   const [nonce, setNonce] = useState(0);
@@ -165,6 +246,7 @@ function ReadinessOverview({ role, onNav }) {
     }
   };
 
+  const openCorrections = (id) => { requestCorrections(id); onNav("matches"); };
   const header = q.header;
   const none = !signedIn() ? <EmptyState message="Sign in to see what is waiting at your school." icon="shield-check"/>
     : !q.reader && !["ok", "empty"].includes(matchesSaid.state) ? <ReadState read={matchesSaid} icon="shield-check" testId="readiness-read-state" onRetry={() => setNonce((n) => n + 1)}/>
@@ -182,6 +264,7 @@ function ReadinessOverview({ role, onNav }) {
           <p data-testid="queue-clock-note" style={{ ...body, margin: "0 0 16px", color: D.textMuted, maxWidth: "70ch" }}>
             Deadlines are the queue's clock, worked from each fixture's start, not the school's rule. A row goes when its record changes; nobody closes one by hand.
           </p>
+          <CorrectionsWaiting role={role} matches={matches} onOpen={openCorrections}/>
           {matchesSaid.state === "failed" && <ReadState read={matchesSaid} compact testId="readiness-read-state" onRetry={() => setNonce((n) => n + 1)}/>}
           <div style={{ display: "grid", gap: "16px", gridTemplateColumns: q.offices.length ? "repeat(auto-fit, minmax(min(100%, 340px), 1fr))" : "1fr", alignItems: "start" }}>
             {q.offices.length > 0 && (

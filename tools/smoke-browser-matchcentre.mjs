@@ -46,6 +46,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters, bowler, inningsStart, revision, sealInnings, placementFromTap } from "@scrbrd/scoring";
 import { buildMatchCentreFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
+import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const WEB_PORT = port(5361);
@@ -252,6 +253,11 @@ try {
   const byId = Object.fromEntries(Object.entries(fx.players).map(([n, id]) => [id, n]));
   const FULL = { "1XI": "Hilton College 1XI", "Westville Boys' High 1XI": "Westville Boys' High 1XI" };
   const expected = deriveCommentary(evs, { nameOf: (r) => byId[r] ?? r, teamName: (_k, n) => FULL[n] ?? n });
+  // GA-I36: the Match Centre tells each correction in one quiet line of its
+  // own (lib/corrections.js); the match is live, so "The scorecard was corrected."
+  // The fixture's events carry no seq: writeEvents() gave them 1, 2, 3… in order.
+  const seqd = evs.map((e, i) => ({ ...e, seq: e.seq ?? i + 1 }));
+  const told = withCorrectionLines(expected, seqd, correctionsOf(seqd), false);
   ok("the first innings is ten overs, sealed", inn1.balls === 60 && inn1.sealed, `${inn1.balls} ${inn1.sealed}`);
   ok("the second is under way", inn2.balls > 0 && !inn2.complete);
   ok("Westville start on the five they were awarded while fielding", inn2.extras.penalty === 5);
@@ -381,12 +387,14 @@ try {
   ok("the newest line first", lines[0]?.key === newest.key && lines[0].text.includes(newest.text), lines[0]?.text);
   const overs = await tid(p, "mc-over").count();
   ok("grouped by over, latest over first", overs >= 5 && /^Over 5\b/i.test((await tid(p, "mc-over").first().innerText()).trim()));
-  ok("every line on screen is word for word the generator's",
-     lines.every((l) => l.text.includes(expected.find((c) => c.key === l.key)?.text ?? "∅")));
+  ok("every line on screen is word for word the generator's, or a correction's",
+     lines.every((l) => l.text.includes(told.find((c) => c.key === l.key)?.text ?? "∅")));
   while (await tid(p, "mc-commentary-more").count()) { await tid(p, "mc-commentary-more").click(); await p.waitForTimeout(300); }
   const all = await p.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-key")));
-  ok(`the whole match, every line but the overs' summaries (${expected.filter((c) => c.kind !== "over_end").length})`,
-     all.length === expected.filter((c) => c.kind !== "over_end").length, all.length);
+  ok(`the whole match, every line but the overs' summaries (${told.filter((c) => c.kind !== "over_end").length})`,
+     all.length === told.filter((c) => c.kind !== "over_end").length, all.length);
+  ok("...with one correction line for each of the two corrections, and no more (GA-I36)",
+     all.filter((k) => k.startsWith("c:")).length === 2 && told.filter((c) => c.kind === "correction").length === 2);
   ok("the voided delivery and the amended one have no line", voided.every((t) => !all.some((k) => k === `e:${t}` || k.startsWith(`e:${t}#`))));
   const body = await tid(p, "mc-commentary").innerText();
   ok("Westville start their innings on the five penalty runs", /Westville Boys' High 1XI start their innings on 5/.test(body));
@@ -566,7 +574,7 @@ try {
   await tid(sc.page, "mc-confirm-delivery").selectOption({ index: 1 });
   await tid(sc.page, "mc-confirm-reason").fill("Smoke walk: this ball was never bowled the way the sheet has it.");
   await tid(sc.page, "mc-confirm-submit").click();
-  ok("filed, and says so", await until(sc.page, () => /Filed|pending/i.test(document.querySelector('[data-testid="mc-confirm-said"]')?.textContent ?? ""), 6000),
+  ok("filed, and says so", await until(sc.page, () => /with the director of sport .*until it is approved/i.test(document.querySelector('[data-testid="mc-confirm-said"]')?.textContent ?? ""), 6000),
      await tid(sc.page, "mc-confirm-said").innerText().catch(() => "∅"));
   await tid(sc.page, "mc-confirm-ok").click();
   await sc.page.waitForTimeout(300);
