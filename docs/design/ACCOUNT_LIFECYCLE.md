@@ -4,7 +4,7 @@
 
 **Decided 2026-10-08 (Kameel), Build Board, answer "keep": slice 2 keeps all three calls as built.**
 
-1. Who sees the date an account was disabled: People shows it only to readers holding user.invite or audit.read at the account's school; a reader with user.read alone (finance, sponsorship) sees "Disabled" with no date (design ref C8).
+1. Who sees the date an account was disabled: People shows it only to readers holding user.invite or audit.read at the account's school; a reader with user.read alone (finance, sponsorship) sees "Disabled" with no date.
 2. other_school: the offboard preview tells the account's OWN school office, before the tap, that the account also holds a role at another school (never which school); the disable itself still answers not_permitted (design §2.3, last row).
 3. The person an account_status_change row is about can never read it, even when they hold user.invite or audit.read (stricter than the design's D4/§7/§8 wording).
 
