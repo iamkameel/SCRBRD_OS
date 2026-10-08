@@ -11,7 +11,7 @@
  * is what the pad's own "3 to send" counts. A practice match lives under
  * `practice:` (lib/practice.js) and is never read here.
  */
-import { getRecord, recordKeys } from "./persist.js";
+import { savedMatchLogs } from "./persist.js";
 import { deviceId } from "./device.js";
 
 const OUTBOX_DB = "scrbrd-outbox";
@@ -65,9 +65,8 @@ export function pendingByMatch(keys, device) {
  * @returns {Promise<{ok: boolean, saved: any[], pending: Map<string, number|null>}>}
  */
 export async function deviceMatches() {
-  const keys = await recordKeys("match:");
-  if (keys == null) return { ok: false, saved: [], pending: new Map() };
-  const saved = (await Promise.all(keys.map((k) => getRecord(k)))).filter((s) => s && s.matchId);
+  const saved = await savedMatchLogs();
+  if (saved == null) return { ok: false, saved: [], pending: new Map() };
   const ob = await outboxKeys();
   const counted = ob ? pendingByMatch(ob, deviceId()) : null;
   const pending = new Map(saved.map((s) => [s.matchId, counted ? counted.get(s.matchId) ?? 0 : null]));

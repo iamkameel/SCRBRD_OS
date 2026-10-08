@@ -6,14 +6,12 @@ import { useDutyCoverage, useLive } from "../lib/live.js";
 import { combineReads, readState } from "../lib/readState.js";
 import { humanDate, humanDateTime } from "../lib/format.js";
 import { deviceMatches } from "../lib/deviceMatches.js";
-import { inProgressPractice, savedWords } from "../lib/practice.js";
 import {
   SESSION_MAX_AGE_MS, STATE_WORDS, nextToPrepare, pendingWords, prepLines, resumeItems, scorerFixtures,
 } from "../lib/scorerHome.js";
 import { EmptyState, ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Icon } from "../ui/icons.jsx";
-import { PracticeLabel } from "../scorer/practiceLabel.jsx";
 
 // ══════════════════════════════════════════════════════
 //  THE SCORER'S HOME (GA-I13)
@@ -53,28 +51,39 @@ function Act({ children, onClick, testId, tone = "primary", label }) {
   );
 }
 
-const line = { ...T.role.body, color: T.content.secondary, margin: 0 };
-const strong = { ...T.role.title.md, color: T.content.primary, margin: 0, overflowWrap: "anywhere" };
+// Functions, not constants: a token read at import time keeps the theme it was read under (design.test.mjs).
+const line = () => ({ ...T.role.body, color: T.content.secondary, margin: 0 });
+const strong = () => ({ ...T.role.title.md, color: T.content.primary, margin: 0, overflowWrap: "anywhere" });
 
 /** The two sides, in full where the read names them. @param {any} m */
 const sidesOf = (m) => `${m.homeLabel ?? m.homeTeam ?? "Home"} v ${m.awayLabel ?? m.awayTeam ?? "Away"}`;
 
-/** This device's saved matches and its practice match in progress; re-read on `nonce`. */
+/**
+ * This device's saved fixture logs and their unsent events; re-read on
+ * `nonce`. A practice match is not read here: its store is the pad's alone
+ * (lib/practice.js), and the pad's start screen offers it, labelled.
+ */
 function useDevice(nonce) {
-  const [s, setS] = useState({ loading: true, ok: true, saved: [], pending: new Map(), practice: null });
+  const [s, setS] = useState({ loading: true, ok: true, saved: [], pending: new Map() });
   useEffect(() => {
     let off = false;
     setS((x) => ({ ...x, loading: true }));
-    (async () => {
-      const [d, practice] = await Promise.all([
-        deviceMatches().catch(() => ({ ok: false, saved: [], pending: new Map() })),
-        inProgressPractice().catch(() => null),
-      ]);
-      if (!off) setS({ loading: false, ...d, practice });
-    })();
+    deviceMatches()
+      .catch(() => ({ ok: false, saved: [], pending: new Map() }))
+      .then((d) => { if (!off) setS({ loading: false, ...d }); });
     return () => { off = true; };
   }, [nonce]);
   return s;
+}
+
+/** "Today 10:42", "Yesterday 17:05", "3 Oct 14:30": when this device last saved the log. */
+function savedAtWords(ts, now) {
+  const d = new Date(ts), n = new Date(now);
+  const hm = d.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const day = (x) => x.toDateString();
+  if (day(d) === day(n)) return `today ${hm}`;
+  if (day(d) === day(new Date(now - 864e5))) return `yesterday ${hm}`;
+  return `${d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })} ${hm}`;
 }
 
 /**
@@ -128,7 +137,8 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
   const matchesAnswered = live && !matchesRead.loading && !matchesRead.error;
   const resume = resumeItems({ saved: device.saved, pending: device.pending, serverMatches: matchesAnswered ? matchesRead.rows : null });
 
-  const prep = nextToPrepare(list.items);
+  // From the fixtures drawn, whose duty rosters were read.
+  const prep = nextToPrepare(list.shown);
   const prepMatch = prep?.match ?? null;
   const fold = useFold(prepMatch?.id, prepMatch ? prepMatch.competitionId != null : false, nonce);
   const prepCov = prepMatch ? coverage.get(prepMatch.id) : null;
@@ -153,7 +163,7 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
         <h1 style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", alignItems: "center", gap: T.space.sm }}>
           <Icon name="notebook-pen"/> Scoring
         </h1>
-        <p style={line}>
+        <p style={line()}>
           {new Date(now).toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
           {!live && " · Demonstration — no server connected"}
         </p>
@@ -166,31 +176,29 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
             ? <ReadState read={deviceRead} onRetry={retry} compact testId="scorer-resume-read"/>
             : (
               <div style={{ display: "flex", flexDirection: "column", gap: T.space.md }}>
-                {resume.length === 0 && !device.practice && (
-                  <p style={line} data-testid="scorer-resume-empty">Nothing on this device to resume.</p>
+                {resume.length === 0 && (
+                  <p style={line()} data-testid="scorer-resume-empty">Nothing on this device to resume.</p>
                 )}
                 {resume.map((r) => (
                   <div key={r.matchId} data-testid={`resume-${r.matchId}`} data-pending={r.pending ?? "unknown"}
                     style={{ display: "flex", flexDirection: "column", gap: T.space.xs }}>
-                    <p style={strong}>{r.title}</p>
-                    <p style={line} data-testid={`resume-${r.matchId}-pending`}>
-                      {pendingWords(r.pending)}{r.savedAt ? ` · saved ${savedWords(r.savedAt, now)}` : ""}
+                    <p style={strong()}>{r.title}</p>
+                    <p style={line()} data-testid={`resume-${r.matchId}-pending`}>
+                      {pendingWords(r.pending)}{r.savedAt ? ` · saved ${savedAtWords(r.savedAt, now)}` : ""}
                     </p>
                     {r.openable
                       ? <Act testId={`resume-${r.matchId}-open`} onClick={() => open(r.match)}>Resume scoring</Act>
-                      : <p style={line} data-testid={`resume-${r.matchId}-closed`}>
+                      : <p style={line()} data-testid={`resume-${r.matchId}-closed`}>
                           This match is no longer on your fixture list, so it does not open here. What is saved stays on this device; the school office can help.
                         </p>}
                   </div>
                 ))}
-                {device.practice && (
-                  <div data-testid="resume-practice" style={{ display: "flex", flexDirection: "column", gap: T.space.xs }}>
-                    <PracticeLabel/>
-                    <p style={strong}>{device.practice.title}</p>
-                    <p style={line}>Saved {savedWords(device.practice.savedAt, now)} · Resume is first on the pad's start screen.</p>
-                    <Act tone="secondary" testId="resume-practice-open" onClick={() => open(null)}>Open the pad</Act>
-                  </div>
-                )}
+                {/* A practice match is the pad's own, kept on this phone and
+                    never read here; its start screen offers Resume, labelled. */}
+                <div data-testid="resume-practice" style={{ display: "flex", flexDirection: "column", gap: T.space.xs, paddingTop: T.space.sm, borderTop: `1px solid ${T.line.subtle}` }}>
+                  <p style={line()}>A practice match is resumed or started on the pad itself.</p>
+                  <Act tone="secondary" testId="resume-practice-open" label="Open the pad for a practice match" onClick={() => open(null)}>Open the pad</Act>
+                </div>
               </div>
             )}
         </BentoCard>
@@ -218,20 +226,20 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
                       ) : (
                         <p style={{ ...T.role.label, color: T.content.tertiary, margin: 0 }}>Your side's fixture</p>
                       )}
-                      <p style={strong}>{sidesOf(m)}</p>
-                      <p style={line}>{humanDateTime(m.date, m.time)}{m.venue ? ` · ${m.venue}` : ""}</p>
+                      <p style={strong()}>{sidesOf(m)}</p>
+                      <p style={line()}>{humanDateTime(m.date, m.time)}{m.venue ? ` · ${m.venue}` : ""}</p>
                       {a?.paused && (
-                        <p data-testid={`fixture-${m.id}-paused`} style={{ ...line, color: T.semantic.warningText }}>
+                        <p data-testid={`fixture-${m.id}-paused`} style={{ ...line(), color: T.semantic.warningText }}>
                           The school office has paused your appointment to this match. They can tell you more.
                         </p>
                       )}
-                      <p data-testid={`fixture-${m.id}-state`} style={{ ...line, color: T.content.primary, fontWeight: 600 }}>{w.label}</p>
+                      <p data-testid={`fixture-${m.id}-state`} style={{ ...line(), color: T.content.primary, fontWeight: 600 }}>{w.label}</p>
                       {sessionError && (
-                        <p data-testid={`fixture-${m.id}-session-read`} role="alert" style={{ ...line, color: T.semantic.criticalText }}>
+                        <p data-testid={`fixture-${m.id}-session-read`} role="alert" style={{ ...line(), color: T.semantic.criticalText }}>
                           Could not read who is scoring this match.
                         </p>
                       )}
-                      {w.note && <p style={line}>{w.note}</p>}
+                      {w.note && <p style={line()}>{w.note}</p>}
                       {w.action
                         ? <Act testId={`fixture-${m.id}-open`} tone={state === "not_started" || state === "held_here" ? "primary" : "secondary"}
                             label={`${w.action}: ${sidesOf(m)}`} onClick={() => open(m)}>{w.action}</Act>
@@ -241,7 +249,7 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
                   );
                 })}
               </ol>
-              {list.later > 0 && <p style={line} data-testid="scorer-fixtures-later">{list.later} more later; the Match Centre lists them.</p>}
+              {list.later > 0 && <p style={line()} data-testid="scorer-fixtures-later">{list.later} more later; the Match Centre lists them.</p>}
             </div>
           )}
         </BentoCard>
@@ -249,7 +257,7 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
         {/* 3. Before the toss, for the next fixture not started. */}
         {prepMatch && (
           <BentoCard level="c" title="Before the toss" data-testid="scorer-prep">
-            <p style={{ ...strong, marginBottom: T.space.sm }} data-testid="scorer-prep-match">{sidesOf(prepMatch)} · {humanDateTime(prepMatch.date, prepMatch.time)}</p>
+            <p style={{ ...strong(), marginBottom: T.space.sm }} data-testid="scorer-prep-match">{sidesOf(prepMatch)} · {humanDateTime(prepMatch.date, prepMatch.time)}</p>
             {prepDuties === undefined
               ? <ReadState read={readState({ loading: true }, { what: "the duty roster" })} compact testId="scorer-prep-read"/>
               : (
@@ -261,7 +269,7 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
                           style={{ color: l.state === "ok" ? T.semantic.positive : l.state === "missing" ? T.semantic.warningText : T.content.tertiary }}/>
                         {l.label}
                       </span>
-                      <span style={{ ...line, color: l.state === "unknown" ? T.semantic.criticalText : T.content.secondary }}>
+                      <span style={{ ...line(), color: l.state === "unknown" ? T.semantic.criticalText : T.content.secondary }}>
                         {l.text}{l.who ? ` · ${l.who} sets this` : ""}
                       </span>
                     </li>

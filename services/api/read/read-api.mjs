@@ -154,6 +154,11 @@ export const READ_QUERIES = {
                   bats_first(t.won_by, t.decision) as bats_first,
                   t.called_at as toss_at,
                   g.name as ground,
+                  -- WHETHER a ground is set, apart from its name: the ground
+                  -- row is read under facility.read, which a scorer does not
+                  -- hold, so for him the name is null on every fixture. The
+                  -- scorer's home (GA-I13) must not read that as "no ground".
+                  (m.ground_id is not null) as has_ground,
                   -- The ground's two named ends (db/67), both or neither.
                   g.end_a_name as ground_end_a, g.end_b_name as ground_end_b
              from match m

@@ -293,6 +293,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // credential and sends by itself, nobody signed in; force-released, it
   // stops in words; signed in again, it goes on.
   "browser-pad-resume",
+  // GA-I13: the scorer's home — appointed first, a fixture another device
+  // holds, a match resumed after a reload with its unsent events counted,
+  // the empty state, and a coach kept on the day sheet.
+  "browser-scorer-home",
   // SCRBRD-094 item 1: the pad's penalty runs sheet — five to either side,
   // a short run, a credit the next innings opens on, a target raised
   // mid-chase, a refusal said in place — held to the API's live score.

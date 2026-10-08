@@ -171,6 +171,9 @@ const TYPE_FLOOR_CEILING = {
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
   listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+  // GA-I13: the scorer's home, on a phone, measured inside its own region — a Resume card with a count, the
+  // fixtures with their states, the lines before the toss. Born at 0, and kept there.
+  scorerhome: 0,
 };                   // 115 in all (SCRBRD-131: the bell's count came onto 12px, one off each shell screen)
 
 /**
@@ -209,6 +212,8 @@ const TAP_FLOOR_CEILING = {
   cockpitday:    0,
   cockpitlive:   0,
   cockpitdrawer: 0, pickside: 0,
+  // GA-I13: the scorer's home, inside its region: every control 44px or more.
+  scorerhome: 0,
   // SCRBRD-140: the sign-in screens: every control 44px or more.
   signuplogin:    0,
   signupclaim:    0,
@@ -272,7 +277,8 @@ const CONTRAST_CEILING = {
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0 },
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+              scorerhome: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, pickside: 0,
@@ -281,7 +287,8 @@ const CONTRAST_CEILING = {
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0 },
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+              scorerhome: 0 },
 };
 
 /**
@@ -343,6 +350,8 @@ const EMOJI_CEILING = {
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
   listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+  // GA-I13: the scorer's home.
+  scorerhome: 0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -1196,6 +1205,67 @@ async function practiceWalk(theme) {
   }
 }
 
+/**
+ * THE SCORER'S HOME (GA-I13): the demonstration's scorer, on a phone, with a
+ * live fixture's log and two unsent events put on this device first, so the
+ * Resume card is drawn with its count beside the fixture list and the lines
+ * before the toss. Measured inside its own region, through the same ratchets
+ * (12px, 44px, AA, emoji), with every control named. What it reads and in what
+ * order is tools/smoke-browser-scorer-home.mjs's, against the real stack.
+ */
+async function scorerHomeWalk(theme) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const REGION = '[data-testid="scorer-home"]';
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await offline(ctx);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  try {
+    group(`${T_} — the scorer's home`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    await page.evaluate(() => new Promise((resolve) => {
+      localStorage.setItem("scrbrd:device-id", "dev-a11y");
+      const put = (name, store, key, value) => new Promise((done) => {
+        const req = indexedDB.open(name, 1);
+        req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store); };
+        req.onerror = () => done(null);
+        req.onsuccess = () => { const db = req.result; const t = db.transaction(store, "readwrite"); t.objectStore(store).put(value, key); t.oncomplete = () => { db.close(); done(null); }; };
+      });
+      const id = "a11y-live-match";
+      Promise.all([
+        put("scrbrd", "kv", `match:${id}`, { matchId: id, savedAt: Date.now(), curIn: 0, events: [[{ id: "e1" }, { id: "e2" }], []],
+          cfg: { matchId: id, team1: "Hilton 1st XI", team2: "Kearsney College 1st XI", overs: 20, live: true } }),
+        put("scrbrd-outbox", "queue", `${id}:dev-a11y:evt:000000001`, "{}"),
+        put("scrbrd-outbox", "queue", `${id}:dev-a11y:evt:000000002`, "{}"),
+      ]).then(resolve);
+    }));
+    const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+    if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    await page.locator("button:not([disabled])", { hasText: /Scorer/ }).first().click({ timeout: 4000 }).catch(() => {});
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector(REGION, { timeout: 8000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="resume-a11y-live-match"]', { timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    ok(`${T_} scorerhome: the scorer lands on it`, await page.locator(REGION).count() === 1);
+    ok(`${T_} scorerhome: the Resume card is drawn with its count`,
+      /^2 to send/.test(await page.locator('[data-testid="resume-a11y-live-match-pending"]').innerText().catch(() => "")));
+    ok(`${T_} scorerhome: the fixtures and the lines before the toss are drawn`,
+      await page.locator('[data-testid="scorer-fixture-list"] > li').count() > 0 && await page.locator('[data-testid="scorer-prep"]').count() === 1);
+    await measure(page, theme, "scorerhome", REGION);
+    const unnamed = await page.evaluate((region) => [...document.querySelectorAll(`${region} button, ${region} a[href], ${region} input, ${region} select`)]
+      .filter((el) => !(el.getAttribute("aria-label") || el.textContent || "").trim()).length, REGION);
+    ok(`${T_} scorerhome: every control in it has a name`, unnamed === 0);
+    ok(`${T_} scorerhome: no sideways scroll at 390`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok(`${T_} scorerhome: no page errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
+  } catch (e) {
+    ok(`the ${theme} scorer's home walk threw: ${/** @type {any} */ (e).message?.slice(0, 100)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function walk(theme) {
   const scheme = theme === "daylight" ? "light" : "dark";
   const ctx = await browser.newContext({ colorScheme: scheme });
@@ -1896,6 +1966,7 @@ try {
   await listingWalk("floodlit", 390);
   await signupWalk("floodlit");
   await practiceWalk("floodlit");
+  await scorerHomeWalk("floodlit");
   await walk("daylight");
   await captainWalk("daylight");
   await cockpitWalk("daylight");
@@ -1904,6 +1975,7 @@ try {
   await listingWalk("daylight", 390);
   await signupWalk("daylight");
   await practiceWalk("daylight");
+  await scorerHomeWalk("daylight");
 
   group("The ground display (SCRBRD-133 G1) — three sizes, every panel");
   await displayWalk("floodlit");

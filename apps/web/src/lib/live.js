@@ -45,6 +45,9 @@ function asMatch(r) {
     homeTeam: r.team_code ?? "Home",
     awayTeam: r.opponent,
     venue: r.ground ?? null,
+    // Whether the fixture has a ground at all, which a reader who may not read
+    // the ground's row (no facility.read: a scorer) cannot tell from `venue`.
+    hasGround: typeof r.has_ground === "boolean" ? r.has_ground : null,
     groundId: null,
     date: r.starts_at ? String(r.starts_at).slice(0, 10) : null,
     // HH:MM, sliced the same way `date` is rather than through a Date object

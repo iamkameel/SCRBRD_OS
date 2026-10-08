@@ -203,6 +203,8 @@ group("Before the toss: each line from a read that exists, with who fixes it");
   ok("no team sheet: the coach", b.squad.state === "missing" && b.squad.who === "the coach");
   ok("no umpire: the school office", b.umpires.state === "missing" && b.umpires.who === "the school office");
   ok("no ground: the school office", b.ground.state === "missing" && b.ground.who === "the school office");
+  const unnamed = prepLines({ match: { ...comp, venue: null, hasGround: true }, duties, fold: { conditions: null } }).find((l) => l.key === "ground");
+  ok("a ground set whose name he may not read (no facility.read) is not 'missing'", unnamed.state === "ok" && unnamed.text === "Set on the fixture", unnamed);
   ok("no conditions published: the league organiser", b.conditions.state === "missing" && b.conditions.who === "the league organiser");
 
   const friendly = prepLines({ match: { ...comp, competitionId: null }, duties, fold: undefined });
@@ -232,14 +234,15 @@ group("The read states the screen draws (GA-I08)");
   ok("the sessions read older than two minutes is stale, with a retry", stale.state === "stale" && stale.retry && /3 minutes ago/.test(stale.sentence), stale);
 }
 
-group("The screen: no child named, the floors, practice labelled");
+group("The screen: no child named, the floors, practice left to the pad");
 {
   const view = readFileSync(new URL("../src/views/ScorerHomeView.jsx", import.meta.url), "utf8");
   const lib = readFileSync(new URL("../src/lib/scorerHome.js", import.meta.url), "utf8");
   const reads = [...view.matchAll(/useLive\("([a-z_]+)"/g)].map((m) => m[1]);
   ok("it reads the fixtures and the officials, and nothing about a child", JSON.stringify(reads) === JSON.stringify(["matches", "officials"]), reads);
   ok("no roster, availability, readiness, squad or player read", !/players|readiness|availability|match_squad|roster_on|injur/.test(view + lib));
-  ok("a practice match carries its PracticeLabel", /<PracticeLabel\/>/.test(view));
+  ok("a practice match is never read here: its store is the pad's, which offers it with its PracticeLabel",
+    !/from\s+["'][^"']*(practice|practiceLabel)(\.jsx?)?["']/.test(view + lib) && /onClick=\{\(\) => open\(null\)\}/.test(view));
   ok("every button is 44px tall at least", /minHeight: "44px"/.test(view) && !/<Btn\b/.test(view));
   ok("nothing set under 12px", ![...view.matchAll(/fontSize:\s*"(\d+)px"/g)].some((m) => Number(m[1]) < 12));
   ok("no motion of its own (nothing for reduced motion to stop)", !/transition|animation|@keyframes/.test(view));

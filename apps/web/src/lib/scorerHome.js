@@ -321,8 +321,12 @@ export function prepLines({ match, duties, fold }) {
         : u ? { state: "ok", text: `${u} named`, who: null }
         : { state: "missing", text: "None named", who: OWNER.umpires }) });
   }
+  // The ground's NAME is read under facility.read, which a scorer does not
+  // hold; `hasGround` says whether one is set at all, so a name he may not
+  // read is never drawn as a ground nobody set.
   lines.push({ key: "ground", label: "Ground",
     ...(match?.venue ? { state: "ok", text: String(match.venue), who: null }
+      : match?.hasGround === true ? { state: "ok", text: "Set on the fixture", who: null }
       : { state: "missing", text: "No ground on the fixture", who: OWNER.ground }) });
   {
     const g = has("ground")[0];
