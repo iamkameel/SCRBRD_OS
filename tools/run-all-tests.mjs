@@ -127,6 +127,10 @@ const SUITES = [
   // folds — the worm ends on the total, extras and penalty runs are in, a
   // finished chase has an end and no NaN (scorer/chartData.js).
   ["charts",            "apps/web/test/charts.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I31: every chart has a "Show as table": the worm, runs per over, the
+  // run rate, batsmen, bowlers, the wheel, the heat map and the spider, each
+  // read back and held to what the same markup draws (ui/ChartTable.jsx).
+  ["chart-tables",      "apps/web/test/chart-tables.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The ground display (SCRBRD-133 G1): the rotation with a hand-held clock —
   // the dwell, the skip, a wicket's interrupt resuming where it was, the holds
   // — and its panels over built logs (display/rotation.js, display/data.js).
