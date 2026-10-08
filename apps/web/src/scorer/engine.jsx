@@ -53,7 +53,7 @@ import { fmtOv, isOut } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { projectMatch } from "./chartData.js";
-import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
+import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone, momentWords, wicketMomentCfg } from "./panels.jsx";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
@@ -70,9 +70,6 @@ import { KeeperSheet } from "./keeperSheet.jsx";
 const extraWicketWords=(b)=>!isWicketBall(b)?"":b.freeHitSaved
   ?` — free hit: not out (${DISMISSAL_LABEL[b.dismissal]??b.dismissal} does not count)`
   :` — WICKET: ${DISMISSAL_LABEL[b.dismissal]??b.dismissal}${b.outAt?` at the ${b.outAt==="bowler_end"?"bowler's":"striker's"} end`:""}`;
-
-/** A moment in words, for the live region: "FOUR. Boundary", "HAT-TRICK BALL. K Naidoo — two in two". */
-const momentWords=(cfg)=>`${cfg.label.replace(/!+$/,"")}${cfg.sub?`. ${cfg.sub}`:""}`;
 
 // Reconstruct an event log from a seeded innings object.
 //
@@ -1705,8 +1702,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     scoreKeyRef.current++;setHubStage(0);setHubShot(null);
     {
       // A wicket always opens a follow-up sheet (new batsman / new over /
-      // innings break), so every overlay in this chain is non-blocking.
-      const wicketCfg={...buildEventCfg("W",null),noBlur:true};
+      // innings break), so every overlay in this chain is non-blocking. One
+      // the free hit saved says "not out", never WICKET!.
+      const wicketCfg={...wicketMomentCfg(stood),noBlur:true};
       // The method rides along only when the wicket stood (a free hit can
       // save the batter), so a hat-trick ball is never called off a not-out.
       const mile=isSuperOver(before)?null:detectMilestone({type:ev.type,value:offExtra?ev.value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{freeHitSaved:true})},before);
