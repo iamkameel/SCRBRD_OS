@@ -32,8 +32,9 @@ export const ChartTablesOpen = createContext(false);
  *   text: the columns of words, set left; the rest are figures, set right.
  */
 
-const th = { ...T.role.body, fontSize: "12px", fontWeight: 600, color: T.content.secondary, padding: "6px 10px", whiteSpace: "nowrap", borderBottom: `1px solid ${T.line.normal}` };
-const td = { ...T.role.body, fontSize: "12px", color: T.content.primary, padding: "6px 10px", borderTop: `1px solid ${T.line.subtle}`, fontVariantNumeric: "tabular-nums" };
+// Read at render, never at import: the theme can change under a mounted page.
+const thStyle = () => ({ ...T.role.body, fontSize: "12px", fontWeight: 600, color: T.content.secondary, padding: "6px 10px", whiteSpace: "nowrap", borderBottom: `1px solid ${T.line.normal}` });
+const tdStyle = () => ({ ...T.role.body, fontSize: "12px", color: T.content.primary, padding: "6px 10px", borderTop: `1px solid ${T.line.subtle}`, fontVariantNumeric: "tabular-nums" });
 
 /**
  * @param {{tables: ChartTableSpec[], testid?: string}} p
@@ -41,6 +42,7 @@ const td = { ...T.role.body, fontSize: "12px", color: T.content.primary, padding
 export function ChartTable({ tables, testid = "chart-table" }) {
   const [open, setOpen] = useState(useContext(ChartTablesOpen));
   const id = useId();
+  const th = thStyle(), td = tdStyle();
   const live = (tables || []).filter((t) => t && t.rows.length > 0);
   if (!live.length) return null;
   return (

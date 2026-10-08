@@ -1333,6 +1333,19 @@ try {
     ok("the spider is drawn beside it", bekker && (await bekker.spider.count()) === 1);
     ok("...with an axis for every angular family", bekker && bekker.axes.length === 12, bekker?.axes.length);
     ok("...saying reach is a distance and not an aim", bekker && /mean distance/.test(bekker.spiderText));
+    // GA-I31: the surface and the shape as tables.
+    if (bekker) {
+      await bekker.heat.locator('[data-testid="heat-table-toggle"]').click({ timeout: 3000 }).catch(() => {});
+      await bekker.spider.locator('[data-testid="spider-table-toggle"]').click({ timeout: 3000 }).catch(() => {});
+      await c.page.waitForTimeout(300);
+      const heatRows = await bekker.heat.locator('[data-testid="heat-table"] tbody tr').evaluateAll((rs) => rs.map((r) => [...r.children].map((x) => x.innerText.trim())));
+      ok(`GA-I31: the density surface has a table with a row for each of its ${bekker.cells.filter((d) => d >= 0.04).length} cells, the hottest first at the peak`,
+         heatRows.length === bekker.cells.filter((d) => d >= 0.04).length && Number(heatRows[0]?.[2]) === 100 && heatRows.every((r) => r[0] && r[0] !== "—"), JSON.stringify(heatRows.slice(0, 2)));
+      const spRows = await bekker.spider.locator('[data-testid="spider-table"] tbody tr').evaluateAll((rs) => rs.map((r) => [...r.children].map((x) => x.innerText.trim())));
+      ok("GA-I31: the spider's table has a row for each of its 12 axes, with the shots each prints",
+         spRows.length === 12 && spRows.every((r, k) => Number(r[1]) === bekker.axes[k].shots), JSON.stringify(spRows.slice(0, 2)));
+      ok("...and neither table holds a name", !/Bekker|Naidoo/.test(spRows.flat().join(" ") + heatRows.flat().join(" ")));
+    }
     ok("...and never claiming precision", bekker && !/precision/i.test(bekker.spiderText));
     // Bekker was seeded through the covers (theta ~300-330): the axis with
     // shots should be an off-side family, left of the wheel's centre (x<150).
