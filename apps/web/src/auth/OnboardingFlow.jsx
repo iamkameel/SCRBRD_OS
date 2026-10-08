@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { SELF_REGISTRABLE_ROLES } from "@scrbrd/policy/roles";
 import { canonicalRole } from "../design/roles.js";
+import { JOIN_WORDS } from "../lib/joinSchool.js";
 import { api } from "../lib/api.js";
 import { mode } from "../lib/session.js";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
@@ -41,6 +43,9 @@ const ONBOARD_ERROR_COPY = {
   school_required: "Choose a school before sending the request.",
   already_pending: "You already have a request in for this — sit tight, someone will answer it.",
   no_such_school: "That school could not be found. Try picking it again.",
+  // /api/onboard takes only SELF_REGISTRABLE_ROLES (E1); said as the join screen says it.
+  role_not_self_registrable: JOIN_WORDS.role_not_self_registrable,
+  platform_role_needs_no_school: JOIN_WORDS.platform_role_needs_no_school,
 };
 function explainOnboardError(e) {
   const code = e?.code || e?.message;
@@ -99,7 +104,9 @@ function OnboardingFlow({ onComplete }) {
     { id:"medical",      icon:"stethoscope", label:"Medical Staff",      desc:"Manage injuries and player fitness" },
     { id:"facilities",   icon:"sprout", label:"Groundskeeper",      desc:"Pitch prep, field management & tasks" },
     { id:"spectator",    icon:"eye", label:"Spectator / Fan",    desc:"View scores, stats and fixtures" },
-  ];
+  // Never a role /api/onboard would refuse: the screen and the route read the
+  // same list (@scrbrd/policy/roles, SELF_REGISTRABLE_ROLES).
+  ].filter((r) => SELF_REGISTRABLE_ROLES.includes(canonicalRole(r.id)));
 
   const ri = ROLES[data.role] || {};
 

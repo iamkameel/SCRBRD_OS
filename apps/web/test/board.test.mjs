@@ -316,5 +316,34 @@ ok("the flip is motion.flip, 190ms", T.motion.flip === "190ms");
   ok(`about 600ms at most (${FLASH_MS})`, FLASH_MS > 0 && FLASH_MS <= 600);
 }
 
+// ── A wicket the free hit saved is not out, on the board and in words ──
+{
+  const { BoardFlash } = await import("../src/scorer/pad.jsx");
+  const { wicketMomentCfg, momentWords } = await import("../src/scorer/panels.jsx");
+  const { deriveInnings, inningsStart, batters, bowler, ball } = await import("@scrbrd/scoring");
+  const sq = [{ id: "a1", name: "Opener One" }, { id: "a2", name: "Opener Two" }, { id: "a3", name: "Third Man In" }];
+  const start = [inningsStart({ battingTeam: "Hilton", bowlingTeam: "Visitors", squad: sq, bowlingSquad: [{ id: "k", name: "K Bowler" }], overs: 20 }),
+    batters({ striker: "a1", nonStriker: "a2" }), bowler({ bowler: "k" }), ball({ type: "Nb", value: 0, nbType: "front_foot" })];
+  const before = deriveInnings(start);
+  // The engine's own question (confirmWicket): did the fold take a wicket?
+  const moment = (w) => { const after = deriveInnings([...start, ball({ type: "W", value: 0, freeHit: true, ...w })]);
+    return { after, cfg: wicketMomentCfg(after.wickets > before.wickets) }; };
+  ok("a no-ball gives a free hit", before.freeHit === true);
+
+  const saved = moment({ dismissal: "bowled" });
+  const flash = html(h(BoardFlash, { event: saved.cfg, onDone() {} }));
+  ok("bowled on the free hit: the fold keeps the batter in", saved.after.wickets === 0 && saved.after.ballLog.at(-1)?.freeHitSaved === true);
+  ok("...the board says not out, the free hit", /NOT OUT: FREE HIT/.test(flash), flash);
+  ok("...and never WICKET!", !/WICKET/i.test(flash) && !/\bOut\b/.test(flash.replace("NOT OUT", "")));
+  ok(`...the screen reader hears the same ("${momentWords(saved.cfg)}")`, momentWords(saved.cfg) === "NOT OUT: FREE HIT");
+  ok("...in the same lime frame as every moment, no colour of its own", flash.includes(T.board.lime) && saved.cfg.color === undefined);
+
+  const runOut = moment({ dismissal: "run_out", dismissed: "a2" });
+  ok("a run out on the free hit stands", runOut.after.wickets === 1);
+  ok("...and plays WICKET!, Out", runOut.cfg.label === "WICKET!" && momentWords(runOut.cfg) === "WICKET. Out"
+     && /WICKET!/.test(html(h(BoardFlash, { event: runOut.cfg, onDone() {} }))));
+  ok("a wicket off a fair ball, no free hit, plays WICKET! as it always did", wicketMomentCfg(true).label === "WICKET!");
+}
+
 console.log(`\n${"─".repeat(52)}\nBOARD: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

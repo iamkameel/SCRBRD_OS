@@ -190,6 +190,55 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
      norm(between(sql)).length > 100 && norm(between(sql)) === norm(between(src)) && norm(between(src)) === norm(t));
 }
 
+group("A. accounts (account lifecycle D5): every account, disabled ones included, under the same policy as users");
+{
+  const a = READ_QUERIES.accounts.text, u = READ_QUERIES.users.text;
+  const cols = (/** @type {string} */ t) => (t.match(/select\s+([\s\S]*?)\s+from\s/i)?.[1] ?? "")
+    .split(",").map((c) => c.trim().split(/\s+/).pop()).filter(Boolean);
+  ok("reads app_user, the table db/09's app_user_read policy governs, and nothing else",
+     /from app_user\s/.test(a) && !/\bjoin\b/i.test(a));
+  ok("has no `where active`: a disabled account is on it", !/\bwhere\b/i.test(a) && !/where\s+active/i.test(a));
+  ok("users keeps its `where active`, for the screens that pick a person to act on", /where active/.test(u));
+  ok("the same columns as users, plus `mine` and nothing more",
+     JSON.stringify(cols(a)) === JSON.stringify([...cols(u), "mine"]));
+  ok("`mine` is the reader's own row, by app_user_id()", /id = app_user_id\(\) as mine/.test(a));
+  ok("takes no parameter a caller could widen it with", !READ_QUERIES.accounts.params && !/\$1/.test(a));
+  ok("is not masked and asks for no capability of its own: RLS decides who reads which row",
+     !READ_QUERIES.accounts.masked && !/app_can/.test(a));
+  ok("no module owns it, so no module can switch People's list off",
+     !Object.hasOwn((await import("@scrbrd/policy/modules")).OWNER_OF_READ, "accounts"));
+  ok("reading it is on the record (logsReads), as the access log's own read is", typeof READ_QUERIES.accounts.logsReads === "function");
+
+  // Who may call it is the database's to say (user.read at the account's
+  // school, or your own row: tables.mjs app_user). The policy holds that.
+  const { TABLES } = await import("@scrbrd/policy/tables");
+  const { roleGrants } = await import("@scrbrd/policy/roles");
+  ok("app_user is read under user.read, or your own row", TABLES.app_user.read === "user.read" && TABLES.app_user.visibleWhen === "id = app_user_id()");
+  ok("the office, the principal and the director of sport hold user.read; a coach, a parent and a pupil do not",
+     ["schooladmin", "principal", "directorofsport"].every((r) => roleGrants(r, "user.read"))
+     && !["coach", "guardian", "player", "selfaccess", "spectator"].some((r) => roleGrants(r, "user.read")));
+
+  // The handler does no RBAC: one text for every caller; the log follows what came back.
+  const OFF = "aaaaaaaa-0000-4000-8000-000000000001", C1 = "aaaaaaaa-0000-4000-8000-000000000002",
+        C2 = "aaaaaaaa-0000-4000-8000-000000000003", S = "bbbbbbbb-0000-4000-8000-000000000001";
+  const lone = fakePool({ "from app_user": [{ id: C1, school_id: S, email: "c1@example.invalid", active: true, mine: true }] });
+  await readResource(lone.pool, SECRET, bearer(C1), "accounts");
+  ok("a coach reading only his own row writes no log entry", !lone.log.some((l) => l.text.includes("log_restricted_read")));
+  const office = fakePool({ "from app_user": [
+    { id: OFF, school_id: S, email: "office@example.invalid", active: true, mine: true },
+    { id: C1, school_id: S, email: "c1@example.invalid", active: true, mine: false },
+    { id: C2, school_id: S, email: "c2@example.invalid", active: false, mine: false }] });
+  const rows = await readResource(office.pool, SECRET, bearer(OFF), "accounts");
+  ok("the office gets every row the database sent, the disabled one included", rows.length === 3 && rows.some((r) => r.active === false));
+  ok("identical SQL for both callers",
+     lone.log.find((l) => l.text.includes("from app_user"))?.text === office.log.find((l) => l.text.includes("from app_user"))?.text);
+  const logged = office.log.filter((l) => l.text.includes("log_restricted_read"));
+  ok("the office's read of other people's accounts is logged once for its school", logged.length === 1 && logged[0].params?.[3] === S);
+  ok("...naming the accounts read, not the reader's own, and the email column",
+     JSON.stringify(logged[0]?.params?.[1]) === JSON.stringify([C1, C2]) && JSON.stringify(logged[0]?.params?.[2]) === JSON.stringify(["email"])
+     && logged[0]?.params?.[0] === "accounts");
+}
+
 // ── B. Client accessor ──
 group("B. Feature flags: mock vs live per resource");
 {

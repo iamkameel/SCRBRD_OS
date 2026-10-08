@@ -5,7 +5,7 @@ import { humanDate } from "../lib/format.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
 import { schoolsWhere } from "../lib/session.js";
-import { Btn, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
+import { Btn, Card, ReadState, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { MatchView } from "./matchcentre/MatchView.jsx";
 import { SideName } from "./matchcentre/bits.jsx";
@@ -19,6 +19,7 @@ import { PublishPanel } from "./publication.jsx";
 import { ReportIncident } from "./discipline.jsx";
 import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
 import { useRows, useWeather } from "../lib/live.js";
+import { readState } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
@@ -38,7 +39,12 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // Fixtures come from the server when there is one — the same call site,
   // scoped in Postgres rather than in the browser. Falls back to the demo
   // fixtures otherwise, and says which it is showing.
-  const { rows: MATCHES, live: matchesAreLive } = useLive("matches", role, matchesNonce);
+  const matchesRead = useLive("matches", role, matchesNonce);
+  const { rows: MATCHES, live: matchesAreLive } = matchesRead;
+  // What the fixtures read said (GA-I08). "No fixtures yet" is a claim about the
+  // season; it is made only of a read that answered. Retry bumps the nonce this
+  // read already carries, so it asks the same question again.
+  const matchesSaid = readState(matchesRead, { what: "the fixtures" });
   const STAFF = useRows("staff", role);
   const WEATHER = useWeather(role);
   const [filter, setFilter] = useState("all");
@@ -244,7 +250,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               list — no live match, no fixture of this status, or a team
               filter with nothing to show — it points at what the list's own
               read already has: the next fixtures and the last results. */}
-          {filtered.length===0&&<NoMatchesPanel matches={MATCHES} filter={filter} teamFilter={teamFilter} onOpen={openFixture}/>}
+          {filtered.length===0&&(["ok","empty"].includes(matchesSaid.state)
+            ? <NoMatchesPanel matches={MATCHES} filter={filter} teamFilter={teamFilter} onOpen={openFixture}/>
+            : <Card data-testid="mc-read-state-card"><ReadState read={matchesSaid} icon="trophy" testId="mc-read-state" onRetry={()=>setMatchesNonce(n=>n+1)}/></Card>)}
         </div>
 
         {/* Match detail with full weather */}

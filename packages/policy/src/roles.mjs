@@ -677,6 +677,28 @@ export function mayGrantRole(granter, role) {
   return (GRANTABLE_ROLES[granter] ?? []).includes(role);
 }
 
+// ── What a stranger may ask for ─────────────────────────────────
+//
+// POST /api/onboard is unauthenticated: onboard_request() (db/08) opens an
+// account labelled with the asked-for role and files a pending request. The
+// label carries no authority (role_assignment does), but a stranger should not
+// be able to call himself `principal` on the office's Users list either. So
+// the route takes only the roles the sign-up screens offer, and both the
+// screens and the route read them from here (E1, 2026-10-07).
+//
+// A signed-in person asking through POST /api/requests is not held to this
+// list: the database decides what may be requested there.
+
+/** Staff roles a person may ask for at a school (the join screen's staff list). */
+export const SELF_REGISTRABLE_STAFF_ROLES = Object.freeze([
+  "coach", "assistantcoach", "teammanager", "scorer", "medical", "facilities", "directorofsport", "schooladmin",
+]);
+
+/** Every role a stranger may register himself for: staff, a pupil, a parent, a follower. */
+export const SELF_REGISTRABLE_ROLES = Object.freeze([
+  ...SELF_REGISTRABLE_STAFF_ROLES, "player", "guardian", "spectator",
+]);
+
 // ── What a role may NOT do, and who decides instead ──────────────
 //
 // SCRBRD-033. Every screen in this product tells a person what they can do.

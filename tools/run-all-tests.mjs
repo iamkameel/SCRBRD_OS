@@ -213,6 +213,7 @@ const SUITES = [
   // Ending a role (SCRBRD-132 C1, db/77): EndRoleButton asks for the reason,
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["decide-words", "apps/web/test/decide-words.test.mjs"],
   // The three solo-test screens, over routes that already existed: the office
   // verifying a parent's link and recording the family's agreement, booking a
   // vehicle and a trip, and signing out everywhere. Who is offered, what is
@@ -252,6 +253,10 @@ const SUITES = [
   // GA-I06: the skills radar's scale is an argument, 20/20 reaches the outer
   // ring, and no target exists without a saved goal.
   ["radar", "apps/web/test/radar.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I08: one read-state contract: loading, empty, unassessed, forbidden,
+  // disabled, failed, stale and partial each say something different, retry
+  // re-runs the same read, and useSkills no longer throws its state away.
+  ["readstate", "apps/web/test/readstate.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I07: Squad and Analytics open on the person's own side, and a gate
   // answers from the roles held, as the menu does.
   ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
@@ -284,6 +289,9 @@ const SUITES = [
   // The signed-out read path (SCRBRD-083): the projection, the router, the shell.
   ["public-api", "services/api/public/public.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
+  // Notifications S0 (docs/design/NOTIFICATIONS.md D6, D12): the publish
+  // route's lock, every push a pointer, an expired notice never sent.
+  ["push-api", "services/api/notify/push-api.test.mjs"],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an
   // email two people share; the templates clean; and it sends nothing.

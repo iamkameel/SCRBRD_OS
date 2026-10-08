@@ -3,8 +3,9 @@ import { Fragment, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { D, T, textOn, themed } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
-import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, Input, Modal, Pill, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
+import { readState } from "../lib/readState.js";
 import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { Icon } from "../ui/icons.jsx";
@@ -18,14 +19,22 @@ function TrainingView({ role }) {
   const [sessionNonce, setSessionNonce] = useState(0);
   const COACHES = useRows("coaches", role);
   const PLAYERS = useRows("players", role);
-  const TRAINING_SESSIONS = useRows("training", role, sessionNonce);
+  const trainingRead = useLive("training", role, sessionNonce);
+  const TRAINING_SESSIONS = trainingRead.rows;
+  // The schedule, said: still coming, could not be read, or none on record. A
+  // blank list reads as "nothing is planned", which is a thing people plan around (GA-I08).
+  const scheduleSaid = readState(trainingRead, { what: "the training sessions" });
   // The register is its own read, behind player.profile.read, because it is a
   // list of named minors and the session row is a noticeboard fact. A parent
   // who may read "training moved to four" must not receive every child who
   // was there. Joined here, per session, from whatever this person was sent —
   // which for that parent is nothing, and the card says nobody is attending
   // rather than crashing on a register it was never given.
-  const REGISTER = useRows("training_attendance", role);
+  const registerRead = useLive("training_attendance", role, sessionNonce);
+  const REGISTER = registerRead.rows;
+  // "0 attending" over a register that did not come is a headcount nobody took.
+  const registerSaid = readState(registerRead, { what: "the attendance register" });
+  const registerFailed = registerSaid.state === "failed";
   // Each boy's load, with the server's word for it. Empty for anyone the
   // server does not hand it to (player.workload.read), and the panel is not
   // drawn; nothing here derives a state from a number.
@@ -80,6 +89,14 @@ function TrainingView({ role }) {
 
       {view==="schedule"&&LOAD.length>0&&<LoadPanel rows={LOAD}/>}
 
+      {view==="schedule"&&scheduleSaid.state!=="ok"&&(
+        <Card sx={{marginBottom:"12px"}}><ReadState read={scheduleSaid} icon="calendar" testId="training-read-state" onRetry={()=>setSessionNonce(n=>n+1)}/></Card>
+      )}
+
+      {view==="schedule"&&registerFailed&&(
+        <Card sx={{marginBottom:"12px"}}><ReadState compact read={registerSaid} testId="register-read-state" onRetry={()=>setSessionNonce(n=>n+1)}/></Card>
+      )}
+
       {view==="schedule"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
           {TRAINING_SESSIONS.map(s=>{
@@ -107,7 +124,7 @@ function TrainingView({ role }) {
                       </div>
                     </div>
                     <div style={{textAlign:"center"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{roll.length}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{registerFailed?"—":roll.length}</div>
                       <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>attending</div>
                     </div>
                   </div>

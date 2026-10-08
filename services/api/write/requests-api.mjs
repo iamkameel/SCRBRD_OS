@@ -18,6 +18,7 @@
  * writing the assignment itself.
  */
 import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
+import { SELF_REGISTRABLE_ROLES } from "@scrbrd/policy/roles";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
@@ -25,6 +26,8 @@ import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
 const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (/** @type {unknown} */ v, /** @type {number} */ max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
+// The roles that belong to no school (db/86). Not asked for; assigned.
+const PLATFORM_ROLES = Object.freeze(["superadmin", "platformadmin"]);
 
 // A refusal from enrol_person() that is not about authority is not a 403.
 // The office is told what cannot be done — this email is another school's,
@@ -86,6 +89,15 @@ export function requestRoutes({ pool, secret }) {
     if (team && !/^[A-Z0-9]{2,8}$/.test(team)) throw err("team_code_invalid");
     return { role, school: b.schoolId, team, note: clean(b.note, 300) };
   };
+  // db/86: superadmin and platformadmin belong to no school, and a request is
+  // always at one, so granting one never works (decide_role_request refuses).
+  // Refused when it is FILED, not left pending for an answer that cannot
+  // come — and, on /api/onboard, before onboard_request() opens an account
+  // labelled with a platform role for a stranger. The same code the enrol
+  // path's refusal uses (ENROL_STATUS), so the screens say it one way.
+  const refusePlatformRole = (/** @type {string} */ role) => {
+    if (PLATFORM_ROLES.includes(role)) throw err("platform_role_needs_no_school", 422);
+  };
 
   return {
     // GET /api/schools — id and name, for choosing one.
@@ -95,6 +107,11 @@ export function requestRoutes({ pool, secret }) {
     onboard: handle(async (req) => {
       const b = req.body || {};
       const f = fields(b);
+      refusePlatformRole(f.role);
+      // A stranger asks only for what the sign-up screens offer. onboard_request()
+      // labels the new account with this role, so anything else (`principal`,
+      // `dso`, …) is refused here, before the database is asked anything.
+      if (!SELF_REGISTRABLE_ROLES.includes(f.role)) throw err("role_not_self_registrable", 422);
       const email = String(b.email ?? "").trim();
       const name = String(b.name ?? "").trim();
       if (name.length < 2) throw err("name_required");
@@ -106,6 +123,7 @@ export function requestRoutes({ pool, secret }) {
     request: handle(async (req) => {
       const b = req.body || {};
       const f = fields(b);
+      refusePlatformRole(f.role);
       const player = b.playerId == null ? null : String(b.playerId);
       if (player && !UUID.test(player)) throw err("player_invalid");
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {

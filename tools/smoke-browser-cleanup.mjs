@@ -136,7 +136,30 @@ async function go(page, nav) {
   await page.waitForTimeout(1600);
   return true;
 }
-const main = async (page) => (await tid(page, "os-main").count()) ? tid(page, "os-main").innerText() : text(page);
+/**
+ * What the screen is, in one line, for a failure's detail: the page shown,
+ * whether a session or the login form is up, whether `id` is drawn, and what
+ * would take a click at its centre.
+ */
+async function where(page, id) {
+  return page.evaluate((testid) => {
+    const q = (s) => document.querySelector(s);
+    const el = q(`[data-testid="${testid}"]`);
+    let hit = null;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      hit = at ? (el.contains(at) ? "itself" : (at.dataset?.testid || at.tagName + "." + String(at.className).slice(0, 30))) : "nothing";
+    }
+    return JSON.stringify({
+      page: q('[data-testid="os-main"]')?.dataset.page ?? null,
+      demo: !!q('[data-testid="demo-banner"]'), login: !!q("#login-email"),
+      drawn: !!el, hit, dialogs: document.querySelectorAll('[role="dialog"]').length,
+      text: (q('[data-testid="os-main"]') ?? document.body).innerText.replace(/\s+/g, " ").slice(0, 120),
+    });
+  }, id).catch((e) => `could not read the page: ${e.message}`);
+}
+const main = async (page) =>(await tid(page, "os-main").count()) ? tid(page, "os-main").innerText() : text(page);
 /** Text under 12px and controls under 44px, inside one block, as drawn. */
 async function floors(page, root) {
   return page.$eval(`[data-testid="${root}"]`, (el) => {
@@ -286,8 +309,13 @@ try {
   // A coach holds neither player.profile.manage nor player.emergency.manage.
   const coach = await open(); all.push(coach);
   ok("the coach signs in", await signIn(coach.page, "coach@example.invalid"));
-  ok("Squad opens (coach)", await go(coach.page, "squad"));
-  ok("he opens a player's panel", await pick(coach.page, PILLAY));
+  // When the coach's Squad does not open, say what the screen was instead.
+  // These two failed once in CI (PR #87, 7 Oct, 96935f9) and passed on every
+  // other run, there and locally, with nothing in the log to say why.
+  const sq = await go(coach.page, "squad");
+  ok("Squad opens (coach)", sq, sq ? "" : await where(coach.page, "nav-squad"));
+  const pk = sq && await pick(coach.page, PILLAY);
+  ok("he opens a player's panel", pk, pk ? "" : await where(coach.page, `squad-card-${PILLAY}`));
   ok("the coach is offered Set Availability and not Edit Profile",
      await tid(coach.page, "player-set-availability").count() === 1 && await tid(coach.page, "player-edit-profile").count() === 0);
   ok("...and no Log Injury", !/Log Injury/.test(await main(coach.page)));

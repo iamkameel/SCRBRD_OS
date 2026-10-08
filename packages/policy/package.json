@@ -15,6 +15,7 @@
     "./modules": "./src/modules.mjs",
     "./sa-id": "./src/sa-id.mjs",
     "./date-of-birth": "./src/date-of-birth.mjs",
-    "./public": "./src/public.mjs"
+    "./public": "./src/public.mjs",
+    "./notifications": "./src/notifications.mjs"
   }
 }

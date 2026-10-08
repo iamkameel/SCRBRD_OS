@@ -1,7 +1,9 @@
 import { D } from "../design/tokens.js";
+import { useState } from "react";
 import { requestDuties } from "../lib/cockpitNav.js";
-import { useDutyCoverage, useRows } from "../lib/live.js";
-import { Card, EmptyState, SectionHeader } from "../ui/primitives.jsx";
+import { useDutyCoverage, useLive } from "../lib/live.js";
+import { readState } from "../lib/readState.js";
+import { Card, EmptyState, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { SLOTS } from "./duties.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -35,19 +37,26 @@ import { SLOTS } from "./duties.jsx";
 // DutyRoster is. Its words are 12px and its slots say "none" as well as being
 // muted: colour is never the only word.
 function ReadinessOverview({ role, onNav }) {
-  const matches = useRows("matches", role);
+  // The fixtures read keeps its state: "No upcoming fixtures" is said of a read
+  // that answered, never of one that failed or has not come back (GA-I08).
+  const [nonce, setNonce] = useState(0);
+  const matchesRead = useLive("matches", role, nonce);
+  const matches = matchesRead.rows;
+  const matchesSaid = readState(matchesRead, { what: "the fixtures" });
   const upcoming = matches
     .filter((m) => m.status === "upcoming")
     .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))
     .slice(0, 8);
-  const { coverage, loading } = useDutyCoverage(upcoming.map((m) => m.id), role);
+  const { coverage, loading } = useDutyCoverage(upcoming.map((m) => m.id), role, nonce);
   const open = (id) => { requestDuties(id); if (onNav) onNav("matches"); };
 
   return (
     <div className="os-page">
       <SectionHeader title="Readiness" sub="Duty-roster coverage across the coming fixtures — one glance instead of one screen each" color={D.sky}/>
 
-      {upcoming.length === 0 ? (
+      {upcoming.length === 0 && !["ok", "empty"].includes(matchesSaid.state) ? (
+        <ReadState read={matchesSaid} icon="shield-check" testId="readiness-read-state" onRetry={() => setNonce((n) => n + 1)}/>
+      ) : upcoming.length === 0 ? (
         <EmptyState message="No upcoming fixtures are scheduled in your scope." icon="shield-check"/>
       ) : loading ? (
         <EmptyState loading/>

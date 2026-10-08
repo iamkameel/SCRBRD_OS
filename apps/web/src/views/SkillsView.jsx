@@ -3,14 +3,14 @@ import { useState } from "react";
 import { holdsAsHeld } from "../lib/held.js";
 import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
-import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, SectionHeader } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useNotes, useRatings, useSkills } from "../lib/live.js";
 import { recordAssessment, writeNote, NOTE_ADJUSTMENT_LIMIT } from "../lib/development.js";
 import { TREE, DISCIPLINES, ANCHOR_POINTS, anchorFor, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
-import { Icon } from "../ui/icons.jsx";
 import { signedIn } from "../lib/api.js";
 import { MIN_RADAR_AXES, RUBRIC_MAX } from "../lib/radar.js";
 import { focusAreas } from "../lib/focusAreas.js";
+import { readState, readStateFor } from "../lib/readState.js";
 
 /** A refusal from the assessment or note routes, in words; the code only when there are none. */
 const WRITE_WORDS = {
@@ -95,12 +95,20 @@ function SkillsView({ role }) {
   // the old figure showing reads exactly like a save that failed, and is how
   // somebody comes to save the same thing twice.
   const [nonce, setNonce]         = useState(0);
-  const { rows: PLAYERS, loading, error } = useLive("players", role, nonce);
-  const SKILLS_MATRIX = useSkills(role, nonce);
+  const playersRead = useLive("players", role, nonce);
+  const { rows: PLAYERS, loading, error } = playersRead;
+  // The skills read keeps its own state (audit R15). It used to return the
+  // pivot alone, so a read that failed drew as "no assessments" and a slow one
+  // as nothing. Retry bumps `nonce`, which re-runs every read on this screen
+  // with the same role and params: it cannot widen the scope.
+  const skillsRead = useSkills(role, nonce);
+  const SKILLS_MATRIX = skillsRead.skills;
+  const retry = () => setNonce(n => n + 1);
   // The rating: the coach's anchor, the ball log's answer, and the gap. Read
   // separately because it is a different question from "what did the coach
   // say" — it is that answer argued with.
-  const { ratings } = useRatings(role, nonce);
+  const ratingsRead = useRatings(role, nonce);
+  const { ratings } = ratingsRead;
   // The selected PLAYER ID, not the player row — see FieldsView for the same
   // change and the same reason: a row captured at first render belongs to a
   // list that no longer exists once the server answers.
@@ -113,6 +121,14 @@ function SkillsView({ role }) {
   // sat beside it. Falls back to the first player when nobody is assessed,
   // which is the state the empty message is actually for.
   const assessed = PLAYERS.filter(p => SKILLS_MATRIX[p.id]);
+  // Players with no assessment are listed too, after the assessed ones, and
+  // say so: a coach looking for who still has to be assessed would otherwise
+  // have to know to look for people who are not on the screen. Only once the
+  // skills read has answered: while it is coming, or after it failed, whether
+  // anybody is assessed is not known, and the detail pane says which.
+  const skillsAnswered = !signedIn() || (skillsRead.live && !skillsRead.disabled);
+  const unassessedList = skillsAnswered ? PLAYERS.filter(p => !SKILLS_MATRIX[p.id]) : [];
+  const listed = [...assessed, ...unassessedList];
   const selPlayer = PLAYERS.find(p => p.id === selId) ?? assessed[0] ?? PLAYERS[0];
   const skills = selPlayer ? SKILLS_MATRIX[selPlayer.id] : null;
   // Writing needs a session: the demo (nobody signed in, a role picked to look
@@ -120,6 +136,10 @@ function SkillsView({ role }) {
   // save would reach the API with no token and fail (missing_token).
   const canEdit = signedIn() && holdsAsHeld(role,"player.development.write");
   const cats = skills ? Object.keys(skills) : [];
+  // What the skills read says about THIS player: reading, could not read, may
+  // not read, or read and nothing for him (not assessed yet).
+  const mayReadSkills = holdsAsHeld(role, "player.development.read");
+  const detailRead = readStateFor(skillsRead, skills ? [skills] : [], { what: "skills assessments", mayRead: mayReadSkills });
   // Technical / mental / physical — the craft, the head, the body.
   const SKILL_COLORS = { technical:D.sky, mental:D.violet, tactical:D.amber, physical:D.emerald };
 
@@ -133,7 +153,8 @@ function SkillsView({ role }) {
   // A reader without it gets an empty list and the section does not appear —
   // which is the correct thing for it to do rather than an empty panel that
   // implies nothing has been written.
-  const { notes } = useNotes(role, selPlayer?.id, nonce);
+  const notesRead = useNotes(role, selPlayer?.id, nonce);
+  const { notes } = notesRead;
   const [assessing, setAssessing] = useState(false);
   const [draft, setDraft]         = useState({});   // { "group.attr": 1..20 }
   const [noteText, setNoteText]   = useState("");
@@ -146,7 +167,8 @@ function SkillsView({ role }) {
   if (!selPlayer) return (
     <div className="os-page">
       <SectionHeader title="Skills Matrix" sub="Player development tracking & assessment" color={D.violet}/>
-      <EmptyState loading={loading} error={error} icon="target" message="No players are in scope for you." />
+      <EmptyState loading={loading} error={error} status={playersRead.status} disabled={playersRead.disabled}
+        what="the players in your scope" onRetry={retry} icon="target" message="No players are in scope for you." />
     </div>
   );
 
@@ -161,9 +183,10 @@ function SkillsView({ role }) {
             <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>SELECT PLAYER</div>
           </div>
           <div style={{maxHeight:"calc(100vh - 200px)",overflowY:"auto"}}>
-            {assessed.map(p=>{
+            {listed.map(p=>{
               const s=SKILLS_MATRIX[p.id];
-              const overall=Math.round(Object.values(s).flatMap(c=>Object.values(c)).reduce((a,b)=>a+b,0)/Object.values(s).flatMap(c=>Object.values(c)).length);
+              // No assessment is not a zero: no figure is made for him.
+              const overall=s?Math.round(Object.values(s).flatMap(c=>Object.values(c)).reduce((a,b)=>a+b,0)/Object.values(s).flatMap(c=>Object.values(c)).length):null;
               return (
                 <button key={p.id} onClick={()=>setSelId(p.id)} className="pressBtn" style={{
                   padding:"10px 14px",display:"flex",alignItems:"center",gap:"9px",
@@ -175,11 +198,14 @@ function SkillsView({ role }) {
                   <div style={{flex:1,textAlign:"left"}}>
                     <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:selPlayer.id===p.id?600:400,color:selPlayer.id===p.id?D.textPrimary:D.textSecondary}}>{p.name.split(" ").pop()}</div>
                     <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</div>
+                    {!s&&<div data-testid={`unassessed-${p.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Not assessed yet</div>}
                   </div>
+                  {s&&(
                   <div style={{textAlign:"center"}}>
                     <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:progressColorForScore(overall)}}>{overall}</div>
                     <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>OVR</div>
                   </div>
+                  )}
                 </button>
               );
             })}
@@ -220,6 +246,9 @@ function SkillsView({ role }) {
               Both halves are always shown. A single adjusted number cannot
               answer the question a coach asks first, in front of a parent,
               which is what moved it. */}
+          {readState(ratingsRead,{what:"the rating"}).state==="failed"&&(
+            <Card sx={{marginBottom:"14px"}}><ReadState compact testId="rating-read-state" read={readState(ratingsRead,{what:"the rating"})} onRetry={retry}/></Card>
+          )}
           {rating&&(BATTING_OR_BOWLING.some(d=>rating[d]?.value!=null))&&(
             <Card sx={{padding:"16px",marginBottom:"14px"}}>
               <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>RATING</div>
@@ -279,6 +308,9 @@ function SkillsView({ role }) {
               Narrower than everything above it: the pupil reads his own
               attribute scores and never this. Shown only to a reader whose
               capability returned rows at all. */}
+          {readState(notesRead,{what:"the development notes"}).state==="failed"&&(
+            <Card sx={{marginBottom:"14px"}}><ReadState compact testId="notes-read-state" read={readState(notesRead,{what:"the development notes"})} onRetry={retry}/></Card>
+          )}
           {(notes.length>0||canEdit)&&(
             <Card sx={{padding:"16px",marginBottom:"14px"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
@@ -492,10 +524,14 @@ function SkillsView({ role }) {
               </div>
             </>
           ):(
-            <Card sx={{padding:"32px",textAlign:"center"}}>
-              <div style={{fontSize:"32px",marginBottom:"12px",color:D.textMuted}}><Icon name="target"/></div>
-              <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted}}>No skills assessment available for this player yet.</div>
-              {canEdit&&<div style={{marginTop:"14px"}}><Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>Run Assessment</Btn></div>}
+            <Card sx={{padding:"16px",textAlign:"center"}} data-testid="skills-read-state-card">
+              {/* Which nothing: still reading, could not read, may not read, or
+                  read and there is nothing for him (not assessed yet). Never a
+                  radar with no points, never a zero. */}
+              <ReadState testId="skills-read-state" onRetry={retry} icon="target" read={detailRead}/>
+              {canEdit&&detailRead.state==="unassessed"&&(
+                <div style={{marginTop:"14px"}}><Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>Run Assessment</Btn></div>
+              )}
             </Card>
           )}
         </div>

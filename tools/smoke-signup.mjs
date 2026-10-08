@@ -136,10 +136,10 @@ try {
       if (r.status >= 500) leaks.push(`${resource}: ${r.status} ${r.body?.error}`);
       else if (r.status === 200 && r.body?.rows?.length && resource !== "my_sign_ins") {
         const rows = r.body.rows;
-        // Its own account row (users reads app_user, which is the self-read
-        // §4.2 allows), and an aggregate over nothing (one row of zeros and
-        // nulls — the summary, a coverage count) are not data.
-        const own = resource === "users" && rows.length === 1 && rows[0].email === NEW_EMAIL;
+        // Its own account row (users and accounts read app_user, which is the
+        // self-read §4.2 allows), and an aggregate over nothing (one row of
+        // zeros and nulls — the summary, a coverage count) are not data.
+        const own = (resource === "users" || resource === "accounts") && rows.length === 1 && rows[0].email === NEW_EMAIL;
         const nothing = rows.every((x) => Object.values(x).every((v) => v === null || v === 0 || v === false || v === ""
                                                                     || (Array.isArray(v) && v.length === 0)));
         if (!own && !nothing) leaks.push(`${resource}: ${JSON.stringify(rows).slice(0, 200)}`);

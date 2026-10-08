@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import { D, T, inkOn, px, textOn } from "../design/tokens.js";
 import { initials } from "../lib/format.js";
 import { radarGeometry, radarSummary } from "../lib/radar.js";
+import { readState } from "../lib/readState.js";
 import { Icon, isIcon } from "./icons.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -296,33 +297,90 @@ function RadarChart({ data, max, color=D.indigo, size=160, caption }) {
 }
 
 /**
+ * A read that did not give rows, said as exactly what it is (GA-I08).
+ *
+ * `read` is what lib/readState.js returned: a state and its one sentence. This
+ * only draws it. Loading, an empty answer, "not assessed yet", a role that may
+ * not read it, a module switched off, a failure, an old observation and a
+ * partly answered screen are different statements and each looks and reads
+ * differently; none of them is a blank.
+ *
+ * RETRY is offered only where a second read could change the answer: a failed
+ * or partial read, or a stale one. `onRetry` is the screen's own nonce bump,
+ * which re-runs the SAME read with the same params and scope, so it can never
+ * widen what was asked. Forbidden, disabled, loading, empty and unassessed get
+ * no button. It is 44px tall, the floor for anything tapped.
+ *
+ * No motion: nothing here animates, so `prefers-reduced-motion` has nothing to
+ * honour.
+ */
+const READ_ICON = { loading: "hourglass", failed: "triangle-alert", partial: "triangle-alert",
+                    forbidden: "lock", disabled: "ban", unassessed: "target", stale: "hourglass" };
+
+const ReadState = ({ read, onRetry, icon, compact = false, testId = "read-state" }) => {
+  const { state, sentence, retry } = read;
+  if (state === "ok" || !sentence) return null;
+  const bad = state === "failed" || state === "partial";
+  const glyph = READ_ICON[state] ?? icon ?? "—";
+  return (
+    <div data-testid={testId} data-state={state}
+      role={bad ? "alert" : state === "loading" ? "status" : undefined}
+      style={{ padding: compact ? "10px 14px" : "32px 16px", textAlign: "center",
+               fontFamily: D.body, fontSize: "13px", lineHeight: 1.5,
+               color: bad ? D.roseText : D.textMuted,
+               display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
+      {!compact && (
+        <div style={{ fontSize: "20px", opacity: 0.7 }} aria-hidden="true">
+          {isIcon(glyph) ? <Icon name={glyph}/> : glyph}
+        </div>
+      )}
+      <div data-testid={`${testId}-sentence`}>{sentence}</div>
+      {retry && onRetry && (
+        <button type="button" onClick={onRetry} data-testid={`${testId}-retry`} className="pressBtn" style={{
+          minHeight: "44px", minWidth: "44px", padding: "0 20px", borderRadius: D.pill,
+          border: `1px solid ${D.border}`, background: D.surf3, color: D.textPrimary,
+          fontFamily: D.head, fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>Retry</button>
+      )}
+    </div>
+  );
+};
+
+/**
  * Nothing to show — and WHICH nothing.
  *
- * Three states that look identical in a list and mean completely different
- * things, so the component insists on being told which one it is:
+ * Several states that look identical in a list and mean completely different
+ * things, so the component insists on being told which one it is, and
+ * lib/readState.js decides (the same decision every screen gets):
  *
  *   loading — the server has not answered yet. Say nothing about the data.
  *   error   — the request failed. This is NOT "no fixtures"; it is "we do not
  *             know", and the difference matters to someone deciding whether to
- *             get in a car.
- *   empty   — the server answered, and the answer is none. The only one of the
- *             three where a definitive statement is honest.
+ *             get in a car. `status` separates "you may not read this" (403)
+ *             from "it did not work"; `disabled` is a module switched off.
+ *   empty   — the server answered, and the answer is none. The only one of
+ *             these where a definitive statement is honest, and the only one
+ *             that draws `message`.
+ *
+ * `what` names the thing in the reader's own words ("the injury list"): the
+ * failure then reads "Could not read the injury list." `onRetry` adds the Retry
+ * button to a failure and to nothing else.
  *
  * The read path never falls back to mock rows in a live session, so an empty
  * list is a real answer rather than a hidden failure — which is precisely why
  * it has to be possible to tell an empty answer from an absent one.
  */
-const EmptyState = ({ loading, error, message = "Nothing here yet", icon = "—" }) => (
-  <div style={{ padding: "32px 16px", textAlign: "center",
-                fontFamily: D.body, fontSize: "12px",
-                color: error ? textOn(D.rose) : D.textMuted }}>
-    <div style={{ fontSize: "20px", marginBottom: "8px", opacity: 0.6 }} aria-hidden="true">
-      {loading ? "…" : error ? "!" : isIcon(icon) ? <Icon name={icon}/> : icon}
+const EmptyState = ({ loading, error, status, disabled, message = "Nothing here yet", icon = "—", what, onRetry }) => {
+  const read = readState({ rows: [], loading, error, status, disabled, live: true }, { what });
+  if (read.state !== "empty") return <ReadState read={read} onRetry={onRetry}/>;
+  return (
+    <div style={{ padding: "32px 16px", textAlign: "center",
+                  fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
+      <div style={{ fontSize: "20px", marginBottom: "8px", opacity: 0.6 }} aria-hidden="true">
+        {isIcon(icon) ? <Icon name={icon}/> : icon}
+      </div>
+      {message}
     </div>
-    {loading ? "Loading…"
-     : error ? "Could not load this — the server did not answer. This is not the same as there being nothing."
-     : message}
-  </div>
-);
+  );
+};
 
-export { Avatar, Badge, Btn, Card, EmptyState, Input, KPICard, Modal, Pill, ProgressBar, RadarChart, SectionHeader, Select, SkillBar, StatusDot };
+export { Avatar, Badge, Btn, Card, EmptyState, Input, KPICard, Modal, Pill, ProgressBar, RadarChart, ReadState, SectionHeader, Select, SkillBar, StatusDot };

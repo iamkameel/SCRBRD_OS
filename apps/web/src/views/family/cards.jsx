@@ -7,6 +7,7 @@
  */
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
+import { ReadState } from "../../ui/primitives.jsx";
 import { resultText, teamOf } from "../../lib/matchCentre.js";
 import { humanDate } from "../../lib/format.js";
 import { fixturesOf, lineFor, noticesFor, opponentOf, endOf } from "../../lib/family.js";
@@ -28,10 +29,20 @@ const dayLabel = (iso) => {
  * The next fixture, where, how he gets there, his answer and the team sheet.
  * `onOpen` opens the fixture (P3/S3), where the answer is given.
  */
-export function NextFixtureCard({ child, matches, role, self = false, onOpen, onMatches, now }) {
+export function NextFixtureCard({ child, matches, role, self = false, onOpen, onMatches, now, said = null, onRetry }) {
   const next = fixturesOf(matches, child, now).upcoming[0] ?? null;
   const name = child.knownAs || child.name;
   if (!next) {
+    // "No fixture is arranged" is a statement about the season. A fixtures read
+    // that is still coming, failed or was refused says that instead (GA-I08):
+    // a parent decides whether to get in a car on this line.
+    if (said && !["ok", "empty"].includes(said.state)) {
+      return (
+        <Card label="Next fixture" testid="next-fixture">
+          <ReadState compact read={said} onRetry={onRetry} testId="next-fixture-read-state"/>
+        </Card>
+      );
+    }
     return (
       <Card label="Next fixture" testid="next-fixture">
         <Line testid="next-fixture-none">{self ? "No fixture is arranged for your side yet." : `No fixture is arranged for ${name} yet.`}</Line>

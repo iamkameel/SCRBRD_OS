@@ -62,6 +62,9 @@ const RESOURCE = {
   skills:       { table: null,          r: "player.development.read", c: "player.development.write", u: "player.development.write", d: "player.development.write" },
   notifications:{ table: null,          r: "news.read",            c: null,                    u: null,                    d: null },
   users:        { table: null,          r: "user.read",            c: "user.invite",           u: "user.role.assign",      d: "user.role.assign" },
+  // The same directory, disabled accounts included (People's read, account
+  // lifecycle D5). The demonstration has none disabled: the same rows.
+  accounts:     { table: null,          r: "user.read",            c: "user.invite",           u: "user.role.assign",      d: "user.role.assign" },
   weather:      { table: null,          r: "fixture.read",         c: null,                    u: null,                    d: null },
 };
 
@@ -262,6 +265,7 @@ const SOURCE = {
   training: () => TRAINING_SESSIONS,
   notifications: () => NOTIFICATIONS,
   users: () => USERS_INITIAL,
+  accounts: () => USERS_INITIAL,
 };
 
 /**

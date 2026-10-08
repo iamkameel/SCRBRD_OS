@@ -13,6 +13,8 @@
 import { useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
+import { ReadState } from "../../ui/primitives.jsx";
+import { readState } from "../../lib/readState.js";
 import { humanDate } from "../../lib/format.js";
 import { resultText } from "../../lib/matchCentre.js";
 import { fixturesOf, lineFor, opponentOf, endOf } from "../../lib/family.js";
@@ -28,11 +30,16 @@ const now = () => Date.now();
 
 /** An upcoming row: when, who, home or away — and his answer, as a word. */
 function UpcomingRow({ m, child, role, onOpen }) {
-  const { rows } = useLive("availability", role, 0, { matchId: m.id });
-  const row = rows.find((r) => r.playerId === child.id) ?? null;
+  const read = useLive("availability", role, 0, { matchId: m.id });
+  const row = read.rows.find((r) => r.playerId === child.id) ?? null;
+  // "No answer" is said only of a read that answered; one that is coming or
+  // failed says that instead, in the chip's place (GA-I08).
+  const said = readState(read, { what: "the answer" });
+  const answered = ["ok", "empty"].includes(said.state);
   return (
     <OpenRow onClick={() => onOpen(m)} testid={`fixture-row-${m.id}`}
-      aside={<StateChip status={row?.status ?? null} testid={`fixture-chip-${m.id}`}/>}>
+      aside={answered ? <StateChip status={row?.status ?? null} testid={`fixture-chip-${m.id}`}/>
+        : <span data-testid={`fixture-chip-${m.id}`} data-state={said.state} style={{ ...T.role.body, fontSize: "14px", fontWeight: 600, color: T.content.secondary }}>{(said.sentence ?? "").replace(/…$|\.$/, "")}</span>}>
       <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>v {opponentOf(m, child)} ({endOf(m, child)})</span>
       <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{whenOf(m)}</span>
     </OpenRow>
@@ -59,7 +66,11 @@ function PlayedRow({ m, child, onOpen, self }) {
  * the list (the switcher).
  */
 export function ChildMatches({ child, role, self = false, head = null }) {
-  const { rows: matches, loading, error } = useLive("matches", role);
+  // Retry bumps this nonce: the same read again, same role, same params.
+  const [nonce, setNonce] = useState(0);
+  const matchesRead = useLive("matches", role, nonce);
+  const { rows: matches, loading, error } = matchesRead;
+  const matchesSaid = readState(matchesRead, { what: "the fixture list" });
   const [open, setOpen] = useState(null);
   if (open?.kind === "fixture") return <FixtureDetail match={open.match} child={child} role={role} self={self} onBack={() => setOpen(null)}/>;
   if (open?.kind === "match") return <MatchFor match={open.match} child={child} role={role} self={self} matches={matches} onBack={() => setOpen(null)}/>;
@@ -70,8 +81,8 @@ export function ChildMatches({ child, role, self = false, head = null }) {
       {head}
       <Title testid="matches-title">Matches · {self ? "your side" : name}</Title>
       <Line quiet>{[child.schoolName, child.team].filter(Boolean).join(" · ")}</Line>
-      {loading && !matches.length ? <Line quiet>Reading the fixture list…</Line>
-        : error ? <Line quiet>Could not load the fixtures just now.</Line> : null}
+      {!["ok", "empty"].includes(matchesSaid.state) && !matches.length
+        ? <ReadState compact read={matchesSaid} onRetry={() => setNonce((n) => n + 1)} testId="matches-read-state"/> : null}
       {live.length > 0 && (
         <Card label="Live now" testid="matches-live">
           {live.map((m) => (
@@ -84,7 +95,7 @@ export function ChildMatches({ child, role, self = false, head = null }) {
       <Card label="Coming up" testid="matches-upcoming">
         {upcoming.length ? upcoming.map((m) => (
           <UpcomingRow key={m.id} m={m} child={child} role={role} onOpen={(x) => setOpen({ kind: "fixture", match: x })}/>
-        )) : !loading && <Line quiet>{self ? "Nothing arranged for your side yet." : `Nothing arranged for ${name}'s side yet.`}</Line>}
+        )) : !loading && !error && <Line quiet>{self ? "Nothing arranged for your side yet." : `Nothing arranged for ${name}'s side yet.`}</Line>}
       </Card>
       {played.length > 0 && (
         <Card label="Played" testid="matches-played">
