@@ -1,5 +1,7 @@
 # GA-I19 · The medical review worklist
 
+**Decided 2026-10-08 (Kameel): approved as recommended. Slice 0 now; slice A after Q0 and Q2 are answered.**
+
 **Status:** design for Kameel's review (Fable, 2026-10-08). Nothing here is built.
 **Family:** SCRBRD-110 (fast-bowler workload, health data, POPIA consent).
 **Governs:** `injury`, its write route, the physio's worklist, SG-12's injury half.

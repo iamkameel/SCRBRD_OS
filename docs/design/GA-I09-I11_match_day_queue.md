@@ -2,6 +2,7 @@
 
 **Status:** for Kameel's review (Fable, 2026-10-07). Nothing built.
 Decided 2026-10-07 (Kameel): D1–D13 as recommended; A0 approved for before the 12 Oct freeze.
+Pulled forward 2026-10-08 (Kameel): A1 onwards now.
 **Source:** `audit/GAP_ANALYSIS_2026-10-05.md` (GA-I09–I11, and the private comparative report it is built from, §3 "the key product gap", §5 and §6 — not quoted here, the repository is public); `docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md` (**the base: this extends it; D1–D16, the signal table and the never-list stand unchanged**); ADR 0001, 0003; `packages/policy/src/roles.mjs`, `capabilities.mjs`; `apps/web/src/lib/cockpit.js` (`cockpitGate`, `PANEL_CAPABILITY`), `lib/signals.js` (S1–S12 as built), `views/cockpit/MatchDayCard.jsx`, `useCockpit.js`, `views/ReadinessOverview.jsx`, `views/DashboardView.jsx`; `services/api/read/read-api.mjs` (`readiness`, `availability`, `match_duties`, `match_squad`, `trips`, `role_requests`, `sign_in_claims`, `clearance_register`, `notifications`, `matches`); `db/84` (`asked_unverified`).
 **Reader:** Kameel on a phone first; then the Opus lead; then the Sonnet agent who builds the pre-freeze slice.
 
