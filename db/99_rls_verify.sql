@@ -3868,7 +3868,84 @@ CREATE OR REPLACE FUNCTION _v86_record() RETURNS text AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/86 (section 65) ──────────────────────────────────────────────
 
--- ┌── db/88 (section 66). SCRBRD-133 G2: par for the public pages ───────
+-- ┌── db/87 (section 66) ──────────────────────────────────────────────
+-- A wicket on a wide or a no-ball (Law 22.9, 21.17). One Hilton 1XI fixture,
+-- one innings, Hilton batting and bowling (the fold cares for neither side):
+-- J Whitfield (…01) and T Bekker (…02) open, R Pillay (…05) and K Dlamini
+-- (…06) come in; S Naidoo (…03) bowls; M Cele (…04) keeps.
+--   seq 1 start · 2 keeper …04 · 3 a single (…01) · 4 stumped off a wide
+--   (…02), "M Cele": the keeper's, the bowler's · 5 …05 in · 6 a no-ball, 2
+--   off the bat (…05), …01 run out at the striker's end: not the bowler's; a
+--   free hit · 7 …06 in · 8 stumped off a wide on the free hit (…06): saved,
+--   and the free hit carries on · 9 a dot (…06): the free hit taken.
+-- packages/scoring/test/replay.test.mjs group P folds the same log ("the log
+-- db/87 proves") and holds the fold to the figures §66 reads. Written as the
+-- owner, one row per statement, as the write path writes.
+CREATE OR REPLACE FUNCTION _seed_87() RETURNS uuid AS $$
+DECLARE m uuid; r record;
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  A1 uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  A2 uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
+  BW uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
+  KP uuid := 'aaaaaaaa-0000-0000-0000-000000000004';
+  A3 uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
+  A4 uuid := 'aaaaaaaa-0000-0000-0000-000000000006';
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', 'Verify 087 wickets off extras', now() - interval '2 days', 'cricket', 'T20', 20, 'complete')
+  RETURNING id INTO m;
+  FOR r IN
+    SELECT * FROM (VALUES
+      (1, 'innings_start', NULL, NULL::int, NULL, jsonb_build_object('battingTeam', 'Hilton 1XI', 'bowlingTeam', 'Hilton 2XI',
+            'squad', jsonb_build_array(jsonb_build_object('id', A1, 'name', 'J Whitfield'), jsonb_build_object('id', A2, 'name', 'T Bekker')),
+            'bowlingSquad', jsonb_build_array(jsonb_build_object('id', BW, 'name', 'S Naidoo'), jsonb_build_object('id', KP, 'name', 'M Cele'))),
+            NULL::uuid, NULL::uuid, NULL::uuid),
+      (2, 'keeper', NULL, NULL, NULL, jsonb_build_object('keeper', KP), NULL, NULL, NULL),
+      (3, 'ball', 'run', 1, NULL, '{}'::jsonb, A1, BW, NULL),
+      (4, 'ball', 'Wd', 0, 'stumped', '{"fielder":"M Cele"}', A2, BW, NULL),
+      (5, 'batters', NULL, NULL, NULL, jsonb_build_object('striker', A3), NULL, NULL, NULL),
+      (6, 'ball', 'Nb', 2, 'run_out', '{"outAt":"striker_end"}', A3, BW, A1),
+      (7, 'batters', NULL, NULL, NULL, jsonb_build_object('striker', A4), NULL, NULL, NULL),
+      (8, 'ball', 'Wd', 0, 'stumped', '{}', A4, BW, NULL),
+      (9, 'ball', 'run', 0, NULL, '{}', A4, BW, NULL)
+    ) AS x(seq, kind, bt, v, dis, payload, striker, bowler, dismissed)
+  LOOP
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                            client_seq, client_ts, kind, ball_type, value, dismissal, payload, striker_id, bowler_id, dismissed_id)
+    VALUES (m, HIL, r.seq, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-087', 'v87:' || m || ':' || r.seq,
+            r.seq, now() - interval '2 days' + r.seq * interval '20 seconds', r.kind, r.bt, r.v, r.dis, r.payload,
+            r.striker, r.bowler, r.dismissed);
+  END LOOP;
+  RETURN m;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Every career figure a wicket on an extra moves, for the six boys, in one
+-- line, as the reader may see them: compared before and after _seed_87().
+CREATE OR REPLACE FUNCTION _careers_87() RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'bowl_since',  (SELECT jsonb_build_array(s.legal_balls, s.wides, s.no_balls, s.wickets, s.runs_conceded)
+                      FROM player_bowling_since('aaaaaaaa-0000-0000-0000-000000000003', NULL) s),
+    'bowl_career', (SELECT coalesce(sum(x.wickets), 0) FROM player_bowling_career x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+    'bowl_season', (SELECT coalesce(sum(x.wickets), 0) FROM player_bowling_by_season x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+    'wkt_stumped', (SELECT coalesce(sum(x.wickets), 0) FROM player_wicket_breakdown x
+                     WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000003' AND x.dismissal = 'stumped'),
+    'out_since',   (SELECT jsonb_build_array(player_dismissals_since('aaaaaaaa-0000-0000-0000-000000000001', NULL),
+                                             player_dismissals_since('aaaaaaaa-0000-0000-0000-000000000002', NULL),
+                                             player_dismissals_since('aaaaaaaa-0000-0000-0000-000000000006', NULL))),
+    'out_view',    (SELECT coalesce(sum(x.dismissals), 0) FROM player_dismissals x
+                     WHERE x.player_id IN ('aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002')),
+    'out_season',  (SELECT coalesce(sum(x.dismissals), 0) FROM player_dismissals_by_season x
+                     WHERE x.player_id IN ('aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002')),
+    'out_ro',      (SELECT coalesce(sum(x.dismissals), 0) FROM player_dismissal_breakdown x
+                     WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000001' AND x.dismissal = 'run_out'),
+    'out_st',      (SELECT coalesce(sum(x.dismissals), 0) FROM player_dismissal_breakdown x
+                     WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000002' AND x.dismissal = 'stumped'),
+    'bat_since',   (SELECT jsonb_build_array(s.runs, s.balls_faced) FROM player_batting_since('aaaaaaaa-0000-0000-0000-000000000005', NULL) s),
+    'bat_wide',    (SELECT jsonb_build_array(s.runs, s.balls_faced) FROM player_batting_since('aaaaaaaa-0000-0000-0000-000000000002', NULL) s),
+    'keeping',     (SELECT coalesce(sum(x.stumpings), 0) FROM player_keeping_career x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000004'))
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+-- └── db/87 (section 66) ──────────────────────────────────────────────
+
+-- ┌── db/88 (section 67; db/88's own comments say §66, the number it was built under). SCRBRD-133 G2: par for the public pages
 -- At Hilton two grounds of the proof's own. "Verify 088 Oval": five 20-over
 -- U15 first innings (Hilton U15A batting first, the match complete) of 100,
 -- 110, 120, 130 and 140, played one to five days ago — par round(600 ÷ 5) =
@@ -3902,7 +3979,7 @@ BEGIN
   PERFORM _publish_73(m_few);
   RETURN jsonb_build_object('g', g, 'g4', g4, 'on', m_on, 'off', m_off, 'few', m_few);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- └── db/88 (section 66) ──────────────────────────────────────────────
+-- └── db/88 (section 67) ──────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -16528,8 +16605,92 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 65
+  -- ┌── section 66 · db/87: a wicket on a wide or a no-ball ──
+  -- _seed_87(): a Hilton innings with a stumping off a wide, a run out off a
+  -- no-ball, and a stumping off a wide on the free hit that follows (saved).
+  -- Every figure below is the fold's for that log (replay.test.mjs group P,
+  -- "the log db/87 proves"); tools/smoke-fold-figures.mjs holds every reader
+  -- to the fold over generated logs with wickets on extras.
+  --
+  -- With db/87 left out (the database as db/85 left it) this section went
+  -- red at its first assertion: the live score read (6,0,2) — no wicket on
+  -- either extra. What each label holds:
+  --   (score)   the live score and the handover's count: 2 wickets, not 0
+  --   (bowler)  the bowler's innings and career: the stumping is his
+  --   (batter)  who is out: …01 run out off the no-ball, …02 stumped off the wide
+  --   (keeper)  the stumping off the wide is the keeper's
+  --   (door)    a method the Law does not allow off the extra is refused
+  DECLARE
+    M    uuid;
+    b0   jsonb;
+    b1   jsonb;
+    got  text;
+    A1 uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+    A2 uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
+    BW uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
+    A3 uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
+    A4 uuid := 'aaaaaaaa-0000-0000-0000-000000000006';
+  BEGIN
+    PERFORM _as(U_SARAH);
+    b0 := _careers_87();
+    M := _seed_87();
+    PERFORM _as(U_SARAH);
+    b1 := _careers_87();
+    -- (score) runs 1 + 1 + 3 + 1 + 0; two wickets (the saved stumping is none); two balls of the over
+    SELECT concat_ws(' | ',
+      (SELECT row(l.runs, l.wickets, l.legal_balls)::text FROM match_live_score l WHERE l.match_id = M),
+      (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(M, 0::smallint) f))
+      INTO got;
+    PERFORM _assert(got = '(6,2,2) | (6,2,2)',
+      format('§66 (score): the live score and the handover''s count read %s, where the fold says (6,2,2) | (6,2,2)', got));
+    -- (bowler) his innings: one wicket, six conceded (both wides, the no-ball and its two off the bat)
+    SELECT row(b.wickets, b.runs_conceded)::text INTO got FROM bowler_innings_figures b WHERE b.match_id = M AND b.player_id = BW;
+    PERFORM _assert(got = '(1,6)', format('§66 (bowler): S Naidoo''s innings reads %s, where the fold says (1,6)', got));
+    PERFORM _assert(b1->'bowl_since' = jsonb_build_array((b0->'bowl_since'->>0)::int + 2, (b0->'bowl_since'->>1)::int + 2,
+                                                         (b0->'bowl_since'->>2)::int + 1, (b0->'bowl_since'->>3)::int + 1,
+                                                         (b0->'bowl_since'->>4)::int + 6)
+                    AND (b1->>'bowl_career')::int = (b0->>'bowl_career')::int + 1
+                    AND (b1->>'bowl_season')::int = (b0->>'bowl_season')::int + 1
+                    AND (b1->>'wkt_stumped')::int = (b0->>'wkt_stumped')::int + 1,
+      format('§66 (bowler): his career moved %s → %s; the fold says two balls, two wides, a no-ball, one wicket (stumped), six runs', b0, b1));
+    -- (batter) who is out, and what each faced: a no-ball is a ball faced, a wide is not
+    SELECT string_agg(CASE x.player_id WHEN A1 THEN 'a1' WHEN A2 THEN 'a2' WHEN A3 THEN 'a3' ELSE 'a4' END
+                      || '=' || row(x.runs, x.balls_faced, x.out)::text, ' ' ORDER BY x.player_id)
+      INTO got FROM player_innings x WHERE x.match_id = M;
+    PERFORM _assert(got = 'a1=(1,1,t) a2=(0,0,t) a3=(2,1,f) a4=(0,1,f)',
+      format('§66 (batter): the innings'' batting reads %s, where the fold says a1=(1,1,t) a2=(0,0,t) a3=(2,1,f) a4=(0,1,f)', got));
+    PERFORM _assert(b1->'out_since' = jsonb_build_array((b0->'out_since'->>0)::int + 1, (b0->'out_since'->>1)::int + 1, (b0->'out_since'->>2)::int)
+                    AND (b1->>'out_view')::int = (b0->>'out_view')::int + 2
+                    AND (b1->>'out_season')::int = (b0->>'out_season')::int + 2
+                    AND (b1->>'out_ro')::int = (b0->>'out_ro')::int + 1
+                    AND (b1->>'out_st')::int = (b0->>'out_st')::int + 1
+                    AND b1->'bat_since' = jsonb_build_array((b0->'bat_since'->>0)::int + 2, (b0->'bat_since'->>1)::int + 1)
+                    AND b1->'bat_wide' = b0->'bat_wide',
+      format('§66 (batter): the careers moved %s → %s; the fold says …01 run out, …02 stumped, …06 not out; …05 2 off a ball; …02 faced nothing', b0, b1));
+    -- (keeper) the stumping off the wide is M Cele's; the saved one is nobody's
+    SELECT string_agg(k.seq || ':' || k.dismissal, ',' ORDER BY k.seq) INTO got FROM keeper_dismissal k WHERE k.match_id = M;
+    PERFORM _assert(got = '4:stumped' AND (b1->>'keeping')::int = (b0->>'keeping')::int + 1,
+      format('§66 (keeper): the keeper''s dismissals read %s (career %s → %s), where the fold says 4:stumped', got, b0->'keeping', b1->'keeping'));
+    -- (door) a bowled off a wide, a stumping or a catch off a no-ball: refused,
+    -- as the owner writes (no route, no policy); a run out off either taken
+    PERFORM _assert(_owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+        idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+        VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-087',
+                'v87:door:wd', 30, now(), 'ball', 'Wd', 0, 'bowled', '{}')$q$, M)) = '23514'
+                    AND _owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+        idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+        VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-087',
+                'v87:door:nb', 30, now(), 'ball', 'Nb', 0, 'caught', '{}')$q$, M)) = '23514'
+                    AND _owner_61(format($q$INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+        idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+        VALUES (%L, '11111111-1111-1111-1111-111111111111', 30, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-087',
+                'v87:door:ok', 30, now(), 'ball', 'Nb', 1, 'run_out', '{}')$q$, M)) = 'ok',
+      '§66 (door): a bowled off a wide or a catch off a no-ball was taken, or a run out off a no-ball refused');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 66
 
-  -- ── 66. Par for the public pages (SCRBRD-133 G2, db/88) ─────────────
+  -- ── 67. Par for the public pages (SCRBRD-133 G2, db/88) ─────────────
   -- _seed_88(): a ground of five innings (par 120), a ground of four, and a
   -- published, an unpublished and a below-the-floor fixture. Read as NOBODY —
   -- the principal every /api/public/ request runs as — except where a reader
@@ -16555,15 +16716,15 @@ $v49$;
     PERFORM _assert(pg_get_function_result('public_venue_par(uuid)'::regprocedure)
                     = 'TABLE(overs integer, age_band text, n integer, floor integer, sufficient boolean, par integer, '
                       'median numeric, low integer, high integer, first_season integer, last_season integer)',
-      format('§66 (columns): public_venue_par returns %s', pg_get_function_result('public_venue_par(uuid)'::regprocedure)));
+      format('§67 (columns): public_venue_par returns %s', pg_get_function_result('public_venue_par(uuid)'::regprocedure)));
     PERFORM _assert(pg_get_function_result('public_dls_table(uuid)'::regprocedure)
                     = 'TABLE(id uuid, version smallint, grain text, max_balls smallint, status text, current boolean, cells jsonb)',
-      format('§66 (columns): public_dls_table returns %s', pg_get_function_result('public_dls_table(uuid)'::regprocedure)));
+      format('§67 (columns): public_dls_table returns %s', pg_get_function_result('public_dls_table(uuid)'::regprocedure)));
     -- the application's, and nobody else's: not PUBLIC
     PERFORM _assert(has_function_privilege('public_venue_par(uuid)', 'EXECUTE') AND has_function_privilege('public_dls_table(uuid)', 'EXECUTE')
                     AND NOT has_function_privilege('public', 'public_venue_par(uuid)', 'EXECUTE')
                     AND NOT has_function_privilege('public', 'public_dls_table(uuid)', 'EXECUTE'),
-      '§66: the public par reads are not the application''s alone');
+      '§67: the public par reads are not the application''s alone');
 
     -- (served) as nobody, a published fixture reads its ground's par and its
     -- evidence; the signed-in reader's door stays shut to nobody
@@ -16571,37 +16732,37 @@ $v49$;
     SELECT row(w.overs, w.age_band, w.n, w.floor, w.sufficient, w.par, w.median, w.low, w.high,
                w.first_season <= w.last_season AND w.last_season = extract(year FROM sa_today())::integer)::text
       INTO got FROM public_venue_par(M_ON) w;
-    PERFORM _assert(got = '(20,U15,5,5,t,120,120,100,140,t)', format('§66 (served): the published fixture''s ground reads %s', got));
+    PERFORM _assert(got = '(20,U15,5,5,t,120,120,100,140,t)', format('§67 (served): the published fixture''s ground reads %s', got));
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM venue_par_for_match(M_ON)),
-      '§66: nobody read a ground''s par through the signed-in reader');
+      '§67: nobody read a ground''s par through the signed-in reader');
     -- (served) nobody published OFF: the same nothing as a fixture that does not exist
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_venue_par(M_OFF)) AND NOT EXISTS (SELECT 1 FROM public_venue_par(gen_random_uuid())),
-      '§66 (served): an unpublished fixture''s ground answered');
+      '§67 (served): an unpublished fixture''s ground answered');
     -- (floor) four innings: nothing at all, not a row with no par
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_venue_par(M_FEW)), '§66 (floor): a ground of four innings answered');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_venue_par(M_FEW)), '§67 (floor): a ground of four innings answered');
     -- …while Hilton's director reads that ground as four of five, insufficient:
     -- the floor hides it, not the lack of a ground
     PERFORM _as(U_SARAH);
     SELECT * INTO v FROM venue_par_for_match(M_FEW);
     PERFORM _assert(v.n = 4 AND NOT v.sufficient AND v.par IS NULL,
-      format('§66 (floor): the director reads the short ground as n %s, sufficient %s', v.n, v.sufficient));
+      format('§67 (floor): the director reads the short ground as n %s, sufficient %s', v.n, v.sufficient));
 
     -- (table) the DLS table goes to the server for a published fixture —
     -- exactly the one a reader of the result reads (§54 left one published)
     -- — and for an unpublished one, nothing
     SELECT string_agg(t.id || ':' || t.version || ':' || t.status || ':' || jsonb_array_length(t.cells), ' ') INTO got
       FROM dls_table_for_match(M_ON) t;
-    PERFORM _assert(got IS NOT NULL, '§66 (table): the director reads no DLS table for the fixture; §54 left none published');
+    PERFORM _assert(got IS NOT NULL, '§67 (table): the director reads no DLS table for the fixture; §54 left none published');
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert((SELECT string_agg(t.id || ':' || t.version || ':' || t.status || ':' || jsonb_array_length(t.cells), ' ')
                        FROM public_dls_table(M_ON) t) = got,
-      format('§66 (table): the published fixture''s server reads %s, the director %s',
+      format('§67 (table): the published fixture''s server reads %s, the director %s',
              (SELECT string_agg(t.id || ':' || t.version, ' ') FROM public_dls_table(M_ON) t), got));
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_dls_table(M_OFF)), '§66 (table): an unpublished fixture read the DLS table');
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match(M_ON)), '§66: nobody read the table through the signed-in reader');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM public_dls_table(M_OFF)), '§67 (table): an unpublished fixture read the DLS table');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM dls_table_for_match(M_ON)), '§67: nobody read the table through the signed-in reader');
   END;
   PERFORM set_config('app.user_id', '', true);
-  -- └── end of section 66
+  -- └── end of section 67
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

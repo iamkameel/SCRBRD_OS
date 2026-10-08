@@ -42,6 +42,12 @@ ok("a wide", w([b({ type: "Wd", value: 0 })]) === "Wide");
 ok("a wide with runs", w([b({ type: "Wd", value: 2 })]) === "Wide, and two more");
 ok("a no ball", w([b({ type: "Nb", value: 0 })]) === "No ball");
 ok("a bye and a leg bye", w([b({ type: "B", value: 1 })]) === "One bye" && w([b({ type: "LB", value: 2 })]) === "Two leg byes");
+// A wicket on a wide or a no-ball (Law 22.9, 21.17): the extra, then the wicket.
+ok("a stumping off a wide: \"Wide. Wicket — stumped\"", w([b({ type: "Wd", value: 0, dismissal: "stumped" })]) === "Wide. Wicket — stumped",
+   w([b({ type: "Wd", value: 0, dismissal: "stumped" })]));
+ok("a run out off a no-ball: \"No ball. Wicket — run out\"", w([b({ type: "Nb", value: 1, dismissal: "run_out", dismissed: B, outAt: "striker_end" })]) === "No ball. Wicket — run out");
+ok("...and a stumping off a wide the free hit saved is no wicket", w([b({ type: "Nb", value: 0 }), b({ type: "Wd", value: 0, dismissal: "stumped" })]) === "Wide. Free hit: not out",
+   w([b({ type: "Nb", value: 0 }), b({ type: "Wd", value: 0, dismissal: "stumped" })]));
 
 console.log("\nB. Only what is new");
 const one = [...head, b({ value: 1 })];

@@ -308,6 +308,13 @@ Each needs a change to the app, not to the data:
 - The away school's bus: a trip belongs to the host school, so Kearsney cannot book one to Westville, and the page says so.
 - The away team sheet on the pad: the host's scorer cannot read the visitors' named XI. He types their names.
 
+## Known issues, fixed after the pilot
+
+Decided 7 Oct (corrections everywhere, GA-I36): these are known and are not failures of the run.
+
+- A fifty or hundred notice stays after its ball is undone or voided. Parents and the coach keep the "reached 50" notice even when the score falls back to 48.
+- An approved correction, or a ball released from quarantine, sends no notice even when it takes a batter past 50.
+
 ## The log
 
 | Time | Device | Scenario | What happened | Screenshot |

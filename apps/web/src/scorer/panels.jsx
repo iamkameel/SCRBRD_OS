@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { batHandOf, chargedToBowler, normaliseDismissal, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
+import { batHandOf, chargedToBowler, isWicketBall, normaliseDismissal, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { rulesOf } from "@scrbrd/scoring";
 import { nameBook } from "../lib/matchCentre.js";
@@ -326,7 +326,10 @@ function IntelPanel({inn,overs,target,isChase}){
 
 function ScorecardPanel({innings,idx}){
   const i=innings[idx];if(!i)return null;
-  const batted=i.batsmen.filter(b=>b.balls>0||b.status==="batting"||b.status==="dnb");
+  // Out or retired is on the card whether or not he faced a ball: a batter
+  // stumped off a wide first ball (Law 22.9), run out off a no-ball before
+  // facing, or timed out has none, and is out all the same.
+  const batted=i.batsmen.filter(b=>b.balls>0||b.status==="batting"||b.status==="dnb"||b.status==="out"||b.status==="retired");
   const bowled=i.bowlers.filter(b=>b.balls>0);
   const xtra=i.extras.wide+i.extras.noBall+i.extras.bye+i.extras.legBye+i.extras.penalty;
   const thRow=(cols,colDefs)=>(
@@ -442,12 +445,25 @@ function detectMilestone(ball,inn){
     if(prev<150&&cur>=150)milestones.push({type:"150",label:"150!",sub:bat.name+" on 150",color:D.amber,icon:"flame"});
     if(prev<200&&cur>=200)milestones.push({type:"200",label:"DOUBLE!",sub:bat.name+" — 200 runs!",color:D.amber,icon:"crown"});
   }
-  if(bow&&ball.type==="W"){
+  // A wicket that stood: a W, or one on a wide or a no-ball (isWicketBall()),
+  // not one a free hit saved (a log entry says so; the pad's caller passes
+  // no method then).
+  if(bow&&isWicketBall(ball)&&!ball.freeHitSaved){
     const wkts=(bow.wickets||0)+1; // including this dismissal
-    if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"ball"});
-    if(wkts>=3){
+    // His fifth only when this one is his (chargedToBowler): a run out off a
+    // no-ball, now recordable, is the side's wicket and not the bowler's.
+    const his=ball.dismissal!=null&&chargedToBowler(normaliseDismissal(ball.dismissal));
+    if(wkts===5&&his)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"ball"});
+    // A hat-trick is three of the bowler's balls of the over running: a
+    // wicket on a wide or a no-ball (Law 22.9, 21.17) neither makes one nor
+    // puts him on one, as the commentary and SQL's bowler_hat_trick read it.
+    // And each of the three his (chargedToBowler) and standing: a run out
+    // or a free hit's save between makes no hat-trick.
+    const ofOver=ball.type!=="Wd"&&ball.type!=="Nb";
+    const mine=(b)=>b?.type==="W"&&!b.freeHitSaved&&b.bowler===bow.id&&chargedToBowler(normaliseDismissal(b.dismissal));
+    if(wkts>=3&&ofOver&&his){
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
-      if(legal.length===2&&legal.every(b=>b.type==="W"&&b.bowler===bow.id))
+      if(legal.length===2&&legal.every(mine))
         milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"sparkles"});
     }
     if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"bails-off"});
@@ -457,8 +473,7 @@ function detectMilestone(ball,inn){
     // itself), with the innings still going. Only a wicket that is the
     // bowler's counts: a run out on the second ball puts no one on a hat-trick.
     // A caller that does not say how the batter was out is not trusted with it.
-    else{
-      const mine=(b)=>b?.type==="W"&&!b.freeHitSaved&&b.bowler===bow.id&&chargedToBowler(normaliseDismissal(b.dismissal));
+    else if(ofOver){
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
       if(ball.dismissal!=null&&chargedToBowler(normaliseDismissal(ball.dismissal))&&mine(legal.at(-1))&&!mine(legal.at(-2)))
         milestones.push({type:"hattrickball",label:"HAT-TRICK BALL",sub:bow.name+" — two in two",color:D.roseText,icon:"sparkles"});

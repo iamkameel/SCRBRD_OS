@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, NB_RUNS } from "@scrbrd/scoring";
+import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, NB_RUNS, dismissalsOffExtra } from "@scrbrd/scoring";
 import { D, T } from "../design/tokens.js";
 import { armHandover, cancelHandover, claimHandover, refusalWords, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
@@ -66,6 +66,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
   // null is off the bat, the event's default, so it is not written.
   const[from,setFrom]=useState(null);
   const FROM=[{id:null,label:"Off the bat"},{id:NB_RUNS.BYES,label:"Byes"},{id:NB_RUNS.LEG_BYES,label:"Leg byes"}];
+  const[wicket,setWicket]=useState(false);
   // Off any no-ball a batter is out only run out, hit the ball twice or
   // obstructing the field (Law 21.17, 4th Edition; 21.18 in the 3rd).
   // Both: 1 penalty run + any runs scored (the bat's only when off the bat), doesn't count as legal delivery
@@ -152,8 +153,28 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
             </div>
           </div>
         )}
-        <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>onConfirm(nbType,runs,runs>0?from:null)} sx={{borderRadius:D.md}}>
-          Confirm No Ball ({runs+1} runs)
+        {/* And a wicket? (Law 21.17): off a no ball only run out, hit the
+            ball twice or obstructing the field. Yes moves on to the wicket
+            sheet, which offers just those; nothing is recorded until it
+            confirms. */}
+        <div data-testid="nb-wicket">
+          <Lbl sx={{marginBottom:"8px"}}>And a wicket?</Lbl>
+          <div style={{display:"flex",gap:"6px"}}>
+            {[[false,"No"],[true,"Yes"]].map(([on,label])=>(
+              <button key={label} type="button" data-testid={`nb-wicket-${on?"yes":"no"}`} aria-pressed={wicket===on} onClick={()=>setWicket(on)} className="pressBtn" style={{
+                flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
+                border:`1px solid ${wicket===on?D.rose+"77":D.border}`,background:wicket===on?`${D.rose}1a`:D.surf2,
+                color:wicket===on?D.roseText:D.textMuted}}>{label}</button>
+            ))}
+          </div>
+          {wicket&&(
+            <div style={{marginTop:"6px",color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
+              Next: run out, hit the ball twice or obstructing the field.
+            </div>
+          )}
+        </div>
+        <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>onConfirm(nbType,runs,runs>0?from:null,wicket)} sx={{borderRadius:D.md}}>
+          {wicket?"Next: the wicket":`Confirm No Ball (${runs+1} runs)`}
         </Btn>
       </div>
     </Sheet>
@@ -759,15 +780,24 @@ function CustomBatEntry({onSend}){
 // fielding side (scorer/side.js). A substitute fielder may be someone outside
 // the eleven (Law 24), so a typed name stays; the twelfth man, when the pad
 // knows him, is offered before it.
-function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,keeper=null,twelfth=null,onClose,onConfirm}){
-  const[mode,setMode]=useState(DISMISSAL.BOWLED);
+/**
+ * `extra` (Law 22.9, 21.17): the wicket fell on a wide or a no-ball, whose
+ * runs the pad has already asked — {type: "Wd" | "Nb", runs}. The sheet
+ * offers only the ways out the Law allows off it, opens on run out, and does
+ * not ask the runs again; the rest (who, the end, the fielder) is as for any
+ * wicket.
+ */
+function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,keeper=null,twelfth=null,extra=null,onClose,onConfirm}){
+  const offExtra=extra?dismissalsOffExtra(extra.type):null;
+  const[mode,setMode]=useState(offExtra?DISMISSAL.RUN_OUT:DISMISSAL.BOWLED);
   // An obstruction that stopped a catch (4th Edition, from 1 October 2026;
   // SCRBRD-113): no runs count, and the fielding captain chooses whether the
   // non-striker or the incoming batter faces the next ball. The 3rd Edition
   // gave no choice: the incoming batter takes the striker's end, as before.
   const[stopped,setStopped]=useState(false);
   const[faces,setFaces]=useState(null);
-  const asksCatch=mode===DISMISSAL.OBSTRUCTING_FIELD&&edition===4&&!!striker&&!!nonStriker;
+  // Not off a wide or a no-ball: nobody is out caught off either.
+  const asksCatch=!offExtra&&mode===DISMISSAL.OBSTRUCTING_FIELD&&edition===4&&!!striker&&!!nonStriker;
   const asksFaces=asksCatch&&stopped;
   const[fielder,setFielder]=useState("");
   const[fielterFilter,setFielderFilter]=useState("");
@@ -783,14 +813,16 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   // offered: since the 2017 Code it is Obstructing the field (Law 37). The
   // engine still reads it, for old logs and pre-2017 scorecards (Kameel,
   // 2026-09-27).
-  const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT&&m!==DISMISSAL.HANDLED_BALL);
+  const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT&&m!==DISMISSAL.HANDLED_BALL&&(!offExtra||offExtra.has(m)));
   // A run out: who, how many runs were completed first, and — when some
   // were, so the batters have crossed (Law 18) — at which end the wicket was
   // put down (Law 38.4). That end is the one left empty (SCRBRD-069).
-  const[runs,setRuns]=useState(0);
+  // Off an extra the runs were asked with it: they are the runs completed.
+  const[ownRuns,setRuns]=useState(0);
+  const runs=offExtra?extra.runs:ownRuns;
   const[end,setEnd]=useState(null);
   const isRunOut=mode===DISMISSAL.RUN_OUT;
-  const asksWho=(mode===DISMISSAL.RETIRED_OUT||isRunOut)&&striker&&nonStriker;
+  const asksWho=(mode===DISMISSAL.RETIRED_OUT||isRunOut||(offExtra&&mode===DISMISSAL.OBSTRUCTING_FIELD))&&striker&&nonStriker;
   const asksEnd=isRunOut&&runs>0;
   const needsFielder=mode===DISMISSAL.CAUGHT||mode===DISMISSAL.RUN_OUT;
   const isStumped=mode===DISMISSAL.STUMPED;
@@ -819,6 +851,13 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
       <div style={{color:D.textSecondary,fontSize:"13px",fontFamily:D.body,marginBottom:"14px",paddingTop:"4px"}}>
         {asksWho?whoName:batName} is dismissed
       </div>
+      {offExtra&&(
+        <div data-testid="wicket-off-extra" style={{color:D.textPrimary,fontSize:"13px",fontFamily:D.body,marginBottom:"12px"}}>
+          {extra.type==="Wd"
+            ?`Off a wide${runs?` (${runs} run${runs!==1?"s":""} taken)`:""}: out only run out, stumped, hit wicket or obstructing the field.`
+            :`Off a no ball${runs?` (${runs} run${runs!==1?"s":""} completed)`:""}: out only run out, hit the ball twice or obstructing the field.`}
+        </div>
+      )}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"14px"}}>
         {modes.map(m=>(
           <button key={m} data-testid={`wicket-mode-${m}`} onClick={()=>handleMode(m)} className="pressBtn" style={{
@@ -844,7 +883,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           )}
         </div>
       )}
-      {isRunOut&&(
+      {isRunOut&&!offExtra&&(
         <div style={{marginBottom:"12px"}}>
           <Lbl sx={{marginBottom:"7px"}}>Runs completed before the run out</Lbl>
           <div style={{display:"flex",gap:"7px"}}>

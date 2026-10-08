@@ -655,5 +655,25 @@ group("K. A public page's ball: the word made on the server, the same line (SCRB
   ok("...and a ball's own placement beats a word riding with it", /straight down the ground/.test(odd[1] ?? "") && !/cover/.test(odd[1] ?? ""), odd[1]);
 }
 
+group("L. A wicket on a wide or a no-ball is told as a wicket, the extra first (Law 22.9, 21.17)");
+{
+  const log = [...openA(),
+    I(ball({ type: BALL_TYPE.WIDE, value: 0, dismissal: "stumped" })),
+    I(batters({ striker: H[2] })),
+    I(ball({ type: BALL_TYPE.NO_BALL, value: 1, dismissal: "run_out", dismissed: H[1], outAt: "striker_end", fielder: FIELDER })),
+    I(batters({ striker: H[3] })),
+    I(ball({ type: BALL_TYPE.WIDE, value: 0, dismissal: "stumped" })),
+    run(0)];
+  const out = deriveCommentary(log, { nameOf, sensitive: true });
+  const wk = ofKind(out, K.WICKET);
+  ok("two wicket lines: the stumping off the wide and the run out off the no-ball", wk.length === 2, texts(out));
+  ok("...the stumping: 'wide, out, stumped', the batter's figures and the score",
+     /K Naidoo to D Erasmus, wide, (out|and that's out), stumped\. D Erasmus (is out for a duck|goes for 0|is out for 0), from 0 balls\./.test(wk[0]?.text ?? ""), wk[0]?.text);
+  ok("...the run out: the no-ball first, the run completed, the end, the fielder, and the free hit to come",
+     /no-ball, (out|and that's out): they complete one, and R Pillay is run out at the striker's end \(W Venter\)\..*Free hit to come\.$/.test(wk[1]?.text ?? ""), wk[1]?.text);
+  const saved = out.find((x) => /free hit: not out/.test(x.text));
+  ok("a stumping off a wide on the free hit: told, and not out", saved?.kind === K.BALL && /^Free hit: K Naidoo to M Cele, wide, stumped, but it's a free hit: not out\.$/.test(saved.text), saved?.text);
+}
+
 console.log(`\n${"─".repeat(52)}\nCOMMENTARY SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

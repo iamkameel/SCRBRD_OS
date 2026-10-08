@@ -47,13 +47,25 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   GA-I20: one list per child of what a parent must do, from consents with
   their exact version and time, availability, lifts and collection handovers;
   two children at two schools kept apart, a pending or revoked link said
-  plainly). A new problem joins this list
+  plainly) and corrections everywhere (added 2026-10-07, gap analysis GA-I36:
+  a corrected ball or an approved amendment reaching every place the score is
+  shown, the pad, the Match Centre, the public page, careers, reports and the
+  charts, with derived figures refreshed and both versions kept in the audit)
+  and recognition (added 2026-10-07, Kameel's spec `docs/design/RECOGNITION_spec_v0.2.md`:
+  awards, achievements and records; what a child's honours may show and to
+  whom, guardian consent and its revoking, a pupil captain choosing Player of
+  the Match, and a corrected score taking an honour back) and account
+  lifecycle (added 2026-10-07: disabling and re-enabling an account, a pupil
+  leaving or changing school, a parent's link ending, staff leaving, and
+  retention under POPIA).
+  A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write
   screens or do searches.
 - **One Fable agent at a time**, with a tight brief that names what to read,
-  so it does not spend its budget exploring.
+  so it does not spend its budget exploring. Kameel may allow two at once for
+  a day (he did on 2026-10-07: account lifecycle beside recognition).
 - Reviewing another agent's work stays with Opus.
 
 ### Opus 5.5 (`model: "opus"`) — where a mistake is expensive or silent
@@ -88,6 +100,29 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
 
 When a task spans two tiers, give it to the higher one. When unsure, give it to
 Opus.
+
+### Haiku's standing steps in the workflow
+
+Added 2026-10-07 (Kameel): Haiku is part of every build, not an occasional
+helper. Use it at these points, so the expensive tiers spend their budget on
+the work itself:
+
+1. **Before a build starts:** Haiku maps the ground. It lists the files, routes,
+   tables, tests and walks the task will touch, with `file:line`, and which
+   design doc and decisions govern it. That map goes into the Opus or Sonnet
+   brief, which then names exactly what to read.
+2. **After Kameel decides:** Haiku records the decision in the design doc, the
+   backlog, the roadmap and the gap analysis plan, word for word as decided.
+3. **After a merge:** Haiku updates the status rows the merge closes (roadmap,
+   gap analysis plan, `DEPLOYING.md`'s paste list where a migration shipped).
+   It doesn't touch `db/SHIPPED.sha256`; that stays with the lead.
+4. **Gap lists:** where a plan says "gaps to list" (for example, acceptance
+   evidence against the walks we have), Haiku lists them and Opus decides what
+   to build.
+
+Haiku's output is reviewed by the lead before it lands on a branch that goes
+to `main`. Its limits above still stand: no code, tests, SQL, policy or minors'
+data.
 
 ## Design skills
 

@@ -39,7 +39,7 @@ import {
   BALL_TYPE, REFUSAL_TEXT,
 } from "@scrbrd/scoring";
 import { shortRunEvents } from "../src/scorer/penalty.js";
-import { deliveryEvents, noBallEvent } from "../src/scorer/delivery.js";
+import { deliveryEvents, noBallEvent, extraWicketEvent } from "../src/scorer/delivery.js";
 import { EXTRAS, extraCall, NB_TYPES, NB_FROM } from "../src/scorer/extras.js";
 import { bowlerChoices, batterChoices, undoWords, unavailableWords, noClause } from "../src/scorer/prompts.js";
 import { hapticTick, setHapticOn, HAPTIC_KEY } from "../src/scorer/haptic.js";
@@ -173,7 +173,26 @@ group("1. Every extra, both ways: the same bytes");
      /const onCommitDetailed=\(type,value,shot,seg,zone,placement\)=>\{\s*if\(!guardReady\(\)\)return;\s*commitBall\(type,value,shot,seg,zone,null,placement\);/.test(eng));
   ok("engine: recordNoBall emits noBallEvent({inn,nbType,runs,nbRuns,selShot,selSeg})",
      /const recordNoBall=\(nbType,runs,nbRuns\)=>\{\s*const nb=noBallEvent\(\{inn,nbType,runs,nbRuns,selShot,selSeg\}\);\s*emit\(nb\);/.test(eng));
-  ok("engine: the no-ball sheet confirms through the same recordNoBall", /<NoBallSheet\s+edition=\{lawsEdition\(\{innings,events\}\)\} freeHits=\{inn\?\.freeHits!==false\}\s+onConfirm=\{recordNoBall\}/.test(eng));
+  ok("engine: the no-ball sheet confirms through the same recordNoBall, or — a wicket too — the wicket sheet",
+     /<NoBallSheet\s+edition=\{lawsEdition\(\{innings,events\}\)\} freeHits=\{inn\?\.freeHits!==false\}\s+onConfirm=\{\(nbType,runs,nbRuns,wicket\)=>wicket\?openExtraWicket\("Nb",runs,nbType,nbRuns\):recordNoBall\(nbType,runs,nbRuns\)\}/.test(eng));
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17): the same extra, byte
+  // for byte, carrying the wicket — and nothing else changed.
+  {
+    const wk = { dismissal: "run_out", fielder: "S Mokoena", dismissed: "a2", outAt: "bowler_end" };
+    // The fields in one order: ball() writes the wicket where it always sits.
+    const byKey = (/** @type {object} */ o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1)));
+    for (const st0 of states) {
+      const st = { ...st0, selShot: null, selSeg: null };
+      const wd = extraWicketEvent({ inn: st.inn, extra: { type: "Wd", runs: 1 }, wicket: wk, freeHit: st.freeHit, approach: st.hubApproach });
+      same("wide + wicket", [byKey({ ...LEGACY.wide(st, 1)[0], ...wk })], [byKey(wd)]);
+      const nb = extraWicketEvent({ inn: st.inn, extra: { type: "Nb", runs: 2, nbType: "height", nbRuns: "byes" }, wicket: wk });
+      same("no-ball + wicket", [byKey({ ...LEGACY.noBall(st, "height", 2, "byes")[0], ...wk })], [byKey(nb)]);
+    }
+    ok("a wicket on a wide or a no-ball is that extra's event, with the wicket on it", differ.length === 0, differ.slice(0, 2).join(" | "));
+    ok("engine: the wicket sheet builds it through extraWicketEvent", /extraWicketEvent\(\{inn,extra:offExtra,freeHit,approach:hubApproach,/.test(eng));
+    ok("pad: a wide or no-ball with the wicket key on goes to onExtraWicket", /onExtraWicket\("Nb", n, nb\.type, n > 0 \? nb\.from : null\)/.test(pad)
+       && /onExtraWicket\("Wd", n\)/.test(pad) && /onExtraWicket=\{openExtraWicket\}/.test(eng));
+  }
   ok("engine: commitBall builds through deliveryEvents with the engine's own state",
      /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver\}\);/.test(eng));
   ok("engine: the pad's wide and no-ball are those two", /onWide=\{recordWide\} onNoBall=\{recordNoBall\}/.test(eng));
@@ -255,6 +274,11 @@ group("3. Undo says what it will take back");
      && words(ball({ type: "Nb", value: 2, nbRuns: "byes" })) === "no ball and 2 byes" && words(ball({ type: "Nb", value: 1, nbRuns: "leg_byes" })) === "no ball and 1 leg bye");
   ok("byes and leg byes", words(ball({ type: "B", value: 1 })) === "1 bye" && words(ball({ type: "LB", value: 3 })) === "3 leg byes");
   ok("a wicket", words(ball({ type: "W", dismissal: "caught", ...at })) === "wicket, D Erasmus caught");
+  // A wicket on a wide or a no-ball (Law 22.9, 21.17): undo takes both, and says both.
+  const stWd = words(ball({ type: "Wd", value: 0, dismissal: "stumped", ...at }));
+  const roNb = words(ball({ type: "Nb", value: 1, dismissal: "run_out", dismissed: "a1", outAt: "striker_end", ...at }));
+  ok(`a stumping off a wide, a run out off a no-ball ("${stWd}", "${roNb}")`,
+     stWd === "wide, wicket, D Erasmus stumped" && roNb === "no ball and 1 run, wicket, R Pillay run out");
   const inAndOn = [...evs, ball({ type: "W", dismissal: "bowled" }), batters({ striker: "a3" }), ...[0, 0, 0, 0].map(run), bowler({ bowler: "b2" })];
   const io = deriveInnings(inAndOn);
   ok("a batter in, a bowler on", words(batters({ striker: "a3" }), io) === "S Mokoena in" && words(bowler({ bowler: "b2" }), io) === "M Botha to bowl");

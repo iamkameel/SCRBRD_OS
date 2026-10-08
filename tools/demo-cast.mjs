@@ -226,6 +226,12 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM app_user WHERE id = ${q(PLATFORM)} AND email = 'platform@example.invalid' AND active) THEN
     RAISE EXCEPTION 'This is not the demo database (the seeded demo accounts are missing). Nothing was changed.';
   END IF;
+  -- Production holds the seed's invented accounts too, so they alone cannot
+  -- tell the two apart. The demo holds no real person: one account outside
+  -- example.invalid means this is not the demo (Kameel, 7 Oct).
+  IF EXISTS (SELECT 1 FROM app_user WHERE email NOT LIKE '%@example.invalid') THEN
+    RAISE EXCEPTION 'This database holds a real person''s account, so it is not the demo copy. Nothing was changed.';
+  END IF;
   IF (SELECT count(*) FROM player WHERE id::text LIKE 'de300000-0000-4000-8000-%') <> 330
      OR NOT EXISTS (SELECT 1 FROM app_user WHERE id = ${q(KEA.office)} AND email = 'office.kea@example.invalid' AND active) THEN
     RAISE EXCEPTION 'The 330 demo players are not loaded here. Paste demo-players-330.sql first. Nothing was changed.';

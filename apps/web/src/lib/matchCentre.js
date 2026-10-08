@@ -7,7 +7,7 @@
  * (@scrbrd/scoring's deriveMatch), and a thing the fold does not have is left
  * out rather than guessed.
  */
-import { runsOffBat, resultWords } from "@scrbrd/scoring";
+import { runsOffBat, resultWords, isWicketBall } from "@scrbrd/scoring";
 import { parseTeam, teamLabel } from "@scrbrd/policy/teams";
 import { humanDateTime } from "./format.js";
 import { superOverInPlay, superOverTitle } from "./superOver.js";
@@ -262,7 +262,7 @@ export function runCounts(inn, id) {
  * @returns {string | null}
  */
 export function dismissalKey(inn, id, events = []) {
-  const ball = (inn?.ballLog ?? []).find((b) => b.type === "W" && !b.freeHitSaved && (b.dismissed ?? b.strikerId) === id);
+  const ball = (inn?.ballLog ?? []).find((b) => isWicketBall(b) && !b.freeHitSaved && (b.dismissed ?? b.strikerId) === id);
   if (ball?.id) return `e:${ball.id}`;
   const retired = events.filter((e) => e.kind === "retire" && e.type === "W" && e.batter === id).pop();
   return retired?.id ? `e:${retired.id}` : null;

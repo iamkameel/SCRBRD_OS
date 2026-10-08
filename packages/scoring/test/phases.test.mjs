@@ -469,5 +469,23 @@ group("L. The invariant, over many innings");
   ok("...and four byes off a no-ball, which are nobody's four", nbByes > 0);
 }
 
+group("W. A wicket on a wide or a no-ball is a phase wicket, and no ball of it (Law 22.9, 21.17)");
+{
+  /** @type {LogEvent[]} */
+  const ev = [START, PAIR, BOWLER,
+    { kind: "ball", type: "run", value: 0 },
+    { kind: "ball", type: "Wd", value: 0, dismissal: "stumped" },
+    { kind: "batters", striker: "c" },
+    { kind: "ball", type: "Nb", value: 1, dismissal: "run_out", dismissed: "b", outAt: "striker_end" },
+    { kind: "batters", striker: "d" },
+    { kind: "ball", type: "Wd", value: 0, dismissal: "stumped" },   // the free hit: saved
+    { kind: "ball", type: "run", value: 0 }];
+  const inn = deriveInnings(ev);
+  ok("the phases' wickets are the innings': two, the stumping on the free hit saved",
+     phaseSum(ev, "wickets") === 2 && inn.wickets === 2);
+  ok("...their balls and runs the innings' too: two balls, four runs", phaseSum(ev, "balls") === inn.balls && inn.balls === 2
+     && phaseSum(ev, "runs") === inn.runs && inn.runs === 4);
+}
+
 console.log(`\n${"─".repeat(52)}\nPHASES SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
