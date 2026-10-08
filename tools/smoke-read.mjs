@@ -60,6 +60,12 @@ const login = async (email) => {
   });
   return (await res.json()).token;
 };
+/** Open a notice as somebody (POST /api/notifications/:id/read, NOTIFICATIONS.md D17). */
+const openNotice = async (id, token) => {
+  const res = await fetch(`${BASE}/api/notifications/${id}/read`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: "{}" });
+  return { status: res.status, body: await res.json().catch(() => null) };
+};
 const read = async (resource, token) => {
   const r = await api(`/api/read/${resource}`, token);
   if (r.status !== 200) throw new Error(`${resource}: ${JSON.stringify(r.body)}`);
@@ -273,6 +279,19 @@ try {
      coachNotices.some((n) => n.team_code === null));
   ok("read state comes back per person, not per notice",
      watcherNotices.every((n) => n.read === false));
+  // Since S1 (D17) the list carries a tiered notice's title and not its body,
+  // and its id is no key: a person the notice is not for who names it gets
+  // the same answer as an id that never existed.
+  const medicInjury = medicNotices.find((n) => n.kind === "injury");
+  ok("the medical officer's list carries the injury notice's title, not its body",
+     !!medicInjury && medicInjury.tiered === true && medicInjury.body === null && !!medicInjury.title);
+  if (medicInjury) {
+    const stolen = await openNotice(medicInjury.id, watcher);
+    ok("a spectator who names the medical notice's id cannot open it",
+       stolen.status === 404 && stolen.body?.detail === "This notice is no longer available." && !stolen.body?.notice);
+    ok("...and it is still unread for him: nothing was written",
+       (await read("notifications", watcher)).every((n) => n.read === false));
+  }
 
   // ── Career figures are derived, and scoped like the rows ────────
   // The aggregate reads ball_event_live, which is security_invoker, so it
@@ -309,8 +328,13 @@ try {
 
   const coachAlerts = injuryAlerts(await read("notifications", coach));
   ok("the coach of the side is alerted", coachAlerts.length > 0);
-  ok("...and the alert names the player and the injury",
-     coachAlerts.some((n) => /Pillay/.test(n.body) && /hamstring/i.test(n.body)));
+  // The list holds the title ("Injury recorded" names nobody); the body is
+  // read on open, and the open is logged (D17).
+  ok("...the list names nobody: no body comes with it", coachAlerts.every((n) => n.body === null));
+  const coachOpened = [];
+  for (const n of coachAlerts) coachOpened.push((await openNotice(n.id, coach)).body?.notice);
+  ok("...and the alert, opened, names the player and the injury",
+     coachOpened.some((n) => /Pillay/.test(n?.body ?? "") && /hamstring/i.test(n?.body ?? "")));
 
   const parentAlerts = injuryAlerts(await read("notifications", guardian));
   ok("the parent of that child is alerted",

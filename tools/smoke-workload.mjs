@@ -59,7 +59,11 @@ const login = async (email) => (await api("/api/auth/dev-login", {
 const rows = async (path, tok) => (await api(path, { token: tok })).body?.rows ?? [];
 const spells = (m, tok) => rows(`/api/read/bowling_spells?matchId=${m}`, tok);
 const workload = (tok, team) => rows(`/api/read/workload${team ? `?teamCode=${team}` : ""}`, tok);
-const notices = (tok) => rows(`/api/read/notifications`, tok);
+// A welfare notice is tiered (player.workload.read): the list carries its
+// title and the body is read on open (NOTIFICATIONS.md D17). So the walk
+// opens each tiered notice it reads, as the person would, to see its words.
+const notices = async (tok) => Promise.all((await rows(`/api/read/notifications`, tok)).map(async (n) =>
+  n.tiered ? { ...n, body: (await api(`/api/notifications/${n.id}/read`, { method: "POST", token: tok, body: {} })).body?.notice?.body ?? null } : n));
 
 const pool = new pg.Pool({ connectionString: DB });
 const q = async (t, p) => (await pool.query(t, p)).rows;

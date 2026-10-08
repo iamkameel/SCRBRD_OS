@@ -616,11 +616,14 @@ INSERT INTO development_note (player_id, school_id, author_id, body, about_disci
    'Has not played the pull shot since he was hit at Kearsney. Working on it in the nets; treat the rating as provisional.',
    'batting', -2, current_date - 5);
 
+-- Since db/89 (NOTIFICATIONS.md D1, D4, D6) every kind is one of the nine and
+-- no notice is public: the first row was public and the third was a
+-- 'training' notice, which is a person's words to a side, so a 'notice'.
 INSERT INTO notification (id, school_id, team_code, scope_level, kind, urgency, title, body, required_capability, is_public, subject_kind) VALUES
   -- General: news.read only. Everyone attached to Hilton receives it.
   ('40170000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', NULL, 'school',
    'system', 'low', 'Fixture list published',
-   'The 2026/27 fixture list is now available.', 'news.read', true, 'system'),
+   'The 2026/27 fixture list is now available.', 'news.read', false, 'system'),
   -- Medical: the body names a child's condition, so it demands
   -- medical.status.read on top of news.read. A spectator holds news.read and
   -- must NOT receive this one — that single row is the whole argument for the
@@ -638,7 +641,7 @@ INSERT INTO notification (id, school_id, team_code, scope_level, kind, urgency, 
   -- A U16B team notice. The 1st XI coach's assignment is team-scoped, so it must
   -- not reach them even though they hold news.read at the same school.
   ('40170000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'U16B', 'team',
-   'training', 'low', 'U16B training moved',
+   'notice', 'low', 'U16B training moved',
    'U16B batting session moves to Nets 6-7.', 'news.read', false, 'training');
 
 INSERT INTO match_weather (match_id, condition, temp_c, humidity_pct, wind_kph, wind_dir, uv_index, rain_chance_pct, forecast, playable) VALUES

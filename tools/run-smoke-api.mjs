@@ -38,6 +38,9 @@ const WALKS = [
   "bootstrap",
   // The way out of quarantine: who may open it, and what a released ball is.
   "quarantine",
+  // Corrections everywhere (GA-I36 N1, N2): who may list a correction, and
+  // an approval or a release reaching the public log on its next read.
+  "corrections",
   // A retry writes once: the Idempotency-Key layer over every write route.
   "idempotency",
   // The managed-host reset drops only what db/ creates (GA-I02): somebody
@@ -234,6 +237,10 @@ const WALKS = [
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
+  // The API refuses to start as the owner, a superuser or a BYPASSRLS role,
+  // starts as scrbrd_app, and /api/health names the commit it was built from
+  // (gap analysis I14–I16, claims 12 and 14).
+  "owner-refusal",
   "public",
   // A child's name on the public pages over HTTP (SCRBRD-083 C1–C5, PILOT_LOAD
   // gap 5): a guardian's consent for his own child and no other, the office's
@@ -245,6 +252,13 @@ const WALKS = [
   // lift by version, the fixture moving under it, names and numbers through
   // the logged doors only, and a family's "no" never switched off.
   "lifts",
+  // The parent's action list, A1 (GA-I20): every read it makes, per child and
+  // per reader — the version and time of her own terms, a count of numbers
+  // that is never a contact (N2), the public-name answer's version and time
+  // (N5), the requests on the lifts she drives as counts with no name (N3),
+  // two children at two schools kept apart, a pending request and an ended
+  // link that read no child.
+  "family-todo",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
@@ -259,12 +273,14 @@ const WALKS = [
 // browser-innings-end scores an innings to its end, which nothing else does:
 // browser-sync taps four deliveries of twenty overs, so the review gate between
 // the last ball and a closed innings was never exercised end to end.
-const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held", "browser-toss", "browser-offline-undo", "browser-dayof",
+const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-handover-offline", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held", "browser-toss", "browser-offline-undo", "browser-dayof",
   // SCRBRD-082 / SCRBRD-084: the Post-Match Report and the Season Awards tab.
   "browser-report", "browser-awards",
   // Redesign step 3c / SCRBRD-098: the Match Centre's six tabs, the
   // scorecard's layout and the shared commentary, on a real scored match.
   "browser-matchcentre",
+  // GA-I36: a correction approved from the sheet reaches two watchers on their next poll.
+  "browser-corrections",
   // SCRBRD-133 G1: the ground display, signed out, at 1920×1080, 1024×768
   // and 390×844 — names only under the rule (and a withdrawal reaching an
   // open display), no token, the 12px floor, the 404, the rotation's skip and
@@ -502,7 +518,7 @@ const WEIGHTS = {
   "browser-cockpit": 100, "browser-management": 90, "browser-rain": 80,
   "browser-offline-day": 80, "browser-playing-conditions-screen": 70,
   "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,
-  "browser-laws4": 70, "browser-handover": 60, "browser-support": 60,
+  "browser-laws4": 70, "browser-handover": 60, "browser-handover-offline": 70, "browser-support": 60,
   "browser-pad-resume": 60, "browser-dossier": 60, "browser-offline-undo": 50,
   "browser-wagonwheel": 50, "browser-results": 50, "browser-drs": 50,
   "browser-safeguarding": 50, "browser-playing-conditions": 50,

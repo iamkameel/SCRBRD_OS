@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { boardInnings, inningsPhase, matchLine, revisionNotice, sidesOf } from "../lib/matchCentre.js";
@@ -65,9 +65,14 @@ function usePhone(px = 640) {
   return phone;
 }
 
-/** The header and the log, polled while the match is live — and the par report read after the log (SCRBRD-133 G2). */
+/**
+ * The header and the log, polled while the match is live — and the par report
+ * read after the log (SCRBRD-133 G2). Once it is not live, the corrections
+ * half (./corrections.jsx, on demand) asks after the head and `note`s what it
+ * saw; the figures change only on `refresh` (GA-I36 §7).
+ */
 function usePublicMatch(matchId) {
-  const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null });
+  const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null, okAt: null, stale: false, refreshing: false });
   const [tick, setTick] = useState(0);
   const live = state.header?.status === "live";
   useEffect(() => {
@@ -84,17 +89,20 @@ function usePublicMatch(matchId) {
           read(`/api/public/matches/${matchId}/log`),
         ]);
         const par = await readPar(`/api/public/matches/${matchId}`);
-        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0, par });
+        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0, par,
+          okAt: Date.now(), stale: false, refreshing: false });
       } catch (e) {
         if (cancelled) return;
         // Not found is one answer: unpublished and no such fixture read alike.
         if (e.status === 404) setState((s) => ({ ...s, loading: false, missing: true, error: null }));
-        else setState((s) => ({ ...s, loading: false, error: e.status === 429 ? "busy" : "unreachable" }));
+        else setState((s) => ({ ...s, loading: false, refreshing: false, error: e.status === 429 ? "busy" : "unreachable" }));
       }
     })();
     return () => { cancelled = true; };
   }, [matchId, tick]);
-  return state;
+  const refresh = () => { setState((s) => ({ ...s, refreshing: true })); setTick((x) => x + 1); };
+  const note = useCallback((/** @type {any} */ r) => setState((s) => ({ ...s, ...r })), []);
+  return { ...state, refresh, note };
 }
 
 /** The team's shot sectors, read when the Analytics tab opens. */
@@ -266,6 +274,13 @@ export function PublicMatch({ matchId, view }) {
   const bi = boardInnings(played, folded?.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${matchId}:${bi.index}`);
+  // GA-I36: the corrections half (./corrections.jsx), loaded once the match
+  // is not live (its head is still asked after), its log has a void, or a
+  // read failed; a live page with nothing corrected pays nothing for it.
+  const [fx, setFx] = useState(/** @type {any} */ (null));
+  const need = (!!data.header && data.header.status !== "live") || data.events.some((e) => e.kind === "void") || !!data.error;
+  useEffect(() => { if (need && !fx) import("./corrections.jsx").then(setFx, () => {}); }, [need, fx]);
+  const fixes = useMemo(() => (fx && story ? fx.publicFixes(data.events, story) : null), [fx, story, data.events]);
 
   if (data.loading) return <Frame><Quiet testid="public-loading">Loading the match…</Quiet></Frame>;
   if (data.missing) return <Frame><Quiet testid="public-missing">This page is not available. The link may be wrong, or the match may not be public.</Quiet></Frame>;
@@ -276,7 +291,7 @@ export function PublicMatch({ matchId, view }) {
   const phase = inningsPhase(played, folded?.result);
   const line = matchLine({ match, competition: null, weather: null, phase });
   const notice = revisionNotice(boardInn);
-  const ctx = { match, innings: played, result, commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
+  const ctx = { match, innings: played, result, commentary: fixes?.commentary ?? commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
     demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
     quietMoments: true };   // the region below says it; the moment is drawn, not said twice
@@ -307,9 +322,15 @@ export function PublicMatch({ matchId, view }) {
           <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
-          {played.length > 0 && <HeaderScores match={match} played={played}/>}
+          {played.length > 0 && <HeaderScores match={match} played={played} corrected={fixes?.corrected}/>}
           {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
+          {/* GA-I36 §5: when, team-level — never who asked, who approved or why. */}
+          {fx && fixes && <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/>}
+          {fx && !isLive && <fx.SettledWatch matchId={matchId} last={data.last} note={data.note}/>}
+          <div role="status" aria-live="polite" data-testid="mc-stale-region">
+            {fx && <fx.StaleLine bare stale={data.stale} refreshing={data.refreshing} failed={!!data.error} okAt={data.okAt} onRefresh={data.refresh}/>}
+          </div>
         </header>
         </ErrorBoundary>
         <ErrorBoundary name="match notices">

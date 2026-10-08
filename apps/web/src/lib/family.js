@@ -177,3 +177,46 @@ export function noticesFor(notices, child) {
     && (n.school == null || n.school === child.school)
     && (n.team == null || n.team === child.team));
 }
+
+/**
+ * The family screen's empty state for a parent whose request is with the
+ * office (§3.3): her own pending guardian requests, each said as pending, with
+ * the school's name from the public list and her own note. Never a child's
+ * name from the platform: the player row is not hers to read until the link
+ * is verified. "This does not mean it was approved."
+ *
+ * @param {any[] | null | undefined} requests  the role_requests read
+ * @param {number} now
+ * @returns {{id: string, words: string, note: string | null}[]}
+ */
+export function pendingWords(requests, now) {
+  return (Array.isArray(requests) ? requests : [])
+    .filter((r) => r.mine && r.state === "pending" && r.role === "guardian")
+    .map((r) => {
+      const asked = Date.parse(r.requestedAt ?? "");
+      const days = !Number.isFinite(asked) ? null : Math.max(0, Math.floor((now - asked) / 864e5));
+      const ago = days == null ? "" : days === 0 ? " · asked today" : ` · asked ${days} day${days === 1 ? "" : "s"} ago`;
+      return {
+        id: r.id,
+        words: `Your request to be linked to a child at ${r.schoolName || "the school"} is with the office${ago}. `
+          + "This does not mean it was approved. When the office verifies the link, your child appears here.",
+        note: r.note ? String(r.note) : null,
+      };
+    });
+}
+
+/**
+ * A door from the Home's To-do list into one child's card on Family (GA-I20
+ * A1): which panel to open there, Consents or Who to ring. Held in memory for
+ * the one hop and taken once, never stored on the device.
+ */
+let _door = /** @type {{childId: string, panel: string} | null} */ (null);
+/** @param {string} childId  @param {string} panel */
+export function doorTo(childId, panel) { _door = { childId, panel }; }
+/** The panel the last door asked for on this child's card, once. @param {string} childId */
+export function takeDoor(childId) {
+  if (_door?.childId !== childId) return null;
+  const p = _door.panel;
+  _door = null;
+  return p;
+}

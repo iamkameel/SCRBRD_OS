@@ -110,6 +110,10 @@ const SUITES = [
   // The Match Centre's own derivations (redesign step 3c): sides named in
   // full and by code, the match line, the scorecard's parts, the break.
   ["match-centre",      "apps/web/test/match-centre.test.mjs"],
+  // GA-I36 A0/A1: a correction read off the log (the chip, the line, the
+  // innings it moved), the effect folded before a decision, and 300 random
+  // logs whose fold with voids equals the fold without the voided rows.
+  ["corrections",       "apps/web/test/corrections.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The public page (SCRBRD-083): the redacted log made foldable, no
   // pseudonym ever shown as a name.
   ["public-page",       "apps/web/test/public-page.test.mjs"],
@@ -214,6 +218,9 @@ const SUITES = [
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["decide-words", "apps/web/test/decide-words.test.mjs"],
+  // GA-I21: one label for demo / practice / read only (no "official": a result
+  // is read from the log, not stored), and the bowling-ceiling refusal in words.
+  ["state-label", "apps/web/test/state-label.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The three solo-test screens, over routes that already existed: the office
   // verifying a parent's link and recording the family's agreement, booking a
   // vehicle and a trip, and signing out everywhere. Who is offered, what is
@@ -257,6 +264,9 @@ const SUITES = [
   // disabled, failed, stale and partial each say something different, retry
   // re-runs the same read, and useSkills no longer throws its state away.
   ["readstate", "apps/web/test/readstate.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I19 slice 0 (D7): the Injuries screen's phase and severity words are the
+  // database's (the CHECKs read from db/00), and its counts follow phase.
+  ["injuries", "apps/web/test/injuries.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I13: the scorer's home — who lands on it (the scorer's bundle alone),
   // his fixtures appointed first, each one's state for this device, what this
   // device has to resume with its unsent events, and the lines before the toss.
@@ -296,6 +306,13 @@ const SUITES = [
   // Notifications S0 (docs/design/NOTIFICATIONS.md D6, D12): the publish
   // route's lock, every push a pointer, an expired notice never sent.
   ["push-api", "services/api/notify/push-api.test.mjs"],
+  // Notifications S1 (D1, D2, D5, D17, D18): the lists and the per-kind
+  // contract agree with db/89's CHECKs and functions; opening a notice and
+  // "Mark all read" write the reader's own receipt and nothing else; one
+  // client store holds the list and the count every badge reads.
+  ["notif-contract", "packages/policy/test/notifications.test.mjs"],
+  ["receipts", "services/api/notify/receipts.test.mjs"],
+  ["notif-store", "apps/web/test/notifications-store.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an
   // email two people share; the templates clean; and it sends nothing.
@@ -317,6 +334,8 @@ const SUITES = [
   // grants name, and a restore aimed anywhere else refused with exit 2.
   ["backup-verify", "tools/backup-verify.test.mjs"],
   ["schema-guard", "services/api/schema-guard.test.mjs"],
+  // Which commit /api/health says the process was built from (GA I14).
+  ["revision", "services/api/revision.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
   // The typecheck strict list only grows, and names nothing that is not there.

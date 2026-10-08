@@ -54,7 +54,13 @@ const post = async (path, body) => {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return res.json().catch(() => null);
 };
-const login = (email) => post("/api/auth/dev-login", { email, deviceId: "device-summary" }).then((b) => b?.token);
+/** A POST as somebody, with the status kept. */
+const send = async (path, token, body = {}) => {
+  const res = await fetch(BASE + path, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+  return { status: res.status, body: await res.json().catch(() => null) };
+};
+const login = (email, deviceId = "device-summary") => post("/api/auth/dev-login", { email, deviceId }).then((b) => b?.token);
 const rowsOf = async (res, token) => (await api(`/api/read/${res}`, { token })).body?.rows || [];
 const summaryOf = async (token) => (await api("/api/read/summary", { token })).body?.rows?.[0];
 
@@ -96,6 +102,79 @@ try {
     ok(`${who}: the match scope equals the fixtures they can read`, s.scope_matches === matches.length);
     ok(`${who}: upcoming equals the scheduled fixtures they can read`,
        s.upcoming_matches === matches.filter((m) => m.status === "scheduled").length);
+  }
+
+  group("Read state is the person's, on every device, and the count moves with it (NOTIFICATIONS.md D17)");
+  // Before S1 nothing wrote a receipt, so `read` was always false and the
+  // assertion above held trivially (map 8.1, 8.2). Now: a notice opened on one
+  // phone is read on the other, the count falls by exactly one on both, and
+  // nobody else's count moves.
+  {
+    const phone = await login("parent@example.invalid", "device-summary-phone");
+    const laptop = await login("parent@example.invalid", "device-summary-laptop");
+    ok("the guardian is signed in on two devices", !!phone && !!laptop && phone !== laptop);
+    const otherBefore = (await summaryOf(tokens.coach))?.unread_alerts;
+    const before = (await summaryOf(laptop))?.unread_alerts;
+    const list0 = await rowsOf("notifications", laptop);
+    const target = list0.find((n) => !n.read && !n.tiered);
+    ok("the guardian has an unread notice to open", !!target && before > 0, { before, n: list0.length });
+    if (target) {
+      const opened = await send(`/api/notifications/${target.id}/read`, phone);
+      ok("opening it on the phone answers the notice, read", opened.status === 200 && opened.body?.notice?.id === target.id
+         && opened.body?.notice?.read === true && opened.body?.notice?.body === target.body, opened);
+      const after = (await summaryOf(laptop))?.unread_alerts;
+      ok("on the laptop, unread_alerts fell by exactly one", after === before - 1, { before, after });
+      ok("...and the open's own count is the summary's", opened.body?.unread === after);
+      const list1 = await rowsOf("notifications", laptop);
+      ok("...and the laptop's list says that notice is read", list1.find((n) => n.id === target.id)?.read === true);
+      ok("...and still counts what it lists", after === list1.filter((n) => !n.read).length);
+      const again = await send(`/api/notifications/${target.id}/read`, laptop);
+      ok("opening it again is not a second receipt: the count stands", again.status === 200 && (await summaryOf(phone))?.unread_alerts === after);
+      ok("another reader's count did not move", (await summaryOf(tokens.coach))?.unread_alerts === otherBefore);
+      const all = await send("/api/notifications/read-all", phone);
+      ok("Mark all read on the phone answers 0 unread", all.status === 200 && all.body?.unread === 0 && all.body?.marked === after, all.body);
+      ok("...the laptop's count is 0 and every row it lists is read",
+         (await summaryOf(laptop))?.unread_alerts === 0 && (await rowsOf("notifications", laptop)).every((n) => n.read));
+      ok("...and the other reader's still did not move", (await summaryOf(tokens.coach))?.unread_alerts === otherBefore);
+      ok("the receipts are the guardian's own, in the table",
+         (await q(`select count(*)::int as n from notification_read r join app_user u on u.id = r.person_id
+                    where u.email <> 'parent@example.invalid'`))[0].n === 0);
+    }
+  }
+
+  group("A tiered notice lists its title; its body is read on open, and logged (D17)");
+  {
+    const medic = tokens.medical;
+    const list = await rowsOf("notifications", medic);
+    const tiered = list.find((n) => n.tiered);
+    ok("the medical officer's list holds a tiered notice", !!tiered, list.map((n) => [n.kind, n.tiered]));
+    if (tiered) {
+      ok("...listed with its title and without its body", !!tiered.title && tiered.body === null);
+      const logged = async () => (await q(
+        `select count(*)::int as n from access_log where resource = 'notification.open' and $1 = any(record_ids)`, [tiered.id]))[0].n;
+      const l0 = await logged();
+      const opened = await send(`/api/notifications/${tiered.id}/read`, medic);
+      ok("opening it answers the body", opened.status === 200 && typeof opened.body?.notice?.body === "string" && opened.body.notice.body.length > 0);
+      ok("...and the open is on the record, once", (await logged()) === l0 + 1);
+    }
+    const plain = list.find((n) => !n.tiered);
+    if (plain) {
+      const l0 = (await q(`select count(*)::int as n from access_log where resource = 'notification.open' and $1 = any(record_ids)`, [plain.id]))[0].n;
+      await send(`/api/notifications/${plain.id}/read`, medic);
+      ok("a news.read notice's open is not logged",
+         (await q(`select count(*)::int as n from access_log where resource = 'notification.open' and $1 = any(record_ids)`, [plain.id]))[0].n === l0);
+    }
+    // Somebody the injury notice is not for: the same answer as nonsense.
+    if (tiered) {
+      const watcher = await login("watcher@example.invalid");
+      const r = await send(`/api/notifications/${tiered.id}/read`, watcher);
+      const nonsense = await send(`/api/notifications/00000000-0000-4000-8000-000000000000/read`, watcher);
+      ok("a reader the notice is not for gets 404 in D16's one sentence", r.status === 404 && r.body?.detail === "This notice is no longer available.", r);
+      ok("...the same answer as an id that never existed", nonsense.status === 404 && nonsense.body?.detail === r.body?.detail);
+      ok("...and no receipt was written for him",
+         (await q(`select count(*)::int as n from notification_read r join app_user u on u.id = r.person_id
+                    where u.email = 'watcher@example.invalid'`))[0].n === 0);
+    }
   }
 
   group("Different readers legitimately get different numbers");

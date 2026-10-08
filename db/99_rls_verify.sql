@@ -20,7 +20,7 @@ SET client_min_messages = warning;
 BEGIN;
 
 -- Everything below runs as scrbrd_app — the SAME role the API connects as,
--- created and granted by db/05_app_role.sql rather than invented here. That
+-- created and granted by db/06_app_role.sql rather than invented here. That
 -- matters: a verifier that builds its own lookalike role proves the policies
 -- are correct for a role nothing uses. A table's OWNER bypasses row-level
 -- security entirely, so testing as the owner would pass every assertion below
@@ -28,7 +28,7 @@ BEGIN;
 DO $role_exists$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'scrbrd_app') THEN
-    RAISE EXCEPTION 'scrbrd_app does not exist — apply db/05_app_role.sql first';
+    RAISE EXCEPTION 'scrbrd_app does not exist — apply db/06_app_role.sql first';
   END IF;
 END $role_exists$;
 
@@ -3981,6 +3981,98 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/88 (section 67) ──────────────────────────────────────────────
 
+-- ┌── db/89 (section 68). Notifications S1: the contract and read state
+-- _seed_89(): five notices at Hilton, written as the owner (the way the
+-- system's own definers write them), each the one an assertion needs:
+--   rec   recognition about J Whitfield (1XI), news.read, medium: his
+--         guardian reads it, another 1XI family does not
+--   note  a person's notice to the school, by Sarah, news.read
+--   gone  a notice that expired a minute ago
+--   fix   a high fixture notice about the next 1XI fixture, fixture.read
+--   sg    a safeguarding notice, never retractable
+CREATE OR REPLACE FUNCTION _seed_89() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  v_rec uuid; v_note uuid; v_gone uuid; v_fix uuid; v_sg uuid;
+BEGIN
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability,
+                            subject_kind, subject_id, subject_person_id)
+  VALUES (HIL, '1XI', 'team', 'recognition', 'medium', 'Fifty for J Whitfield', 'Fifty (52) against Verify 089.', 'news.read',
+          'match', '77777777-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001') RETURNING id INTO v_rec;
+  INSERT INTO notification (school_id, scope_level, kind, urgency, title, body, published_by)
+  VALUES (HIL, 'school', 'notice', 'low', 'Verify 089 notice', 'Nets are open on Friday.', '88888888-0000-0000-0000-000000000007')
+  RETURNING id INTO v_note;
+  INSERT INTO notification (school_id, scope_level, kind, urgency, title, body, expires_at)
+  VALUES (HIL, 'school', 'notice', 'low', 'Verify 089 expired', 'Gone.', now() - interval '1 minute') RETURNING id INTO v_gone;
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability, subject_kind, subject_id)
+  VALUES (HIL, '1XI', 'team', 'fixture', 'high', 'Verify 089 fixture moved', 'The fixture moved.', 'fixture.read',
+          'match', '77777777-0000-0000-0000-000000000002') RETURNING id INTO v_fix;
+  INSERT INTO notification (school_id, scope_level, kind, urgency, title, body, required_capability)
+  VALUES (HIL, 'school', 'safeguarding', 'high', 'A safeguarding concern has been raised', 'Verify 089.', 'safeguarding.concern.read')
+  RETURNING id INTO v_sg;
+  RETURN jsonb_build_object('rec', v_rec, 'note', v_note, 'gone', v_gone, 'fix', v_fix, 'sg', v_sg);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- notification_retract() as one of the system's own definers calls it, with
+-- the signed-in person (or nobody) set: its result as text, or the
+-- constraint or SQLSTATE that refused it.
+CREATE OR REPLACE FUNCTION _retract_89(p_id uuid, p_kind text, p_say boolean, p_as uuid) RETURNS text AS $$
+DECLARE v_con text; v_out uuid;
+BEGIN
+  PERFORM set_config('app.user_id', coalesce(p_as::text, ''), true);
+  v_out := notification_retract(p_id, p_kind, p_say);
+  RETURN coalesce(v_out::text, 'said nothing');
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN coalesce(nullif(v_con, ''), SQLSTATE);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One statement as the CALLER (the application role, under RLS): 'ok', or
+-- the constraint or SQLSTATE that refused it. Not a definer.
+CREATE OR REPLACE FUNCTION _app_89(p_sql text) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN coalesce(nullif(v_con, ''), SQLSTATE);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+
+-- A notice's row as the owner reads it: what RLS would not say.
+CREATE OR REPLACE FUNCTION _row_89(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(n) FROM notification n WHERE n.id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The "withdrawn" notices about one notice, as the owner counts them.
+CREATE OR REPLACE FUNCTION _said_89(p_id uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM notification WHERE retracts_id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- access_log rows under one resource naming one record (the log is not the
+-- application's to read).
+CREATE OR REPLACE FUNCTION _logged_89(p_resource text, p_id uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM access_log WHERE resource = p_resource AND p_id = ANY (record_ids)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A milestone's notice row, written as milestone_notify() writes one, and
+-- optionally already taken back.
+CREATE OR REPLACE FUNCTION _milestone_89(p_player uuid, p_match uuid, p_value integer, p_retracted boolean) RETURNS void AS $$
+  INSERT INTO milestone_notice (player_id, kind, match_id, innings, value, retracted_at)
+  VALUES (p_player, 'fifty', p_match, 0, p_value, CASE WHEN p_retracted THEN now() END)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What every stored notice says, as the owner counts: the kinds outside D1's
+-- list (with how many), and how many are public. 'none / 0 public' is right.
+CREATE OR REPLACE FUNCTION _stored_89() RETURNS text AS $$
+  SELECT coalesce((SELECT string_agg(x.kind || ' ' || x.n, ', ' ORDER BY x.kind)
+                     FROM (SELECT kind, count(*) AS n FROM notification
+                            WHERE kind NOT IN ('injury', 'recognition', 'welfare', 'safeguarding', 'system',
+                                               'availability', 'fixture', 'lift', 'notice')
+                            GROUP BY kind) x), 'none')
+         || ' / ' || (SELECT count(*) FROM notification WHERE is_public) || ' public'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/89 (section 68) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -4698,7 +4790,7 @@ BEGIN
 
   -- ...and the team notice they may publish goes through.
   INSERT INTO notification (school_id, team_code, scope_level, kind, title, body)
-  VALUES (HIL, '1XI', 'team', 'training', 'Nets moved', 'Nets 1-3 at 14:30.');
+  VALUES (HIL, '1XI', 'team', 'notice', 'Nets moved', 'Nets 1-3 at 14:30.');
 
   -- The catalogue must not be writable by the application role: a row here
   -- would let a notice declare a capability the model never defined.
@@ -9443,9 +9535,9 @@ BEGIN
     -- (notice) SG-9: a private notice to a pupil is the system's alone; and
     -- nobody publishes a safeguarding notice through the publish route
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _assert(_notice_57(U_SELF, 'news') = 'refused', 'db/57 (notice): a private news notice to a pupil was written');
+    PERFORM _assert(_notice_57(U_SELF, 'lift') = 'refused', 'db/57 (notice): a private lift notice to a pupil was written');
     PERFORM _assert(_notice_57(U_SELF, 'system') = 'ok', 'db/57 (notice): the system''s own notice to a pupil was refused');
-    PERFORM _assert(_notice_57(U_SARAH, 'news') = 'ok', 'db/57 (notice): a private notice to an adult was refused');
+    PERFORM _assert(_notice_57(U_SARAH, 'lift') = 'ok', 'db/57 (notice): a private notice to an adult was refused');
     PERFORM _as(U_SARAH);
     BEGIN
       INSERT INTO notification (school_id, scope_level, kind, title, body, required_capability)
@@ -9453,8 +9545,8 @@ BEGIN
       v_err := NULL;
     EXCEPTION WHEN insufficient_privilege THEN v_err := SQLERRM; END;
     PERFORM _assert(v_err IS NOT NULL, 'db/57 (notice): the director of sport published a safeguarding notice');
-    INSERT INTO notification (school_id, scope_level, kind, title, body) VALUES (HIL, 'school', 'news', 'Verify 057', 'Ordinary');
-    SELECT count(*) INTO n FROM notification WHERE title = 'Verify 057' AND kind = 'news' AND recipient_id IS NULL;
+    INSERT INTO notification (school_id, scope_level, kind, title, body) VALUES (HIL, 'school', 'notice', 'Verify 057', 'Ordinary');
+    SELECT count(*) INTO n FROM notification WHERE title = 'Verify 057' AND kind = 'notice' AND recipient_id IS NULL;
     PERFORM _assert(n = 1, 'db/57 (notice): the director of sport cannot publish an ordinary notice — the refusal above proves nothing');
 
     -- (guard) the principal, named in an open leadership concern, cannot end a
@@ -12518,6 +12610,7 @@ BEGIN
 select s.player_id, p.full_name, p.known_as, p.team_code,
                   p.school_id, sc.name as school_name, sc.kind as school_kind,
                   s.relationship, s.verification_state, s.consent_state,
+                  s.consent_version, s.consent_at,
                   s.valid_from, s.valid_until
              from role_assignment a
              join assignment_subject s on s.assignment_id = a.id
@@ -12549,6 +12642,12 @@ $v49$;
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE valid_until IS NOT NULL OR relationship <> 'parent'
                                   OR verification_state <> 'verified' OR consent_state <> 'granted'),
       '§49: Sarah''s links are not the open, verified, consented parent links the seed made');
+    -- (GA-I20 A1, R8a) Each link carries the wording of the school's terms
+    -- it was agreed under, and when, as the link holds them (the seed
+    -- records popia-2026-01 on every granted link).
+    PERFORM _assert((SELECT count(*) FROM _v49_my_children
+                      WHERE consent_version = 'popia-2026-01' AND consent_at IS NOT NULL) = 2,
+      '§49 (A1): Sarah''s granted links do not carry their own consent version and time');
 
     -- (G11) The end date rides along, and is the link's own.
     PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date + 400);
@@ -12595,8 +12694,9 @@ $v49$;
     -- under is a live link (app_can() reads verification, not consent), and
     -- says which it is.
     PERFORM _as(U_CELE);
-    SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending';
-    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, or does not say consent is pending');
+    SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending'
+                                                   AND consent_version IS NULL AND consent_at IS NULL;
+    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, does not say consent is pending, or claims a version or time no one recorded');
     -- A link the school has not verified is no link at all.
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE verification_state <> 'verified'),
       '§49 (pending): an unverified link is listed');
@@ -16763,6 +16863,275 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 67
+
+  -- ── 68. Notifications S1: the contract and read state (db/89) ───────
+  -- docs/design/NOTIFICATIONS.md D1, D4, D5, D17, D18, D19. _seed_89() writes
+  -- five notices as the owner (as the system's own definers do); every read
+  -- below is as a person, under RLS, through scrbrd_app. The JavaScript half:
+  -- packages/policy/test/notifications.test.mjs (the lists agree with this
+  -- file's CHECKs), services/api/notify/receipts.test.mjs (the two routes),
+  -- apps/web/test/notifications-store.test.mjs (one store, one count), and
+  -- tools/smoke-summary.mjs (the count falls on a second device's receipt).
+  --
+  -- What each label holds:
+  --   (kinds)     D1/D5: a kind outside the nine refused; welfare and news stored
+  --   (stored)    every stored row is in the list and none is public (D6);
+  --               both CHECKs validated
+  --   (shape)     D4: a person's notice names no child, has no recipient, is
+  --               never high and asks news.read alone; nothing is public;
+  --               on insert and on update; through the application too
+  --   (life)      D4: expiry by kind when the writer left it null
+  --   (door)      D18: the retraction columns are notification_retract()'s
+  --               alone; the application cannot call it
+  --   (retract)   D18: the words per kind, the person, once only, one
+  --               "withdrawn" notice to the same audience, urgency capped
+  --   (excluded)  D17/D19: the view leaves out the retracted and the expired
+  --   (audience)  another child's parent gets neither notice nor stub
+  --   (stub)      D19: a retracted notice opens as a stub with no words
+  --   (tiered)    D17: a tiered row lists its title; its body is read on
+  --               open, and the open is logged; a news.read open is not
+  --   (receipts)  D17: a receipt is the reader's own, for a notice he can
+  --               see; the count falls with it; read-all is per person
+  --   (milestone) D19: milestone_notice and recognition() leave out a
+  --               retracted mark
+  --
+  -- Falsified once each, by replacing the object in the database and running
+  -- this file; each went red at its label:
+  --   (excluded)  my_notifications without `n.retracted_at IS NULL`
+  --   (door)      notification_retraction_door() without its owner test
+  --   (kinds)     db/89 without notification_kind_known
+  --   (shape)     notification_contract() without its `kind = 'notice'` block
+  --   (stub)      notification_by_id() returning the row when retracted
+  --   (tiered)    notification_by_id() without its log_restricted_read()
+  --   (milestone) milestone_notice_not_retracted dropped
+  DECLARE
+    ids    jsonb := _seed_89();
+    R uuid; N uuid; G uuid; F uuid; SG uuid; W uuid; WF uuid; v uuid;
+    U_KIN    uuid := '88888888-0000-0000-0000-000000000010';  -- H Whitfield, guardian of J Whitfield (1XI)
+    U_OTHER  uuid := '88888888-0000-0000-0000-000000000011';  -- A Bekker, guardian of T Bekker (1XI): not J Whitfield
+    P_KIN    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+    N_ALL  uuid := '40170000-0000-0000-0000-000000000001';  -- the seed's school-wide notice, news.read
+    N_INJ  uuid := '40170000-0000-0000-0000-000000000002';  -- the seed's injury notice, medical.status.read
+    P_FIFTY  uuid := 'aaaaaaaa-0000-0000-0000-000000000002';  -- T Bekker: a fifty in the seed's match …04
+    P_FIFTY2 uuid := 'aaaaaaaa-0000-0000-0000-000000000004';  -- and another boy's, left standing
+    M_FIFTY  uuid := '77777777-0000-0000-0000-000000000004';
+    got    text;
+    j      jsonb;
+    c0     integer;
+    c1     integer;
+  BEGIN
+    R := (ids->>'rec')::uuid; N := (ids->>'note')::uuid; G := (ids->>'gone')::uuid;
+    F := (ids->>'fix')::uuid; SG := (ids->>'sg')::uuid;
+
+    -- (kinds) as the owner, so nothing but the schema can refuse
+    PERFORM _assert(_try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body)
+                                        VALUES (%L, 'school', 'training', 'v89', 'v89')$q$, HIL)) = 'notification_kind_known',
+      '§68 (kinds): a notice of kind ''training'' was stored');
+    PERFORM _assert(_try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, required_capability, subject_kind)
+                                        VALUES (%L, 'school', 'welfare', 'v89', 'v89', 'player.workload.read', 'welfare')$q$, HIL)) = 'ok'
+                    AND _try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, subject_kind)
+                                        VALUES (%L, 'school', 'notice', 'v89', 'v89', 'news')$q$, HIL)) = 'ok',
+      '§68 (kinds): a welfare or a news subject was refused (D5)');
+    PERFORM _assert(_try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, subject_kind)
+                                        VALUES (%L, 'school', 'notice', 'v89', 'v89', 'weather')$q$, HIL)) = 'notification_subject_kind_known',
+      '§68 (kinds): a subject outside the list was stored');
+    -- (stored)
+    got := _stored_89();
+    PERFORM _assert(got = 'none / 0 public', format('§68 (stored): stored notices outside the list / public: %s', got));
+    PERFORM _assert((SELECT count(*) FROM pg_constraint WHERE conrelid = 'notification'::regclass AND convalidated
+                       AND conname IN ('notification_kind_known', 'notification_subject_kind_known')) = 2,
+      '§68 (stored): the kind and subject CHECKs are not both validated');
+
+    -- (shape) D4, as the owner: the trigger refuses, not a policy
+    PERFORM _assert(_try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, subject_person_id)
+                                        VALUES (%L, 'school', 'notice', 'v89', 'v89', %L)$q$, HIL, P_INJURED)) = 'notification_notice_shape'
+                    AND _try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, recipient_id)
+                                        VALUES (%L, 'school', 'notice', 'v89', 'v89', %L)$q$, HIL, U_SARAH)) = 'notification_notice_shape'
+                    AND _try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, urgency, title, body)
+                                        VALUES (%L, 'school', 'notice', 'high', 'v89', 'v89')$q$, HIL)) = 'notification_notice_shape'
+                    AND _try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, required_capability)
+                                        VALUES (%L, 'school', 'notice', 'v89', 'v89', 'medical.nature.read')$q$, HIL)) = 'notification_notice_shape',
+      '§68 (shape): a person''s notice named a child, had a recipient, was high or asked more than news.read');
+    PERFORM _assert(_try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, is_public)
+                                        VALUES (%L, 'school', 'system', 'v89', 'v89', true)$q$, HIL)) = 'notification_never_public',
+      '§68 (shape): a public notice was stored (D6)');
+    -- …and an edit cannot reach what an insert may not
+    PERFORM _assert(_try_75(format('UPDATE notification SET urgency = ''high'' WHERE id = %L', N)) = 'notification_notice_shape'
+                    AND _try_75(format('UPDATE notification SET subject_person_id = %L WHERE id = %L', P_INJURED, N)) = 'notification_notice_shape'
+                    AND _try_75(format('UPDATE notification SET is_public = true WHERE id = %L', R)) = 'notification_never_public',
+      '§68 (shape): an update made a notice high, about a child, or public');
+    -- …and through the application: Sarah may publish to her school
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(_app_89(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, subject_person_id)
+                                       VALUES (%L, 'school', 'notice', 'v89', 'v89', %L)$q$, HIL, P_INJURED)) = 'notification_notice_shape'
+                    AND _app_89(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body)
+                                       VALUES (%L, 'school', 'notice', 'v89 app', 'v89')$q$, HIL)) = 'ok',
+      '§68 (shape): the director of sport published a notice about a child, or could not publish an ordinary one');
+
+    -- (life) from published_at, by kind; a writer's own expiry kept
+    SELECT concat_ws(' ',
+      (SELECT ((x->>'expires_at')::timestamptz - (x->>'published_at')::timestamptz)::text FROM _row_89(R) x),
+      (SELECT ((x->>'expires_at')::timestamptz - (x->>'published_at')::timestamptz)::text FROM _row_89(N) x),
+      (SELECT ((x->>'expires_at')::timestamptz = (SELECT m.starts_at + interval '7 days' FROM match m WHERE m.id = '77777777-0000-0000-0000-000000000002'))::text FROM _row_89(F) x),
+      (SELECT ((x->>'expires_at')::timestamptz < now())::text FROM _row_89(G) x)) INTO got;
+    PERFORM _assert(got = '180 days 60 days true true',
+      format('§68 (life): recognition / notice / fixture (start + 7 days) / the writer''s own read %s', got));
+
+    -- (door) as the application, which may UPDATE the notice (news.publish.school)…
+    PERFORM _as(U_SARAH);
+    UPDATE notification SET body = body WHERE id = N RETURNING id INTO v;
+    PERFORM _assert(v = N, '§68 (door): the director of sport cannot update the notice at all — the refusals below prove nothing');
+    -- …but not its retraction, not with the door's setting forged, and not by
+    -- writing a "withdrawn" notice of her own
+    PERFORM _assert(_app_89(format('UPDATE notification SET retracted_at = now(), retraction_kind = ''withdrawn'' WHERE id = %L', N)) = 'notification_retraction_door',
+      '§68 (door): the application set retracted_at');
+    PERFORM set_config('scrbrd.notification_retract', N::text, true);
+    PERFORM _assert(_app_89(format('UPDATE notification SET retracted_at = now(), retraction_kind = ''withdrawn'' WHERE id = %L', N)) = 'notification_retraction_door',
+      '§68 (door): the application set retracted_at with the door''s setting forged');
+    PERFORM set_config('scrbrd.notification_retract', '', true);
+    PERFORM _assert(_app_89(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, retracts_id)
+                                       VALUES (%L, 'school', 'notice', 'v89', 'v89', %L)$q$, HIL, N)) = 'notification_retraction_door',
+      '§68 (door): the application wrote a "withdrawn" notice');
+    -- the owner outside the function: refused too; a notice is not born retracted
+    PERFORM _assert(_try_75(format('UPDATE notification SET retracted_at = now(), retraction_kind = ''correction'' WHERE id = %L', R)) = 'notification_retraction_door'
+                    AND _try_75(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, retracted_at, retraction_kind)
+                                        VALUES (%L, 'school', 'notice', 'v89', 'v89', now(), 'correction')$q$, HIL)) = 'notification_retraction_door',
+      '§68 (door): the owner retracted a notice outside notification_retract(), or wrote one born retracted');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'notification_retract(uuid,text,boolean)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'notification_retract(uuid,text,boolean)', 'EXECUTE')
+                    AND _app_89(format('SELECT notification_retract(%L, ''withdrawn'', true)', N)) = '42501',
+      '§68 (door): the application can call notification_retract()');
+    PERFORM _assert(has_table_privilege('scrbrd_app', 'my_notifications', 'SELECT')
+                    AND NOT has_table_privilege('scrbrd_app', 'my_notifications', 'INSERT')
+                    AND NOT has_table_privilege('scrbrd_app', 'my_notifications', 'UPDATE')
+                    AND NOT has_table_privilege('public', 'my_notifications', 'SELECT')
+                    AND (SELECT c.reloptions FROM pg_class c WHERE c.oid = 'my_notifications'::regclass) @> ARRAY['security_invoker=true'],
+      '§68 (door): my_notifications is not a read, as the caller, for the application alone');
+
+    -- (retract) the word must fit the kind (D2)
+    SELECT concat_ws(' ', _retract_89(SG, 'correction', true, NULL), _retract_89(N, 'correction', true, NULL),
+                          _retract_89(R, 'withdrawn', true, U_SARAH), _retract_89(N, 'withdrawn', true, NULL),
+                          _retract_89(N, 'withdrawn', true, U_KIN), _retract_89(N, 'regretted', true, NULL)) INTO got;
+    PERFORM _assert(got = 'notification_retract_kind notification_retract_kind notification_retract_kind 42501 42501 22023',
+      format('§68 (retract): safeguarding / a notice corrected / a fifty withdrawn / nobody / not the author / no such word read %s', got));
+    -- a correction, while a scorer is signed in: still the system's
+    W := _retract_89(R, 'correction', true, U_SCORER)::uuid;
+    j := _row_89(R);
+    PERFORM _assert(j->>'retracted_at' IS NOT NULL AND j->>'retracted_by' IS NULL AND j->>'retraction_kind' = 'correction',
+      format('§68 (retract): the corrected fifty reads %s', j));
+    j := _row_89(W);
+    PERFORM _assert(j->>'kind' = 'recognition' AND j->>'urgency' = 'medium' AND j->>'team_code' = '1XI' AND j->>'scope_level' = 'team'
+                    AND j->>'school_id' = HIL::text AND j->>'required_capability' = 'news.read'
+                    AND j->>'subject_person_id' = P_KIN::text AND j->>'recipient_id' IS NULL
+                    AND j->>'retracts_id' = R::text AND j->>'published_by' IS NULL AND j->>'retracted_at' IS NULL
+                    AND j->>'title' = 'A notice was withdrawn'
+                    AND j->>'body' = '''Fifty for J Whitfield'' was withdrawn after the scorecard was corrected.',
+      format('§68 (retract): the "withdrawn" notice is not the original''s audience in the system''s words: %s', j));
+    PERFORM _assert(_retract_89(R, 'correction', true, NULL) = W::text AND _said_89(R) = 1,
+      '§68 (retract): a second retraction said something again');
+    -- superseded: a high fixture notice's withdrawal is medium
+    WF := _retract_89(F, 'superseded', true, NULL)::uuid;
+    j := _row_89(WF);
+    PERFORM _assert(j->>'urgency' = 'medium' AND j->>'required_capability' = 'fixture.read' AND j->>'kind' = 'fixture'
+                    AND j->>'body' = '''Verify 089 fixture moved'' was replaced by a later notice.',
+      format('§68 (retract): the superseded fixture notice''s withdrawal reads %s', j));
+    -- withdrawn by its author, saying nothing: on the record as hers
+    -- (Called first, on its own: a STABLE reader in the same statement would
+    -- read the row as the statement found it.)
+    got := _retract_89(N, 'withdrawn', false, U_SARAH);
+    PERFORM _assert(got = 'said nothing'
+                    AND _row_89(N)->>'retracted_by' = U_SARAH::text AND _row_89(N)->>'retraction_kind' = 'withdrawn'
+                    AND _said_89(N) = 0 AND _logged_89('notification.retract', N) = 1
+                    AND _logged_89('notification.retract', R) = 0,
+      format('§68 (retract): the author''s withdrawal answered %s and reads %s, logged %s', got, _row_89(N), _logged_89('notification.retract', N)));
+
+    -- (excluded) J Whitfield's guardian: the view leaves out what was taken
+    -- back and what expired; the table's own policy still admits both, so it
+    -- is the view that takes them away
+    PERFORM _as(U_KIN);
+    PERFORM _assert(EXISTS (SELECT 1 FROM notification WHERE id = R) AND EXISTS (SELECT 1 FROM notification WHERE id = G),
+      '§68 (excluded): J Whitfield''s guardian cannot read the fifty or the expired notice at all — the exclusions below prove nothing');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_notifications WHERE id IN (R, N, G))
+                    AND EXISTS (SELECT 1 FROM my_notifications WHERE id = W),
+      '§68 (excluded): the guardian''s list holds a retracted or expired notice, or lacks the "withdrawn" one');
+
+    -- (stub)
+    j := notification_by_id(R);
+    PERFORM _assert(j->>'id' = R::text AND (j->>'withdrawn')::boolean AND j->>'retracted_at' IS NOT NULL
+                    AND j->>'withdrawal_id' = W::text
+                    AND (SELECT string_agg(k, ',' ORDER BY k) FROM jsonb_object_keys(j) k) = 'id,retracted_at,withdrawal_id,withdrawn',
+      format('§68 (stub): the retracted fifty opens as %s', j));
+    PERFORM _assert(notification_by_id(W)->>'body' = '''Fifty for J Whitfield'' was withdrawn after the scorecard was corrected.'
+                    AND NOT (notification_by_id(W)->>'withdrawn')::boolean,
+      '§68 (stub): the "withdrawn" notice does not open in full');
+    PERFORM _assert(notification_by_id(G) IS NULL AND notification_by_id(gen_random_uuid()) IS NULL,
+      '§68 (stub): an expired or unknown notice answered');
+
+    -- (audience) another 1XI family: neither notice, nor its stub
+    PERFORM _as(U_OTHER);
+    PERFORM _assert(EXISTS (SELECT 1 FROM my_notifications WHERE id = N_ALL),
+      '§68 (audience): the other guardian reads no notice at all — the refusals below prove nothing');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_notifications WHERE id IN (R, W))
+                    AND notification_by_id(R) IS NULL AND notification_by_id(W) IS NULL,
+      '§68 (audience): another child''s parent read J Whitfield''s fifty, its stub, or its withdrawal');
+
+    -- (tiered) the medical officer: the injury notice's title in the list,
+    -- its body on open, and the open on the record
+    PERFORM _as(U_MEDICAL);
+    SELECT row(m.tiered, m.body IS NULL, m.title)::text INTO got FROM my_notifications m WHERE m.id = N_INJ;
+    PERFORM _assert(got = '(t,t,"Availability update")', format('§68 (tiered): the injury notice lists as %s', got));
+    c0 := _logged_89('notification.open', N_INJ);
+    j := notification_by_id(N_INJ);
+    PERFORM _assert(j->>'body' = 'R Pillay is unavailable for selection. Review in two weeks.' AND (j->>'tiered')::boolean
+                    AND _logged_89('notification.open', N_INJ) = c0 + 1,
+      format('§68 (tiered): the open read %s, logged %s → %s', j->>'body', c0, _logged_89('notification.open', N_INJ)));
+    SELECT row(m.tiered, m.body)::text INTO got FROM my_notifications m WHERE m.id = N_ALL;
+    PERFORM _assert(got = '(f,"The 2026/27 fixture list is now available.")'
+                    AND notification_by_id(N_ALL)->>'body' = 'The 2026/27 fixture list is now available.'
+                    AND _logged_89('notification.open', N_ALL) = 0,
+      format('§68 (tiered): a news.read notice lists as %s, or its open was logged', got));
+
+    -- (receipts) the guardian's own
+    PERFORM _as(U_KIN);
+    SELECT count(*) INTO c0 FROM my_notifications WHERE NOT read;
+    INSERT INTO notification_read (notification_id, person_id) VALUES (W, app_user_id());
+    SELECT count(*) INTO c1 FROM my_notifications WHERE NOT read;
+    PERFORM _assert(c1 = c0 - 1 AND (SELECT read FROM my_notifications WHERE id = W)
+                    AND (notification_by_id(W)->>'read')::boolean,
+      format('§68 (receipts): a receipt moved the guardian''s unread count %s → %s', c0, c1));
+    PERFORM _assert(_app_89(format('INSERT INTO notification_read (notification_id, person_id) VALUES (%L, %L)', N_ALL, U_OTHER)) = '42501',
+      '§68 (receipts): the guardian marked a notice read for somebody else');
+    PERFORM _as(U_OTHER);
+    SELECT count(*) INTO c0 FROM my_notifications WHERE NOT read;
+    PERFORM _assert(_app_89(format('INSERT INTO notification_read (notification_id, person_id) VALUES (%L, %L)', R, U_OTHER)) = '42501',
+      '§68 (receipts): a receipt was written for a notice its reader cannot see');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification_read WHERE person_id = U_KIN),
+      '§68 (receipts): one guardian read another''s receipts');
+    -- read-all, as the route writes it: the guardian's alone
+    PERFORM _as(U_KIN);
+    INSERT INTO notification_read (notification_id, person_id)
+      SELECT id, app_user_id() FROM my_notifications WHERE NOT read ON CONFLICT DO NOTHING;
+    SELECT count(*) INTO c1 FROM my_notifications WHERE NOT read;
+    PERFORM _assert(c1 = 0, format('§68 (receipts): after read-all the guardian has %s unread', c1));
+    PERFORM _as(U_OTHER);
+    SELECT count(*) INTO c1 FROM my_notifications WHERE NOT read;
+    PERFORM _assert(c0 > 0 AND c1 = c0, format('§68 (receipts): the guardian''s read-all moved the other family''s count %s → %s', c0, c1));
+
+    -- (milestone) a mark whose notice was retracted is read nowhere
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(EXISTS (SELECT 1 FROM recognition(P_FIFTY) x WHERE x.family = 'milestone' AND x.match_id = M_FIFTY AND x.kind = 'fifty'),
+      '§68 (milestone): the seed''s fifty is not in recognition() — the exclusion below proves nothing');
+    PERFORM _milestone_89(P_FIFTY, M_FIFTY, 60, true);
+    PERFORM _milestone_89(P_FIFTY2, M_FIFTY, 71, false);
+    PERFORM _as(U_SARAH);
+    SELECT string_agg(mn.player_id::text, ',') INTO got FROM milestone_notice mn WHERE mn.match_id = M_FIFTY;
+    PERFORM _assert(got = P_FIFTY2::text, format('§68 (milestone): milestone_notice for the match reads %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM recognition(P_FIFTY) x WHERE x.family = 'milestone' AND x.match_id = M_FIFTY AND x.kind = 'fifty')
+                    AND EXISTS (SELECT 1 FROM recognition(P_FIFTY2) x WHERE x.family = 'milestone' AND x.match_id = M_FIFTY AND x.kind = 'fifty'),
+      '§68 (milestone): recognition() kept a retracted fifty, or lost a standing one');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 68
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

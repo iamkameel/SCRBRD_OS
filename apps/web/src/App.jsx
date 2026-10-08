@@ -16,6 +16,7 @@ import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
 import { useRows } from "./lib/live.js";
+import { useNotifications } from "./lib/notifications.js";
 import { useWaitingInvitations } from "./lib/invitations.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
@@ -27,6 +28,7 @@ import { scorerLanding } from "./lib/scorerHome.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut } from "./lib/session.js";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
+import { StateLabel } from "./ui/stateLabel.jsx";
 
 // ── Route-level code splitting (SCRBRD-020) ─────────────────────────────
 //
@@ -386,11 +388,12 @@ export default function SCRBRD_OS() {
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
 
-  // Counted over the notices the SERVER agreed to send this person. A badge is
-  // a disclosure: "3 unread" built from rows nobody authorised states a fact
-  // about data the reader may not have.
-  const notifications = useRows("notifications", role);
-  const unreadCount = notifications.filter(n=>!n.read).length;
+  // Counted by the SERVER over the notices it agreed to send this person
+  // (my_notifications, db/89), from the one store every badge reads. A badge
+  // is a disclosure: "3 unread" built from rows nobody authorised states a
+  // fact about data the reader may not have.
+  const { unread: unreadCounted } = useNotifications(role);
+  const unreadCount = unreadCounted ?? 0;
   // Invitations to leagues waiting for this person's answer. The API writes no
   // notification for one yet, so the navigation says so (lib/invitations.js).
   const invitesWaiting = useWaitingInvitations(`${appState}:${role}:${page}`);
@@ -511,7 +514,7 @@ export default function SCRBRD_OS() {
     children:     <FamilyHome        role={role} onNav={setPage}/>,
     fixtures:     <FamilyMatches     role={role}/>,
     notices:      <FamilyNotices     role={role}/>,
-    family:       <FamilyFile        role={role}/>,
+    family:       <FamilyFile        role={role} onNav={setPage}/>,
     myhome:       <PupilHome         role={role}/>,
     mymatches:    <PupilMatches      role={role}/>,
     passport:     <PupilPassport     role={role}/>,
@@ -545,8 +548,8 @@ export default function SCRBRD_OS() {
               everything, for as long as there is no token. */}
           {!signedIn() && (
             <div role="status" data-testid="demo-banner" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"12px",padding:"6px 16px",background:clr(D.amber,0.14),borderBottom:`1px solid ${D.amber}`,fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>
-              <span><strong>Demonstration.</strong> Nothing on these screens is a school's, and nothing is saved.</span>
-              <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"11px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
+              <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:"0 8px"}}><StateLabel kind="demo" compact/><span>Nothing on these screens is a school's, and nothing is saved.</span></div>
+              <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"12px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
             </div>
           )}
           {personaHeader

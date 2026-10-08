@@ -5,12 +5,14 @@ import { D, T } from "../design/tokens.js";
 import { addDays, dateStr, humanDate, humanDateTime, today } from "../lib/format.js";
 import { api, signedIn } from "../lib/api.js";
 import { useDutyCoverage, useLive, useWeatherState } from "../lib/live.js";
+import { useNotifications } from "../lib/notifications.js";
 import { combineReads, readState } from "../lib/readState.js";
 import { holdsAsHeld } from "../lib/held.js";
 import { Btn, EmptyState, ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
 import { Icon, isIcon } from "../ui/icons.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 import { boardFromInnings } from "../scorer/boardData.js";
 import { seedCompletedMatch } from "../scorer/seed.js";
 import { boardInsights } from "../scorer/signals.js";
@@ -148,7 +150,7 @@ function useLiveScore(matchId) {
  *   onRetry      the one Retry: it re-runs these reads, the same ones, with the same role
  *   onNav, onOpenScorer         the two buttons' handlers
  */
-function DaySheet({ role, live = true, demoNote = "Demonstration — no server connected", liveMatch = null, board = null, boardState = {},
+function DaySheet({ role, live = true, demoNote = "sample fixtures, no server connected", liveMatch = null, board = null, boardState = {},
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
                     reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
@@ -169,10 +171,10 @@ function DaySheet({ role, live = true, demoNote = "Demonstration — no server c
           <Icon name={rc?.icon ?? "layout-dashboard"} style={{ color: rc?.color }}/>
           {rc?.label ?? "Today"}
         </h1>
-        <p style={{ ...T.role.body, color: T.content.secondary }}>
-          {new Date().toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-          {!live && ` · ${demoNote}`}
-        </p>
+        <div style={{ ...T.role.body, color: T.content.secondary, display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
+          <span>{new Date().toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
+          {!live && <StateLabel kind="demo" compact why={demoNote}/>}
+        </div>
       </div>
 
       <Bento>
@@ -302,7 +304,8 @@ function DaySheet({ role, live = true, demoNote = "Demonstration — no server c
               {unread.slice(0, 6).map((n) => (
                 <div key={n.id} data-testid={`alert-${n.id}`}>
                   <div style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>{n.title}</div>
-                  <div style={{ ...T.role.body, color: T.content.secondary }}>{n.body}</div>
+                  {/* A tiered notice lists its title only; its body is read in Notices, on open (D17). */}
+                  {n.body && <div style={{ ...T.role.body, color: T.content.secondary }}>{n.body}</div>}
                 </div>
               ))}
             </div>
@@ -326,8 +329,9 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const { rows: MATCHES, live: matchesAreLive } = matchesRead;
   const injuriesRead = useLive("injuries", role, nonce);
   const INJURIES = injuriesRead.rows;
-  const notificationsRead = useLive("notifications", role, nonce);
-  const NOTIFICATIONS = notificationsRead.rows;
+  // The notices' one store (lib/notifications.js): the same rows and read
+  // state every badge reads, so a notice opened in Notices leaves this list too.
+  const { list: notificationsRead, rows: NOTIFICATIONS } = useNotifications(role, nonce, { fresh: true });
   const trainingRead = useLive("training", role, nonce);
   const TRAINING = trainingRead.rows;
   const PLAYERS = useLive("players", role, nonce).rows;
@@ -393,7 +397,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   } : null;
 
   return (
-    <DaySheet role={role} live={matchesAreLive} liveMatch={liveMatch} board={board} boardState={liveScore}
+    <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} onRetry={() => setNonce((n) => n + 1)}

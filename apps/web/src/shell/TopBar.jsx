@@ -2,18 +2,20 @@ import { useState, useEffect } from "react";
 import { ROLES, ROLE_FAMILIES, canonicalRole } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { GlobalSearch } from "./GlobalSearch.jsx";
-import { useRows } from "../lib/live.js";
+import { useNotifications } from "../lib/notifications.js";
 import { Icon } from "../ui/icons.jsx";
 
 function TopBar({ role, onRoleChange, onNav, userName }) {
-  // The unread badge is built from the notices the SERVER agreed to send.
-  // Counting client-side over rows the browser filtered would put a number in
-  // the chrome that no policy ever produced — and a count discloses as surely
-  // as a list does.
-  const NOTIFICATIONS = useRows("notifications", role);
+  // The unread badge is the SERVER's count of the notices it agreed to send
+  // this person (my_notifications, db/89), from the one store every badge
+  // reads (lib/notifications.js). Counting client-side over rows the browser
+  // filtered would put a number in the chrome that no policy ever produced —
+  // and a count discloses as surely as a list does. Null while uncounted: no
+  // badge rather than a number nobody counted.
+  const { unread: counted } = useNotifications(role);
   const [roleOpen, setRoleOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const unread = NOTIFICATIONS.filter(n=>!n.read).length;
+  const unread = counted ?? 0;
 
   // Keyboard shortcut: Cmd/Ctrl+K
   useEffect(()=>{
@@ -56,7 +58,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
           </button>
           {roleOpen&&(
             <div role="menu" aria-label="Switch role" style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:T.surface.overlay,border:`1px solid ${T.line.normal}`,borderRadius:T.radius.lg,overflowY:"auto",minWidth:"210px",maxHeight:"min(70vh,520px)",zIndex:200,boxShadow:T.elevation.lg}}>
-              <div style={{position:"sticky",top:0,background:T.surface.overlay,padding:"10px 12px 6px",borderBottom:`1px solid ${T.line.subtle}`,fontFamily:T.type.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary}}>Switch Role (Demo)</div>
+              <div style={{position:"sticky",top:0,background:T.surface.overlay,padding:"10px 12px 6px",borderBottom:`1px solid ${T.line.subtle}`,fontFamily:T.type.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary}}>Switch Role (Demo)</div>
               {/* Grouped by family, and ONE ENTRY PER ROLE.
                   This menu used to iterate ROLES, which is the LOOKUP table:
                   twenty-four real roles plus nine demonstration aliases that

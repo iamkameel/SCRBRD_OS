@@ -231,8 +231,10 @@ group("S12 · A notice for this fixture, as published");
 {
   const n = (o) => ({ id: "n1", type: "welfare", title: "Bowling directive exceeded", body: "A boy is 5 overs into a spell. Take him off.", subjectKind: "match", subjectId: "m1", ...o });
   const run = (rows) => ruleS12(base({ notices: rows }));
-  ok("welfare, selection and transport notices about this match", ["welfare", "selection", "transport"].every((k) => run([n({ type: k })]).length === 1));
+  ok("welfare, a person's notice and lift notices about this match (D1's kinds)", ["welfare", "notice", "lift"].every((k) => run([n({ type: k })]).length === 1));
+  ok("...and no kind outside D1's list", ["selection", "transport"].every((k) => run([n({ type: k })]).length === 0));
   ok("the notice is as published, word for word", run([n()])[0]?.lines.join(" | ") === "Bowling directive exceeded | A boy is 5 overs into a spell. Take him off.");
+  ok("a tiered notice, listed without its body, is its title alone (D17)", run([n({ body: null })])[0]?.lines.join(" | ") === "Bowling directive exceeded");
   ok("not injury, not training, not another match, not about nothing", [{ type: "injury" }, { type: "training" }, { subjectId: "m2" }, { subjectKind: null }, { subjectKind: "injury" }].every((o) => run([n(o)]).length === 0));
   ok("nothing derived: a failed read is silent", run(null).length === 0);
 }

@@ -3,6 +3,7 @@ import { T, inkOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { Badge, EmptyState } from "../ui/primitives.jsx";
+import { StateLabel } from "../ui/stateLabel.jsx";
 import {
   KEY_WORDS, PARTS, STANDING_WORDS, sourceWords, confirmedCount, dayOf, draftOf, formatDay, formatWhen, labelOf,
   bandDefault, oversCell, platformDefaultWords, refusalWords, standing, valueOfDraft, valueWords,
@@ -531,7 +532,7 @@ export function PlayingConditions({ competition }) {
       <div>
         <h3 style={S.h3}>Playing conditions</h3>
         <p style={S.body}>The figures {competition.name ? `${competition.name} is` : "this competition is"} played under: how a match runs, how the table is worked out, who may be picked.</p>
-        {!data.canManage && <p data-testid="pc-readonly" style={S.meta}>Only this competition's organiser can change these.</p>}
+        {!data.canManage && <div data-testid="pc-readonly"><StateLabel kind="readonly" why="only this competition's organiser can change these"/></div>}
       </div>
 
       <section data-testid="pc-in-force" aria-label="In force today" style={S.card}>

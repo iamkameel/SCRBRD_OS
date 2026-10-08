@@ -62,12 +62,13 @@ import { isPadAuthorization, padRoute, padPrincipal, padRefusal, padCredentialRo
 import { signInRoutes, verifierFromEnv } from "./auth/signin-api.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
-import { eventRoutes, amendmentRoutes, quarantineRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
+import { receiptRoutes } from "./notify/receipts-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
 import { ownerRecoveryRoutes } from "./write/owner-recovery-api.mjs";
@@ -109,6 +110,7 @@ import { PAGE_MAX_BYTES } from "./io/page-image.mjs";
 import { publicPages } from "./public/public-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 import { schemaRefusal } from "./schema-guard.mjs";
+import { revisionFromEnv } from "./revision.mjs";
 import { appUrl, port } from "../../tools/db-url.mjs";
 /** @import { IncomingMessage, ServerResponse } from "node:http" */
 /** @import { Handler, IdHandler, ExactHandler } from "./api-types.mjs" */
@@ -131,7 +133,7 @@ const DEV = process.env.NODE_ENV !== "production";
 // The application connects as scrbrd_app, NOT as the schema owner. Row-level
 // security does not apply to a table's owner, so an owner connection runs with
 // every policy in db/ silently inert. assertRlsApplies() below refuses to start
-// on such a connection; see db/05_app_role.sql for how this was found.
+// on such a connection; see db/06_app_role.sql for how this was found.
 // DATABASE_URL first: it is how every deployment names the application role
 // (DEPLOYING.md, Cloud Run). appUrl() is only the local default — this
 // worktree's database when SCRBRD_DB is set, the plain local one otherwise.
@@ -172,7 +174,7 @@ async function assertRlsApplies() {
       problems.map((p) => `  problem:      ${p}`).join("\n") +
       `\n\nEvery policy in db/ would be inert and every request would be answered in\n` +
       `full, with nothing reporting a fault. Point DATABASE_URL at scrbrd_app\n` +
-      `(see db/05_app_role.sql) rather than at the schema owner.\n`);
+      `(see db/06_app_role.sql) rather than at the schema owner.\n`);
     process.exit(1);
   }
 }
@@ -386,8 +388,14 @@ const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
 const conduct = disciplineRoutes({ pool, secret: SECRET });
-const amend   = amendmentRoutes({ pool, secret: SECRET });
-const quarantine = quarantineRoutes({ pool, secret: SECRET });
+// GA-I36 N2: an approved amendment's void and a released held ball drop the
+// fixture's public cache once committed (afterCommit, as the publication
+// route's), so the public log answers the new head at once. No hub: nothing
+// subscribes to it, and every screen polls (Kameel, 8 Oct).
+const amend   = amendmentRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
+const quarantine = quarantineRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
+// GA-I36 N1: the corrections waiting on a match, and across the reader's matches.
+const corrections = correctionRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
@@ -414,6 +422,8 @@ const padCreds = padCredentialRoutes({ pool, secret: SECRET });
 const pushOut  = transportFor();
 const devices  = deviceRoutes({ pool, secret: SECRET });
 const notices  = notificationRoutes({ pool, secret: SECRET, transport: pushOut });
+// Opening a notice and marking notices read (NOTIFICATIONS.md D17).
+const receipts = receiptRoutes({ pool, secret: SECRET });
 // The rewards algorithm's coefficients. Write-only by design — see
 // services/api/rewards/weights-api.mjs for why there is no matching read.
 const rewards  = rewardWeightRoutes({ pool, secret: SECRET });
@@ -575,6 +585,8 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/amendments$/,        "POST", amend.request],
   // The way out of quarantine: list what is waiting, then accept or reject.
   [/^\/api\/matches\/([^/]+)\/quarantine$/,         "GET",  quarantine.list],
+  // GA-I36 N1: the amendments and held balls on a match, under their own policies.
+  [/^\/api\/matches\/([^/]+)\/corrections$/,        "GET",  corrections.forMatch],
   // Naming the side. The two safeguarding triggers on match_squad fire here,
   // and had no way to fire at all before this route existed.
   [/^\/api\/matches\/([^/]+)\/squad$/,             "POST", squad.select],
@@ -647,6 +659,10 @@ const MATCH_ROUTES = [
   // Putting a published notice in front of people. Keyed on the notice, so it
   // rides the id-bearing table rather than SCOUT_ROUTES.
   [/^\/api\/notifications\/([^/]+)\/push$/,       "POST", notices.push],
+  // Opening a notice: its body (a tiered one's open is logged) and its
+  // receipt, as the reader. NOT module-gated: a person's own notices are not
+  // a module (modules.mjs).
+  [/^\/api\/notifications\/([^/]+)\/read$/,       "POST", receipts.open],
   [/^\/api\/fixtures\/([^/]+)$/,                  "POST", fixtures.amend],
   // A side of the fixture on the public pages (SCRBRD-083). fixture_publish()
   // (db/47) decides who: broadcast.publish at THAT side's school and team.
@@ -923,6 +939,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/discipline\/([^/]+)$/,               "PATCH", conduct.progress],
   [/^\/api\/amendments\/([^/]+)\/decide$/,       "POST", amend.decide],
   [/^\/api\/quarantine\/([^/]+)\/resolve$/,       "POST", quarantine.resolve],
+  // GA-I36 N1: every match with a correction open that the reader may see (O7).
+  [/^\/api\/corrections$/,                       "GET",  corrections.open],
 ];
 
 // Scouting: keyed on the scout, not on a match or a child. Registration takes
@@ -997,6 +1015,9 @@ const LIFT_ROUTES = [
   [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/expected$/, "GET", lifts.expected],
   [/^\/api\/lifts\/exceptions$/,                      "GET",  lifts.exceptions],
   [/^\/api\/lifts\/mine$/,                            "GET",  lifts.mine],
+  // GA-I20 A1 (N3): her own open lifts' requests, counted; no name. Gated:
+  // it reads an arrangement, and a module switched off is no row, not a fault.
+  [/^\/api\/lifts\/requests-mine$/,                   "GET",  lifts.requestsMine, "lift_club"],
   [/^\/api\/lifts\/watch$/,                           "POST", lifts.watch],
   [/^\/api\/lifts\/purge$/,                           "GET",  lifts.purgeDue],
   [/^\/api\/lifts\/([0-9a-f-]{36})\/purge$/,            "POST", lifts.purge],
@@ -1023,6 +1044,8 @@ const SCOUT_ROUTES = [
   [/^\/api\/devices\/retire$/,                             "POST", devices.retire],
   // Publishing a notice, which until now had a policy and no route at all.
   [/^\/api\/notifications$/,                               "POST", notices.publish],
+  // Every notice in the reader's list, marked read: his own receipts only.
+  [/^\/api\/notifications\/read-all$/,                      "POST", receipts.readAll],
   // The fixture itself. NOT module-gated: arranging a match is the product,
   // not a module somebody may switch off — and the sport it is in is gated in
   // the database, which catches a seed and an import too.
@@ -1217,6 +1240,10 @@ const server = createServer(async (req, res) => {
       reader: readerConfig().mode,
       // The weather hint (Practice Match): configured | unconfigured. Never the key.
       weather: weather.configured() ? "configured" : "unconfigured",
+      // The commit this process was built from (RENDER_GIT_COMMIT, else
+      // GIT_COMMIT), or null: how a running revision is tied to a reviewed
+      // commit (DEPLOYING.md, "The deployed revision"). A commit id only.
+      revision: revisionFromEnv(process.env),
     });
   }
 

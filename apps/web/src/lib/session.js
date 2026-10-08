@@ -14,6 +14,7 @@
 import { api, setToken, apiStatus, resetApi, getToken } from "./api.js";
 import { forgetAllPadCredentials } from "./padKey.js";
 import { resetFeatures, resetSports } from "./features.js";
+import { resetNotifications } from "./notifications.js";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { deviceId } from "./device.js";
 
@@ -104,6 +105,9 @@ export function signOut() {
   // device that kept them would draw the previous person's menu.
   resetFeatures();
   resetSports();
+  // And the notices: one person's list and count are nobody else's
+  // (lib/notifications.js keys them to the session as well).
+  resetNotifications();
 }
 
 /** The signed-in person, or null. Never an authorization answer. */

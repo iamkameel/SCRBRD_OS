@@ -26,6 +26,7 @@
 import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
 import { combineReads } from "./readState.js";
+import { asNotification } from "./notifications.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
@@ -195,25 +196,9 @@ function asTraining(r) {
   };
 }
 
-function asNotification(r) {
-  return {
-    id: r.id, type: r.kind, urgency: r.urgency, title: r.title, body: r.body,
-    time: r.published_at, read: r.read, team: r.team_code, school: r.school_id,
-    isPublic: r.is_public,
-    // What the notice is about (SCRBRD-137 S12): a fixture, say, by its id. The
-    // cockpit's notices lane shows only those about the match it is open on.
-    subjectKind: r.subject_kind ?? null, subjectId: r.subject_id ?? null,
-    // The child a notice is about, when it is about one (step 4 P1/P5): a
-    // family screen says whose it is, and a parent who is also staff sees on
-    // a child's Home only the notices about that child or about nobody.
-    subjectPerson: r.subject_person_id ?? null,
-    // The mock carried a `roles: [...]` list, and it was never security — it
-    // was a filter the browser applied to rows it already held. The server
-    // does not send a notice this person may not have, so there is nothing
-    // left to filter and no list to carry.
-    live: true,
-  };
-}
+// asNotification lives with the notices' store (lib/notifications.js, D17),
+// which every badge and the Notices screens read; the cockpit's lane reads
+// the same adapter through readLive().
 
 function asLadderRow(r) {
   return { id: r.id ?? `${r.competition_id}:${r.school_id}:${r.team_code ?? ""}`,
@@ -670,6 +655,15 @@ function asContact(r) {
            phone: r.phone, phoneAlt: r.phone_alt, email: r.email, note: r.note, live: true };
 }
 
+/**
+ * How many numbers are on record to ring for one child (GA-I20 A1, N2): the
+ * child's id and a count, never a contact. No row for a reader who may not
+ * read his contacts.
+ */
+function asContactCount(r) {
+  return { playerId: r.player_id, active: Number(r.active_count), live: true };
+}
+
 /** One row of the clearance register, or one adult's clearance. The word is the server's. */
 function asClearance(r) {
   const d = (v) => (v ? String(v).slice(0, 10) : null);
@@ -991,6 +985,8 @@ function asChild(r) {
   return { id: r.player_id, name: r.full_name, knownAs: r.known_as ?? null, team: r.team_code,
            school: r.school_id, schoolName: r.school_name ?? null, schoolKind: r.school_kind ?? null,
            relationship: r.relationship, verification: r.verification_state, consent: r.consent_state,
+           // GA-I20 A1 (R8a): the wording of the terms her own link was agreed under, and when.
+           consentVersion: r.consent_version ?? null, consentAt: r.consent_at ?? null,
            from: d10(r.valid_from), until: d10(r.valid_until), live: true };
 }
 
@@ -1172,6 +1168,7 @@ const ADAPT = {
   availability: asAvailability,
   readiness: asReadiness,
   emergency_contacts: asContact,
+  emergency_contact_count: asContactCount,
   trip_contacts: asContact,
   clearance_register: asClearance,
   clearances: asClearance,

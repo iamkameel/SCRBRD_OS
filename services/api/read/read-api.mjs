@@ -632,16 +632,22 @@ export const READ_QUERIES = {
   // needs no filter of its own beyond ordering, and MUST NOT grow one that
   // looks like an authorization check. If a row comes back, the database
   // decided this person may have it.
+  //
+  // FROM my_notifications (db/89, NOTIFICATIONS.md D17): the policy read as
+  // the caller, less what expired or was retracted, with the reader's own
+  // receipt. The summary's unread_alerts counts the same view, so the badge
+  // and the list cannot disagree. A tiered row (behind more than news.read)
+  // comes with its title and no body: the body is read on open
+  // (POST /api/notifications/:id/read), which logs it.
+  //
+  // LIMIT 200 bounds the list; the count is never taken from it.
   notifications: {
     text: `select n.id, n.school_id, n.team_code, n.scope_level, n.kind,
-                  n.urgency, n.title, n.body, n.subject_kind, n.subject_id,
-                  n.published_at, n.is_public, n.subject_person_id,
-                  (r.person_id is not null) as read
-             from notification n
-             left join notification_read r
-                    on r.notification_id = n.id and r.person_id = app_user_id()
-            where n.expires_at is null or n.expires_at > now()
-            order by n.published_at desc`,
+                  n.urgency, n.title, n.body, n.tiered, n.subject_kind, n.subject_id,
+                  n.published_at, n.subject_person_id, n.retracts_id, n.read
+             from my_notifications n
+            order by n.published_at desc, n.id
+            limit 200`,
   },
 
   // The league ladder. Readable whole by anyone who can reach the competition,
@@ -724,11 +730,8 @@ export const READ_QUERIES = {
              (case when my_feature_enabled('injuries')
                    then (select count(*)::int from injury_masked where restricted)
               end)                                                        as injuries_active,
-             (select count(*)::int from notification n
-                left join notification_read r
-                       on r.notification_id = n.id and r.person_id = app_user_id()
-               where r.person_id is null
-                 and (n.expires_at is null or n.expires_at > now()))      as unread_alerts,
+             -- my_notifications, as the notifications read: one view, one count.
+             (select count(*)::int from my_notifications where not read) as unread_alerts,
              (case when my_feature_enabled('training')
                    then (select count(*)::int from training_session
                           where starts_at >= date_trunc('week', now())
@@ -1350,6 +1353,36 @@ export const READ_QUERIES = {
              join player p on p.id = c.player_id
             where c.player_id = $1 and c.active
             order by c.priority`,
+    params: q => [req(q, "playerId")],
+  },
+
+  /**
+   * HOW MANY NUMBERS ARE ON RECORD TO RING FOR ONE CHILD, and nothing else
+   * (GA-I20 A1, N2; docs/design/GA-I20_parent_action_list.md §5.2, D8).
+   *
+   * The parent's action list asks "is anybody on record to ring if he is
+   * hurt?" every time her Home opens. Reading `emergency_contacts` for that
+   * would hand the screen the phone numbers and log a disclosure she never
+   * asked for, so this returns the child's id and a count: no name, no phone,
+   * no email, no relationship. It is NOT in RESTRICTED_FIELDS, because
+   * nothing it returns is a contact.
+   *
+   * A row comes back only where the caller may read the child's contacts:
+   * the player row under its own RLS, AND the same app_can() question
+   * emergency_contact's own SELECT policy asks (db/09, player.emergency.read
+   * for this boy). So a parent of another family, a pupil (selfaccess holds
+   * no player.emergency.read, STEP4 Q7) or a coach without the capability
+   * gets no row, never a false zero. The count itself is read under
+   * emergency_contact's own policy, live rows only, as the list is.
+   */
+  emergency_contact_count: {
+    text: `select p.id as player_id, p.school_id,
+                  (select count(*) from emergency_contact c
+                    where c.player_id = p.id and c.active)::int as active_count
+             from player p
+            where p.id = $1
+              and app_can('player.emergency.read', p.school_id, p.team_code, p.id,
+                          '00000000-0000-0000-0000-000000000000'::uuid)`,
     params: q => [req(q, "playerId")],
   },
 
@@ -2612,6 +2645,10 @@ export const READ_QUERIES = {
    * the link ends otherwise; the screen says which (§3.3). No self link, no
    * other guardian, no reason for anything: what is not hers is not here.
    *
+   * consent_version and consent_at (GA-I20 A1, R8a): the wording of the
+   * school's terms her own link was agreed under, and when it was recorded,
+   * for "What you have agreed". Her own link's, never another guardian's.
+   *
    * db/99 §49 runs this same text (between the my_children markers) as each
    * persona; read.test.mjs holds the two copies equal.
    */
@@ -2619,6 +2656,7 @@ export const READ_QUERIES = {
     text: /* my_children:begin */`select s.player_id, p.full_name, p.known_as, p.team_code,
                   p.school_id, sc.name as school_name, sc.kind as school_kind,
                   s.relationship, s.verification_state, s.consent_state,
+                  s.consent_version, s.consent_at,
                   s.valid_from, s.valid_until
              from role_assignment a
              join assignment_subject s on s.assignment_id = a.id
@@ -2998,6 +3036,10 @@ const pick = (/** @type {any} */ row, /** @type {string} */ path) =>
 /** @type {Record<string, string>} */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
+                     // Not logged on an ordinary read (no contact comes back);
+                     // named here so a platform-wide or support read of it,
+                     // which is always logged, names the child it counted.
+                     emergency_contact_count: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
                      users: "id", accounts: "id", ratings: "player_id", notes: "player_id",
                      disciplinary_records: "player_id",
