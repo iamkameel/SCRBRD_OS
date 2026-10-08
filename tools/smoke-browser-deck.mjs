@@ -328,7 +328,7 @@ try {
   ok("a laptop frame at this width, holding the day sheet",
      (await page.locator(day).getAttribute("data-kind")) === "laptop" && (await count(`${day} [data-testid="day-sheet"]`)) === 1);
   ok("it is the coach's, and says it is a demonstration", /Coach/.test(await page.locator(`${day} h1`).innerText())
-     && /Demonstration: invented fixtures and players/.test(await page.locator(`${day} [data-testid="day-sheet"]`).innerText()));
+     && /demo\s*·\s*invented fixtures and players/i.test(await page.locator(`${day} [data-testid="day-sheet"]`).innerText()));
   ok("Now: the live fixture is on the board, from the fold of the demonstration chase",
      (await count(`${day} [data-testid="day-now"] [data-testid="day-board"]`)) === 1
      && /Need \d+ off \d+/.test(await page.locator(`${day} [data-testid="day-board"]`).innerText()));

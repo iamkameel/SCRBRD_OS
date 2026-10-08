@@ -26,6 +26,7 @@ import { termsOf } from "../../lib/captain.js";
 import { cockpitGate } from "../../lib/cockpit.js";
 import { profile } from "../../lib/session.js";
 import { CoachTab } from "../cockpit/CoachTab.jsx";
+import { StateLabel } from "../../ui/stateLabel.jsx";
 
 /**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
@@ -384,7 +385,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
             {isLive && !(log.result && !liveSO) && <span className="live-dot" aria-hidden="true"/>}
             {(log.result && !liveSO) || (server && server.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
-          {log.demo && <span style={{ ...T.role.label, color: T.content.tertiary }}>Demonstration</span>}
+          {log.demo && <StateLabel kind="demo" compact/>}
         </div>
         <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
           {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
