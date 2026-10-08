@@ -115,4 +115,4 @@ None of these starts without a real data source and Kameel's say.
   matter only if beta still holds real records. If it does, take it offline or lock its
   rules.
 
-GA-I36 (corrections everywhere) was brought forward to a Fable design pass on 7 Oct by Kameel's decision; the build stays after the pilot unless he says otherwise.
+GA-I36 (corrections everywhere) was brought forward to a Fable design pass on 7 Oct by Kameel's decision; on 8 Oct he pulled the build forward (A0+A1, #102).
