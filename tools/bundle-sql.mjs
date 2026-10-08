@@ -268,6 +268,13 @@ SELECT
         AND to_regclass('my_notifications') IS NOT NULL
         AND NOT has_function_privilege('scrbrd_app', 'notification_retract(uuid,text,boolean)', 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Notices keep their contract",
+  -- db/90: an account is disabled or enabled through one door, with a reason
+  -- on the record; the application cannot write app_user.active itself.
+  CASE WHEN to_regclass('account_status_change') IS NOT NULL
+        AND to_regprocedure('account_set_active(uuid,boolean,text)') IS NOT NULL
+        AND to_regprocedure('account_set_active(uuid,boolean)') IS NULL
+        AND NOT has_column_privilege('scrbrd_app', 'app_user', 'active', 'UPDATE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Accounts change with a reason",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

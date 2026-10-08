@@ -375,9 +375,16 @@ export const READ_QUERIES = {
   // (logsReads, as the access log and the support sessions are): a list of
   // other people's accounts, the disabled ones among them, is on the record,
   // one row per school, naming the accounts that came back.
+  //
+  // `status_changed_at` (slice 2, db/90): when the account last changed state,
+  // read from account_status_change under ITS policy (user.invite or
+  // audit.read at the school, never the person), so People says "disabled
+  // {date}" to the office and nothing more to a reader who holds user.read
+  // alone: for them, and for an account disabled before db/90, it is null.
   accounts: {
     text: `select id, school_id, email, name, role, active, last_seen_at, teams, player_id,
-                  id = app_user_id() as mine
+                  id = app_user_id() as mine,
+                  (select max(c.changed_at) from account_status_change c where c.user_id = app_user.id) as status_changed_at
              from app_user
             order by name`,
     logsReads: () => [],
