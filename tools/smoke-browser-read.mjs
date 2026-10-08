@@ -423,10 +423,16 @@ try {
     const listed = await text(medic.page);
     ok("the medical officer's list holds the injury notice, by its title", /Injury recorded/i.test(listed));
     ok("...and not its words until it is opened", !/hamstring/i.test(listed));
-    const row = medic.page.locator('[data-testid="notice-open"]', { hasText: /Injury recorded/i }).first();
-    await row.click().catch(() => {});
-    await medic.page.locator('[data-testid="notice-body"]', { hasText: /hamstring/i }).first().waitFor({ timeout: 5000 }).catch(() => {});
-    ok("the medical officer does receive it, on open", /hamstring/i.test(await text(medic.page)));
+    // One notice is open at a time; the seed records more than one injury, so
+    // each is opened in turn until the one naming the hamstring is read.
+    const rows = medic.page.locator('[data-testid="notice-open"]', { hasText: /Injury recorded/i });
+    let read = false;
+    for (let i = 0; i < await rows.count() && !read; i++) {
+      await rows.nth(i).click().catch(() => {});
+      read = await medic.page.locator('[data-testid="notice-body"]', { hasText: /hamstring/i }).first()
+        .waitFor({ timeout: 4000 }).then(() => true, () => false);
+    }
+    ok("the medical officer does receive it, on open", read && /hamstring/i.test(await text(medic.page)));
   } else {
     ok("the medical officer's feed is not on their nav (API assertion covers it)", true);
   }
@@ -2228,8 +2234,15 @@ try {
         [m, PILLAY, parentId])).rows[0];
       ok("...recorded as his, about the fixture as it stands, the old answer kept",
          row?.by_him === true && row?.current === true && row?.kept === 1);
-      ok("his notices include the ask, about his boy", await nav(g.page, /^Notices$/)
-         && /please answer again/i.test(await text(g.page)) && /R Pillay/.test(await text(g.page)));
+      // The ask is tiered (availability.read): listed by its title, its words
+      // read on open (NOTIFICATIONS.md D17), which marks it read.
+      const onNotices = await nav(g.page, /^Notices$/);
+      const ask = g.page.locator('[data-testid="notice-open"]', { hasText: /please answer again/i }).first();
+      const listed = onNotices && await ask.count() === 1;
+      if (listed) await ask.click().catch(() => {});
+      const words = listed && await g.page.locator('[data-testid="notice-body"]', { hasText: /R Pillay/ }).first()
+        .waitFor({ timeout: 5000 }).then(() => true, () => false);
+      ok("his notices include the ask, about his boy, read on open", listed && words);
       ok("...and no notice names another family's boy", !/Whitfield/.test(await text(g.page)));
       ok("no scoping refusals or console errors for the guardian", g.refusals.length === 0 && g.errors.length === 0);
       await g.ctx.close();
