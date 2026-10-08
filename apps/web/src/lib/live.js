@@ -46,6 +46,9 @@ function asMatch(r) {
     homeTeam: r.team_code ?? "Home",
     awayTeam: r.opponent,
     venue: r.ground ?? null,
+    // Whether the fixture has a ground at all, which a reader who may not read
+    // the ground's row (no facility.read: a scorer) cannot tell from `venue`.
+    hasGround: typeof r.has_ground === "boolean" ? r.has_ground : null,
     groundId: null,
     date: r.starts_at ? String(r.starts_at).slice(0, 10) : null,
     // HH:MM, sliced the same way `date` is rather than through a Date object
@@ -59,6 +62,9 @@ function asMatch(r) {
     status: MATCH_STATUS[r.status] ?? "upcoming",
     result: null,
     competition: null,
+    // The competition it is played under, or null for a friendly (SCRBRD-114):
+    // the scorer's home asks whether its playing conditions are published.
+    competitionId: r.competition_id ?? null,
     // The school season this fixture falls in, from the same season_for()
     // rule the calendar uses — never derived again here from the date, so a
     // season history view and the database can never name a fixture into two
@@ -856,6 +862,10 @@ function asDuty(r) {
   // derives a lifecycle of its own.
   return { duty: r.duty, who: r.who || null, state: r.state,
            status: r.status ?? null,
+           // The scoring row only: whose the token is, for this reader
+           // (this_device, you, another, lapsed), worked out by the server
+           // against the reader's own token (GA-I13). Null everywhere else.
+           held: r.held ?? null,
            detail: r.detail || null,
            at: r.at ? String(r.at).slice(0, 10) : null, live: true };
 }

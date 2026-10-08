@@ -1,6 +1,8 @@
 # Solo test on the demo copy
 
-One person tests all of SCRBRD, end to end, on the demo copy. Kameel, from 8 October 2026. The 15 October pilot is this test. Westville's real pilot is postponed.
+Postponed 2026-10-08 (Kameel); no new date yet.
+
+One person tests all of SCRBRD, end to end, on the demo copy. Kameel was to run it from 8 October 2026, as the 15 October pilot. Westville's real pilot is postponed.
 
 The demo copy is the `scrbrd-demo` Supabase project and its own Render service (`DEMO_COPY.md`). Every person in it is invented. Every address ends `@example.invalid`. Production is never touched.
 

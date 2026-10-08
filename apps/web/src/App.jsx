@@ -23,6 +23,8 @@ import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
 import { PersonaBar } from "./shell/PersonaBar.jsx";
 import { personaOf } from "./lib/features.js";
+import { holdsAsHeld } from "./lib/held.js";
+import { scorerLanding } from "./lib/scorerHome.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut } from "./lib/session.js";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
@@ -63,6 +65,9 @@ const DashboardView     = view(() => import("./views/DashboardView.jsx"),     "D
 // two named exports, chosen below by capability rather than by role name.
 const DriverDayView         = view(() => import("./views/DayOfView.jsx"), "DriverDayView");
 const GroundskeeperDayView  = view(() => import("./views/DayOfView.jsx"), "GroundskeeperDayView");
+// The scorer's landing screen (GA-I13): resume, his fixtures appointed first,
+// and what is missing before the toss. Chosen below by capability.
+const ScorerHomeView    = view(() => import("./views/ScorerHomeView.jsx"),    "ScorerHomeView");
 const FieldsView        = view(() => import("./views/FieldsView.jsx"),        "FieldsView");
 const InjuryView        = view(() => import("./views/InjuryView.jsx"),        "InjuryView");
 const LeagueView        = view(() => import("./views/LeagueView.jsx"),        "LeagueView");
@@ -467,8 +472,16 @@ export default function SCRBRD_OS() {
   const isDriverLanding = holdsCapability(role, "transport.drive");
   const isGroundskeeperLanding = !isDriverLanding
     && holdsCapability(role, "facility.manage") && !holdsCapability(role, "team.manage");
+  // The scorer's home (GA-I13): an account that may start scoring and neither
+  // picks a side nor reads its roster — the scorer's bundle alone. Asked of
+  // every role the person holds (GA-I07), so a scorer who also coaches keeps
+  // the day sheet and its match-day card. Presentation only, like the two
+  // above; the claim is decided in Postgres.
+  const isScorerLanding = !isDriverLanding && !isGroundskeeperLanding
+    && scorerLanding((cap) => holdsAsHeld(role, cap));
   const dashboardView = isDriverLanding ? <DriverDayView role={role}/>
     : isGroundskeeperLanding ? <GroundskeeperDayView role={role}/>
+    : isScorerLanding ? <ScorerHomeView role={role} onNav={setPage} onOpenScorer={openScorer}/>
     : <DashboardView role={role} onNav={setPage} onOpenScorer={openScorer}/>;
   const VIEW_MAP = {
     dashboard:    dashboardView,

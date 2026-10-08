@@ -831,6 +831,11 @@ OK). **Schema first**: the API built with it refuses to start without db/87
 (`expected-migrations.json`), and the pad records these wickets only once the
 server's Laws take them.
 <!-- ── end db/87 ── -->
+<!-- ── db/88: public venue par (SCRBRD-133 G2) ── -->
+#### Public venue par (SCRBRD-133 G2, db/88)
+
+`db/88_public_venue_par.sql` (sha `3b45e737`) was applied to the demonstration and production databases on 2026-10-08 at about 05:25 UTC.
+<!-- ── end db/88 ── -->
 <!-- ── db/89: notifications S1, the contract and read state ── -->
 #### Notices: the contract and read state (db/89)
 

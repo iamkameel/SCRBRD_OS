@@ -154,6 +154,11 @@ export const READ_QUERIES = {
                   bats_first(t.won_by, t.decision) as bats_first,
                   t.called_at as toss_at,
                   g.name as ground,
+                  -- WHETHER a ground is set, apart from its name: the ground
+                  -- row is read under facility.read, which a scorer does not
+                  -- hold, so for him the name is null on every fixture. The
+                  -- scorer's home (GA-I13) must not read that as "no ground".
+                  (m.ground_id is not null) as has_ground,
                   -- The ground's two named ends (db/67), both or neither.
                   g.end_a_name as ground_end_a, g.end_b_name as ground_end_b
              from match m
@@ -945,6 +950,15 @@ export const READ_QUERIES = {
    * duty somebody holds. It grants nothing and is read here only so the
    * roster can say it; a withdrawn appointment ('revoked') is not on this
    * roster at all, for the reason above.
+   *
+   * `held` is WHOSE the scoring token is, for the reader (GA-I13, the
+   * scorer's home): 'this_device' when the reader holds it on the device his
+   * token was signed to, 'you' on another of his devices, 'another' for any
+   * other holder, 'lapsed' when the session is active and no lease is current
+   * (the pad's claim takes it, db/33). NULL while idle and on every other arm.
+   * Worked out here, against app_user_id() and app_device_id(), so a client
+   * never compares names or device ids; it says nothing the row did not
+   * already say to a reader who may read the session (session_read, db/02).
    */
   match_duties: {
     text: `select o.duty                              as duty,
@@ -952,19 +966,25 @@ export const READ_QUERIES = {
                   'named'                              as state,
                   coalesce(o.panel, '')                as detail,
                   o.appointed_at                       as at,
-                  duty_status(o.id)                    as status
+                  duty_status(o.id)                    as status,
+                  null::text                           as held
              from match_official o
             where o.match_id = $1 and not o.withdrawn
             union all
            select 'scoring', coalesce(u.name, ''),
                   s.state::text,
                   case when s.lease_until is not null then 'lease held' else '' end,
-                  s.updated_at, null::text
+                  s.updated_at, null::text,
+                  case when s.state = 'idle' then null
+                       when s.state = 'active' and (s.lease_until is null or s.lease_until <= now()) then 'lapsed'
+                       when s.holder_user_id = app_user_id() and s.holder_device = app_device_id() then 'this_device'
+                       when s.holder_user_id = app_user_id() then 'you'
+                       else 'another' end
              from scoring_session s
              left join app_user u on u.id = s.holder_user_id
             where s.match_id = $1
             union all
-           select 'transport', coalesce(t.driver_name, ''), t.state, coalesce(t.registration, ''), t.arranged_at, null::text
+           select 'transport', coalesce(t.driver_name, ''), t.state, coalesce(t.registration, ''), t.arranged_at, null::text, null::text
              from (select tr.match_id, tr.arranged_at, v.registration, du.name as driver_name,
                           case when tr.cancelled_at is not null then 'cancelled'
                                when tr.arrived_at   is not null then 'arrived'
@@ -975,11 +995,11 @@ export const READ_QUERIES = {
                      left join app_user du on du.id = tr.driver_id) t
             where t.match_id = $1
             union all
-           select 'ground', '', 'recorded', coalesce(r.surface, ''), r.reported_at, null::text
+           select 'ground', '', 'recorded', coalesce(r.surface, ''), r.reported_at, null::text, null::text
              from match_pitch_report r
             where r.match_id = $1
             union all
-           select 'squad', '', 'named', count(*)::text || ' selected', max(q.selected_at), null::text
+           select 'squad', '', 'named', count(*)::text || ' selected', max(q.selected_at), null::text, null::text
              from match_squad q
             where q.match_id = $1 and not q.withdrawn
             having count(*) > 0`,
