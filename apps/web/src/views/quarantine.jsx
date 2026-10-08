@@ -178,4 +178,4 @@ function QuarantinePanel({ matchId, role }) {
   );
 }
 
-export { QuarantinePanel };
+export { QuarantinePanel, describeBall };

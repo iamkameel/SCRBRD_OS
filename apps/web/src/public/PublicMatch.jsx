@@ -11,6 +11,8 @@ import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
+import { CorrectedChip, StaleLine } from "../views/matchcentre/corrected.jsx";
+import { correctionText } from "../lib/corrections.js";
 import { publicStory, read } from "./reads.js";
 
 /**
@@ -65,16 +67,35 @@ function usePhone(px = 640) {
   return phone;
 }
 
-/** The header and the log, polled while the match is live. */
+/**
+ * The header and the log, polled while the match is live. Once it is not, the
+ * log's head is still asked after (`?since=last`, the cache's own answer) so a
+ * correction made after the match is said — "Updated · refresh" — and folded
+ * only on the reader's tap (GA-I36 §7).
+ */
 function usePublicMatch(matchId) {
-  const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0 });
+  const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, okAt: null, stale: false, refreshing: false });
   const [tick, setTick] = useState(0);
   const live = state.header?.status === "live";
+  const settledHead = state.header && !live ? state.last : null;
   useEffect(() => {
     if (!live) return undefined;
     const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, Math.max(5000, liveRefreshMs()));
     return () => clearInterval(t);
   }, [live]);
+  useEffect(() => {
+    if (settledHead == null) return undefined;
+    const t = setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const log = await read(`/api/public/matches/${matchId}/log?since=${settledHead}`);
+        setState((s) => ({ ...s, error: null, stale: s.stale || (log.last ?? 0) > settledHead }));
+      } catch (e) {
+        setState((s) => ({ ...s, error: e.status === 429 ? "busy" : "unreachable" }));
+      }
+    }, liveRefreshMs());
+    return () => clearInterval(t);
+  }, [matchId, settledHead]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -83,17 +104,18 @@ function usePublicMatch(matchId) {
           read(`/api/public/matches/${matchId}`),
           read(`/api/public/matches/${matchId}/log`),
         ]);
-        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0 });
+        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0, okAt: Date.now(), stale: false, refreshing: false });
       } catch (e) {
         if (cancelled) return;
         // Not found is one answer: unpublished and no such fixture read alike.
         if (e.status === 404) setState((s) => ({ ...s, loading: false, missing: true, error: null }));
-        else setState((s) => ({ ...s, loading: false, error: e.status === 429 ? "busy" : "unreachable" }));
+        else setState((s) => ({ ...s, loading: false, refreshing: false, error: e.status === 429 ? "busy" : "unreachable" }));
       }
     })();
     return () => { cancelled = true; };
   }, [matchId, tick]);
-  return state;
+  const refresh = () => { setState((s) => ({ ...s, refreshing: true })); setTick((x) => x + 1); };
+  return { ...state, refresh };
 }
 
 /** The team's shot sectors, read when the Analytics tab opens. */
@@ -305,9 +327,12 @@ export function PublicMatch({ matchId, view }) {
           <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
-          {played.length > 0 && <HeaderScores match={match} played={played}/>}
+          {played.length > 0 && <HeaderScores match={match} played={played} corrected={story.corrected}/>}
           {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
+          {/* GA-I36 §5: when, team-level — never who asked, who approved or why. */}
+          <CorrectedChip at={story.correctedAt} lines={() => [correctionText(match.status === "complete" || story.settled)]}/>
+          <StaleLine stale={data.stale} refreshing={data.refreshing} failed={!!data.error} okAt={data.okAt} onRefresh={data.refresh}/>
         </header>
         </ErrorBoundary>
         <ErrorBoundary name="match notices">

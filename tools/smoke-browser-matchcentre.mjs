@@ -566,7 +566,7 @@ try {
   await tid(sc.page, "mc-confirm-delivery").selectOption({ index: 1 });
   await tid(sc.page, "mc-confirm-reason").fill("Smoke walk: this ball was never bowled the way the sheet has it.");
   await tid(sc.page, "mc-confirm-submit").click();
-  ok("filed, and says so", await until(sc.page, () => /Filed|pending/i.test(document.querySelector('[data-testid="mc-confirm-said"]')?.textContent ?? ""), 6000),
+  ok("filed, and says so", await until(sc.page, () => /with the director of sport .*until it is approved/i.test(document.querySelector('[data-testid="mc-confirm-said"]')?.textContent ?? ""), 6000),
      await tid(sc.page, "mc-confirm-said").innerText().catch(() => "∅"));
   await tid(sc.page, "mc-confirm-ok").click();
   await sc.page.waitForTimeout(300);

@@ -4,6 +4,7 @@ import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { resultText, teamOf } from "../lib/matchCentre.js";
 import { liveSuperOverLine, superOverCommentary } from "../lib/superOver.js";
 import { asPublicMatch, foldable, unnamedToPositions } from "./publicLog.js";
+import { correctedAt, correctedInnings, correctionsOf, withCorrectionLines } from "../lib/corrections.js";
 
 /**
  * The public reads, shared by the live page (PublicMatch.jsx) and the ground
@@ -55,7 +56,13 @@ export function publicStory({ header, fold = {}, events = [], people = {} }) {
   const r = folded.result;
   const pending = r && r.outcome === "tie" && r.decidedBy === null && fold?.conditions?.["result.tie_break"] === "super_over";
   const settled = !liveSO && (!!server || (!!r && !pending));
-  return { match, events: evs, folded, played, commentary, liveSO, result, settled };
+  // GA-I36: a correction is a void in the log the page already has — its
+  // time and a pseudonymous target, never a reason or a name. One quiet
+  // commentary line each, and the latest time for the chip.
+  const fixes = correctionsOf(events);
+  return { match, events: evs, folded, played, liveSO, result, settled,
+    commentary: withCorrectionLines(commentary, events, fixes, settled || match.status === "complete"),
+    correctedAt: correctedAt(fixes), corrected: correctedInnings(events, fixes, folded.innings) };
 }
 
 /** The same names for the same pseudonyms? @param {Record<string, string>} a @param {Record<string, string>} b */

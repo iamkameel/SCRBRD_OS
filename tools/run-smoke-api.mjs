@@ -38,6 +38,9 @@ const WALKS = [
   "bootstrap",
   // The way out of quarantine: who may open it, and what a released ball is.
   "quarantine",
+  // Corrections everywhere (GA-I36 N1, N2): who may list a correction, and
+  // an approval or a release reaching the public log on its next read.
+  "corrections",
   // A retry writes once: the Idempotency-Key layer over every write route.
   "idempotency",
   // The managed-host reset drops only what db/ creates (GA-I02): somebody
