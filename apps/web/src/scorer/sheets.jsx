@@ -12,6 +12,7 @@ import { batterChoices, bowlerChoices, unavailableWords } from "./prompts.js";
 import { KeeperRow } from "./keeperSheet.jsx";
 import { OFF_SIDE_ASK, OFF_SIDE_MARK, OFF_SIDE_WHY, offSide } from "./side.js";
 import { Proposal, useProposal } from "./rainSheet.jsx";
+import { extraOf } from "./extras.js";
 
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
@@ -175,6 +176,72 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
         </div>
         <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>onConfirm(nbType,runs,runs>0?from:null,wicket)} sx={{borderRadius:D.md}}>
           {wicket?"Next: the wicket":`Confirm No Ball (${runs+1} runs)`}
+        </Btn>
+      </div>
+    </Sheet>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   WIDE SHEET — Pro Mode's wide, asking what the pad asks
+═══════════════════════════════════════════════════════ */
+// Pro Mode's WIDE used to be one tap that always recorded a wide of no runs:
+// the runs the batters took off it, and a wicket on it, could not be scored
+// (Kameel, 8 Oct 2026, in a live match). The pad (Focus Mode) asks both; so
+// does this, with the pad's own keys (extras.js) — the runs taken, then "and
+// a wicket?" — and the engine records the answer through the same calls the
+// pad makes: recordWide(runs), or openExtraWicket("Wd", runs), whose sheet
+// offers only Law 22.9's ways out. Same answers, same event, either mode.
+function WideSheet({onConfirm,onClose,edition=3}){
+  const x=extraOf("Wd");
+  const[runs,setRuns]=useState(x.likely);
+  const[wicket,setWicket]=useState(false);
+  return (
+    <Sheet title="Wide" accent={D.orange} onClose={onClose}>
+      <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
+        {edition===4&&(
+          <div data-testid="wd-head-height" style={{color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
+            A bouncer over head height is a wide.
+          </div>
+        )}
+        <div>
+          <Lbl sx={{marginBottom:"8px"}}>Runs Taken Off This Wide</Lbl>
+          <div style={{display:"flex",gap:"6px"}}>
+            {x.runs.map(r=>(
+              <button key={r} type="button" data-testid={`wd-run-${r}`} aria-pressed={runs===r} onClick={()=>setRuns(r)} className="pressBtn" style={{
+                flex:1,minHeight:"44px",padding:"11px 0",borderRadius:D.md,cursor:"pointer",
+                fontFamily:D.mono,fontSize:"15px",fontWeight:500,
+                border:`1px solid ${runs===r?D.orange+"77":D.border}`,
+                background:runs===r?`${D.orange}1a`:D.surf2,
+                color:runs===r?D.orange:D.textMuted,transition:"all .2s",
+              }}>{r}</button>
+            ))}
+          </div>
+          <div style={{marginTop:"6px",color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
+            +1 for the wide. Total: <span style={{color:D.orange,fontFamily:D.mono,fontWeight:500}}>{runs+1}</span> runs to batting team, all wides.
+          </div>
+        </div>
+        {/* And a wicket? (Law 22.9): off a wide only run out, stumped, hit
+            wicket or obstructing the field. Yes moves on to the wicket sheet,
+            which offers just those; nothing is recorded until it confirms. */}
+        <div data-testid="wd-wicket">
+          <Lbl sx={{marginBottom:"8px"}}>And a wicket?</Lbl>
+          <div style={{display:"flex",gap:"6px"}}>
+            {[[false,"No"],[true,"Yes"]].map(([on,label])=>(
+              <button key={label} type="button" data-testid={`wd-wicket-${on?"yes":"no"}`} aria-pressed={wicket===on} onClick={()=>setWicket(on)} className="pressBtn" style={{
+                flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
+                border:`1px solid ${wicket===on?D.rose+"77":D.border}`,background:wicket===on?`${D.rose}1a`:D.surf2,
+                color:wicket===on?D.roseText:D.textMuted}}>{label}</button>
+            ))}
+          </div>
+          {wicket&&(
+            <div style={{marginTop:"6px",color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
+              Next: run out, stumped, hit wicket or obstructing the field.
+            </div>
+          )}
+        </div>
+        <Btn variant="amber" size="lg" full data-testid="wd-confirm" onClick={()=>onConfirm(runs,wicket)} sx={{borderRadius:D.md}}>
+          {wicket?"Next: the wicket":`Confirm Wide (${runs+1} run${runs+1!==1?"s":""})`}
         </Btn>
       </div>
     </Sheet>
@@ -1334,4 +1401,4 @@ function InningsReviewSheet({inn,inningsNo,label=null,onConfirm,onFixLastBall,on
   );
 }
 
-export { BattingOrderSheet, CustomBatEntry, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet };
+export { BattingOrderSheet, CustomBatEntry, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet, WideSheet };

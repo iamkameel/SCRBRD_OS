@@ -226,6 +226,46 @@ export async function markAll(role) {
   }
 }
 
+/**
+ * What reporting a notice says back (D11, CSA SG-9 rule 4), by the server's
+ * answer. The reporter is never told who else reported it, nor anything about
+ * the DSO; the person who posted it is never told who reported it.
+ */
+export const REPORT_WORDS = Object.freeze({
+  taken: "Reported to the school's safeguarding officer. Whoever posted it is not told it was you.",
+  unheld: "Reported, but your school has no safeguarding officer on SCRBRD yet. Please tell the school directly too.",
+  already_reported: "You have already reported this notice.",
+  no_such_notice: GONE,
+  not_reportable: "Only a notice somebody wrote can be reported.",
+  demo: "Sign in to report a notice.",
+  failed: "Could not report it. Try again.",
+});
+
+/**
+ * Whether a row may be reported: words a person wrote (`notice`), and not
+ * the system's own "A notice was withdrawn". The server asks again.
+ * @param {any} n  a row from asNotification()
+ */
+export const reportable = (n) => !!n && n.type === "notice" && !n.retracts;
+
+/**
+ * Report a person's notice to the school's DSOs, in one tap (D11). Resolves to
+ * `{ done, words }`: `done` once the server holds a report from this person
+ * (taken now, or before).
+ * @param {string} id
+ * @returns {Promise<{ done: boolean, words: string }>}
+ */
+export async function report(id) {
+  if (!signedIn()) return { done: false, words: REPORT_WORDS.demo };
+  try {
+    const b = await api(`/api/notifications/${encodeURIComponent(id)}/report`, { method: "POST", body: {} });
+    return { done: true, words: b?.unheld ? REPORT_WORDS.unheld : REPORT_WORDS.taken };
+  } catch (/** @type {any} */ e) {
+    const code = /** @type {keyof typeof REPORT_WORDS} */ (e?.code);
+    return { done: code === "already_reported", words: REPORT_WORDS[code] ?? REPORT_WORDS.failed };
+  }
+}
+
 /** The store's state now. Tests and non-React callers. */
 export function snapshot() { return state; }
 /** Forget everything: a sign-out, or a test between cases. */

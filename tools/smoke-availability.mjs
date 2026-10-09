@@ -198,6 +198,17 @@ try {
     ok("a selector can see both facts at once",
        s4.some((r) => r.clinically_restricted === true) &&
        s4.some((r) => r.status === "unavailable" && r.clinically_restricted === false));
+    // A reader without medical.status.read for a boy sees none of his injury
+    // rows, and false would read as "cleared" (K3, db/55): null, "not yours".
+    const scorerSheet = await sheet(m, await login("scorer@example.invalid"));
+    ok("a scorer reads the restricted boy and the fit one alike as null, never as cleared",
+       scorerSheet.some((r) => r.player_id === injured.id) &&
+       scorerSheet.every((r) => r.clinically_restricted === null));
+    const mateSheet = await sheet(m, boy);
+    ok("a team-mate reads another boy's restriction as null; his own is his",
+       mateSheet.find((r) => r.player_id === injured.id)?.clinically_restricted === null &&
+       mateSheet.find((r) => r.player_id === fitAndAway.id)?.clinically_restricted === null &&
+       mateSheet.find((r) => r.player_id === CHILD)?.clinically_restricted === true);
   }
 
   group("Unanswered boys sort first, because they are the ones to chase");

@@ -103,6 +103,7 @@ group("S3 · A picked boy is unavailable, restricted or asking again");
   ok("not picked: silent", run([r({ selected: false, declaredStatus: "unavailable" })]).length === 0);
   ok("one card per boy, in the read's order", run([r({ playerId: "a", declaredStatus: "unavailable" }), r({ playerId: "b", clinicallyRestricted: true }), r({ playerId: "c" })]).length === 2);
   ok("it needs the selection: an assistant coach, who does not select, has none", run([r({ declaredStatus: "unavailable" })], ASSIST).length === 0);
+  ok("a null clinical half (not this reader's to know) is no card, and no restriction", run([r({ clinicallyRestricted: null })]).length === 0);
   ok("a restricted boy is not told to a reader without medical.status.read", run([r({ clinicallyRestricted: true })], { ...COACH, panels: { ...COACH.panels, status: false } }).length === 0);
   ok("his status changing again changes the evidence", run([r({ clinicallyRestricted: true, returnDate: "2026-10-14" })])[0].key !== run([r({ clinicallyRestricted: true, returnDate: "2026-10-21" })])[0].key);
   const blob = JSON.stringify(run([r({ declaredStatus: "unavailable", reasonKind: "bereavement", note: "A family funeral", injuryType: "Grade 2 hamstring strain" })]));

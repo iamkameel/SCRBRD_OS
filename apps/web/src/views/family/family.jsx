@@ -16,19 +16,19 @@
 import { useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
-import { useNotifications } from "../../lib/notifications.js";
+import { useNotifications, report, reportable } from "../../lib/notifications.js";
 import { signedIn } from "../../lib/api.js";
 import { useNav } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { tenantWords } from "../../lib/words.js";
-import { chooseChild, recallChild, rememberChild } from "../../lib/family.js";
+import { chooseChild, doorTo, pendingWords, recallChild, rememberChild } from "../../lib/family.js";
 import { Action, Card, ChildSwitcher, Line, NoneOr, Page, Title } from "./parts.jsx";
 import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { ChildFileCard } from "./childfile.jsx";
-import { LiftsToday } from "../lifts.jsx";
-import { TodoCard } from "./todo.jsx";
+import { LiftsToday, useLiftDay } from "../lifts.jsx";
+import { TodoCard, TodoCount } from "./todo.jsx";
 
 /** The children this parent answers for, the one chosen, and the fixture list the cards share. */
 function useChildren(role) {
@@ -48,12 +48,23 @@ function useChildren(role) {
 
 /** What a family screen says when there is no child to show — and why, honestly. */
 function NoChild({ loading, error, testid }) {
+  // Her own requests to be linked (GA-I20 A1, §3.3): said as pending, and
+  // never as approved. Her own rows only (`mine`); no child is named, because
+  // the player row is not hers to read until the office verifies the link.
+  const asked = useLive("role_requests", "guardian");
+  const pending = signedIn() && !loading && !error ? pendingWords(asked.rows, Date.now()) : [];
   return (
     <Page testid={testid}>
       <Card label="Family" testid="family-none">
         {!signedIn() ? <Line>Sign in to see your family. The demonstration holds no family's records.</Line>
           : loading ? <Line quiet>Reading your family…</Line>
           : error ? <Line quiet>Could not load your family just now. This is not the same as there being nobody.</Line>
+          : pending.length ? pending.map((p) => (
+            <div key={p.id} data-testid="family-pending" style={{ display: "grid", gap: "2px" }}>
+              <Line>{p.words}</Line>
+              {p.note && <Line quiet>Your note to the office: {p.note}</Line>}
+            </div>
+          ))
           : <Line>No child is linked to your account yet. The school office verifies each link; ask them if one is missing.</Line>}
       </Card>
     </Page>
@@ -74,7 +85,17 @@ export function FamilyHome({ role, onNav }) {
   if (open?.kind === "fixture") {
     return <Page testid="family-home"><FixtureDetail match={open.match} child={child} role={role} onBack={() => setOpen(null)}/></Page>;
   }
+  return <FamilyHomeBody role={role} onNav={onNav} kids={kids} child={child} choose={choose} matches={matches}
+    matchesRead={matchesRead} matchesSaid={matchesSaid} retry={retry} nav={nav} setOpen={setOpen}/>;
+}
+
+/** The Home for the chosen child: its own component, so the day's reads (a hook) are made for him alone. */
+function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead, matchesSaid, retry, nav, setOpen }) {
   const now = Date.now();
+  // The day's lift cards, read once and shared by the list (R7) and the day cards (GA-I20 A1, D8).
+  const { day, reload: reloadDay } = useLiftDay(child, matches, now);
+  // A door from the list into his card on Family: Consents, or Who to ring.
+  const toFamily = (panel) => { doorTo(child.id, panel); onNav?.("family"); };
   return (
     <Page testid="family-home">
       <ChildSwitcher kids={kids} chosen={child} onChoose={(c) => { setOpen(null); choose(c); }}/>
@@ -91,11 +112,12 @@ export function FamilyHome({ role, onNav }) {
         {/* GA-I20 A0: what is owed for him, under the next fixture: his fixtures'
             answers, narrowed to him, and the one door of each row. */}
         <TodoCard child={child} matches={matches} matchesRead={matchesRead} now={now}
-          onOpen={(m) => setOpen({ kind: "fixture", match: m })}/>
+          onOpen={(m) => setOpen({ kind: "fixture", match: m })} day={day} onDayRetry={reloadDay}
+          onDoor={onNav ? toFamily : undefined}/>
         {/* SCRBRD-124 phase 2 (db/76): his lifts on the day — the driver's
             number and car, the marks, "confirm collected"; her own card when
             she drives. */}
-        <LiftsToday child={child} matches={matches}/>
+        <LiftsToday child={child} matches={matches} day={day ?? undefined} onReload={reloadDay}/>
         <LiveCard child={child} matches={matches} now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>
         <LastMatchCard child={child} matches={matches} now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
         <SeasonCard child={child} role={role}/>
@@ -121,38 +143,47 @@ export function FamilyMatches({ role }) {
 // ── P5 · Notices ───────────────────────────────────────
 
 /**
- * Notices and the newsfeed in one list, newest first, unread first-lit, each
- * saying which child it is about when it names one. What arrives is what RLS
- * delivered (§2.1 P5): nothing is filtered here, because for a parent nothing
- * needs to be — a medical notice about another child cannot reach her.
+ * One list of notices, newest first, unread first-lit, each saying which
+ * child it is about when it names one. What arrives is what RLS delivered
+ * (§2.1 P5): nothing is filtered here, because for a parent nothing needs to
+ * be — a medical notice about another child cannot reach her.
+ *
+ * ONE STREAM (NOTIFICATIONS.md D10, S2): a post the side or the school sends
+ * is a notice of its own now, written by the post's trigger (db/91), so this
+ * list reads the notices alone; the newsfeed is News's. A post's notice has
+ * read state like any other, and carries "Report" (D11): one tap sends it to
+ * the school's safeguarding officer.
  *
  * The notices come from the one store every badge reads (lib/notifications.js,
  * NOTIFICATIONS.md D17): read state is the server's, on every device. Opening
  * a notice marks it read; a notice behind more than news.read lists its title
- * and is read on open. "Mark all read" marks every notice. A news post has no
- * read state until it is a notice of its own (S2), so it is never "New".
+ * and is read on open. "Mark all read" marks every notice.
  */
 export function FamilyNotices({ role }) {
   const [nonce, setNonce] = useState(0);
   const { list: notesRead, rows: notes, unread: counted, opened, open, markAll } = useNotifications(role, nonce, { fresh: true });
-  const { rows: news } = useLive("news", role, nonce);
   const { rows: kids } = useLive("my_children", role);
   const [openKey, setOpenKey] = useState(/** @type {string | null} */ (null));
   const [got, setGot] = useState(/** @type {Record<string, any>} */ ({}));
-  const items = [
-    ...notes.map((n) => ({ key: `n-${n.id}`, id: n.id, at: n.time, title: n.title, body: n.body, unread: !n.read, tiered: n.tiered,
-      about: kids.find((k) => k.id === n.subjectPerson) ?? null })),
-    ...news.filter((p) => !p.draft).map((p) => ({ key: `p-${p.id}`, id: null, at: p.at, title: p.title, body: p.body, unread: false, tiered: false,
-      from: p.audience, about: null })),
-  ].sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")));
+  const [reported, setReported] = useState(/** @type {Record<string, { done: boolean, words: string }>} */ ({}));
+  const [reporting, setReporting] = useState(/** @type {string | null} */ (null));
+  const items = notes.map((n) => ({ key: `n-${n.id}`, id: n.id, at: n.time, title: n.title, body: n.body, unread: !n.read, tiered: n.tiered,
+    about: kids.find((k) => k.id === n.subjectPerson) ?? null, reportable: reportable(n) }))
+    .sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")));
   // "Nothing unread" is a count; it is said of notices the server counted.
   const answered = ["ok", "empty"].includes(readState(notesRead, { what: "the notices" }).state) && counted != null;
   const toggle = async (/** @type {any} */ i) => {
     if (openKey === i.key) { setOpenKey(null); return; }
     setOpenKey(i.key);
-    if (!i.id || (opened[i.id] && !opened[i.id].failed) || (!i.unread && !i.tiered)) return;
+    if ((opened[i.id] && !opened[i.id].failed) || (!i.unread && !i.tiered)) return;
     const r = await open(i.id);
     setGot((m) => ({ ...m, [i.id]: r }));
+  };
+  const sendReport = async (/** @type {string} */ id) => {
+    setReporting(id);
+    const r = await report(id);
+    setReporting(null);
+    setReported((m) => ({ ...m, [id]: r }));
   };
   return (
     <Page testid="family-notices">
@@ -162,7 +193,7 @@ export function FamilyNotices({ role }) {
       {!items.length && <Card label="Notices"><NoneOr read={notesRead} what="notices" none="No notices yet." onRetry={() => setNonce((n) => n + 1)} testid="notices-none"/></Card>}
       {items.map((i) => {
         const isOpen = openKey === i.key;
-        const o = i.id ? (got[i.id] ?? opened[i.id]) : null;
+        const o = got[i.id] ?? opened[i.id];
         const body = i.body ?? (o && !o.gone && !o.withdrawn && !o.failed ? o.body : null);
         const sentence = o && (o.gone || o.withdrawn || o.failed) ? o.sentence : null;
         return (
@@ -173,21 +204,22 @@ export function FamilyNotices({ role }) {
               {i.unread && <span style={{ ...T.role.label, color: T.content.primary }}>New</span>}
               <span style={{ ...T.role.label, color: T.content.secondary }}>{humanDate(String(i.at ?? "").slice(0, 10))}</span>
               {i.about && <span data-testid="notice-about" style={{ ...T.role.label, color: T.content.secondary }}>About {i.about.knownAs || i.about.name}</span>}
-              {i.from && <span style={{ ...T.role.label, color: T.content.secondary }}>{i.from}</span>}
             </div>
-            {i.id ? (
-              // The title is the control: opening the notice reads it and marks it read.
-              <button type="button" onClick={() => { void toggle(i); }} aria-expanded={isOpen} data-testid="notice-open"
-                style={{ ...T.role.body, fontWeight: i.unread ? 700 : 600, color: T.content.primary, margin: 0, padding: 0, minHeight: "44px",
-                  background: "none", border: "none", textAlign: "left", cursor: "pointer" }}>
-                {i.title}
-              </button>
-            ) : (
-              <h2 style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{i.title}</h2>
-            )}
+            {/* The title is the control: opening the notice reads it and marks it read. */}
+            <button type="button" onClick={() => { void toggle(i); }} aria-expanded={isOpen} data-testid="notice-open"
+              style={{ ...T.role.body, fontWeight: i.unread ? 700 : 600, color: T.content.primary, margin: 0, padding: 0, minHeight: "44px",
+                background: "none", border: "none", textAlign: "left", cursor: "pointer" }}>
+              {i.title}
+            </button>
             {body && (isOpen || !i.tiered) && <p data-testid="notice-body" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{body}</p>}
             {!body && i.tiered && !isOpen && <p style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>Open to read.</p>}
             {isOpen && sentence && <p data-testid="notice-sentence" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{sentence}</p>}
+            {i.reportable && !reported[i.id]?.done && (
+              <div><Action onClick={() => { void sendReport(i.id); }} testid="notice-report" disabled={reporting === i.id}>
+                {reporting === i.id ? "Reporting…" : "Report"}
+              </Action></div>
+            )}
+            {reported[i.id] && <p role="status" data-testid="notice-reported" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{reported[i.id].words}</p>}
           </article>
         );
       })}
@@ -202,13 +234,21 @@ export function FamilyNotices({ role }) {
  * (§3.1). Each child's card is its own component (childfile.jsx), so a later
  * card — lifts, consents, the account — is added beside it, not into it.
  */
-export function FamilyFile({ role }) {
+export function FamilyFile({ role, onNav }) {
   const { rows: kids, loading, error } = useLive("my_children", role);
+  // The fixtures, for each child's count (GA-I20 A1): the same read the Home makes.
+  const matchesRead = useLive("matches", role);
   if (!kids.length) return <NoChild loading={loading} error={error} testid="family-file"/>;
+  const now = Date.now();
+  // His count opens his Home: the child is chosen as the switcher chooses him.
+  const openHome = (c) => { rememberChild(c.id); onNav?.("children"); };
   return (
     <Page testid="family-file">
       <Title>Family</Title>
-      {kids.map((c) => <ChildFileCard key={c.id} child={c} role={role} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })}/>)}
+      {kids.map((c) => (
+        <ChildFileCard key={c.id} child={c} role={role} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })}
+          todo={<TodoCount child={c} matches={matchesRead.rows} matchesRead={matchesRead} now={now} onOpen={() => openHome(c)}/>}/>
+      ))}
     </Page>
   );
 }

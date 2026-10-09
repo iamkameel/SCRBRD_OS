@@ -79,11 +79,13 @@ group("correctionsOf: a void counts when it undid an event of this log");
   const v = put(voidEvent({ target: target.id }), 0);
   v.clientTs = Date.parse("2026-10-03T16:42:00Z");
   v.amendment = "amend-1";
+  const undo = put(voidEvent({ target: log.find((e) => e.kind === "ball" && e.innings === 1).id, reason: "scorer_undo" }), 1);
+  ok("a scorer's own undo during play is not a correction", !correctionsOf(log).some((c) => c.seq === undo.seq));
   const ghost = put(voidEvent({ target: "no-such-event" }), 1);
   const vv = put(voidEvent({ target: v.id }), 0);   // a void of a void: the fold skips it, so does this
   const list = correctionsOf(log);
   ok("one correction: the void of a ball in the log", list.length === 1 && list[0].seq === v.seq, list);
-  ok("...its time, innings, target and that it was approved", list[0].at === v.clientTs && list[0].innings === 0 && list[0].target === target.id && list[0].approved === true);
+  ok("...its time, innings and target", list[0].at === v.clientTs && list[0].innings === 0 && list[0].target === target.id);
   ok("a void naming nothing in the log is not one", !list.some((c) => c.seq === ghost.seq));
   ok("a void of a void is not one", !list.some((c) => c.seq === vv.seq));
   ok("correctedAt is the latest time", correctedAt(list) === v.clientTs);
@@ -115,20 +117,20 @@ group("The commentary: one quiet line each, in its place, never a card");
   const before = log.indexOf(mid);
   const undo = { ...voidEvent({ target: mid.id }), innings: 0, seq: mid.seq + 0.5, id: "undo-1", clientTs: mid.clientTs + 1000 };
   log.splice(before + 1, 0, undo);
-  const after = put(voidEvent({ target: log.filter((e) => e.kind === "ball" && e.innings === 1)[2].id }), 1);
+  const after = { ...put(voidEvent({ target: log.filter((e) => e.kind === "ball" && e.innings === 1)[2].id }), 1), amendment: "a1" };
+  log[log.indexOf(log.find((e) => e.id === after.id))] = after;
   const items = deriveCommentary(log);
   const list = correctionsOf(log);
   const told = withCorrectionLines(items, log, list, true);
   const lines = told.filter((t) => t.kind === "correction");
-  ok("two corrections, two lines", lines.length === 2, lines);
-  ok("the undo during play: 'The scorecard was corrected.'", lines[0].text === "The scorecard was corrected." && lines[0].innings === 0);
-  ok("the void after the match: '...after the match.'", lines[1].text === "The scorecard was corrected after the match." && lines[1].innings === 1);
-  ok("afterTheMatch reads it so", afterTheMatch(log, list[1], true) && !afterTheMatch(log, list[0], true) && !afterTheMatch(log, list[1], false));
+  ok("the scorer's undo is no correction: one correction, one line", list.length === 1 && lines.length === 1, lines);
+  ok("the amendment after the match: '...after the match.'", lines[0].text === "The scorecard was corrected after the match." && lines[0].innings === 1);
+  ok("afterTheMatch reads it so", afterTheMatch(log, list[0], true) && !afterTheMatch(log, list[0], false));
   const i0 = told.indexOf(lines[0]);
   const prevKey = told[i0 - 1]?.key ?? "";
   const prevSeq = log.find((e) => `e:${e.id}` === prevKey.split("#")[0])?.seq;
-  ok("the undo's line sits after the last line told before it", prevSeq != null && prevSeq < undo.seq && told.slice(i0 + 1).every((t) => {
-    const s = log.find((e) => `e:${e.id}` === t.key.split("#")[0])?.seq; return s == null || s > undo.seq; }), { prevKey });
+  ok("its line sits after the last line told before it", prevSeq != null && prevSeq < after.seq && told.slice(i0 + 1).every((t) => {
+    const s = log.find((e) => `e:${e.id}` === t.key.split("#")[0])?.seq; return s == null || s > after.seq; }), { prevKey });
   ok("...in the same over as the line before it", lines[0].over === told[i0 - 1].over);
   ok("keys are their own and unique", new Set(told.map((t) => t.key)).size === told.length && lines.every((l) => l.key.startsWith("c:")));
   ok("no names in a correction line", lines.every((l) => !/Player/.test(l.text)));
@@ -207,8 +209,15 @@ group("The public page's half: what it draws of a correction, from the redacted 
   const t = log.find((e) => e.kind === "ball" && e.innings === 1 && e.value > 0);
   const v = put(voidEvent({ target: t.id }), 1);
   v.clientTs = Date.parse("2026-10-03T16:42:00Z");
-  // The public log's void: kind, innings, seq, id, time and target, nothing else.
-  const pub = log.map((e) => (e.kind === "void" ? { kind: e.kind, innings: e.innings, seq: e.seq, id: e.id, clientTs: e.clientTs, target: e.target } : e));
+  // The public log's void: kind, innings, seq, id, time and target, and `amendment: true` when an amendment wrote it.
+  const redact = (/** @type {any} */ x) => (x.kind === "void" ? { kind: x.kind, innings: x.innings, seq: x.seq, id: x.id, clientTs: x.clientTs, target: x.target, ...(x.amendment ? { amendment: true } : {}) } : x);
+  // A scorer's undo (no flag) is no correction; the amendment's void (flagged) is.
+  const undone = log.find((e) => e.kind === "ball" && e.innings === 0 && e.value > 0);
+  const u = put(voidEvent({ target: undone.id, reason: "scorer_undo" }), 0);
+  const pubUndo = log.map(redact);
+  ok("an undo alone: no chip, no words", publicFixes(pubUndo, { commentary: [], folded: deriveMatch(pubUndo), settled: true, match: { status: "complete" } }).at === null);
+  v.amendment = "amend-9";
+  const pub = log.map(redact);
   const folded = deriveMatch(pub);
   const story = { commentary: deriveCommentary(pub), folded, settled: !!folded.result, match: { status: "complete" } };
   const f = publicFixes(pub, story);
@@ -217,7 +226,7 @@ group("The public page's half: what it draws of a correction, from the redacted 
   ok("the innings it moved has its words", f.corrected.get(folded.innings[1]) === `corrected ${clockWords(v.clientTs)}` && !f.corrected.has(folded.innings[0]), [...f.corrected.values()]);
   ok("the commentary gains the one line", f.commentary.length === story.commentary.length + 1 && f.commentary.filter((c) => c.kind === "correction").length === 1);
   ok("inningsWords is correctedInnings in words", [...inningsWords(pub, correctionsOf(pub), folded.innings).values()].every((w) => /^corrected \d\d:\d\d/.test(w)));
-  const none = publicFixes(log.filter((e) => e !== v), { ...story, commentary: deriveCommentary(log.filter((e) => e !== v)) });
+  const none = publicFixes(log.filter((e) => e !== v && e !== u), { ...story, commentary: deriveCommentary(log.filter((e) => e !== v && e !== u)) });
   ok("no correction: no time, no words, the commentary as it was", none.at === null && none.corrected.size === 0 && none.commentary.every((c) => c.kind !== "correction"));
 }
 

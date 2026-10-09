@@ -393,8 +393,8 @@ try {
   const all = await p.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-key")));
   ok(`the whole match, every line but the overs' summaries (${told.filter((c) => c.kind !== "over_end").length})`,
      all.length === told.filter((c) => c.kind !== "over_end").length, all.length);
-  ok("...with one correction line for each of the two corrections, and no more (GA-I36)",
-     all.filter((k) => k.startsWith("c:")).length === 2 && told.filter((c) => c.kind === "correction").length === 2);
+  ok("...with one correction line for the approved amendment, none for the scorer's undo, and no more (GA-I36)",
+     all.filter((k) => k.startsWith("c:")).length === 1 && told.filter((c) => c.kind === "correction").length === 1);
   ok("the voided delivery and the amended one have no line", voided.every((t) => !all.some((k) => k === `e:${t}` || k.startsWith(`e:${t}#`))));
   const body = await tid(p, "mc-commentary").innerText();
   ok("Westville start their innings on the five penalty runs", /Westville Boys' High 1XI start their innings on 5/.test(body));
@@ -412,6 +412,77 @@ try {
      && /unbroken/i.test(await tid(p, "mc-partnership").last().innerText()));
   await tab(p, "analytics");
   ok("the analytics draw", await tid(p, "mc-analytics").count() === 1);
+
+  group("Every chart has a table (GA-I31): closed until asked, then the figures the chart draws");
+  {
+    await tid(p, "mc-innings-0").click(); await p.waitForTimeout(400);
+    const A = tid(p, "mc-analytics");
+    ok("no table in the Analytics tab until one is asked for", await A.locator("table").count() === 0);
+    const CHARTS = ["worm", "manhattan", "batsman", "bowler", "wheel", "heat", "spider"];
+    for (const id of CHARTS) {
+      const t = tid(p, `${id}-table-toggle`);
+      const box = await t.boundingBox().catch(() => null);
+      ok(`${id}: a Show as table button, shut, 44px tall`, await t.count() === 1 && await t.getAttribute("aria-expanded") === "false"
+         && /Show as table/.test(await t.innerText()) && !!box && box.height >= 44, box?.height);
+    }
+    const open1 = async (id) => {
+      await tid(p, `${id}-table-toggle`).click(); await p.waitForTimeout(200);
+      return { expanded: await tid(p, `${id}-table-toggle`).getAttribute("aria-expanded"),
+        tables: await tid(p, `${id}-table`).locator("table").evaluateAll((ts) => ts.map((t) => ({
+          caption: t.querySelector("caption")?.innerText.trim(),
+          heads: [...t.querySelectorAll("thead th")].map((c) => c.innerText.trim()),
+          scopes: [...t.querySelectorAll("th")].map((c) => c.getAttribute("scope")).join(),
+          rows: [...t.querySelectorAll("tbody tr")].map((r) => [...r.children].map((c) => c.innerText.trim())) }))) };
+    };
+    // Runs per over: each row is the bar beside it.
+    const man = await open1("manhattan");
+    const bars = await A.locator("rect[data-over]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-over"), e.getAttribute("data-runs")]));
+    ok("runs per over: it opens, one captioned table with scoped headers", man.expanded === "true" && man.tables.length === 1 && !!man.tables[0].caption && !/null|^$/.test(man.tables[0].scopes));
+    ok("...a row for every bar, with the bar's own runs", man.tables[0].rows.length === bars.length && bars.length >= 5
+       && man.tables[0].rows.every((r, k) => r[0].split(" ")[0] === bars[k][0] && r[1] === bars[k][1]), JSON.stringify(man.tables[0].rows.slice(0, 3)));
+    ok(`...and they add up to the first innings' ${inn1.runs}`, man.tables[0].rows.reduce((s, r) => s + Number(r[1]), 0) === inn1.runs
+       || await A.locator('[data-testid="manhattan-unplaced"]').count() === 1);
+    // The worm: both innings end on the fold's score, and every wicket marker is a row.
+    const worm = await open1("worm");
+    const lastOf = (t) => t.rows.at(-1);
+    ok("the worm: a table for each innings, and the fall of wickets", worm.tables.length === 3 && /Fall of wickets/.test(worm.tables[2].caption), worm.tables.map((t) => t.caption).join(" | "));
+    ok(`...innings one ends on the fold's ${inn1.runs}/${inn1.wickets}`, Number(lastOf(worm.tables[0])[1]) === inn1.runs && Number(lastOf(worm.tables[0])[2]) === inn1.wickets, lastOf(worm.tables[0]));
+    ok(`...innings two on its ${inn2.runs}/${inn2.wickets}`, Number(lastOf(worm.tables[1])[1]) === inn2.runs && Number(lastOf(worm.tables[1])[2]) === inn2.wickets, lastOf(worm.tables[1]));
+    ok("...a fall-of-wickets row for each marker the worm draws, the batter named", worm.tables[2].rows.length === await p.evaluate(() => document.querySelectorAll('[data-testid="mc-analytics"] circle[r="4.5"]').length)
+       && worm.tables[2].rows.length === inn1.fow.length + inn2.fow.length && worm.tables[2].rows.slice(0, inn1.fow.length).every((r, k) => r[3] === inn1.fow[k].batsman), JSON.stringify(worm.tables[2].rows.slice(0, 2)));
+    // Batters and bowlers: the card's order, the fold's figures.
+    const bat = await open1("batsman");
+    const wantBat = inn1.batsmen.filter((b) => b.balls > 0).sort((a, b) => b.runs - a.runs).slice(0, 6);
+    ok("batsmen: the chart's bars, in its order, with the fold's runs and balls", bat.tables[0].rows.length === wantBat.length
+       && wantBat.every((b, k) => bat.tables[0].rows[k][0].replace("*", "") === b.name && Number(bat.tables[0].rows[k][1]) === b.runs && Number(bat.tables[0].rows[k][2]) === b.balls), JSON.stringify(bat.tables[0].rows.slice(0, 2)));
+    const bowl = await open1("bowler");
+    const wantBowl = inn1.bowlers.filter((b) => b.balls > 0).sort((a, b) => b.wickets - a.wickets || a.runs - b.runs).slice(0, 6);
+    ok("bowlers: the chart's rows, with the fold's wickets and runs", bowl.tables[0].rows.length === wantBowl.length
+       && wantBowl.every((b, k) => bowl.tables[0].rows[k][0].replace("*", "") === b.name && Number(bowl.tables[0].rows[k][2]) === b.wickets && Number(bowl.tables[0].rows[k][3]) === b.runs), JSON.stringify(bowl.tables[0].rows.slice(0, 2)));
+    // The wheel, the heat map and the spider: one row for each thing drawn.
+    const wheel = await open1("wheel");
+    const spokes = await tid(p, "shot-wheel").locator("[data-spoke]").evaluateAll((els) => els.map((e) => e.querySelector("title")?.textContent));
+    ok(`the wheel: a row for each of its ${spokes.length} spokes, saying what the spoke's tooltip says`, spokes.length >= 5 && wheel.tables[0].rows.length === spokes.length
+       && wheel.tables[0].rows.every((r, k) => spokes[k].startsWith(r[1]) && (r[2] === "—" || spokes[k].includes(r[2]))), JSON.stringify(wheel.tables[0].rows.slice(0, 2)) + " / " + spokes.slice(0, 2));
+    const heat = await open1("heat");
+    const cells = await tid(p, "shot-heat-map").locator(".heat-cell").count();
+    ok(`the heat map: a row for each of its ${cells} cells, the hottest first at the peak`, cells > 0 && heat.tables[0].rows.length === cells && Number(heat.tables[0].rows[0][2]) === 100
+       && heat.tables[0].rows.every((r, k, a) => k === 0 || Number(a[k - 1][2]) >= Number(r[2])), JSON.stringify(heat.tables[0].rows.slice(0, 2)));
+    const spider = await open1("spider");
+    const axes = await tid(p, "shot-spider").locator("[data-testid^='spider-axis-']").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-shots"))));
+    ok("the spider: a row for each axis, with the shots the axis prints", spider.tables[0].rows.length === axes.length && axes.length === 12
+       && spider.tables[0].rows.every((r, k) => Number(r[1]) === axes[k]), JSON.stringify(spider.tables[0].rows.slice(0, 3)));
+    // The tables sit in the page: a phone's width does not grow, and the tab is shut again with a second tap.
+    await p.setViewportSize(PHONE); await p.waitForTimeout(400);
+    ok("at 390 wide, with every table open, nothing is wider than the screen", await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+       await p.evaluate(() => document.documentElement.scrollWidth));
+    const small = await p.evaluate(() => [...document.querySelectorAll('[data-testid="mc-analytics"] table *')].filter((e) => e.children.length === 0 && e.textContent.trim() && parseFloat(getComputedStyle(e).fontSize) < 12).length);
+    ok("...and nothing in a table is under 12px", small === 0, small);
+    await p.setViewportSize(DESK); await p.waitForTimeout(300);
+    for (const id of CHARTS) await tid(p, `${id}-table-toggle`).click();
+    await p.waitForTimeout(200);
+    ok("a second tap shuts each one: no table is left", await A.locator("table").count() === 0 && await A.locator('[data-testid$="-table-toggle"][aria-expanded="true"]').count() === 0);
+  }
   await tab(p, "details");
   const det = await tid(p, "mc-details").innerText();
   ok("the format, the ground and the toss", /T10 · 10 overs a side/.test(det) && /Gordon Sherwood Oval/.test(det)

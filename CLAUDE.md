@@ -60,7 +60,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   retention under POPIA) and notifications (added 2026-10-07: one model for
   every notice, who receives what, push to phones with no child's name on a
   lock screen, one read count, a correction taking a notice back, and quiet
-  hours for children).
+  hours for children) and compare and combine (added 2026-10-08, gap analysis
+  GA-I24/I25: two players' figures side by side and the analyst's workspace;
+  who may compare or combine which children's figures, across a squad, a
+  family or a school, what combining reveals that the parts don't, and how
+  the other school's squad names may appear).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from

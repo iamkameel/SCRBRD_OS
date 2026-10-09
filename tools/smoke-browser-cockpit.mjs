@@ -663,23 +663,23 @@ try {
     await q(`delete from match where id = any($1::uuid[])`, [X]);
   }
 
-  // ══ 6c · Readiness: a row opens its fixture's duties ═════════════════════
-  group("Readiness: each row is a 44px tap that opens its fixture's duties (queue A0)");
+  // ══ 6c · To resolve (was Readiness): a row opens its fixture's duties ═══
+  group("To resolve: each row is a 44px tap whose door is the exact place it promises (queue A0/A1)");
   {
+    // The duties row is S8's rule, which speaks within 48 hours of the start: bring Michaelhouse (an umpire on record, no scorer) to tomorrow.
+    await q(`update match set starts_at = (sa_today()::timestamp + interval '1 day' + time '10:00') at time zone 'Africa/Johannesburg' where id = $1`, [MICH]);
     const r = await open({ viewport: DESK });
     await signIn(r.page, "sarah@example.invalid");
-    ok("the director reaches Readiness", await go(r.page, "readiness") && await tid(r.page, "os-main").getAttribute("data-page") === "readiness");
-    await r.page.waitForSelector(`[data-testid="readiness-open-${DAY}"]`, { timeout: 8000 }).catch(() => {});
-    ok("tonight's fixture is a row, and the row is one button", await tid(r.page, `readiness-open-${DAY}`).count() === 1 && await tid(r.page, `readiness-fixture-${DAY}`).locator("button").count() === 1);
+    ok("the director reaches To resolve", await go(r.page, "readiness") && await tid(r.page, "os-main").getAttribute("data-page") === "readiness");
+    await r.page.waitForFunction(() => { const q = document.querySelector('[data-testid="queue"]'); return q && !/Reading/.test(q.innerText); }, null, { timeout: 30000 }).catch(() => {});
+    ok("tonight's fixture is a group, and the duty count line is the roster's", await tid(r.page, `readiness-fixture-${DAY}`).count() === 1 && await tid(r.page, `readiness-covered-${DAY}`).count() === 1);
     const coveredText = (await inner(r.page, `readiness-covered-${DAY}`)).trim();
     await r.page.setViewportSize(PHONE);
     await r.page.waitForTimeout(700);
     const f8 = await floors(r.page);
-    ok(`at 390: nothing under 12px, chips included (${f8.small.length}), every row at least 44px (${f8.tiny.length})`, f8.small.length === 0 && f8.tiny.length === 0, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
-    const chip = await r.page.$eval(`[data-testid="readiness-slot-${DAY}-umpire"]`, (e) => parseFloat(getComputedStyle(e).fontSize)).catch(() => 0);
-    ok(`...a duty chip is 12px (${chip})`, chip >= 12);
-    ok("...a slot with nothing on record says 'none' in words, not only in colour", /none/.test(await inner(r.page, `readiness-slot-${DAY}-umpire`)) || /none/.test(await inner(r.page, `readiness-slot-${DAY}-scorer`)));
-    await tid(r.page, `readiness-open-${MICH}`).click({ timeout: 4000 });
+    ok(`at 390: nothing under 12px (${f8.small.length}), every row at least 44px (${f8.tiny.length})`, f8.small.length === 0 && f8.tiny.length === 0, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
+    ok("...Michaelhouse's group names the umpire that is on record as not a blocker, and a missing scorer as one", /No scorer on record/.test(await tid(r.page, `readiness-fixture-${MICH}`).innerText()) && !/No umpire on record/.test(await tid(r.page, `readiness-fixture-${MICH}`).innerText()));
+    await r.page.locator(`[data-testid="queue-group"][data-match="${MICH}"] [data-rule="O4"] button`).first().click({ timeout: 4000 });
     await r.page.waitForTimeout(1500);
     const box = await tid(r.page, "match-details").boundingBox().catch(() => null);
     ok("tapping a row opens that fixture's duties, on the Match Centre", await tid(r.page, "os-main").getAttribute("data-page") === "matches"
@@ -687,9 +687,9 @@ try {
     ok("...brought into view on a phone, not left under the list (its top is on the screen)", !!box && box.y < 400 && box.y > -20, JSON.stringify(box));
     await r.page.setViewportSize(DESK);
     await r.page.waitForTimeout(600);
-    ok("back on Readiness, the other row opens its own fixture", await go(r.page, "readiness"));
-    await r.page.waitForSelector(`[data-testid="readiness-open-${DAY}"]`, { timeout: 8000 }).catch(() => {});
-    await tid(r.page, `readiness-open-${DAY}`).click({ timeout: 4000 });
+    ok("back on To resolve, tonight's row opens its own fixture", await go(r.page, "readiness"));
+    await r.page.waitForFunction(() => { const q = document.querySelector('[data-testid="queue"]'); return q && !/Reading/.test(q.innerText); }, null, { timeout: 30000 }).catch(() => {});
+    await r.page.locator(`[data-testid="queue-group"][data-match="${DAY}"] [data-rule="O4"] button`).first().click({ timeout: 4000 });
     await r.page.waitForTimeout(1500);
     ok("...tonight's: its details, not Michaelhouse's", await tid(r.page, "match-details").getAttribute("data-match") === DAY && await tid(r.page, "match-details").count() === 1);
     const rosterText = (await inner(r.page, "duty-covered")).trim();
@@ -716,7 +716,48 @@ try {
   ok("...the over story, last two", (await lv.page.$$('[data-testid="coach-story"] li')).length === 2);
   ok("...the wheel, and a filter by shot", await tid(lv.page, "coach-wheel").count() >= 1 && await tid(lv.page, "coach-wheel-drive").count() === 1);
   await tid(lv.page, "coach-wheel-drive").click({ timeout: 3000 });
-  ok("...filtering to the drive keeps a wheel", await tid(lv.page, "shot-wheel").count() >= 1);
+  ok("...filtering to the drive keeps a wheel", await tid(lv.page, "wagon-analysis-wheel").count() >= 1);
+  // GA-I28: the Match Centre's wheel filters, over the rows the tab already holds.
+  {
+    const wheel = tid(lv.page, "coach-wheel").first();
+    const spokes = () => wheel.locator("[data-spoke]").count();
+    const placedBy = (who) => ATTACK.filter((w, o) => w === who && o % 3 === 0).length; // the seed places one drive in overs 0, 3, 6, 9, 12
+    const placed = ATTACK.filter((_, o) => o % 3 === 0).length;
+    ok("wheel analysis: the panel is on the Coach tab", await wheel.locator('[data-testid="wagon-analysis"]').count() === 1);
+    ok(`...run chips: all, 1, 2, 3, 4 and 6 are there, "all" counts the ${placed} placed shots`,
+      (await Promise.all(["all", "1", "2", "3", "4", "6"].map((k) => wheel.locator(`[data-testid="wagon-chip-${k}"]`).count()))).every((c) => c === 1)
+      && (await wheel.locator('[data-testid="wagon-chip-all"]').innerText()).includes(String(placed)));
+    ok(`...${placed} spokes drawn to start with`, await spokes() === placed, await spokes());
+    await wheel.locator('[data-testid="wagon-chip-6"]').click({ timeout: 3000 });
+    ok("...a run chip narrows the wheel: the 6s chip leaves no spoke of fours", await spokes() === 0, await spokes());
+    await wheel.locator('[data-testid="wagon-chip-4"]').click({ timeout: 3000 });
+    ok(`...the 4s chip keeps all ${placed}`, await spokes() === placed, await spokes());
+    await wheel.locator('[data-testid="wagon-chip-4"]').click({ timeout: 3000 }); // off again
+    ok("...a bowler filter for each of our bowlers who bowled, and only them",
+      (await wheel.locator('[data-testid^="wagon-bowler-"]').count()) === 5 && (await wheel.locator('[data-testid="wagon-bowler-all"]').count()) === 1
+      && (await Promise.all([NAIDOO, WHITFIELD, BEKKER, SEVEN].map((id) => wheel.locator(`[data-testid="wagon-bowler-${id}"]`).count()))).every((c) => c === 1));
+    await wheel.locator(`[data-testid="wagon-bowler-${NAIDOO}"]`).click({ timeout: 3000 });
+    ok(`...a bowler narrows the wheel: Naidoo's ${placedBy("naidoo")} placed shots of ${placed}`, await spokes() === placedBy("naidoo"), await spokes());
+    await wheel.locator(`[data-testid="wagon-bowler-${WHITFIELD}"]`).click({ timeout: 3000 });
+    ok("...a bowler with no placed shot says so, in words, and draws no wheel",
+      await spokes() === 0 && await wheel.locator('[data-testid="wagon-analysis-wheel"]').count() === 0 && /No placed shots for this filter/.test(await wheel.innerText()));
+    await wheel.locator('[data-testid="wagon-bowler-all"]').click({ timeout: 3000 });
+    ok("...off side against on side, and the eight named areas",
+      /off side/i.test(await wheel.innerText()) && /on side/i.test(await wheel.innerText()) && await wheel.locator('[data-testid^="wagon-area-"]').count() === 8,
+      `${await wheel.locator('[data-testid^="wagon-area-"]').count()} areas`);
+    ok("...no batter chooser (the wheel is the innings, as before) and no match chooser", await wheel.locator('[data-testid^="wagon-batter-"], [data-testid^="wagon-match-"]').count() === 0);
+    ok("...no percentage on the Coach tab's wheel (the never-list)", !/\d\s?%/.test(await wheel.innerText()), await wheel.innerText());
+    const fw = await floors(lv.page, '[data-testid="coach-wheel"]');
+    ok(`...desktop: nothing under 12px (${fw.small.length}), nothing tapped under 44px (${fw.tiny.length})`, fw.small.length === 0 && fw.tiny.length === 0, [...fw.small, ...fw.tiny].slice(0, 4).join(" · "));
+    const wp = await open({ viewport: PHONE });
+    await signIn(wp.page, "coach@example.invalid"); await openMatch(wp.page, FIELD); await coachTab(wp.page);
+    const pw = await floors(wp.page, '[data-testid="coach-wheel"]');
+    ok(`...phone (390): the filters are there, nothing under 12px (${pw.small.length}), nothing tapped under 44px (${pw.tiny.length})`,
+      await wp.page.locator('[data-testid="coach-wheel"] [data-testid="wagon-chip-4"]').count() === 1 && pw.small.length === 0 && pw.tiny.length === 0, [...pw.small, ...pw.tiny].slice(0, 4).join(" · "));
+    ok("...phone: the page does not scroll sideways", await wp.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok("...phone: no page errors", wp.errors.length === 0 && wp.refusals.length === 0, [...wp.errors, ...wp.refusals].join(" | "));
+    await wp.ctx.close();
+  }
   await openDrawer(lv.page);
   const lcs = await cards(lv.page);
   const s2a = byRule(lcs, "S2a");

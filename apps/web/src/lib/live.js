@@ -60,6 +60,10 @@ function asMatch(r) {
     // decides the Edition of the Laws the match is scored under (SCRBRD-113).
     startsAt: r.starts_at ?? null,
     status: MATCH_STATUS[r.status] ?? "upcoming",
+    // 'abandoned' is read as "complete" above, so a fixture called off before it
+    // was played cannot be told from one that was: the match-day queue's O5
+    // (called off with work still on record) asks, and only for this.
+    calledOff: r.status === "abandoned",
     result: null,
     competition: null,
     // The competition it is played under, or null for a friendly (SCRBRD-114):
@@ -159,7 +163,10 @@ function asUser(r) {
            // A coach's account links to nobody; a pupil's links to the child
            // whose passport, squad entry and profile are all keyed on it.
            player: r.player_id ?? null,
-           lastLogin: r.last_seen_at, teams: r.teams, live: true };
+           lastLogin: r.last_seen_at, teams: r.teams, live: true,
+           // `accounts` only (db/90): when it last changed state, for those who
+           // may read why. `users` has no such column: undefined, never shown.
+           statusChangedAt: r.status_changed_at ?? null };
 }
 
 function asGround(r) {
@@ -465,9 +472,10 @@ function asAvailability(r) {
            declaredAt: r.declared_at, selfDeclared: r.self_declared === true,
            declaredByName: r.declared_by_name,
            // Deliberately NOT coerced to a boolean. Null is a third answer
-           // here — the school does not run the Injuries module, so no
-           // clinical opinion is being collected — and `=== true` turned that
-           // into "cleared", which is the one reading nothing asserted.
+           // here — the school does not run the Injuries module, or this
+           // reader does not hold medical.status.read for this boy — and
+           // coercing it turned that into "cleared", which is the one reading
+           // nothing asserted. Never drawn as cleared, never as restricted.
            clinicallyRestricted: r.clinically_restricted ?? null, live: true };
 }
 
@@ -653,6 +661,15 @@ function asContact(r) {
   return { id: r.id ?? null, playerId: r.player_id, playerName: r.full_name, school: r.school_id,
            priority: r.priority, name: r.name, relationship: r.relationship,
            phone: r.phone, phoneAlt: r.phone_alt, email: r.email, note: r.note, live: true };
+}
+
+/**
+ * How many numbers are on record to ring for one child (GA-I20 A1, N2): the
+ * child's id and a count, never a contact. No row for a reader who may not
+ * read his contacts.
+ */
+function asContactCount(r) {
+  return { playerId: r.player_id, active: Number(r.active_count), live: true };
 }
 
 /** One row of the clearance register, or one adult's clearance. The word is the server's. */
@@ -917,7 +934,8 @@ function asReadiness(r) {
            reasonKind: r.reason_kind,
            selfDeclared: r.self_declared === true,
            declaredByName: r.declared_by_name,
-           // Tri-state, as above: true restricted, false cleared, null not asked.
+           // Tri-state, as above: true restricted, false cleared, null not
+           // asked or not this reader's to know.
            clinicallyRestricted: r.clinically_restricted ?? null,
            returnDate: r.rtw_date ? String(r.rtw_date).slice(0, 10) : null,
            selected: r.selected === true, side: r.selected_side, battingNo: r.batting_no,
@@ -976,6 +994,8 @@ function asChild(r) {
   return { id: r.player_id, name: r.full_name, knownAs: r.known_as ?? null, team: r.team_code,
            school: r.school_id, schoolName: r.school_name ?? null, schoolKind: r.school_kind ?? null,
            relationship: r.relationship, verification: r.verification_state, consent: r.consent_state,
+           // GA-I20 A1 (R8a): the wording of the terms her own link was agreed under, and when.
+           consentVersion: r.consent_version ?? null, consentAt: r.consent_at ?? null,
            from: d10(r.valid_from), until: d10(r.valid_until), live: true };
 }
 
@@ -1157,6 +1177,7 @@ const ADAPT = {
   availability: asAvailability,
   readiness: asReadiness,
   emergency_contacts: asContact,
+  emergency_contact_count: asContactCount,
   trip_contacts: asContact,
   clearance_register: asClearance,
   clearances: asClearance,

@@ -270,7 +270,7 @@ try {
     !page.includes(REASON) && !page.includes(NOTE) && !page.includes(REQUESTER) && !page.includes(APPROVER) && !/Daniel/.test(page));
   const got = (await Promise.all(pu.bodies)).join("\n");
   ok("...nor did anything the page received", got.length > 0 && !got.includes(REASON) && !got.includes(NOTE) && !got.includes(REQUESTER)
-    && !got.includes(APPROVER) && !/approved_by|"amendment"|requested/.test(got));
+    && !got.includes(APPROVER) && !/approved_by|"amendment":(?!true)|requested/.test(got));
   ok("no console errors (coach, public)", co.errors.length === 0 && pu.errors.length === 0, [...co.errors, ...pu.errors].join(" | "));
 
   group("6. The scorer reads the decline and its note");

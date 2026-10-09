@@ -4072,6 +4072,112 @@ CREATE OR REPLACE FUNCTION _stored_89() RETURNS text AS $$
          || ' / ' || (SELECT count(*) FROM notification WHERE is_public) || ' public'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/89 (section 68) ──────────────────────────────────────────────
+-- ┌── db/90 (section 69). Account lifecycle slice 2: the reason, the preview, the notice
+-- Written as the owner, the way the system's own definers write, each the
+-- one thing an assertion needs.
+-- The account_status_change rows about one account, as the owner counts them
+-- (the person may not read them; the count is the claim).
+CREATE OR REPLACE FUNCTION _v90_changes(p_user uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM account_status_change WHERE user_id = p_user
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- One of them, whole, found by its reason (changed_at is the transaction's
+-- clock, the same for every row this file writes).
+CREATE OR REPLACE FUNCTION _v90_row(p_user uuid, p_reason text) RETURNS jsonb AS $$
+  SELECT to_jsonb(c) FROM account_status_change c WHERE c.user_id = p_user AND c.reason = p_reason
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A row about somebody, planted as the owner: the reader it is about must
+-- not read it, whatever he holds.
+CREATE OR REPLACE FUNCTION _v90_plant(p_user uuid, p_by uuid) RETURNS uuid AS $$
+  INSERT INTO account_status_change (user_id, school_id, active, reason, changed_by)
+  SELECT u.id, u.school_id, u.active, 'Verify 090: planted about the reader', p_by FROM app_user u WHERE u.id = p_user
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- account_set_active() as the CALLER, its refusal as text, or the SQLSTATE
+-- of whatever raised instead of answering (a missing check shows here as the
+-- table's CHECK, not as a pass). Not a definer.
+CREATE OR REPLACE FUNCTION _v90_set(p_user uuid, p_active boolean, p_reason text) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  SELECT coalesce(o.reason, 'ok') INTO v FROM account_set_active(p_user, p_active, p_reason) o;
+  RETURN v;
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- An account at Hilton holding nothing at all: no news.read, so a notice
+-- reaches it only through a door of its own.
+CREATE OR REPLACE FUNCTION _v90_bare() RETURNS uuid AS $$
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'v90.bare@example.invalid', 'V90 Bare', 'spectator')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A 'system' notice to one person that no audit row admits: what a forged
+-- or published notice would be.
+CREATE OR REPLACE FUNCTION _v90_stray(p_user uuid) RETURNS uuid AS $$
+  INSERT INTO notification (school_id, scope_level, kind, urgency, title, body, required_capability,
+                            subject_kind, recipient_id)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'school', 'system', 'medium', 'Verify 090 stray',
+          'Not written by account_set_active().', 'news.read', 'system', p_user)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Make an account a parent at Hilton of two children (B Khumalo, K
+-- Dlamini), verified by the office, as guardian_link_establish() writes it.
+CREATE OR REPLACE FUNCTION _v90_link(p_user uuid) RETURNS void AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (p_user, 'guardian', '11111111-1111-1111-1111-111111111111')
+  RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  SELECT a, x, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+         '88888888-0000-0000-0000-00000000000c', current_date - 1
+    FROM unnest(ARRAY['aaaaaaaa-0000-0000-0000-000000000013', 'aaaaaaaa-0000-0000-0000-000000000006']::uuid[]) x;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Things an account has open on a fixture three days out: the scoring token
+-- (held now) and a scorer's duty. Answers the fixture's label as the
+-- preview says it.
+CREATE OR REPLACE FUNCTION _v90_open(p_user uuid) RETURNS text AS $$
+DECLARE m uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify Ninety College 1XI', now() + interval '3 days',
+          'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO m;
+  INSERT INTO scoring_session (match_id, school_id, state, holder_user_id, holder_device, lease_until)
+  VALUES (m, '11111111-1111-1111-1111-111111111111', 'active', p_user, 'v90-pad', now() + interval '1 hour');
+  INSERT INTO match_official (match_id, school_id, duty, person_name, person_id)
+  VALUES (m, '11111111-1111-1111-1111-111111111111', 'scorer', 'V90 Scorer', p_user);
+  RETURN audit_fixture_label(m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/90 (section 69) ──────────────────────────────────────────────
+
+-- ┌── db/91 (section 70). Notifications S2: one stream
+-- A post's notices as the owner reads them (RLS would not say): every row
+-- the post's trigger wrote, oldest first, without the "withdrawn" notices
+-- notification_retract() writes about them.
+CREATE OR REPLACE FUNCTION _notices_91(p_post uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(n) ORDER BY n.published_at, n.school_id), '[]'::jsonb)
+    FROM notification n
+   WHERE n.kind = 'notice' AND n.subject_kind = 'news' AND n.subject_id = p_post AND n.retracts_id IS NULL
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The DSOs' notices a report of one post wrote, as the owner reads them.
+CREATE OR REPLACE FUNCTION _reports_91(p_post uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(n) ORDER BY n.published_at, n.id), '[]'::jsonb)
+    FROM notification n
+   WHERE n.kind = 'safeguarding' AND n.subject_kind = 'news' AND n.subject_id = p_post
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One report, as the route makes it: 'ok', 'ok unheld', or the reason.
+CREATE OR REPLACE FUNCTION _report_91(p_id uuid) RETURNS text AS $$
+  SELECT CASE WHEN r.ok THEN 'ok' || CASE WHEN r.unheld THEN ' unheld' ELSE '' END ELSE r.reason END
+    FROM notification_report(p_id) r
+$$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
+
+-- One withdrawal, as the route makes it: 'ok', or the reason.
+CREATE OR REPLACE FUNCTION _withdraw_91(p_post uuid) RETURNS text AS $$
+  SELECT CASE WHEN w.ok THEN 'ok' ELSE w.reason END FROM news_post_withdraw(p_post) w
+$$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/91 (section 70) ──────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -4788,9 +4894,11 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
 
-  -- ...and the team notice they may publish goes through.
+  -- ...and the team notice they may publish goes through. (Not a 'notice':
+  -- since db/91 a person's words are a news_post, and the post's trigger
+  -- writes the notice; §70.)
   INSERT INTO notification (school_id, team_code, scope_level, kind, title, body)
-  VALUES (HIL, '1XI', 'team', 'notice', 'Nets moved', 'Nets 1-3 at 14:30.');
+  VALUES (HIL, '1XI', 'team', 'fixture', 'Nets moved', 'Nets 1-3 at 14:30.');
 
   -- The catalogue must not be writable by the application role: a row here
   -- would let a notice declare a capability the model never defined.
@@ -9545,8 +9653,9 @@ BEGIN
       v_err := NULL;
     EXCEPTION WHEN insufficient_privilege THEN v_err := SQLERRM; END;
     PERFORM _assert(v_err IS NOT NULL, 'db/57 (notice): the director of sport published a safeguarding notice');
-    INSERT INTO notification (school_id, scope_level, kind, title, body) VALUES (HIL, 'school', 'notice', 'Verify 057', 'Ordinary');
-    SELECT count(*) INTO n FROM notification WHERE title = 'Verify 057' AND kind = 'notice' AND recipient_id IS NULL;
+    -- (a 'fixture': since db/91 a 'notice' is the news_post trigger's alone, §70)
+    INSERT INTO notification (school_id, scope_level, kind, title, body) VALUES (HIL, 'school', 'fixture', 'Verify 057', 'Ordinary');
+    SELECT count(*) INTO n FROM notification WHERE title = 'Verify 057' AND kind = 'fixture' AND recipient_id IS NULL;
     PERFORM _assert(n = 1, 'db/57 (notice): the director of sport cannot publish an ordinary notice — the refusal above proves nothing');
 
     -- (guard) the principal, named in an open leadership concern, cannot end a
@@ -12610,6 +12719,7 @@ BEGIN
 select s.player_id, p.full_name, p.known_as, p.team_code,
                   p.school_id, sc.name as school_name, sc.kind as school_kind,
                   s.relationship, s.verification_state, s.consent_state,
+                  s.consent_version, s.consent_at,
                   s.valid_from, s.valid_until
              from role_assignment a
              join assignment_subject s on s.assignment_id = a.id
@@ -12641,6 +12751,12 @@ $v49$;
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE valid_until IS NOT NULL OR relationship <> 'parent'
                                   OR verification_state <> 'verified' OR consent_state <> 'granted'),
       '§49: Sarah''s links are not the open, verified, consented parent links the seed made');
+    -- (GA-I20 A1, R8a) Each link carries the wording of the school's terms
+    -- it was agreed under, and when, as the link holds them (the seed
+    -- records popia-2026-01 on every granted link).
+    PERFORM _assert((SELECT count(*) FROM _v49_my_children
+                      WHERE consent_version = 'popia-2026-01' AND consent_at IS NOT NULL) = 2,
+      '§49 (A1): Sarah''s granted links do not carry their own consent version and time');
 
     -- (G11) The end date rides along, and is the link's own.
     PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date + 400);
@@ -12687,8 +12803,9 @@ $v49$;
     -- under is a live link (app_can() reads verification, not consent), and
     -- says which it is.
     PERFORM _as(U_CELE);
-    SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending';
-    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, or does not say consent is pending');
+    SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending'
+                                                   AND consent_version IS NULL AND consent_at IS NULL;
+    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, does not say consent is pending, or claims a version or time no one recorded');
     -- A link the school has not verified is no link at all.
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE verification_state <> 'verified'),
       '§49 (pending): an unverified link is listed');
@@ -16465,17 +16582,17 @@ $v49$;
 
     -- (disable)
     PERFORM _as(U_REGISTRAR);
-    SELECT o.reason INTO v_got FROM account_set_active(U_REGISTRAR, false) o;
+    SELECT o.reason INTO v_got FROM account_set_active(U_REGISTRAR, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'cannot_disable_yourself', format('§64 (disable): the office disabled itself (%s)', v_got));
     PERFORM _as(U_C);
-    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false) o;
+    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'not_permitted', format('§64 (disable): a coach disabled a parent (%s)', v_got));
     PERFORM _as(U_WES_ADM);
-    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false) o;
+    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'not_permitted', format('§64 (disable): Westville''s office disabled Hilton''s parent (%s)', v_got));
     PERFORM _assert((_v85_state(U_PARENT)->>'active')::boolean, '§64 (disable): a refused disable disabled the account');
     PERFORM _as(U_REGISTRAR);
-    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false) o;
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'true:false', format('§64 (disable): Hilton''s office could not disable its parent (%s)', v_got));
     j := _v85_state(U_PARENT);
     PERFORM _assert(j->>'reason' = 'account_disabled' AND (j->>'epoch')::int = e2 + 1 AND (j->>'by')::uuid = U_REGISTRAR,
@@ -16486,16 +16603,16 @@ $v49$;
     SELECT o.session_id INTO v_id FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
     PERFORM _assert(v_id IS NULL, '§64 (disable): a disabled account was minted a session');
     PERFORM _as(U_REGISTRAR);
-    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true) o;
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true, 'Verify 085: the phone was found') o;
     PERFORM _assert(v_got = 'true:true', format('§64 (disable): Hilton''s office could not enable its parent (%s)', v_got));
     PERFORM set_config('app.user_id', '', true);
     v_got := _v85_begin(U_PARENT, 'v85-phone', s3, e2);
     PERFORM _assert(v_got = '28000: session_revoked', format('§64 (disable): enabling brought an old session back (%s)', v_got));
     -- The owner's key may do what the office may.
     PERFORM _as(U_OWNER);
-    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false) o;
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'true:false', format('§64 (disable): the owner could not disable a parent (%s)', v_got));
-    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true) o;
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true, 'Verify 085: the phone was found') o;
     PERFORM _assert(v_got = 'true:true', format('§64 (disable): the owner could not enable a parent (%s)', v_got));
     PERFORM set_config('app.user_id', '', true);
     SELECT o.session_id, o.epoch INTO s4, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
@@ -16532,14 +16649,14 @@ $v49$;
     v_got := _v85_begin(U_SCORER, 'v85-pad-2', NULL, NULL, c1);
     PERFORM _assert(v_got = '28000: session_revoked', format('§64 (pad): a credential began on another device (%s)', v_got));
     PERFORM _as(U_REGISTRAR);
-    SELECT o.ok::text INTO v_got FROM account_set_active(U_SCORER, false) o;
+    SELECT o.ok::text INTO v_got FROM account_set_active(U_SCORER, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'true', format('§64 (pad): Hilton''s office could not disable its scorer (%s)', v_got));
     PERFORM _assert(_v85_pad_reason(c1) = 'account_disabled', format('§64 (pad): the credential reads %s after the account was disabled', _v85_pad_reason(c1)));
     PERFORM set_config('app.user_id', '', true);
     v_got := _v85_begin(U_SCORER, 'v85-pad-1', NULL, NULL, c1);
     PERFORM _assert(v_got = '28000: session_revoked', format('§64 (pad): a disabled scorer''s credential began (%s)', v_got));
     PERFORM _as(U_REGISTRAR);
-    PERFORM account_set_active(U_SCORER, true);
+    PERFORM account_set_active(U_SCORER, true, 'Verify 085: the phone was found');
     PERFORM _assert(_v85_pad_reason(c1) = 'account_disabled', '§64 (pad): enabling the account brought the credential back');
     c2 := _v85_pad(U_SCORER, 'v85-pad-2');
     PERFORM _as(U_SCORER);
@@ -16952,13 +17069,16 @@ $v49$;
                     AND _try_75(format('UPDATE notification SET subject_person_id = %L WHERE id = %L', P_INJURED, N)) = 'notification_notice_shape'
                     AND _try_75(format('UPDATE notification SET is_public = true WHERE id = %L', R)) = 'notification_never_public',
       '§68 (shape): an update made a notice high, about a child, or public');
-    -- …and through the application: Sarah may publish to her school
+    -- …and through the application: the contract refuses first; and since
+    -- db/91 (D9, §70) the application writes no notice at all, an ordinary
+    -- one included: a person's words are a news_post, and its trigger writes
+    -- the notice
     PERFORM _as(U_SARAH);
     PERFORM _assert(_app_89(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, subject_person_id)
                                        VALUES (%L, 'school', 'notice', 'v89', 'v89', %L)$q$, HIL, P_INJURED)) = 'notification_notice_shape'
                     AND _app_89(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body)
-                                       VALUES (%L, 'school', 'notice', 'v89 app', 'v89')$q$, HIL)) = 'ok',
-      '§68 (shape): the director of sport published a notice about a child, or could not publish an ordinary one');
+                                       VALUES (%L, 'school', 'notice', 'v89 app', 'v89')$q$, HIL)) = '42501',
+      '§68 (shape): the director of sport published a notice about a child, or wrote a notice through the application (db/91)');
 
     -- (life) from published_at, by kind; a writer's own expiry kept
     SELECT concat_ws(' ',
@@ -16969,16 +17089,18 @@ $v49$;
     PERFORM _assert(got = '180 days 60 days true true',
       format('§68 (life): recognition / notice / fixture (start + 7 days) / the writer''s own read %s', got));
 
-    -- (door) as the application, which may UPDATE the notice (news.publish.school)…
+    -- (door) as the application, which may UPDATE the fixture notice
+    -- (news.publish at the side; a 'notice' it may not update at all since
+    -- db/91, §70)…
     PERFORM _as(U_SARAH);
-    UPDATE notification SET body = body WHERE id = N RETURNING id INTO v;
-    PERFORM _assert(v = N, '§68 (door): the director of sport cannot update the notice at all — the refusals below prove nothing');
+    UPDATE notification SET body = body WHERE id = F RETURNING id INTO v;
+    PERFORM _assert(v = F, '§68 (door): the director of sport cannot update the fixture notice at all — the refusals below prove nothing');
     -- …but not its retraction, not with the door's setting forged, and not by
     -- writing a "withdrawn" notice of her own
-    PERFORM _assert(_app_89(format('UPDATE notification SET retracted_at = now(), retraction_kind = ''withdrawn'' WHERE id = %L', N)) = 'notification_retraction_door',
+    PERFORM _assert(_app_89(format('UPDATE notification SET retracted_at = now(), retraction_kind = ''superseded'' WHERE id = %L', F)) = 'notification_retraction_door',
       '§68 (door): the application set retracted_at');
-    PERFORM set_config('scrbrd.notification_retract', N::text, true);
-    PERFORM _assert(_app_89(format('UPDATE notification SET retracted_at = now(), retraction_kind = ''withdrawn'' WHERE id = %L', N)) = 'notification_retraction_door',
+    PERFORM set_config('scrbrd.notification_retract', F::text, true);
+    PERFORM _assert(_app_89(format('UPDATE notification SET retracted_at = now(), retraction_kind = ''superseded'' WHERE id = %L', F)) = 'notification_retraction_door',
       '§68 (door): the application set retracted_at with the door''s setting forged');
     PERFORM set_config('scrbrd.notification_retract', '', true);
     PERFORM _assert(_app_89(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body, retracts_id)
@@ -17124,6 +17246,474 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 68
+  -- ┌── 69 · An account changes with a reason (db/90, account lifecycle slice 2) ──
+  -- As the application role, through the two db/90 doors:
+  --
+  --   (reason)    no reason, a short one or one past 2,000 characters is
+  --               refused by name and changes nothing; a stranger is refused
+  --               not_permitted before the reason is looked at
+  --   (row)       a disable writes one row (which way, the reason, who, the
+  --               school) and no notice; asking again writes nothing
+  --   (notice)    an enable writes the row and one 'system' notice to the
+  --               person: the date, never the reason; it reaches him, and
+  --               nobody else, the owner included
+  --   (door)      an account holding nothing (no news.read) reads its enable
+  --               notice through notification_account_enabled, and not a
+  --               'system' notice no audit row admits
+  --   (reader)    the office (user.invite) and the principal (audit.read)
+  --               read the rows; the bursar (user.read), a coach, Westville's
+  --               office and the person do not; an office holder does not
+  --               read a row about himself
+  --   (column)    the application cannot write app_user.active, by the
+  --               office's or the principal's policy; the rest of the row is
+  --               writable as before
+  --   (signature) account_set_active(uuid, boolean) is gone
+  --   (preview)   counts move with what the account holds (a session, a pad
+  --               credential, a scoring token by its fixture, a duty); a
+  --               parent's linked children are counted; a stranger, Westville's
+  --               office, the principal, the account itself and a pad are
+  --               refused with no counts; an account with a role at another
+  --               school is other_school to its own office only
+  --
+  -- Falsified, each red at its own label with its key line removed and
+  -- green again restored: the reason checks out of account_set_active()
+  -- (reason); the account_status_change INSERT (row); the notification
+  -- INSERT (notice); the notification_account_enabled policy (door); the
+  -- `user_id <> app_user_id()` clause of the read policy (reader); the
+  -- REVOKE UPDATE ON app_user (column); the DROP FUNCTION (signature); the
+  -- scoring_session arm of the preview, and the auth_office_refusal() call
+  -- in it (preview).
+  DECLARE
+    V_PARENT  uuid := '88888888-0000-0000-0000-000000000005';
+    V_SCORER  uuid := '88888888-0000-0000-0000-000000000006';
+    V_OFFICE  uuid := '88888888-0000-0000-0000-00000000000c';  -- schooladmin, Hilton: user.invite
+    V_HEAD    uuid := '88888888-0000-0000-0000-000000000016';  -- principal: audit.read, no user.invite
+    V_BURSAR  uuid := '88888888-0000-0000-0000-000000000015';  -- finance: user.read only
+    V_COACH   uuid := '88888888-0000-0000-0000-00000000000a';  -- 2XI coach
+    V_WES     uuid := '88888888-0000-0000-0000-00000000000d';  -- schooladmin, Westville
+    V_SARAH   uuid := '88888888-0000-0000-0000-000000000007';  -- director of sport, a guardian at Westville too
+    V_OWN     uuid := '88888888-0000-0000-0000-000000000022';  -- the owner's key
+    v_bare uuid; v_note uuid; v_stray uuid; v_row uuid;
+    v_got text; v_label text; n0 int; n1 int; j jsonb; p record; p0 record;
+  BEGIN
+    -- (reason)
+    PERFORM _as(V_OFFICE);
+    n0 := _v90_changes(V_SCORER);
+    v_got := _v90_set(V_SCORER, false, NULL);
+    PERFORM _assert(v_got = 'reason_required', format('§69 (reason): no reason answered %s', v_got));
+    v_got := _v90_set(V_SCORER, false, '   too short   ');
+    PERFORM _assert(v_got = 'reason_required', format('§69 (reason): nine characters, padded, answered %s', v_got));
+    v_got := _v90_set(V_SCORER, false, repeat('x', 2001));
+    PERFORM _assert(v_got = 'reason_too_long', format('§69 (reason): 2,001 characters answered %s', v_got));
+    PERFORM _assert((_v85_state(V_SCORER)->>'active')::boolean AND _v90_changes(V_SCORER) = n0,
+      '§69 (reason): a refused disable disabled the account, or wrote a row');
+    PERFORM _as(V_COACH);
+    v_got := _v90_set(V_SCORER, false, NULL);
+    PERFORM _assert(v_got = 'not_permitted', format('§69 (reason): a coach with no reason was told %s, not not_permitted', v_got));
+
+    -- (preview), before: what the scorer holds now
+    PERFORM _as(V_OFFICE);
+    SELECT * INTO p0 FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(p0.ok AND p0.reason IS NULL AND p0.active AND p0.lifts = 0 AND p0.children = 0,
+      format('§69 (preview): the office''s first preview of the scorer reads %s', row_to_json(p0)));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM auth_session_open(V_SCORER, 'v90-phone', 1800);
+    PERFORM _v85_pad(V_SCORER, 'v90-pad');
+    v_label := _v90_open(V_SCORER);
+    PERFORM _as(V_OFFICE);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(p.ok AND p.sessions = p0.sessions + 1 AND p.pad_credentials = p0.pad_credentials + 1
+                    AND p.duties = p0.duties + 1 AND p.lifts = 0 AND p.children = 0,
+      format('§69 (preview): after a session, a pad credential and a duty the preview reads %s (before %s)', row_to_json(p), row_to_json(p0)));
+    PERFORM _assert(v_label = ANY (p.scoring_tokens) AND cardinality(p.scoring_tokens) = cardinality(p0.scoring_tokens) + 1,
+      format('§69 (preview): the scoring token for %s is not in %s', v_label, p.scoring_tokens));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM unnest(p.scoring_tokens) t WHERE t ~* 'pillay|whitfield|dlamini'),
+      '§69 (preview): a child''s name is in the preview');
+    -- Refused, with nothing counted.
+    PERFORM _as(V_COACH);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted' AND p.active IS NULL AND p.sessions IS NULL AND p.pad_credentials IS NULL
+                    AND p.scoring_tokens IS NULL AND p.duties IS NULL AND p.lifts IS NULL AND p.children IS NULL,
+      format('§69 (preview): a coach''s preview of the scorer reads %s', row_to_json(p)));
+    PERFORM _as(V_WES);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted' AND p.sessions IS NULL AND p.scoring_tokens IS NULL,
+      format('§69 (preview): Westville''s office previewed Hilton''s scorer: %s', row_to_json(p)));
+    PERFORM _as(V_HEAD);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted' AND p.sessions IS NULL,
+      format('§69 (preview): the principal (no user.invite) previewed the scorer: %s', row_to_json(p)));
+    PERFORM _as(V_OFFICE);
+    SELECT * INTO p FROM account_offboard_preview(V_OFFICE);
+    PERFORM _assert(NOT p.ok AND p.reason = 'cannot_disable_yourself' AND p.sessions IS NULL,
+      format('§69 (preview): the office previewed itself: %s', row_to_json(p)));
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted' AND p.sessions IS NULL,
+      format('§69 (preview): a pad''s request previewed an account: %s', row_to_json(p)));
+    SELECT * INTO p FROM account_offboard_preview(V_SARAH);
+    PERFORM _assert(NOT p.ok AND p.reason = 'other_school' AND p.sessions IS NULL,
+      format('§69 (preview): Hilton''s office previewed its director of sport (a guardian at Westville): %s', row_to_json(p)));
+    PERFORM _as(V_WES);
+    SELECT * INTO p FROM account_offboard_preview(V_SARAH);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted',
+      format('§69 (preview): Westville''s office was told about Hilton''s account: %s', row_to_json(p)));
+
+    -- (row)
+    PERFORM _as(V_OFFICE);
+    n0 := _v90_changes(V_SCORER);
+    SELECT o.ok::text || ':' || o.active::text INTO v_got
+      FROM account_set_active(V_SCORER, false, '  Verify 090: stepped back for a week  ') o;
+    PERFORM _assert(v_got = 'true:false', format('§69 (row): Hilton''s office could not disable its scorer (%s)', v_got));
+    j := _v90_row(V_SCORER, 'Verify 090: stepped back for a week');
+    PERFORM _assert(_v90_changes(V_SCORER) = n0 + 1 AND (j->>'active')::boolean = false
+                    AND j->>'reason' = 'Verify 090: stepped back for a week' AND (j->>'changed_by')::uuid = V_OFFICE
+                    AND j->>'school_id' = '11111111-1111-1111-1111-111111111111' AND j->>'notice_id' IS NULL,
+      format('§69 (row): the disable wrote %s rows, the last %s', _v90_changes(V_SCORER) - n0, j));
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(p.ok AND NOT p.active AND p.sessions = 0 AND p.pad_credentials = 0 AND v_label = ANY (p.scoring_tokens),
+      format('§69 (preview): after the disable the preview reads %s', row_to_json(p)));
+    SELECT o.ok::text || ':' || o.active::text INTO v_got
+      FROM account_set_active(V_SCORER, false, 'Verify 090: asked a second time') o;
+    PERFORM _assert(v_got = 'true:false' AND _v90_changes(V_SCORER) = n0 + 1,
+      format('§69 (row): disabling twice answered %s and wrote %s rows', v_got, _v90_changes(V_SCORER) - n0));
+    PERFORM _assert(_v85_try(format('INSERT INTO account_status_change (user_id, active, reason, changed_by) VALUES (%L, true, %L, %L)',
+                                    V_SCORER, 'Verify 090: written by hand', V_OFFICE)) = '42501',
+      '§69 (row): the application wrote account_status_change itself');
+
+    -- (notice)
+    SELECT o.ok::text || ':' || o.active::text INTO v_got
+      FROM account_set_active(V_SCORER, true, 'Verify 090: back after the week') o;
+    PERFORM _assert(v_got = 'true:true', format('§69 (notice): Hilton''s office could not enable its scorer (%s)', v_got));
+    j := _v90_row(V_SCORER, 'Verify 090: back after the week');
+    v_note := (j->>'notice_id')::uuid;
+    PERFORM _assert(_v90_changes(V_SCORER) = n0 + 2 AND (j->>'active')::boolean AND j->>'reason' = 'Verify 090: back after the week'
+                    AND v_note IS NOT NULL,
+      format('§69 (notice): the enable wrote %s', j));
+    j := _row_89(v_note);
+    PERFORM _assert(j->>'kind' = 'system' AND (j->>'recipient_id')::uuid = V_SCORER AND j->>'title' = 'Your account was re-enabled'
+                    AND j->>'body' LIKE 'Your account was re-enabled on %. Every device was signed out when it was disabled; sign in again where you need to.'
+                    AND position('week' IN j->>'body') = 0 AND NOT (j->>'is_public')::boolean
+                    AND (j->>'expires_at')::timestamptz > now() + interval '179 days',
+      format('§69 (notice): the notice is %s', j));
+    PERFORM _as(V_SCORER);
+    PERFORM _assert(EXISTS (SELECT 1 FROM my_notifications m WHERE m.id = v_note)
+                    AND notification_by_id(v_note)->>'title' = 'Your account was re-enabled',
+      '§69 (notice): the scorer cannot read the notice about his own account');
+    FOREACH v_row IN ARRAY ARRAY[V_OFFICE, V_HEAD, V_PARENT, V_OWN] LOOP
+      PERFORM _as(v_row);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification x WHERE x.id = v_note) AND notification_by_id(v_note) IS NULL,
+        format('§69 (notice): %s read the scorer''s notice', v_row));
+    END LOOP;
+
+    -- (door)
+    v_bare := _v90_bare();
+    PERFORM _as(V_OFFICE);
+    SELECT o.ok::text INTO v_got FROM account_set_active(v_bare, false, 'Verify 090: the bare account, off') o;
+    PERFORM _assert(v_got = 'true', format('§69 (door): the office could not disable an account holding nothing (%s)', v_got));
+    SELECT o.ok::text INTO v_got FROM account_set_active(v_bare, true, 'Verify 090: the bare account, on') o;
+    v_note := (_v90_row(v_bare, 'Verify 090: the bare account, on')->>'notice_id')::uuid;
+    v_stray := _v90_stray(v_bare);
+    PERFORM _as(v_bare);
+    PERFORM _assert(v_got = 'true' AND v_note IS NOT NULL AND EXISTS (SELECT 1 FROM my_notifications m WHERE m.id = v_note),
+      '§69 (door): an account with no news.read cannot read its enable notice');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification x WHERE x.id = v_stray),
+      '§69 (door): a system notice no audit row admits came through the door');
+    -- (preview), a parent: the bare account made a guardian of two children
+    PERFORM _v90_link(v_bare);
+    PERFORM _as(V_OFFICE);
+    SELECT * INTO p FROM account_offboard_preview(v_bare);
+    PERFORM _assert(p.ok AND p.children = 2 AND p.sessions = 0 AND p.duties = 0 AND cardinality(p.scoring_tokens) = 0,
+      format('§69 (preview): a parent of two reads %s', row_to_json(p)));
+
+    -- (reader)
+    FOREACH v_row IN ARRAY ARRAY[V_OFFICE, V_HEAD] LOOP
+      PERFORM _as(v_row);
+      SELECT count(*) INTO n1 FROM account_status_change c WHERE c.user_id = V_SCORER;
+      PERFORM _assert(n1 = _v90_changes(V_SCORER) AND n1 >= 2, format('§69 (reader): %s reads %s of the scorer''s %s rows', v_row, n1, _v90_changes(V_SCORER)));
+    END LOOP;
+    FOREACH v_row IN ARRAY ARRAY[V_BURSAR, V_COACH, V_WES, V_SCORER] LOOP
+      PERFORM _as(v_row);
+      SELECT count(*) INTO n1 FROM account_status_change c WHERE c.user_id = V_SCORER;
+      PERFORM _assert(n1 = 0, format('§69 (reader): %s reads %s of the scorer''s rows', v_row, n1));
+    END LOOP;
+    v_row := _v90_plant(V_OFFICE, V_OWN);
+    PERFORM _as(V_OFFICE);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM account_status_change c WHERE c.id = v_row)
+                    AND EXISTS (SELECT 1 FROM account_status_change c WHERE c.user_id = V_SCORER),
+      '§69 (reader): the office read a row about itself');
+    PERFORM _as(V_HEAD);
+    PERFORM _assert(EXISTS (SELECT 1 FROM account_status_change c WHERE c.id = v_row),
+      '§69 (reader): the principal cannot read the row about the office (the plant proves nothing)');
+
+    -- (column)
+    FOREACH v_row IN ARRAY ARRAY[V_OFFICE, V_HEAD] LOOP
+      PERFORM _as(v_row);
+      v_got := _v85_try(format('UPDATE app_user SET active = false WHERE id = %L', V_SCORER));
+      PERFORM _assert(v_got = '42501', format('§69 (column): %s wrote app_user.active directly (%s)', v_row, v_got));
+    END LOOP;
+    PERFORM _assert((_v85_state(V_SCORER)->>'active')::boolean, '§69 (column): the scorer was disabled by a plain UPDATE');
+    PERFORM _as(V_OFFICE);
+    v_got := _v85_try(format('UPDATE app_user SET name = name WHERE id = %L', V_SCORER));
+    PERFORM _assert(v_got = 'ok' AND NOT has_column_privilege('app_user', 'active', 'UPDATE')
+                    AND has_column_privilege('app_user', 'name', 'UPDATE'),
+      format('§69 (column): the rest of the row is not writable as before (%s)', v_got));
+
+    -- (signature)
+    PERFORM _assert(to_regprocedure('account_set_active(uuid,boolean)') IS NULL,
+      '§69 (signature): account_set_active(uuid, boolean) is still there');
+    v_got := _v85_try(format('SELECT * FROM account_set_active(%L::uuid, false)', V_SCORER));
+    PERFORM _assert(v_got = '42883', format('§69 (signature): a call with no reason answered %s', v_got));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 69
+
+  -- ── 70. Notifications S2: one stream (db/91) ────────────────────────
+  -- docs/design/NOTIFICATIONS.md D9, D10, D11. Every write below is a person's,
+  -- through scrbrd_app under RLS, as the routes make it: a post is inserted,
+  -- edited and withdrawn by people; the notices are the trigger's. The owner's
+  -- helpers (_notices_91, _reports_91, _row_89, _said_89, _logged_89) only read.
+  -- The JavaScript half: services/api/notify/push-api.test.mjs (the two
+  -- closed routes, the report route), services/api/write/news-api.test.mjs
+  -- (urgency, the withdrawal door), and tools/smoke-push.mjs (publishing
+  -- through /api/news).
+  --
+  -- What each label holds:
+  --   (publish)  a post sent at once writes ONE notice: kind notice, the
+  --              post's scope and anchor, news.read, its urgency and title,
+  --              its first 280 characters, subject news = the post, by its
+  --              author, about nobody and for nobody
+  --   (draft)    a draft writes nothing; sending it writes one
+  --   (readers)  the side's family and pupil read it; another school does not
+  --   (edit)     an edit re-syncs the words; one row still; published_at kept
+  --   (urgency)  never high; a sent post's urgency is fixed
+  --   (app)      the application writes and edits no notice (D9)
+  --   (league)   a league post: one notice per school entered
+  --   (withdraw) a news.publish.school holder withdraws a coach's post; the
+  --              notice is retracted 'withdrawn' by her, one "withdrawn"
+  --              notice said, on the log; a parent may not; the author's own
+  --              withdrawal (the old route's UPDATE) retracts too
+  --   (report)   a reader's report writes ONE no-name DSO notice (school,
+  --              high, safeguarding.concern.read, subject the post) and one
+  --              log row; a repeat is refused and writes nothing; another
+  --              reader's report is his own; a non-reader, a system notice and
+  --              a "withdrawn" notice are refused; the DSO reads the notice,
+  --              the family does not; the log row is the DSO's, not the
+  --              office's or the author's; a school with no DSO says unheld
+  --
+  -- Falsified once each, by replacing the object in the database and running
+  -- this file; each went red at its label:
+  --   (publish)  news_post_notice() without its INSERT
+  --   (edit)     news_post_notice() without its re-sync UPDATE
+  --   (urgency)  news_post_notice() without its sent-urgency refusal
+  --   (withdraw) news_post_notice() without its notification_retract() call;
+  --              news_post_withdraw() without its news.publish.school arm
+  --   (report)   notification_report() without its already-reported check;
+  --              without its DSO INSERT; without its app_can() reader test
+  --   (app)      notification_notice_insert_system dropped (red first at
+  --              §68 (shape), whose application insert now expects 42501)
+  DECLARE
+    V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
+    V_WES    uuid := '22222222-2222-2222-2222-222222222222';
+    V_COACH  uuid := '88888888-0000-0000-0000-00000000000b';  -- U14A coach: news.publish.team (the 1XI coach is revoked above, line ~5015)
+    V_REG    uuid := '88888888-0000-0000-0000-00000000000c';  -- Hilton's office: audit.read, not a DSO
+    V_SARAH  uuid := '88888888-0000-0000-0000-000000000007';  -- director of sport: news.publish.school, audit.read
+    V_KIN    uuid := '88888888-0000-0000-0000-000000000010';  -- guardian of J Whitfield (1XI)
+    V_PUPIL  uuid := '88888888-0000-0000-0000-000000000009';  -- a 1XI player
+    V_DSO    uuid := '88888888-0000-0000-0000-000000000057';  -- Hilton's DSO
+    V_LEAGUE uuid := '88888888-0000-0000-0000-000000000021';  -- runs the league
+    V_WCOACH uuid := '88888888-0000-0000-0000-00000000001a';  -- a coach at Westville (no DSO there)
+    V_WREG   uuid := '88888888-0000-0000-0000-00000000000d';  -- Westville's office
+    V_COMP   uuid := '99999999-0000-0000-0000-000000000001';
+    P uuid; D uuid; L uuid; R uuid; W uuid;
+    NP uuid; ND uuid; NR uuid; NW uuid; v uuid;
+    j  jsonb;
+    x  jsonb;
+    got text;
+    t0 timestamptz;
+  BEGIN
+    -- (publish) the U14A coach sends a medium post at once
+    PERFORM _as(V_COACH);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, urgency)
+    VALUES ('team', V_HIL, 'U14A', 'Verify 091 nets', repeat('Nets on Thursday at half past two. ', 12), now(), 'medium')
+    RETURNING id INTO P;
+    j := _notices_91(P);
+    PERFORM _assert(jsonb_array_length(j) = 1, format('§70 (publish): a sent post wrote %s notices, not one', jsonb_array_length(j)));
+    x := j->0; NP := (x->>'id')::uuid;
+    got := concat_ws(' ', x->>'kind', x->>'scope_level', x->>'team_code', (x->>'school_id' = V_HIL::text), x->>'urgency',
+                     x->>'required_capability', x->>'subject_kind', (x->>'subject_id' = P::text), (x->>'published_by' = V_COACH::text),
+                     coalesce(x->>'subject_person_id', '-'), coalesce(x->>'recipient_id', '-'), x->>'is_public', x->>'title');
+    PERFORM _assert(got = 'notice team U14A t medium news.read news t t - - false Verify 091 nets',
+      format('§70 (publish): the notice reads %s', got));
+    PERFORM _assert(length(x->>'body') = 280 AND right(x->>'body', 1) = '…'
+                    AND left(x->>'body', 279) = left((SELECT b.body FROM news_post b WHERE b.id = P), 279),
+      format('§70 (publish): the notice''s body is not the post''s first 280 characters (%s)', length(x->>'body')));
+    PERFORM _assert((x->>'published_at')::timestamptz = (SELECT b.published_at FROM news_post b WHERE b.id = P)
+                    AND (x->>'expires_at')::timestamptz = (x->>'published_at')::timestamptz + interval '60 days',
+      '§70 (publish): the notice''s published_at is not the post''s, or it does not live sixty days');
+
+    -- (draft) saved unsent: nothing; sent (POST /api/news/:id/publish): one
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, 'U14A', 'Verify 091 draft', 'Kit check on Monday.', NULL) RETURNING id INTO D;
+    PERFORM _assert(jsonb_array_length(_notices_91(D)) = 0, '§70 (draft): a draft wrote a notice');
+    UPDATE news_post SET published_at = now() WHERE id = D AND published_at IS NULL;
+    j := _notices_91(D);
+    PERFORM _assert(jsonb_array_length(j) = 1 AND j->0->>'urgency' = 'low' AND j->0->>'body' = 'Kit check on Monday.',
+      format('§70 (draft): sending the draft wrote %s', j));
+    ND := (j->0->>'id')::uuid;
+
+    -- (edit) the author edits the sent post: the words follow, the time does not
+    PERFORM _as(V_COACH);
+    t0 := (x->>'published_at')::timestamptz;
+    UPDATE news_post SET title = 'Verify 091 nets moved', body = 'Nets on Friday instead.' WHERE id = P;
+    j := _notices_91(P);
+    PERFORM _assert(jsonb_array_length(j) = 1 AND j->0->>'id' = NP::text AND j->0->>'title' = 'Verify 091 nets moved'
+                    AND j->0->>'body' = 'Nets on Friday instead.' AND (j->0->>'published_at')::timestamptz = t0,
+      format('§70 (edit): after the edit the post''s notices read %s', j));
+    -- nobody else's edit lands (db/12)
+    PERFORM _as(V_SARAH);
+    UPDATE news_post SET body = 'Not mine to change.' WHERE id = P RETURNING id INTO v;
+    PERFORM _assert(v IS NULL AND _notices_91(P)->0->>'body' = 'Nets on Friday instead.',
+      '§70 (edit): somebody other than the author edited the post, or its notice');
+
+    -- (urgency) never high; and a sent post's is fixed
+    PERFORM _as(V_COACH);
+    PERFORM _assert(_app_89(format($q$INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, urgency)
+                                       VALUES ('team', %L, 'U14A', 'Verify 091 loud', 'Loud.', now(), 'high')$q$, V_HIL)) = 'news_post_urgency_known',
+      '§70 (urgency): a post was sent high');
+    got := _app_89(format('UPDATE news_post SET urgency = ''low'' WHERE id = %L', P));
+    PERFORM _assert(got = 'news_post_urgency_sent' AND _notices_91(P)->0->>'urgency' = 'medium',
+      '§70 (urgency): a sent post''s urgency was changed');
+    PERFORM _assert(_app_89(format('UPDATE news_post SET urgency = ''medium'' WHERE id = %L', D)) = 'news_post_urgency_sent',
+      '§70 (urgency): a sent draft''s urgency was changed');
+
+    -- (app) D9: the application writes and edits no notice, the director of sport's publishing tiers notwithstanding
+    PERFORM _as(V_SARAH);
+    PERFORM _assert(_app_89(format($q$INSERT INTO notification (school_id, scope_level, kind, title, body)
+                                       VALUES (%L, 'school', 'notice', 'Verify 091 typed', 'Typed.')$q$, V_HIL)) = '42501',
+      '§70 (app): the application wrote a notice');
+    UPDATE notification SET body = 'Rewritten.' WHERE id = NP RETURNING id INTO v;
+    PERFORM _assert(v IS NULL AND _notices_91(P)->0->>'body' = 'Nets on Friday instead.',
+      '§70 (app): the application rewrote a post''s notice');
+
+    -- (league) the league's post: one notice per school entered, each at its school
+    PERFORM _as(V_LEAGUE);
+    INSERT INTO news_post (scope, competition_id, title, body, published_at)
+    VALUES ('competition', V_COMP, 'Verify 091 league', 'Round five is on Saturday.', now()) RETURNING id INTO L;
+    j := _notices_91(L);
+    SELECT string_agg(e->>'scope_level' || ':' || (e->>'school_id'), ',' ORDER BY e->>'school_id') INTO got FROM jsonb_array_elements(j) e;
+    PERFORM _assert(jsonb_array_length(j) = 2
+                    AND got = (SELECT string_agg('competition:' || ce.school_id, ',' ORDER BY ce.school_id::text)
+                                 FROM competition_entrant ce WHERE ce.competition_id = V_COMP),
+      format('§70 (league): the league post''s notices are %s', got));
+
+    -- (withdraw) a parent may not; the director of sport (news.publish.school) withdraws the coach's post
+    PERFORM _as(V_KIN);
+    got := _withdraw_91(P);
+    PERFORM _assert(got = 'no_such_notice' AND (_row_89(NP)->>'retracted_at') IS NULL,
+      '§70 (withdraw): a parent withdrew a post');
+    PERFORM _as(V_SARAH);
+    PERFORM _assert(_withdraw_91(P) = 'ok', '§70 (withdraw): the director of sport could not withdraw the coach''s post');
+    x := _row_89(NP);
+    PERFORM _assert(x->>'retraction_kind' = 'withdrawn' AND x->>'retracted_by' = V_SARAH::text AND (x->>'retracted_at') IS NOT NULL,
+      format('§70 (withdraw): the notice reads retracted %s by %s', x->>'retraction_kind', x->>'retracted_by'));
+    PERFORM _assert(_said_89(NP) = 1 AND _logged_89('notification.retract', NP) = 1,
+      format('§70 (withdraw): %s "withdrawn" notices and %s log rows, not one each', _said_89(NP), _logged_89('notification.retract', NP)));
+    got := _withdraw_91(P);
+    PERFORM _assert((SELECT b.published_at FROM news_post b WHERE b.id = P) IS NULL AND got = 'no_such_notice',
+      '§70 (withdraw): the post is still sent, or withdraws twice');
+    PERFORM _as(V_KIN);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_notifications WHERE id = NP)
+                    AND EXISTS (SELECT 1 FROM my_notifications WHERE retracts_id = NP AND title = 'A notice was withdrawn'),
+      '§70 (withdraw): the family still reads the withdrawn notice, or was not told');
+    -- the author's own withdrawal, as the old route wrote it
+    PERFORM _as(V_COACH);
+    UPDATE news_post SET published_at = NULL WHERE id = D AND published_at IS NOT NULL;
+    PERFORM _assert(_row_89(ND)->>'retraction_kind' = 'withdrawn' AND _row_89(ND)->>'retracted_by' = V_COACH::text AND _said_89(ND) = 1,
+      '§70 (withdraw): the author''s withdrawal did not retract the notice as him');
+
+    -- (report) the director of sport posts to the 1XI; its guardian reports the notice
+    PERFORM _as(V_SARAH);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, '1XI', 'Verify 091 J Whitfield', 'Well batted J Whitfield.', now()) RETURNING id INTO R;
+    NR := (_notices_91(R)->0->>'id')::uuid;
+
+    -- (readers) the side's family and a pupil on it read it; another school's coach does not
+    PERFORM _as(V_KIN);
+    PERFORM _assert(EXISTS (SELECT 1 FROM my_notifications WHERE id = NR AND NOT tiered AND body IS NOT NULL),
+      '§70 (readers): the 1XI guardian does not read the side''s notice');
+    PERFORM _as(V_PUPIL);
+    PERFORM _assert(EXISTS (SELECT 1 FROM my_notifications WHERE id = NR), '§70 (readers): a 1XI pupil does not read the side''s notice');
+    PERFORM _as(V_WCOACH);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification WHERE id = NR), '§70 (readers): a coach at another school read the notice');
+
+    PERFORM _as(V_KIN);
+    PERFORM _assert(_report_91(NR) = 'ok', '§70 (report): the guardian''s report was refused');
+    j := _reports_91(R);
+    PERFORM _assert(jsonb_array_length(j) = 1, format('§70 (report): one report wrote %s DSO notices', jsonb_array_length(j)));
+    x := j->0;
+    got := concat_ws(' ', x->>'school_id' = V_HIL::text, x->>'scope_level', coalesce(x->>'team_code', '-'), x->>'urgency',
+                     x->>'required_capability', coalesce(x->>'recipient_id', '-'), coalesce(x->>'subject_person_id', '-'),
+                     coalesce(x->>'published_by', '-'), x->>'subject_id' = R::text, x->>'title');
+    PERFORM _assert(got = 't school - high safeguarding.concern.read - - - t A notice was reported at your school',
+      format('§70 (report): the DSO''s notice reads %s', got));
+    PERFORM _assert(x->>'body' NOT ILIKE '%Whitfield%' AND x->>'body' NOT ILIKE '%Verify 091%' AND x->>'body' ILIKE '%the 1XI%'
+                    AND x->>'body' NOT ILIKE '%Mokoena%' AND x->>'body' NOT ILIKE '%Pillay%',  -- the author; the pupil who reports next
+      format('§70 (report): the DSO''s notice names somebody, or not where the notice went: %s', x->>'body'));
+    PERFORM _assert(_logged_89('safeguarding.notice_report', NR) = 1, '§70 (report): the report is not on the log once');
+    -- a repeat: refused, nothing written
+    got := _report_91(NR);
+    PERFORM _assert(got = 'already_reported' AND jsonb_array_length(_reports_91(R)) = 1
+                    AND _logged_89('safeguarding.notice_report', NR) = 1,
+      '§70 (report): a second report of the same notice by the same person was taken');
+    -- another reader's report is his own
+    PERFORM _as(V_PUPIL);
+    got := _report_91(NR);
+    PERFORM _assert(got = 'ok' AND jsonb_array_length(_reports_91(R)) = 2,
+      '§70 (report): a pupil''s report of the same notice was refused, or wrote nothing');
+    -- a non-reader, a system notice and a "withdrawn" notice: refused
+    PERFORM _as(V_WCOACH);
+    PERFORM _assert(_report_91(NR) = 'no_such_notice', '§70 (report): a coach at another school reported a notice he cannot read');
+    PERFORM _as(V_KIN);
+    PERFORM _assert(_report_91('40170000-0000-0000-0000-000000000001') = 'not_reportable',
+      '§70 (report): a system notice was reported as a person''s words');
+    PERFORM _assert(_report_91((SELECT m.id FROM my_notifications m WHERE m.retracts_id = NP)) = 'not_reportable',
+      '§70 (report): a "withdrawn" notice was reported');
+    PERFORM _assert(_report_91(NP) = 'no_such_notice', '§70 (report): a withdrawn notice was reported');
+    -- who reads what: the DSO the notice, the family not; the log the DSO's alone
+    PERFORM _as(V_DSO);
+    PERFORM _assert(EXISTS (SELECT 1 FROM my_notifications m WHERE m.id = (x->>'id')::uuid AND m.tiered AND m.body IS NULL),
+      '§70 (report): the DSO does not read the report''s notice, or reads its body in the list');
+    PERFORM _assert((SELECT count(*) FROM access_log l WHERE l.resource = 'safeguarding.notice_report' AND l.record_ids @> ARRAY[NR]) = 2,
+      '§70 (report): the DSO does not read both reports on the log');
+    PERFORM _as(V_KIN);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_notifications m WHERE m.id = (x->>'id')::uuid),
+      '§70 (report): the reporting family reads the DSO''s notice');
+    PERFORM _as(V_REG);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM access_log l WHERE l.resource = 'safeguarding.notice_report')
+                    AND NOT EXISTS (SELECT 1 FROM audit_log(V_HIL, ARRAY['access'], NULL, NULL, NULL, 200) a
+                                     WHERE a.detail->>'resource' = 'safeguarding.notice_report'),
+      '§70 (report): the office (audit.read) reads who reported a notice');
+    PERFORM _as(V_SARAH);
+    PERFORM _assert(notification_report_about_me(ARRAY[NR]), '§70 (report): the author is not recognised as the notice''s author');
+    PERFORM _as(V_DSO);
+    PERFORM _assert(NOT notification_report_about_me(ARRAY[NR]), '§70 (report): the DSO is taken for the notice''s author');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'access_log' AND policyname = 'access_log_notice_report_author'
+                               AND permissive = 'RESTRICTIVE'),
+      '§70 (report): nothing keeps the log row from the notice''s author');
+    -- a school with no DSO (db/57's section appointed Westville one; his account is disabled): taken, and said to be unheld
+    PERFORM _v81_deactivate('88888888-0000-0000-0000-000000005703');
+    PERFORM _as(V_WCOACH);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_WES, '1XI', 'Verify 091 Westville', 'Nets on Tuesday.', now()) RETURNING id INTO W;
+    NW := (_notices_91(W)->0->>'id')::uuid;
+    PERFORM _as(V_WREG);
+    got := _report_91(NW);
+    PERFORM _assert(got = 'ok unheld', format('§70 (report): a report at a school with no DSO answered %s', got));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 70
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
