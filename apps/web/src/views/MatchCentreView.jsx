@@ -28,6 +28,9 @@ import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
 import { clearCoach, peekCoach } from "../lib/cockpitNav.js";
 import { PickSideEntry } from "./cockpit/PickSide.jsx";
 
+// A hand on the page: any of these means the person is steering, so the held scroll below lets go.
+const HAND = ["wheel", "touchstart", "pointerdown", "keydown"];
+
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   useTheme();
   // Read through the choke point: row-scoped and column-masked for this
@@ -69,11 +72,26 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   }, [MATCHES]);
   const [selMatch, setSelMatch] = useState(null);
   // A fixture opened from Readiness has its details panel scrolled into view once it is drawn (a phone draws it under the list).
+  // One scroll is not enough: the cards, weather chips and reads above the panel keep arriving after it, and each
+  // push moves it back under the fold. So the scroll stays armed for 1.5 s, repeating whenever the page's height
+  // changes, and lets go the moment the person scrolls, touches or presses a key. Instant, never smooth: a
+  // correction that animates is a second movement, and that keeps prefers-reduced-motion honoured without asking.
   const wantDetails = useRef(false);
   useEffect(() => {
     if (!wantDetails.current || !selMatch) return;
     wantDetails.current = false;
-    document.querySelector('[data-testid="match-details"]')?.scrollIntoView({ block: "start" });
+    const bring = () => document.querySelector('[data-testid="match-details"]')?.scrollIntoView({ block: "start", behavior: "instant" });
+    bring();
+    const watch = typeof ResizeObserver === "function" ? new ResizeObserver(bring) : null;
+    watch?.observe(document.querySelector(".os-page") ?? document.body);
+    const stop = () => {
+      watch?.disconnect();
+      clearTimeout(timer);
+      for (const e of HAND) window.removeEventListener(e, stop, true);
+    };
+    const timer = setTimeout(stop, 1500);
+    for (const e of HAND) window.addEventListener(e, stop, { capture: true, passive: true });
+    return stop;
   }, [selMatch]);
   // The fixture open in the Match Centre's own view (views/matchcentre/):
   // the board, the scorecard, the commentary and the rest, in six tabs. It

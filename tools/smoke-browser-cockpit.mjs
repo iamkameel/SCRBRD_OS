@@ -716,7 +716,48 @@ try {
   ok("...the over story, last two", (await lv.page.$$('[data-testid="coach-story"] li')).length === 2);
   ok("...the wheel, and a filter by shot", await tid(lv.page, "coach-wheel").count() >= 1 && await tid(lv.page, "coach-wheel-drive").count() === 1);
   await tid(lv.page, "coach-wheel-drive").click({ timeout: 3000 });
-  ok("...filtering to the drive keeps a wheel", await tid(lv.page, "shot-wheel").count() >= 1);
+  ok("...filtering to the drive keeps a wheel", await tid(lv.page, "wagon-analysis-wheel").count() >= 1);
+  // GA-I28: the Match Centre's wheel filters, over the rows the tab already holds.
+  {
+    const wheel = tid(lv.page, "coach-wheel").first();
+    const spokes = () => wheel.locator("[data-spoke]").count();
+    const placedBy = (who) => ATTACK.filter((w, o) => w === who && o % 3 === 0).length; // the seed places one drive in overs 0, 3, 6, 9, 12
+    const placed = ATTACK.filter((_, o) => o % 3 === 0).length;
+    ok("wheel analysis: the panel is on the Coach tab", await wheel.locator('[data-testid="wagon-analysis"]').count() === 1);
+    ok(`...run chips: all, 1, 2, 3, 4 and 6 are there, "all" counts the ${placed} placed shots`,
+      (await Promise.all(["all", "1", "2", "3", "4", "6"].map((k) => wheel.locator(`[data-testid="wagon-chip-${k}"]`).count()))).every((c) => c === 1)
+      && (await wheel.locator('[data-testid="wagon-chip-all"]').innerText()).includes(String(placed)));
+    ok(`...${placed} spokes drawn to start with`, await spokes() === placed, await spokes());
+    await wheel.locator('[data-testid="wagon-chip-6"]').click({ timeout: 3000 });
+    ok("...a run chip narrows the wheel: the 6s chip leaves no spoke of fours", await spokes() === 0, await spokes());
+    await wheel.locator('[data-testid="wagon-chip-4"]').click({ timeout: 3000 });
+    ok(`...the 4s chip keeps all ${placed}`, await spokes() === placed, await spokes());
+    await wheel.locator('[data-testid="wagon-chip-4"]').click({ timeout: 3000 }); // off again
+    ok("...a bowler filter for each of our bowlers who bowled, and only them",
+      (await wheel.locator('[data-testid^="wagon-bowler-"]').count()) === 5 && (await wheel.locator('[data-testid="wagon-bowler-all"]').count()) === 1
+      && (await Promise.all([NAIDOO, WHITFIELD, BEKKER, SEVEN].map((id) => wheel.locator(`[data-testid="wagon-bowler-${id}"]`).count()))).every((c) => c === 1));
+    await wheel.locator(`[data-testid="wagon-bowler-${NAIDOO}"]`).click({ timeout: 3000 });
+    ok(`...a bowler narrows the wheel: Naidoo's ${placedBy("naidoo")} placed shots of ${placed}`, await spokes() === placedBy("naidoo"), await spokes());
+    await wheel.locator(`[data-testid="wagon-bowler-${WHITFIELD}"]`).click({ timeout: 3000 });
+    ok("...a bowler with no placed shot says so, in words, and draws no wheel",
+      await spokes() === 0 && await wheel.locator('[data-testid="wagon-analysis-wheel"]').count() === 0 && /No placed shots for this filter/.test(await wheel.innerText()));
+    await wheel.locator('[data-testid="wagon-bowler-all"]').click({ timeout: 3000 });
+    ok("...off side against on side, and the eight named areas",
+      /off side/i.test(await wheel.innerText()) && /on side/i.test(await wheel.innerText()) && await wheel.locator('[data-testid^="wagon-area-"]').count() === 8,
+      `${await wheel.locator('[data-testid^="wagon-area-"]').count()} areas`);
+    ok("...no batter chooser (the wheel is the innings, as before) and no match chooser", await wheel.locator('[data-testid^="wagon-batter-"], [data-testid^="wagon-match-"]').count() === 0);
+    ok("...no percentage on the Coach tab's wheel (the never-list)", !/\d\s?%/.test(await wheel.innerText()), await wheel.innerText());
+    const fw = await floors(lv.page, '[data-testid="coach-wheel"]');
+    ok(`...desktop: nothing under 12px (${fw.small.length}), nothing tapped under 44px (${fw.tiny.length})`, fw.small.length === 0 && fw.tiny.length === 0, [...fw.small, ...fw.tiny].slice(0, 4).join(" · "));
+    const wp = await open({ viewport: PHONE });
+    await signIn(wp.page, "coach@example.invalid"); await openMatch(wp.page, FIELD); await coachTab(wp.page);
+    const pw = await floors(wp.page, '[data-testid="coach-wheel"]');
+    ok(`...phone (390): the filters are there, nothing under 12px (${pw.small.length}), nothing tapped under 44px (${pw.tiny.length})`,
+      await wp.page.locator('[data-testid="coach-wheel"] [data-testid="wagon-chip-4"]').count() === 1 && pw.small.length === 0 && pw.tiny.length === 0, [...pw.small, ...pw.tiny].slice(0, 4).join(" · "));
+    ok("...phone: the page does not scroll sideways", await wp.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok("...phone: no page errors", wp.errors.length === 0 && wp.refusals.length === 0, [...wp.errors, ...wp.refusals].join(" | "));
+    await wp.ctx.close();
+  }
   await openDrawer(lv.page);
   const lcs = await cards(lv.page);
   const s2a = byRule(lcs, "S2a");

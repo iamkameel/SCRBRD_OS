@@ -107,11 +107,6 @@ export const instantOf = (day, hhmm) => `${day}T${hhmm}:00+02:00`;
 /** A day's first instant. @param {string} day */
 export const startOfDay = (day) => instantOf(day, "00:00");
 
-// ── An entrant's standing ─────────────────────────────────────────
-
-/** @type {Record<string, string>} */
-export const ENTRANT_STATUS = { invited: "Invited", accepted: "Accepted", declined: "Declined" };
-
 /**
  * What an entrant's standing means for the organiser, in a sentence. The
  * organiser can never answer for a school: only someone who arranges that

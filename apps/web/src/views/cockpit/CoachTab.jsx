@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
-import { bowlingLimit } from "@scrbrd/scoring";
+import { batHandOf, bowlingLimit } from "@scrbrd/scoring";
 import { boardInnings, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { bandLine, bandOfTeam, bowlerRows, matchupTypes, matchupWords, notYetBowled, overStory, pitchWords, sheetOf } from "../../lib/captain.js";
 import {
@@ -12,7 +12,8 @@ import { humanDateTime } from "../../lib/format.js";
 import { Board } from "../../ui/board.jsx";
 import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { bowlerCapWords, conditionsWords } from "../../scorer/conditionsLine.jsx";
-import { ShotWheel } from "../../scorer/charts.jsx";
+import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
+import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { Panel, Quiet } from "../matchcentre/bits.jsx";
 import { OppositionDossier } from "../dossier.jsx";
 import { FeedDrawer } from "./FeedDrawer.jsx";
@@ -350,7 +351,20 @@ function DuringAndAfter({ match, gate, innings, overs, result, commentary, phone
                 ))}
               </div>
             )}
-            <ShotWheel inn={shown} playerId={null} title="Where they have scored"/>
+            {/* GA-I28: the Match Centre's wheel filters (bowler, run chips, off
+                side against on side, the eight areas) over the same rows this
+                tab already holds: this innings' log, our bowlers by the name
+                the log carries. No batter chooser (the wheel stays the whole
+                innings, as it was) and no match chooser (one match). */}
+            <ErrorBoundary name="coach wheel analysis">
+              <WagonAnalysisPanel
+                balls={shown.ballLog}
+                handOf={(strikerId) => batHandOf(o, strikerId)}
+                bowlers={(o.bowlers ?? []).filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
+                title="Where they have scored"
+                showPercent={false}
+              />
+            </ErrorBoundary>
           </div>
         );
       })}

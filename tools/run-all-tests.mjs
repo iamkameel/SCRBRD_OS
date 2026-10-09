@@ -225,6 +225,7 @@ const SUITES = [
   // GA-I21: one label for demo / practice / read only (no "official": a result
   // is read from the log, not stored), and the bowling-ceiling refusal in words.
   ["state-label", "apps/web/test/state-label.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["source-line", "apps/web/test/source-line.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The three solo-test screens, over routes that already existed: the office
   // verifying a parent's link and recording the family's agreement, booking a
   // vehicle and a trip, and signing out everywhere. Who is offered, what is
@@ -279,6 +280,11 @@ const SUITES = [
   // GA-I07: Squad and Analytics open on the person's own side, and a gate
   // answers from the roles held, as the menu does.
   ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I30: one home per domain (Competitions, Transport, Grounds). For every
+  // role, a home's sections and links are the menu's own answer for their
+  // source destination, and a role that reaches none of a home's parts has no
+  // entry for it; modules; the bar drawn; the 12px and 44px floors.
+  ["homes", "apps/web/test/homes.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The public home page's sections (SCRBRD-142 phase 1): signed out, the
   // strip and news hidden on a 404, the analytics toggle writes the pref and

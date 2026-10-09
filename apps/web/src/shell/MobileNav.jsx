@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { NAV_META, groupNav } from "../design/roles.js";
-import { useNav, useSports, sportBadge } from "../lib/features.js";
+import { useSports, sportBadge } from "../lib/features.js";
+import { useMenu } from "../lib/homeNav.js";
 import { D, T, inkOn, themed } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
 import { invitationsWords } from "../lib/league.js";
@@ -83,7 +84,7 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
   // Same list the sidebar draws, from the same place. Two components computing
   // a menu two ways is how a destination comes to exist on a phone and not on
   // a laptop.
-  const nav = useNav(role);
+  const nav = useMenu(role);
   const primary = nav.slice(0, 4);
   const rest = nav.slice(4);
   const moreActive = rest.includes(active);

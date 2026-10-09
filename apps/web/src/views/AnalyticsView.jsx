@@ -4,6 +4,9 @@ import { D, px, textOn, themed } from "../design/tokens.js";
 import { fitnessColor, stat } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
+import { SourceLine } from "../ui/sourceLine.jsx";
+import { SRC_BALLS, SRC_FIXTURES, SRC_RECORD, WINDOW_ALL, ballsFacedBasis, isoDay } from "../lib/sourceWords.js";
+import { signedIn } from "../lib/api.js";
 import { usePlayersWithCareer, useLive } from "../lib/live.js";
 import { Metric, MetricGroup, dash } from "../ui/data.jsx";
 import { heldTeams } from "../lib/held.js";
@@ -124,6 +127,12 @@ function AnalyticsView({ role }) {
               <div style={{display:"flex",alignItems:"center",gap:"6px"}}><div style={{width:20,height:2,background:D.rose,borderTop:"2px dashed"+(D.rose)}}/><span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Opposition</span></div>
             </div>
           </Card>
+          {/* The four bar charts below are the career read; the worm above is not. */}
+          <div style={{marginBottom:"12px"}}>
+            <SourceLine testid="source-line-performance" demo={!signedIn()} demoWhy="sample players"
+              source={SRC_RECORD} scope={`${teamFilter ?? "No side in view"}, one bar per player`} window={WINDOW_ALL}
+              denominator={ballsFacedBasis(players)}/>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px",marginBottom:"14px"}}>
             <Card sx={{padding:"16px"}}>
               <BarChart label="Batting Averages"
@@ -160,6 +169,11 @@ function AnalyticsView({ role }) {
         <Card>
           <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
             <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Full Squad Stats — {teamFilter ?? "no side in view"}</span>
+            <div style={{marginTop:"6px"}}>
+              <SourceLine testid="source-line-table" demo={!signedIn()} demoWhy="sample players"
+                source={SRC_RECORD} scope={`${teamFilter ?? "No side in view"}, one row per player`} window={WINDOW_ALL}
+                denominator={ballsFacedBasis(players)}/>
+            </div>
           </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -236,6 +250,12 @@ function AnalyticsView({ role }) {
 //  disclose that those matches exist.
 // ══════════════════════════════════════════════════════
 const RESULT_TONE = themed(() => ({ won: D.emerald, lost: D.rose, tied: D.amber, undecided: D.textMuted }));
+// The latest game any rivalry in view was played: the read has no start date
+// for the first of them, so the window says how far it runs, not where it began.
+const h2hWindow = (rows) => {
+  const last = rows.map((r) => r.lastPlayed).filter(Boolean).sort().pop();
+  return isoDay(last) ? `${WINDOW_ALL}, up to ${isoDay(last)}` : WINDOW_ALL;
+};
 const day = (t) => (t ? new Date(t).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" }) : "—");
 
 function HeadToHead({ role, teamFilter }) {
@@ -249,10 +269,13 @@ function HeadToHead({ role, teamFilter }) {
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}} data-testid="h2h">
       <Card sx={{padding:"14px 16px",background:`linear-gradient(135deg,${D.indigo}08,${D.surf1})`,border:`1px solid ${D.indigo}22`}}>
         <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.indigoText,marginBottom:"4px"}}>Head-to-head record ({teamFilter ?? "all your sides"})</div>
-        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
-          {live ? "Derived from completed fixtures you may see, and from the toss that decided each one. Nothing here is stored."
-                : "Demo figures, no server connected."}
-        </div>
+        <SourceLine testid="source-line-h2h" demo={!live} demoWhy="no server connected"
+          source={SRC_FIXTURES} scope={`${teamFilter ?? "All your sides"}, against ${rows.length} ${rows.length===1?"rival":"rivals"}`}
+          window={h2hWindow(rows)}
+          denominator={{ n: rows.reduce((s,r)=>s+r.played,0), unit: "completed fixture",
+                         detail: `${rows.reduce((s,r)=>s+r.decided,0)} of them decided` }}>
+          Derived from completed fixtures you may see, and from the toss that decided each one. Nothing here is stored.
+        </SourceLine>
       </Card>
       {rows.map(r=>(
         <Card key={`${r.school}:${r.rivalKey}`} sx={{padding:"14px 16px"}} data-testid={`h2h-${r.rivalKey}`}>
@@ -340,6 +363,7 @@ function Matchups({ role }) {
   const cover = useLive("matchup_coverage", role, 0, batter ? { batterId: batter } : null);
   const cov = cover.rows[0] ?? null;
   const batters = [...new Map(pairs.rows.map(p=>[p.batterId,p.batterName])).entries()];
+  const batterName = batter ? (batters.find(([id])=>id===batter)?.[1] ?? null) : null;
 
   if (pairs.loading) return <EmptyState loading/>;
   if (pairs.disabled) return <EmptyState icon="ban" message="Analytics is switched off for this school."/>;
@@ -357,14 +381,16 @@ function Matchups({ role }) {
                     tone={cov.unattributable?D.amber:undefined}/>
             <Metric size="sm" label="Pairs" value={pairs.rows.length} sub="batter against bowler"/>
           </MetricGroup>
-          {cov.unattributable>0&&(
-            /* One template literal rather than prose around three
-               interpolations: check-imports reads the words between two
-               expressions as identifiers, and a sentence is not a reference. */
-            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,marginTop:"10px",lineHeight:1.6}}>
-              {`The table below speaks for ${cov.attributable} of ${cov.deliveries} deliveries. The other ${cov.unattributable} were bowled by somebody with no record here, a school that does not keep its roster on this platform, and no match-up is derivable from them. They are not missing data; they are deliveries nobody named.`}
-            </div>
-          )}
+          <div style={{marginTop:"12px"}}>
+            <SourceLine testid="source-line-matchups" demo={!signedIn()} demoWhy="sample rows"
+              source={SRC_BALLS} scope={batterName ? `One batter: ${batterName}` : "Every batter you may see"} window={WINDOW_ALL}
+              denominator={{ n: cov.attributable, unit: "attributed ball", detail: `of ${cov.deliveries} deliveries in the log` }}>
+              {/* One template literal rather than prose around three
+                  interpolations: check-imports reads the words between two
+                  expressions as identifiers, and a sentence is not a reference. */}
+              {cov.unattributable>0 ? `The table below speaks for ${cov.attributable} of ${cov.deliveries} deliveries. The other ${cov.unattributable} were bowled by somebody with no record here, a school that does not keep its roster on this platform, and no match-up is derivable from them. They are not missing data; they are deliveries nobody named.` : null}
+            </SourceLine>
+          </div>
         </Card>
       )}
 
@@ -476,6 +502,8 @@ const PHASE_TONE = themed(() => ({ powerplay: D.sky, middle: D.violet, death: D.
  * falsification exposed it. The reason a figure is missing belongs in the
  * metric's `sub`, which does take a node, and never in a zero.
  */
+/** Balls in the phases an innings was long enough to have, over both innings. */
+const phaseBalls = (rows) => rows.reduce((t, inn) => t + Object.values(inn.phases ?? {}).reduce((u, ph) => u + (ph?.played ? Number(ph.balls) || 0 : 0), 0), 0);
 const pctText = (v) => (v == null ? "—" : `${v}%`);
 
 function Phases({ role }) {
@@ -508,6 +536,17 @@ function Phases({ role }) {
           </button>
         ))}
       </div>
+
+      {!loading&&!error&&!disabled&&(
+        <SourceLine testid="source-line-phases" demo={!signedIn()} demoWhy="sample fixtures"
+          source={SRC_BALLS} scope={match ? `${match.homeTeam} v ${match.awayTeam}, both innings` : "One fixture"}
+          window={isoDay(match?.startsAt)}
+          denominator={{ n: phaseBalls(rows), unit: "ball" }}>
+          Folded from the ball log through the same reducer the scorer&rsquo;s device runs, over the deliveries you may
+          see, so two people can legitimately get different figures for the same match, and that is the model working
+          rather than a fault. Nothing here is stored.
+        </SourceLine>
+      )}
 
       {loading&&<EmptyState loading/>}
       {disabled&&<EmptyState icon="ban" message="Analytics is switched off for this school."/>}
@@ -595,11 +634,6 @@ function Phases({ role }) {
         </div>
       ))}
 
-      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,lineHeight:1.6,maxWidth:"680px"}}>
-        Folded from the ball log through the same reducer the scorer&rsquo;s device runs, over the deliveries you may
-        see — so two people can legitimately get different figures for the same match, and that is the model working
-        rather than a fault. Nothing here is stored.
-      </div>
     </div>
   );
 }

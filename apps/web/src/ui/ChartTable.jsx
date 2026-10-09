@@ -39,6 +39,9 @@ const tdStyle = () => ({ ...T.role.body, fontSize: "12px", color: T.content.prim
 /**
  * @param {{tables: ChartTableSpec[], testid?: string}} p
  */
+/** A cell with no figure: drawn as a dash, read as "none" (not "em dash"). */
+const blank = <><span aria-hidden="true">—</span><span className="sr-only">none</span></>;
+
 export function ChartTable({ tables, testid = "chart-table" }) {
   const [open, setOpen] = useState(useContext(ChartTablesOpen));
   const id = useId();
@@ -47,7 +50,7 @@ export function ChartTable({ tables, testid = "chart-table" }) {
   if (!live.length) return null;
   return (
     <div style={{ marginTop: T.space.sm, display: "grid", gap: T.space.sm, justifyItems: "start" }}>
-      <button type="button" data-testid={`${testid}-toggle`} aria-expanded={open} aria-controls={`${id}-tables`}
+      <button type="button" data-testid={`${testid}-toggle`} aria-expanded={open} aria-controls={open ? `${id}-tables` : undefined}
         onClick={() => setOpen((o) => !o)} className="pressBtn os-state"
         style={{
           minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center",
@@ -71,8 +74,8 @@ export function ChartTable({ tables, testid = "chart-table" }) {
                 {t.rows.map((r, i) => (
                   <tr key={i}>
                     {r.map((cell, j) => j === 0
-                      ? <th key={j} scope="row" style={{ ...td, fontWeight: 500, textAlign: "left" }}>{cell ?? "—"}</th>
-                      : <td key={j} style={{ ...td, textAlign: t.text?.includes(j) ? "left" : "right" }}>{cell ?? "—"}</td>)}
+                      ? <th key={j} scope="row" style={{ ...td, fontWeight: 500, textAlign: "left" }}>{cell ?? blank}</th>
+                      : <td key={j} style={{ ...td, textAlign: t.text?.includes(j) ? "left" : "right" }}>{cell ?? blank}</td>)}
                   </tr>
                 ))}
               </tbody>

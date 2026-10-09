@@ -217,6 +217,12 @@ async function signIn(page, who) {
   return until(page, () => /Match Centre|Dashboard/i.test(document.body.innerText));
 }
 async function nav(page, label) {
+  // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.
+  if (/Leagues/.test(String(label))) {
+    if (!(await press(page, /^Competitions\d*$/, "nav button"))) return false;
+    if (!(await press(page, /^Leagues$/, '[data-testid="home-competitions-sections"] button'))) return false;
+    return until(page, () => /League Management/.test(document.body.innerText));
+  }
   if (!(await press(page, label, "nav button"))) return false;
   return until(page, () => /League Management/.test(document.body.innerText));
 }
@@ -418,6 +424,8 @@ try {
   ok(`the options are every season, ${cur} and ${prev} — no empty season offered`,
      same(s.options, ["all", cur, prev]), s.options.join(", "));
   ok("the screen says which season the lists cover", s.scope.includes(cur), s.scope);
+  ok("...as the shared source line: source, scope, window and a count of balls (GA-I22)",
+     /Source Scored balls and scorebook imports/.test(s.scope.replace(/\s+/g, " ")) && /Scope .+, .+/.test(s.scope.replace(/\s+/g, " ")) && /Window The \d{4} school season/.test(s.scope.replace(/\s+/g, " ")) && /Basis (From|Only|No) /.test(s.scope.replace(/\s+/g, " ")), s.scope);
 
   group("This season: only this season's players");
   ok("Last Season Star is on no list this season", !everywhere(s.lists, LS), JSON.stringify(s.lists));

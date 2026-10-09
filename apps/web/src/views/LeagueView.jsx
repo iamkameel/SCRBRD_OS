@@ -21,14 +21,19 @@ import { useTheme } from "../design/theme.js";
 import { schoolsWhere } from "../lib/session.js";
 import {
   ALL_SEASONS, awardSeasons, bestBattingAverages, bestBowlingEconomies, defaultAwardSeason, mvpRanking,
-  playersForSeason, topRunScorers, topWicketTakers,
+  playersForSeason, scoped, topRunScorers, topWicketTakers,
 } from "../lib/seasonAwards.js";
 import { Icon } from "../ui/icons.jsx";
+import { SourceLine } from "../ui/sourceLine.jsx";
+import { SRC_ENTERED, SRC_RECORD, SRC_RESULTS, WINDOW_ALL, ballsFacedBasis, seasonWindow } from "../lib/sourceWords.js";
+import { basisWords } from "../lib/standings.js";
+import { signedIn } from "../lib/api.js";
+import { MIN_BALLS_FACED } from "@scrbrd/scoring";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
 // ══════════════════════════════════════════════════════
-function LeagueView({ role }) {
+function LeagueView({ role, homeBar = null }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const COMPETITIONS = useRows("competitions", role);
@@ -119,6 +124,7 @@ function LeagueView({ role }) {
     <div className="os-page">
       <SectionHeader title="League Management" sub="Standings · Fixtures · Results · Top Performers" color={D.amber}
         actions={fixtureSchools.length>0&&<Btn size="sm" onClick={()=>setAddFixture(true)}>+ Add Fixture</Btn>}/>
+      {homeBar}
 
       {/* Competition selector */}
       <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
@@ -168,7 +174,9 @@ function LeagueView({ role }) {
               <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
                   <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{comp.name}</div>
-                  <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{comp.teams} teams · {comp.format} · {comp.region}</div>
+                  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginBottom:"6px"}}>{comp.format}</div>
+                  <SourceLine testid="source-line-ladder-demo" demo demoWhy="invented standings"
+                    scope={`${comp.teams} teams, ${comp.region}`} window={comp.season ?? null}/>
                 </div>
                 {canEdit&&<Btn size="sm" variant="ghost" onClick={()=>setEditRow("all")}>Edit Standings</Btn>}
               </div>
@@ -322,6 +330,13 @@ function LeagueView({ role }) {
 
           {/* ── TOP PERFORMERS ── */}
           {tab==="performers"&&(
+            <>
+            <div style={{marginBottom:"12px"}}>
+              {/* The two lists rank Hilton's players (school "HIL") of every age group, whatever competition is chosen above. */}
+              <SourceLine testid="source-line-performers" demo={!signedIn()} demoWhy="sample players"
+                source={SRC_RECORD} scope="Hilton College, every age group" window={WINDOW_ALL}
+                denominator={ballsFacedBasis(PLAYERS.filter(p=>p.school==="HIL"))}/>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
               <Card>
                 <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="bat"/> Top Batters — {comp.ageGroup}</div>
@@ -366,6 +381,7 @@ function LeagueView({ role }) {
                 ))}
               </Card>
             </div>
+            </>
           )}
 
           {/* ── SEASON AWARDS / MVP (SCRBRD-084), season by season (SCRBRD-086) ── */}
@@ -394,11 +410,17 @@ function LeagueView({ role }) {
                   {awardTeams.map(t=><option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
-              <div data-testid="awards-season-scope" style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"16px"}}>
-                {seasonPending ? "Finding the seasons on record…"
-                  : SEASON_CAREER.error && activeSeason===ALL_SEASONS ? "The seasons could not be loaded, so these are the figures across every season."
-                  : activeSeason===ALL_SEASONS ? "Every season on record: every match you can see."
-                  : `The ${activeSeason} school season: the matches that started in it. The sample floors apply to this season's balls alone.`}
+              <div style={{marginBottom:"16px"}}>
+                <SourceLine testid="awards-season-scope"
+                  source={SRC_RECORD}
+                  scope={`${awardsSchool ? (awardSchools.find(([id])=>id===awardsSchool)?.[1] ?? "One school") : "Every school you may see"}, ${awardsTeam || "every team"}`}
+                  window={seasonPending ? null : activeSeason===ALL_SEASONS ? WINDOW_ALL : seasonWindow(activeSeason)}
+                  denominator={seasonPending || awardsLoading || awardsFailed ? null : ballsFacedBasis(scoped(AWARD_PLAYERS, awardScope), MIN_BALLS_FACED)}>
+                  {seasonPending ? "Finding the seasons on record…"
+                    : SEASON_CAREER.error && activeSeason===ALL_SEASONS ? "The seasons could not be loaded, so these are the figures across every season."
+                    : activeSeason===ALL_SEASONS ? "Every match you may see."
+                    : "The matches that started in it. The sample floors apply to this season's balls alone."}
+                </SourceLine>
               </div>
               {awardsFailed ? (
                 <AwardsReadFailed read={awardsRead} onRetry={()=>setCareerNonce(n=>n+1)}/>
@@ -475,9 +497,14 @@ function LiveLadder({ rows, comp }) {
     <Card data-testid="live-ladder">
       <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
         <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{comp.name}</div>
-        <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{rows.length} teams · {comp.format} · {comp.season ?? ""}{comp.divisions?` · ${comp.divisions} division${comp.divisions>1?"s":""}`:""}</div>
+        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginBottom:"6px"}}>{comp.format}{comp.divisions?` · ${comp.divisions} division${comp.divisions>1?"s":""}`:""}</div>
         {/* SCRBRD-114 phase 3a: computed from results under confirmed points, or the schools' own figures. */}
-        {rows[0]?.basis&&<div data-testid="ladder-basis" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginTop:"4px"}}>{rows[0].basis==="computed"?"Worked out from the results, under the league's confirmed points.":"As the schools entered it: the league's points are not confirmed yet."}</div>}
+        <SourceLine testid="source-line-ladder"
+          source={rows[0]?.basis==="computed"?SRC_RESULTS:rows[0]?.basis==="entered"?SRC_ENTERED:null}
+          scope="Every team in this competition" window={comp.season ?? null}
+          denominator={{ n: rows.length, unit: "team" }}>
+          {rows[0]?.basis&&<span data-testid="ladder-basis">{basisWords(rows[0].basis)}</span>}
+        </SourceLine>
       </div>
       {groups.map(g=>(
         <div key={g.key} data-testid={`ladder-${g.key}`}>

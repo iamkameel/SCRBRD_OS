@@ -3,6 +3,8 @@ import { D } from "../design/tokens.js";
 import { signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { Badge, Card, EmptyState, StatusDot } from "../ui/primitives.jsx";
+import { SourceLine } from "../ui/sourceLine.jsx";
+import { SRC_ENTERED, SRC_RESULTS, seasonWindow } from "../lib/sourceWords.js";
 
 /**
  * The Season History Archive — up11.
@@ -104,7 +106,7 @@ function SignedInSeasonHistory({ role, selected, setSelected }) {
             ? <Card sx={{ padding: "20px", textAlign: "center" }}><div style={{ color: D.textMuted, fontFamily: D.body, fontSize: "12px" }}>No competitions recorded for {active.label}.</div></Card>
             : (
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }} data-testid="season-competitions">
-                {comps.map(c => <SeasonCompetition key={c.id} comp={c} role={role} />)}
+                {comps.map(c => <SeasonCompetition key={c.id} comp={c} role={role} season={active.label} />)}
               </div>
             )}
         </div>
@@ -137,7 +139,7 @@ function SignedInSeasonHistory({ role, selected, setSelected }) {
 
 /** One competition's card, with its final standings — read fresh, per
  *  competition, the same way LeagueView reads the current one's. */
-function SeasonCompetition({ comp, role }) {
+function SeasonCompetition({ comp, role, season }) {
   const ladder = useLive("league", role, 0, { competitionId: comp.id }).rows;
   return (
     <Card data-testid={`season-competition-${comp.id}`}>
@@ -145,6 +147,14 @@ function SeasonCompetition({ comp, role }) {
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>{comp.name}</div>
           <div style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, marginTop: "2px" }}>{comp.type} · {comp.format} · {comp.ageGroup}</div>
+          {ladder.length > 0 && (
+            <div style={{ marginTop: "6px" }}>
+              <SourceLine testid={`source-line-season-ladder-${comp.id}`}
+                source={ladder[0]?.basis === "computed" ? SRC_RESULTS : ladder[0]?.basis === "entered" ? SRC_ENTERED : null}
+                scope="Every team in this competition" window={seasonWindow(season)}
+                denominator={{ n: ladder.length, unit: "team" }} />
+            </div>
+          )}
         </div>
       </div>
       {ladder.length > 0 && (
