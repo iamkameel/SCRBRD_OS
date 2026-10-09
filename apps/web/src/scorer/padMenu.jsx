@@ -107,7 +107,7 @@ export function PadMenu({ children }) {
         <div ref={panel} id={panelId} data-testid="pad-menu-panel" role="group" aria-label="Pad menu"
           style={{ position: "fixed", top: at ? `${at.top}px` : "60px", left: at ? `${at.left}px` : `${GUTTER}px`, zIndex: 300,
             width: at ? `${at.width}px` : `min(${PANEL_WIDTH}px, calc(100vw - ${2 * GUTTER}px))`,
-            maxHeight: at ? `${at.maxHeight}px` : "80vh", overflowY: "auto",
+            maxHeight: at ? `${at.maxHeight}px` : "80vh", overflowY: "auto", overscrollBehavior: "contain",
             padding: T.space.md, borderRadius: T.radius.lg, background: T.surface.overlay,
             border: `1px solid ${T.line.normal}`, boxShadow: T.elevation.lg, display: "grid", gap: T.space.md }}>
           {children?.(close)}
