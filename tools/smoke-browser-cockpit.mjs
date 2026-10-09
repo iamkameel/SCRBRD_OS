@@ -663,23 +663,23 @@ try {
     await q(`delete from match where id = any($1::uuid[])`, [X]);
   }
 
-  // ══ 6c · Readiness: a row opens its fixture's duties ═════════════════════
-  group("Readiness: each row is a 44px tap that opens its fixture's duties (queue A0)");
+  // ══ 6c · To resolve (was Readiness): a row opens its fixture's duties ═══
+  group("To resolve: each row is a 44px tap whose door is the exact place it promises (queue A0/A1)");
   {
+    // The duties row is S8's rule, which speaks within 48 hours of the start: bring Michaelhouse (an umpire on record, no scorer) to tomorrow.
+    await q(`update match set starts_at = (sa_today()::timestamp + interval '1 day' + time '10:00') at time zone 'Africa/Johannesburg' where id = $1`, [MICH]);
     const r = await open({ viewport: DESK });
     await signIn(r.page, "sarah@example.invalid");
-    ok("the director reaches Readiness", await go(r.page, "readiness") && await tid(r.page, "os-main").getAttribute("data-page") === "readiness");
-    await r.page.waitForSelector(`[data-testid="readiness-open-${DAY}"]`, { timeout: 8000 }).catch(() => {});
-    ok("tonight's fixture is a row, and the row is one button", await tid(r.page, `readiness-open-${DAY}`).count() === 1 && await tid(r.page, `readiness-fixture-${DAY}`).locator("button").count() === 1);
+    ok("the director reaches To resolve", await go(r.page, "readiness") && await tid(r.page, "os-main").getAttribute("data-page") === "readiness");
+    await r.page.waitForFunction(() => { const q = document.querySelector('[data-testid="queue"]'); return q && !/Reading/.test(q.innerText); }, null, { timeout: 30000 }).catch(() => {});
+    ok("tonight's fixture is a group, and the duty count line is the roster's", await tid(r.page, `readiness-fixture-${DAY}`).count() === 1 && await tid(r.page, `readiness-covered-${DAY}`).count() === 1);
     const coveredText = (await inner(r.page, `readiness-covered-${DAY}`)).trim();
     await r.page.setViewportSize(PHONE);
     await r.page.waitForTimeout(700);
     const f8 = await floors(r.page);
-    ok(`at 390: nothing under 12px, chips included (${f8.small.length}), every row at least 44px (${f8.tiny.length})`, f8.small.length === 0 && f8.tiny.length === 0, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
-    const chip = await r.page.$eval(`[data-testid="readiness-slot-${DAY}-umpire"]`, (e) => parseFloat(getComputedStyle(e).fontSize)).catch(() => 0);
-    ok(`...a duty chip is 12px (${chip})`, chip >= 12);
-    ok("...a slot with nothing on record says 'none' in words, not only in colour", /none/.test(await inner(r.page, `readiness-slot-${DAY}-umpire`)) || /none/.test(await inner(r.page, `readiness-slot-${DAY}-scorer`)));
-    await tid(r.page, `readiness-open-${MICH}`).click({ timeout: 4000 });
+    ok(`at 390: nothing under 12px (${f8.small.length}), every row at least 44px (${f8.tiny.length})`, f8.small.length === 0 && f8.tiny.length === 0, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
+    ok("...Michaelhouse's group names the umpire that is on record as not a blocker, and a missing scorer as one", /No scorer on record/.test(await tid(r.page, `readiness-fixture-${MICH}`).innerText()) && !/No umpire on record/.test(await tid(r.page, `readiness-fixture-${MICH}`).innerText()));
+    await r.page.locator(`[data-testid="queue-group"][data-match="${MICH}"] [data-rule="O4"] button`).first().click({ timeout: 4000 });
     await r.page.waitForTimeout(1500);
     const box = await tid(r.page, "match-details").boundingBox().catch(() => null);
     ok("tapping a row opens that fixture's duties, on the Match Centre", await tid(r.page, "os-main").getAttribute("data-page") === "matches"
@@ -687,9 +687,9 @@ try {
     ok("...brought into view on a phone, not left under the list (its top is on the screen)", !!box && box.y < 400 && box.y > -20, JSON.stringify(box));
     await r.page.setViewportSize(DESK);
     await r.page.waitForTimeout(600);
-    ok("back on Readiness, the other row opens its own fixture", await go(r.page, "readiness"));
-    await r.page.waitForSelector(`[data-testid="readiness-open-${DAY}"]`, { timeout: 8000 }).catch(() => {});
-    await tid(r.page, `readiness-open-${DAY}`).click({ timeout: 4000 });
+    ok("back on To resolve, tonight's row opens its own fixture", await go(r.page, "readiness"));
+    await r.page.waitForFunction(() => { const q = document.querySelector('[data-testid="queue"]'); return q && !/Reading/.test(q.innerText); }, null, { timeout: 30000 }).catch(() => {});
+    await r.page.locator(`[data-testid="queue-group"][data-match="${DAY}"] [data-rule="O4"] button`).first().click({ timeout: 4000 });
     await r.page.waitForTimeout(1500);
     ok("...tonight's: its details, not Michaelhouse's", await tid(r.page, "match-details").getAttribute("data-match") === DAY && await tid(r.page, "match-details").count() === 1);
     const rosterText = (await inner(r.page, "duty-covered")).trim();

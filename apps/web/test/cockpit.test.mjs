@@ -106,6 +106,13 @@ group("D4 · health is the status tier only: restricted, and back on a date");
   const noStatus = sideRows([r({ clinicallyRestricted: true, returnDate: "2026-10-18", declaredStatus: null })], "home", { status: false });
   ok("without medical.status.read a restricted boy is drawn as the family's word, with no date", noStatus[0].state === "unanswered" && noStatus[0].back === null);
   ok("the foot counts, in words", sideFoot(rows) === "5 named · 2 to chase · 1 unavailable · 1 restricted", sideFoot(rows));
+  // Null is "not this reader's to know" (the readiness read, for a reader
+  // without medical.status.read for that boy): never restricted, never
+  // counted, and never "cleared" — the family's word stands, as for false.
+  const unknown = sideRows([r({ playerId: "n1", name: "N1", clinicallyRestricted: null, returnDate: null, declaredStatus: "available" }),
+    r({ playerId: "n2", name: "N2", clinicallyRestricted: null, declaredStatus: null })], "home", may);
+  ok("a null clinical half is the family's word, with no date", unknown[0].state === "available" && unknown[0].back === null && unknown[1].state === "unanswered");
+  ok("...and the foot counts no null as restricted", !/restricted/.test(sideFoot(unknown)), sideFoot(unknown));
   ok("a away-end read draws the away boys", sideRows([r({ side: "away" })], "home", may).length === 0 && sideRows([r({ side: "away" })], "away", may).length === 1);
 }
 

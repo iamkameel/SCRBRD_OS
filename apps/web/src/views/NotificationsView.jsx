@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { Badge, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
-import { useNotifications } from "../lib/notifications.js";
+import { useNotifications, report, reportable } from "../lib/notifications.js";
 import { readState } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
 
@@ -18,6 +18,10 @@ import { Icon } from "../ui/icons.jsx";
  * body is read when it is opened; the server logs that open. A notice taken
  * back opens as one sentence, "This notice was withdrawn on …", and one that
  * is no longer this person's as "This notice is no longer available."
+ *
+ * A notice somebody wrote (a post's notice) carries "Report": one tap sends it
+ * to the school's safeguarding officer (D11, CSA SG-9 rule 4), and the row
+ * says it was reported. Who reported it is never shown to whoever posted it.
  */
 function NotificationsView({ role }) {
   // Retry bumps the read's own nonce: the same reads, the same role, nothing wider.
@@ -30,6 +34,14 @@ function NotificationsView({ role }) {
   const [openId, setOpenId] = useState(/** @type {string | null} */ (null));
   const [busy, setBusy] = useState(/** @type {string | null} */ (null));
   const [result, setResult] = useState(/** @type {Record<string, any>} */ ({}));
+  const [reported, setReported] = useState(/** @type {Record<string, { done: boolean, words: string }>} */ ({}));
+  const [reporting, setReporting] = useState(/** @type {string | null} */ (null));
+  const sendReport = async (/** @type {string} */ id) => {
+    setReporting(id);
+    const r = await report(id);
+    setReporting(null);
+    setReported((m) => ({ ...m, [id]: r }));
+  };
 
   const toggle = async (/** @type {any} */ n) => {
     if (openId === n.id) { setOpenId(null); return; }
@@ -87,10 +99,19 @@ function NotificationsView({ role }) {
                   {!body && n.tiered && !isOpen && <p style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5,margin:0}}>Open to read.</p>}
                   {isOpen && busy === n.id && <p role="status" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:0}}>Opening…</p>}
                   {isOpen && sentence && <p data-testid="notice-sentence" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,margin:0}}>{sentence}</p>}
-                  <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
+                  <div style={{display:"flex",gap:"5px",marginTop:"6px",alignItems:"center",flexWrap:"wrap"}}>
                     <Badge color={uc(n.urgency)}>{n.urgency}</Badge>
                     <Badge color={D.textMuted}>{n.type}</Badge>
+                    {reportable(n) && !reported[n.id]?.done && (
+                      <button type="button" className="pressBtn" data-testid="notice-report" disabled={reporting === n.id}
+                        onClick={() => { void sendReport(n.id); }} aria-label={`Report this notice: ${n.title}`}
+                        style={{marginLeft:"auto",minHeight:"44px",minWidth:"44px",padding:"0 14px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
+                          color:D.textSecondary,cursor:"pointer",fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em"}}>
+                        {reporting === n.id ? "Reporting…" : "Report"}
+                      </button>
+                    )}
                   </div>
+                  {reported[n.id] && <p role="status" data-testid="notice-reported" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5,margin:"6px 0 0"}}>{reported[n.id].words}</p>}
                 </div>
               </div>
             </Card>

@@ -164,9 +164,9 @@ Sign in as `coach.wes.1xi` on phone 2.
 2. Tap **Open the Coach tab**. Read **The side** and **Our bowlers this week**. Tap **Signals**. Tap **Seen** on one card.
 3. Tap **Match Centre**, then today's fixture's card. Under **Match Details**, tap **Pick the side**. Choose eleven boys. Tap **Save the side**.
 4. Tap **Squad**, the 1XI. In **Availability**, tap **Available** or **Doubtful** for two boys.
-5. Tap **Readiness**. Tap today's row. It opens the fixture's **Match-day duties**: **Scorer appointed**, umpire and transport on record.
+5. Tap **To resolve**. Today's fixture is listed under today, with what is still open (each row with its own button) and how many of its eight duties are on record.
 
-You should see: only the 1XI's fixtures (today and 17 October). The side saved. Duties showing the scorer and the umpire.
+You should see: only the 1XI's fixtures (today and 17 October). The side saved. Today's fixture counting the scorer and the umpire among its duties on record.
 
 A failure: another side's fixture; a Kearsney boy offered in **Pick the side**; an injury's nature on the coach's screens; any page error.
 
@@ -274,7 +274,7 @@ A failure: the driver seeing a trip that is not his; `driver.kea` seeing Westvil
 
 Sign in as `dos.wes`.
 
-1. **Readiness**: every Westville fixture, each with its duty count.
+1. **To resolve**: the office's list first, then every Westville fixture in the next seven days by day and team, each with its duty count; the rest folded under Later.
 2. **Officials**, **Staff** and the **Clearance register**: the whole school.
 3. **Match Centre**: all twelve fixtures.
 4. After the match, as `scorer2.wes`: on the fixture's full-time card tap "Something to correct", pick a ball and file a correction. The director cannot yet approve it on a screen.

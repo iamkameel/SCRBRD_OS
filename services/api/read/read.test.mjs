@@ -5,7 +5,7 @@
  *   B. client getData() serves mock when a resource is not flagged live, and
  *      hits the API (with bearer) when it is; failures never silently fall back.
  */
-import { readResource, READ_QUERIES, liveResources } from "./read-api.mjs";
+import { readResource, READ_QUERIES, RESTRICTED_FIELDS, liveResources } from "./read-api.mjs";
 import { createDataClient } from "./data-client.mjs";
 import { signToken } from "../auth/auth.mjs";
 
@@ -177,6 +177,7 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
      /s\.verification_state = 'verified'/.test(t) && /s\.valid_from <= current_date/.test(t)
      && /\(s\.valid_until is null or s\.valid_until > current_date\)/.test(t));
   ok("carries the link's end date (G11) and its consent state", /s\.valid_until/.test(t) && /s\.consent_state/.test(t));
+  ok("carries the wording and the time her own link's terms were agreed under (GA-I20 A1, R8a)", /s\.consent_version/.test(t) && /s\.consent_at/.test(t));
   ok("takes no parameter a caller could widen it with", !READ_QUERIES.my_children.params && !/\$1/.test(t));
   ok("reads no masked column of the child: no born, no address, no id number", !/\b(born|address|id_number|phone|email)\b/.test(t));
   // db/99 §49 runs the read's own text as a temporary view, as each persona.
@@ -190,17 +191,34 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
      norm(between(sql)).length > 100 && norm(between(sql)) === norm(between(src)) && norm(between(src)) === norm(t));
 }
 
+group("A. emergency_contact_count (GA-I20 A1, N2): a count, never a contact, and only where the contacts may be read");
+{
+  const d = READ_QUERIES.emergency_contact_count;
+  const cols = (d.text.match(/^select\s+([\s\S]*?)\s+from player p/i)?.[1] ?? "");
+  ok("returns the child's id, his school and a count of live numbers, nothing else",
+     /p\.id as player_id/.test(cols) && /p\.school_id/.test(cols) && /count\(\*\)/.test(cols) && /c\.active/.test(d.text) && /as active_count/.test(cols));
+  ok("no name, relationship, phone, email or note of any contact leaves it", !/\b(c\.name|relationship|phone|email|note)\b/.test(d.text));
+  ok("asks the emergency_contact policy's own question before a row exists (no false zero for a reader without the right)",
+     /app_can\('player\.emergency\.read', p\.school_id, p\.team_code, p\.id,/.test(d.text));
+  ok("one child, named by the caller", /where p\.id = \$1/.test(d.text) && typeof d.params === "function");
+  ok("is NOT a logged read: no contact comes back, so nothing is disclosed", !Object.hasOwn(RESTRICTED_FIELDS, "emergency_contact_count"));
+}
+
 group("A. accounts (account lifecycle D5): every account, disabled ones included, under the same policy as users");
 {
   const a = READ_QUERIES.accounts.text, u = READ_QUERIES.users.text;
   const cols = (/** @type {string} */ t) => (t.match(/select\s+([\s\S]*?)\s+from\s/i)?.[1] ?? "")
     .split(",").map((c) => c.trim().split(/\s+/).pop()).filter(Boolean);
-  ok("reads app_user, the table db/09's app_user_read policy governs, and nothing else",
-     /from app_user\s/.test(a) && !/\bjoin\b/i.test(a));
-  ok("has no `where active`: a disabled account is on it", !/\bwhere\b/i.test(a) && !/where\s+active/i.test(a));
+  ok("reads app_user, the table db/09's app_user_read policy governs, and account_status_change under its own policy (db/90)",
+     /from app_user\s/.test(a) && !/\bjoin\b/i.test(a)
+     && (a.match(/\bfrom\s+(\w+)/gi) ?? []).map((f) => f.split(/\s+/)[1]).sort().join() === "account_status_change,app_user");
+  const outer = a.replace(/\(select[\s\S]*?\) as status_changed_at/, "status_changed_at");
+  ok("has no `where active`: a disabled account is on it", !/\bwhere\b/i.test(outer) && !/where\s+active/i.test(a));
   ok("users keeps its `where active`, for the screens that pick a person to act on", /where active/.test(u));
-  ok("the same columns as users, plus `mine` and nothing more",
-     JSON.stringify(cols(a)) === JSON.stringify([...cols(u), "mine"]));
+  ok("the same columns as users, plus `mine` and `status_changed_at` and nothing more",
+     JSON.stringify(cols(outer)) === JSON.stringify([...cols(u), "mine", "status_changed_at"]));
+  ok("status_changed_at is the account's own latest change, read as the caller (no definer, no app_can)",
+     /\(select max\(c\.changed_at\) from account_status_change c where c\.user_id = app_user\.id\) as status_changed_at/.test(a));
   ok("`mine` is the reader's own row, by app_user_id()", /id = app_user_id\(\) as mine/.test(a));
   ok("takes no parameter a caller could widen it with", !READ_QUERIES.accounts.params && !/\$1/.test(a));
   ok("is not masked and asks for no capability of its own: RLS decides who reads which row",
@@ -237,6 +255,29 @@ group("A. accounts (account lifecycle D5): every account, disabled ones included
   ok("...naming the accounts read, not the reader's own, and the email column",
      JSON.stringify(logged[0]?.params?.[1]) === JSON.stringify([C1, C2]) && JSON.stringify(logged[0]?.params?.[2]) === JSON.stringify(["email"])
      && logged[0]?.params?.[0] === "accounts");
+}
+
+group("A. The physio's half is null, not false, for a reader without medical.status.read");
+{
+  // injury_read (db/09) hides every injury row from a reader without the
+  // status tier, so "no restricted row" proves nothing for him; false would
+  // read as "cleared" (K3, db/55). Both reads that carry the column ask the
+  // same app_can() call the policy makes, per boy, and say null otherwise.
+  // The live proof is tools/smoke-readiness.mjs and smoke-availability.mjs.
+  const flat = (/** @type {string} */ t) => t.replace(/\s+/g, " ");
+  const gate = "app_can('medical.status.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)";
+  const policy = flat((await import("node:fs")).readFileSync(new URL("../../../db/09_rls_policies.sql", import.meta.url), "utf8"))
+    .match(/CREATE POLICY injury_read ON injury FOR SELECT USING \((app_can\('medical\.status\.read'[^;]*)\);/)?.[1] ?? "";
+  ok("the gate is the injury_read policy's own call, with the boy for the injury row",
+     policy.replaceAll("injury.school_id", "p.school_id").replace(/\(SELECT p\.team_code FROM player p WHERE p\.id = injury\.player_id\)/, "p.team_code")
+       .replaceAll("injury.player_id", "p.id") === gate);
+  const r = flat(READ_QUERIES.readiness.text), a = flat(READ_QUERIES.availability.text);
+  ok("readiness: asked per boy", r.includes(`cross join lateral (select ${gate} as may) k`));
+  ok("readiness: the coalesce to false only where the tier fills it",
+     /\(case when my_feature_enabled\('injuries'\) and k\.may then coalesce\(c\.restricted, false\) end\) as clinically_restricted/.test(r));
+  ok("readiness: no other coalesce of the clinical half", (r.match(/coalesce\(c\.restricted/g) ?? []).length === 1);
+  ok("availability: exists() only where the tier fills it",
+     a.includes(`(case when my_feature_enabled('injuries') and ${gate} then exists (select 1 from injury_masked i where i.player_id = p.id and i.restricted) end) as clinically_restricted`));
 }
 
 // ── B. Client accessor ──

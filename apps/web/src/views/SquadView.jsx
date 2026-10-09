@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
-import { fitnessColor, roleColor, stat } from "../lib/format.js";
+import { fitnessColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
 import { SegmentedControl } from "../ui/data.jsx";

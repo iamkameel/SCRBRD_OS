@@ -68,7 +68,10 @@ const OVAL = "ffffffff-0000-0000-0000-000000000001";
 // A team-mate's health, in every form it could leak in: the injury, the tier
 // word, the fitness column's words, the return date written either way.
 // (Not "unavailable": it is one of his own three answer keys on this screen.)
-const HEALTH = /shoulder|impingement|rehab|injur|fitness|not fit|10 Oct|2026-10-10|Back Sat 10/i;
+// The team-mate's return date is the seed's current_date + 9 (db/98), so it is
+// read from the database below and added there, never pinned here: a pinned
+// "10 Oct" outlived it and became the pupil's own fixture day (9 Oct).
+let HEALTH = /shoulder|impingement|rehab|injur|fitness|not fit/i;
 
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
   env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(API_PORT), NODE_ENV: "development",
@@ -96,6 +99,12 @@ await new Promise((r) => web.listen(WEB_PORT, r));
 
 const owner = new pg.Pool({ connectionString: ownerUrl() });
 const q = async (text, params) => (await owner.query(text, params)).rows;
+// BEKKER's return date, in each form a screen could print it: "18 Oct",
+// "2026-10-18", "Back Sun 18".
+const [RTW] = await q(`select to_char(rtw_date, 'FMDD Mon') as dm, to_char(rtw_date, 'Dy FMDD') as dd, rtw_date::text as iso
+                         from injury where id = 'cccccccc-0000-0000-0000-000000000002'`);
+const RTW_WORDS = `${RTW.dm}|${RTW.iso}|Back ${RTW.dd}`;
+HEALTH = new RegExp(`${HEALTH.source}|${RTW_WORDS}`, "i");
 const browser = await chromium.launch({ ...launchOptions() });
 
 /** A fresh context per sitting; a phone by default. `reads` records the conduct record's read. */
@@ -191,6 +200,9 @@ try {
 
   group("The pupil's app: Home · Matches · Passport · Me");
   const s = await open();
+  // GA-I20 A1 (D12): what his own To-do list asks the server for.
+  const asked = [];
+  s.page.on("request", (r) => { if (r.url().includes("/api/")) asked.push(new URL(r.url()).pathname); });
   ok("the pupil signs in, to his own app's header", await signIn(s.page));
   ok("...and lands on his Home", await tid(s.page, "os-main").getAttribute("data-page") === "myhome");
   const bar = await s.page.$$eval('[data-testid^="mnav-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
@@ -209,6 +221,28 @@ try {
   const fh = await floors(s.page);
   ok(`Home at phone width: nothing read under 12px (${fh.small.length})`, fh.small.length === 0, fh.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fh.tiny.length})`, fh.tiny.length === 0, fh.tiny.slice(0, 4).join(" · "));
+
+  group("His own To-do list (GA-I20 A1, D12): his answers, and no lift, consent or contact row");
+  {
+    await s.page.waitForFunction(() => { const e = document.querySelector('[data-testid="todo-count"]'); return !!e && !/^Reading/.test(e.innerText); }, null, { timeout: 9000 }).catch(() => {});
+    const card = await inner(s.page, "todo-card");
+    const order = await s.page.$$eval('[data-testid="pupil-home"] > *', (els) => els.map((e) => e.getAttribute("data-testid")).filter(Boolean));
+    ok("'To do for you', under his next fixture", /To do for you/i.test(card) && order.indexOf("todo-card") === order.indexOf("next-fixture") + 1, order.join());
+    // Every fixture of his side is months away (dated so above): the window is fourteen days, and the rest fold.
+    ok("nothing inside fourteen days, said for the window; his unanswered fixtures folded under 'Later'",
+       /Nothing to do for you in the next 14 days/.test(card) && /Later · \d+ to answer/.test(card), card);
+    await tid(s.page, "todo-later").click({ timeout: 4000 }).catch(() => {});
+    await s.page.waitForTimeout(300);
+    const rows = await s.page.$$eval('[data-testid="todo-card"] [data-testid^="todo-row-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
+    ok("...unfolded: one row per fixture, each his own answer (R1), worded to him", rows.includes(`todo-row-${NEXT}`) && rows.every((r) => !/^todo-row-R\d/.test(r))
+       && /Answer for \w{3} v Verify Pupil XI/.test(await inner(s.page, `todo-row-${NEXT}`)) && /you or your parents/.test(await inner(s.page, `todo-row-${NEXT}`)), rows);
+    ok("no lift, consent or contact row, and no 'What you have agreed' card", !/seat|lift|consent|public pages|Health monitoring|number|ring/i.test(await inner(s.page, "todo-card"))
+       && await tid(s.page, "todo-record").count() === 0);
+    ok("...and his list never asked for a contact count, a lift, a driver's requests or the public-name answer",
+       !asked.some((p) => /emergency_contact|\/matches\/[^/]+\/lifts|lifts\/requests|public-name/.test(p)), asked.filter((p) => /emergency_contact|\/matches\/[^/]+\/lifts|lifts\/requests|public-name/.test(p)));
+    ok("no team-mate's name on it", !/Whitfield|Bekker|Naidoo/.test(await inner(s.page, "todo-card")));
+    await tid(s.page, "todo-later").click({ timeout: 4000 }).catch(() => {});
+  }
 
   group("He answers for himself, from the fixture");
   await tid(s.page, "next-fixture-open").click({ timeout: 4000 }).catch(() => {});
@@ -361,7 +395,7 @@ try {
            values ('a5510000-0000-0000-0000-0000000000a2', $1, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c')`, [WHITFIELD]);
 
   // What the tab may never say (§4): the walk's own list, kept apart from the screen's.
-  const NEVER = /injur|fitness|\bfit\b|physio|rehab|restrict|return date|guideline|workload|wellness|available|unavailable|doubtful|\breason|because|\bwhy\b|threat|probab|win chance|shoulder|impingement|hamstring|funeral|10 Oct|2026-10-10/i;
+  const NEVER = new RegExp(String.raw`injur|fitness|\bfit\b|physio|rehab|restrict|return date|guideline|workload|wellness|available|unavailable|doubtful|\breason|because|\bwhy\b|threat|probab|win chance|shoulder|impingement|hamstring|funeral|${RTW_WORDS}`, "i");
   async function signInAs(page, email) {
     await click(page, /Get Started|Log In/, 5000);
     await page.waitForTimeout(500);
@@ -427,6 +461,9 @@ try {
   await c.page.waitForTimeout(2200);
   const sec = await inner(c.page, "captain-section");
   dbg("SECTION", sec);
+  // The day line fills in two steps (the format first, then the conditions'
+  // cap and free hit), so wait for the second rather than a fixed pause.
+  await c.page.waitForFunction(() => /Free hit/.test(document.querySelector('[data-testid="captain-day-line"]')?.innerText ?? ""), null, { timeout: 9000 }).catch(() => {});
   const dayLine = await inner(c.page, "captain-day-line");
   ok("the fixture carries a Captain section", await tid(c.page, "captain-section").count() === 1 && /^CAPTAIN/i.test(sec), sec.slice(0, 80));
   ok("...the day: the format and overs, the document's own words (cap, free hit)",

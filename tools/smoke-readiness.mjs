@@ -278,6 +278,44 @@ try {
        && back?.needs_reconfirming === false);
   }
 
+  // The roster goes to every team.read holder; the physio's half does not. A
+  // reader without medical.status.read for a boy sees no injury row of his
+  // (injury_read, db/09), and false there would read as "cleared" to somebody
+  // with no right to know either way (K3, db/55). Null is "not yours to know",
+  // never cleared and never restricted.
+  group("The physio's half is null for a reader without the status tier");
+  {
+    const scorer = await login("scorer@example.invalid");     // team.read, no medical.status.read
+    const pupil  = await login("pillay@example.invalid");     // a team-mate: player + his own selfaccess
+    const s = await sheet(m, scorer);
+    ok("the scorer reads the roster", s.length > 0 && !!rowFor(s, hurt.id));
+    ok("...with the clinical column null on every row, restricted boy and clean one alike",
+       s.every((r) => r.clinically_restricted === null)
+       && rowFor(s, hurt.id)?.clinically_restricted === null
+       && rowFor(s, unwilling.id)?.clinically_restricted === null);
+    ok("...no return date", s.every((r) => r.rtw_date === null));
+    ok("...and no state or conflict that says restricted",
+       s.every((r) => r.state !== "restricted" && r.conflict !== "selected_while_restricted"));
+    const p = await sheet(m, pupil);
+    // The pupil's own record: the boy his selfaccess assignment names.
+    const self = (await q(
+      `select g.player_id from assignment_subject g
+         join role_assignment a on a.id = g.assignment_id and a.role = 'selfaccess' and a.active
+         join app_user u on u.id = a.person_id and u.email = 'pillay@example.invalid'`))[0]?.player_id;
+    ok("a team-mate reads the restricted boy as null, not as cleared", rowFor(p, hurt.id)?.clinically_restricted === null);
+    ok("...and the clean boy as null too", rowFor(p, unwilling.id)?.clinically_restricted === null);
+    ok("...while his own row is his to read (selfaccess)", rowFor(p, self)?.clinically_restricted === true);
+    // And the readers whose tier fills it still get both answers.
+    for (const [who, email] of [["the director of sport", "sarah@example.invalid"], ["the physio", "medical@example.invalid"],
+                                ["the principal", "principal@example.invalid"]]) {
+      const r = await sheet(m, await login(email));
+      ok(`${who} reads restricted as true and clean as false`,
+         rowFor(r, hurt.id)?.clinically_restricted === true && rowFor(r, unwilling.id)?.clinically_restricted === false);
+    }
+    ok("the coach too", rowFor(await sheet(m, coach), hurt.id)?.clinically_restricted === true
+       && rowFor(await sheet(m, coach), unwilling.id)?.clinically_restricted === false);
+  }
+
   group("Only the people picking the side may read it");
   {
     ok("a spectator reads nothing", (await sheet(m, watcher)).length === 0);

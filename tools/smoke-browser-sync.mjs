@@ -305,6 +305,14 @@ try {
   ok(`...drawn at that height against its own axis (${worm?.drawnRuns})`, worm?.drawnRuns === boardRuns);
   ok(`...at the legal balls bowled, five: the extras at the x of the ball before them (${worm?.endBalls})`, worm?.endBalls === 5);
   ok("...and nothing in it is NaN or Infinity", worm?.clean === true);
+  // GA-I31: the worm as a table on the pad's Analysis tab. Five balls bowled: one row, the board's total.
+  await tid("worm-table-toggle").first().click({ timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  const wormRows = await tid("worm-table").first().locator("tbody tr").evaluateAll((rs) => rs.map((r) => [...r.children].map((c) => c.innerText.trim()))).catch(() => []);
+  ok(`GA-I31: the worm's table (Show as table) ends on the board's total, at the balls bowled (${JSON.stringify(wormRows)})`,
+     wormRows.length === 1 && Number(wormRows[0][1]) === boardRuns && wormRows[0][0] === "0.5" && Number(wormRows[0][2]) === 0);
+  const overRows = await tid("manhattan-table-toggle").first().click({ timeout: 3000 }).then(() => tid("manhattan-table").first().locator("tbody tr").evaluateAll((rs) => rs.map((r) => [...r.children].map((c) => c.innerText.trim())))).catch(() => []);
+  ok(`GA-I31: ...and runs per over: the one over, all ${boardRuns} (${JSON.stringify(overRows)})`, overRows.length === 1 && Number(overRows[0][1]) === boardRuns);
   ok("no errors while scoring the extras", errors.length === errsBefore);
 } catch (e) {
   ok(`the browser walk threw: ${e.message?.slice(0, 110)}`, false);

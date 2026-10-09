@@ -878,6 +878,72 @@ OK). **Schema first**: the API built with it reads `my_notifications` and
 refuses to start without db/89 (`expected-migrations.json`); the two receipt
 routes, `POST /api/notifications/:id/read` and `/read-all`, are on that API.
 <!-- ── end db/89 ── -->
+<!-- ── db/90: account lifecycle slice 2, the reason, the preview, the notice ── -->
+#### An account changes with a reason (account lifecycle slice 2, db/90)
+
+`db/90_account_status_change.sql` is slice 2 of `docs/design/ACCOUNT_LIFECYCLE.md`
+(D3, D4, D20, Q3). Disabling or enabling an account now needs a reason of ten
+characters or more (`POST /api/auth/users/:id/disable` and `/enable`
+`{ reason }`), kept in a new table, `account_status_change`, which the school
+office and its auditors read (`user.invite` or `audit.read` at the account's
+school) and the person never does. Enabling writes the person one notice, kind
+`system`: the date and "sign in again", never the reason.
+`GET /api/auth/users/:id/preview` says what disabling would cut (devices,
+scoring phones, scoring tokens by fixture, duties and lifts this fortnight,
+linked children as a count), refused first by the same rule as the act.
+
+**The application can no longer write `app_user.active` itself** (Q3): its
+table-level UPDATE on `app_user` is replaced by UPDATE on every other column,
+so `account_set_active()` is the only door. The owner in the SQL Editor still
+can (and the session epoch still bumps). **The file contains one DROP**:
+`DROP FUNCTION IF EXISTS account_set_active(uuid, boolean)`, the old form
+without a reason. No row is changed, no account changes state, no session
+ends; an account disabled before db/90 has no reason row and reads "Disabled"
+without a date. No secret, no backfill.
+
+Paste `node tools/bundle-sql.mjs --apply 90` (after 89), then the verify bundle
+(§69 is its proof, and the summary row's "Accounts change with a reason" reads
+OK). **Schema first**: the API built with it calls the three-argument function
+and refuses to start without db/90 (`expected-migrations.json`). Between the
+paste and that API, the old API's Disable and Enable answer 500 and change
+nothing; everything else works.
+<!-- ── end db/90 ── -->
+
+<!-- ── db/91: notifications S2, one stream ── -->
+#### Notices: one stream (db/91)
+
+`db/91_notification_one_stream.sql` is notifications slice S2
+(`docs/design/NOTIFICATIONS.md` D9–D11). People write posts; the system writes
+notices. `news_post` gains `urgency` (`low` | `medium`, default `low`: "Send to
+phones too" is `medium`; never `high`). A trigger on `news_post` writes one
+`notice` when a post is sent (one per school entered, for a league post),
+re-syncs its words when a sent post is edited, and retracts it through
+`notification_retract(…, 'withdrawn', true)` when the post is withdrawn, so its
+readers are told. The application may no longer insert or edit a `notice`
+itself (two RESTRICTIVE policies). `news_post_withdraw()` lets a
+`news.publish.school` holder at the post's school withdraw it, not only its
+author. `notification_report()` is the one-tap report: one safeguarding notice
+to the school's DSOs naming nobody, and an `access_log` row
+(`safeguarding.notice_report`) that only the school's DSOs read and that
+refuses a second report of the same notice by the same person.
+
+**What it does to a live database.** Adds the column (every stored post reads
+`low`; no rewrite), four functions, one trigger and three RESTRICTIVE policies.
+No row is inserted, changed or deleted, and **no notice is backfilled** for
+posts sent before the paste: those stay in News and do not arrive in
+everybody's Notices as new. Nothing in the file drops anything (no `DROP` of
+any kind): the trigger is `CREATE OR REPLACE TRIGGER`, the policies are created
+only when `pg_policies` lacks them, so a second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 91` (after 89, and after 90 if that has
+shipped), then the verify bundle (§70 is its proof; the summary row's "Posts
+write their notices" reads OK). **Schema first**: the API built with it refuses
+to start without db/91 (`expected-migrations.json`), answers
+`POST /api/notifications` and `POST /api/notifications/:id/push` with 410,
+takes `urgency` on `POST /api/news`, withdraws through `news_post_withdraw()`,
+and serves `POST /api/notifications/:id/report`. Nothing is pushed by itself
+until slice S3's worker: a `medium` post is stored as `medium` and waits.
+<!-- ── end db/91 ── -->
 
 ### 5 · Cloud Run, the first time
 

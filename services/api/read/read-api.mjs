@@ -375,9 +375,16 @@ export const READ_QUERIES = {
   // (logsReads, as the access log and the support sessions are): a list of
   // other people's accounts, the disabled ones among them, is on the record,
   // one row per school, naming the accounts that came back.
+  //
+  // `status_changed_at` (slice 2, db/90): when the account last changed state,
+  // read from account_status_change under ITS policy (user.invite or
+  // audit.read at the school, never the person), so People says "disabled
+  // {date}" to the office and nothing more to a reader who holds user.read
+  // alone: for them, and for an account disabled before db/90, it is null.
   accounts: {
     text: `select id, school_id, email, name, role, active, last_seen_at, teams, player_id,
-                  id = app_user_id() as mine
+                  id = app_user_id() as mine,
+                  (select max(c.changed_at) from account_status_change c where c.user_id = app_user.id) as status_changed_at
              from app_user
             order by name`,
     logsReads: () => [],
@@ -1239,7 +1246,16 @@ export const READ_QUERIES = {
                   -- that module" are different facts and false cannot tell
                   -- them apart; a selector reading false would take it as a
                   -- clinical all-clear that nothing in the system asserted.
+                  --
+                  -- And null for a reader without medical.status.read for
+                  -- this boy. injury_masked gives him no rows (injury_read,
+                  -- db/09), so exists() alone answered false — "cleared" —
+                  -- to a reader with no right to know either way (K3,
+                  -- db/55). Asked per row with the same app_can() call
+                  -- injury_read makes, as the readiness read below does.
                   (case when my_feature_enabled('injuries')
+                         and app_can('medical.status.read', p.school_id, p.team_code, p.id,
+                                     '00000000-0000-0000-0000-000000000000'::uuid)
                         then exists (select 1 from injury_masked i
                                       where i.player_id = p.id and i.restricted)
                    end)                 as clinically_restricted
@@ -1353,6 +1369,36 @@ export const READ_QUERIES = {
              join player p on p.id = c.player_id
             where c.player_id = $1 and c.active
             order by c.priority`,
+    params: q => [req(q, "playerId")],
+  },
+
+  /**
+   * HOW MANY NUMBERS ARE ON RECORD TO RING FOR ONE CHILD, and nothing else
+   * (GA-I20 A1, N2; docs/design/GA-I20_parent_action_list.md §5.2, D8).
+   *
+   * The parent's action list asks "is anybody on record to ring if he is
+   * hurt?" every time her Home opens. Reading `emergency_contacts` for that
+   * would hand the screen the phone numbers and log a disclosure she never
+   * asked for, so this returns the child's id and a count: no name, no phone,
+   * no email, no relationship. It is NOT in RESTRICTED_FIELDS, because
+   * nothing it returns is a contact.
+   *
+   * A row comes back only where the caller may read the child's contacts:
+   * the player row under its own RLS, AND the same app_can() question
+   * emergency_contact's own SELECT policy asks (db/09, player.emergency.read
+   * for this boy). So a parent of another family, a pupil (selfaccess holds
+   * no player.emergency.read, STEP4 Q7) or a coach without the capability
+   * gets no row, never a false zero. The count itself is read under
+   * emergency_contact's own policy, live rows only, as the list is.
+   */
+  emergency_contact_count: {
+    text: `select p.id as player_id, p.school_id,
+                  (select count(*) from emergency_contact c
+                    where c.player_id = p.id and c.active)::int as active_count
+             from player p
+            where p.id = $1
+              and app_can('player.emergency.read', p.school_id, p.team_code, p.id,
+                          '00000000-0000-0000-0000-000000000000'::uuid)`,
     params: q => [req(q, "playerId")],
   },
 
@@ -1790,17 +1836,24 @@ export const READ_QUERIES = {
                   a.reason_kind,
                   coalesce(d.is_self, false)  as self_declared,
                   d.name                      as declared_by_name,
-                  -- THE PHYSIO'S HALF, and null means ONE thing here: the
-                  -- Injuries module is off, so no clinical opinion is being
-                  -- collected at all. False means one was and it says he is
-                  -- clear — no restricted injury row that this reader can see.
+                  -- THE PHYSIO'S HALF. True is restricted, false is clear —
+                  -- no restricted injury row — and null is "not this reader's
+                  -- to know": either the Injuries module is off, so no
+                  -- clinical opinion is being collected at all, or the reader
+                  -- does not hold medical.status.read for THIS boy.
                   --
-                  -- Keeping those two apart is the whole reason for the
-                  -- coalesce. Left-joined raw, a boy with no injury history
-                  -- came back null, indistinguishable from a school that had
-                  -- switched the module off, and the one column a selector
-                  -- would act on could not tell "cleared" from "not asked".
-                  (case when my_feature_enabled('injuries')
+                  -- The coalesce is what tells "cleared" from "not asked": a
+                  -- boy with no injury history left-joins to null. But a
+                  -- reader without the status tier sees no injury rows at all
+                  -- (injury_read, db/09), so for him every boy left-joins to
+                  -- null, and the coalesce turned that into "cleared" for a
+                  -- scorer, an official or a team-mate who has no right to
+                  -- know either way (K3, db/55). So the coalesce applies only
+                  -- where the reader's tier is what fills the column, asked
+                  -- per row with the SAME app_can() call injury_read makes —
+                  -- which is also why, for any other reader, c is empty and
+                  -- rtw_date, state and conflict carry nothing clinical.
+                  (case when my_feature_enabled('injuries') and k.may
                         then coalesce(c.restricted, false)
                    end)                        as clinically_restricted,
                   c.rtw_date,
@@ -1838,6 +1891,8 @@ export const READ_QUERIES = {
                on a.match_id = m.id and a.player_id = p.id
              left join lateral availability_declarant(p.id, a.declared_by) d on true
              left join clinical c on c.player_id = p.id
+             cross join lateral (select app_can('medical.status.read', p.school_id, p.team_code, p.id,
+                                                '00000000-0000-0000-0000-000000000000'::uuid) as may) k
              left join match_squad s
                on s.match_id = m.id and s.player_id = p.id and not s.withdrawn
              cross join lateral (select availability_effective(a, m)     as status,
@@ -2615,6 +2670,10 @@ export const READ_QUERIES = {
    * the link ends otherwise; the screen says which (§3.3). No self link, no
    * other guardian, no reason for anything: what is not hers is not here.
    *
+   * consent_version and consent_at (GA-I20 A1, R8a): the wording of the
+   * school's terms her own link was agreed under, and when it was recorded,
+   * for "What you have agreed". Her own link's, never another guardian's.
+   *
    * db/99 §49 runs this same text (between the my_children markers) as each
    * persona; read.test.mjs holds the two copies equal.
    */
@@ -2622,6 +2681,7 @@ export const READ_QUERIES = {
     text: /* my_children:begin */`select s.player_id, p.full_name, p.known_as, p.team_code,
                   p.school_id, sc.name as school_name, sc.kind as school_kind,
                   s.relationship, s.verification_state, s.consent_state,
+                  s.consent_version, s.consent_at,
                   s.valid_from, s.valid_until
              from role_assignment a
              join assignment_subject s on s.assignment_id = a.id
@@ -3001,6 +3061,10 @@ const pick = (/** @type {any} */ row, /** @type {string} */ path) =>
 /** @type {Record<string, string>} */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
+                     // Not logged on an ordinary read (no contact comes back);
+                     // named here so a platform-wide or support read of it,
+                     // which is always logged, names the child it counted.
+                     emergency_contact_count: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
                      users: "id", accounts: "id", ratings: "player_id", notes: "player_id",
                      disciplinary_records: "player_id",

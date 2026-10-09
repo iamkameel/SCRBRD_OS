@@ -27,7 +27,8 @@
  *   POST /api/matches/:id/pad-credentials/revoke  the school office ends them
  *   POST /api/auth/sign-out                       this device's sessions and credentials end
  *   POST /api/auth/sign-out-everywhere            every session and credential ends (db/85)
- *   POST /api/auth/users/:id/disable · /enable    the office ends an account's sessions (db/85)
+ *   POST /api/auth/users/:id/disable · /enable { reason }   the office ends an account's sessions, saying why (db/85, db/90)
+ *   GET  /api/auth/users/:id/preview              what disabling an account would cut (db/90)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
@@ -656,9 +657,13 @@ const MATCH_ROUTES = [
   [/^\/api\/officials$/,                             "POST", register.add],
   [/^\/api\/officials\/([^/]+)\/accredit$/,          "POST", register.accredit],
   [/^\/api\/officials\/([^/]+)\/retire$/,            "POST", register.retire],
-  // Putting a published notice in front of people. Keyed on the notice, so it
-  // rides the id-bearing table rather than SCOUT_ROUTES.
+  // Pushing a notice by hand: closed (NOTIFICATIONS.md D9, S2), 410. A
+  // notice reaches phones by itself once published (S3).
   [/^\/api\/notifications\/([^/]+)\/push$/,       "POST", notices.push],
+  // Reporting a notice to the school's DSOs, in one tap (D11, CSA SG-9 rule
+  // 4). notification_report() (db/91) decides: a reader of the notice, once.
+  // NOT module-gated, as the receipt below is not.
+  [/^\/api\/notifications\/([^/]+)\/report$/,     "POST", notices.report],
   // Opening a notice: its body (a tiered one's open is logged) and its
   // receipt, as the reader. NOT module-gated: a person's own notices are not
   // a module (modules.mjs).
@@ -737,6 +742,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/auth\/sign-out-everywhere$/,          "POST", signIn.signOutEverywhere],
   [/^\/api\/auth\/users\/([^/]+)\/disable$/,        "POST", signIn.disable],
   [/^\/api\/auth\/users\/([^/]+)\/enable$/,         "POST", signIn.enable],
+  // Account lifecycle slice 2 (db/90): what disabling would cut, before the tap.
+  [/^\/api\/auth\/users\/([^/]+)\/preview$/,        "GET",  signIn.preview],
   [/^\/api\/auth\/claims\/([^/]+)\/confirm$/,        "POST", signIn.confirmClaim],
   [/^\/api\/auth\/claims\/([^/]+)\/decline$/,        "POST", signIn.declineClaim],
   [/^\/api\/onboard$/,                              "POST", requests.onboard],
@@ -1015,6 +1022,9 @@ const LIFT_ROUTES = [
   [/^\/api\/matches\/([0-9a-f-]{36})\/lifts\/expected$/, "GET", lifts.expected],
   [/^\/api\/lifts\/exceptions$/,                      "GET",  lifts.exceptions],
   [/^\/api\/lifts\/mine$/,                            "GET",  lifts.mine],
+  // GA-I20 A1 (N3): her own open lifts' requests, counted; no name. Gated:
+  // it reads an arrangement, and a module switched off is no row, not a fault.
+  [/^\/api\/lifts\/requests-mine$/,                   "GET",  lifts.requestsMine, "lift_club"],
   [/^\/api\/lifts\/watch$/,                           "POST", lifts.watch],
   [/^\/api\/lifts\/purge$/,                           "GET",  lifts.purgeDue],
   [/^\/api\/lifts\/([0-9a-f-]{36})\/purge$/,            "POST", lifts.purge],
@@ -1039,7 +1049,8 @@ const SCOUT_ROUTES = [
   // notice about a child in hospital is not a module somebody may switch off.
   [/^\/api\/devices$/,                                     "POST", devices.register],
   [/^\/api\/devices\/retire$/,                             "POST", devices.retire],
-  // Publishing a notice, which until now had a policy and no route at all.
+  // Publishing a notice by hand: closed (D9, S2), 410. A person's words are
+  // a post (POST /api/news), and the post's trigger writes its notice (db/91).
   [/^\/api\/notifications$/,                               "POST", notices.publish],
   // Every notice in the reader's list, marked read: his own receipts only.
   [/^\/api\/notifications\/read-all$/,                      "POST", receipts.readAll],
@@ -1197,10 +1208,10 @@ async function servePad(req, res) {
 /**
  * The write routes that keep their own once-only rule and stand outside the
  * Idempotency-Key unit (see the dispatcher): ball events, keyed per event in
- * the batch; and the push fan-out, a delivery row per device, sent once.
+ * the batch. (The push fan-out was the other; its route is closed since S2.)
  * @type {Set<unknown>}
  */
-const OWN_DEDUP = new Set([events.append, notices.push]);
+const OWN_DEDUP = new Set([events.append]);
 
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});

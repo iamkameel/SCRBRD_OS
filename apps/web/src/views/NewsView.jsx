@@ -22,8 +22,15 @@ import { holdsCapability } from "../rbac/index.js";
  * THE PUBLIC HOME PAGE (SCRBRD-142 §3.5, db/83): a sent team or school post
  * carries a line saying whether it is on the SCRBRD home page, with the one
  * button its state allows; the school's publishers get a short approvals card
- * at the top. The composer has nothing new: a post is asked about after it
- * is posted, so nobody writes "for the public" in haste.
+ * at the top. The composer has nothing new for that: a post is asked about
+ * after it is posted, so nobody writes "for the public" in haste.
+ *
+ * ONE STREAM (docs/design/NOTIFICATIONS.md D9-D11, S2): a sent post is also a
+ * notice in everybody's Notices, written by the post's trigger (db/91). The
+ * composer says, above the words, who reads them and what never goes in them
+ * (a machine cannot check that, so the writer is told); and "Send to phones
+ * too" makes the notice medium, which a phone shows as a pointer and nothing
+ * more. Never high: that is the system's.
  */
 const TIER = themed(() => ({
   team:        { cap: "news.publish.team",        label: "My side",     tone: D.emerald },
@@ -44,7 +51,7 @@ function NewsView({ role }) {
   const canPublish = tiers.length > 0;
   const schools = schoolsWhere("news.read");
 
-  const [post, setPost] = useState({ scope: "", schoolId: "", teamCode: "", title: "", body: "" });
+  const [post, setPost] = useState({ scope: "", schoolId: "", teamCode: "", title: "", body: "", phones: false });
   const scope = post.scope || tiers[0]?.[0] || "";
 
   const send = async () => {
@@ -56,9 +63,11 @@ function NewsView({ role }) {
         teamCode: scope === "team" ? post.teamCode.toUpperCase() : undefined,
         competitionId: scope === "competition" ? post.competitionId : undefined,
         title: post.title, body: post.body, publish: true,
+        // "Send to phones too" (D9): medium; otherwise low, in the app only.
+        urgency: post.phones ? "medium" : "low",
       }});
       setComposing(false);
-      setPost({ scope: "", schoolId: "", teamCode: "", title: "", body: "" });
+      setPost({ scope: "", schoolId: "", teamCode: "", title: "", body: "", phones: false });
       setNonce(n => n + 1);
     } catch (e) {
       setError(MESSAGE[e?.code] || e?.code || "Could not post that.");
@@ -150,7 +159,7 @@ function NewsView({ role }) {
 
       {composing && (
         <Modal title="Post a notice" onClose={()=>{setComposing(false);setError(null);}}>
-          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,lineHeight:1.5,marginBottom:"10px"}}>
+          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5,marginBottom:"10px"}}>
             Who sees this is decided by the tier, not by who you send it to.
           </div>
           {tiers.length>1 && (
@@ -167,12 +176,29 @@ function NewsView({ role }) {
           )}
           <Input label="Headline" value={post.title} onChange={v=>setPost(p=>({...p,title:v}))} placeholder="Saturday's fixture moved"/>
           <div style={{marginBottom:"14px"}}>
-            <label style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>Notice</label>
-            <textarea value={post.body} onChange={e=>setPost(p=>({...p,body:e.target.value}))} rows={5}
+            <label htmlFor="news-compose-body" style={{display:"block",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>Notice</label>
+            {/* D11: what a machine cannot check, said to the writer before the words. */}
+            <p id="news-compose-readers" data-testid="news-compose-readers" style={{margin:"0 0 8px",fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>
+              {READERS[scope] || READERS.team} Nothing about a child's health, home or discipline; those have their own screens.
+            </p>
+            <textarea id="news-compose-body" aria-describedby="news-compose-readers" value={post.body} onChange={e=>setPost(p=>({...p,body:e.target.value}))} rows={5}
               placeholder="What people need to know."
               style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
                 color:D.textPrimary,fontFamily:D.body,fontSize:"13px",resize:"vertical"}}/>
           </div>
+          {/* D9: medium, a pointer on the phone; low stays in the app. Never high. */}
+          <label data-testid="news-compose-phones-row" style={{display:"flex",gap:"10px",alignItems:"flex-start",minHeight:"44px",cursor:"pointer",marginBottom:"14px"}}>
+            <input type="checkbox" checked={post.phones} onChange={e=>setPost(p=>({...p,phones:e.target.checked}))} data-testid="news-compose-phones"
+              aria-describedby="news-compose-phones-hint" style={{width:"20px",height:"20px",marginTop:"2px",flexShrink:0}}/>
+            <span>
+              <span style={{display:"block",fontFamily:D.body,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Send to phones too</span>
+              <span id="news-compose-phones-hint" style={{display:"block",fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5}}>
+                {post.phones
+                  ? "Phones that allow alerts show “You have a new notice.” The words stay in the app."
+                  : "In the app only: it waits in Notices and News until people open SCRBRD."}
+              </span>
+            </span>
+          </label>
           {error && (
             <div data-testid="news-error" role="alert" style={{marginBottom:"10px",padding:"8px 10px",borderRadius:D.sm,
               background:D.rose+"14",border:`1px solid ${D.rose}33`,fontFamily:D.body,fontSize:"11px",color:textOn(D.rose)}}>{error}</div>
@@ -226,6 +252,14 @@ function PublicRow({ n, busy, onDoor, error }) {
   );
 }
 
+// Who reads a post, by its tier: said above the words (D11), because what goes
+// in them is the writer's to judge and no machine's.
+const READERS = {
+  team: "Everyone on the side reads this, pupils and parents too.",
+  school: "Everyone at the school reads this, pupils and parents too.",
+  competition: "Everyone at every school in the league reads this, pupils and parents too.",
+};
+
 // The office's words for what the server refuses, so the screen never shows a
 // reason code to somebody who has to act on it.
 const MESSAGE = {
@@ -244,6 +278,7 @@ const MESSAGE = {
   school_required: "Choose the school this is for.",
   team_code_required: "Name the side this is for, like 1XI.",
   competition_required: "Choose the league this is for.",
+  urgency_invalid: "A notice goes to the app, or to phones too; nothing louder.",
 };
 
 export { NewsView };

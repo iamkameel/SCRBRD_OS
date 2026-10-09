@@ -252,6 +252,18 @@ const WALKS = [
   // lift by version, the fixture moving under it, names and numbers through
   // the logged doors only, and a family's "no" never switched off.
   "lifts",
+  // The match-day queue (GA-I09–I11 slice A1): the reads its rows are derived
+  // from answer the director, the office, the principal, a coach of two sides,
+  // and nobody who is not a reader; the lift exceptions are logged once for
+  // each call the office makes.
+  "queue",
+  // The parent's action list, A1 (GA-I20): every read it makes, per child and
+  // per reader — the version and time of her own terms, a count of numbers
+  // that is never a contact (N2), the public-name answer's version and time
+  // (N5), the requests on the lifts she drives as counts with no name (N3),
+  // two children at two schools kept apart, a pending request and an ended
+  // link that read no child.
+  "family-todo",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
@@ -470,7 +482,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // booking a vehicle and a trip (Logistics → transport), and Sign out
   // everywhere (Settings → Me). The rows each writes, the refusal and the
   // failure in words with the form kept, who is not offered it, 12px and 44px.
-  "browser-solo"];
+  "browser-solo",
+  // GA-I09–I11 slice A1: the match-day queue on the "To resolve" screen —
+  // the director's grouped counts with owner, clock and door, the office
+  // list, the lifts on a tap, a coach of two sides, a failed read said as a
+  // failed read, the Later fold, the empty and the clear screen; 12px, 44px.
+  "browser-queue"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
