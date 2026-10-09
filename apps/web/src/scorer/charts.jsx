@@ -340,7 +340,9 @@ function BowlerChart({inn}){
  * left-handers' mirrored, and says so. Either way OFF and LEG on the field
  * are true of every spoke on it.
  */
-function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
+// `table` is false only where the screen may hold no control at all: the
+// captain's tab, where nothing is a button or a link (SCRBRD-138).
+function ShotWheel({inn,playerId=null,title="Wagon wheel",table=true}){
   if(!inn)return null;
   const log=inn.ballLog||[];
   const mine=playerId?log.filter(b=>b.strikerId===playerId):log;
@@ -440,7 +442,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
           {missing>0&&` ${missing} ball${missing===1?"":"s"} carried no placement.`}
         </div>
       )}
-      <ChartTable testid="wheel-table" tables={wheelTable}/>
+      {table&&<ChartTable testid="wheel-table" tables={wheelTable}/>}
     </Card>
   );
 }

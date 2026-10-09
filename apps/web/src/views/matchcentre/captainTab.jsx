@@ -161,7 +161,7 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
 
       {field.filter((x) => x.inn.ballLog?.length).map(({ inn: o, i }) => (
         <div key={`wheel-${i}`} data-testid="mc-captain-wheel">
-          <ShotWheel inn={o} playerId={null} title="Where they have scored"/>
+          <ShotWheel inn={o} playerId={null} title="Where they have scored" table={false}/>
         </div>
       ))}
 
