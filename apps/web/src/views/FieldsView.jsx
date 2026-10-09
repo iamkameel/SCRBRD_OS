@@ -11,6 +11,7 @@ import { Icon } from "../ui/icons.jsx";
 import { GroundOffers } from "./groundoffers.jsx";
 import { VenueParCard } from "./venuePar.jsx";   // SCRBRD-130 R3
 import { AddGroundButton, AddGroundForm } from "./addground.jsx";
+import { HomeBar } from "../shell/HomeBar.jsx";   // GA-I30
 
 // The cracks on a strip's drawing are decoration, fixed by the strip's number:
 // the same strip draws the same cracks every time. They used to be
@@ -25,7 +26,7 @@ const crackJitter = (seed, i) => {
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
 // ══════════════════════════════════════════════════════
-function FieldsView({ role }) {
+function FieldsView({ role, onNav }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const [groundsNonce, setGroundsNonce] = useState(0);
@@ -136,6 +137,7 @@ function FieldsView({ role }) {
   if (!selGround) return (
     <div className="os-page">
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal} actions={addControl}/>
+      <HomeBar home="fields" role={role} onNav={onNav}/>
       {addForm}
       <EmptyState loading={loading} error={error} icon="ground" message="No grounds are in scope for you." />
     </div>
@@ -145,6 +147,7 @@ function FieldsView({ role }) {
     <div className="os-page">
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}
         actions={<>{addControl}{canEdit&&<Btn size="sm" data-testid="open-pitch-report" onClick={()=>setReportOpen(true)}>+ Pitch Report</Btn>}</>}/>
+      <HomeBar home="fields" role={role} onNav={onNav}/>
       {addForm}
       {reportOpen&&(
         <PitchReportModal ground={selGround} role={role}

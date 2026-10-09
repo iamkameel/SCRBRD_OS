@@ -131,6 +131,15 @@ async function signIn(page, email) {
   return (await page.locator("nav button").count()) > 0;
 }
 async function nav(page, label) {
+  // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.
+  if (/Leagues/.test(String(label))) {
+    if (!(await nav(page, /^Competitions\d*$/))) return false;
+    const s = page.locator('[data-testid="home-competitions-section-leagues"]');
+    if (!(await s.count())) return false;
+    try { await s.click({ timeout: 6000 }); } catch { return false; }
+    await page.waitForTimeout(1500);
+    return true;
+  }
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }

@@ -1,7 +1,7 @@
 import pkg from "../../package.json";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { NAV_META, ROLES, groupNav } from "../design/roles.js";
-import { useNav } from "../lib/features.js";
+import { useMenu } from "../lib/homeNav.js";
 import { D, T, inkOn } from "../design/tokens.js";
 import { invitationsWords } from "../lib/league.js";
 import { SportSwitcher } from "./MobileNav.jsx";
@@ -12,8 +12,8 @@ import { Icon } from "../ui/icons.jsx";
 // ══════════════════════════════════════════════════════
 function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut, persona = null }) {
   // The role's destinations, narrowed by the modules this school has on.
-  // Narrowed only — useNav() cannot add a destination the role did not hold.
-  const nav = useNav(role);
+  // Narrowed only — useMenu() (useNav, with each home drawn once) cannot add a destination the role did not hold.
+  const nav = useMenu(role);
   const rc  = ROLES[role];
   // Drawn group by group. The grouping is presentation over a list that has
   // already been narrowed twice (capability, then module); it adds nothing.
