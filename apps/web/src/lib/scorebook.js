@@ -384,8 +384,6 @@ export function dropCardChecked(checked, n) {
 
 // ── Names: ours from the roster, theirs typed ───────────────────────────
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const isPlayerRef = (/** @type {unknown} */ r) => typeof r === "string" && UUID.test(r);
 export const isTypedRef = (/** @type {unknown} */ r) => typeof r === "string" && /^t:\d{1,3}$/.test(r);
 
 /** A typed name, as the API keeps it: trimmed, one space between words. @param {string} s */
