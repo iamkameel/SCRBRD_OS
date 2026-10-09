@@ -11,6 +11,7 @@ import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
 // Somebody signed in who holds nothing yet: their requests, and how to ask (SCRBRD-140).
 import { NoSchool } from "./auth/NoSchool.jsx";
 import { NAV_META, ROLES } from "./design/roles.js";
+import { HOME_OF } from "./design/homes.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
@@ -60,7 +61,9 @@ import { StateLabel } from "./ui/stateLabel.jsx";
 const view = (load, name) => lazy(() => load().then((m) => ({ default: m[name] })));
 const AnalyticsView     = view(() => import("./views/AnalyticsView.jsx"),     "AnalyticsView");
 const CalendarView      = view(() => import("./views/CalendarView.jsx"),      "CalendarView");
-const CompetitionsView  = view(() => import("./views/CompetitionsView.jsx"),  "CompetitionsView");
+// The Competitions home (GA-I30): the competitions and leagues screens as the
+// two sections of one; each of them loads when its section is first shown.
+const CompetitionsHome  = view(() => import("./views/CompetitionsHome.jsx"),  "CompetitionsHome");
 const DashboardView     = view(() => import("./views/DashboardView.jsx"),     "DashboardView");
 // The driver and groundskeeper's landing screen (SCRBRD-085) — one module,
 // two named exports, chosen below by capability rather than by role name.
@@ -71,7 +74,6 @@ const GroundskeeperDayView  = view(() => import("./views/DayOfView.jsx"), "Groun
 const ScorerHomeView    = view(() => import("./views/ScorerHomeView.jsx"),    "ScorerHomeView");
 const FieldsView        = view(() => import("./views/FieldsView.jsx"),        "FieldsView");
 const InjuryView        = view(() => import("./views/InjuryView.jsx"),        "InjuryView");
-const LeagueView        = view(() => import("./views/LeagueView.jsx"),        "LeagueView");
 const LogisticsView     = view(() => import("./views/LogisticsView.jsx"),     "LogisticsView");
 const ManagementView    = view(() => import("./views/ManagementView.jsx"),    "ManagementView");
 const MatchCentreView   = view(() => import("./views/MatchCentreView.jsx"),   "MatchCentreView");
@@ -157,7 +159,12 @@ export default function SCRBRD_OS() {
   const [appState,  setAppState]  = useState("login"); // login|onboarding|pending|app
   const [role,      setRole]      = useState("superadmin");
   const [userName,  setUserName]  = useState("Super Admin");
-  const [page,      setPage]      = useState("dashboard");
+  const [page,      setPageRaw]   = useState("dashboard");
+  // A section a link named (GA-I30): "the ground schedule", not just "Logistics".
+  // Cleared by every move that does not name one, so a menu choice never opens
+  // a section a link asked for earlier.
+  const [pageSection, setPageSection] = useState(null);
+  const setPage = (k, section = null) => { setPageSection(section); setPageRaw(k); };
   const [collapsed, setCollapsed] = useState(false);
   // Lifted users state so ManagementView + SettingsView share the same source
   // of truth. Seeded from the read path rather than from the mock module: this
@@ -487,17 +494,18 @@ export default function SCRBRD_OS() {
   const VIEW_MAP = {
     dashboard:    dashboardView,
     matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNavProfile={(id)=>{setProfileTarget(id);setPage("profiles");}}/>,
-    competitions: <CompetitionsView  role={role}/>,
-    leagues:      <LeagueView        role={role}/>,
+    competitions: <CompetitionsHome  role={role} section={pageSection}/>,
+    // Still a route (a saved session, a link): the Competitions home opened on Leagues.
+    leagues:      <CompetitionsHome  role={role} section="leagues"/>,
     squad:        <SquadView         role={role}/>,
     profiles:     <ProfilesView      role={role} profileTarget={profileTarget} onClearTarget={()=>setProfileTarget(null)}/>,
     analytics:    <AnalyticsView     role={role}/>,
     skills:       <SkillsView        role={role}/>,
     training:     <TrainingView      role={role}/>,
     injuries:     <InjuryView        role={role}/>,
-    logistics:    <LogisticsView     role={role}/>,
+    logistics:    <LogisticsView     role={role} section={pageSection} onNav={setPage}/>,
     calendar:     <CalendarView      role={role} onNav={setPage}/>,
-    fields:       <FieldsView        role={role}/>,
+    fields:       <FieldsView        role={role} onNav={setPage}/>,
     readiness:    <ReadinessOverview role={role} onNav={setPage}/>,
     staff:        <StaffView         role={role}/>,
     officials:    <OfficialsView     role={role}/>,
@@ -539,7 +547,7 @@ export default function SCRBRD_OS() {
             navigation entry on every single page change — and the nav is up to
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
-        {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
+        {!isMobile&&<Sidebar role={role} active={HOME_OF[page] ?? page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can
               be reached without a session — the demo entry, a restored
@@ -569,7 +577,7 @@ export default function SCRBRD_OS() {
             </Suspense>
           </main>
         </div>
-        {isMobile&&<MobileNav role={role} active={page} onNav={setPage} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
+        {isMobile&&<MobileNav role={role} active={HOME_OF[page] ?? page} onNav={setPage} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
       </div>
     </>
   );

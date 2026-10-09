@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { HomeBar, useHomeSection } from "../shell/HomeBar.jsx";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, KPICard, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
@@ -27,7 +28,7 @@ const clock = (ts) => {
 // ══════════════════════════════════════════════════════
 //  LOGISTICS VIEW  — full overhaul
 // ══════════════════════════════════════════════════════
-function LogisticsView({ role }) {
+function LogisticsView({ role, section = null, onNav }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const COACHES = useRows("coaches", role);
@@ -37,7 +38,11 @@ function LogisticsView({ role }) {
   const PLAYERS = useRows("players", role);
   const STAFF = useRows("staff", role);
   const WEATHER = useWeather(role);
-  const [tab,       setTab]       = useState("transport");
+  // The Transport home's sections (GA-I30): the trips, the kit register and
+  // the ground schedule, as they were, drawn by the home bar from the same
+  // reach the menu uses. All three came from this screen's one capability.
+  const [chosenTab, setTab] = useHomeSection(role, "logistics", section);
+  const tab = chosenTab ?? "transport";
   // The fleet and the trips, from the database.
   //
   // Every figure on this tab used to be computed in the browser over a mock
@@ -74,17 +79,7 @@ function LogisticsView({ role }) {
     <div className="os-page">
       <SectionHeader title="Logistics" sub="Transport, the kit register and ground scheduling" color={D.orange}/>
 
-      <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap"}}>
-        {["transport","equipment","grounds"].map(t=>(
-          <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
-            padding:"6px 18px", minHeight:"44px", borderRadius:D.pill, cursor:"pointer", textTransform:"capitalize",
-            border:`1px solid ${tab===t?D.orange+"55":D.border}`,
-            background:tab===t?D.orange+"14":"transparent",
-            fontFamily:D.body, fontSize:"12px", fontWeight:tab===t?600:400,
-            color:tab===t?D.orange:D.textMuted,
-          }}>{t}</button>
-        ))}
-      </div>
+      <HomeBar home="logistics" role={role} section={tab} onSection={setTab} onNav={onNav}/>
 
       {/* ── TRANSPORT ── */}
       {tab==="transport"&&(

@@ -269,6 +269,9 @@ const NAV_CAPABILITY = {
    nothing here adds a destination the capability map withheld.
 */
 const NAV_GROUPS = [
+  // `leagues` is still a destination here (its own capability, module and view),
+  // but the menu draws it inside the Competitions home, not as a second entry
+  // (design/homes.js, lib/homeNav.js).
   { key:"play",    label:"Play",       items:["dashboard","news","matches","calendar","competitions","leagues","officials"] },
   { key:"people",  label:"People",     items:["squad","profiles","injuries","staff"] },
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
