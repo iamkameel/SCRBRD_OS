@@ -878,6 +878,37 @@ OK). **Schema first**: the API built with it reads `my_notifications` and
 refuses to start without db/89 (`expected-migrations.json`); the two receipt
 routes, `POST /api/notifications/:id/read` and `/read-all`, are on that API.
 <!-- ── end db/89 ── -->
+<!-- ── db/90: account lifecycle slice 2, the reason, the preview, the notice ── -->
+#### An account changes with a reason (account lifecycle slice 2, db/90)
+
+`db/90_account_status_change.sql` is slice 2 of `docs/design/ACCOUNT_LIFECYCLE.md`
+(D3, D4, D20, Q3). Disabling or enabling an account now needs a reason of ten
+characters or more (`POST /api/auth/users/:id/disable` and `/enable`
+`{ reason }`), kept in a new table, `account_status_change`, which the school
+office and its auditors read (`user.invite` or `audit.read` at the account's
+school) and the person never does. Enabling writes the person one notice, kind
+`system`: the date and "sign in again", never the reason.
+`GET /api/auth/users/:id/preview` says what disabling would cut (devices,
+scoring phones, scoring tokens by fixture, duties and lifts this fortnight,
+linked children as a count), refused first by the same rule as the act.
+
+**The application can no longer write `app_user.active` itself** (Q3): its
+table-level UPDATE on `app_user` is replaced by UPDATE on every other column,
+so `account_set_active()` is the only door. The owner in the SQL Editor still
+can (and the session epoch still bumps). **The file contains one DROP**:
+`DROP FUNCTION IF EXISTS account_set_active(uuid, boolean)`, the old form
+without a reason. No row is changed, no account changes state, no session
+ends; an account disabled before db/90 has no reason row and reads "Disabled"
+without a date. No secret, no backfill.
+
+Paste `node tools/bundle-sql.mjs --apply 90` (after 89), then the verify bundle
+(§69 is its proof, and the summary row's "Accounts change with a reason" reads
+OK). **Schema first**: the API built with it calls the three-argument function
+and refuses to start without db/90 (`expected-migrations.json`). Between the
+paste and that API, the old API's Disable and Enable answer 500 and change
+nothing; everything else works.
+<!-- ── end db/90 ── -->
+
 <!-- ── db/91: notifications S2, one stream ── -->
 #### Notices: one stream (db/91)
 

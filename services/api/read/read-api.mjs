@@ -375,9 +375,16 @@ export const READ_QUERIES = {
   // (logsReads, as the access log and the support sessions are): a list of
   // other people's accounts, the disabled ones among them, is on the record,
   // one row per school, naming the accounts that came back.
+  //
+  // `status_changed_at` (slice 2, db/90): when the account last changed state,
+  // read from account_status_change under ITS policy (user.invite or
+  // audit.read at the school, never the person), so People says "disabled
+  // {date}" to the office and nothing more to a reader who holds user.read
+  // alone: for them, and for an account disabled before db/90, it is null.
   accounts: {
     text: `select id, school_id, email, name, role, active, last_seen_at, teams, player_id,
-                  id = app_user_id() as mine
+                  id = app_user_id() as mine,
+                  (select max(c.changed_at) from account_status_change c where c.user_id = app_user.id) as status_changed_at
              from app_user
             order by name`,
     logsReads: () => [],
@@ -1239,7 +1246,16 @@ export const READ_QUERIES = {
                   -- that module" are different facts and false cannot tell
                   -- them apart; a selector reading false would take it as a
                   -- clinical all-clear that nothing in the system asserted.
+                  --
+                  -- And null for a reader without medical.status.read for
+                  -- this boy. injury_masked gives him no rows (injury_read,
+                  -- db/09), so exists() alone answered false — "cleared" —
+                  -- to a reader with no right to know either way (K3,
+                  -- db/55). Asked per row with the same app_can() call
+                  -- injury_read makes, as the readiness read below does.
                   (case when my_feature_enabled('injuries')
+                         and app_can('medical.status.read', p.school_id, p.team_code, p.id,
+                                     '00000000-0000-0000-0000-000000000000'::uuid)
                         then exists (select 1 from injury_masked i
                                       where i.player_id = p.id and i.restricted)
                    end)                 as clinically_restricted
@@ -1820,17 +1836,24 @@ export const READ_QUERIES = {
                   a.reason_kind,
                   coalesce(d.is_self, false)  as self_declared,
                   d.name                      as declared_by_name,
-                  -- THE PHYSIO'S HALF, and null means ONE thing here: the
-                  -- Injuries module is off, so no clinical opinion is being
-                  -- collected at all. False means one was and it says he is
-                  -- clear — no restricted injury row that this reader can see.
+                  -- THE PHYSIO'S HALF. True is restricted, false is clear —
+                  -- no restricted injury row — and null is "not this reader's
+                  -- to know": either the Injuries module is off, so no
+                  -- clinical opinion is being collected at all, or the reader
+                  -- does not hold medical.status.read for THIS boy.
                   --
-                  -- Keeping those two apart is the whole reason for the
-                  -- coalesce. Left-joined raw, a boy with no injury history
-                  -- came back null, indistinguishable from a school that had
-                  -- switched the module off, and the one column a selector
-                  -- would act on could not tell "cleared" from "not asked".
-                  (case when my_feature_enabled('injuries')
+                  -- The coalesce is what tells "cleared" from "not asked": a
+                  -- boy with no injury history left-joins to null. But a
+                  -- reader without the status tier sees no injury rows at all
+                  -- (injury_read, db/09), so for him every boy left-joins to
+                  -- null, and the coalesce turned that into "cleared" for a
+                  -- scorer, an official or a team-mate who has no right to
+                  -- know either way (K3, db/55). So the coalesce applies only
+                  -- where the reader's tier is what fills the column, asked
+                  -- per row with the SAME app_can() call injury_read makes —
+                  -- which is also why, for any other reader, c is empty and
+                  -- rtw_date, state and conflict carry nothing clinical.
+                  (case when my_feature_enabled('injuries') and k.may
                         then coalesce(c.restricted, false)
                    end)                        as clinically_restricted,
                   c.rtw_date,
@@ -1868,6 +1891,8 @@ export const READ_QUERIES = {
                on a.match_id = m.id and a.player_id = p.id
              left join lateral availability_declarant(p.id, a.declared_by) d on true
              left join clinical c on c.player_id = p.id
+             cross join lateral (select app_can('medical.status.read', p.school_id, p.team_code, p.id,
+                                                '00000000-0000-0000-0000-000000000000'::uuid) as may) k
              left join match_squad s
                on s.match_id = m.id and s.player_id = p.id and not s.withdrawn
              cross join lateral (select availability_effective(a, m)     as status,

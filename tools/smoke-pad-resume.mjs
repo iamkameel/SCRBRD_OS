@@ -339,22 +339,25 @@ try {
   const { dev: AD } = await issue(scorerA);
   ok("phone A is issued another, and it works for an active account",
      !!AD && (await AD.send(`/api/matches/${MATCH}/events?since=0`)).status === 200);
-  const dis = await api(`/api/auth/users/${SCORER}/disable`, { method: "POST", token: registrar });
+  const dis = await api(`/api/auth/users/${SCORER}/disable`, { method: "POST", token: registrar,
+                                                                     body: { reason: "Pad walk: the phone was lost" } });
   ok("Hilton's office disables the scorer's account", dis.status === 200 && dis.body?.active === false, JSON.stringify(dis.body));
   const afterDisable = await AD.send(`/api/matches/${MATCH}/events?since=0`);
   ok("...the credential: 401 pad_revoked account_disabled", afterDisable.status === 401 && afterDisable.body?.error === "pad_revoked"
      && afterDisable.body?.detail === "account_disabled", JSON.stringify(afterDisable.body));
   ok("...and the row says so", (await credOf("scorer@example.invalid", DEV_A))?.revoked_reason === "account_disabled");
   ok("...and the phone's token is refused", (await api("/api/session", { token: scorerA })).status === 401);
-  const en = await api(`/api/auth/users/${SCORER}/enable`, { method: "POST", token: registrar });
+  const en = await api(`/api/auth/users/${SCORER}/enable`, { method: "POST", token: registrar,
+                                                                   body: { reason: "Pad walk: the phone was found" } });
   ok("the office enables the account again", en.status === 200 && en.body?.active === true, JSON.stringify(en.body));
   ok("...and the revoked credential stays revoked", (await AD.send(`/api/matches/${MATCH}/events?since=0`)).status === 401);
   scorerA = await login("scorer@example.invalid", DEV_A);
   ok("the scorer signs in again and holds the match", await holdA());
   const { dev: AE } = await issue(scorerA);
   ok("...and a fresh credential works", !!AE && (await AE.send(`/api/matches/${MATCH}/events?since=0`)).status === 200);
-  // The plain-UPDATE door (app_user_update, under user.role.assign) ends it
-  // too: the rule is a trigger on app_user, not a step in the route.
+  // A plain UPDATE (the owner, in the SQL editor: since db/90 the
+  // application cannot write app_user.active) ends it too: the rule is a
+  // trigger on app_user, not a step in the route.
   await q(`update app_user set active = false where id = $1`, [SCORER]);
   const afterUpdate = await AE.send(`/api/matches/${MATCH}/events?since=0`);
   ok("an account disabled by a plain UPDATE: 401 pad_revoked account_disabled", afterUpdate.status === 401

@@ -88,5 +88,6 @@
   "87_wicket_on_extra.sql",
   "88_public_venue_par.sql",
   "89_notification_contract.sql",
+  "90_account_status_change.sql",
   "91_notification_one_stream.sql"
 ]

@@ -25,7 +25,9 @@
  *   POST /api/auth/claims/:id/confirm            the office confirms a claim
  *   POST /api/auth/claims/:id/decline            the office declines one
  *   POST /api/auth/sign-out-everywhere           every session you hold ends (GA-I03)
- *   POST /api/auth/users/:id/disable · /enable   the office or the owner (GA-I03)
+ *   POST /api/auth/users/:id/disable · /enable { reason }   the office or the owner (GA-I03,
+ *                                                account lifecycle slice 2, db/90)
+ *   GET  /api/auth/users/:id/preview             what disabling would cut (db/90)
  * and two reads on the governed read path: my_sign_ins, sign_in_claims.
  *
  * ENDING A SESSION (GA-I03, db/85). Removing a way to sign in — yours, or the
@@ -117,6 +119,13 @@ export const SIGN_IN_REFUSALS = {
   cannot_confirm_your_own:[403, "You cannot confirm a sign-in to your own account. Ask a colleague."],
   cannot_disable_yourself:[403, "You cannot disable or enable your own account. Ask a colleague at the office."],
   stale_sign_in:          [401, "For your security, sign in with Google again, then add it."],
+  // Account lifecycle slice 2 (db/90): disable and enable carry a reason; the
+  // preview says, before the tap, the one refusal it can name.
+  reason_required:        [422, "Say why, in at least ten characters. It goes on the school's record, not to the person."],
+  reason_too_long:        [422, "Keep the reason under 2,000 characters."],
+  other_school:           [403, "Also holds roles at another school. This account cannot be disabled from here."],
+  // D21: a dead token's holder is told the same for every reason (db/85).
+  session_revoked:        [401, "You were signed out. Sign in again."],
   refused:                [409, "The database refused this."],
 };
 
@@ -158,6 +167,15 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
       console.error("sign-in route →", e.code || "", e.message);
       return res.status(500).json({ error: "internal_error" });
     }
+  };
+  /**
+   * account_set_active() (db/90), as an answer.
+   * @param {import("../api-types.mjs").Db} client @param {string} id @param {boolean} active @param {unknown} reason
+   */
+  const setActive = async (client, id, active, reason) => {
+    const { rows: [r] } = await client.query(`select * from account_set_active($1, $2, $3)`,
+                                             [id, active, typeof reason === "string" ? reason : null]);
+    return r?.ok ? { ok: true, active: r.active } : { ok: false, reason: r?.reason };
   };
   const idOf = (/** @type {ApiRequest} */ req) => {
     const id = String(req.params?.id ?? "");
@@ -247,17 +265,24 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
       return r?.ok ? { ok: true, signedOut: true } : { ok: false, reason: r?.reason };
     }),
 
-    // POST /api/auth/users/:id/disable · /enable — the office or the owner,
-    // under db/81's rule for acting on somebody else's account. Disabling
-    // ends every session and pad credential the account holds; enabling
-    // brings none back (db/85).
-    disable: signedIn(async (req, client) => {
-      const { rows: [r] } = await client.query(`select * from account_set_active($1, false)`, [idOf(req)]);
-      return r?.ok ? { ok: true, active: r.active } : { ok: false, reason: r?.reason };
-    }),
-    enable: signedIn(async (req, client) => {
-      const { rows: [r] } = await client.query(`select * from account_set_active($1, true)`, [idOf(req)]);
-      return r?.ok ? { ok: true, active: r.active } : { ok: false, reason: r?.reason };
+    // POST /api/auth/users/:id/disable · /enable { reason } — the office or
+    // the owner, under db/81's rule for acting on somebody else's account,
+    // saying why (ten characters or more: reason_required). Disabling ends
+    // every session and pad credential the account holds; enabling brings
+    // none back, and tells the person, never why (db/85, db/90). The reason
+    // goes to the database as it came; the database trims and checks it.
+    disable: signedIn(async (req, client) => setActive(client, idOf(req), false, req.body?.reason)),
+    enable: signedIn(async (req, client) => setActive(client, idOf(req), true, req.body?.reason)),
+
+    // GET /api/auth/users/:id/preview — what disabling the account would cut
+    // (db/90 account_offboard_preview()): counts, and the fixtures of the
+    // scoring tokens it holds; never a child's name. Refused by the same rule
+    // as the act, first, so a stranger learns nothing.
+    preview: signedIn(async (req, client) => {
+      const { rows: [r] } = await client.query(`select * from account_offboard_preview($1)`, [idOf(req)]);
+      if (!r?.ok) return { ok: false, reason: r?.reason };
+      return { ok: true, active: r.active, sessions: r.sessions, padCredentials: r.pad_credentials,
+               scoringTokens: r.scoring_tokens ?? [], duties: r.duties, lifts: r.lifts, children: r.children };
     }),
   };
 }

@@ -4072,6 +4072,83 @@ CREATE OR REPLACE FUNCTION _stored_89() RETURNS text AS $$
          || ' / ' || (SELECT count(*) FROM notification WHERE is_public) || ' public'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/89 (section 68) ──────────────────────────────────────────────
+-- ┌── db/90 (section 69). Account lifecycle slice 2: the reason, the preview, the notice
+-- Written as the owner, the way the system's own definers write, each the
+-- one thing an assertion needs.
+-- The account_status_change rows about one account, as the owner counts them
+-- (the person may not read them; the count is the claim).
+CREATE OR REPLACE FUNCTION _v90_changes(p_user uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM account_status_change WHERE user_id = p_user
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- One of them, whole, found by its reason (changed_at is the transaction's
+-- clock, the same for every row this file writes).
+CREATE OR REPLACE FUNCTION _v90_row(p_user uuid, p_reason text) RETURNS jsonb AS $$
+  SELECT to_jsonb(c) FROM account_status_change c WHERE c.user_id = p_user AND c.reason = p_reason
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A row about somebody, planted as the owner: the reader it is about must
+-- not read it, whatever he holds.
+CREATE OR REPLACE FUNCTION _v90_plant(p_user uuid, p_by uuid) RETURNS uuid AS $$
+  INSERT INTO account_status_change (user_id, school_id, active, reason, changed_by)
+  SELECT u.id, u.school_id, u.active, 'Verify 090: planted about the reader', p_by FROM app_user u WHERE u.id = p_user
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- account_set_active() as the CALLER, its refusal as text, or the SQLSTATE
+-- of whatever raised instead of answering (a missing check shows here as the
+-- table's CHECK, not as a pass). Not a definer.
+CREATE OR REPLACE FUNCTION _v90_set(p_user uuid, p_active boolean, p_reason text) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  SELECT coalesce(o.reason, 'ok') INTO v FROM account_set_active(p_user, p_active, p_reason) o;
+  RETURN v;
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- An account at Hilton holding nothing at all: no news.read, so a notice
+-- reaches it only through a door of its own.
+CREATE OR REPLACE FUNCTION _v90_bare() RETURNS uuid AS $$
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'v90.bare@example.invalid', 'V90 Bare', 'spectator')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A 'system' notice to one person that no audit row admits: what a forged
+-- or published notice would be.
+CREATE OR REPLACE FUNCTION _v90_stray(p_user uuid) RETURNS uuid AS $$
+  INSERT INTO notification (school_id, scope_level, kind, urgency, title, body, required_capability,
+                            subject_kind, recipient_id)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'school', 'system', 'medium', 'Verify 090 stray',
+          'Not written by account_set_active().', 'news.read', 'system', p_user)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Make an account a parent at Hilton of two children (B Khumalo, K
+-- Dlamini), verified by the office, as guardian_link_establish() writes it.
+CREATE OR REPLACE FUNCTION _v90_link(p_user uuid) RETURNS void AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (p_user, 'guardian', '11111111-1111-1111-1111-111111111111')
+  RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  SELECT a, x, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+         '88888888-0000-0000-0000-00000000000c', current_date - 1
+    FROM unnest(ARRAY['aaaaaaaa-0000-0000-0000-000000000013', 'aaaaaaaa-0000-0000-0000-000000000006']::uuid[]) x;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Things an account has open on a fixture three days out: the scoring token
+-- (held now) and a scorer's duty. Answers the fixture's label as the
+-- preview says it.
+CREATE OR REPLACE FUNCTION _v90_open(p_user uuid) RETURNS text AS $$
+DECLARE m uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify Ninety College 1XI', now() + interval '3 days',
+          'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO m;
+  INSERT INTO scoring_session (match_id, school_id, state, holder_user_id, holder_device, lease_until)
+  VALUES (m, '11111111-1111-1111-1111-111111111111', 'active', p_user, 'v90-pad', now() + interval '1 hour');
+  INSERT INTO match_official (match_id, school_id, duty, person_name, person_id)
+  VALUES (m, '11111111-1111-1111-1111-111111111111', 'scorer', 'V90 Scorer', p_user);
+  RETURN audit_fixture_label(m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/90 (section 69) ──────────────────────────────────────────────
 
 -- ┌── db/91 (section 70). Notifications S2: one stream
 -- A post's notices as the owner reads them (RLS would not say): every row
@@ -16505,17 +16582,17 @@ $v49$;
 
     -- (disable)
     PERFORM _as(U_REGISTRAR);
-    SELECT o.reason INTO v_got FROM account_set_active(U_REGISTRAR, false) o;
+    SELECT o.reason INTO v_got FROM account_set_active(U_REGISTRAR, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'cannot_disable_yourself', format('§64 (disable): the office disabled itself (%s)', v_got));
     PERFORM _as(U_C);
-    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false) o;
+    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'not_permitted', format('§64 (disable): a coach disabled a parent (%s)', v_got));
     PERFORM _as(U_WES_ADM);
-    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false) o;
+    SELECT o.reason INTO v_got FROM account_set_active(U_PARENT, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'not_permitted', format('§64 (disable): Westville''s office disabled Hilton''s parent (%s)', v_got));
     PERFORM _assert((_v85_state(U_PARENT)->>'active')::boolean, '§64 (disable): a refused disable disabled the account');
     PERFORM _as(U_REGISTRAR);
-    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false) o;
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'true:false', format('§64 (disable): Hilton''s office could not disable its parent (%s)', v_got));
     j := _v85_state(U_PARENT);
     PERFORM _assert(j->>'reason' = 'account_disabled' AND (j->>'epoch')::int = e2 + 1 AND (j->>'by')::uuid = U_REGISTRAR,
@@ -16526,16 +16603,16 @@ $v49$;
     SELECT o.session_id INTO v_id FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
     PERFORM _assert(v_id IS NULL, '§64 (disable): a disabled account was minted a session');
     PERFORM _as(U_REGISTRAR);
-    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true) o;
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true, 'Verify 085: the phone was found') o;
     PERFORM _assert(v_got = 'true:true', format('§64 (disable): Hilton''s office could not enable its parent (%s)', v_got));
     PERFORM set_config('app.user_id', '', true);
     v_got := _v85_begin(U_PARENT, 'v85-phone', s3, e2);
     PERFORM _assert(v_got = '28000: session_revoked', format('§64 (disable): enabling brought an old session back (%s)', v_got));
     -- The owner's key may do what the office may.
     PERFORM _as(U_OWNER);
-    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false) o;
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'true:false', format('§64 (disable): the owner could not disable a parent (%s)', v_got));
-    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true) o;
+    SELECT o.ok::text || ':' || o.active::text INTO v_got FROM account_set_active(U_PARENT, true, 'Verify 085: the phone was found') o;
     PERFORM _assert(v_got = 'true:true', format('§64 (disable): the owner could not enable a parent (%s)', v_got));
     PERFORM set_config('app.user_id', '', true);
     SELECT o.session_id, o.epoch INTO s4, e1 FROM auth_session_open(U_PARENT, 'v85-phone', 1800) o;
@@ -16572,14 +16649,14 @@ $v49$;
     v_got := _v85_begin(U_SCORER, 'v85-pad-2', NULL, NULL, c1);
     PERFORM _assert(v_got = '28000: session_revoked', format('§64 (pad): a credential began on another device (%s)', v_got));
     PERFORM _as(U_REGISTRAR);
-    SELECT o.ok::text INTO v_got FROM account_set_active(U_SCORER, false) o;
+    SELECT o.ok::text INTO v_got FROM account_set_active(U_SCORER, false, 'Verify 085: a phone lost on tour') o;
     PERFORM _assert(v_got = 'true', format('§64 (pad): Hilton''s office could not disable its scorer (%s)', v_got));
     PERFORM _assert(_v85_pad_reason(c1) = 'account_disabled', format('§64 (pad): the credential reads %s after the account was disabled', _v85_pad_reason(c1)));
     PERFORM set_config('app.user_id', '', true);
     v_got := _v85_begin(U_SCORER, 'v85-pad-1', NULL, NULL, c1);
     PERFORM _assert(v_got = '28000: session_revoked', format('§64 (pad): a disabled scorer''s credential began (%s)', v_got));
     PERFORM _as(U_REGISTRAR);
-    PERFORM account_set_active(U_SCORER, true);
+    PERFORM account_set_active(U_SCORER, true, 'Verify 085: the phone was found');
     PERFORM _assert(_v85_pad_reason(c1) = 'account_disabled', '§64 (pad): enabling the account brought the credential back');
     c2 := _v85_pad(U_SCORER, 'v85-pad-2');
     PERFORM _as(U_SCORER);
@@ -17169,6 +17246,228 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 68
+  -- ┌── 69 · An account changes with a reason (db/90, account lifecycle slice 2) ──
+  -- As the application role, through the two db/90 doors:
+  --
+  --   (reason)    no reason, a short one or one past 2,000 characters is
+  --               refused by name and changes nothing; a stranger is refused
+  --               not_permitted before the reason is looked at
+  --   (row)       a disable writes one row (which way, the reason, who, the
+  --               school) and no notice; asking again writes nothing
+  --   (notice)    an enable writes the row and one 'system' notice to the
+  --               person: the date, never the reason; it reaches him, and
+  --               nobody else, the owner included
+  --   (door)      an account holding nothing (no news.read) reads its enable
+  --               notice through notification_account_enabled, and not a
+  --               'system' notice no audit row admits
+  --   (reader)    the office (user.invite) and the principal (audit.read)
+  --               read the rows; the bursar (user.read), a coach, Westville's
+  --               office and the person do not; an office holder does not
+  --               read a row about himself
+  --   (column)    the application cannot write app_user.active, by the
+  --               office's or the principal's policy; the rest of the row is
+  --               writable as before
+  --   (signature) account_set_active(uuid, boolean) is gone
+  --   (preview)   counts move with what the account holds (a session, a pad
+  --               credential, a scoring token by its fixture, a duty); a
+  --               parent's linked children are counted; a stranger, Westville's
+  --               office, the principal, the account itself and a pad are
+  --               refused with no counts; an account with a role at another
+  --               school is other_school to its own office only
+  --
+  -- Falsified, each red at its own label with its key line removed and
+  -- green again restored: the reason checks out of account_set_active()
+  -- (reason); the account_status_change INSERT (row); the notification
+  -- INSERT (notice); the notification_account_enabled policy (door); the
+  -- `user_id <> app_user_id()` clause of the read policy (reader); the
+  -- REVOKE UPDATE ON app_user (column); the DROP FUNCTION (signature); the
+  -- scoring_session arm of the preview, and the auth_office_refusal() call
+  -- in it (preview).
+  DECLARE
+    V_PARENT  uuid := '88888888-0000-0000-0000-000000000005';
+    V_SCORER  uuid := '88888888-0000-0000-0000-000000000006';
+    V_OFFICE  uuid := '88888888-0000-0000-0000-00000000000c';  -- schooladmin, Hilton: user.invite
+    V_HEAD    uuid := '88888888-0000-0000-0000-000000000016';  -- principal: audit.read, no user.invite
+    V_BURSAR  uuid := '88888888-0000-0000-0000-000000000015';  -- finance: user.read only
+    V_COACH   uuid := '88888888-0000-0000-0000-00000000000a';  -- 2XI coach
+    V_WES     uuid := '88888888-0000-0000-0000-00000000000d';  -- schooladmin, Westville
+    V_SARAH   uuid := '88888888-0000-0000-0000-000000000007';  -- director of sport, a guardian at Westville too
+    V_OWN     uuid := '88888888-0000-0000-0000-000000000022';  -- the owner's key
+    v_bare uuid; v_note uuid; v_stray uuid; v_row uuid;
+    v_got text; v_label text; n0 int; n1 int; j jsonb; p record; p0 record;
+  BEGIN
+    -- (reason)
+    PERFORM _as(V_OFFICE);
+    n0 := _v90_changes(V_SCORER);
+    v_got := _v90_set(V_SCORER, false, NULL);
+    PERFORM _assert(v_got = 'reason_required', format('§69 (reason): no reason answered %s', v_got));
+    v_got := _v90_set(V_SCORER, false, '   too short   ');
+    PERFORM _assert(v_got = 'reason_required', format('§69 (reason): nine characters, padded, answered %s', v_got));
+    v_got := _v90_set(V_SCORER, false, repeat('x', 2001));
+    PERFORM _assert(v_got = 'reason_too_long', format('§69 (reason): 2,001 characters answered %s', v_got));
+    PERFORM _assert((_v85_state(V_SCORER)->>'active')::boolean AND _v90_changes(V_SCORER) = n0,
+      '§69 (reason): a refused disable disabled the account, or wrote a row');
+    PERFORM _as(V_COACH);
+    v_got := _v90_set(V_SCORER, false, NULL);
+    PERFORM _assert(v_got = 'not_permitted', format('§69 (reason): a coach with no reason was told %s, not not_permitted', v_got));
+
+    -- (preview), before: what the scorer holds now
+    PERFORM _as(V_OFFICE);
+    SELECT * INTO p0 FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(p0.ok AND p0.reason IS NULL AND p0.active AND p0.lifts = 0 AND p0.children = 0,
+      format('§69 (preview): the office''s first preview of the scorer reads %s', row_to_json(p0)));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM auth_session_open(V_SCORER, 'v90-phone', 1800);
+    PERFORM _v85_pad(V_SCORER, 'v90-pad');
+    v_label := _v90_open(V_SCORER);
+    PERFORM _as(V_OFFICE);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(p.ok AND p.sessions = p0.sessions + 1 AND p.pad_credentials = p0.pad_credentials + 1
+                    AND p.duties = p0.duties + 1 AND p.lifts = 0 AND p.children = 0,
+      format('§69 (preview): after a session, a pad credential and a duty the preview reads %s (before %s)', row_to_json(p), row_to_json(p0)));
+    PERFORM _assert(v_label = ANY (p.scoring_tokens) AND cardinality(p.scoring_tokens) = cardinality(p0.scoring_tokens) + 1,
+      format('§69 (preview): the scoring token for %s is not in %s', v_label, p.scoring_tokens));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM unnest(p.scoring_tokens) t WHERE t ~* 'pillay|whitfield|dlamini'),
+      '§69 (preview): a child''s name is in the preview');
+    -- Refused, with nothing counted.
+    PERFORM _as(V_COACH);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted' AND p.active IS NULL AND p.sessions IS NULL AND p.pad_credentials IS NULL
+                    AND p.scoring_tokens IS NULL AND p.duties IS NULL AND p.lifts IS NULL AND p.children IS NULL,
+      format('§69 (preview): a coach''s preview of the scorer reads %s', row_to_json(p)));
+    PERFORM _as(V_WES);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted' AND p.sessions IS NULL AND p.scoring_tokens IS NULL,
+      format('§69 (preview): Westville''s office previewed Hilton''s scorer: %s', row_to_json(p)));
+    PERFORM _as(V_HEAD);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted' AND p.sessions IS NULL,
+      format('§69 (preview): the principal (no user.invite) previewed the scorer: %s', row_to_json(p)));
+    PERFORM _as(V_OFFICE);
+    SELECT * INTO p FROM account_offboard_preview(V_OFFICE);
+    PERFORM _assert(NOT p.ok AND p.reason = 'cannot_disable_yourself' AND p.sessions IS NULL,
+      format('§69 (preview): the office previewed itself: %s', row_to_json(p)));
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted' AND p.sessions IS NULL,
+      format('§69 (preview): a pad''s request previewed an account: %s', row_to_json(p)));
+    SELECT * INTO p FROM account_offboard_preview(V_SARAH);
+    PERFORM _assert(NOT p.ok AND p.reason = 'other_school' AND p.sessions IS NULL,
+      format('§69 (preview): Hilton''s office previewed its director of sport (a guardian at Westville): %s', row_to_json(p)));
+    PERFORM _as(V_WES);
+    SELECT * INTO p FROM account_offboard_preview(V_SARAH);
+    PERFORM _assert(NOT p.ok AND p.reason = 'not_permitted',
+      format('§69 (preview): Westville''s office was told about Hilton''s account: %s', row_to_json(p)));
+
+    -- (row)
+    PERFORM _as(V_OFFICE);
+    n0 := _v90_changes(V_SCORER);
+    SELECT o.ok::text || ':' || o.active::text INTO v_got
+      FROM account_set_active(V_SCORER, false, '  Verify 090: stepped back for a week  ') o;
+    PERFORM _assert(v_got = 'true:false', format('§69 (row): Hilton''s office could not disable its scorer (%s)', v_got));
+    j := _v90_row(V_SCORER, 'Verify 090: stepped back for a week');
+    PERFORM _assert(_v90_changes(V_SCORER) = n0 + 1 AND (j->>'active')::boolean = false
+                    AND j->>'reason' = 'Verify 090: stepped back for a week' AND (j->>'changed_by')::uuid = V_OFFICE
+                    AND j->>'school_id' = '11111111-1111-1111-1111-111111111111' AND j->>'notice_id' IS NULL,
+      format('§69 (row): the disable wrote %s rows, the last %s', _v90_changes(V_SCORER) - n0, j));
+    SELECT * INTO p FROM account_offboard_preview(V_SCORER);
+    PERFORM _assert(p.ok AND NOT p.active AND p.sessions = 0 AND p.pad_credentials = 0 AND v_label = ANY (p.scoring_tokens),
+      format('§69 (preview): after the disable the preview reads %s', row_to_json(p)));
+    SELECT o.ok::text || ':' || o.active::text INTO v_got
+      FROM account_set_active(V_SCORER, false, 'Verify 090: asked a second time') o;
+    PERFORM _assert(v_got = 'true:false' AND _v90_changes(V_SCORER) = n0 + 1,
+      format('§69 (row): disabling twice answered %s and wrote %s rows', v_got, _v90_changes(V_SCORER) - n0));
+    PERFORM _assert(_v85_try(format('INSERT INTO account_status_change (user_id, active, reason, changed_by) VALUES (%L, true, %L, %L)',
+                                    V_SCORER, 'Verify 090: written by hand', V_OFFICE)) = '42501',
+      '§69 (row): the application wrote account_status_change itself');
+
+    -- (notice)
+    SELECT o.ok::text || ':' || o.active::text INTO v_got
+      FROM account_set_active(V_SCORER, true, 'Verify 090: back after the week') o;
+    PERFORM _assert(v_got = 'true:true', format('§69 (notice): Hilton''s office could not enable its scorer (%s)', v_got));
+    j := _v90_row(V_SCORER, 'Verify 090: back after the week');
+    v_note := (j->>'notice_id')::uuid;
+    PERFORM _assert(_v90_changes(V_SCORER) = n0 + 2 AND (j->>'active')::boolean AND j->>'reason' = 'Verify 090: back after the week'
+                    AND v_note IS NOT NULL,
+      format('§69 (notice): the enable wrote %s', j));
+    j := _row_89(v_note);
+    PERFORM _assert(j->>'kind' = 'system' AND (j->>'recipient_id')::uuid = V_SCORER AND j->>'title' = 'Your account was re-enabled'
+                    AND j->>'body' LIKE 'Your account was re-enabled on %. Every device was signed out when it was disabled; sign in again where you need to.'
+                    AND position('week' IN j->>'body') = 0 AND NOT (j->>'is_public')::boolean
+                    AND (j->>'expires_at')::timestamptz > now() + interval '179 days',
+      format('§69 (notice): the notice is %s', j));
+    PERFORM _as(V_SCORER);
+    PERFORM _assert(EXISTS (SELECT 1 FROM my_notifications m WHERE m.id = v_note)
+                    AND notification_by_id(v_note)->>'title' = 'Your account was re-enabled',
+      '§69 (notice): the scorer cannot read the notice about his own account');
+    FOREACH v_row IN ARRAY ARRAY[V_OFFICE, V_HEAD, V_PARENT, V_OWN] LOOP
+      PERFORM _as(v_row);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification x WHERE x.id = v_note) AND notification_by_id(v_note) IS NULL,
+        format('§69 (notice): %s read the scorer''s notice', v_row));
+    END LOOP;
+
+    -- (door)
+    v_bare := _v90_bare();
+    PERFORM _as(V_OFFICE);
+    SELECT o.ok::text INTO v_got FROM account_set_active(v_bare, false, 'Verify 090: the bare account, off') o;
+    PERFORM _assert(v_got = 'true', format('§69 (door): the office could not disable an account holding nothing (%s)', v_got));
+    SELECT o.ok::text INTO v_got FROM account_set_active(v_bare, true, 'Verify 090: the bare account, on') o;
+    v_note := (_v90_row(v_bare, 'Verify 090: the bare account, on')->>'notice_id')::uuid;
+    v_stray := _v90_stray(v_bare);
+    PERFORM _as(v_bare);
+    PERFORM _assert(v_got = 'true' AND v_note IS NOT NULL AND EXISTS (SELECT 1 FROM my_notifications m WHERE m.id = v_note),
+      '§69 (door): an account with no news.read cannot read its enable notice');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification x WHERE x.id = v_stray),
+      '§69 (door): a system notice no audit row admits came through the door');
+    -- (preview), a parent: the bare account made a guardian of two children
+    PERFORM _v90_link(v_bare);
+    PERFORM _as(V_OFFICE);
+    SELECT * INTO p FROM account_offboard_preview(v_bare);
+    PERFORM _assert(p.ok AND p.children = 2 AND p.sessions = 0 AND p.duties = 0 AND cardinality(p.scoring_tokens) = 0,
+      format('§69 (preview): a parent of two reads %s', row_to_json(p)));
+
+    -- (reader)
+    FOREACH v_row IN ARRAY ARRAY[V_OFFICE, V_HEAD] LOOP
+      PERFORM _as(v_row);
+      SELECT count(*) INTO n1 FROM account_status_change c WHERE c.user_id = V_SCORER;
+      PERFORM _assert(n1 = _v90_changes(V_SCORER) AND n1 >= 2, format('§69 (reader): %s reads %s of the scorer''s %s rows', v_row, n1, _v90_changes(V_SCORER)));
+    END LOOP;
+    FOREACH v_row IN ARRAY ARRAY[V_BURSAR, V_COACH, V_WES, V_SCORER] LOOP
+      PERFORM _as(v_row);
+      SELECT count(*) INTO n1 FROM account_status_change c WHERE c.user_id = V_SCORER;
+      PERFORM _assert(n1 = 0, format('§69 (reader): %s reads %s of the scorer''s rows', v_row, n1));
+    END LOOP;
+    v_row := _v90_plant(V_OFFICE, V_OWN);
+    PERFORM _as(V_OFFICE);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM account_status_change c WHERE c.id = v_row)
+                    AND EXISTS (SELECT 1 FROM account_status_change c WHERE c.user_id = V_SCORER),
+      '§69 (reader): the office read a row about itself');
+    PERFORM _as(V_HEAD);
+    PERFORM _assert(EXISTS (SELECT 1 FROM account_status_change c WHERE c.id = v_row),
+      '§69 (reader): the principal cannot read the row about the office (the plant proves nothing)');
+
+    -- (column)
+    FOREACH v_row IN ARRAY ARRAY[V_OFFICE, V_HEAD] LOOP
+      PERFORM _as(v_row);
+      v_got := _v85_try(format('UPDATE app_user SET active = false WHERE id = %L', V_SCORER));
+      PERFORM _assert(v_got = '42501', format('§69 (column): %s wrote app_user.active directly (%s)', v_row, v_got));
+    END LOOP;
+    PERFORM _assert((_v85_state(V_SCORER)->>'active')::boolean, '§69 (column): the scorer was disabled by a plain UPDATE');
+    PERFORM _as(V_OFFICE);
+    v_got := _v85_try(format('UPDATE app_user SET name = name WHERE id = %L', V_SCORER));
+    PERFORM _assert(v_got = 'ok' AND NOT has_column_privilege('app_user', 'active', 'UPDATE')
+                    AND has_column_privilege('app_user', 'name', 'UPDATE'),
+      format('§69 (column): the rest of the row is not writable as before (%s)', v_got));
+
+    -- (signature)
+    PERFORM _assert(to_regprocedure('account_set_active(uuid,boolean)') IS NULL,
+      '§69 (signature): account_set_active(uuid, boolean) is still there');
+    v_got := _v85_try(format('SELECT * FROM account_set_active(%L::uuid, false)', V_SCORER));
+    PERFORM _assert(v_got = '42883', format('§69 (signature): a call with no reason answered %s', v_got));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 69
 
   -- ── 70. Notifications S2: one stream (db/91) ────────────────────────
   -- docs/design/NOTIFICATIONS.md D9, D10, D11. Every write below is a person's,

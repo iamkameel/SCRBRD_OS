@@ -212,7 +212,7 @@ before serialisation. The lists, as the design stands (Opus finalises them again
 | `ball` | type, runs/value, extras kind, dismissal (canonical), the out batter, fielder (pseudonym), run-out end, free-hit flag, short-run flag, `seq`, timestamp | `placement`/shot coordinates (L7: team level only — served aggregated by `public_shot_sectors`), shot id and any note; `speed` if ever recorded |
 | `retire` | batter, out/not-out as the fold needs it | `reason` ("hurt" is N2). The commentary already reads "retires, not out" with `sensitive: false` |
 | `penalty` | runs, which side, the Law 41 reason **code** (§9 Q4) | any note |
-| `void` / `revision` | the target event's seq and the corrected fields | the comment or note |
+| `void` / `revision` | the target event's seq and the corrected fields; on a void an approved amendment wrote, `amendment: true` (GA-I36, 8 Oct 2026: the page tells it from a scorer's undo) | the comment or note; the amendment's id, reason and people |
 | `innings_end` | reason code, totals as recorded | note |
 | `milestone`, `over_end`, `short_running` | as the fold needs; players as pseudonyms | notes |
 | anything not listed | **the whole event is dropped** | a new event kind reaches the public only when it is listed |

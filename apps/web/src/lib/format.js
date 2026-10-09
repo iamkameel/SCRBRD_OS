@@ -1,4 +1,3 @@
-import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 
 // ── DATE HELPERS (must be before any data that uses them) ──
@@ -19,8 +18,6 @@ const initials = (name) => name.split(" ").map(w=>w[0]).join("").slice(0,2).toUp
 const severityColor = (s) => s==="severe"?D.rose:s==="moderate"?D.orange:D.amber;
 
 const fitnessColor  = (f) => f==="fit"?D.emerald:f==="injured"?D.rose:f==="rehab"?D.orange:D.amber;
-
-const roleColor = (r) => ROLES[r]?.color||D.textMuted;
 
 // ── HUMAN DATES (DESIGN_DIRECTION §3, §5) ──
 // "2026-09-26" reads as a row in a spreadsheet; a person reads "Sat 26 Sep".
@@ -96,4 +93,4 @@ const bookNote = (p) => {
 const withheld = (v, label = "Not shown at your access level") =>
   (v === null || v === undefined ? label : v);
 
-export { addDays, atLeast, bookNote, dateStr, fitnessColor, humanDate, humanDateTime, initials, pctDays, roleColor, severityColor, stat, today, withheld };
+export { addDays, atLeast, bookNote, dateStr, fitnessColor, humanDate, humanDateTime, initials, pctDays, severityColor, stat, today, withheld };
