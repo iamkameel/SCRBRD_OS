@@ -25,7 +25,6 @@
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { withPrincipal, AuthError } from "../auth/auth.mjs";
 import { transportFromEnv } from "./fcm.mjs";
-import { SUBJECT_KINDS } from "@scrbrd/policy/notifications";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler, Pool } from "../api-types.mjs" */
 /** @import { PushTransport } from "./fcm.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
@@ -36,33 +35,24 @@ const err = (code, status = 400, detail = undefined) =>
   Object.assign(new Error(code), { status, ...(detail ? { detail } : {}) });
 
 const PLATFORMS = ["web", "android", "ios"];
-const SCOPES = ["school", "team", "competition"];
-const URGENCY = ["low", "medium", "high"];
 
-// ── THE LOCK (docs/design/NOTIFICATIONS.md D12, slice S0) ──
+// ── THE CLOSURE (docs/design/NOTIFICATIONS.md D9, slice S2) ──
 //
-// Until S2 closes this route, it publishes one thing: words a person wrote to
-// a side, a school or a competition. A `notice`, at most `medium`, readable by
-// whoever holds news.read in its scope, about nobody in particular and for
-// nobody in particular. A notice about a child, behind a capability or for
-// one person is written by the database's own triggers (notify_injury(),
-// db/57, db/70, …), never typed through here. No web screen calls this route.
-export const PUBLISH_KIND = "notice";
-export const PUBLISH_URGENCY = Object.freeze(["low", "medium"]);
-// Refused when PRESENT, whatever the value: a body that names one of these is
-// asking for something the lock does not give, and quietly dropping it would
-// publish a notice its author did not mean. [code, words]
-/** @type {Readonly<Record<string, readonly [string, string]>>} */
-export const LOCKED_FIELDS = Object.freeze({
-  requiredCapability: ["required_capability_not_accepted",
-    "A notice published here is for everybody with news.read in its scope. One that needs more is written by the record it comes from."],
-  isPublic:           ["is_public_not_accepted",
-    "Nothing published here is public. A notice reaches the people its school, side or competition admits."],
-  subjectPersonId:    ["subject_person_id_not_accepted",
-    "A notice about one child is not published here. It is written by the record it comes from."],
-  recipientId:        ["recipient_id_not_accepted",
-    "A notice for one person is not published here. It goes to everybody in its scope."],
+// People write posts; the system writes notices. A person's words become a
+// `notice` only through news_post (POST /api/news), whose trigger writes the
+// one notice row (db/91, D10); the database refuses the application a notice
+// of its own. So the hand-written publish route and the manual push route
+// are gone, said as 410 with the words a caller can act on. Pushing becomes
+// the worker's, after commit, without a button (S3).
+/** @type {Readonly<Record<"publish" | "push", string>>} */
+export const CLOSED = Object.freeze({
+  publish: "Notices are not published here any more. Write a post (POST /api/news): its notice is written for you, to the people its side, school or league admits.",
+  push: "Notices are not pushed by hand any more. A notice reaches phones by itself once it is published.",
 });
+
+/** The status for each reason notification_report() (db/91) refuses with. @type {Readonly<Record<string, number>>} */
+const REPORT_STATUS = Object.freeze({ no_such_notice: 404, not_reportable: 422, already_reported: 409, not_permitted: 403 });
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * What a notice says on a lock screen, which is: almost nothing.
@@ -370,90 +360,55 @@ export function deviceRoutes({ pool, secret }) {
 }
 
 /**
- * Publishing a notice, and then putting it in front of people.
+ * What is left of the notices' own write routes: two closed doors, and the
+ * one-tap report (D11, CSA SG-9 rule 4).
  *
- * The publish had no route at all: notices existed only in the seed, so a
- * capability-gated publish policy governed something nobody could do. RLS
- * decides here as everywhere — this validates the vocabulary and stamps the
- * publisher, and a caller without news.publish for the scope gets 403 from the
- * database rather than from a branch in this file.
+ * The report decides nothing here. notification_report() (db/91) asks the
+ * notice's own policy whether the caller may read it, refuses a second
+ * report of the same notice by the same person, writes the DSOs' notice
+ * (naming nobody) and the record of who reported it, and answers `unheld`
+ * when the school has no DSO, so the screen can say to tell the school.
+ * The answer carries no id and no name: a reporter is told it was taken.
  */
 /**
  * @param {{ pool: Pool, secret: string, transport?: PushTransport | null }} deps
+ *   `transport` is accepted for the server's wiring and unused: nothing is
+ *   pushed from a route since S2
  * @returns {Record<string, Handler>}
  */
-export function notificationRoutes({ pool, secret, transport = transportFor() }) {
+export function notificationRoutes({ pool, secret }) {
   /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
     catch (/** @type {any} */ e) {
-      if (e.code === "23514") return res.status(422).json({ error: "invalid_notice", detail: e.message });
-      if (e.code === "23503") return res.status(404).json({ error: "no_such_school_or_subject" });
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error"),
                                 ...(e.status && e.detail ? { detail: e.detail } : {}) });
     }
   };
+  /** @param {"publish" | "push"} door @returns {Handler} */
+  const closed = (door) => async (_req, res) => { res.status(410).json({ error: "gone", detail: CLOSED[door] }); };
 
   return {
-    // POST /api/notifications { schoolId, scopeLevel, teamCode?, kind: "notice",
-    //                           title, body, urgency?, subjectKind?, subjectId?, expiresAt? }
-    //
-    // Locked (D12): PUBLISH_KIND, PUBLISH_URGENCY and LOCKED_FIELDS above.
-    // Every refusal but the database's own is decided before a connection is
-    // taken, so none of them depends on who is asking.
-    publish: handle(async (req) => {
-      const b = req.body || {};
-      for (const [field, [code, words]] of Object.entries(LOCKED_FIELDS)) {
-        if (Object.hasOwn(b, field)) throw err(code, 422, words);
-      }
-      if (!b.schoolId) throw err("school_required");
-      if (!SCOPES.includes(b.scopeLevel)) throw err("scope_level_invalid");
-      if (b.scopeLevel === "team" && !b.teamCode) throw err("team_required_for_team_scope");
-      if (!b.kind || !String(b.kind).trim()) throw err("kind_required");
-      if (String(b.kind).trim() !== PUBLISH_KIND) {
-        throw err("kind_must_be_notice", 422,
-          `Only a "${PUBLISH_KIND}" is published here. Every other kind is written by the record it is about.`);
-      }
-      if (!b.title || !String(b.title).trim()) throw err("title_required");
-      if (!b.body || !String(b.body).trim()) throw err("body_required");
-      const urgency = b.urgency ?? "low";
-      if (!URGENCY.includes(urgency)) throw err("urgency_invalid");
-      if (!PUBLISH_URGENCY.includes(urgency)) {
-        throw err("urgency_too_high", 422,
-          "A notice published here is low or medium. High is kept for what the system raises.");
-      }
-      const subjectKind = b.subjectKind == null || b.subjectKind === "" ? null : String(b.subjectKind);
-      if (subjectKind && !SUBJECT_KINDS.includes(subjectKind)) throw err("subject_kind_invalid");
+    // POST /api/notifications — closed (D9). 410 whoever asks and whatever
+    // the body: nothing is read, no connection is taken.
+    publish: closed("publish"),
 
-      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
-        // required_capability, is_public, subject_person_id and recipient_id
-        // are not named: the table's defaults (news.read, false, null, null)
-        // are the only values the lock allows.
-        // The database's own contract (db/89, D4) holds the same shape: a
-        // `notice` names no child, has no recipient, is never high and is
-        // never public, whatever reaches it.
-        const { rows } = await client.query(
-          `insert into notification
-             (school_id, team_code, scope_level, kind, urgency, title, body,
-              subject_kind, subject_id, published_by, expires_at)
-           values ($1, $2, $3, $4, $5, btrim($6), btrim($7), $8, $9, app_user_id(), $10)
-           returning id, school_id, scope_level, required_capability, is_public,
-                     published_at`,
-          [b.schoolId, b.teamCode ?? null, b.scopeLevel, PUBLISH_KIND,
-           urgency, b.title, b.body, subjectKind, b.subjectId ?? null,
-           b.expiresAt ?? null]);
-        if (!rows.length) throw err("not_permitted", 403);
-        const n = rows[0];
-        return { id: n.id, school: n.school_id, scopeLevel: n.scope_level,
-                 requiredCapability: n.required_capability, isPublic: n.is_public,
-                 publishedAt: n.published_at };
-      });
+    // POST /api/notifications/:id/push — closed (D9; S3 pushes after commit).
+    push: closed("push"),
+
+    // POST /api/notifications/:id/report — one tap, no body.
+    report: handle(async (req) => {
+      const id = String(req.params?.id ?? "").toLowerCase();
+      // Not a uuid: the same answer as a notice that is not there.
+      if (!UUID.test(id)) throw err("no_such_notice", 404);
+      const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
+        (await client.query(`select ok, reason, unheld from notification_report($1)`, [id])).rows[0]);
+      if (!r?.ok) {
+        const reason = r?.reason ?? "refused";
+        throw err(reason, REPORT_STATUS[reason] ?? 409);
+      }
+      return { reported: true, unheld: !!r.unheld };
     }),
-
-    // POST /api/notifications/:id/push
-    push: handle(async (req) =>
-      fanOut({ pool, secret, bearer: req.headers?.authorization,
-               notificationId: req.params.id, transport })),
   };
 }

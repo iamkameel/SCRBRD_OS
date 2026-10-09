@@ -127,6 +127,10 @@ const SUITES = [
   // folds — the worm ends on the total, extras and penalty runs are in, a
   // finished chase has an end and no NaN (scorer/chartData.js).
   ["charts",            "apps/web/test/charts.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I31: every chart has a "Show as table": the worm, runs per over, the
+  // run rate, batsmen, bowlers, the wheel, the heat map and the spider, each
+  // read back and held to what the same markup draws (ui/ChartTable.jsx).
+  ["chart-tables",      "apps/web/test/chart-tables.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The ground display (SCRBRD-133 G1): the rotation with a hand-held clock —
   // the dwell, the skip, a wicket's interrupt resuming where it was, the holds
   // — and its panels over built logs (display/rotation.js, display/data.js).
@@ -247,6 +251,7 @@ const SUITES = [
   // event the pad always sent, byte for byte; the likely bowler and the next
   // batter first; undo in words; dot and 1 the biggest keys; the haptic tick.
   ["pad-feel", "apps/web/test/pad-feel.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["pro-extras-parity", "apps/web/test/pro-extras-parity.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the Board — always black, figures that flip (DESIGN_DIRECTION §1).
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No emoji in the client outside a reasoned allow-list, every icon name
@@ -308,9 +313,13 @@ const SUITES = [
   // The signed-out read path (SCRBRD-083): the projection, the router, the shell.
   ["public-api", "services/api/public/public.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
-  // Notifications S0 (docs/design/NOTIFICATIONS.md D6, D12): the publish
-  // route's lock, every push a pointer, an expired notice never sent.
+  // Notifications S0 and S2 (docs/design/NOTIFICATIONS.md D6, D9, D11): the
+  // publish and push routes closed (410), the one-tap report, every push a
+  // pointer, an expired notice never sent.
   ["push-api", "services/api/notify/push-api.test.mjs"],
+  // Notifications S2 (D9, D11): a post's urgency is never high; withdrawing
+  // one asks news_post_withdraw() (db/91).
+  ["news-api", "services/api/write/news-api.test.mjs"],
   // Notifications S1 (D1, D2, D5, D17, D18): the lists and the per-kind
   // contract agree with db/89's CHECKs and functions; opening a notice and
   // "Mark all read" write the reader's own receipt and nothing else; one

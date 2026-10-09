@@ -657,9 +657,13 @@ const MATCH_ROUTES = [
   [/^\/api\/officials$/,                             "POST", register.add],
   [/^\/api\/officials\/([^/]+)\/accredit$/,          "POST", register.accredit],
   [/^\/api\/officials\/([^/]+)\/retire$/,            "POST", register.retire],
-  // Putting a published notice in front of people. Keyed on the notice, so it
-  // rides the id-bearing table rather than SCOUT_ROUTES.
+  // Pushing a notice by hand: closed (NOTIFICATIONS.md D9, S2), 410. A
+  // notice reaches phones by itself once published (S3).
   [/^\/api\/notifications\/([^/]+)\/push$/,       "POST", notices.push],
+  // Reporting a notice to the school's DSOs, in one tap (D11, CSA SG-9 rule
+  // 4). notification_report() (db/91) decides: a reader of the notice, once.
+  // NOT module-gated, as the receipt below is not.
+  [/^\/api\/notifications\/([^/]+)\/report$/,     "POST", notices.report],
   // Opening a notice: its body (a tiered one's open is logged) and its
   // receipt, as the reader. NOT module-gated: a person's own notices are not
   // a module (modules.mjs).
@@ -1045,7 +1049,8 @@ const SCOUT_ROUTES = [
   // notice about a child in hospital is not a module somebody may switch off.
   [/^\/api\/devices$/,                                     "POST", devices.register],
   [/^\/api\/devices\/retire$/,                             "POST", devices.retire],
-  // Publishing a notice, which until now had a policy and no route at all.
+  // Publishing a notice by hand: closed (D9, S2), 410. A person's words are
+  // a post (POST /api/news), and the post's trigger writes its notice (db/91).
   [/^\/api\/notifications$/,                               "POST", notices.publish],
   // Every notice in the reader's list, marked read: his own receipts only.
   [/^\/api\/notifications\/read-all$/,                      "POST", receipts.readAll],
@@ -1203,10 +1208,10 @@ async function servePad(req, res) {
 /**
  * The write routes that keep their own once-only rule and stand outside the
  * Idempotency-Key unit (see the dispatcher): ball events, keyed per event in
- * the batch; and the push fan-out, a delivery row per device, sent once.
+ * the batch. (The push fan-out was the other; its route is closed since S2.)
  * @type {Set<unknown>}
  */
-const OWN_DEDUP = new Set([events.append, notices.push]);
+const OWN_DEDUP = new Set([events.append]);
 
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});

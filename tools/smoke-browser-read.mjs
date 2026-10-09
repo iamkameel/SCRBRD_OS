@@ -317,6 +317,19 @@ try {
   const notes = await ptid("family-notices").innerText({ timeout: 4000 }).catch(() => "");
   ok("...with her notices, the one about her child saying so", /Injury recorded/i.test(notes) && /About R Pillay/i.test(notes));
   ok("...and none naming another family's child", !OTHERS.test(notes), notes.match(OTHERS)?.[0]);
+  // One stream (NOTIFICATIONS.md D10, S2): the side's post is a notice of its
+  // own, listed once; a notice somebody wrote carries Report (D11), and the
+  // system's do not.
+  const postRow = parent.page.locator('[data-testid="notice"]', { hasText: "Nets moved to Thursday" });
+  ok("...the side's post among them, once, as a notice", await postRow.count() === 1);
+  const injRow = parent.page.locator('[data-testid="notice"]', { hasText: /Injury recorded/i }).first();
+  ok("...which carries Report; the injury notice does not",
+     await postRow.locator('[data-testid="notice-report"]').count() === 1 && await injRow.locator('[data-testid="notice-report"]').count() === 0);
+  await postRow.locator('[data-testid="notice-report"]').click({ timeout: 4000 }).catch(() => {});
+  const reportedWords = await postRow.locator('[data-testid="notice-reported"]').innerText({ timeout: 6000 }).catch(() => "");
+  ok("one tap reports it to the school's safeguarding officer, and says so",
+     /Reported to the school's safeguarding officer/.test(reportedWords), reportedWords);
+  ok("...and the Report button is gone", await postRow.locator('[data-testid="notice-report"]').count() === 0);
   ok("the guardian's session raised no scoping refusals", parent.refusals.length === 0);
   ok("...and no page errors", parent.errors.length === 0, parent.errors.join(" | "));
 
@@ -1335,6 +1348,19 @@ try {
     ok("the spider is drawn beside it", bekker && (await bekker.spider.count()) === 1);
     ok("...with an axis for every angular family", bekker && bekker.axes.length === 12, bekker?.axes.length);
     ok("...saying reach is a distance and not an aim", bekker && /mean distance/.test(bekker.spiderText));
+    // GA-I31: the surface and the shape as tables.
+    if (bekker) {
+      await bekker.heat.locator('[data-testid="heat-table-toggle"]').click({ timeout: 3000 }).catch(() => {});
+      await bekker.spider.locator('[data-testid="spider-table-toggle"]').click({ timeout: 3000 }).catch(() => {});
+      await c.page.waitForTimeout(300);
+      const heatRows = await bekker.heat.locator('[data-testid="heat-table"] tbody tr').evaluateAll((rs) => rs.map((r) => [...r.children].map((x) => x.innerText.trim())));
+      ok(`GA-I31: the density surface has a table with a row for each of its ${bekker.cells.filter((d) => d >= 0.04).length} cells, the hottest first at the peak`,
+         heatRows.length === bekker.cells.filter((d) => d >= 0.04).length && Number(heatRows[0]?.[2]) === 100 && heatRows.every((r) => r[0] && r[0] !== "—"), JSON.stringify(heatRows.slice(0, 2)));
+      const spRows = await bekker.spider.locator('[data-testid="spider-table"] tbody tr').evaluateAll((rs) => rs.map((r) => [...r.children].map((x) => x.innerText.trim())));
+      ok("GA-I31: the spider's table has a row for each of its 12 axes, with the shots each prints",
+         spRows.length === 12 && spRows.every((r, k) => Number(r[1]) === bekker.axes[k].shots), JSON.stringify(spRows.slice(0, 2)));
+      ok("...and neither table holds a name", !/Bekker|Naidoo/.test(spRows.flat().join(" ") + heatRows.flat().join(" ")));
+    }
     ok("...and never claiming precision", bekker && !/precision/i.test(bekker.spiderText));
     // Bekker was seeded through the covers (theta ~300-330): the axis with
     // shots should be an off-side family, left of the wheel's centre (x<150).
@@ -1513,7 +1539,10 @@ try {
     ok("...and says so in words", /Hilton College has your request/.test(await text(s.page)));
     await click(s.page, /Back to sign in/, 4000); await s.page.waitForTimeout(500);
     await s.page.locator("#login-email").fill("n.zulu@example.invalid");
-    await click(s.page, /^Sign In$/, 5000); await s.page.waitForTimeout(2000);
+    await click(s.page, /^Sign In$/, 5000);
+    // Wait for the state the step asserts (the pending request drawn), not a fixed pause: under load the sign-in round trip can outlast any guess.
+    await s.page.locator('[data-testid="pending-requests"]').waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    await s.page.locator('[data-testid="request-pending"]').waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
     ok("signing in shows the pending request and no shell", await s.page.locator('[data-testid="pending-requests"]').count() === 1
        && await s.page.locator('[data-testid="request-pending"]').count() === 1 && await s.page.locator('[data-testid="os-main"]').count() === 0);
     ok("no console errors (stranger)", s.errors.length === 0);
@@ -2263,15 +2292,15 @@ try {
     const c = await open();
     ok("the director of sport signs in", await signIn(c.page, /sarah@example\.invalid|Director/));
     const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
-    await tid("nav-readiness").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
-    ok("she reaches Readiness", await tid("os-main").getAttribute("data-page") === "readiness");
+    await tid("nav-readiness").click({ timeout: 6000 }); await c.page.waitForTimeout(3500);
+    ok("she reaches To resolve (was Readiness)", await tid("os-main").getAttribute("data-page") === "readiness");
 
     const card = tid(`readiness-fixture-${MATCH}`);
     ok("the fixture is on the overview", await card.count() === 1);
     const overviewText = await tid(`readiness-covered-${MATCH}`).innerText();
     ok(`the overview reads "${trueCovered} of 8 on record"`, overviewText.trim() === `${trueCovered} of 8 on record`);
-    ok("the covered slot itself is shown as on record, not merely counted",
-       await tid(`readiness-slot-${MATCH}-umpire`).count() === 1);
+    ok("the umpire on record is not a row to resolve: no 'No umpire on record' on that fixture's group",
+       !/No umpire on record/.test(await card.innerText()));
 
     // Cross-check against the fixture's own screen — not a second opinion,
     // the same claim asked twice.

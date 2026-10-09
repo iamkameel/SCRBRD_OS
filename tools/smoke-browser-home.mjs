@@ -418,6 +418,20 @@ try {
     const row = (/** @type {any} */ page) => page.locator(`[data-testid="news-public-${post}"]`);
 
     const coach = await member("coach2@example.invalid");
+    // The composer (NOTIFICATIONS.md D9, D11, S2): who reads a post and what
+    // never goes in it, said above the words; and "Send to phones too", off.
+    await coach.page.locator('[data-testid="news-compose"]').click({ timeout: 6000 }).catch(() => {});
+    const readers = await coach.page.locator('[data-testid="news-compose-readers"]').innerText({ timeout: 6000 }).catch(() => "");
+    ok("the composer says who reads a post, and what never goes in one",
+       /Everyone on the side reads this, pupils and parents too\./.test(readers) && /health, home or discipline/.test(readers), readers);
+    const phones = coach.page.locator('[data-testid="news-compose-phones"]');
+    ok("...and offers \"Send to phones too\", off until ticked",
+       (await phones.count()) === 1 && (await phones.isChecked().catch(() => true)) === false
+       && /Send to phones too/.test(await coach.page.locator('[data-testid="news-compose-phones-row"]').innerText().catch(() => "")));
+    const tick = await coach.page.locator('[data-testid="news-compose-phones-row"]').boundingBox().catch(() => null);
+    ok("...on a target 44px tall", !!tick && tick.height >= 44, JSON.stringify(tick));
+    await coach.page.keyboard.press("Escape").catch(() => {});
+    await coach.page.locator('[data-testid="news-compose-readers"]').waitFor({ state: "detached", timeout: 4000 }).catch(() => {});
     ok("the coach's own post carries the line: not asked", /not asked/.test(await row(coach.page).innerText({ timeout: 8000 }).catch(() => "")));
     await coach.page.locator(`[data-testid="news-public-request-${post}"]`).click({ timeout: 4000 });
     ok("he asks: waiting for the office", await coach.page.waitForFunction((id) =>

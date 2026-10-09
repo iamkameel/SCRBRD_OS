@@ -72,6 +72,10 @@ try {
   ok("the retry gets the same answer", second.status === 200 && second.body?.id === first.body?.id, JSON.stringify(second.body));
   ok("...marked as a replay", second.replayed === true && first.replayed === false);
   ok("...and there is ONE row", (await rows(title)).length === 1, `${(await rows(title)).length} rows`);
+  // Since S2 a sent post writes its notice (db/91's trigger): a retry is one
+  // post, so it is one notice in everybody's Notices, not two.
+  const notices = await q(`select count(*)::int c from notification where kind = 'notice' and subject_kind = 'news' and subject_id = $1`, [first.body?.id]);
+  ok("...and ONE notice", notices[0]?.c === 1, `${notices[0]?.c} notices`);
 
   group("Without a key, the old behaviour: twice is twice");
   const t2 = `Kit day ${stamp}`;

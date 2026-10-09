@@ -401,7 +401,7 @@ const NAV_META = {
   logistics:    { icon:"bus", label:"Logistics"    },
   calendar:     { icon:"calendar", label:"Calendar"     },
   fields:       { icon:"ground", label:"Fields"       },
-  readiness:    { icon:"shield-check", label:"Readiness"    },
+  readiness:    { icon:"shield-check", label:"To resolve"   },
   officials:    { icon:"hand", label:"Officials"    },
   staff:        { icon:"wrench", label:"Staff"        },
   sponsors:     { icon:"handshake", label:"Sponsors"     },

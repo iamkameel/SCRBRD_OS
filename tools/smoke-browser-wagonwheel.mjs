@@ -396,6 +396,17 @@ try {
      all.length === 4 && all.filter((s) => s.side === "right").length === 1 && all.filter((s) => s.side === "left").length === 3, JSON.stringify(all));
   ok("the spokes are the chips' colours: a 1 pink, a 2 green", points.every((s) => s.stroke === s.colour)
      && all.find((s) => s.key === "1")?.stroke === "#ec4899" && all.find((s) => s.key === "2")?.stroke === "#b2e358", JSON.stringify(all));
+  // GA-I31: the wheel as a table, one row for each spoke, in the order drawn.
+  const wheelRows = async () => {
+    const t = page.locator('[data-testid="wheel-table-toggle"]').first();
+    if ((await t.getAttribute("aria-expanded").catch(() => null)) !== "true") await t.click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(200);
+    return page.evaluate(() => [...(document.querySelector('[data-testid="wheel-table"] table')?.querySelectorAll("tbody tr") ?? [])]
+      .map((r) => [...r.children].map((c) => c.innerText.trim())));
+  };
+  const allRows = await wheelRows();
+  ok(`GA-I31: the whole innings' table has a row for each of its ${all.length} spokes`, allRows.length === all.length, JSON.stringify(allRows));
+  ok("...the right-hander's square leg and the left-hander's points, in words, no name", allRows.some((r) => /square leg/i.test(r[2])) && !/Naidoo|Bekker/.test(allRows.flat().join(" ")), JSON.stringify(allRows));
   await shoot("whole-innings");
   // One batter: his own hand.
   await click(/^S Naidoo$/).catch(() => {});
@@ -405,6 +416,8 @@ try {
        && await page.locator(`${wheel} [data-testid="field-side-right"]`).first().innerText({ timeout: 2000 }).catch(() => "") === "OFF" && !(await has("wheel-mirror-note")));
   const his = await spokes(wheel);
   ok("...his balls on HIS off side, the right", his.length === 3 && his.every((s) => s.side === "right"), JSON.stringify(his));
+  const hisRows = await wheelRows();
+  ok(`GA-I31: ...and his wheel's table has his ${his.length} rows, the same fielding words as the commentary`, hisRows.length === his.length, JSON.stringify(hisRows));
   await shoot("left-hander-wheel");
 
   // ── E ────────────────────────────────────────────────────────

@@ -60,6 +60,10 @@ function asMatch(r) {
     // decides the Edition of the Laws the match is scored under (SCRBRD-113).
     startsAt: r.starts_at ?? null,
     status: MATCH_STATUS[r.status] ?? "upcoming",
+    // 'abandoned' is read as "complete" above, so a fixture called off before it
+    // was played cannot be told from one that was: the match-day queue's O5
+    // (called off with work still on record) asks, and only for this.
+    calledOff: r.status === "abandoned",
     result: null,
     competition: null,
     // The competition it is played under, or null for a friendly (SCRBRD-114):
@@ -468,9 +472,10 @@ function asAvailability(r) {
            declaredAt: r.declared_at, selfDeclared: r.self_declared === true,
            declaredByName: r.declared_by_name,
            // Deliberately NOT coerced to a boolean. Null is a third answer
-           // here — the school does not run the Injuries module, so no
-           // clinical opinion is being collected — and `=== true` turned that
-           // into "cleared", which is the one reading nothing asserted.
+           // here — the school does not run the Injuries module, or this
+           // reader does not hold medical.status.read for this boy — and
+           // coercing it turned that into "cleared", which is the one reading
+           // nothing asserted. Never drawn as cleared, never as restricted.
            clinicallyRestricted: r.clinically_restricted ?? null, live: true };
 }
 
@@ -929,7 +934,8 @@ function asReadiness(r) {
            reasonKind: r.reason_kind,
            selfDeclared: r.self_declared === true,
            declaredByName: r.declared_by_name,
-           // Tri-state, as above: true restricted, false cleared, null not asked.
+           // Tri-state, as above: true restricted, false cleared, null not
+           // asked or not this reader's to know.
            clinicallyRestricted: r.clinically_restricted ?? null,
            returnDate: r.rtw_date ? String(r.rtw_date).slice(0, 10) : null,
            selected: r.selected === true, side: r.selected_side, battingNo: r.batting_no,

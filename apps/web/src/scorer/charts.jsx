@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { D, T, textOn } from "../design/tokens.js";
-import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, areaWords, ballAngle, frameOf, lineKey, toXY, wagEnd } from "./field.js";
+import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, areaWords, ballAngle, frameOf, lineKey, placeWords, toXY, wagEnd } from "./field.js";
 import { FieldLabels, MIRROR_NOTE, fieldSentence } from "./fieldLabels.jsx";
 import { RR, SR, isOut } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
@@ -8,6 +8,7 @@ import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
 import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
 import { Icon } from "../ui/icons.jsx";
+import { ChartTable } from "../ui/ChartTable.jsx";
 import { chaseEndWords, projectInnings, projectMatch, runRates } from "./chartData.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -15,7 +16,16 @@ import { chaseEndWords, projectInnings, projectMatch, runRates } from "./chartDa
 ═══════════════════════════════════════════════════════ */
 /* ──────────────────────────────
    ANALYSIS CHARTS
+
+   Each chart ends in a <ChartTable> (ui/ChartTable.jsx, GA-I31): the figures
+   it draws, and the names it draws, as a real table behind a "Show as table"
+   button — built here from the very values the chart was just given, so the
+   two cannot disagree and the table can show no more than the chart does.
+   None of these charts is on a public page (the public bundle graph holds
+   scorer/charts.jsx nowhere); a public chart gets no table with names.
 ────────────────────────────── */
+/** Legal balls as overs, the cricketer's way: 17 balls is "2.5". @param {number} balls */
+const oversWord=(balls)=>Math.floor(balls/6)+"."+(balls%6);
 function WormChart({innings,match,events=null}){
   // One projection of the fold for every chart (chartData.js, GA-I05): each
   // delivery at the legal balls bowled, a wide or no-ball a step up at the
@@ -35,10 +45,26 @@ function WormChart({innings,match,events=null}){
   const mkPath=(pts)=>pts.length<2?"":pts.map((p,i)=>(i===0?"M":"L")+((xScale(p.ball))+","+yScale(p.runs).toFixed(1))).join(" ");
   const xTicks=Array.from({length:overs+1},(_,i)=>i);
   const yTicks=[0,Math.round(maxR/4),Math.round(maxR/2),Math.round(3*maxR/4),maxR];
+  // The innings the chart draws a line for, and the same figures as a table.
+  const drawn=[[inn1,p1],[inn2,p2]].filter(([i,p])=>i&&p&&p.points.length>1);
+  const wormLabel="Worm, runs and wickets against overs bowled. "+(drawn.length?drawn.map(([i,p])=>`${i.battingTeam} ${p.total}/${p.wickets.length} after ${oversWord(p.balls)} overs`).join("; "):"Nothing to draw yet")+".";
+  const wormTables=[
+    ...drawn.map(([i,p])=>({
+      caption:`${i.battingTeam}: runs and wickets at the end of each over`,
+      columns:["Over","Runs","Wickets"],
+      rows:Array.from({length:Math.ceil(p.balls/6)},(_,k)=>{
+        const lim=Math.min((k+1)*6,p.balls);
+        const pt=p.points.filter(q=>q.ball<=lim).pop();
+        return[(k+1)*6<=p.balls?String(k+1):oversWord(p.balls),pt.runs,p.wickets.filter(w=>w.ball<=lim).length];
+      }),
+    })),
+    {caption:"Fall of wickets",columns:["Wicket","Score","Overs","Batter","How out"],text:[3,4],
+      rows:drawn.flatMap(([i,p])=>p.wickets.map(w=>[`${i.battingTeam} ${w.n}`,w.runs,oversWord(w.ball),w.name,w.how||null]))},
+  ];
   return (
     <Card style={{padding:"14px 16px"}}>
       <Lbl sx={{marginBottom:"10px"}}>Worm — Runs & Wickets</Lbl>
-      <svg width="100%" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}}>
+      <svg width="100%" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}} role="img" aria-label={wormLabel}>
         <g transform={"translate("+PAD.l+","+PAD.t+")"}>
           {/* Grid */}
           {yTicks.map(v=>(
@@ -86,6 +112,7 @@ function WormChart({innings,match,events=null}){
           <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Wicket</span>
         </div>}
       </div>
+      <ChartTable testid="worm-table" tables={wormTables}/>
     </Card>
   );
 }
@@ -110,10 +137,14 @@ function ManhattanChart({inn,match,events=null,projection=null}){
   const barW=Math.max(4,cw/overs-2);
   const barColor=(r,w)=>w>0?D.rose:r>=12?D.amber:r>=8?D.sky:D.indigo;
   const live=!inn?.complete;
+  const best=ovData.reduce((a,o)=>o.runs>a.runs?o:a,ovData[0]);
+  const manLabel=`Runs per over: ${ovData.length} over${ovData.length===1?"":"s"}, the most ${best.runs} in over ${best.over+1}, ${p.total} run${p.total===1?"":"s"} in all.`;
+  const manTable=[{caption:"Runs and wickets in each over",columns:["Over","Runs","Wickets"],
+    rows:ovData.map(o=>[String(o.over+1)+(live&&!o.complete&&o===ovData[ovData.length-1]?" (so far)":""),o.runs,o.wickets])}];
   return (
     <Card style={{padding:"14px 16px"}}>
       <Lbl sx={{marginBottom:"10px"}}>Manhattan — Runs per Over</Lbl>
-      <svg width="100%" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}}>
+      <svg width="100%" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}} role="img" aria-label={manLabel}>
         <g transform={"translate("+PAD.l+","+PAD.t+")"}>
           {[0,Math.round(maxR/2),maxR].map(v=>(
             <g key={v}>
@@ -152,6 +183,7 @@ function ManhattanChart({inn,match,events=null,projection=null}){
           </div>
         ))}
       </div>
+      <ChartTable testid="manhattan-table" tables={manTable}/>
     </Card>
   );
 }
@@ -172,10 +204,14 @@ function RunRateChart({inn,match,target,events=null,projection=null}){
   const xS=v=>(v/overs)*cw;const yS=v=>ch-Math.min(1,v/maxRR)*ch;
   const mkP=(list,key)=>list.map((q,i)=>(i===0?"M":"L")+xS(q.over).toFixed(1)+","+yS(q[key]).toFixed(1)).join(" ");
   const endWords=chaseEndWords(end);
+  const showReq=req.length>1;
+  const rrLabel=pts.length>=2?`Run rate after each over, from ${pts[0].rr.toFixed(2)} to ${pts[pts.length-1].rr.toFixed(2)}`+(showReq?`; the rate required from ${req[0].reqRr.toFixed(2)} to ${req[req.length-1].reqRr.toFixed(2)}`:"")+".":"";
+  const rrTable=pts.length>=2?[{caption:"Run rate after each over",columns:showReq?["Overs","Run rate","Required rate"]:["Overs","Run rate"],
+    rows:pts.map(q=>[oversWord(Math.round(q.over*6)),q.rr.toFixed(2),...(showReq?[q.reqRr==null?null:q.reqRr.toFixed(2)]:[])])}]:[];
   return (
     <Card style={{padding:"14px 16px"}}>
       <Lbl sx={{marginBottom:"10px"}}>Run Rate</Lbl>
-      {pts.length>=2&&<svg width="100%" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}}>
+      {pts.length>=2&&<svg width="100%" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}} role="img" aria-label={rrLabel}>
         <g transform={"translate("+PAD.l+","+PAD.t+")"}>
           {[0,Math.round(maxRR/2),maxRR].map(v=>(
             <g key={v}>
@@ -205,6 +241,7 @@ function RunRateChart({inn,match,target,events=null,projection=null}){
           <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Required RR</span>
         </div>}
       </div>
+      <ChartTable testid="runrate-table" tables={rrTable}/>
     </Card>
   );
 }
@@ -235,6 +272,9 @@ function BatsmanChart({inn}){
           );
         })}
       </div>
+      <ChartTable testid="batsman-table" tables={[{caption:"Top batsmen",columns:["Batter","Runs","Balls","Strike rate"],
+        rows:batters.map(b=>[b.name+(b.status==="batting"?"*":""),b.runs,b.balls,b.balls>0?(b.runs/b.balls*100).toFixed(0):0]),
+        note:"* still batting"}]}/>
     </Card>
   );
 }
@@ -264,6 +304,9 @@ function BowlerChart({inn}){
           );
         })}
       </div>
+      <ChartTable testid="bowler-table" tables={[{caption:"Bowling performance",columns:["Bowler","Overs","Wickets","Runs","Economy"],
+        rows:bowlers.map(b=>[b.name+(b.id===inn.bowler?"*":""),oversWord(b.balls),b.wickets,b.runs,(b.balls>0?b.runs/(b.balls/6):0).toFixed(2)]),
+        note:"* bowling now"}]}/>
     </Card>
   );
 }
@@ -297,7 +340,9 @@ function BowlerChart({inn}){
  * left-handers' mirrored, and says so. Either way OFF and LEG on the field
  * are true of every spoke on it.
  */
-function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
+// `table` is false only where the screen may hold no control at all: the
+// captain's tab, where nothing is a button or a link (SCRBRD-138).
+function ShotWheel({inn,playerId=null,title="Wagon wheel",table=true}){
   if(!inn)return null;
   const log=inn.ballLog||[];
   const mine=playerId?log.filter(b=>b.strikerId===playerId):log;
@@ -312,6 +357,14 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
   // One batter's wheel counts his runs — not byes, even off a no-ball
   // (runsOffBat, SCRBRD-068); the side's counts everything run.
   const runs=mine.reduce((s,b)=>s+(playerId?runsOffBat(b):(b.value||0)),0);
+  // One row per spoke, in the order they are drawn, saying what its tooltip says.
+  const wheelTable=[{caption:`${title}: one row for each shot drawn`,columns:["Over","Result","Where","Placed"],text:[1,2,3],
+    rows:drawn.map(b=>[
+      b.over!=null?`${b.over+1}.${(b.ballInOver??0)+1}`:null,
+      isOut(b)?"Wicket":`${b.value||0} run${b.value===1?"":"s"}`,
+      areaWords(b,handOf(b)),
+      wagEnd(angleOf(b),b).synthetic?"Direction only":"Exact",
+    ])}];
   return (
     <Card style={{padding:"14px 16px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"10px"}}>
@@ -389,6 +442,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
           {missing>0&&` ${missing} ball${missing===1?"":"s"} carried no placement.`}
         </div>
       )}
+      {table&&<ChartTable testid="wheel-table" tables={wheelTable}/>}
     </Card>
   );
 }
@@ -450,6 +504,16 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
   // One hue, light to dark: a sequential surface is magnitude, and magnitude
   // is a single ramp. The amber is the ground's own colour on the wheel.
   const cells=d.cells.filter(c=>c.density>=0.04);
+  // The cells drawn, hottest first, each named for the fielding position it
+  // sits at and how far out it is. The mirror for a left-hander is its own
+  // inverse, so screenAngle() reads a screen angle back to the batter's theta
+  // (and, unlike thetaFromScreen, is already in the public graph's chunk).
+  const heatTable=[{caption:`${title}: the cells drawn, hottest first`,columns:["Where","Distance, % of the rope","Density, % of the peak"],
+    rows:[...cells].sort((a,b)=>b.density-a.density).map(c=>{
+      const r=Math.min(1,Math.hypot(c.x,c.y));
+      const ang=(Math.atan2(c.x,-c.y)*180/Math.PI+360)%360;
+      return[placeWords({theta:screenAngle(ang,frame.hand),radius:r})??"Around the pitch",Math.round(r*100),Math.round(Math.min(1,c.density)*100)];
+    })}];
   return (
     <div data-testid="shot-heat-map">
     <Card style={{padding:"14px 16px"}}>
@@ -480,6 +544,7 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
       )}
       {d.n>0&&frame.mixed&&<p data-testid="heat-mirror-note" style={{margin:"8px 0 0",textAlign:"center",fontFamily:T.type.body,fontSize:"12px",lineHeight:1.4,color:T.content.secondary}}>{MIRROR_NOTE}</p>}
       {d.n>0&&<Provenance n={d.n} missing={ev.missing} notCaptured={ev.notCaptured}/>}
+      <ChartTable testid="heat-table" tables={d.n>0?heatTable:[]}/>
     </Card>
     </div>
   );
@@ -497,6 +562,8 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
   const hand=playerId?batHandOf(inn,playerId):(hands.size===1?[...hands][0]:"R");
   const at=(mid,r)=>toXY(screenAngle(mid,hand),r);
   const pts=p.directions.map(d=>at(d.mid,(d.reach??0)*R_BND));
+  const spiderTable=[{caption:`${title}: shots, reach and runs in each direction`,columns:["Direction","Shots","Reach, % of the rope","Runs"],
+    rows:p.directions.map(d=>[d.label,d.shots,d.shots>0?Math.round(d.reach*100):null,d.shots>0?d.runs:null])}];
   return (
     <div data-testid="shot-spider">
     <Card style={{padding:"14px 16px"}}>
@@ -538,6 +605,7 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
           {`${p.n} shot${p.n===1?"":"s"} placed exactly.`}
         </Provenance>
       )}
+      <ChartTable testid="spider-table" tables={p.n>0?spiderTable:[]}/>
     </Card>
     </div>
   );
