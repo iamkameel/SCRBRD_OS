@@ -15,7 +15,9 @@
  *   2. a run out off a no-ball: one run completed off the bat, the
  *      non-striker run out at the striker's end;
  *   3. the free hit, bowled: the batter not out, the board saying so;
- *   4. a stumping off a wide.
+ *   4. a stumping off a wide;
+ *   5. in Pro Mode, a wide with two runs, and a stumping off a wide (the hub's
+ *      WIDE asks what the pad asks; Kameel, 8 Oct 2026).
  * At each step the board, the server's fold of its own rows and
  * match_live_score (the SQL fold the public score and the handover read)
  * agree. Then the same score is held to: the board's chips for the over
@@ -375,6 +377,57 @@ try {
      fow.length === 2 && /^3\/1 · .* · 0\.1$/.test(fow[0].trim()) && /^4\/2 · .* · 0\.2$/.test(fow[1].trim()));
   ok("no console errors on the public page", pubErrors.length === 0, pubErrors.slice(0, 3).join(" | "));
   await pctx.close();
+
+  // ── 3. Pro Mode's wide: its runs, and a wicket ─────────────────
+  // Kameel, 8 Oct 2026, in a live match: Pro Mode's WIDE was one tap that
+  // always recorded a wide of no runs, with no runs taken off it and no
+  // wicket on it. It asks what the pad asks now, and records the same event.
+  group("Pro Mode's WIDE asks what the pad asks: the runs taken, and a wicket");
+  await makeReady();
+  await tap("pad-menu"); await tap("pad-pro-mode");
+  await page.waitForTimeout(500);
+  const rowsAt = (await serverLog(0)).rows.length;
+  ok("the pro hub offers WIDE", await click(/^WIDE$/, 3000));
+  ok("...which asks the runs taken and whether anyone was out, recording nothing yet",
+     await tid("wd-run-2").count() === 1 && await tid("wd-wicket-yes").count() === 1 && (await serverLog(0)).rows.length === rowsAt);
+  await tap("wd-run-2");
+  await tap("wd-confirm");
+  const pw = await agree("after a Pro Mode wide with two runs");
+  const pwRow = pw.rows.filter((r) => r.kind === "ball").at(-1);
+  ok("the server stored the wide with its two runs, and no wicket", pwRow?.ball_type === "Wd" && pwRow?.value === 2 && !pwRow?.dismissal,
+     JSON.stringify(pwRow && { type: pwRow.ball_type, d: pwRow.dismissal, v: pwRow.value }));
+  ok("...7 for 2: three wides more, and no ball of the over", pw.inn.runs === st.inn.runs + 3 && pw.inn.balls === st.inn.balls
+     && pw.inn.extras.wide === st.inn.extras.wide + 3 && nel(pw.inn)?.runs === nel(st.inn).runs + 3 && nel(pw.inn)?.wides === nel(st.inn).wides + 1, boardOf(pw.inn));
+
+  const out3 = pw.inn.striker;
+  ok("WIDE again", await click(/^WIDE$/, 3000));
+  await tap("wd-wicket-yes");
+  ok("...a wicket on it moves on to the wicket sheet", /Next: the wicket/.test(await tid("wd-confirm").innerText().catch(() => "")));
+  await tap("wd-confirm");
+  ok("the wicket sheet opens, off a wide", /Off a wide: /.test(await tid("wicket-off-extra").innerText().catch(() => "")));
+  const proModes = await modesOffered();
+  ok(`...offering only Law 22.9's ways out, as on the pad (${proModes})`, proModes === "hit_wicket,obstructing_field,run_out,stumped");
+  ok("...nothing is recorded yet", (await serverLog(0)).rows.length === pw.rows.length);
+  await tap("wicket-mode-stumped");
+  await tap("wicket-confirm");
+  await page.waitForTimeout(600);
+  await clearBlockers();
+  const ps = await agree("after a Pro Mode stumping off a wide");
+  const psRow = ps.rows.filter((r) => r.kind === "ball").at(-1);
+  ok("the server stored one row: the wide, carrying the stumping", psRow?.ball_type === "Wd" && psRow?.dismissal === "stumped" && psRow?.value === 0
+     && ps.rows.filter((r) => r.kind === "ball").length === pw.rows.filter((r) => r.kind === "ball").length + 1,
+     JSON.stringify(psRow && { type: psRow.ball_type, d: psRow.dismissal, v: psRow.value }));
+  ok("...8 for 3, still two balls of the over; the striker out stumped, the bowler's wicket",
+     ps.inn.runs === 8 && ps.inn.wickets === 3 && ps.inn.balls === 2 && ps.inn.extras.wide === st.inn.extras.wide + 4
+     && /^st /.test(ps.inn.batsmen.find((b) => b.id === out3)?.dismissal ?? "") && nel(ps.inn)?.wickets === 2 && nel(ps.inn)?.wides === nel(st.inn).wides + 2,
+     boardOf(ps.inn));
+  ok("...the fall of wickets adds 8-3 at 0.2", ps.inn.fow.map((f) => `${f.runs}-${f.wickets}@${f.overs}`).join(" ") === "3-1@0.1 4-2@0.2 8-3@0.2", JSON.stringify(ps.inn.fow));
+  await click(/FOCUS MODE/i, 3000);
+  await page.locator("button", { hasText: /^\s*Cards$/ }).first().click({ timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  const proCards = await text();
+  ok("the scorecard: 8/3, 0.2 overs, the fall of wickets 8/3", /8\s*\/\s*3/.test(proCards) && /0\.2 overs/.test(proCards) && /8\/3/.test(proCards));
+  await page.locator("button", { hasText: /^\s*Score$/ }).first().click({ timeout: 3000 }).catch(() => {});
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {

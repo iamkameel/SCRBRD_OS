@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "description": "Event-sourced cricket scoring: the ball log is the only source of truth, everything else is derived by replay.",
   "main": "./src/index.mjs",
   "exports": { ".": "./src/index.mjs", "./commentary": "./src/commentary.mjs", "./planner": "./src/planner.mjs" },

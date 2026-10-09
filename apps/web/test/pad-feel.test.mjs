@@ -168,7 +168,11 @@ group("1. Every extra, both ways: the same bytes");
   const eng = src("apps/web/src/scorer/engine.jsx"), pad = src("apps/web/src/scorer/pad.jsx");
   ok("engine: recordWide(runs) is commitBall(\"Wd\",runs,null,null,null,hubApproach)",
      /const recordWide=\(runs\)=>\{\s*if\(!guardReady\(\)\)return;\s*commitBall\("Wd",runs,null,null,null,hubApproach\);/.test(eng));
-  ok("engine: the one-tap wide is recordWide(0)", /const onWide=\(\)=>recordWide\(0\);/.test(eng));
+  // Pro Mode's WIDE asks the runs and the wicket on the wide sheet now (8 Oct
+  // 2026); pro-extras-parity.test.mjs proves it records what the pad records.
+  ok("engine: the hub's WIDE opens the wide sheet, which confirms through recordWide or openExtraWicket",
+     /const onWide=\(\)=>\{\s*if\(!guardReady\(\)\)return;\s*setModal\("wide"\);/.test(eng)
+     && /onConfirm=\{\(runs,wicket\)=>\{if\(wicket\)openExtraWicket\("Wd",runs\);else\{setModal\(null\);recordWide\(runs\);\}\}\}/.test(eng));
   ok("engine: onCommitDetailed is commitBall(type,value,shot,seg,zone,null,placement)",
      /const onCommitDetailed=\(type,value,shot,seg,zone,placement\)=>\{\s*if\(!guardReady\(\)\)return;\s*commitBall\(type,value,shot,seg,zone,null,placement\);/.test(eng));
   ok("engine: recordNoBall emits noBallEvent({inn,nbType,runs,nbRuns,selShot,selSeg})",

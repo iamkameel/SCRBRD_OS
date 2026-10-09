@@ -393,8 +393,8 @@ try {
   const all = await p.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-key")));
   ok(`the whole match, every line but the overs' summaries (${told.filter((c) => c.kind !== "over_end").length})`,
      all.length === told.filter((c) => c.kind !== "over_end").length, all.length);
-  ok("...with one correction line for each of the two corrections, and no more (GA-I36)",
-     all.filter((k) => k.startsWith("c:")).length === 2 && told.filter((c) => c.kind === "correction").length === 2);
+  ok("...with one correction line for the approved amendment, none for the scorer's undo, and no more (GA-I36)",
+     all.filter((k) => k.startsWith("c:")).length === 1 && told.filter((c) => c.kind === "correction").length === 1);
   ok("the voided delivery and the amended one have no line", voided.every((t) => !all.some((k) => k === `e:${t}` || k.startsWith(`e:${t}#`))));
   const body = await tid(p, "mc-commentary").innerText();
   ok("Westville start their innings on the five penalty runs", /Westville Boys' High 1XI start their innings on 5/.test(body));

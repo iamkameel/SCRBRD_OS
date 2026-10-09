@@ -38,7 +38,9 @@ import { AccountButton } from "./accountactive.jsx";
 //  offered only where the server would allow it (lib/people.js
 //  accountAction(), db/81's rule) and decided again by the server, whose
 //  refusal is shown in its own words. A disabled account stays on the list,
-//  marked "Disabled" in words.
+//  marked "Disabled" in words, with the day it changed for the office and its
+//  auditors (slice 2, db/90). Each act asks for a reason, and a disable first
+//  says what the account has open (accountactive.jsx, the preview).
 //
 //  Nobody signed in (the demonstration): the seeded directory is read, one
 //  role each, and nothing is offered that would write.
@@ -84,6 +86,13 @@ function RoleChip({ r, person, linkedName }) {
   );
 }
 
+/** The reader's own day an account changed state (YYYY-MM-DD), or null. */
+function changedDay(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("en-CA");
+}
+
 function lastSeen(v) {
   if (!v) return "Never signed in";
   const s = String(v);
@@ -121,7 +130,7 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
   const me = live ? profile() : null;
   const accountChanged = (p, active) => {
     setNotice(active
-      ? `Enabled ${p.name}'s account. They can sign in again; each device signs in afresh.`
+      ? `Enabled ${p.name}'s account. They can sign in again; each device signs in afresh. They are told it was re-enabled, not why.`
       : `Disabled ${p.name}'s account. They are signed out of every device and cannot sign in. Their roles stay.`);
     setNonce((n) => n + 1);
     onDirectoryChanged?.();
@@ -220,8 +229,16 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
               <div style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted, marginTop: "2px" }}>
                 {/* The state in words, never by colour alone: a disabled account
                     cannot sign in, and keeps every role it holds. */}
-                {p.status === "active" ? "Active"
-                  : <span data-testid="account-disabled" style={{ fontWeight: 700, color: D.textPrimary }}>Disabled</span>}
+                {p.status === "active" ? "Active" : (
+                  <>
+                    <span data-testid="account-disabled" style={{ fontWeight: 700, color: D.textPrimary }}>Disabled</span>
+                    {/* When, from account_status_change (db/90): the office and its
+                        auditors read it; a reader with user.read alone gets no date. */}
+                    {changedDay(p.statusChangedAt) && (
+                      <span data-testid="account-disabled-on"> {humanDate(changedDay(p.statusChangedAt))}, by the office</span>
+                    )}
+                  </>
+                )}
                 {" · "}{lastSeen(p.lastLogin)}
                 {linkedName(p) ? ` · account for ${linkedName(p)}` : ""}
               </div>

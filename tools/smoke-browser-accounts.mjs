@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 /**
  * Disable account and Enable account, on Management → Users, from a browser
- * (account lifecycle, slice 1: the `accounts` read, db/85's two routes, db/81's
- * rule; no migration).
+ * (account lifecycle, slices 1 and 2: the `accounts` read, db/85's two routes
+ * with db/90's reason, db/90's preview and the notice on enable, db/81's rule).
  *
  *   1. The office sees Disable account beside a coach, and not beside the
  *      principal, the DSO or itself: the button is drawn only where the server
  *      would allow it.
  *   2. Disable opens a confirmation that says every device is signed out now
- *      and the roles stay; "Keep it active" changes nothing.
- *   3. Confirmed: the coach's token is dead on its next request, his row stays
- *      on the list marked "Disabled" in words, every role chip still live, the
- *      "Disabled" filter finds him, and Postgres agrees.
- *   4. Enable account: the row is "Active" again, and the coach signs in from
- *      a browser.
+ *      and the roles stay, and above the reason what the account has open (the
+ *      preview: his devices); Disable waits for a reason of ten characters;
+ *      "Keep it active" changes nothing.
+ *   3. Confirmed with a reason: the coach's token is dead on its next request,
+ *      his row stays on the list marked "Disabled" in words with the day, by
+ *      the office, every role chip still live, the "Disabled" filter finds
+ *      him, and Postgres agrees, the reason on account_status_change.
+ *   4. Enable account opens its own confirmation, which asks why too: the row
+ *      is "Active" again, one notice is written to him without the reason,
+ *      and the coach signs in from a browser.
  *   5. An account holding a role at a second school, which the office cannot
- *      see: the button is drawn, the server refuses, and the screen says why in
- *      the server's words; nothing moves.
+ *      see: the button is drawn, the preview says before the tap that this
+ *      account cannot be disabled from here, in words; no reason is asked and
+ *      no Disable offered; nothing moves.
  *   6. The "coming" line is gone; a coach is offered no Disable at all; the
  *      demonstration offers none.
  *   7. The floors: no text under 12px, nothing tapped under 44px, at 1280 and
@@ -73,6 +78,9 @@ await new Promise((r) => web.listen(WEB_PORT, r));
 const pool = new pg.Pool({ connectionString: ownerUrl() });
 const q = async (text, params) => (await pool.query(text, params)).rows;
 const activeOf = async (email) => (await q(`select active from app_user where email = $1`, [email]))[0]?.active;
+const changesOf = async (email) => (await q(
+  `select c.active, c.reason, c.notice_id from account_status_change c join app_user u on u.id = c.user_id
+    where u.email = $1 order by c.changed_at, c.id`, [email]));
 const rolesOf = async (email) => (await q(
   `select a.role, a.team_code from role_assignment a join app_user u on u.id = a.person_id
     where u.email = $1 and a.active order by a.role, a.team_code`, [email])).map((r) => `${r.role}:${r.team_code ?? ""}`).join(",");
@@ -205,6 +213,13 @@ try {
      warning === "This signs C Hendricks out of every device now and stops them signing in. Their roles stay. To remove them from the school, end their roles first.", warning);
   ok("...Keep it active has the focus: the destructive button is not the default",
      await off.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "account-disable-cancel");
+  await tid(off.page, "account-preview").waitFor({ timeout: 8000 }).catch(() => {});
+  const lines = await tid(off.page, "account-preview").locator("li").allInnerTexts().catch(() => []);
+  ok("...above the reason it says what he has open: his devices, signed out now",
+     lines.length >= 1 && lines.some((l) => /^\d+ devices? signed in; all are signed out now\.$/.test(l)), lines.join(" | "));
+  ok("...Disable account waits for a reason", await tid(off.page, "account-disable-confirm").isDisabled());
+  await tid(off.page, "account-reason").fill("lost it");
+  ok("...nine characters will not do", await tid(off.page, "account-disable-confirm").isDisabled());
   const ff = await floors(off.page, '[data-testid="account-disable-form"]');
   ok("...on the 12px and 44px floors", ff.small.length === 0 && ff.taps.length === 0, ff.small.concat(ff.taps).join(" | "));
   await tid(off.page, "account-disable-cancel").click();
@@ -214,7 +229,10 @@ try {
 
   // ── 3. Disabled ──────────────────────────────────────────────────
   group("Disabled: signed out everywhere, still on the list, every role kept");
+  const changes0 = (await changesOf(COACH)).length;
   await tid(off.page, `account-disable-${coachId}`).click({ timeout: 5000 });
+  ok("...the reason starts empty again", (await tid(off.page, "account-reason").inputValue()) === "");
+  await tid(off.page, "account-reason").fill("Phone lost at the away fixture");
   await tid(off.page, "account-disable-confirm").click({ timeout: 5000 });
   await tid(off.page, `account-enable-${coachId}`).waitFor({ timeout: 10000 }).catch(() => {});
   ok("Postgres has the account disabled", (await activeOf(COACH)) === false);
@@ -224,6 +242,11 @@ try {
   ok("the coach stays on the list, once", await rowOf(off.page, COACH).count() === 1);
   ok("...marked Disabled in words", (await rowOf(off.page, COACH).getAttribute("data-status")) === "inactive"
      && (await rowOf(off.page, COACH).locator('[data-testid="account-disabled"]').innerText()).trim() === "Disabled");
+  const said1 = await rowOf(off.page, COACH).locator('[data-testid="account-disabled-on"]').innerText().catch(() => "");
+  ok("...with the day, by the office", /^\s*\w{3} \d{1,2} \w{3}, by the office$/.test(said1), said1);
+  const ch1 = await changesOf(COACH);
+  ok("Postgres has the reason on the record, and no notice", ch1.length === changes0 + 1 && ch1.at(-1)?.active === false
+     && ch1.at(-1)?.reason === "Phone lost at the away fixture" && ch1.at(-1)?.notice_id === null, JSON.stringify(ch1));
   ok("...every role chip as it was, live", JSON.stringify(await chipStates(rowOf(off.page, COACH))) === JSON.stringify(chipsBefore)
      && (await rolesOf(COACH)) === rolesBefore, `${await chipStates(rowOf(off.page, COACH))} / ${chipsBefore}`);
   ok("...and Enable account offered in place of Disable", await tid(off.page, `account-enable-${coachId}`).count() === 1
@@ -245,6 +268,18 @@ try {
   // ── 4. Enabled ───────────────────────────────────────────────────
   group("Enable account: active again, and he signs in");
   await tid(off.page, `account-enable-${coachId}`).click({ timeout: 5000 });
+  const enForm = tid(off.page, "account-enable-form");
+  ok("Enable opens its own confirmation: nobody is signed back in, he is told, not why",
+     await enForm.count() === 1 && /can sign in again; each device signs in afresh\. They are told the account was re-enabled, not why\./
+       .test(await tid(off.page, "account-enable-warning").innerText().catch(() => "")));
+  ok("...Keep it disabled has the focus, and Enable waits for a reason",
+     await off.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "account-enable-cancel"
+     && await tid(off.page, "account-enable-confirm").isDisabled());
+  ok("...no preview: there is nothing to cut", await tid(off.page, "account-preview").count() === 0);
+  const ef = await floors(off.page, '[data-testid="account-enable-form"]');
+  ok("...on the 12px and 44px floors", ef.small.length === 0 && ef.taps.length === 0, ef.small.concat(ef.taps).join(" | "));
+  await tid(off.page, "account-reason").fill("Phone recovered by the coach");
+  await tid(off.page, "account-enable-confirm").click({ timeout: 5000 });
   await tid(off.page, `account-disable-${coachId}`).waitFor({ timeout: 10000 }).catch(() => {});
   ok("Postgres has the account active", (await activeOf(COACH)) === true);
   ok("the screen says so", /Enabled C Hendricks's account\. They can sign in again/.test(await tid(off.page, "people-notice").innerText().catch(() => "")));
@@ -252,6 +287,13 @@ try {
      && await rowOf(off.page, COACH).locator('[data-testid="account-disabled"]').count() === 0
      && await tid(off.page, `account-disable-${coachId}`).count() === 1);
   ok("his old phone token stays signed out", (await coachSession()) === 401);
+  const ch2 = await changesOf(COACH);
+  const notice = ch2.at(-1)?.notice_id
+    ? (await q(`select kind, recipient_id, title, body from notification where id = $1`, [ch2.at(-1).notice_id]))[0] : null;
+  ok("Postgres has the enable's reason, and one notice to him, without it",
+     ch2.length === changes0 + 2 && ch2.at(-1)?.active === true && ch2.at(-1)?.reason === "Phone recovered by the coach"
+     && notice?.kind === "system" && notice?.title === "Your account was re-enabled"
+     && !notice.body.includes("recovered") && !notice.body.includes("lost"), JSON.stringify([ch2.at(-1), notice]));
   ok("every role he held is still held", (await rolesOf(COACH)) === rolesBefore);
   const coachBack = await open();
   ok("the coach signs in again from a browser", await signIn(coachBack.page, COACH));
@@ -265,7 +307,7 @@ try {
   await coachBack.ctx.close();
 
   // ── 5. Refused in words ──────────────────────────────────────────
-  group("A role at a second school: the server refuses, and the screen says why");
+  group("A role at a second school: the preview says before the tap that it cannot be done here");
   // The account was made before the office signed in, so it is on the list
   // already (a reload would sign the office out: the token lives in memory).
   ok("the account is on the office's list", await rowOf(off.page, TWO).count() === 1);
@@ -273,11 +315,12 @@ try {
   ok("the office sees the account and its role here, not the one at Westville",
      await rowOf(off.page, TWO).count() === 1 && JSON.stringify(await chipStates(rowOf(off.page, TWO))) === JSON.stringify(["coach:live"]));
   await tid(off.page, `account-disable-${twoId}`).click({ timeout: 5000 });
-  await tid(off.page, "account-disable-confirm").click({ timeout: 5000 });
   await tid(off.page, "account-refused").waitFor({ timeout: 8000 }).catch(() => {});
   const said = await tid(off.page, "account-refused").innerText().catch(() => "");
   ok("the refusal is the server's sentence, in words, never a code",
-     said === "You cannot do this for that account. The school office that enrolled them can." && !/not_permitted/.test(said), said);
+     said === "Also holds roles at another school. This account cannot be disabled from here." && !/other_school/.test(said), said);
+  ok("...no reason is asked and no Disable offered", await tid(off.page, "account-disable-confirm").count() === 0
+     && await tid(off.page, "account-reason").count() === 0);
   ok("...the confirmation stays open, and nothing moved", await tid(off.page, "account-disable-form").count() === 1 && (await activeOf(TWO)) === true);
   await tid(off.page, "account-disable-cancel").click();
   ok("no console errors on the office's session", off.errors.length === 0, off.errors.join(" | "));

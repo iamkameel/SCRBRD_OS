@@ -209,12 +209,16 @@ group("A. accounts (account lifecycle D5): every account, disabled ones included
   const a = READ_QUERIES.accounts.text, u = READ_QUERIES.users.text;
   const cols = (/** @type {string} */ t) => (t.match(/select\s+([\s\S]*?)\s+from\s/i)?.[1] ?? "")
     .split(",").map((c) => c.trim().split(/\s+/).pop()).filter(Boolean);
-  ok("reads app_user, the table db/09's app_user_read policy governs, and nothing else",
-     /from app_user\s/.test(a) && !/\bjoin\b/i.test(a));
-  ok("has no `where active`: a disabled account is on it", !/\bwhere\b/i.test(a) && !/where\s+active/i.test(a));
+  ok("reads app_user, the table db/09's app_user_read policy governs, and account_status_change under its own policy (db/90)",
+     /from app_user\s/.test(a) && !/\bjoin\b/i.test(a)
+     && (a.match(/\bfrom\s+(\w+)/gi) ?? []).map((f) => f.split(/\s+/)[1]).sort().join() === "account_status_change,app_user");
+  const outer = a.replace(/\(select[\s\S]*?\) as status_changed_at/, "status_changed_at");
+  ok("has no `where active`: a disabled account is on it", !/\bwhere\b/i.test(outer) && !/where\s+active/i.test(a));
   ok("users keeps its `where active`, for the screens that pick a person to act on", /where active/.test(u));
-  ok("the same columns as users, plus `mine` and nothing more",
-     JSON.stringify(cols(a)) === JSON.stringify([...cols(u), "mine"]));
+  ok("the same columns as users, plus `mine` and `status_changed_at` and nothing more",
+     JSON.stringify(cols(outer)) === JSON.stringify([...cols(u), "mine", "status_changed_at"]));
+  ok("status_changed_at is the account's own latest change, read as the caller (no definer, no app_can)",
+     /\(select max\(c\.changed_at\) from account_status_change c where c\.user_id = app_user\.id\) as status_changed_at/.test(a));
   ok("`mine` is the reader's own row, by app_user_id()", /id = app_user_id\(\) as mine/.test(a));
   ok("takes no parameter a caller could widen it with", !READ_QUERIES.accounts.params && !/\$1/.test(a));
   ok("is not masked and asks for no capability of its own: RLS decides who reads which row",
@@ -251,6 +255,29 @@ group("A. accounts (account lifecycle D5): every account, disabled ones included
   ok("...naming the accounts read, not the reader's own, and the email column",
      JSON.stringify(logged[0]?.params?.[1]) === JSON.stringify([C1, C2]) && JSON.stringify(logged[0]?.params?.[2]) === JSON.stringify(["email"])
      && logged[0]?.params?.[0] === "accounts");
+}
+
+group("A. The physio's half is null, not false, for a reader without medical.status.read");
+{
+  // injury_read (db/09) hides every injury row from a reader without the
+  // status tier, so "no restricted row" proves nothing for him; false would
+  // read as "cleared" (K3, db/55). Both reads that carry the column ask the
+  // same app_can() call the policy makes, per boy, and say null otherwise.
+  // The live proof is tools/smoke-readiness.mjs and smoke-availability.mjs.
+  const flat = (/** @type {string} */ t) => t.replace(/\s+/g, " ");
+  const gate = "app_can('medical.status.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)";
+  const policy = flat((await import("node:fs")).readFileSync(new URL("../../../db/09_rls_policies.sql", import.meta.url), "utf8"))
+    .match(/CREATE POLICY injury_read ON injury FOR SELECT USING \((app_can\('medical\.status\.read'[^;]*)\);/)?.[1] ?? "";
+  ok("the gate is the injury_read policy's own call, with the boy for the injury row",
+     policy.replaceAll("injury.school_id", "p.school_id").replace(/\(SELECT p\.team_code FROM player p WHERE p\.id = injury\.player_id\)/, "p.team_code")
+       .replaceAll("injury.player_id", "p.id") === gate);
+  const r = flat(READ_QUERIES.readiness.text), a = flat(READ_QUERIES.availability.text);
+  ok("readiness: asked per boy", r.includes(`cross join lateral (select ${gate} as may) k`));
+  ok("readiness: the coalesce to false only where the tier fills it",
+     /\(case when my_feature_enabled\('injuries'\) and k\.may then coalesce\(c\.restricted, false\) end\) as clinically_restricted/.test(r));
+  ok("readiness: no other coalesce of the clinical half", (r.match(/coalesce\(c\.restricted/g) ?? []).length === 1);
+  ok("availability: exists() only where the tier fills it",
+     a.includes(`(case when my_feature_enabled('injuries') and ${gate} then exists (select 1 from injury_masked i where i.player_id = p.id and i.restricted) end) as clinically_restricted`));
 }
 
 // ── B. Client accessor ──
