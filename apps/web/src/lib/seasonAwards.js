@@ -107,7 +107,7 @@ export function mvpScore({ batting, bowling }) {
 }
 
 /** @param {any[]} players @param {{team?: string|null, school?: string|null}} [opts] */
-const scoped = (players, { team = null, school = null } = {}) =>
+export const scoped = (players, { team = null, school = null } = {}) =>
   players.filter((p) => (team == null || p.team === team) && (school == null || p.school === school));
 
 /**
