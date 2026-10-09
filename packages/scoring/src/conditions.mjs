@@ -37,8 +37,6 @@
  */
 import { freeHitsApply, MATCH_FORMAT } from "./format.mjs";
 
-/** The three parts of a document: when each is frozen, and who reads it (design §1.1). */
-export const CONDITION_PART = Object.freeze({ PLAY: "play", TABLE: "table", SHEET: "sheet" });
 
 /**
  * Key prefixes no condition may carry: anything whose evaluation would need
