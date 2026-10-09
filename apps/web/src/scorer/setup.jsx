@@ -204,7 +204,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
             placeholder="Filter bowlers…"
             style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
               color:D.textPrimary,fontSize:"16px",fontFamily:D.body,padding:"8px 12px",minHeight:"44px",width:"100%"}}/>
-          <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"300px",overflowY:"auto"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"300px",overflowY:"auto",overscrollBehavior:"contain"}}>
             {bowlerCandidates.map(name=>{
               const p=getBowler(name);
               const rc=p?ROLE_COLORS[p.role]||D.textMuted:D.textMuted;

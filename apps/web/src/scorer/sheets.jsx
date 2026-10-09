@@ -1012,7 +1012,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
             placeholder="Search fielder…"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,
               color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px",marginBottom:"8px"}}/>
-          <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"180px",overflowY:"auto"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"180px",overflowY:"auto",overscrollBehavior:"contain"}}>
             {filteredFielders.map(p=>(
               <button key={p.name} onClick={()=>setFielder(p.name)} className="pressBtn" style={{
                 display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:D.md,
@@ -1144,7 +1144,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
         <Lbl sx={{marginBottom:"7px",color:D.textSecondary,fontSize:"12px"}}>
           {teamInfo?`${bowlingTeamKey} — Bowling Options`:bowlingSquad?.length?"Fielding Squad":"New Bowler"}
         </Lbl>
-        <div data-testid="bowler-choices" style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"14px",maxHeight:"320px",overflowY:"auto"}}>
+        <div data-testid="bowler-choices" style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"14px",maxHeight:"320px",overflowY:"auto",overscrollBehavior:"contain"}}>
           {rows.map(p=>{
             const asked=!midOver||!!reason;
             // The Laws batch's words first (they know a suspension), else the generic ones.

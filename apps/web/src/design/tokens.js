@@ -797,10 +797,13 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 ::-webkit-scrollbar-thumb{background:${T.surface.overlay};border-radius:2px}
 .os-page{animation:fadeUp .25s ease}
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.pressBtn{transition:all .12s ease;transform-origin:center}
-.pressBtn:active{transform:scale(0.96)}
-.card-hover{transition:all .2s ease}
-.card-hover:hover{transform:translateY(-1px);box-shadow:${T.elevation.lg}!important}
+/* Name what moves (never "all"), and a disabled button never presses. Hover
+   lives behind (hover: hover): on a phone :hover latches after a tap and
+   reads as "selected". */
+.pressBtn{transition:transform 150ms ease-out;transform-origin:center}
+.pressBtn:not(:disabled):active{transform:scale(0.96)}
+.card-hover{transition:transform .2s ease,box-shadow .2s ease}
+@media (hover: hover){.card-hover:hover{transform:translateY(-1px);box-shadow:${T.elevation.lg}!important}}
 .pulse{animation:pulse 2s ease infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .spin{animation:spin 1s linear infinite}
@@ -834,7 +837,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 .os-state{position:relative;isolation:isolate}
 .os-state::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
   background:${T.content.primary};opacity:0;transition:opacity ${T.motion.micro} ${T.motion.swift}}
-.os-state:hover::after{opacity:.05}
+@media (hover: hover){.os-state:hover::after{opacity:.05}}
 .os-state:active::after{opacity:.09}
 .os-state[aria-selected="true"]::after,.os-state[data-selected="true"]::after{opacity:.08}
 
@@ -926,7 +929,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
     transition-duration:1ms!important;
     scroll-behavior:auto!important;
   }
-  .pressBtn:active{transform:none}
+  .pressBtn:not(:disabled):active{transform:none}
   .card-hover:hover{transform:none}
   .os-insight-in{animation:none!important}
   .mc-moment,.mc-moment-big{animation:none!important}

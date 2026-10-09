@@ -53,7 +53,7 @@ export function KeeperChoices({ keeper, choices, onPick }) {
   const name = typed.trim();
   return (
     <div data-testid="keeper-choices" style={{ display: "grid", gap: T.space.xs }}>
-      <div role="radiogroup" aria-label="Who is keeping wicket?" style={{ display: "grid", gap: T.space.xs, maxHeight: "240px", overflowY: "auto" }}>
+      <div role="radiogroup" aria-label="Who is keeping wicket?" style={{ display: "grid", gap: T.space.xs, maxHeight: "240px", overflowY: "auto", overscrollBehavior: "contain" }}>
         {choices.map((p) => {
           const on = keeper?.id === p.id;
           return (
