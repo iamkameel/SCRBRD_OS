@@ -179,8 +179,6 @@ export const CLOCK = Object.freeze({
   bus:       Object.freeze({ hours: 0, trip: true }),    // S1: the trip's depart_at, else the first ball
 });
 
-/** Which clock each rule runs on. A rule not here has none. */
-export const ROW_CLOCK = Object.freeze({ S7: "answers", S3: "answers", S6: "sheet", S1: "bus", O4: "firstBall", S10: "firstBall", O5: "firstBall" });
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

@@ -400,10 +400,6 @@ export const STOP_REASON = /** @type {const} */ ({
 });
 /** @type {ReadonlySet<string>} */
 export const STOP_REASONS = new Set(Object.values(STOP_REASON));
-/** The words for a stop's reason ("Rain stopped play", "Play stopped (bad light)"). */
-export const STOP_REASON_WORDS = Object.freeze({
-  rain: "rain", bad_light: "bad light", wet_ground: "a wet ground", other: "an interruption",
-});
 // ── end SCRBRD-130 R1 ──
 
 /*

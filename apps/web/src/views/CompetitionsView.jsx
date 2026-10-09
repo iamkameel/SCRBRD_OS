@@ -51,7 +51,7 @@ function useSetupState(id, wanted, nonce) {
   return wanted && got && got.id === id && got.nonce === nonce ? got.state : null;
 }
 
-function CompetitionsView({ role }) {
+function CompetitionsView({ role, homeBar = null }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   // `nonce` reads the competitions again after the wizard has made or changed one.
@@ -98,6 +98,7 @@ function CompetitionsView({ role }) {
     <div className="os-page">
       <SectionHeader title="Competitions" sub="Leagues, cups and tournaments" color={D.amber}
         actions={canMake&&<button type="button" data-testid="new-competition" onClick={()=>setMode({wizard:true,competitionId:null})} style={leagueButton(true)}>+ New Competition</button>}/>
+      {homeBar}
       <LeagueInvitations role={role} onAnswered={()=>setNonce((n)=>n+1)}/>
       <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
         {COMPETITIONS.map(c=>(
