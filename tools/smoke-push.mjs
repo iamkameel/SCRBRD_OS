@@ -17,11 +17,15 @@
  *      an id, a row marked public included (NOTIFICATIONS.md D6, D14).
  *   4. A PHONE THAT CHANGES HANDS stops receiving the last person's alerts.
  *   5. NOBODY ENROLS SOMEBODY ELSE'S PHONE, and nobody reads their list.
- *   6. THE PUBLISH ROUTE IS LOCKED (D12, slice S0): a `notice`, at most
- *      `medium`, with no capability, no public flag, no child and no single
- *      recipient. A notice about a child is the system's to write, so this
- *      walk writes those rows directly, as notify_injury() does.
+ *   6. PEOPLE WRITE POSTS; THE SYSTEM WRITES NOTICES (D9, D10, slice S2). A
+ *      person publishes through POST /api/news, and the post's trigger
+ *      (db/91) writes its one notice; POST /api/notifications and the manual
+ *      push are closed (410). A notice about a child is the system's to
+ *      write, so this walk writes those rows directly, as notify_injury()
+ *      does, and calls the fan-out itself (S3's worker will, after commit).
  *   7. AN EXPIRED NOTICE IS NOT SENT.
+ *   8. A POST WITHDRAWN TAKES ITS NOTICE BACK, AND ANY READER MAY REPORT ONE
+ *      (D11), once.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-push.mjs
@@ -70,11 +74,37 @@ const retire = (token, tok) =>
   api("/api/devices/retire", { method: "POST", token: tok, body: { token } });
 const retireById = (id, tok) =>
   api("/api/devices/retire", { method: "POST", token: tok, body: { id } });
-const publish = (tok, body) => api("/api/notifications", { method: "POST", token: tok, body });
-const push = (id, tok) => api(`/api/notifications/${id}/push`, { method: "POST", token: tok });
+// A person's words: a post, through the newsfeed (D9). Its notice is the
+// trigger's (db/91); noticeOf() finds it as the owner.
+const post = (tok, body) => api("/api/news", { method: "POST", token: tok, body });
+const noticeOf = async (postId) => (await q(
+  `select id from notification
+    where kind = 'notice' and subject_kind = 'news' and subject_id = $1 and retracts_id is null`, [postId]))[0]?.id ?? null;
+// Post, and hand back the notice the post wrote: { status, post, id }.
+const publish = async (tok, body) => {
+  const r = await post(tok, body);
+  return { status: r.status, body: r.body, id: r.status === 200 ? await noticeOf(r.body.id) : null };
+};
+// The two closed doors (D9): answered 410 whatever they are sent.
+const oldPublish = (tok, body) => api("/api/notifications", { method: "POST", token: tok, body });
+const oldPush = (id, tok) => api(`/api/notifications/${id}/push`, { method: "POST", token: tok });
+// The fan-out itself, as the caller would have pushed it before S2 and as S3's
+// worker will after commit: in this process, through the echo transport.
+const wire = echoTransport();
+const push = async (id, tok, transport = wire) => {
+  try {
+    return { status: 200, body: await fanOut({ pool: appPool, secret: "smoke-push-secret", bearer: `Bearer ${tok}`, notificationId: id, transport }) };
+  } catch (e) {
+    return { status: e.status ?? 500, body: { error: e.message, ...(e.detail ? { detail: e.detail } : {}) } };
+  }
+};
+const report = (id, tok) => api(`/api/notifications/${id}/report`, { method: "POST", token: tok, body: {} });
 const myDevices = async (tok) => (await api("/api/read/my_devices", { token: tok })).body?.rows ?? [];
 
 const pool = new pg.Pool({ connectionString: DB });
+// The fan-out runs as the API does: the application role, under RLS. As the
+// owner every row is everybody's, and the per-person question answers yes.
+const appPool = new pg.Pool({ connectionString: appUrl() });
 const q = async (t, p) => (await pool.query(t, p)).rows;
 
 /**
@@ -204,84 +234,108 @@ try {
        rows.find((r) => !r.live)?.retired_reason === "replaced");
   }
 
-  group("Publishing, which had a policy and no route at all");
+  group("Publishing is writing a post: its notice is the trigger's (D9, D10)");
   {
-    const good = await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice",
+    const good = await publish(head, { scope: "school", schoolId: HIL,
       title: "Saturday's fixtures", body: "All age groups at home." });
-    ok("somebody holding news.publish.school can publish", good.status === 200);
-    ok("...and it is stamped with the publisher",
-       (await q(`select published_by from notification where id = $1`, [good.body.id]))[0]
-         .published_by === await idOf("sarah@example.invalid"));
-    ok("...as news.read, not public", good.body?.requiredCapability === "news.read"
-       && good.body?.isPublic === false);
+    ok("somebody holding news.publish.school can post", good.status === 200 && good.body?.published === true);
+    ok("...and the post wrote one notice", !!good.id
+       && (await q(`select count(*)::int c from notification where subject_kind = 'news' and subject_id = $1 and retracts_id is null`,
+                   [good.body.id]))[0].c === 1);
+    const row = (await q(`select kind, scope_level, urgency, required_capability, is_public, subject_person_id, recipient_id,
+                                 published_by, title, body from notification where id = $1`, [good.id]))[0];
+    ok("...a notice, to the school, in the app only (low)", row?.kind === "notice" && row?.scope_level === "school" && row?.urgency === "low");
+    ok("...stamped with the author", row?.published_by === await idOf("sarah@example.invalid"));
+    ok("...as news.read, not public, about nobody, for nobody",
+       row?.required_capability === "news.read" && row?.is_public === false && row?.subject_person_id === null && row?.recipient_id === null);
+    ok("...in the post's own words", row?.title === "Saturday's fixtures" && row?.body === "All age groups at home.");
 
-    // published_by is never taken from the request, exactly as declared_by on
+    // The author is the session, never the body, exactly as declared_by on
     // an availability row is not.
-    const spoofed = await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B",
-      publishedBy: await idOf("coach@example.invalid") });
-    ok("published_by cannot be spoofed",
-       (await q(`select published_by from notification where id = $1`, [spoofed.body.id]))[0]
-         .published_by === await idOf("sarah@example.invalid"));
+    const spoofed = await publish(head, { scope: "school", schoolId: HIL, title: "Kit day", body: "B",
+      authorId: await idOf("coach@example.invalid"), publishedBy: await idOf("coach@example.invalid") });
+    ok("the author cannot be spoofed",
+       (await q(`select published_by from notification where id = $1`, [spoofed.id]))[0]?.published_by === await idOf("sarah@example.invalid"));
 
-    ok("a spectator cannot publish", [403, 401].includes((await publish(watcher, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B" })).status));
+    const phones = await publish(head, { scope: "school", schoolId: HIL, title: "Nets", body: "B field this week.", urgency: "medium" });
+    ok("\"Send to phones too\" makes the notice medium",
+       phones.body?.urgency === "medium" && (await q(`select urgency from notification where id = $1`, [phones.id]))[0]?.urgency === "medium");
+
+    const count = async () => (await q(`select count(*)::int c from notification`))[0].c;
+    const before = await count();
+    ok("a spectator cannot post", [403, 401].includes((await post(watcher, {
+      scope: "school", schoolId: HIL, title: "Tea", body: "B" })).status));
     // The medical officer holds every medical capability and no publishing one.
     ok("holding a subject-matter capability is not holding a publishing one",
-       [403, 401].includes((await publish(medic, {
-         schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B" })).status));
+       [403, 401].includes((await post(medic, { scope: "school", schoolId: HIL, title: "Tea", body: "B" })).status));
+    ok("an unknown scope is refused", (await post(head, { scope: "province", schoolId: HIL, title: "Tea", body: "B" })).status === 400);
+    ok("a team post with no team is refused", (await post(head, { scope: "team", schoolId: HIL, title: "Tea", body: "B" })).status === 400);
+    for (const urgency of ["screaming", "high"]) {
+      const r = await post(head, { scope: "school", schoolId: HIL, title: "Tea", body: "B", urgency });
+      ok(`urgency "${urgency}" is refused`, r.status === 400 && r.body?.error === "urgency_invalid");
+    }
+    ok("...and none of the refusals wrote a notice", await count() === before);
 
-    ok("an unknown scope is refused", (await publish(head, {
-      schoolId: HIL, scopeLevel: "province", kind: "notice", title: "T", body: "B" })).status === 400);
-    ok("a team notice with no team is refused", (await publish(head, {
-      schoolId: HIL, scopeLevel: "team", kind: "notice", title: "T", body: "B" })).status === 400);
-    ok("an unknown urgency is refused", (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B",
-      urgency: "screaming" })).status === 400);
-    ok("an unknown subject kind is refused", (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B",
-      subjectKind: "gossip" })).status === 400);
+    // A draft writes nothing; sending it writes one.
+    const draft = await post(head, { scope: "school", schoolId: HIL, title: "Draft", body: "Not yet.", publish: false });
+    ok("a draft is saved", draft.status === 200 && draft.body?.published === false);
+    ok("...and wrote no notice", await noticeOf(draft.body.id) === null);
+    const sent = await api(`/api/news/${draft.body.id}/publish`, { method: "POST", token: head });
+    ok("sending the draft writes its notice", sent.status === 200 && !!(await noticeOf(draft.body.id)));
   }
 
-  group("The publish route is locked until S2 (D12)");
+  group("The publish and push routes are closed (D9)");
   {
     const count = async () => (await q(`select count(*)::int c from notification`))[0].c;
     const before = await count();
     const base = { schoolId: HIL, scopeLevel: "school", kind: "notice", title: "T", body: "B" };
-    const refusals = [
-      ["a kind other than notice", { kind: "fixture" }, "kind_must_be_notice"],
-      ["an injury kind", { kind: "injury" }, "kind_must_be_notice"],
-      ["urgency high", { urgency: "high" }, "urgency_too_high"],
-      ["a required capability", { requiredCapability: "medical.status.read" }, "required_capability_not_accepted"],
-      ["...even news.read itself", { requiredCapability: "news.read" }, "required_capability_not_accepted"],
-      ["a public flag", { isPublic: true }, "is_public_not_accepted"],
-      ["...even false", { isPublic: false }, "is_public_not_accepted"],
-      ["a child", { subjectPersonId: CHILD }, "subject_person_id_not_accepted"],
-      ["one recipient", { recipientId: await idOf("parent@example.invalid") }, "recipient_id_not_accepted"],
-    ];
-    for (const [what, extra, code] of refusals) {
-      const r = await publish(head, { ...base, ...extra });
-      ok(`${what} is refused (${code})`, r.status === 422 && r.body?.error === code);
-      ok("...in words", typeof r.body?.detail === "string" && r.body.detail.length > 20);
+    for (const [what, extra] of [["the notice the lock let through", {}], ["a medium one", { urgency: "medium" }],
+                                 ["an injury", { kind: "injury" }], ["one about a child", { subjectPersonId: CHILD }],
+                                 ["a public one", { isPublic: true }]]) {
+      const r = await oldPublish(head, { ...base, ...extra });
+      ok(`${what}: 410`, r.status === 410 && r.body?.error === "gone");
+      ok("...saying to write a post", /POST \/api\/news/.test(r.body?.detail ?? ""));
     }
+    ok("...signed out too", (await oldPublish(undefined, base)).status === 410);
     ok("...and none of them wrote a row", await count() === before);
+    const any = (await q(`select id from notification order by published_at desc limit 1`))[0].id;
+    const r = await oldPush(any, head);
+    ok("pushing by hand: 410", r.status === 410 && r.body?.error === "gone" && typeof r.body?.detail === "string");
+    ok("...and nothing was delivered", (await q(`select count(*)::int c from notification_delivery where notification_id = $1`, [any]))[0].c === 0);
+  }
 
-    const medium = await publish(head, { ...base, urgency: "medium", title: "Nets", body: "B field this week." });
-    ok("a medium notice is published", medium.status === 200);
-    ok("...as a notice",
-       (await q(`select kind, urgency from notification where id = $1`, [medium.body.id]))[0]
-         ?.kind === "notice");
+  group("A post withdrawn takes its notice back; any reader may report one (D10, D11)");
+  {
+    // The 1XI coach posts to his side.
+    const side = await publish(coach, { scope: "team", schoolId: HIL, teamCode: "1XI", title: "Nets moved", body: "Nets on Friday." });
+    ok("the coach's post wrote its notice", side.status === 200 && !!side.id);
 
-    // The shared list knew welfare in S0; the database's CHECK learned it in
-    // S1 (db/89, D5), so it is stored now — and the database's own contract
-    // keeps the notice a person's: news.read, about nobody, never public.
-    const welfare = await publish(head, { ...base, subjectKind: "welfare" });
-    ok("a notice about welfare is stored (S1)", welfare.status === 200);
-    ok("...as a person's notice, news.read and not public",
-       (await q(`select kind, subject_kind, required_capability, is_public from notification where id = $1`, [welfare.body?.id]))
-         .filter((r) => r.kind === "notice" && r.subject_kind === "welfare" && r.required_capability === "news.read" && r.is_public === false).length === 1);
-    ok("...one row more", await count() === before + 2);
+    // A guardian on the side reports it, once.
+    const first = await report(side.id, parent);
+    ok("a guardian reports it", first.status === 200 && first.body?.reported === true && first.body?.unheld === false);
+    ok("...and is told nothing else", Object.keys(first.body ?? {}).sort().join() === "reported,unheld");
+    const dso = await q(`select scope_level, urgency, required_capability, title, body, published_by, recipient_id, subject_kind, subject_id
+                           from notification where kind = 'safeguarding' and subject_kind = 'news' and subject_id = $1`, [side.body.id]);
+    ok("one notice went to the school's DSOs", dso.length === 1 && dso[0].scope_level === "school"
+       && dso[0].required_capability === "safeguarding.concern.read" && dso[0].urgency === "high");
+    ok("...naming nobody", dso[0]?.published_by === null && dso[0]?.recipient_id === null
+       && !/Pillay|Nets moved|parent|coach/i.test(`${dso[0]?.title} ${dso[0]?.body}`));
+    const again = await report(side.id, parent);
+    ok("a second report by the same person is refused", again.status === 409 && again.body?.error === "already_reported");
+    ok("...and wrote nothing", (await q(`select count(*)::int c from notification where kind = 'safeguarding' and subject_id = $1`, [side.body.id]))[0].c === 1);
+    ok("a report of something that is no notice is 404", (await report("not-a-notice", parent)).status === 404);
+
+    // The parent may not withdraw it; the director of sport may (news.publish.school).
+    const no = await api(`/api/news/${side.body.id}/withdraw`, { method: "POST", token: parent });
+    ok("a parent cannot withdraw a post", no.status === 404);
+    const yes = await api(`/api/news/${side.body.id}/withdraw`, { method: "POST", token: head });
+    ok("the director of sport withdraws the coach's post", yes.status === 200 && yes.body?.published === false);
+    const n = (await q(`select retraction_kind, retracted_by from notification where id = $1`, [side.id]))[0];
+    ok("...its notice is retracted, withdrawn by her",
+       n?.retraction_kind === "withdrawn" && n?.retracted_by === await idOf("sarah@example.invalid"));
+    ok("...and its readers are told, once",
+       (await q(`select count(*)::int c from notification where retracts_id = $1 and title = 'A notice was withdrawn'`, [side.id]))[0].c === 1);
+    ok("a withdrawn notice cannot be reported", (await report(side.id, parent)).status === 404);
   }
 
   group("A cached notification is not permission");
@@ -396,7 +450,7 @@ try {
                (select id from app_user where email = 'sarah@example.invalid'))
        returning id`, [HIL]))[0];
     const echoOpen = echoTransport();
-    const outOpen = await fanOut({ pool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
+    const outOpen = await fanOut({ pool: appPool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
                                    notificationId: open.id, transport: echoOpen });
     const r2 = await deliveries(open.id);
     ok("a school-wide notice reached more people than the restricted one", r2.length > r1.length && outOpen.delivered > 0);
@@ -441,7 +495,7 @@ try {
           order by published_at desc limit 1`, [CHILD]))[0];
       ok("the trigger authored a notice naming the child and the injury",
          /Pillay/.test(authored?.body ?? "") && /hamstring/.test(authored?.body ?? ""));
-      const out = await fanOut({ pool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
+      const out = await fanOut({ pool: appPool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
                                  notificationId: authored.id, transport: echo });
       ok("it reached at least one phone", out.delivered > 0 && echo.sent.length > 0);
       const wire = echo.sent.map((s) => JSON.stringify(s.payload));
@@ -457,9 +511,7 @@ try {
 
   group("Told once, and only when there is a wire");
   {
-    const n = (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice",
-      title: "Reminder", body: "Kit inspection Friday." })).body;
+    const n = await publish(head, { scope: "school", schoolId: HIL, title: "Reminder", body: "Kit inspection Friday." });
     const first = (await push(n.id, head)).body;
     const before = (await deliveries(n.id)).length;
     await push(n.id, head);
@@ -474,7 +526,7 @@ try {
     // evidence that a parent was told.
     let refusedCode = null;
     try {
-      await fanOut({ pool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
+      await fanOut({ pool: appPool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
                      notificationId: n.id, transport: null });
     } catch (e) { refusedCode = e.message; }
     ok("an unconfigured transport refuses the fan-out", refusedCode === "push_not_configured");
@@ -482,34 +534,23 @@ try {
 
   group("An expired notice is not sent");
   {
-    // Published with an expiry already past (the route takes expiresAt as
-    // given; S1's trigger sets a default by kind).
-    const gone = await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice",
-      title: "Yesterday", body: "Nets cancelled.", expiresAt: new Date(Date.now() - 3600_000).toISOString() });
-    ok("a notice with a past expiry is on record", gone.status === 200);
-    const r = await push(gone.body.id, head);
+    // A post's notice lives sixty days (D4); this one is aged past it, as the
+    // owner, the way time would.
+    const gone = await publish(head, { scope: "school", schoolId: HIL, title: "Yesterday", body: "Nets cancelled." });
+    await q(`update notification set expires_at = now() - interval '1 hour' where id = $1`, [gone.id]);
+    ok("a notice past its expiry is on record", !!gone.id);
+    const r = await push(gone.id, head);
     ok("pushing it is refused as expired", r.status === 410 && r.body?.error === "notice_expired");
     ok("...in words", typeof r.body?.detail === "string");
-    ok("...and nobody was told", (await deliveries(gone.body.id)).length === 0);
-
-    const echo = echoTransport();
-    let code = null;
-    try {
-      await fanOut({ pool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
-                     notificationId: gone.body.id, transport: echo });
-    } catch (e) { code = e.message; }
-    ok("the fan-out itself refuses it", code === "notice_expired" && echo.sent.length === 0);
+    ok("...and nobody was told", (await deliveries(gone.id)).length === 0);
 
     // The gate is asked first: somebody who may not push it is not told it expired.
     ok("a spectator is refused for permission, not told it expired",
-       (await push(gone.body.id, watcher)).body?.error === "not_permitted");
+       (await push(gone.id, watcher)).body?.error === "not_permitted");
 
     // A notice expiring in the future still goes.
-    const later = await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice",
-      title: "Tomorrow", body: "Nets on.", expiresAt: new Date(Date.now() + 86400_000).toISOString() });
-    ok("a notice not yet expired is sent", (await push(later.body.id, head)).body?.delivered > 0);
+    const later = await publish(head, { scope: "school", schoolId: HIL, title: "Tomorrow", body: "Nets on." });
+    ok("a notice not yet expired is sent", (await push(later.id, head)).body?.delivered > 0);
   }
 
   group("Signing out is a retirement, not a deletion");
@@ -564,9 +605,7 @@ try {
        (await api("/api/devices/retire", { method: "POST", token: parent, body: {} })).status === 400);
 
     // A retired phone is not in the address book any more.
-    const n = (await publish(head, {
-      schoolId: HIL, scopeLevel: "school", kind: "notice",
-      title: "Later", body: "Bus leaves at seven." })).body;
+    const n = await publish(head, { scope: "school", schoolId: HIL, title: "Later", body: "Bus leaves at seven." });
     await push(n.id, head);
     ok("a retired device receives nothing",
        (await q(`select count(*)::int c from notification_delivery
@@ -580,6 +619,7 @@ try {
   if (serverErr.length) console.log(serverErr.join("").slice(-1500));
 } finally {
   await pool.end().catch(() => {});
+  await appPool.end().catch(() => {});
   server.kill();
   console.log("\n" + "─".repeat(52));
   console.log(`PUSH SMOKE: ${pass} passed, ${fail} failed`);

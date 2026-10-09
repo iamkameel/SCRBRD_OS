@@ -317,6 +317,19 @@ try {
   const notes = await ptid("family-notices").innerText({ timeout: 4000 }).catch(() => "");
   ok("...with her notices, the one about her child saying so", /Injury recorded/i.test(notes) && /About R Pillay/i.test(notes));
   ok("...and none naming another family's child", !OTHERS.test(notes), notes.match(OTHERS)?.[0]);
+  // One stream (NOTIFICATIONS.md D10, S2): the side's post is a notice of its
+  // own, listed once; a notice somebody wrote carries Report (D11), and the
+  // system's do not.
+  const postRow = parent.page.locator('[data-testid="notice"]', { hasText: "Nets moved to Thursday" });
+  ok("...the side's post among them, once, as a notice", await postRow.count() === 1);
+  const injRow = parent.page.locator('[data-testid="notice"]', { hasText: /Injury recorded/i }).first();
+  ok("...which carries Report; the injury notice does not",
+     await postRow.locator('[data-testid="notice-report"]').count() === 1 && await injRow.locator('[data-testid="notice-report"]').count() === 0);
+  await postRow.locator('[data-testid="notice-report"]').click({ timeout: 4000 }).catch(() => {});
+  const reportedWords = await postRow.locator('[data-testid="notice-reported"]').innerText({ timeout: 6000 }).catch(() => "");
+  ok("one tap reports it to the school's safeguarding officer, and says so",
+     /Reported to the school's safeguarding officer/.test(reportedWords), reportedWords);
+  ok("...and the Report button is gone", await postRow.locator('[data-testid="notice-report"]').count() === 0);
   ok("the guardian's session raised no scoping refusals", parent.refusals.length === 0);
   ok("...and no page errors", parent.errors.length === 0, parent.errors.join(" | "));
 

@@ -1,21 +1,20 @@
 #!/usr/bin/env node
 /**
- * The publish route's lock, the pointer, and the expired notice: notifications
- * slice S0 (docs/design/NOTIFICATIONS.md D6, D12, D14), with no database.
+ * The closed routes, the report, the pointer, and the expired notice:
+ * notifications slices S0 and S2 (docs/design/NOTIFICATIONS.md D6, D9, D11,
+ * D14), with no database.
  *
- * Every refusal the lock makes is decided before a connection is taken, so a
- * pool that throws when touched proves it. Where the work reaches the
- * database, a fake client answers the handful of statements push-api.mjs
- * sends, and records them, so the test can also say what was NOT asked: a
- * locked field never reaches the insert, and an expired notice never reaches
- * the address book or the wire. tools/smoke-push.mjs walks the same rules
- * against a real database.
+ * The two closed routes answer 410 before a connection is taken, so a pool
+ * that throws when touched proves it. Where the work reaches the database, a
+ * fake client answers the handful of statements push-api.mjs sends, and
+ * records them, so the test can also say what was NOT asked: an expired
+ * notice never reaches the address book or the wire. tools/smoke-push.mjs and
+ * db/99 §70 walk the same rules against a real database.
  *
  *   node services/api/notify/push-api.test.mjs
  */
 import { readFileSync } from "node:fs";
-import { buildPayload, fanOut, echoTransport, notificationRoutes,
-         LOCKED_FIELDS, PUBLISH_KIND, PUBLISH_URGENCY } from "./push-api.mjs";
+import { buildPayload, fanOut, echoTransport, notificationRoutes, CLOSED } from "./push-api.mjs";
 import { SUBJECT_KINDS } from "@scrbrd/policy/notifications";
 import { signToken } from "../auth/auth.mjs";
 
@@ -40,9 +39,9 @@ const untouchable = {
 
 /**
  * A pool whose one client answers what push-api.mjs asks, and keeps a list.
- * @param {{ notice?: any, gate?: boolean, insert?: (sql: string, params: any[]) => any }} o
+ * @param {{ notice?: any, gate?: boolean, report?: any }} o
  */
-function fakePool({ notice = null, gate = true, insert } = {}) {
+function fakePool({ notice = null, gate = true, report = null } = {}) {
   /** @type {{ sql: string, params: any[] }[]} */
   const asked = [];
   const client = {
@@ -53,12 +52,7 @@ function fakePool({ notice = null, gate = true, insert } = {}) {
       if (sql.includes("from notification where id")) return { rows: notice ? [notice] : [] };
       if (sql.includes("app_can(")) return { rows: [{ ok: gate }] };
       if (sql.includes("push_candidates")) return { rows: [] };
-      if (sql.includes("insert into notification")) {
-        if (insert) return insert(sql, params);
-        return { rows: [{ id: NOTICE, school_id: SCHOOL, scope_level: params[2],
-                          required_capability: "news.read", is_public: false,
-                          published_at: new Date(0) }] };
-      }
+      if (sql.includes("notification_report(")) return { rows: report ? [report] : [] };
       throw new Error("unexpected statement: " + sql.slice(0, 60));
     },
     release() {},
@@ -67,13 +61,13 @@ function fakePool({ notice = null, gate = true, insert } = {}) {
 }
 
 /** Run a handler as the server would, and keep what it answered. */
-async function call(/** @type {any} */ handler, /** @type {any} */ body, headers = {}) {
+async function call(/** @type {any} */ handler, /** @type {any} */ body, headers = {}, params = {}) {
   const out = { status: 200, body: /** @type {any} */ (null) };
   const res = {
     status(/** @type {number} */ s) { out.status = s; return res; },
     json(/** @type {any} */ b) { out.body = b; return res; },
   };
-  await handler({ body, headers, params: {} }, res);
+  await handler({ body, headers, params }, res);
   return out;
 }
 
@@ -103,72 +97,59 @@ group("A. Every push is a pointer (D6, D14)");
   ok("the id travels as a string", buildPayload({ id: 42 }).message.data.notificationId === "42");
 }
 
-group("B. The publish route is locked, before any connection (D12)");
+group("B. The publish and push routes are closed, before any connection (D9)");
 {
-  const publish = notificationRoutes({ pool: /** @type {any} */ (untouchable), secret: SECRET, transport: null }).publish;
-  ok("the lock names four fields",
-     Object.keys(LOCKED_FIELDS).sort().join() === "isPublic,recipientId,requiredCapability,subjectPersonId");
-
-  for (const [field, [code]] of Object.entries(LOCKED_FIELDS)) {
-    // Refused when present, whatever the value: false and null included.
-    for (const value of ["x", true, false, null]) {
-      const r = await call(publish, good({ [field]: value }), { authorization: BEARER });
-      ok(`${field}: ${JSON.stringify(value)} is refused as ${code}`, r.status === 422 && r.body?.error === code);
-      ok(`...in words`, typeof r.body?.detail === "string" && r.body.detail.length > 20);
+  const routes = notificationRoutes({ pool: /** @type {any} */ (untouchable), secret: SECRET, transport: echoTransport() });
+  // What the S0 lock let through, and what it refused: all of it is 410 now.
+  const bodies = [good(), good({ urgency: "medium" }), good({ kind: "injury" }), good({ isPublic: true }),
+                  good({ subjectPersonId: NOTICE }), {}, null];
+  for (const b of bodies) {
+    for (const headers of [{ authorization: BEARER }, {}]) {
+      const r = await call(routes.publish, b, headers);
+      ok(`publish ${JSON.stringify(b)?.slice(0, 40)} ${headers.authorization ? "signed in" : "signed out"} is 410`,
+         r.status === 410 && r.body?.error === "gone");
     }
   }
-  // isPublic alone would have travelled in full before S0.
-  const pub = await call(publish, good({ isPublic: true }), { authorization: BEARER });
-  ok("a public notice cannot be published", pub.status === 422 && pub.body.error === "is_public_not_accepted");
-
-  ok("the only kind is notice", PUBLISH_KIND === "notice");
-  for (const kind of ["fixture", "injury", "welfare", "safeguarding", "system", "Notice", "notices"]) {
-    const r = await call(publish, good({ kind }), { authorization: BEARER });
-    ok(`kind "${kind}" is refused`, r.status === 422 && r.body?.error === "kind_must_be_notice");
-  }
-  ok("no kind is refused", (await call(publish, good({ kind: "" }))).body?.error === "kind_required");
-
-  ok("urgency is at most medium", PUBLISH_URGENCY.join() === "low,medium");
-  const high = await call(publish, good({ urgency: "high" }), { authorization: BEARER });
-  ok("high is refused", high.status === 422 && high.body?.error === "urgency_too_high" && !!high.body?.detail);
-  ok("an unknown urgency is refused",
-     (await call(publish, good({ urgency: "screaming" }))).body?.error === "urgency_invalid");
-  ok("an unknown subject kind is refused",
-     (await call(publish, good({ subjectKind: "gossip" }))).body?.error === "subject_kind_invalid");
-  ok("the old vocabulary checks stand",
-     (await call(publish, good({ scopeLevel: "province" }))).body?.error === "scope_level_invalid"
-     && (await call(publish, good({ scopeLevel: "team" }))).body?.error === "team_required_for_team_scope"
-     && (await call(publish, good({ title: " " }))).body?.error === "title_required");
-  ok("...and none of it took a connection", untouchable.touched === false);
-
-  // Past the lock, the route asks who is calling before anything else.
-  const anon = await call(publish, good({ subjectKind: "welfare", urgency: "medium" }));
-  ok("welfare is in the route's list: an unsigned caller is refused for the token, not the subject",
-     anon.status === 401 && anon.body?.error === "missing_token");
+  const pub = await call(routes.publish, good(), { authorization: BEARER });
+  ok("...saying where a person's words go now", pub.body?.detail === CLOSED.publish && /POST \/api\/news/.test(pub.body.detail));
+  const push = await call(routes.push, undefined, { authorization: BEARER }, { id: NOTICE });
+  ok("pushing by hand is 410", push.status === 410 && push.body?.error === "gone");
+  ok("...in words", push.body?.detail === CLOSED.push && push.body.detail.length > 20);
+  ok("...signed out too", (await call(routes.push, undefined, {}, { id: NOTICE })).status === 410);
+  ok("neither took a connection", untouchable.touched === false);
 }
 
-group("C. What a locked notice writes, and the database's refusal");
+group("C. Reporting a notice (D11)");
 {
-  const pool = fakePool();
-  const publish = notificationRoutes({ pool: /** @type {any} */ (pool), secret: SECRET, transport: null }).publish;
-  const r = await call(publish, good({ urgency: "medium", subjectKind: "training" }), { authorization: BEARER });
-  ok("a notice is published", r.status === 200 && r.body?.id === NOTICE);
-  ok("...as news.read and not public", r.body?.requiredCapability === "news.read" && r.body?.isPublic === false);
-  const ins = pool.asked.find((a) => a.sql.includes("insert into notification"));
-  ok("the insert names none of the locked columns",
-     !!ins && !/required_capability\s*,|is_public\s*,|subject_person_id|recipient_id/.test(ins.sql.split("values")[0]));
-  ok("...and writes the kind itself, not the body's", ins?.params[3] === "notice");
+  const routes = notificationRoutes({ pool: /** @type {any} */ (untouchable), secret: SECRET });
+  const notUuid = await call(routes.report, undefined, { authorization: BEARER }, { id: "not-a-notice" });
+  ok("an id that is no uuid is no notice", notUuid.status === 404 && notUuid.body?.error === "no_such_notice");
+  const anon = await call(routes.report, undefined, {}, { id: NOTICE });
+  ok("an unsigned caller is refused for the token", anon.status === 401 && anon.body?.error === "missing_token");
+  ok("...and neither took a connection", untouchable.touched === false);
 
-  // Since S1 (db/89) the database stores welfare; a CHECK it raises is its
-  // own refusal, said as one, and the transaction rolls back.
-  const refusing = fakePool({ insert: () => { throw Object.assign(new Error("violates check constraint"),
-    { code: "23514", constraint: "notification_subject_kind_known" }); } });
-  const p2 = notificationRoutes({ pool: /** @type {any} */ (refusing), secret: SECRET, transport: null }).publish;
-  const w = await call(p2, good({ subjectKind: "welfare" }), { authorization: BEARER });
-  ok("a CHECK the database raises is an invalid notice", w.status === 422 && w.body?.error === "invalid_notice");
-  ok("...and the transaction rolled back", refusing.asked.some((a) => a.sql.trim() === "ROLLBACK"));
-  const okWelfare = await call(publish, good({ subjectKind: "welfare" }), { authorization: BEARER });
-  ok("a welfare subject reaches the database (S1 stores it)", okWelfare.status === 200);
+  const taken = fakePool({ report: { ok: true, reason: null, unheld: false } });
+  const r = await call(notificationRoutes({ pool: /** @type {any} */ (taken), secret: SECRET }).report,
+                       { reason: "ignored", personId: USER }, { authorization: BEARER }, { id: NOTICE.toUpperCase() });
+  ok("a report is taken", r.status === 200 && r.body?.reported === true && r.body?.unheld === false);
+  ok("...and says nothing else: no id, no name", Object.keys(r.body).sort().join() === "reported,unheld");
+  const asked = taken.asked.find((a) => a.sql.includes("notification_report("));
+  ok("the database is asked, with the notice's id and nothing from the body",
+     !!asked && asked.params.length === 1 && asked.params[0] === NOTICE);
+  ok("...as the caller, in a transaction", taken.asked.some((a) => a.sql.includes("app_session_begin")) && taken.asked.some((a) => a.sql.trim() === "COMMIT"));
+
+  const unheld = fakePool({ report: { ok: true, reason: null, unheld: true } });
+  const u = await call(notificationRoutes({ pool: /** @type {any} */ (unheld), secret: SECRET }).report,
+                       undefined, { authorization: BEARER }, { id: NOTICE });
+  ok("a school with no DSO is said to be unheld", u.status === 200 && u.body?.unheld === true);
+
+  for (const [reason, status] of /** @type {[string, number][]} */ ([["no_such_notice", 404], ["not_reportable", 422],
+                                                                     ["already_reported", 409], ["not_permitted", 403]])) {
+    const pool = fakePool({ report: { ok: false, reason, unheld: null } });
+    const x = await call(notificationRoutes({ pool: /** @type {any} */ (pool), secret: SECRET }).report,
+                         undefined, { authorization: BEARER }, { id: NOTICE });
+    ok(`${reason} is ${status}`, x.status === status && x.body?.error === reason);
+  }
 }
 
 group("D. The shared list (D1, D5)");

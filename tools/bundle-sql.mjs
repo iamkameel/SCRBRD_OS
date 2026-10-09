@@ -275,6 +275,16 @@ SELECT
         AND to_regprocedure('account_set_active(uuid,boolean)') IS NULL
         AND NOT has_column_privilege('scrbrd_app', 'app_user', 'active', 'UPDATE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Accounts change with a reason",
+  -- db/91: a person's words become a notice only through a post, whose
+  -- trigger writes it; any reader may report one (NOTIFICATIONS.md S2).
+  CASE WHEN EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_notice' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news_post' AND column_name = 'urgency')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'notification' AND policyname = 'notification_notice_insert_system')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'notification' AND policyname = 'notification_notice_update_system')
+        AND has_function_privilege('scrbrd_app', 'notification_report(uuid)', 'EXECUTE')
+        AND has_function_privilege('scrbrd_app', 'news_post_withdraw(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', 'news_post_notice()', 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Posts write their notices",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

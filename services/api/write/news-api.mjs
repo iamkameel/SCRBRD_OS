@@ -19,6 +19,8 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 
 const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** How loud a post's notice is (db/91): never "high", which is the system's. */
+export const URGENCY = Object.freeze(["low", "medium"]);
 const clean = (/** @type {unknown} */ v, /** @type {number} */ max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
 
 /**
@@ -55,7 +57,12 @@ export function newsRoutes({ pool, secret, onChange }) {
   };
 
   return {
-    // POST /api/news { scope, schoolId?, teamCode?, competitionId?, title, body, publish? }
+    // POST /api/news { scope, schoolId?, teamCode?, competitionId?, title, body, publish?, urgency? }
+    //
+    // Sending a post writes its one notice (db/91, NOTIFICATIONS.md D10): the
+    // post's trigger, not this route. `urgency` is how loud that notice is:
+    // "low" (the default) stays in the app; "medium" is "Send to phones too".
+    // Never "high": that is the system's, and the column's CHECK says so too.
     publish: handle(async (req) => {
       const b = req.body || {};
       const scope = String(b.scope ?? "").trim();
@@ -65,6 +72,8 @@ export function newsRoutes({ pool, secret, onChange }) {
       if (!title || title.length < 3) throw err("title_required");
       const body = clean(b.body, 4000);
       if (!body) throw err("body_required");
+      const urgency = b.urgency == null || b.urgency === "" ? "low" : String(b.urgency);
+      if (!URGENCY.includes(urgency)) throw err("urgency_invalid");
 
       // The anchor each scope needs, checked here so the refusal names the
       // missing field rather than arriving as a constraint violation.
@@ -87,18 +96,19 @@ export function newsRoutes({ pool, secret, onChange }) {
 
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rows } = await client.query(
-          `insert into news_post (scope, school_id, team_code, competition_id, title, body, published_at)
-           values ($1, $2, $3, $4, $5, $6, case when $7 then now() else null end)
-           returning id, scope, published_at`,
-          [scope, school, team, competition, title, body, publish]);
+          `insert into news_post (scope, school_id, team_code, competition_id, title, body, published_at, urgency)
+           values ($1, $2, $3, $4, $5, $6, case when $7 then now() else null end, $8)
+           returning id, scope, published_at, urgency`,
+          [scope, school, team, competition, title, body, publish, urgency]);
         // No row and no error is the policy declining: this person does not
         // hold the tier this scope demands.
         if (!rows.length) throw err("not_permitted", 403);
-        return { id: rows[0].id, scope: rows[0].scope, published: rows[0].published_at != null };
+        return { id: rows[0].id, scope: rows[0].scope, published: rows[0].published_at != null, urgency: rows[0].urgency };
       });
     }),
 
-    // POST /api/news/:id/publish — send a draft.
+    // POST /api/news/:id/publish — send a draft. Its notice is written by the
+    // post's trigger (db/91), at the urgency the draft was saved with.
     send: handle(async (req) =>
       runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rows } = await client.query(
@@ -110,13 +120,17 @@ export function newsRoutes({ pool, secret, onChange }) {
 
     // POST /api/news/:id/withdraw — take one back. The row stays, so a
     // disputed notice can still be shown to have existed; it stops being read.
+    // news_post_withdraw() (db/91, D11) decides who: the author, or a
+    // news.publish.school holder at the post's school; anybody else is told
+    // there is no such notice, as before. Its notice is retracted by the
+    // post's trigger, and its readers told it was withdrawn.
     withdraw: handle(async (req) => {
+      const raw = String(req.params?.id ?? "").toLowerCase();
+      if (!UUID.test(raw)) throw err("no_such_notice", 404);
       const id = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
-        const { rows } = await client.query(
-          `update news_post set published_at = null
-            where id = $1 and published_at is not null returning id`, [req.params.id]);
-        if (!rows.length) throw err("no_such_notice", 404);
-        return rows[0].id;
+        const r = (await client.query(`select ok, reason from news_post_withdraw($1)`, [raw])).rows[0];
+        if (!r?.ok) throw err(r?.reason === "not_permitted" ? "not_permitted" : "no_such_notice", r?.reason === "not_permitted" ? 403 : 404);
+        return raw;
       });
       // Committed (runAsPrincipal has returned): a notice withdrawn here
       // leaves the home page too (public_news() requires published_at), so

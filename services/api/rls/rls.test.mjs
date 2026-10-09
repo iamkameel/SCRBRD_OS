@@ -597,5 +597,63 @@ group("L. Account lifecycle slice 2: the reason, the preview, the notice (db/90)
   ok("a file that kept the table-level UPDATE is seen", widened !== sql90 && !/REVOKE UPDATE ON app_user FROM scrbrd_app;/.test(widened));
 }
 
+// ── M. Notifications S2 (db/91) ──────────────────────────
+// Hand-written, so held here by what it says. The application writes no
+// notice (two RESTRICTIVE policies, nothing permissive); the post's trigger
+// is a definer the application cannot call; the withdrawal door and the
+// report are the application's to call and nobody else's; and the file
+// drops nothing and changes no stored row, because the tool that applies it
+// to production hangs on DROP. db/99 §70 proves the behaviour in Postgres.
+group("M. Notifications S2: one stream (db/91)");
+{
+  const here = dirname(fileURLToPath(import.meta.url));
+  const F = "91_notification_one_stream.sql";
+  const raw = readFileSync(join(here, "../../../db", F), "utf8");
+  const sql91 = raw.replace(/--[^\n]*/g, "");
+  // Top level only: every function body ($$ … $$) and DO block taken out,
+  // and the words a policy or a trigger uses to name what it governs.
+  const top = sql91.replace(/\$[a-z_]*\$[\s\S]*?\$[a-z_]*\$/g, "BODY")
+                   .replace(/FOR (INSERT|UPDATE)\b/g, "").replace(/AFTER INSERT OR UPDATE OF/g, "");
+  const expected = JSON.parse(readFileSync(join(here, "../expected-migrations.json"), "utf8"));
+  ok("db/91 is a migration the API expects", expected.includes(F));
+  ok("db/91 drops nothing: no DROP of any kind", !/\bDROP\b/i.test(sql91));
+  ok("...and changes no stored row: no top-level UPDATE, DELETE, INSERT or TRUNCATE",
+     !/\b(UPDATE|DELETE|INSERT|TRUNCATE)\b/i.test(top));
+  ok("news_post gains urgency, low or medium, never high",
+     /ALTER TABLE news_post ADD COLUMN IF NOT EXISTS urgency text NOT NULL DEFAULT 'low'\s+CONSTRAINT news_post_urgency_known CHECK \(urgency IN \('low', 'medium'\)\);/.test(sql91));
+  ok("the post's trigger is replaced in place, after insert and the four columns' update",
+     /CREATE OR REPLACE TRIGGER news_post_notice\s+AFTER INSERT OR UPDATE OF published_at, title, body, urgency ON news_post\s+FOR EACH ROW EXECUTE FUNCTION news_post_notice\(\);/.test(sql91));
+  ok("...and withdrawal retracts through notification_retract(), as the withdrawer",
+     /PERFORM notification_retract\(r\.id, 'withdrawn', r\.live\);/.test(sql91));
+  const policies = sql91.match(/CREATE POLICY [^;]*;/g) || [];
+  ok("three policies, every one RESTRICTIVE, each created only when missing",
+     policies.length === 3 && policies.every((p) => /AS RESTRICTIVE/.test(p))
+     && (sql91.match(/IF NOT EXISTS \(SELECT 1 FROM pg_policies/g) || []).length === 3);
+  ok("...the application inserts no notice, and edits none",
+     /CREATE POLICY notification_notice_insert_system ON notification AS RESTRICTIVE\s+FOR INSERT WITH CHECK \(kind <> 'notice'\);/.test(sql91)
+     && /CREATE POLICY notification_notice_update_system ON notification AS RESTRICTIVE\s+FOR UPDATE USING \(kind <> 'notice'\) WITH CHECK \(kind <> 'notice'\);/.test(sql91));
+  ok("every SECURITY DEFINER in db/91 pins its search_path",
+     (sql91.match(/SECURITY DEFINER(?! SET search_path = pg_catalog, public, pg_temp)/g) || []).length === 0
+     && (sql91.match(/SECURITY DEFINER/g) || []).length === 4);
+  ok("the trigger's function is the application's never",
+     /REVOKE ALL ON FUNCTION news_post_notice\(\) FROM PUBLIC;/.test(sql91) && !/GRANT EXECUTE ON FUNCTION news_post_notice/.test(sql91));
+  for (const f of ["news_post_withdraw(uuid)", "notification_report(uuid)", "notification_report_about_me(uuid[])"]) {
+    const e = f.replace(/[()[\]]/g, (c) => "\\" + c);
+    ok(`${f} is revoked from PUBLIC and granted to the application alone`,
+       new RegExp(`REVOKE ALL ON FUNCTION ${e} FROM PUBLIC;`).test(sql91)
+       && new RegExp(`GRANT EXECUTE ON FUNCTION ${e} TO scrbrd_app;`).test(sql91)
+       && (sql91.match(new RegExp(`GRANT EXECUTE ON FUNCTION ${e}`, "g")) || []).length === 1);
+  }
+  ok("notification_retract() is still granted to nobody", !/GRANT EXECUTE ON FUNCTION notification_retract/.test(sql91));
+  ok("a report's record is a safeguarding row on the log, written directly",
+     /INSERT INTO access_log \(school_id, person_id, resource, record_ids, record_count, fields, device_id\)\s+VALUES \(n\.school_id, v_me, 'safeguarding\.notice_report', ARRAY\[n\.id\]/.test(sql91)
+     && !/log_restricted_read\('safeguarding\.notice_report'/.test(sql91));
+  // It can fail.
+  const dropped = sql91.replace("CREATE OR REPLACE TRIGGER news_post_notice", "DROP TRIGGER IF EXISTS news_post_notice ON news_post;\nCREATE TRIGGER news_post_notice");
+  ok("a DROP in db/91 is seen", dropped !== sql91 && /\bDROP\b/i.test(dropped));
+  const touched = top + "\nUPDATE news_post SET urgency = 'medium';";
+  ok("a stored row changed at the top level is seen", /\b(UPDATE|DELETE|INSERT|TRUNCATE)\b/i.test(touched));
+}
+
 console.log(`\n${"─".repeat(52)}\nRLS SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
