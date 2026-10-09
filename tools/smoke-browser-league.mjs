@@ -151,12 +151,22 @@ const settled = async (page) => { await page.waitForLoadState("networkidle").cat
 async function nav(page, label) {
   // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.
   if (/Leagues/.test(String(label))) {
+    // Inside the planner, the Competitions menu entry is the page already on
+    // show, so it does not leave the planner: back out the way a user would.
+    const back = page.locator('[data-testid="pl-back"]');
+    if (await back.count()) { await back.first().click({ timeout: 6000 }).catch(() => {}); await page.waitForTimeout(800); }
     if (!(await nav(page, /^Competitions\d*$/))) return false;
+    // The home loads its section's screen lazily, so wait for it: either the
+    // section switch (a reader with both) or League Management itself (a
+    // reader whose only section is Leagues gets no switch).
     const s = page.locator('[data-testid="home-competitions-section-leagues"]');
-    if (!(await s.count())) return false;
-    try { await s.click({ timeout: 6000 }); } catch { return false; }
-    await page.waitForTimeout(1500);
-    return true;
+    await page.waitForFunction((sel) => !!document.querySelector(sel) || /League Management/.test(document.body.innerText),
+      '[data-testid="home-competitions-section-leagues"]', { timeout: 10000 }).catch(() => {});
+    if (await s.count()) {
+      try { await s.click({ timeout: 6000 }); } catch { return false; }
+    }
+    return page.waitForFunction(() => /League Management/.test(document.body.innerText), null, { timeout: 10000 })
+      .then(() => true, async () => { if (process.env.LEAGUE_DEBUG) console.log("LEAGUE-DEBUG", JSON.stringify((await page.innerText("body")).slice(0, 600))); return false; });
   }
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;

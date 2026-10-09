@@ -64,7 +64,7 @@ export function HomeBar({ home, role, section = null, onSection, onNav }) {
           style={{display:"flex",gap:"6px",flexWrap:"wrap",marginLeft:switchOn ? "auto" : 0}}>
           {shownLinks.map((l) => (
             <button key={l.to + (l.section ?? "")} type="button" data-testid={`home-${home}-link-${l.to}${l.section ? "-" + l.section : ""}`}
-              onClick={() => onNav(l.to, l.section)} className="pressBtn" style={pill(false, tone)}>{l.label} →</button>
+              onClick={() => onNav(l.to, l.section)} className="pressBtn" style={pill(false, tone)}>{l.label} <span aria-hidden="true">→</span></button>
           ))}
         </div>
       )}

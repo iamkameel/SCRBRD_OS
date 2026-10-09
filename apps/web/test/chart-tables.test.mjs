@@ -42,7 +42,8 @@ const warned = [];
 console.error = (...a) => { warned.push(a.map(String).join(" ")); };
 
 // ── Reading markup ──────────────────────────────────────────────────────
-const unesc = (s) => s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+// The visible text: screen-reader-only words (a blank cell's "none") are not drawn.
+const unesc = (s) => s.replace(/<span class="sr-only">[^<]*<\/span>/g, "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 const render = (C, props, open = false) => renderToStaticMarkup(open ? h(ChartTablesOpen.Provider, { value: true }, h(C, props)) : h(C, props));
 const opened = (C, props) => render(C, props, true);
 
@@ -86,7 +87,7 @@ console.log("A. The component");
   const spec = [{ caption: "Cap", columns: ["Over", "Runs", "Note"], text: [2], rows: [["1", 4, "ok"], ["2", null, null]], note: "* foot" }];
   const closed = renderToStaticMarkup(h(ChartTable, { tables: spec, testid: "t" }));
   ok("closed: a button and nothing else (no table in the page)", /<button/.test(closed) && !/<table/.test(closed));
-  ok("...it says Show as table, aria-expanded false, and controls the region", /aria-expanded="false"/.test(closed) && />Show as table</.test(closed) && /aria-controls="[^"]+-tables"/.test(closed));
+  ok("...it says Show as table, aria-expanded false, and names no region while there is none", /aria-expanded="false"/.test(closed) && />Show as table</.test(closed) && !/aria-controls=/.test(closed));
   ok("...it is at least 44px high", /min-height:44px/.test(closed));
   const o = renderToStaticMarkup(h(ChartTablesOpen.Provider, { value: true }, h(ChartTable, { tables: spec, testid: "t" })));
   ok("open: aria-expanded true and the button says Hide table", /aria-expanded="true"/.test(o) && />Hide table</.test(o));
@@ -97,6 +98,7 @@ console.log("A. The component");
      /<caption[^>]*>Cap<\/caption>/.test(o) && countOf(o, /<th scope="col"/g) === 3 && countOf(o, /<th scope="row"/g) === 2);
   const t = tablesOf(o)[0];
   ok("...the rows are the rows given; a missing cell is a dash, not blank", JSON.stringify(t.rows) === JSON.stringify([["1", "4", "ok"], ["2", "—", "—"]]), t.rows);
+  ok("...and a screen reader hears a missing cell as \"none\", the dash hidden from it", /<span aria-hidden="true">—<\/span><span class="sr-only">none<\/span>/.test(o));
   ok("...the foot note is there", /<tfoot>[\s\S]*\* foot/.test(o));
   ok("...words are set left, figures right", /<td[^>]*text-align:left[^>]*>ok/.test(o) && /<td[^>]*text-align:right[^>]*>4</.test(o));
   const sizes = [...o.matchAll(/font-size:(\d+(?:\.\d+)?)px/g)].map((m) => Number(m[1]));

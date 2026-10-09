@@ -1834,9 +1834,13 @@ try {
       ok("the director of sport signs in (homes)", signed);
       const m = await menuOf(c.page);
       ok("she has all three homes and no Leagues entry", ["competitions", "logistics", "fields"].every((k) => m.includes(k)) && !m.includes("leagues"), m.join());
-      await tid("nav-competitions").click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+      await tid("nav-competitions").click({ timeout: 6000 });
+      // The home loads the competitions screen lazily: wait for its sections, not a fixed pause.
+      await tid("home-competitions-sections").waitFor({ timeout: 10000 }).catch(() => {});
       ok("Competitions has both sections", await tid("home-competitions-sections").locator("button").count() === 2);
-      ok("...and the New Competition button, held by her capability", await tid("new-competition").count() === 1);
+      // competition.manage is the competition admin's alone (packages/policy roles.mjs), so the
+      // home must not lend her a control her capability withholds.
+      ok("...and no New Competition button: that is competition.manage, which she does not hold", await tid("new-competition").count() === 0);
       await c.ctx.close();
     }
 
