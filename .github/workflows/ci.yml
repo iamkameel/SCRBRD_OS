@@ -206,6 +206,15 @@ jobs:
       - name: Migrate
         run: node tools/migrate.mjs --reset --seed
 
+      # The Dockerfile's base, fetched from Docker's official-image mirror and
+      # tagged under its Docker Hub name, so the build finds it locally rather
+      # than asking Docker Hub, which rate-limits these runners. The
+      # Dockerfile itself, and so Render's build, is unchanged.
+      - name: Fetch the base image from the mirror
+        run: |
+          docker pull public.ecr.aws/docker/library/node:22-alpine
+          docker tag public.ecr.aws/docker/library/node:22-alpine node:22-alpine
+
       - name: Build the image
         run: docker build -t scrbrd-api:ci .
 
