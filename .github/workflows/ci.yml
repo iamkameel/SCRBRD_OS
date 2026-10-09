@@ -113,7 +113,7 @@ jobs:
       # The version docker-compose.yml pins. RLS behaviour is the thing under
       # test here, so the major version is not a detail to leave floating.
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_USER: scrbrd
           POSTGRES_PASSWORD: scrbrd
@@ -180,7 +180,7 @@ jobs:
     # a migrated database, and asks /api/health whether it reached it.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_USER: scrbrd
           POSTGRES_PASSWORD: scrbrd
@@ -248,7 +248,7 @@ jobs:
         shard: [1, 2, 3, 4]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_USER: scrbrd
           POSTGRES_PASSWORD: scrbrd
