@@ -169,7 +169,9 @@ group("The screens use it, with no per-view line left beside it");
   ok("Analytics: the 10px note under the phases is gone", !/fontSize:"10px",color:D\.textMuted,lineHeight:1\.6,maxWidth:"680px"/.test(an));
   ok("Analytics: the coverage sentence is the line's note, at 12px, and not a div of its own", !/fontSize:"11px",color:D\.textSecondary,marginTop:"10px",lineHeight:1\.6/.test(an));
   ok("Analytics: the head-to-head still says it is derived (the dossier walk reads it)", /Derived from completed fixtures you may see/.test(an));
-  ok("Analytics: the Demo label on the illustrative tab is untouched", /<StateLabel kind="demo" compact\/>/.test(an));
+  // GA-I23: the performance tab's blanket "illustrative" card is gone with the
+  // invented arrays; Demo is said by the panels that draw a demonstration.
+  ok("Analytics: the blanket illustrative card on the performance tab is gone (GA-I23)", !/These figures are illustrative/.test(an) && !/<StateLabel kind="demo" compact\/>/.test(an));
   const lg = read("../src/views/LeagueView.jsx");
   ok("League imports it", /import \{ SourceLine \} from "\.\.\/ui\/sourceLine\.jsx"/.test(lg));
   for (const id of ["ladder", "ladder-demo", "performers"]) ok(`League: ${id} has a line`, new RegExp(`testid="source-line-${id}"`).test(lg));
@@ -193,7 +195,7 @@ group("The screens use it, with no per-view line left beside it");
     }
   };
   walk("../src/");
-  ok("only the signed-in views import it", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView)\.jsx|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
+  ok("only the signed-in views import it", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|demoworm)\.jsx|lib\/seasonBars\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

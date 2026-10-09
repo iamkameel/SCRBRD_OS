@@ -494,6 +494,98 @@ try {
   ok("the allrounder is still on the table, ranked below the ceiling specialist",
      s.lists.mvp.indexOf(SA) > 0, s.lists.mvp.map((id) => NAME[id] ?? id).join(" | "));
 
+  // ── GA-I23: the Analytics performance tab draws these same rows ──────────
+  //
+  // The season bars are the career_by_season read, per player per season: the
+  // expected bars are written out below from the raw API rows (not from the
+  // web helpers), so a bug in one cannot hide in both.
+  group("Analytics: the performance tab's season bars ARE the career_by_season rows (GA-I23)");
+  const barsNow = (page) => page.evaluate(() => [...document.querySelectorAll('[data-testid="season-bar"]')]
+    .map((e) => ({ key: e.getAttribute("data-key"), value: e.getAttribute("data-value") })));
+  const barsAre = (page, expected) => until(page, (exp) => JSON.stringify([...document.querySelectorAll('[data-testid="season-bar"]')]
+    .map((e) => ({ key: e.getAttribute("data-key"), value: e.getAttribute("data-value") }))) === exp, JSON.stringify(expected));
+  const rowFigure = (r, metric) => (metric === "runs" ? (Number(r.bat_matches) > 0 ? Number(r.runs) : null)
+                                                      : (Number(r.balls_bowled) > 0 ? Number(r.wickets) : null));
+  const expectSquad = (season, metric) => sarahSeasons
+    .filter((r) => r.team_code === "9XI" && r.season === season)
+    .map((r) => ({ id: r.player_id, name: r.full_name, v: rowFigure(r, metric) }))
+    .filter((b) => b.v != null && b.v > 0)
+    .sort((a, b) => b.v - a.v || a.name.localeCompare(b.name)).slice(0, 6)
+    .map((b) => ({ key: b.id, value: String(b.v) }));
+  const expectPlayer = (id, metric) => sarahSeasons.filter((r) => r.player_id === id)
+    .sort((a, b) => a.season.localeCompare(b.season))
+    .map((r) => ({ key: r.season, value: rowFigure(r, metric) == null ? "" : String(rowFigure(r, metric)) }));
+  const panelText = (page) => page.locator('[data-testid="season-bars-panel"]').innerText().then((t) => t.replace(/\s+/g, " "));
+
+  ok("Analytics opens", await press(dos.page, /Analytics/, "nav button")
+     && await until(dos.page, () => !!document.querySelector('[data-testid="analytics-teams"]')));
+  await dos.page.locator('[data-testid="analytics-team-9XI"]').click({ timeout: WAIT }).catch(() => {});
+  ok("...on the 9XI side", await until(dos.page, () => document.querySelector('[data-testid="analytics-team-9XI"]')?.getAttribute("aria-pressed") === "true"));
+  const squadRuns = expectSquad(cur, "runs");
+  ok("there is something to compare: this season's 9XI run-scorers are several", squadRuns.length >= 4, JSON.stringify(squadRuns));
+  ok(`it opens on the performance tab's season bars: the side's leaders for ${cur}, each the read's runs, highest first`,
+     await barsAre(dos.page, squadRuns), JSON.stringify(await barsNow(dos.page)) + " vs " + JSON.stringify(squadRuns));
+  ok("...Top Scorer's 118 (59 twos) is the highest of them", squadRuns[0].key === TS && squadRuns[0].value === "118", JSON.stringify(squadRuns[0]));
+  ok("...the 10XI star and last season's star are not in this side's chart", !squadRuns.some((b) => b.key === OT || b.key === LS));
+  let pt = await panelText(dos.page);
+  if (DEBUG) console.log("[debug] season bars panel:", pt);
+  ok("...the source line: source, scope, window and a count of innings",
+     /Source Scored balls and scorebook imports/.test(pt) && /Scope 9XI, \d+ players by runs/.test(pt)
+       && new RegExp(`Window The ${cur} school season`).test(pt) && /Basis From \d+ innings/.test(pt), pt.slice(0, 400));
+  ok("...it says why these players: no player is picked", /No player is picked, so this is the side.s leaders/.test(pt), pt.slice(0, 500));
+  const nInnings = sarahSeasons.filter((r) => squadRuns.some((b) => b.key === r.player_id) && r.season === cur).reduce((t, r) => t + Number(r.bat_matches), 0);
+  ok(`...the basis is exactly those players' innings (${nInnings})`, new RegExp(`Basis From ${nInnings} innings`).test(pt), pt.slice(0, 400));
+  ok("...signed in, so nothing says Demo and no demonstration worm is drawn",
+     !/\bDemo\b/.test(await dos.page.locator("body").innerText()) && await dos.page.locator('[data-testid="demo-worm"]').count() === 0
+       && await dos.page.locator('[data-testid="state-label-demo"]').count() === 0);
+  ok("...and the old illustrative sentence is gone", !/illustrative/i.test(await dos.page.locator("body").innerText()));
+
+  await dos.page.locator('[data-testid="season-bars-wkts"]').click({ timeout: WAIT }).catch(() => {});
+  const squadWkts = expectSquad(cur, "wkts");
+  ok("Wickets: the side's wicket-takers, each the read's wickets", await barsAre(dos.page, squadWkts) && squadWkts.length >= 2,
+     JSON.stringify(await barsNow(dos.page)) + " vs " + JSON.stringify(squadWkts));
+  ok("...Leading Bowler's eight tops them", squadWkts[0].key === LB && squadWkts[0].value === "8", JSON.stringify(squadWkts[0]));
+  pt = await panelText(dos.page);
+  ok("...wickets stand on balls bowled", /Basis From \d+ balls bowled/.test(pt), pt.slice(0, 400));
+  await dos.page.locator('[data-testid="season-bars-runs"]').click({ timeout: WAIT }).catch(() => {});
+
+  await dos.page.selectOption('[data-testid="season-bars-season"]', prev).catch(() => {});
+  const squadPrev = expectSquad(prev, "runs");
+  ok(`Season ${prev}: last season's leaders, Last Season Star first`,
+     await barsAre(dos.page, squadPrev) && squadPrev[0]?.key === LS, JSON.stringify(await barsNow(dos.page)) + " vs " + JSON.stringify(squadPrev));
+  ok("...with last season's window", new RegExp(`Window The ${prev} school season`).test(await panelText(dos.page)));
+  await dos.page.selectOption('[data-testid="season-bars-season"]', cur).catch(() => {});
+
+  await dos.page.selectOption('[data-testid="season-bars-player"]', SP).catch(() => {});
+  const spBars = expectPlayer(SP, "runs");
+  ok(`Split Allrounder: one bar a season, oldest first (${prev}, ${cur}), each the read's runs`,
+     spBars.length === 2 && await barsAre(dos.page, spBars), JSON.stringify(await barsNow(dos.page)) + " vs " + JSON.stringify(spBars));
+  pt = await panelText(dos.page);
+  ok("...One player, the seasons shown as the window, the current season named",
+     /Scope One player: Split Allrounder/.test(pt) && new RegExp(`Window ${prev} to ${cur} school seasons`).test(pt) && /this season/.test(pt), pt.slice(0, 400));
+  await dos.page.selectOption('[data-testid="season-bars-player"]', LB).catch(() => {});
+  const lbRuns = expectPlayer(LB, "runs");
+  ok("Leading Bowler never batted: his run bar is 'did not bat', not a bar of nought",
+     await barsAre(dos.page, lbRuns) && lbRuns.every((b) => b.value === "") && /did not bat/.test(await panelText(dos.page)),
+     JSON.stringify(await barsNow(dos.page)) + " vs " + JSON.stringify(lbRuns));
+  await dos.page.locator('[data-testid="season-bars-wkts"]').click({ timeout: WAIT }).catch(() => {});
+  const lbWkts = expectPlayer(LB, "wkts");
+  ok("...and his wickets are the read's", await barsAre(dos.page, lbWkts) && lbWkts.some((b) => b.value === "8"), JSON.stringify(await barsNow(dos.page)) + " vs " + JSON.stringify(lbWkts));
+  await dos.page.locator('[data-testid="season-bars-runs"]').click({ timeout: WAIT }).catch(() => {});
+
+  const boxes = await Promise.all(["season-bars-runs", "season-bars-wkts", "season-bars-player"].map((id) => dos.page.locator(`[data-testid="${id}"]`).boundingBox()));
+  ok("the controls are at least 44px tall", boxes.every((b) => b && b.height >= 44), JSON.stringify(boxes));
+  const small = await dos.page.evaluate(() => [...document.querySelectorAll('[data-testid="season-bars-panel"] *')]
+    .filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()))
+    .map((e) => ({ t: e.textContent.trim().slice(0, 30), px: parseFloat(getComputedStyle(e).fontSize) })).filter((x) => x.px < 12));
+  ok("nothing in the panel is under 12px", small.length === 0, JSON.stringify(small));
+
+  // A side the director cannot see a season row of: the 10XI star is on his own side, and says so.
+  await dos.page.locator('[data-testid="analytics-team-10XI"]').click({ timeout: WAIT }).catch(() => {});
+  const otPlayer = expectPlayer(OT, "runs");
+  ok("Switching side lets go of the player picked: 10XI shows its one player's seasons", await barsAre(dos.page, otPlayer), JSON.stringify(await barsNow(dos.page)) + " vs " + JSON.stringify(otPlayer));
+  ok("...said as the one player the read shows of this side", /one player of this side/.test(await panelText(dos.page)));
+
   ok("no console errors on the director of sport's session", dos.errors.length === 0, dos.errors.join(" | "));
   await dos.ctx.close().catch(() => {});
 

@@ -210,9 +210,16 @@ jobs:
       # tagged under its Docker Hub name, so the build finds it locally rather
       # than asking Docker Hub, which rate-limits these runners. The
       # Dockerfile itself, and so Render's build, is unchanged.
+      # The mirror throttles anonymous pulls to about one a second, and this
+      # job has just pulled Postgres from it: a refused pull waits and tries
+      # again, up to five times, before the job fails.
       - name: Fetch the base image from the mirror
         run: |
-          docker pull public.ecr.aws/docker/library/node:22-alpine
+          for try in 1 2 3 4 5; do
+            docker pull public.ecr.aws/docker/library/node:22-alpine && break
+            [ "$try" = 5 ] && exit 1
+            sleep $((try * 5))
+          done
           docker tag public.ecr.aws/docker/library/node:22-alpine node:22-alpine
 
       - name: Build the image

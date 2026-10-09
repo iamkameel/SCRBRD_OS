@@ -3,8 +3,9 @@ import { useState } from "react";
 import { D, px, textOn, themed } from "../design/tokens.js";
 import { fitnessColor, stat } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
-import { StateLabel } from "../ui/stateLabel.jsx";
 import { SourceLine } from "../ui/sourceLine.jsx";
+import { SeasonBars } from "./seasonbars.jsx";
+import { DemoWorm } from "./demoworm.jsx";
 import { SRC_BALLS, SRC_FIXTURES, SRC_RECORD, WINDOW_ALL, ballsFacedBasis, isoDay } from "../lib/sourceWords.js";
 import { signedIn } from "../lib/api.js";
 import { usePlayersWithCareer, useLive } from "../lib/live.js";
@@ -46,12 +47,6 @@ function AnalyticsView({ role }) {
     );
   };
 
-
-
-  // Season trend data (last 8 matches)
-  const SEASON_TREND = [142,186,134,168,194,152,177,142];
-  const SEASON_OPP   = [108,152,135,141,156,148,162,null];
-
   return (
     <div className="os-page">
       <SectionHeader title="Analytics" sub="Performance insights · KZN head-to-head · Phase analysis" color={D.sky}/>
@@ -79,55 +74,14 @@ function AnalyticsView({ role }) {
       </div>
 
       {subView==="performance"&&(
-        /* SAID OUT LOUD, because the tab beside these two is now derived.
-           Phases, Head-to-Head and Match-ups read the database; the season
-           worm and the per-player bars are still hard-coded arrays in this
-           file. A screen that mixes measured and invented figures without
-           marking which is which is worse than one that is honestly empty —
-           and the invented head-to-head table this replaced is exactly how
-           that goes wrong. These two need a career read per player over a
-           season, which is not one of this module's reads yet. */
-        <Card sx={{padding:"10px 14px",marginBottom:"12px",border:`1px solid ${D.amber}33`,background:`${D.amber}0c`}}>
-          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>
-            <StateLabel kind="demo" compact/>
-            <div style={{marginTop:"4px"}}>{"These figures are illustrative, not your school's. Phases, Head-to-Head and Match-ups are derived from the database; this tab is not yet."}</div>
-          </div>
-        </Card>
-      )}
-
-      {subView==="performance"&&(
         <>
-          {/* Season worm */}
-          <Card sx={{padding:"16px",marginBottom:"14px"}}>
-            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"14px"}}>Season Scores — Last 8 Matches</div>
-            <div style={{position:"relative",height:"100px"}}>
-              <svg viewBox={`0 0 ${SEASON_TREND.length*60} 100`} style={{width:"100%",height:"100px",overflow:"visible"}}>
-                {/* Hilton line */}
-                <polyline
-                  points={SEASON_TREND.map((v,i)=>`${i*60+30},${100-(v/220)*90}`).join(" ")}
-                  fill="none" stroke={D.emerald} strokeWidth="2" strokeLinejoin="round"/>
-                {/* Opponent line */}
-                <polyline
-                  points={SEASON_OPP.filter(v=>v!==null).map((v,i)=>`${i*60+30},${100-(v/220)*90}`).join(" ")}
-                  fill="none" stroke={D.rose} strokeWidth="1.5" strokeLinejoin="round" strokeDasharray="4 3"/>
-                {/* Dots */}
-                {SEASON_TREND.map((v,i)=>(
-                  <g key={i}>
-                    <circle cx={i*60+30} cy={100-(v/220)*90} r="4" fill={D.emerald} stroke={D.surf1} strokeWidth="2"/>
-                    <text x={i*60+30} y={100-(v/220)*90-8} textAnchor="middle" fontSize="8" fill={D.emerald} fontFamily={D.mono}>{v}</text>
-                  </g>
-                ))}
-                {SEASON_OPP.filter(v=>v!==null).map((v,i)=>(
-                  <circle key={i} cx={i*60+30} cy={100-(v/220)*90} r="3" fill={D.rose} stroke={D.surf1} strokeWidth="1.5"/>
-                ))}
-              </svg>
-            </div>
-            <div style={{display:"flex",gap:"16px",marginTop:"8px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:"6px"}}><div style={{width:20,height:2,background:D.emerald}}/><span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Hilton</span></div>
-              <div style={{display:"flex",alignItems:"center",gap:"6px"}}><div style={{width:20,height:2,background:D.rose,borderTop:"2px dashed"+(D.rose)}}/><span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Opposition</span></div>
-            </div>
-          </Card>
-          {/* The four bar charts below are the career read; the worm above is not. */}
+          {/* GA-I23: the season bars are the career_by_season read, per player per
+              school season. The team's match-by-match worm needs a read of its own
+              (the second slice), so it is a labelled demonstration drawn only when
+              nobody is signed in; a signed-in reader never sees invented figures. */}
+          <SeasonBars key={teamFilter??"none"} role={role} team={teamFilter} demoPlayers={PLAYERS}/>
+          {!signedIn()&&<DemoWorm/>}
+          {/* The four bar charts below are the career read (every season on record). */}
           <div style={{marginBottom:"12px"}}>
             <SourceLine testid="source-line-performance" demo={!signedIn()} demoWhy="sample players"
               source={SRC_RECORD} scope={`${teamFilter ?? "No side in view"}, one bar per player`} window={WINDOW_ALL}
