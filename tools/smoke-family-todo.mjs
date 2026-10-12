@@ -200,9 +200,13 @@ try {
     ok("H Whitfield declares", (await api("/api/lifts/declaration", { method: "POST", token: driver,
       body: { schoolId: HIL, vehicle: "silver Toyota Fortuner", registration: "nd 123-456", seats: 3, licenceHeld: true, insured: true,
               roadworthy: true, belts: true, codeAcknowledged: true, contactId: card.id } })).status === 200);
+    // Forty hours from now, so the meeting (90 minutes before) is always
+    // inside R4's 48 hours. Two days' date at 09:00 was 48 to 53.5 hours off
+    // between midnight and 05:30 UTC, and failed main's CI at 00:2x UTC on
+    // 10 Oct.
     const [m] = await q(
       `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
-       values ($1, '1XI', 'Smoke Family Todo', ((current_date + 2)::timestamp + time '09:00') at time zone 'Africa/Johannesburg', 'T20', 20, 'scheduled')
+       values ($1, '1XI', 'Smoke Family Todo', now() + interval '40 hours', 'T20', 20, 'scheduled')
        returning id, starts_at`, [HIL]);
     const meet = new Date(new Date(m.starts_at).getTime() - 90 * 60_000).toISOString();
     r = await api(`/api/matches/${m.id}/lifts`, { method: "POST", token: driver, body: { legs: [{ leg: "out", seats: 3, meetKind: "school", meetAt: meet }] } });
