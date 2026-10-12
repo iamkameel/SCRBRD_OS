@@ -487,7 +487,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // the director's grouped counts with owner, clock and door, the office
   // list, the lifts on a tap, a coach of two sides, a failed read said as a
   // failed read, the Later fold, the empty and the clear screen; 12px, 44px.
-  "browser-queue"];
+  "browser-queue",
+  // #133: signing out on a shared tablet ends the family fold cache, and a
+  // read answered late for the last session is neither cached for the next
+  // person nor shown on their screen.
+  "browser-signout"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
