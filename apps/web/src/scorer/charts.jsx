@@ -135,7 +135,11 @@ function ManhattanChart({inn,match,events=null,projection=null}){
   const W=500,H=150,PAD={t:12,r:8,b:28,l:32};
   const cw=W-PAD.l-PAD.r,ch=H-PAD.t-PAD.b;
   const barW=Math.max(4,cw/overs-2);
-  const barColor=(r,w)=>w>0?D.rose:r>=12?D.amber:r>=8?D.sky:D.indigo;
+  // Height carries the runs, so every bar wears one hue; red marks an over
+  // with a wicket, with its W written above the bar as well. Run bands in
+  // separate hues put amber beside the wicket red, which colour-blind
+  // readers could not tell apart (dataviz CVD check, daylight ΔE 2.2).
+  const barColor=(r,w)=>w>0?D.rose:D.sky;
   const live=!inn?.complete;
   const best=ovData.reduce((a,o)=>o.runs>a.runs?o:a,ovData[0]);
   const manLabel=`Runs per over: ${ovData.length} over${ovData.length===1?"":"s"}, the most ${best.runs} in over ${best.over+1}, ${p.total} run${p.total===1?"":"s"} in all.`;
@@ -176,7 +180,7 @@ function ManhattanChart({inn,match,events=null,projection=null}){
         <p data-testid="manhattan-unplaced" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:"6px 0 0"}}>{"Plus "+unplaced+" penalty run"+(Math.abs(unplaced)===1?"":"s")+" not placed in an over."}</p>
       )}
       <div style={{display:"flex",gap:"12px",marginTop:"6px",flexWrap:"wrap"}}>
-        {[{c:D.indigo,l:"0–7"},{c:D.sky,l:"8–11"},{c:D.amber,l:"12+"},{c:D.rose,l:"Wicket"}].map(({c,l})=>(
+        {[{c:D.sky,l:"Runs in the over"},{c:D.rose,l:"Over with a wicket (W)"}].map(({c,l})=>(
           <div key={l} style={{display:"flex",alignItems:"center",gap:"4px"}}>
             <div style={{width:"10px",height:"10px",borderRadius:"2px",background:c,opacity:.85}}/>
             <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
