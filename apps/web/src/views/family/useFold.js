@@ -11,14 +11,29 @@
  */
 import { useEffect, useState } from "react";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
-import { api, signedIn } from "../../lib/api.js";
+import { api, getToken, signedIn } from "../../lib/api.js";
 import { liveRefreshMs } from "../matchcentre/live.js";
 
 /** matchId → { innings, result } for a match already finished. Signed-out has none. */
 const done = new Map();
+/** The bearer the cache was filled under. */
+let doneFor = /** @type {string | null} */ (null);
 
-/** Forget the cache (tests, and a sign-out on a shared device). */
-export function forgetFolds() { done.clear(); }
+/**
+ * The cache, for this session only. Signing out does not reload the page, so
+ * a module-level cache would outlive it: the next person on a shared tablet
+ * would be served the last person's children's lines. Keyed to the bearer, as
+ * the notices are (lib/notifications.js sessionKey), so a sign-out, an expired
+ * session or a different person signing in all start from nothing.
+ */
+export function foldCache() {
+  const who = signedIn() ? getToken() : null;
+  if (who !== doneFor) { done.clear(); doneFor = who; }
+  return done;
+}
+
+/** Forget the cache (tests). */
+export function forgetFolds() { done.clear(); doneFor = null; }
 
 /**
  * @param {{ id: string, status: string } | null} match
@@ -28,7 +43,7 @@ export function useFold(match) {
   const id = match?.id ?? null;
   const live = match?.status === "live";
   const [tick, setTick] = useState(0);
-  const [state, setState] = useState(() => (id && done.has(id) ? { loading: false, error: null, ...done.get(id) }
+  const [state, setState] = useState(() => (id && foldCache().has(id) ? { loading: false, error: null, ...foldCache().get(id) }
     : { loading: !!id && signedIn(), error: null, innings: [], result: null }));
 
   useEffect(() => {
@@ -39,14 +54,14 @@ export function useFold(match) {
 
   useEffect(() => {
     if (!id || !signedIn()) { setState({ loading: false, error: null, innings: [], result: null }); return undefined; }
-    if (!live && done.has(id)) { setState({ loading: false, error: null, ...done.get(id) }); return undefined; }
+    if (!live && foldCache().has(id)) { setState({ loading: false, error: null, ...foldCache().get(id) }); return undefined; }
     let cancelled = false;
     (async () => {
       try {
         const { events: rows, fold } = await api(`/api/matches/${id}/events`);
         const m = deriveMatch((rows || []).map(fromRow), fold ?? {});
         const out = { innings: (m.innings ?? []).filter(Boolean), result: m.result ?? null };
-        if (match?.status === "complete") done.set(id, out);
+        if (match?.status === "complete") foldCache().set(id, out);
         if (!cancelled) setState({ loading: false, error: null, ...out });
       } catch (e) {
         if (!cancelled) setState({ loading: false, error: e.code || "unreachable", innings: [], result: null });
