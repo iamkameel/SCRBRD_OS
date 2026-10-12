@@ -103,7 +103,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,onPlacing,viewMode,onViewMo
               background:viewMode===m?D.grad:"transparent",
               color:viewMode===m?T.light.ink:D.textMuted,
               fontFamily:T.type.body,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em",
-              textTransform:"uppercase",transition:"all .25s",
+              textTransform:"uppercase",transition:"background-color .25s, border-color .25s, color .25s, transform 150ms ease-out",
             }}>{m==="wagon"?"Wheel":"Heat"}</button>
           ))}
         </div>
@@ -222,7 +222,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,onPlacing,viewMode,onViewMo
           return(<button key={k} onClick={()=>onToggle(k)} className="pressBtn" style={{
             minHeight:"44px",display:"flex",alignItems:"center",gap:"5px",padding:"4px 12px",borderRadius:D.pill,
             cursor:"pointer",background:off?"transparent":`${col}12`,
-            border:`1px solid ${off?D.border:`${col}38`}`,opacity:off?0.3:1,transition:"all .2s",
+            border:`1px solid ${off?D.border:`${col}38`}`,opacity:off?0.3:1,transition:"background-color .2s, border-color .2s, color .2s, opacity .2s, transform 150ms ease-out",
           }}>
             <div style={{width:"12px",height:"2px",borderRadius:"2px",background:off?D.textMuted:col}}/>
             <span style={{color:off?D.textMuted:D.textSecondary,fontSize:"12px",fontFamily:T.type.body,fontWeight:600,letterSpacing:"0.03em"}}>{LEGEND_WORD[k]??k}</span>
@@ -283,7 +283,7 @@ function IntelPanel({inn,overs,target,isChase}){
           <button onClick={()=>setAuto(p=>!p)} className="pressBtn" style={{
             padding:"3px 8px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.head,fontSize:"9px",
             border:`1px solid ${auto?D.emerald+"44":D.border}`,background:"transparent",
-            color:auto?D.emerald:D.textMuted,transition:"all .2s",
+            color:auto?D.emerald:D.textMuted,transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
           }} aria-label={auto?"Pause the cards":"Play the cards"}><Icon name={auto?"pause":"play"}/></button>
         </div>
       </div>
@@ -311,7 +311,7 @@ function IntelPanel({inn,overs,target,isChase}){
           {cards.map((c,i)=>(
             <button key={i} onClick={()=>{setIdx(i);setAuto(false);}} style={{
               width:i===idx?"18px":"6px",height:"6px",borderRadius:"4px",border:"none",cursor:"pointer",padding:0,
-              background:i===idx?card.accent:`${D.textMuted}30`,transition:"all .3s ease",
+              background:i===idx?card.accent:`${D.textMuted}30`,transition:"background-color .3s, border-color .3s, color .3s, width .3s",
             }}/>
           ))}
         </div>

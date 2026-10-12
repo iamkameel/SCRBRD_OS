@@ -137,7 +137,7 @@ function RulebookView({ role }) {
       cursor:"pointer",border:`1px solid ${open===id?D.amber+"66":D.border}`,
       background:open===id?`${D.amber}18`:"transparent",
       fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em",
-      color:open===id?D.amber:D.textMuted,transition:"all .18s",
+      color:open===id?D.amber:D.textMuted,transition:"background-color .18s, border-color .18s, color .18s, transform 150ms ease-out",
     }}>{label}</button>
   );
   const groupLabel = (t) => <div style={{fontFamily:D.mono,fontSize:"9px",letterSpacing:"0.08em",textTransform:"uppercase",color:D.textMuted,marginTop:"14px"}}>{t}</div>;

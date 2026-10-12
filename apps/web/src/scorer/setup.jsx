@@ -56,7 +56,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
             background:i===subStep?D.indigo+"20":i<subStep?D.emerald+"10":"transparent",
             border:`1px solid ${i===subStep?D.indigo+"55":i<subStep?D.emerald+"33":D.border}`,
             fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",
-            color:i===subStep?D.sky:i<subStep?D.emerald:D.textMuted,transition:"all .2s",
+            color:i===subStep?D.sky:i<subStep?D.emerald:D.textMuted,transition:"background-color .2s, border-color .2s, color .2s",
           }} onClick={()=>i<subStep&&setSubStep(i)}>
             {i<subStep?"✓ ":""}{l}
           </button>
@@ -87,7 +87,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
                     background:isDraggingThis?`${D.sky}18`:isDragTarget?`${D.indigo}14`:isOpener?`${D.emerald}09`:D.surf2,
                     border:`1px solid ${isDraggingThis?D.sky+"66":isDragTarget?D.indigo+"44":isOpener?D.emerald+"33":D.border}`,
                     cursor:"grab",userSelect:"none",
-                    opacity:isDraggingThis?0.6:1,transition:"all .12s",
+                    opacity:isDraggingThis?0.6:1,transition:"background-color .12s, border-color .12s, color .12s, opacity .12s, box-shadow .12s",
                     boxShadow:isDragTarget?`0 0 0 2px ${D.indigo}44`:"none",
                   }}>
                   <span style={{color:D.textMuted,fontSize:"14px",cursor:"grab",flexShrink:0}}>⠿</span>
@@ -161,7 +161,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
                   textAlign:"left",width:"100%",
                   border:`1px solid ${isO1?D.emerald+"55":isO2?D.sky+"55":D.border}`,
                   background:isO1?`${D.emerald}0e`:isO2?`${D.sky}0e`:D.surf2,
-                  transition:"all .15s",
+                  transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out",
                 }}>
                   <div style={{width:"28px",height:"28px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
                     fontFamily:isSelected?"Syne":"DM Mono",fontSize:"12px",fontWeight:700,
@@ -215,7 +215,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
                   display:"flex",alignItems:"center",gap:"9px",padding:"8px 11px",minHeight:"44px",borderRadius:D.md,
                   cursor:"pointer",textAlign:"left",width:"100%",
                   border:`1px solid ${isSel?D.rose+"55":D.border}`,
-                  background:isSel?`${D.rose}0e`:D.surf2,transition:"all .15s",
+                  background:isSel?`${D.rose}0e`:D.surf2,transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out",
                 }}>
                   <div style={{width:"28px",height:"28px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
                     fontFamily:D.mono,fontSize:"12px",fontWeight:700,
@@ -281,7 +281,7 @@ function TossStep({team1Key,team2Key,overs,toss,setToss,bat,setBat,onConfirm,abb
               fontFamily:D.body,fontSize:"14px",fontWeight:600,
               border:`1px solid ${toss===i?D.emerald+"66":D.border}`,
               background:toss===i?`${D.emerald}14`:D.surf2,
-              color:toss===i?D.emerald:D.textSecondary,transition:"all .2s",
+              color:toss===i?D.emerald:D.textSecondary,transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
             }}>{t}</button>
           ))}
         </div>
@@ -295,7 +295,7 @@ function TossStep({team1Key,team2Key,overs,toss,setToss,bat,setBat,onConfirm,abb
               fontFamily:D.body,fontSize:"14px",fontWeight:600,
               border:`1px solid ${bat===i?D.amber+"66":D.border}`,
               background:bat===i?`${D.amber}14`:D.surf2,
-              color:bat===i?D.amber:D.textSecondary,transition:"all .2s",
+              color:bat===i?D.amber:D.textSecondary,transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
             }}>{opt}</button>
           ))}
         </div>
@@ -319,7 +319,7 @@ function TeamSelector({value, onChange, accent, label}){
       <button onClick={()=>setOpen(p=>!p)} className="pressBtn" style={{
         width:"100%",padding:"12px 16px",minHeight:"48px",borderRadius:D.md,cursor:"pointer",
         background:D.surf2,border:`1px solid ${selected?accent+"55":D.border}`,
-        display:"flex",alignItems:"center",gap:"10px",transition:"all .2s",
+        display:"flex",alignItems:"center",gap:"10px",transition:"background-color .2s, border-color .2s, color .2s, box-shadow .2s, transform 150ms ease-out",
         boxShadow:selected?`0 0 16px ${accent}10`:"none",
       }}>
         {selected
@@ -433,7 +433,7 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
               borderRadius:D.md,cursor:"pointer",textAlign:"left",width:"100%",
               border:`1px solid ${inXI?accent+"44":is12th?D.violet+"44":D.border}`,
               background:inXI?`${accent}0e`:is12th?`${D.violet}0e`:`${D.surf2}88`,
-              transition:"all .15s",
+              transition:"background-color .15s, border-color .15s, color .15s, opacity .15s, transform 150ms ease-out",
               opacity:(!inXI&&!is12th&&xi>=11)?0.4:1,
             }}>
               <div style={{width:"22px",height:"22px",borderRadius:"50%",flexShrink:0,
@@ -597,7 +597,7 @@ function SetupScreen({onStart,practice=null}){
               background:i===step?D.grad:i<step?`${D.emerald}22`:D.surf2,
               color:i===step?T.light.ink:i<step?D.emerald:D.textMuted,
               border:`1px solid ${i===step?D.indigo+"66":i<step?D.emerald+"44":D.border}`,
-              transition:"all .3s",
+              transition:"background-color .3s, border-color .3s, color .3s",
             }} onClick={()=>i<step&&setStep(i)}>{i<step?"✓":i+1}</div>
             <span style={{fontFamily:D.body,fontSize:"12px",color:i===step?D.textPrimary:D.textMuted,fontWeight:i===step?600:400}}>{s}</span>
             {i<3&&<div style={{width:"16px",height:"1px",background:D.border}}/>}
@@ -622,7 +622,7 @@ function SetupScreen({onStart,practice=null}){
                       fontFamily:D.mono,fontSize:"15px",fontWeight:500,
                       border:`1px solid ${overs===o?D.indigo+"77":D.border}`,
                       background:overs===o?`${D.indigo}1a`:D.surf2,
-                      color:overs===o?D.sky:D.textMuted,transition:"all .2s",
+                      color:overs===o?D.sky:D.textMuted,transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
                     }}>{o}</button>
                   ))}
                 </div>

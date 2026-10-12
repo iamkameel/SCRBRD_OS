@@ -84,8 +84,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
       <svg width={data.length*(w+gap)} height={height} style={{verticalAlign:"middle"}}>
         {data.map((v,i)=>{
           const h = Math.max(2,(v/max)*height);
-          const c = v===0?D.rose:v>=5?D.amber:color;
-          return <rect key={i} x={i*(w+gap)} y={height-h} width={w} height={h} rx="1.5" fill={c} opacity={0.85}/>;
+          return <rect key={i} x={i*(w+gap)} y={height-h} width={w} height={h} rx="1.5" fill={color} opacity={0.85}/>;
         })}
       </svg>
     );
@@ -121,7 +120,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
         <div style={{background:`linear-gradient(135deg,${rCol}18,${D.surf1} 60%)`,padding:"24px",borderBottom:`1px solid ${D.border}`}}>
           <div style={{display:"flex",gap:"18px",alignItems:"flex-start",flexWrap:"wrap"}}>
             <div style={{position:"relative"}}>
-              <div style={{width:"72px",height:"72px",borderRadius:"50%",background:`linear-gradient(135deg,${rCol}40,${rCol}20)`,border:`3px solid ${rCol}55`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <div style={{width:"72px",height:"72px",borderRadius:"50%",background:rCol+"2a",border:`3px solid ${rCol}55`,display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <span style={{fontFamily:D.head,fontSize:"24px",fontWeight:800,color:rCol}}>{p.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</span>
               </div>
               {seesFitness&&<div style={{position:"absolute",bottom:0,right:0,width:"18px",height:"18px",borderRadius:"50%",background:p.fitness==="fit"?D.emerald:p.fitness==="injured"?D.rose:D.amber,border:`2px solid ${D.surf1}`}}/>}
@@ -182,7 +181,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                 {p.avg>0&&<StatBox label="Batting Avg" value={p.avg} color={p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber} big/>}
                 {p.sr>0&&<StatBox label="Strike Rate" value={p.sr} color={p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber} big/>}
                 {p.wkts>0&&<StatBox label="Wickets" value={p.wkts} color={p.wkts>=15?D.rose:D.violet} big/>}
-                {p.econ>0&&<StatBox label="Economy" value={p.econ} color={p.econ<=6.5?D.emerald:p.econ<=8?D.amber:D.rose} big/>}
+                {p.econ>0&&<StatBox label="Economy" value={p.econ} color={D.sky} big/>}
                 {p.careerTotals?.innings&&<StatBox label="Innings" value={p.careerTotals.innings} big/>}
                 {p.careerTotals?.runs&&<StatBox label="Career Runs" value={p.careerTotals.runs} color={D.sky} big/>}
                 {p.careerTotals?.hs&&<StatBox label="High Score" value={p.careerTotals.hs} color={D.amber} big/>}
@@ -193,7 +192,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               </div>
 
               {/* Radar + injury side by side */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"14px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px",marginBottom:"14px"}}>
                 {!skills&&(
                   <Card sx={{padding:"14px"}}>
                     <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
@@ -246,8 +245,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   </div>
                   <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
                     {p.form.map((v,i)=>(
-                      <div key={i} style={{width:"36px",height:"36px",borderRadius:D.sm,background:v===0?D.rose+"20":v>=5?D.amber+"20":D.emerald+"20",border:`1px solid ${v===0?D.rose+"33":v>=5?D.amber+"33":D.emerald+"33"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:v===0?D.rose:v>=5?D.amber:D.emerald}}>{v===0?"W":v}</span>
+                      <div key={i} style={{width:"36px",height:"36px",borderRadius:D.sm,background:D.surf2,border:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{v===0?"W":v}</span>
                       </div>
                     ))}
                   </div>
@@ -389,7 +388,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                           <td style={{padding:"9px 12px",fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{s.opp}</td>
                           <td style={{padding:"9px 12px",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{s.date}</td>
                           <td style={{padding:"9px 12px",textAlign:"center"}}>
-                            {s.runs!=null?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:s.runs>=50?D.amber:s.runs>=25?D.sky:s.runs===0?D.rose:D.textPrimary}}>{s.runs}</span>:<span style={{color:D.textMuted,fontSize:"12px"}}>—</span>}
+                            {s.runs!=null?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{s.runs}</span>:<span style={{color:D.textMuted,fontSize:"12px"}}>—</span>}
                           </td>
                           <td style={{padding:"9px 12px",textAlign:"center"}}>
                             {s.wkts>0?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.violetText}}>{s.wkts}w</span>:<span style={{color:D.textMuted,fontSize:"12px"}}>—</span>}
@@ -445,7 +444,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px",textTransform:"uppercase"}}>{cat}</div>
                       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                         {Object.entries(vals).map(([skill,score])=>{
-                          const sc = score>=80?D.emerald:score>=65?D.sky:score>=50?D.amber:D.rose;
+                          const sc = score>=80?D.emerald:score>=65?D.sky:score>=50?D.amber:D.textMuted;
                           const label = score>=80?"Elite":score>=65?"Good":score>=50?"Avg":"Dev";
                           return (
                             <div key={skill} style={{display:"flex",alignItems:"center",gap:"10px"}}>
@@ -483,7 +482,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
       <div style={{flex:1,overflowY:"auto"}}>
         <div style={{background:`linear-gradient(135deg,${D.emerald}18,${D.surf1} 60%)`,padding:"24px",borderBottom:`1px solid ${D.border}`}}>
           <div style={{display:"flex",gap:"18px",alignItems:"flex-start",flexWrap:"wrap"}}>
-            <div style={{width:"72px",height:"72px",borderRadius:"50%",background:`linear-gradient(135deg,${D.emerald}40,${D.emerald}20)`,border:`3px solid ${D.emerald}55`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <div style={{width:"72px",height:"72px",borderRadius:"50%",background:D.emerald+"2a",border:`3px solid ${D.emerald}55`,display:"flex",alignItems:"center",justifyContent:"center"}}>
               <span style={{fontFamily:D.head,fontSize:"24px",fontWeight:800,color:D.emerald}}>{c.name.split(" ").filter(w=>w!=="Mr"&&w!=="Ms"&&w!=="Mrs").map(w=>w[0]).join("").slice(0,2)}</span>
             </div>
             <div style={{flex:1}}>
