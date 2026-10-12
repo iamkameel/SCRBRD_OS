@@ -190,6 +190,12 @@ try {
     try { const r = await fetch(`${API}/api/health`).then((x) => x.json()); if (r?.db === "ok") break; } catch { /* not up */ }
     await new Promise((r) => setTimeout(r, 250));
   }
+  // The home page lists today's fixtures by the South African date. A walk
+  // that inserts its fixture just before midnight there and reads the list
+  // just after finds it gone (CI, 9 Oct, 23:59 SAST). Within ten minutes of
+  // midnight, wait until it has passed.
+  const [{ left }] = await q(`select extract(epoch from date_trunc('day', now() at time zone 'Africa/Johannesburg') + interval '1 day' - now() at time zone 'Africa/Johannesburg')::int as left`);
+  if (left < 600) await new Promise((r) => setTimeout(r, (left + 5) * 1000));
   // A fixture today (the home page lists today's), Hilton at home to Westville. The seed's own are dated otherwise.
   [{ id: today }] = await q(
     `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at, sport, format, overs, status)

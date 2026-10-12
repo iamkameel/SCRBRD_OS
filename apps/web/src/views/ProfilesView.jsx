@@ -95,8 +95,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   const StatBox = ({label,value,sub,color=D.textPrimary,big}) => (
     <div style={{textAlign:"center",padding:big?"14px 10px":"10px 8px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`}}>
       <div style={{fontFamily:D.mono,fontSize:big?"22px":"16px",fontWeight:700,color,lineHeight:1}}>{value}</div>
-      {sub&&<div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}>{sub}</div>}
-      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"4px",lineHeight:1.2}}>{label}</div>
+      {sub&&<div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{sub}</div>}
+      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"4px",lineHeight:1.2}}>{label}</div>
     </div>
   );
 
@@ -166,7 +166,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
         <div style={{display:"flex",gap:"4px",padding:"10px 16px",borderBottom:`1px solid ${D.border}`,overflowX:"auto"}}>
           {tabs.map(t=>(
             <button key={t} onClick={()=>setTab(t)} className="pressBtn" data-testid={`profile-tab-${t.replace(/ /g,"-")}`} style={{
-              padding:"5px 14px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",flexShrink:0,
+              padding:"0 14px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",flexShrink:0,
               border:`1px solid ${tab===t?rCol+"55":D.border}`,background:tab===t?rCol+"12":"transparent",
               fontFamily:D.body,fontSize:"12px",fontWeight:tab===t?600:400,color:tab===t?rCol:D.textMuted,
             }}>{t}</button>
@@ -196,13 +196,13 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"14px"}}>
                 {!skills&&(
                   <Card sx={{padding:"14px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
                     <ReadState testId="profile-skills-read-state" compact icon="target" onRetry={retry} read={skillsSaid}/>
                   </Card>
                 )}
                 {skills&&(
                   <Card sx={{padding:"14px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
                     <div style={{display:"flex",justifyContent:"center"}}>
                       {/* One axis per category the ratings actually carry. The demo
                           groups by batting/bowling/fielding/fitness; live ratings by
@@ -215,7 +215,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   </Card>
                 )}
                 <Card sx={{padding:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>PERSONAL</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>PERSONAL</div>
                   {[
                     ["Hometown",    p.hometown||"—"],
                     ["School House",p.houseAtSchool||"—"],
@@ -223,15 +223,15 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     ["Bat / Bowl",  `${p.batHand}HB · ${p.bowlArm||"—"}A ${p.bowlStyle==="F"?"Fast":p.bowlStyle==="S"?"Spin":"Medium"}`],
                   ].map(([l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary,fontWeight:500}}>{v}</span>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>{v}</span>
                     </div>
                   ))}
                   {inj&&(
                     <div style={{marginTop:"10px",padding:"8px 10px",background:D.rose+"0a",borderRadius:D.sm,border:`1px solid ${D.rose}22`}}>
-                      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.roseText,letterSpacing:"0.08em",marginBottom:"3px"}}>CURRENT INJURY</div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{inj.type} · {inj.phase}</div>
-                      <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,marginTop:"2px"}}>RTW: {inj.rtw}</div>
+                      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.roseText,letterSpacing:"0.08em",marginBottom:"3px"}}>CURRENT INJURY</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{inj.type} · {inj.phase}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>RTW: {inj.rtw}</div>
                     </div>
                   )}
                 </Card>
@@ -241,7 +241,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               {p.form&&(
                 <Card sx={{padding:"14px"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>FORM (LAST 8)</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>FORM (LAST 8)</div>
                     <Spark data={p.form} color={rCol} height={32}/>
                   </div>
                   <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
@@ -286,7 +286,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                       <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:D.textPrimary}} data-testid={`career-${l.toLowerCase().replace(/ /g,"-")}`}>{v}</span>
                     </div>
                   ))}
-                  {bookNote(p)&&<div data-testid="career-book-note" style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px"}}>{bookNote(p)}</div>}
+                  {bookNote(p)&&<div data-testid="career-book-note" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>{bookNote(p)}</div>}
                   {p.live&&"ballsFaced" in p&&(
                     <div style={{marginTop:"10px"}}>
                       {/* Balls where the scorebooks gave them; the innings where they did not (an innings imported with no balls column). */}
@@ -379,7 +379,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     <thead>
                       <tr style={{background:D.surf2}}>
                         {["Opponent","Date","Runs","Wkts","Result"].map(h=>(
-                          <th key={h} style={{padding:"8px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Opponent"||h==="Date"?"left":"center"}}>{h}</th>
+                          <th key={h} style={{padding:"8px 12px",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Opponent"||h==="Date"?"left":"center"}}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -387,12 +387,12 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                       {p.seasonForm.map((s,i)=>(
                         <tr key={i} style={{borderTop:`1px solid ${D.border}`}}>
                           <td style={{padding:"9px 12px",fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{s.opp}</td>
-                          <td style={{padding:"9px 12px",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{s.date}</td>
+                          <td style={{padding:"9px 12px",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{s.date}</td>
                           <td style={{padding:"9px 12px",textAlign:"center"}}>
-                            {s.runs!=null?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:s.runs>=50?D.amber:s.runs>=25?D.sky:s.runs===0?D.rose:D.textPrimary}}>{s.runs}</span>:<span style={{color:D.textMuted,fontSize:"11px"}}>—</span>}
+                            {s.runs!=null?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:s.runs>=50?D.amber:s.runs>=25?D.sky:s.runs===0?D.rose:D.textPrimary}}>{s.runs}</span>:<span style={{color:D.textMuted,fontSize:"12px"}}>—</span>}
                           </td>
                           <td style={{padding:"9px 12px",textAlign:"center"}}>
-                            {s.wkts>0?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.violetText}}>{s.wkts}w</span>:<span style={{color:D.textMuted,fontSize:"11px"}}>—</span>}
+                            {s.wkts>0?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.violetText}}>{s.wkts}w</span>:<span style={{color:D.textMuted,fontSize:"12px"}}>—</span>}
                           </td>
                           <td style={{padding:"9px 12px",textAlign:"center"}}>
                             {s.result&&<Badge color={s.result==="W"?D.emerald:s.result==="L"?D.rose:s.result==="NR"?D.amber:D.textMuted}>{s.result}</Badge>}
@@ -418,7 +418,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     <div style={{display:"flex",alignItems:"center",gap:"14px",flexWrap:"wrap"}}>
                       <div style={{flex:1}}>
                         <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"2px"}}>{opp}</div>
-                        <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{rec.P} match{rec.P!==1?"es":""}</div>
+                        <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{rec.P} match{rec.P!==1?"es":""}</div>
                       </div>
                       {rec.runs!=null&&<StatBox label="Runs" value={rec.runs} color={D.sky}/>}
                       {rec.avg!=null&&<StatBox label="Avg" value={rec.avg} color={rec.avg>=40?D.emerald:D.amber}/>}
@@ -442,18 +442,18 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                 <>
                   {Object.entries(skills).map(([cat,vals])=>(
                     <Card key={cat} sx={{padding:"14px"}}>
-                      <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px",textTransform:"uppercase"}}>{cat}</div>
+                      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px",textTransform:"uppercase"}}>{cat}</div>
                       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                         {Object.entries(vals).map(([skill,score])=>{
                           const sc = score>=80?D.emerald:score>=65?D.sky:score>=50?D.amber:D.rose;
                           const label = score>=80?"Elite":score>=65?"Good":score>=50?"Avg":"Dev";
                           return (
                             <div key={skill} style={{display:"flex",alignItems:"center",gap:"10px"}}>
-                              <div style={{width:"90px",fontFamily:D.body,fontSize:"11px",color:D.textSecondary,textTransform:"capitalize"}}>{skill}</div>
+                              <div style={{width:"90px",fontFamily:D.body,fontSize:"12px",color:D.textSecondary,textTransform:"capitalize"}}>{skill}</div>
                               <div style={{flex:1,height:"6px",borderRadius:"3px",background:D.surf3,overflow:"hidden"}}>
                                 <div style={{height:"100%",width:`${score}%`,borderRadius:"3px",background:sc,transition:"width .6s"}}/>
                               </div>
-                              <div style={{fontFamily:D.mono,fontSize:"11px",fontWeight:600,color:sc,width:"28px",textAlign:"right"}}>{score}</div>
+                              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:sc,width:"28px",textAlign:"right"}}>{score}</div>
                               <Badge color={sc} style={{minWidth:"36px",textAlign:"center"}}>{label}</Badge>
                             </div>
                           );
@@ -500,9 +500,9 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
         <div style={{display:"flex",gap:"4px",padding:"10px 16px",borderBottom:`1px solid ${D.border}`}}>
           {tabs.map(t=>(
             <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
-              padding:"5px 14px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
+              padding:"0 14px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
               border:`1px solid ${tab===t?D.emerald+"55":D.border}`,background:tab===t?D.emerald+"12":"transparent",
-              fontFamily:D.body,fontSize:"11px",fontWeight:tab===t?600:400,color:tab===t?D.emerald:D.textMuted,
+              fontFamily:D.body,fontSize:"12px",fontWeight:tab===t?600:400,color:tab===t?D.emerald:D.textMuted,
             }}>{t}</button>
           ))}
         </div>
@@ -518,26 +518,26 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               </div>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
                 <Card sx={{padding:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>QUALIFICATIONS</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>QUALIFICATIONS</div>
                   {c.qualifications.map(q=>(
                     <div key={q} style={{display:"flex",alignItems:"flex-start",gap:"7px",padding:"5px 0",borderBottom:`1px solid ${D.border}`}}>
                       <div style={{width:"5px",height:"5px",borderRadius:"50%",background:D.emerald,marginTop:"5px",flexShrink:0}}/>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{q}</span>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{q}</span>
                     </div>
                   ))}
                 </Card>
                 <Card sx={{padding:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>CONTACT</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>CONTACT</div>
                   {[["phone","Phone",c.phone],["mail","Email",c.email],["house","Hometown",c.hometown||"—"],["cake","Born",c.born||"—"]].map(([ic,l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${D.border}`}}>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name={ic}/> {l}</span>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>{v}</span>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name={ic}/> {l}</span>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{v}</span>
                     </div>
                   ))}
                 </Card>
               </div>
               <Card sx={{padding:"14px",marginTop:"12px"}}>
-                <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SQUAD — {c.team}</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SQUAD — {c.team}</div>
                 <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
                   {coachPlayers.map(p=>(
                     <button key={p.id} onClick={()=>{handleSelect(p.id,"players");}} className="pressBtn" style={{
@@ -545,8 +545,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     }}>
                       <Avatar name={p.name} size={24} color={seesFitness?fitnessColor(p.fitness):D.textMuted}/>
                       <div style={{textAlign:"left"}}>
-                        <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:500,color:D.textPrimary}}>{p.name}</div>
-                        <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.role}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{p.name}</div>
+                        <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.role}</div>
                       </div>
                     </button>
                   ))}
@@ -559,7 +559,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               {c.coachingCareer?.map((r,i)=>(
                 <div key={i} style={{display:"flex",gap:"14px",alignItems:"center",padding:"12px 14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`}}>
                   <div style={{width:"8px",height:"8px",borderRadius:"50%",background:i===0?D.emerald:D.textMuted,flexShrink:0}}/>
-                  <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"90px"}}>{r.year}</div>
+                  <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"90px"}}>{r.year}</div>
                   <div>
                     <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{r.role} · {r.team}</div>
                     <Badge color={r.level==="Provincial"?D.violet:r.level==="School"?D.sky:D.amber}>{r.level}</Badge>
@@ -567,10 +567,10 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                 </div>
               ))}
               <Card sx={{padding:"14px",marginTop:"4px"}}>
-                <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SPECIALISATION</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SPECIALISATION</div>
                 <p style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6}}>{c.specialisation}</p>
-                <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="calendar"/> Availability: {c.availability}</div>
-                {c.notes&&<div style={{marginTop:"8px",padding:"8px 10px",background:D.amber+"0a",borderRadius:D.sm,fontFamily:D.body,fontSize:"11px",color:D.textSecondary,fontStyle:"italic"}}>{c.notes}</div>}
+                <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="calendar"/> Availability: {c.availability}</div>
+                {c.notes&&<div style={{marginTop:"8px",padding:"8px 10px",background:D.amber+"0a",borderRadius:D.sm,fontFamily:D.body,fontSize:"12px",color:D.textSecondary,fontStyle:"italic"}}>{c.notes}</div>}
               </Card>
             </div>
           )}
@@ -582,7 +582,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{s.title}</div>
                     <Badge color={s.type==="fitness"?D.amber:s.type==="batting"?D.sky:D.emerald}>{s.type}</Badge>
                   </div>
-                  <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{s.date} · {s.time} · {s.duration}min · {s.venue}</div>
+                  <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{s.date} · {s.time} · {s.duration}min · {s.venue}</div>
                   <div style={{marginTop:"6px",display:"flex",gap:"4px",flexWrap:"wrap"}}>{s.drills.map(d=><Pill key={d} color={D.indigo}>{d}</Pill>)}</div>
                 </Card>
               ))}
@@ -668,8 +668,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
                     <Avatar name={c2.name} size={30} color={D.emerald}/>
                     <div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:500,color:D.textPrimary}}>{c2.name.split(" ").slice(1).join(" ")}</div>
-                      <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{c2.role} · {c2.team}</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{c2.name.split(" ").slice(1).join(" ")}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{c2.role} · {c2.team}</div>
                     </div>
                   </div>
                 </button>
@@ -681,7 +681,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
               {["scorer","medical","driver","facilities"].map(sRole=>(
                 <div key={sRole}>
-                  <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:ROLES[sRole]?.color||D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:"4px",textTransform:"uppercase"}}>{sRole==="facilities"?"Groundskeepers":`${sRole}s`}</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:ROLES[sRole]?.color||D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:"4px",textTransform:"uppercase"}}>{sRole==="facilities"?"Groundskeepers":`${sRole}s`}</div>
                   {STAFF.filter(s=>s.role===sRole).map(s=>(
                     <button key={s.id} onClick={()=>handleSelect(s.id,"staff")} className="pressBtn" style={{
                       width:"100%",padding:"7px 10px",borderRadius:D.md,cursor:"pointer",textAlign:"left",marginBottom:"2px",
@@ -689,7 +689,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     }}>
                       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
                         <Avatar name={s.name} size={28} color={ROLES[s.role]?.color||D.cyan}/>
-                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name.split(" ").slice(1).join(" ")}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name.split(" ").slice(1).join(" ")}</div>
                       </div>
                     </button>
                   ))}
@@ -826,11 +826,11 @@ function RecognitionCard({ playerId, role }) {
           {rows.map((r,i)=>(
             <span key={`${r.family}-${r.kind}-${r.id??i}`} data-testid={`recognition-${r.family}`}
               title={[r.season, r.on, r.opponent&&`v ${r.opponent}`, r.citation, r.isPublic?"on the public board":null].filter(Boolean).join(" · ")}
-              style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 10px",borderRadius:D.pill,fontFamily:D.body,fontSize:"11px",
+              style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 10px",borderRadius:D.pill,fontFamily:D.body,fontSize:"12px",
                 background:FAMILY_TONE[r.family]+"14",border:`1px solid ${FAMILY_TONE[r.family]}33`,color:textOn(FAMILY_TONE[r.family])}}>
               {r.label}
-              <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{r.season??r.on}</span>
-              {r.isPublic&&<span style={{fontSize:"9px"}}><Icon name="landmark" label="on the public board"/></span>}
+              <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{r.season??r.on}</span>
+              {r.isPublic&&<span style={{fontSize:"12px"}}><Icon name="landmark" label="on the public board"/></span>}
             </span>
           ))}
         </div>
@@ -857,8 +857,8 @@ function PassportCard({ playerId, role }) {
               <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{r.label}</span>
               <span style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,marginLeft:"8px"}}>{r.value}</span>
             </div>
-            <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{[r.on, r.source, r.recordedBy].filter(Boolean).join(" · ")}</span>
-            <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",padding:"2px 8px",borderRadius:D.pill,
+            <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{[r.on, r.source, r.recordedBy].filter(Boolean).join(" · ")}</span>
+            <span style={{fontFamily:D.mono,fontSize:"12px",textTransform:"uppercase",padding:"2px 8px",borderRadius:D.pill,
                           background:(CONFIDENCE_TONE[r.confidence]??D.textMuted)+"14",border:`1px solid ${(CONFIDENCE_TONE[r.confidence]??D.textMuted)}33`,
                           color:textOn(CONFIDENCE_TONE[r.confidence]??D.textMuted)}}>{r.confidence}</span>
           </div>
@@ -921,9 +921,9 @@ function DismissalMethodCard({ title, testId, color, live, playerId, side, empty
           const pct = total>0 ? Math.round((r.count/total)*100) : 0;
           return (
             <div key={r.method ?? "unrecorded"} style={{marginBottom:"9px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontFamily:D.body,fontSize:"11px",color:D.textPrimary,marginBottom:"3px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontFamily:D.body,fontSize:"12px",color:D.textPrimary,marginBottom:"3px"}}>
                 <span>{dismissalMethodLabel(r.method)}</span>
-                <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{r.count} · {pct}%</span>
+                <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{r.count} · {pct}%</span>
               </div>
               <div style={{height:"6px",borderRadius:D.pill,background:D.surf2,overflow:"hidden"}}>
                 <div style={{height:"100%",width:`${pct}%`,borderRadius:D.pill,background:color}}/>
