@@ -30,7 +30,7 @@ export function TossSheet({ home, away, onConfirm, onClose }) {
     fontFamily: T.type.body, fontSize: "15px", fontWeight: 600,
     border: `1px solid ${on ? color + "66" : T.line.normal}`,
     background: on ? `${color}14` : T.surface.interactive,
-    color: on ? color : T.content.secondary, transition: "all .2s",
+    color: on ? color : T.content.secondary, transition: "background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
   });
 
   return (

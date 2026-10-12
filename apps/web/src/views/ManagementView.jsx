@@ -65,7 +65,7 @@ function ManagementView({ role, onDirectoryChanged }) {
       {tabs.length===0&&<div data-testid="mgmt-nothing" style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>Nothing on this screen is yours to manage.</div>}
       <div role="group" aria-label="Management sections" style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
         {tabs.map(t=>(
-          <button key={t.id} onClick={()=>setActiveTab(t.id)} aria-pressed={tab===t.id} className="pressBtn" data-testid={`mgmt-tab-${t.id}`} style={{display:"flex",alignItems:"center",gap:"6px",minHeight:"44px",padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:`1px solid ${tab===t.id?t.color+"55":D.border}`,background:tab===t.id?`${t.color}18`:"transparent",fontFamily:D.head,fontSize:"13px",fontWeight:700,letterSpacing:"0.02em",color:tab===t.id?t.color:D.textMuted,transition:"all .18s"}}>
+          <button key={t.id} onClick={()=>setActiveTab(t.id)} aria-pressed={tab===t.id} className="pressBtn" data-testid={`mgmt-tab-${t.id}`} style={{display:"flex",alignItems:"center",gap:"6px",minHeight:"44px",padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:`1px solid ${tab===t.id?t.color+"55":D.border}`,background:tab===t.id?`${t.color}18`:"transparent",fontFamily:D.head,fontSize:"13px",fontWeight:700,letterSpacing:"0.02em",color:tab===t.id?t.color:D.textMuted,transition:"background-color .18s, border-color .18s, color .18s, transform 150ms ease-out"}}>
             <Icon name={t.icon}/> {t.label}
           </button>
         ))}

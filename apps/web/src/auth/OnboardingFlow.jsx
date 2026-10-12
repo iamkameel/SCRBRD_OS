@@ -234,7 +234,7 @@ function OnboardingFlow({ onComplete }) {
                   <button key={r.id} onClick={()=>chooseAndAdvance({ role: r.id })} className="pressBtn" style={{
                     display:"flex",alignItems:"flex-start",gap:"10px",padding:"12px 14px",borderRadius:"12px",
                     cursor:"pointer",border:`1px solid ${data.role===r.id?`${D.indigo}8c`:T.line.subtle}`,
-                    background:data.role===r.id?`${D.indigo}24`:T.fill.panel,textAlign:"left",transition:"all .18s",
+                    background:data.role===r.id?`${D.indigo}24`:T.fill.panel,textAlign:"left",transition:"background-color .18s, border-color .18s, color .18s, transform 150ms ease-out",
                   }}>
                     <span style={{fontSize:"20px",flexShrink:0,marginTop:"1px",color:data.role===r.id?D.indigoText:T.content.secondary}}><Icon name={r.icon}/></span>
                     <div>
@@ -260,7 +260,7 @@ function OnboardingFlow({ onComplete }) {
                   <button key={s.id} onClick={()=>chooseAndAdvance({ schoolId: s.id, schoolCustom: s.name })} className="pressBtn" style={{
                     display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px",borderRadius:"10px",
                     cursor:"pointer",border:`1px solid ${data.schoolId===s.id?`${D.indigo}80`:T.line.subtle}`,
-                    background:data.schoolId===s.id?`${D.indigo}1e`:T.fill.panel,textAlign:"left",transition:"all .15s",
+                    background:data.schoolId===s.id?`${D.indigo}1e`:T.fill.panel,textAlign:"left",transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out",
                   }}>
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:data.schoolId===s.id?D.indigoText:T.content.primary}}>{s.name}</div>
@@ -405,7 +405,7 @@ function OnboardingFlow({ onComplete }) {
             border:"none",fontFamily:D.head,fontSize:"12px",fontWeight:700,
             color:(canAdvance()||stepId==="tour")&&!sending?T.light.ink:T.content.tertiary,
             boxShadow:(canAdvance()||stepId==="tour")&&!sending?`0 4px 20px ${D.indigo}59`:"none",
-            letterSpacing:"0.04em",transition:"all .2s",display:"inline-flex",alignItems:"center",gap:"8px",
+            letterSpacing:"0.04em",transition:"background-color .2s, border-color .2s, color .2s, box-shadow .2s, transform 150ms ease-out",display:"inline-flex",alignItems:"center",gap:"8px",
           }}>
             {sending
               ? <><span className="live-dot" aria-hidden="true"/> Sending…</>

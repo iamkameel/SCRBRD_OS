@@ -635,7 +635,7 @@ function AnalysisDashboard({inn,match,curIn,innings,events=null}){
             background:activeView===id?D.grad:T.fill.field,
             color:activeView===id?T.light.ink:D.textMuted,
             boxShadow:activeView===id?"0 4px 16px "+D.indigo+"40":"none",
-            transition:"all .2s"}}>
+            transition:"background-color .2s, border-color .2s, color .2s, box-shadow .2s, transform 150ms ease-out"}}>
             <Icon name={ic}/> {label}
           </button>
         ))}

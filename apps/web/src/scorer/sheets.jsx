@@ -128,7 +128,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
                 fontFamily:D.mono,fontSize:"15px",fontWeight:500,
                 border:`1px solid ${runs===r?D.amber+"77":D.border}`,
                 background:runs===r?`${D.amber}1a`:D.surf2,
-                color:runs===r?D.amber:D.textMuted,transition:"all .2s",
+                color:runs===r?D.amber:D.textMuted,transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
               }}>{r}</button>
             ))}
           </div>
@@ -213,7 +213,7 @@ function WideSheet({onConfirm,onClose,edition=3}){
                 fontFamily:D.mono,fontSize:"15px",fontWeight:500,
                 border:`1px solid ${runs===r?D.orange+"77":D.border}`,
                 background:runs===r?`${D.orange}1a`:D.surf2,
-                color:runs===r?D.orange:D.textMuted,transition:"all .2s",
+                color:runs===r?D.orange:D.textMuted,transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
               }}>{r}</button>
             ))}
           </div>
@@ -284,7 +284,7 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
               <button key={r} onClick={()=>setReason(r)} className="pressBtn" style={{
                 minHeight:"44px",padding:"5px 14px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:500,
                 border:`1px solid ${reason===r?D.amber+"55":D.border}`,background:reason===r?`${D.amber}14`:D.surf2,
-                color:reason===r?D.amber:D.textMuted,transition:"all .15s"}}>{r}</button>
+                color:reason===r?D.amber:D.textMuted,transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out"}}>{r}</button>
             ))}
           </div>
         </div>
@@ -723,7 +723,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
                 display:"flex",alignItems:"center",gap:"10px",minHeight:"48px",flexShrink:0,
                 padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",width:"100%",
                 border:`${first?2:1}px solid ${first?T.content.primary:D.border}`,
-                background:first?`${D.emerald}0a`:D.surf2,transition:"all .15s",
+                background:first?`${D.emerald}0a`:D.surf2,transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out",
               }}>
                 <div style={{minWidth:"26px",height:"26px",borderRadius:"50%",flexShrink:0,
                   background:first?`${D.emerald}22`:D.surf3,
@@ -931,7 +931,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
             minHeight:"48px",padding:"8px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
             border:"1px solid "+(mode===m?D.rose+"55":D.border),
             background:mode===m?D.rose+"1a":D.surf2,
-            color:mode===m?D.roseText:D.textSecondary,transition:"all .15s"}}>
+            color:mode===m?D.roseText:D.textSecondary,transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out"}}>
             {DISMISSAL_LABEL[m]}
           </button>
         ))}
@@ -1018,7 +1018,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
                 display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:D.md,
                 border:"1px solid "+(fielder===p.name?D.sky+"55":D.border),
                 background:fielder===p.name?D.sky+"12":D.surf2,
-                cursor:"pointer",textAlign:"left",transition:"all .12s"}}>
+                cursor:"pointer",textAlign:"left",transition:"background-color .12s, border-color .12s, color .12s, transform 150ms ease-out"}}>
                 <span style={{fontFamily:D.body,fontSize:"13px",color:fielder===p.name?D.sky:D.textPrimary,fontWeight:500,flex:1}}>{p.name}</span>
                 <Badge color={p.role==="WK"?D.violet:p.role==="ALL"?D.amber:p.role==="BOWL"?D.orange:D.sky}>{p.role}</Badge>
               </button>

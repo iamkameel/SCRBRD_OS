@@ -186,7 +186,7 @@ const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, 
       ...v, padding:pad, minHeight:minH, boxSizing:"border-box", borderRadius:D.pill, cursor:disabled?"not-allowed":"pointer",
       fontFamily:D.body, fontSize:fs, fontWeight:600, letterSpacing:"0.01em",
       width:full?"100%":undefined, whiteSpace:"nowrap",
-      opacity:disabled?0.42:1, transition:"all .15s", ...sx,
+      opacity:disabled?0.42:1, transition:"background-color .15s, border-color .15s, color .15s, opacity .15s, transform 150ms ease-out", ...sx,
     }}>{children}</button>
   );
 };
@@ -320,7 +320,7 @@ const CaptureProfilePicker = ({ value, onChange, label = "What will you capture?
             flex: 1, minWidth: 0, minHeight: "52px", padding: "6px 4px", borderRadius: D.md, cursor: "pointer",
             border: `1px solid ${value === c.id ? T.content.primary : T.line.normal}`,
             background: value === c.id ? T.surface.raised : T.surface.interactive,
-            color: value === c.id ? T.content.primary : T.content.secondary, transition: "all .2s",
+            color: value === c.id ? T.content.primary : T.content.secondary, transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
           }}>
           <div style={{ fontFamily: T.type.body, fontSize: "15px", fontWeight: 600, lineHeight: 1.2 }}>{c.label}</div>
           <div style={{ fontFamily: T.type.body, fontSize: "12px", marginTop: "2px" }}>{c.hint}</div>

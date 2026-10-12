@@ -42,7 +42,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
               background:i===hubStage?D.grad:i<hubStage?D.emerald+"18":"transparent",
               color:i===hubStage?T.light.ink:i<hubStage?D.emerald:D.textMuted,
               border:"1px solid "+(i===hubStage?D.indigo+"55":i<hubStage?D.emerald+"33":D.border),
-              transition:"all .25s",
+              transition:"background-color .25s, border-color .25s, color .25s",
             }}>{i<hubStage?"✓ ":""}{s}</div>
             {i<2&&<div style={{width:"5px",height:"1px",background:D.border}}/>}
           </Fragment>
@@ -95,7 +95,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                     fontFamily:D.body,fontSize:"12px",fontWeight:isActive?600:400,
                     background:isActive?"linear-gradient(135deg,"+D.indigo+","+D.sky+")"  :"transparent",
                     color:isActive?T.light.ink:D.textMuted,
-                    transition:"all .2s cubic-bezier(.34,1.56,.64,1)",
+                    transition:"background-color .2s, border-color .2s, color .2s, box-shadow .2s, transform 150ms ease-out",
                     boxShadow:isActive?"0 2px 12px "+D.indigo+"40":"none",
                   }}>
                     {i===0?"Over the Wicket":"Around the Wicket"}
@@ -120,7 +120,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                   <button key={shot.id} onClick={()=>onShot(shot.id)} className="pressBtn" style={{
                     display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
                     minHeight:"44px",gap:"3px",padding:"9px 4px",borderRadius:D.md,cursor:"pointer",
-                    border:"1px solid "+D.border,background:D.surf2,transition:"all .15s"}}>
+                    border:"1px solid "+D.border,background:D.surf2,transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out"}}>
                     <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,
                       color:D.textSecondary,textAlign:"center",lineHeight:1.2}}>{shot.label}</span>
                   </button>
@@ -208,7 +208,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                 border:"1px solid "+(r===4?D.indigo+"55":r===6?D.amber+"55":D.border),
                 background:r===4?D.indigo+"18":r===6?D.amber+"18":D.surf2,
                 color:r===4?D.sky:r===6?D.amber:D.textPrimary,
-                transition:"all .12s",
+                transition:"background-color .12s, border-color .12s, color .12s, box-shadow .12s, transform 150ms ease-out",
                 boxShadow:r===4?"0 0 12px "+D.indigo+"15":r===6?"0 0 12px "+D.amber+"15":"none",
               }}>{r}</button>
             ))}
@@ -227,7 +227,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             border:"1px solid "+D.rose+"44",background:D.rose+"0e",
             color:D.roseText,fontFamily:D.head,fontSize:"13px",fontWeight:700,
             letterSpacing:"0.06em",textTransform:"uppercase",
-            boxShadow:"0 4px 20px "+D.rose+"15",transition:"all .15s"}}>
+            boxShadow:"0 4px 20px "+D.rose+"15",transition:"background-color .15s, border-color .15s, color .15s, box-shadow .15s, transform 150ms ease-out"}}>
             <Icon name="bails-off"/> Wicket
           </button>
         </div>
@@ -326,7 +326,7 @@ function ScoringPanel({inn,innings,events,curIn,match,hubStage,hubShot,hubApproa
           border:"1px solid "+D.border,background:"transparent",
           color:D.textMuted,fontFamily:D.body,fontSize:"12px",
           animation:"undoPop .3s cubic-bezier(.22,1,.36,1)",
-          transition:"all .15s",
+          transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out",
         }}>
           <span style={{fontSize:"14px"}}><Icon name="undo-2"/></span>
           <span>Undo last ball</span>

@@ -257,7 +257,7 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
         <div style={{borderRadius:"20px",border:`1px solid ${T.line.normal}`,background:T.fill.panel,padding:"28px",backdropFilter:"blur(20px)"}}>
           {/* Demo entry — only where there is no server. See handleDemoEntry. */}
           {live === false && <>
-          <button onClick={handleDemoEntry} disabled={oauthLoading} data-testid="login-demo" className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:T.fill.field,border:`1px solid ${T.line.normal}`,display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"all .2s"}}>
+          <button onClick={handleDemoEntry} disabled={oauthLoading} data-testid="login-demo" className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:T.fill.field,border:`1px solid ${T.line.normal}`,display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out"}}>
             <span aria-hidden="true" style={{color:T.content.secondary,fontSize:"16px"}}><Icon name="play"/></span>
             <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.content.primary}}>{oauthLoading?"Opening the demo…":"Explore the demo — nothing is saved"}</span>
           </button>
