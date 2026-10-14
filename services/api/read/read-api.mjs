@@ -416,11 +416,19 @@ export const READ_QUERIES = {
                   a.active, a.valid_from, a.valid_until,
                   a.created_at, a.created_by, g.name as granted_by_name,
                   a.revoked_at, a.revoked_by, r.name as revoked_by_name,
-                  assignment_suspended(a.id) as suspended
+                  assignment_suspended(a.id) as suspended,
+                  rq.decided_note as granted_note
              from role_assignment a
              left join app_user p on p.id = a.person_id
              left join app_user g on g.id = a.created_by
              left join app_user r on r.id = a.revoked_by
+             -- The request it answered, if any, as role_request's own policy
+             -- lets this reader see it: a register grant's note says "from
+             -- the staff register, row …, uploaded …" (db/92), for People's
+             -- origin line.
+             left join lateral (select q.decided_note from role_request q
+                                 where q.assignment_id = a.id
+                                 order by q.decided_at desc nulls last limit 1) rq on true
             where ($1::uuid is null or a.person_id = $1)
             order by a.active desc, a.created_at desc`,
     params: q => [q?.personId || null],

@@ -194,6 +194,12 @@ const WALKS = [
   // a second Google account, revocation, and the rate limits — against the
   // walk's own signing key, which a production server refuses to start with.
   "signup",
+  // The school staff register (SCRBRD-140 phase 2, db/92) and the request
+  // cooldown (db/93): check then import, a Google account's claim granted
+  // with no role chosen, ended and claimed again, a departed uploader's row
+  // granting nothing, the register the office's alone, and a declined parent
+  // claim telling the DSO and pausing the asker until the DSO lifts it.
+  "staff-register",
   "kit",
   "passport",
   "web",
