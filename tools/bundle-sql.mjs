@@ -323,7 +323,7 @@ SELECT
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_plan_guard' AND tgenabled = 'O')
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_public_not_plan' AND tgenabled = 'O')
         AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('news_post_plan_live') AND i.indisunique)
-        AND NOT has_function_privilege('scrbrd_app', 'news_post_plan_guard()', 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('news_post_plan_guard()'), 'EXECUTE')
         AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
               AND (tablename, policyname) IN (('news_post', 'news_post_plan_side'), ('notification', 'notification_plan_side'))) = 2
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan is one per side, to the side",
