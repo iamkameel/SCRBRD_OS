@@ -67,11 +67,15 @@ export const WORDS = Object.freeze((/** @type {[string, string][]} */ ([
   ["asthma*", "health"], ["inhaler", "health"], ["surgery", "health"],
   // ── absence · no reason for anybody's absence (138 §5.2): the sheet is
   //    the answer ──
-  ["excused", "absence"], ["sick note", "absence"], ["grounded", "absence"],
-  ["exam", "absence"], ["examination", "absence"], ["suspended", "absence"], ["suspension", "absence"],
+  //    Not "grounded" or "suspended", and "disciplinary" rather than the
+  //    stem "disciplin*": each has a cricket sense a true plan needs (a bat
+  //    grounded behind the crease, play suspended for rain, bowling with
+  //    discipline). Kameel, 14 Oct 2026: "Drop the cricket senses".
+  ["excused", "absence"], ["sick note", "absence"],
+  ["exam", "absence"], ["examination", "absence"], ["suspension", "absence"],
   // ── discipline · another boy's conduct is never in front of children
   //    (PUBLIC_DATA N3; SAFEGUARDING_DSO §1) ──
-  ["detention", "discipline"], ["disciplin*", "discipline"], ["conduct matter", "discipline"],
+  ["detention", "discipline"], ["disciplinary", "discipline"], ["conduct matter", "discipline"],
   ["misconduct", "discipline"], ["expelled", "discipline"], ["expulsion", "discipline"], ["demerit*", "discipline"],
   // ── derisive · mocking is bullying (CSA p39; SG-10) ──
   ["shocker", "derisive"], ["howler", "derisive"], ["embarrass*", "derisive"], ["useless", "derisive"],

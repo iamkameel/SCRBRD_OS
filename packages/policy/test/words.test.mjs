@@ -9,7 +9,8 @@
  * Falsified once each by editing the list or the matcher and running this
  * file: "physio*" made a plain word (E names "physiotherapist"); the
  * lookbehind removed (B, D and E go red at "still", "skill", "Still
- * suspended"); "exam" made a stem (D names "for example"); a full stop and a
+ * excused"); "grounded" put back on the list (D names "the ball was grounded
+ * behind the crease"); "exam" made a stem (D names "for example"); a full stop and a
  * bracket counted as letters at the edges (F names "R.physio" and "(physio)",
  * and B every sentence ending in its word).
  *
@@ -49,9 +50,9 @@ group("B. Each class hits (§3.3)");
     ["Pillay is ill.", "ill:health"],
     ["Mokoena is excused.", "excused:absence"],
     ["Brought a sick note.", "sick note:absence"],
-    ["He's grounded this weekend.", "grounded:absence"],
     ["He has an exam on Saturday.", "exam:absence"],
-    ["Still suspended.", "suspended:absence"],
+    ["Still excused.", "excused:absence"],
+    ["His suspension runs to Friday.", "suspension:absence"],
     ["He has detention.", "detention:discipline"],
     ["A disciplinary matter.", "disciplinary:discipline"],
     ["There is a conduct matter.", "conduct matter:discipline"],
@@ -62,6 +63,8 @@ group("B. Each class hits (§3.3)");
   for (const [text, want] of cases) ok(`${JSON.stringify(text)} → ${want}`, words(text) === want, words(text));
   ok("every class is reached by the cases above",
      CLASSES.every((c) => cases.some(([t]) => refusedWords(t).some((h) => h.cls === c))));
+  ok("'a disciplinary matter' and 'his suspension' are refused (Kameel, 14 Oct 2026)",
+     words("a disciplinary matter") === "disciplinary:discipline" && words("his suspension") === "suspension:absence");
   ok("a two-word entry wins over the word inside it: 'sick note' is absence, not health",
      words("sick  note") === "sick note:absence");
 }
@@ -82,7 +85,9 @@ group("D. The words a plan needs pass (§3.3)");
 {
   for (const t of ["away", "rest", "out", "load", "limit", "four overs", "the rest of the order",
                    "away whites", "out by seven", "load the off side", "for example", "the hospitality tent",
-                   "at Illovo", "restrict them to 120", "a still day", "Willis", "skill", "physique", "medium pace"]) {
+                   "at Illovo", "restrict them to 120", "a still day", "Willis", "skill", "physique", "medium pace",
+                   // The cricket senses (Kameel, 14 Oct 2026: "Drop the cricket senses").
+                   "the ball was grounded behind the crease", "play suspended for rain", "bowl with discipline"]) {
     ok(`${JSON.stringify(t)} passes`, refusedWords(t).length === 0, words(t));
   }
 }
@@ -91,7 +96,7 @@ group("E. A stem matches its forms; a word its plural");
 {
   for (const [t, w] of [["injury", "injury"], ["injured", "injured"], ["injuries", "injuries"],
                         ["physiotherapist", "physiotherapist"], ["physios", "physios"],
-                        ["concussed", "concussed"], ["discipline", "discipline"], ["disciplined", "disciplined"],
+                        ["concussed", "concussed"],
                         ["embarrassed", "embarrassed"], ["embarrassment", "embarrassment"], ["sickness", "sickness"],
                         ["howlers", "howlers"], ["shockers", "shockers"], ["exams", "exams"], ["illnesses", "illnesses"]]) {
     ok(`${t} is caught as "${w}"`, refusedWords(t).length === 1 && refusedWords(t)[0].word === w, words(t));
