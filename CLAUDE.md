@@ -64,7 +64,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   GA-I24/I25: two players' figures side by side and the analyst's workspace;
   who may compare or combine which children's figures, across a squad, a
   family or a school, what combining reveals that the parts don't, and how
-  the other school's squad names may appear).
+  the other school's squad names may appear) and assessment history (added
+  2026-10-14, gap analysis GA-I26a: what a coach records about a child's
+  skills over time and the drills that follow; who may read it, the child,
+  his parents, other coaches; how long it is kept; and the coaching points
+  of coach cards slice 2 that stand on it).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
