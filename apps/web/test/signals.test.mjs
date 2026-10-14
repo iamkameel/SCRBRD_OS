@@ -16,7 +16,7 @@ import { panelsOf, LOAD_SENTENCE } from "../src/lib/cockpit.js";
 import { FORBIDDEN_FIELDS, NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
 import { EXCEPTION_WORDS } from "../src/lib/liftWords.js";
 import {
-  RULES, RULE_ORDER, MATCHUP_FLOOR, MATCHUP_GROWTH, evaluate, isSeen, markSeen, unseen, ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12,
+  RULES, RULE_ORDER, TRAILS, MATCHUP_FLOOR, MATCHUP_GROWTH, evaluate, trailLine, isSeen, markSeen, unseen, ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12,
 } from "../src/lib/signals.js";
 
 let pass = 0, fail = 0;
@@ -310,6 +310,102 @@ group("D13 · Seen: per evidence, and nothing else");
   ok("seeing it on another fixture is not seeing it here", !isSeen({ ...card, base: "m2:S6" }, seen));
 }
 
+group("GA-I27 · Every card's evidence trail: the rule's own inputs, its time from the context, nothing the never-lists hold");
+{
+  const PLAY = { "bowling.max_overs_per_bowler_innings": 4 };
+  const T0 = NOW - 120000;                                     // 13:58 on the SA clock
+  const AT = { trips: T0 + 3000, match_squad: T0, lift_expected: T0 + 5000, fold: T0 + 1000, bowling_spells: T0 + 2000, bowler_day: T0 + 4000, readiness: T0 + 6000,
+    matchups: T0 + 7000, matchup_coverage: T0 + 7000, match_duties: T0 + 8000, weather: T0 + 9000, "playing-conditions": T0 + 10000, workload: T0 + 11000, notifications: T0 + 12000,
+    lift_exceptions: T0 + 13000 };
+  const HEAD = 412;
+  // Every row carries fields no rule reads, each with a value that must never reach a trail.
+  const POISON = { reasonKind: "ZZREASON", note: "ZZNOTE", injuryType: "ZZINJURY", severity: "ZZSEVERE", monitored: true, openFlag: true, ewmaRatio: 9.87, acwr: 8.76,
+    units7d: 98765, roster: 97531, opponent: "ZZOPP", driverPhone: "ZZPHONE", wellness: "ZZWELL" };
+  const p = (o) => ({ ...o, ...POISON });
+  const full = (o = {}) => base({
+    match: DAYOF, at: AT, head: HEAD,
+    squad: sheet(10, POISON),
+    trips: [p({ school: HIL, state: "scheduled", capacity: 4, seatsTaken: 0 })],
+    lifts: { boys: new Set(["p1"]), count: 1, lifts: 1, notLeft: 1, handedOverUnconfirmed: 0 },
+    readiness: [p({ playerId: "p2", name: "R Pillay", selected: true, side: "home", team: "1XI", declaredStatus: "unavailable", clinicallyRestricted: false, declaredByName: "Mrs Pillay" }),
+      p({ playerId: "p3", name: "K Naidoo", selected: true, side: "home", team: "1XI", declaredStatus: null, clinicallyRestricted: false })],
+    workload: [p({ playerId: "p1", name: "D Erasmus", pace: true, loadWord: "rising", overs7d: 6, estimated7d: false })],
+    spells: [p({ bowlerId: "b1", name: "T Cele", innings: 0, spellNo: 1, overs: 5, maxSpell: 6, ageBand: "U15", pace: true })],
+    bowlerDay: [p({ playerId: "b1", name: "T Cele", oversToday: 11, matchesToday: 1, ageBand: "U15", pace: true, maxDay: 12 })],
+    fielding: [{ inn: { bowler: "b1", bowlers: [p({ id: "b1", name: "T Cele", balls: 18 })] }, i: 0, inPlay: true }],
+    capFor: (b) => capWords(b, PLAY),
+    matchups: { p1: { rows: [p({ bowlingStyle: "Right-arm fast", balls: 48, runs: 31, dismissals: 3 })], coverage: { attributable: 48, deliveries: 61 } } },
+    duties: [],
+    weather: p({ rainChancePct: 70, playable: true, condition: "Showers", tempC: 18, forecast: "Rain likely from 14:00" }),
+    conditions: { state: "defaults", cap: null, freeHit: true },
+    notices: [p({ id: "n1", type: "notice", title: "The sheet has changed", body: "The sheet for tonight was changed by the selector.", subjectKind: "match", subjectId: "m1" })],
+    ...o,
+  });
+  const OFFICE = gateOf("sportsadmin", { teamCode: null });
+  const coachCards = evaluate(full());
+  const officeCards = evaluate(full({ gate: OFFICE, liftExceptions: [p({ seatId: "s1", kind: "not_collected", name: "T Bekker", driverName: "H Whitfield", leg: "back", since: "2026-10-02T15:10:00Z" })] }));
+  const all = [...coachCards, ...officeCards.filter((k) => k.rule === "S4b")];
+  const one = (r) => all.find((k) => k.rule === r);
+  const figs = (r) => JSON.stringify(one(r)?.evidence.figures);
+  const want = (...f) => JSON.stringify(f.map(([label, value, unit]) => (unit ? { label, value, unit } : { label, value })));
+
+  ok("every rule has its trail's row, and every rule fires once in this context", RULE_ORDER.every((r) => TRAILS[r] && one(r)), RULE_ORDER.filter((r) => !one(r)));
+  ok("every card carries evidence: a read, a window, its figures", all.every((k) => k.evidence && k.evidence.read && k.evidence.window && k.evidence.figures.length >= 1));
+  ok("the read it names is one of the card's own sources", all.every((k) => k.source.includes(k.evidence.read)), all.filter((k) => !k.source.includes(k.evidence.read)).map((k) => k.rule));
+
+  // Each figure is the rule's input, as the row had it.
+  ok("S1: the bus's seats, the seats taken, named, by lift, travelling", figs("S1") === want(["seats on the bus", 4, "seats"], ["seats marked taken", 0, "seats"], ["named", 10, "boys"], ["by lift", 1, "boy"], ["travelling by bus", 9, "boys"]), figs("S1"));
+  ok("S1: a reader who may not count lifts reads 'not counted'", JSON.stringify(ruleS1(full({ gate: gateOf("directorofsport") }))[0]?.evidence.figures[3]) === JSON.stringify({ label: "by lift", value: "not counted" }));
+  ok("S2a: the balls he has bowled and the cap's own sentence, verbatim", figs("S2a") === want(["balls bowled", 18, "balls"], ["the conditions", capWords(18, PLAY)]), figs("S2a"));
+  ok("S2b: the spell, its overs, the directive's spell, the band", figs("S2b") === want(["spell", 1], ["overs in it", 5, "overs"], ["the directive's spell", 6, "overs"], ["age band", "U15"]), figs("S2b"));
+  ok("S2c: overs today, the day's limit and whose, the matches as a count, the band", figs("S2c") === want(["overs today", 11, "overs"], ["the day's limit", 12, "overs"], ["whose limit", "directive"], ["matches today", 1], ["age band", "U15"]), figs("S2c"));
+  ok("S3: the state, and who said it; no reason, no nature", figs("S3") === want(["on the sheet", "yes"], ["state", "unavailable"], ["who said it", "said by Mrs Pillay"]), figs("S3"));
+  ok("S3: restricted carries the date he is back and nothing of who said it",
+     JSON.stringify(ruleS3(base({ readiness: [{ playerId: "p1", name: "R Pillay", selected: true, side: "home", clinicallyRestricted: true, returnDate: "2026-10-14T00:00:00.000Z", declaredByName: "Mrs Pillay" }] }))[0]?.evidence.figures)
+       === want(["on the sheet", "yes"], ["state", "restricted"], ["back", "14 Oct"]));
+  ok("S4a: a head count, nothing more", figs("S4a") === want(["arriving by lift", 1, "boy"], ["not marked as leaving", 1, "lift"], ["handed over, not yet confirmed", 0, "boys"]), figs("S4a"));
+  ok("S4b: the office's: the kind in db/76's words, the leg, since when", figs("S4b") === want(["what", EXCEPTION_WORDS.not_collected], ["leg", "home"], ["since", "17:10"]), figs("S4b"));
+  ok("S5: the type, balls, runs, out, and what is attributable", figs("S5") === want(["against", "pace"], ["balls", 48, "balls"], ["runs", 31, "runs"], ["out", 3, "times"], ["attributable", 48, "balls"], ["of the balls he faced", 61, "balls"]), figs("S5"));
+  ok("S6: named, of a side of eleven; never the roster", figs("S6") === want(["named", 10, "boys"], ["a side", 11, "boys"]), figs("S6"));
+  ok("S7: counts, never a name and never the roster", figs("S7") === want(["not answered", 1], ["to answer again", 0]), figs("S7"));
+  ok("S8: the empty slot and the day", figs("S8") === want(["slot", "scorer"], ["on record", "nobody"], ["the day", "2 Oct"]), figs("S8"));
+  ok("S9: the read's forecast, the chance in 100 (never a percent), playable", figs("S9") === want(["forecast", "Rain likely from 14:00"], ["chance of rain", 70, "in 100"], ["playable", "yes"]), figs("S9"));
+  ok("S10: what the document says", figs("S10") === want(["conditions", "the platform defaults"], ["cap", "none"], ["free hit", "yes"]), figs("S10"));
+  ok("S11: the overs, the word, whether it is an estimate; never a ratio", figs("S11") === want(["overs this week", 6, "overs"], ["the word", "rising"], ["an estimate", "no"]), figs("S11"));
+  ok("S12: the notice's kind; the notice itself is the record", figs("S12") === want(["kind", "notice"]), figs("S12"));
+
+  // The time: from the context, never a clock of the module's own.
+  ok("as at is the oldest of the card's reads (S1: the sheet, read before the bus and the lifts)", one("S1").evidence.asOf === AT.match_squad);
+  ok("...a card over one read is that read's time", one("S11").evidence.asOf === AT.workload && one("S2c").evidence.asOf === AT.bowler_day && one("S2a").evidence.asOf === AT.fold);
+  ok("the head is the context's, on the cards that stand on the log (S2a, S2b), and on no other", all.every((k) => k.evidence.head === (["S2a", "S2b"].includes(k.rule) ? HEAD : null)), all.map((k) => `${k.rule}:${k.evidence.head}`));
+  ok("the source line: read, window, denominator, as at",
+     trailLine(one("S11").evidence, NOW) === "workload · the 7 days to today · overs begun, every match · as at 13:58", trailLine(one("S11").evidence, NOW));
+  ok("...and the head where it stands on the log", trailLine(one("S2a").evidence, NOW) === "fold · this innings · balls bowled, against the frozen conditions · as at 13:58 · head 412", trailLine(one("S2a").evidence, NOW));
+  ok("...a read from another day says its date", /as at 13:58, 1 Oct$/.test(trailLine({ ...one("S11").evidence, asOf: T0 - 86400e3 }, NOW)), trailLine({ ...one("S11").evidence, asOf: T0 - 86400e3 }, NOW));
+  const bare = evaluate(full({ at: undefined, head: undefined }));
+  ok("a context with no times: no 'as at', never 'Invalid Date', and no head", bare.length === coachCards.length && bare.every((k) => k.evidence.asOf === null && k.evidence.head === null
+     && !/as at|Invalid|NaN|undefined/.test(trailLine(k.evidence, NOW))), bare.map((k) => trailLine(k.evidence, NOW)).find((l) => /as at|Invalid|NaN|undefined/.test(l)));
+  ok("...nor when the read the card names did not answer, though another did", evaluate(full({ at: { match_squad: T0 } })).find((k) => k.rule === "S1").evidence.asOf === null);
+  ok("a card drawn straight from its rule is not yet stamped (evaluate() alone holds the context)", ruleS11(full())[0].evidence.asOf === null);
+
+  // What never reaches a trail.
+  const words = (k) => [k.evidence.read, k.evidence.window, k.evidence.denominator, k.evidence.unit, k.evidence.screen?.label,
+    ...k.evidence.figures.flatMap((f) => [f.label, String(f.value), f.unit])].filter((x) => x != null);
+  const bad = all.flatMap((k) => words(k).filter((w) => NEVER_ON_THE_COCKPIT.test(w)).map((w) => `${k.rule}: ${w}`));
+  ok("no word in any trail matches the never-words", bad.length === 0, bad);
+  const fieldHit = all.flatMap((k) => words(k).filter((w) => FORBIDDEN_FIELDS.some((f) => new RegExp(`\\b${f}\\b`).test(w))).map((w) => `${k.rule}: ${w}`));
+  ok("...nor names a forbidden field", fieldHit.length === 0, fieldHit);
+  const blob = JSON.stringify(all.map((k) => k.evidence));
+  const leaked = ["ZZ", "9.87", "8.76", "98765", "97531", "roster", "Whitfield"].filter((s) => blob.includes(s));
+  ok("no field the rules do not read reaches a trail, though every row carried them (a reason, a nature, a flag, a ratio, the roster, a phone, a driver)", leaked.length === 0, leaked);
+  const ids = all.flatMap((k) => Object.entries(k.evidence.params).filter(([n]) => /player|batter|bowler/i.test(n)).filter(([, v]) => !k.base.includes(String(v))).map(([n, v]) => `${k.rule}: ${n}=${v}`));
+  ok("params name a boy only when the card does (his id is in the card's base)", ids.length === 0, ids);
+  ok("no trail names a second boy: S5's names its batter alone, S6 and S7 none", Object.keys(one("S5").evidence.params).join() === "batterId,type" && Object.keys(one("S6").evidence.params).length === 0 && Object.keys(one("S7").evidence.params).length === 0);
+  ok("the screens are the existing ones (C-D3: no fifth destination); S9 has none", all.every((k) => k.evidence.screen === null || ["logistics", "scorecard", "training", "squad", "profile", "duties", "competitions", "notifications"].includes(k.evidence.screen.route))
+     && one("S9").evidence.screen === null);
+  ok("the team manager's cards carry no load read's name, for he has no load card", !/bowler_day|bowling_spells|workload/.test(JSON.stringify(evaluate(full({ gate: MANAGER })).map((k) => k.evidence))));
+}
+
 group("The static check: the rules read none of what they must not, and touch nothing");
 {
   const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
@@ -317,6 +413,7 @@ group("The static check: the rules read none of what they must not, and touch no
   const hit = FORBIDDEN_FIELDS.filter((w) => new RegExp(`\\b${w}\\b`).test(code));
   ok(`no forbidden field is read (${FORBIDDEN_FIELDS.join(", ")})`, hit.length === 0, hit);
   ok("it fetches nothing and writes nothing (no api, no storage, no clock of its own)", !/\bapi\(|fetch\(|localStorage|sessionStorage|Date\.now|new Date\(\)|XMLHttpRequest/i.test(code), code.match(/\bapi\(|fetch\(|localStorage|Date\.now/)?.[0]);
+  ok("the scan holds the evidence trail's helpers too (GA-I27: trail, stamp, trailLine)", /function trail\(/.test(code) && /function stamp\(/.test(code) && /export function trailLine\(/.test(code));
   ok("it imports no screen", !/from "\.\.\/(views|ui)\//.test(code) && !/from "react"/.test(code));
   // Phase B §1.5: the new read's absent columns stay absent from the rule that reads it.
   const s2c = code.slice(code.indexOf("export function ruleS2c"), code.indexOf("export function ruleS3"));
