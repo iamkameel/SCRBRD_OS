@@ -969,7 +969,7 @@ or was withdrawn only when someone at the school presses Clear.
 **What it does to a live database.** Adds the table, its two indexes, eleven
 functions, and re-emits `decide_role_request()` (its rights kept). No row is
 inserted, changed or deleted. Nothing in the file drops anything; the one
-temporary table it uses is `ON COMMIT DROP`.
+temporary table it uses is dropped at the end of the file.
 
 Paste `node tools/bundle-sql.mjs --apply 92` (after 91), then the verify
 bundle (§73 is its proof; the summary row's "Staff register is the office's"
