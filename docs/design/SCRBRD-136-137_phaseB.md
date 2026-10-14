@@ -1,6 +1,6 @@
 # SCRBRD-136 / 137 — Phase B: `bowler_day`, `signal_ack`, the guideline slot, and the proofs phase A still owes
 
-**Status:** draft for Kameel's review (Fable, 2026-10-13). Nothing built.
+**Status:** decided (Kameel, 2026-10-13: "yes to all"; every call as recommended). Merged as #135 on 2026-10-14. Nothing built; building starts after the pilot.
 **Source:** `docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md` (the base; D1–D16 stand; this document supersedes its phase B row and the lines §12 names); `apps/web/src/lib/signals.js`, `lib/cockpit.js`, `views/cockpit/useCockpit.js`, `views/cockpit/MatchDayCard.jsx`, `views/cockpit/useQueue.js` (phase A as built); `services/api/read/read-api.mjs` (the lead's three read fixes); `db/60_workload_consent_count.sql` (`workload()`, the consent); `docs/design/SCRBRD-110_workload.md` §3.3, §4.2, §6.1, §6.5, §7.4, §9; ADR 0002; `docs/design/SAFEGUARDING_DSO.md` §1, §4.4; `packages/policy/src/roles.mjs`; `db/89_notification_contract.sql`; `docs/design/GA-I09-I11_match_day_queue.md` §3.1 through `MatchDayCard.jsx`'s header.
 **Reader:** Kameel first; then the Opus lead; then the Opus agent who builds the function, the proofs and (if chosen) the table, and the Sonnet agent who builds the one new card. Names in examples are the seed's illustrative ones, never a real child's.
 
@@ -15,9 +15,9 @@ B0 with the Opus review of the proofs; Haiku keeps the status line and the 136 d
 
 ## What Kameel decides
 
-1. **`signal_ack`: build it in phase B, or keep the device store until the pilot shows it failing?** Recommendation: **keep the device store; do not build the table now** (PB-D5). The 136 phase table lists the table; this document asks to take it out of phase B and keep its design in §3 so it drops in if a coach asks for it.
-2. **`bowler_day`'s gate: `player.workload.read`, per boy, inside the function (D16 confirmed), held by coach, assistant coach, director of sport, physio, S&C coach and the boy himself; not the team manager, not the office.** Recommendation: confirm (PB-D1). The alternative, widening the team manager in, is a change to `roles.mjs` this document does not ask for.
-3. **Phase C (`coach_signals()` in SQL): keep as an option with a measured trigger, or drop it.** Recommendation: keep, with the trigger in §7 (PB-D9).
+1. **`signal_ack`: build it in phase B, or keep the device store until the pilot shows it failing?** Recommendation: **keep the device store; do not build the table now** (PB-D5). The 136 phase table lists the table; this document asks to take it out of phase B and keep its design in §3 so it drops in if a coach asks for it. — **Decided: as recommended (2026-10-13).**
+2. **`bowler_day`'s gate: `player.workload.read`, per boy, inside the function (D16 confirmed), held by coach, assistant coach, director of sport, physio, S&C coach and the boy himself; not the team manager, not the office.** Recommendation: confirm (PB-D1). The alternative, widening the team manager in, is a change to `roles.mjs` this document does not ask for. — **Decided: as recommended (2026-10-13).**
+3. **Phase C (`coach_signals()` in SQL): keep as an option with a measured trigger, or drop it.** Recommendation: keep, with the trigger in §7 (PB-D9). — **Decided: as recommended (2026-10-13).**
 4. **The stale comment on `workload` at `read-api.mjs:1479`** ("per row under `player.development.read`") is the same drift the lead fixed on `bowling_breaches`. Recommendation: Haiku corrects it with the status line (PB-D11). Named here only because it is a claim about a gate.
 
 Everything else below is a design call made with reasons, and is Kameel's to overturn.
