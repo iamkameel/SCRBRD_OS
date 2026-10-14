@@ -38,6 +38,13 @@
  *      the second opens THAT fixture's Coach tab; past the first few, the rest
  *      fold under "Later" and make no read until opened. A Readiness row is a
  *      44px tap that opens its fixture's duties.
+ *   3b. WHERE THIS COMES FROM (GA-I27 slice 1, docs/design/GA-I27_coach_cards.md
+ *      §5.1, §7): every card's disclosure, 44px and collapsed until asked;
+ *      expanded, its trail's figures equal the same raw reads by arithmetic
+ *      written again here, it says when its read answered, the rendered
+ *      drawer holds none of the never-words or the five basis words, the
+ *      trail is its own lazily loaded chunk, and each link opens the screen
+ *      it names. The team manager's trails name no load read.
  *   7. Floors: nothing read under 12px, nothing tapped under 44px, at 390
  *      wide, in both themes; reduced motion respected; no page errors.
  *
@@ -197,6 +204,28 @@ async function openDrawer(page) {
 const cards = (page) => page.$$eval('[data-testid^="signal-"][data-rule]', (els) => els.map((e) => ({
   rule: e.getAttribute("data-rule"), count: Number(e.getAttribute("data-count")), seen: e.getAttribute("data-seen"), text: e.innerText })));
 const byRule = (cs, r) => cs.filter((c) => c.rule === r);
+/** Open every card's "Where this comes from" (GA-I27), saying what the buttons were before and after. */
+async function openTrails(page) {
+  const before = await page.$$eval('[data-testid="signals"] article [data-testid^="signal-trail-"]', (els) => ({
+    buttons: els.length, collapsedFirst: els.every((e) => e.getAttribute("aria-expanded") === "false"),
+    minH: Math.min(...els.map((e) => e.getBoundingClientRect().height)) }));
+  const btns = page.locator('[data-testid="signals"] article [data-testid^="signal-trail-"]');
+  for (let i = 0; i < before.buttons; i++) await btns.nth(i).click({ timeout: 4000 });
+  await page.waitForFunction((n) => document.querySelectorAll('[data-testid="evidence-trail"]').length >= n, before.buttons, { timeout: 8000 }).catch(() => {});
+  const expanded = await page.$$eval('[data-testid="signals"] article [data-testid^="signal-trail-"]', (els) => els.filter((e) => e.getAttribute("aria-expanded") === "true"
+    && document.getElementById(e.getAttribute("aria-controls") ?? "")?.getAttribute("data-testid") === "evidence-trail").length);
+  return { ...before, expanded };
+}
+/** Every open trail, read off the screen: its rule, read, head, line, figures by label, link, and its card's text and source. */
+const trails = (page) => page.$$eval('[data-testid="evidence-trail"]', (els) => els.map((e) => {
+  const art = e.closest("article");
+  const a = e.querySelector('[data-testid="evidence-trail-link"]');
+  return { rule: e.getAttribute("data-rule"), read: e.getAttribute("data-read"), head: e.getAttribute("data-head"),
+    line: e.querySelector('[data-testid="evidence-trail-line"]')?.innerText ?? "",
+    figures: Object.fromEntries([...e.querySelectorAll("dd[data-label]")].map((d) => [d.getAttribute("data-label"), d.innerText.trim()])),
+    link: a ? { route: a.getAttribute("data-route"), label: a.innerText } : null,
+    text: art?.innerText ?? "", source: (art?.innerText.match(/From (.+?)\. You see it/) ?? [])[1] ?? "" };
+}));
 
 /** §3.2 and §3.5 over what is on screen: the main area and the drawer. */
 async function floors(page, within = '[data-testid="os-main"], [data-testid="signals"]') {
@@ -503,6 +532,81 @@ try {
   ok(`the drawer, phone: nothing under 12px (${f2.small.length}), nothing tapped under 44px (${f2.tiny.length})`, f2.small.length === 0 && f2.tiny.length === 0, [...f2.small, ...f2.tiny].slice(0, 4).join(" · "));
   ok("the drawer is a dialog named by its heading, and the cards are articles with their evidence as text",
      await c.page.$eval('[data-testid="signals"]', (e) => e.getAttribute("role") === "dialog" && !!document.getElementById(e.getAttribute("aria-labelledby"))) && (await c.page.$$('[data-testid="signals"] article')).length === cs.length);
+
+  // ══ 3b · Where this comes from (GA-I27 slice 1) ═══════════════════════════
+  group("Where this comes from: every card's trail equals the rows the coach's own token reads, and its link goes where it says");
+  const opened = await openTrails(c.page);
+  ok(`every card has the disclosure, 44px and collapsed until asked (${opened.buttons} of ${cs.length})`, opened.buttons === cs.length && opened.collapsedFirst && opened.minH >= 43.5, JSON.stringify(opened));
+  ok("...expanded, each says so (aria-expanded) and draws its trail", opened.expanded === cs.length && (await trails(c.page)).length === cs.length, JSON.stringify(opened));
+  const tr = await trails(c.page);
+  dbg("TRAILS", tr.map((t) => `${t.rule} ${t.line} :: ${JSON.stringify(t.figures)} -> ${t.link?.route ?? "-"}`).join("\n"));
+  const trOf = (r) => tr.filter((t) => t.rule === r);
+  const fig = (t, label) => t?.figures[label];
+  const n = (v) => Number(String(v ?? "").match(/^-?\d+/)?.[0]);
+  ok("every trail names a read the card's own source names, and says when it answered on the SA clock", tr.every((t) => t.source.includes(t.read) && t.line.startsWith(`${t.read} · `) && /as at \d\d:\d\d/.test(t.line)),
+     tr.map((t) => `${t.rule}: ${t.line}`).filter((l) => !/as at \d\d:\d\d/.test(l)).join(" | "));
+  ok("...and none of them stands on the log before the first ball (no head)", tr.every((t) => t.head === "" && !/head \d/.test(t.line)));
+  const t1 = trOf("S1")[0];
+  const seatsTaken = rawTrips.filter((t) => t.state !== "cancelled").reduce((k, t) => k + (t.seats_taken ?? 0), 0);
+  ok(`S1's trail: ${cap} seats, ${seatsTaken} taken, ${home.length} named, ${byLift} by lift, ${travelling} travelling — the raw trips, sheet and lifts`,
+     n(fig(t1, "seats on the bus")) === cap && n(fig(t1, "seats marked taken")) === seatsTaken && n(fig(t1, "named")) === home.length && n(fig(t1, "by lift")) === byLift && n(fig(t1, "travelling by bus")) === travelling, JSON.stringify(t1?.figures));
+  ok("...from trips, the fixture, seats and boys named", /^trips · this fixture · seats on the bus, boys named · as at/.test(t1?.line ?? ""), t1?.line);
+  ok("S3's trails: each picked boy's state, never a reason", trOf("S3").length === wantS3.length && trOf("S3").every((t) => /^(restricted|unavailable|asked again)$/.test(fig(t, "state")) && leaks(JSON.stringify(t.figures)).length === 0),
+     JSON.stringify(trOf("S3").map((t) => t.figures)));
+  const t4 = trOf("S4a")[0];
+  ok(`S4a's trail: ${byLift} arriving by lift, ${lateOffers} not marked as leaving, as head counts`, n(fig(t4, "arriving by lift")) === byLift && n(fig(t4, "not marked as leaving")) === lateOffers && !/Bekker|Whitfield|Fortuner/.test(JSON.stringify(t4?.figures)), JSON.stringify(t4?.figures));
+  const t6 = trOf("S6")[0];
+  ok(`S6's trail: ${home.filter((r) => !r.twelfth).length} named of a side of 11, and never the roster`, n(fig(t6, "named")) === home.filter((r) => !r.twelfth).length && n(fig(t6, "a side")) === 11 && !/roster/i.test(JSON.stringify(t6)), JSON.stringify(t6?.figures));
+  const t7 = trOf("S7")[0];
+  ok(`S7's trail: ${none} not answered, ${again} to answer again, and no name`, n(fig(t7, "not answered")) === none && n(fig(t7, "to answer again")) === again && !/Naidoo|Pillay|Whitfield/.test(JSON.stringify(t7)), JSON.stringify(t7?.figures));
+  ok("S8's trails: one empty slot each, the scorer's and the umpire's", trOf("S8").map((t) => fig(t, "slot")).sort().join() === wantS8.sort().join() && trOf("S8").every((t) => fig(t, "on record") === "nobody"), JSON.stringify(trOf("S8").map((t) => t.figures)));
+  const t9 = trOf("S9")[0];
+  ok(`S9's trail: the weather read's forecast, ${rawWeather.rain_chance_pct} in 100, playable — and no percent sign`,
+     fig(t9, "forecast") === rawWeather.forecast && fig(t9, "chance of rain") === `${rawWeather.rain_chance_pct} in 100` && fig(t9, "playable") === (rawWeather.playable ? "yes" : "no") && !/%/.test(JSON.stringify(t9)), JSON.stringify(t9?.figures));
+  ok("...and no link: the weather has no screen of its own", t9 && t9.link === null);
+  ok("S10's trail: the platform defaults, as the document says", fig(trOf("S10")[0], "conditions") === "the platform defaults", JSON.stringify(trOf("S10")[0]?.figures));
+  const t11 = trOf("S11");
+  const s11ok = t11.length === wantS11.length && t11.every((t) => {
+    const w = wantS11.find((r) => t.text.includes(`${r.full_name} · `));
+    return w && fig(t, "the word") === w.load_word && String(fig(t, "overs this week")).split(" ")[0] === String(w.overs_7d ?? 0) && fig(t, "an estimate") === (w.estimated_7d ? "yes" : "no");
+  });
+  ok(`S11's trails: each boy's overs this week and his word, as the workload read has them (${wantS11.length})`, s11ok, JSON.stringify(t11.map((t) => t.figures)));
+  ok("...from workload, the 7 days to today, overs begun in every match", t11.every((t) => /^workload · the 7 days to today · overs begun, every match · as at/.test(t.line)), t11[0]?.line);
+  ok("S12's trail: the notice's kind as published", fig(trOf("S12")[0], "kind") === wantS12[0].kind);
+  const allOpen = await inner(c.page, "signals");
+  const bad4 = leaks(allOpen);
+  ok(`every trail open, the drawer: none of the never-words, no reason, no nature, no phone (${bad4.length})`, bad4.length === 0, bad4.join(" | "));
+  const BASIS = /returning[\s_-]*from[\s_-]*injury|\bgrowth\b|pre[\s_-]?season|physio[\s_-]*judge?ment|coach[\s_-]*judge?ment|\bset by\b/i;
+  ok("...nor any of the five basis words, nor \"set by\" (PB-D7)", !BASIS.test(allOpen), allOpen.match(BASIS)?.[0]);
+  const f2b = await floors(c.page);
+  const links = await c.page.$$eval('[data-testid="evidence-trail-link"]', (els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+  ok(`trails open, phone: nothing under 12px (${f2b.small.length}), nothing tapped under 44px (${f2b.tiny.length}), every link 44px (${links.join()})`,
+     f2b.small.length === 0 && f2b.tiny.length === 0 && links.length > 0 && links.every((h) => h >= 44), [...f2b.small, ...f2b.tiny].slice(0, 4).join(" · "));
+  ok("the figures are in the figure face, tabular", await c.page.$$eval('[data-testid="evidence-trail-figures"] dd', (els) => els.length > 0 && els.every((e) => /DM Mono/.test(getComputedStyle(e).fontFamily) && getComputedStyle(e).fontVariantNumeric.includes("tabular-nums"))));
+  ok("the trail chunk loaded on asking: a separate script, not the Match Centre's", await c.page.evaluate(() => performance.getEntriesByType("resource").some((r) => /\/assets\/EvidenceTrail-[^/]+\.js$/.test(r.name))));
+  // Tab stays inside the drawer with the links in it, and Escape still closes it.
+  for (let i = 0; i < 80; i++) await c.page.keyboard.press("Tab");
+  ok("with every trail open, Tab stays inside the drawer", await c.page.evaluate(() => !!document.activeElement?.closest('[data-testid="signals"]')));
+
+  // The links: each goes to the screen it names, and the screen is one his menu has.
+  const linkTo = async (rule, check, what) => {
+    await backTo(c.page, "coach@example.invalid", DAY);
+    const art = c.page.locator(`[data-testid="signals"] article[data-rule="${rule}"]`).first();
+    await art.locator(`[data-testid="signal-trail-${rule}"]`).click({ timeout: 4000 });
+    const a = art.locator('[data-testid="evidence-trail-link"]');
+    await a.waitFor({ timeout: 6000 }).catch(() => {});
+    const label = await a.innerText().catch(() => "");
+    await a.click({ timeout: 4000 }).catch(() => {});
+    await c.page.waitForTimeout(2500);
+    ok(`${rule}'s link "${label}" ${what}`, label !== "" && await check() && (await tid(c.page, "signals").count()) === 0, `${label} → ${await c.page.$eval('[data-testid="os-main"]', (e) => e.getAttribute("data-page")).catch(() => "?")}`);
+  };
+  const pageIs = (k) => async () => (await c.page.$eval('[data-testid="os-main"]', (e) => e.getAttribute("data-page")).catch(() => "")) === k;
+  await linkTo("S7", pageIs("squad"), "opens Squad");
+  await linkTo("S11", pageIs("training"), "opens Training, where the week's load is");
+  await linkTo("S1", async () => (await pageIs("logistics")()) && /Transport/i.test(await inner(c.page, "os-main")), "opens Logistics on Transport");
+  await linkTo("S8", async () => (await c.page.$eval('[data-testid="match-details"]', (e) => e.getAttribute("data-match")).catch(() => "")) === DAY, "opens this fixture's duties");
+  await linkTo("S12", pageIs("notifications"), "opens Alerts");
+  await backTo(c.page, "coach@example.invalid", DAY);
   await c.page.keyboard.press("Escape");
   await c.page.waitForTimeout(300);
   ok("Escape closes it, and focus returns to the button that opened it", (await tid(c.page, "signals").count()) === 0 && await c.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "coach-signals-open");
@@ -549,6 +653,10 @@ try {
   ok("...no load anywhere on his tab", (await tid(tm.page, "coach-week").count()) === 0 && !/spike|rising|A guide to a conversation/.test(await inner(tm.page, "signals")));
   const bad3 = leaks(await inner(tm.page, "signals"));
   ok("...and none of the never-words in his drawer", bad3.length === 0, bad3.join());
+  const tmOpen = await openTrails(tm.page);
+  const tmDrawer = await inner(tm.page, "signals");
+  ok(`...every trail of his open (${tmOpen.expanded}), none names a load read: no bowler_day, bowling_spells or workload (C-D8)`,
+     tmOpen.expanded === tmCards.length && !/bowler_day|bowling_spells|workload/.test(tmDrawer) && leaks(tmDrawer).length === 0, tmDrawer.match(/bowler_day|bowling_spells|workload/)?.[0]);
   await tid(tm.page, "signal-seen-S7").click({ timeout: 3000 }).catch(() => {});
   await tm.ctx.close();
   const as = await open({ viewport: PHONE });

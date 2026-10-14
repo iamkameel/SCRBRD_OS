@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
-import { ROLES } from "../../design/roles.js";
+import { useNav } from "../../lib/features.js";
 import { batHandOf, bowlingLimit } from "@scrbrd/scoring";
 import { boardInnings, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { bandLine, bandOfTeam, bowlerRows, matchupTypes, matchupWords, notYetBowled, overStory, pitchWords, sheetOf } from "../../lib/captain.js";
@@ -105,7 +105,7 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
   // Where a card's link goes (GA-I27 §5.2, C-D3): an existing screen, and only
   // one this reader's menu already has; the screen's own gate decides again.
   // A screen he has no door to is no link, and the trail stands without it.
-  const nav = ROLES[role]?.nav ?? [];
+  const nav = useNav(role);
   const closeThen = (/** @type {() => void} */ f) => () => { setDrawer(false); f(); };
   const openScreen = (/** @type {any} */ c) => {
     const s = c.evidence?.screen;
