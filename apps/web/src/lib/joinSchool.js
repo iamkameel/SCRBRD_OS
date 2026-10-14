@@ -10,9 +10,10 @@
  * THREE RULES, each held by apps/web/test/signin.test.mjs:
  *
  *   1. NOBODY ASSIGNS THEMSELVES ANYTHING. Every kind ends in a request, never
- *      a role. Nothing here is automatic: not for staff (the register that
- *      would let an office pre-approve its staff is phase 2, with no route yet),
- *      not for a parent, not for a pupil.
+ *      a role. Nothing here is automatic: not for a parent, not for a pupil, and
+ *      not for staff either. A member of staff whose office listed them in the
+ *      staff register is granted by the SERVER (POST /api/join/register-claim,
+ *      db/92), on the address Google verified; this form only asks.
  *   2. A PARENT'S CLAIM ON A CHILD NEVER LOOKS A CHILD UP (§5.3). The child is
  *      free text — a name as the family writes it, a relationship, a year —
  *      travelling in the request's note for the office to match by hand. No
@@ -95,7 +96,10 @@ export function buildRequest(kind, schoolId, f = {}) {
  * None says anything about a child or an account.
  */
 export const JOIN_WORDS = {
-  already_pending: "You already have a request in for this. Somebody at the school will answer it.",
+  already_pending: "Your request is already with the school office. You do not need to send it again: the answer will show on this page.",
+  // db/93: the account's own state, said as that and nothing more. It never
+  // says why and never names anyone (design SCRBRD-140 phase 2 §4.2).
+  request_cooldown: "This account can't send a request yet. The school's safeguarding lead can lift that. Ask the school office to put you in touch.",
   no_such_school: "That school could not be selected. Choose it again from the list.",
   school_required: "Choose your school first.",
   role_invalid: "Say who you are first.",
