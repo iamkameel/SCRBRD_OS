@@ -169,3 +169,153 @@ Build `coaching_point` exactly as I27 §6 draws it, with one change to its read 
 
 `development_target.from_skill_id` and `development_target.note_id` are foreign keys, not copies of a pointer; the note's `evidence_params.skillId` is the same `player_skill.id`. So a corrected score (§5) is found by every row that stood on it by one join, and GA-I36's "both versions kept" holds without a stored snapshot. The only copied text anywhere is I27's `evidence_text` for S2a/S5 cards, which C-D4 allowed because those cards' capabilities are the reader's own.
 
+---
+
+## 3 · Who reads each part (AH-D3)
+
+### 3.1 The rule, as the argument
+
+Every row in this design is either **about one boy** (class C2: `player_skill`, `development_target`, `development_note`; class C1: `training_attendance`) or **about the side** (`training_session`, `training_session_drill`). REACH §3.3 and §3.1 give each its one spelling of `app_can()`'s person argument, and this design adds no spelling:
+
+| table | capability | person argument | team argument |
+|---|---|---|---|
+| `player_skill` | `player.development.read` / `.write` | **the row's `player_id`** | the boy's current side (`player.team_code`), as `db/09:425–439` |
+| `development_target` | `player.development.read`; writes only through `target_set()`/`target_withdraw()` | the row's `player_id` | the boy's current side |
+| `development_note` (notes and coaching points) | `player.note.read`; writes `player.note.write` and, for a point, `player.development.write` too | the row's `player_id` | the boy's current side |
+| `training_attendance` | `player.profile.read` / `team.manage` | the row's `player_id` | the session's side |
+| `training_session`, `training_session_drill` | `team.read` / `team.manage` | **zeros** today; **`side_reach('team.read', school, team, zeros)`** when REACH R-A lands | the session's side |
+
+A guardian passes the boy rule for her child only where she holds the capability, and she holds none of `player.development.read`, `player.note.read` (`roles.mjs:391–400`). She passes the side rule for her child's side under `team.read`. A pupil passes the boy rule for himself through `selfaccess` (`:376–386`: `player.development.read`, not `player.note.read`) and the side rule through `player` (`:330–335`: `team.read`). A coach passes both for his side. The office passes the boy rule school-wide only where it holds the capability, and `schooladmin` holds neither development nor note capabilities (`:198`), which is right: the office keeps the record (§6) and does not read the judgement.
+
+### 3.2 Reader by reader, in plain words
+
+| reader | scores, the history, the trend | targets | notes and coaching points | the side's plan | the register | why |
+|---|---|---|---|---|---|---|
+| **the coach** of his side | reads and writes | reads, sets, withdraws | reads, writes, withdraws | reads, writes | reads, writes | `coach` (`roles.mjs:250–272`) holds every capability named |
+| **the assistant coach** | reads | reads | reads, writes a plain note; **cannot write a coaching point** | reads; writes only if his bundle holds `team.manage` (see note) | reads; writes the same way | `assistantcoach` (`:274–285`) holds `player.development.read` but not `.write`, so `target_set()` and `coaching_point_write()` refuse him; `player.note.write` lets him write a note |
+| **the director of sport** | reads, school-wide | reads | reads, writes a plain note | reads, writes | reads, writes | `:169–182` |
+| **the principal** | **no** | **no** | reads | reads | reads | `:137–168`: `player.note.read` without `player.development.read`. The head reads what the coach wrote and not the numbers; this design records it and does not change it |
+| **the team manager** | no | no | no | reads, writes | reads, writes | `:287–294`: `team.manage`, `team.select`, nothing of development or notes. He runs the session, not the judgement |
+| **the boy himself** (`selfaccess`) | reads his own, every row, the trend | reads his own | **no** | reads his side's | reads his side's | STEP4 item 7 and `capabilities.mjs:113–131`: his scores yes, the prose no |
+| **his parents** (`guardian`) | **no** | **no** | **no** | reads her child's side's (once R-A: her side, not the school) | reads her child's row (`player.profile.read`, row id; the side's other rows too, C1) | STEP4 "What the parent never sees"; "his drills this week" is answered by the **side's** plan, which names nobody, and not by his targets |
+| **a pupil captain** over a team-mate | no | no | no | his side's | his side's | `player` holds none of the development or note capabilities (138 :213); the honour adds nothing |
+| **an analyst** | no | no | no | reads | reads (the register is C1 under `player.profile.read`, which he holds; §3.4) | `:414–421`; GA-I24-I25 D5 keeps judgements out of his workspace |
+| **the other school** | no | no | no | no | no | the side rule is this school's side; `opposition_squad()` names its own columns and none of these |
+| **a scorer, an official, a spectator, the office, finance, a driver** | no | no | no | per `team.read` where held and scoped | per `player.profile.read` where held | none holds a development or note capability |
+| **the public** | never | never | never | never | never | PUBLIC_DATA §3 N5: judgements; the plan and register are signed-in rows under `team.read`/`player.profile.read` and no `public_*()` function serves them |
+| **a `support_access` session** | no | no | no | — | — | the `RESTRICTIVE` cut I27 §6 asked for, on all three class-C2 tables (Opus verifies `development_note` and `player_skill` have one today, and adds it where they do not) |
+
+Note on the assistant and the plan: `assistantcoach` spreads `READ_TEAM` (`team.read`, not `team.manage`) in the lines read (`:274–285`); the lead confirms from the full bundle whether he holds `team.manage`. If he does not, the plan is the coach's and the team manager's to write, which is how a school runs a session anyway.
+
+### 3.3 What the history reveals that one score does not
+
+A trend is a **direction** — "D Erasmus's `againstPace` has gone 8, 9, 11 since March" — and a direction about a named child's judged ability is more than a number: it says whether the coaching is working and whether the boy is. Two things follow and one does not.
+
+- **It changes no reader.** Every row of `player_skill` is already returned by the `skills` read to every holder of `player.development.read` for the boy (`read-api.mjs:494–500` has no date filter; `db/09:425` has no DELETE policy). The screen throws the older rows away in the browser. Making the line visible discloses nothing to anyone who could not already fetch it with the same token.
+- **It changes the words** (§4): a falling line drawn to a fourteen-year-old with the word "declining" beside it is a verdict; the same line with its dates and "rated 11 on 14 Sep by your coach" is his record. GA-I24-I25 D3's rule — figures, no verdict, no colour that scores — applies to the trend exactly as to a comparison.
+- **It does not reach a comparison or a workspace** (GA-I24-I25 D5, §4 item 2), a pupil captain, a parent or a public page. A trend across two boys would be a selection verdict written by the app, and I24-I25 refused it by name.
+
+### 3.4 Two existing reaches this design does not widen but names
+
+1. **The register is side-shared.** `training_attendance` is REACH class C1 under `player.profile.read` with the row's player id — a team-mate (through `player` at team scope), the analyst and the scorer may read who was at training. REACH decided C1 and this design keeps it. What it adds is AH-D9: no health word on that table. "Did not attend" is a fact the side shares; why is not.
+2. **The principal reads notes, not scores.** Recorded in §3.2; not changed. If Kameel wants the head to read the ratings too, it is one line in `roles.mjs` and his to say.
+
+---
+
+## 4 · The history screens (AH-D4)
+
+No new destination (136 D2's rule applies by analogy). Everything below is on the **Skills screen** (`SkillsView.jsx`), which is already the development tier's surface, and on the **Training screen** for the plan and the register. Sonnet builds; Opus reviews because every screen here shows a named child's judgement.
+
+### 4.1 The strip: one metric's history
+
+Under each attribute bar (`SkillsView.jsx` ~:455–480), a strip: the 1–20 axis across, one dot per non-withdrawn `player_skill` row for that metric, dated, joined by a hairline in one neutral colour (`D.textMuted`), no band colour on the line. The newest dot carries the score already shown in the bar's colour; the older dots are the same grey. A withdrawn row is a hollow dot with a strike, and the word "withdrawn" on hover and in its `aria-label`. Tapping a dot opens a sheet with: the score, the date, the author ("R Pillay, coach" to staff; "your coach" to the boy — the author's name is on the `coach` table the side reads anyway, so the choice is words, not disclosure), and, for staff, the coaching points that stood on this row (`evidence_params.skillId`). **No word for the direction.** "8 → 11 since March" is said as the two figures and the dates; "improving", "declining", "stalled", "plateau" are not written anywhere, and `apps/web/test/skillsHistory.test.mjs` greps the rendered strip for them.
+
+A target shows as a tick mark on the axis at `target_score` with "target 12 · by 30 Nov · set 14 Sep", and the focus-areas card (`focusAreas.js`) finally receives `saved` from the `targets` read: `{ [metric]: target_score }` for the open targets. When the newest score is at or above the target: "reached 11 Oct" under the strip, the target struck; the row is still there for the coach to withdraw or replace. A target is never auto-closed, never auto-raised; `target_set()` is the only way it moves.
+
+### 4.2 "Since the last look"
+
+A panel per discipline (batting, bowling, fielding, keeping), because the anchor is per discipline, exactly as `ratingsQuery()` anchors (`read-api.mjs:502–520`): the last look is the newest `assessed_on` among the discipline's attributes (`DISCIPLINES`). It says, in this order and these words:
+
+> **Batting · last looked 14 Sep** (your coach)
+> Since then the U15A held **6 sessions**; D Erasmus was marked present at **5**, late at 1.
+> Drills on those sessions: throw-downs ×4, short-pitch defence ×2, running between wickets ×3.
+> Target: `againstPace` **12** by 30 Nov, set 14 Sep — the drill for it, throw-downs, ran **4 times**; he was there for **3**.
+
+The panel never says "missed", "absent" or counts sessions he was not at as a figure of its own; it counts what he attended (GA-I24-I25 D8's rule, applied to training). A session with no register says "no register taken", not a zero. A boy with no assessment in a discipline says "not yet rated for batting" and the panel ends there. A boy whose side held no sessions says so. Every figure names its source and window in the panel's footer, as every Phase C item must ("From training, training_attendance and the plan; U15A, 14 Sep to today").
+
+**One read, `development_since?playerId`**, invoker-rights SQL under the caller's own capabilities: it joins `player_skill` (the anchor per discipline), `training_session` for the boy's current side between the anchor and `sa_today()`, `training_session_drill` + `drill` for the plan, `training_attendance` for his rows, and the open `development_target` rows. RLS is the floor inside it: a reader who may not read the boy's targets gets the panel with no target line; one who may not read the side's sessions gets no session line. The `skills_history?playerId` read returns every row with `assessed_by`, `withdrawn_at`, `withdrawn_by`, `withdrawn_reason`; the existing `skills` read adds `WHERE s.withdrawn_at IS NULL` so the pivot keeps meaning "the newest standing score". Both new reads join `RESTRICTED_FIELDS` (`skills_history: ["score"]`, `development_since: ["target_score"]`) with `SUBJECT_ID` set to `player_id`, so every open of a boy's history is one access-log row against him. The lead decides whether Opus writes `development_since` as one SQL read or the client composes it from four; one read is preferred, because four reads are four log rows for one glance.
+
+### 4.3 Writing a target and a plan
+
+- **Target:** on the attribute row, "Set target" (44 px, `player.development.write` only): a number picker 1–20 that refuses values at or below the standing score with the word "already there", a date (optional), a drill picker ordered by `drillCategoriesFor()` with a "suits againstPace" badge on matches and every library drill below it, and one line of 200 characters, labelled **"Why — staff only; the boy sees the target, not this"**, which becomes the coaching point (`coaching_point_write` with `evidence_read='skills'`) and the target's `note_id`. The label is the honesty: the same form writes to two tiers and says which words land where.
+- **Plan:** on a session on the Training screen, "Plan" (`team.manage`): the library grouped by category with the session type's default filter, drag to order (keyboard: move up/down buttons, 44 px), minutes editable, the legacy `drills` text shown as "Other" and not editable. Nothing here names a boy.
+- **Register:** on a session, the side's roster with four states (present, late, excused, absent), one tap each, 44 px, saved as a whole. No "injured". No free text.
+
+### 4.4 What never appears on these screens
+
+- **No health or workload inference** (SCRBRD-110 §3.3, §5): no load figure, no `bowler_day`, no `wellness` dot, no "fatigue", no "rest", no "injured" on the register; a `technique_review` (110 §5, `player.workload.plan`) is not drawn here even to a coach who holds it, because it is under the health consent and this is the development tier. If a coach wants it beside the history, it is 110's screen that gains a link, not this one that gains a read.
+- **No discipline** (`disciplinary_record`): never on the Skills screen; STEP4 Q5, Q6 stand.
+- **No absence as a figure** (GA-I24-I25 D8): attended counts only.
+- **No verdict words, rank, colour score or composite** (GA-I24-I25 D3): no "top of the side", no percentile, no "form".
+- **No team-mate on the boy's own view**: the pupil's Skills screen lists him alone (it lists `assessed` players from `SKILLS_MATRIX`, which for `selfaccess` is one boy already).
+- **No comparison** of two boys' histories, trends or targets (D5), and no "Compare" link from this screen.
+- **No export**: `skills`, `skills_history`, `targets`, `development_since`, `notes`, `coaching_points` are refused by the generic CSV route (GA-I24-I25 D9's rule, extended; Opus confirms what it serves today).
+- **No public page, no share card, no post to the side.** A target is not news.
+- **No `player_skill.note`**: the per-row prose column is not returned by any read today and stays unreturned; the sentence belongs on `development_note` with the pointer. The assessment modal's single `note` field, which today is copied into every row written (`recordAssessment`), is removed from the form; what a coach wants to say becomes a coaching point on the row he means.
+
+Floors: nothing under 12 px (the strip's date labels are 12 px and may be hidden under 360 px width in favour of the sheet), nothing tapped under 44 px (dots are 24 px marks inside 44 px hit areas), the hairline draws with no animation under `prefers-reduced-motion` and a 200 ms draw otherwise. The browser walk greps the rendered Skills screen for the never-words (§7).
+
+---
+
+## 5 · Corrections and withdrawal (AH-D5)
+
+The existing shape is uneven: a plain note has author-only edits enforced by trigger (`db/08:1890–1920`); a score has an UPDATE policy open to every `player.development.write` holder of the side (`db/09:433–436`) and an API upsert that re-stamps `assessed_by = excluded.assessed_by` on conflict (`assessment-api.mjs:104–112`). So a colleague who re-rates D Erasmus's `footwork` on the same day a coach did overwrites the number **and takes the authorship**. GA-I36's rule is both versions kept, the audit saying who changed what.
+
+| record | correcting yourself | correcting another's | removing a wrong one | the audit |
+|---|---|---|---|---|
+| **a score** (`player_skill`) | same day: the upsert stays (`assessed_by = app_user_id()` must equal the row's, else refused); a later day: a new row, as today | **never by overwrite**: a later-dated row of your own; a same-day row by a different author is refused with `45003 'rate it yourself on your own row'` | `skill_withdraw(p_id, p_reason)`: sets `withdrawn_at/by/reason`; any `player.development.write` holder for the boy's current side; the original `assessed_by` is untouched | the row stays; `skills` omits it, `skills_history` shows it struck; `ratings` (`ratingsQuery`) and `focusAreas` exclude it; a target that stood on it shows "stood on a withdrawn score" and keeps standing |
+| **a target** (`development_target`) | `target_set()` again: the old one is withdrawn with reason `'replaced'` in the same transaction | the same — a target has one standing row per metric; whoever sets the next is named on it | `target_withdraw(p_id, p_reason)` | both rows remain, the old one struck with "replaced 2 Oct by R Pillay" |
+| **a coaching point** (`development_note` with a pointer) | withdraw and write again (I27 §5.3: Save and Withdraw are the only acts) | `note_withdraw()` by any `player.note.write` holder for the side | `note_withdraw(p_id)` | the row stays; the panel shows it struck; the stood-on figure is still re-derived |
+| **a plain note** | author-only edits, as built (`45001`); `updated_at` stamped | never (trigger) | `note_withdraw()` | as today, plus the strike |
+| **the plan** | re-save the plan (`PUT`), the old rows go | the same; the plan names nobody and is the side's | — | `training_session_drill` has no history; the plan is a noticeboard, not a record of a child (an audit trigger is a later ask if a school wants it) |
+| **the register** | re-save; upsert on `(session_id, player_id)` | the same, under `team.manage` | — | `recorded_at` moves; no history (the same reasoning) |
+
+Mechanics, all in `db/104`:
+
+- `player_skill` gains `withdrawn_at timestamptz, withdrawn_by uuid → app_user, withdrawn_reason text CHECK (length ≤ 200)` and the CHECK `withdrawn_at IS NULL OR withdrawn_by IS NOT NULL`.
+- A `BEFORE UPDATE` trigger `player_skill_revision()`: if any of `score, note, category, metric, assessed_on, player_id` changes and `OLD.assessed_by <> app_user_id()`, raise `45003`; if `OLD.withdrawn_at IS NOT NULL` and anything changes, raise `45004 'a withdrawn score is not revised'`; `assessed_by` never changes hands (`NEW.assessed_by := OLD.assessed_by`). The API's `on conflict … do update set assessed_by = excluded.assessed_by` loses that clause, and maps `45003` to `403 not_the_assessor`, as `45001` maps to `not_the_author` today.
+- `skill_withdraw`, `target_withdraw`, `note_withdraw`: `SECURITY DEFINER`, pinned path, grants as `db/60:1192–1224`; each checks the write capability for the boy's current side itself and sets the three columns; each refuses a row already withdrawn.
+- No DELETE policy appears on any of the four tables. A row leaves only by the retention purge (§6).
+- Every read of a withdrawn row is still a read of a score (`RESTRICTED_FIELDS`), so the log keeps its holes-free record (ACCOUNT_LIFECYCLE §6.2, access log).
+
+What a correction reaches, in GA-I36's terms: the strip (struck dot), the bar and radar (next standing row), the focus areas (recomputed), the `ratings` coach index (recomputed over standing rows), the target's "stood on" line, the coaching point's stood-on/now pair, and the "since the last look" anchor (which moves to the newest standing row, so a withdrawn newest look re-opens the window to the one before). Nothing is cached in the browser beyond the read's own state; a withdraw bumps `nonce` and every read re-runs.
+
+---
+
+## 6 · Side, school, link, eighteen — and retention (AH-D6)
+
+### 6.1 Events
+
+| event | scores and history | targets | notes and coaching points | plan | register |
+|---|---|---|---|---|---|
+| **changes side** (U14A → U15A, `player.team_code` moves) | the new coach reads all of it; the old coach reads none from the next statement (current-side anchoring, `db/09:425`; ACCOUNT_LIFECYCLE §3) | follow the boy; the new coach sees "set by R Pillay, U14A, 3 Sep" and may withdraw or replace | follow the boy; the same | stays with the old side's sessions | stays with the sessions; his rows are his (C1) and the "since the last look" panel counts only sessions of his **current** side, so the window after a move starts at the move — the panel says "U15A since 1 Oct" |
+| **leaves the school** (`player_departure`, `team_code = NULL`) | no coach reads them (ACCOUNT_LIFECYCLE §3: every side-anchored read is false); he keeps `selfaccess` and reads his own until purge; the office holds the record but not the capability | the same; open targets stay open and unread — nothing closes them, nothing needs to | the same (AL Q9's slice-4 `RESTRICTIVE` for departed pupils applies to all three class-C2 tables when it lands) | untouched | his rows stay until purge |
+| **transfers to a school on SCRBRD** | **nothing travels** (AL §3.4: "not his notes, his ratings"); Westville's coach starts a fresh history; the Passport carries honours and figures, never a skill | nothing travels | nothing travels | — | — |
+| **a guardian link ends** (revoked, pending, dated out) | no change: she read none | none | none | she loses the side (REACH: an ended link reads nothing of the side) | she loses it |
+| **turns eighteen** (still at school) | no change: he reads his own, the coach reads his side; the policy shift at eighteen (STEP4 §3.3) is about his parents, who read none of this | none | none | none | none |
+| **turns eighteen and requests erasure** (140 §4.3) | deleted with the file | deleted | deleted | untouched (names nobody) | his rows deleted |
+| **a coach leaves** | rows keep `assessed_by`; the name follows the account (AL §6.2 role assignments: "the person's name follows their account"); the strip then says "a former coach" | `set_by` the same | `author_id` the same (AL: "the author's uuid on the note is not a reason to keep it") | `drill.created_by` the same | — |
+
+### 6.2 Retention, by table
+
+ACCOUNT_LIFECYCLE §6.2 (D22) is the schedule; its row "development notes, ratings — `development_note`, `player_skill` — recommend 2 years after leaving — delete — anchor leaving — the office" is **extended by name**, not re-decided. New rows for `packages/policy/src/retention.mjs`, each a recommendation under AL Q11:
+
+| kind | table | keep | then | anchor | who acts | why this period |
+|---|---|---|---|---|---|---|
+| development targets | `development_target` | **2 years after leaving** (the same row as notes and ratings) | delete | `player_departure.left_on` | the office | a target without its scores is a number with no subject; it lives and dies with them |
+| coaching points | `development_note` rows with a pointer | the notes' row, unchanged | delete | leaving | the office | I27 A5 asked for the row; the fold (§2) means it is the same row |
+| the register | `training_attendance` | **2 years after leaving** | delete his rows | leaving | the office | it is evidence in the development loop and names a child; it has no row in AL today and this design proposes one (open call for Kameel) |
+| the side's plan | `training_session_drill` | with `training_session` (no AL row; **propose: keep with the school's programme record, no child named**) | keep | — | — | a noticeboard of what the side did; nothing about a person |
+
+Erasure at eighteen (140 §4.3) and the departed-pupil cut (AL Q9) apply to the three class-C2 tables and the register exactly as to `player_skill`. The purge job AL §6 builds takes the two new table names; `retention.test.mjs` (D22: every masked table has an entry) will fail until they are added, which is the intended tripwire.
+
