@@ -19491,13 +19491,17 @@ $v49$;
   --              PERMISSIVE, all four FOR SELECT; db/96's plan policy reads
   --              the sheet; the application holds no DELETE on either table
   --
-  -- Falsified once each, by removing the object from db/101 and running
-  -- `node tools/migrate.mjs --reset --seed --verify`; each went red at its label:
-  --   (sheet)    without news_post_read_sheet and notification_read_sheet
-  --              (red at the boy playing up reading f1's plan)
-  --   (team)     without news_post_team_side and notification_team_side
-  --              (red at the U15B parent; §76 (post) and §70 (withdraw) go
-  --              red too, which is the change they now prove)
+  -- Falsified once each, by replacing the object in the database and running
+  -- this file; each went red at the first assertion that depends on it:
+  --   (sheet)    DROP POLICY news_post_read_sheet and notification_read_sheet
+  --              (red at §78 (sheet): the boy playing up reading f1's plan)
+  --   (team)     DROP POLICY news_post_team_side (red at §76 (post): the
+  --              U15B parent reads an ordinary U15A post); DROP POLICY
+  --              notification_team_side (red at §70 (withdraw): a 1XI family
+  --              reads a U14A post's notice). Both run before §78 (team),
+  --              which asserts the same of the U15B parent
+  --   (report)   notification_report() with db/91's reader test (red at the
+  --              boy playing up reporting f1's plan's notice: no_such_notice)
   DECLARE
     y        jsonb := _v101_stage();
     V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
