@@ -286,7 +286,7 @@ SELECT
         AND has_function_privilege('scrbrd_app', 'news_post_withdraw(uuid)', 'EXECUTE')
         AND NOT has_function_privilege('scrbrd_app', 'news_post_notice()', 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Posts write their notices",
-  -- db/92–94 look their objects up with to_regprocedure()/to_regclass(), so a
+  -- These rows look their objects up with to_regprocedure()/to_regclass(), so a
   -- database without the migration reads PROBLEM here instead of failing the
   -- whole check (a ::regprocedure cast is resolved before anything runs).
   -- db/92: the staff register is read and written through its functions
