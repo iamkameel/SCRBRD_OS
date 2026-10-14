@@ -1076,6 +1076,51 @@ draws his wheel and before `matchup_coverage` counts a named batter's balls,
 so the visiting school reads a shared fixture's balls but not the host's boy
 across fixtures. No screen changes.
 <!-- ── end db/97 ── -->
+<!-- ── db/100: a parent reads his child's side's balls ── -->
+#### A parent reads the ball log of his child's side's fixtures (db/100)
+
+`db/100_ball_event_guardian_read.sql` is Kameel's decision of 2026-10-14:
+a guardian reads the balls of fixtures his child's side plays, home and away;
+per-boy figures stay gated as they are. Until now `ball_event_read` asked
+`fixture.read` about nobody in particular, which a guardian's assignment (it
+names his children) never answers, so a parent saw his son's fixture on his
+list and none of it: the family cards and the Match Centre in family mode
+folded an empty log. `ball_event_read` keeps db/97's host and away branches
+word for word and gains a third: the fixture is one `my_child_fixtures()`
+returns, a new helper that answers the caller alone. It lists the fixtures
+whose side, at either end, has on it a child the caller's own verified link
+names, each asked of `app_can()` about that child. "On the side" is the
+child's team at that end's school, or the fixture's team sheet
+(`match_squad`, not withdrawn), so a boy playing up for an older side is
+followed into that match. It never asks with the all-zeros person
+`match_read` uses, which for a school-wide guardian assignment would open
+every fixture at the school. Another side's fixture at the same school, and
+any fixture at another school, read nothing; a link that ends reads nothing
+from the next query. The per-boy gates still ask per boy: other boys' wheels,
+careers and matchups join `player`, which a parent reads for his own child
+only, and the load (`bowling_spells`' directive, `workload`, `bowler_day`)
+asks `player.workload.read`, which a guardian does not hold. The pad's tables
+and every write are unchanged.
+
+**What it does to a live database.** It creates `my_child_fixtures()` (a
+`SECURITY DEFINER` function taking no argument; `EXECUTE` revoked from
+`PUBLIC` and granted to `scrbrd_app`), then drops `ball_event_read` on
+`ball_event` and creates it again with the guardian branch, in the paste's
+one transaction; the file checks the policy's and the helper's text and
+grants before it commits. No table, column or row is added or changed, and no
+other policy is touched. A second paste changes nothing. The helper runs once
+per read of the log, not once per ball: on the seed, every read the lead
+compared (a coach's own match, the away coach's, a refused fixture, a
+career view) costs what it did under db/97 within a millisecond or two, and
+planning is unchanged (db/100's header has the figures).
+
+Paste `node tools/bundle-sql.mjs --apply 100` (after 97), then the verify
+bundle (§77 is its proof; the summary row "A parent reads his child's side's
+balls" should read OK, and "The away side reads its fixture's balls" still
+does). **Schema first**: the API built with it refuses to start without
+db/100 (`expected-migrations.json`). No API text or screen changes: the
+parent's screens already read `GET /api/matches/:id/events`.
+<!-- ── end db/100 ── -->
 
 ### 5 · Cloud Run, the first time
 
