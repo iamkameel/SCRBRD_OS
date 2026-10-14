@@ -1077,6 +1077,45 @@ so the visiting school reads a shared fixture's balls but not the host's boy
 across fixtures. No screen changes.
 <!-- ── end db/97 ── -->
 
+<!-- ── db/96: the plan to the side, a team post tagged to a fixture ── -->
+#### The coach's plan to the side (db/96)
+
+`db/96_news_plan.sql` is SCRBRD-138 phase B (`docs/design/SCRBRD-138_phaseB.md`
+§1–§2, decided by Kameel on 2026-10-14). The coach's plan for a match is a
+`news_post` of kind `plan` with the fixture on it: written under
+`news.publish.team` at the side, its one notice written by the post's trigger
+with no recipient, withdrawn as any post is. `news_post` gains `kind` (`post`
+or `plan`) and `fixture_id`. A trigger, `news_post_plan_guard`, refuses a plan
+with no fixture or not to a team, a post with a fixture, a plan for a fixture
+the side does not play in (home or away), and a sent plan's kind or fixture
+changed. A partial unique index, `news_post_plan_live`, allows one live plan
+per fixture per side. Two `RESTRICTIVE` policies narrow a plan, and its
+notice, to the side: `news.read` and `team.read` at the side, a guardian
+through a boy on it. Without them a guardian of a boy on another side, and a
+follower holding `news.read` school-wide, read every side's posts. A trigger
+on `news_post_public` refuses a plan on the public home page. The plan's
+words are not checked here: the API checks them, with the one list in
+`packages/policy/src/words.mjs`.
+
+**What it does to a live database.** Adds two columns to `news_post` (every
+stored post reads `kind = 'post'`, `fixture_id` null; no rewrite), two
+triggers (`CREATE OR REPLACE TRIGGER`), four functions, three indexes
+(`news_post_plan_live`, `news_post_fixture`, `notification_news_subject`) and
+two `RESTRICTIVE` `SELECT` policies, each created only when `pg_policies` does
+not have it. An ordinary post, and every notice that is not a plan's, reads
+exactly as before. No row is inserted, changed or deleted. Nothing is dropped.
+
+Paste `node tools/bundle-sql.mjs --apply 96` (after 94), then the verify
+bundle (§76 is its proof; the summary row "A plan is one per side, to the
+side" should read OK). **Schema first**: an API built with it refuses to start
+without db/96 (`expected-migrations.json`). It accepts `kind: "plan"` and
+`fixtureId` on `POST /api/news`, refuses a plan's refused words with `422
+refused_words` (the words named) at publish and at `POST /api/news/:id/publish`,
+answers a second live plan with `409 plan_exists` and who wrote the first, and
+returns `kind`, `fixtureId` and `noticeId` on the `news` read. No screen
+writes a plan until the composer ships (B5).
+<!-- ── end db/96 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

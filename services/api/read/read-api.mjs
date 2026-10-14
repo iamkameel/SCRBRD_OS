@@ -615,8 +615,24 @@ export const READ_QUERIES = {
   // public_names is the scan's count on a waiting request, for the approvals
   // card's warning: news_public_check() answers the author and the school's
   // publishers, and NULL to anybody else.
+  //
+  // The coach's plan (db/96, SCRBRD-138 phase B §2.2): `kind` is 'post' or
+  // 'plan', and `fixtureId` the match a plan is for, so the fixture screen
+  // picks kind === 'plan' && fixtureId === match.id (PlanBlock, C1's line,
+  // the Captain tab's row). Who reads a plan is the policies' (db/12, and
+  // db/96's narrowing to the side); nothing here filters. `noticeId` is the
+  // live plan's notice as this reader may read it, for the block's Report
+  // button: notification_report() takes a notice's id, not a post's (the
+  // lead's note on PB-D12). Null for an ordinary post, a draft, or a notice
+  // this reader does not have.
   news: {
     text: `select n.id, n.scope, n.school_id, n.team_code, n.competition_id,
+                  n.kind, n.fixture_id as "fixtureId",
+                  case when n.kind = 'plan' and n.published_at is not null then (
+                    select x.id from notification x
+                     where x.kind = 'notice' and x.subject_kind = 'news' and x.subject_id = n.id
+                       and x.retracts_id is null and x.retracted_at is null
+                     order by x.published_at desc limit 1) end as "noticeId",
                   n.title, n.body, n.published_at, n.created_at,
                   s.name as school_name, c.name as competition_name,
                   u.name as author_name,
