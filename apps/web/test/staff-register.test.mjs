@@ -235,6 +235,7 @@ group("Who is offered the register, and what a signed-out or unlisted person see
   ok("a coach is not", canSeeRegister("coach") === false);
   ok("a scorer is not", canSeeRegister("scorer") === false);
   ok("a parent is not", canSeeRegister("guardian") === false);
+  ok("the safeguarding officer is not (the server refuses the DSO too)", canSeeRegister("dso") === false);
   ok("the panel draws nothing at all for a coach", renderToStaticMarkup(h(StaffRegisterPanel, { role: "coach" })) === "");
   ok("signed out (the demonstration) it draws nothing: there is no register to read", renderToStaticMarkup(h(StaffRegisterPanel, { role: "schooladmin" })) === "");
   ok("primaryRole picks the widest role held, for the shell after a claim", primaryRole({ assignments: [{ role: "scorer" }, { role: "coach" }] }) === "coach" && primaryRole({ assignments: [] }) === "spectator");

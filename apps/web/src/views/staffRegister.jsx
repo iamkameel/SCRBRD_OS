@@ -40,7 +40,11 @@ import {
  */
 
 /** Can this person see the register at all? A courtesy: the server decides. */
-export const canSeeRegister = (role) => holdsCapability(role, "user.role.assign") || holdsCapability(role, "audit.read");
+// The DSO holds audit.read (db/57) but not the register: school_register_rows()
+// refuses whoever also holds safeguarding.concern.read (db/92), so the panel is
+// not drawn for them either.
+export const canSeeRegister = (role) => holdsCapability(role, "user.role.assign")
+  || (holdsCapability(role, "audit.read") && !holdsCapability(role, "safeguarding.concern.read"));
 
 const LABEL = () => ({ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,
                        letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "6px" });
