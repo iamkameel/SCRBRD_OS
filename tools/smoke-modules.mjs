@@ -161,6 +161,29 @@ try {
   ok("...including another coach at the same school",
      (await read("training", await login("coach2@example.invalid"))).status === 200);
 
+  // WHO it was hidden from, and why, is the school's managers' to read
+  // (db/102). The named person reads that it is hidden from him, not why;
+  // nobody else reads the row at all, at this school or another.
+  {
+    const named = async (token) => ((await read("module_suppressions", token, `?schoolId=${HIL}&key=training`)).body?.rows ?? [])
+      .filter((r) => r.person_id);
+    const managerSees = await named(registrar);
+    ok("the school administrator reads who Training was hidden from, and why",
+       managerSees.length === 1 && managerSees[0].person_id === uCoach && managerSees[0].reason === "On leave.");
+    const selfSees = await named(coach);
+    ok("...the coach reads that it is hidden from him",
+       selfSees.length === 1 && selfSees[0].person_id === uCoach);
+    ok("...but not the reason written about him", selfSees.length === 1 && selfSees[0].reason === null);
+    for (const [who, email] of [["another Hilton coach", "coach2@example.invalid"], ["a parent", "parent@example.invalid"],
+                                ["a pupil", "pillay@example.invalid"], ["a spectator", "watcher@example.invalid"],
+                                ["Westville's administrator", "registrar.wes@example.invalid"]])
+      ok(`...and ${who} reads nobody's name`, (await named(await login(email))).length === 0);
+    const count = async (token) => ((await read("module_settings", token, `?schoolId=${HIL}`)).body?.rows ?? [])
+      .find((r) => r.key === "training")?.people_hidden;
+    ok("the settings count the people for the administrator", (await count(registrar)) === 1);
+    ok("...and are null, not 0, to somebody who may not read them", (await count(await login("parent@example.invalid"))) === null);
+  }
+
   group("A SUPPRESSION CANNOT GRANT — there is no column for it");
   {
     // The design, asserted against the catalogue rather than against a

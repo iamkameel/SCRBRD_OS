@@ -339,6 +339,15 @@ SELECT
                          WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_insert'
                            AND pg_get_expr(p.polwithcheck, p.polrelid) LIKE '%away\\_%')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The away side reads its fixture's balls",
+  -- db/102: a module hidden from a named person is read by that school's
+  -- managers and by him, and its reason only through its function.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('feature_suppression') AND p.polname = 'feature_suppression_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%(person_id = app_user_id())%school.feature.manage%')
+        AND to_regprocedure('feature_suppression_reason(uuid)') IS NOT NULL
+        AND has_function_privilege('scrbrd_app', to_regprocedure('feature_suppression_reason(uuid)'), 'EXECUTE')
+        AND NOT has_column_privilege('scrbrd_app', to_regclass('feature_suppression'), 'reason', 'SELECT')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Who a module is hidden from is the school's",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
