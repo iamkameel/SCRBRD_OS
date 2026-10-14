@@ -10,7 +10,7 @@
  */
 import { runAsPrincipal, runAsUnit, afterCommit } from "../auth/auth-db.mjs";
 import { signToken } from "../auth/auth.mjs";
-import { canonical, fingerprint, keyedWrite } from "./replay.mjs";
+import { canonical, fingerprint, keyedWrite, UNKEPT } from "./replay.mjs";
 
 let pass = 0, fail = 0;
 /** @param {string} n @param {unknown} c @param {string} [d] */
@@ -194,6 +194,19 @@ group("keyedWrite: claim, look, run, keep");
   const r7 = await keyedWrite({ pool: busy.pool, secret: SECRET, bearer: BEARER, key: "k", route: "POST /api/news", fp, run: async () => { ran++; return answer; } });
   ok("a copy that waits past the bound is told the key is in flight (409)", r7.kind === "refused" && r7.answer.status === 409
      && /** @type {any} */ (r7.answer.body).error === "idempotency_key_in_flight");
+
+  // A plan refused for its words keeps no receipt (SCRBRD-138 phase B §3.5):
+  // the answer names the refused words, and nothing of a refused plan is kept.
+  const words = fakePool();
+  const refused = { status: 422, body: { error: "refused_words", words: [{ word: "physio", cls: "health" }], message: "…" } };
+  const r8 = await keyedWrite({ pool: words.pool, secret: SECRET, bearer: BEARER, key: "k", route: "POST /api/news", fp, run: async () => refused });
+  ok("a words refusal is answered, and keeps no receipt", r8.kind === "ran" && r8.answer?.status === 422
+     && count(words.log, /insert into request_replay/) === 0 && count(words.log, /^COMMIT$/) === 0, words.log.join(" | "));
+  ok("...while any other refusal is kept as it always was", UNKEPT.join() === "refused_words");
+  const other422 = fakePool();
+  await keyedWrite({ pool: other422.pool, secret: SECRET, bearer: BEARER, key: "k", route: "POST /api/news", fp,
+                     run: async () => ({ status: 422, body: { error: "refused" } }) });
+  ok("...an ordinary 422 still keeps its receipt", count(other422.log, /insert into request_replay/) === 1);
 }
 
 console.log(`\nREPLAY: ${pass} passed, ${fail} failed`);
