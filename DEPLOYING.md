@@ -1042,6 +1042,40 @@ with it refuses to start without db/94 (`expected-migrations.json`) and serves
 `GET /api/read/bowler_day?date=YYYY-MM-DD&teamCode=…`. The web app reads it
 only on the Coach tab, and only while our side fields.
 <!-- ── end db/94 ── -->
+<!-- ── db/97: the ball log follows the fixture ── -->
+#### The away side reads its fixture's balls (db/97)
+
+`db/97_ball_event_away_read.sql` is SCRBRD-136/137 away visibility
+(`docs/design/SCRBRD-136-137_away_visibility.md`, approved by Kameel on
+2026-10-14; AV-D1 to AV-D5). A fixture's `match` row was already readable by
+either side's `fixture.read` holders, but every ball of it carries the host's
+school, and `ball_event_read` (db/02) asked only the host. So at an away
+fixture the visiting coach, pupils and spectators saw the fixture and none of
+it: no scorecard, no spells, no wheel. `ball_event_read` now has
+`match_read`'s two branches: the host's, unchanged, or `fixture.read` at the
+fixture's away school and away team. Every read of the log follows (they are
+`security_invoker` down to `ball_event`); every per-boy gate on top of it
+still asks per boy, so the host's boys' load, records and wheels stay the
+host's. The pad's tables (`scoring_session`, `ball_event_quarantine`,
+`scoring_audit`) and every write stay the host's: nothing lets the away side
+score. A guardian's reads are unchanged (the log asks about nobody in
+particular, at either side's fixtures).
+
+**What it does to a live database.** It drops `ball_event_read` on
+`ball_event` and creates it again with the away branch, in the paste's one
+transaction; the file checks the policy's text before it commits. No table,
+column, row, function or grant is added or changed, and no other policy is
+touched. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 97` (after 94; 95 and 96 are not
+needed first), then the verify bundle (§75 is its proof; the summary row "The
+away side reads its fixture's balls" should read OK). **Schema first**: the
+API built with it refuses to start without db/97 (`expected-migrations.json`).
+The API it ships with also asks a boy's record before `player_shot_points`
+draws his wheel and before `matchup_coverage` counts a named batter's balls,
+so the visiting school reads a shared fixture's balls but not the host's boy
+across fixtures. No screen changes.
+<!-- ── end db/97 ── -->
 
 <!-- ── db/96: the plan to the side, a team post tagged to a fixture ── -->
 #### The coach's plan to the side (db/96)

@@ -93,5 +93,6 @@
   "92_staff_register.sql",
   "93_declined_claim_notice.sql",
   "94_bowler_day.sql",
-  "96_news_plan.sql"
+  "96_news_plan.sql",
+  "97_ball_event_away_read.sql"
 ]

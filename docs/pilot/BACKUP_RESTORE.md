@@ -328,6 +328,69 @@ second person):
 
 ---
 
+## 6 · Without admin rights: the drill in GitHub Actions
+
+Sections 2 and 4 need Postgres on your own machine. The owner's Mac is
+company-managed and cannot install it (14 October 2026), so the same tool also
+runs in a GitHub Actions job, `.github/workflows/backup-drill.yml`. Kameel chose
+this on 14 October. It does sections 2 and 4 in one go, on a fresh GitHub
+runner that is destroyed when the job ends, and hands back only an encrypted
+copy of the dump.
+
+**What this means for the data.** For the few minutes the job runs, a full copy
+of production, children's records included, exists inside GitHub's runner.
+GitHub-hosted runners are not in South Africa, so this is a transfer outside the
+country under POPIA section 72, made by an operator (GitHub) on the school's
+behalf. The plain dump is deleted before the job ends. What leaves the runner is
+the dump encrypted with AES-256 under a passphrase only you hold, and the counts
+file, which has no names and no rows. Before the real pilot, check that the
+schools' data agreements allow this, or move the drill back to a machine of your
+own. This is a summary for running the drill, not legal advice.
+
+**Once: the environment and its two secrets**
+
+1. GitHub → the SCRBRD_OS repository → **Settings → Environments → New
+   environment**, named exactly `backup-drill`.
+2. Under **Deployment protection rules**, tick **Required reviewers** and add
+   yourself. Every run then waits for you to press Approve.
+3. Under **Environment secrets**, add:
+   - `SCRBRD_PROD_OWNER_URL`: Supabase's owner string from the green
+     **Connect** button, **Session pooler** (port 5432), with your database
+     password in it. GitHub's runners have no IPv6, and Supabase's direct host
+     is IPv6-only, so the direct string will not connect.
+   - `BACKUP_PASSPHRASE`: a long passphrase (16 characters at least; a
+     five-word phrase is better), kept in your password manager. Without it the
+     downloaded file cannot be opened, by anyone.
+
+**Each time: run it**
+
+1. GitHub → **Actions → Backup drill → Run workflow** (on `main`), then
+   Approve when it asks.
+2. About five minutes. Expect every step green, and step 5 to end with
+   **BACKUP VERIFIED and sealed**. Steps 3 and 4 are the proof: the ledger and
+   every table's row count match, and ALL RLS LIVE ASSERTIONS PASSED on the copy.
+3. At the bottom of the run, under **Artifacts**, download `scrbrd-backup-N`.
+   Unzip it into `~/scrbrd-backups` on your Mac. It holds `scrbrd.dump.enc`
+   and the counts file.
+4. Delete the artifact from the run page once it is downloaded (it would go by
+   itself after three days).
+
+**Opening the sealed dump** (only for a real restore, section 5). On a machine
+with OpenSSL 3, or in a job like this one:
+
+```sh
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in scrbrd.dump.enc -out scrbrd.dump
+```
+
+It asks for the passphrase. The job already proved, before it uploaded the
+file, that this gives back the same bytes it dumped.
+
+If a step goes red, the backup is not proven. Send the step's last lines (they
+hold table names and counts, never a row or a password) and keep the previous
+good file.
+
+---
+
 ## What you must decide
 
 1. **The plan.** Tick it in section 1, and decide whether the pilot pays for

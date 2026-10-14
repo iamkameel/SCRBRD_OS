@@ -327,6 +327,18 @@ SELECT
         AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
               AND (tablename, policyname) IN (('news_post', 'news_post_plan_side'), ('notification', 'notification_plan_side'))) = 2
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan is one per side, to the side",
+  -- db/97: the ball log follows the fixture; the away side reads its match
+  -- (SCRBRD-136/137 away visibility, AV-D1). The writes stay the host's.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read'
+                       AND p.polcmd = 'r' AND p.polpermissive
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%match_team(%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%away_school_id%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%away_team_code%')
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                         WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_insert'
+                           AND pg_get_expr(p.polwithcheck, p.polrelid) LIKE '%away\\_%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The away side reads its fixture's balls",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
