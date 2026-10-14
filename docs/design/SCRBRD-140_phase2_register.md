@@ -1,6 +1,8 @@
 # SCRBRD-140 phase 2 — The school staff register: the design
 
-Status: **for Kameel's review (Fable, 2026-10-13).** Phase 1 of SCRBRD-140 is built and shipped
+**Status:** decided (Kameel, 2026-10-13: "yes to all"; every call as recommended). Merged as #134 on 2026-10-14. Nothing built; building starts after the pilot.
+
+Phase 1 of SCRBRD-140 is built and shipped
 (`db/81_signup_google.sql`; the parent doc's status line, line 3, still says "nothing here is
 built yet" and is stale — see §10). Nothing of phase 2 exists: no `school_register`, no
 `register_upload()`, no `register_claim()`, no `role_request_grant_as()`, no route, no screen.
@@ -26,17 +28,17 @@ from it; the lead numbers nothing here differently from §9.
 
 1. **The ceiling on what the register may grant** (P2-D3): refuse at upload any role whose
    bundle holds `medical.details.read`, `discipline.read` or a `safeguarding.*` capability, so a
-   mistyped email never hands a stranger a child's clinical notes. Recommended **yes**.
+   mistyped email never hands a stranger a child's clinical notes. Recommended **yes**. — **Decided: as recommended (2026-10-13).**
 2. **Who lifts a request cooldown** (P2-D12): a DSO at a school where the declined claims were,
-   never the office. Recommended **the DSO**.
+   never the office. Recommended **the DSO**. — **Decided: as recommended (2026-10-13).**
 3. **Retention of unclaimed register rows** (P2-D13): name and email redacted ninety days after
    the row expires or is withdrawn unclaimed. Kameel signs this as information officer.
-   Recommended **ninety days**.
+   Recommended **ninety days**. — **Decided: as recommended (2026-10-13).**
 4. **The pilot's staff** (P2-D16): phase 1's path (sign in with Google, request, one tap from
-   the office per head), no bulk staff import before 15 October. Recommended **phase 1's path**.
+   the office per head), no bulk staff import before 15 October. Recommended **phase 1's path**. — **Decided: as recommended (2026-10-13).**
 5. **Whether the cooldown ships beside the register** (P2-D17, `db/93`) or waits for its own
    day. Recommended **ships beside it**, as a separate file so it can wait without holding
-   `db/92`.
+   `db/92`. — **Decided: as recommended (2026-10-13).**
 
 ---
 
