@@ -25,3 +25,22 @@ export const FORBIDDEN_FIELDS = Object.freeze([
   "reason_kind", "reasonKind", "injury_type", "injuryType", "severity", "acwr", "ewma_ratio", "ewmaRatio",
   "open_flag", "openFlag", "monitored", "wellness",
 ]);
+
+/**
+ * No rule keys a card to the other side's boy (away visibility §7, AV3).
+ * Since db/97 a shared fixture's log is the visitors' to read as well, so its
+ * balls name both sides' boys by id: the bowler of every ball, the striker
+ * and the non-striker. The feed's rules are about our side, and a card keyed
+ * to one of their ids would be a card about another school's child.
+ *
+ * So these ids never appear in lib/signals.js at all; the one id a rule may
+ * key a card to from a read of the log is a spell's `bowlerId`, and only in
+ * S2b, where it is the bowler of OUR fielding innings and the directive
+ * beside him answered (which it does only for a boy whose load the reader
+ * may read). signals.test.mjs holds the module to both, statically, and the
+ * rules to it with the other side's rows as the reads return them.
+ */
+export const OTHER_SIDE_IDS = Object.freeze([
+  "bowler_id", "striker_id", "non_striker_id", "dismissed_id", "strikerId", "nonStrikerId", "nonStriker", "dismissedId",
+  "batterId", "batter_id", "bowlerName", "batterName",
+]);
