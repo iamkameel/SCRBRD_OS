@@ -10,14 +10,23 @@
  * and a withdrawal asks the function, with the post's id and nothing else.
  * db/99 §70 and tools/smoke-push.mjs walk the rest against a real database.
  *
+ * And the coach's plan (SCRBRD-138 phase B, db/96; group C): its shape, the
+ * 1 000 limit, its words as the gate at publish and at send — a hit returns
+ * the refusal with the words named and writes no row — and the index's
+ * refusal said with who wrote the live plan. db/99 §76 proves the audience.
+ * Falsified once each by editing the route: the check removed at send (C
+ * names the draft sent with "hamstring"), removed at publish (C names the
+ * plan sent and the draft saved with "physio"), and the plan's limit set to
+ * the post's 4 000 (C names the 1 001-character body).
+ *
  *   node services/api/write/news-api.test.mjs
  */
-import { newsRoutes, URGENCY } from "./news-api.mjs";
+import { newsRoutes, URGENCY, KINDS, PLAN_BODY_MAX } from "./news-api.mjs";
 import { signToken } from "../auth/auth.mjs";
 
 let pass = 0, fail = 0;
-/** @param {string} n @param {unknown} c */
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+/** @param {string} n @param {unknown} c @param {string} [d] what was seen, on a failure */
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 const SECRET = "news-api-test-secret";
@@ -34,18 +43,31 @@ const untouchable = {
   async query() { this.touched = true; throw new Error("the pool was touched"); },
 };
 
-/** @param {{ withdraw?: any }} o */
-function fakePool({ withdraw = null } = {}) {
+/**
+ * @param {{ withdraw?: any, writeError?: any, draft?: any, live?: any }} o
+ *   writeError: what the INSERT (or a send's UPDATE) throws; draft: the row
+ *   a send reads; live: the live plan the index's refusal names
+ */
+function fakePool({ withdraw = null, writeError = null, draft = null, live = null } = {}) {
   /** @type {{ sql: string, params: any[] }[]} */
   const asked = [];
   const client = {
     async query(/** @type {string} */ sql, /** @type {any[]} */ params = []) {
       asked.push({ sql, params });
       if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(sql.trim())) return { rows: [] };
+      if (/savepoint/i.test(sql)) return { rows: [] };
       if (sql.includes("app_session_begin")) return { rows: [{}] };
       if (sql.includes("insert into news_post")) {
-        return { rows: [{ id: POST, scope: params[0], published_at: params[6] ? new Date(0) : null, urgency: params[7] }] };
+        if (writeError) throw writeError;
+        return { rows: [{ id: POST, scope: params[0], published_at: params[6] ? new Date(0) : null, urgency: params[7],
+                          kind: params[8], fixture_id: params[9] }] };
       }
+      if (/select kind, title, body, fixture_id/.test(sql)) return { rows: draft ? [draft] : [] };
+      if (/update news_post set published_at = now\(\)/.test(sql)) {
+        if (writeError) throw writeError;
+        return { rows: [{ id: params[0] }] };
+      }
+      if (/where n\.kind = 'plan' and n\.fixture_id = \$1/.test(sql)) return { rows: live ? [live] : [] };
       if (sql.includes("news_post_withdraw(")) return { rows: withdraw ? [withdraw] : [] };
       throw new Error("unexpected statement: " + sql.slice(0, 60));
     },
@@ -115,6 +137,141 @@ group("B. Withdrawing a post asks news_post_withdraw() (D11)");
                        undefined, { authorization: BEARER }, { id: POST });
   ok("somebody who may not is told there is no such notice", x.status === 404 && x.body?.error === "no_such_notice");
   ok("...and nothing is told it changed", quiet.length === 0);
+}
+
+group("C. The coach's plan (db/96, SCRBRD-138 phase B)");
+{
+  const FIXTURE = "44444444-4444-4444-8444-444444444444";
+  const plan = (/** @type {Record<string, unknown>} */ extra = {}) => ({
+    scope: "team", schoolId: SCHOOL, teamCode: "U15A", kind: "plan", fixtureId: FIXTURE,
+    title: "The plan: v Westville U15A, Sat 3 Oct", body: "Bat first if we win it. Captain and Mate open.", ...extra });
+  const written = (/** @type {any} */ pool) => pool.asked.filter((/** @type {any} */ a) => /insert into news_post|update news_post/i.test(a.sql));
+
+  ok("two kinds, post and plan", KINDS.join() === "post,plan" && PLAN_BODY_MAX === 1000);
+
+  // Shape, before any connection.
+  {
+    const routes = newsRoutes({ pool: /** @type {any} */ (untouchable), secret: SECRET });
+    /** @type {[Record<string, unknown>, string][]} */
+    const bad = [
+      [{ kind: "note" }, "kind_invalid"],
+      [{ scope: "school", teamCode: undefined }, "plan_needs_team_and_fixture"],
+      [{ fixtureId: undefined }, "fixture_required"],
+      [{ fixtureId: "not-a-uuid" }, "fixture_required"],
+      [{ kind: undefined }, "fixture_only_for_plan"],
+      [{ body: "x".repeat(PLAN_BODY_MAX + 1) }, "body_too_long"],
+    ];
+    for (const [extra, code] of bad) {
+      const r = await call(routes.publish, plan(extra), { authorization: BEARER });
+      ok(`${JSON.stringify(extra).slice(0, 60)} is refused ${code}`, r.status === 400 && r.body?.error === code, JSON.stringify(r.body));
+    }
+    ok("...a long plan is refused, not cut, and says the limit",
+       (await call(routes.publish, plan({ body: "y".repeat(1200) }), { authorization: BEARER })).body?.max === 1000);
+    ok("...all before any connection", untouchable.touched === false);
+  }
+
+  // The words, at publish: refused, named, nothing written, no connection.
+  for (const publish of [true, false]) {
+    const pool = fakePool();
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET }).publish,
+                         plan({ publish, body: "Naidoo is on four overs, physio. Smith had a shocker." }), { authorization: BEARER });
+    const what = publish ? "sent" : "saved as a draft";
+    ok(`a plan ${what} with refused words is refused 422`, r.status === 422 && r.body?.error === "refused_words", JSON.stringify(r.body));
+    ok(`...the words named, with their classes (${what})`,
+       JSON.stringify(r.body?.words) === JSON.stringify([{ word: "physio", cls: "health" }, { word: "shocker", cls: "derisive" }]));
+    ok(`...in the design's words (${what})`, typeof r.body?.message === "string"
+       && r.body.message.startsWith("This can't go to the side with physio and shocker in it.")
+       && r.body.message.includes("A boy's health is not for it."));
+    ok(`...and the text is not in the answer (${what})`, !JSON.stringify(r.body).includes("Naidoo") && !JSON.stringify(r.body).includes("four overs"));
+    ok(`...and no row is written: no connection at all (${what})`, pool.asked.length === 0);
+  }
+  {
+    const pool = fakePool();
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET }).publish,
+                         plan({ title: "The plan: injured list", body: "Bat first." }), { authorization: BEARER });
+    ok("the title is checked as well as the body", r.status === 422 && r.body?.words?.[0]?.word === "injured" && pool.asked.length === 0);
+  }
+
+  // A clean plan is written, under a savepoint, with its kind and fixture.
+  {
+    const pool = fakePool();
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET }).publish, plan(), { authorization: BEARER });
+    const ins = pool.asked.find((a) => a.sql.includes("insert into news_post"));
+    ok("a clean plan is written", r.status === 200 && r.body?.kind === "plan" && r.body?.fixtureId === FIXTURE && r.body?.published === true,
+       JSON.stringify(r.body));
+    ok("...as kind plan, with the fixture", ins?.params[8] === "plan" && ins?.params[9] === FIXTURE);
+    ok("...inside a savepoint", pool.asked.findIndex((a) => /^savepoint news_plan_write$/.test(a.sql)) < pool.asked.indexOf(/** @type {any} */ (ins))
+       && pool.asked.some((a) => /^release savepoint news_plan_write$/.test(a.sql)));
+  }
+
+  // An ordinary post is not checked (PB-D8), keeps its 4 000, and carries no fixture.
+  {
+    const pool = fakePool();
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET }).publish,
+                         post({ body: "Physio clinic on Tuesday. " + "x".repeat(1100) }), { authorization: BEARER });
+    const ins = pool.asked.find((a) => a.sql.includes("insert into news_post"));
+    ok("an ordinary post is not word-checked, and keeps its 4 000", r.status === 200 && ins?.params[8] === "post" && ins?.params[9] === null
+       && String(ins?.params[5]).length > 1000);
+  }
+
+  // The index's refusal, in words.
+  {
+    const pool = fakePool({ writeError: Object.assign(new Error("duplicate key"), { code: "23505", constraint: "news_post_plan_live" }),
+                            live: { id: POST, author_name: "V96 Coach", mine: false, published_at: new Date(0), at: "Thu 20:10" } });
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET }).publish, plan(), { authorization: BEARER });
+    ok("a second live plan is refused 409, with who wrote the first",
+       r.status === 409 && r.body?.error === "plan_exists"
+       && r.body?.message === "The side already has a plan for this fixture, by V96 Coach, Thu 20:10."
+       && r.body?.plan?.id === POST && r.body?.plan?.mine === false, JSON.stringify(r.body));
+    ok("...after rolling back to its savepoint", pool.asked.some((a) => /^rollback to savepoint news_plan_write$/.test(a.sql)));
+    const hidden = fakePool({ writeError: Object.assign(new Error("duplicate key"), { code: "23505", constraint: "news_post_plan_live" }) });
+    const h = await call(newsRoutes({ pool: /** @type {any} */ (hidden), secret: SECRET }).publish, plan(), { authorization: BEARER });
+    ok("...and a live plan the writer cannot read is said without a byline",
+       h.status === 409 && h.body?.message === "The side already has a plan for this fixture." && h.body?.plan === null);
+  }
+
+  // The guard's refusals, by name.
+  for (const [constraint, code] of [["news_post_plan_side", "fixture_not_this_side"], ["news_post_plan_fixed", "plan_fixed"],
+                                    ["news_post_plan_anchored", "plan_needs_team_and_fixture"]]) {
+    const pool = fakePool({ writeError: Object.assign(new Error("guard"), { code: "23514", constraint }) });
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET }).publish, plan(), { authorization: BEARER });
+    ok(`db/96's ${constraint} answers 422 ${code}`, r.status === 422 && r.body?.error === code && !r.body?.detail, JSON.stringify(r.body));
+  }
+
+  // At send: the draft is read as its author and checked again.
+  {
+    const dirty = fakePool({ draft: { kind: "plan", title: "The plan", body: "Rest Naidoo, his hamstring.", fixture_id: FIXTURE, school_id: SCHOOL, team_code: "U15A" } });
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (dirty), secret: SECRET }).send, undefined, { authorization: BEARER }, { id: POST });
+    ok("sending a draft plan with a refused word is refused 422, the word named",
+       r.status === 422 && r.body?.error === "refused_words" && r.body?.words?.map((/** @type {any} */ w) => w.word).join() === "hamstring",
+       JSON.stringify(r.body));
+    ok("...and nothing is changed: no UPDATE", written(dirty).length === 0);
+    ok("...the draft read as its author's", dirty.asked.some((a) => /author_id = app_user_id\(\)/.test(a.sql) && a.params[0] === POST));
+
+    const clean = fakePool({ draft: { kind: "plan", title: "The plan", body: "Rest of the order as on the sheet.", fixture_id: FIXTURE, school_id: SCHOOL, team_code: "U15A" } });
+    const c = await call(newsRoutes({ pool: /** @type {any} */ (clean), secret: SECRET }).send, undefined, { authorization: BEARER }, { id: POST });
+    ok("a clean draft plan is sent, inside a savepoint", c.status === 200 && c.body?.published === true && written(clean).length === 1
+       && clean.asked.some((a) => /^savepoint news_plan_write$/.test(a.sql)));
+
+    const twice = fakePool({ draft: { kind: "plan", title: "The plan", body: "Bowl first.", fixture_id: FIXTURE, school_id: SCHOOL, team_code: "U15A" },
+                             writeError: Object.assign(new Error("duplicate key"), { code: "23505", constraint: "news_post_plan_live" }),
+                             live: { id: "55555555-5555-4555-8555-555555555555", author_name: "V96 Manager", mine: false, published_at: new Date(0), at: "Fri 07:05" } });
+    const t = await call(newsRoutes({ pool: /** @type {any} */ (twice), secret: SECRET }).send, undefined, { authorization: BEARER }, { id: POST });
+    ok("a draft plan sent beside a live one is refused 409, with the byline", t.status === 409
+       && t.body?.message === "The side already has a plan for this fixture, by V96 Manager, Fri 07:05.");
+
+    const ordinary = fakePool({ draft: { kind: "post", title: "Clinic", body: "Physio clinic Tuesday.", fixture_id: null, school_id: SCHOOL, team_code: "U15A" } });
+    const o = await call(newsRoutes({ pool: /** @type {any} */ (ordinary), secret: SECRET }).send, undefined, { authorization: BEARER }, { id: POST });
+    ok("an ordinary draft is sent unchecked (PB-D8)", o.status === 200 && written(ordinary).length === 1
+       && !ordinary.asked.some((a) => /savepoint news_plan_write/.test(a.sql)));
+
+    const none = fakePool();
+    const n = await call(newsRoutes({ pool: /** @type {any} */ (none), secret: SECRET }).send, undefined, { authorization: BEARER }, { id: POST });
+    ok("a draft that is not the caller's is no draft", n.status === 404 && n.body?.error === "no_such_draft" && written(none).length === 0);
+    const routes = newsRoutes({ pool: /** @type {any} */ (untouchable), secret: SECRET });
+    const bad = await call(routes.send, undefined, { authorization: BEARER }, { id: "x'; --" });
+    ok("an id that is no uuid is no draft, before any connection", bad.status === 404 && untouchable.touched === false);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

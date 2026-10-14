@@ -1042,6 +1042,80 @@ with it refuses to start without db/94 (`expected-migrations.json`) and serves
 `GET /api/read/bowler_day?date=YYYY-MM-DD&teamCode=…`. The web app reads it
 only on the Coach tab, and only while our side fields.
 <!-- ── end db/94 ── -->
+<!-- ── db/97: the ball log follows the fixture ── -->
+#### The away side reads its fixture's balls (db/97)
+
+`db/97_ball_event_away_read.sql` is SCRBRD-136/137 away visibility
+(`docs/design/SCRBRD-136-137_away_visibility.md`, approved by Kameel on
+2026-10-14; AV-D1 to AV-D5). A fixture's `match` row was already readable by
+either side's `fixture.read` holders, but every ball of it carries the host's
+school, and `ball_event_read` (db/02) asked only the host. So at an away
+fixture the visiting coach, pupils and spectators saw the fixture and none of
+it: no scorecard, no spells, no wheel. `ball_event_read` now has
+`match_read`'s two branches: the host's, unchanged, or `fixture.read` at the
+fixture's away school and away team. Every read of the log follows (they are
+`security_invoker` down to `ball_event`); every per-boy gate on top of it
+still asks per boy, so the host's boys' load, records and wheels stay the
+host's. The pad's tables (`scoring_session`, `ball_event_quarantine`,
+`scoring_audit`) and every write stay the host's: nothing lets the away side
+score. A guardian's reads are unchanged (the log asks about nobody in
+particular, at either side's fixtures).
+
+**What it does to a live database.** It drops `ball_event_read` on
+`ball_event` and creates it again with the away branch, in the paste's one
+transaction; the file checks the policy's text before it commits. No table,
+column, row, function or grant is added or changed, and no other policy is
+touched. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 97` (after 94; 95 and 96 are not
+needed first), then the verify bundle (§75 is its proof; the summary row "The
+away side reads its fixture's balls" should read OK). **Schema first**: the
+API built with it refuses to start without db/97 (`expected-migrations.json`).
+The API it ships with also asks a boy's record before `player_shot_points`
+draws his wheel and before `matchup_coverage` counts a named batter's balls,
+so the visiting school reads a shared fixture's balls but not the host's boy
+across fixtures. No screen changes.
+<!-- ── end db/97 ── -->
+
+<!-- ── db/96: the plan to the side, a team post tagged to a fixture ── -->
+#### The coach's plan to the side (db/96)
+
+`db/96_news_plan.sql` is SCRBRD-138 phase B (`docs/design/SCRBRD-138_phaseB.md`
+§1–§2, decided by Kameel on 2026-10-14). The coach's plan for a match is a
+`news_post` of kind `plan` with the fixture on it: written under
+`news.publish.team` at the side, its one notice written by the post's trigger
+with no recipient, withdrawn as any post is. `news_post` gains `kind` (`post`
+or `plan`) and `fixture_id`. A trigger, `news_post_plan_guard`, refuses a plan
+with no fixture or not to a team, a post with a fixture, a plan for a fixture
+the side does not play in (home or away), and a sent plan's kind or fixture
+changed. A partial unique index, `news_post_plan_live`, allows one live plan
+per fixture per side. Two `RESTRICTIVE` policies narrow a plan, and its
+notice, to the side: `news.read` and `team.read` at the side, a guardian
+through a boy on it. Without them a guardian of a boy on another side, and a
+follower holding `news.read` school-wide, read every side's posts. A trigger
+on `news_post_public` refuses a plan on the public home page. The plan's
+words are not checked here: the API checks them, with the one list in
+`packages/policy/src/words.mjs`.
+
+**What it does to a live database.** Adds two columns to `news_post` (every
+stored post reads `kind = 'post'`, `fixture_id` null; no rewrite), two
+triggers (`CREATE OR REPLACE TRIGGER`), four functions, three indexes
+(`news_post_plan_live`, `news_post_fixture`, `notification_news_subject`) and
+two `RESTRICTIVE` `SELECT` policies, each created only when `pg_policies` does
+not have it. An ordinary post, and every notice that is not a plan's, reads
+exactly as before. No row is inserted, changed or deleted. Nothing is dropped.
+
+Paste `node tools/bundle-sql.mjs --apply 96` (after 94), then the verify
+bundle (§76 is its proof; the summary row "A plan is one per side, to the
+side" should read OK). **Schema first**: an API built with it refuses to start
+without db/96 (`expected-migrations.json`). It accepts `kind: "plan"` and
+`fixtureId` on `POST /api/news`, refuses a plan's refused words with `422
+refused_words` (the words named) at publish and at `POST /api/news/:id/publish`,
+answers a second live plan with `409 plan_exists` and who wrote the first, and
+returns `kind`, `fixtureId` and `noticeId` on the `news` read. No screen
+writes a plan until the composer ships (B5).
+<!-- ── end db/96 ── -->
+
 <!-- ── db/102: who a module was hidden from is the school's to read ── -->
 #### Who a module was hidden from is the school's to read (db/102)
 

@@ -41,6 +41,15 @@ import { runAsUnit } from "../auth/auth-db.mjs";
 export const CLAIM_WAIT = "5s";
 
 /**
+ * Refusals that keep no receipt. A plan refused for its words (SCRBRD-138
+ * phase B §3.5, PB-D10) answers with the refused words named, and nothing of
+ * a refused plan is stored: not the text, and not the words in a receipt. A
+ * retry runs afresh and, the check being a pure function of the text, says
+ * the same; the handler wrote nothing, so there is nothing to write twice.
+ */
+export const UNKEPT = Object.freeze(["refused_words"]);
+
+/**
  * JSON with every object's keys in order, so the same request spelled in a
  * different order is the same request. Arrays keep their order: in a body,
  * order in a list means something.
@@ -122,8 +131,10 @@ export async function keyedWrite({ pool, secret, bearer, key, route, fp, run }) 
     await unit.close();
 
     // 4. Only an answer the handler stood behind is kept. Anything else —
-    //    a 5xx, or silence — keeps nothing, so the retry runs afresh.
-    if (!answer || answer.status >= 500) return { commit: false, value: /** @type {Outcome} */ ({ kind: "ran", answer, committed: false }) };
+    //    a 5xx, or silence — keeps nothing, so the retry runs afresh. Nor
+    //    does a refusal in UNKEPT, whose body names what must not be kept.
+    const body = /** @type {{ error?: unknown } | null} */ (answer?.body ?? null);
+    if (!answer || answer.status >= 500 || UNKEPT.includes(String(body?.error ?? ""))) return { commit: false, value: /** @type {Outcome} */ ({ kind: "ran", answer, committed: false }) };
     await c.query(`insert into request_replay (person_id, key, route, status, body)
                    values (app_user_id(), $1, $2, $3, $4)`,
                   [key, `${route} sha256:${fp}`, answer.status, JSON.stringify(answer.body ?? null)]);

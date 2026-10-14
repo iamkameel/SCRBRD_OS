@@ -316,6 +316,29 @@ SELECT
                          WHERE p.oid IN (to_regprocedure('bowler_day(date,text)'), to_regprocedure('bowling_directive_for(uuid)'))
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A bowler's day is read under the load capability",
+  -- db/96: the coach's plan is a team post tagged to a fixture, one live per
+  -- side, never public (SCRBRD-138 phase B §1).
+  CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news_post' AND column_name = 'kind')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news_post' AND column_name = 'fixture_id')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_plan_guard' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_public_not_plan' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('news_post_plan_live') AND i.indisunique)
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('news_post_plan_guard()'), 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+              AND (tablename, policyname) IN (('news_post', 'news_post_plan_side'), ('notification', 'notification_plan_side'))) = 2
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan is one per side, to the side",
+  -- db/97: the ball log follows the fixture; the away side reads its match
+  -- (SCRBRD-136/137 away visibility, AV-D1). The writes stay the host's.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read'
+                       AND p.polcmd = 'r' AND p.polpermissive
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%match_team(%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%away_school_id%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%away_team_code%')
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                         WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_insert'
+                           AND pg_get_expr(p.polwithcheck, p.polrelid) LIKE '%away\\_%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The away side reads its fixture's balls",
   -- db/102: a module hidden from a named person is read by that school's
   -- managers and by him, and its reason only through its function.
   CASE WHEN EXISTS (SELECT 1 FROM pg_policy p
