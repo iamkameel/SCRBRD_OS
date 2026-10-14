@@ -37,6 +37,7 @@
  * deploying the older code; a server that starts anyway is the incident.
  */
 import { readFileSync } from "node:fs";
+import { migrationPrefix } from "./migration-names.mjs";
 
 /** @type {string[]} */
 export const EXPECTED = JSON.parse(
@@ -52,7 +53,7 @@ export const missingMigrations = (/** @type {readonly string[]} */ expected, /**
 };
 
 const applyStep = (/** @type {string} */ name) =>
-  `    node tools/bundle-sql.mjs --apply ${name.slice(0, 2)}   → scrbrd-supabase-apply-${name.slice(0, 2)}.sql  (${name})`;
+  `    node tools/bundle-sql.mjs --apply ${migrationPrefix(name)}   → scrbrd-supabase-apply-${migrationPrefix(name)}.sql  (${name})`;
 
 const FIX_TAIL =
   `\nAfter the last one, paste scrbrd-supabase-verify.sql and expect ALL RLS LIVE\n` +
@@ -78,7 +79,7 @@ export function refusalMessage(missing, { ledgerUnreadable = false, expected = E
       `the database is, in its SQL Editor, as the owner —\n` +
       `    SELECT name FROM schema_migration ORDER BY name;\n` +
       `then apply scrbrd-supabase-apply-NN.sql for each missing number, in order\n` +
-      `(DEPLOYING.md, "The procedure"), up to and including ${LEDGER_READER.slice(0, 2)}:\n` +
+      `(DEPLOYING.md, "The procedure"), up to and including ${migrationPrefix(LEDGER_READER)}:\n` +
       `    node tools/bundle-sql.mjs --apply NN\n` + FIX_TAIL;
   }
   if (!missing.length) return null;

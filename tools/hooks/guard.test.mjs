@@ -23,10 +23,10 @@
  *   node tools/hooks/guard.test.mjs
  */
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { FROZEN_THROUGH } from "./guard.mjs";
+import { migrationFiles, migrationNumber } from "../../services/api/migration-names.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GUARD = join(HERE, "guard.mjs");
@@ -73,9 +73,8 @@ quiet("an empty payload is not grounds to block anything", ask({}));
 
 // ── The ledger ───────────────────────────────────────────
 group("The migration ledger is closed, by every route in");
-const frozen = readdirSync(DB)
-  .filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f) && Number(f.slice(0, 2)) <= FROZEN_THROUGH)
-  .sort();
+const frozen = migrationFiles(DB)
+  .filter((f) => migrationNumber(f) <= FROZEN_THROUGH);
 // The constant is the whole rule, and a constant can rot: pointed past the
 // last file it closes nothing, and the block below would still pass green on
 // the files it does cover. So the top of the range has to be a real file.

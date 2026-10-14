@@ -8,10 +8,10 @@
 //
 // The refusal itself is asserted live, against a real server and a real
 // ledger, by tools/smoke-schema-guard.mjs.
-import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { EXPECTED, LEDGER_READER, missingMigrations, refusalMessage, schemaRefusal } from "./schema-guard.mjs";
+import { migrationFiles, byMigrationOrder, isMigrationFile, migrationNumber, migrationPrefix } from "./migration-names.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 let passes = 0, fails = 0;
@@ -22,9 +22,9 @@ const ok = (label, cond, detail = "") => {
 };
 
 // ── The list agrees with db/ ─────────────────────────────────────
-// The same filter tools/migrate.mjs applies: NN_*.sql, never 98_ (seed) or
-// 99_ (verifier), in the order the migrator runs them.
-const onDisk = readdirSync(join(ROOT, "db")).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
+// The same list tools/migrate.mjs runs (services/api/migration-names.mjs): NN_*.sql
+// and NNN_*.sql, never 98_ (seed) or 99_ (verifier), in number order.
+const onDisk = migrationFiles(join(ROOT, "db"));
 const listed = new Set(EXPECTED);
 const unlisted = onDisk.filter((f) => !listed.has(f));
 const phantom = EXPECTED.filter((f) => !onDisk.includes(f));
@@ -35,9 +35,24 @@ ok("every db/NN migration is in services/api/expected-migrations.json", unlisted
 ok("expected-migrations.json names no file that is not in db/", phantom.length === 0,
    `${phantom.join(", ")} — renamed or removed? The server would refuse every database`);
 ok("expected-migrations.json is in migration order, without duplicates",
-   JSON.stringify(EXPECTED) === JSON.stringify([...new Set(EXPECTED)].sort()));
+   JSON.stringify(EXPECTED) === JSON.stringify([...new Set(EXPECTED)].sort(byMigrationOrder)));
 ok("neither the seed nor the verifier is expected", !EXPECTED.some((n) => /^9[89]_/.test(n)));
 ok(`the ledger reader (${LEDGER_READER}) is itself expected`, EXPECTED.includes(LEDGER_READER) && onDisk.includes(LEDGER_READER));
+
+// ── Numbers, not spelling: the order past db/97 ──────────────────
+// Sorted as text, 100_ would run before 11_. Every reader of db/ takes its
+// order from migration-names.mjs, and this is that order on a made-up list.
+{
+  const names = ["11_b.sql", "100_d.sql", "02_a.sql", "97_c.sql", "98_seed_pilot.sql", "99_rls_verify.sql", "101_e.sql", "notes.sql", "1_x.sql", "1000_y.sql"];
+  const ordered = names.filter(isMigrationFile).sort(byMigrationOrder);
+  ok("three-digit migrations run after two-digit ones, by number",
+     JSON.stringify(ordered) === JSON.stringify(["02_a.sql", "11_b.sql", "97_c.sql", "100_d.sql", "101_e.sql"]), ordered.join(", "));
+  ok("the seed and the verifier are never migrations", !isMigrationFile("98_seed_pilot.sql") && !isMigrationFile("99_rls_verify.sql"));
+  ok("a paste kit names a three-digit file by its number", migrationPrefix("100_d.sql") === "100" && migrationPrefix("92_staff_register.sql") === "92");
+  const numbers = onDisk.map(migrationNumber);
+  ok("no two files in db/ share a number", new Set(numbers).size === numbers.length,
+     onDisk.filter((f, i) => numbers.indexOf(migrationNumber(f)) !== i).join(", "));
+}
 
 // ── What is missing, and what is not ─────────────────────────────
 const exp = ["00_a.sql", "01_b.sql", "02_c.sql", "03_d.sql"];
