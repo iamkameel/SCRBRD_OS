@@ -1,6 +1,6 @@
 # SCRBRD-136 / 137 — Away visibility: what the visiting side may read of its own boys from a fixture another school hosts
 
-**Status:** for Kameel's review, 2026-10-14. Nothing built.
+**Status:** Decided 14 Oct 2026; build not started.
 **Source:** PR #141's walk (`tools/smoke-cockpit.mjs` on `claude/wip-cockpit-b`, :179–189: "this may be a functional gap for away coaches"); `docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md` §1, §3.5–3.7, §9, D8, D15; `docs/design/SCRBRD-136-137_phaseB.md` §1, §5, PB-D1–D3; `db/02_schema_scoring.sql` (`ball_event_read` :212–215, `ball_event_live` :487); `db/07_shot_placement.sql` :113; `db/09_rls_policies.sql` (`match_read` :237–239, `match_squad_read` :273); `db/54_laws_4th_edition.sql` (`bowler_over` :332–347); `db/94_bowler_day.sql` [branch]; `services/api/read/read-api.mjs` (`shot_points` :218–230, `workload` :1481–1503, `bowling_spells` :1568–1585); `docs/design/GA-I24-I25_compare_and_combine.md` D7; `docs/policy/PUBLIC_DATA.md` §3, §5a; ADR 0002; `docs/design/SCRBRD-110_workload.md` §3.3, §4.2; `docs/design/STEP4_parent_pupil.md` §1.2, §2.1 P4, Q4.
 **Reader:** Kameel first; then the Opus lead; then the Opus agent who writes the one policy and its proofs, and the Sonnet agent who flips the walk's assertions and checks the two screens. Plain words come first in each section. Names are the seed's illustrative ones (Hilton, Westville, Kearsney, D Erasmus, R Pillay, K Naidoo), never a real child's.
 **Scope:** reads only. Nothing here lets the away side score, correct, void or hold the pad; nothing here touches the dossier's window, the public page, or any medical, wellness, discipline or safeguarding table.
@@ -10,6 +10,8 @@
 ---
 
 ## What Kameel decides
+
+**Decided 14 October 2026 (Kameel): every recommendation below, as written.**
 
 1. **The ball log follows the fixture.** `ball_event_read` gains the away-side branch that `match_read` already has (db/09:237–239), so a fixture both schools may *see* is a fixture both schools may *watch*. Recommendation: **yes** (AV-D1). The alternative, a per-side view of the log filtered to "our boys' balls", is rejected in §2.3: every ball has one side's bowler and the other side's striker, so there is no such thing as our half of a log.
 2. **Names on the away side's scorecard, as the log carries them.** A Westville coach, pupil, parent or spectator signed in at a Hilton-hosted fixture sees Hilton's eleven by the names the pad wrote (STEP4:227), exactly as Hilton's own crowd does and as the board at the ground does. Recommendation: **yes**, no masking (AV-D2). STEP4 Q4 decided the signed-in, linked crowd is not the public; 136 §3.5 already says "from the first ball: this match's scorecard and log, as every signed-in reader has it". This makes the code do what that row says.
@@ -252,11 +254,11 @@ One Opus agent's two days with Sonnet beside it; only AV0's paste waits on the d
 
 | # | decision | recommendation | why, in one line |
 |---|---|---|---|
-| **AV-D1** | the model | **`ball_event_read` = `match_read`'s two branches; the log follows the fixture** | a ball has both sides on it; the design (136 §3.5 row 3, D8, STEP4:184) already assumed this and the code never followed |
-| **AV-D2** | names of the host's boys to the away side's signed-in readers | **as the log carries them, unmasked** | STEP4 Q4: the linked, signed-in crowd is not the public; the board at the ground shows them; one scorecard, not two |
-| **AV-D3** | the per-boy figures | **unchanged: every existing per-boy gate holds in both directions; no new gate, no new read** | `w.may`, `workload()`, `bowler_day`, `matchups`, `player_shot_points` all already ask per boy (§4.2) |
-| **AV-D4** | the pad's tables | **host-only, unchanged** | the token, the quarantine and the audit are how the host scored, not what the balls say |
-| **AV-D5** | the away school's spectators | **in, through `fixture.read`, like the host's** | keeping them out needs a role test in a policy (against ADR 0003) or a capability for one table |
+| **AV-D1** | the model | **`ball_event_read` = `match_read`'s two branches; the log follows the fixture** — **decided 14 Oct** | a ball has both sides on it; the design (136 §3.5 row 3, D8, STEP4:184) already assumed this and the code never followed |
+| **AV-D2** | names of the host's boys to the away side's signed-in readers | **as the log carries them, unmasked** — **decided 14 Oct** | STEP4 Q4: the linked, signed-in crowd is not the public; the board at the ground shows them; one scorecard, not two |
+| **AV-D3** | the per-boy figures | **unchanged: every existing per-boy gate holds in both directions; no new gate, no new read** — **decided 14 Oct** | `w.may`, `workload()`, `bowler_day`, `matchups`, `player_shot_points` all already ask per boy (§4.2) |
+| **AV-D4** | the pad's tables | **host-only, unchanged** — **decided 14 Oct** | the token, the quarantine and the audit are how the host scored, not what the balls say |
+| **AV-D5** | the away school's spectators | **in, through `fixture.read`, like the host's** — **decided 14 Oct** | keeping them out needs a role test in a policy (against ADR 0003) or a capability for one table |
 
 ## 11 · Assumptions
 

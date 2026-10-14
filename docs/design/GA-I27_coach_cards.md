@@ -1,6 +1,6 @@
 # GA-I27 — Evidence-linked coach cards: the design
 
-**Status:** for Kameel's review, 14 Oct 2026 (Fable). Nothing here is built.
+**Status:** Decided 14 Oct 2026; build not started.
 **Source:** `audit/GAP_ANALYSIS_2026-10-05.md` ("The decision"; Phase C row "I26a, I27, I29, I32"); `docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md` §0, §3.6, §3.7, §4, §7, §10, Appendix A; `docs/design/SCRBRD-136-137_phaseB.md` (PB-D1–D11, decided 13 Oct); `apps/web/src/lib/signals.js` and `views/cockpit/useCockpit.js` (branch `claude/wip-cockpit-b`); `apps/web/src/lib/cockpitNever.js`; `views/cockpit/FeedDrawer.jsx`; `docs/design/GA-I24-I25_compare_and_combine.md` D7, D14, §4, §5; `docs/design/GA-I36_corrections_everywhere.md` §0, D1, D2, §2.3; `docs/design/SCRBRD-110_workload.md` §3.3, §4.2; `docs/adr/0002-coach-medical-overview.md`. Line numbers in `read-api.mjs` and `db/60` are as phase B and GA-I24-I25 cite them; this document did not reopen those files.
 **Reader:** Kameel on a phone first; then the Opus lead; then the Opus agent who builds the evidence model and (if chosen) the table, and the Sonnet agent who builds the disclosure. Names in examples are the seed's illustrative ones (Hilton, Westville, Kearsney, D Erasmus, R Pillay, K Naidoo), never a real child's.
 **Scope:** GA-I27 only. It does not reopen D1–D16 of the 136 doc, PB-D1–D11, 110 §3.3/§4.2, ADR 0002, GA-I24-I25's refusals or GA-I36's model. I26a (assessment history and the drill loop), I29 and I32 share its gap-analysis row and are named only where this design leaves them a seam.
@@ -10,6 +10,8 @@
 ---
 
 ## What Kameel decides
+
+**Decided 14 October 2026 (Kameel): every recommendation below, as written.**
 
 1. **What a card is.** Recommendation (C-D1): **two kinds.** A *signal card* is what the drawer draws today (`signals.js:44–60`), derived on read, stored nowhere, and it gains an evidence trail now with no migration. A *coaching point* is a sentence the coach writes about one boy, pinned to the evidence it stood on; it is stored, and it is slice 2, built with I26a, one table. Alternative: signals only, no coaching point. Why not: the brief names the coach's own notes, and I26a will need the same evidence pointer.
 2. **Where the evidence comes from.** Recommendation (C-D2): **the rows the rule already read, in the browser; no new read, no new gate, no new row.** The trail is the card's own working shown, not a second query. Alternative: a server function returning evidence per card (phase B §7's `coach_signals()`). Why not: PB-D9 keeps that behind a measured trigger, and a trail over the same rows cannot widen a gate.
@@ -254,14 +256,14 @@ C1–C2 are one Opus agent with Sonnet beside it and wait on no database lock. C
 
 | # | decision | recommendation | why, in one line |
 |---|---|---|---|
-| **C-D1** | what a card is | **a signal card (derived, trail added now) or a coaching point (stored, slice 2)** | the brief names both; the trail needs no row, the note does |
-| **C-D2** | where the trail comes from | **the rule's own rows, in the browser; no new read or gate** | a view of inputs cannot widen a gate; PB-D9 decides if evaluation moves |
-| **C-D3** | how it opens | **a disclosure on the card, then one link to the existing screen** | 136 D2: no fifth destination |
-| **C-D4** | the coaching point's tier and evidence | **one boy; `player.development.*`, logged; pointer always, lines only for `fixture.read`/`player.performance.read` cards; load figures re-derived under the reader's own gate; no pupil, no parent** | a load word in a development row crosses a tier; a note to a child is 138's question |
-| **C-D5** | corrections | **"as at" on every card, head on fold-derived ones; a point shows stood-on and now, never overwrites** | GA-I36 D1, D2, D10; both versions kept |
-| **C-D6** | actions | **links to where the act lives; the drawer writes nothing** | PB-D5 |
-| **C-D7** | which cards may seed a point | **S2a, S2b, S2c, S5, S11; never S3, S4a, S4b, S6–S10, S12** | availability, lifts, duties and notices are not coaching |
-| **C-D8** | the team manager's trail | **his cards' trails only; no read he cannot see is named anywhere on his drawer** | 136 §1.2: his tab says nothing is missing |
+| **C-D1** | what a card is | **a signal card (derived, trail added now) or a coaching point (stored, slice 2)** — **decided 14 Oct** | the brief names both; the trail needs no row, the note does |
+| **C-D2** | where the trail comes from | **the rule's own rows, in the browser; no new read or gate** — **decided 14 Oct** | a view of inputs cannot widen a gate; PB-D9 decides if evaluation moves |
+| **C-D3** | how it opens | **a disclosure on the card, then one link to the existing screen** — **decided 14 Oct** | 136 D2: no fifth destination |
+| **C-D4** | the coaching point's tier and evidence | **one boy; `player.development.*`, logged; pointer always, lines only for `fixture.read`/`player.performance.read` cards; load figures re-derived under the reader's own gate; no pupil, no parent** — **decided 14 Oct** | a load word in a development row crosses a tier; a note to a child is 138's question |
+| **C-D5** | corrections | **"as at" on every card, head on fold-derived ones; a point shows stood-on and now, never overwrites** — **decided 14 Oct** | GA-I36 D1, D2, D10; both versions kept |
+| **C-D6** | actions | **links to where the act lives; the drawer writes nothing** — **decided 14 Oct** | PB-D5 |
+| **C-D7** | which cards may seed a point | **S2a, S2b, S2c, S5, S11; never S3, S4a, S4b, S6–S10, S12** — **decided 14 Oct** | availability, lifts, duties and notices are not coaching |
+| **C-D8** | the team manager's trail | **his cards' trails only; no read he cannot see is named anywhere on his drawer** — **decided 14 Oct** | 136 §1.2: his tab says nothing is missing |
 
 ## 10 · Assumptions
 
