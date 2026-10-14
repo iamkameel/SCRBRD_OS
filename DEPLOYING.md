@@ -1200,6 +1200,41 @@ and `notifications` reads return what the database's policies let through,
 so they answer the narrower set on the paste.
 <!-- ── end db/101 ── -->
 
+<!-- ── db/102: who a module was hidden from is the school's to read ── -->
+#### Who a module was hidden from is the school's to read (db/102)
+
+`db/102_suppression_read.sql` closes a leak found on 2026-10-14 before anyone
+used the feature (production held no row naming a person). A school can hide
+a module from one named person, with a free-text reason. Until now anybody
+enrolled at any school could read those rows, and `module_suppressions` gave
+them the person's name and the reason. Now a row naming a person is read only
+by a holder of `school.feature.manage` at that school and by the person named.
+He reads that the module is hidden from him, not why: the application no
+longer selects `feature_suppression.reason`, and `feature_suppression_reason(id)`
+gives the reason to the school's managers (and, for a school-wide row, to
+whoever reads the row, as before). Who a module is hidden from still resolves
+as before, because `feature_enabled()` and `my_feature_enabled()` read the
+table as its owner. `module_settings` gives its `people_hidden` count to the
+school's managers and null to everybody else.
+
+**What it does to a live database.** Replaces the `feature_suppression_read`
+policy. Refuses to run if that policy is not the one db/81 left (or this
+file's own). Takes `SELECT` on `feature_suppression` from `scrbrd_app`, and
+from a managed host's `anon`/`authenticated` where they hold it, and grants
+it back on every column but `reason`. `INSERT` and `UPDATE` are unchanged.
+Adds one function: `SECURITY DEFINER`, `STABLE`, pinned search path,
+executable by `scrbrd_app` and not `PUBLIC`. No table, no row. A second paste
+changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 102` (after 94, and after 96–101 if
+they have shipped; the bundle names the one it needs first), then the verify
+bundle (§79 is its proof). The summary row "Who a module is hidden from is
+the school's" should read OK. **Schema first**: the API built with it refuses
+to start without db/102 (`expected-migrations.json`), and its
+`module_suppressions` read calls `feature_suppression_reason()`, which an older
+database does not have.
+<!-- ── end db/102 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

@@ -5076,6 +5076,53 @@ CREATE OR REPLACE FUNCTION _v101_unsheet(p_match uuid, p_player uuid) RETURNS in
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/101 (section 78) ─────────────────────────────────────────────
 
+-- ┌── db/102 (section 79). Who a module was hidden from is the school's to read
+-- Invented people, one per reader the policy is about, and four suppressions:
+-- Skills hidden from one Hilton coach (N1) and Training from another (N2),
+-- each with a reason; Leagues hidden from the whole of Hilton (S1); Skills
+-- hidden from a Westville coach (W1). The pupil and the parent are enrolled
+-- (the parent's link is verified, as the seed's are), so a row they do not
+-- read is the policy refusing them, not an account that reads nothing.
+CREATE OR REPLACE FUNCTION _v102_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  ids jsonb; v_boy uuid; v_a uuid; n1 uuid; n2 uuid; s1 uuid; w1 uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneOhTwo Boy', 1021, 'batter', make_date(extract(year FROM sa_today())::int - 15, 3, 1))
+  RETURNING id INTO v_boy;
+  ids := _v71_people('v102', ARRAY[
+    ARRAY['manager',    'schooladmin', HIL::text, '',    ''],
+    ARRAY['named',      'coach',       HIL::text, '1XI', ''],
+    ARRAY['colleague',  'coach',       HIL::text, '3XI', ''],
+    ARRAY['teacher',    'coach',       HIL::text, '2XI', ''],
+    ARRAY['parent',     'guardian',    HIL::text, '',    ''],
+    ARRAY['pupil',      'player',      HIL::text, '1XI', v_boy::text],
+    ARRAY['spectator',  'spectator',   HIL::text, '',    ''],
+    ARRAY['wesmanager', 'schooladmin', WES::text, '',    ''],
+    ARRAY['wesnamed',   'coach',       WES::text, '1XI', '']]);
+  SELECT a.id INTO v_a FROM role_assignment a WHERE a.person_id = (ids->>'parent')::uuid;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, v_boy, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  INSERT INTO feature_suppression (key, school_id, person_id, reason, hidden_by)
+  VALUES ('skills', HIL, (ids->>'named')::uuid, 'v102: pending a review of his conduct', (ids->>'manager')::uuid)
+  RETURNING id INTO n1;
+  INSERT INTO feature_suppression (key, school_id, person_id, reason, hidden_by)
+  VALUES ('training', HIL, (ids->>'colleague')::uuid, 'v102: on leave', (ids->>'manager')::uuid)
+  RETURNING id INTO n2;
+  INSERT INTO feature_suppression (key, school_id, person_id, reason, hidden_by)
+  VALUES ('leagues', HIL, NULL, 'v102: not running leagues this term', (ids->>'manager')::uuid)
+  RETURNING id INTO s1;
+  INSERT INTO feature_suppression (key, school_id, person_id, reason, hidden_by)
+  VALUES ('skills', WES, (ids->>'wesnamed')::uuid, 'v102: Westville''s own note', (ids->>'wesmanager')::uuid)
+  RETURNING id INTO w1;
+  RETURN ids || jsonb_build_object('boy', v_boy, 'n1', n1, 'n2', n2, 's1', s1, 'w1', w1);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/102 (section 79) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -20616,6 +20663,170 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 78
   -- └── db/101 (section 78) ───────────────────────────────────────────
+  -- ┌── section 79: who a module was hidden from is the school's to read (db/102) ──
+  -- feature_suppression's read policy was "anybody enrolled" (db/08, db/81),
+  -- and module_suppressions handed any school's named rows, names and reasons
+  -- to any parent, pupil or follower anywhere. The API half is
+  -- tools/smoke-modules.mjs ("One person, not the whole school").
+  --
+  -- What each label holds:
+  --   (manager)    Hilton's school administrator reads both Hilton named
+  --                rows and their reasons, and not Westville's
+  --   (self)       the coach Skills was hidden from reads his own row, not
+  --                its reason, and not his colleague's row
+  --   (refused)    another Hilton coach, a parent, a pupil, a spectator and
+  --                Westville's administrator read neither Hilton named row,
+  --                nor its reason, and module_suppressions (its query,
+  --                verbatim) gives them no named Hilton row
+  --   (wide)       every one of them still reads the school-wide row and its
+  --                reason, as before: the refusals above are the policy's
+  --   (column)     nobody selects feature_suppression.reason directly, not
+  --                even a manager: the column is not the application's
+  --   (resolve)    Skills resolves as hidden for the named coach and as on for
+  --                every other Hilton reader; Training the other way round;
+  --                Westville's row reaches only Westville's coach
+  --   (school)     the school-wide row resolves Leagues off for everybody at
+  --                Hilton and for nobody at Westville
+  --   (writes)     a manager still hides from a person (INSERT … RETURNING)
+  --                and lifts it (UPDATE … RETURNING), as scouting-api does
+  --   (doors)      the policy's text; the column privilege; the reason
+  --                function a stable definer for scrbrd_app, not PUBLIC
+  --
+  -- Falsified once, by putting the open policy back (feature_suppression_read
+  -- USING (app_enrolled()), as db/81 left it) and running this file: red at
+  -- (manager), Hilton's administrator reading Westville's named row.
+  DECLARE
+    y        jsonb := _v102_stage();
+    HIL      uuid := '11111111-1111-1111-1111-111111111111';
+    N1       uuid := (y->>'n1')::uuid;
+    N2       uuid := (y->>'n2')::uuid;
+    S1       uuid := (y->>'s1')::uuid;
+    W1       uuid := (y->>'w1')::uuid;
+    k        text;
+    got      text;
+    v_new    uuid;
+  BEGIN
+    -- (manager)
+    PERFORM _as((y->>'manager')::uuid);
+    SELECT string_agg(s.key || '@' || (s.school_id = HIL) || ':' || coalesce(feature_suppression_reason(s.id), '(none)'),
+                      ', ' ORDER BY s.key, s.school_id = HIL) INTO got
+      FROM feature_suppression s WHERE s.id IN (N1, N2, W1);
+    PERFORM _assert(got = 'skills@true:v102: pending a review of his conduct, training@true:v102: on leave',
+      format('§79 (manager): Hilton''s administrator reads %s', coalesce(got, 'no row')));
+    PERFORM _assert(feature_suppression_reason(W1) IS NULL,
+      '§79 (manager): Hilton''s administrator reads the reason Westville wrote');
+    PERFORM _as((y->>'wesmanager')::uuid);
+    PERFORM _assert((SELECT string_agg(s.id::text, ',') FROM feature_suppression s WHERE s.id IN (N1, N2, W1)) = W1::text
+                    AND feature_suppression_reason(W1) = 'v102: Westville''s own note',
+      '§79 (manager): Westville''s administrator does not read his own school''s named row, or reads Hilton''s');
+
+    -- (self)
+    PERFORM _as((y->>'named')::uuid);
+    SELECT string_agg(s.key || ':' || (s.person_id = (y->>'named')::uuid), ',') INTO got
+      FROM feature_suppression s WHERE s.id IN (N1, N2, W1);
+    PERFORM _assert(got = 'skills:true', format('§79 (self): the named coach reads %s, not his own row alone', coalesce(got, 'no row')));
+    PERFORM _assert(feature_suppression_reason(N1) IS NULL,
+      '§79 (self): the named coach reads the reason his administrator wrote about him');
+
+    -- (refused), and (wide) beside it
+    FOREACH k IN ARRAY ARRAY['teacher', 'parent', 'pupil', 'spectator', 'wesmanager'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM feature_suppression s WHERE s.id IN (N1, N2)),
+        format('§79 (refused): the %s reads a Hilton suppression naming somebody', k));
+      PERFORM _assert(feature_suppression_reason(N1) IS NULL AND feature_suppression_reason(N2) IS NULL,
+        format('§79 (refused): the %s reads the reason written about a Hilton coach', k));
+      -- module_suppressions, as services/api/read/read-api.mjs runs it.
+      PERFORM _assert(NOT EXISTS (
+          SELECT 1 FROM (
+            select s.key, s.school_id, s.person_id, u.name as person_name,
+                   feature_suppression_reason(s.id) as reason, s.hidden_at
+              from feature_suppression s
+              left join app_user u on u.id = s.person_id
+             where s.school_id = HIL
+               and s.lifted_at is null
+               and (null::text is null or s.key = null::text)
+             order by s.key, u.name nulls first) m
+           WHERE m.person_id IS NOT NULL),
+        format('§79 (refused): module_suppressions gives the %s a named Hilton row', k));
+      PERFORM _assert(EXISTS (SELECT 1 FROM feature_suppression s WHERE s.id = S1)
+                      AND feature_suppression_reason(S1) = 'v102: not running leagues this term',
+        format('§79 (wide): the %s no longer reads Hilton''s school-wide suppression, or its reason', k));
+    END LOOP;
+
+    -- (column)
+    FOREACH k IN ARRAY ARRAY['manager', 'named', 'parent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := 'read';
+      BEGIN
+        PERFORM s.reason FROM feature_suppression s WHERE s.id = S1;
+      EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+      END;
+      PERFORM _assert(got = 'refused', format('§79 (column): the %s selects the reason column directly', k));
+    END LOOP;
+
+    -- (resolve)
+    PERFORM _assert(feature_enabled('skills', HIL, NULL) AND feature_enabled('training', HIL, NULL),
+      '§79 (resolve): Skills or Training is off at Hilton before anybody was named; this proves nothing');
+    PERFORM _as((y->>'named')::uuid);
+    PERFORM _assert(NOT my_feature_enabled('skills') AND NOT feature_enabled('skills', HIL, (y->>'named')::uuid),
+      '§79 (resolve): Skills reads as on for the coach it was hidden from');
+    PERFORM _assert(my_feature_enabled('training'),
+      '§79 (resolve): the coach reads Training as off, which was hidden from his colleague');
+    PERFORM _as((y->>'colleague')::uuid);
+    PERFORM _assert(NOT my_feature_enabled('training') AND my_feature_enabled('skills'),
+      '§79 (resolve): his colleague''s Training and Skills resolve the wrong way round');
+    FOREACH k IN ARRAY ARRAY['manager', 'teacher', 'parent', 'pupil', 'spectator'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(my_feature_enabled('skills') AND my_feature_enabled('training')
+                      AND feature_enabled('skills', HIL, (y->>k)::uuid),
+        format('§79 (resolve): Skills or Training reads as off for the %s, from whom nothing was hidden', k));
+    END LOOP;
+    PERFORM _as((y->>'wesnamed')::uuid);
+    PERFORM _assert(NOT my_feature_enabled('skills'), '§79 (resolve): Westville''s named coach reads Skills as on');
+    PERFORM _as((y->>'wesmanager')::uuid);
+    PERFORM _assert(my_feature_enabled('skills'), '§79 (resolve): Westville''s row reached its administrator');
+
+    -- (school)
+    FOREACH k IN ARRAY ARRAY['manager', 'named', 'teacher', 'parent', 'pupil', 'spectator'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(NOT my_feature_enabled('leagues'),
+        format('§79 (school): Leagues reads as on for the %s at a school that hid it', k));
+    END LOOP;
+    PERFORM _as((y->>'wesmanager')::uuid);
+    PERFORM _assert(my_feature_enabled('leagues') AND NOT feature_enabled('leagues', HIL, NULL),
+      '§79 (school): Hilton''s school-wide row reached Westville, or stopped resolving at Hilton');
+
+    -- (writes)
+    PERFORM _as((y->>'manager')::uuid);
+    INSERT INTO feature_suppression (key, school_id, person_id, reason, hidden_by)
+    VALUES ('analytics', HIL, (y->>'teacher')::uuid, 'v102: a write', app_user_id())
+    RETURNING id INTO v_new;
+    PERFORM _assert(v_new IS NOT NULL AND feature_suppression_reason(v_new) = 'v102: a write',
+      '§79 (writes): the manager''s hide returned no row, or he cannot read the reason he wrote');
+    UPDATE feature_suppression SET lifted_at = now(), lifted_by = app_user_id()
+     WHERE id = v_new AND lifted_at IS NULL
+    RETURNING person_id::text INTO got;
+    PERFORM _assert(got = (y->>'teacher'), '§79 (writes): the manager could not lift the suppression he wrote');
+
+    -- (doors)
+    PERFORM _assert((SELECT pg_get_expr(p.polqual, p.polrelid) FROM pg_policy p
+                      WHERE p.polrelid = 'feature_suppression'::regclass AND p.polname = 'feature_suppression_read')
+                    = '(((person_id IS NULL) AND app_enrolled()) OR ((person_id IS NOT NULL) AND ((person_id = app_user_id()) OR '
+                      'app_can(''school.feature.manage''::text, school_id, NULL::text, NULL::uuid, NULL::uuid))))',
+      '§79 (doors): feature_suppression_read is not the policy db/102 wrote');
+    PERFORM _assert(NOT has_column_privilege('scrbrd_app', 'feature_suppression', 'reason', 'SELECT')
+                    AND has_column_privilege('scrbrd_app', 'feature_suppression', 'person_id', 'SELECT'),
+      '§79 (doors): scrbrd_app selects the reason, or lost the rest of the row');
+    PERFORM _assert((SELECT prosecdef AND provolatile = 's' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                       FROM pg_proc WHERE oid = 'feature_suppression_reason(uuid)'::regprocedure)
+                    AND has_function_privilege('scrbrd_app', 'feature_suppression_reason(uuid)'::regprocedure, 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                     WHERE p.oid = 'feature_suppression_reason(uuid)'::regprocedure
+                                       AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+      '§79 (doors): feature_suppression_reason is not a stable definer for scrbrd_app alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 79
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

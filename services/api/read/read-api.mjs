@@ -2110,11 +2110,15 @@ export const READ_QUERIES = {
    * three different conversations, and an administrator staring at one boolean
    * cannot tell which they are in.
    *
-   * Readable by anyone signed in, like feature_flag itself. What the product
-   * offers and whether a school has it is not a secret from that school —
-   * the suppression rows name people, and naming somebody a module was hidden
-   * from discloses nothing about them that the person who hid it did not
-   * already know.
+   * The switches are readable by anyone signed in, like feature_flag itself:
+   * what the product offers and whether a school has it is not a secret from
+   * that school. WHO a module was hidden from is. A row naming a person says
+   * a school administrator decided something about him, often for a reason
+   * that must not travel (db/102), so the named rows are read only by a
+   * holder of school.feature.manage at that school and by the person named.
+   * `people_hidden` is therefore the managers' number: to anybody else it is
+   * null, not the count of the rows row security happens to show them (his
+   * own, or none), which would read as "hidden from nobody".
    */
   module_settings: {
     text: `select f.key, f.kind, f.label, f.enabled as platform_default,
@@ -2127,10 +2131,12 @@ export const READ_QUERIES = {
                            where s.key = f.key and s.school_id = $1
                              and s.person_id is null
                              and s.lifted_at is null)          as school_hidden,
-                  (select count(*)::int from feature_suppression s
-                    where s.key = f.key and s.school_id = $1
-                      and s.person_id is not null
-                      and s.lifted_at is null)                 as people_hidden,
+                  case when app_can('school.feature.manage', $1::uuid, null, null, null)
+                       then (select count(*)::int from feature_suppression s
+                              where s.key = f.key and s.school_id = $1
+                                and s.person_id is not null
+                                and s.lifted_at is null)
+                  end                                          as people_hidden,
                   feature_enabled(f.key, $1::uuid, null)       as resolved
              from feature_flag f
              left join feature_grant g on g.key = f.key and g.school_id = $1
@@ -2145,10 +2151,16 @@ export const READ_QUERIES = {
    * settings screen is a list of switches — folding them together would mean
    * every render of the switch list carried every person any module was ever
    * hidden from.
+   *
+   * Row security decides who reads a named row (db/102): the school's
+   * managers, and the person named, who reads that the module is hidden from
+   * him but not why. The reason is not a column the application may select;
+   * feature_suppression_reason() hands it to whoever may read it, and gives
+   * the named person null.
    */
   module_suppressions: {
     text: `select s.key, s.school_id, s.person_id, u.name as person_name,
-                  s.reason, s.hidden_at
+                  feature_suppression_reason(s.id) as reason, s.hidden_at
              from feature_suppression s
              left join app_user u on u.id = s.person_id
             where s.school_id = $1
