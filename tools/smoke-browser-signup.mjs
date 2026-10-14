@@ -33,6 +33,14 @@
  *      Google sign-in is that account. A second claim is answered with a code
  *      instead, shown once.
  *   5. No page errors; both themes on the new screens.
+ *   6. THE STAFF REGISTER (phase 2, db/92–93). The office, in a browser: the template, a Check with
+ *      problems in words (a coach with no side, a parent in the list, a warning to tick), Import only
+ *      once ticked, Withdraw after a confirm, one person by the form, "Clear N expired rows". A listed
+ *      person signs in with Google, chooses the school and is told so, with no second sign-in; People
+ *      says where the appointments came from. An unlisted person, and one whose uploader has left,
+ *      read the same ordinary form and nothing of any list; the second is told plainly the request is
+ *      already with the office. A paused account is told it can't ask yet, never why, and the DSO lifts
+ *      the pause from the notice; the same account is then claimed in. 12px and 44px throughout.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-browser-signup.mjs
@@ -47,7 +55,8 @@ import { readFile, readdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
 import { generateKeyPairSync, createSign } from "node:crypto";
-import { appUrl, port } from "./db-url.mjs";
+import pg from "pg";
+import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { SIGNIN_NOTICE } from "../apps/web/src/lib/signinNotice.js";
 
 const WEB_PORT = port(4385);
@@ -487,6 +496,265 @@ try {
     ok(`${scheme}: the no-school screen holds the floors`, b.small.length === 0 && b.tiny.length === 0, [...b.small, ...b.tiny].join(" | "));
     ok(`${scheme}: no page errors`, h.errors.length === 0, h.errors.join(" | "));
     await h.ctx.close();
+  }
+  // ── 6 · The staff register ──────────────────────────────────────
+  group("6. The staff register: the office lists (Check, tick, Import, Withdraw, Clear); a listed person signs in and is in; an unlisted one is asked for a request; a pause is lifted by the DSO");
+  {
+    const WHY = "Left the school at the end of term.";
+    const HEADER = "name,email,role,team_code,valid_until";
+    const LISTED = `walk.listed.${RUN}@example.invalid`;
+    const ENDED = `walk.ended.${RUN}@example.invalid`;
+    const FORMED = `walk.form.${RUN}@example.invalid`;
+    const LATE = `walk.late.${RUN}@example.invalid`;
+    const UNLISTED = `walk.unlisted.${RUN}@example.invalid`;
+    const ASKER = `walk.asker.${RUN}@example.invalid`;
+    const OFF2 = `walk.office.${RUN}@example.invalid`;
+    const login = (email) => call("/api/auth/dev-login", { method: "POST", body: { email, deviceId: `device-register-${email.slice(0, 12)}` } }).then((r) => r.body?.token);
+    const head = await login("principal@example.invalid");
+    ok("(setup) the principal signs in", !!head);
+
+    // Set-up through the API: a scorer who has since been ended (the twelve-month warning), and an
+    // uploader who has since left (a claim that can only be requested).
+    const enrolled = await call("/api/users", { method: "POST", token: office, body: { email: ENDED, name: "Walk Ended", role: "scorer", schoolId: HIL } });
+    const ended = await call(`/api/assignments/${enrolled.body?.assignmentId}/end`, { method: "POST", token: office, body: { reason: WHY } });
+    ok("(setup) a scorer is enrolled, then ended", enrolled.status === 200 && ended.status === 200, [enrolled.body, ended.body]);
+    const off2 = await call("/api/users", { method: "POST", token: head, body: { email: OFF2, name: "Walk Office", role: "schooladmin", schoolId: HIL } });
+    const office2 = await login(OFF2);
+    const lateUp = await call(`/api/register/${HIL}`, { method: "POST", token: office2, body: { rows: [{ name: "Walk Late", email: LATE, role: "scorer" }], commit: true } });
+    const off2End = await call(`/api/assignments/${off2.body?.assignmentId}/end`, { method: "POST", token: head, body: { reason: WHY } });
+    ok("(setup) a second office lists a scorer, then leaves", lateUp.body?.committed === true && off2End.status === 200, [lateUp.body, off2End.body]);
+
+    // ── The office, in a browser ──
+    const o = await open({ viewport: DESK });
+    ok("the office signs in", await devSignIn(o, "registrar@example.invalid"));
+    ok("Settings → Import opens", await settingsTab(o.page, "import"));
+    await o.page.waitForSelector('[data-testid="register-panel"]', { timeout: 6000 }).catch(() => {});
+    const P = o.page;
+    ok("the Staff register is on the Import tab", (await tid(P, "register-panel").count()) === 1);
+    ok("...with the rule above it, word for word", sentence(await tid(P, "register-rule").innerText()) === "Adults who work at the school. Never a pupil, never a parent.");
+
+    const [dl] = await Promise.all([P.waitForEvent("download", { timeout: 6000 }), tid(P, "register-template").click()]);
+    const template = await readFile(await dl.path(), "utf8");
+    ok("the template downloads with the register's columns and made-up people", template.split("\n")[0] === HEADER && /@school\.invalid/.test(template), template);
+
+    const BAD = [HEADER, `Walk Listed,${LISTED},scorer,,`, `Walk Listed,${LISTED},coach,,`, `Walk Parent,parent.row.${RUN}@example.invalid,guardian,,`, `Walk Ended,${ENDED},scorer,,`, ""].join("\n");
+    await tid(P, "register-file").setInputFiles({ name: "staff.csv", mimeType: "text/csv", buffer: Buffer.from(BAD) });
+    ok("Import is off before a Check", await tid(P, "register-import").isDisabled());
+    await tid(P, "register-check").click();
+    await P.waitForSelector('[data-testid="register-report"]', { timeout: 8000 }).catch(() => {});
+    ok("a Check with problems says how many and that nothing was listed", /^2 rows to fix\. Nothing was listed\.$/.test(sentence(await tid(P, "register-summary").innerText().catch(() => ""))), await tid(P, "register-summary").innerText().catch(() => ""));
+    const l3 = sentence(await tid(P, "register-line-3").innerText().catch(() => ""));
+    const l4 = sentence(await tid(P, "register-line-4").innerText().catch(() => ""));
+    ok("a coach with no side: 'Row 3: a coach needs a side.', beside her name", /Row 3: a coach needs a side\./.test(l3) && /Walk Listed/.test(l3), l3);
+    ok("a parent in the list: said where parents are linked, and 'Walk Parent' beside it", /Row 4: a parent is linked by the office from a request, never from a list\./.test(l4) && /Walk Parent/.test(l4), l4);
+    ok("the recently ended person comes back as a warning to tick", (await tid(P, "register-warning-5").count()) === 1 && /Ended .* List anyway\?/.test(sentence(await tid(P, "register-line-5").innerText())), sentence(await tid(P, "register-line-5").innerText().catch(() => "")));
+    ok("...and Import stays off", await tid(P, "register-import").isDisabled());
+    const flc = await floors(P, '[data-testid="register-panel"]');
+    ok("the register with a report: nothing under 12px, nothing under 44px (desktop)", flc.small.length === 0 && flc.tiny.length === 0, [...flc.small, ...flc.tiny].join(" | "));
+
+    const GOOD = [HEADER, `Walk Listed,${LISTED},scorer,,`, `Walk Listed,${LISTED},coach,U14A,`, `Walk Ended,${ENDED},scorer,,`, ""].join("\n");
+    await tid(P, "register-file").setInputFiles({ name: "staff.csv", mimeType: "text/csv", buffer: Buffer.from(GOOD) });
+    ok("choosing another file drops the old report", (await tid(P, "register-report").count()) === 0 && await tid(P, "register-import").isDisabled());
+    await tid(P, "register-check").click();
+    await P.waitForSelector('[data-testid="register-report"]', { timeout: 8000 }).catch(() => {});
+    ok("the corrected file asks for the warning to be ticked", /Tick the warning/.test(await tid(P, "register-summary").innerText().catch(() => "")), await tid(P, "register-summary").innerText().catch(() => ""));
+    ok("...Import is off until it is", await tid(P, "register-import").isDisabled());
+    await tid(P, "register-warning-4").check();
+    ok("ticked: the Check reads clean and Import is offered", /^3 rows clean\./.test(sentence(await tid(P, "register-summary").innerText())) && !(await tid(P, "register-import").isDisabled()), await tid(P, "register-summary").innerText());
+    await tid(P, "register-import").click();
+    await P.waitForSelector('[data-testid="register-result"]', { timeout: 8000 }).catch(() => {});
+    ok("Import lists them, in words", /^3 people listed\. They join by signing in with Google/.test(sentence(await tid(P, "register-result").innerText().catch(() => ""))), await tid(P, "register-result").innerText().catch(() => ""));
+
+    // The list.
+    await P.waitForTimeout(800);
+    const rowOf = (email) => P.locator('li[data-testid^="register-row-"]', { hasText: email });
+    ok("the open list shows both of Walk Listed's rows, with their states in words", (await rowOf(LISTED).count()) === 2 && /Open until \d{1,2} [A-Z][a-z]{2}/.test(await rowOf(LISTED).first().innerText()), await rowOf(LISTED).first().innerText().catch(() => ""));
+    ok("...and who listed them and when", /Listed by .* on \d{1,2} [A-Z][a-z]{2}/.test(await rowOf(LISTED).first().innerText()));
+    ok("...the side beside the coach", /Coach \(U14A\)/.test(await rowOf(LISTED).nth(0).innerText() + await rowOf(LISTED).nth(1).innerText()));
+
+    // Withdraw, with a confirm in words.
+    await rowOf(ENDED).locator('[data-testid="register-withdraw"]').click();
+    ok("Withdraw asks first, in words", /Take Walk Ended off the register\?/.test(await rowOf(ENDED).innerText()) && /Nobody is told/.test(await rowOf(ENDED).innerText()));
+    await rowOf(ENDED).locator('[data-testid="register-withdraw-cancel"]').click();
+    ok("Keep keeps it", (await rowOf(ENDED).count()) === 1 && (await rowOf(ENDED).locator('[data-testid="register-withdraw-confirm"]').count()) === 0);
+    await rowOf(ENDED).locator('[data-testid="register-withdraw"]').click();
+    await rowOf(ENDED).locator('[data-testid="register-withdraw-confirm"]').click();
+    await P.waitForSelector('[data-testid="register-withdrawn"]', { timeout: 6000 }).catch(() => {});
+    ok("withdrawn: said in words, and gone from the open list", /Withdrawn: Walk Ended is off the register\./.test(await tid(P, "register-withdrawn").innerText().catch(() => "")) && (await rowOf(ENDED).count()) === 0);
+    await tid(P, "register-filter-withdrawn").click();
+    await P.waitForTimeout(700);
+    ok("...and on the Withdrawn list, 'Withdrawn <day> by <name>'", /Withdrawn \d{1,2} [A-Z][a-z]{2} by /.test(await rowOf(ENDED).innerText().catch(() => "")), await rowOf(ENDED).innerText().catch(() => ""));
+    await tid(P, "register-filter-open").click();
+
+    // One person, by the form.
+    await tid(P, "register-mode-person").click();
+    ok("the form offers no parent, pupil, safeguarding officer or physio", await P.$$eval("#register-role option", (os) => os.map((o) => o.value).filter((v) => /^(guardian|player|selfaccess|enquiry|dso|medical|superadmin|platformadmin)$/.test(v))).then((a) => a.length === 0));
+    ok("...a coach is offered", await P.$$eval("#register-role option", (os) => os.some((o) => o.value === "coach")));
+    ok("the side is asked only once a coach is chosen", (await tid(P, "register-team").count()) === 0);
+    await tid(P, "register-name").fill("Walk Form");
+    await tid(P, "register-email").fill(FORMED);
+    await tid(P, "register-role").selectOption("coach");
+    ok("...and then it is", (await tid(P, "register-team").count()) === 1);
+    await tid(P, "register-check").click();
+    await P.waitForTimeout(300);
+    ok("a coach with no side is stopped at the form, in words", /A coach needs a side\./.test(await tid(P, "register-problem").innerText().catch(() => "")), await tid(P, "register-problem").innerText().catch(() => ""));
+    await tid(P, "register-team").selectOption({ index: 1 });
+    await tid(P, "register-check").click();
+    await P.waitForSelector('[data-testid="register-report"]', { timeout: 8000 }).catch(() => {});
+    ok("one person checks clean", /^1 row clean\./.test(sentence(await tid(P, "register-summary").innerText().catch(() => ""))), await tid(P, "register-summary").innerText().catch(() => ""));
+    await tid(P, "register-import").click();
+    await P.waitForSelector('[data-testid="register-result"]', { timeout: 8000 }).catch(() => {});
+    ok("...and is listed", /^1 person listed\./.test(sentence(await tid(P, "register-result").innerText().catch(() => ""))) && (await rowOf(FORMED).count()) === 1);
+    await tid(P, "register-mode-file").click();
+
+    await P.setViewportSize(PHONE);
+    await P.waitForTimeout(500);
+    const fp = await floors(P, '[data-testid="register-panel"]');
+    ok("the register at 390 wide: nothing under 12px, nothing under 44px", fp.small.length === 0 && fp.tiny.length === 0, [...fp.small, ...fp.tiny].join(" | "));
+    ok("...and no sideways scroll", (await P.evaluate(() => document.documentElement.scrollWidth)) <= 390, await P.evaluate(() => document.documentElement.scrollWidth));
+    await P.setViewportSize(DESK);
+
+    // ── A listed person signs in ──
+    const LIST_UID = `walkb-listed-${RUN}`;
+    const L = await open({ viewport: PHONE });
+    await toLogin(L);
+    await google(L, idToken(LIST_UID, LISTED), 2500);
+    await L.page.waitForSelector('[data-testid="join-school"]', { timeout: 6000 }).catch(() => {});
+    await tid(L.page, `join-school-${HIL}`).click();
+    await tid(L.page, "join-kind-staff").click();
+    await L.page.waitForSelector('[data-testid="join-claimed"]', { timeout: 8000 }).catch(() => {});
+    const said = sentence(await tid(L.page, "join-claimed").innerText().catch(() => ""));
+    ok("a listed person is told so: 'You're in. The office listed you as …', both roles", /^You're in\. The office listed you as /.test(said) && /Scorer/.test(said) && /Coach \(U14A\)/.test(said), said);
+    ok("...and is asked for no request", (await tid(L.page, "join-form-staff").count()) === 0 && (await tid(L.page, "join-send").count()) === 0);
+    const fj = await floors(L.page, '[data-testid="join-school"]');
+    ok("the claimed block: nothing under 12px, nothing under 44px", fj.small.length === 0 && fj.tiny.length === 0, [...fj.small, ...fj.tiny].join(" | "));
+    await tid(L.page, "join-claimed-continue").click();
+    await L.page.waitForTimeout(2200);
+    ok("Open the school enters the school, with no second sign-in", await inShell(L.page), (await text(L.page)).slice(0, 120));
+    ok("no page errors on the join screen", L.errors.length === 0, L.errors.join(" | "));
+    await L.ctx.close();
+
+    // The office sees the join, on People and in the register.
+    ok("Management opens", await go(P, "management"));
+    await tid(P, "mgmt-tab-users").click().catch(() => {});
+    await P.waitForSelector('[data-testid="people-search"]', { timeout: 6000 }).catch(() => {});
+    await tid(P, "people-search").fill(LISTED);
+    await P.waitForTimeout(1500);
+    ok("People says where the appointments came from, beside End role", (await P.locator('[data-testid="role-origin"]', { hasText: "From the staff register, listed" }).count()) >= 2 && (await P.locator('[data-testid="end-role"]').count()) >= 2, (await P.locator('[data-testid="role-origin"]').count()));
+    ok("Settings → Import opens again", await settingsTab(P, "import"));
+    await P.waitForSelector('[data-testid="register-panel"]', { timeout: 6000 }).catch(() => {});
+    await tid(P, "register-filter-claimed").click();
+    await P.waitForTimeout(800);
+    ok("the Claimed list says 'Joined <day>'", /Joined \d{1,2} [A-Z][a-z]{2}/.test(await rowOf(LISTED).first().innerText().catch(() => "")), await rowOf(LISTED).first().innerText().catch(() => ""));
+
+    // ── Somebody the office did not list ──
+    const U = await open({ viewport: PHONE });
+    await toLogin(U);
+    await google(U, idToken(`walkb-unlisted-${RUN}`, UNLISTED), 2500);
+    await U.page.waitForSelector('[data-testid="join-school"]', { timeout: 6000 }).catch(() => {});
+    await tid(U.page, `join-school-${HIL}`).click();
+    await tid(U.page, "join-kind-staff").click();
+    await U.page.waitForSelector('[data-testid="join-form-staff"]', { timeout: 8000 }).catch(() => {});
+    ok("an unlisted person gets the ordinary request form", (await tid(U.page, "join-form-staff").count()) === 1 && (await tid(U.page, "join-claimed").count()) === 0);
+    ok("...and the screen says nothing of any list", !/listed|register|staff list/i.test(await tid(U.page, "join-school").innerText()), (await tid(U.page, "join-school").innerText()).match(/listed|register|staff list/i)?.[0]);
+    await U.ctx.close();
+
+    // A person whose uploader has since left: the claim grants nothing and says nothing; the request is already with the office.
+    const LATE_UID = `walkb-late-${RUN}`;
+    const T = await open({ viewport: PHONE });
+    await toLogin(T);
+    await google(T, idToken(LATE_UID, LATE), 2500);
+    await T.page.waitForSelector('[data-testid="join-school"]', { timeout: 6000 }).catch(() => {});
+    await tid(T.page, `join-school-${HIL}`).click();
+    await tid(T.page, "join-kind-staff").click();
+    await T.page.waitForSelector('[data-testid="join-form-staff"]', { timeout: 8000 }).catch(() => {});
+    ok("a claim that grants nothing reads exactly as an unlisted person's: the form, no words", (await tid(T.page, "join-form-staff").count()) === 1 && (await tid(T.page, "join-claimed").count()) === 0 && !/listed|register|staff list/i.test(await tid(T.page, "join-school").innerText()));
+    await tid(T.page, "join-staff-role").selectOption("scorer");
+    await tid(T.page, "join-send").click();
+    await T.page.waitForSelector('[data-testid="join-problem"]', { timeout: 6000 }).catch(() => {});
+    const pend = sentence(await tid(T.page, "join-problem").innerText().catch(() => ""));
+    ok("sending it again: 'already with the school office', plainly", /Your request is already with the school office\./.test(pend) && !/_/.test(pend), pend);
+    await T.ctx.close();
+    await tid(P, "register-filter-open").click();
+    await tid(P, "register-filter-claimed").click();
+    await P.waitForTimeout(800);
+    ok("the office's Claimed list says why it was only requested", /Requested instead — the uploader may no longer grant Scorer here/.test(await rowOf(LATE).first().innerText().catch(() => "")), await rowOf(LATE).first().innerText().catch(() => ""));
+
+    // ── A pause, and the DSO ──
+    const ASK_UID = `walkb-asker-${RUN}`;
+    const askerIn = await exchange(idToken(ASK_UID, ASKER));
+    const asker = askerIn.body?.token;
+    let declined = 0;
+    for (let i = 0; i < 3; i++) {
+      const r = await call("/api/requests", { method: "POST", token: asker, body: { role: "guardian", schoolId: HIL, note: "For a test child" } });
+      const d = await call(`/api/requests/${r.body?.id}/decide`, { method: "POST", token: office, body: { grant: false } });
+      if (d.status === 200 && d.body?.state === "declined") declined++;
+    }
+    const up = await call(`/api/register/${HIL}`, { method: "POST", token: office, body: { rows: [{ name: "Walk Asker", email: ASKER, role: "scorer" }], commit: true } });
+    ok("(setup) three requests declined and a row listed for the same account", declined === 3 && up.body?.committed === true, [declined, up.body]);
+
+    const A = await open({ viewport: PHONE });
+    await toLogin(A);
+    await google(A, idToken(ASK_UID, ASKER), 2500);
+    await A.page.waitForSelector('[data-testid="join-school"]', { timeout: 6000 }).catch(() => {});
+    await tid(A.page, `join-school-${HIL}`).click();
+    await tid(A.page, "join-kind-staff").click();
+    await A.page.waitForSelector('[data-testid="join-cooldown"]', { timeout: 8000 }).catch(() => {});
+    const cool = sentence(await tid(A.page, "join-cooldown").innerText().catch(() => ""));
+    ok("a paused account is told plainly: can't ask yet, the school's safeguarding lead can lift it", /can't send a request yet/.test(cool) && /safeguarding lead can lift/.test(cool), cool);
+    ok("...never why, never who", !/declin|parent|child|guardian|claim|repeated|three|Walk/i.test(cool), cool);
+    ok("...and no form to send it from", (await tid(A.page, "join-send").count()) === 0 && (await tid(A.page, "join-form-staff").count()) === 0);
+    await tid(A.page, "join-kind-parent").click();
+    await tid(A.page, "join-child").fill("A Test Child");
+    await tid(A.page, "join-relationship").selectOption("Mother");
+    await tid(A.page, "join-send").click();
+    await A.page.waitForSelector('[data-testid="join-problem"]', { timeout: 6000 }).catch(() => {});
+    ok("a request from the form says the same sentence", sentence(await tid(A.page, "join-problem").innerText().catch(() => "")) === cool, await tid(A.page, "join-problem").innerText().catch(() => ""));
+
+    const D = await open({ viewport: DESK });
+    ok("the DSO signs in", await devSignIn(D, "dso@example.invalid"));
+    ok("Notifications opens", await go(D.page, "notifications"));
+    await D.page.waitForTimeout(1500);
+    const notice = D.page.locator('[data-testid="notice-row"]', { hasText: "An account has been paused from asking" }).first();
+    ok("the DSO is told of the pause", (await notice.count()) === 1);
+    await notice.locator('[data-testid="notice-open"]').click();
+    await D.page.waitForTimeout(1200);
+    ok("the notice names nobody", !/Walk|@/.test(await notice.innerText()), await notice.innerText());
+    ok("...and carries 'Lift the pause'", (await notice.locator('[data-testid="pause-lift-open"]').count()) === 1);
+    await notice.locator('[data-testid="pause-lift-open"]').click();
+    const fd = await floors(D.page, '[data-testid="notice-row"]');
+    ok("the lift form: nothing under 12px, nothing under 44px", fd.small.length === 0 && fd.tiny.length === 0, [...fd.small, ...fd.tiny].join(" | "));
+    await notice.locator('[data-testid="pause-lift-note"]').fill("Spoke to the family.");
+    await notice.locator('[data-testid="pause-lift-confirm"]').click();
+    await D.page.waitForSelector('[data-testid="pause-lifted"]', { timeout: 6000 }).catch(() => {});
+    ok("lifted, in words", /The pause is lifted\./.test(await notice.locator('[data-testid="pause-lifted"]').innerText().catch(() => "")));
+
+    // The asker, once lifted, is claimed in.
+    await tid(A.page, "join-kind-follower").click();
+    await tid(A.page, "join-kind-staff").click();
+    await A.page.waitForSelector('[data-testid="join-claimed"]', { timeout: 8000 }).catch(() => {});
+    ok("after the lift, the same account is claimed in", /^You're in\. The office listed you as Scorer\./.test(sentence(await tid(A.page, "join-claimed").innerText().catch(() => ""))), await tid(A.page, "join-claimed").innerText().catch(() => ""));
+
+    // ── Clear what has expired ──
+    const pool = new pg.Pool({ connectionString: ownerUrl() });
+    try { await pool.query(`update school_register set withdrawn_at = now() - interval '91 days' where lower(email) = lower($1) and withdrawn_at is not null`, [ENDED]); }
+    finally { await pool.end().catch(() => {}); }
+    await settingsTab(P, "me");
+    ok("Settings → Import opens for the office again", await settingsTab(P, "import"));
+    await P.waitForSelector('[data-testid="register-clear"]', { timeout: 6000 }).catch(() => {});
+    ok("'Clear N expired rows' is offered once rows are due", /^Clear \d+ expired rows?$/.test(sentence(await tid(P, "register-clear").innerText().catch(() => ""))), await tid(P, "register-clear").innerText().catch(() => ""));
+    await tid(P, "register-clear").click();
+    ok("it says what it does before it does it", /name and email/.test(await tid(P, "register-clear-section").innerText()) && /cannot be undone/.test(await tid(P, "register-clear-section").innerText()));
+    await tid(P, "register-clear-confirm").click();
+    await P.waitForSelector('[data-testid="register-cleared"]', { timeout: 6000 }).catch(() => {});
+    ok("cleared, in words", /^Cleared \d+ rows?\.$/.test(sentence(await tid(P, "register-cleared").innerText().catch(() => ""))), await tid(P, "register-cleared").innerText().catch(() => ""));
+    await tid(P, "register-filter-withdrawn").click();
+    await P.waitForTimeout(800);
+    ok("...and the withdrawn row no longer carries a name or an address", (await rowOf(ENDED).count()) === 0 && /Name cleared/.test(await tid(P, "register-list").innerText().catch(() => "")));
+
+    ok("no page errors on the office's screens", o.errors.length === 0, o.errors.join(" | "));
+    ok("no page errors on the DSO's or the paused account's", D.errors.length + A.errors.length === 0, [...D.errors, ...A.errors].join(" | "));
+    await o.ctx.close(); await D.ctx.close(); await A.ctx.close();
   }
 } catch (e) {
   fail++;

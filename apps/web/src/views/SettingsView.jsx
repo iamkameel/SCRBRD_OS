@@ -18,6 +18,7 @@ import { SupportAccessPanel } from "./support.jsx";
 import { DlsTablesPanel } from "./dlsTables.jsx";
 // Settings → Import: a spreadsheet of boys, checked, then imported (services/api/io/import-api.mjs).
 import { ImportPanel, canImport } from "./importer.jsx";
+import { StaffRegisterPanel, canSeeRegister } from "./staffRegister.jsx";
 // The enrolment form, its words and the one-time code card are shared with the
 // Management screen (views/enrol.jsx): one form, one set of refusals in words.
 import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, grantableFor, issuedFrom } from "./enrol.jsx";
@@ -65,7 +66,7 @@ const TABS = [
   { id: "school",   label: "School",   hint: "What is on record for each school" },
   { id: "upgrades", label: "Roadmap",  hint: "Built, built underneath, planned" },
   // Drawn for a role that holds an import kind's capability (views/importer.jsx canImport).
-  { id: "import",   label: "Import",   hint: "Bring a spreadsheet in, checked first", offeredTo: canImport },
+  { id: "import",   label: "Import",   hint: "Bring a spreadsheet in, checked first", offeredTo: (r) => canImport(r) || canSeeRegister(r) },
   // The platform side of support access (support.jsx); drawn only for a holder.
   { id: "support",  label: "Support",  hint: "Reach one school, for an hour, on the record", cap: "platform.support.impersonate" },
   // SCRBRD-130 R2: the DLS resource table (dlsTables.jsx); platform reference data.
@@ -291,7 +292,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "passport" && <PassportTab role={role}/>}
         {tab === "school"   && <SchoolTab role={role} users={users} players={PLAYERS} staff={STAFF} coaches={COACHES} canAudit={canAudit}/>}
         {tab === "upgrades" && <RoadmapTab/>}
-        {tab === "import"   && <ImportPanel role={role}/>}
+        {tab === "import"   && <><ImportPanel role={role}/><StaffRegisterPanel role={role}/></>}
         {tab === "support"  && <SupportAccessPanel role={role}/>}
         {tab === "dls"      && <DlsTablesPanel role={role}/>}
       </div>

@@ -31,12 +31,13 @@
  *
  * Both outputs are generated and git-ignored. This file is the source.
  */
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { projectObjects, teardownSql } from "./reset-objects.mjs";
+import { migrationFiles } from "../services/api/migration-names.mjs";
 
 // Relative to this file, not a hard-coded checkout: run from a worktree or a
 // clone elsewhere, a fixed path silently bundled a DIFFERENT tree's db/.
@@ -57,7 +58,7 @@ const noteSql = COMMIT ? `'${COMMIT}'` : "NULL";
 // anything if somebody else's object depends on one of ours.
 const teardown = teardownSql(projectObjects(DB));
 
-const migrations = readdirSync(DB).filter(f => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
+const migrations = migrationFiles(DB);
 
 // ── --apply NN: one migration, for a database that already has the rest ──
 //
@@ -288,6 +289,23 @@ SELECT
   -- These rows look their objects up with to_regprocedure()/to_regclass(), so a
   -- database without the migration reads PROBLEM here instead of failing the
   -- whole check (a ::regprocedure cast is resolved before anything runs).
+  -- db/92: the staff register is read and written through its functions
+  -- alone, and grants through the one door decide_role_request() uses.
+  CASE WHEN to_regclass('school_register') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('school_register'))
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('school_register'), 'SELECT')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('register_claim(uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'), 'EXECUTE')
+        AND position('role_request_grant_as(' IN (SELECT prosrc FROM pg_proc
+                      WHERE oid = to_regprocedure('decide_role_request(uuid,boolean,text,uuid,text)'))) > 0
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Staff register is the office's",
+  -- db/93: a declined parent claim tells the DSO; repeated ones pause the asker.
+  CASE WHEN to_regclass('request_cooldown') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_request_declined_notice' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_request_cooldown' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'pending_claim_declined_notice' AND tgenabled = 'O')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('request_cooldown_lift(uuid,text)'), 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Declined parent claims reach the DSO",
   -- db/94: a boy's overs today across every match, to whoever may read his
   -- load and nobody else (SCRBRD-136/137 phase B §1).
   CASE WHEN to_regprocedure('bowler_day(date,text)') IS NOT NULL

@@ -26,12 +26,12 @@
  * schema closes that, and the rule above still stands: neither reset ever
  * runs against a database holding a real record.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { migrationFiles } from "../services/api/migration-names.mjs";
 
 /** The migrations, as tools/migrate.mjs selects them. */
-export const migrationFiles = (/** @type {string} */ dbDir) =>
-  readdirSync(dbDir).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
+export { migrationFiles };
 
 // An identifier, optionally schema-qualified, quoted or bare.
 const ID = String.raw`((?:"[^"]+"|[A-Za-z_][\w$]*)(?:\s*\.\s*(?:"[^"]+"|[A-Za-z_][\w$]*))?)`;

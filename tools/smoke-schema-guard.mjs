@@ -105,7 +105,7 @@ try {
       ok("scrbrd_app reads every applied name through schema_migrations_applied()",
          names.rows.length === ledgerCount && ledgerCount > 0, `${names.rows.length} vs ${ledgerCount}`);
       ok("…names only: no hash, no note", Object.keys(names.rows[0] ?? {}).join() === "name"
-         && names.rows.every((r) => /^\d\d_.*\.sql$/.test(r.name)));
+         && names.rows.every((r) => /^\d{2,3}_.*\.sql$/.test(r.name)));
     } finally { await app.end(); }
   }
 

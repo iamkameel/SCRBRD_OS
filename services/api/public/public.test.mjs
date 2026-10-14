@@ -17,7 +17,7 @@
 // tools/smoke-public.mjs and tools/smoke-browser-public.mjs; the SQL is held
 // by db/99 section 37 and by packages/policy/test/public.test.mjs.
 import { createServer } from "node:http";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -30,6 +30,7 @@ import {
 } from "./public-api.mjs";
 import { publicationRoutes } from "../write/publication-api.mjs";
 import { signToken } from "../auth/auth.mjs";
+import { migrationFiles } from "../migration-names.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 let passes = 0, fails = 0;
@@ -126,7 +127,7 @@ LOG.push(at({ ...sealInnings(sealed, "overs_complete") }));
 // The definition that runs: the last file that makes it (db/59's, then
 // db/63's, which serves an innings_summary's card, SCRBRD-120; then db/71's,
 // which serves a super over's marker, SCRBRD-114 phase 3b).
-const LOG_FILE = readdirSync(join(ROOT, "db")).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort()
+const LOG_FILE = migrationFiles(join(ROOT, "db"))
   .filter((f) => readFileSync(join(ROOT, "db", f), "utf8").includes("CREATE OR REPLACE FUNCTION public_match_log")).pop() ?? "";
 const SQL = readFileSync(join(ROOT, "db", LOG_FILE), "utf8");
 const logBody = SQL.slice(SQL.indexOf("CREATE OR REPLACE FUNCTION public_match_log"), SQL.indexOf("REVOKE ALL ON FUNCTION public_match_log"));

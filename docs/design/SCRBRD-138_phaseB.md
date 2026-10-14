@@ -1,6 +1,6 @@
 # SCRBRD-138 phase B — The plan to the side: the design
 
-**Status:** for Kameel's review, 2026-10-13. Nothing of phase B is built. Phase A (C1–C5) is built and shipped with no migration (`apps/web/src/lib/captain.js:59`, `apps/web/src/views/family/captain.jsx:68`, `:117`, `apps/web/src/views/matchcentre/captainTab.jsx:80`).
+**Status:** decided (Kameel, 2026-10-14: "Approve all seven as recommended"). Merged as #136 on 2026-10-14. Nothing built; building starts when a wave 1 lane frees (from 16 October).
 **Source:** `docs/design/SCRBRD-138_captains_view.md` (§3.2 C1, §3.3 C2, §5.2, §9 phase B, D5, D6, A3; the lead's note at line 8); `db/12_news.sql`; `db/91_notification_one_stream.sql`; `db/57_safeguarding_dso.sql` (SG-9's trigger); `docs/policy/CSA_SAFEGUARDING_CHECK.md` SG-9, SG-10, K3; `docs/design/SAFEGUARDING_DSO.md` §1, §4.4, §9.1; `docs/design/STEP4_parent_pupil.md` §1.2, §2.2, §3.3; `docs/policy/PUBLIC_DATA.md` §3, §5a; ADR 0003; `packages/policy/src/roles.mjs` 250–335; `services/api/ai/ai-service.mjs`.
 **Reader:** the product owner first; then the Opus agent who builds the migration, the route and the filter, and the Sonnet agent who builds the composer and the block. Plain words come first in each section. Names in the sketches are the seed's illustrative ones (Hilton, Kearsney, D Erasmus, R Pillay, K Naidoo, Mr Dlamini), never a real child's.
 **Scope:** phase B only. Phase C (a server-side `is_captain_of()`, a captain's note to the side) is named only where phase B must leave room for it (§6).
@@ -24,13 +24,13 @@ must open the notice in Notices to report it. Opus decides in B3.
 
 ## What Kameel decides
 
-1. **PB-D1** · The plan is a `news_post` tagged to a fixture (`db/96` adds `fixture_id` and `kind`), not a table of its own. *Recommended: the post.*
-2. **PB-D3** · The audience is the side — everyone `news.read` reaches at that team: the side's boys (sheet or not), their guardians, the side's staff — never narrowed to the sheet or to the captain. *Recommended: the side.*
-3. **PB-D4** · Anyone holding `news.publish.team` at the side may write it (the coach; the team manager also holds it, `roles.mjs:291`); the design does not narrow to the coach by role. *Recommended: do not narrow.*
-4. **PB-D6** · The word list lives in `packages/policy` as code, maintained by PR; not a table, not per school. *Recommended: code.*
-5. **PB-D8** · The filter runs on the plan only in phase B, not on every team post. *Recommended: the plan only, for now.*
-6. **PB-D9** · The AI tone line is out of phase B. *Recommended: out.*
-7. **PB-D11** · The plan is kept and retained exactly as a post is; no rule of its own. *Recommended: the post's.*
+1. **PB-D1** · The plan is a `news_post` tagged to a fixture (`db/96` adds `fixture_id` and `kind`), not a table of its own. *Recommended: the post.* — **Decided: as recommended (2026-10-14).**
+2. **PB-D3** · The audience is the side — everyone `news.read` reaches at that team: the side's boys (sheet or not), their guardians, the side's staff — never narrowed to the sheet or to the captain. *Recommended: the side.* — **Decided: as recommended (2026-10-14).**
+3. **PB-D4** · Anyone holding `news.publish.team` at the side may write it (the coach; the team manager also holds it, `roles.mjs:291`); the design does not narrow to the coach by role. *Recommended: do not narrow.* — **Decided: as recommended (2026-10-14).**
+4. **PB-D6** · The word list lives in `packages/policy` as code, maintained by PR; not a table, not per school. *Recommended: code.* — **Decided: as recommended (2026-10-14).**
+5. **PB-D8** · The filter runs on the plan only in phase B, not on every team post. *Recommended: the plan only, for now.* — **Decided: as recommended (2026-10-14).**
+6. **PB-D9** · The AI tone line is out of phase B. *Recommended: out.* — **Decided: as recommended (2026-10-14).**
+7. **PB-D11** · The plan is kept and retained exactly as a post is; no rule of its own. *Recommended: the post's.* — **Decided: as recommended (2026-10-14).**
 
 ---
 

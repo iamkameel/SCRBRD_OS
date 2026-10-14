@@ -20,6 +20,7 @@
  */
 import { GRANTABLE_ROLES, ROLE_CAPABILITIES, roleGrants } from "@scrbrd/policy/roles";
 import { PLATFORM_ONLY } from "@scrbrd/policy/capabilities";
+import { registerOrigin } from "./staffRegister.js";
 
 /** "live" | "paused" | "upcoming" | "ended" for one appointment on `today` (YYYY-MM-DD). */
 export function roleState(a, today) {
@@ -37,7 +38,7 @@ export function endDayOf(a) {
 }
 
 /**
- * One entry per account: `{ ...user, roles: [{ key, role, team, state, endedOn, from }] }`.
+ * One entry per account: `{ ...user, roles: [{ key, role, team, state, endedOn, from, origin }] }`.
  *
  * `users` are the `users` read's rows, `assignments` the `assignments` read's.
  * An account the assignments read says nothing about (a reader who may see the
@@ -59,7 +60,8 @@ export function peopleWithRoles(users, assignments, today) {
     const held = by.get(u.id);
     const roles = held?.length
       ? held.map((a) => ({ key: a.id, role: a.role, team: a.team ?? null, school: a.school ?? null, state: roleState(a, today),
-                           endedOn: endDayOf(a), from: a.validFrom ?? null, until: a.validUntil ?? null }))
+                           endedOn: endDayOf(a), from: a.validFrom ?? null, until: a.validUntil ?? null,
+                           origin: registerOrigin(a.grantedNote) }))
       : [{ key: `${u.id}:${u.role}`, role: u.role, team: null, school: u.school ?? null, state: "live", endedOn: null, from: null, until: null }];
     // Array.prototype.sort is stable: the read's own order survives inside a rank.
     roles.sort((x, y) => rank[x.state] - rank[y.state]);

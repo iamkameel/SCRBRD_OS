@@ -6,6 +6,8 @@ is held privately. This repository is public, and the report cites exact lines f
 weaknesses that are not yet fixed, so it is not committed here. This file is the plan
 built from it. It is the record of what is open, what is scheduled and what is closed.
 
+**Status as of 14 October 2026.** The freeze lifted on 14 Oct. Open items join the build queue after wave 1 (the cockpit and register phase B builds).
+
 ## The decision
 
 SCRBRD_OS is the product and the system of record. scrbrd-beta-2 is a reference for
@@ -60,13 +62,13 @@ ticket takes a SCRBRD number, and that number is noted here.
 
 | GA | What | Tier | Status |
 |---|---|---|---|
-| I09–I11 | The match-day queue: readiness rows open the exact fixture and action; a multi-squad coach day queue; a director/admin operations home with owner and deadline | Fable design check (coach cockpit, SCRBRD-136/137), then Opus | design approved; slice A0 merged #78; A1 onwards pulled forward 8 Oct (was: after the pilot) |
+| I09–I11 | The match-day queue: readiness rows open the exact fixture and action; a multi-squad coach day queue; a director/admin operations home with owner and deadline | Fable design check (coach cockpit, SCRBRD-136/137), then Opus | design approved; A0 merged #78; A1 merged #108 |
 | I12 | Notification read receipts persist per person, and counts agree everywhere | Sonnet + Opus review | done · merged #97 (2026-10-08), db/89 live |
-| I13 | The scorer's preparation and resume home, with appointments | Opus | building (decision 4 recorded) |
+| I13 | The scorer's preparation and resume home, with appointments | Opus | done · merged #95 |
 | I14–I16 | Acceptance evidence on a real database: cross-school and child refusals, two-device offline scoring, the deployed revision, a backup restore | Opus | 13 of 18 covered, plus 9, 12, 14 closed by #99 (2026-10-08); 16 and 17 wait for the backup drill |
 | I17 | Push: a supported FCM token refresh, or "unavailable" stated plainly | Opus | open |
-| I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | in scope; design approved; slice 0 in review (#101); slice A waits on Q0 and Q2 |
-| I20 | The parent's action list per child | Fable (redesign step 4); design started 7 Oct | design approved; slice A0 merged #81; the rest after the pilot |
+| I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | in scope; design approved; slice 0 merged (#101); slice A waits on Q0 and Q2; #120 (readiness: clinical column null, not cleared) |
+| I20 | The parent's action list per child | Fable (redesign step 4); design started 7 Oct | design approved; A0 merged #81; A1 merged #106; the rest later |
 | I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | done · merged #91 and #98 (2026-10-08); "official" waits for the official result design's slice 1 |
 
 ## Phase C: enrich verified information (after the pilot)
@@ -83,10 +85,21 @@ GA-I22–I36:
 - grounds, transport and competition homes;
 - full-name chart tables;
 - the narrow-screen, keyboard and daylight pass;
-- lineage and correction refresh (GA-I36: A0+A1 in review, #102).
+- lineage and correction refresh (GA-I36: A0+A1 merged #102).
 
 Each one is built over existing reads, with its source, unit, window and denominator
 shown.
+
+| GA | What | Tier | Status |
+|---|---|---|---|
+| I22 | Panel-level source and scope | Sonnet, Opus review | done · merged #113 |
+| I23 | A real season trend | Sonnet, Opus review | slice 1 · merged #115 |
+| I24–I25 | The analyst workspace and two-player comparison | Fable design, then Opus | design approved 8 Oct · merged #118; not built |
+| I26a, I27, I29, I32 | Assessment history and the drill loop; evidence-linked coach cards; scenario controls; the narrow-screen, keyboard and daylight pass | Sonnet, Opus review | open |
+| I28 | Shot-wheel filtering | Sonnet, Opus review | done · merged #111 |
+| I30 | Grounds, transport and competition homes | Sonnet, Opus review | done · merged #122 |
+| I31 | Full-name chart tables; every chart gets "Show as table" and a spoken summary | Sonnet, Opus review | done · merged #121 |
+| I36 | Lineage and correction refresh | Fable design, then Opus | A0+A1 merged #102; #109 merged; A2 later |
 
 ## Phase D: only when evidence exists
 

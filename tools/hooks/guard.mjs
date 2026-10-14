@@ -52,20 +52,20 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // db/98 and db/99 are the seed and the RLS verifier, which tools/migrate.mjs
 // excludes from the ledger, so they are excluded here too.
 export const FROZEN_THROUGH = Math.max(-1, ...readFileSync(resolve(ROOT, "db", "SHIPPED.sha256"), "utf8")
-  .split("\n").map((l) => /\sdb\/(\d\d)_\S+\.sql\s*$/.exec(l)?.[1]).filter(Boolean).map(Number));
+  .split("\n").map((l) => /\sdb\/(\d{2,3})_\S+\.sql\s*$/.exec(l)?.[1]).filter(Boolean).map(Number));
 
 const isFrozen = (nn) => Number(nn) <= FROZEN_THROUGH && !/^9[89]$/.test(nn);
 
 /** The frozen migration a file path names, repo-relative, or null. */
 export function frozenPath(filePath) {
   const rel = relative(ROOT, resolve(ROOT, String(filePath ?? "")));
-  const m = /^db\/(\d\d)_[^/]+\.sql$/.exec(rel);
+  const m = /^db\/(\d{2,3})_[^/]+\.sql$/.exec(rel);
   return m && isFrozen(m[1]) ? rel : null;
 }
 
 /** The frozen migration named anywhere in a shell fragment, or null. */
 const frozenInText = (seg) => {
-  for (const m of seg.matchAll(/(?:^|[\s"'=(])(?:\.\/)?(db\/(\d\d)_[^\s"';|&)]+\.sql)/g))
+  for (const m of seg.matchAll(/(?:^|[\s"'=(])(?:\.\/)?(db\/(\d{2,3})_[^\s"';|&)]+\.sql)/g))
     if (isFrozen(m[2])) return m[1];
   return null;
 };
