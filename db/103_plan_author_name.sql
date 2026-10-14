@@ -40,15 +40,22 @@
 --                              news.read at the post's team (a plan is always
 --                              scope 'team': db/96's guard)
 --   db/12 news_post_read_own   OR its author
---   db/96 news_post_plan_side  RESTRICTIVE: its author, or news_plan_reach()
+--   db/101 news_post_read_sheet  OR published, published_at <= now(), and
+--                              news_sheet_reach(): a boy named on the
+--                              fixture's sheet at the plan's end, not
+--                              withdrawn, or his guardian (playing up)
+--   db/96 news_post_plan_side  RESTRICTIVE (as db/101 altered it): its
+--                              author, news_plan_reach() or news_sheet_reach()
+--   db/101 news_post_team_side RESTRICTIVE: the same three, for a plan
 -- and news_plan_reach() already asks news.read at the side, so the whole
--- test is "its author, or news_plan_reach(school, team)". news_plan_reach()
--- is called, not copied: if the side's reach changes there, it changes here.
--- db/99 §80 (agree) holds the two together: for every reader it stages and
--- every post, the name comes back exactly when the reader reads the row as a
--- live plan. A new policy that widens who reads a plan (a permissive one, as
--- the team sheet's would be) is not seen here until this function asks it
--- too: the name is then missing for that reader, never shown to another.
+-- test is "its author, or news_plan_reach(school, team), or
+-- news_sheet_reach(fixture, school, team)". Both reach functions are called,
+-- not copied: if the side's or the sheet's reach changes there, it changes
+-- here. db/99 §80 (agree) holds the two together: for every reader it stages
+-- and every post, the name comes back exactly when the reader reads the row
+-- as a live plan. A later policy that widens who reads a plan is not seen
+-- here until this function asks it too: the name is then missing for that
+-- reader, never shown to another.
 --
 -- NOTHING IS REMOVED. One function, CREATE OR REPLACE; its grants. No table,
 -- column, row or policy is added, changed or deleted. Safe to run twice.
@@ -67,11 +74,11 @@ CREATE OR REPLACE FUNCTION plan_author_name(p_post uuid) RETURNS text AS $$
      AND n.kind = 'plan'
      AND n.scope = 'team'
      AND n.published_at IS NOT NULL AND n.published_at <= now()
-     -- and this reader reads it: db/12's and db/96's policies, as they ask it
-     AND (n.author_id = app_user_id() OR news_plan_reach(n.school_id, n.team_code))
+     -- and this reader reads it: db/12's, db/96's and db/101's policies, as they ask it
+     AND (n.author_id = app_user_id() OR news_plan_reach(n.school_id, n.team_code) OR news_sheet_reach(n.fixture_id, n.school_id, n.team_code))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 COMMENT ON FUNCTION plan_author_name(uuid) IS
-  'The display name of a live plan''s author, to a reader of that plan (db/12, db/96''s policies); null for anything else. SCRBRD-138 phase B''s byline, CSA SG-9. db/103.';
+  'The display name of a live plan''s author, to a reader of that plan (db/12, db/96, db/101''s policies); null for anything else. SCRBRD-138 phase B''s byline, CSA SG-9. db/103.';
 REVOKE ALL ON FUNCTION plan_author_name(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION plan_author_name(uuid) TO scrbrd_app;
 
@@ -106,7 +113,7 @@ BEGIN
   SELECT p.prosrc INTO f FROM pg_proc p WHERE p.oid = o;
   IF position('n.kind = ''plan''' IN f) = 0
      OR position('n.published_at IS NOT NULL AND n.published_at <= now()' IN f) = 0
-     OR position('n.author_id = app_user_id() OR news_plan_reach(n.school_id, n.team_code)' IN f) = 0
+     OR position('n.author_id = app_user_id() OR news_plan_reach(n.school_id, n.team_code) OR news_sheet_reach(n.fixture_id, n.school_id, n.team_code)' IN f) = 0
      OR position('app_user_id() IS NOT NULL' IN f) = 0
      OR position('SELECT u.name' IN f) = 0
      OR f ~* 'u\.(email|phone|role|school_id|player_id|child_ids|teams)' THEN
@@ -120,8 +127,11 @@ BEGIN
                 AND has_function_privilege(g.oid, o, 'EXECUTE')) THEN
     RAISE EXCEPTION 'db/103: a managed host''s API role can call plan_author_name(uuid)';
   END IF;
-  -- The reach it calls is still db/96's: a definer the application may call.
+  -- The reaches it calls are still db/96's and db/101's: definers.
   IF NOT coalesce((SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('news_plan_reach(uuid,text)')), false) THEN
     RAISE EXCEPTION 'db/103: news_plan_reach(uuid, text) (db/96) is missing or no longer SECURITY DEFINER';
+  END IF;
+  IF NOT coalesce((SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('news_sheet_reach(uuid,uuid,text)')), false) THEN
+    RAISE EXCEPTION 'db/103: news_sheet_reach(uuid, uuid, text) (db/101) is missing or no longer SECURITY DEFINER';
   END IF;
 END $check$;

@@ -1165,8 +1165,11 @@ adult wrote to his side. But the `news` read took the author's name from
 so for them the plan said "The plan · Thu". `plan_author_name(post)` gives the
 author's display name for one post, and only when that post is a plan, live
 (sent, not withdrawn, not dated in the future) and one the caller already
-reads. It asks what `news_post`'s read policies ask (db/12's, and db/96's
-narrowing to the side, through db/96's own `news_plan_reach()`). It returns
+reads. It asks what `news_post`'s read policies ask: db/12's, db/96's
+narrowing to the side, and db/101's team sheet. It calls db/96's
+`news_plan_reach()` and db/101's `news_sheet_reach()` rather than copying
+them, so a boy playing up on the fixture's sheet, and his guardian, read the
+name too. It returns
 only the name. A draft, a withdrawn plan, another side's plan, an ordinary
 post, a post that is not there, and an anonymous caller all get null. Ordinary
 posts are unchanged: whether a post's author is named to pupils and parents is
@@ -1178,9 +1181,9 @@ not decided.
 `CREATE OR REPLACE` means a second paste changes nothing. The file checks
 itself and refuses to commit if the function is not what it says.
 
-Paste `node tools/bundle-sql.mjs --apply 103` (after 96, and after 97–102 if
-they have shipped), then the verify
-bundle (§80 is its proof). The summary row "A plan names its author to the
+Paste `node tools/bundle-sql.mjs --apply 103` after 101 (it calls db/101's
+`news_sheet_reach()` and refuses to commit without it), and after 100 and 102
+if they ship with it, then the verify bundle (§80 is its proof). The summary row "A plan names its author to the
 side" should read OK. **Schema first**: an API built with it refuses to start
 without db/103 (`expected-migrations.json`). Its `news` read names a live
 plan's author to the plan's readers and takes `fixtureId`, which narrows the

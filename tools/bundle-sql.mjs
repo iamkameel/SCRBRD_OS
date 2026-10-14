@@ -365,6 +365,7 @@ SELECT
   CASE WHEN to_regprocedure('plan_author_name(uuid)') IS NOT NULL
         AND (SELECT prosecdef AND provolatile = 's' FROM pg_proc WHERE oid = to_regprocedure('plan_author_name(uuid)'))
         AND coalesce(pg_get_functiondef(to_regprocedure('plan_author_name(uuid)')), '') LIKE '%news_plan_reach(%'
+        AND coalesce(pg_get_functiondef(to_regprocedure('plan_author_name(uuid)')), '') LIKE '%news_sheet_reach(n.fixture_id%'
         AND coalesce(pg_get_functiondef(to_regprocedure('plan_author_name(uuid)')), '') LIKE '%n.kind = ''plan''%'
         AND has_function_privilege('scrbrd_app', to_regprocedure('plan_author_name(uuid)'), 'EXECUTE')
         AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x

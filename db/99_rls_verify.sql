@@ -4939,8 +4939,9 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- (the plan's side) and 11XI (another side), and Westville's 10XI. On 10XI:
 -- a captain named on the sheet, a boy on the roster and not on it, the
 -- captain's guardian (verified and consented), the coach and the team
--- manager. On 11XI: its coach, a boy and his guardian. At Westville: the
--- 10XI coach and a boy. A follower (spectator) and the finance office, who
+-- manager. On 11XI: its coach, a boy and his guardian, and a second boy
+-- who plays up, named on 10XI's sheet for the fixture, with his own
+-- guardian (db/101's team sheet). At Westville: the 10XI coach and a boy. A follower (spectator) and the finance office, who
 -- hold news.read school-wide and read no side; and an account with no
 -- assignment at all. Two fixtures: 10XI at home to Westville's 10XI (the
 -- plan's, and Westville's plan's from the away end), and 11XI's. As the
@@ -4951,7 +4952,7 @@ DECLARE
   WES uuid := '22222222-2222-2222-2222-222222222222';
   OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
   U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
-  ids jsonb; v_cap uuid; v_res uuid; v_b uuid; v_w uuid; v_s uuid; f1 uuid; f2 uuid; r record;
+  ids jsonb; v_cap uuid; v_res uuid; v_b uuid; v_up uuid; v_w uuid; v_s uuid; f1 uuid; f2 uuid; r record;
 BEGIN
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (HIL, '10XI', 'Verify OneOhThree Captain', 1031, 'batter', U15) RETURNING id INTO v_cap;
@@ -4959,6 +4960,8 @@ BEGIN
     (HIL, '10XI', 'Verify OneOhThree Reserve', 1032, 'bowler', U15) RETURNING id INTO v_res;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (HIL, '11XI', 'Verify OneOhThree Bside', 1033, 'batter', U15) RETURNING id INTO v_b;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '11XI', 'Verify OneOhThree Playsup', 1035, 'bowler', U15) RETURNING id INTO v_up;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (WES, '10XI', 'Verify OneOhThree Westville', 1034, 'batter', U15) RETURNING id INTO v_w;
   ids := _v71_people('v103', ARRAY[
@@ -4970,6 +4973,8 @@ BEGIN
     ARRAY['bcoach',     'coach',          HIL::text, '11XI', ''],
     ARRAY['bboy',       'player',         HIL::text, '11XI', v_b::text],
     ARRAY['bparent',    'guardian',       HIL::text, '',     ''],
+    ARRAY['upboy',      'player',         HIL::text, '11XI', v_up::text],
+    ARRAY['upparent',   'guardian',       HIL::text, '',     ''],
     ARRAY['wescoach',   'coach',          WES::text, '10XI', ''],
     ARRAY['wesboy',     'player',         WES::text, '10XI', v_w::text],
     ARRAY['follower',   'spectator',      HIL::text, '',     ''],
@@ -4978,7 +4983,8 @@ BEGIN
   INSERT INTO app_user (school_id, email, name, role)
   VALUES (HIL, 'v103.stranger@example.invalid', 'V103 Stranger', 'spectator') RETURNING id INTO v_s;
   FOR r IN SELECT a.id AS aid, x.p FROM role_assignment a,
-                  LATERAL (VALUES ((ids->>'guardian')::uuid, v_cap), ((ids->>'bparent')::uuid, v_b)) AS x(person, p)
+                  LATERAL (VALUES ((ids->>'guardian')::uuid, v_cap), ((ids->>'bparent')::uuid, v_b),
+                                  ((ids->>'upparent')::uuid, v_up)) AS x(person, p)
             WHERE a.person_id = x.person LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
@@ -4990,9 +4996,18 @@ BEGIN
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, '11XI', 'Verify OneOhThree Visitors', ((sa_today() + 2)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f2;
-  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES (f1, v_cap, 'home', 1);
-  RETURN ids || jsonb_build_object('stranger', v_s, 'f1', f1, 'f2', f2);
+  -- The sheet: the captain, and the 11XI boy playing up; the reserve is on the roster only.
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES (f1, v_cap, 'home', 1), (f1, v_up, 'home', 2);
+  RETURN ids || jsonb_build_object('stranger', v_s, 'f1', f1, 'f2', f2, 'p_up', v_up);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Withdraw a boy from a fixture's sheet, as the API does (withdrawn = true,
+-- the row kept), as the owner: the coach's own write is the API's, proved by
+-- its walks, and this section is about what the byline does once he is off.
+CREATE OR REPLACE FUNCTION _v103_off_sheet(p_match uuid, p_player uuid) RETURNS integer AS $$
+  WITH d AS (UPDATE match_squad SET withdrawn = true WHERE match_id = p_match AND player_id = p_player AND NOT withdrawn RETURNING 1)
+  SELECT count(*)::int FROM d
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/103 (section 80) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -20243,6 +20258,10 @@ $v49$;
   --   (side)     11XI's plan, and Westville's plan for the same fixture from
   --              the away end, name nobody to a 10XI reader; their own sides
   --              read their own authors
+  --   (sheet)    a 11XI boy named on the fixture's sheet (playing up), and
+  --              his guardian, read the author's name of the 10XI plan
+  --              (db/101's news_post_read_sheet); Westville's plan they do
+  --              not; once he is withdrawn from the sheet, neither reads it
   --   (others)   a 11XI boy and his guardian, Westville's coach and boy, a
   --              follower, the finance office, a signed-in account holding
   --              nothing, and an anonymous session get no name for the plan
@@ -20270,6 +20289,8 @@ $v49$;
   --              ordinary post)
   --   (draft)    without "n.published_at IS NOT NULL AND …" (red at the
   --              captain, on the draft)
+  --   (sheet)    without "OR news_sheet_reach(...)" (red at the boy playing
+  --              up, on the sheet)
   DECLARE
     y        jsonb := _v103_stage();
     V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
@@ -20277,7 +20298,7 @@ $v49$;
     F1       uuid := (y->>'f1')::uuid;
     F2       uuid := (y->>'f2')::uuid;
     EVERYONE text[] := ARRAY['coach', 'manager', 'captain', 'reserve', 'guardian', 'bcoach', 'bboy', 'bparent',
-                             'wescoach', 'wesboy', 'follower', 'finance', 'stranger'];
+                             'upboy', 'upparent', 'wescoach', 'wesboy', 'follower', 'finance', 'stranger'];
     P uuid; D uuid; O uuid; B uuid; W uuid;
     k  text;
     x  uuid;
@@ -20331,6 +20352,17 @@ $v49$;
     PERFORM _as((y->>'wesboy')::uuid);
     PERFORM _assert(plan_author_name(W) = 'V103 Wescoach', '§80 (side): the Westville boy does not read his side''s plan''s author');
 
+    -- (sheet)
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P) = 1,
+        format('§80 (sheet): the %s does not read the 10XI plan through the sheet, so this proves nothing', k));
+      got := plan_author_name(P);
+      PERFORM _assert(got = 'V103 Coach', format('§80 (sheet): the %s, on the sheet, reads the plan''s author as %s', k, coalesce(got, 'null')));
+      PERFORM _assert(plan_author_name(W) IS NULL AND plan_author_name(D) IS NULL,
+        format('§80 (sheet): the %s reads the author of Westville''s plan or of the draft', k));
+    END LOOP;
+
     -- (others)
     FOREACH k IN ARRAY ARRAY['bboy', 'bparent', 'bcoach', 'wescoach', 'wesboy', 'follower', 'finance', 'stranger'] LOOP
       PERFORM _as((y->>k)::uuid);
@@ -20371,6 +20403,21 @@ $v49$;
           format('§80 (agree): for the %s, the byline of %s (%s) and the read of it as a live plan disagree',
                  k, CASE x WHEN P THEN 'the 10XI plan' WHEN D THEN 'the draft' WHEN O THEN 'the post'
                            WHEN B THEN 'the 11XI plan' ELSE 'Westville''s plan' END, coalesce(plan_author_name(x), 'null')));
+      END LOOP;
+    END LOOP;
+
+    -- (sheet), off it: withdrawn from the sheet, the boy and his guardian
+    -- read neither the plan nor its author.
+    PERFORM _assert(_v103_off_sheet(F1, (y->>'p_up')::uuid) = 1, '§80 (sheet): the boy was not withdrawn from the sheet');
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := plan_author_name(P);
+      PERFORM _assert(got IS NULL AND (SELECT count(*) FROM news_post n WHERE n.id = P) = 0,
+        format('§80 (sheet): off the sheet, the %s reads the plan''s author as %s', k, coalesce(got, 'null')));
+      FOREACH x IN ARRAY ARRAY[P, D, O, B, W] LOOP
+        PERFORM _assert((plan_author_name(x) IS NOT NULL)
+                        = EXISTS (SELECT 1 FROM news_post n WHERE n.id = x AND n.kind = 'plan' AND n.published_at IS NOT NULL),
+          format('§80 (agree): off the sheet, for the %s, the byline of a post and the read of it disagree', k));
       END LOOP;
     END LOOP;
 
