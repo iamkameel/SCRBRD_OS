@@ -16,7 +16,7 @@ import { panelsOf, LOAD_SENTENCE } from "../src/lib/cockpit.js";
 import { FORBIDDEN_FIELDS, NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
 import { EXCEPTION_WORDS } from "../src/lib/liftWords.js";
 import {
-  RULES, RULE_ORDER, MATCHUP_FLOOR, MATCHUP_GROWTH, evaluate, isSeen, markSeen, unseen, ruleS1, ruleS2a, ruleS2b, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12,
+  RULES, RULE_ORDER, MATCHUP_FLOOR, MATCHUP_GROWTH, evaluate, isSeen, markSeen, unseen, ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12,
 } from "../src/lib/signals.js";
 
 let pass = 0, fail = 0;
@@ -90,6 +90,37 @@ group("S2b · A bowler one over from the directive's spell");
   ok("the latest spell is the open one", run([spell({ spellNo: 1, overs: 6 }), spell({ spellNo: 2, overs: 1 })]).length === 0);
   ok("never after the innings; never without player.workload.read", run([spell()], [{ ...f(), inPlay: false }]).length === 0 && run([spell()], [f()], MANAGER).length === 0);
   ok("it clears by itself", run([spell()])[0].dismissable === false);
+}
+
+group("S2c · A bowler one over from the directive's day, across every match (phase B §1.5)");
+{
+  // bowler_day's rows, adapted (lib/live.js asBowlerDay): the server has summed the matches.
+  const day = (o = {}) => ({ playerId: "b1", name: "K Naidoo", team: "1XI", oversToday: 11, matchesToday: 1, ageBand: "U15", pace: true, maxSpell: 6, maxDay: 12, ...o });
+  const f = (o = {}) => ({ inn: { bowler: "b1", bowlers: [{ id: "b1", name: "K Naidoo" }], ...o }, i: 0, inPlay: true });
+  const run = (rows, field = [f()], g = COACH, squad = []) => ruleS2c(base({ gate: g, bowlerDay: rows, fielding: field, squad }));
+  ok("eleven of twelve: fires, with the band's directive", run([day()])[0]?.lines[0] === "K Naidoo · 11 of 12 today (U15 directive)", run([day()]));
+  ok("ten of twelve: two short, silent", run([day({ oversToday: 10 })]).length === 0);
+  ok("the sum of two matches says so", run([day({ matchesToday: 2 })])[0]?.lines[0] === "K Naidoo · 11 of 12 today, two matches (U15 directive)");
+  ok("at the figure and past it: the figure, never 'stop'",
+     run([day({ oversToday: 12, matchesToday: 2 })])[0]?.lines[0] === "K Naidoo · 12 of 12 today"
+     && run([day({ oversToday: 13 })])[0]?.lines[0] === "K Naidoo · 13 of 12 today"
+     && !/stop|take him off|do not bowl/i.test(JSON.stringify(run([day({ oversToday: 13 })]))));
+  ok("a spinner never fires (no day limit, and not pace)", run([day({ pace: false, maxDay: null })]).length === 0 && run([day({ pace: false })]).length === 0
+     && run([day({ maxDay: null })]).length === 0);
+  ok("a read that did not answer never fires", run(null).length === 0);
+  ok("the key changes with the over, so it clears with his next one", run([day()])[0].key !== run([day({ oversToday: 12 })])[0].key
+     && run([day()])[0].base === run([day({ oversToday: 12 })])[0].base);
+  ok("it is the count of overs, and clears by itself", run([day()])[0].count === 11 && run([day()])[0].dismissable === false);
+  ok("in play only: after the innings it is not drawn at all", run([day()], [{ ...f(), inPlay: false }]).length === 0);
+  ok("never without player.workload.read: the team manager has none", run([day()], [f()], MANAGER).length === 0);
+  ok("never on the Dashboard's card, which has no fold", run([day()], []).length === 0);
+  ok("a boy who has not bowled in this innings but is on our sheet still counts (the morning's overs are his)",
+     run([day({ playerId: "p2", name: "Boy 2" })], [f()], COACH, sheet(3))[0]?.lines[0] === "Boy 2 · 11 of 12 today (U15 directive)");
+  ok("...and a boy neither on the sheet nor bowling here is not ours to warn about", run([day({ playerId: "zz" })], [f()], COACH, sheet(3)).length === 0);
+  ok("the bowler's name is the fold's where it has one", run([day({ name: "Kabelo Naidoo" })])[0]?.lines[0].startsWith("K Naidoo · "));
+  ok("the band is said only when the read has one", run([day({ ageBand: null })])[0]?.lines[0] === "K Naidoo · 11 of 12 today (directive)");
+  const blob = JSON.stringify(run([day({ loadWord: "spike", monitored: true, openFlag: true, opponent: "Kearsney", matchId: "m-other" })]));
+  ok("nothing but the figure reaches the card: no word, no flag, no other match", !/spike|monitored|openFlag|Kearsney|m-other/.test(blob), blob);
 }
 
 group("S3 · A picked boy is unavailable, restricted or asking again");
@@ -243,8 +274,9 @@ group("S12 · A notice for this fixture, as published");
 group("Every rule: its gate, its order, its words");
 {
   const everyone = base({ gate: COACH });
-  ok("the twelve rules (S1 to S12, S2 and S4 in parts) are listed, in the design's order", RULE_ORDER.join() === "S1,S2a,S2b,S3,S4a,S4b,S5,S6,S7,S8,S9,S10,S11,S12");
-  ok("S2c is not here: it needs bowler_day, which is phase B", !("S2c" in RULES));
+  ok("the twelve rules (S1 to S12, S2 and S4 in parts; S2c from phase B) are listed, in the design's order", RULE_ORDER.join() === "S1,S2a,S2b,S2c,S3,S4a,S4b,S5,S6,S7,S8,S9,S10,S11,S12");
+  ok("S2c sits between S2b and S3, under the load capability, from bowler_day",
+     JSON.stringify(RULES.S2c) === JSON.stringify({ title: "A bowler at the directive's day", via: ["player.workload.read"], source: "bowler_day" }));
   ok("every rule names a read and a capability that lets him see it", Object.values(RULES).every((r) => r.source && r.via.length > 0 && r.title));
   ok("with a reader holding nothing but the fixture, only the rules the fixture alone gates speak (S8, S9, S10)", evaluate({ ...everyone, gate: gateOf("spectator"), squad: sheet(3), trips: [{ school: HIL, state: "s", capacity: 1, seatsTaken: 9 }],
     readiness: [{ playerId: "x", selected: true, side: "home", declaredStatus: "unavailable", team: "1XI", name: "X" }], workload: [{ playerId: "p1", pace: true, loadWord: "spike", name: "J", overs7d: 9 }],
@@ -276,6 +308,11 @@ group("The static check: the rules read none of what they must not, and touch no
   ok(`no forbidden field is read (${FORBIDDEN_FIELDS.join(", ")})`, hit.length === 0, hit);
   ok("it fetches nothing and writes nothing (no api, no storage, no clock of its own)", !/\bapi\(|fetch\(|localStorage|sessionStorage|Date\.now|new Date\(\)|XMLHttpRequest/i.test(code), code.match(/\bapi\(|fetch\(|localStorage|Date\.now/)?.[0]);
   ok("it imports no screen", !/from "\.\.\/(views|ui)\//.test(code) && !/from "react"/.test(code));
+  // Phase B §1.5: the new read's absent columns stay absent from the rule that reads it.
+  const s2c = code.slice(code.indexOf("export function ruleS2c"), code.indexOf("export function ruleS3"));
+  ok("S2c reads no load word, monitored, flag or ratio from bowlerDay", s2c.length > 200 && !/load_?word|monitored|open_?flag|acwr|ewma|units/i.test(s2c), s2c.length);
+  const adapter = (() => { const live = readFileSync(new URL("../src/lib/live.js", import.meta.url), "utf8"); return live.slice(live.indexOf("function asBowlerDay"), live.indexOf("function asBreach")); })();
+  ok("...and its adapter carries none of them either, nor another match's id", adapter.length > 100 && !/load_?word|monitored|open_?flag|acwr|ewma|units|match_id|opponent/i.test(adapter.replace(/\/\*\*[\s\S]*?\*\//, "")));
   const lines = ["Boy 1 v pace · 48 balls · 31 runs · out 3 times", "Bus seats 22 · 25 named, 2 by lift → 23 travelling", "R Pillay · restricted · back 14 Oct", "Has 1 over left (4 an innings)", "10 named · a side needs 11",
     "No playing conditions are set for this fixture: the pad will use the platform defaults", "Rain likely from 14:00", "1 lift not marked as leaving", "J Smith · 6 overs this week · rising (estimate)"];
   ok("the cards' own sentences pass the never-words", lines.every((l) => !NEVER_ON_THE_COCKPIT.test(l)), lines.filter((l) => NEVER_ON_THE_COCKPIT.test(l)));

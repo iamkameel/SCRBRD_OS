@@ -751,6 +751,18 @@ function asSpell(r) {
            ageBand: r.age_band, pace: r.pace, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day,
            overSpellLimit: r.over_spell_limit, breachRecorded: r.breach_recorded, live: true };
 }
+/**
+ * One boy's overs on one day, across every match (SCRBRD-136/137 phase B,
+ * db/94's bowler_day). Counts and the directive's figures only: the read
+ * carries no other match's id and nothing of the load model, and nor does this.
+ */
+function asBowlerDay(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code, school: r.school_id,
+           bowledOn: r.bowled_on ? String(r.bowled_on).slice(0, 10) : null,
+           oversToday: r.overs_today, matchesToday: r.matches_today,
+           ageBand: r.age_band, pace: r.pace, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day,
+           clauseCode: r.clause_code ?? null, live: true };
+}
 function asBreach(r) {
   return { id: r.id, matchId: r.match_id, opponent: r.opponent, innings: r.innings, bowlerId: r.bowler_id,
            name: r.full_name, team: r.team_code, kind: r.kind, overs: r.overs, allowed: r.allowed,
@@ -1206,6 +1218,7 @@ const ADAPT = {
   load_weeks: asLoadWeek,
   consents: asConsent,
   bowling_spells: asSpell,
+  bowler_day: asBowlerDay,
   bowling_breaches: asBreach,
   bowling_directives: asDirective,
   rulebook_clauses: asClause,

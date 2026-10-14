@@ -7,7 +7,8 @@
  * `page.route`, the routes the coach's Dashboard, Match Centre and Coach tab
  * read: his session (a coach of the 1XI), two fixtures (tonight's, with a sheet
  * of ten, a four-seat bus, an answer, a restriction, a lift and a notice; and
- * a live one under a four-over cap), and the live log of tools/fixture-captain.mjs.
+ * a live one under a four-over cap, with a bowler at the directive's day for
+ * phase B's S2c), and the live log of tools/fixture-captain.mjs.
  * Every other read answers with no rows.
  *
  * It is NOT an authorization layer and proves nothing about who may read what:
@@ -86,6 +87,11 @@ export function cockpitApi() {
     workload: () => workload,
     bowling_spells: (q) => (q.get("matchId") === MATCH.live ? [{ match_id: MATCH.live, innings: 0, bowler_id: IDS.bekker, full_name: NAMES.bekker, spell_no: 5, first_over: 13, last_over: 13, overs: 1,
       legal_balls: 6, bowled_on: "2026-10-02", age_band: "U15", pace: true, max_overs_per_spell: 6, max_overs_per_day: 12, over_spell_limit: false, breach_recorded: false }] : []),
+    // Phase B's S2c (db/94): the live match's bowler has bowled eleven of the
+    // U15 day's twelve across two matches, so the drawer on the live tab has
+    // the card to measure. Any date: the walk's clock is its own.
+    bowler_day: (q) => (q.get("date") ? [{ player_id: IDS.bekker, full_name: NAMES.bekker, team_code: "1XI", school_id: HIL, bowled_on: q.get("date"),
+      overs_today: 11, matches_today: 2, age_band: "U15", pace: true, max_overs_per_spell: 6, max_overs_per_day: 12, clause_code: "PACE-U14-U15" }] : []),
     phases: (q) => (q.get("matchId") === MATCH.live ? [{ innings: 0, phases: {
       powerplay: { name: "powerplay", label: "Powerplay", overs: "1–6", played: true, runs: 12, wickets: 0, balls: 36, runRate: 2 },
       middle: { name: "middle", label: "Middle", overs: "7–15", played: true, runs: 14, wickets: 0, balls: 48, runRate: 1.75 },
