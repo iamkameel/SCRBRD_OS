@@ -286,6 +286,26 @@ SELECT
         AND has_function_privilege('scrbrd_app', 'news_post_withdraw(uuid)', 'EXECUTE')
         AND NOT has_function_privilege('scrbrd_app', 'news_post_notice()', 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Posts write their notices",
+  -- These rows look their objects up with to_regprocedure()/to_regclass(), so a
+  -- database without the migration reads PROBLEM here instead of failing the
+  -- whole check (a ::regprocedure cast is resolved before anything runs).
+  -- db/92: the staff register is read and written through its functions
+  -- alone, and grants through the one door decide_role_request() uses.
+  CASE WHEN to_regclass('school_register') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('school_register'))
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('school_register'), 'SELECT')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('register_claim(uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'), 'EXECUTE')
+        AND position('role_request_grant_as(' IN (SELECT prosrc FROM pg_proc
+                      WHERE oid = to_regprocedure('decide_role_request(uuid,boolean,text,uuid,text)'))) > 0
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Staff register is the office's",
+  -- db/93: a declined parent claim tells the DSO; repeated ones pause the asker.
+  CASE WHEN to_regclass('request_cooldown') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_request_declined_notice' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_request_cooldown' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'pending_claim_declined_notice' AND tgenabled = 'O')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('request_cooldown_lift(uuid,text)'), 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Declined parent claims reach the DSO",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

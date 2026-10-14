@@ -55,7 +55,7 @@ as it is, write dates as `YYYY-MM-DD`, and save as CSV (UTF-8).
 | File | One row per | Columns | Used by |
 |---|---|---|---|
 | `players.csv` | boy | The importer's own twelve columns, in its order. Fill `full_name`, `team_code`, `born`. Fill `squad_no`, `playing_role` (batter, bowler, allrounder, keeper), `batting_style` (R/L), `bowling_arm` (R/L) and `bowling_style` (F/M/S) if known. Leave the last four blank. | `POST /api/import/players`, step 5 |
-| `staff.csv` | role a person holds | `name, email, role, team_code`. `team_code` is required for coach, assistantcoach and teammanager, and blank otherwise | Settings → People, steps 3 and 6 |
+| `staff.csv` | role a person holds | `name, email, role, team_code, valid_until`. `team_code` is required for coach, assistantcoach and teammanager, and blank otherwise. `valid_until` (a date like 2026-12-31) is read only by the staff register (SCRBRD-140 phase 2) and may be left blank | Settings → People, steps 3 and 6 |
 | `guardians.csv` | guardian, per child | The guardians import's own four columns: `player_full_name, guardian_name, guardian_email, relationship`. The child's name must match `players.csv` exactly. A parent of two boys takes two rows with the same email. `relationship` is `parent`: enrolment records a parent link only, so the import refuses any other value (gap 3) | `POST /api/import/guardians`, step 7 |
 
 Sides are `U9`–`U16` with an optional `A`–`F` (`U14A`), or `1XI`, `2XI`…. A boy's side

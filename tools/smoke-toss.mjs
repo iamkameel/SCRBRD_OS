@@ -213,8 +213,13 @@ try {
   // auth_epoch and auth_session (db/85, GA-I03) are the same shape for the
   // session check: read and written only through db/85's functions; whoever
   // could write the epoch could bring a stolen token back.
+  // school_register (db/92) and request_cooldown (db/93, SCRBRD-140 phase 2)
+  // are the same shape again: read and written only through db/92's and
+  // db/93's functions, which decide who may see a row (an uploader's list, a
+  // DSO's lift); a policy would be a second door beside them.
   const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
-                                          "auth_identity", "pending_claim", "auth_epoch", "auth_session"]);
+                                          "auth_identity", "pending_claim", "auth_epoch", "auth_session",
+                                          "school_register", "request_cooldown"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c
