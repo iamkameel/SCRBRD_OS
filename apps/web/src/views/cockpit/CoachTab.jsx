@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
+import { ROLES } from "../../design/roles.js";
 import { batHandOf, bowlingLimit } from "@scrbrd/scoring";
 import { boardInnings, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { bandLine, bandOfTeam, bowlerRows, matchupTypes, matchupWords, notYetBowled, overStory, pitchWords, sheetOf } from "../../lib/captain.js";
@@ -68,11 +69,14 @@ const btn = () => ({ minHeight: "44px", padding: `0 ${T.space.lg}`, background: 
 /** A panel's line when its read did not answer: said, never a blank that reads as "nothing". */
 const Unread = ({ what }) => <p style={quiet()}>{what} could not be read just now. That is not the same as there being nothing.</p>;
 
-export function CoachTab({ match, role, innings, result, commentary, overs, phone, staff, terms, shownRuns, venueLine, eventCount, initialDrawer = false }) {
+export function CoachTab({ match, role, innings, result, commentary, overs, phone, staff, terms, shownRuns, venueLine, eventCount, initialDrawer = false,
+  head = null, okAt = null, log = null, setTab = null, onNav = null, onNavProfile = null, onOpenDuties = null }) {
   const gate = staff;
   const panels = gate.panels;
   const sides = sidesOf(match);
-  const cockpit = useCockpit({ match, gate, lifts: true, matchups: true, seen: eventCount });
+  // What the live reads are asked again on: the log's head seq where it is known (GA-I27 §4.1), else its length.
+  const grown = head ?? eventCount;
+  const cockpit = useCockpit({ match, gate, lifts: true, matchups: true, seen: grown });
   const { reads, loading } = cockpit;
   const played = innings.length > 0;
   const decided = match.status === "complete" || !!result;
@@ -85,10 +89,10 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
   const capFor = useMemo(() => (termsNow ? (/** @type {number} */ balls) => bowlerCapWords(termsNow, balls) : null), [termsNow]);
   const fielding = useMemo(() => mine.filter((x) => x.side === "bowling").map(({ inn, i }) => ({ inn, i, inPlay: !decided && !inn.complete })), [mine, decided]);
   // S2c's read: a boy's overs today across every match, only while we field (phase B §1.6).
-  const bowlerDay = useBowlerDay({ match, gate, fielding, seen: eventCount });
+  const day = useBowlerDay({ match, gate, fielding, seen: grown });
   // The competition's day figure for a band, as the band line below reads it (tightest wins in S2c).
   const docDayFor = useMemo(() => (termsNow ? (/** @type {string} */ band) => bowlingLimit(termsNow.conditions, band)?.day ?? null : null), [termsNow]);
-  const feed = useFeed({ match, gate, cockpit, fielding, capFor, bowlerDay, docDayFor });
+  const feed = useFeed({ match, gate, cockpit, fielding, capFor, bowlerDay: day.rows, dayAt: day.at, docDayFor, head, foldAt: okAt });
 
   const [drawer, setDrawer] = useState(initialDrawer);
   const opener = useRef(null);
@@ -97,6 +101,23 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
   const [picking, setPicking] = useState(false);
   const picker = useRef(null);
   const mayPick = panels.select && match.status === "upcoming";
+
+  // Where a card's link goes (GA-I27 §5.2, C-D3): an existing screen, and only
+  // one this reader's menu already has; the screen's own gate decides again.
+  // A screen he has no door to is no link, and the trail stands without it.
+  const nav = ROLES[role]?.nav ?? [];
+  const closeThen = (/** @type {() => void} */ f) => () => { setDrawer(false); f(); };
+  const openScreen = (/** @type {any} */ c) => {
+    const s = c.evidence?.screen;
+    if (!s) return null;
+    if (s.route === "scorecard") return setTab ? closeThen(() => setTab("scorecard")) : null;
+    if (s.route === "duties") return onOpenDuties ? closeThen(() => onOpenDuties(match)) : null;
+    if (s.route === "profile") {
+      const id = c.evidence.params?.batterId;
+      return id && onNavProfile && nav.includes("profiles") ? closeThen(() => onNavProfile(id)) : null;
+    }
+    return onNav && nav.includes(s.route) ? closeThen(() => onNav(s.route, s.section ?? null)) : null;
+  };
 
   const label = `Coach · ${phone ? sides[gate.end].short : sides[gate.end].full}`;
   const cols = phone ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))";
@@ -141,7 +162,7 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
       {!loading && !played && panels.matchups && reads.matchups && <Matchups reads={reads} sheet={sheet}/>}
 
       {drawer && (
-        <FeedDrawer feed={feed} gate={gate} onClose={() => { setDrawer(false); opener.current?.focus(); }}/>
+        <FeedDrawer feed={feed} gate={gate} log={log} openScreen={openScreen} onClose={() => { setDrawer(false); opener.current?.focus(); }}/>
       )}
       {dossier && <OppositionDossier match={match} role={role} onClose={() => setDossier(false)}/>}
       {picking && (
