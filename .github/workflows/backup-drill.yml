@@ -1,0 +1,138 @@
+# SCRBRD — the backup-and-restore drill, for an owner with no admin rights
+#
+# docs/pilot/BACKUP_RESTORE.md is the drill: dump production, restore the dump
+# into a throwaway database, prove the copy is the database it came from, and
+# keep the dump. It was written for the owner's own machine. The owner's Mac is
+# company-managed and cannot install Postgres (14 Oct 2026), so this job runs
+# the same tool (tools/backup-verify.mjs) in GitHub's runner instead, and hands
+# back only an encrypted copy of the dump. Kameel chose this on 14 Oct; the
+# runbook's section 6 says what it means for the data.
+#
+# What it does, in one job on a fresh runner that is destroyed afterwards:
+#   1. Dumps the production database READ ONLY (one repeatable-read snapshot),
+#      with the row count of every table and the migration ledger.
+#   2. Restores it into a local Postgres 17 inside the runner, and proves the
+#      ledger matches db/SHIPPED.sha256 and every table has the rows it had.
+#   3. Runs db/99's live RLS assertions against the restored copy.
+#   4. Encrypts the dump (AES-256, a passphrase only the owner holds), proves
+#      the encrypted file decrypts to the same bytes, deletes the plain dump,
+#      and uploads the encrypted file and the counts as a short-lived artifact.
+#
+# What it never does: print a connection string, a host or a row (the tool
+# prints table names, counts, migration names and hashes only); write to
+# production; keep the plain dump anywhere; run on its own. It runs only when
+# somebody presses "Run workflow", and its secrets live in the `backup-drill`
+# environment, which the owner can set to need his approval for every run.
+#
+# Secrets (Settings → Environments → backup-drill → Environment secrets):
+#   SCRBRD_PROD_OWNER_URL   Supabase's owner string, SESSION POOLER (port 5432).
+#                           GitHub's runners have no IPv6, and Supabase's direct
+#                           host is IPv6-only, so the pooler is the one that works.
+#   BACKUP_PASSPHRASE       A long passphrase, kept in the owner's password
+#                           manager. Without it the downloaded file is noise.
+name: Backup drill
+
+on:
+  workflow_dispatch:
+
+# One drill at a time; a second press waits rather than racing the first.
+concurrency:
+  group: backup-drill
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    name: Dump, restore, prove, encrypt
+    runs-on: ubuntu-latest
+    environment: backup-drill
+    timeout-minutes: 30
+    services:
+      # The restored copy. Production is Postgres 17 (17.6 on 14 Oct), and a
+      # restore needs a server of the same major version or newer.
+      postgres:
+        image: mirror.gcr.io/library/postgres:17-alpine
+        env:
+          POSTGRES_USER: scrbrd
+          POSTGRES_PASSWORD: scrbrd
+          POSTGRES_DB: scrbrd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scrbrd -d scrbrd"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DUMP: ${{ runner.temp }}/scrbrd.dump
+      COUNTS: ${{ runner.temp }}/scrbrd.counts.json
+      SEALED: ${{ runner.temp }}/out/scrbrd.dump.enc
+    steps:
+      - name: The secrets are set
+        env:
+          SRC: ${{ secrets.SCRBRD_PROD_OWNER_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          [ -n "$SRC" ] || { echo "::error::SCRBRD_PROD_OWNER_URL is not set in the backup-drill environment"; exit 1; }
+          [ "${#PASS}" -ge 16 ] || { echo "::error::BACKUP_PASSPHRASE is missing or shorter than 16 characters"; exit 1; }
+
+      - uses: actions/checkout@v4
+      # No version here on purpose: package.json's packageManager names pnpm's.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # pg_dump must be the server's major version or newer, and the tool
+      # refuses an older one. Ubuntu's own client is 16; production is 17.
+      - name: Install the Postgres 17 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client-17 >/dev/null
+          pg_dump --version
+
+      - name: 1 · Dump production (read only)
+        env:
+          DATABASE_URL: ${{ secrets.SCRBRD_PROD_OWNER_URL }}
+        run: |
+          umask 077
+          node tools/backup-verify.mjs dump --out "$DUMP" --counts "$COUNTS"
+
+      - name: 2 · Restore into the runner's own database
+        run: |
+          PGPASSWORD=scrbrd createdb -h 127.0.0.1 -U scrbrd scrbrd_drill
+          SCRBRD_DB=scrbrd_drill node tools/backup-verify.mjs restore --from "$DUMP"
+
+      - name: 3 · Prove the copy is the database it came from
+        run: SCRBRD_DB=scrbrd_drill node tools/backup-verify.mjs verify --counts "$COUNTS" --dump "$DUMP"
+
+      - name: 4 · The RLS assertions, against the restored copy
+        run: SCRBRD_DB=scrbrd_drill node tools/migrate.mjs --verify
+
+      - name: 5 · Encrypt, prove it opens, delete the plain dump
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          umask 077
+          mkdir -p "$(dirname "$SEALED")"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:BACKUP_PASSPHRASE -in "$DUMP" -out "$SEALED"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:BACKUP_PASSPHRASE -in "$SEALED" | cmp - "$DUMP"
+          cp "$COUNTS" "$(dirname "$SEALED")/"
+          shred -u "$DUMP"
+          echo "BACKUP VERIFIED and sealed: $(du -h "$SEALED" | cut -f1) encrypted; the plain dump is deleted"
+
+      - name: Hand back the sealed dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrbrd-backup-${{ github.run_number }}
+          path: ${{ runner.temp }}/out/
+          retention-days: 3
+          if-no-files-found: error
+
+      # Whatever happened above, the plain dump does not outlive the job.
+      - name: Remove the plain dump
+        if: always()
+        run: if [ -f "$DUMP" ]; then shred -u "$DUMP"; fi
