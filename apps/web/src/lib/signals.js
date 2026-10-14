@@ -45,7 +45,7 @@ export const RULES = Object.freeze({
   S1:  { title: "The bus is short",                          via: ["transport.read", "team.read"],                source: "trips, match_squad, lift_expected" },
   S2a: { title: "A bowler at the competition's cap",         via: ["fixture.read"],                               source: "the fold, the frozen conditions" },
   S2b: { title: "A bowler at the directive's spell",         via: ["player.workload.read"],                       source: "bowling_spells" },
-  S2c: { title: "A bowler at the directive's day",           via: ["player.workload.read"],                       source: "bowler_day" },
+  S2c: { title: "A bowler at the day's limit",               via: ["player.workload.read"],                       source: "bowler_day, the frozen conditions" },
   S3:  { title: "A picked boy may not be available",         via: ["team.select", "availability.read"],           source: "readiness" },
   S4a: { title: "Lifts to chase",                            via: ["transport.lift.receive"],                     source: "lift_expected" },
   S4b: { title: "A lift exception",                          via: ["transport.lift.oversee"],                     source: "lift_exceptions" },
@@ -102,6 +102,7 @@ const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {s
  * @property {any[] | null} workload
  * @property {any[] | null} spells      bowling_spells
  * @property {any[] | null} [bowlerDay] bowler_day: each boy's overs on the fixture's date, every match (read only while our side fields)
+ * @property {((band: string) => number | null) | null} [docDayFor] this fixture's competition day figure for a band (bowlingLimit over the frozen conditions), or null
  * @property {any[] | null} trips
  * @property {{boys: Set<string>, count: number, lifts: number, notLeft: number, handedOverUnconfirmed: number} | null} lifts  liftCounts()
  * @property {any[] | null} liftExceptions
@@ -203,13 +204,22 @@ export function ruleS2c(c) {
     // Who may bowl in it: our named side, and anyone who already has.
     const may = new Set([...named(c).map((r) => r.playerId), ...(inn?.bowlers ?? []).map((/** @type {any} */ b) => b.id)]);
     for (const d of c.bowlerDay) {
-      if (!may.has(d.playerId) || d.pace !== true || d.maxDay == null || !(d.oversToday >= d.maxDay - 1)) continue;
+      if (!may.has(d.playerId)) continue;
+      // Tightest wins (Kameel, 14 Oct, #141): the directive's day (a pace
+      // bowler's only) against this fixture's competition figure for his band,
+      // where its frozen conditions name one (for every bowler, as bandLine
+      // says it). The lower is the limit, and the card says whose it is.
+      const dir = d.pace === true && d.maxDay != null ? d.maxDay : null;
+      const doc = d.ageBand && typeof c.docDayFor === "function" ? c.docDayFor(d.ageBand) : null;
+      const max = dir == null ? doc : doc == null ? dir : Math.min(dir, doc);
+      if (max == null || !(d.oversToday >= max - 1)) continue;
+      const whose = doc != null && (dir == null || doc < dir) ? "competition" : "directive";
       const who = inn?.bowlers?.find((/** @type {any} */ b) => b.id === d.playerId)?.name ?? d.name;
       const matches = d.matchesToday > 1 ? `, ${NUMBER_WORDS[d.matchesToday] ?? d.matchesToday} matches` : "";
-      const line = d.oversToday >= d.maxDay
-        ? `${who} · ${d.oversToday} of ${d.maxDay} today`
-        : `${who} · ${d.oversToday} of ${d.maxDay} today${matches} (${d.ageBand ? `${d.ageBand} ` : ""}directive)`;
-      out.push(card("S2c", `S2c:${i}:${d.playerId}`, `S2c:${i}:${d.playerId}:${d.oversToday}:${d.maxDay}`, [line], d.oversToday, { dismissable: false }));
+      const line = d.oversToday >= max
+        ? `${who} · ${d.oversToday} of ${max} today`
+        : `${who} · ${d.oversToday} of ${max} today${matches} (${d.ageBand ? `${d.ageBand} ` : ""}${whose})`;
+      out.push(card("S2c", `S2c:${i}:${d.playerId}`, `S2c:${i}:${d.playerId}:${d.oversToday}:${max}`, [line], d.oversToday, { dismissable: false }));
     }
   }
   return out;

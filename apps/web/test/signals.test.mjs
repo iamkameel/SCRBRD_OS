@@ -119,6 +119,16 @@ group("S2c · A bowler one over from the directive's day, across every match (ph
   ok("...and a boy neither on the sheet nor bowling here is not ours to warn about", run([day({ playerId: "zz" })], [f()], COACH, sheet(3)).length === 0);
   ok("the bowler's name is the fold's where it has one", run([day({ name: "Kabelo Naidoo" })])[0]?.lines[0].startsWith("K Naidoo · "));
   ok("the band is said only when the read has one", run([day({ ageBand: null })])[0]?.lines[0] === "K Naidoo · 11 of 12 today (directive)");
+  // Tightest wins (Kameel, 14 Oct, #141): the competition's figure for the band, where the frozen conditions name one.
+  const runDoc = (rows, docDay) => ruleS2c(base({ gate: COACH, bowlerDay: rows, fielding: [f()], squad: [], docDayFor: (band) => (band === "U15" ? docDay : null) }));
+  ok("a tighter competition figure is the limit, and the card says it is the competition's",
+     runDoc([day({ oversToday: 9 })], 10)[0]?.lines[0] === "K Naidoo · 9 of 10 today (U15 competition)", runDoc([day({ oversToday: 9 })], 10));
+  ok("...so it fires where the directive alone would stay silent", run([day({ oversToday: 9 })]).length === 0 && runDoc([day({ oversToday: 9 })], 10).length === 1);
+  ok("a looser competition figure leaves the directive's in charge", runDoc([day()], 14)[0]?.lines[0] === "K Naidoo · 11 of 12 today (U15 directive)");
+  ok("a spinner has no directive day, but the competition's figure is for every bowler",
+     runDoc([day({ pace: false, maxDay: null, oversToday: 7 })], 8)[0]?.lines[0] === "K Naidoo · 7 of 8 today (U15 competition)");
+  ok("no band, no competition figure: the directive alone", runDoc([day({ ageBand: null })], 8)[0]?.lines[0] === "K Naidoo · 11 of 12 today (directive)");
+  ok("the key carries the limit in force, so a changed limit is a new card", runDoc([day({ oversToday: 9 })], 10)[0].key.endsWith(":9:10"));
   const blob = JSON.stringify(run([day({ loadWord: "spike", monitored: true, openFlag: true, opponent: "Kearsney", matchId: "m-other" })]));
   ok("nothing but the figure reaches the card: no word, no flag, no other match", !/spike|monitored|openFlag|Kearsney|m-other/.test(blob), blob);
 }
@@ -275,8 +285,8 @@ group("Every rule: its gate, its order, its words");
 {
   const everyone = base({ gate: COACH });
   ok("the twelve rules (S1 to S12, S2 and S4 in parts; S2c from phase B) are listed, in the design's order", RULE_ORDER.join() === "S1,S2a,S2b,S2c,S3,S4a,S4b,S5,S6,S7,S8,S9,S10,S11,S12");
-  ok("S2c sits between S2b and S3, under the load capability, from bowler_day",
-     JSON.stringify(RULES.S2c) === JSON.stringify({ title: "A bowler at the directive's day", via: ["player.workload.read"], source: "bowler_day" }));
+  ok("S2c sits between S2b and S3, under the load capability, from bowler_day and the frozen conditions",
+     JSON.stringify(RULES.S2c) === JSON.stringify({ title: "A bowler at the day's limit", via: ["player.workload.read"], source: "bowler_day, the frozen conditions" }));
   ok("every rule names a read and a capability that lets him see it", Object.values(RULES).every((r) => r.source && r.via.length > 0 && r.title));
   ok("with a reader holding nothing but the fixture, only the rules the fixture alone gates speak (S8, S9, S10)", evaluate({ ...everyone, gate: gateOf("spectator"), squad: sheet(3), trips: [{ school: HIL, state: "s", capacity: 1, seatsTaken: 9 }],
     readiness: [{ playerId: "x", selected: true, side: "home", declaredStatus: "unavailable", team: "1XI", name: "X" }], workload: [{ playerId: "p1", pace: true, loadWord: "spike", name: "J", overs7d: 9 }],

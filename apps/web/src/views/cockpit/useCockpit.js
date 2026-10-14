@@ -153,9 +153,9 @@ export function useBowlerDay({ match, gate, fielding = [], seen = 0 }) {
  * useBowlerDay(), where the tab has them; the dashboard's card has none and
  * the three bowler rules draw nothing there.
  *
- * @param {{match: any, gate: any, cockpit: ReturnType<typeof useCockpit>, fielding?: {inn: any, i: number, inPlay: boolean}[], capFor?: ((balls: number) => string | null) | null, bowlerDay?: any[] | null}} o
+ * @param {{match: any, gate: any, cockpit: ReturnType<typeof useCockpit>, fielding?: {inn: any, i: number, inPlay: boolean}[], capFor?: ((balls: number) => string | null) | null, bowlerDay?: any[] | null, docDayFor?: ((band: string) => number | null) | null}} o
  */
-export function useFeed({ match, gate, cockpit, fielding = [], capFor = null, bowlerDay = null }) {
+export function useFeed({ match, gate, cockpit, fielding = [], capFor = null, bowlerDay = null, docDayFor = null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(t); }, []);
   const { reads, loading } = cockpit;
@@ -167,9 +167,9 @@ export function useFeed({ match, gate, cockpit, fielding = [], capFor = null, bo
       lifts: reads.lifts != null ? liftCounts(reads.lifts, now) : null,
       liftExceptions: reads.liftExceptions ?? null, weather: reads.weather ?? null, duties: reads.duties ?? null,
       conditions: reads.conditions ?? { state: "failed", cap: null, freeHit: null }, notices: reads.notices ?? null,
-      matchups: reads.matchups ?? null, fielding, capFor, bowlerDay,
+      matchups: reads.matchups ?? null, fielding, capFor, bowlerDay, docDayFor,
     });
-  }, [now, match, gate, loading, reads, fielding, capFor, bowlerDay]);
+  }, [now, match, gate, loading, reads, fielding, capFor, bowlerDay, docDayFor]);
 
   const person = profile()?.user?.id ?? null;
   const [seen, setSeen] = useState(() => loadSeen(person));

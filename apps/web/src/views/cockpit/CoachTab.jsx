@@ -86,7 +86,9 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
   const fielding = useMemo(() => mine.filter((x) => x.side === "bowling").map(({ inn, i }) => ({ inn, i, inPlay: !decided && !inn.complete })), [mine, decided]);
   // S2c's read: a boy's overs today across every match, only while we field (phase B §1.6).
   const bowlerDay = useBowlerDay({ match, gate, fielding, seen: eventCount });
-  const feed = useFeed({ match, gate, cockpit, fielding, capFor, bowlerDay });
+  // The competition's day figure for a band, as the band line below reads it (tightest wins in S2c).
+  const docDayFor = useMemo(() => (termsNow ? (/** @type {string} */ band) => bowlingLimit(termsNow.conditions, band)?.day ?? null : null), [termsNow]);
+  const feed = useFeed({ match, gate, cockpit, fielding, capFor, bowlerDay, docDayFor });
 
   const [drawer, setDrawer] = useState(initialDrawer);
   const opener = useRef(null);
