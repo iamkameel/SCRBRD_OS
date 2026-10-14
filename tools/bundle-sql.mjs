@@ -31,12 +31,13 @@
  *
  * Both outputs are generated and git-ignored. This file is the source.
  */
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { projectObjects, teardownSql } from "./reset-objects.mjs";
+import { migrationFiles } from "../services/api/migration-names.mjs";
 
 // Relative to this file, not a hard-coded checkout: run from a worktree or a
 // clone elsewhere, a fixed path silently bundled a DIFFERENT tree's db/.
@@ -57,7 +58,7 @@ const noteSql = COMMIT ? `'${COMMIT}'` : "NULL";
 // anything if somebody else's object depends on one of ours.
 const teardown = teardownSql(projectObjects(DB));
 
-const migrations = readdirSync(DB).filter(f => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
+const migrations = migrationFiles(DB);
 
 // ── --apply NN: one migration, for a database that already has the rest ──
 //

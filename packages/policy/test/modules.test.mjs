@@ -12,9 +12,11 @@
  *
  *   node packages/policy/test/modules.test.mjs
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { MODULES, FEATURES, SPORTS, SWITCHABLE, OWNER_OF_READ, MODULE_OF_NAV, sportFlagKey } from "../src/modules.mjs";
 import { ALL_CAPABILITIES } from "../src/capabilities.mjs";
+import { fileURLToPath } from "node:url";
+import { migrationFiles, migrationNumber } from "../../../services/api/migration-names.mjs";
 
 let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -24,9 +26,8 @@ const group = (/** @type {string} */ t) => console.log("\n" + t);
 // (db/60's workload_monitoring) seeds it in its own file, the same row shape.
 // Every db/NN from 08 on is read, never the seed or the verifier.
 const DB_DIR = new URL("../../../db/", import.meta.url);
-const SCHEMA = readdirSync(DB_DIR)
-  .filter((f) => /^\d\d_.*\.sql$/.test(f) && Number(f.slice(0, 2)) >= 8 && !/^9[89]_/.test(f))
-  .sort()
+const SCHEMA = migrationFiles(fileURLToPath(DB_DIR))
+  .filter((f) => migrationNumber(f) >= 8)
   .map((f) => readFileSync(new URL(f, DB_DIR), "utf8"))
   .join("\n");
 // The sport catalogue lives in db/00, because `match` references it and that

@@ -42,13 +42,14 @@
  * 98_ and 99_ are not migrations and are never recorded: one is fixture data,
  * the other is the live verifier.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ownerUrl } from "./db-url.mjs";
 import { projectObjects, teardownSql } from "./reset-objects.mjs";
+import { migrationFiles } from "../services/api/migration-names.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_DIR = join(ROOT, "db");
@@ -148,10 +149,8 @@ const ledger = new Map();
   for (const line of r.out.split("\n").filter(Boolean)) { const [n, h] = line.split(" "); ledger.set(n, h); }
 }
 
-// Only NN_* files are migrations. 98_seed_pilot.sql is fixture data (--seed)
-// and 99_rls_verify.sql is the live verifier (--verify); neither is schema, and
-// applying either as a migration is how a seed ends up running twice.
-const migrations = readdirSync(DB_DIR).filter(f => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
+// Which files are migrations, and their order: services/api/migration-names.mjs.
+const migrations = migrationFiles(DB_DIR);
 if (!migrations.length) { console.error("no migrations found in db/"); process.exit(1); }
 
 const commitSha = gitSha();
