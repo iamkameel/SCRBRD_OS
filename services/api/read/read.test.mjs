@@ -280,6 +280,44 @@ group("A. The physio's half is null, not false, for a reader without medical.sta
      a.includes(`(case when my_feature_enabled('injuries') and ${gate} then exists (select 1 from injury_masked i where i.player_id = p.id and i.restricted) end) as clinically_restricted`));
 }
 
+group("A. The cockpit's reads (SCRBRD-136/137 phase B §5, §1.4): the lead's fixes and bowler_day, held in the text");
+{
+  // The texts are proved over HTTP by tools/smoke-cockpit.mjs, as each
+  // persona; this holds what each text must say, so a refactor that drops
+  // the gate or the live log fails here before it reaches a walk.
+  const flat = (/** @type {string} */ s) => s.replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
+  const gate = "app_can('player.workload.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)";
+  const sp = flat(READ_QUERIES.shot_points.text), bs = flat(READ_QUERIES.bowling_spells.text);
+  ok("shot_points reads the live log, so a voided ball is not drawn", /from ball_event_live b\b/.test(sp) && !/from ball_event /.test(sp));
+  ok("bowling_spells asks the load capability per bowler", bs.includes(`cross join lateral (select ${gate} as may) w`));
+  ok("...and joins the directive only on it", bs.includes("left join lateral bowling_directive_for(s.bowler_id) d on w.may"));
+  ok("...and says 'over the limit' only to that reader", bs.includes("(case when w.may then d.max_overs_per_spell is not null and s.overs > d.max_overs_per_spell end) as over_spell_limit"));
+  ok("bowling_breaches carries no gate of its own (bowling_breach's policy is player.workload.read)",
+     !/app_can/.test(flat(READ_QUERIES.bowling_breaches.text)));
+  ok("workload's comment names the gate workload() asks, not player.development.read",
+     !/development/.test((await import("node:fs")).readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8")
+       .split("\n").slice(0, 2000).join("\n").match(/\/\*\s*\n\s*\* WORKLOAD:[\s\S]*?\*\//)?.[0] ?? "development"));
+
+  const bd = READ_QUERIES.bowler_day;
+  const params = /** @type {(q: Record<string, string>) => unknown[]} */ (bd.params);
+  const { OWNER_OF_READ } = await import("@scrbrd/policy/modules");
+  ok("bowler_day is the function's answer, whole: nothing joined on the way out", flat(bd.text) === "select * from bowler_day($1::date, $2::text)");
+  ok("...in no module (as workload: every school has the directive), not masked, not logging itself",
+     !OWNER_OF_READ.bowler_day && !bd.masked && !bd.logsReads && !bd.logsItself);
+  ok("...a date and an optional team", JSON.stringify(params({ date: "2026-10-17", teamCode: "U15A" })) === '["2026-10-17","U15A"]'
+     && JSON.stringify(params({ date: "2026-10-17" })) === '["2026-10-17",null]');
+  /** @param {Record<string, string>} q */
+  const refused = (q) => { try { params(q); return null; } catch (/** @type {any} */ e) { return `${e.status} ${e.message}`; } };
+  ok("...no date is the caller's mistake", refused({}) === "400 missing_param:date");
+  ok("...nor is a date that is not one", refused({ date: "17 Oct" }) === "400 bad_param:date" && refused({ date: "2026-13-40" }) === "400 bad_param:date");
+  const { pool, log } = fakePool({ "bowler_day(": [{ player_id: "p1", overs_today: 11, matches_today: 2 }] });
+  const rows = await readResource(pool, SECRET, bearer("uCoach"), "bowler_day", { date: "2026-10-17", teamCode: "U15A" });
+  const call = log.findIndex((l) => l.text.includes("bowler_day("));
+  const begin = log.findIndex((l) => l.text.includes("app_session_begin"));
+  ok("...run under the caller's principal, with the parameters as given",
+     rows.length === 1 && JSON.stringify(log[call]?.params) === '["2026-10-17","U15A"]' && begin >= 0 && begin < call);
+}
+
 // ── B. Client accessor ──
 group("B. Feature flags: mock vs live per resource");
 {

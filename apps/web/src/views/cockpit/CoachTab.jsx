@@ -18,7 +18,7 @@ import { Panel, Quiet } from "../matchcentre/bits.jsx";
 import { OppositionDossier } from "../dossier.jsx";
 import { FeedDrawer } from "./FeedDrawer.jsx";
 import { PickSide } from "./PickSide.jsx";
-import { useCockpit, useFeed } from "./useCockpit.js";
+import { useBowlerDay, useCockpit, useFeed } from "./useCockpit.js";
 
 /**
  * THE COACH TAB (SCRBRD-136 phase A; docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md
@@ -84,7 +84,11 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
   const termsNow = terms ?? reads.terms ?? null;
   const capFor = useMemo(() => (termsNow ? (/** @type {number} */ balls) => bowlerCapWords(termsNow, balls) : null), [termsNow]);
   const fielding = useMemo(() => mine.filter((x) => x.side === "bowling").map(({ inn, i }) => ({ inn, i, inPlay: !decided && !inn.complete })), [mine, decided]);
-  const feed = useFeed({ match, gate, cockpit, fielding, capFor });
+  // S2c's read: a boy's overs today across every match, only while we field (phase B §1.6).
+  const bowlerDay = useBowlerDay({ match, gate, fielding, seen: eventCount });
+  // The competition's day figure for a band, as the band line below reads it (tightest wins in S2c).
+  const docDayFor = useMemo(() => (termsNow ? (/** @type {string} */ band) => bowlingLimit(termsNow.conditions, band)?.day ?? null : null), [termsNow]);
+  const feed = useFeed({ match, gate, cockpit, fielding, capFor, bowlerDay, docDayFor });
 
   const [drawer, setDrawer] = useState(initialDrawer);
   const opener = useRef(null);

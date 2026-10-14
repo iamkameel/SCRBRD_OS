@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, signedIn } from "../../lib/api.js";
 import { readLive } from "../../lib/live.js";
 import { profile } from "../../lib/session.js";
-import { conditionsState, liftCounts, termsFromConditions } from "../../lib/cockpit.js";
+import { conditionsState, liftCounts, saDay, termsFromConditions } from "../../lib/cockpit.js";
 import { evaluate, isSeen, markSeen, unseen } from "../../lib/signals.js";
 
 /**
@@ -111,13 +111,51 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
 }
 
 /**
- * The feed over those reads, and what this person has seen of it (D13).
- * `fielding` and `capFor` come from the fold, where the tab has one; the
- * dashboard's card has none and the two bowler rules draw nothing there.
+ * A BOY'S OVERS TODAY, ACROSS EVERY MATCH (SCRBRD-136/137 phase B §1.6): the
+ * `bowler_day` read (db/94) for S2c, on the Coach tab only and only while our
+ * side fields in an innings still in play. Before the match nobody has bowled
+ * for us today, and after it the card is not drawn, so it is not read then;
+ * the Dashboard's card never reads it (PB-D10). Asked again as the log grows,
+ * as the spells and the week are. Only for a reader the gate gave the load
+ * panel; the server asks player.workload.read again, per boy.
  *
- * @param {{match: any, gate: any, cockpit: ReturnType<typeof useCockpit>, fielding?: {inn: any, i: number, inPlay: boolean}[], capFor?: ((balls: number) => string | null) | null}} o
+ * Its own hook, called once `fielding` is known: useCockpit() is called before
+ * the tab has a fold, so it takes no `fielding`.
+ *
+ * `null` until it answers, and when it fails: S2c then draws nothing.
+ *
+ * @param {{match: any, gate: any, fielding?: {inPlay: boolean}[], seen?: unknown}} o
+ * @returns {any[] | null}
  */
-export function useFeed({ match, gate, cockpit, fielding = [], capFor = null }) {
+export function useBowlerDay({ match, gate, fielding = [], seen = 0 }) {
+  const [rows, setRows] = useState(/** @type {any[] | null} */ (null));
+  const inPlay = fielding.some((f) => f.inPlay);
+  const on = !!gate?.panels?.load && inPlay && !!match?.id && signedIn();
+  const startsAt = Date.parse(String(match?.startsAt ?? ""));
+  // The fixture's date on the SA calendar, as bowler_over dates an over (db/54).
+  const date = Number.isFinite(startsAt) ? saDay(startsAt) : match?.date ?? null;
+  const teamCode = gate?.teamCode ?? null;
+  useEffect(() => {
+    if (!on || !date) { setRows(null); return undefined; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const r = await readLive("bowler_day", teamCode ? { date, teamCode } : { date });
+      if (!cancelled) setRows((prev) => r ?? prev);
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [on, date, teamCode, seen]);
+  return on ? rows : null;
+}
+
+/**
+ * The feed over those reads, and what this person has seen of it (D13).
+ * `fielding` and `capFor` come from the fold, and `bowlerDay` from
+ * useBowlerDay(), where the tab has them; the dashboard's card has none and
+ * the three bowler rules draw nothing there.
+ *
+ * @param {{match: any, gate: any, cockpit: ReturnType<typeof useCockpit>, fielding?: {inn: any, i: number, inPlay: boolean}[], capFor?: ((balls: number) => string | null) | null, bowlerDay?: any[] | null, docDayFor?: ((band: string) => number | null) | null}} o
+ */
+export function useFeed({ match, gate, cockpit, fielding = [], capFor = null, bowlerDay = null, docDayFor = null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(t); }, []);
   const { reads, loading } = cockpit;
@@ -129,9 +167,9 @@ export function useFeed({ match, gate, cockpit, fielding = [], capFor = null }) 
       lifts: reads.lifts != null ? liftCounts(reads.lifts, now) : null,
       liftExceptions: reads.liftExceptions ?? null, weather: reads.weather ?? null, duties: reads.duties ?? null,
       conditions: reads.conditions ?? { state: "failed", cap: null, freeHit: null }, notices: reads.notices ?? null,
-      matchups: reads.matchups ?? null, fielding, capFor,
+      matchups: reads.matchups ?? null, fielding, capFor, bowlerDay, docDayFor,
     });
-  }, [now, match, gate, loading, reads, fielding, capFor]);
+  }, [now, match, gate, loading, reads, fielding, capFor, bowlerDay, docDayFor]);
 
   const person = profile()?.user?.id ?? null;
   const [seen, setSeen] = useState(() => loadSeen(person));
@@ -142,7 +180,7 @@ export function useFeed({ match, gate, cockpit, fielding = [], capFor = null }) 
   return { cards, open, seenCount: cards.length - open.length, dismiss, isSeen: (/** @type {any} */ c) => isSeen(c, seen), now };
 }
 
-// ── "Seen", per person, on this device (D13; signal_ack is phase B) ──
+// ── "Seen", per person, on this device (D13; signal_ack deferred, phase B PB-D5) ──
 const STORE = "scrbrd.signals.seen.";
 const memory = /** @type {Record<string, any>} */ ({});
 function loadSeen(/** @type {string | null} */ person) {
