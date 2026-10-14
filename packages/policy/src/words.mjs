@@ -55,7 +55,7 @@ export const CLASSES = Object.freeze(["health", "absence", "discipline", "derisi
  * class. Kept in class order so a reviewer reads one class at a time.
  * @type {ReadonlyArray<Readonly<{ w: string, cls: string }>>}
  */
-export const WORDS = Object.freeze(/** @type {[string, string][]} */ ([
+export const WORDS = Object.freeze((/** @type {[string, string][]} */ ([
   // ── health · K3: a pupil holds no medical tier at all (db/55), and
   //    PUBLIC_DATA N2 treats even "unavailable" as health ──
   ["physio*", "health"], ["injur*", "health"], ["hamstring*", "health"], ["concuss*", "health"],
@@ -77,7 +77,7 @@ export const WORDS = Object.freeze(/** @type {[string, string][]} */ ([
   ["shocker", "derisive"], ["howler", "derisive"], ["embarrass*", "derisive"], ["useless", "derisive"],
   ["pathetic", "derisive"], ["hopeless", "derisive"], ["disgrace*", "derisive"], ["clown*", "derisive"],
   ["laughing stock", "derisive"], ["butterfingers", "derisive"],
-].map(([w, cls]) => Object.freeze({ w, cls }))));
+])).map(([w, cls]) => Object.freeze({ w, cls })));
 
 const LETTER = "[\\p{L}\\p{N}_]";
 const escapeRe = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

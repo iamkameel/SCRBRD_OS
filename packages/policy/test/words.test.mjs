@@ -117,10 +117,10 @@ group("G. The refusal, in words (§3.4)");
        "This can't go to the side with physio in it. A plan is read by every boy in the side and their parents. " +
        "A boy's health is not for it. Change the words and send again.");
   const m = refusalMessage(refusedWords("A howler, physio, and detention."));
-  ok("every word named, in the order written", m?.startsWith("This can't go to the side with howler, physio and detention in it."), m);
+  ok("every word named, in the order written", m?.startsWith("This can't go to the side with howler, physio and detention in it."), m ?? "");
   ok("one sentence per class hit, in class order",
-     m?.includes("A boy's health is not for it. A boy's conduct is not for it. The side reads this about a team-mate."), m);
-  ok("never the writer's text beyond the words", !m?.includes("A howler,"), m);
+     m?.includes("A boy's health is not for it. A boy's conduct is not for it. The side reads this about a team-mate."), m ?? "");
+  ok("never the writer's text beyond the words", !m?.includes("A howler,"), m ?? "");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
