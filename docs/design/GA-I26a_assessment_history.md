@@ -433,3 +433,15 @@ As the coach on the seed: the strip for D Erasmus's `againstPace` shows two dots
 - **GA-I36**'s model: both versions kept; corrections reach every surface by re-read, not by stored copies.
 - `db/01`, `db/09` (frozen); `app_can()`'s body (`db/50`).
 
+
+---
+
+## Lead review, 14 Oct (the five facts this design could not settle from its brief)
+
+Checked on main by the lead; each settles an assumption above.
+
+1. **`assistantcoach` does not hold `team.manage`** (`packages/policy/src/roles.mjs`, the assistantcoach bundle). He reads the side's plan and register and writes neither; the coach, director of sport, school admin and sports admin write them.
+2. **No per-table support cut exists on `player_skill` or `development_note`.** `support_access` (`db/22`) is a logged support window, not a RESTRICTIVE policy on these tables. Slice A1 decides whether the tables need one; it is not assumed present.
+3. **`player_team(uuid)` exists** (`db/08_schema_programme.sql:633`), beside `player_school()`.
+4. **The CSV export serves `skills` today.** `GET /export/:resource` runs any read resource through `readResource()` (`services/api/read/read-api.mjs:3285`), logged but not refused. AH-D4's "no export" therefore needs an explicit refusal for `skills`, `ratings`, `notes` and the new target reads, in slice A2 or A3, with a walk.
+5. **`ratingsQuery()` reads `player_skill` directly** (`read-api.mjs`, about line 2809), so the withdrawn-row filter (AH-D5) goes there as well as in `skills` and the focus areas.
