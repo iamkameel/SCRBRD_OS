@@ -246,6 +246,17 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
             <ul aria-label={`Roles held by ${p.name}`} style={{ flex: "2 1 260px", margin: 0, padding: 0, display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
               {p.roles.map((r) => <RoleChip key={r.key} r={r} person={p} linkedName={linkedName(p)}/>)}
             </ul>
+            {/* Where an appointment came from, when it was the staff register's
+                (db/92): said beside the End role button that undoes it. */}
+            {p.roles.some((r) => r.origin) && (
+              <ul aria-label={`Where ${p.name}'s roles came from`} style={{ flex: "1 1 100%", margin: 0, padding: 0, display: "grid", gap: "2px" }}>
+                {p.roles.filter((r) => r.origin).map((r) => (
+                  <li key={r.key} data-testid="role-origin" style={{ listStyle: "none", fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
+                    {label(r.role)}{r.team ? ` (${r.team})` : ""}: {r.origin}
+                  </li>
+                ))}
+              </ul>
+            )}
             {/* End a role (db/77): offered beside each live appointment at a school
                 this reader may assign at. role_assignment_end() decides the rest
                 (the owner's key, a superadmin's roles, your own last admin role,

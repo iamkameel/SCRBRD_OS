@@ -27,7 +27,8 @@ import { personaOf } from "./lib/features.js";
 import { holdsAsHeld } from "./lib/held.js";
 import { scorerLanding } from "./lib/scorerHome.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
-import { signOut } from "./lib/session.js";
+import { signOut, refreshProfile } from "./lib/session.js";
+import { primaryRole } from "./lib/primaryRole.js";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
 import { StateLabel } from "./ui/stateLabel.jsx";
 
@@ -226,6 +227,15 @@ export default function SCRBRD_OS() {
     setPage(nav[0] || "dashboard");
     setLoginForPad(false);
     setAppState("app");
+  };
+
+  // The staff register granted a role while the person sat on the school-less
+  // screen (POST /api/join/register-claim): ask who they are again and enter
+  // the school. A profile with still nothing in it is not a way in.
+  const handleJoined = async () => {
+    const p = await refreshProfile();
+    if (!Array.isArray(p?.assignments) || p.assignments.length === 0) throw new Error("no_assignments");
+    handleLogin(primaryRole(p), p?.user?.name || userName, p);
   };
 
   /**
@@ -427,7 +437,7 @@ export default function SCRBRD_OS() {
       {/* The same sign-out the shell uses. This one cleared the profile and
           left the persisted session behind, so a reload put the next person
           back where the last one stood. */}
-      <NoSchool name={userName} onSignOut={handleSignOut}/>
+      <NoSchool name={userName} onSignOut={handleSignOut} onJoined={handleJoined}/>
     </>
   );
   if (appState === "onboarding") return (

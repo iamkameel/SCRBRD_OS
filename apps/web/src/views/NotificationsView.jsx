@@ -4,6 +4,8 @@ import { Badge, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { useNotifications, report, reportable } from "../lib/notifications.js";
 import { readState } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
+import { liftable } from "../lib/staffRegister.js";
+import { LiftPause } from "./liftPause.jsx";
 
 /**
  * Notices (docs/design/NOTIFICATIONS.md D17).
@@ -18,6 +20,9 @@ import { Icon } from "../ui/icons.jsx";
  * body is read when it is opened; the server logs that open. A notice taken
  * back opens as one sentence, "This notice was withdrawn on …", and one that
  * is no longer this person's as "This notice is no longer available."
+ *
+ * A safeguarding officer's notice that an account has been paused from asking
+ * (db/93) carries "Lift the pause" (views/liftPause.jsx); only a DSO is sent it.
  *
  * A notice somebody wrote (a post's notice) carries "Report": one tap sends it
  * to the school's safeguarding officer (D11, CSA SG-9 rule 4), and the row
@@ -98,6 +103,7 @@ function NotificationsView({ role }) {
                   {body && (isOpen || !n.tiered) && <p data-testid="notice-body" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5,margin:0}}>{body}</p>}
                   {!body && n.tiered && !isOpen && <p style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5,margin:0}}>Open to read.</p>}
                   {isOpen && busy === n.id && <p role="status" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:0}}>Opening…</p>}
+                  {liftable(n) && (isOpen || !n.tiered) && <LiftPause id={n.subjectId}/>}
                   {isOpen && sentence && <p data-testid="notice-sentence" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,margin:0}}>{sentence}</p>}
                   <div style={{display:"flex",gap:"5px",marginTop:"6px",alignItems:"center",flexWrap:"wrap"}}>
                     <Badge color={uc(n.urgency)}>{n.urgency}</Badge>

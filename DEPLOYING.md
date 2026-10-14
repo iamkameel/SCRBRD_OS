@@ -945,6 +945,71 @@ and serves `POST /api/notifications/:id/report`. Nothing is pushed by itself
 until slice S3's worker: a `medium` post is stored as `medium` and waits.
 <!-- ── end db/91 ── -->
 
+<!-- ── db/92: the school staff register ── -->
+#### The school staff register (db/92)
+
+`db/92_staff_register.sql` is SCRBRD-140 phase 2
+(`docs/design/SCRBRD-140_phase2_register.md`, decided 13 October). The office
+lists its staff (`staff.csv`'s columns: `name, email, role, team_code,
+valid_until`); a staff member who signs in with Google and chooses the school
+is granted what was listed for the address Google verified, through the same
+grant body a hand grant uses. `school_register` is a new table under RLS with
+no policy and no privilege for the application: every read and write is one
+of six functions (`register_upload`, `register_claim`, `register_withdraw`,
+`school_register_rows`, `register_redact_due`, `register_redact`).
+`decide_role_request()` is re-emitted with its grant half moved, unchanged,
+into the internal `role_request_grant_as()`; it refuses to apply unless the
+function in place is db/81's (its md5) and checks that the moved text is that
+body with `app_user_id()` → the decider. Rows naming a child's role, a DSO, a
+platform role, or any role whose bundle holds `medical.details.read`,
+`discipline.read` or `safeguarding.*` are refused. Nothing runs unattended:
+an unclaimed row's name and address are cleared ninety days after it expired
+or was withdrawn only when someone at the school presses Clear.
+
+**What it does to a live database.** Adds the table, its two indexes, eleven
+functions, and re-emits `decide_role_request()` (its rights kept). No row is
+inserted, changed or deleted. Nothing in the file drops anything; the one
+temporary table it uses is `ON COMMIT DROP`.
+
+Paste `node tools/bundle-sql.mjs --apply 92` (after 91), then the verify
+bundle (§73 is its proof; the summary row's "Staff register is the office's"
+reads OK). **Schema first**: the API built with it refuses to start without
+db/92 (`expected-migrations.json`) and serves `POST`/`GET /api/register/:schoolId`,
+`POST /api/register/rows/:id/withdraw`, `GET`/`POST /api/register/:schoolId/redact`
+and `POST /api/join/register-claim`. No screen calls them until the register's
+screens ship.
+<!-- ── end db/92 ── -->
+
+<!-- ── db/93: a declined parent claim, and the request cooldown ── -->
+#### A declined parent claim tells the DSO; repeated ones pause the asker (db/93)
+
+`db/93_declined_claim_notice.sql` is SCRBRD-140's D7 (the phase 2 design's §4;
+P2-D11, P2-D12). When the office declines a request to be a child's guardian,
+or declines a Google sign-in's claim on a pupil's or a parent's account, the
+school's DSOs get a `safeguarding` notice naming nobody ("The office can tell
+you who asked"). When a person's declined guardian requests in thirty days
+reach three, or their guardian requests in thirty days span more than two
+schools, `request_cooldown` pauses them for thirty days: a `BEFORE INSERT`
+trigger on `role_request` refuses every request (`check_violation
+request_cooldown`), whichever route inserts it, and the schools' DSOs are
+told. A DSO at one of those schools lifts it (`request_cooldown_lift()`); the
+office cannot, and neither can the owner's key.
+
+**What it does to a live database.** Adds the table (RLS on, no policy, no
+privilege), three triggers (`role_request_declined_notice`,
+`role_request_cooldown`, `pending_claim_declined_notice`, each `CREATE OR
+REPLACE TRIGGER`) and six functions. No row is inserted, changed or deleted,
+and no notice is backfilled; declines from the thirty days before the paste
+do count toward a cooldown set by a decline after it. Nothing is dropped.
+
+Paste `node tools/bundle-sql.mjs --apply 93` (after 92), then the verify
+bundle (§74 is its proof; the summary row's "Declined parent claims reach the
+DSO" reads OK). **Schema first**: the API built with it refuses to start
+without db/93, answers a request under a cooldown with `409 request_cooldown`
+and words, answers signed-out `POST /api/onboard` as it always does, and
+serves `POST /api/cooldowns/:id/lift`.
+<!-- ── end db/93 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh
