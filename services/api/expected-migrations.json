@@ -95,5 +95,7 @@
   "94_bowler_day.sql",
   "96_news_plan.sql",
   "97_ball_event_away_read.sql",
+  "100_ball_event_guardian_read.sql",
+  "101_news_to_the_side.sql",
   "102_suppression_read.sql"
 ]

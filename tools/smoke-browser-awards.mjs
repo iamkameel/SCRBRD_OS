@@ -389,8 +389,13 @@ try {
   const dw = drift(await read(wesTok, "career"), wesSeasons);
   ok("...and his own seasons sum to his own career read", dw.length === 0, dw.join(" | "));
   const lbCur = sarahSeasons.find((r) => r.player_id === LB && r.season === cur);
-  ok("the director's figures for that Hilton boy leave out the Westville delivery she cannot read (60 balls, not 61)",
-     Number(lbCur?.balls_bowled) === 60, JSON.stringify(lbCur));
+  // The director is also the seed's two-school parent: her Westville boy
+  // (D Mkhize) plays for Westville's 1XI, whose fixture this is, and he bats
+  // in it. Since db/100 a parent reads the balls of his child's side's
+  // fixtures, so she reads that delivery too: 61, not 60. The Westville
+  // administrator above still reads nothing of the Hilton boy.
+  ok("the director's figures for that Hilton boy include the Westville delivery she reads as her Westville boy's parent (61 balls, db/100)",
+     Number(lbCur?.balls_bowled) === 61, JSON.stringify(lbCur));
 
   // What the tab should draw, from the same reads and the same rankings.
   const players = (await read(sarahTok, "players")).map((p) => ({ id: p.id, name: p.full_name, team: p.team_code, school: p.school_id }));

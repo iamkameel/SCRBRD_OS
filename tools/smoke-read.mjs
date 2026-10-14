@@ -293,6 +293,29 @@ try {
        (await read("notifications", watcher)).every((n) => n.read === false));
   }
 
+  // ── A side's news is the side's (db/101) ────────────────────────
+  // Kameel, 2026-10-14: a team post and its notice reach the side and nobody
+  // wider. Before db/101 the follower read the 1XI's post, because news.read
+  // is held school-wide by roles that read no side. A school post still
+  // reaches him. The full proof, a parent of another side and the team sheet
+  // included, is db/99 §78; this is the same answer through the route.
+  group("A side's news reaches the side, and nobody wider (db/101)");
+  {
+    const SIDE_POST = "0c000000-0000-0000-0000-000000000001";    // the seed's 1XI post
+    const SCHOOL_POST = "0c000000-0000-0000-0000-000000000002";  // the seed's school post
+    const guardianNews = await read("news", guardian);
+    const coachNews = await read("news", coach);
+    const watcherNews = await read("news", watcher);
+    ok("a 1XI guardian reads the 1XI's post", guardianNews.some((n) => n.id === SIDE_POST));
+    ok("...and so does the side's coach", coachNews.some((n) => n.id === SIDE_POST));
+    ok("a follower reads the school's post", watcherNews.some((n) => n.id === SCHOOL_POST));
+    ok("...and no side's post", !watcherNews.some((n) => n.scope === "team"));
+    ok("...nor a side's post's notice",
+       !(await read("notifications", watcher)).some((n) => n.subject_kind === "news" && n.subject_id === SIDE_POST));
+    ok("the 1XI guardian has the 1XI post's notice",
+       (await read("notifications", guardian)).some((n) => n.subject_kind === "news" && n.subject_id === SIDE_POST));
+  }
+
   // ── Career figures are derived, and scoped like the rows ────────
   // The aggregate reads ball_event_live, which is security_invoker, so it
   // covers exactly the deliveries the reader may see. Two people getting
