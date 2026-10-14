@@ -290,6 +290,14 @@ function asNewsPost(r) {
     mayTakeDown: r.may_take_down === true,
     publicState: r.public_state ?? null,
     publicNames: r.public_names == null ? null : Number(r.public_names),
+    // The coach's plan (db/96, SCRBRD-138 phase B): a post is a 'post' or a
+    // 'plan', and a plan names the fixture and the side it is for. `noticeId`
+    // is the live plan's notice, for the block's Report (lib/captain.js planOf).
+    kind: r.kind ?? "post",
+    fixtureId: r.fixtureId ?? null,
+    noticeId: r.noticeId ?? null,
+    schoolId: r.school_id ?? null,
+    teamCode: r.team_code ?? null,
   };
 }
 
