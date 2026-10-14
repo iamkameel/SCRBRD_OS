@@ -4,9 +4,10 @@
 // regenerated db/01 matches trivially. SCRBRD-030 shipped exactly that edit.
 // This holds every file listed in db/SHIPPED.sha256 to the bytes it shipped as.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { migrationFiles } from "../services/api/migration-names.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 let passes = 0, fails = 0;
@@ -29,7 +30,7 @@ for (const { hash, file } of entries) {
 
 // Shipped files are a prefix of the migration order: a gap would mean a later
 // file shipped ahead of an earlier one, which bundle-sql --apply refuses.
-const all = readdirSync(join(ROOT, "db")).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
+const all = migrationFiles(join(ROOT, "db"));
 const listed = new Set(entries.map((e) => e.file.replace(/^db\//, "")));
 const firstUnshipped = all.findIndex((f) => !listed.has(f));
 const gap = firstUnshipped === -1 ? [] : all.slice(firstUnshipped).filter((f) => listed.has(f));

@@ -27,7 +27,7 @@
  *
  *   node packages/policy/test/public.test.mjs
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -36,6 +36,7 @@ import {
   POSITION_LABELS, publicName, initialAndSurname,
 } from "../src/public.mjs";
 import { TABLES, maskedColumns } from "../src/tables.mjs";
+import { migrationFiles, migrationNumber } from "../../../services/api/migration-names.mjs";
 /** @import { NameFacts, NameConsent } from "../src/public.mjs" */
 /** @import { TableDef } from "../src/tables.mjs" */
 
@@ -158,7 +159,7 @@ function columnsOf(body) {
 function readSchema(dir) {
   /** @type {Map<string, Set<string>>} */
   const tables = new Map();
-  const files = readdirSync(dir).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
+  const files = migrationFiles(dir);
   const re = new RegExp(String.raw`\bCREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?(\w+)\s*\(`
     + String.raw`|\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(?:public\.)?(\w+)\s([^;]*);`
     + String.raw`|\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?(\w+)`, "gi");
@@ -348,7 +349,7 @@ group("§3 against tables.mjs — every column masked about a pupil is placed");
      Object.keys(PUBLIC_DESPITE_MASK).length <= 5);
 
   // Masks in db/ that tables.mjs did not generate.
-  const dbSql = readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f))
+  const dbSql = migrationFiles(DB)
     .map((f) => stripComments(readFileSync(join(DB, f), "utf8"))).join("\n");
   const views = [...new Set([...dbSql.matchAll(/VIEW\s+(\w+)_masked\b/g)].map((m) => m[1]))];
   const handWritten = views.filter((t) => !masking.includes(t));
@@ -423,7 +424,7 @@ const HAND_WRITTEN_SINCE_47 = {
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */
-const since47 = readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f) && Number(f.slice(0, 2)) >= 47);
+const since47 = migrationFiles(DB).filter((f) => migrationNumber(f) >= 47);
 
 /**
  * Every column of a hand-written pupil table that is placed on neither list.
@@ -759,7 +760,7 @@ function publicFunctions(sql) {
 }
 
 /** Every view db/ creates. */
-const VIEWS = new Set(readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f))
+const VIEWS = new Set(migrationFiles(DB)
   .flatMap((f) => [...stripComments(readFileSync(join(DB, f), "utf8")).matchAll(/\bCREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?:public\.)?(\w+)/gi)]
     .map((m) => m[1].toLowerCase())));
 /**
@@ -820,7 +821,7 @@ function publicReadProblems(body) {
 
 group("§6 step 3 — the signed-out reads name their columns, and none §3 forbids (db/59)");
 {
-  const files = readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && Number(f.slice(0, 2)) >= 59 && !/^9[89]_/.test(f)).sort();
+  const files = migrationFiles(DB).filter((f) => migrationNumber(f) >= 59);
   // db/47's two doors, re-emitted by db/62 for SCRBRD-083 §6.3 (option C)
   // with their bodies otherwise db/47's. They are not signed-out reads:
   // public_name_consent_set() is a signed-in write, and public_name_facts()
