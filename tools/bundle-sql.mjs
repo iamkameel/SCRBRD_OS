@@ -339,6 +339,23 @@ SELECT
                          WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_insert'
                            AND pg_get_expr(p.polwithcheck, p.polrelid) LIKE '%away\\_%')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The away side reads its fixture's balls",
+  -- db/100: a parent reads the ball log of his child's side's fixtures, asked
+  -- about the child (never the all-zeros person); the writes stay the host's.
+  CASE WHEN to_regclass('ball_event') IS NOT NULL
+        AND to_regprocedure('my_child_fixtures()') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('ball_event') AND p.polname = 'ball_event_read'
+                       AND p.polcmd = 'r' AND p.polpermissive
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%my_child_fixtures()%'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%00000000-0000-0000-0000-000000000000%')
+        AND (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('my_child_fixtures()'))
+        AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('my_child_fixtures()')) LIKE '%p.id, m.id)%'
+        AND has_function_privilege('scrbrd_app', to_regprocedure('my_child_fixtures()'), 'EXECUTE')
+        AND NOT has_function_privilege('public', to_regprocedure('my_child_fixtures()'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                         WHERE p.polrelid = to_regclass('ball_event') AND p.polname = 'ball_event_insert'
+                           AND pg_get_expr(p.polwithcheck, p.polrelid) LIKE '%my\\_child\\_fixtures%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A parent reads his child's side's balls",
   -- db/101: a team post and its notice reach the side only; a boy on a
   -- fixture's sheet, and his guardians, read that fixture's plan.
   CASE WHEN to_regprocedure('news_sheet_reach(uuid,uuid,text)') IS NOT NULL

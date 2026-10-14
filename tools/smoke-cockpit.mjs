@@ -34,6 +34,14 @@
  *      none of it; the pad and every write stay the host's; a guardian reads
  *      what a guardian of the host school reads.
  *
+ *   6. A PARENT (db/100, Kameel 2026-10-14). A guardian reads the balls of
+ *      the fixtures his child's side plays, home and away: our guardian of R
+ *      Pillay (1XI) reads our shared fixture and Westville's, whole, as our
+ *      coach does; Westville's guardian the same from his side. Another side's
+ *      fixture at the same school reads nothing, though the fixture is on his
+ *      list. Per boy stays per boy: no other boy's wheel, spell or load, and
+ *      not the pad.
+ *
  * The rest of the 136 doc's §9 API walk (opposition_context, trips, matchups,
  * the logged doors) is held by smoke-opposition, smoke-lifts and
  * smoke-matchups; db/99 §71, §72 and §75 hold the schema half of this one.
@@ -135,6 +143,8 @@ const fixture = async ({ hhmm, opponent, host = HIL, shared = false, daysAgo = 0
    values ($1, '1XI', $2, $3, $4, ((sa_today() - $6::int)::timestamp + $5::time) at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'live')
    returning id`, [host, shared ? (host === HIL ? WES : HIL) : null, shared ? "1XI" : null, opponent, hhmm, daysAgo]))[0].id;
 const FILLED = (r) => r.age_band != null && r.pace != null && r.max_overs_per_spell != null && r.max_overs_per_day != null && typeof r.over_spell_limit === "boolean";
+/** Group 5's readers, for group 6. @type {any} */
+let families;
 const BLANK = (r) => r.age_band === null && r.pace === null && r.max_overs_per_spell === null && r.max_overs_per_day === null && r.over_spell_limit === null;
 
 try {
@@ -395,8 +405,8 @@ try {
     ok("a matchup's coverage counts our opener's balls for us and none for them", (await cov(coach, WHITFIELD)) >= 30 && (await cov(wes, WHITFIELD)) === 0);
 
     // A guardian reads at the other school's fixture what a guardian of the
-    // host reads at it: the fixture, and its balls as ours does (the log asks
-    // about nobody in particular, at either school's fixtures; unchanged).
+    // host reads at it: the fixture, and its balls as ours does (both boys
+    // are on their 1XI, the side at each end: group 6 has the rest, db/100).
     const fam = async (tok) => ({ seen: ((await rows("matches", null, tok)) ?? []).some((m) => m.id === SHARED), balls: ((await log(tok)) ?? []).length });
     const gW = await fam(awayParent), gH = await fam(parent);
     ok("the Westville guardian reads the fixture, as our guardian does", gW.seen && gH.seen, { gW, gH });
@@ -407,6 +417,7 @@ try {
     ok("Westville's coach cannot take the pad at our fixture", claim.body?.ok !== true, claim.raw);
     const held = await api(`/api/matches/${SHARED}/quarantine`, { token: wes });
     ok("...nor read what it holds for review", held.status !== 200 || (held.body?.rows ?? []).length === 0, held.raw);
+    families = { parent, awayParent, log, seqs, ours, theirsLog };
 
     // bowler_day agrees with the spell it counts, across the boundary.
     const d = ((await read("bowler_day", { date: today, teamCode: "1XI" }, wes)).body?.rows ?? []).find((r) => r.player_id === THEIRS);
@@ -417,6 +428,63 @@ try {
     const raw = JSON.stringify([await rows("bowling_spells", { matchId: SHARED }, wes), await log(wes)]);
     ok("...and nothing of ours rides along: no injury, reason or risk word, none of our bowlers named",
        !/injury_type|reason_kind|\brisk\b|V Cockpit Quick|V Cockpit Spin/i.test(raw));
+  }
+
+  // ══ 6 ══
+  group("6 · a parent reads the balls of his child's side's fixtures, home and away (db/100)");
+  {
+    const { parent, awayParent, log, seqs, ours, theirsLog } = families;
+    // Another side at our school, today: the 2XI, eight overs.
+    const SECONDS = (await q(
+      `insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, '2XI', 'Verify Cockpit Seconds', (sa_today()::timestamp + time '11:00') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'live')
+       returning id`, [HIL]))[0].id;
+    await feed(SECONDS, 0, [null, null, null, null, null, null, null, null]);
+    const coach2 = await login("coach2@example.invalid");
+    const seconds = await log(coach2, SECONDS);
+    ok("the 2XI's coach reads his own side's fixture (the control)", (seconds ?? []).length === 48, seconds?.length);
+
+    // Home and away, as our guardian of R Pillay (1XI).
+    const home = await log(parent);
+    ok("our parent reads every ball of the shared fixture at home, as our coach does", home !== null && seqs(home) === seqs(ours), home?.length);
+    const away = await log(parent, AWAY);
+    ok("...and every ball of it at Westville, where his son's side is the visitor", away !== null && seqs(away) === seqs(theirsLog), away?.length);
+    const afternoon = await log(parent, AFTERNOON);
+    ok("...and the afternoon's, his son's side's with no away school", afternoon !== null && seqs(afternoon) === seqs(await log(coach, AFTERNOON))
+       && afternoon.length > 0, afternoon?.length);
+    // ...and Westville's guardian, from the other end.
+    ok("Westville's parent reads both, his son's side at each end",
+       seqs(await log(awayParent)) === seqs(ours) && seqs(await log(awayParent, AWAY)) === seqs(theirsLog));
+    const score = async (tok, m) => JSON.stringify(await rows("live_score", { matchId: m }, tok));
+    ok("the score a parent folds is the score the coach reads", (await score(parent, SHARED)) === (await score(coach, SHARED))
+       && (await score(parent, SHARED)) !== "[]");
+
+    // Refused: another side's fixture.
+    const seen = ((await rows("matches", null, parent)) ?? []).some((m) => m.id === SECONDS);
+    ok("our parent sees the 2XI's fixture on his list (match_read, unchanged)...", seen);
+    ok("...and reads none of its balls: it is not his son's side's", ((await log(parent, SECONDS)) ?? []).length === 0);
+    ok("...nor its score", (await score(parent, SECONDS)) === "[]");
+    ok("Westville's parent reads none of it either", ((await log(awayParent, SECONDS)) ?? []).length === 0);
+
+    // Per boy stays per boy.
+    const wheel = async (tok, id) => ((await rows("player_shot_points", { playerId: id }, tok)) ?? []).length;
+    ok("our parent draws no other boy's wheel: not our opener's, not Westville's", (await wheel(parent, WHITFIELD)) === 0 && (await wheel(parent, AWAYBAT)) === 0);
+    ok("Westville's parent draws his own son's wheel at our ground, and not our opener's",
+       (await wheel(awayParent, AWAYBAT)) === 6 && (await wheel(awayParent, WHITFIELD)) === 0);
+    ok("...nor counts another boy's matchup balls", (await rows("matchup_coverage", { batterId: WHITFIELD }, parent))?.[0]?.deliveries === 0);
+    ok("bowling_spells at the shared fixture carries none of the bowlers (none is his son)",
+       JSON.stringify(await rows("bowling_spells", { matchId: SHARED }, parent)) === "[]");
+    ok("...and the load reads nothing: workload, bowler_day",
+       JSON.stringify(await rows("workload", { teamCode: "1XI" }, parent)) === "[]"
+       && JSON.stringify(await rows("bowler_day", { date: today, teamCode: "1XI" }, parent)) === "[]");
+    const raw = JSON.stringify([home, away]);
+    ok("...and no name, injury or load rides on the log he reads", !/V Cockpit|injury_type|reason_kind|\brisk\b|age_band/i.test(raw));
+
+    // The pad stays the scorer's.
+    const claim = await api(`/api/matches/${SHARED}/session/claim`, { method: "POST", token: parent, body: { device: "device-cockpit-api" } });
+    ok("our parent cannot take the pad", claim.body?.ok !== true, claim.raw);
+    const held = await api(`/api/matches/${SHARED}/quarantine`, { token: parent });
+    ok("...nor read what it holds for review", held.status !== 200 || (held.body?.rows ?? []).length === 0, held.raw);
   }
 
   ok("the server logged no errors", serverErr.join("").trim() === "", serverErr.join("").slice(0, 600));
