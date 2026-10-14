@@ -285,14 +285,17 @@ SELECT
         AND has_function_privilege('scrbrd_app', 'news_post_withdraw(uuid)', 'EXECUTE')
         AND NOT has_function_privilege('scrbrd_app', 'news_post_notice()', 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Posts write their notices",
+  -- These rows look their objects up with to_regprocedure()/to_regclass(), so a
+  -- database without the migration reads PROBLEM here instead of failing the
+  -- whole check (a ::regprocedure cast is resolved before anything runs).
   -- db/94: a boy's overs today across every match, to whoever may read his
   -- load and nobody else (SCRBRD-136/137 phase B §1).
   CASE WHEN to_regprocedure('bowler_day(date,text)') IS NOT NULL
-        AND (SELECT prosecdef FROM pg_proc WHERE oid = 'bowler_day(date,text)'::regprocedure)
-        AND pg_get_functiondef('bowler_day(date,text)'::regprocedure) LIKE '%app_can(''player.workload.read''%'
-        AND has_function_privilege('scrbrd_app', 'bowler_day(date,text)', 'EXECUTE')
+        AND (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('bowler_day(date,text)'))
+        AND coalesce(pg_get_functiondef(to_regprocedure('bowler_day(date,text)')), '') LIKE '%app_can(''player.workload.read''%'
+        AND has_function_privilege('scrbrd_app', to_regprocedure('bowler_day(date,text)'), 'EXECUTE')
         AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
-                         WHERE p.oid IN ('bowler_day(date,text)'::regprocedure, 'bowling_directive_for(uuid)'::regprocedure)
+                         WHERE p.oid IN (to_regprocedure('bowler_day(date,text)'), to_regprocedure('bowling_directive_for(uuid)'))
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A bowler's day is read under the load capability",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
