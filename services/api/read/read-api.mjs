@@ -619,6 +619,18 @@ export const READ_QUERIES = {
   // button: notification_report() takes a notice's id, not a post's (the
   // lead's note on PB-D12). Null for an ordinary post, a draft, or a notice
   // this reader does not have.
+  //
+  // The plan's byline (db/103, CSA SG-9: a pupil knows which adult wrote to
+  // his side). The author's name is the app_user join where this reader may
+  // read the author's account; for a live plan it is otherwise
+  // plan_author_name(), which names the author of a plan this reader already
+  // reads and nothing else. An ordinary post is as before: a pupil and a
+  // parent hold no user.read, so its author_name stays null for them.
+  //
+  // `fixtureId`, optional, narrows to one fixture's posts (its plans: a post
+  // has no fixture), so the fixture screen finds the plan however many newer
+  // posts there are; the list is otherwise the newest 100. A narrowing, never
+  // a widening: the policies have already decided the set.
   news: {
     text: `select n.id, n.scope, n.school_id, n.team_code, n.competition_id,
                   n.kind, n.fixture_id as "fixtureId",
@@ -629,7 +641,7 @@ export const READ_QUERIES = {
                      order by x.published_at desc limit 1) end as "noticeId",
                   n.title, n.body, n.published_at, n.created_at,
                   s.name as school_name, c.name as competition_name,
-                  u.name as author_name,
+                  coalesce(u.name, case when n.kind = 'plan' then plan_author_name(n.id) end) as author_name,
                   (n.author_id = app_user_id()) as mine,
                   coalesce(app_can('broadcast.publish', n.school_id, null::text,
                                    '00000000-0000-0000-0000-000000000000'::uuid,
@@ -653,9 +665,16 @@ export const READ_QUERIES = {
                 where q.post_id = n.id
                 order by (q.withdrawn_at is null) desc, q.requested_at desc
                 limit 1) pp on true
+            where ($1::uuid is null or n.fixture_id = $1::uuid)
             order by coalesce(n.published_at, n.created_at) desc
             limit 100`,
-    params: () => [],
+    params: (q) => {
+      const id = q?.fixtureId || null;
+      if (id && !UUID_RE.test(id)) {
+        const e = /** @type {DressedError} */ (new Error("bad_param:fixtureId")); e.status = 400; throw e;
+      }
+      return [id];
+    },
   },
 
   // Notices. The read policy demands news.read AND the capability each row

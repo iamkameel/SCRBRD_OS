@@ -23,7 +23,7 @@ import { AnalyticsTab } from "../src/views/matchcentre/tabs.jsx";
 import {
   captaincyOf, currentSchoolSeason, sheetOf, nextIn, inningsOf, bowlerRows, notYetBowled, bandOfTeam, bandLine, pitchWords,
   bowlingType, matchupTypes, matchupWords, termsOf, overStory, NEVER_ON_THE_TAB,
-  planOf, draftPlanOf, planLine, planLabel, planTitle, planRefusal,
+  planOf, draftPlanOf, planLine, planLabel, planRead, planTitle, planRefusal,
 } from "../src/lib/captain.js";
 import { PlanBlock } from "../src/views/family/plan.jsx";
 import { CaptainCardView } from "../src/views/family/captain.jsx";
@@ -383,8 +383,10 @@ group("SCRBRD-138 phase B: the coach's plan is the live one for the fixture and 
      && draftPlanOf([row({ publishedAt: null, mine: false })], "m-sat", side) === null);
   ok("the byline: the author and the day, SA time", planLine(planOf(rows, "m-sat")) === "Plan from Mr Dlamini · Thu" && planLabel(planOf(rows, "m-sat")) === "The plan · Mr Dlamini · Thu 20:10", planLabel(planOf(rows, "m-sat")));
   const nameless = planOf([row({ authorName: null })], "m-sat");
-  ok("a reader who may not read the author's name is told nothing about who, and never 'the office'",
+  ok("a plan with no name (the author's account gone) says nothing about who, and never 'the office'",
      planLine(nameless) === "Plan for the side · Thu" && planLabel(nameless) === "The plan · Thu 20:10" && !/office/i.test(planLine(nameless) + planLabel(nameless)));
+  ok("the fixture's plan is read narrowed to that fixture, so the newest 100 posts cannot hide it; no fixture, no narrowing",
+     JSON.stringify(planRead("m-sat")) === '{"fixtureId":"m-sat"}' && planRead(null) === null && planRead(undefined) === null && planRead("") === null);
   ok("...the title the screen makes is the fixture, never the coach's", planTitle("Kearsney", Date.parse("2026-10-03T07:00:00Z")) === "The plan: v Kearsney, Sat 3 Oct"
      && planTitle("", null) === "The plan: v the opposition");
 }
