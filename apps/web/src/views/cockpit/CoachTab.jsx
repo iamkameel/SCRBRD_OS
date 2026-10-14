@@ -113,7 +113,7 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
     if (s.route === "scorecard") return setTab ? closeThen(() => setTab("scorecard")) : null;
     if (s.route === "duties") return onOpenDuties ? closeThen(() => onOpenDuties(match)) : null;
     if (s.route === "profile") {
-      const id = c.evidence.params?.batterId;
+      const id = c.evidence.params?.playerId;
       return id && onNavProfile && nav.includes("profiles") ? closeThen(() => onNavProfile(id)) : null;
     }
     return onNav && nav.includes(s.route) ? closeThen(() => onNav(s.route, s.section ?? null)) : null;

@@ -400,7 +400,7 @@ group("GA-I27 · Every card's evidence trail: the rule's own inputs, its time fr
   ok("no field the rules do not read reaches a trail, though every row carried them (a reason, a nature, a flag, a ratio, the roster, a phone, a driver)", leaked.length === 0, leaked);
   const ids = all.flatMap((k) => Object.entries(k.evidence.params).filter(([n]) => /player|batter|bowler/i.test(n)).filter(([, v]) => !k.base.includes(String(v))).map(([n, v]) => `${k.rule}: ${n}=${v}`));
   ok("params name a boy only when the card does (his id is in the card's base)", ids.length === 0, ids);
-  ok("no trail names a second boy: S5's names its batter alone, S6 and S7 none", Object.keys(one("S5").evidence.params).join() === "batterId,type" && Object.keys(one("S6").evidence.params).length === 0 && Object.keys(one("S7").evidence.params).length === 0);
+  ok("no trail names a second boy: S5's names its batter alone, S6 and S7 none", Object.keys(one("S5").evidence.params).join() === "playerId,type" && Object.keys(one("S6").evidence.params).length === 0 && Object.keys(one("S7").evidence.params).length === 0);
   ok("the screens are the existing ones (C-D3: no fifth destination); S9 has none", all.every((k) => k.evidence.screen === null || ["logistics", "scorecard", "training", "squad", "profile", "duties", "competitions", "notifications"].includes(k.evidence.screen.route))
      && one("S9").evidence.screen === null);
   ok("the team manager's cards carry no load read's name, for he has no load card", !/bowler_day|bowling_spells|workload/.test(JSON.stringify(evaluate(full({ gate: MANAGER })).map((k) => k.evidence))));

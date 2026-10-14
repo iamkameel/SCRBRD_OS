@@ -228,7 +228,7 @@ export function ruleS2a(c) {
       const words = c.capFor(b.balls);
       if (!words || (!inPlay && !pastCap(words))) continue;
       out.push(card("S2a", `S2a:${i}:${b.id}`, `S2a:${i}:${b.id}:${words}`, [`${b.name} · ${words}`], 1, { dismissable: !inPlay,
-        figures: [fig("balls bowled", b.balls, per(b.balls, "ball")), fig("the conditions", words)], params: { innings: i, bowlerId: b.id } }));
+        figures: [fig("balls bowled", b.balls, per(b.balls, "ball")), fig("the conditions", words)], params: { innings: i, playerId: b.id } }));
     }
   }
   return out;
@@ -249,7 +249,7 @@ export function ruleS2b(c) {
     out.push(card("S2b", `S2b:${i}:${open.bowlerId}`, `S2b:${i}:${open.bowlerId}:${open.spellNo}:${open.overs}`,
       [`${who} · spell ${open.overs} of ${open.maxSpell} (${open.ageBand ? `${open.ageBand} ` : ""}directive)`], 1, { dismissable: false,
         figures: [fig("spell", open.spellNo), fig("overs in it", open.overs, per(open.overs, "over")), fig("the directive's spell", open.maxSpell, per(open.maxSpell, "over")),
-          open.ageBand ? fig("age band", open.ageBand) : null], params: { innings: i, bowlerId: open.bowlerId } }));
+          open.ageBand ? fig("age band", open.ageBand) : null], params: { innings: i, playerId: open.bowlerId } }));
   }
   return out;
 }
@@ -367,7 +367,7 @@ export function ruleS5(c) {
       ], t.balls, { growth: MATCHUP_GROWTH, figures: [fig("against", t.type), fig("balls", t.balls, per(t.balls, "ball")), fig("runs", t.runs, per(t.runs, "run")),
         fig("out", t.out, t.out === 1 ? "time" : "times"),
         has ? fig("attributable", m.coverage.attributable, per(m.coverage.attributable, "ball")) : null,
-        has ? fig("of the balls he faced", m.coverage.deliveries, per(m.coverage.deliveries, "ball")) : null], params: { batterId: r.playerId, type: t.type } }));
+        has ? fig("of the balls he faced", m.coverage.deliveries, per(m.coverage.deliveries, "ball")) : null], params: { playerId: r.playerId, type: t.type } }));
     }
   }
   return out;
