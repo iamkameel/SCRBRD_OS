@@ -36,7 +36,7 @@ export const PANEL_CAPABILITY = Object.freeze({
   side:       ["team.read", "availability.read"],        // P2, S3, S7: who has answered
   status:     ["medical.status.read"],                   // P2: restricted, and until when (the status tier only)
   select:     ["team.select"],                           // S3, S6: the selection signals
-  load:       ["player.workload.read"],                  // P3, P6's directive, S2b, S11
+  load:       ["player.workload.read"],                  // P3, P6's directive, S2b, S2c, S11
   opposition: ["opposition.read"],                       // P4
   bus:        ["transport.read"],                        // P1's bus line, S1
   lifts:      ["transport.lift.receive"],                // P1's head count, S1's subtraction, S4a

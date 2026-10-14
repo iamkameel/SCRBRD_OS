@@ -136,13 +136,14 @@ const TYPE_FLOOR_CEILING = {
   display390:  0,
   // SCRBRD-136/137 phase A (2026-10-02): the coach's cockpit, on a phone, against the
   // walk's own API (tools/a11y-cockpit-mock.mjs): the Dashboard's match-day card, the
-  // Coach tab before the first ball and live, and the feed's drawer. Measured inside the
+  // Coach tab before the first ball and live, and the feed's drawer (on the day, and live with
+  // phase B's S2c, cockpitlivedrawer). Measured inside the
   // cockpit's own regions (the card, the tab, the drawer) — the staff shell around them
   // is priced into dashboard and matchview above, not here. Born at 0, and kept there.
   cockpithome:   0,
   cockpitday:    0,
   cockpitlive:   0,
-  cockpitdrawer: 0,
+  cockpitdrawer: 0, cockpitlivedrawer: 0,
   // Pick the side (2026-10-03): the coach's dialog naming the side, opened from the Coach
   // tab's side panel, on a phone; measured inside its own region. Born at 0, and kept there.
   pickside:      0,
@@ -211,7 +212,7 @@ const TAP_FLOOR_CEILING = {
   cockpithome:   0,
   cockpitday:    0,
   cockpitlive:   0,
-  cockpitdrawer: 0, pickside: 0,
+  cockpitdrawer: 0, cockpitlivedrawer: 0, pickside: 0,
   // GA-I13: the scorer's home, inside its region: every control 44px or more.
   scorerhome: 0,
   // SCRBRD-140: the sign-in screens: every control 44px or more.
@@ -271,7 +272,7 @@ const CONTRAST_CEILING = {
   // (board.dim lifted) on the daylight one.
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
-              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, pickside: 0,
+              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, pickside: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
@@ -281,7 +282,7 @@ const CONTRAST_CEILING = {
               scorerhome: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
-              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, pickside: 0,
+              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, pickside: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
@@ -327,7 +328,7 @@ const EMOJI_CEILING = {
   cockpithome:   0,
   cockpitday:    0,
   cockpitlive:   0,
-  cockpitdrawer: 0, pickside: 0,
+  cockpitdrawer: 0, cockpitlivedrawer: 0, pickside: 0,
   // SCRBRD-140: the sign-in screens.
   signuplogin:    0,
   signupclaim:    0,
@@ -778,6 +779,15 @@ async function cockpitWalk(theme) {
     await tap("mc-tab-coach", 2500);
     ok("the live match has the Coach tab, with the Board and the bowlers' overs left", await tid("coach-board").count() === 1 && await tid("coach-bowlers").count() === 1);
     await check("cockpitlive", '[data-testid="mc-coach"]');
+    // Phase B's S2c: the live tab's drawer, with a bowler at the directive's day.
+    await tid("coach-signals-open").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="signal-S2c"]', { timeout: 4000 }).catch(() => {});
+    ok("the live tab's drawer carries S2c: the bowler's day across two matches, the figure and its source",
+       /11 of 12 today, two matches \(U15 directive\)/.test(await tid("signal-S2c").first().innerText().catch(() => "")));
+    await check("cockpitlivedrawer", '[data-testid="signals"]');
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
     ok("no page errors on the cockpit's screens", errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} cockpit walk threw: ${e.message?.slice(0, 160)}`, false);

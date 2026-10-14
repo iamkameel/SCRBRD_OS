@@ -8,6 +8,7 @@ import {
   KINDS, PUPIL_UNDER_18, RELATIONSHIPS, REQUEST_STATE_WORDS, STAFF_ROLES,
   EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, withdrawWords, withdrew,
 } from "../lib/joinSchool.js";
+import { claimFailure, claimResult } from "../lib/registerClaim.js";
 
 // ══════════════════════════════════════════════════════
 //  AN ACCOUNT WITH NO SCHOOL  (SCRBRD-140 §4, §5)
@@ -97,9 +98,16 @@ function HelpLine() {
 
 /**
  * The join form. `post` is api() unless a test hands in another.
- * @param {{ schools: { id: string, name: string }[], onSent: () => void, post?: typeof api }} p
+ *
+ * A member of staff who chooses their school is first asked of the school's
+ * staff register (POST /api/join/register-claim, SCRBRD-140 phase 2): if the
+ * office listed the address Google verified, the server grants what was listed
+ * and `onJoined` enters the school. If it grants nothing, the claim says
+ * NOTHING: the request form below reads exactly as it would have if the office
+ * had listed nobody, so a refused person learns nothing from the claim.
+ * @param {{ schools: { id: string, name: string }[], onSent: () => void, onJoined?: () => Promise<void>, post?: typeof api }} p
  */
-export function JoinSchool({ schools, onSent, post = api }) {
+export function JoinSchool({ schools, onSent, onJoined, post = api }) {
   const [schoolId, setSchoolId] = useState(schools.length === 1 ? schools[0].id : null);
   const [q, setQ] = useState("");
   const [kind, setKind] = useState(null);
@@ -107,11 +115,41 @@ export function JoinSchool({ schools, onSent, post = api }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const [sent, setSent] = useState(null);
+  // The register's claim for a member of staff: idle | checking | granted | none | cooldown | error.
+  const [claim, setClaim] = useState({ state: "idle", words: "" });
+  const [claimTry, setClaimTry] = useState(0);
+  const [entering, setEntering] = useState(false);
+  const [enterProblem, setEnterProblem] = useState("");
   const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setProblem(""); };
 
   // A single school is not a choice (as the earlier sign-up flow already knew).
   useEffect(() => { if (schools.length === 1) setSchoolId(schools[0].id); }, [schools]);
   const school = schools.find((s) => s.id === schoolId) ?? null;
+
+  // Before any role is offered to somebody who works at the school, ask the register.
+  useEffect(() => {
+    if (kind !== "staff" || !schoolId) { setClaim({ state: "idle", words: "" }); return undefined; }
+    let off = false;
+    setClaim({ state: "checking", words: "" });
+    setEnterProblem("");
+    post("/api/join/register-claim", { method: "POST", body: { schoolId } })
+      .then((r) => {
+        if (off) return;
+        const c = claimResult(r);
+        if (c.kind === "granted") { setClaim({ state: "granted", words: c.words }); onSent?.(); }
+        else setClaim({ state: "none", words: "" });
+      })
+      .catch((e) => { if (!off) { const f = claimFailure(e); setClaim({ state: f.kind, words: f.words }); } });
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, schoolId, claimTry]);
+
+  const enter = async () => {
+    setEntering(true); setEnterProblem("");
+    try { await onJoined?.(); }
+    catch { setEnterProblem("You are in, but this page could not load the school. Sign out and sign in again."); }
+    setEntering(false);
+  };
   const shown = schools.filter((s) => s.name.toLowerCase().includes(q.trim().toLowerCase()));
   const built = kind ? buildRequest(kind, schoolId, form) : null;
 
@@ -167,7 +205,33 @@ export function JoinSchool({ schools, onSent, post = api }) {
       )}
 
       {/* 3 · The details each kind needs, and no more */}
-      {schoolId && kind === "staff" && (
+      {schoolId && kind === "staff" && claim.state === "checking" && (
+        <div role="status" data-testid="join-claim-checking" style={{ ...text(14), marginBottom: "14px" }}>Checking the school's staff list…</div>
+      )}
+
+      {schoolId && kind === "staff" && claim.state === "granted" && (
+        <div role="status" data-testid="join-claimed" style={{ ...text(14, T.content.primary), padding: "14px", borderRadius: "12px",
+          border: `1px solid ${T.line.strong}`, background: T.surface.base, marginBottom: "14px" }}>
+          <div style={{ fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, marginBottom: "6px" }}>{claim.words}</div>
+          <Btn kind="primary" data-testid="join-claimed-continue" disabled={entering} onClick={enter} style={{ marginTop: "8px" }}>{entering ? "Opening…" : "Open the school"}</Btn>
+          {enterProblem && <div role="alert" data-testid="join-claimed-problem" style={{ ...text(13, T.semantic.criticalText), marginTop: "8px" }}>{enterProblem}</div>}
+        </div>
+      )}
+
+      {schoolId && kind === "staff" && claim.state === "cooldown" && (
+        <div role="alert" data-testid="join-cooldown" style={{ ...text(14, T.content.primary), padding: "12px 14px", borderRadius: "10px",
+          border: `1px solid ${T.line.normal}`, background: T.surface.base, marginBottom: "14px" }}>{claim.words}</div>
+      )}
+
+      {schoolId && kind === "staff" && claim.state === "error" && (
+        <div role="alert" data-testid="join-claim-error" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px",
+          background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "12px" }}>
+          {claim.words}
+          <div><Btn data-testid="join-claim-retry" style={{ marginTop: "8px" }} onClick={() => setClaimTry((n) => n + 1)}>Check again</Btn></div>
+        </div>
+      )}
+
+      {schoolId && kind === "staff" && (claim.state === "none" || claim.state === "error") && (
         <div data-testid="join-form-staff">
           <Field label="What do you do at the school?">{(id) => (
             <select id={id} value={form.role} onChange={(e) => set("role", e.target.value)} style={input()} data-testid="join-staff-role">
@@ -217,7 +281,8 @@ export function JoinSchool({ schools, onSent, post = api }) {
 
       {problem && <div role="alert" data-testid="join-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "12px" }}>{problem}</div>}
 
-      {schoolId && kind && !(kind === "pupil" && form.adult !== "yes") && (
+      {schoolId && kind && !(kind === "pupil" && form.adult !== "yes")
+        && !(kind === "staff" && claim.state !== "none" && claim.state !== "error") && (
         <Btn kind="primary" data-testid="join-send" disabled={busy || !built?.ok} onClick={send}>{busy ? "Sending…" : "Send my request"}</Btn>
       )}
     </div>
@@ -228,7 +293,7 @@ export function JoinSchool({ schools, onSent, post = api }) {
  * The screen. `name` is what the shell knows of the person; `onSignOut` is
  * the shell's sign-out (which clears the persisted session too).
  */
-export function NoSchool({ name, onSignOut }) {
+export function NoSchool({ name, onSignOut, onJoined }) {
   const [nudge, setNudge] = useState(0);
   const rows = useLive("role_requests", "spectator", nudge).rows;
   const [schools, setSchools] = useState(null);
@@ -291,7 +356,7 @@ export function NoSchool({ name, onSignOut }) {
         )}
 
         {schools === null ? <div style={text(14)}>Loading the schools…</div>
-          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)}/>}
+          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined}/>}
 
         <HelpLine/>
 

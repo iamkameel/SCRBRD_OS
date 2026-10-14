@@ -15,9 +15,10 @@
  *   - It never reads a reason for an absence, an injury's nature, a ratio, a
  *     check-in or a flag, or whether a boy is monitored (D4, D5). The static
  *     check in apps/web/test/signals.test.mjs holds the source to that.
- *   - It builds none of the eight refused signals (§4.4), and not S2c (it needs
- *     `bowler_day`, phase B). The lift rules show a head count; the office's
- *     S4b shows names to the office only (D10).
+ *   - It builds none of the eight refused signals (§4.4). S2c, the directive's
+ *     day across two matches, is phase B's (docs/design/SCRBRD-136-137_phaseB.md
+ *     §1.5) over the `bowler_day` read (db/94). The lift rules show a head
+ *     count; the office's S4b shows names to the office only (D10).
  *   - "Dismiss" is "I have seen this" (D13): per person, per evidence, held by
  *     the caller. It changes no row and tells nobody.
  *
@@ -44,6 +45,7 @@ export const RULES = Object.freeze({
   S1:  { title: "The bus is short",                          via: ["transport.read", "team.read"],                source: "trips, match_squad, lift_expected" },
   S2a: { title: "A bowler at the competition's cap",         via: ["fixture.read"],                               source: "the fold, the frozen conditions" },
   S2b: { title: "A bowler at the directive's spell",         via: ["player.workload.read"],                       source: "bowling_spells" },
+  S2c: { title: "A bowler at the day's limit",               via: ["player.workload.read"],                       source: "bowler_day, the frozen conditions" },
   S3:  { title: "A picked boy may not be available",         via: ["team.select", "availability.read"],           source: "readiness" },
   S4a: { title: "Lifts to chase",                            via: ["transport.lift.receive"],                     source: "lift_expected" },
   S4b: { title: "A lift exception",                          via: ["transport.lift.oversee"],                     source: "lift_exceptions" },
@@ -99,6 +101,8 @@ const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {s
  * @property {any[] | null} readiness
  * @property {any[] | null} workload
  * @property {any[] | null} spells      bowling_spells
+ * @property {any[] | null} [bowlerDay] bowler_day: each boy's overs on the fixture's date, every match (read only while our side fields)
+ * @property {((band: string) => number | null) | null} [docDayFor] this fixture's competition day figure for a band (bowlingLimit over the frozen conditions), or null
  * @property {any[] | null} trips
  * @property {{boys: Set<string>, count: number, lifts: number, notLeft: number, handedOverUnconfirmed: number} | null} lifts  liftCounts()
  * @property {any[] | null} liftExceptions
@@ -172,6 +176,51 @@ export function ruleS2b(c) {
     const who = inn.bowlers?.find((/** @type {any} */ b) => b.id === open.bowlerId)?.name ?? open.name;
     out.push(card("S2b", `S2b:${i}:${open.bowlerId}`, `S2b:${i}:${open.bowlerId}:${open.spellNo}:${open.overs}`,
       [`${who} · spell ${open.overs} of ${open.maxSpell} (${open.ageBand ? `${open.ageBand} ` : ""}directive)`], 1, { dismissable: false }));
+  }
+  return out;
+}
+
+// ── S2c · A bowler at the directive's day ──────────────
+
+const NUMBER_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+/**
+ * A boy who may bowl in this innings, one over from the directive's day or
+ * past it, counting every match he has bowled in on the fixture's date
+ * (phase B §1.5). The day's figure is the directive's, from `bowler_day`
+ * (db/94), as S2b's spell is: the read is the boy's, so it is asked of
+ * player.workload.read and a reader without it has no row to draw. In play
+ * only, and never dismissable: it clears with his next over, and after the
+ * innings the record of a day passed is bowling_breach's (P9). It says the
+ * figure and its source and never a reason, a guideline, the other match's
+ * name or "stop".
+ * @param {Ctx} c @returns {Card[]}
+ */
+export function ruleS2c(c) {
+  if (!c.gate.panels.load || !c.bowlerDay) return [];
+  const out = [];
+  for (const { inn, i, inPlay } of c.fielding ?? []) {
+    if (!inPlay) continue;
+    // Who may bowl in it: our named side, and anyone who already has.
+    const may = new Set([...named(c).map((r) => r.playerId), ...(inn?.bowlers ?? []).map((/** @type {any} */ b) => b.id)]);
+    for (const d of c.bowlerDay) {
+      if (!may.has(d.playerId)) continue;
+      // Tightest wins (Kameel, 14 Oct, #141): the directive's day (a pace
+      // bowler's only) against this fixture's competition figure for his band,
+      // where its frozen conditions name one (for every bowler, as bandLine
+      // says it). The lower is the limit, and the card says whose it is.
+      const dir = d.pace === true && d.maxDay != null ? d.maxDay : null;
+      const doc = d.ageBand && typeof c.docDayFor === "function" ? c.docDayFor(d.ageBand) : null;
+      const max = dir == null ? doc : doc == null ? dir : Math.min(dir, doc);
+      if (max == null || !(d.oversToday >= max - 1)) continue;
+      const whose = doc != null && (dir == null || doc < dir) ? "competition" : "directive";
+      const who = inn?.bowlers?.find((/** @type {any} */ b) => b.id === d.playerId)?.name ?? d.name;
+      const matches = d.matchesToday > 1 ? `, ${NUMBER_WORDS[d.matchesToday] ?? d.matchesToday} matches` : "";
+      const line = d.oversToday >= max
+        ? `${who} · ${d.oversToday} of ${max} today`
+        : `${who} · ${d.oversToday} of ${max} today${matches} (${d.ageBand ? `${d.ageBand} ` : ""}${whose})`;
+      out.push(card("S2c", `S2c:${i}:${d.playerId}`, `S2c:${i}:${d.playerId}:${d.oversToday}:${max}`, [line], d.oversToday, { dismissable: false }));
+    }
   }
   return out;
 }
@@ -342,7 +391,7 @@ export function ruleS12(c) {
 }
 
 /** Every rule, in the fixed order. */
-const EVALUATE = [ruleS1, ruleS2a, ruleS2b, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12];
+const EVALUATE = [ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12];
 
 /**
  * The feed: every rule over what the cockpit holds, in the rules' fixed order.

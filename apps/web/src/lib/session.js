@@ -79,6 +79,17 @@ export async function signInWithToken(token) {
 }
 
 /**
+ * Ask the server who this is again, with the token already held. After the
+ * staff register granted a role (POST /api/join/register-claim) the account
+ * has assignments it did not have at sign-in; the shell lays out from these.
+ * Nothing here decides anything: the server authorises every request again.
+ */
+export async function refreshProfile() {
+  _profile = await api("/api/session");
+  return _profile;
+}
+
+/**
  * Whether this server will accept the development sign-in.
  *
  * Read from /api/health rather than assumed, so the screen offers the seeded

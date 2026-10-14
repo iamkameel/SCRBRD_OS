@@ -23,14 +23,19 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCsv, mapRows, asText, asEmail, asOneOf } from "../services/api/io/csv.mjs";
+import { parseCsv, mapRows, asText, asEmail, asOneOf, asDate } from "../services/api/io/csv.mjs";
 import { IMPORTS, GUARDIAN_RELATIONSHIPS } from "../services/api/io/import-api.mjs";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { parseTeam, isValidTeam, ageAtCutoff } from "@scrbrd/policy/teams";
 import { ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, mayGrantRole } from "@scrbrd/policy/roles";
 
-/** The office's staff worksheet: one row per role a person is to hold. */
-export const STAFF_COLUMNS = ["name", "email", "role", "team_code"];
+/**
+ * The office's staff worksheet: one row per role a person is to hold. The
+ * same file is the staff register's (SCRBRD-140 phase 2, db/92): its last
+ * column, valid_until, is optional — the date by which the person must claim
+ * the row, blank for the end of the current season.
+ */
+export const STAFF_COLUMNS = ["name", "email", "role", "team_code", "valid_until"];
 /** The guardians import's own file (POST /api/import/guardians): one row per guardian per child. */
 export const GUARDIAN_COLUMNS = IMPORTS.guardians.template;
 
@@ -43,6 +48,7 @@ const STAFF_SPEC = {
   email:     { required: true, parse: asEmail },
   role:      { required: true, parse: asText(30) },
   team_code: { parse: asText(8) },
+  valid_until: { parse: asDate },
 };
 const GUARDIAN_SPEC = {
   player_full_name: { required: true, parse: asText(120) },

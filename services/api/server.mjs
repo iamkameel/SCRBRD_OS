@@ -90,6 +90,9 @@ import { resultsRoutes } from "./write/results-api.mjs";
 // SCRBRD-130 (db/73–75): the rain rule's reads — venue par, the DLS proposal.
 import { rainRoutes } from "./read/rain-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
+// SCRBRD-140 phase 2 (db/92–93): the school staff register, and the
+// request cooldown's lift.
+import { registerRoutes } from "./write/register-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
 import { workloadRoutes } from "./write/workload-api.mjs";
@@ -446,6 +449,7 @@ const safeguarding = safeguardingRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
+const staffRegister = registerRoutes({ pool, secret: SECRET });
 // Sign-up with Google (SCRBRD-140 phase 1, db/81). Google's keys for
 // scrbrd-os; FIREBASE_TEST_KEYS (the walk's own key) is refused in
 // production and verifies only a project that is not scrbrd-os.
@@ -757,6 +761,18 @@ const PLAYER_ROUTES = [
   // Ending one role (db/77). role_assignment_end() decides who may, and
   // answers every refusal with a code the route turns into words.
   [/^\/api\/assignments\/([^/]+)\/end$/,           "POST", requests.endAssignment],
+  // The school staff register (SCRBRD-140 phase 2, db/92). Every decision is
+  // a db/92 function's, under the caller: the office checks, imports, reads,
+  // withdraws and clears; a signing-in staff member claims what was listed
+  // for the address Google verified. NOT module-gated: it is how staff get in.
+  [/^\/api\/register\/([0-9a-f-]{36})$/,             "POST", staffRegister.upload],
+  [/^\/api\/register\/([0-9a-f-]{36})$/,             "GET",  staffRegister.list],
+  [/^\/api\/register\/rows\/([0-9a-f-]{36})\/withdraw$/, "POST", staffRegister.withdraw],
+  [/^\/api\/register\/([0-9a-f-]{36})\/redact$/,     "GET",  staffRegister.redactDue],
+  [/^\/api\/register\/([0-9a-f-]{36})\/redact$/,     "POST", staffRegister.redact],
+  [/^\/api\/join\/register-claim$/,                   "POST", staffRegister.claim],
+  // db/93: a DSO at one of its schools lifts a request cooldown.
+  [/^\/api\/cooldowns\/([0-9a-f-]{36})\/lift$/,       "POST", staffRegister.liftCooldown],
   // The newsfeed. Which tier a post needs is decided by its ANCHOR, inside the
   // INSERT policy — see db/12 — so these routes carry no capability checks.
   [/^\/api\/news$/,                                 "POST", news.publish],

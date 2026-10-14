@@ -19,6 +19,7 @@
  */
 import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
 import { SELF_REGISTRABLE_ROLES } from "@scrbrd/policy/roles";
+import { COOLDOWN_WORDS } from "./register-api.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
@@ -74,6 +75,10 @@ export function requestRoutes({ pool, secret }) {
       // db/86's constraint is named for its refusal code; say it as the
       // functions do, whichever door reached it.
       if (e.code === "23514" && e.constraint === "platform_role_needs_no_school") return res.status(422).json({ error: e.constraint });
+      // db/93: this person is paused from asking after repeated declined
+      // parent claims. Their own account's state, so saying so tells them
+      // nothing about anybody else; a DSO lifts it, or it ends by itself.
+      if (e.code === "23514" && e.constraint === "request_cooldown") return res.status(409).json({ error: "request_cooldown", detail: COOLDOWN_WORDS });
       if (e.code === "23514") return res.status(422).json({ error: "not_requestable", detail: e.message });
       if (e.code === "23505") return res.status(422).json({ error: "already_pending" });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_school" });
@@ -115,7 +120,15 @@ export function requestRoutes({ pool, secret }) {
       const email = String(b.email ?? "").trim();
       const name = String(b.name ?? "").trim();
       if (name.length < 2) throw err("name_required");
-      await pool.query(`select onboard_request($1, $2, $3, $4, $5, $6)`, [email, name, f.role, f.school, f.team, f.note]);
+      try {
+        await pool.query(`select onboard_request($1, $2, $3, $4, $5, $6)`, [email, name, f.role, f.school, f.team, f.note]);
+      } catch (/** @type {any} */ e) {
+        // db/93's cooldown is the state of whichever account the typed
+        // address belongs to. Signed out, the asker has not shown it is
+        // theirs, and onboarding never says whether an address was known:
+        // the answer is "requested" either way, and nothing was written.
+        if (!(e.code === "23514" && e.constraint === "request_cooldown")) throw e;
+      }
       return { requested: true };
     }),
 

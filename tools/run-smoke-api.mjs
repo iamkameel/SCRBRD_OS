@@ -117,6 +117,11 @@ const WALKS = [
   "derby",
   // Batter against bowler, and how much of the log a matchup can speak for.
   "matchups",
+  // The coach's cockpit over HTTP (SCRBRD-136/137 phase B §5, §1.7): the
+  // directive beside a spell only to player.workload.read for that boy, a
+  // voided ball off the wheel, the team manager's empty workload, and a
+  // boy's overs today across two matches (bowler_day, db/94) by reader.
+  "cockpit",
   // DRS, and the platform switch that holds it off until there is
   // ball-tracking to feed it.
   "drs",
@@ -194,6 +199,12 @@ const WALKS = [
   // a second Google account, revocation, and the rate limits — against the
   // walk's own signing key, which a production server refuses to start with.
   "signup",
+  // The school staff register (SCRBRD-140 phase 2, db/92) and the request
+  // cooldown (db/93): check then import, a Google account's claim granted
+  // with no role chosen, ended and claimed again, a departed uploader's row
+  // granting nothing, the register the office's alone, and a declined parent
+  // claim telling the DSO and pausing the asker until the DSO lifts it.
+  "staff-register",
   "kit",
   "passport",
   "web",
