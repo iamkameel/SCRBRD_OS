@@ -312,6 +312,17 @@ SELECT
                          WHERE p.oid IN ('bowler_day(date,text)'::regprocedure, 'bowling_directive_for(uuid)'::regprocedure)
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A bowler's day is read under the load capability",
+  -- db/96: the coach's plan is a team post tagged to a fixture, one live per
+  -- side, never public (SCRBRD-138 phase B §1).
+  CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news_post' AND column_name = 'kind')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news_post' AND column_name = 'fixture_id')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_plan_guard' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_public_not_plan' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('news_post_plan_live') AND i.indisunique)
+        AND NOT has_function_privilege('scrbrd_app', 'news_post_plan_guard()', 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+              AND (tablename, policyname) IN (('news_post', 'news_post_plan_side'), ('notification', 'notification_plan_side'))) = 2
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan is one per side, to the side",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
