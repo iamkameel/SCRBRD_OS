@@ -31,7 +31,17 @@
  *     scoring package), says no injury, fitness word, guideline,
  *     availability or reason, offers no row to open, and puts no child of
  *     another school on screen beyond the log's own names.
+ *   - THE COACH'S PLAN (SCRBRD-138 phase B, docs/design/SCRBRD-138_phaseB.md
+ *     §7.3): the coach writes a plan with "physio" in it and is refused with
+ *     the word on the screen, read out, his words kept (and the server's own
+ *     refusal shows the same way); writes a clean one; the captain's card
+ *     shows the line; a team-mate's fixture screen and a parent's show the
+ *     block, above the captain's section; a boy of another side has no plan in
+ *     his Home or his reads; the Captain tab's row opens; the coach withdraws;
+ *     the block, the line and the row are gone on the next load, Notices says
+ *     it was withdrawn, and no notification row carries a recipient.
  *
+
  * Every fixture here takes an explicit date.
  *
  *   node tools/migrate.mjs --reset --seed
@@ -451,7 +461,7 @@ try {
   dbg("CARD", card);
   ok("the Home card says Captain, his side, and the match live now", /^CAPTAIN/i.test(card) && /1XI/i.test(card) && /live now/.test(card) && /v Westville/.test(card), card);
   ok("...a count of the side and no name on it", /\d+ named in the side/.test(card) && !/Whitfield|Bekker|Naidoo|Seven|Mate Six/.test(card), card);
-  ok("...no plan line: the coach's plan is phase B", !/plan/i.test(card));
+  ok("...no plan line while no plan is out, and no place held for one", !/plan/i.test(card) && await tid(c.page, "captain-card-plan").count() === 0);
   const f1 = await floors(c.page);
   ok(`Home with the card: nothing read under 12px (${f1.small.length}), nothing tapped under 44px (${f1.tiny.length})`, f1.small.length === 0 && f1.tiny.length === 0, [...f1.small, ...f1.tiny].slice(0, 4).join(" · "));
 
@@ -473,7 +483,7 @@ try {
   const side = await inner(c.page, "captain-side");
   ok("...the side, by name and place, once on the screen", /6 named/i.test(side) && [WHITFIELD, BEKKER, NAIDOO, PILLAY, SEVEN, SIX].every((id) => side.includes(nm[id])) && await tid(c.page, "side-sheet").count() === 1, side);
   ok("...this season's figures for a boy on the sheet, in the figure line", /inns · \d+ runs · avg \d/.test(await inner(c.page, `captain-season-${PILLAY}`)), await inner(c.page, `captain-season-${PILLAY}`));
-  ok("...nothing of the plan, and no place held for it", !/plan/i.test(sec));
+  ok("...no plan block while no plan is out, and no place held for one; the section never holds one", !/plan/i.test(sec) && await tid(c.page, "plan-block").count() === 0);
   const secAll = await inner(c.page, "os-main");
   ok("...and no team-mate's injury, answer or reason anywhere on the screen (D7, K3)",
      !HEALTH.test(secAll) && !/physio says rest|illness/i.test(secAll) && await tid(c.page, `availability-state-${BEKKER}`).count() === 0, secAll.match(HEALTH)?.[0]);
