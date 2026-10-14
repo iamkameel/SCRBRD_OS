@@ -4686,6 +4686,95 @@ CREATE OR REPLACE FUNCTION _v96_named(p_post uuid) RETURNS text AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/96 (section 76) ──────────────────────────────────────────────
 
+-- ┌── db/101 (section 78). News to the side: a team post, and the team sheet
+-- Hilton's U15A, U15B and U14A and Westville's U15A and U14A, invented here,
+-- with a boy on each and his guardian (verified and consented, as the seed's
+-- are: a boy is selected only once registered). Hilton U15A at home to
+-- Westville U15A (f1), and against a school SCRBRD does not host (f2). f1's
+-- sheet: at the home end a U15A boy and a U14A boy playing up; at the away
+-- end a Westville U15A boy and a Westville U14A boy playing up. The other
+-- U14A boy is on no sheet. The U15A coach, team manager and assistant coach,
+-- the U14A coach, the director of sport, and five school-wide roles that hold
+-- news.read and read no side (a follower, finance, sponsorship, a driver,
+-- facilities). Westville's U15A coach. As the owner; every name is invented.
+CREATE OR REPLACE FUNCTION _v101_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE  uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's office verifies Hilton's links
+  WOFFICE uuid := '88888888-0000-0000-0000-00000000000d';   -- Westville's, Westville's
+  U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  U14 date := make_date(extract(year FROM sa_today())::int - 13, 3, 1);
+  ids jsonb; v_a uuid; v_up uuid; v_14 uuid; v_b uuid; v_w uuid; v_wup uuid; f1 uuid; f2 uuid; r record;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15A', 'Verify OneOhOne Opener', 1011, 'batter', U15) RETURNING id INTO v_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U14A', 'Verify OneOhOne Climber', 1012, 'bowler', U14) RETURNING id INTO v_up;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U14A', 'Verify OneOhOne Stayer', 1013, 'bowler', U14) RETURNING id INTO v_14;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15B', 'Verify OneOhOne Bside', 1014, 'batter', U15) RETURNING id INTO v_b;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, 'U15A', 'Verify OneOhOne Visitor', 1015, 'batter', U15) RETURNING id INTO v_w;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, 'U14A', 'Verify OneOhOne Visiting Climber', 1016, 'bowler', U14) RETURNING id INTO v_wup;
+  ids := _v71_people('v101', ARRAY[
+    ARRAY['coach',       'coach',           HIL::text, 'U15A', ''],
+    ARRAY['manager',     'teammanager',     HIL::text, 'U15A', ''],
+    ARRAY['assistant',   'assistantcoach',  HIL::text, 'U15A', ''],
+    ARRAY['u14coach',    'coach',           HIL::text, 'U14A', ''],
+    ARRAY['director',    'directorofsport', HIL::text, '',     ''],
+    ARRAY['aboy',        'player',          HIL::text, 'U15A', v_a::text],
+    ARRAY['upboy',       'player',          HIL::text, 'U14A', v_up::text],
+    ARRAY['u14boy',      'player',          HIL::text, 'U14A', v_14::text],
+    ARRAY['bboy',        'player',          HIL::text, 'U15B', v_b::text],
+    ARRAY['aparent',     'guardian',        HIL::text, '',     ''],
+    ARRAY['upparent',    'guardian',        HIL::text, '',     ''],
+    ARRAY['u14parent',   'guardian',        HIL::text, '',     ''],
+    ARRAY['bparent',     'guardian',        HIL::text, '',     ''],
+    ARRAY['follower',    'spectator',       HIL::text, '',     ''],
+    ARRAY['finance',     'finance',         HIL::text, '',     ''],
+    ARRAY['sponsorship', 'sponsorship',     HIL::text, '',     ''],
+    ARRAY['driver',      'driver',          HIL::text, '',     ''],
+    ARRAY['facilities',  'facilities',      HIL::text, '',     ''],
+    ARRAY['wescoach',    'coach',           WES::text, 'U15A', ''],
+    ARRAY['wesboy',      'player',          WES::text, 'U15A', v_w::text],
+    ARRAY['wesup',       'player',          WES::text, 'U14A', v_wup::text],
+    ARRAY['wesparent',   'guardian',        WES::text, '',     ''],
+    ARRAY['wesupparent', 'guardian',        WES::text, '',     '']]);
+  -- Each guardian is one boy's, verified by his school's office and consented.
+  FOR r IN SELECT a.id AS aid, x.p, x.verifier FROM role_assignment a,
+                  LATERAL (VALUES ((ids->>'aparent')::uuid, v_a, OFFICE), ((ids->>'upparent')::uuid, v_up, OFFICE),
+                                  ((ids->>'u14parent')::uuid, v_14, OFFICE), ((ids->>'bparent')::uuid, v_b, OFFICE),
+                                  ((ids->>'wesparent')::uuid, v_w, WOFFICE),
+                                  ((ids->>'wesupparent')::uuid, v_wup, WOFFICE)) AS x(person, p, verifier)
+            WHERE a.person_id = x.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, 'parent', 'verified', r.verifier, now(), 'granted', 'popia-2026-01', now(), r.verifier, current_date - 1);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', WES, 'U15A', 'Westville U15A', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f1;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', 'Verify OneOhOne Visitors', ((sa_today() + 10)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f2;
+  -- f1's sheet, both ends: a boy of the side and a boy playing up at each.
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES
+    (f1, v_a, 'home', 1), (f1, v_up, 'home', 2), (f1, v_w, 'away', 1), (f1, v_wup, 'away', 2);
+  RETURN ids || jsonb_build_object('p_a', v_a, 'p_up', v_up, 'p_14', v_14, 'p_b', v_b, 'p_w', v_w, 'p_wup', v_wup,
+                                   'f1', f1, 'f2', f2);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Take a boy off a sheet by deleting his row, as the owner: no person may
+-- delete a squad row (db/09 has no DELETE policy; the API withdraws).
+CREATE OR REPLACE FUNCTION _v101_unsheet(p_match uuid, p_player uuid) RETURNS integer AS $$
+  WITH d AS (DELETE FROM match_squad WHERE match_id = p_match AND player_id = p_player RETURNING 1)
+  SELECT count(*)::int FROM d
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/101 (section 78) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -18130,10 +18219,17 @@ $v49$;
     got := _withdraw_91(P);
     PERFORM _assert((SELECT b.published_at FROM news_post b WHERE b.id = P) IS NULL AND got = 'no_such_notice',
       '§70 (withdraw): the post is still sent, or withdraws twice');
-    PERFORM _as(V_KIN);
+    -- The side's readers are told. Since db/101 a U14A post reaches the U14A
+    -- side and nobody wider, and the seed has no U14A family: Hilton's office
+    -- reads every side; the 1XI family reads neither notice (§78 proves the
+    -- side's own families).
+    PERFORM _as(V_REG);
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_notifications WHERE id = NP)
                     AND EXISTS (SELECT 1 FROM my_notifications WHERE retracts_id = NP AND title = 'A notice was withdrawn'),
-      '§70 (withdraw): the family still reads the withdrawn notice, or was not told');
+      '§70 (withdraw): the side''s readers still read the withdrawn notice, or were not told');
+    PERFORM _as(V_KIN);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification WHERE id = NP OR retracts_id = NP),
+      '§70 (withdraw): a 1XI family reads a U14A post''s notice, or its "withdrawn" one (db/101)');
     -- the author's own withdrawal, as the old route wrote it
     PERFORM _as(V_COACH);
     UPDATE news_post SET published_at = NULL WHERE id = D AND published_at IS NOT NULL;
@@ -18185,6 +18281,7 @@ $v49$;
     PERFORM _as(V_KIN);
     PERFORM _assert(_report_91('40170000-0000-0000-0000-000000000001') = 'not_reportable',
       '§70 (report): a system notice was reported as a person''s words');
+    PERFORM _as(V_REG);   -- a reader of the U14A side (db/101): the family reads none of it
     PERFORM _assert(_report_91((SELECT m.id FROM my_notifications m WHERE m.retracts_id = NP)) = 'not_reportable',
       '§70 (report): a "withdrawn" notice was reported');
     PERFORM _assert(_report_91(NP) = 'no_such_notice', '§70 (report): a withdrawn notice was reported');
@@ -19124,9 +19221,10 @@ $v49$;
   --   (writer)   the assistant coach, holding no news.publish.team, is
   --              refused the insert
   --   (public)   a plan cannot be asked onto the public home page
-  --   (post)     an ordinary team post still reads as before: the U15B
-  --              parent and the follower read a U15A post (the narrowing is
-  --              the plan's alone, PB-D8)
+  --   (post)     an ordinary team post: the side's captain and guardian
+  --              read it and its notice. Until db/101 the U15B parent and
+  --              the follower read it too (the narrowing was the plan's
+  --              alone); since db/101 (Kameel, 2026-10-14) they read neither
   --   (doors)    the four functions are SECURITY DEFINER with a pinned path;
   --              the two trigger functions are executable by neither
   --              scrbrd_app nor PUBLIC, the two reach functions by scrbrd_app
@@ -19297,11 +19395,21 @@ $v49$;
     PERFORM _as((y->>'coach')::uuid);
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', V_HIL, 'U15A', 'Verify 096 nets', 'Nets at three on Thursday.', now()) RETURNING id INTO v;
-    FOREACH k IN ARRAY ARRAY['bparent', 'follower', 'captain'] LOOP
+    -- db/101 (Kameel, 2026-10-14: "Yes, in its own migration") narrowed an
+    -- ordinary team post to the side as well: the U15B parent and the
+    -- follower, who read it here before db/101, now read neither it nor its
+    -- notice. §78 is the full proof.
+    FOREACH k IN ARRAY ARRAY['captain', 'guardian'] LOOP
       PERFORM _as((y->>k)::uuid);
       PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = v) = 1
                       AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = v) = 1,
         format('§76 (post): the %s no longer reads an ordinary U15A post or its notice', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['bparent', 'follower'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = v) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = v) = 0,
+        format('§76 (post): the %s reads an ordinary U15A post or its notice (db/101 keeps it to the side)', k));
     END LOOP;
 
     -- (doors)
@@ -19330,6 +19438,291 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 76
   -- └── db/96 (section 76) ───────────────────────────────────────────
+  -- ┌── db/101 (section 78) ──────────────────────────────────────────
+  -- ── 78. News to the side: a team post, and the team sheet (db/101) ──
+  -- Kameel's two decisions of 2026-10-14: an ordinary team post and its
+  -- notice reach the side only, as a plan does ("Yes, in its own
+  -- migration"); a boy on a fixture's sheet and his guardians read that
+  -- fixture's plan even when his own side is another ("Yes: the team sheet
+  -- counts too"). Every write below is a person's, through scrbrd_app under
+  -- RLS, except the stage and the one deleted squad row (_v101_unsheet: no
+  -- person may delete one). Westville stands in for the other school.
+  --
+  -- What each label holds:
+  --   (team)     the U15A coach's ordinary post: the side's boy, his
+  --              guardian, the coach (its author), the team manager, the
+  --              assistant coach and the director of sport read it and its
+  --              notice; the U15B boy and parent, a follower, finance,
+  --              sponsorship, a driver, facilities, the U14A boys (on the
+  --              sheet or not) and their guardians, the U14A coach,
+  --              Westville's coach and boy, and nobody signed in, read
+  --              neither
+  --   (school)   a school post still reaches the whole school, those above
+  --              included, with its notice
+  --   (public)   db/83's door is unchanged: the author asks, the director of
+  --              sport approves, and the signed-out home page reads the post
+  --   (sheet)    the coach's plan for f1, and another for f2: the U14A boy
+  --              on f1's sheet reads f1's plan and its notice, and so does
+  --              his guardian; neither reads f2's plan or its notice, nor the
+  --              ordinary post: of every U15A row he reads f1's plan alone;
+  --              the U14A boy on no sheet, his guardian, the U14A coach, the
+  --              U15B parent, the follower and finance read nothing of it
+  --   (report)   the boy playing up may report f1's plan's notice, and the
+  --              side's guardian the post's (any reader may, SG-9 rule 4);
+  --              the U15B parent, the follower and the U14A guardian off the
+  --              sheet, who read neither, are told there is no such notice
+  --   (off)      withdrawn from the sheet he reads neither, nor does his
+  --              guardian; put back he reads it; his row deleted he reads
+  --              neither again
+  --   (away)     Westville's coach sends his side's plan for f1: the
+  --              Westville boy, the Westville U14A boy on the away sheet and
+  --              both their guardians read it and its notice; the visiting
+  --              U14A boy and his guardian read nothing of Hilton U15A; no
+  --              Hilton boy or guardian reads Westville's plan
+  --   (withdraw) Hilton's f1 plan withdrawn: the boy playing up and his
+  --              guardian read neither it nor its notice, and do read the
+  --              "withdrawn" notice; the U14A guardian off the sheet does not
+  --   (author)   the team manager writes to U15A and then leaves the side:
+  --              he still reads his own post, and not the coach's
+  --   (doors)    the three new functions and db/96's news_notice_reach are
+  --              stable SECURITY DEFINERs with a pinned path, the
+  --              application's and not PUBLIC's or a managed host's; the two
+  --              narrowing policies RESTRICTIVE, the two sheet reads
+  --              PERMISSIVE, all four FOR SELECT; db/96's plan policy reads
+  --              the sheet; the application holds no DELETE on either table
+  --
+  -- Falsified once each, by removing the object from db/101 and running
+  -- `node tools/migrate.mjs --reset --seed --verify`; each went red at its label:
+  --   (sheet)    without news_post_read_sheet and notification_read_sheet
+  --              (red at the boy playing up reading f1's plan)
+  --   (team)     without news_post_team_side and notification_team_side
+  --              (red at the U15B parent; §76 (post) and §70 (withdraw) go
+  --              red too, which is the change they now prove)
+  DECLARE
+    y        jsonb := _v101_stage();
+    V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
+    V_WES    uuid := '22222222-2222-2222-2222-222222222222';
+    F1       uuid := (y->>'f1')::uuid;
+    F2       uuid := (y->>'f2')::uuid;
+    T uuid; S uuid; P1 uuid; P2 uuid; W uuid; M uuid; NP1 uuid;
+    v_ok boolean; v_reason text;
+    k  text;
+    got text;
+    n  integer;
+  BEGIN
+    -- (team)
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, 'U15A', 'Verify 101 nets', 'Nets at three on Thursday.', now()) RETURNING id INTO T;
+    PERFORM _assert(jsonb_array_length(_notices_91(T)) = 1, '§78 (team): the post did not write one notice');
+    FOREACH k IN ARRAY ARRAY['aboy', 'aparent', 'coach', 'manager', 'assistant', 'director'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = T) = 1
+                      AND (SELECT count(*) FROM my_notifications n WHERE n.subject_kind = 'news' AND n.subject_id = T) = 1,
+        format('§78 (team): the %s does not read the side''s post and its notice', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['bboy', 'bparent', 'follower', 'finance', 'sponsorship', 'driver', 'facilities',
+                             'upboy', 'upparent', 'u14boy', 'u14parent', 'u14coach', 'wescoach', 'wesboy'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = T) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = T) = 0,
+        format('§78 (team): the %s reads Hilton U15A''s post, or its notice', k));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = T) = 0
+                    AND (SELECT count(*) FROM notification n WHERE n.subject_id = T) = 0,
+      '§78 (team): an anonymous session reads the side''s post, or its notice');
+
+    -- (school)
+    PERFORM _as((y->>'director')::uuid);
+    INSERT INTO news_post (scope, school_id, title, body, published_at)
+    VALUES ('school', V_HIL, 'Verify 101 assembly', 'Colours at Friday assembly.', now()) RETURNING id INTO S;
+    FOREACH k IN ARRAY ARRAY['aboy', 'aparent', 'bboy', 'bparent', 'follower', 'finance', 'sponsorship', 'driver',
+                             'facilities', 'upboy', 'upparent', 'u14boy', 'u14parent', 'u14coach', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = S) = 1
+                      AND (SELECT count(*) FROM my_notifications n WHERE n.subject_kind = 'news' AND n.subject_id = S) = 1,
+        format('§78 (school): the %s no longer reads a school post and its notice', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['wescoach', 'wesboy'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = S) = 0,
+        format('§78 (school): Westville''s %s reads a Hilton school post', k));
+    END LOOP;
+
+    -- (public)
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(T) r;
+    PERFORM _assert(v_ok, format('§78 (public): the author could not ask for his team post (%s)', v_reason));
+    PERFORM _as((y->>'director')::uuid);
+    PERFORM public_listing_set(V_HIL, true);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(T) r;
+    PERFORM _assert(v_ok, format('§78 (public): the director of sport could not approve the team post (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM public_news(20) x WHERE x.id = T AND x.team_code = 'U15A' AND x.title = 'Verify 101 nets') = 1,
+      '§78 (public): the approved team post is not on the home page');
+
+    -- (sheet)
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_HIL, 'U15A', 'The plan: v Westville U15A', 'Bat first if we win it.', now(), 'plan', F1)
+    RETURNING id INTO P1;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_HIL, 'U15A', 'The plan: v Visitors', 'Bowl first if we win it.', now(), 'plan', F2)
+    RETURNING id INTO P2;
+    NP1 := (_notices_91(P1)->0->>'id')::uuid;
+    PERFORM _assert(NP1 IS NOT NULL AND jsonb_array_length(_notices_91(P2)) = 1, '§78 (sheet): the plans did not write their notices');
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent', 'aboy', 'aparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P1 AND n.kind = 'plan' AND n.fixture_id = F1) = 1
+                      AND (SELECT count(*) FROM my_notifications n WHERE n.id = NP1) = 1,
+        format('§78 (sheet): the %s does not read f1''s plan and its notice', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (P2, T)) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (P2, T)) = 0,
+        format('§78 (sheet): the %s reads U15A''s other plan or its ordinary post, or a notice of one', k));
+      PERFORM _assert((SELECT string_agg(n.id::text, ',') FROM news_post n WHERE n.school_id = V_HIL AND n.team_code = 'U15A') = P1::text,
+        format('§78 (sheet): of Hilton U15A the %s reads more than f1''s plan', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['u14boy', 'u14parent', 'u14coach', 'bparent', 'follower', 'finance'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.school_id = V_HIL AND n.team_code = 'U15A') = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (P1, P2, T)) = 0,
+        format('§78 (sheet): the %s reads something of Hilton U15A', k));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (P1, P2)) = 0, '§78 (sheet): an anonymous session reads a plan');
+
+    -- (report)
+    PERFORM _as((y->>'upboy')::uuid);
+    got := _report_91(NP1);
+    PERFORM _assert(got = 'ok', format('§78 (report): the boy playing up could not report f1''s plan''s notice (%s)', got));
+    PERFORM _as((y->>'aparent')::uuid);
+    got := _report_91((_notices_91(T)->0->>'id')::uuid);
+    PERFORM _assert(got = 'ok', format('§78 (report): the side''s guardian could not report the side''s post''s notice (%s)', got));
+    FOREACH k IN ARRAY ARRAY['bparent', 'follower', 'u14parent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _report_91((_notices_91(T)->0->>'id')::uuid) || ' ' || _report_91(NP1);
+      PERFORM _assert(got = 'no_such_notice no_such_notice',
+        format('§78 (report): the %s, who reads neither, reported the side''s notices (%s)', k, got));
+    END LOOP;
+
+    -- (off)
+    PERFORM _as((y->>'coach')::uuid);
+    UPDATE match_squad SET withdrawn = true WHERE match_id = F1 AND player_id = (y->>'p_up')::uuid;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, '§78 (off): the coach could not take the boy off the sheet');
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P1) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.id = NP1) = 0,
+        format('§78 (off): withdrawn from the sheet, the %s still reads f1''s plan or its notice', k));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    UPDATE match_squad SET withdrawn = false WHERE match_id = F1 AND player_id = (y->>'p_up')::uuid;
+    PERFORM _as((y->>'upboy')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P1) = 1, '§78 (off): put back on the sheet, the boy does not read f1''s plan');
+    PERFORM _assert(_v101_unsheet(F1, (y->>'p_up')::uuid) = 1, '§78 (off): the boy''s squad row was not deleted');
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P1) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.id = NP1) = 0,
+        format('§78 (off): off the sheet, the %s still reads f1''s plan or its notice', k));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES (F1, (y->>'p_up')::uuid, 'home', 2);
+
+    -- (away)
+    PERFORM _as((y->>'wescoach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_WES, 'U15A', 'The plan: at Hilton U15A', 'Bowl first if we win it.', now(), 'plan', F1)
+    RETURNING id INTO W;
+    FOREACH k IN ARRAY ARRAY['wesboy', 'wesup', 'wesparent', 'wesupparent', 'wescoach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = W) = 1
+                      AND (SELECT count(*) FROM my_notifications n WHERE n.subject_kind = 'news' AND n.subject_id = W) = 1,
+        format('§78 (away): the Westville %s does not read his side''s plan for f1 and its notice', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['wesup', 'wesupparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.school_id = V_HIL AND n.team_code = 'U15A') = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (P1, P2, T)) = 0,
+        format('§78 (away): the Westville %s reads something of Hilton U15A', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent', 'aboy', 'aparent', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = W) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = W) = 0,
+        format('§78 (away): the Hilton %s reads Westville''s plan, or its notice', k));
+    END LOOP;
+
+    -- (withdraw)
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(_withdraw_91(P1) = 'ok', '§78 (withdraw): the coach could not withdraw f1''s plan');
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P1) = 0
+                      AND NOT EXISTS (SELECT 1 FROM my_notifications n WHERE n.id = NP1)
+                      AND EXISTS (SELECT 1 FROM my_notifications n WHERE n.retracts_id = NP1 AND n.title = 'A notice was withdrawn'),
+        format('§78 (withdraw): the %s still reads the withdrawn plan, or was not told', k));
+    END LOOP;
+    PERFORM _as((y->>'u14parent')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification n WHERE n.id = NP1 OR n.retracts_id = NP1),
+      '§78 (withdraw): the U14A guardian off the sheet reads the plan''s notices');
+
+    -- (author)
+    PERFORM _as((y->>'manager')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, 'U15A', 'Verify 101 kit', 'Whites on Saturday.', now()) RETURNING id INTO M;
+    PERFORM _revoke((y->>'manager')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = M) = 1, '§78 (author): the author no longer reads his own post');
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = T) = 0, '§78 (author): off the side, he still reads the coach''s post');
+    PERFORM _as((y->>'bparent')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = M) = 0, '§78 (author): the U15B parent reads the manager''s post');
+
+    -- (doors)
+    FOREACH k IN ARRAY ARRAY['news_sheet_reach(uuid,uuid,text)', 'news_team_notice_reach(uuid)',
+                             'news_notice_sheet(uuid,uuid,text)', 'news_notice_reach(uuid)'] LOOP
+      PERFORM _assert((SELECT prosecdef AND provolatile = 's' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                         FROM pg_proc WHERE oid = to_regprocedure(k)),
+        format('§78 (doors): %s is not a stable SECURITY DEFINER with a pinned path', k));
+      PERFORM _assert(has_function_privilege('scrbrd_app', to_regprocedure(k), 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                       WHERE p.oid = to_regprocedure(k) AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                                         AND has_function_privilege(g.oid, to_regprocedure(k), 'EXECUTE')),
+        format('§78 (doors): %s is not the application''s alone', k));
+    END LOOP;
+    PERFORM _assert((SELECT prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                       FROM pg_proc WHERE oid = to_regprocedure('notification_report(uuid)'))
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('notification_report(uuid)'), 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                     WHERE p.oid = to_regprocedure('notification_report(uuid)') AND a.grantee = 0
+                                       AND a.privilege_type = 'EXECUTE'),
+      '§78 (doors): notification_report is not a SECURITY DEFINER with a pinned path, the application''s alone');
+    PERFORM _assert((SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND cmd = 'SELECT'
+                       AND ((permissive = 'RESTRICTIVE' AND (tablename, policyname) IN
+                              (('news_post', 'news_post_team_side'), ('notification', 'notification_team_side')))
+                         OR (permissive = 'PERMISSIVE' AND (tablename, policyname) IN
+                              (('news_post', 'news_post_read_sheet'), ('notification', 'notification_read_sheet'))))) = 4,
+      '§78 (doors): the side''s two narrowing policies are not RESTRICTIVE, or its two sheet reads not PERMISSIVE, SELECT policies');
+    PERFORM _assert((SELECT count(*) FROM pg_policies WHERE schemaname = 'public'
+                       AND policyname IN ('news_post_team_side', 'notification_team_side', 'news_post_read_sheet', 'notification_read_sheet')
+                       AND cmd <> 'SELECT') = 0,
+      '§78 (doors): a policy of db/101''s governs a write');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'news_post'
+                               AND policyname = 'news_post_plan_side' AND permissive = 'RESTRICTIVE' AND cmd = 'SELECT'
+                               AND qual LIKE '%news_sheet_reach(%'),
+      '§78 (doors): db/96''s plan narrowing does not read the sheet');
+    PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'news_post', 'DELETE')
+                    AND NOT has_table_privilege('scrbrd_app', 'notification', 'DELETE'),
+      '§78 (doors): the application may delete a post or a notice');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 78
+  -- └── db/101 (section 78) ───────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
