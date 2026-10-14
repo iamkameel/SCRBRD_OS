@@ -306,6 +306,16 @@ SELECT
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'pending_claim_declined_notice' AND tgenabled = 'O')
         AND has_function_privilege('scrbrd_app', to_regprocedure('request_cooldown_lift(uuid,text)'), 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Declined parent claims reach the DSO",
+  -- db/94: a boy's overs today across every match, to whoever may read his
+  -- load and nobody else (SCRBRD-136/137 phase B §1).
+  CASE WHEN to_regprocedure('bowler_day(date,text)') IS NOT NULL
+        AND (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('bowler_day(date,text)'))
+        AND coalesce(pg_get_functiondef(to_regprocedure('bowler_day(date,text)')), '') LIKE '%app_can(''player.workload.read''%'
+        AND has_function_privilege('scrbrd_app', to_regprocedure('bowler_day(date,text)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('bowler_day(date,text)'), to_regprocedure('bowling_directive_for(uuid)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A bowler's day is read under the load capability",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

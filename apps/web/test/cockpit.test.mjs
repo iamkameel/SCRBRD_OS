@@ -228,5 +228,32 @@ group("The Coach tab's wheel is the Match Centre's analysis panel (GA-I28), insi
   ok("...and no batter or match chooser when the caller gives none", !/wagon-batter-|wagon-match-/.test(noPct));
 }
 
+group("Phase B §1.6, PB-D10 · bowler_day is read by the Coach tab while we field, and never for a Dashboard card");
+{
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+  const src = (p) => strip(readFileSync(new URL(p, import.meta.url), "utf8"));
+  const hooks = src("../src/views/cockpit/useCockpit.js");
+  /** One exported function's text, up to the next one. @param {string} name */
+  const fn = (name) => {
+    const at = hooks.indexOf(`export function ${name}`);
+    const next = hooks.indexOf("export function", at + 1);
+    return hooks.slice(at, next === -1 ? undefined : next);
+  };
+  const day = fn("useBowlerDay");
+  ok("one hook makes the read, and it is the only place that names it", (hooks.match(/"bowler_day"/g) ?? []).length === 1 && day.includes('readLive("bowler_day"'));
+  ok("...only for the load panel, and only while an innings of ours is in play",
+     /gate\?\.panels\?\.load/.test(day) && /fielding\.some\(\(f\) => f\.inPlay\)/.test(day) && /const on = !!gate\?\.panels\?\.load && inPlay/.test(day));
+  ok("...on the fixture's date as the SA calendar has it, with the side", /saDay\(startsAt\)/.test(day) && /\{ date, teamCode \}/.test(day));
+  ok("...asked again as the log grows", /\[on, date, teamCode, seen\]/.test(day));
+  ok("useCockpit() itself does not read it (the Dashboard's card shares it)", !/bowler_?[dD]ay/.test(fn("useCockpit")));
+  const tab = src("../src/views/cockpit/CoachTab.jsx");
+  ok("the Coach tab calls it after `fielding` is known, and gives it to the feed",
+     tab.indexOf("const fielding =") >= 0 && tab.indexOf("useBowlerDay(") > tab.indexOf("const fielding =")
+     && /useFeed\(\{[^}]*bowlerDay[^}]*\}\)/.test(tab));
+  for (const f of ["MatchDayCard.jsx", "useQueue.js"]) {
+    ok(`${f} neither reads bowler_day nor asks for S2c's read`, !/bowler_?[dD]ay|useBowlerDay/.test(src(`../src/views/cockpit/${f}`)));
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1009,6 +1009,39 @@ without db/93, answers a request under a cooldown with `409 request_cooldown`
 and words, answers signed-out `POST /api/onboard` as it always does, and
 serves `POST /api/cooldowns/:id/lift`.
 <!-- ── end db/93 ── -->
+<!-- ── db/94: bowler_day, a boy's overs today across every match ── -->
+#### A bowler's day (db/94)
+
+`db/94_bowler_day.sql` is SCRBRD-136/137 phase B's one read
+(`docs/design/SCRBRD-136-137_phaseB.md` §1, decided by Kameel on 2026-10-13).
+`bowler_day(p_date, p_team)` gives, for each boy the caller may read the load
+of, his overs on one date in every match he bowled in that day, how many
+matches that was, and the directive's spell and day figures with their clause.
+It is the read behind the coach's S2c card: "11 of 12 today, two matches (U15
+directive)". The gate is `player.workload.read`, asked per boy inside the
+function exactly as `workload()` asks it. A team manager, the office, a scorer,
+a pupil or a guardian gets no row; the boy gets his own through self-access.
+The date is the fixture's start date on the South African calendar, the date
+`workload()` and the breach watch already count by. It returns no other match's
+id, opponent or venue, and nothing of the load model.
+
+**What it does to a live database.** It adds one function: `SECURITY DEFINER`,
+`STABLE`, with a pinned search path, executable by `scrbrd_app` and not by
+`PUBLIC`, `anon` or `authenticated`. It also takes `EXECUTE` on
+`bowling_directive_for()` (db/08) away from `PUBLIC` and grants it to
+`scrbrd_app` by name. Its callers are three definer functions, which run as
+the owner, and the `bowling_spells` read, which runs as `scrbrd_app`, so every
+caller keeps it. It adds no table, row or policy. `CREATE OR REPLACE` means a
+second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 94` (after 91, and after 92–93 if they
+have shipped), then the verify bundle (§71 holds the cockpit's read fixes; §72
+proves the function, reader by reader). The summary row "A bowler's day is
+read under the load capability" should read OK. **Schema first**: an API built
+with it refuses to start without db/94 (`expected-migrations.json`) and serves
+`GET /api/read/bowler_day?date=YYYY-MM-DD&teamCode=…`. The web app reads it
+only on the Coach tab, and only while our side fields.
+<!-- ── end db/94 ── -->
 
 ### 5 · Cloud Run, the first time
 
