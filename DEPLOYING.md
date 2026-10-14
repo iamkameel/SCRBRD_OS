@@ -1082,6 +1082,45 @@ returns `kind`, `fixtureId` and `noticeId` on the `news` read. No screen
 writes a plan until the composer ships (B5).
 <!-- ── end db/96 ── -->
 
+<!-- ── db/101: news to the side, a team post and the team sheet ── -->
+#### News to the side: a team post, and the team sheet (db/101)
+
+`db/101_news_to_the_side.sql` is two decisions of Kameel's (2026-10-14).
+**A team post reaches the side only**: an ordinary post to a side (scope
+`team`) and its notice now read as a plan does since db/96, to `news.read`
+and `team.read` at the side, a guardian through a child on it, and its author
+always. Before it, a guardian of a boy on another side and every school-wide
+role that reads no side (a follower, finance, sponsorship, a driver,
+facilities) read every side's posts and their notices. School and league
+posts are unchanged. **A boy on the team sheet reads his match's plan**: a
+boy named on a fixture's sheet at the plan's end (not withdrawn), and his
+guardians, read that fixture's plan and its notice even when his own side is
+another (a boy playing up), and nothing else of that side. A boy taken off the
+sheet loses it.
+
+**What it does to a live database.** Three functions (`news_sheet_reach`,
+`news_team_notice_reach`, `news_notice_sheet`), db/96's `news_notice_reach`
+replaced in place (same signature and grants), two `RESTRICTIVE` and two
+permissive `SELECT` policies (`news_post_team_side`, `notification_team_side`,
+`news_post_read_sheet`, `notification_read_sheet`), each created only when
+`pg_policies` does not have it, and **one `ALTER POLICY`**: db/96's
+`news_post_plan_side` gains the sheet (a restrictive policy would otherwise
+refuse the boy playing up). Nothing is dropped. No row is inserted, changed
+or deleted. Nothing grants a write. **One behaviour changes for every school
+at once, on the paste:** parents and followers stop seeing other sides' team
+posts and their notices in News and Notices, and stop being pushed them.
+The ALTER and the policies lock `news_post` and `notification` for the
+length of one statement each; paste outside a match.
+
+Paste `node tools/bundle-sql.mjs --apply 101` (after 96, and after 97 and
+100 where those have shipped), then the verify bundle (§78 is its proof; the
+summary row "A team post is the side's; the sheet reads its plan" should read
+OK). **Schema first**: an API built with it refuses to start without db/101
+(`expected-migrations.json`). The API needs nothing new from it: the `news`
+and `notifications` reads return what the database's policies let through,
+so they answer the narrower set on the paste.
+<!-- ── end db/101 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

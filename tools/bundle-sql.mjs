@@ -327,6 +327,27 @@ SELECT
         AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
               AND (tablename, policyname) IN (('news_post', 'news_post_plan_side'), ('notification', 'notification_plan_side'))) = 2
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan is one per side, to the side",
+  -- db/101: a team post and its notice reach the side only; a boy on a
+  -- fixture's sheet, and his guardians, read that fixture's plan.
+  CASE WHEN to_regprocedure('news_sheet_reach(uuid,uuid,text)') IS NOT NULL
+        AND to_regprocedure('news_team_notice_reach(uuid)') IS NOT NULL
+        AND to_regprocedure('news_notice_sheet(uuid,uuid,text)') IS NOT NULL
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('news_sheet_reach(uuid,uuid,text)'), to_regprocedure('news_team_notice_reach(uuid)'),
+                              to_regprocedure('news_notice_sheet(uuid,uuid,text)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('news_sheet_reach(uuid,uuid,text)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('news_sheet_reach(uuid,uuid,text)'), to_regprocedure('news_team_notice_reach(uuid)'),
+                                         to_regprocedure('news_notice_sheet(uuid,uuid,text)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND cmd = 'SELECT'
+              AND ((permissive = 'RESTRICTIVE' AND (tablename, policyname) IN
+                     (('news_post', 'news_post_team_side'), ('notification', 'notification_team_side')))
+                OR (permissive = 'PERMISSIVE' AND (tablename, policyname) IN
+                     (('news_post', 'news_post_read_sheet'), ('notification', 'notification_read_sheet'))))) = 4
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'news_post'
+                     AND policyname = 'news_post_plan_side' AND qual LIKE '%news_sheet_reach(%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A team post is the side's; the sheet reads its plan",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
