@@ -55,18 +55,26 @@
 -- THE SHAPE: one definer helper, my_child_fixtures(), and the policy's third
 -- branch `match_id = ANY ((SELECT my_child_fixtures())::uuid[])`. The
 -- sub-select is an InitPlan: the helper runs once per scan of the log, not
--- once per ball. Measured on the seed (median of fifteen, EXPLAIN ANALYZE,
--- the seed's 96-ball 1XI match and two copies of it, one shared with
--- Westville and one as the 2XI):
+-- once per ball. Measured on the seed (median of 31, EXPLAIN ANALYZE, in
+-- one rolled-back transaction: the seed's 96-ball 1XI match and two copies,
+-- one shared with Westville and one as the 2XI; ms, execution + planning;
+-- run to run the same read moves by a few ms):
 --
---                                        db/97          invoker branch   this
---   Hilton's coach, his own match       4.5 + 0.2      4.8 + 2.1        5.4 + 0.3
---   Westville's coach, shared copy     15.1 + 0.3     18.1 + 2.4       15.0 + 0.3
---   Hilton's 1XI coach, the 2XI copy    3.5 + 0.1      4.5 + 2.2        5.5 + 0.3
---   the parent, his son's fixture       4.0 (0 rows)   8.8 (96) + 2.2   6.6 (96) + 0.3
---   the parent, the 2XI copy            5.2 + 0.2      8.8 + 2.2        6.6 + 0.2
---   Hilton's coach, career view        48.1 + 3.0     74.0 + 19.1      44.3 + 3.2
---                                       (ms: execution + planning)
+--                                               db/97          this
+--   Hilton's coach, his own match              5.1 + 0.3      7.8 + 0.4
+--   Westville's coach, the shared copy        23.8 + 0.3     16.8 + 0.3
+--   Westville's coach, a Hilton-only fixture   4.3 + 0.3      4.9 + 0.2   (refused)
+--   Hilton's 1XI coach, the 2XI copy           4.1 + 0.3      5.9 + 0.3   (refused)
+--   the parent, his son's fixture              4.2 (none)     9.6 (96)
+--   the parent, the 2XI copy                   4.5 + 0.3      6.3 + 0.3   (refused)
+--   Hilton's coach, the whole log             11.0 + 0.3     13.7 + 0.3
+--   Hilton's coach, a career view             45.9 + 3.4     53.8 + 4.4
+--   the parent, a career view                 27.0 (none)    75.2 (192 balls read)
+--
+-- A refused ball costs a probe of an array; the helper itself costs a
+-- reader whose links name nobody one index lookup, and a guardian about 5 ms
+-- on the seed (app_can() for each fixture of his child's side), once per
+-- scan. That last grows with the fixtures his child's side has played.
 --
 -- The first build wrote the branch as an invoker `match_id IN (SELECT …)`
 -- over role_assignment, assignment_subject, player, match and match_squad
@@ -74,8 +82,9 @@
 -- five tables' own policies (and theirs) was planned into every reference to
 -- ball_event, and the career views reference it several times (ball_event_live
 -- asks the log again for voids and innings starts), so planning a coach's
--- career read went from 3 ms to 19 and running it from 48 to 74, for a reader
--- the branch gives nothing. The helper is planned as one call.
+-- career read went from 3 ms to 19 and running it from 48 to 74 (a median of
+-- fifteen), for a reader the branch gives nothing. The helper is planned as
+-- one call.
 --
 -- WHY A DEFINER IS SAFE HERE. db/97 declined a definer helper because the one
 -- it was offered took a match id and would have answered anyone "which school
@@ -99,8 +108,8 @@
 --
 -- WHAT IT OPENS. Every read of the log is security_invoker down to
 -- ball_event, so the parent's Match Centre (family mode) and fixture cards
--- (GET /api/matches/:id/events, folded on the client), live_score, phases,
--- shot_points and summary answer him for his child's fixtures. The per-boy
+-- (GET /api/matches/:id/events, folded on the client), live_score, phases
+-- and shot_points answer him for his child's fixtures. The per-boy
 -- gates on top of the log keep asking per boy: player_shot_points,
 -- matchup_coverage, matchups and the career views join `player`, which he
 -- reads for his own child only; bowling_spells joins `player` too, and the

@@ -1109,10 +1109,10 @@ and every write are unchanged.
 one transaction; the file checks the policy's and the helper's text and
 grants before it commits. No table, column or row is added or changed, and no
 other policy is touched. A second paste changes nothing. The helper runs once
-per read of the log, not once per ball: on the seed, every read the lead
-compared (a coach's own match, the away coach's, a refused fixture, a
-career view) costs what it did under db/97 within a millisecond or two, and
-planning is unchanged (db/100's header has the figures).
+per read of the log, not once per ball: on the seed, every read compared (a
+coach's own match, the away coach's, a refused fixture, a career view) costs
+what it did under db/97 within a few milliseconds, planning is unchanged, and
+a guardian's helper call is about 5 ms (db/100's header has the figures).
 
 Paste `node tools/bundle-sql.mjs --apply 100` (after 97), then the verify
 bundle (§77 is its proof; the summary row "A parent reads his child's side's
