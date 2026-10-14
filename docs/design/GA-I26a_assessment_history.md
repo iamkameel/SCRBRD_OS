@@ -319,3 +319,117 @@ ACCOUNT_LIFECYCLE §6.2 (D22) is the schedule; its row "development notes, ratin
 
 Erasure at eighteen (140 §4.3) and the departed-pupil cut (AL Q9) apply to the three class-C2 tables and the register exactly as to `player_skill`. The purge job AL §6 builds takes the two new table names; `retention.test.mjs` (D22: every masked table has an entry) will fail until they are added, which is the intended tripwire.
 
+---
+
+## 7 · Build plan, tiers and proofs (AH-D7)
+
+Migrations are numbered from `db/104`; the lead assigns the exact numbers and may fold the two into one. `db/01` and `db/09` never move (`DEPLOYING.md`); every policy change below is a `DROP POLICY IF EXISTS … CREATE POLICY` in the new file, as `db/60` and later do.
+
+| # | item | migration | tier | proof |
+|---|---|---|---|---|
+| **A0** | the ground map (done: the brief's "what the map found"); after Kameel decides, the decisions into this document's table, the gap-analysis row, I27 §6/§8's pointer to §2 here, ACCOUNT_LIFECYCLE §6.2's two new rows, REACH §6.1's re-create list gaining `training_session_drill_read` | none | **Haiku** | the lead reads the diff |
+| **A1 · corrections and the point** | `player_skill` withdraw columns and `player_skill_revision()`; `development_note` pointer columns, withdraw columns, the trigger's two new refusals; `coaching_point_write()`, `skill_withdraw()`, `note_withdraw()`; the `support_access` `RESTRICTIVE` on `player_skill`/`development_note` where missing; `assessment-api.mjs` loses `assessed_by = excluded.assessed_by` and maps `45003`/`45004`; `skills` read filters withdrawn, `skills_history` and `coaching_points` reads added, `RESTRICTED_FIELDS`/`SUBJECT_ID` entries; `ratingsQuery()` excludes withdrawn; `capabilities.mjs` label fix (§8); `db/99 §NN` | **`db/104`** | **Opus** | `db/99 §NN` (below); `packages/policy` tests; the API walk |
+| **A2 · the loop** | `development_target`, its policy, `target_set()`, `target_withdraw()`; `training_session_drill`, its policies; the `training_attendance` route refusing `injured` and the read's `CASE`; `PUT …/plan`, `PUT …/attendance`; `targets`, `development_since` reads with their `RESTRICTED_FIELDS` entries; `retention.mjs` rows; `modules.mjs` `training → team.read` (§8); the generic CSV refusal list; `drillCategoriesFor()` in `rubric.mjs` with its test | **`db/105`** | **Opus** (SQL, policy, the scoring package, and the module gate are all Opus's by CLAUDE.md; the mapping is small but lives in `packages/scoring`) | `db/99 §NN+1`; `packages/scoring/test/drillmap.test.mjs`; the API walk |
+| **A3 · the screens** | the strip, the dot sheet, the target tick and "reached", the focus-areas `saved` wiring, the "Since the last look" panel, "Set target" with its two-tier label, the plan editor, the register, the assessment modal losing its `note` field; `skillsHistory.test.mjs` with the never-words; the browser walk | none | **Sonnet**, **Opus reviews** (a named child's judgement on every screen); `interface-review` on the diff, `break-ui` on the strip with 40 dots and with one | the browser walk; `check-bundle` |
+| **A4 · I27 C4** | S13 over `coaching_points`, "Make a coaching point of this" from S5 and from a strip dot, the stood-on/now drawing | none | **Opus** for S13 and the write's client, **Sonnet** for the panel, **Opus reviews** | I27 §7's browser walk and corrections case |
+| **A5** | after each merge: the gap-analysis row (I26a from `open`), the roadmap, `DEPLOYING.md`'s paste list for `db/104`/`db/105`, I27 §8's C3 row marked "built as GA-I26a §2" | none | **Haiku** | the lead reviews |
+
+A1 can ship alone and is worth shipping alone: it closes the re-attribution fault (§5) and I27's `selfaccess` leak before any coaching point exists. A2 waits on A1 (the target's `from_skill_id` wants the revision trigger in place). A3 waits on A2's reads; its pure parts (`focusAreas`, the strip's geometry) can start on fixtures. A4 is I27's C4 and follows A1.
+
+### 7.1 `db/99 §NN` for A1 (SET ROLE as the seed's personas, D Erasmus the subject)
+
+1. The coach writes `footwork 11` for D Erasmus on day 1 and `12` the same day: one row, `assessed_by` the coach. The assistant coach (who holds no `player.development.write`) is refused the insert outright by policy (`42501`). A second `coach` persona at the same side writes `footwork 9` the same day: refused `45003`; writes it dated tomorrow: a second row with his own `assessed_by`.
+2. `skill_withdraw(row, 'rated the wrong boy')` by the coach: the row keeps `assessed_by`, gains the three columns; by `selfaccess` (D Erasmus): refused; by the other school's coach: refused; a second withdraw: refused. An UPDATE of `score` on a withdrawn row: `45004`.
+3. The `skills` read as the coach omits the withdrawn row; `skills_history` includes it with the strike columns; both write one `access_log` row each for D Erasmus; `ratings` for batting ignores it.
+4. `coaching_point_write(D Erasmus, NULL, 'front foot is late to the pitch', {read:'skills', params:{skillId}, asOf})` by the coach: one `development_note` row, `author_id` the coach, `about_discipline` and `adjustment` NULL. By the assistant (`note.write` but not `development.write`): refused. By the director: refused. `evidence_params.batterId` ≠ the boy: refused. A body naming R Pillay from a fixture's `match_squad`: refused. A body with a forbidden word: refused. `evidence_text` with `evidence_rule='S11'`: the CHECK refuses.
+5. The point is read by the coach, the assistant, the director and the principal (`player.note.read`); **invisible under `selfaccess` as D Erasmus** (the proof I27 §7 lacked), under `player`, under `guardian` (his parent), under `teammanager`, `analyst`, `medical`, `scorer`, the other school's coach, a `support_access` session, a platform-wide assignment. Each staff read writes an `access_log` row with `body` named.
+6. An UPDATE of the point's `body` by its author: `45002`. `note_withdraw()` by the director (`note.write`): the two columns change and nothing else. A plain note (no pointer) still accepts its author's edit (`45001` only for others).
+7. `development_note.evidence_read` NOT NULL with `evidence_as_of` NULL: the CHECK refuses.
+
+### 7.2 `db/99 §NN+1` for A2
+
+1. `target_set(D Erasmus, 'technical', 'againstPace', 12, '2026-11-30', throw-downs, point)` by the coach after a standing score of 9: one row, `from_skill_id` that row, `set_by` the coach. Score 9 or 8: refused ("already there"). Score 21: the CHECK. A retired drill: refused. A `p_note` about K Naidoo: refused. By the assistant: refused. A second `target_set` for the same metric: the first row gains `withdrawn_reason = 'replaced'`, the second stands; the partial unique index holds.
+2. The target is read by the coach, the assistant, the director, and **by D Erasmus under `selfaccess`** (`target_score` logged); not by the principal, `guardian`, `teammanager`, `analyst`, `player` as a team-mate (R Pillay's `selfaccess` reads none of D Erasmus's), the other school, `support_access`. Direct INSERT/UPDATE/DELETE on the table by any persona: refused (no policy).
+3. `training_session_drill`: the team manager writes a plan for a U15A session; the coach reads it; `guardian` (D Erasmus's parent) reads it; `player` (R Pillay, U15A) reads it; the analyst reads it; the U13A's coach does not; the other school does not. A row naming a drill from another school's library (`drill.school_id` ≠ the session's school and not NULL): refused by a trigger or a CHECK-through-function (Opus chooses; the proof is the refusal).
+4. The attendance route: `present` for D Erasmus by the team manager: one row; `injured`: `422`; the same route as `guardian`: `403`. A pre-existing `injured` row (inserted by the test as superuser) reads back as `excused` through the `training_attendance` read.
+5. `development_since?playerId=D Erasmus` as the coach: the batting anchor is his newest standing `assessed_on` among `DISCIPLINES.batting`; the session count is U15A sessions after it; the attended count is his `present`+`late` rows; the drill line counts the plan rows; the target line shows throw-downs ran N and he was there for M ≤ N. As `selfaccess`: the same panel. As `teammanager`: `403`/empty (he holds no `player.development.read`). After `skill_withdraw` of the anchor row: the anchor moves back and the counts widen.
+6. `retention.test.mjs`: `development_target` and `training_attendance` have entries; `drillmap.test.mjs`: every attribute in `TREE` maps; `againstPace` → `{batting}`; `bowlingPace` → `{bowling, fitness}`; `fieldPlacement` → `{bowling, fielding, tactical}`; `leadership` → `{}`.
+7. The generic CSV route refuses `skills`, `skills_history`, `targets`, `development_since`, `notes`, `coaching_points`.
+
+### 7.3 The browser walk (A3)
+
+As the coach on the seed: the strip for D Erasmus's `againstPace` shows two dots and a target tick; the rendered Skills screen contains none of `improving`, `declining`, `stalled`, `plateau`, `regress`, `form`, `fatigue`, `injured`, `absent`, `missed`, `rank`, `percentile`, and none of `cockpitNever.js`'s `NEVER_ON_THE_COCKPIT`; every dot's hit area measures ≥ 44 px; no text under 12 px; the hairline has no transition under `prefers-reduced-motion: reduce`. As `selfaccess` (D Erasmus): the strip and the target draw, the "Why" field and the notes section do not exist in the DOM, the player list has one name. As `guardian`: the Skills nav is absent; the Training screen shows her child's side's sessions and plans and no "Set target" anywhere. As `teammanager`: Training shows the plan editor and the register with four states and no fifth. `check-bundle` stays green; the strip's chunk is lazy if it pushes the entry over the ceiling.
+
+---
+
+## 8 · The map's mismatches, and which this build fixes
+
+| mismatch (the brief) | fixed? | where |
+|---|---|---|
+| `capabilities.mjs:111–112` labels `player.development.*` as "development notes and skill ratings"; notes are `player.note.*` | **yes** | A1: "See skill ratings, their history and targets" / "Write skill ratings and set targets" |
+| `modules.mjs:99–103` gates `training` by `player.development.read` while `training_session`'s policy is `team.read` | **yes** (AH-D8) | A2: `capability: "team.read"`; the register inside the screen is already its own read under `player.profile.read` |
+| `training_session.drills text[]` keyed to nothing | **yes**, additively | A2: `training_session_drill`; the column stays read-only as "Other" |
+| `training_attendance` has no write route | **yes** | A2 |
+| four vocabularies map to nothing | **yes**, one pure map | A2: `drillCategoriesFor()`, used to order a picker and refuse nothing |
+| the screen shows the newest row only; no trend | **yes** | A3 |
+| no saved target (GA-I06's `saved` is always `null`) | **yes** | A2 + A3 |
+| no `coaching_point`, no retention code | **yes**: the point on the note (§2), `retention.mjs` rows (§6.2) | A1, A2 |
+| I27 C-D4's tier reaches `selfaccess` | **yes** (found here, §2.1) | A1 |
+| same-day correction re-attributes a colleague's score | **yes** | A1 |
+| `injured` on a side-shared register | **partly**: the route refuses it, the read maps it; the CHECK is retired later | A2, then a later migration |
+| `technique_review` not built (110 §5) | **no** — 110's, not this design's | — |
+| REACH M3 (every guardian reads every session at the school) | **no** — REACH R-A's; this design adds one table to R-A's re-create list | — |
+
+---
+
+## 9 · Decisions — AH-D1 … AH-D9
+
+| # | decision | recommendation | why, in one line |
+|---|---|---|---|
+| **AH-D1** | the loop and the smallest model | **`player_skill` as is + `development_target` + `training_session_drill` + the register's route; "since the last look" derived** | nothing stored that a read can answer; one place for each truth |
+| **AH-D2** | the coaching point and the pointer | **the pointer rides on `development_note`; targets reference it and the `player_skill` row by id** (alternative: I27's table with its read capability changed to `player.note.read`) | `selfaccess` holds `player.development.read`, so I27's tier reaches the boy; the note tier is C-D4's reader set exactly |
+| **AH-D3** | who reads each part | **scores/history/targets: coach, assistant, director, the boy; notes/points: coach, assistant, director, principal; the plan: the side under `team.read`, parents included; the register: `player.profile.read`; nobody else, ever** | REACH's class C argument; STEP4's reader rules; the trend changes words, not readers |
+| **AH-D4** | the history screens | **a strip per metric and a "since the last look" panel per discipline on the Skills screen; author and date on every point; no verdict word, no health, no absence, no discipline** | GA-I24-I25 D3/D8 and 110's boundary, applied to training |
+| **AH-D5** | corrections | **append-and-withdraw; same-day self-correction kept; a colleague's row never overwritten; withdrawn rows kept and struck; plain notes keep author edits** | GA-I36: both versions kept; the API re-attributes today |
+| **AH-D6** | side, school, link, eighteen; retention | **targets follow the boy and die with his scores: 2 years after leaving; the register's rows the same (new row, Kameel's call); the plan stays with the session** | ACCOUNT_LIFECYCLE §6.2 extended by name, not re-decided |
+| **AH-D7** | slices and tiers | **`db/104` (A1) and `db/105` (A2), Opus; screens Sonnet with Opus review; Haiku's rows** | A1 is worth shipping alone |
+| **AH-D8** | the Training module's gate | **`team.read`** | the nav should show what the table already gives |
+| **AH-D9** | the register's `injured` | **refused by the route, read as `excused`, the CHECK retired later** | a health word on a side-shared table |
+
+### 9.1 Open calls that are Kameel's and nobody else's
+
+- **AH-D2's shape** against I27 §6, decided 14 Oct: fold into the note (recommended) or keep the table with one capability changed.
+- **The pupil reads his targets** (AH-D3). The alternative is targets at the note tier (staff only), which makes the boy's focus-areas card say "No target is set" forever on his own screen.
+- **The register's retention row** (AH-D6): 2 years after leaving, or treat it as a side fact and keep it with the session.
+- **The principal and the ratings** (§3.4): leave as is (notes yes, scores no) or add `player.development.read` to `principal`.
+- **AH-D8's widening of the nav** to parents, pupils, the team manager and the analyst.
+
+---
+
+## 10 · Assumptions
+
+| # | assumption | if wrong |
+|---|---|---|
+| **A1** | `player_team(uuid)` or an equivalent "current side" helper exists beside `player_school()` (`assessment-api.mjs:170` uses `player_school`) | `target_set()` and the functions select `team_code` from `player` inline |
+| **A2** | `development_note` and `player_skill` lack the `support_access` `RESTRICTIVE` cut I27 §6 named for its table | Opus adds it in `db/104`; if present, nothing changes |
+| **A3** | `assistantcoach` does not hold `team.manage` (the lines read spread `READ_TEAM` only) | he writes the plan and the register too; §3.2's row changes and nothing else does |
+| **A4** | the generic CSV route (`read-api.mjs` ~3197 per GA-I24-I25) does not serve `skills` today | it does, and A2 refuses it with the rest; the lead decides whether that is a behaviour change a school notices |
+| **A5** | `ratingsQuery()` reads `player_skill` directly and can take `AND s.withdrawn_at IS NULL` in its `distinct on` | it reads through a view; the view gains the filter |
+| **A6** | REACH R-A has not merged when A2 is built | if it has, `training_session_drill_read` is spelled `side_reach()` from the start and the re-create list is unneeded |
+| **A7** | the seed has two assessments on different dates for at least one boy, so the walk has a strip with two dots | the walk writes the second inside its run |
+| **A8** | `drill.school_id` NULL (platform drills) are readable to every signed-in user (`db/08:6127`) and so may go on any school's plan | if a school's library is the only source, the plan refuses NULL-school drills; the seed's ten platform drills then need copying |
+
+---
+
+## 11 · What this document does not reopen
+
+- **STEP4**'s reader rules: no ratings or notes to a guardian; the pupil's own ratings through `selfaccess`; Q5, Q7.
+- **ACCOUNT_LIFECYCLE** D22's shape (a signed schedule, dates enforced, nothing on a clock); its 2-year row for notes and ratings (extended, not changed); Q9's departed-pupil cut; Q12 (a guardian's access to notes through the office is still Kameel's to take "before the first minimisation" and this design does not take it).
+- **GA-I24-I25** D3, D5, D8, D9: no judgement in a comparison or a workspace, no verdict, no absence, nothing stored or exported.
+- **GA-I27** C-D1, C-D2, C-D3, C-D5, C-D6, C-D7, C-D8; its §5.3 words; its §7 proofs (which gain one persona, `selfaccess`); its §6 table shape is the one thing §2 asks to move, with the alternative that moves nothing but one capability.
+- **SCRBRD-110** §3.3 and §5: `technique_review`, `capacity_test`, `pace_reading` and the health consent stay on 110's side of the boundary; nothing here reads them.
+- **SCRBRD-138** :213: no team-mate's ratings or notes to a captain.
+- **PUBLIC_DATA** N5; **REACH**'s three spellings and `side_reach()`; **ADR 0001** (one assignment decides), **ADR 0002** (scope, not tier: current-side anchoring), **ADR 0003** (no role names in policies — every rule here is a capability and an argument).
+- **GA-I36**'s model: both versions kept; corrections reach every surface by re-read, not by stored copies.
+- `db/01`, `db/09` (frozen); `app_can()`'s body (`db/50`).
+
