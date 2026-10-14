@@ -4073,6 +4073,8 @@ Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same scree
   - whether a coach may send him anything, under the CSA safeguarding policy;
   - how the honour switches it on and off.
 
+**Phase B decided (Kameel, 2026-10-14, "Approve all seven as recommended"), with #136:** PB-D1 the post, `db/96`; PB-D3 the side; PB-D4 "do not narrow" (by role); PB-D6 the list as code in packages/policy; PB-D8 the plan only, for now; PB-D9 the AI tone line out; PB-D11 the post's retention. Design: `docs/design/SCRBRD-138_phaseB.md`. Migration db/96. Built from 16 October.
+
 ### SCRBRD-140 — Sign-up with Google, and linking an account to a school (2026-10-02)
 
 Kameel, 2026-10-02: *"Can we use Google OAuth via Firebase? Can users just sign up and then later be linked to their school, or select a school and it must get passed against a school-provided register."* Added to Fable's list the same day ("security isn't cheap"). Design: `docs/design/SCRBRD-140_signup_and_school_linking.md`.
