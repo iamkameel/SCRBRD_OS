@@ -4179,6 +4179,290 @@ CREATE OR REPLACE FUNCTION _withdraw_91(p_post uuid) RETURNS text AS $$
 $$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/91 (section 70) ──────────────────────────────────────────────
 
+-- ┌── db/92 (section 73). The school staff register (SCRBRD-140 phase 2)
+-- Its own world, as the owner: Hilton's two offices, its principal, DSO and
+-- a coach; Westville's office, DSO and coach; the owner's key; a parent with
+-- one verified link; a pupil whose family has consented, with a Google
+-- sign-in; an account whose Hilton coaching ended this morning; a
+-- code-only account; an account whose Google address differs from the one
+-- the office typed; two accounts sharing one Google address; and a teacher
+-- the office will pause on a duty. Every person invented; every date
+-- relative to today.
+CREATE OR REPLACE FUNCTION _seed_92() RETURNS jsonb AS $$
+DECLARE
+  HIL  uuid := '11111111-1111-1111-1111-111111111111';
+  WES  uuid := '22222222-2222-2222-2222-222222222222';
+  ids  jsonb := '{}'::jsonb;
+  r    record;
+  v_u  uuid;
+  v_a  uuid;
+  v_p  uuid;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('office',   'schooladmin', HIL,  NULL::text),
+      ('office2',  'schooladmin', HIL,  NULL),
+      ('head',     'principal',   HIL,  NULL),
+      ('dso',      'dso',         HIL,  NULL),
+      ('coach',    'coach',       HIL,  'U15A'),
+      ('wes',      'schooladmin', WES,  NULL),
+      ('wesdso',   'dso',         WES,  NULL),
+      ('wescoach', 'coach',       WES,  'U15A'),
+      ('own',      'superadmin',  NULL::uuid, NULL),
+      ('parent',   'guardian',    HIL,  NULL)) AS v(k, role, school, team)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (r.school, 'v92.' || r.k || '@example.invalid', 'V92 ' || initcap(r.k), r.role)
+    RETURNING id INTO v_u;
+    INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+    VALUES (v_u, r.role, r.school, r.team, current_date - 30) RETURNING id INTO v_a;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u, 'a_' || r.k, v_a);
+  END LOOP;
+
+  -- The parent's child, a minor, verified by the office.
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, 'U15A', 'Kid Ninetytwo', 'Ninetytwo', 920, 'batter', (current_date - interval '14 years')::date)
+  RETURNING id INTO v_p;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, created_by, valid_from)
+  VALUES ((ids->>'a_parent')::uuid, v_p, 'parent', 'verified', (ids->>'u_office')::uuid, now(),
+          'pending', (ids->>'u_office')::uuid, current_date - 30);
+
+  -- A pupil at Hilton, his own record verified and his family's consent
+  -- given, signed in with Google.
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, 'U15A', 'Pupil Ninetytwo', 'Ninetytwo', 921, 'bowler', (current_date - interval '15 years')::date)
+  RETURNING id INTO v_p;
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (HIL, 'v92.pupil@example.invalid', 'V92 Pupil', 'player', v_p) RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (v_u, 'selfaccess', HIL, current_date - 30)
+  RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, v_p, 'self', 'verified', (ids->>'u_office')::uuid, now(), 'granted', 'popia-2026-01', now(),
+          (ids->>'u_office')::uuid, current_date - 30);
+  INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how)
+  VALUES (v_u, 'google.com', 'v92-pupil', 'v92.pupil@example.invalid', 'office_confirmed');
+  ids := ids || jsonb_build_object('u_pupil', v_u);
+
+  -- Accounts with no role anywhere, each with or without a Google sign-in.
+  FOR r IN SELECT * FROM (VALUES
+      ('ended',    'v92.ended@example.invalid'),          -- his Hilton coaching ends below
+      ('codeonly', NULL),                                  -- a login code, never Google
+      ('differs',  'v92.other@example.invalid'),           -- Google says another address
+      ('twin1',    'v92.twin@example.invalid'),
+      ('twin2',    'v92.twin@example.invalid'),            -- the same Google address, another account
+      ('paused',   'v92.paused@example.invalid')) AS v(k, google)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (NULL, 'v92.' || r.k || '@example.invalid', 'V92 ' || initcap(r.k), 'none')
+    RETURNING id INTO v_u;
+    IF r.google IS NOT NULL THEN
+      INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how)
+      VALUES (v_u, 'google.com', 'v92-' || r.k, r.google, 'new_account');
+    END IF;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+  END LOOP;
+
+  -- The ended coach: his Hilton side, ended this morning by the office.
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+  VALUES ((ids->>'u_ended')::uuid, 'coach', HIL, 'U15A', current_date - 200) RETURNING id INTO v_a;
+  UPDATE role_assignment SET active = false WHERE id = v_a;
+  INSERT INTO role_assignment_ending (assignment_id, person_id, role, school_id, team_code, reason, ended_by)
+  VALUES (v_a, (ids->>'u_ended')::uuid, 'coach', HIL, 'U15A', 'Verify 92: left at the end of term.', (ids->>'u_office')::uuid);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The paused teacher: after his row was listed, a scorer's duty at Hilton,
+-- its assignment paused by the office (db/34's duty_suspension).
+CREATE OR REPLACE FUNCTION _v92_pause(p_user uuid, p_office uuid) RETURNS void AS $$
+DECLARE m uuid; a uuid; d uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'U15A', 'Verify Ninetytwo College U15A', now() + interval '2 days',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+  INSERT INTO role_assignment (person_id, role, school_id, fixture_id, valid_from)
+  VALUES (p_user, 'scorer', '11111111-1111-1111-1111-111111111111', m, current_date) RETURNING id INTO a;
+  INSERT INTO match_official (match_id, school_id, duty, person_name, person_id)
+  VALUES (m, '11111111-1111-1111-1111-111111111111', 'scorer', 'V92 Paused', p_user) RETURNING id INTO d;
+  INSERT INTO duty_suspension (duty_id, assignment_id, school_id, suspended_by, reason)
+  VALUES (d, a, '11111111-1111-1111-1111-111111111111', p_office, 'Verify 92: paused pending a conversation.');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- An account of this section's, by its address, as the owner finds it.
+CREATE OR REPLACE FUNCTION _v92_id(p_email text) RETURNS uuid AS $$
+  SELECT id FROM app_user WHERE email = p_email
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The register and the requests as the owner reads them, past RLS.
+CREATE OR REPLACE FUNCTION _v92_row(p uuid) RETURNS school_register AS $$
+  SELECT * FROM school_register WHERE id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v92_rows(p_school uuid, p_email text) RETURNS integer AS $$
+  SELECT count(*)::int FROM school_register WHERE school_id = p_school AND email = p_email
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v92_request(p_person uuid, p_role text, p_school uuid) RETURNS role_request AS $$
+  SELECT * FROM role_request WHERE person_id = p_person AND role = p_role AND school_id = p_school
+   ORDER BY requested_at DESC, id LIMIT 1
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v92_held(p_person uuid, p_school uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(role || coalesce(':' || team_code, ''), ',' ORDER BY role, team_code), '')
+    FROM role_assignment WHERE person_id = p_person AND school_id = p_school AND active
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v92_assignment(p_person uuid, p_role text, p_school uuid) RETURNS role_assignment AS $$
+  SELECT * FROM role_assignment WHERE person_id = p_person AND role = p_role AND school_id = p_school AND active
+   ORDER BY created_at DESC LIMIT 1
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v92_log(p_resource text, p_id uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM access_log WHERE resource = p_resource AND p_id = ANY (record_ids)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Notices at a school with this title, as the owner counts them; and the
+-- newest of them.
+CREATE OR REPLACE FUNCTION _v92_notices(p_school uuid, p_title text) RETURNS integer AS $$
+  SELECT count(*)::int FROM notification WHERE school_id = p_school AND title = p_title
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v92_notice(p_school uuid, p_title text) RETURNS notification AS $$
+  SELECT * FROM notification WHERE school_id = p_school AND title = p_title ORDER BY published_at DESC, id DESC LIMIT 1
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The owner moves a row's dates, as time would.
+CREATE OR REPLACE FUNCTION _v92_age(p uuid, p_until date, p_withdrawn timestamptz) RETURNS void AS $$
+  UPDATE school_register SET valid_until = coalesce(p_until, valid_until), withdrawn_at = coalesce(p_withdrawn, withdrawn_at)
+   WHERE id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The owner's direct write of a row naming a child's role: the CHECK's answer.
+CREATE OR REPLACE FUNCTION _v92_child_row(p_school uuid, p_by uuid, p_role text) RETURNS text AS $$
+BEGIN
+  INSERT INTO school_register (school_id, email, name, role, valid_until, uploaded_by, upload_id)
+  VALUES (p_school, 'v92.child@example.invalid', 'V92 Child', p_role, current_date + 30, p_by, gen_random_uuid());
+  RETURN 'written';
+EXCEPTION WHEN check_violation THEN
+  RETURN 'check_violation';
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The principal moves to the office: his principal's role ends, an office
+-- role begins. He may still appoint here, but not a sports administrator.
+CREATE OR REPLACE FUNCTION _v92_demote(p_user uuid) RETURNS void AS $$
+  UPDATE role_assignment SET active = false WHERE person_id = p_user AND role = 'principal';
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_user, 'schooladmin', '11111111-1111-1111-1111-111111111111', current_date);
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The upload as the route makes it, under the caller's identity: every row's
+-- answer, as one jsonb array in line order.
+CREATE OR REPLACE FUNCTION _up92(p_school uuid, p_rows jsonb, p_commit boolean DEFAULT false, p_ack uuid[] DEFAULT '{}')
+RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(u) ORDER BY u.line), '[]'::jsonb)
+    FROM register_upload(p_school, p_rows, p_commit, p_ack) u
+$$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
+-- One row of a register upload, as the screen types it.
+CREATE OR REPLACE FUNCTION _r92(p_email text, p_role text, p_team text DEFAULT NULL, p_until text DEFAULT NULL,
+                                p_name text DEFAULT 'V92 Listed') RETURNS jsonb AS $$
+  SELECT jsonb_strip_nulls(jsonb_build_object('name', p_name, 'email', p_email, 'role', p_role,
+                                              'team_code', p_team, 'valid_until', p_until))
+$$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
+-- A claim as the route makes it: 'role:team:outcome' per row, sorted, or
+-- the SQLSTATE and constraint it raised.
+CREATE OR REPLACE FUNCTION _claim92(p_school uuid) RETURNS text AS $$
+DECLARE v text; v_state text; v_con text;
+BEGIN
+  SELECT string_agg(coalesce(c.role, '-') || ':' || coalesce(c.team_code, '') || ':' || c.outcome, ','
+                    ORDER BY c.role NULLS FIRST, c.team_code)
+    INTO v FROM register_claim(p_school) c;
+  RETURN v;
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_con = CONSTRAINT_NAME;
+  RETURN 'raised ' || v_state || ' ' || coalesce(nullif(v_con, ''), '-');
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- Is the register's table itself out of the application's reach?
+CREATE OR REPLACE FUNCTION _v92_table_read() RETURNS text AS $$
+DECLARE n integer;
+BEGIN
+  SELECT count(*) INTO n FROM school_register;
+  RETURN 'read ' || n;
+EXCEPTION WHEN insufficient_privilege THEN
+  RETURN 'refused';
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- register_redact() under the caller: the count, or the refusal.
+CREATE OR REPLACE FUNCTION _redact92(p_school uuid) RETURNS text AS $$
+BEGIN
+  RETURN register_redact(p_school)::text;
+EXCEPTION WHEN insufficient_privilege THEN
+  RETURN 'refused';
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- The internal door, called by the application directly: refused.
+CREATE OR REPLACE FUNCTION _door92(p_request uuid, p_by uuid) RETURNS text AS $$
+DECLARE v boolean;
+BEGIN
+  SELECT d.ok INTO v FROM role_request_grant_as(p_request, p_by, 'Verify 92', NULL, NULL) d;
+  RETURN 'called ' || coalesce(v::text, 'null');
+EXCEPTION WHEN insufficient_privilege THEN
+  RETURN 'refused';
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/92 (section 73) ──────────────────────────────────────────────
+
+-- ┌── db/93 (section 74). A declined parent claim, and the request cooldown
+-- A third school, with an office and a DSO, for the "more than two schools"
+-- rule; the cooldowns and pending claims as the owner reads them.
+CREATE OR REPLACE FUNCTION _seed_93() RETURNS jsonb AS $$
+DECLARE
+  TRD uuid := '93939393-0000-0000-0000-000000000093';
+  ids jsonb := jsonb_build_object('school', '93939393-0000-0000-0000-000000000093');
+  r   record;
+  v_u uuid;
+BEGIN
+  INSERT INTO school (id, code, name, kind, province) VALUES (TRD, 'verify-093', 'Verify 093', 'school', 'KwaZulu-Natal');
+  FOR r IN SELECT * FROM (VALUES ('office', 'schooladmin'), ('dso', 'dso')) AS v(k, role) LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (TRD, 'v93.' || r.k || '@example.invalid', 'V93 ' || initcap(r.k), r.role) RETURNING id INTO v_u;
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (v_u, r.role, TRD, current_date - 30);
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v93_cooldown(p_person uuid) RETURNS request_cooldown AS $$
+  SELECT * FROM request_cooldown WHERE person_id = p_person ORDER BY set_at DESC, id DESC LIMIT 1
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v93_cooldowns(p_person uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM request_cooldown WHERE person_id = p_person
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v93_claim(p_uid text) RETURNS uuid AS $$
+  SELECT id FROM pending_claim WHERE provider = 'google.com' AND provider_uid = p_uid AND resolved_at IS NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A request as POST /api/requests inserts it, under the caller: its id, or
+-- the SQLSTATE and constraint it raised.
+CREATE OR REPLACE FUNCTION _ask93(p_role text, p_school uuid, p_note text DEFAULT NULL) RETURNS text AS $$
+DECLARE v uuid; v_state text; v_con text;
+BEGIN
+  INSERT INTO role_request (person_id, role, school_id, note) VALUES (app_user_id(), p_role, p_school, p_note)
+  RETURNING id INTO v;
+  RETURN v::text;
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_con = CONSTRAINT_NAME;
+  RETURN 'raised ' || v_state || ' ' || coalesce(nullif(v_con, ''), '-');
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- POST /api/onboard's function, signed out: its answer, or what it raised.
+CREATE OR REPLACE FUNCTION _onboard93(p_email text, p_school uuid) RETURNS text AS $$
+DECLARE v uuid; v_state text; v_con text;
+BEGIN
+  v := onboard_request(p_email, 'V93 Asker', 'scorer', p_school, NULL, NULL);
+  RETURN 'requested';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_con = CONSTRAINT_NAME;
+  RETURN 'raised ' || v_state || ' ' || coalesce(nullif(v_con, ''), '-');
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _decide93(p_request uuid, p_grant boolean) RETURNS text AS $$
+  SELECT CASE WHEN d.ok THEN 'ok' ELSE d.reason END FROM decide_role_request(p_request, p_grant, 'Verify 93', NULL, NULL) d
+$$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _lift93(p_cooldown uuid) RETURNS text AS $$
+  SELECT CASE WHEN l.ok THEN 'ok' ELSE l.reason END FROM request_cooldown_lift(p_cooldown, 'Verify 93: spoke to the family.') l
+$$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v93_table_read() RETURNS text AS $$
+DECLARE n integer;
+BEGIN
+  SELECT count(*) INTO n FROM request_cooldown;
+  RETURN 'read ' || n;
+EXCEPTION WHEN insufficient_privilege THEN
+  RETURN 'refused';
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/93 (section 74) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -17714,6 +17998,647 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 70
+  -- ┌── section 73: the school staff register (db/92, SCRBRD-140 phase 2) ──
+  -- docs/design/SCRBRD-140_phase2_register.md §8 item 4, every proof it
+  -- lists. _seed_92() builds its own world (see its comment). Claimants who
+  -- have never been here sign in through auth_identity_sign_in(), as the
+  -- exchange does; everything else runs as the person, under the
+  -- application role.
+  --
+  --   (fences)    a guardian, player, selfaccess, enquiry, dso or platform
+  --               row is refused at upload, and the CHECK refuses the first
+  --               five written past the function; a role the uploader may
+  --               not grant is refused; the owner's key is never listable
+  --   (ceiling)   a role whose bundle holds medical.details.read,
+  --               discipline.read or safeguarding.* is refused, read from
+  --               role_capability; a role under it is not
+  --   (shape)     a side for a coach, a real side at the school, a date in
+  --               the window, one row per person, role and side; one bad
+  --               row commits nothing
+  --   (who)       only user.role.assign at the school uploads: never a
+  --               coach, another school's office, a pad, or nobody
+  --   (commit)    one upload id, the rows, the log; a row still open is not
+  --               listed twice
+  --   (warn)      an ending here in the last year warns; commit needs the
+  --               warning's key; a live role here refuses; a role at another
+  --               school is never mentioned
+  --   (read)      the office reads the register; a coach, a parent, the
+  --               DSO, a pad, a school-less account and another school's
+  --               office do not; the table itself is nobody's
+  --   (claim)     a new Google account's two rows both grant in one call,
+  --               through the door, decided by the uploader, with one notice
+  --               to the office; the account takes the school
+  --   (once)      a claimed row is not claimed again, by its claimant or by
+  --               another account sharing the address
+  --   (match)     a code-only account, and app_user.email alone, match
+  --               nothing; another school's row for the same address stays
+  --   (first)     a person holding a duty-suspended assignment at the school
+  --               cannot claim
+  --   (lapsed)    an uploader who lost user.role.assign, or lost the grant of
+  --               that role, grants nothing: consumed as requested, pending
+  --   (pupil)     a pupil's account is consumed as requested, nothing granted
+  --   (withdraw)  only whoever may list it; an open row only; it then
+  --               matches nothing
+  --   (expiry)    a row past its date matches nothing
+  --   (redact)    ninety days after expiry or withdrawal, name and email go
+  --               and the rest stays; never a claimed row; only the office
+  --   (hand)      a hand grant through decide_role_request() still names its
+  --               caller as the decider and still refuses a coach
+  --   (door)      role_request_grant_as() is not the application's, and
+  --               app_may_grant_at_for() still mirrors app_may_grant_at()
+  --
+  -- Falsified once each, the change made in the database as the owner before
+  -- this file ran, and red at its own assertion:
+  --   register_role_over_ceiling() made `false`      → (ceiling) red: medical,
+  --                                                     schooladmin, directorofsport listed
+  --   register_claim() without the P2-D4 refusal     → (first) red: the paused
+  --                                                     teacher claimed
+  --   step 1's two uploader re-checks removed        → (lapsed) red: granted
+  --   the match also made on app_user.email          → (match) red: the code-only
+  --                                                     account claimed
+  --   school_register_rows()'s DSO cut inverted      → (read) red: the DSO read it
+  --   app_may_grant_at_for() made `SELECT true`      → (lapsed) red: the demoted
+  --                                                     principal's row granted
+  --   app_may_grant_at_for() re-emitted without the
+  --   account's `active`                             → (door) red: the mirror
+  DECLARE
+    ids       jsonb;
+    HIL92     uuid := '11111111-1111-1111-1111-111111111111';
+    WES92     uuid := '22222222-2222-2222-2222-222222222222';
+    U_OFF     uuid; U_OFF2 uuid; U_HEAD uuid; U_DSO92 uuid; U_COACH92 uuid; U_WES uuid; U_WESDSO uuid;
+    U_WESCOACH uuid; U_OWN92 uuid; U_PARENT92 uuid; U_PUPIL92 uuid; U_ENDED uuid; U_CODE uuid;
+    U_DIFF uuid; U_TWIN1 uuid; U_TWIN2 uuid; U_PAUSED uuid;
+    U_NEW     uuid; U_LAPSE1 uuid; U_LAPSE2 uuid; U_LATE uuid; U_ASK uuid; U_NOSCHOOL uuid;
+    j         jsonb;
+    x         jsonb;
+    got       text;
+    v_out     text;
+    v_up      uuid;
+    R_COACH   uuid; R_SCORER uuid; R_CODE uuid; R_DIFF uuid; R_TWIN uuid; R_PAUSED uuid; R_WES uuid;
+    R_LAPSE1  uuid; R_LAPSE2 uuid; R_PUPIL uuid; R_WD uuid; R_LATE uuid;
+    g         school_register;
+    q         role_request;
+    ra        role_assignment;
+    n         notification;
+    k         integer;
+    k2        integer;
+    v_req     uuid;
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    ids := _seed_92();
+    U_OFF := (ids->>'u_office')::uuid;    U_OFF2 := (ids->>'u_office2')::uuid;  U_HEAD := (ids->>'u_head')::uuid;
+    U_DSO92 := (ids->>'u_dso')::uuid;     U_COACH92 := (ids->>'u_coach')::uuid; U_WES := (ids->>'u_wes')::uuid;
+    U_WESDSO := (ids->>'u_wesdso')::uuid; U_WESCOACH := (ids->>'u_wescoach')::uuid;
+    U_OWN92 := (ids->>'u_own')::uuid;     U_PARENT92 := (ids->>'u_parent')::uuid; U_PUPIL92 := (ids->>'u_pupil')::uuid;
+    U_ENDED := (ids->>'u_ended')::uuid;   U_CODE := (ids->>'u_codeonly')::uuid; U_DIFF := (ids->>'u_differs')::uuid;
+    U_TWIN1 := (ids->>'u_twin1')::uuid;   U_TWIN2 := (ids->>'u_twin2')::uuid;   U_PAUSED := (ids->>'u_paused')::uuid;
+
+    -- ── (fences), (shape) — one file, every refusal, nothing written ──
+    PERFORM _as(U_OFF);
+    j := _up92(HIL92, jsonb_build_array(
+      _r92('v92.newcoach@example.invalid', 'coach', 'U15A'),          -- 2  fine
+      _r92('v92.g@example.invalid', 'guardian'),                       -- 3
+      _r92('v92.p@example.invalid', 'player', 'U15A'),                 -- 4
+      _r92('v92.s@example.invalid', 'selfaccess'),                     -- 5
+      _r92('v92.e@example.invalid', 'enquiry'),                        -- 6
+      _r92('v92.d@example.invalid', 'dso'),                            -- 7
+      _r92('v92.o@example.invalid', 'superadmin'),                     -- 8
+      _r92('v92.pa@example.invalid', 'platformadmin'),                 -- 9
+      _r92('v92.h@example.invalid', 'principal'),                      -- 10 not the office's to grant
+      _r92('v92.c1@example.invalid', 'coach'),                         -- 11 no side
+      _r92('v92.c2@example.invalid', 'coach', 'XYZ'),                  -- 12 not a side
+      _r92('v92.c3@example.invalid', 'coach', 'U13C'),                 -- 13 not a Hilton side
+      _r92('V92.NEWCOACH@example.invalid ', 'Coach', 'u15a'),          -- 14 line 2 again, typed differently
+      _r92('v92.coach@example.invalid', 'scorer'),                     -- 15 already Coach (U15A) here
+      _r92('v92.past@example.invalid', 'scorer', NULL, to_char(current_date - 1, 'YYYY-MM-DD')),
+      _r92('v92.far@example.invalid', 'scorer', NULL, to_char(current_date + 600, 'YYYY-MM-DD')),
+      _r92('v92.bad@example.invalid', 'scorer', NULL, '31/12/2026'),
+      _r92('v92.n@example.invalid', 'scorer', NULL, NULL, 'X'),
+      _r92('not-an-address', 'scorer'),
+      _r92('v92.who@example.invalid', 'wizard')), true);
+    SELECT string_agg((e->>'line') || '=' || coalesce(e->>'problem', 'ok'), ' ' ORDER BY (e->>'line')::int) INTO got
+      FROM jsonb_array_elements(j) e;
+    PERFORM _assert(got = '2=ok 3=guardian_row 4=child_role 5=child_role 6=child_role 7=dso_row 8=not_grantable_here '
+                          '9=not_grantable_here 10=not_grantable_here 11=team_required 12=team_invalid 13=team_unknown '
+                          '14=duplicate_in_file 15=already_holds_role 16=valid_until_past 17=valid_until_too_far '
+                          '18=valid_until_invalid 19=name_invalid 20=email_invalid 21=role_unknown',
+      format('§73 (shape): the upload answered %s', got));
+    PERFORM _assert((SELECT e->>'detail' FROM jsonb_array_elements(j) e WHERE e->>'line' = '15') = 'Coach (U15A)'
+                    AND (SELECT e->>'detail' FROM jsonb_array_elements(j) e WHERE e->>'line' = '14') = '2',
+      '§73 (shape): the refusals do not say which role, or which line');
+    PERFORM _assert(_v92_rows(HIL92, 'v92.newcoach@example.invalid') = 0 AND (j->0->>'upload_id') IS NULL,
+      '§73 (shape): a file with bad rows committed its good one');
+    -- The CHECK, past the function.
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH got IN ARRAY ARRAY['guardian', 'selfaccess', 'enquiry', 'player', 'dso'] LOOP
+      PERFORM _assert(_v92_child_row(HIL92, U_OFF, got) = 'check_violation',
+        format('§73 (fences): a %s row was written past register_upload()', got));
+    END LOOP;
+    -- The owner's key lists nothing of the platform's.
+    PERFORM _as(U_OWN92);
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.o2@example.invalid', 'superadmin'),
+                                        _r92('v92.pa2@example.invalid', 'platformadmin')));
+    PERFORM _assert(j->0->>'problem' = 'not_grantable_here' AND j->1->>'problem' = 'not_grantable_here',
+      format('§73 (fences): the owner''s key listed a platform role: %s', j));
+
+    -- ── (ceiling) ──
+    PERFORM _as(U_HEAD);
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.m@example.invalid', 'medical'),
+                                        _r92('v92.sa@example.invalid', 'schooladmin'),
+                                        _r92('v92.ds@example.invalid', 'directorofsport'),
+                                        _r92('v92.sp@example.invalid', 'sportsadmin'),
+                                        _r92('v92.fi@example.invalid', 'finance')));
+    SELECT string_agg(coalesce(e->>'problem', 'ok'), ',' ORDER BY (e->>'line')::int) INTO got FROM jsonb_array_elements(j) e;
+    PERFORM _assert(got = 'sensitive_role,sensitive_role,sensitive_role,ok,ok',
+      format('§73 (ceiling): the principal''s upload answered %s', got));
+
+    -- ── (who) ──
+    FOREACH v_up IN ARRAY ARRAY[U_COACH92, U_WES, U_DSO92, U_PARENT92] LOOP
+      PERFORM _as(v_up);
+      j := _up92(HIL92, jsonb_build_array(_r92('v92.x@example.invalid', 'scorer')), true);
+      PERFORM _assert(jsonb_array_length(j) = 1 AND j->0->>'problem' = 'not_permitted' AND (j->0->>'line')::int = 0,
+        format('§73 (who): %s uploaded to Hilton''s register: %s', v_up, j));
+    END LOOP;
+    PERFORM _as(U_OFF);
+    PERFORM set_config('app.scope', 'pad', true);
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.x@example.invalid', 'scorer')), true);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(j->0->>'problem' = 'not_permitted', '§73 (who): the office''s pad credential uploaded');
+    PERFORM set_config('app.user_id', '', true);
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.x@example.invalid', 'scorer')), true);
+    PERFORM _assert(j->0->>'problem' = 'not_permitted', '§73 (who): nobody signed in uploaded');
+
+    -- ── (commit) ──
+    PERFORM _as(U_OFF);
+    j := _up92(HIL92, jsonb_build_array(
+      _r92('v92.newcoach@example.invalid', 'coach', 'U15A', NULL, 'V92 New Coach'),
+      _r92('v92.newcoach@example.invalid', 'scorer', NULL, NULL, 'V92 New Coach'),
+      _r92('v92.codeonly@example.invalid', 'scorer'),
+      _r92('v92.differs@example.invalid', 'scorer'),
+      _r92('v92.twin@example.invalid', 'scorer'),
+      _r92('v92.paused@example.invalid', 'scorer'),
+      -- Westville's coach: a role at another school is never mentioned
+      _r92('v92.wescoach@example.invalid', 'analyst')), true);
+    PERFORM _assert(jsonb_array_length(j) = 7 AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(j) e
+                                                               WHERE e->>'problem' IS NOT NULL OR e->>'warning' IS NOT NULL
+                                                                  OR e->>'row_id' IS NULL),
+      format('§73 (commit): the clean file answered %s', j));
+    v_up := (j->0->>'upload_id')::uuid;
+    PERFORM _assert(v_up IS NOT NULL AND (SELECT count(DISTINCT e->>'upload_id') FROM jsonb_array_elements(j) e) = 1,
+      '§73 (commit): the rows do not share one upload id');
+    R_COACH := (j->0->>'row_id')::uuid; R_SCORER := (j->1->>'row_id')::uuid; R_CODE := (j->2->>'row_id')::uuid;
+    R_DIFF := (j->3->>'row_id')::uuid;  R_TWIN := (j->4->>'row_id')::uuid;   R_PAUSED := (j->5->>'row_id')::uuid;
+    g := _v92_row(R_COACH);
+    PERFORM _assert(g.email = 'v92.newcoach@example.invalid' AND g.role = 'coach' AND g.team_code = 'U15A'
+                    AND g.uploaded_by = U_OFF AND g.upload_id = v_up AND g.claimed_at IS NULL
+                    AND g.valid_until = (SELECT s.ends_on FROM season s WHERE s.level = 'school'
+                                          AND current_date BETWEEN s.starts_on AND s.ends_on),
+      format('§73 (commit): the row reads %s', row_to_json(g)));
+    PERFORM _assert(_v92_log('register.upload', v_up) = 1 AND _v92_log('register.upload', R_PAUSED) = 1,
+      '§73 (commit): the upload is not on the log once, with its rows');
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.newcoach@example.invalid', 'coach', 'U15A')), true);
+    PERFORM _assert(j->0->>'problem' = 'already_listed' AND _v92_rows(HIL92, 'v92.newcoach@example.invalid') = 2,
+      format('§73 (commit): an open row was listed twice: %s', j));
+    -- The same address at Westville, by Westville's office.
+    PERFORM _as(U_WES);
+    j := _up92(WES92, jsonb_build_array(_r92('v92.newcoach@example.invalid', 'scorer', NULL, NULL, 'V92 New Coach')), true);
+    R_WES := (j->0->>'row_id')::uuid;
+    PERFORM _assert(R_WES IS NOT NULL, format('§73 (commit): Westville could not list the address: %s', j));
+
+    -- ── (warn) ──
+    PERFORM _as(U_OFF);
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.ended@example.invalid', 'scorer')));
+    x := j->0;
+    PERFORM _assert((x->>'ok')::boolean AND x->>'warning' = 'recently_ended' AND (x->>'ended_on')::date = current_date
+                    AND x->>'detail' = 'Coach (U15A)' AND (x->>'ack') IS NOT NULL,
+      format('§73 (warn): the dry run answered %s', x));
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.ended@example.invalid', 'scorer')), true);
+    PERFORM _assert(j->0->>'problem' = 'warning_not_acknowledged' AND _v92_rows(HIL92, 'v92.ended@example.invalid') = 0,
+      format('§73 (warn): an unacknowledged warning committed: %s', j));
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.ended@example.invalid', 'scorer')), true, ARRAY[(x->>'ack')::uuid]);
+    g := _v92_row((j->0->>'row_id')::uuid);
+    PERFORM _assert(g.id IS NOT NULL AND g.warned_ended_on = current_date,
+      format('§73 (warn): the acknowledged row was not written with its warning: %s', j));
+    -- Westville's coach was listed above with no warning and no refusal.
+    PERFORM _assert(_v92_rows(HIL92, 'v92.wescoach@example.invalid') = 1,
+      '§73 (warn): another school''s coach was refused or warned about');
+
+    -- ── (read) ──
+    PERFORM _as(U_OFF);
+    SELECT count(*) INTO k FROM school_register_rows(HIL92, NULL) r WHERE r.upload_id = v_up;
+    SELECT count(*) INTO k2 FROM school_register_rows(HIL92, 'open') r WHERE r.upload_id = v_up AND r.uploaded_by_name = 'V92 Office';
+    PERFORM _assert(k = 7 AND k2 = 7, format('§73 (read): the office reads %s of its 7 rows (%s open)', k, k2));
+    FOREACH v_up IN ARRAY ARRAY[U_COACH92, U_PARENT92, U_DSO92, U_WES, U_CODE] LOOP
+      PERFORM _as(v_up);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM school_register_rows(HIL92, NULL)),
+        format('§73 (read): %s read Hilton''s register', v_up));
+      PERFORM _assert(_v92_table_read() = 'refused', format('§73 (read): %s read school_register itself', v_up));
+    END LOOP;
+    PERFORM _as(U_OFF);
+    PERFORM _assert(_v92_table_read() = 'refused', '§73 (read): the office read school_register itself');
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM school_register_rows(HIL92, NULL)), '§73 (read): a pad read the register');
+    PERFORM set_config('app.scope', '', true);
+
+    -- ── (claim) — a stranger to SCRBRD, listed twice ──
+    PERFORM set_config('app.user_id', '', true);
+    SELECT s.user_id INTO U_NEW FROM auth_identity_sign_in('google.com', 'v92-newcoach', 'V92.NewCoach@Example.invalid', 'V92 New Coach') s;
+    PERFORM _assert(U_NEW IS NOT NULL AND (_v81_user(U_NEW)).school_id IS NULL, '§73 (claim): the newcomer is not a new account');
+    PERFORM _as(U_NEW);
+    got := _claim92(HIL92);
+    PERFORM _assert(got = 'coach:U15A:granted,scorer::granted', format('§73 (claim): the claim answered %s', got));
+    PERFORM _assert(_v92_held(U_NEW, HIL92) = 'coach:U15A,scorer', format('§73 (claim): the newcomer holds %s', _v92_held(U_NEW, HIL92)));
+    PERFORM _assert((_v81_user(U_NEW)).school_id = HIL92, '§73 (claim): the account did not take the school');
+    q := _v92_request(U_NEW, 'coach', HIL92);
+    g := _v92_row(R_COACH);
+    PERFORM _assert(q.state = 'granted' AND q.decided_by = U_OFF AND q.team_code = 'U15A'
+                    AND q.decided_note = format('from the staff register, row %s, uploaded %s', R_COACH, to_char(g.uploaded_at, 'YYYY-MM-DD'))
+                    AND q.assignment_id = (_v92_assignment(U_NEW, 'coach', HIL92)).id AND NOT q.asked_unverified,
+      format('§73 (claim): the request reads %s', row_to_json(q)));
+    PERFORM _assert(g.claimed_by = U_NEW AND g.outcome = 'granted' AND g.outcome_reason IS NULL AND g.claimed_request = q.id
+                    AND g.claimed_identity = (_v81_identity('v92-newcoach')).id AND g.claimed_at IS NOT NULL,
+      format('§73 (claim): the row reads %s', row_to_json(g)));
+    PERFORM _assert((_v92_row(R_SCORER)).outcome = 'granted' AND _v92_log('register.claim', R_COACH) = 1
+                    AND _v92_log('register.claim', R_SCORER) = 1,
+      '§73 (claim): the second row was not granted, or the claim is not on the log per row');
+    -- P2-D9: the identity keeps its honest linked_how.
+    PERFORM _assert((_v81_identity('v92-newcoach')).linked_how = 'new_account', '§73 (claim): the identity was relabelled');
+    -- The office is told, once; the coach and the newcomer are not.
+    n := _v92_notice(HIL92, 'Joined from the staff register');
+    PERFORM _assert(_v92_notices(HIL92, 'Joined from the staff register') = 1 AND n.kind = 'system' AND n.recipient_id IS NULL
+                    AND n.required_capability = 'user.role.assign' AND n.scope_level = 'school'
+                    AND n.body LIKE '%V92 New Coach joined as Coach (U15A) today, from the row V92 Office uploaded on%'
+                    AND n.body LIKE '%V92 New Coach joined as Scorer today%' AND n.body LIKE '%end the role on People.',
+      format('§73 (claim): the office''s notice reads %s', row_to_json(n)));
+    PERFORM _as(U_OFF);
+    PERFORM _assert(EXISTS (SELECT 1 FROM notification WHERE id = n.id), '§73 (claim): the office does not read its notice');
+    FOREACH v_up IN ARRAY ARRAY[U_COACH92, U_NEW, U_DSO92] LOOP
+      PERFORM _as(v_up);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification WHERE id = n.id),
+        format('§73 (claim): %s read the office''s notice', v_up));
+    END LOOP;
+    -- On the next statement the newcomer is a Hilton coach.
+    PERFORM _as(U_NEW);
+    PERFORM _assert(app_enrolled() AND app_can('team.read', HIL92, 'U15A', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
+      '§73 (claim): the granted coach cannot read his side');
+
+    -- ── (once), (match) ──
+    PERFORM _assert(_claim92(HIL92) = '-::no_match', '§73 (once): the claimant claimed again');
+    PERFORM _assert((_v92_row(R_WES)).claimed_at IS NULL, '§73 (match): Westville''s row went with Hilton''s claim');
+    PERFORM _as(U_TWIN1);
+    PERFORM _assert(_claim92(HIL92) = 'scorer::granted', '§73 (once): the first twin could not claim');
+    PERFORM _as(U_TWIN2);
+    PERFORM _assert(_claim92(HIL92) = '-::no_match' AND (_v92_row(R_TWIN)).claimed_by = U_TWIN1
+                    AND _v92_held(U_TWIN2, HIL92) = '',
+      '§73 (once): the second account sharing the address claimed the row too');
+    PERFORM _as(U_CODE);
+    PERFORM _assert(_claim92(HIL92) = '-::no_match' AND (_v92_row(R_CODE)).claimed_at IS NULL,
+      '§73 (match): a code-only account claimed by its typed address');
+    PERFORM _as(U_DIFF);
+    PERFORM _assert(_claim92(HIL92) = '-::no_match' AND (_v92_row(R_DIFF)).claimed_at IS NULL,
+      '§73 (match): app_user.email matched where Google''s address did not');
+
+    -- ── (first) — paused on a duty after his row was listed ──
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v92_pause(U_PAUSED, U_OFF);
+    PERFORM _as(U_PAUSED);
+    PERFORM _assert(_claim92(HIL92) = '-::no_match' AND (_v92_row(R_PAUSED)).claimed_at IS NULL
+                    AND _v92_held(U_PAUSED, HIL92) = 'scorer'
+                    AND (_v92_request(U_PAUSED, 'scorer', HIL92)).id IS NULL,
+      '§73 (first): a person with a paused assignment here claimed, or asked');
+
+    -- ── (lapsed) — the uploader lost the key; then lost the grant of the role ──
+    PERFORM _as(U_OFF2);
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.lapse1@example.invalid', 'scorer')), true);
+    R_LAPSE1 := (j->0->>'row_id')::uuid;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _revoke(U_OFF2);
+    SELECT s.user_id INTO U_LAPSE1 FROM auth_identity_sign_in('google.com', 'v92-lapse1', 'v92.lapse1@example.invalid', 'V92 Lapse') s;
+    PERFORM _as(U_LAPSE1);
+    got := _claim92(HIL92);
+    g := _v92_row(R_LAPSE1);
+    q := _v92_request(U_LAPSE1, 'scorer', HIL92);
+    PERFORM _assert(got = 'scorer::requested' AND g.outcome = 'requested' AND g.outcome_reason = 'uploader_authority_lapsed'
+                    AND q.state = 'pending' AND q.id = g.claimed_request AND _v92_held(U_LAPSE1, HIL92) = '',
+      format('§73 (lapsed): a departed office''s row answered %s, the row %s', got, row_to_json(g)));
+    PERFORM _assert((_v92_notice(HIL92, 'A staff register claim is waiting')).body LIKE '%is waiting in Requests.',
+      '§73 (lapsed): the office is not told the claim waits');
+    PERFORM _as(U_HEAD);
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.lapse2@example.invalid', 'sportsadmin')), true);
+    R_LAPSE2 := (j->0->>'row_id')::uuid;
+    PERFORM _assert(R_LAPSE2 IS NOT NULL, format('§73 (lapsed): the principal could not list a sports administrator: %s', j));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v92_demote(U_HEAD);
+    SELECT s.user_id INTO U_LAPSE2 FROM auth_identity_sign_in('google.com', 'v92-lapse2', 'v92.lapse2@example.invalid', 'V92 Lapse Two') s;
+    PERFORM _as(U_LAPSE2);
+    got := _claim92(HIL92);
+    g := _v92_row(R_LAPSE2);
+    PERFORM _assert(got = 'sportsadmin::requested' AND g.outcome_reason = 'uploader_authority_lapsed'
+                    AND _v92_held(U_LAPSE2, HIL92) = '' AND (_v92_request(U_LAPSE2, 'sportsadmin', HIL92)).state = 'pending',
+      format('§73 (lapsed): an uploader who may no longer grant the role granted it: %s', got));
+
+    -- ── (pupil) — Westville lists a Hilton pupil's Google address ──
+    PERFORM _as(U_WES);
+    j := _up92(WES92, jsonb_build_array(_r92('v92.pupil@example.invalid', 'scorer')), true);
+    R_PUPIL := (j->0->>'row_id')::uuid;
+    PERFORM _as(U_PUPIL92);
+    got := _claim92(WES92);
+    g := _v92_row(R_PUPIL);
+    PERFORM _assert(got = 'scorer::requested' AND g.outcome_reason = 'refused' AND _v92_held(U_PUPIL92, WES92) = ''
+                    AND (_v92_request(U_PUPIL92, 'scorer', WES92)).state = 'pending',
+      format('§73 (pupil): a pupil''s account answered %s and holds %s at Westville', got, _v92_held(U_PUPIL92, WES92)));
+    -- At his own school he holds a role: the first door.
+    PERFORM _assert(_claim92(HIL92) = '-::no_match', '§73 (pupil): the pupil claimed at his own school');
+
+    -- ── (withdraw) ──
+    PERFORM _as(U_OFF);
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.wd@example.invalid', 'scorer'), _r92('v92.late@example.invalid', 'scorer')), true);
+    R_WD := (j->0->>'row_id')::uuid; R_LATE := (j->1->>'row_id')::uuid;
+    FOREACH v_up IN ARRAY ARRAY[U_COACH92, U_WES, U_DSO92, U_NEW] LOOP
+      PERFORM _as(v_up);
+      SELECT CASE WHEN w.ok THEN 'ok' ELSE w.reason END INTO got FROM register_withdraw(R_WD) w;
+      PERFORM _assert(got = 'not_permitted', format('§73 (withdraw): %s withdrew Hilton''s row: %s', v_up, got));
+    END LOOP;
+    PERFORM _as(U_OFF);
+    SELECT CASE WHEN w.ok THEN 'ok' ELSE w.reason END INTO got FROM register_withdraw(R_WD) w;
+    PERFORM _assert(got = 'ok' AND (_v92_row(R_WD)).withdrawn_by = U_OFF AND _v92_log('register.withdraw', R_WD) = 1,
+      format('§73 (withdraw): the office''s withdrawal answered %s', got));
+    SELECT CASE WHEN w.ok THEN 'ok' ELSE w.reason END INTO got FROM register_withdraw(R_WD) w;
+    PERFORM _assert(got = 'already_withdrawn', format('§73 (withdraw): a second withdrawal answered %s', got));
+    SELECT CASE WHEN w.ok THEN 'ok' ELSE w.reason END INTO got FROM register_withdraw(R_COACH) w;
+    PERFORM _assert(got = 'already_claimed', format('§73 (withdraw): a claimed row answered %s', got));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT s.user_id INTO v_up FROM auth_identity_sign_in('google.com', 'v92-wd', 'v92.wd@example.invalid', 'V92 Withdrawn') s;
+    PERFORM _as(v_up);
+    PERFORM _assert(_claim92(HIL92) = '-::no_match', '§73 (withdraw): a withdrawn row was claimed');
+
+    -- ── (expiry) ──
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v92_age(R_LATE, current_date - 1, NULL);
+    SELECT s.user_id INTO U_LATE FROM auth_identity_sign_in('google.com', 'v92-late', 'v92.late@example.invalid', 'V92 Late') s;
+    PERFORM _as(U_LATE);
+    PERFORM _assert(_claim92(HIL92) = '-::no_match' AND (_v92_row(R_LATE)).claimed_at IS NULL,
+      '§73 (expiry): a row past its date was claimed');
+    PERFORM _as(U_OFF);
+    PERFORM _assert((SELECT r.state FROM school_register_rows(HIL92, NULL) r WHERE r.id = R_LATE) = 'expired',
+      '§73 (expiry): the expired row does not read expired');
+    -- Listing him again withdraws the expired row and opens a fresh one.
+    j := _up92(HIL92, jsonb_build_array(_r92('v92.late@example.invalid', 'scorer')), true);
+    PERFORM _assert(j->0->>'row_id' IS NOT NULL AND (_v92_row(R_LATE)).withdrawn_by = U_OFF,
+      format('§73 (expiry): an expired row blocked a fresh listing: %s', j));
+    PERFORM _as(U_LATE);
+    PERFORM _assert(_claim92(HIL92) = 'scorer::granted', '§73 (expiry): the fresh listing could not be claimed');
+
+    -- ── (redact) — ninety-one days on ──
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v92_age(R_LATE, NULL, now() - interval '91 days');
+    PERFORM _v92_age(R_DIFF, current_date - 91, NULL);
+    PERFORM _v92_age(R_CODE, current_date - 89, NULL);          -- not yet due
+    PERFORM _as(U_COACH92);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM register_redact_due(HIL92)) AND _redact92(HIL92) = 'refused',
+      '§73 (redact): a coach saw or cleared what is due');
+    PERFORM _as(U_OFF);
+    SELECT string_agg(d.id::text, ',' ORDER BY d.id) INTO got FROM register_redact_due(HIL92) d;
+    PERFORM _assert(got = (SELECT string_agg(x2::text, ',' ORDER BY x2) FROM unnest(ARRAY[R_LATE, R_DIFF]) x2),
+      format('§73 (redact): due are %s', got));
+    PERFORM _assert(_redact92(HIL92) = '2', '§73 (redact): the office did not clear two rows');
+    g := _v92_row(R_DIFF);
+    PERFORM _assert(g.name = 'Redacted' AND g.email = 'redacted+' || R_DIFF || '@redacted.invalid' AND g.redacted_at IS NOT NULL
+                    AND g.role = 'scorer' AND g.uploaded_by = U_OFF AND g.valid_until = current_date - 91,
+      format('§73 (redact): the cleared row reads %s', row_to_json(g)));
+    PERFORM _assert((_v92_row(R_CODE)).redacted_at IS NULL AND (_v92_row(R_COACH)).email = 'v92.newcoach@example.invalid'
+                    AND NOT EXISTS (SELECT 1 FROM register_redact_due(HIL92)) AND _v92_log('register.redact', R_DIFF) = 1,
+      '§73 (redact): a row not yet due, or a claimed row, was cleared; or nothing is on the log');
+
+    -- ── (hand) — the office's own door, after the factoring ──
+    PERFORM set_config('app.user_id', '', true);
+    SELECT s.user_id INTO U_ASK FROM auth_identity_sign_in('google.com', 'v92-ask', 'v92.ask@example.invalid', 'V92 Ask') s;
+    PERFORM _as(U_ASK);
+    INSERT INTO role_request (person_id, role, school_id, team_code) VALUES (U_ASK, 'coach', HIL92, 'U15A') RETURNING id INTO v_req;
+    PERFORM _as(U_COACH92);
+    PERFORM _assert(_decide93(v_req, true) = 'not_permitted', '§73 (hand): a coach granted a request');
+    PERFORM _as(U_OFF);
+    PERFORM _assert(_decide93(v_req, true) = 'ok', '§73 (hand): the office could not grant a request');
+    q := _v92_request(U_ASK, 'coach', HIL92);
+    ra := _v92_assignment(U_ASK, 'coach', HIL92);
+    PERFORM _assert(q.state = 'granted' AND q.decided_by = U_OFF AND q.decided_note = 'Verify 93'
+                    AND ra.id = q.assignment_id AND ra.created_by = U_OFF AND ra.team_code = 'U15A',
+      format('§73 (hand): the hand grant reads %s / %s', row_to_json(q), row_to_json(ra)));
+    PERFORM _assert(_decide93(v_req, true) = 'already_decided', '§73 (hand): a request was granted twice');
+
+    -- ── (door) ──
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'role_request_grant_as(uuid,uuid,text,uuid,text)', 'EXECUTE')
+                    AND _door92(v_req, U_OFF) = 'refused',
+      '§73 (door): the application may call role_request_grant_as()');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'app_may_grant_at_for(uuid,text,uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'app_may_assign_at_for(uuid,uuid)', 'EXECUTE'),
+      '§73 (door): the application may ask about somebody else''s authority');
+    PERFORM _assert((SELECT p.prosrc FROM pg_proc p WHERE p.oid = 'app_may_grant_at_for(uuid,text,uuid)'::regprocedure)
+                    = replace(replace((SELECT p.prosrc FROM pg_proc p WHERE p.oid = 'app_may_grant_at(text,uuid)'::regprocedure),
+                                      'SELECT NOT app_pad_scoped() AND EXISTS (',
+                                      'SELECT EXISTS (SELECT 1 FROM app_user u WHERE u.id = p_person AND u.active) AND EXISTS ('),
+                              'app_user_id()', 'p_person'),
+      '§73 (door): app_may_grant_at_for() no longer mirrors app_may_grant_at(); re-emit them together');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.scope', '', true);
+  -- └── end of section 73
+  -- ┌── section 74: a declined parent claim, and the request cooldown (db/93) ──
+  -- docs/design/SCRBRD-140_phase2_register.md §4 and §8 item 4's last
+  -- proofs, and the lead's review note (1): the cooldown refuses a register
+  -- claim too, from the claim's own request.
+  --
+  --   (notice)    a declined guardian request writes exactly one
+  --               safeguarding notice at its school, naming nobody; the DSO
+  --               reads it, the office and a coach do not; a declined coach
+  --               request writes none
+  --   (cooldown)  the third decline in thirty days pauses the asker: every
+  --               request route refuses with request_cooldown, the DSOs are
+  --               told, the table is nobody's to read
+  --   (claim)     a register claim under a cooldown raises the cooldown and
+  --               consumes nothing (the lead's note (1))
+  --   (lift)      only a DSO at one of its schools lifts it; not the office,
+  --               not the owner's key, not another school's DSO; then the
+  --               claim grants
+  --   (schools)   guardian requests at three schools in thirty days pause on
+  --               one decline; every school's DSOs are told; each may lift
+  --   (signin)    a declined sign-in claim on a pupil's or a parent's
+  --               account tells the DSO; on a coach's, nobody
+  --
+  -- Falsified once each, as the owner before this file ran:
+  --   role_request_declined_notice disabled            → (notice) red: no notice
+  --   role_request_cooldown disabled                   → (cooldown) red: asked again
+  --   request_cooldown_lift() asking user.role.assign  → (lift) red: the office lifted
+  DECLARE
+    HIL93    uuid := '11111111-1111-1111-1111-111111111111';
+    WES93    uuid := '22222222-2222-2222-2222-222222222222';
+    ids      jsonb;
+    TRD      uuid;
+    U_OFF    uuid := _v92_id('v92.office@example.invalid');
+    U_DSO93  uuid := _v92_id('v92.dso@example.invalid');
+    U_COACH93 uuid := _v92_id('v92.coach@example.invalid');
+    U_WES93  uuid := _v92_id('v92.wes@example.invalid');
+    U_WESDSO93 uuid := _v92_id('v92.wesdso@example.invalid');
+    U_OWN93  uuid := _v92_id('v92.own@example.invalid');
+    U_TOFF   uuid; U_TDSO uuid;
+    U_ASK1   uuid; U_ASK2 uuid;
+    v_req    uuid;
+    v_hil    uuid; v_trd uuid;
+    v_row    uuid;
+    v_pc     uuid;
+    got      text;
+    k        integer;
+    k2       integer;
+    k3       integer;
+    n        notification;
+    c        request_cooldown;
+    j        jsonb;
+    DECLINED text := 'A parent claim was declined';
+    PAUSED   text := 'An account has been paused from asking';
+    SIGNIN   text := 'A sign-in claim was declined';
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    ids := _seed_93();
+    TRD := (ids->>'school')::uuid; U_TOFF := (ids->>'u_office')::uuid; U_TDSO := (ids->>'u_dso')::uuid;
+    SELECT s.user_id INTO U_ASK1 FROM auth_identity_sign_in('google.com', 'v93-ask1', 'v93.ask1@example.invalid', 'V93 Asker One') s;
+    SELECT s.user_id INTO U_ASK2 FROM auth_identity_sign_in('google.com', 'v93-ask2', 'v93.ask2@example.invalid', 'V93 Asker Two') s;
+    PERFORM _assert(U_OFF IS NOT NULL AND U_DSO93 IS NOT NULL AND U_ASK1 IS NOT NULL AND U_ASK2 IS NOT NULL,
+      '§74: section 73''s accounts, or the askers, are missing');
+
+    -- ── (notice) ──
+    PERFORM _as(U_ASK1);
+    v_req := _ask93('guardian', HIL93, 'For my son Kid Ninetythree in the U15A')::uuid;
+    k := _v92_notices(HIL93, DECLINED);
+    PERFORM _as(U_OFF);
+    PERFORM _assert(_decide93(v_req, false) = 'ok', '§74 (notice): the office could not decline');
+    n := _v92_notice(HIL93, DECLINED);
+    PERFORM _assert(_v92_notices(HIL93, DECLINED) = k + 1,
+      format('§74 (notice): one decline wrote %s notices', _v92_notices(HIL93, DECLINED) - k));
+    PERFORM _assert(n.kind = 'safeguarding' AND n.required_capability = 'safeguarding.concern.read' AND n.recipient_id IS NULL
+                    AND n.subject_person_id IS NULL AND n.team_code IS NULL AND n.scope_level = 'school' AND NOT n.is_public
+                    AND n.body LIKE 'A request to be linked to a child at your school was declined by the office on %. The office can tell you who asked. If anything about it concerns you, raise a concern.',
+      format('§74 (notice): the notice reads %s', row_to_json(n)));
+    PERFORM _assert(n.body NOT ILIKE '%Ninetythree%' AND n.body NOT ILIKE '%Asker%' AND n.body NOT ILIKE '%v93.ask1%'
+                    AND n.body NOT ILIKE '%U15A%' AND n.title NOT ILIKE '%Asker%',
+      format('§74 (notice): the notice names somebody: %s', n.body));
+    PERFORM _as(U_DSO93);
+    PERFORM _assert(EXISTS (SELECT 1 FROM notification WHERE id = n.id), '§74 (notice): the DSO does not read it');
+    FOREACH v_row IN ARRAY ARRAY[U_OFF, U_COACH93, U_ASK1, U_WESDSO93, U_OWN93] LOOP
+      PERFORM _as(v_row);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification WHERE id = n.id),
+        format('§74 (notice): %s read the DSO''s notice', v_row));
+    END LOOP;
+    -- A declined scorer's request is not a parent's claim.
+    PERFORM _as(U_ASK1);
+    v_req := _ask93('scorer', HIL93)::uuid;
+    PERFORM _as(U_OFF);
+    PERFORM _assert(_decide93(v_req, false) = 'ok' AND _v92_notices(HIL93, DECLINED) = k + 1,
+      '§74 (notice): a declined scorer''s request told the DSO');
+
+    -- ── (cooldown) — the second and third declines ──
+    PERFORM _as(U_ASK1);
+    v_req := _ask93('guardian', HIL93, 'Again')::uuid;
+    PERFORM _as(U_OFF);
+    PERFORM _assert(_decide93(v_req, false) = 'ok' AND _v93_cooldowns(U_ASK1) = 0,
+      '§74 (cooldown): two declines paused the asker');
+    PERFORM _as(U_ASK1);
+    v_req := _ask93('guardian', HIL93, 'A third time')::uuid;
+    k2 := _v92_notices(HIL93, PAUSED);
+    PERFORM _as(U_OFF);
+    PERFORM _assert(_decide93(v_req, false) = 'ok', '§74 (cooldown): the third decline failed');
+    c := _v93_cooldown(U_ASK1);
+    PERFORM _assert(_v93_cooldowns(U_ASK1) = 1 AND c.reason = 'repeated_declines' AND c.school_ids = ARRAY[HIL93]
+                    AND c.until = now() + interval '30 days' AND c.lifted_at IS NULL,
+      format('§74 (cooldown): the cooldown reads %s', row_to_json(c)));
+    n := _v92_notice(HIL93, PAUSED);
+    PERFORM _assert(_v92_notices(HIL93, PAUSED) = k2 + 1 AND n.kind = 'safeguarding' AND n.subject_id = c.id
+                    AND n.required_capability = 'safeguarding.concern.read' AND n.body NOT ILIKE '%Asker%'
+                    AND _v92_notices(HIL93, DECLINED) = k + 3,
+      format('§74 (cooldown): the DSOs'' notice reads %s', row_to_json(n)));
+    PERFORM _as(U_DSO93);
+    PERFORM _assert(EXISTS (SELECT 1 FROM notification WHERE id = n.id), '§74 (cooldown): the DSO is not told of the pause');
+    PERFORM _assert(_v93_table_read() = 'refused', '§74 (cooldown): the DSO read request_cooldown itself');
+    PERFORM _as(U_ASK1);
+    got := _ask93('scorer', HIL93);
+    PERFORM _assert(got = 'raised 23514 request_cooldown', format('§74 (cooldown): a request under a cooldown answered %s', got));
+    PERFORM _assert(_v93_table_read() = 'refused', '§74 (cooldown): the asker read request_cooldown');
+    PERFORM set_config('app.user_id', '', true);
+    got := _onboard93('v93.ask1@example.invalid', HIL93);
+    PERFORM _assert(got = 'raised 23514 request_cooldown', format('§74 (cooldown): onboarding under a cooldown answered %s', got));
+
+    -- ── (claim) — the lead's note (1) ──
+    PERFORM _as(U_OFF);
+    j := _up92(HIL93, jsonb_build_array(_r92('v93.ask1@example.invalid', 'scorer', NULL, NULL, 'V93 Asker One')), true);
+    v_row := (j->0->>'row_id')::uuid;
+    PERFORM _assert(v_row IS NOT NULL, format('§74 (claim): the office could not list the asker: %s', j));
+    PERFORM _as(U_ASK1);
+    got := _claim92(HIL93);
+    PERFORM _assert(got = 'raised 23514 request_cooldown' AND (_v92_row(v_row)).claimed_at IS NULL
+                    AND _v92_log('register.claim', v_row) = 0 AND _v92_held(U_ASK1, HIL93) = '',
+      format('§74 (claim): a claim under a cooldown answered %s, or consumed its row', got));
+
+    -- ── (lift) ──
+    FOREACH v_req IN ARRAY ARRAY[U_OFF, U_OWN93, U_WESDSO93, U_ASK1, U_COACH93, U_TDSO] LOOP
+      PERFORM _as(v_req);
+      got := _lift93(c.id);
+      PERFORM _assert(got = 'not_permitted', format('§74 (lift): %s lifting answered %s', v_req, got));
+    END LOOP;
+    PERFORM _as(U_DSO93);
+    PERFORM _assert(_lift93(c.id) = 'ok', '§74 (lift): the DSO could not lift it');
+    PERFORM _assert(_lift93(c.id) = 'already_lifted', '§74 (lift): lifted twice');
+    c := _v93_cooldown(U_ASK1);
+    PERFORM _assert(c.lifted_by = U_DSO93 AND c.lift_note = 'Verify 93: spoke to the family.'
+                    AND _v92_log('safeguarding.cooldown_lift', c.id) = 1,
+      format('§74 (lift): the lift reads %s', row_to_json(c)));
+    PERFORM _as(U_ASK1);
+    got := _claim92(HIL93);
+    PERFORM _assert(got = 'scorer::granted', format('§74 (lift): after the lift the claim answered %s', got));
+
+    -- ── (schools) — three schools in thirty days, one decline ──
+    PERFORM _as(U_ASK2);
+    v_hil := _ask93('guardian', HIL93)::uuid;
+    v_req := _ask93('guardian', WES93)::uuid;
+    v_trd := _ask93('guardian', TRD)::uuid;
+    k := _v92_notices(HIL93, PAUSED); k2 := _v92_notices(WES93, PAUSED); k3 := _v92_notices(TRD, PAUSED);
+    PERFORM _as(U_WES93);
+    PERFORM _assert(_decide93(v_req, false) = 'ok', '§74 (schools): Westville could not decline');
+    c := _v93_cooldown(U_ASK2);
+    PERFORM _assert(c.reason = 'many_schools'
+                    AND (SELECT array_agg(x ORDER BY x) FROM unnest(c.school_ids) x)
+                        = (SELECT array_agg(x ORDER BY x) FROM unnest(ARRAY[HIL93, WES93, TRD]) x),
+      format('§74 (schools): the cooldown reads %s', row_to_json(c)));
+    PERFORM _assert(_v92_notices(HIL93, PAUSED) = k + 1 AND _v92_notices(WES93, PAUSED) = k2 + 1 AND _v92_notices(TRD, PAUSED) = k3 + 1,
+      '§74 (schools): each school''s DSOs were not told once');
+    PERFORM _as(U_ASK2);
+    PERFORM _assert(_ask93('scorer', TRD) = 'raised 23514 request_cooldown', '§74 (schools): the asker asked again');
+    PERFORM _as(U_TOFF);
+    PERFORM _assert(_lift93(c.id) = 'not_permitted', '§74 (schools): the third school''s office lifted it');
+    PERFORM _as(U_TDSO);
+    PERFORM _assert(_lift93(c.id) = 'ok', '§74 (schools): the third school''s DSO could not lift it');
+
+    -- ── (signin) — a stranger's Google sign-in reaching for a pupil's, a parent's, a coach's account ──
+    k := _v92_notices(HIL93, SIGNIN);
+    FOREACH got IN ARRAY ARRAY['pupil', 'parent', 'coach'] LOOP
+      PERFORM set_config('app.user_id', '', true);
+      PERFORM _assert((SELECT s.outcome FROM auth_identity_sign_in('google.com', 'v93-' || got, 'v92.' || got || '@example.invalid', 'Stranger') s)
+                      = 'claim_required', format('§74 (signin): the %s''s address was not a claim', got));
+      v_pc := _v93_claim('v93-' || got);
+      PERFORM _as(U_OFF);
+      PERFORM _assert((SELECT d.ok FROM pending_claim_decline(v_pc) d),
+        format('§74 (signin): the office could not decline the %s claim', got));
+    END LOOP;
+    n := _v92_notice(HIL93, SIGNIN);
+    PERFORM _assert(_v92_notices(HIL93, SIGNIN) = k + 2 AND n.kind = 'safeguarding' AND n.recipient_id IS NULL
+                    AND n.required_capability = 'safeguarding.concern.read'
+                    AND n.body NOT ILIKE '%Ninetytwo%' AND n.body NOT ILIKE '%Stranger%' AND n.body NOT ILIKE '%v92.%',
+      format('§74 (signin): %s notices (two expected), the last %s', _v92_notices(HIL93, SIGNIN) - k, row_to_json(n)));
+    PERFORM _as(U_DSO93);
+    PERFORM _assert(EXISTS (SELECT 1 FROM notification WHERE id = n.id), '§74 (signin): the DSO does not read it');
+    PERFORM _as(U_OFF);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification WHERE id = n.id), '§74 (signin): the office reads it');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 74
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
