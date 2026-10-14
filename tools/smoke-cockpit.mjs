@@ -1,0 +1,287 @@
+#!/usr/bin/env node
+/**
+ * The coach's cockpit, over HTTP: the proofs phase A still owed, and phase B's
+ * one read (SCRBRD-136/137; docs/design/SCRBRD-136-137_phaseB.md §5, §1.7).
+ *
+ * Phase A shipped three read fixes in services/api/read/read-api.mjs that were
+ * proved by nothing but reading them. They are claims about gates on minors'
+ * data, so each is proved here as the people it is about, signed in through
+ * the API with the seed's invented accounts and two this walk appoints:
+ *
+ *   1. BOWLING_SPELLS. The spell is the match's log and goes to whoever may
+ *      read the match; the directive beside it (age band, pace, the limits,
+ *      over_spell_limit) is the boy's load, and comes back only to a reader
+ *      holding player.workload.read for that boy. The coach and the physio
+ *      get it filled; the scorer, a pupil and the team manager get the same
+ *      spell with those null; the other school's coach gets his own bowler's
+ *      filled and nothing of ours.
+ *   2. SHOT_POINTS. A ball voided through the pad's own route is gone from
+ *      the match's wheel; the striker's own wheel (player_shot_points) agrees;
+ *      the count is ball_event_live's.
+ *   3. WORKLOAD. The team manager reads none; the coach and the assistant do.
+ *   4. BOWLER_DAY (phase B, db/94). A boy's overs today across two matches,
+ *      one of them another side's: the coach, the assistant, the physio and
+ *      the director read eleven of twelve, two matches; the team manager, the
+ *      scorer and a pupil get an empty answer and no error naming the gate;
+ *      the boy himself reads his own row and nobody else's.
+ *
+ * The rest of the 136 doc's §9 API walk (opposition_context, trips, matchups,
+ * the logged doors) is held by smoke-opposition, smoke-lifts and
+ * smoke-matchups; db/99 §71 and §72 hold the schema half of this one.
+ *
+ *   node tools/migrate.mjs --reset --seed
+ *   node tools/smoke-cockpit.mjs
+ */
+import { spawn } from "node:child_process";
+import pg from "pg";
+import { inningsStart, batters, bowler, ball, voidEvent, BALL_TYPE } from "@scrbrd/scoring";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
+
+const PORT = port(8936);
+const BASE = `http://127.0.0.1:${PORT}`;
+const HIL = "11111111-1111-1111-1111-111111111111";
+const WES = "22222222-2222-2222-2222-222222222222";
+const SCORER = "88888888-0000-0000-0000-000000000006";
+const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";   // 1XI, with an account and self-access
+const WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001";
+const BEKKER = "aaaaaaaa-0000-0000-0000-000000000002";
+const NAIDOO = "aaaaaaaa-0000-0000-0000-000000000003";
+const SCHEDULED = "77777777-0000-0000-0000-000000000002";  // the seed's 1XI v Michaelhouse, unscored
+
+let pass = 0, fail = 0;
+const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${String(typeof d === "string" ? d : JSON.stringify(d)).slice(0, 300)}`); } };
+const group = (t) => console.log("\n" + t);
+
+const server = spawn(process.execPath, ["services/api/server.mjs"], {
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development",
+         ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-cockpit-secret" },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+const serverErr = [];
+server.stderr.on("data", (d) => serverErr.push(d.toString()));
+
+const api = async (path, { method = "GET", token, body } = {}) => {
+  const res = await fetch(BASE + path, {
+    method,
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const raw = await res.text();
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch { /* not JSON */ }
+  return { status: res.status, body: parsed, raw };
+};
+const login = async (email, deviceId = "device-cockpit-api") => (await api("/api/auth/dev-login", {
+  method: "POST", body: { email, deviceId } })).body?.token;
+const read = (resource, query, tok) => api(`/api/read/${resource}${query ? `?${new URLSearchParams(query)}` : ""}`, { token: tok });
+const rows = async (resource, query, tok) => (await read(resource, query, tok)).body?.rows ?? null;
+
+const pool = new pg.Pool({ connectionString: ownerUrl() });
+const q = async (t, p) => (await pool.query(t, p)).rows;
+
+// The log, as the owner writes it for a walk about what the log MEANS: six
+// legal balls an over, bowled by `overs[i]` (null: a bowler SCRBRD holds no
+// row for, which still counts in the over's numbering, so alternate overs
+// from one end are one spell).
+let key = 0;
+async function feed(matchId, innings, overs) {
+  let seq = (await q(`select coalesce(max(seq), 0)::int s from ball_event where match_id = $1`, [matchId]))[0].s;
+  const school = (await q(`select school_id from match where id = $1`, [matchId]))[0].school_id;
+  for (const b of overs) {
+    for (let j = 0; j < 6; j++) {
+      seq++;
+      await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                                       idempotency_key, client_seq, client_ts, kind, ball_type, value, bowler_id)
+               values ($1, $2, $3, 0, $4, $5, 'walk-cockpit', $6, $3, now(), 'ball', 'run', 0, $7)`,
+              [matchId, school, seq, innings, SCORER, `ck-${++key}`, b]);
+    }
+  }
+}
+/**
+ * A 1XI fixture at `hhmm` on the SA date `daysAgo` days back: Hilton's, or
+ * Westville's at home to Hilton's 1XI, optionally shared with the other
+ * school's 1XI. The host's log is the host's: ball_event_read asks
+ * fixture.read at the host school, so the visitors' coach reads none of it.
+ */
+const fixture = async ({ hhmm, opponent, host = HIL, shared = false, daysAgo = 0 }) => (await q(
+  `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+   values ($1, '1XI', $2, $3, $4, ((sa_today() - $6::int)::timestamp + $5::time) at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'live')
+   returning id`, [host, shared ? (host === HIL ? WES : HIL) : null, shared ? "1XI" : null, opponent, hhmm, daysAgo]))[0].id;
+const FILLED = (r) => r.age_band != null && r.pace != null && r.max_overs_per_spell != null && r.max_overs_per_day != null && typeof r.over_spell_limit === "boolean";
+const BLANK = (r) => r.age_band === null && r.pace === null && r.max_overs_per_spell === null && r.max_overs_per_day === null && r.over_spell_limit === null;
+
+try {
+  for (let i = 0; i < 60; i++) {
+    try { const r = await api("/api/health"); if (r.body?.db === "ok") break; } catch { /* not up */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+
+  // ══ The stage ══
+  group("Set the stage: our U15 quick, our spinner and theirs; a shared fixture today and a second one this afternoon");
+  const today = (await q(`select sa_today()::text d`))[0].d;
+  const born = (await q(`select make_date(extract(year from sa_today())::int - 16, 10, 1)::text d`))[0].d;   // U15 this school year
+  const QUICK = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style)
+                          values ($1, '1XI', 'V Cockpit Quick', 81, 'bowler', $2, 'F') returning id`, [HIL, born]))[0].id;
+  const SPIN = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style)
+                         values ($1, '1XI', 'V Cockpit Spin', 82, 'bowler', $2, 'S') returning id`, [HIL, born]))[0].id;
+  const THEIRS = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style)
+                           values ($1, '1XI', 'V Cockpit Visitor', 83, 'bowler', $2, 'F') returning id`, [WES, born]))[0].id;
+  ok("the walk's quick is U15 this school year", (await q(`select age_band($1::date) b`, [born]))[0].b === "U15");
+  // The two staff the seed does not have, appointed to the 1XI as the office would.
+  for (const [email, name, role] of [["assist.ck@example.invalid", "A Assistant", "assistantcoach"], ["manager.ck@example.invalid", "T Manager", "teammanager"]]) {
+    await q(`insert into app_user (school_id, email, name, role, teams) values ($1, $2, $3, $4, '{1XI}')`, [HIL, email, name, role]);
+    await q(`insert into role_assignment (person_id, role, school_id, team_code) select id, $2, school_id, '1XI' from app_user where email = $1`, [email, role]);
+  }
+  const SHARED = await fixture({ hhmm: "09:00", opponent: "Westville Boys' High 1XI", shared: true });
+  const AFTERNOON = await fixture({ hhmm: "14:00", opponent: "Verify Cockpit Afternoon XI" });
+  const AWAY = await fixture({ hhmm: "10:00", opponent: "Hilton College 1XI", host: WES, shared: true, daysAgo: 1 });
+  // Morning, at Hilton: our quick bowls six from one end (the U15 spell is
+  // six: at it, not past it), our spinner five from the other.
+  await feed(SHARED, 0, [QUICK, SPIN, QUICK, SPIN, QUICK, SPIN, QUICK, SPIN, QUICK, SPIN, QUICK]);
+  // Afternoon: five more for our quick. Eleven on the day, of a day's twelve.
+  await feed(AFTERNOON, 0, [QUICK, null, QUICK, null, QUICK, null, QUICK, null, QUICK]);
+  // Yesterday, at Westville: theirs bowls seven on the trot from one end, one
+  // past his spell; our spinner bowls the other end.
+  await feed(AWAY, 0, [THEIRS, SPIN, THEIRS, SPIN, THEIRS, SPIN, THEIRS, SPIN, THEIRS, SPIN, THEIRS, SPIN, THEIRS]);
+  ok("the stage is set", !!SHARED && !!AFTERNOON && !!AWAY);
+
+  const coach = await login("coach@example.invalid");         // coach, 1XI
+  const assist = await login("assist.ck@example.invalid");    // assistant coach, 1XI
+  const manager = await login("manager.ck@example.invalid");  // team manager, 1XI
+  const medic = await login("medical@example.invalid");       // physio, the school
+  const head = await login("sarah@example.invalid");          // director of sport
+  const scorer = await login("scorer@example.invalid");       // scorer, the school
+  const pupil = await login("spectator@example.invalid");     // a pupil (player role), no self-access
+  const self = await login("pillay@example.invalid");         // R Pillay: a pupil on the side, and self-access to his own record
+  const wes = await login("coach.wes@example.invalid");       // Westville's 1XI coach
+  const owner = await login("owner@example.invalid");         // the owner's key
+  ok("everyone signs in", [coach, assist, manager, medic, head, scorer, pupil, self, wes, owner].every(Boolean));
+
+  // ══ 1 ══
+  group("1 · bowling_spells: the spell is the match's; the directive beside it is the boy's load");
+  {
+    const spells = (tok) => rows("bowling_spells", { matchId: SHARED }, tok);
+    const c = await spells(coach);
+    const ours = (c ?? []).filter((r) => r.bowler_id === QUICK);
+    ok("the coach reads our quick's spell", ours.length === 1 && ours[0].overs === 6, c);
+    ok("...with the U15 directive filled and the flag a boolean", ours.every(FILLED) && ours[0].age_band === "U15"
+       && ours[0].max_overs_per_spell === 6 && ours[0].max_overs_per_day === 12 && ours[0].over_spell_limit === false, ours);
+    for (const [who, tok] of [["the scorer", scorer], ["a pupil", pupil], ["the team manager", manager]]) {
+      const s = await spells(tok);
+      const mine = (s ?? []).filter((r) => r.bowler_id === QUICK);
+      ok(`${who} reads the same spell`, mine.length === 1 && mine[0].overs === 6 && mine[0].first_over === 0 && mine[0].last_over === 10, s);
+      ok("...with the band, pace, both limits and the flag null", mine.every(BLANK), mine);
+      ok("...and nobody's band at all", (s ?? []).every(BLANK));
+    }
+    const m = await spells(medic);
+    ok("the physio at the school reads it filled", (m ?? []).filter((r) => r.bowler_id === QUICK).every(FILLED)
+       && (m ?? []).some((r) => r.bowler_id === QUICK));
+    // The other school's coach, both ways round. At Hilton's fixture he reads
+    // nothing: the log is the host's (ball_event_read, fixture.read at the
+    // host school), so not even his own boy's spell, let alone our band.
+    ok("the other school's coach reads none of a fixture Hilton hosts", JSON.stringify(await spells(wes)) === "[]");
+    const w = await rows("bowling_spells", { matchId: AWAY }, wes);
+    const theirs = (w ?? []).filter((r) => r.bowler_id === THEIRS);
+    ok("at his own school's fixture he reads his bowler filled, and that he went past his spell",
+       theirs.length === 1 && FILLED(theirs[0]) && theirs[0].age_band === "U15" && theirs[0].overs === 7 && theirs[0].over_spell_limit === true, w);
+    ok("...and nothing of ours filled (our spinner's record is not his to read)", (w ?? []).filter((r) => r.bowler_id !== THEIRS).every(BLANK)
+       && !(w ?? []).some((r) => r.bowler_id === SPIN && r.age_band != null), w);
+    ok("our coach, in turn, reads none of Westville's", JSON.stringify(await rows("bowling_spells", { matchId: AWAY }, coach)) === "[]");
+  }
+
+  // ══ 2 ══
+  group("2 · shot_points: a ball voided through the pad's own route is not drawn");
+  {
+    const dev = "device-cockpit-pad";
+    const pad = await login("scorer@example.invalid", dev);
+    const claim = await api(`/api/matches/${SCHEDULED}/session/claim`, { method: "POST", token: pad, body: { device: dev } });
+    ok("the scorer claims the fixture", claim.body?.ok === true, claim.raw);
+    const epoch = claim.body?.epoch;
+    let n = 0;
+    const post = (evs) => api(`/api/matches/${SCHEDULED}/events`, { method: "POST", token: pad, body: { events: evs.map((payload) => ({
+      epoch, deviceId: dev, idempotencyKey: `ck-pad:${++n}`, clientSeq: n, clientTs: Date.now(), innings: 0, payload })) } });
+    const shot = (theta) => ball({ type: BALL_TYPE.RUN, value: 4, striker: WHITFIELD, nonStriker: BEKKER, bowler: NAIDOO,
+      theta, radius: 0.9, placementSource: "point", captureProfile: "full" });
+    const first = await post([inningsStart({ innings: 0, battingTeam: "HIL", bowlingTeam: "MHS", oversLimit: 20 }),
+      batters({ striker: WHITFIELD, nonStriker: BEKKER }), bowler({ bowler: NAIDOO }), shot(70), shot(300)]);
+    ok("five events land through the route", first.body?.accepted?.length === 5, first.raw);
+    const seqs = async (tok) => ((await rows("shot_points", { matchId: SCHEDULED }, tok)) ?? []).map((r) => r.seq);
+    const before = await seqs(coach);
+    ok("the coach's wheel draws both balls", before.length === 2, before);
+    const second = await post([voidEvent({ innings: 0, target: "ck-pad:5" })]);
+    ok("the scorer voids the last ball, as the pad's undo does", second.body?.accepted?.length === 1, second.raw);
+    const after = await seqs(coach);
+    ok("the voided ball is gone from the match's wheel", after.length === 1 && after[0] === before[0], after);
+    const career = ((await rows("player_shot_points", { playerId: WHITFIELD }, coach)) ?? []).filter((r) => r.match_id === SCHEDULED).map((r) => r.seq);
+    ok("the striker's own wheel agrees", JSON.stringify(career) === JSON.stringify(after), career);
+    const live = (await q(`select count(*)::int c from ball_event_live where match_id = $1 and kind = 'ball'
+                             and placement_source = 'point' and capture_profile in ('full', 'standard')`, [SCHEDULED]))[0].c;
+    ok("the count is ball_event_live's for the match", live === after.length, live);
+  }
+
+  // ══ 3 ══
+  group("3 · workload: the team manager reads none; the coach and the assistant do");
+  {
+    const wl = (tok) => rows("workload", { teamCode: "1XI" }, tok);
+    ok("the team manager reads nothing", JSON.stringify(await wl(manager)) === "[]");
+    for (const [who, tok] of [["the coach", coach], ["the assistant coach", assist]]) {
+      const r = await wl(tok);
+      ok(`${who} reads the side, our quick's eleven overs this week among it`,
+         (r ?? []).length > 1 && (r ?? []).find((x) => x.player_id === QUICK)?.overs_7d === 11, r);
+    }
+  }
+
+  // ══ 4 ══
+  group("4 · bowler_day: a boy's overs today, across every match, under player.workload.read");
+  {
+    const day = (tok, query = { date: today, teamCode: "1XI" }) => read("bowler_day", query, tok);
+    const c = await day(coach);
+    const q1 = (c.body?.rows ?? []).find((r) => r.player_id === QUICK);
+    ok("the coach reads our quick: eleven of twelve today, two matches, the U15 directive",
+       q1?.overs_today === 11 && q1?.matches_today === 2 && q1?.max_overs_per_day === 12 && q1?.age_band === "U15"
+       && q1?.pace === true && q1?.clause_code === "PACE-U14-U15" && String(q1?.bowled_on).slice(0, 10) === today, q1);
+    ok("...and nothing about the other match but the count",
+       Object.keys(q1 ?? {}).sort().join() === "age_band,bowled_on,clause_code,full_name,matches_today,max_overs_per_day,max_overs_per_spell,overs_today,pace,player_id,school_id,team_code");
+    const s1 = (c.body?.rows ?? []).find((r) => r.player_id === SPIN);
+    ok("...the spinner: his five, no day limit, no clause", s1?.overs_today === 5 && s1?.pace === false && s1?.max_overs_per_day === null && s1?.clause_code === null, s1);
+    ok("...a boy who has not bowled is a row with 0", (c.body?.rows ?? []).some((r) => r.player_id === WHITFIELD && r.overs_today === 0 && r.matches_today === 0));
+    ok("...the most overs first", c.body?.rows?.[0]?.player_id === QUICK);
+    for (const [who, tok] of [["the assistant coach", assist], ["the physio", medic], ["the director of sport", head]]) {
+      const r = (await day(tok)).body?.rows ?? [];
+      ok(`${who} reads the same eleven`, r.find((x) => x.player_id === QUICK)?.overs_today === 11, r.length);
+    }
+    for (const [who, tok] of [["the team manager", manager], ["the scorer", scorer], ["a pupil", pupil]]) {
+      const r = await day(tok);
+      ok(`${who} gets an empty answer`, r.status === 200 && JSON.stringify(r.body?.rows) === "[]", r.raw);
+      ok("...and nothing that names the gate", !/workload|capabilit|permission|forbidden|denied/i.test(r.raw), r.raw);
+    }
+    const me = (await day(self, { date: today })).body?.rows ?? [];
+    ok("R Pillay, through self-access, reads his own row and nobody else's", me.length === 1 && me[0].player_id === PILLAY && me[0].overs_today === 0, me);
+    const yesterday = (await q(`select (sa_today() - 1)::text d`))[0].d;
+    const w = (await day(wes, { date: yesterday, teamCode: "1XI" })).body?.rows ?? [];
+    ok("the other school's coach reads his own boy's seven yesterday, and none of ours",
+       w.find((r) => r.player_id === THEIRS)?.overs_today === 7 && !w.some((r) => r.school_id === HIL), w.map((r) => r.full_name));
+    ok("...though our spinner bowled at his ground: our coach reads that, as his day",
+       ((await day(coach, { date: yesterday, teamCode: "1XI" })).body?.rows ?? []).find((r) => r.player_id === SPIN)?.overs_today === 6);
+    // SCRBRD-136/137 phase B, point 1 of the build brief: superadmin holds every
+    // capability but safeguarding, so the per-boy gate admits him. The design's
+    // reader list does not name him; roles are unchanged.
+    ok("the owner's key reads it too (every capability, at every school)",
+       ((await day(owner)).body?.rows ?? []).find((r) => r.player_id === QUICK)?.overs_today === 11);
+    ok("three days ago, by the fixture's SA date, is nothing", ((await day(coach, { date: (await q(`select (sa_today() - 3)::text d`))[0].d, teamCode: "1XI" })).body?.rows ?? [])
+       .every((r) => r.overs_today === 0));
+    ok("no date is refused as the caller's mistake", (await day(coach, { teamCode: "1XI" })).status === 400);
+    ok("...and so is a date that is not one", (await day(coach, { date: "Saturday" })).status === 400);
+    ok("it is not read signed out", (await day(undefined)).status === 401);
+  }
+
+  ok("the server logged no errors", serverErr.join("").trim() === "", serverErr.join("").slice(0, 600));
+} catch (e) {
+  fail++;
+  console.log("  ✗ threw:", e.stack ?? e.message);
+} finally {
+  server.kill();
+  await pool.end();
+}
+console.log(`\n${"─".repeat(52)}\nCOCKPIT SMOKE: ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -4179,6 +4179,141 @@ CREATE OR REPLACE FUNCTION _withdraw_91(p_post uuid) RETURNS text AS $$
 $$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/91 (section 70) ──────────────────────────────────────────────
 
+-- ┌── SCRBRD-136/137 phase B, B0 (section 71; no migration). The cockpit's read fixes, held in the schema
+-- Overs from the log, as the pad's server writes them: one delivery per row,
+-- six legal balls an over, bowled by p_overs[i] (NULL: a bowler SCRBRD holds
+-- no row for, which still counts in the over's numbering). As the owner.
+CREATE OR REPLACE FUNCTION _v71_bowl(p_match uuid, p_scorer uuid, p_overs uuid[]) RETURNS void AS $$
+DECLARE i int; j int; s int;
+BEGIN
+  s := coalesce((SELECT max(seq) FROM ball_event WHERE match_id = p_match), 0);
+  FOR i IN 1..coalesce(array_length(p_overs, 1), 0) LOOP
+    FOR j IN 1..6 LOOP
+      s := s + 1;
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, bowler_id)
+      SELECT p_match, m.school_id, s, 0, 0, p_scorer, 'v71-pad', 'v71-' || p_match || '-' || s, s, now(),
+             'ball', 'run', 0, p_overs[i]
+        FROM match m WHERE m.id = p_match;
+    END LOOP;
+  END LOOP;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- People, by key: an account and one assignment each, as the office makes
+-- them. p_rows is [key, role, school, team, player] per person; the player is
+-- the account's own record (a pupil, or the boy himself) or null.
+CREATE OR REPLACE FUNCTION _v71_people(p_tag text, p_rows text[][]) RETURNS jsonb AS $$
+DECLARE i int; v_u uuid; ids jsonb := '{}';
+BEGIN
+  FOR i IN 1..array_length(p_rows, 1) LOOP
+    INSERT INTO app_user (school_id, email, name, role, player_id, teams)
+    VALUES (p_rows[i][3]::uuid, p_tag || '.' || p_rows[i][1] || '@example.invalid', upper(p_tag) || ' ' || initcap(p_rows[i][1]),
+            p_rows[i][2], nullif(p_rows[i][5], '')::uuid,
+            CASE WHEN coalesce(p_rows[i][4], '') = '' THEN '{}'::text[] ELSE ARRAY[p_rows[i][4]] END)
+    RETURNING id INTO v_u;
+    INSERT INTO role_assignment (person_id, role, school_id, team_code)
+    VALUES (v_u, p_rows[i][2], nullif(p_rows[i][3], '')::uuid, nullif(p_rows[i][4], ''));
+    ids := ids || jsonb_build_object(p_rows[i][1], v_u);
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One Hilton side (17XI), one U15 pace bowler on it, the staff the gate is
+-- about, and today's match on which he bowled one over and a seventh ball
+-- that the scorer then voided.
+CREATE OR REPLACE FUNCTION _v71_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  ids jsonb; v_p uuid; v_m uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style)
+  VALUES (HIL, '17XI', 'Verify SeventyOne Quick', 71, 'bowler', make_date(extract(year FROM sa_today())::int - 16, 10, 1), 'F')
+  RETURNING id INTO v_p;
+  ids := _v71_people('v71', ARRAY[
+    ARRAY['coach',     'coach',          HIL::text, '17XI', ''],
+    ARRAY['assistant', 'assistantcoach', HIL::text, '17XI', ''],
+    ARRAY['manager',   'teammanager',    HIL::text, '17XI', ''],
+    ARRAY['scorer',    'scorer',         HIL::text, '',    ''],
+    ARRAY['medical',   'medical',        HIL::text, '',    ''],
+    ARRAY['wescoach',  'coach',          WES::text, '1XI', '']]);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '17XI', 'Verify SeventyOne XI', (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'live')
+  RETURNING id INTO v_m;
+  PERFORM _v71_bowl(v_m, (ids->>'scorer')::uuid, ARRAY[v_p]);
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value, bowler_id)
+  VALUES (v_m, HIL, 7, 0, 0, (ids->>'scorer')::uuid, 'v71-pad', 'v71-voided', 7, now(), 'ball', 'run', 4, v_p);
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, payload)
+  VALUES (v_m, HIL, 8, 0, 0, (ids->>'scorer')::uuid, 'v71-pad', 'v71-void', 8, now(), 'void',
+          jsonb_build_object('target', 'v71-voided'));
+  RETURN ids || jsonb_build_object('boy', v_p, 'match', v_m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── SCRBRD-136/137 B0 (section 71) ─────────────────────────────────
+
+-- ┌── db/94 (section 72). bowler_day(): a boy's overs today, across every match
+-- A side (18XI) with a U15 pace bowler, a spinner and a batter; the readers the
+-- gate is about, one each; and the bowler's day: six overs in the morning's
+-- match and five in the afternoon's, which is another side's (19XI). The
+-- spinner bowls three in the morning and two three days ago. Nobody passes a
+-- spell or the day, so nothing here writes a breach or a notice.
+CREATE OR REPLACE FUNCTION _v94_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';   -- verifies the links, as the seed's do
+  U15 date := make_date(extract(year FROM sa_today())::int - 16, 10, 1);
+  ids jsonb; v_p uuid; v_s uuid; v_n uuid; v_a uuid; ma uuid; mb uuid; mc uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) VALUES
+    (HIL, '18XI', 'Verify NinetyFour Quick', 941, 'bowler', U15, 'F') RETURNING id INTO v_p;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) VALUES
+    (HIL, '18XI', 'Verify NinetyFour Spin', 942, 'bowler', U15, 'S') RETURNING id INTO v_s;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '18XI', 'Verify NinetyFour Bat', 943, 'batter', U15) RETURNING id INTO v_n;
+  ids := _v71_people('v94', ARRAY[
+    ARRAY['coach',      'coach',           HIL::text, '18XI',  ''],
+    ARRAY['assistant',  'assistantcoach',  HIL::text, '18XI',  ''],
+    ARRAY['manager',    'teammanager',     HIL::text, '18XI',  ''],
+    ARRAY['fitness',    'fitness',         HIL::text, '',     ''],
+    ARRAY['medical',    'medical',         HIL::text, '',     ''],
+    ARRAY['director',   'directorofsport', HIL::text, '',     ''],
+    ARRAY['scorer',     'scorer',          HIL::text, '',     ''],
+    ARRAY['pupil',      'player',          HIL::text, '18XI',  v_n::text],
+    ARRAY['othercoach', 'coach',           HIL::text, '19XI', ''],
+    ARRAY['wescoach',   'coach',           WES::text, '1XI',  ''],
+    ARRAY['guardian',   'guardian',        HIL::text, '',     ''],
+    ARRAY['self',       'selfaccess',      HIL::text, '',     v_p::text]]);
+  -- The guardian's link to the bowler and the bowler's to his own record:
+  -- verified by the office and consented, as the seed's are.
+  FOR v_a IN SELECT a.id FROM role_assignment a
+              WHERE a.person_id IN ((ids->>'guardian')::uuid, (ids->>'self')::uuid) LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    SELECT v_a, v_p, CASE WHEN a.role = 'guardian' THEN 'parent' ELSE 'self' END, 'verified', OFFICE, now(),
+           'granted', 'popia-2026-01', now(), OFFICE, current_date - 1
+      FROM role_assignment a WHERE a.id = v_a;
+  END LOOP;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '18XI', 'Verify NinetyFour Morning', (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'complete') RETURNING id INTO ma;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '19XI', 'Verify NinetyFour Afternoon', (sa_today()::timestamp + time '14:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'live') RETURNING id INTO mb;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '18XI', 'Verify NinetyFour Midweek', ((sa_today() - 3)::timestamp + time '15:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'complete') RETURNING id INTO mc;
+  -- Alternate overs from one end are one spell: six for him in the morning
+  -- (the U15 spell is six: at it, not past it), five in the afternoon.
+  PERFORM _v71_bowl(ma, (ids->>'scorer')::uuid, ARRAY[v_p, v_s, v_p, v_s, v_p, v_s, v_p, NULL, v_p, NULL, v_p]::uuid[]);
+  PERFORM _v71_bowl(mb, (ids->>'scorer')::uuid, ARRAY[v_p, NULL, v_p, NULL, v_p, NULL, v_p, NULL, v_p]::uuid[]);
+  PERFORM _v71_bowl(mc, (ids->>'scorer')::uuid, ARRAY[v_s, NULL, v_s]::uuid[]);
+  RETURN ids || jsonb_build_object('quick', v_p, 'spin', v_s, 'bat', v_n, 'ma', ma, 'mb', mb, 'mc', mc);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/94 (section 72) ──────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -17714,6 +17849,224 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 70
+
+  -- ── 71. The cockpit's read fixes, held in the schema (SCRBRD-136/137 phase B, B0) ──
+  -- docs/design/SCRBRD-136-137_phaseB.md §5 (PB-D8). Phase A's three read
+  -- fixes live in services/api/read/read-api.mjs, which is JavaScript: the
+  -- texts are held by services/api/read/read.test.mjs (statically) and by
+  -- tools/smoke-cockpit.mjs (over HTTP, as each persona). This section holds
+  -- the schema facts those texts rest on. No migration of its own.
+  --
+  -- What each label holds:
+  --   (invoker)   bowler_over and bowler_spell are security_invoker views: a
+  --               reader's spells are the log his own row security admits
+  --   (directive) bowling_directive_for() is callable by scrbrd_app (the
+  --               bowling_spells read's lateral) and answers the band and its
+  --               limits for a boy the caller may read
+  --   (gate)      bowling_spells' w.may and workload()'s boys CTE ask
+  --               app_can('player.workload.read', …) per boy: the coach, the
+  --               assistant coach and the physio hold it for the 17XI bowler;
+  --               the team manager, a scorer and the other school's coach do not
+  --   (spells)    the spell itself is the match's log: the team manager reads
+  --               it; the other school's coach does not (not his fixture)
+  --   (void)      ball_event_live drops a ball the scorer voided, so the
+  --               match's wheel (shot_points) and the overs drop it too
+  --   (workload)  workload() gives the team manager nothing and the coach and
+  --               the assistant the bowler
+  --
+  -- Falsified once each, by replacing the object in the database and running
+  -- this file; each went red at its label:
+  --   (invoker)   bowler_spell re-created WITH (security_invoker = false)
+  --   (gate)      teammanager granted player.workload.read in role_capability
+  --   (void)      ball_event_live without its void filter
+  DECLARE
+    x       jsonb := _v71_stage();
+    V_HIL   uuid := '11111111-1111-1111-1111-111111111111';
+    V_BOY   uuid := (x->>'boy')::uuid;
+    V_M     uuid := (x->>'match')::uuid;
+    ZERO    uuid := '00000000-0000-0000-0000-000000000000';
+    k       text;
+    d       record;
+  BEGIN
+    -- (invoker)
+    PERFORM _assert((SELECT bool_and(coalesce(c.reloptions, '{}') @> ARRAY['security_invoker=true'])
+                       FROM pg_class c WHERE c.oid IN ('bowler_over'::regclass, 'bowler_spell'::regclass)),
+      '§71 (invoker): bowler_over or bowler_spell is not security_invoker');
+
+    -- (directive)
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'bowling_directive_for(uuid)', 'EXECUTE'),
+      '§71 (directive): the application cannot call bowling_directive_for()');
+    PERFORM _as((x->>'coach')::uuid);
+    SELECT * INTO d FROM bowling_directive_for(V_BOY);
+    PERFORM _assert(d.age_band = 'U15' AND d.pace AND d.max_overs_per_spell = 6 AND d.max_overs_per_day = 12,
+      format('§71 (directive): the 17XI bowler''s directive reads %s %s %s/%s', d.age_band, d.pace, d.max_overs_per_spell, d.max_overs_per_day));
+
+    -- (gate): the expression both reads ask, per persona
+    FOREACH k IN ARRAY ARRAY['coach', 'assistant', 'medical'] LOOP
+      PERFORM _as((x->>k)::uuid);
+      PERFORM _assert(app_can('player.workload.read', V_HIL, '17XI', V_BOY, ZERO),
+        format('§71 (gate): the %s does not hold player.workload.read for the side''s bowler', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['manager', 'scorer', 'wescoach'] LOOP
+      PERFORM _as((x->>k)::uuid);
+      PERFORM _assert(NOT app_can('player.workload.read', V_HIL, '17XI', V_BOY, ZERO),
+        format('§71 (gate): the %s holds player.workload.read for the side''s bowler', k));
+    END LOOP;
+
+    -- (spells)
+    PERFORM _as((x->>'manager')::uuid);
+    PERFORM _assert((SELECT count(*) FROM bowler_spell s WHERE s.match_id = V_M AND s.bowler_id = V_BOY) = 1,
+      '§71 (spells): the team manager does not read the side''s spell (the match''s log is his)');
+    PERFORM _as((x->>'wescoach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM bowler_spell s WHERE s.match_id = V_M) = 0,
+      '§71 (spells): another school''s coach reads the spells of a fixture that is not his');
+
+    -- (void): the seventh ball is on the record and out of the live log
+    PERFORM _as((x->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM ball_event b WHERE b.match_id = V_M AND b.idempotency_key = 'v71-voided') = 1,
+      '§71 (void): the voided ball is not on the record');
+    PERFORM _assert((SELECT count(*) FROM ball_event_live b WHERE b.match_id = V_M AND b.idempotency_key = 'v71-voided') = 0,
+      '§71 (void): ball_event_live still carries a voided ball');
+    PERFORM _assert((SELECT count(*) FROM ball_event_live b WHERE b.match_id = V_M AND b.kind = 'ball') = 6
+                    AND (SELECT sum(legal_balls) FROM bowler_over o WHERE o.match_id = V_M) = 6,
+      '§71 (void): the live log or the overs count the voided ball');
+    -- (workload)
+    PERFORM _as((x->>'manager')::uuid);
+    PERFORM _assert((SELECT count(*) FROM workload('17XI')) = 0, '§71 (workload): the team manager reads the side''s workload');
+    FOREACH k IN ARRAY ARRAY['coach', 'assistant'] LOOP
+      PERFORM _as((x->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM workload('17XI') w WHERE w.player_id = V_BOY AND w.overs_7d = 1) = 1,
+        format('§71 (workload): the %s does not read the bowler''s one over', k));
+    END LOOP;
+
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 71
+
+  -- ── 72. bowler_day(): a boy's overs today, across every match (db/94) ──
+  -- docs/design/SCRBRD-136-137_phaseB.md §1.7 (PB-D1 to PB-D4). The API half
+  -- is tools/smoke-cockpit.mjs (bowler_day over HTTP, as each persona); the
+  -- card it feeds (S2c) is apps/web/test/signals.test.mjs's.
+  --
+  -- What each label holds:
+  --   (sum)      the coach of the side reads the bowler's row: eleven overs
+  --              from two matches on the day, one of them another side's, with
+  --              the U15 directive (6 a spell, 12 a day) and its clause
+  --   (rows)     a boy who has not bowled is a row with 0, not an absent one
+  --   (readers)  the assistant coach, the physio, the S&C coach and the
+  --              director of sport read the same row
+  --   (owner)    so does the owner's key: superadmin holds every capability
+  --              but safeguarding (roles.mjs ALL_CAPABILITIES, db/01), so the
+  --              capability gate admits him at every school. The design's
+  --              reader list (PB-D1) does not name him; roles are unchanged
+  --   (refused)  the scorer, the team manager, a pupil on the side, the
+  --              bowler's guardian, the coach of another side at the school
+  --              and the other school's coach read no row for the side
+  --   (self)     the boy, through self-access, reads his own row and nobody else's
+  --   (spinner)  a spinner's row carries no day limit and no clause
+  --   (date)     the date is the fixture's SA start date: three days ago is
+  --              the spinner's two overs, not today's
+  --   (agree)    for a boy whose only overs this week are today's, overs_today
+  --              equals workload().overs_7d
+  --   (doors)    a stable SECURITY DEFINER with a pinned path; executable by
+  --              scrbrd_app and not by PUBLIC (nor anon/authenticated where a
+  --              managed host has them); bowling_directive_for() likewise
+  --
+  -- Falsified once each, by replacing the object in the database and running
+  -- this file; each went red at its label:
+  --   (sum)      bowler_day() with its day CTE filtered to one match
+  --   (refused)  bowler_day() with the app_can() line removed from its boys CTE
+  --   (self)     bowler_day() asking app_can() without the boy's id: the team
+  --              and school scopes still answer, self-access no longer does
+  --   (doors)    GRANT EXECUTE ON FUNCTION bowler_day(date, text) TO PUBLIC
+  DECLARE
+    y       jsonb := _v94_stage();
+    V_QUICK uuid := (y->>'quick')::uuid;
+    V_SPIN  uuid := (y->>'spin')::uuid;
+    V_BAT   uuid := (y->>'bat')::uuid;
+    V_OWN   uuid := '88888888-0000-0000-0000-000000000022';   -- superadmin, every capability
+    k       text;
+    r       record;
+    got     text;
+  BEGIN
+    -- (sum)
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT * INTO r FROM bowler_day(sa_today(), '18XI') b WHERE b.player_id = V_QUICK;
+    got := concat_ws(' ', r.overs_today, r.matches_today, r.age_band, r.pace, r.max_overs_per_spell, r.max_overs_per_day,
+                     r.clause_code, r.bowled_on = sa_today(), r.team_code);
+    PERFORM _assert(got = '11 2 U15 t 6 12 PACE-U14-U15 t 18XI', format('§72 (sum): the coach reads the bowler''s day as %s', got));
+    SELECT string_agg(b.full_name || ':' || b.overs_today, ', ' ORDER BY ord) INTO got
+      FROM bowler_day(sa_today(), '18XI') WITH ORDINALITY AS b(player_id, full_name, team_code, school_id, bowled_on,
+             overs_today, matches_today, age_band, pace, max_overs_per_spell, max_overs_per_day, clause_code, ord);
+    PERFORM _assert(got = 'Verify NinetyFour Quick:11, Verify NinetyFour Spin:3, Verify NinetyFour Bat:0',
+      format('§72 (sum): the side reads %s, most overs first', got));
+
+    -- (rows)
+    PERFORM _assert((SELECT count(*) FROM bowler_day(sa_today(), '18XI') b
+                      WHERE b.player_id = V_BAT AND b.overs_today = 0 AND b.matches_today = 0) = 1,
+      '§72 (rows): a boy who has not bowled is not a row with 0');
+
+    -- (readers)
+    FOREACH k IN ARRAY ARRAY['assistant', 'medical', 'fitness', 'director'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM bowler_day(sa_today(), '18XI') b
+                        WHERE b.player_id = V_QUICK AND b.overs_today = 11 AND b.matches_today = 2) = 1,
+        format('§72 (readers): the %s does not read the bowler''s day', k));
+    END LOOP;
+
+    -- (owner)
+    PERFORM _as(V_OWN);
+    PERFORM _assert((SELECT count(*) FROM bowler_day(sa_today(), '18XI') b WHERE b.player_id = V_QUICK AND b.overs_today = 11) = 1,
+      '§72 (owner): the owner''s key does not read the bowler''s day, though it holds player.workload.read everywhere');
+
+    -- (refused)
+    FOREACH k IN ARRAY ARRAY['scorer', 'manager', 'pupil', 'guardian', 'othercoach', 'wescoach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM bowler_day(sa_today(), '18XI')) = 0
+                      AND NOT EXISTS (SELECT 1 FROM bowler_day(sa_today(), NULL) b WHERE b.player_id IN (V_QUICK, V_SPIN, V_BAT)),
+        format('§72 (refused): the %s reads an 18XI boy''s day', k));
+    END LOOP;
+
+    -- (self)
+    PERFORM _as((y->>'self')::uuid);
+    SELECT string_agg(b.player_id::text || ':' || b.overs_today, ',') INTO got FROM bowler_day(sa_today(), NULL) b;
+    PERFORM _assert(got = V_QUICK::text || ':11', format('§72 (self): the boy''s own read is %s', got));
+
+    -- (spinner)
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT * INTO r FROM bowler_day(sa_today(), '18XI') b WHERE b.player_id = V_SPIN;
+    PERFORM _assert(r.pace = false AND r.max_overs_per_day IS NULL AND r.max_overs_per_spell IS NULL AND r.clause_code IS NULL
+                    AND r.overs_today = 3 AND r.matches_today = 1,
+      format('§72 (spinner): the spinner''s row reads %s %s %s %s', r.pace, r.max_overs_per_day, r.clause_code, r.overs_today));
+
+    -- (date)
+    SELECT string_agg(b.full_name || ':' || b.overs_today || '/' || b.matches_today, ', ' ORDER BY b.full_name) INTO got
+      FROM bowler_day(sa_today() - 3, '18XI') b;
+    PERFORM _assert(got = 'Verify NinetyFour Bat:0/0, Verify NinetyFour Quick:0/0, Verify NinetyFour Spin:2/1',
+      format('§72 (date): three days ago reads %s', got));
+
+    -- (agree)
+    PERFORM _assert((SELECT b.overs_today FROM bowler_day(sa_today(), '18XI') b WHERE b.player_id = V_QUICK)
+                    = (SELECT w.overs_7d FROM workload('18XI') w WHERE w.player_id = V_QUICK),
+      '§72 (agree): bowler_day and workload() disagree about a week that is one day');
+
+    -- (doors)
+    PERFORM _assert((SELECT prosecdef AND provolatile = 's' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                       FROM pg_proc WHERE oid = 'bowler_day(date,text)'::regprocedure),
+      '§72 (doors): bowler_day is not a stable SECURITY DEFINER with a pinned path');
+    FOREACH k IN ARRAY ARRAY['bowler_day(date,text)', 'bowling_directive_for(uuid)'] LOOP
+      PERFORM _assert(has_function_privilege('scrbrd_app', k::regprocedure, 'EXECUTE'),
+        format('§72 (doors): the application cannot call %s', k));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                   WHERE p.oid = k::regprocedure AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+        format('§72 (doors): %s is executable by PUBLIC', k));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                                     AND has_function_privilege(g.oid, k::regprocedure, 'EXECUTE')),
+        format('§72 (doors): a managed host''s API role can call %s', k));
+    END LOOP;
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 72
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

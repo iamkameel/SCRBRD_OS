@@ -117,6 +117,11 @@ const WALKS = [
   "derby",
   // Batter against bowler, and how much of the log a matchup can speak for.
   "matchups",
+  // The coach's cockpit over HTTP (SCRBRD-136/137 phase B §5, §1.7): the
+  // directive beside a spell only to player.workload.read for that boy, a
+  // voided ball off the wheel, the team manager's empty workload, and a
+  // boy's overs today across two matches (bowler_day, db/94) by reader.
+  "cockpit",
   // DRS, and the platform switch that holds it off until there is
   // ball-tracking to feed it.
   "drs",

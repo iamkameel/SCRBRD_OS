@@ -285,6 +285,16 @@ SELECT
         AND has_function_privilege('scrbrd_app', 'news_post_withdraw(uuid)', 'EXECUTE')
         AND NOT has_function_privilege('scrbrd_app', 'news_post_notice()', 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Posts write their notices",
+  -- db/94: a boy's overs today across every match, to whoever may read his
+  -- load and nobody else (SCRBRD-136/137 phase B §1).
+  CASE WHEN to_regprocedure('bowler_day(date,text)') IS NOT NULL
+        AND (SELECT prosecdef FROM pg_proc WHERE oid = 'bowler_day(date,text)'::regprocedure)
+        AND pg_get_functiondef('bowler_day(date,text)'::regprocedure) LIKE '%app_can(''player.workload.read''%'
+        AND has_function_privilege('scrbrd_app', 'bowler_day(date,text)', 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN ('bowler_day(date,text)'::regprocedure, 'bowling_directive_for(uuid)'::regprocedure)
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A bowler's day is read under the load capability",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

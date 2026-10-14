@@ -1475,8 +1475,12 @@ export const READ_QUERIES = {
 
   /*
    * WORKLOAD: what each boy bowled and trained, with the server's word for
-   * where his load sits. Through workload() in db/08, per row under
-   * player.development.read. An optional team narrows; nothing widens.
+   * where his load sits. Through workload() (db/60's, re-emitting db/08's),
+   * per boy under player.workload.read: the function asks app_can() for each
+   * boy before he is in, as bowling_breaches' policy and bowling_spells' join
+   * do. An optional team narrows; nothing widens. Level 2: not logged for a
+   * school's own staff (SCRBRD-110 §2.3); a platform-wide or support reader's
+   * answer is, as every read's is.
    */
   workload: {
     // THE CLAUSE BESIDE THE LIMIT (SCRBRD-041). The limit a boy is under is
@@ -1500,6 +1504,29 @@ export const READ_QUERIES = {
                  join rulebook_clause rc on rc.code = d.clause_code
                 where d.age_band = w.age_band and w.pace) c on true`,
     params: q => [q?.teamCode || null],
+  },
+
+  /*
+   * A BOY'S OVERS TODAY, ACROSS EVERY MATCH (SCRBRD-136/137 phase B §1.4,
+   * db/94): overs_today and matches_today on one date (the fixture's SA start
+   * date, as bowler_over dates an over), beside the directive's figures and
+   * its clause. The coach's feed draws it as S2c, only while our side fields.
+   * bowler_day() asks player.workload.read per boy, as workload() does, so a
+   * reader without it for a boy gets no row for him: the team manager, a
+   * scorer and a pupil get an empty answer, not an error naming the gate.
+   * It returns no other match's id, opponent or venue ("two matches" is a
+   * count) and nothing of the load model. Logged as workload is: not for a
+   * school's own staff. An optional team narrows; nothing widens.
+   */
+  bowler_day: {
+    text: `select * from bowler_day($1::date, $2::text)`,
+    params: (q) => {
+      const date = req(q, "date");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+        const e = /** @type {DressedError} */ (new Error("bad_param:date")); e.status = 400; throw e;
+      }
+      return [date, q?.teamCode || null];
+    },
   },
 
   /*
