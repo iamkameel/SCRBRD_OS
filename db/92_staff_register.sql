@@ -192,7 +192,11 @@ $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, 
 -- Guarded: the function in place must be db/81's patched text (its md5,
 -- taken from a database at db/91), or already call role_request_grant_as()
 -- (a second run). The text it had is kept for the check in §3c.
-CREATE TEMP TABLE IF NOT EXISTS _db92_decide (src text, cfg text, acl text, sec boolean, fresh boolean) ON COMMIT DROP;
+-- A plain temporary table, dropped at the end of §3c rather than ON COMMIT:
+-- pasted statement by statement (psql without -1, the rebuild bundle),
+-- ON COMMIT DROP would take it away before §3c reads it (db/42's note).
+DROP TABLE IF EXISTS _db92_decide;
+CREATE TEMP TABLE _db92_decide (src text, cfg text, acl text, sec boolean, fresh boolean);
 DO $guard$
 DECLARE
   v_fn  regprocedure := 'decide_role_request(uuid,boolean,text,uuid,text)'::regprocedure;
@@ -352,6 +356,7 @@ BEGIN
     RAISE EXCEPTION 'db/92: decide_role_request()''s lookup, authority and decline are not db/81''s';
   END IF;
 END $factored$;
+DROP TABLE IF EXISTS _db92_decide;
 
 
 -- ── 4 · Upload: check, then commit (§1.2, §1.3, §1.6) ──────────────
@@ -633,7 +638,7 @@ BEGIN
        AND r.valid_until >= current_date
        AND r.email IN (SELECT lower(x.email_at_link) FROM auth_identity x
                         WHERE x.user_id = v_me AND x.revoked_at IS NULL)
-     ORDER BY r.id
+     ORDER BY r.uploaded_at, r.role, coalesce(r.team_code, ''), r.id  -- a stable order: the words list roles the same way every time
        FOR UPDATE OF r
   LOOP
     v_any := true;
