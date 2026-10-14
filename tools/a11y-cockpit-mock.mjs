@@ -41,7 +41,7 @@ export const MATCH = { day: "cc000000-0000-0000-0000-000000000001", live: "cc000
 /** A ball_event row as the events read returns it. @param {any} ev @param {number} seq */
 const eventRow = (ev, seq) => ({ ...toRow(ev), seq, epoch: 1, idempotency_key: ev.id });
 
-/** @returns {(method: string, pathname: string, search: URLSearchParams) => { status: number, body: any }} */
+/** @returns {(method: string, pathname: string, search: URLSearchParams, reqBody?: string | null) => { status: number, body: any }} */
 export function cockpitApi() {
   const logs = captainLogs({ ids: IDS, names: NAMES });
   const fold = { startsAt: null, format: "T20", conditions: PLAY, conditionsHash: "mock", conditionsFixed: true, conditionsSources: SOURCES, conditionsTitle: null, conditionsVersion: null };
@@ -76,8 +76,12 @@ export function cockpitApi() {
   };
   const events = { [MATCH.live]: logs.field.map((e, i) => eventRow(e, i + 1)), [MATCH.day]: [] };
 
+  // SCRBRD-138 phase B: the plans the coach writes in the walk, kept in memory and handed back by the `news` read.
+  /** @type {any[]} */
+  const news = [];
   /** @type {Record<string, (q: URLSearchParams) => any[]>} */
   const reads = {
+    news: () => news,
     matches: () => matches,
     match_squad: (q) => squad(q.get("matchId")),
     // The roster Pick the side offers: the ten on the sheet and a reserve who is not.
@@ -113,11 +117,26 @@ export function cockpitApi() {
   };
   const doc = { v: 1, play: { "format.kind": "limited", "format.free_hit": true, "format.overs_per_innings": 20 }, sheet: {}, table: {} };
 
-  return (method, pathname, search) => {
+  return (method, pathname, search, reqBody) => {
     if (pathname === "/api/health") return { status: 200, body: { ok: true, db: "ok", ai: "no_credentials", auth: "dev_login_enabled", read: [], write: "mounted", handover: "mounted", public: "off", pages: "local", reader: "none" } };
     if (pathname === "/api/auth/dev-login") return { status: 200, body: { token: "a11y-cockpit-token" } };
     if (pathname === "/api/session") return { status: 200, body: session };
     if (pathname === "/api/competition-invitations") return { status: 200, body: { invitations: [] } };
+    // The plan to the side: a post with a fixture (the walk's coach writes one; it is read back as his own).
+    if (method === "POST" && pathname === "/api/news") {
+      const b = JSON.parse(reqBody ?? "{}");
+      const id = `cc000000-0000-0000-0000-0000000000${String(10 + news.length).padStart(2, "0")}`;
+      news.unshift({ id, scope: "team", school_id: HIL, team_code: b.teamCode, competition_id: null, kind: b.kind, fixtureId: b.fixtureId, noticeId: b.publish ? `${id}-n` : null,
+        title: b.title, body: b.body, published_at: b.publish ? new Date().toISOString() : null, created_at: new Date().toISOString(), school_name: "Hilton College", competition_name: null,
+        author_name: "C Hendricks", mine: true, may_approve: false, may_take_down: false, public_state: null, public_names: null });
+      return { status: 200, body: { id, scope: "team", published: !!b.publish, urgency: b.urgency, kind: b.kind, fixtureId: b.fixtureId } };
+    }
+    const withdraw = /^\/api\/news\/([^/]+)\/withdraw$/.exec(pathname);
+    if (method === "POST" && withdraw) {
+      const n = news.find((x) => x.id === withdraw[1]);
+      if (n) { n.published_at = null; n.noticeId = null; }
+      return { status: 200, body: { id: withdraw[1], published: false } };
+    }
     const read = /^\/api\/read\/([a-z_]+)$/.exec(pathname);
     if (read) return { status: 200, body: { resource: read[1], rows: reads[read[1]]?.(search) ?? [] } };
     const m = /^\/api\/matches\/([^/]+)\/([a-z-]+)(?:\/([a-z]+))?$/.exec(pathname);

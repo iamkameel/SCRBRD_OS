@@ -141,17 +141,15 @@ export default function PlanComposer({ match, side, title, opponent, sheet, onCl
         </p>
 
         {/* The post's own option, unchanged: low stays in the app, medium is "Send to phones too". Never louder. */}
-        <label data-testid="plan-phones-row" style={{ display: "flex", gap: T.space.md, alignItems: "flex-start", minHeight: "44px", cursor: "pointer" }}>
-          <input type="checkbox" checked={phones} onChange={(e) => setPhones(e.target.checked)} data-testid="plan-phones"
-            aria-describedby="plan-phones-hint" style={{ width: "24px", height: "24px", marginTop: "2px", flexShrink: 0 }}/>
-          <span style={{ display: "grid", gap: "2px" }}>
-            <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>Send to phones too</span>
-            <span id="plan-phones-hint" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>
-              {phones ? "Phones that allow alerts show “You have a new notice.” The words stay in the app."
-                : "In the app only: it waits in Notices until people open SCRBRD."}
-            </span>
+        <div data-testid="plan-phones-row" style={{ display: "grid", gap: T.space.xs, justifyItems: "start" }}>
+          <Action testid="plan-phones" pressed={phones} onClick={() => setPhones((p) => !p)}>
+            Send to phones too
+          </Action>
+          <span id="plan-phones-hint" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>
+            {phones ? "Phones that allow alerts show “You have a new notice.” The words stay in the app."
+              : "In the app only: it waits in Notices until people open SCRBRD."}
           </span>
-        </label>
+        </div>
 
         <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Action testid="plan-cancel" onClick={onClose} disabled={busy != null}>Cancel</Action>
