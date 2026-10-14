@@ -320,7 +320,7 @@ export function planTitle(opponent, startMs) {
 }
 
 /**
- * @typedef {{ id: string, title: string, body: string, author: string, publishedAt: string | null, mine: boolean,
+ * @typedef {{ id: string, title: string, body: string, author: string | null, publishedAt: string | null, mine: boolean,
  *             noticeId: string | null, schoolId: string | null, teamCode: string | null }} Plan
  */
 
@@ -340,7 +340,7 @@ function plansFor(rows, fixtureId, side = null) {
   return (rows ?? [])
     .filter((r) => r?.kind === "plan" && r.fixtureId === fixtureId
       && (!side || ((side.school == null || r.schoolId === side.school) && (side.team == null || r.teamCode === side.team))))
-    .map((r) => ({ id: r.id, title: r.title, body: r.body, author: r.author, publishedAt: r.publishedAt ?? null, mine: r.mine === true,
+    .map((r) => ({ id: r.id, title: r.title, body: r.body, author: r.authorName ?? null, publishedAt: r.publishedAt ?? null, mine: r.mine === true,
                    noticeId: r.noticeId ?? null, schoolId: r.schoolId ?? null, teamCode: r.teamCode ?? null }))
     .sort((a, b) => String(b.publishedAt ?? "9").localeCompare(String(a.publishedAt ?? "9")));
 }
@@ -404,8 +404,13 @@ export function planRefusal(e) {
   return { code, words: [], message: /** @type {Record<string, string>} */ (said)[code] ?? "That did not go. Your words are still here: try again." };
 }
 
-/** "Plan from Mr Dlamini · Thu": the captain's card line (§5.3). @param {Plan} p */
-export const planLine = (p) => ["Plan from " + (p.author || "the coach"), planWhen(p.publishedAt, { time: false })].filter(Boolean).join(" · ");
+/**
+ * "Plan from Mr Dlamini · Thu": the captain's card line (§5.3). Where the
+ * reader may not read the author's name (the news read gives a pupil or a
+ * parent none), "Plan for the side · Thu": nothing is said about who.
+ * @param {Plan} p
+ */
+export const planLine = (p) => [p.author ? `Plan from ${p.author}` : "Plan for the side", planWhen(p.publishedAt, { time: false })].filter(Boolean).join(" · ");
 
 /** "The plan · Mr Dlamini · Thu 20:10": the block's label (§5.2; the label role draws it in capitals). @param {Plan} p */
 export const planLabel = (p) => ["The plan", p.author || null, planWhen(p.publishedAt)].filter(Boolean).join(" · ");

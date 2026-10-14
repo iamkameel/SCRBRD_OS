@@ -367,7 +367,7 @@ group("GA-I20 A1: each child's count on Family is his own; nothing sums them (D1
 group("SCRBRD-138 phase B: the coach's plan is the live one for the fixture and the side, and nothing else");
 {
   const row = (o = {}) => ({ id: "n1", kind: "plan", fixtureId: "m-sat", schoolId: HIL, teamCode: "1XI", title: "The plan: v Kearsney, Sat 3 Oct",
-    body: "Bat first if we win it.", author: "Mr Dlamini", publishedAt: "2026-10-01T18:10:00Z", mine: false, draft: false, noticeId: "nt1", ...o });
+    body: "Bat first if we win it.", authorName: "Mr Dlamini", publishedAt: "2026-10-01T18:10:00Z", mine: false, draft: false, noticeId: "nt1", ...o });
   const side = { school: HIL, team: "1XI" };
   const rows = [row(), row({ id: "n0", kind: "post", fixtureId: null, title: "Training moved" }), row({ id: "n2", fixtureId: "m-other", body: "Another fixture." })];
   ok("the live plan for the fixture", planOf(rows, "m-sat", side)?.id === "n1" && planOf(rows, "m-sat")?.body === "Bat first if we win it.");
@@ -382,6 +382,9 @@ group("SCRBRD-138 phase B: the coach's plan is the live one for the fixture and 
   ok("his own unsent plan is his draft; a live plan and somebody else's are not", mine?.id === "d1" && draftPlanOf([row()], "m-sat", side) === null
      && draftPlanOf([row({ publishedAt: null, mine: false })], "m-sat", side) === null);
   ok("the byline: the author and the day, SA time", planLine(planOf(rows, "m-sat")) === "Plan from Mr Dlamini · Thu" && planLabel(planOf(rows, "m-sat")) === "The plan · Mr Dlamini · Thu 20:10", planLabel(planOf(rows, "m-sat")));
+  const nameless = planOf([row({ authorName: null })], "m-sat");
+  ok("a reader who may not read the author's name is told nothing about who, and never 'the office'",
+     planLine(nameless) === "Plan for the side · Thu" && planLabel(nameless) === "The plan · Thu 20:10" && !/office/i.test(planLine(nameless) + planLabel(nameless)));
   ok("...the title the screen makes is the fixture, never the coach's", planTitle("Kearsney", Date.parse("2026-10-03T07:00:00Z")) === "The plan: v Kearsney, Sat 3 Oct"
      && planTitle("", null) === "The plan: v the opposition");
 }

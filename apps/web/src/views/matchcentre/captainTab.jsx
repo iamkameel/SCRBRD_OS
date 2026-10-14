@@ -4,7 +4,7 @@ import { api, signedIn } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
 import { boardInnings, teamOf } from "../../lib/matchCentre.js";
 import { endOf } from "../../lib/family.js";
-import { bowlerRows, inningsOf, matchupTypes, matchupWords, nextIn, notYetBowled, overStory, planLabel, planOf, sheetOf } from "../../lib/captain.js";
+import { bowlerRows, inningsOf, matchupTypes, matchupWords, nextIn, notYetBowled, overStory, planOf, sheetOf } from "../../lib/captain.js";
 import { Board } from "../../ui/board.jsx";
 import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { bowlerCapWords } from "../../scorer/conditionsLine.jsx";

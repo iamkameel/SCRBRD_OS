@@ -294,6 +294,10 @@ function asNewsPost(r) {
     // 'plan', and a plan names the fixture and the side it is for. `noticeId`
     // is the live plan's notice, for the block's Report (lib/captain.js planOf).
     kind: r.kind ?? "post",
+    // The author's own name, or null where the reader may not read the
+    // author's account (a pupil and a parent hold no user.read): `author`
+    // above says "The office" then, which is not true of a coach's plan.
+    authorName: r.author_name ?? null,
     fixtureId: r.fixtureId ?? null,
     noticeId: r.noticeId ?? null,
     schoolId: r.school_id ?? null,

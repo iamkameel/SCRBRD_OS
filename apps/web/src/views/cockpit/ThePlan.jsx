@@ -19,7 +19,8 @@
  *
  * Whether he may is layout only: the role's `news.publish.team` (the coach and
  * the team manager hold it, PB-D4); the insert's policy decides again. A plan
- * is written for a fixture still to be played.
+ * is written for a fixture still to be played or in play (the innings break is
+ * the moment 138 §2.2 names), never for one that is over.
  */
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { roleGrants } from "@scrbrd/policy/roles";
@@ -55,7 +56,7 @@ export function ThePlan({ match, role, gate, sheet }) {
   const side = { school: gate.school, team: gate.teamCode };
   const plan = planOf(rows, match.id, side);
   const draft = draftPlanOf(rows, match.id, side);
-  const mayWrite = !!gate.teamCode && roleGrants(gate.role, "news.publish.team") && match.status === "upcoming";
+  const mayWrite = !!gate.teamCode && roleGrants(gate.role, "news.publish.team") && (match.status === "upcoming" || match.status === "live");
   const sides = sidesOf(match);
   const opponent = sides[gate.end === "home" ? "away" : "home"].full;
   const title = planTitle(opponent, startMs(match));
