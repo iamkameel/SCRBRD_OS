@@ -978,6 +978,9 @@ function asAssignment(r) {
            validFrom: r.valid_from ? String(r.valid_from).slice(0, 10) : null,
            validUntil: r.valid_until ? String(r.valid_until).slice(0, 10) : null,
            grantedAt: r.created_at, granterId: r.created_by, granterName: r.granted_by_name,
+           // The note on the request this appointment answered, where the reader may see it:
+           // a register grant's says so (db/92), for People's origin line.
+           grantedNote: r.granted_note ?? null,
            revokedAt: r.revoked_at, revokerId: r.revoked_by, revokerName: r.revoked_by_name,
            // Paused by the office (db/34): not live, but not revoked either.
            // authorize.mjs isActive() reads this beside `active`.
