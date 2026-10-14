@@ -312,6 +312,18 @@ SELECT
                          WHERE p.oid IN ('bowler_day(date,text)'::regprocedure, 'bowling_directive_for(uuid)'::regprocedure)
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A bowler's day is read under the load capability",
+  -- db/97: the ball log follows the fixture; the away side reads its match
+  -- (SCRBRD-136/137 away visibility, AV-D1). The writes stay the host's.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read'
+                       AND p.polcmd = 'r' AND p.polpermissive
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%match_team(%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%away_school_id%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%away_team_code%')
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                         WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_insert'
+                           AND pg_get_expr(p.polwithcheck, p.polrelid) LIKE '%away\\_%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The away side reads its fixture's balls",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
