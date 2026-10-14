@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 import { capWords } from "@scrbrd/scoring";
 import { panelsOf, LOAD_SENTENCE } from "../src/lib/cockpit.js";
-import { FORBIDDEN_FIELDS, NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
+import { FORBIDDEN_FIELDS, NEVER_ON_THE_COCKPIT, OTHER_SIDE_IDS } from "../src/lib/cockpitNever.js";
 import { EXCEPTION_WORDS } from "../src/lib/liftWords.js";
 import {
   RULES, RULE_ORDER, MATCHUP_FLOOR, MATCHUP_GROWTH, evaluate, isSeen, markSeen, unseen, ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12,
@@ -327,6 +327,47 @@ group("The static check: the rules read none of what they must not, and touch no
     "No playing conditions are set for this fixture: the pad will use the platform defaults", "Rain likely from 14:00", "1 lift not marked as leaving", "J Smith · 6 overs this week · rising (estimate)"];
   ok("the cards' own sentences pass the never-words", lines.every((l) => !NEVER_ON_THE_COCKPIT.test(l)), lines.filter((l) => NEVER_ON_THE_COCKPIT.test(l)));
   ok("no refused signal (§4.4) has a title: no risk, no flag, no guideline, no win chance", Object.values(RULES).every((r) => !NEVER_ON_THE_COCKPIT.test(r.title) && !/discipl|safeguard|clearance|fees|invoice|injury/i.test(r.title)));
+
+  // Away visibility (AV3, db/97): no rule keys a card to the other side's boy.
+  const body = (name, next) => code.slice(code.indexOf(`export function ${name}`), code.indexOf(`export function ${next}`));
+  const other = OTHER_SIDE_IDS.filter((w) => new RegExp(`\\b${w}\\b`).test(code));
+  ok(`no rule reads the log's other ids (${OTHER_SIDE_IDS.join(", ")})`, other.length === 0, other);
+  const s2b = body("ruleS2b", "ruleS2c");
+  ok("a spell's bowlerId is read in S2b alone", s2b.length > 200 && (code.match(/\bbowlerId\b/g) ?? []).length === (s2b.match(/\bbowlerId\b/g) ?? []).length, (code.match(/\bbowlerId\b/g) ?? []).length);
+  ok("...matched to the bowler on now in OUR fielding innings", /for \(const \{ inn, i, inPlay \} of c\.fielding \?\? \[\]\)/.test(s2b) && /s\.bowlerId === inn\.bowler/.test(s2b));
+  ok("...and keyed only once the directive beside him answered (a boy whose load the reader may read)",
+     s2b.indexOf("open.pace !== true || open.maxSpell == null") > 0 && s2b.indexOf("open.pace !== true || open.maxSpell == null") < s2b.indexOf('card("S2b"'));
+  ok("every rule that walks an innings walks our fielding ones", (code.match(/\{ inn, i, inPlay \} of /g) ?? []).length === (code.match(/\{ inn, i, inPlay \} of c\.fielding \?\? \[\]/g) ?? []).length
+     && (code.match(/of c\.fielding/g) ?? []).length >= 3 && !/c\.innings\b|c\.batting\b/.test(code));
+  ok("S5 counts a matchup by type, never by their bowler", !/bowler/i.test(body("ruleS5", "ruleS6").replace(/bowling/g, "")));
+}
+
+group("Away visibility (AV3): the other side's boy, as the reads return him after db/97, draws no card");
+{
+  // A Westville-hosted fixture read by our coach: the other side's quick is in
+  // the log (the fold's bowlers when we bat), in bowling_spells with the
+  // directive null (or not at all: the read joins his record), absent from
+  // bowler_day and workload, and named on matchup rows. Our side is b1.
+  const THEIRS = "w9";
+  const theirSpell = { bowlerId: THEIRS, name: "W Visitor", innings: 1, spellNo: 1, overs: 7, maxSpell: null, maxDay: null, ageBand: null, pace: null };
+  const ourSpell = { bowlerId: "b1", name: "T Cele", innings: 0, spellNo: 1, overs: 5, maxSpell: 6, ageBand: "U15", pace: true };
+  const away = { end: "away", school: "wes", teamCode: "1XI", panels: panelsOf("coach") };
+  const fielding = [{ inn: { bowler: "b1", bowlers: [{ id: "b1", name: "T Cele", balls: 30 }] }, i: 0, inPlay: true }];
+  const ctx = base({
+    gate: away, match: { ...DAYOF, status: "live" }, squad: sheet(11, { side: "away" }), spells: [theirSpell, ourSpell], fielding,
+    bowlerDay: [{ playerId: "b1", name: "T Cele", oversToday: 11, matchesToday: 2, ageBand: "U15", pace: true, maxSpell: 6, maxDay: 12 }],
+    workload: [], capFor: (b) => capWords(b, { "bowling.max_overs_per_bowler_innings": 4 }),
+    matchups: { p1: { rows: [{ bowlerId: THEIRS, bowlerName: "W Visitor", bowlingStyle: "Right-arm fast", balls: 40, runs: 20, dismissals: 1 }], coverage: { attributable: 40, deliveries: 40 } } },
+  });
+  const cards = evaluate(ctx);
+  ok("our bowler's cards still speak (S2a, S2b, S2c)", ["S2a", "S2b", "S2c"].every((r) => cards.some((k) => k.rule === r)), cards.map((k) => k.rule));
+  ok("no card is keyed to their bowler or names him", cards.every((k) => !k.key.includes(THEIRS) && !k.base.includes(THEIRS) && !k.lines.join(" ").includes("W Visitor")), cards.map((k) => k.key));
+  // ...even were their bowler on now in an innings handed to the rules as ours:
+  // his spell's directive is null, so S2b has nothing to say of him.
+  const astray = [{ inn: { bowler: THEIRS, bowlers: [{ id: THEIRS, name: "W Visitor", balls: 42 }] }, i: 1, inPlay: true }];
+  ok("...even were he handed to S2b as the bowler on now, his null directive keeps it silent",
+     ruleS2b(base({ gate: away, spells: [theirSpell], fielding: astray })).length === 0);
+  ok("...and S2c has no row for him to draw", ruleS2c(base({ gate: away, bowlerDay: [], fielding: astray })).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

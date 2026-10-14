@@ -292,6 +292,13 @@ group("A. The cockpit's reads (SCRBRD-136/137 phase B §5, §1.4): the lead's fi
   ok("bowling_spells asks the load capability per bowler", bs.includes(`cross join lateral (select ${gate} as may) w`));
   ok("...and joins the directive only on it", bs.includes("left join lateral bowling_directive_for(s.bowler_id) d on w.may"));
   ok("...and says 'over the limit' only to that reader", bs.includes("(case when w.may then d.max_overs_per_spell is not null and s.overs > d.max_overs_per_spell end) as over_spell_limit"));
+  // Away visibility (db/97): the visiting school reads a shared fixture's
+  // balls, so a read of one boy across fixtures asks his record as well.
+  ok("bowling_spells names a bowler only through his record (join player, under player_read)", bs.includes("join player p on p.id = s.bowler_id"));
+  ok("player_shot_points draws a boy's wheel only for a reader of his record",
+     flat(READ_QUERIES.player_shot_points.text).includes("where b.striker_id = $1 and exists (select 1 from player p where p.id = $1)"));
+  ok("matchup_coverage counts a named batter's balls only for a reader of his record",
+     flat(READ_QUERIES.matchup_coverage.text).includes("($1::uuid is null or (striker_id = $1 and exists (select 1 from player p where p.id = $1)))"));
   ok("bowling_breaches carries no gate of its own (bowling_breach's policy is player.workload.read)",
      !/app_can/.test(flat(READ_QUERIES.bowling_breaches.text)));
   ok("workload's comment names the gate workload() asks, not player.development.read",
