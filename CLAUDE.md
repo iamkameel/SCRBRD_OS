@@ -131,6 +131,28 @@ Haiku's output is reviewed by the lead before it lands on a branch that goes
 to `main`. Its limits above still stand: no code, tests, SQL, policy or minors'
 data.
 
+## Saving progress
+
+Added 2026-10-14 (Kameel): always save our progress before we hit session
+limits. A usage limit or a container restart stops work without warning, and
+nothing left only on the container's disk outlives the session. No hook can
+see a limit coming, so the rule is a cadence, not a trigger:
+
+- **Every builder** commits and pushes its own branch (`claude/wip-*`) after
+  each step that passes its checks, and at least every 30 minutes of work. A
+  step half done goes up as a `WIP:` commit. Every brief says so. Nothing
+  waits in a worktree for the end of the task.
+- **The lead** pushes a branch as soon as it changes it, commits before any
+  long run (a full walk set, a long verify), and keeps the Build Board current
+  after every event. The board is the record of where each thread stands and
+  what its next step is, so a fresh session can pick up from it.
+- **The hourly board sweep** also checks every running agent's branch for
+  unpushed work and tells that agent to push it.
+- **After a stop** (a limit, a restart): start the local Postgres again if it
+  is down (`pg_ctlcluster 16 main start`), resume each stopped agent with a
+  message rather than starting it afresh, and re-read the board before
+  anything else.
+
 ## Design skills
 
 Installed 2026-10-07 (Kameel) to raise SCRBRD's design, UI and UX, in
