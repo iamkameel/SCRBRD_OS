@@ -19134,14 +19134,17 @@ $v49$;
   --
   -- Falsified once each, by replacing the object in the database and running
   -- this file; each went red at its label:
-  --   (one)      DROP INDEX news_post_plan_live
-  --   (others)   DROP POLICY news_post_plan_side (red at the U15B parent);
-  --              news_plan_reach() without its team.read clause (red at the
-  --              follower)
+  --   (one)      DROP INDEX news_post_plan_live (red at the coach's second
+  --              live plan)
+  --   (others)   DROP POLICY news_post_plan_side, and news_plan_reach()
+  --              without its team.read clause (each red at the U15B parent);
+  --              news_plan_reach() asking news.read where it asks team.read
+  --              (red at the follower)
   --   (notice)   DROP POLICY notification_plan_side (red at the U15B parent)
   --   (guard)    news_post_plan_guard() without its side check (red at the
   --              other side's fixture); without its fixed check (red at the
   --              sent plan's new fixture)
+  --   (public)   DROP TRIGGER news_post_public_not_plan (the request answered ok)
   DECLARE
     y        jsonb := _v96_stage();
     V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
