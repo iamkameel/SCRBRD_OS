@@ -273,6 +273,12 @@ export const READ_QUERIES = {
              left join innings_declared_profile d
                     on d.match_id = b.match_id and d.innings = b.innings
             where b.striker_id = $1
+              -- The boy's own record, under player_read: a wheel across
+              -- innings is his, as career is (SCRBRD-136/137 away visibility
+              -- §4.2, db/97). Once the visiting school reads a shared
+              -- fixture's balls, the log alone would draw the host's boy's
+              -- wheel across every fixture the two schools have played.
+              and exists (select 1 from player p where p.id = $1)
               and b.kind = 'ball'
               and (b.theta is not null or b.seg is not null)
             order by m.starts_at, b.seq`,
@@ -2294,7 +2300,9 @@ export const READ_QUERIES = {
                   count(*)::int                                                                 as deliveries
              from ball_event_career
             where kind = 'ball'
-              and ($1::uuid is null or striker_id = $1)`,
+              -- A named batter is one whose record the reader may read, as
+              -- matchups' join on player asks (away visibility §4.2, db/97).
+              and ($1::uuid is null or (striker_id = $1 and exists (select 1 from player p where p.id = $1)))`,
     params: q => [q?.batterId || null],
   },
 

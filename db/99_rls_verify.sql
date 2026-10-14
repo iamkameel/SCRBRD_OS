@@ -4685,6 +4685,165 @@ CREATE OR REPLACE FUNCTION _v96_named(p_post uuid) RETURNS text AS $$
       OR n.retracts_id IN (SELECT x.id FROM notification x WHERE x.subject_kind = 'news' AND x.subject_id = p_post)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/96 (section 76) ──────────────────────────────────────────────
+-- ┌── db/97 (section 75). The ball log follows the fixture: the away side reads its match
+-- docs/design/SCRBRD-136-137_away_visibility.md §9. Everything below is
+-- invented for the proof: a third school standing in for the design's
+-- Kearsney (neither side), one side at each of Hilton and Westville (16XI),
+-- a U15 quick on each (the design's "K Naidoo" at Hilton and "D Erasmus" at
+-- Westville), a pupil with self-access and a guardian at each, and the
+-- readers the policy is about. Three fixtures today: Hilton at home to
+-- Westville, Westville at home to Hilton, and Hilton against a school not on
+-- the platform. Written as the owner.
+
+-- Overs of the log for one innings: six legal balls each, bowled by p_overs[i]
+-- (NULL: a bowler SCRBRD holds no row for) to p_striker, each with a measured
+-- point so the striker's wheel has something to draw.
+CREATE OR REPLACE FUNCTION _v97_bowl(p_match uuid, p_scorer uuid, p_innings int, p_striker uuid, p_overs uuid[])
+RETURNS void AS $$
+DECLARE i int; j int; s int;
+BEGIN
+  s := coalesce((SELECT max(seq) FROM ball_event WHERE match_id = p_match), 0);
+  FOR i IN 1..coalesce(array_length(p_overs, 1), 0) LOOP
+    FOR j IN 1..6 LOOP
+      s := s + 1;
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, bowler_id, striker_id,
+                              theta, radius, placement_source, capture_profile)
+      SELECT p_match, m.school_id, s, 0, p_innings, p_scorer, 'v97-pad', 'v97-' || p_match || '-' || s, s, now(),
+             'ball', 'run', 1, p_overs[i], p_striker, (s * 37) % 360, 0.5, 'point', 'full'
+        FROM match m WHERE m.id = p_match;
+    END LOOP;
+  END LOOP;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the rule says a reader may read of a fixture's log, asked as the
+-- owner with app_can() directly (the policy's two branches, spelled out
+-- apart from it), beside the whole log: so the section can hold the policy
+-- to the rule, and the host branch alone to what the old policy answered.
+CREATE OR REPLACE FUNCTION _v97_rule(p_match uuid, OUT host int, OUT away int, OUT either int, OUT total int) AS $$
+  SELECT count(*) FILTER (WHERE h)::int, count(*) FILTER (WHERE a)::int, count(*) FILTER (WHERE h OR a)::int, count(*)::int
+    FROM (SELECT app_can('fixture.read', b.school_id, match_team(b.match_id), NULL, b.match_id) AS h,
+                 coalesce(app_can('fixture.read', m.away_school_id, m.away_team_code, NULL, b.match_id), false) AS a
+            FROM ball_event b JOIN match m ON m.id = b.match_id
+           WHERE b.match_id = p_match) x
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The API's bowling_spells and player_shot_points, as the caller (invoker,
+-- not a definer): services/api/read/read-api.mjs's texts, column for column
+-- where the section reads them, so the per-boy gates are proved as they run.
+CREATE OR REPLACE FUNCTION _v97_spells(p_match uuid)
+RETURNS TABLE (bowler_id uuid, overs int, age_band text, pace boolean, max_overs_per_spell smallint,
+               max_overs_per_day smallint, over_spell_limit boolean, breach_recorded boolean) AS $$
+  SELECT s.bowler_id, s.overs::int, d.age_band, d.pace, d.max_overs_per_spell, d.max_overs_per_day,
+         (CASE WHEN w.may THEN d.max_overs_per_spell IS NOT NULL AND s.overs > d.max_overs_per_spell END),
+         EXISTS (SELECT 1 FROM bowling_breach x
+                  WHERE x.match_id = s.match_id AND x.innings = s.innings
+                    AND x.bowler_id = s.bowler_id AND x.kind = 'spell' AND x.key = s.first_over)
+    FROM bowler_spell s
+    JOIN player p ON p.id = s.bowler_id
+    CROSS JOIN LATERAL (SELECT app_can('player.workload.read', p.school_id, p.team_code, p.id,
+                                       '00000000-0000-0000-0000-000000000000'::uuid) AS may) w
+    LEFT JOIN LATERAL bowling_directive_for(s.bowler_id) d ON w.may
+   WHERE s.match_id = p_match
+$$ LANGUAGE sql STABLE;
+CREATE OR REPLACE FUNCTION _v97_wheel(p_player uuid) RETURNS int AS $$
+  SELECT count(*)::int
+    FROM ball_event_career b
+    JOIN match m ON m.id = b.match_id
+   WHERE b.striker_id = p_player
+     AND EXISTS (SELECT 1 FROM player p WHERE p.id = p_player)
+     AND b.kind = 'ball'
+     AND (b.theta IS NOT NULL OR b.seg IS NOT NULL)
+$$ LANGUAGE sql STABLE;
+
+-- The pad's tables for one fixture, as the owner counts them.
+CREATE OR REPLACE FUNCTION _v97_pad_rows(p_match uuid) RETURNS text AS $$
+  SELECT concat_ws('/', (SELECT count(*) FROM scoring_session WHERE match_id = p_match),
+                        (SELECT count(*) FROM ball_event_quarantine WHERE match_id = p_match),
+                        (SELECT count(*) FROM scoring_audit WHERE match_id = p_match))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v97_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';   -- verifies the links, as the seed's do
+  U15 date := make_date(extract(year FROM sa_today())::int - 16, 10, 1);
+  KRS uuid; ids jsonb; v_a uuid;
+  h_quick uuid; w_quick uuid; h_bat uuid; w_bat uuid; fh uuid; fw uuid; fn uuid;
+BEGIN
+  INSERT INTO school (code, name, kind, province) VALUES ('V97K', 'Verify NinetySeven College', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO KRS;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) VALUES
+    (HIL, '16XI', 'Verify NinetySeven Home Quick', 971, 'bowler', U15, 'F') RETURNING id INTO h_quick;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) VALUES
+    (WES, '16XI', 'Verify NinetySeven Away Quick', 972, 'bowler', U15, 'F') RETURNING id INTO w_quick;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '16XI', 'Verify NinetySeven Home Bat', 973, 'batter', U15) RETURNING id INTO h_bat;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, '16XI', 'Verify NinetySeven Away Bat', 974, 'batter', U15) RETURNING id INTO w_bat;
+  ids := _v71_people('v97', ARRAY[
+    ARRAY['hilcoach',    'coach',      HIL::text, '16XI', ''],
+    ARRAY['hil2coach',   'coach',      HIL::text, '15XI', ''],
+    ARRAY['hilscorer',   'scorer',     HIL::text, '',     ''],
+    ARRAY['hilspec',     'spectator',  HIL::text, '',     ''],
+    ARRAY['hilpupil',    'player',     HIL::text, '16XI', h_bat::text],
+    ARRAY['hilguardian', 'guardian',   HIL::text, '',     ''],
+    ARRAY['wescoach',    'coach',      WES::text, '16XI', ''],
+    ARRAY['wesscorer',   'scorer',     WES::text, '',     ''],
+    ARRAY['wesspec',     'spectator',  WES::text, '',     ''],
+    ARRAY['wespupil',    'player',     WES::text, '16XI', w_bat::text],
+    ARRAY['wesguardian', 'guardian',   WES::text, '',     ''],
+    ARRAY['kcoach',      'coach',      KRS::text, '16XI', ''],
+    ARRAY['kspec',       'spectator',  KRS::text, '',     '']]);
+  -- Each pupil also holds self-access over his own record, as R Pillay does.
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES ((ids->>'hilpupil')::uuid, 'selfaccess', HIL), ((ids->>'wespupil')::uuid, 'selfaccess', WES);
+  -- The guardians' links to the pupils and the pupils' to themselves:
+  -- verified by the office and consented, as the seed's are.
+  FOR v_a IN SELECT a.id FROM role_assignment a
+              WHERE a.person_id IN ((ids->>'hilpupil')::uuid, (ids->>'wespupil')::uuid,
+                                    (ids->>'hilguardian')::uuid, (ids->>'wesguardian')::uuid)
+                AND a.role IN ('guardian', 'selfaccess') LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    SELECT v_a, CASE WHEN a.school_id = HIL THEN h_bat ELSE w_bat END,
+           CASE WHEN a.role = 'guardian' THEN 'parent' ELSE 'self' END, 'verified', OFFICE, now(),
+           'granted', 'popia-2026-01', now(), OFFICE, current_date - 1
+      FROM role_assignment a WHERE a.id = v_a;
+  END LOOP;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '16XI', WES, '16XI', 'Verify NinetySeven Westville', (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'live') RETURNING id INTO fh;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (WES, '16XI', HIL, '16XI', 'Verify NinetySeven Hilton', (sa_today()::timestamp + time '14:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'live') RETURNING id INTO fw;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '16XI', 'Verify NinetySeven Elsewhere', (sa_today()::timestamp + time '06:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'live') RETURNING id INTO fn;
+  -- At Hilton: Westville's quick bowls three to Hilton's bat (one spell, alternate
+  -- overs from one end), then Hilton's quick two to Westville's bat.
+  PERFORM _v97_bowl(fh, (ids->>'hilscorer')::uuid, 0, h_bat, ARRAY[w_quick, NULL, w_quick, NULL, w_quick]::uuid[]);
+  PERFORM _v97_bowl(fh, (ids->>'hilscorer')::uuid, 1, w_bat, ARRAY[h_quick, NULL, h_quick]::uuid[]);
+  -- At Westville, the afternoon: Hilton's quick two to Westville's bat, then
+  -- Westville's quick four to Hilton's bat. His day: seven, two matches.
+  PERFORM _v97_bowl(fw, (ids->>'wesscorer')::uuid, 0, w_bat, ARRAY[h_quick, NULL, h_quick]::uuid[]);
+  PERFORM _v97_bowl(fw, (ids->>'wesscorer')::uuid, 1, h_bat, ARRAY[w_quick, NULL, w_quick, NULL, w_quick, NULL, w_quick]::uuid[]);
+  -- Against a school not on the platform: one over of Hilton's quick.
+  PERFORM _v97_bowl(fn, (ids->>'hilscorer')::uuid, 0, NULL, ARRAY[h_quick]::uuid[]);
+  -- The pad's tables at Hilton's fixture: Westville's scorer holding the
+  -- token (so a refused write below is refused for the school, not for want
+  -- of a token), a held ball and the audit row of the claim.
+  INSERT INTO scoring_session (match_id, school_id, state, epoch, holder_user_id, holder_device, lease_until)
+  VALUES (fh, HIL, 'active', 0, (ids->>'wesscorer')::uuid, 'v97-away-pad', now() + interval '1 hour');
+  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body, fingerprint)
+  VALUES (fh, HIL, 0, 0, (ids->>'hilscorer')::uuid, 'v97-pad', 'v97-held-' || fh, '{}'::jsonb, 'v97-fingerprint');
+  INSERT INTO scoring_audit (match_id, school_id, event, actor_id, epoch)
+  VALUES (fh, HIL, 'claim', (ids->>'hilscorer')::uuid, 0);
+  RETURN ids || jsonb_build_object('krs', KRS, 'h_quick', h_quick, 'w_quick', w_quick, 'h_bat', h_bat, 'w_bat', w_bat,
+                                   'fh', fh, 'fw', fw, 'fn', fn);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/97 (section 75) ──────────────────────────────────────────────
 
 -- ┌── db/103 (section 80). The plan's byline: who wrote the side's plan
 -- Its own sides, so §76's plans and readers do not meet it: Hilton's 10XI
@@ -14237,12 +14396,16 @@ $v49$;
     PERFORM _as(U_SARAH);
     c_after := _careers_71(K1);
     PERFORM _assert(c_after = c_before, format('db/71 (career): a super over moved a career: before %s; after %s', c_before, c_after));
-    -- (scope) the career log is the reader's: the visitors' coach reads none
-    -- of the home school's, the home coach reads it
+    -- (scope) the career log is the reader's: a coach of neither side (the
+    -- 2XI's) reads none of it, the home school reads it, and since db/97 so
+    -- do the visitors, whose fixture it is (the log follows the fixture, §75)
     PERFORM _assert((SELECT count(*) FROM ball_event_career WHERE match_id = K1) > 0, 'db/71 (scope): Hilton''s director of sport reads none of her school''s career log');
-    PERFORM _as(U_WESC);
+    PERFORM _as(U_COACH2);
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM ball_event_career WHERE match_id = K1),
-      'db/71 (scope): the visitors'' coach reads the home school''s log through ball_event_career');
+      'db/71 (scope): a coach of neither side reads the fixture''s log through ball_event_career');
+    PERFORM _as(U_WESC);
+    PERFORM _assert((SELECT count(*) FROM ball_event_career WHERE match_id = K1) > 0,
+      'db/71 (scope): the visitors'' coach reads none of his own fixture''s log through ball_event_career (db/97)');
 
     -- (marker) (live) the board's block: innings 2 and 3 are the first super over
     PERFORM _as(U_SARAH);
@@ -19391,6 +19554,280 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 76
   -- └── db/96 (section 76) ───────────────────────────────────────────
+
+  -- ┌── db/97 (section 75) ──────────────────────────────────────────────
+  -- ── 75. The ball log follows the fixture: the away side reads its match (db/97) ──
+  -- docs/design/SCRBRD-136-137_away_visibility.md §9 (AV-D1 to AV-D5). The
+  -- API half is tools/smoke-cockpit.mjs's group 5; the read texts it rests on
+  -- are services/api/read/read.test.mjs's. Rows are _v97_stage()'s, invented.
+  --
+  -- What each label holds:
+  --   (rule)      for every reader below and each of the three fixtures, the
+  --               balls row security admits are exactly the ones the rule
+  --               admits (host branch OR away branch, asked with app_can()
+  --               apart from the policy), in ball_event and ball_event_live
+  --   (each way)  both coaches read every ball of both shared fixtures, as
+  --               many as the owner; a pupil and a spectator of each school
+  --               read the other school's fixture whole (AV-D5)
+  --   (unchanged) a reader of the host school reads exactly what the host
+  --               branch alone (db/02's policy) gave; what a visitor gained
+  --               is the away branch and nothing else
+  --   (per boy)   the API's bowling_spells at Hilton's fixture, as
+  --               Westville's coach: his quick's spell with the U15 directive
+  --               filled, the flag a boolean, no breach; Hilton's quick's
+  --               spell is in the log (bowler_spell) but not in the read:
+  --               the read joins player, whose record is not Westville's,
+  --               and the load gate answers false for him. The mirror at
+  --               Westville's fixture, as Hilton's coach. (The design's §9
+  --               item 2 expected the host's boy as a row with the directive
+  --               null; the join drops the row, which is narrower.)
+  --   (refused)   the third school's coach and spectator read neither shared
+  --               fixture nor any ball of it, without an error; Hilton's coach
+  --               of another side reads what the host branch gave him: none
+  --   (pupils)    each pupil reads the other school's fixture, and his own
+  --               wheel across both (36 and 72 balls); the other school's
+  --               boy's wheel is refused (his record is not the pupil's)
+  --   (guardians) each guardian reads both shared fixtures' rows and no ball
+  --               of either, nor her child's wheel: the log asks about nobody
+  --               in particular (db/02's NULL person, kept in both branches),
+  --               and a guardian's assignment is about one child. Symmetric,
+  --               and as db/99 §22 has always said; unchanged by db/97
+  --   (pad)       Westville's coach, scorer and spectator read none of
+  --               Hilton's fixture's session, held ball or audit row (each
+  --               exists); Westville's scorer, holding the token, cannot write
+  --               a ball to it: ball_event_insert refuses (AV-D4)
+  --   (no away)   a fixture with no away school: Hilton's coach reads it,
+  --               Westville's reads none, and nothing raises (in (rule))
+  --   (columns)   ball_event's columns are a fixed list: a medical, note or
+  --               PII column on the log fails here before it is widened
+  --   (text)      ball_event_read names away_school_id and away_team_code and
+  --               match_team( once; the writes and the pad's policies name no
+  --               away anchor; the chain the away branch rides is
+  --               security_invoker
+  --   (day)       bowler_day for Westville's quick, as his coach, is the sum
+  --               of his spells across both fixtures: seven, two matches
+  --
+  -- Falsified once, by putting db/02's host-only ball_event_read back in the
+  -- database and running this file with each assertion made to report
+  -- rather than raise: red at (rule) for every visiting reader (the coach,
+  -- scorer, spectator and pupil of each school at the other's fixture: 0
+  -- balls where the rule gives 48 or 60), (each way), (per boy) (no spell
+  -- of either quick at the other school's fixture), (pupils) (each wheel
+  -- short by the away innings: 18 of 36, 30 of 72), (text) and (day)
+  -- (bowler_day 7, the readable spells 4). (unchanged), (refused),
+  -- (guardians), (pad), (columns) stayed green, as they should: they hold
+  -- what db/97 must not change. db/71 (scope) went red first.
+  DECLARE
+    z       jsonb := _v97_stage();
+    V_FH    uuid := (z->>'fh')::uuid;
+    V_FW    uuid := (z->>'fw')::uuid;
+    V_FN    uuid := (z->>'fn')::uuid;
+    V_HQ    uuid := (z->>'h_quick')::uuid;
+    V_WQ    uuid := (z->>'w_quick')::uuid;
+    V_HB    uuid := (z->>'h_bat')::uuid;
+    V_WB    uuid := (z->>'w_bat')::uuid;
+    V_OWN   uuid := '88888888-0000-0000-0000-000000000022';
+    ZERO    uuid := '00000000-0000-0000-0000-000000000000';
+    k       text;
+    f       uuid;
+    rr      record;
+    n       int;
+    n2      int;
+    got     text;
+    q       text;
+  BEGIN
+    -- (rule), for every reader and every fixture
+    FOREACH k IN ARRAY ARRAY['hilcoach', 'hil2coach', 'hilscorer', 'hilspec', 'hilpupil', 'hilguardian',
+                             'wescoach', 'wesscorer', 'wesspec', 'wespupil', 'wesguardian', 'kcoach', 'kspec'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      FOREACH f IN ARRAY ARRAY[V_FH, V_FW, V_FN] LOOP
+        rr := _v97_rule(f);
+        SELECT count(*) INTO n FROM ball_event b WHERE b.match_id = f;
+        SELECT count(*) INTO n2 FROM ball_event_live b WHERE b.match_id = f;
+        PERFORM _assert(n = rr.either AND n2 = rr.either,
+          format('§75 (rule): as %s at %s, row security admits %s balls (%s live) where the rule gives %s (host %s, away %s, of %s)',
+                 k, CASE f WHEN V_FH THEN 'Hilton''s fixture' WHEN V_FW THEN 'Westville''s fixture' ELSE 'the unshared fixture' END,
+                 n, n2, rr.either, rr.host, rr.away, rr.total));
+      END LOOP;
+    END LOOP;
+
+    -- (each way)
+    PERFORM _as(V_OWN);
+    SELECT count(*) INTO n FROM bowler_over WHERE match_id IN (V_FH, V_FW) AND bowler_id IS NOT NULL;
+    PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = V_FH) = 48 AND (SELECT count(*) FROM ball_event WHERE match_id = V_FW) = 60
+                    AND n = 11,
+      format('§75 (each way): the owner''s count of the shared fixtures is not 48 and 60 balls and 11 overs by a boy on record (%s overs)', n));
+    FOREACH k IN ARRAY ARRAY['hilcoach', 'wescoach'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = V_FH) = 48
+                      AND (SELECT count(*) FROM ball_event WHERE match_id = V_FW) = 60
+                      AND (SELECT count(*) FROM bowler_over WHERE match_id IN (V_FH, V_FW) AND bowler_id IS NOT NULL) = n,
+        format('§75 (each way): the %s does not read every ball and over of both shared fixtures', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['wespupil', 'wesspec', 'wesscorer'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = V_FH) = 48,
+        format('§75 (each way): Westville''s %s does not read Hilton''s fixture whole', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['hilpupil', 'hilspec', 'hilscorer'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = V_FW) = 60,
+        format('§75 (each way): Hilton''s %s does not read Westville''s fixture whole', k));
+    END LOOP;
+
+    -- (unchanged): the host's readers at the host's fixture, the visitors at
+    -- their own, and every reader at the unshared one, read what db/02 gave
+    FOREACH k IN ARRAY ARRAY['hilcoach', 'hil2coach', 'hilscorer', 'hilspec', 'hilpupil', 'hilguardian', 'kcoach', 'kspec'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      FOREACH f IN ARRAY ARRAY[V_FH, V_FN] LOOP
+        PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = f) = (_v97_rule(f)).host,
+          format('§75 (unchanged): as %s, a Hilton-hosted fixture reads other than the host branch gave', k));
+      END LOOP;
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['wescoach', 'wesscorer', 'wesspec', 'wespupil', 'wesguardian'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = V_FW) = (_v97_rule(V_FW)).host,
+        format('§75 (unchanged): as %s, Westville''s own fixture reads other than the host branch gave', k));
+      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = V_FN) = 0,
+        format('§75 (unchanged): as %s, a Hilton fixture with no away school is read', k));
+    END LOOP;
+    -- ...and what a visitor gained is exactly the away branch
+    FOREACH k IN ARRAY ARRAY['wescoach', 'wespupil', 'wesspec'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      rr := _v97_rule(V_FH);
+      PERFORM _assert(rr.host = 0 AND rr.away = 48 AND rr.total = 48, format('§75 (unchanged): as %s at Hilton, host %s away %s', k, rr.host, rr.away));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['hilcoach', 'hilpupil', 'hilspec'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      rr := _v97_rule(V_FW);
+      PERFORM _assert(rr.host = 0 AND rr.away = 60 AND rr.total = 60, format('§75 (unchanged): as %s at Westville, host %s away %s', k, rr.host, rr.away));
+    END LOOP;
+
+    -- (per boy), at Hilton's fixture as Westville's coach
+    PERFORM _as((z->>'wescoach')::uuid);
+    SELECT string_agg(concat_ws(' ', s.overs, s.age_band, s.pace, s.max_overs_per_spell, s.max_overs_per_day,
+                                s.over_spell_limit, s.breach_recorded), '; ') INTO got
+      FROM _v97_spells(V_FH) s WHERE s.bowler_id = V_WQ;
+    PERFORM _assert(got = '3 U15 t 6 12 f f', format('§75 (per boy): Westville''s coach reads his quick at Hilton as %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v97_spells(V_FH) s WHERE s.bowler_id <> V_WQ),
+      '§75 (per boy): Westville''s coach''s bowling_spells at Hilton carries a Hilton boy');
+    PERFORM _assert((SELECT count(*) FROM bowler_spell s WHERE s.match_id = V_FH AND s.bowler_id = V_HQ AND s.overs = 2) = 1,
+      '§75 (per boy): Hilton''s quick''s spell is not in the log Westville''s coach reads (the spell is the match''s)');
+    PERFORM _assert(NOT app_can('player.workload.read', '11111111-1111-1111-1111-111111111111', '16XI', V_HQ, ZERO)
+                    AND app_can('player.workload.read', '22222222-2222-2222-2222-222222222222', '16XI', V_WQ, ZERO),
+      '§75 (per boy): the load gate does not answer Westville''s coach for his boy and against Hilton''s');
+    PERFORM _assert((SELECT count(*) FROM player WHERE id = V_HQ) = 0,
+      '§75 (per boy): Westville''s coach reads Hilton''s quick''s record');
+    -- ...and the mirror, at Westville's fixture as Hilton's coach
+    PERFORM _as((z->>'hilcoach')::uuid);
+    SELECT string_agg(concat_ws(' ', s.overs, s.age_band, s.pace, s.max_overs_per_spell, s.max_overs_per_day,
+                                s.over_spell_limit, s.breach_recorded), '; ') INTO got
+      FROM _v97_spells(V_FW) s WHERE s.bowler_id = V_HQ;
+    PERFORM _assert(got = '2 U15 t 6 12 f f', format('§75 (per boy): Hilton''s coach reads his quick at Westville as %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v97_spells(V_FW) s WHERE s.bowler_id <> V_HQ),
+      '§75 (per boy): Hilton''s coach''s bowling_spells at Westville carries a Westville boy');
+    PERFORM _assert((SELECT count(*) FROM bowler_spell s WHERE s.match_id = V_FW AND s.bowler_id = V_WQ AND s.overs = 4) = 1,
+      '§75 (per boy): Westville''s quick''s spell is not in the log Hilton''s coach reads');
+    PERFORM _assert(NOT app_can('player.workload.read', '22222222-2222-2222-2222-222222222222', '16XI', V_WQ, ZERO),
+      '§75 (per boy): Hilton''s coach holds the load gate for Westville''s quick');
+
+    -- (refused)
+    FOREACH k IN ARRAY ARRAY['kcoach', 'kspec'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id IN (V_FH, V_FW, V_FN)) = 0
+                      AND (SELECT count(*) FROM match WHERE id IN (V_FH, V_FW, V_FN)) = 0
+                      AND (SELECT count(*) FROM bowler_spell WHERE match_id IN (V_FH, V_FW)) = 0,
+        format('§75 (refused): the third school''s %s reads a fixture of the other two', k));
+    END LOOP;
+    PERFORM _as((z->>'hil2coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id IN (V_FH, V_FW)) = 0
+                    AND (_v97_rule(V_FH)).host = 0 AND (_v97_rule(V_FW)).either = 0,
+      '§75 (refused): Hilton''s coach of another side reads a 16XI fixture');
+
+    -- (pupils)
+    PERFORM _as((z->>'wespupil')::uuid);
+    PERFORM _assert(_v97_wheel(V_WB) = 36 AND _v97_wheel(V_HB) = 0,
+      format('§75 (pupils): Westville''s pupil reads his own wheel as %s balls (36) and Hilton''s boy''s as %s (none)', _v97_wheel(V_WB), _v97_wheel(V_HB)));
+    PERFORM _as((z->>'hilpupil')::uuid);
+    PERFORM _assert(_v97_wheel(V_HB) = 72 AND _v97_wheel(V_WB) = 0,
+      format('§75 (pupils): Hilton''s pupil reads his own wheel as %s balls (72) and Westville''s boy''s as %s (none)', _v97_wheel(V_HB), _v97_wheel(V_WB)));
+    -- ...and the coaches likewise, the other school's boy refused
+    PERFORM _as((z->>'wescoach')::uuid);
+    PERFORM _assert(_v97_wheel(V_WB) = 36 AND _v97_wheel(V_HB) = 0, '§75 (pupils): Westville''s coach draws a Hilton boy''s wheel');
+
+    -- (guardians)
+    FOREACH k IN ARRAY ARRAY['hilguardian', 'wesguardian'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM match WHERE id IN (V_FH, V_FW)) = 2
+                      AND (SELECT count(*) FROM ball_event WHERE match_id IN (V_FH, V_FW)) = 0
+                      AND _v97_wheel(V_HB) = 0 AND _v97_wheel(V_WB) = 0,
+        format('§75 (guardians): the %s reads other than both fixtures and no ball', k));
+    END LOOP;
+
+    -- (pad)
+    PERFORM _as(V_OWN);
+    PERFORM _assert(_v97_pad_rows(V_FH) = '1/1/1', format('§75 (pad): the stage''s pad rows are %s', _v97_pad_rows(V_FH)));
+    FOREACH k IN ARRAY ARRAY['wescoach', 'wesscorer', 'wesspec'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM scoring_session WHERE match_id = V_FH) = 0
+                      AND (SELECT count(*) FROM ball_event_quarantine WHERE match_id = V_FH) = 0
+                      AND (SELECT count(*) FROM scoring_audit WHERE match_id = V_FH) = 0,
+        format('§75 (pad): Westville''s %s reads Hilton''s session, held ball or audit', k));
+    END LOOP;
+    PERFORM _as((z->>'hilcoach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM scoring_session WHERE match_id = V_FH) = 1,
+      '§75 (pad): Hilton''s coach does not read his own fixture''s session (the control)');
+    PERFORM _as((z->>'wesscorer')::uuid);
+    PERFORM set_config('app.device_id', 'v97-away-pad', true);
+    got := NULL;
+    BEGIN
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value)
+      VALUES (V_FH, '11111111-1111-1111-1111-111111111111', 61, 0, 1, (z->>'wesscorer')::uuid, 'v97-away-pad',
+              'v97-away-write', 49, now(), 'ball', 'run', 4);
+      got := 'written';
+    EXCEPTION WHEN insufficient_privilege THEN
+      got := SQLERRM;
+    END;
+    PERFORM set_config('app.device_id', '', true);
+    PERFORM _assert(got LIKE '%row-level security%',
+      format('§75 (pad): Westville''s scorer, holding the token, writes to Hilton''s fixture: %s', got));
+
+    -- (columns)
+    SELECT string_agg(attname, ',' ORDER BY attnum) INTO got
+      FROM pg_attribute WHERE attrelid = 'ball_event'::regclass AND attnum > 0 AND NOT attisdropped;
+    PERFORM _assert(got = 'id,match_id,school_id,seq,epoch,innings,scorer_user_id,device_id,idempotency_key,client_seq,'
+                          'client_ts,server_ts,kind,ball_type,value,shot,contact,trajectory,seg,zone,striker_id,'
+                          'non_striker_id,bowler_id,dismissed_id,dismissal,payload,recovered,theta,radius,'
+                          'placement_source,placement_null,close_position,capture_profile,fingerprint',
+      format('§75 (columns): ball_event''s columns are now %s; a new column on the log is read by both schools', got));
+
+    -- (text)
+    SELECT pg_get_expr(p.polqual, p.polrelid) INTO q FROM pg_policy p
+     WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read' AND p.polcmd = 'r' AND p.polpermissive;
+    PERFORM _assert(position('away_school_id' IN q) > 0 AND position('away_team_code' IN q) > 0
+                    AND (length(q) - length(replace(q, 'match_team(', ''))) / length('match_team(') = 1,
+      format('§75 (text): ball_event_read reads %s', q));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_policy p
+                                 WHERE p.polrelid IN ('ball_event'::regclass, 'scoring_session'::regclass,
+                                                      'ball_event_quarantine'::regclass, 'scoring_audit'::regclass)
+                                   AND p.polname <> 'ball_event_read'
+                                   AND concat(pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid)) LIKE '%away\_%'),
+      '§75 (text): a write or a pad table''s policy names the away side');
+    PERFORM _assert((SELECT bool_and(coalesce(c.reloptions, '{}') @> ARRAY['security_invoker=true']) AND count(*) = 5
+                       FROM pg_class c WHERE c.oid IN ('ball_event_live'::regclass, 'bowler_over'::regclass, 'bowler_spell'::regclass,
+                                                       'ball_event_career'::regclass, 'match_live_score'::regclass)),
+      '§75 (text): a view the away branch rides is not security_invoker');
+
+    -- (day)
+    PERFORM _as((z->>'wescoach')::uuid);
+    SELECT concat_ws(' ', b.overs_today, b.matches_today) INTO got FROM bowler_day(sa_today(), '16XI') b WHERE b.player_id = V_WQ;
+    SELECT sum(s.overs)::int INTO n FROM (SELECT * FROM _v97_spells(V_FH) UNION ALL SELECT * FROM _v97_spells(V_FW)) s WHERE s.bowler_id = V_WQ;
+    PERFORM _assert(got = '7 2' AND n = 7,
+      format('§75 (day): bowler_day reads Westville''s quick as %s; his spells across both fixtures sum to %s', got, n));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 75
   -- ┌── db/103 (section 80) ──────────────────────────────────────────
   -- ── 80. The plan's byline: who wrote the side's plan (db/103) ──
   -- SCRBRD-138 phase B's "Plan from …" and CSA SG-9: a pupil knows which
