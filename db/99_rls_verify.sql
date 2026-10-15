@@ -5824,6 +5824,178 @@ CREATE OR REPLACE FUNCTION _v108_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/108 (section 85) ─────────────────────────────────────────────
 
+-- ┌── db/109 (section 86). Account lifecycle slice 3: a child's links, and the reason for an ending
+-- Written as the owner, the way the system's own definers write, each the
+-- one thing an assertion needs.
+--
+-- The stage: three Hilton boys (Boy, 15, U15A; Two, 14, U14A; Old, 19 and
+-- still at school, 1XI), the office, the director of sport, a coach, three
+-- guardians (Mum and Dad of Boy; Gran and Dad of Two; Aunt of Old) and
+-- Westville's office. Mum's links carry everything a revocation takes with
+-- it: a public-name "yes" and a health-monitoring "yes" given ten days ago
+-- through her link, and a seat she asked for on Dad's lift tomorrow. Boy has
+-- an emergency contact. The seed's DSO (N Dube) is the DSO, and an open
+-- concern names Boy.
+CREATE OR REPLACE FUNCTION _v109_link(p_person uuid, p_player uuid) RETURNS uuid AS $$
+DECLARE a uuid; l uuid;
+BEGIN
+  SELECT r.id INTO a FROM role_assignment r WHERE r.person_id = p_person AND r.role = 'guardian' AND r.active LIMIT 1;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now() - interval '20 days',
+          'granted', 'popia-2026-01', now() - interval '20 days', '88888888-0000-0000-0000-00000000000c', current_date - 30)
+  RETURNING id INTO l;
+  RETURN l;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v109_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  ids jsonb; v_boy uuid; v_two uuid; v_old uuid; l uuid; a uuid; v_m uuid; v_d uuid; v_o uuid; v_s uuid; v_c uuid; v_p uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15A', 'Verify OneOhNine Boy', 1091, 'batter', make_date(extract(year FROM sa_today())::int - 15, 3, 1))
+  RETURNING id INTO v_boy;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U14A', 'Verify OneOhNine Two', 1092, 'bowler', make_date(extract(year FROM sa_today())::int - 14, 3, 1))
+  RETURNING id INTO v_two;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneOhNine Old', 1093, 'batter', make_date(extract(year FROM sa_today())::int - 19, 3, 1))
+  RETURNING id INTO v_old;
+  ids := _v71_people('v109', ARRAY[
+    ARRAY['office',    'schooladmin',     HIL::text, '',     ''],
+    ARRAY['dos',       'directorofsport', HIL::text, '',     ''],
+    ARRAY['coach',     'coach',           HIL::text, 'U15A', ''],
+    ARRAY['mum',       'guardian',        HIL::text, '',     ''],
+    ARRAY['dad',       'guardian',        HIL::text, '',     ''],
+    ARRAY['gran',      'guardian',        HIL::text, '',     ''],
+    ARRAY['aunt',      'guardian',        HIL::text, '',     ''],
+    ARRAY['uncle',     'guardian',        HIL::text, '',     ''],
+    ARRAY['wesoffice', 'schooladmin',     WES::text, '',     '']]);
+  -- A platform administrator: one platform-wide assignment, no school.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v109.platform@example.invalid', 'V109 Platform', 'platformadmin') RETURNING id INTO v_p;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'platformadmin', NULL);
+  ids := ids || jsonb_build_object('platform', v_p);
+  -- An owner's key: a platform-wide superadmin, guardian.link.manage everywhere.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v109.owner@example.invalid', 'V109 Owner', 'superadmin') RETURNING id INTO v_p;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'superadmin', NULL);
+  ids := ids || jsonb_build_object('owner', v_p);
+  ids := ids || jsonb_build_object('boy', v_boy, 'two', v_two, 'old', v_old,
+    'l_mum',  _v109_link((ids->>'mum')::uuid,  v_boy),
+    'l_dad',  _v109_link((ids->>'dad')::uuid,  v_boy),
+    'l_gran', _v109_link((ids->>'gran')::uuid, v_two),
+    'l_dad2', _v109_link((ids->>'dad')::uuid,  v_two),
+    'l_old',  _v109_link((ids->>'aunt')::uuid, v_old),
+    'l_uncle', _v109_link((ids->>'uncle')::uuid, v_two));
+  l := (ids->>'l_mum')::uuid;
+  SELECT g.assignment_id INTO a FROM assignment_subject g WHERE g.id = l;
+  -- What goes with her link (D14).
+  INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+  VALUES (v_boy, 'guardian', a, l, 'popia-2026-01', current_date - 10, OFFICE);
+  INSERT INTO health_monitoring_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+  VALUES (v_boy, 'guardian', a, l, 'v109', current_date - 10, OFFICE);
+  INSERT INTO emergency_contact (player_id, priority, name, relationship, phone)
+  VALUES (v_boy, 1, 'V109 Mum', 'mother', '+27 82 109 0001') RETURNING id INTO v_c;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', 'Verify OneOhNine XI', ((current_date + 3)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO v_m;
+  INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
+                                       insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
+  VALUES ((ids->>'dad')::uuid, HIL, 'Silver hatchback', 'V109 GP', 3, true, true, true, true, true, 1, current_date + 300)
+  RETURNING id INTO v_d;
+  INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at,
+                          fixture_starts_at)
+  VALUES (HIL, v_m, 'U15A', 'out', (ids->>'dad')::uuid, v_d, 3, 'school',
+          ((current_date + 3)::timestamp + time '07:30') AT TIME ZONE 'Africa/Johannesburg', now())
+  RETURNING id INTO v_o;
+  INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id,
+                         guardian_link_id, requested_by, state)
+  VALUES (v_o, HIL, v_m, 'U15A', 'out', v_boy, 'guardian', a, l, (ids->>'mum')::uuid, 'requested')
+  RETURNING id INTO v_s;
+  INSERT INTO safeguarding_concern (reference, tenant_id, school_id, about_kind, subject_player_id,
+                                    nature, certainty, account)
+  VALUES ('SG-V109-0109', HIL, HIL, 'child', v_boy, '{neglect}', 'suspicion', 'A concern raised for db/99 section 86 only.')
+  RETURNING id INTO v_c;
+  RETURN ids || jsonb_build_object('seat', v_s, 'concern', v_c);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- guardian_link_revoke() as the CALLER, its refusal as text ('ok' when it
+-- ended the link), or the SQLSTATE of whatever raised instead of answering.
+-- Not a definer.
+CREATE OR REPLACE FUNCTION _v109_revoke(p_link uuid, p_kind text, p_reason text) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  SELECT coalesce(o.reason, 'ok') INTO v FROM guardian_link_revoke(p_link, p_kind, p_reason) o;
+  RETURN v;
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+
+-- The ending row of one link, whole, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_ending(p_link uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(e) FROM guardian_link_ending e WHERE e.link_id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- One link, whole, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_link_row(p_link uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(g) FROM assignment_subject g WHERE g.id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A notice, whole, past RLS.
+CREATE OR REPLACE FUNCTION _v109_notice(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(n) FROM notification n WHERE n.id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Health consent, the one gate every health read asks (db/60), past RLS.
+CREATE OR REPLACE FUNCTION _v109_health(p_player uuid) RETURNS boolean AS $$
+  SELECT health_consent_live(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The public-name facts (db/47, db/62), as the public read path asks them.
+CREATE OR REPLACE FUNCTION _v109_facts(p_player uuid) RETURNS jsonb AS $$
+  SELECT public_name_facts(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy leaves the school system today (his open membership closes), or
+-- comes back (a new one opens), and db/62's deferred triggers are fired.
+CREATE OR REPLACE FUNCTION _v109_leave(p_player uuid) RETURNS void AS $$
+BEGIN
+  UPDATE team_membership SET left_on = current_date WHERE player_id = p_player AND left_on IS NULL;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_return(p_player uuid) RETURNS void AS $$
+BEGIN
+  INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
+  SELECT p.id, p.school_id, 'cricket', p.team_code, current_date, 'moved' FROM player p WHERE p.id = p_player;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How many contacts a boy has, past RLS (D14: they stay).
+CREATE OR REPLACE FUNCTION _v109_contacts(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM emergency_contact WHERE player_id = p_player AND active
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The access log's child_links reads of one child, past RLS.
+CREATE OR REPLACE FUNCTION _v109_logged(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM access_log WHERE resource = 'child_links' AND p_player = ANY (record_ids)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Disable an account as the owner would (Q13), and its guardian role's id.
+CREATE OR REPLACE FUNCTION _v109_disable(p_user uuid) RETURNS void AS $$
+  UPDATE app_user SET active = false WHERE id = p_user
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_role(p_user uuid) RETURNS uuid AS $$
+  SELECT id FROM role_assignment WHERE person_id = p_user AND role = 'guardian' AND active LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A second role for a person (and its end), as the office's grant writes one.
+CREATE OR REPLACE FUNCTION _v109_grant(p_user uuid, p_role text) RETURNS uuid AS $$
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES (p_user, p_role, '11111111-1111-1111-1111-111111111111') RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_ungrant(p_id uuid) RETURNS void AS $$
+  UPDATE role_assignment SET active = false WHERE id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/109 (section 86) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -23279,6 +23451,344 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 85
+  -- ┌── section 86: a child's links, and the reason for an ending (db/109) ──
+  -- Account lifecycle slice 3 (ACCOUNT_LIFECYCLE.md §4, D11–D14, Q8, Q10,
+  -- Q13). The API half is tools/smoke-family-links.mjs (child_links and the
+  -- two revoke routes).
+  --
+  -- What each label holds:
+  --   (q13)        a disabled parent still counts as a verified guardian
+  --   (before)     Mum's consents count, his health consent is live, her
+  --                seat stands, and no ending row exists for any link yet
+  --   (refused)    a stranger, a coach, the director of sport (no
+  --                guardian.link.manage), the parent herself and Westville's
+  --                office are not_permitted; nothing moves
+  --   (own)        nobody ends a link of their own (G1)
+  --   (words)      no_such_link, kind_required, kind_not_allowed for an
+  --                automatic kind, reason_required, reason_too_long; nothing
+  --                moves
+  --   (revoke)     the office ends Mum's link (custody): revoked, dated today,
+  --                no reason on the link (D13), her guardian role ended with
+  --                her last link, one row with the kind, the reason and the
+  --                office's name
+  --   (notice)     Mum reads one 'system' notice naming the school and the
+  --                date, not the child, not the reason; Dad does not; a
+  --                forged notice reaches her through no door
+  --   (readers)    the office and the director of sport read the kind and the
+  --                reason; Mum, the coach, the DSO and Westville's office read
+  --                no row; the DSO reads none of the child's links either (D12)
+  --   (platform)   the platform administrator reads no row with no support
+  --                session, nor inside one at Westville; inside one at Hilton
+  --                it reads the kind and the reason; ended, nothing again
+  --                (Kameel, 15 October 2026)
+  --   (owner)      the owner's key cannot end a link with no support session,
+  --                and can inside a live one at Hilton (the same day's rule)
+  --   (dso)        inside the open concern the DSO reads the kind and the date
+  --                and never the reason (Q10)
+  --   (d14)        his public-name consent through Mum's link is no longer
+  --                competent and none is (he is "Batter": db/47, unchanged);
+  --                the health consent lapsed; her seat is void; the contact
+  --                stays
+  --   (again)      no_open_link; last_verified_link for Dad, now his only one
+  --   (role)       ending Gran's guardian role (db/77) writes 'role_ended'
+  --                rows for the link it revoked, with the role's reason
+  --   (left)       Two leaves at 14: Dad keeps his link until Two's birthday,
+  --                one 'majority' row, no reason, no actor (D11); nothing was
+  --                written before he left (Q8); he comes back and the row goes
+  --   (adult)      Old leaves at 19: Aunt's link ends today, 'left_school'
+  --   (writes)     the application writes no ending row, and cannot call
+  --                db/08's door without a kind or a reason
+  --   (doors)      the functions' shape and grants, the policies
+  --
+  -- Falsified seven ways, each red for the right reason: the read policy's
+  -- DSO cut removed (red at (readers): the DSO reads the boy's ending row);
+  -- the guardian admitted to her own row (red at (readers): Mum reads it);
+  -- db/08's door given back to scrbrd_app (red at (writes)); the notice's
+  -- door answering true for any notice (red at (notice): the forged notice
+  -- reaches Mum); db/109's trigger on role_assignment_ending dropped (red at
+  -- (role): Gran's link has no row); the RESTRICTIVE platform cut dropped (red
+  -- at (platform): read with no support session); the door's platform
+  -- refusal taken out (red at (owner): the owner's key ends a link with no
+  -- support session).
+  DECLARE
+    y       jsonb := _v109_stage();
+    U_DSO   uuid := '88888888-0000-0000-0000-000000000057';
+    B       uuid := (y->>'boy')::uuid;
+    T       uuid := (y->>'two')::uuid;
+    O       uuid := (y->>'old')::uuid;
+    L_MUM   uuid := (y->>'l_mum')::uuid;
+    L_DAD   uuid := (y->>'l_dad')::uuid;
+    L_GRAN  uuid := (y->>'l_gran')::uuid;
+    L_DAD2  uuid := (y->>'l_dad2')::uuid;
+    L_OLD   uuid := (y->>'l_old')::uuid;
+    WHY     text := 'V109: a custody order of the High Court';
+    k       text;
+    got     text;
+    n       integer;
+    e       jsonb;
+    v_j     jsonb;
+    v_extra uuid;
+    v_stray uuid;
+    v_birth date;
+    v_ok    boolean;
+    v_sess  uuid;
+  BEGIN
+    -- (q13)
+    PERFORM _v109_disable((y->>'dad')::uuid);
+    PERFORM _as((y->>'office')::uuid);
+    PERFORM _assert((SELECT live_links FROM player_guardian_status WHERE player_id = B) = 2,
+      '§86 (q13): a disabled parent no longer counts as a verified guardian');
+
+    -- (before)
+    PERFORM _assert((_v109_facts(B) -> 'consents') @> '[{"by": "guardian", "competent": true}]'::jsonb,
+      format('§86 (before): Mum''s public-name consent does not count, so (d14) proves nothing: %s', _v109_facts(B)));
+    PERFORM _assert(_v109_health(B), '§86 (before): his health consent is not live, so (d14) proves nothing');
+    PERFORM _assert((_v70_seat((y->>'seat')::uuid)).state = 'requested', '§86 (before): Mum''s seat is not live');
+    PERFORM _assert(_v109_ending(L_MUM) IS NULL AND _v109_ending(L_DAD2) IS NULL AND _v109_ending(L_OLD) IS NULL,
+      '§86 (before): an ending row exists before anything ended');
+
+    -- (refused)
+    PERFORM set_config('app.user_id', '', true);
+    got := _v109_revoke(L_MUM, 'custody', WHY);
+    PERFORM _assert(got = 'not_signed_in', format('§86 (refused): nobody signed in was told %s', got));
+    FOREACH k IN ARRAY ARRAY['coach', 'dos', 'mum', 'wesoffice'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v109_revoke(L_MUM, 'custody', WHY);
+      PERFORM _assert(got = 'not_permitted', format('§86 (refused): the %s was told %s', k, got));
+    END LOOP;
+    PERFORM _assert((_v109_link_row(L_MUM))->>'verification_state' = 'verified' AND _v109_ending(L_MUM) IS NULL,
+      '§86 (refused): a refused revoke moved the link, or wrote a row');
+
+    -- (own)
+    v_extra := _v109_grant((y->>'aunt')::uuid, 'schooladmin');
+    PERFORM _as((y->>'aunt')::uuid);
+    got := _v109_revoke(L_OLD, 'office', WHY);
+    PERFORM _assert(got = 'own_link', format('§86 (own): the office ending its own link was told %s', got));
+    PERFORM _v109_ungrant(v_extra);
+
+    -- (words)
+    PERFORM _as((y->>'office')::uuid);
+    got := _v109_revoke(gen_random_uuid(), 'custody', WHY);
+    PERFORM _assert(got = 'no_such_link', format('§86 (words): a link that is not there answered %s', got));
+    got := _v109_revoke(NULL, 'custody', WHY);
+    PERFORM _assert(got = 'no_such_link', format('§86 (words): no link answered %s', got));
+    got := _v109_revoke(L_MUM, NULL, WHY);
+    PERFORM _assert(got = 'kind_required', format('§86 (words): no kind answered %s', got));
+    FOREACH k IN ARRAY ARRAY['majority', 'left_school', 'role_ended', 'whim'] LOOP
+      got := _v109_revoke(L_MUM, k, WHY);
+      PERFORM _assert(got = 'kind_not_allowed', format('§86 (words): the kind %s answered %s', k, got));
+    END LOOP;
+    got := _v109_revoke(L_MUM, 'custody', '   too short   ');
+    PERFORM _assert(got = 'reason_required', format('§86 (words): nine characters, padded, answered %s', got));
+    got := _v109_revoke(L_MUM, 'custody', repeat('x', 2001));
+    PERFORM _assert(got = 'reason_too_long', format('§86 (words): 2,001 characters answered %s', got));
+    PERFORM _assert((_v109_link_row(L_MUM))->>'verification_state' = 'verified' AND _v109_ending(L_MUM) IS NULL,
+      '§86 (words): a refused revoke moved the link, or wrote a row');
+
+    -- (revoke)
+    got := _v109_revoke(L_MUM, 'custody', '  ' || WHY || '  ');
+    PERFORM _assert(got = 'ok', format('§86 (revoke): the office was told %s', got));
+    v_j := _v109_link_row(L_MUM);
+    PERFORM _assert(v_j->>'verification_state' = 'revoked' AND (v_j->>'valid_until')::date = current_date
+                    AND v_j->>'verified_note' IS NULL,
+      format('§86 (revoke): the link reads %s', v_j));
+    PERFORM _assert(position('High Court' IN v_j::text) = 0, '§86 (revoke): the reason is on the link (D13)');
+    PERFORM _assert(_v109_role((y->>'mum')::uuid) IS NULL, '§86 (revoke): Mum''s guardian role outlived her last link');
+    e := _v109_ending(L_MUM);
+    PERFORM _assert(e->>'kind' = 'custody' AND e->>'reason' = WHY AND (e->>'ended_by')::uuid = (y->>'office')::uuid
+                    AND (e->>'ends_on')::date = current_date AND (e->>'guardian_id')::uuid = (y->>'mum')::uuid
+                    AND (e->>'player_id')::uuid = B AND e->>'notice_id' IS NOT NULL,
+      format('§86 (revoke): the ending row reads %s', e));
+
+    -- (notice)
+    v_j := _v109_notice((e->>'notice_id')::uuid);
+    PERFORM _assert(v_j->>'kind' = 'system' AND (v_j->>'recipient_id')::uuid = (y->>'mum')::uuid
+                    AND v_j->>'subject_person_id' IS NULL AND v_j->>'urgency' = 'medium'
+                    AND v_j->>'body' = 'Your link to a child at Hilton College ended on '
+                                       || to_char(current_date, 'FMDD FMMonth YYYY')
+                                       || '. The school office can say why; the platform does not.',
+      format('§86 (notice): the notice reads %s', v_j));
+    PERFORM _assert(position('OneOhNine' IN v_j::text) = 0 AND position('High Court' IN v_j::text) = 0,
+      '§86 (notice): the notice names the child or gives the reason');
+    PERFORM _as((y->>'mum')::uuid);
+    PERFORM _assert((SELECT count(*) FROM notification n WHERE n.id = (e->>'notice_id')::uuid) = 1,
+      '§86 (notice): Mum, with no role left at the school, does not read her notice');
+    v_stray := _v90_stray((y->>'mum')::uuid);
+    PERFORM _assert((SELECT count(*) FROM notification n WHERE n.id = v_stray) = 0,
+      '§86 (notice): a system notice no ending row admits reaches Mum');
+    PERFORM _as((y->>'dad')::uuid);
+    PERFORM _assert((SELECT count(*) FROM notification n WHERE n.id = (e->>'notice_id')::uuid) = 0,
+      '§86 (notice): Dad reads the notice written to Mum');
+
+    -- (readers)
+    FOREACH k IN ARRAY ARRAY['office', 'dos'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT x.kind || ':' || x.reason INTO got FROM guardian_link_ending x WHERE x.link_id = L_MUM;
+      PERFORM _assert(got = 'custody:' || WHY, format('§86 (readers): the %s reads %s', k, coalesce(got, 'no row')));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['mum', 'dad', 'coach', 'wesoffice', 'dso'] LOOP
+      PERFORM _as(CASE k WHEN 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
+      PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+        format('§86 (readers): the %s reads an ending row of the boy''s', k));
+    END LOOP;
+    PERFORM _as(U_DSO);
+    PERFORM _assert((SELECT count(*) FROM assignment_subject g WHERE g.player_id = B) = 0,
+      '§86 (readers): the DSO reads the boy''s links by standing (D12)');
+
+    -- (platform) Kameel, 15 October 2026: never platform-wide; inside a live
+    -- support session at the boy's school, and only there.
+    PERFORM _as((y->>'platform')::uuid);
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): the platform administrator reads the boy''s ending row with no support session');
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('22222222-2222-2222-2222-222222222222', 'schooladmin', 'V109: Westville asked for help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (platform): a support session at Westville could not be begun');
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): inside a session at Westville, the platform administrator reads Hilton''s ending row');
+    PERFORM support_access_end(v_sess);
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('11111111-1111-1111-1111-111111111111', 'schooladmin', 'V109: Hilton asked for help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (platform): a support session at Hilton could not be begun');
+    SELECT x.kind || ':' || x.reason INTO got FROM guardian_link_ending x WHERE x.link_id = L_MUM;
+    PERFORM _assert(got = 'custody:' || WHY,
+      format('§86 (platform): inside a session at Hilton, the platform administrator reads %s', coalesce(got, 'no row')));
+    PERFORM support_access_end(v_sess);
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): the session ended and the platform administrator still reads the row');
+
+    -- (owner) No platform role gains school authority here: the owner's key
+    -- ends a family's link only inside a live support session at that school.
+    PERFORM _as((y->>'owner')::uuid);
+    got := _v109_revoke((y->>'l_uncle')::uuid, 'office', 'V109: the school asked the platform to end it');
+    PERFORM _assert(got = 'not_permitted', format('§86 (owner): the owner''s key with no support session was told %s', got));
+    PERFORM _assert((_v109_link_row((y->>'l_uncle')::uuid))->>'verification_state' = 'verified'
+                    AND _v109_ending((y->>'l_uncle')::uuid) IS NULL,
+      '§86 (owner): a refused revoke by the owner''s key moved the link, or wrote a row');
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('11111111-1111-1111-1111-111111111111', 'schooladmin', 'V109: Hilton asked the platform to help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (owner): the owner''s key could not begin a support session at Hilton');
+    got := _v109_revoke((y->>'l_uncle')::uuid, 'office', 'V109: the school asked the platform to end it');
+    PERFORM _assert(got = 'ok', format('§86 (owner): inside a session at Hilton the owner''s key was told %s', got));
+    PERFORM _assert((_v109_ending((y->>'l_uncle')::uuid))->>'kind' = 'office'
+                    AND ((_v109_ending((y->>'l_uncle')::uuid))->>'ended_by')::uuid = (y->>'owner')::uuid,
+      format('§86 (owner): the ending reads %s', _v109_ending((y->>'l_uncle')::uuid)));
+    PERFORM support_access_end(v_sess);
+
+    -- (dso)
+    PERFORM _as(U_DSO);
+    v_j := safeguarding_family((y->>'concern')::uuid);
+    PERFORM _assert(v_j -> 'ended' @> jsonb_build_array(jsonb_build_object('kind', 'custody', 'endsOn', current_date,
+                                                                          'linkId', L_MUM)),
+      format('§86 (dso): inside the concern the DSO does not read how Mum''s link ended: %s', v_j -> 'ended'));
+    PERFORM _assert(position('High Court' IN v_j::text) = 0 AND NOT (v_j -> 'ended' -> 0 ? 'reason'),
+      '§86 (dso): inside the concern the DSO reads the office''s reason (Q10)');
+
+    -- (d14)
+    PERFORM _assert(NOT ((_v109_facts(B) -> 'consents') @> '[{"competent": true}]'::jsonb),
+      format('§86 (d14): a consent through a revoked link still counts, so he is named: %s', _v109_facts(B)));
+    PERFORM _assert((_v109_facts(B) -> 'consents') @> '[{"by": "guardian", "competent": false}]'::jsonb,
+      format('§86 (d14): Mum''s consent is gone from the facts rather than read as incompetent: %s', _v109_facts(B)));
+    PERFORM _assert(NOT _v109_health(B), '§86 (d14): his health consent through a revoked link is still live');
+    PERFORM _v70_fire();
+    PERFORM _assert((_v70_seat((y->>'seat')::uuid)).state = 'void',
+      format('§86 (d14): Mum''s seat reads %s, not void', (_v70_seat((y->>'seat')::uuid)).state));
+    PERFORM _assert(_v109_contacts(B) = 1, '§86 (d14): the emergency contact went with the link');
+
+    -- (again)
+    PERFORM _as((y->>'office')::uuid);
+    got := _v109_revoke(L_MUM, 'custody', WHY);
+    PERFORM _assert(got = 'no_open_link', format('§86 (again): an ended link answered %s', got));
+    got := _v109_revoke(L_DAD, 'custody', WHY);
+    PERFORM _assert(got = 'last_verified_link', format('§86 (again): his only verified link answered %s', got));
+    got := _v109_revoke(L_DAD, NULL, NULL);
+    PERFORM _assert(got = 'last_verified_link', format('§86 (again): the last link, asked with nothing, answered %s', got));
+    PERFORM _assert((_v109_link_row(L_DAD))->>'verification_state' = 'verified' AND _v109_ending(L_DAD) IS NULL,
+      '§86 (again): his last link moved');
+
+    -- (role)
+    SELECT r.ok::text || coalesce(r.reason, '') INTO got
+      FROM role_assignment_end(_v109_role((y->>'gran')::uuid), 'V109: Gran stepped back from the family') r;
+    PERFORM _assert(got = 'true', format('§86 (role): ending Gran''s role answered %s', got));
+    e := _v109_ending(L_GRAN);
+    PERFORM _assert(e->>'kind' = 'role_ended' AND e->>'reason' = 'V109: Gran stepped back from the family'
+                    AND (e->>'ended_by')::uuid = (y->>'office')::uuid AND e->>'notice_id' IS NOT NULL
+                    AND (e->>'ends_on')::date = current_date,
+      format('§86 (role): Gran''s link reads %s', e));
+    PERFORM _assert(_v109_ending(L_DAD2) IS NULL, '§86 (role): ending Gran''s role wrote a row for Dad''s link');
+
+    -- (left)
+    PERFORM _assert(_v109_ending(L_DAD2) IS NULL AND (_v109_link_row(L_DAD2))->>'valid_until' IS NULL,
+      '§86 (left): Dad''s link to Two ends, or has a row, before Two left (Q8)');
+    PERFORM _v109_leave(T);
+    v_birth := majority_on((SELECT p.born FROM player p WHERE p.id = T));
+    e := _v109_ending(L_DAD2);
+    PERFORM _assert(e->>'kind' = 'majority' AND (e->>'ends_on')::date = v_birth
+                    AND e->>'reason' IS NULL AND e->>'ended_by' IS NULL AND e->>'notice_id' IS NULL,
+      format('§86 (left): Two left at 14 and Dad''s link reads %s', e));
+    PERFORM _assert((_v109_link_row(L_DAD2))->>'verification_state' = 'verified'
+                    AND ((_v109_link_row(L_DAD2))->>'valid_until')::date = v_birth,
+      '§86 (left): Dad does not keep his link until Two''s birthday (D11)');
+    PERFORM _as((y->>'office')::uuid);
+    PERFORM _assert((SELECT x.kind FROM guardian_link_ending x WHERE x.link_id = L_DAD2) = 'majority',
+      '§86 (left): the office does not read how Dad''s link will end');
+    PERFORM _v109_return(T);
+    PERFORM _assert(_v109_ending(L_DAD2) IS NULL AND (_v109_link_row(L_DAD2))->>'valid_until' IS NULL,
+      format('§86 (left): Two came back and Dad''s link reads %s, its row %s', _v109_link_row(L_DAD2), _v109_ending(L_DAD2)));
+
+    -- (adult)
+    PERFORM _v109_leave(O);
+    e := _v109_ending(L_OLD);
+    PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = current_date
+                    AND e->>'reason' IS NULL AND e->>'ended_by' IS NULL,
+      format('§86 (adult): Old left at 19 and Aunt''s link reads %s', e));
+
+    -- (writes)
+    PERFORM _as((y->>'office')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO guardian_link_ending (link_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on)
+      VALUES (L_DAD, B, '11111111-1111-1111-1111-111111111111', (y->>'dad')::uuid, 'office', WHY, (y->>'office')::uuid, current_date);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§86 (writes): the application wrote an ending row');
+    got := 'written';
+    BEGIN
+      UPDATE guardian_link_ending SET reason = 'V109: rewritten after the fact' WHERE link_id = L_MUM;
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§86 (writes): the application rewrote an ending row');
+    got := 'called';
+    BEGIN
+      PERFORM guardian_link_revoke((y->>'dad')::uuid, T, 'no kind, no reason'::text);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§86 (writes): db/08''s door without a kind or a reason is callable');
+
+    -- (doors)
+    FOREACH k IN ARRAY ARRAY['guardian_link_revoke(uuid,text,text)', 'guardian_link_ending_notice_is_mine(uuid)',
+                             'safeguarding_family(uuid)'] LOOP
+      PERFORM _assert((SELECT prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                         FROM pg_proc WHERE oid = to_regprocedure(k))
+                      AND has_function_privilege('scrbrd_app', to_regprocedure(k), 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                       WHERE p.oid = to_regprocedure(k) AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+        format('§86 (doors): %s is not a SECURITY DEFINER with a pinned path, the application''s alone', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['role_assignment_ending_links()', 'guardian_links_close_on_leaving(uuid,date)',
+                             'guardian_links_reopen_at_school(uuid)', 'guardian_link_revoke(uuid,uuid,text)'] LOOP
+      PERFORM _assert(NOT has_function_privilege('scrbrd_app', to_regprocedure(k), 'EXECUTE'),
+        format('§86 (doors): the application may call %s', k));
+    END LOOP;
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'notification'
+                               AND policyname = 'notification_link_ended' AND permissive = 'PERMISSIVE' AND cmd = 'SELECT')
+                    AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'guardian_link_ending'
+                                   AND policyname = 'pad_scope_select' AND permissive = 'RESTRICTIVE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                                       AND tablename = 'guardian_link_ending' AND cmd <> 'SELECT'),
+      '§86 (doors): the notice''s door, the pad cut, or a write policy on guardian_link_ending is wrong');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 86
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
