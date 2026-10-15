@@ -21341,7 +21341,7 @@ $v49$;
   --              hers, and the claiming physio's boy off hers; nobody without
   --              medical.write gets a row, nor the owner's key, nor
   --              Westville's physio a Hilton row
-  --   (support)  a support session as the physio, and as the office: no
+  --   (support)  a support session as the physio, and as the sports office: no
   --              review row, no worklist, both doors not_under_support; the
   --              injury rows themselves as today (Q7)
   --   (sg12)     a severe record writes the DSO one safeguarding notice that
@@ -21675,10 +21675,12 @@ $v49$;
     PERFORM _assert(n = 0, format('§88 (worklist): Westville''s physio reads %s of Hilton''s worklist', n));
 
     -- ── (support) ──
-    FOREACH k IN ARRAY ARRAY['medical', 'schooladmin'] LOOP
+    -- sportsadmin, not schooladmin: earlier sections leave the platform's own
+    -- schooladmin session at Hilton live in this transaction (already_live).
+    FOREACH k IN ARRAY ARRAY['medical', 'sportsadmin'] LOOP
       PERFORM _as(U_PLAT);
-      SELECT r.ok, r.id INTO v_ok, v_sid FROM support_access_begin(V_HIL, k, 'v111: the injuries screen will not load') r;
-      PERFORM _assert(v_ok, format('§88 (support): a support session as %s did not begin', k));
+      SELECT r.ok, r.id, r.reason INTO v_ok, v_sid, v_reason FROM support_access_begin(V_HIL, k, 'v111: the injuries screen will not load') r;
+      PERFORM _assert(v_ok, format('§88 (support): a support session as %s did not begin (%s)', k, v_reason));
       SELECT count(*)::int INTO n FROM injury_review;
       SELECT count(*)::int INTO c_rows FROM injury_review_masked;
       SELECT count(*)::int INTO c_phase FROM injury_masked WHERE player_id = BOY;
