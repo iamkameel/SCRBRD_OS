@@ -275,7 +275,7 @@ function InjuryView({ role }) {
               )}
 
               <div style={{marginTop:"12px"}}>
-                <InjuryHistory injuryId={sel.id} role={role} nonce={nonce} physio={physio} recordingNote={sel.notes}/>
+                <InjuryHistory injuryId={sel.id} role={role} nonce={nonce} physio={physio} recordingNote={sel.notes} recordedAt={sel.recordedAt}/>
               </div>
             </Card>
           );
