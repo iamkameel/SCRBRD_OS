@@ -359,20 +359,17 @@ export function ReviewForm({ injury, onSaved, onCancel }) {
  * `physio` is true for a medical.write holder: she alone sees her clock (the
  * next review date) and calls a look a review. `recordingNote` is the injury's
  * own note, shown on the recording (db/111 writes the first row without one),
- * where the reader's tier returned it. `recordedAt` is when the injury row was
- * made: the oldest review is the recording only when it was made then, within seconds (the
- * seed's injuries, and any older than the door, have no recording row, and a
- * first look must not be called one).
+ * where the reader's tier returned it. The server marks the recording itself
+ * (`is_recording`): an injury older than the door has no such row, and a first
+ * look on it is not called a recording.
  */
-export function InjuryHistory({ injuryId, role, nonce = 0, physio = false, recordingNote = null, recordedAt = null, testid = "injury-history" }) {
+export function InjuryHistory({ injuryId, role, nonce = 0, physio = false, recordingNote = null, testid = "injury-history" }) {
   const s = useStyles();
   const read = useLive("injury_reviews", role, nonce, { injuryId });
   const said = readState(read, { what: "the history" });
   const answered = said.state === "ok" || said.state === "empty";
   // The server orders oldest first; people read newest first.
   const rows = [...read.rows].reverse();
-  const oldest = rows[rows.length - 1];
-  const recordingId = oldest && recordedAt && Math.abs(new Date(oldest.at).getTime() - new Date(recordedAt).getTime()) < 5000 ? oldest.id : null;
   return (
     <div data-testid={testid} style={{ display: "grid", gap: T.space.sm }}>
       <h3 style={s.h3}>History</h3>
@@ -384,7 +381,7 @@ export function InjuryHistory({ injuryId, role, nonce = 0, physio = false, recor
       {answered && rows.length > 0 && (
         <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: T.space.sm }}>
           {rows.map((r) => {
-            const isFirst = r.id === recordingId;
+            const isFirst = r.isRecording;
             const note = r.note ?? (isFirst ? recordingNote : null);
             const bits = [
               phaseWord(r.phase),

@@ -385,6 +385,8 @@ try {
        && !t.includes(secrets.notes.slice(0, 25)) && !t.includes(FAMILY_NOTE) && !/eccentric/i.test(t));
     ok("...but the history of the physio's looks, with dates", /Seen by the physio/.test(await inner(C, "injury-history")) && (await C.locator('[data-testid="history-row"]').count()) >= 1);
     ok("...and no clock: no next date of the physio's", !/next/i.test(await inner(C, "injury-history")));
+    if (who === "director") ok("...a boy who has left the school is marked so (the injuries read says it, status tier)", await tid(C, `left-school-${LEAVER_INJ}`).count() === 1);
+    if (who === "coach") ok("...a coach's own side only: the boy who left is no longer in it, so no row and no mark", await tid(C, `injury-${LEAVER_INJ}`).count() === 0);
     const nav = await C.locator('[data-testid="nav-injuries"]').first().innerText().catch(() => "?");
     ok("no count on the Injuries nav item", !/\d/.test(nav), nav);
     ok("no page error", c.errors.length === 0 && c.refusals.length === 0, [...c.errors, ...c.refusals].join(" | "));
@@ -414,6 +416,7 @@ try {
   ok("...no 'review' word, no worklist, no forms", !/review/i.test(rt) && pr.worklist.length === 0 && await tid(R, "reviews-due").count() === 0 && await tid(R, "record-injury-open").count() === 0);
   const hist = await inner(R, "injury-history");
   ok("...the history says only that he was seen, and what it left him as", /Seen by the physio/.test(hist) && /Restricted/.test(hist) && !/Rehabilitating|Injured|Cleared/.test(hist), hist);
+  ok("...a boy who has left the school is marked so, at the status tier too", await tid(R, `left-school-${LEAVER_INJ}`).count() === 1);
   ok("no page error", pr.errors.length === 0 && pr.refusals.length === 0, [...pr.errors, ...pr.refusals].join(" | "));
   await pr.ctx.close();
 

@@ -22,13 +22,6 @@ import { InjuryHistory, RecordInjuryForm, ReviewForm, ReviewsDue } from "./injur
 //  Type is 12px at the smallest and every control is 44px tall.
 // ══════════════════════════════════════════════════════
 
-/** The boys who have left the school, from the `memberships` read; drawn nothing. Asked only of a reader of the status tier. */
-function Leavers({ role, nonce, onRows }) {
-  const read = useLive("memberships", role, nonce);
-  useEffect(() => { if (read.live && !read.loading) onRows(read.rows); }, [read.rows, read.live, read.loading]);  // eslint-disable-line react-hooks/exhaustive-deps -- onRows is a setter
-  return null;
-}
-
 function InjuryView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
@@ -60,8 +53,6 @@ function InjuryView({ role }) {
   // gate: the functions behind the two forms refuse the same write from anyone.
   const physio = signedIn() && holds(role, "medical.write");
 
-  const [leavers, setLeavers] = useState(/** @type {any[]} */ ([]));
-  const left = (id) => hasLeftSchool(id, leavers);
   const nameOf = (id) => PLAYERS.find((p) => p.id === id)?.name ?? "Player";
 
   const [recording, setRecording] = useState(false);
@@ -111,8 +102,6 @@ function InjuryView({ role }) {
             Record an injury
           </button>
         )}/>
-
-      {seesSide && signedIn() && <Leavers role={role} nonce={nonce} onRows={setLeavers}/>}
 
       {saved && <p role="status" data-testid="injury-saved" style={{...text,fontSize:"14px",color:D.textPrimary,margin:"0 0 16px"}}>{saved}</p>}
 
@@ -166,7 +155,7 @@ function InjuryView({ role }) {
                         <span style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{player?.name}</span>
                         {severityWord(inj.severity)&&<Badge color={sc}>{severityWord(inj.severity)}</Badge>}
                         <Badge color={inj.restricted?D.rose:D.emerald}>{inj.restricted?"Restricted":"Not restricted"}</Badge>
-                        {left(inj.player)&&<Badge color={D.textMuted} data-testid={`left-school-${inj.id}`}>Left the school</Badge>}
+                        {hasLeftSchool(inj)&&<Badge color={D.textMuted} data-testid={`left-school-${inj.id}`}>Left the school</Badge>}
                       </span>
                       <span style={{display:"block",...text,fontWeight:500,color:inj.type?sc:D.textMuted,marginBottom:"4px",fontStyle:inj.type?"normal":"italic"}}>{withheld(inj.type,"Details withheld")}</span>
                       <span style={{display:"block",...text,color:D.textMuted,marginBottom:"8px"}}>
@@ -223,9 +212,9 @@ function InjuryView({ role }) {
                 <div style={{...text,fontSize:"13px",color:sel.type?sc:D.textMuted,marginTop:"3px",fontWeight:500,fontStyle:sel.type?"normal":"italic"}}>{withheld(sel.type,"Details withheld")}</div>
                 <div style={{display:"flex",justifyContent:"center",gap:"6px",flexWrap:"wrap",marginTop:"6px"}}>
                   {severityWord(sel.severity)&&<Badge color={sc}>{severityWord(sel.severity)}</Badge>}
-                  {left(sel.player)&&<Badge color={D.textMuted} data-testid="left-school-detail">Left the school</Badge>}
+                  {hasLeftSchool(sel)&&<Badge color={D.textMuted} data-testid="left-school-detail">Left the school</Badge>}
                 </div>
-                {left(sel.player)&&<p style={{...text,color:D.textSecondary,margin:"8px 0 0"}}>{physio?"He has left the school. His record is kept for reading, and he is not on your list.":"He has left the school. His record is kept for reading."}</p>}
+                {hasLeftSchool(sel)&&<p style={{...text,color:D.textSecondary,margin:"8px 0 0"}}>{physio?"He has left the school. His record is kept for reading, and he is not on your list.":"He has left the school. His record is kept for reading."}</p>}
               </div>
 
               <dl style={{margin:0}}>
@@ -275,7 +264,7 @@ function InjuryView({ role }) {
               )}
 
               <div style={{marginTop:"12px"}}>
-                <InjuryHistory injuryId={sel.id} role={role} nonce={nonce} physio={physio} recordingNote={sel.notes} recordedAt={sel.recordedAt}/>
+                <InjuryHistory injuryId={sel.id} role={role} nonce={nonce} physio={physio} recordingNote={sel.notes}/>
               </div>
             </Card>
           );

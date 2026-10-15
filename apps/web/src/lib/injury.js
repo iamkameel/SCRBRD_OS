@@ -168,16 +168,14 @@ const injurySay = (e) => (e?.code && Object.hasOwn(REFUSAL, e.code) ? REFUSAL[/*
 const seenWord = (first) => (first ? "Recorded" : "Seen by the physio");
 
 /**
- * A boy who has left the school, from the `memberships` read (the existing
- * read: no widening). He has left when he has at least one membership and
- * none of them is current. Nothing known about him is not "left": a read that
- * returned no rows for him says nothing, and nothing is marked (D11).
- * @param {string} playerId @param {{player?: string, playerId?: string, current: boolean}[]} memberships
+ * Whether the "left the school" mark is drawn on an injury row (D11). The
+ * `injuries` read says so itself (left_school, left_on; db/111), and says
+ * NULL both for a boy still enrolled and for a reader who cannot read his
+ * memberships, so only an explicit true marks: NULL is "no mark", never a
+ * claim that he is at school.
+ * @param {{leftSchool?: boolean | null} | null | undefined} injury
  */
-function hasLeftSchool(playerId, memberships) {
-  const mine = memberships.filter((m) => (m.playerId ?? m.player) === playerId);
-  return mine.length > 0 && !mine.some((m) => m.current);
-}
+const hasLeftSchool = (injury) => injury?.leftSchool === true;
 
 export {
   NEXT_REVIEW_SHORTCUTS, PHASE_WORDS, REASON_ORDER, REFUSAL, SEVERITY_WORDS,

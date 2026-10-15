@@ -1047,6 +1047,10 @@ function asInjury(r) {
            nextReviewOn: r.next_review_on ? String(r.next_review_on).slice(0, 10) : null,
            emergencyServices: r.emergency_services ?? null, recordedBy: r.recorded_by ?? null,
            recursInjury: r.recurs_injury_id ?? null, school: r.school_id ?? null, recordedAt: r.created_at ?? null,
+           // The day he left the injury's school, and whether he did (status tier). NULL
+           // is "not known to this reader" as much as "still enrolled": a screen marks
+           // only on a true, and never reads NULL as "at school".
+           leftOn: r.left_on ? String(r.left_on).slice(0, 10) : null, leftSchool: r.left_school === true ? true : null,
            live: true };
 }
 
@@ -1061,7 +1065,7 @@ function asInjuryReview(r) {
            restricted: r.restricted_after, rtw: r.rtw_date_after ? String(r.rtw_date_after).slice(0, 10) : null,
            phase: r.phase_after ?? null,
            nextReviewOn: r.next_review_on ? String(r.next_review_on).slice(0, 10) : null,
-           note: r.note ?? null, by: r.reviewed_by ?? null, live: true };
+           note: r.note ?? null, by: r.reviewed_by ?? null, isRecording: r.is_recording === true, live: true };
 }
 
 /**

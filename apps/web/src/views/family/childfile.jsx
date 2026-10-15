@@ -255,7 +255,7 @@ export function Health({ child, role, self = false }) {
             : <div><Action testid={`injury-open-${i.id}`} onClick={() => setOpen(i.id)}>The physio&apos;s notes</Action></div>)}
           <div style={{ marginTop: T.space.xs }}>
             {seen === i.id
-              ? <InjuryHistory injuryId={i.id} role={role} recordingNote={i.notes} recordedAt={i.recordedAt} testid={`injury-history-${i.id}`}/>
+              ? <InjuryHistory injuryId={i.id} role={role} recordingNote={i.notes} testid={`injury-history-${i.id}`}/>
               : <Action testid={`injury-history-open-${i.id}`} onClick={() => setSeen(i.id)}>How it has gone</Action>}
           </div>
         </div>

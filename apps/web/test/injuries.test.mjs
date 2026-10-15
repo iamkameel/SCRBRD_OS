@@ -105,9 +105,9 @@ ok("outside the physio's screen a look is 'Seen by the physio', and the first is
    seenWord(true) === "Recorded" && seenWord(false) === "Seen by the physio" && !/review/i.test(seenWord(true) + seenWord(false)));
 ok("an injury is open until cleared; with no phase read, restricted decides",
    isOpenInjury({ phase: "rehab" }) && !isOpenInjury({ phase: "cleared" }) && isOpenInjury({ phase: null, restricted: true }) && !isOpenInjury({ phase: null, restricted: false }));
-ok("left the school: memberships and none current", hasLeftSchool("a", [{ playerId: "a", current: false }, { playerId: "a", current: false }]));
-ok("...not while one is current, nor with nothing known, nor for another boy",
-   !hasLeftSchool("a", [{ playerId: "a", current: false }, { playerId: "a", current: true }]) && !hasLeftSchool("a", []) && !hasLeftSchool("a", [{ playerId: "b", current: false }]));
-
+ok("left the school: only an explicit true from the injuries read marks", hasLeftSchool({ leftSchool: true }));
+ok("...NULL is no mark (still enrolled, or a reader who cannot read his memberships), never 'at school'",
+   !hasLeftSchool({ leftSchool: null }) && !hasLeftSchool({ leftSchool: false }) && !hasLeftSchool({}) && !hasLeftSchool(null) && !hasLeftSchool(undefined));
+ok("...and a date alone is not the mark", !hasLeftSchool({ leftOn: "2026-10-01" }));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
