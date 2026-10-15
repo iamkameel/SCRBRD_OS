@@ -20363,7 +20363,7 @@ $v49$;
   --                 in ball_event, ball_event_live and ball_event_career,
   --                 and the live score of each
   --   (other side)  g1 reads none of f3 (another side at his son's school),
-  --                 though match_read shows him the fixture; none of f5 (a
+  --                 nor, since db/106, the fixture itself; none of f5 (a
   --                 third school) or f6 (Westville's seconds)
   --   (two schools) g2, guardian of B at Hilton and of W at Westville, reads
   --                 f3 (B's side), f1 (B on the sheet, playing up; W's side
@@ -20459,10 +20459,12 @@ $v49$;
     END LOOP;
 
     -- (other side)
-    PERFORM _assert((SELECT count(*) FROM match WHERE id = F3) = 1
+    -- Since db/106 (REACH-D1, §83) match_read no longer shows him f3 either:
+    -- this read "= 1" while match_read asked with the all-zeros person.
+    PERFORM _assert((SELECT count(*) FROM match WHERE id = F3) = 0
                     AND (SELECT count(*) FROM ball_event WHERE match_id = F3) = 0
                     AND (SELECT count(*) FROM match_live_score WHERE match_id = F3) = 0,
-      '§77 (other side): A''s guardian reads a ball of f3, Hilton''s 14XI (or no longer sees the fixture match_read shows him)');
+      '§77 (other side): A''s guardian reads f3, Hilton''s 14XI, or a ball of it (db/106: the side only)');
     PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id IN (F5, F6)) = 0,
       '§77 (other side): A''s guardian reads a ball at a school that is not his son''s fixture''s');
     PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id IN (F1, F2, F3, F4, F5, F6)) = 78,
