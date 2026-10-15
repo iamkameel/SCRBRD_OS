@@ -166,8 +166,14 @@ export const NEVER_PUBLIC_RULES = Object.freeze({
 export const NEVER_PUBLIC = Object.freeze({
   // ── Whole tables ──
   // N2. The injury record: availability, diagnosis and the clinical notes,
-  // every tier of it (tables.mjs masks two of three; here all three).
+  // every tier of it (tables.mjs masks two of three; here all three). Whole,
+  // so db/111's columns on it (emergency_services, next_review_on,
+  // recorded_by, recurs_injury_id, dso_notified_at) are never public too.
   injury: "N2",
+  // N2. A physio's review of an injury (GA-I19, db/111): that one happened
+  // says a boy is hurt, and its phase, clock, note and author are the
+  // clinical record. Whole, as the injury row is (GA-I19 D5).
+  injury_review: "N2",
   // N2. A family's statement about one Saturday — "unavailable, family" — is
   // "why a boy is not playing", and its status column is the bare word.
   match_availability: "N2",

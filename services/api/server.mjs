@@ -107,6 +107,7 @@ import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
 import { workloadRoutes } from "./write/workload-api.mjs";
 import { loadRoutes } from "./write/load-api.mjs";
+import { injuryRoutes } from "./write/injury-api.mjs";
 import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
@@ -480,6 +481,7 @@ const news = newsRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
 const load = loadRoutes({ pool, secret: SECRET });
+const injuries = injuryRoutes({ pool, secret: SECRET });
 const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
 // A publish or withdrawal drops the public cache's entry before it answers,
@@ -824,6 +826,12 @@ const PLAYER_ROUTES = [
   // this route still answers a direct POST, and its record counts again the
   // day the school switches the module on.
   [/^\/api\/players\/([^/]+)\/consents\/health$/,    "POST", load.healthConsent],
+  // The physio's injury record and its reviews (GA-I19 slice A, db/111).
+  // Each calls one SECURITY DEFINER function that decides who may: the
+  // physio at the boy's school, never his family, never under a support
+  // session (injury-api.mjs). Module-gated on Injuries, as the function is.
+  [/^\/api\/injuries$/,                               "POST", injuries.record, "injuries"],
+  [/^\/api\/injuries\/([^/]+)\/reviews$/,              "POST", injuries.review, "injuries"],
   // A boy joins the roster one at a time, under the same authority as the
   // bulk CSV import (player.profile.manage).
   [/^\/api\/players$/,                               "POST", rosterAdd.add],

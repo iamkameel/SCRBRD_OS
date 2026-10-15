@@ -175,6 +175,9 @@ const WALKS = [
   "workload",
   // SCRBRD-110 phase 1 (db/60): the nets band and the health consent, over HTTP.
   "load",
+  // GA-I19 slice A (db/111): the physio records and reviews an injury, her
+  // worklist, each reader's tier, the refusals in words, and SG-12.
+  "injury",
   // SCRBRD-110 phase 0 (db/62): the guardian link past eighteen — open while
   // he is at school, ended when he leaves — and option C for the public name.
   "link18",

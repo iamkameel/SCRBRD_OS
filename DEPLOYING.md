@@ -1588,6 +1588,52 @@ row "A draft plan is its author's to change or throw away" should read OK.
 - **Send again** on a withdrawn plan.
 <!-- ── end db/110 ── -->
 
+<!-- ── db/111: the physio's injury record, its reviews and her worklist ── -->
+#### The physio records and reviews an injury (db/111)
+
+`db/111_injury_review.sql` is GA-I19 slice A, with slice C's SG-12 injury half
+(`docs/design/GA-I19_medical_review.md`, decided 8 Oct; Q0 and Q2 confirmed
+15 Oct). Until now a physio could read every injury at her school and write
+none of them. Now she records an injury through `injury_record()` and reviews
+it through `injury_review_record()`. Each review is a dated `injury_review`
+row with the state it left the injury in (phase, restriction, return date,
+next review, note). A trigger applies it to the `injury` row, and
+`notify_injury()` sends its notices exactly as before. A trigger also derives
+`player.fitness`. `injury_worklist()` is her list of reviews due, and nobody
+without `medical.write` gets a row of it. A severe injury, or one where
+emergency services were called, sends the school's DSOs one safeguarding
+notice that names no child and no diagnosis, once per injury. The legal basis
+is the guardian-link consent (the information officer, Q2), so nothing here
+asks for health-monitoring consent.
+
+**What it does to a live database.** `injury` gains five nullable or
+defaulted columns (`recorded_by`, `emergency_services`, `next_review_on`,
+`recurs_injury_id`, `dso_notified_at`) and a unique key on
+`(id, player_id, school_id)`. No stored row is rewritten. `injury_masked` is
+rebuilt with db/09's five masks and four new ones. `injury_review` is
+created behind RLS, with the generated policies, a masked view, a RESTRICTIVE
+cut that hides it from support sessions, and the pad guard. The application
+**loses INSERT, UPDATE, DELETE and TRUNCATE on `injury`** and on
+`injury_review`, so the two functions are the only writers. Nothing in the API
+wrote `injury` before; the seed and the walks write it as the owner. The new
+functions are `SECURITY DEFINER` with a pinned path, except the worklist,
+which runs as the caller. The application may call the two doors, the
+worklist and the family check, and `PUBLIC`, `anon` and `authenticated` may
+call none of them. No capability is added. Existing rows that were already
+severe send no notice. The file checks itself and refuses to commit if
+anything above is not so. Running it a second time changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 111` after 103 (it needs db/57's
+safeguarding notice policies, db/60's `still_at_school()` and db/89's
+notification contract, all long shipped), then the verify bundle (§88 is its
+proof). The summary row "The physio records and reviews an injury" should
+read OK. **Schema first**: an API built with it refuses to start without
+db/111 (`expected-migrations.json`). Its new routes are `POST /api/injuries`
+and `POST /api/injuries/:id/reviews`, and its new reads are `injury_reviews`
+and `injury_worklist`, all behind the Injuries module. The `injuries` read
+also returns the new columns, masked by tier.
+<!-- ── end db/111 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh
