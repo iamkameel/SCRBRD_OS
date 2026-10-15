@@ -5219,7 +5219,7 @@ DECLARE
   OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
   U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
   KRS uuid; ids jsonb; v_s uuid; v_stranger uuid;
-  c_a uuid; c_up uuid; c_b uuid; c_w uuid; c_e uuid; c_n uuid;
+  c_a uuid; c_up uuid; c_b uuid; c_w uuid; c_e uuid; c_n uuid; c_m uuid;
   f1 uuid; f2 uuid; f3 uuid; f4 uuid; f5 uuid; f6 uuid; f7 uuid; f8 uuid;
   t1 uuid; t1b uuid; t2 uuid; t3 uuid; t4 uuid; t6 uuid; t8 uuid;
   s6 uuid; s7 uuid; s8 uuid; sw uuid;
@@ -5239,6 +5239,8 @@ BEGIN
     (HIL, '6XI', 'Verify OneOhSix Ended', 1065, 'batter', U15) RETURNING id INTO c_e;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (HIL, '9XI', 'Verify OneOhSix Teamless', 1066, 'batter', U15) RETURNING id INTO c_n;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '7XI', 'Verify OneOhSix Mate', 1067, 'batter', U15) RETURNING id INTO c_m;
   ids := _v71_people('v106', ARRAY[
     ARRAY['g1',       'guardian',    HIL::text, '',    ''],    -- A's, one child
     ARRAY['g2',       'guardian',    HIL::text, '',    ''],    -- B's at Hilton and W's at Westville
@@ -5250,6 +5252,7 @@ BEGIN
     ARRAY['gdriver',  'guardian',    HIL::text, '',    ''],    -- B's, and a Hilton driver
     ARRAY['aboy',     'player',      HIL::text, '6XI', c_a::text],
     ARRAY['upboy',    'player',      HIL::text, '7XI', c_up::text],
+    ARRAY['upmate',   'player',      HIL::text, '7XI', c_m::text],     -- UP's team-mate, on no sheet
     ARRAY['coach6',   'coach',       HIL::text, '6XI', ''],
     ARRAY['coach7',   'coach',       HIL::text, '7XI', ''],
     ARRAY['spec',     'spectator',   HIL::text, '',    ''],    -- school-wide follower
@@ -5323,7 +5326,7 @@ BEGIN
     (f1, 'home', HIL, '6XI', true, OFFICE), (f1, 'away', WES, '6XI', true, '88888888-0000-0000-0000-00000000000d'),
     (f6, 'home', HIL, '8XI', false, OFFICE);
   RETURN ids || jsonb_build_object('krs', KRS, 'stranger', v_stranger,
-    'a', c_a, 'up', c_up, 'b', c_b, 'w', c_w, 'e', c_e, 'n', c_n,
+    'a', c_a, 'up', c_up, 'b', c_b, 'w', c_w, 'e', c_e, 'n', c_n, 'm', c_m,
     'f1', f1, 'f2', f2, 'f3', f3, 'f4', f4, 'f5', f5, 'f6', f6, 'f7', f7, 'f8', f8,
     't1', t1, 't1b', t1b, 't2', t2, 't3', t3, 't4', t4, 't6', t6, 't8', t8,
     's6', s6, 's7', s7, 's8', s8, 'sw', sw);
@@ -5333,6 +5336,24 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 CREATE OR REPLACE FUNCTION _v106_label(z jsonb, p uuid) RETURNS text AS $$
   SELECT min(key) FROM jsonb_each_text(z) WHERE value = p::text
 $$ LANGUAGE sql IMMUTABLE;
+
+-- The reader is himself on this fixture's sheet, not withdrawn, at his own
+-- school's end, and holds the capability about himself at his own side
+-- (db/106 (e), spelled out apart from it), as the owner.
+CREATE OR REPLACE FUNCTION _v106_self_sheet(p_cap text, p_match uuid) RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM match m
+                   JOIN match_squad ms ON ms.match_id = m.id AND NOT ms.withdrawn
+                   JOIN player p ON p.id = ms.player_id
+                  WHERE m.id = p_match
+                    AND p.school_id = CASE WHEN ms.side = 'away' THEN m.away_school_id ELSE m.school_id END
+                    AND (EXISTS (SELECT 1 FROM app_user u WHERE u.id = app_user_id() AND u.player_id = p.id)
+                         OR EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+                                     WHERE a.person_id = app_user_id() AND a.role = 'selfaccess' AND a.active
+                                       AND g.player_id = p.id AND g.verification_state = 'verified'
+                                       AND g.valid_from <= current_date
+                                       AND (g.valid_until IS NULL OR g.valid_until > current_date)))
+                    AND app_can(p_cap, p.school_id, p.team_code, p.id, m.id))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- §2.5's text, spelled out apart from the build: every boy on the side,
 -- every boy on the sheet (header (b)'s filters, which proof 1 needs). As the
@@ -5352,7 +5373,9 @@ CREATE OR REPLACE FUNCTION _v106_lit_fixture(p_cap text, p_match uuid) RETURNS b
                   AND app_can(p_cap,
                               CASE WHEN ms.side = 'away' THEN m.away_school_id ELSE m.school_id END,
                               CASE WHEN ms.side = 'away' THEN m.away_team_code ELSE m.team_code END,
-                              ms.player_id, m.id))))
+                              ms.player_id, m.id))
+    -- Kameel, 2026-10-15: the boy himself on the sheet, asked at his own side
+    OR _v106_self_sheet(p_cap, m.id)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- What db/09 and db/39 asked before this file, as the owner about the caller:
@@ -5429,6 +5452,19 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v106_seed_matches() RETURNS uuid[] AS $$
   SELECT coalesce(array_agg(id), '{}') FROM match WHERE id::text LIKE '77777777-%'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A fixture the reader reaches ONLY as the boy on its sheet (db/106 (e)):
+-- not by the unnamed branch and not as anybody's guardian, as the owner.
+CREATE OR REPLACE FUNCTION _v106_self_only(p_match uuid) RETURNS boolean AS $$
+  SELECT _v106_self_sheet('fixture.read', p_match)
+     AND NOT coalesce(_v106_unnamed('fixture.read', p_match), false)
+     AND NOT (p_match = ANY (my_child_fixtures()))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Take a boy off a sheet as a coach does (withdrawn), as the owner.
+CREATE OR REPLACE FUNCTION _v106_withdraw(p_match uuid, p_player uuid) RETURNS integer AS $$
+  WITH d AS (UPDATE match_squad SET withdrawn = true WHERE match_id = p_match AND player_id = p_player AND NOT withdrawn RETURNING 1)
+  SELECT count(*)::int FROM d
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/106 (section 83) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -21389,10 +21425,13 @@ $v49$;
   --                 gup (UP plays up): f1 by the sheet and his own side's f3;
   --                   not the 6XI's next (f4) nor f5, from whose sheet UP was
   --                   withdrawn; f1's buses; his own side's nets only
-  --                 upboy (UP himself): f3 only, NOT f1 — his selfaccess holds
-  --                   no fixture.read and his team assignment is the 7XI's;
-  --                   db/100's log answers him the same. §2.2 says he reads
-  --                   f1: a capability question recorded for Kameel, not built
+  --                 upboy (UP himself, Kameel 2026-10-15): f1, the fixture
+  --                   he is picked for, with its toss, umpire, weather and
+  --                   buses, as his guardian reads it (db/106 (e)); his own
+  --                   side's f3 and nets; not the 6XI's next (f4) or its bus
+  --                   (t4), not f5, whose sheet he was withdrawn from
+  --                 upmate (UP's team-mate, on no sheet): his side's f3 only;
+  --                   UP's sheet gives him nothing
   --                 aboy (a pupil): his side's, home and away, as before
   --                 wesg (the away family): her side's two; Hilton's bus to
   --                   f1 never; f1's toss, umpire and weather (new)
@@ -21435,7 +21474,7 @@ $v49$;
   --               side_reach() does, match_toss_read every toss
   --   (text)      each re-created read asks the unnamed branch with all-f and
   --               the named branches through the helpers, never the all-zeros
-  --               person; no pad table asks a helper; the seven helpers are
+  --               person; no pad table asks a helper; the eight helpers are
   --               stable definers for scrbrd_app alone
   --   (ended)     g1's own link ended mid-section: his next read is nothing
   --
@@ -21463,6 +21502,12 @@ $v49$;
   --     t1b, the Opener named in its notes), gdriver; (unchanged); (shape)
   --   db/41's trip_fixture_driver_only() (zeros): red at (reader) for gdriver
   --     (the other bus to f1, t1b)
+  -- Kameel's 2026-10-15 branch for the boy himself (db/106 (e)), twice:
+  --   the sheet's "not withdrawn" dropped: red at (reader) for upboy (f5,
+  --     the sheet he was taken off), (shape) and (withdrawn)
+  --   the sheet dropped (any fixture at his school): red at (reader) for
+  --     upboy (f4, f5, f6, t4, t6), upmate (f1, f4–f6: a team-mate gains the
+  --     whole school) and aboy; (agree), (shape), (withdrawn)
   -- And a sixth, found by the whole file rather than made: trip_read without
   -- db/106 (d)'s "and reads its fixture" went red at db/39's section (a school-wide
   -- driver read two trips he was not driving) and here at gdriver (t3, t4).
@@ -21496,7 +21541,8 @@ $v49$;
       "g1":       {"m": "f1 f2 f4 f5",       "t": "t1 t1b t4",       "s": "s6",       "x": "f1 f2",    "p": "f1-home"},
       "g2":       {"m": "f1 f2 f6",          "t": "t2 t6",           "s": "s8 sw",    "x": "f1 f2 f6", "p": "f1-away f6-home"},
       "gup":      {"m": "f1 f3",             "t": "t1 t1b t3",       "s": "s7",       "x": "f1",       "p": ""},
-      "upboy":    {"m": "f3",                "t": "t3",              "s": "s7",       "x": "",         "p": ""},
+      "upboy":    {"m": "f1 f3",             "t": "t1 t1b t3",       "s": "s7",       "x": "f1",       "p": ""},
+      "upmate":   {"m": "f3",                "t": "t3",              "s": "s7",       "x": "",         "p": ""},
       "aboy":     {"m": "f1 f2 f4 f5",       "t": "t1 t1b t4",       "s": "s6",       "x": "f1 f2",    "p": "f1-home"},
       "wesg":     {"m": "f1 f2",             "t": "t2",              "s": "sw",       "x": "f1 f2",    "p": "f1-away"},
       "gdriver":  {"m": "f1 f6",             "t": "t1 t6",           "s": "s8",       "x": "f6",       "p": "f6-home"},
@@ -21571,7 +21617,9 @@ $v49$;
 
     -- (agree) 1: db/100's log. For every person, the fixtures whose balls he
     -- reads are exactly the scored fixtures match_read shows him (bar the
-    -- fixture a driver reads only as its driver, which shows no ball); (shape)
+    -- fixture a driver reads only as its driver, and the one a boy playing up
+    -- reads only as the boy on its sheet, db/106 (e): neither shows a ball,
+    -- db/100's helper being his guardian's and not his); (shape)
     -- below holds match_read to fixture_reach() on every one of them.
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
@@ -21579,11 +21627,11 @@ $v49$;
       SELECT string_agg(x::text, ' ') INTO bad
         FROM ((SELECT DISTINCT b.match_id FROM ball_event b)
               EXCEPT (SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
-                       AND NOT trip_fixture_driver_only(m.id))) d(x);
+                       AND NOT trip_fixture_driver_only(m.id) AND NOT _v106_self_only(m.id))) d(x);
       PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads the balls of %s, which match_read does not give him', u, left(bad, 300)));
       SELECT string_agg(x::text, ' ') INTO bad
         FROM ((SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
-                AND NOT trip_fixture_driver_only(m.id))
+                AND NOT trip_fixture_driver_only(m.id) AND NOT _v106_self_only(m.id))
               EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b)) d(x);
       PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads %s through match_read and none of its balls', u, left(bad, 300)));
       n := n + (SELECT count(DISTINCT b.match_id) FROM ball_event b);
@@ -21701,14 +21749,28 @@ $v49$;
                                       to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
                                       to_regprocedure('fixture_reach(text,uuid)'), to_regprocedure('my_fixture_ends(text)'),
                                       to_regprocedure('my_sides(text)'), to_regprocedure('match_away_school(uuid)'),
-                                      to_regprocedure('match_away_team(uuid)')))
+                                      to_regprocedure('match_away_team(uuid)'), to_regprocedure('my_own_boy()')))
                     AND (SELECT count(*) FROM pg_proc p
                           WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'),
                                           to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
                                           to_regprocedure('fixture_reach(text,uuid)'), to_regprocedure('my_fixture_ends(text)'),
                                           to_regprocedure('my_sides(text)'), to_regprocedure('match_away_school(uuid)'),
-                                          to_regprocedure('match_away_team(uuid)'))) = 7,
+                                          to_regprocedure('match_away_team(uuid)'), to_regprocedure('my_own_boy()'))) = 8,
       '§83 (text): a reach helper is missing, not a stable definer with a pinned path, or not scrbrd_app''s alone');
+
+    -- (withdrawn): taken off f1's sheet, UP reads nothing of it, nor does
+    -- his guardian; f5, which he was withdrawn from at the start, was never
+    -- his (the (reader) sets above)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v106_withdraw((z->>'f1')::uuid, (z->>'up')::uuid) = 1, '§83 (withdrawn): UP was not on f1''s sheet to take off');
+    FOREACH k IN ARRAY ARRAY['upboy', 'gup'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM match WHERE id IN ((z->>'f1')::uuid, (z->>'f5')::uuid)) = 0
+                      AND (SELECT count(*) FROM trip WHERE match_id = (z->>'f1')::uuid) = 0
+                      AND (SELECT count(*) FROM match_toss WHERE match_id = (z->>'f1')::uuid) = 0
+                      AND (SELECT count(*) FROM match WHERE id = (z->>'f3')::uuid) = 1,
+        format('§83 (withdrawn): the %s still reads f1 (or f5), its bus or its toss after UP was withdrawn, or lost his own side''s f3', k));
+    END LOOP;
 
     -- (ended), last: g1's own link ends, and his next read has nothing
     PERFORM set_config('app.user_id', '', true);

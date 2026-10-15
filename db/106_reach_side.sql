@@ -66,6 +66,8 @@
 --       caller reaches through a boy his own links name: (2) the boy's side at
 --       that end, or (3) the boy on that end's sheet. Each asked of app_can()
 --       about the boy, at that end, with the fixture.
+--       And (4), header (e): the boy himself on that end's sheet.
+--   my_own_boy()                  the boy the caller is (header (e)).
 --   my_sides(capability)          the sides (school, team) the caller reaches
 --       through a boy his own links name (2), asked with no fixture (zeros),
 --       as training_session_read always asked.
@@ -128,6 +130,22 @@
 --       hidden in an anchor: fixture_reach('fixture.read') on the trip's
 --       fixture, or a live trip to it that he drives (db/41's
 --       trip_driven_matches()).
+--   (e) The boy himself, playing up (Kameel, 2026-10-15: "yes, a boy playing
+--       up sees the fixture he is picked for, and its bus, as his guardian
+--       does; he gets nothing else of the older side"). §2.5's branch (3)
+--       asks about the boy at the fixture's end, which his guardian passes
+--       (her link names him at any team) and he does not: his self-access
+--       link holds no fixture.read or transport.read, and his `player`
+--       assignment is his own side's. So a fourth branch, drawn as db/101
+--       drew the plan's sheet: the reader IS the boy (my_own_boy(): his
+--       account's player, or his live verified self-access link), he is on
+--       that end's sheet, not withdrawn, a boy of that end's school, and he
+--       holds the capability about himself at his OWN side. Nothing is added
+--       to self-access, and nobody his unnamed `player` assignment reaches (a
+--       team-mate) is a candidate. It reaches match_read, the satellites and
+--       trip_read; training stays his own side's (my_sides() has no sheet).
+--       The ball log is db/100's my_child_fixtures(), which this file does
+--       not touch: he reads the fixture and not yet its balls.
 --
 -- THE POLICIES (each DROP POLICY IF EXISTS, then CREATE; FOR SELECT,
 -- PERMISSIVE; the write policies are not touched)
@@ -180,11 +198,10 @@
 --     fixture a child is on the sheet of (playing up); their trips at the
 --     trip's end; their training. Nothing of another side, at her school or
 --     any other. A link pending, ended or revoked: nothing.
---   A pupil: his side's, through his team assignment (unnamed), as before.
---     Playing up he does not read the older side's fixture: his selfaccess
---     link holds no fixture.read, and his team assignment is his own side's.
---     db/100's log answers him the same; §2.2's plain words say he should,
---     which is a capability question, not this file's.
+--   A pupil: his side's, through his team assignment (unnamed), as before;
+--     and playing up, the one fixture whose sheet names him at his school's
+--     end, with its toss, umpires, weather and bus (header (e)). Withdrawn,
+--     nothing of it. Not the older side's other fixtures, buses or nets.
 --   A pupil whose `player` assignment has no team (until R-D, db/108): every
 --     side at his school, exactly as before. Branch (1) gives it him; (2)
 --     and (3) give him nothing more (§83 (team-less)).
@@ -192,7 +209,7 @@
 --   The away side's family and staff: gain the satellites of their side's
 --     away fixtures.
 --
--- WHAT IT CHANGES ON A LIVE DATABASE. Seven new functions; one function
+-- WHAT IT CHANGES ON A LIVE DATABASE. Eight new functions; one function
 -- replaced in place (trip_fixture_driver_only); thirteen read policies
 -- dropped and created again, each in the paste's one transaction. No table,
 -- column, index or row. No grant on a table. A second paste changes nothing.
@@ -220,6 +237,26 @@ END $needs$;
 -- Read as the owner: the roster, the sheet and the links are rows the
 -- caller's own policies may not show him, and a policy that asks must not
 -- depend on what he can see of them. Each answers yes or no.
+
+-- The boy the caller IS: his account's own player (app_user.player_id), or
+-- the one boy his live, verified self-access link names (db/101's test for
+-- "the boy is the reader"). Never a team-mate, a child or anyone his
+-- unnamed `player` assignment reaches.
+CREATE OR REPLACE FUNCTION my_own_boy() RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(DISTINCT b), '{}') FROM (
+    SELECT u.player_id FROM app_user u WHERE u.id = app_user_id() AND u.player_id IS NOT NULL
+    UNION
+    SELECT g.player_id
+      FROM role_assignment a
+      JOIN assignment_subject g ON g.assignment_id = a.id
+     WHERE a.person_id = app_user_id() AND a.role = 'selfaccess' AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       AND (a.expires_at  IS NULL OR a.expires_at  >  now())
+       AND g.verification_state = 'verified'
+       AND g.valid_from <= current_date
+       AND (g.valid_until IS NULL OR g.valid_until > current_date)) x(b)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Is the caller at this side, for this capability?
 CREATE OR REPLACE FUNCTION side_reach(p_capability text, p_school uuid, p_team text, p_fixture uuid)
@@ -261,7 +298,22 @@ RETURNS boolean AS $$
                         AND m.team_code IS NOT DISTINCT FROM p_team)
                     OR (ms.side = 'away' AND m.away_school_id = p_school
                         AND m.away_team_code IS NOT DISTINCT FROM p_team))
-                  AND app_can(p_capability, p_school, p_team, ms.player_id, m.id)))
+                  AND app_can(p_capability, p_school, p_team, ms.player_id, m.id))
+    -- (4) the boy himself, playing up (Kameel, 2026-10-15): the reader is the
+    --     boy on this end's sheet, not withdrawn, of this end's school, and
+    --     holds the capability about himself at HIS OWN side (his `player`
+    --     assignment). Header (e).
+    OR EXISTS (SELECT 1
+                 FROM match m
+                 JOIN match_squad ms ON ms.match_id = m.id AND NOT ms.withdrawn
+                 JOIN player p ON p.id = ms.player_id AND p.school_id = p_school
+                WHERE m.id = p_match
+                  AND ((ms.side = 'home' AND m.school_id = p_school
+                        AND m.team_code IS NOT DISTINCT FROM p_team)
+                    OR (ms.side = 'away' AND m.away_school_id = p_school
+                        AND m.away_team_code IS NOT DISTINCT FROM p_team))
+                  AND p.id = ANY (my_own_boy())
+                  AND app_can(p_capability, p.school_id, p.team_code, p.id, m.id)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Is the caller at either end of this fixture, or named on its sheet?
@@ -303,7 +355,17 @@ RETURNS TABLE (match_id uuid, school_id uuid, team_code text) AS $$
                   OR EXISTS (SELECT 1 FROM match_squad s
                               WHERE s.match_id = m.id AND s.player_id = p.id
                                 AND s.side = 'away' AND NOT s.withdrawn))
-             AND app_can(p_capability, m.away_school_id, m.away_team_code, p.id, m.id)) x(match_id, school_id, team_code)
+             AND app_can(p_capability, m.away_school_id, m.away_team_code, p.id, m.id)
+          UNION ALL
+          -- (4) the boy himself on this end's sheet, asked at his own side
+          SELECT m.id, CASE WHEN s.side = 'home' THEN m.school_id ELSE m.away_school_id END,
+                       CASE WHEN s.side = 'home' THEN m.team_code ELSE m.away_team_code END
+            FROM player p
+            JOIN match_squad s ON s.player_id = p.id AND NOT s.withdrawn
+            JOIN match m ON m.id = s.match_id
+                        AND p.school_id = CASE WHEN s.side = 'home' THEN m.school_id ELSE m.away_school_id END
+           WHERE p.id = ANY (my_own_boy())
+             AND app_can(p_capability, p.school_id, p.team_code, p.id, m.id)) x(match_id, school_id, team_code)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The sides the caller reaches through a boy his own links name (2), asked
@@ -341,7 +403,7 @@ DO $grants$
 DECLARE f text; r text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['side_reach(text,uuid,text,uuid)', 'fixture_end_reach(text,uuid,uuid,text)',
-                           'fixture_reach(text,uuid)', 'my_fixture_ends(text)', 'my_sides(text)',
+                           'fixture_reach(text,uuid)', 'my_fixture_ends(text)', 'my_sides(text)', 'my_own_boy()',
                            'match_away_school(uuid)', 'match_away_team(uuid)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
@@ -468,10 +530,13 @@ BEGIN
   -- about the boy with no fixture, which is the zeros FIXTURE argument).
   FOR r IN SELECT x.sig, x.must FROM (VALUES
              ('side_reach(text,uuid,text,uuid)', ARRAY['ffffffff-ffff-ffff-ffff-ffffffffffff', 'p.id, p_fixture', 'a.person_id = app_user_id()']),
-             ('fixture_end_reach(text,uuid,uuid,text)', ARRAY['side_reach(p_capability, p_school, p_team, p_match)', 'NOT ms.withdrawn', 'ms.player_id, m.id', 'a.person_id = app_user_id()']),
+             ('fixture_end_reach(text,uuid,uuid,text)', ARRAY['side_reach(p_capability, p_school, p_team, p_match)', 'NOT ms.withdrawn', 'ms.player_id, m.id', 'a.person_id = app_user_id()',
+                                                       'p.id = ANY (my_own_boy())']),
              ('fixture_reach(text,uuid)', ARRAY['m.school_id, m.team_code', 'm.away_school_id, m.away_team_code']),
-             ('my_fixture_ends(text)', ARRAY['NOT s.withdrawn', 'm.school_id, m.team_code, p.id, m.id', 'm.away_school_id, m.away_team_code, p.id, m.id', 'a.person_id = app_user_id()']),
+             ('my_fixture_ends(text)', ARRAY['NOT s.withdrawn', 'm.school_id, m.team_code, p.id, m.id', 'm.away_school_id, m.away_team_code, p.id, m.id', 'a.person_id = app_user_id()',
+                                             'p.id = ANY (my_own_boy())', 'p.school_id, p.team_code, p.id, m.id']),
              ('my_sides(text)', ARRAY['p.school_id, p.team_code, p.id', 'a.person_id = app_user_id()']),
+             ('my_own_boy()', ARRAY['u.id = app_user_id()', 'a.role = ''selfaccess''', 'g.verification_state = ''verified''']),
              ('match_away_school(uuid)', ARRAY['away_school_id']),
              ('match_away_team(uuid)', ARRAY['away_team_code'])) x(sig, must) LOOP
     SELECT p.prosrc INTO f FROM pg_proc p
