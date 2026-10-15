@@ -28,7 +28,7 @@ import { readState } from "../../lib/readState.js";
 export function Page({ children, testid, label }) {
   return (
     <div className="os-page" data-testid={testid} aria-label={label}
-      style={{ maxWidth: "720px", margin: "0 auto", display: "grid", gap: T.space.md, alignContent: "start" }}>
+      style={{ maxWidth: "720px", margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.md, alignContent: "start" }}>
       {children}
     </div>
   );
@@ -39,7 +39,7 @@ export function Card({ label, children, testid, aside, tone }) {
   return (
     <section data-testid={testid} aria-label={typeof label === "string" ? label : undefined}
       style={{ background: T.surface.raised, border: `1px solid ${tone ?? T.line.normal}`, borderRadius: T.radius.lg,
-        padding: `${T.space.md} ${T.space.lg}`, display: "grid", gap: T.space.sm }}>
+        padding: `${T.space.md} ${T.space.lg}`, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.sm }}>
       {(label || aside) && (
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap" }}>
           {label && <h2 style={{ ...T.role.label, color: T.content.secondary, margin: 0 }}>{label}</h2>}

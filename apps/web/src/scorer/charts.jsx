@@ -481,7 +481,7 @@ const declaredOf=(inn,balls)=>{
 /** One line under a chart saying what it drew and what it left out — and
  *  which of the gaps are gaps, and which were never asked for. */
 const Provenance=({n,missing,notCaptured=0,children})=>(
-  <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px",textAlign:"center",lineHeight:1.5}}>
+  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px",textAlign:"center",lineHeight:1.5}}>
     {children??`${n} shot${n===1?"":"s"} placed exactly.`}
     {missing>0&&` ${missing} ball${missing===1?"":"s"} carried no exact point and ${missing===1?"is":"are"} not drawn.`}
     {notCaptured>0&&<span data-testid="placement-not-captured-count">{` ${notCaptured} came from an innings that never asked for an exact point.`}</span>}

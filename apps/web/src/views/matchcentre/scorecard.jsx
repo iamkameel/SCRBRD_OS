@@ -212,7 +212,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
         </span>
       </div>
 
-      <div role="table" aria-label="Batting" style={{ border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
+      <div role="table" aria-label="Batting" className="mc-table" style={{ border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
         <HeadRow cols={COLS} label="Batting" icon="bat" heads={["R", "B", "4s", "6s", "SR"]}/>
         {inn.batsmen.map((b) => (
           <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
@@ -248,7 +248,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
       </div>
 
       {inn.bowlers.length > 0 && (
-        <div role="table" aria-label="Bowling" data-testid="mc-bowling" style={{ border: `1px solid ${T.line.normal}`, marginTop: T.space.lg, borderRadius: T.radius.lg, overflow: "hidden" }}>
+        <div role="table" aria-label="Bowling" data-testid="mc-bowling" className="mc-table" style={{ border: `1px solid ${T.line.normal}`, marginTop: T.space.lg, borderRadius: T.radius.lg, overflow: "hidden" }}>
           <HeadRow cols={BOWL_COLS} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
           {inn.bowlers.map((bw) => (
             <div key={bw.id} role="row" data-focus={focus?.has(bw.id) ? "true" : undefined}

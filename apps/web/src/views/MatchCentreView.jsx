@@ -223,7 +223,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                     {w&&<WeatherChip w={w} status={m.status} compact/>}
                     <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{humanDate(m.date)}</span>
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"12px",alignItems:"center"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto minmax(0,1fr)",gap:"12px",alignItems:"center"}}>
                     <div>
                       <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary}}><SideName side={sides.home}/></div>
                       {m.scorecard?.home&&<div style={{...T.role.figure.md,color:isLive?D.emerald:D.textPrimary,marginTop:"4px"}}>{m.scorecard.home.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.home.overs})</span></div>}

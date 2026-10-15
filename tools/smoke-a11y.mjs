@@ -817,6 +817,17 @@ async function cockpitWalk(theme) {
        && /plan-honesty/.test(await page.locator("#plan-body").getAttribute("aria-describedby") ?? "") && /Read by every boy in the side and their parents/.test(await tid("plan-honesty").innerText()));
     ok("...the title is made for him and is not a field", /^The plan: v Verify Cockpit XI/.test((await tid("plan-title").innerText()).trim()) && await page.locator('#plan-body ~ input, [data-testid="plan-title"] input').count() === 0);
     await check("plancomposer", '[data-testid="plan-composer"]');
+    if (NARROW) {
+      // I32: Cancel by keyboard closes the composer and hands focus back to the button that opened it; open it again to go on.
+      await tid("plan-cancel").focus();
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(300);
+      ok(`${T_} @${NARROW.width}: Cancel closes the composer, and focus returns to Write the plan`,
+        await tid("plan-composer").count() === 0 && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "plan-write");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('[data-testid="plan-composer"]', { timeout: 6000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
     await page.keyboard.type("Naidoo is on four overs, physio says no more.");
     await page.waitForFunction(() => /physio/.test(document.querySelector('[data-testid="plan-refusal-message"]')?.innerText ?? ""), null, { timeout: 4000 }).catch(() => {});
     ok("a refusal is read out: a polite live region, the field described by it and marked invalid, the word named",
@@ -1504,6 +1515,51 @@ async function narrowStaffWalk(theme) {
     ok(`the ${T_} @${W} staff shell walk threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);
   } finally {
     await ctx.close();
+  }
+}
+
+/**
+ * I32: prefers-reduced-motion, on the match-day screens at 320. With the device asking for less motion, nothing on the
+ * staff Dashboard (the live dot, the board, the rotating line), the More drawer's slide, or the ground display's panels
+ * may be running an animation longer than a cut (50ms). Falsified first, on the same screens without the preference:
+ * the same probe must see the live dot pulsing, or it is counting nothing.
+ */
+async function motionWalk() {
+  /** Running CSS animations and transitions longer than a cut, by what they animate. */
+  const moving = (page) => page.evaluate(() => document.getAnimations()
+    .filter((a) => a.playState === "running" && Number(a.effect?.getComputedTiming().activeDuration) > 50)
+    .map((a) => `${/** @type {any} */ (a).animationName ?? /** @type {any} */ (a).transitionProperty ?? "?"} on ${(a.effect?.target instanceof Element ? a.effect.target.getAttribute("data-testid") || a.effect.target.className || a.effect.target.tagName : "?")}`));
+  for (const reduce of [false, true]) {
+    const W = vw();
+    const ctx = await browser.newContext({ colorScheme: "dark", viewport: { width: W, height: 640 }, isMobile: true, hasTouch: true, reducedMotion: reduce ? "reduce" : "no-preference" });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    const which = reduce ? "reduced" : "unreduced";
+    try {
+      group(`@${W} — motion, ${which}`);
+      await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+      const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+      if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+      await page.locator("button:not([disabled])", { hasText: "Head Coach" }).first().click({ timeout: 4000 }).catch(() => {});
+      await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="mnav"]', { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1200);
+      await page.locator('[data-testid="mnav-more"]').click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(150);
+      const staff = await moving(page);
+      if (!reduce) ok(`@${W}: the probe sees motion without the preference (${staff.length} running)`, staff.length > 0, staff.join(" · "));
+      else ok(`@${W}: with the preference, nothing on the Dashboard or the drawer runs longer than a cut`, staff.length === 0, staff.slice(0, 4).join(" · "));
+      await page.goto(`http://localhost:${PORT}/display/${DISPLAY_ID}`, { waitUntil: "networkidle" });
+      await page.waitForSelector('[data-testid="display-panel"] section', { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const display = await moving(page);
+      // The display's live dot and the rotation's own fade are the motion; neither survives the preference.
+      if (reduce) ok(`@${W}: ...nor does the ground display`, display.length === 0, display.slice(0, 4).join(" · "));
+    } catch (e) {
+      ok(`the motion walk (${which}) threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);
+    } finally {
+      await ctx.close();
+    }
   }
 }
 
@@ -2242,6 +2298,7 @@ try {
       if (want("cockpit")) await cockpitWalk(th);
       if (want("captain")) await captainWalk(th);
     }
+    if (width === 320 && want("motion")) await motionWalk();
   }
   NARROW = null;
 

@@ -127,7 +127,7 @@ const Sep = ({ sx }) => <div style={{height:"1px",background:D.border,...sx}} />
 const Badge = ({ children, color, sx, ...rest }) => (
   <span {...rest} style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em",
     textTransform:"uppercase",padding:"3px 8px",borderRadius:D.pill,
-    background:`${color||D.indigo}1e`,color:textOn(color||D.indigo),
+    background:`${color||D.indigo}14`,color:textOn(color||D.indigo),
     border:`1px solid ${color||D.indigo}30`,flexShrink:0,...sx}}>{children}</span>
 );
 
