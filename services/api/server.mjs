@@ -31,6 +31,7 @@
  *   GET  /api/auth/users/:id/preview              what disabling an account would cut (db/90)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   POST /api/players/:id/access-request          ask that player's coach for access
+ *   POST /api/players/:id/guardians/:link/revoke { kind, reason }   the office ends one guardian link, saying how and why (db/109)
  *   POST /api/access-requests/:id/decide          answer such a request
  *   POST /api/assignments/:id/end { reason }      end one role (db/77), the row withdrawn, never deleted
  *   GET  /api/matches/:id/events?since=           incremental sync
