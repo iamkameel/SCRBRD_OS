@@ -142,21 +142,21 @@ export const READ_QUERIES = {
                   (select s.code from school s where s.id = m.away_school_id) as away_code,
                   -- WHICH END THIS READER IS AT, answered by the same question
                   -- the policy used to hand them the row (db/106's
-                  -- side_reach()). A reader at the home side is at home; one
-                  -- who got the row through the away side, or through his
-                  -- child's name on the away sheet, is away; a boy's family
-                  -- reached through the home sheet (playing up) is at home. A
-                  -- platform reader is at both and comes back 'home', which
-                  -- is correct in the only sense available: they are not a
-                  -- participant. Not the all-zeros person: for a parent at
-                  -- the host whose other child plays for the visitors, that
-                  -- answered 'home' for her visitor's fixture.
-                  (case when side_reach('fixture.read', m.school_id, m.team_code, m.id) then 'home'
-                        when m.away_school_id is not null
-                         and (side_reach('fixture.read', m.away_school_id, m.away_team_code, m.id)
-                              or exists (select 1 from match_squad s
-                                          where s.match_id = m.id and s.side = 'away' and not s.withdrawn))
-                        then 'away' else 'home' end)                     as my_side,
+                  -- match_read, in its set-once shape). A reader at the home
+                  -- end, as staff or as a boy's family (his side, or his name
+                  -- on the home sheet when he plays up), is at home; one who
+                  -- got the row through the away end is away. A platform
+                  -- reader is at both and comes back 'home', which is correct
+                  -- in the only sense available: they are not a participant.
+                  -- Not the all-zeros person: for a parent at the host whose
+                  -- only child there plays for the visitors, that answered
+                  -- 'home'.
+                  (case when app_can('fixture.read', m.school_id, m.team_code,
+                                     'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id)
+                          or (m.id, m.school_id, coalesce(m.team_code, ''))
+                             in (select r.match_id, r.school_id, coalesce(r.team_code, '')
+                                   from my_fixture_ends('fixture.read') r)
+                        then 'home' else 'away' end)                     as my_side,
                   t.won_by   as toss_won_by,
                   t.decision as toss_decision,
                   bats_first(t.won_by, t.decision) as bats_first,

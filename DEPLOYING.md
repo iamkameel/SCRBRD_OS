@@ -1252,27 +1252,34 @@ the umpires, the pitch report, the weather, the playing conditions and the
 broadcast setting of their side's away fixture, which were the host's alone.
 A link that is pending, ended or revoked reads nothing of the child's side.
 
-**What it does to a live database.** Three functions, `side_reach`,
-`fixture_end_reach` and `fixture_reach` (`SECURITY DEFINER`, `STABLE`, pinned
-search path; `EXECUTE` revoked from `PUBLIC` and granted to `scrbrd_app`, and
-from a managed host's `anon`/`authenticated` where they exist); db/41's
-`trip_fixture_driver_only()` replaced in place (same signature and grants: "a
-driver who reaches the fixture only as its driver" now asks match_read's new
-question); thirteen read policies dropped and created again (`match_read`,
-`trip_read`, `training_session_read`, `fixture_publication_read`,
-`match_result_decision_read` and the eight satellites' `*_read`), in the
-paste's one transaction. The file checks every policy's text and the helpers'
-grants before it commits. No table, column, row or write policy is touched. A
-second paste changes nothing. **One behaviour changes for every school at
-once, on the paste:** parents stop seeing other sides' fixtures, buses and
-nets; paste outside a match.
+**What it does to a live database.** Seven functions (`SECURITY DEFINER`,
+`STABLE`, pinned search path; `EXECUTE` revoked from `PUBLIC` and granted to
+`scrbrd_app`, and from a managed host's `anon`/`authenticated` where they
+exist): the rule, one row at a time (`side_reach`, `fixture_end_reach`,
+`fixture_reach`), and the same rule asked once per statement, which is what
+the policies call (`my_fixture_ends`, `my_sides`, and the away anchors
+`match_away_school`/`match_away_team` beside db/02's home ones). db/41's
+`trip_fixture_driver_only()` is replaced in place (same signature and grants:
+"a driver who reaches the fixture only as its driver" now asks match_read's
+new question). Thirteen read policies are dropped and created again
+(`match_read`, `trip_read`, `training_session_read`,
+`fixture_publication_read`, `match_result_decision_read` and the eight
+satellites' `*_read`), in the paste's one transaction. A trip is read at its
+own school's end, and only by someone who reads its fixture, as before. The
+file checks every policy's text and the helpers' grants before it commits.
+No table, column, row or write policy is touched. A second paste changes
+nothing. **One behaviour changes for every school at once, on the paste:**
+parents stop seeing other sides' fixtures, buses and nets; paste outside a
+match. Cost, on a forty-fixture season: a coach's or the director's fixture
+list as before (8–11 ms); a parent of two about 35–45 ms (db/106's header has
+the figures).
 
 Paste `node tools/bundle-sql.mjs --apply 106` (after 102, and after 103–105 if
 they have shipped; the bundle names the one it needs first), then the verify
 bundle (§83 is its proof; the summary row "A family reads its side's fixtures"
 should read OK). **Schema first**: the API built with it refuses to start
 without db/106 (`expected-migrations.json`), and its `matches` read asks
-`side_reach()` for which end the reader is at.
+`my_fixture_ends()` which end the reader is at.
 <!-- ── end db/106 ── -->
 
 ### 5 · Cloud Run, the first time

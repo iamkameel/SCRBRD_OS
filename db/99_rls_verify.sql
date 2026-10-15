@@ -5290,6 +5290,7 @@ CREATE OR REPLACE FUNCTION _v106_old_match(p_match uuid) RETURNS boolean AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v106_old_trip(p_trip uuid) RETURNS boolean AS $$
   SELECT app_can('transport.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+         AND _v106_old_match(m.id)   -- db/09 read the anchors through match under the caller's own RLS
     FROM trip t JOIN match m ON m.id = t.match_id WHERE t.id = p_trip
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v106_old_training(p_session uuid) RETURNS boolean AS $$
@@ -5329,6 +5330,25 @@ CREATE OR REPLACE FUNCTION _v106_spelling(p_cap text, p_match uuid) RETURNS bool
                   IS NOT DISTINCT FROM app_can(p_cap, e.s, e.t, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id))
     FROM match m, LATERAL (VALUES (m.school_id, m.team_code), (m.away_school_id, m.away_team_code)) e(s, t)
    WHERE m.id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Every trip (with its end's team, the host's, as trip_read asks), every
+-- session and every fixture with a toss, as the owner.
+CREATE OR REPLACE FUNCTION _v106_trips() RETURNS TABLE (id uuid, match_id uuid, school_id uuid, team_code text, driver_id uuid) AS $$
+  SELECT t.id, t.match_id, t.school_id, m.team_code, t.driver_id FROM trip t JOIN match m ON m.id = t.match_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_sessions() RETURNS TABLE (id uuid, school_id uuid, team_code text) AS $$
+  SELECT id, school_id, team_code FROM training_session
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_toss_matches() RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(match_id), '{}') FROM match_toss
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Branch (1) alone at either end, as the owner about the caller: what an
+-- assignment naming nobody gives.
+CREATE OR REPLACE FUNCTION _v106_unnamed(p_cap text, p_match uuid) RETURNS boolean AS $$
+  SELECT app_can(p_cap, m.school_id, m.team_code, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id)
+      OR (m.away_school_id IS NOT NULL
+          AND app_can(p_cap, m.away_school_id, m.away_team_code, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id))
+    FROM match m WHERE m.id = p_match
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/106 (section 83) ─────────────────────────────────────────────
 
@@ -21086,7 +21106,9 @@ $v49$;
   --                   f1 never; f1's toss, umpire and weather (new)
   --                 gdriver (B's, and a driver): B's side; f1 only through
   --                   the trip he drives (db/41), and of f1's buses his own
-  --                   alone (trip_fixture_driver_only now asks fixture_reach)
+  --                   alone (trip_fixture_driver_only now asks fixture_reach);
+  --                   no bus to a fixture he cannot read (t3, t4), though his
+  --                   driver's transport.read is school-wide (db/106 (d))
   --                 coach6, coach7, wescoach, spec (school-wide), spec6
   --                   (scoped to the 6XI), office, teamless: as before
   --                 g3 (ended), g4 (pending), g5 (revoked), a stranger, an
@@ -21112,23 +21134,45 @@ $v49$;
   --               side_reach('team.read'); for every guardian and plan,
   --               db/101's reach (side or sheet) is news.read and
   --               fixture_end_reach('team.read') at the plan's end
-  --   (text)      each re-created policy is the helper's question and nothing
-  --               else; no pad table asks a helper
+  --   (shape)     db/106 asks the rule in a set-once shape (its header):
+  --               for every person holding an assignment, match_read admits
+  --               exactly the staged and scored fixtures fixture_reach()
+  --               does (with db/41's driver's fixture), trip_read every trip
+  --               fixture_end_reach() does at its own end (with db/41's two
+  --               driver policies), training_session_read every session
+  --               side_reach() does, match_toss_read every toss
+  --   (text)      each re-created read asks the unnamed branch with all-f and
+  --               the named branches through the helpers, never the all-zeros
+  --               person; no pad table asks a helper; the seven helpers are
+  --               stable definers for scrbrd_app alone
   --   (ended)     g1's own link ended mid-section: his next read is nothing
   --
-  -- Cost (§5 item 11), measured on this database on 2026-10-15 by
-  -- EXPLAIN (ANALYZE) outside this file (median of 15, ms, execution):
-  -- see db/106's header and the build report for the figures.
+  -- Cost (§5 item 11) is in db/106's header: on a forty-fixture season the
+  -- fixture list costs a guardian of two 34–45 ms (db/09: 9.5), a coach 9
+  -- (11), the director 8 (8); her trips 62 (43); the first build, which put
+  -- the one-row helpers in the policies, cost every reader 350–500 ms.
   --
-  -- Falsified (each by putting the wrong definition in the database and
-  -- running this section; each went red where named):
-  --   db/09's match_read (zeros) back: (reader) g1 reads f3, f6
-  --   side_reach() without its named-boy branch: (reader) g1, g2, wesg read
-  --     nothing; (agree) ball_event_read admits what fixture_reach refuses
-  --   fixture_end_reach() without the sheet: (reader) gup loses f1 and t1
-  --   trip_read as fixture_reach() over both ends: (reader) wesg reads t1, t1b
-  --   db/41's trip_fixture_driver_only() (zeros) back: (reader) gdriver
-  --     reads t1b
+  -- Falsified five ways, each by putting the wrong definition in the database
+  -- and running this section alone with each assertion made to report rather
+  -- than raise (beside the seed only, so (agree)'s "proves nothing" guards
+  -- report in every run, the control's too; nothing else did in the control):
+  --   db/09's match_read (zeros): red at (reader) for g1 (f3, f6), g2 (f3,
+  --     f4, f5, f8), gup, wesg (f8), gdriver; (shape) for every family
+  --     reader; (text)
+  --   side_reach() without the named boy (2): red at (reader) for every
+  --     publication row a family reads (g1, g2, wesg, gdriver); (literal),
+  --     (agree) (the log and my_child_fixtures() for every seed and staged
+  --     guardian) and (shape) for every family reader
+  --   my_fixture_ends() without the sheet (3): red at (reader) for gup (f1,
+  --     t1, t1b and f1's toss, umpire, weather lost) and (shape) for him
+  --   trip_read over both ends: red at (reader) for g1, g2, aboy, coach6,
+  --     office, teamless (Westville's t2), wesg and wescoach (Hilton's t1,
+  --     t1b, the Opener named in its notes), gdriver; (unchanged); (shape)
+  --   db/41's trip_fixture_driver_only() (zeros): red at (reader) for gdriver
+  --     (the other bus to f1, t1b)
+  -- And a sixth, found by the whole file rather than made: trip_read without
+  -- db/106 (d)'s "and reads its fixture" went red at db/39's section (a school-wide
+  -- driver read two trips he was not driving) and here at gdriver (t3, t4).
   DECLARE
     z    jsonb := _v106_stage();
     FX   uuid[];
@@ -21162,7 +21206,7 @@ $v49$;
       "upboy":    {"m": "f3",                "t": "t3",              "s": "s7",       "x": "",         "p": ""},
       "aboy":     {"m": "f1 f2 f4 f5",       "t": "t1 t1b t4",       "s": "s6",       "x": "f1 f2",    "p": "f1-home"},
       "wesg":     {"m": "f1 f2",             "t": "t2",              "s": "sw",       "x": "f1 f2",    "p": "f1-away"},
-      "gdriver":  {"m": "f1 f6",             "t": "t1 t3 t4 t6",     "s": "s8",       "x": "f6",       "p": "f6-home"},
+      "gdriver":  {"m": "f1 f6",             "t": "t1 t6",           "s": "s8",       "x": "f6",       "p": "f6-home"},
       "coach6":   {"m": "f1 f2 f4 f5",       "t": "t1 t1b t4",       "s": "s6",       "x": "f1 f2",    "p": "f1-home"},
       "coach7":   {"m": "f3",                "t": "t3",              "s": "s7",       "x": "",         "p": ""},
       "wescoach": {"m": "f1 f2",             "t": "t2",              "s": "sw",       "x": "f1 f2",    "p": "f1-away"},
@@ -21206,10 +21250,7 @@ $v49$;
     PERFORM _as((z->>'teamless')::uuid);
     SELECT string_agg(_v106_label(z, x), ' ' ORDER BY _v106_label(z, x)) INTO bad
       FROM unnest(FX) x
-     WHERE fixture_reach('fixture.read', x) IS DISTINCT FROM
-           (SELECT app_can('fixture.read', m.school_id, m.team_code, ALLF, m.id)
-                   OR app_can('fixture.read', m.away_school_id, m.away_team_code, ALLF, m.id)
-              FROM match m WHERE m.id = x);
+     WHERE fixture_reach('fixture.read', x) IS DISTINCT FROM _v106_unnamed('fixture.read', x);
     PERFORM _assert(bad IS NULL, format('§83 (team-less): fixture_reach() gives the team-less pupil more or less than the unnamed branch at %s', bad));
 
     -- (spelling): NULL and all-f answer alike, at both ends of each fixture
@@ -21282,32 +21323,72 @@ $v49$;
     END LOOP;
     PERFORM _assert(n > 0, '§83 (agree): no guardian reaches a plan by the sheet alone: the sheet comparison proves nothing');
 
-    -- (text)
+    -- (shape): each policy admits exactly the rows the one-row question
+    -- admits, for every person, on every row of the table (db/106 header,
+    -- THE SHAPE). match also opens to the driver of a trip to it (db/41);
+    -- trip is narrowed for a driver by db/41's restrictive policy.
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      SELECT string_agg(_v106_label(z, x) || '?' || x::text, ' ') INTO bad
+        FROM unnest(FX || _v106_ball_matches()) x
+       WHERE EXISTS (SELECT 1 FROM match m WHERE m.id = x)
+             IS DISTINCT FROM (fixture_reach('fixture.read', x) OR x IN (SELECT trip_driven_matches()));
+      PERFORM _assert(bad IS NULL, format('§83 (shape): for %s match_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
+      SELECT string_agg(coalesce(_v106_label(z, t.id), t.id::text), ' ') INTO bad
+        FROM _v106_trips() t
+       WHERE EXISTS (SELECT 1 FROM trip v WHERE v.id = t.id)
+             IS DISTINCT FROM (((fixture_end_reach('transport.read', t.match_id, t.school_id, t.team_code)
+                                 AND (fixture_reach('fixture.read', t.match_id) OR t.match_id IN (SELECT trip_driven_matches())))
+                                OR (coalesce(t.driver_id = app_user_id(), false)
+                                    AND app_can('transport.read', t.school_id, t.team_code, ZERO, t.match_id)))
+                               AND (coalesce(t.driver_id = app_user_id(), false) OR NOT trip_fixture_driver_only(t.match_id)));
+      PERFORM _assert(bad IS NULL, format('§83 (shape): for %s trip_read and fixture_end_reach() answer apart at %s', u, left(bad, 300)));
+      SELECT string_agg(coalesce(_v106_label(z, t.id), t.id::text), ' ') INTO bad
+        FROM _v106_sessions() t
+       WHERE EXISTS (SELECT 1 FROM training_session v WHERE v.id = t.id)
+             IS DISTINCT FROM side_reach('team.read', t.school_id, t.team_code, ZERO);
+      PERFORM _assert(bad IS NULL, format('§83 (shape): for %s training_session_read and side_reach() answer apart at %s', u, left(bad, 300)));
+      SELECT string_agg(coalesce(_v106_label(z, x), x::text), ' ') INTO bad
+        FROM unnest(_v106_toss_matches()) x
+       WHERE EXISTS (SELECT 1 FROM match_toss v WHERE v.match_id = x)
+             IS DISTINCT FROM fixture_reach('fixture.read', x);
+      PERFORM _assert(bad IS NULL, format('§83 (shape): for %s match_toss_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
+    END LOOP;
+    PERFORM _assert(cardinality(_v106_toss_matches()) >= 3 AND (SELECT count(*) FROM _v106_trips()) >= 7
+                    AND (SELECT count(*) FROM _v106_sessions()) >= 4,
+      '§83 (shape): too few rows to compare: it proves nothing');
+
+    -- (text): each re-created read asks the unnamed branch with all-f and
+    -- the named branches through the helpers, never the all-zeros person
+    -- (training's fixture argument, "no fixture", aside)
     SELECT string_agg(x.tbl || '.' || x.pol, ' ') INTO bad
       FROM (VALUES
-        ('match', 'match_read', 'fixture_reach(''fixture.read''::text, id)'),
-        ('match_toss', 'match_toss_read', 'fixture_reach(''fixture.read''::text, match_id)'),
-        ('match_broadcast', 'match_broadcast_read', 'fixture_reach(''fixture.read''::text, match_id)'),
-        ('drs_review', 'drs_review_read', 'fixture_reach(''fixture.read''::text, match_id)'),
-        ('match_official', 'match_official_read', 'fixture_reach(''fixture.read''::text, match_id)'),
-        ('match_pitch_report', 'match_pitch_report_read', 'fixture_reach(''fixture.read''::text, match_id)'),
-        ('match_weather', 'match_weather_read', 'fixture_reach(''fixture.read''::text, match_id)'),
-        ('match_conditions', 'match_conditions_read', 'fixture_reach(''fixture.read''::text, match_id)'),
-        ('match_condition_override', 'match_condition_override_read', 'fixture_reach(''fixture.read''::text, match_id)'),
-        ('match_result_decision', 'match_result_decision_read', '(fixture_reach(''fixture.read''::text, match_id) OR competition_visible(match_competition_of(match_id)))'),
+        ('match', 'match_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('match_toss', 'match_toss_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('match_broadcast', 'match_broadcast_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('drs_review', 'drs_review_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('match_official', 'match_official_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('match_pitch_report', 'match_pitch_report_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('match_weather', 'match_weather_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('match_conditions', 'match_conditions_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('match_condition_override', 'match_condition_override_read', 'my_fixture_ends(''fixture.read''::text)'),
+        ('match_result_decision', 'match_result_decision_read', 'my_fixture_ends(''fixture.read''::text)'),
         ('fixture_publication', 'fixture_publication_read', 'side_reach(''fixture.read''::text, school_id, team_code, match_id)'),
-        ('trip', 'trip_read', 'fixture_end_reach(''transport.read''::text, match_id, school_id, match_team(match_id))'),
-        ('training_session', 'training_session_read', 'side_reach(''team.read''::text, school_id, team_code, ''00000000-0000-0000-0000-000000000000''::uuid)')
+        ('trip', 'trip_read', 'my_fixture_ends(''transport.read''::text)'),
+        ('training_session', 'training_session_read', 'my_sides(''team.read''::text)')
       ) x(tbl, pol, q)
      WHERE NOT EXISTS (SELECT 1 FROM pg_policy p
                         WHERE p.polrelid = to_regclass(x.tbl) AND p.polname = x.pol AND p.polcmd = 'r' AND p.polpermissive
-                          AND pg_get_expr(p.polqual, p.polrelid) = x.q);
+                          AND position(x.q IN pg_get_expr(p.polqual, p.polrelid)) > 0
+                          AND replace(pg_get_expr(p.polqual, p.polrelid),
+                                      '''ffffffff-ffff-ffff-ffff-ffffffffffff''::uuid, ''00000000-0000-0000-0000-000000000000''::uuid)', '')
+                              NOT LIKE '%00000000-0000-0000-0000-000000000000%');
     PERFORM _assert(bad IS NULL, format('§83 (text): %s is not the policy db/106 wrote', bad));
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_policy p
                                  WHERE p.polrelid IN (to_regclass('scoring_session'), to_regclass('ball_event_quarantine'),
                                                       to_regclass('scoring_audit'))
                                    AND concat(pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid))
-                                       ~ '(side|fixture|fixture_end)_reach'),
+                                       ~ '(side_reach|fixture_reach|fixture_end_reach|my_fixture_ends|my_sides)\('),
       '§83 (text): a pad table''s policy asks a reach helper');
     PERFORM _assert((SELECT bool_and(p.prosecdef AND p.provolatile = 's'
                                      AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
@@ -21316,11 +21397,15 @@ $v49$;
                        FROM pg_proc p
                       WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'),
                                       to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
-                                      to_regprocedure('fixture_reach(text,uuid)')))
+                                      to_regprocedure('fixture_reach(text,uuid)'), to_regprocedure('my_fixture_ends(text)'),
+                                      to_regprocedure('my_sides(text)'), to_regprocedure('match_away_school(uuid)'),
+                                      to_regprocedure('match_away_team(uuid)')))
                     AND (SELECT count(*) FROM pg_proc p
                           WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'),
                                           to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
-                                          to_regprocedure('fixture_reach(text,uuid)'))) = 3,
+                                          to_regprocedure('fixture_reach(text,uuid)'), to_regprocedure('my_fixture_ends(text)'),
+                                          to_regprocedure('my_sides(text)'), to_regprocedure('match_away_school(uuid)'),
+                                          to_regprocedure('match_away_team(uuid)'))) = 7,
       '§83 (text): a reach helper is missing, not a stable definer with a pinned path, or not scrbrd_app''s alone');
 
     -- (ended), last: g1's own link ends, and his next read has nothing

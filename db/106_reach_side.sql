@@ -31,39 +31,75 @@
 --   <a boy's id>  this boy: his family and himself, and every unnamed
 --                 assignment that reaches his side.
 --
--- WHAT THIS FILE ADDS (each STABLE SECURITY DEFINER, search_path pinned,
--- EXECUTE for scrbrd_app alone)
+-- THE RULE: three questions about one row (§2.5)
 --
 --   side_reach(capability, school, team, fixture)
 --       Is the caller at this side, for this capability? (1) An assignment
 --       naming nobody that fits the school and team (app_can() with all-f),
 --       or (2) a named assignment (guardian, selfaccess, enquiry) naming a
 --       boy whose side this is (player.school_id and player.team_code are
---       the side), asked of app_can() about that boy. §2.5, word for word in
---       its meaning.
---
+--       the side), asked of app_can() about that boy.
 --   fixture_end_reach(capability, match, school, team)
 --       Is the caller at the end of this fixture that (school, team) plays,
 --       or named on that end's sheet? side_reach() at that end, or (3) a boy
 --       on the fixture's sheet at that end (match_squad, not withdrawn, a boy
 --       of that end's school), asked of app_can() about the boy at that end.
---
 --   fixture_reach(capability, match)
 --       Is the caller at either end of this fixture, or named on its sheet?
 --       fixture_end_reach() at the home end, or at the away end when there is
 --       one. §2.5's three branches, grouped by end.
 --
+-- THE SHAPE: the same rule, asked once per statement (§2.5 "cost")
+--   The three questions above are one row at a time, and the first build put
+--   them in the policies as they stand. Measured on a forty-fixture season
+--   (five Hilton sides, 204 fixtures, 200 buses) that cost every reader
+--   350–500 ms for the fixture list where db/09 cost 8–11: each row nested
+--   four definer calls (fixture_reach → fixture_end_reach → side_reach →
+--   app_can), and a definer SQL function called from inside another is
+--   started afresh on every call. §2.5 names the remedy, "the shape change —
+--   not the rule change", as lift_my_sides() (db/70) already does: the
+--   branches that are about the caller's own boys are computed ONCE per
+--   statement, as a set, and the policy probes it; the branch about nobody
+--   (1) stays a direct app_can() per row, as db/09's was.
+--
+--   my_fixture_ends(capability)   the fixture ends (match, school, team) the
+--       caller reaches through a boy his own links name: (2) the boy's side at
+--       that end, or (3) the boy on that end's sheet. Each asked of app_can()
+--       about the boy, at that end, with the fixture.
+--   my_sides(capability)          the sides (school, team) the caller reaches
+--       through a boy his own links name (2), asked with no fixture (zeros),
+--       as training_session_read always asked.
+--   match_away_school(match), match_away_team(match)   the away anchors, as
+--       db/02's match_school()/match_team() are the home ones, so a satellite
+--       asks (1) at the away end without reading match under the caller's
+--       row security (db/39's reason).
+--
+--   Measured, the same season, median of 15, ms execution (planning < 0.3):
+--                                   db/09     first build    this file
+--     match, guardian of two          9.5        508           34–45
+--     match, 1XI coach               11.0        427            9
+--     match, director                 7.7        353            8
+--     match, pupil (self-access)        –        452           19–22
+--     trip,  guardian of two         43          295           62
+--     trip,  1XI coach               57          256           29–31
+--     toss,  guardian of two         16 (db/39)    –           29
+--     toss,  1XI coach                7 (db/39)    –           10
+--     training, guardian of two         –          –            8
+--   The guardian's figure grows with her children's fixtures (app_can() per
+--   fixture of each child's side, once per statement), not with the school's.
+--   On the seed every read is under 13 ms. db/99 §83 (shape) proves, for
+--   every person holding an assignment and every staged and scored row, that
+--   each policy admits exactly the rows the one-row question admits.
+--
 -- WHERE THE BUILD DIFFERS FROM §2.5's SQL, and why each is the same rule
 --   (a) The boys branch (2) and the sheet branch (3) ask about are the boys
 --       the CALLER'S OWN links name, not every boy on the side or the sheet.
---       Same answer: app_can() about a boy can say yes where the unnamed
---       branch (1) said no only through an assignment that names that boy
---       (§1.2: an assignment naming nobody passes every spelling alike, so
---       for it (2) and (3) add nothing to (1)). Asking only about the
---       caller's own boys makes the cost the caller's links (a parent's one
---       or two children), not the side's roster (fifteen to twenty-five boys,
---       per row). db/99 §83 (literal) holds the build equal to §2.5's text,
---       spelled out apart from it, for every reader and every row it stages.
+--       Same answer: app_can() about a boy can say yes where branch (1) said
+--       no only through an assignment that names that boy (§1.2: an
+--       assignment naming nobody passes every spelling alike, so for it (2)
+--       and (3) add nothing to (1)). db/99 §83 (literal) holds the helpers
+--       equal to §2.5's text, spelled out over every boy, for every person
+--       and every row it stages.
 --   (b) The sheet branch skips a WITHDRAWN boy and asks for a boy of that
 --       end's school, as db/100's my_child_fixtures() and db/101's
 --       news_sheet_reach() do (Kameel: "a boy taken off the sheet loses
@@ -78,6 +114,16 @@
 --       would hand the host's bus, its driver, its pickup and its notes to
 --       the away school's parents. trip_read asks fixture_end_reach() at the
 --       trip's school and the host's team, which is db/41's anchor.
+--   (d) ...and only to a reader of its fixture. db/09's trip_read read its
+--       anchors through a subquery on match under the caller's own row
+--       security, so a caller who could not read the fixture got no anchor
+--       and no trip: that is what kept a school-wide driver (transport.read,
+--       no fixture.read) to the fixtures he drives, where db/41 then cuts
+--       him to his own bus (db/99's db/39 section tripwire; docs/rls-anchor-audit.md,
+--       "trip"). trip_read keeps that condition, spelled out instead of
+--       hidden in an anchor: fixture_reach('fixture.read') on the trip's
+--       fixture, or a live trip to it that he drives (db/41's
+--       trip_driven_matches()).
 --
 -- THE POLICIES (each DROP POLICY IF EXISTS, then CREATE; FOR SELECT,
 -- PERMISSIVE; the write policies are not touched)
@@ -94,18 +140,22 @@
 --   match_result_decision_read     the same, OR db/69's competition_visible()
 --                                  branch, kept word for word
 --   fixture_publication_read       side_reach('fixture.read', school, team,
---                                  match): each school still reads its own
---                                  side's row and only that (db/47); the
---                                  columns are a yes/no per side and who set
---                                  it (§5 item 9), the side's row
+--                                  match), the one-row question as it stands
+--                                  (read one fixture at a time): each school
+--                                  still reads its own side's row and only
+--                                  that (db/47); its columns are a yes/no per
+--                                  side and who set it (§5 item 9)
 --   trip_read                      fixture_end_reach('transport.read', match,
---                                  trip's school, match_team()) — (c) above
+--                                  trip's school, match_team()) AND
+--                                  (fixture_reach('fixture.read', match) OR
+--                                  he drives to it) — (c) and (d) above
 --   training_session_read          side_reach('team.read', school, team, zeros)
+--   each in THE SHAPE above.
 -- AND REPLACES IN PLACE
 --   trip_fixture_driver_only(match) (db/41)  "the caller reaches this
 --       fixture ONLY as a driver": its second half was "the two arms of
---       match_read (db/09), repeated here"; it now repeats match_read as it
---       stands, fixture_reach('fixture.read', match). For a driver (no
+--       match_read (db/09), repeated here"; it now asks match_read's question
+--       as it stands, fixture_reach('fixture.read', match). For a driver (no
 --       fixture.read) nothing changes; a guardian who also drives reaches a
 --       fixture of another side only as its driver, so db/41's restrictive
 --       policy keeps the other buses on it from her. Signature, owner rights
@@ -130,17 +180,15 @@
 --     Playing up he does not read the older side's fixture: his selfaccess
 --     link holds no fixture.read, and his team assignment is his own side's.
 --     db/100's log answers him the same; §2.2's plain words say he should,
---     which is a capability question, not this file's (the report says so).
+--     which is a capability question, not this file's.
 --   A pupil whose `player` assignment has no team (until R-D, db/108): every
 --     side at his school, exactly as before. Branch (1) gives it him; (2)
 --     and (3) give him nothing more (§83 (team-less)).
 --   Staff, a school-wide spectator, the office, a driver: unchanged.
---   The away side's family: gains the satellites of her side's fixtures.
+--   The away side's family and staff: gain the satellites of their side's
+--     away fixtures.
 --
--- COST. Measured on the seed and a synthetic forty-fixture season, as a
--- guardian of two boys; the figures are in db/99 §83's header. (§5 item 11)
---
--- WHAT IT CHANGES ON A LIVE DATABASE. Three new functions; one function
+-- WHAT IT CHANGES ON A LIVE DATABASE. Seven new functions; one function
 -- replaced in place (trip_fixture_driver_only); thirteen read policies
 -- dropped and created again, each in the paste's one transaction. No table,
 -- column, index or row. No grant on a table. A second paste changes nothing.
@@ -151,8 +199,12 @@
 DO $needs$
 BEGIN
   IF to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL
+     OR to_regprocedure('match_school(uuid)') IS NULL
+     OR to_regprocedure('match_team(uuid)') IS NULL
      OR to_regprocedure('trip_fixture_driver_only(uuid)') IS NULL
+     OR to_regprocedure('trip_driven_matches()') IS NULL
      OR to_regprocedure('competition_visible(uuid)') IS NULL
+     OR to_regprocedure('match_competition_of(uuid)') IS NULL
      OR to_regclass('fixture_publication') IS NULL
      OR to_regclass('match_conditions') IS NULL
      OR to_regclass('match_result_decision') IS NULL THEN
@@ -160,7 +212,7 @@ BEGIN
   END IF;
 END $needs$;
 
--- ── 1 · The helpers ────────────────────────────────────────────────
+-- ── 1 · The rule: three questions about one row ────────────────────
 -- Read as the owner: the roster, the sheet and the links are rows the
 -- caller's own policies may not show him, and a policy that asks must not
 -- depend on what he can see of them. Each answers yes or no.
@@ -184,8 +236,6 @@ RETURNS boolean AS $$
                   AND p.school_id = p_school AND p.team_code = p_team
                   AND app_can(p_capability, p_school, p_team, p.id, p_fixture))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-REVOKE ALL ON FUNCTION side_reach(text, uuid, text, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION side_reach(text, uuid, text, uuid) TO scrbrd_app;
 
 -- Is the caller at the end of this fixture that (school, team) plays, or
 -- named on that end's sheet?
@@ -209,8 +259,6 @@ RETURNS boolean AS $$
                         AND m.away_team_code IS NOT DISTINCT FROM p_team))
                   AND app_can(p_capability, p_school, p_team, ms.player_id, m.id)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-REVOKE ALL ON FUNCTION fixture_end_reach(text, uuid, uuid, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION fixture_end_reach(text, uuid, uuid, text) TO scrbrd_app;
 
 -- Is the caller at either end of this fixture, or named on its sheet?
 CREATE OR REPLACE FUNCTION fixture_reach(p_capability text, p_match uuid)
@@ -220,8 +268,59 @@ RETURNS boolean AS $$
     OR (m.away_school_id IS NOT NULL
         AND fixture_end_reach(p_capability, m.id, m.away_school_id, m.away_team_code))))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-REVOKE ALL ON FUNCTION fixture_reach(text, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION fixture_reach(text, uuid) TO scrbrd_app;
+
+-- ── 2 · The shape: the named branches, once per statement ──────────
+-- The fixture ends the caller reaches through a boy his own links name:
+-- branch (2), the boy's side at that end, or (3), the boy on that end's
+-- sheet, not withdrawn; a boy of that end's school; asked about the boy, at
+-- that end, with the fixture. Bounded by the boys' schools' fixtures.
+CREATE OR REPLACE FUNCTION my_fixture_ends(p_capability text)
+RETURNS TABLE (match_id uuid, school_id uuid, team_code text) AS $$
+  SELECT DISTINCT x.match_id, x.school_id, x.team_code
+    FROM (SELECT m.id, m.school_id, m.team_code
+            FROM role_assignment a
+            JOIN assignment_subject g ON g.assignment_id = a.id
+            JOIN player p ON p.id = g.player_id
+            JOIN match m ON m.school_id = p.school_id
+           WHERE a.person_id = app_user_id()
+             AND (m.team_code = p.team_code
+                  OR EXISTS (SELECT 1 FROM match_squad s
+                              WHERE s.match_id = m.id AND s.player_id = p.id
+                                AND s.side = 'home' AND NOT s.withdrawn))
+             AND app_can(p_capability, m.school_id, m.team_code, p.id, m.id)
+          UNION ALL
+          SELECT m.id, m.away_school_id, m.away_team_code
+            FROM role_assignment a
+            JOIN assignment_subject g ON g.assignment_id = a.id
+            JOIN player p ON p.id = g.player_id
+            JOIN match m ON m.away_school_id = p.school_id
+           WHERE a.person_id = app_user_id()
+             AND (m.away_team_code = p.team_code
+                  OR EXISTS (SELECT 1 FROM match_squad s
+                              WHERE s.match_id = m.id AND s.player_id = p.id
+                                AND s.side = 'away' AND NOT s.withdrawn))
+             AND app_can(p_capability, m.away_school_id, m.away_team_code, p.id, m.id)) x(match_id, school_id, team_code)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The sides the caller reaches through a boy his own links name (2), asked
+-- with no fixture.
+CREATE OR REPLACE FUNCTION my_sides(p_capability text)
+RETURNS TABLE (school_id uuid, team_code text) AS $$
+  SELECT DISTINCT p.school_id, p.team_code
+    FROM role_assignment a
+    JOIN assignment_subject g ON g.assignment_id = a.id
+    JOIN player p ON p.id = g.player_id
+   WHERE a.person_id = app_user_id() AND p.team_code IS NOT NULL
+     AND app_can(p_capability, p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The away anchors, as db/02's match_school() and match_team() are the home.
+CREATE OR REPLACE FUNCTION match_away_school(p_match uuid) RETURNS uuid AS $$
+  SELECT away_school_id FROM match WHERE id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION match_away_team(p_match uuid) RETURNS text AS $$
+  SELECT away_team_code FROM match WHERE id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- db/41's "the caller reaches this fixture only as a driver", with
 -- match_read's question as it now stands. Every other line is db/41's.
@@ -232,124 +331,150 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 REVOKE ALL ON FUNCTION trip_fixture_driver_only(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION trip_fixture_driver_only(uuid) TO PUBLIC;
 
--- A managed host's API roles reach none of the new helpers.
-DO $managed$
-DECLARE r text;
+-- Who may call the new ones: the application, whose policies ask them. Not
+-- PUBLIC, nor a managed host's API roles.
+DO $grants$
+DECLARE f text; r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-      EXECUTE format('REVOKE ALL ON FUNCTION side_reach(text, uuid, text, uuid) FROM %I', r);
-      EXECUTE format('REVOKE ALL ON FUNCTION fixture_end_reach(text, uuid, uuid, text) FROM %I', r);
-      EXECUTE format('REVOKE ALL ON FUNCTION fixture_reach(text, uuid) FROM %I', r);
-    END IF;
+  FOREACH f IN ARRAY ARRAY['side_reach(text,uuid,text,uuid)', 'fixture_end_reach(text,uuid,uuid,text)',
+                           'fixture_reach(text,uuid)', 'my_fixture_ends(text)', 'my_sides(text)',
+                           'match_away_school(uuid)', 'match_away_team(uuid)'] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
+      END IF;
+    END LOOP;
   END LOOP;
-END $managed$;
+END $grants$;
 
--- ── 2 · Class A: the fixture and the facts around it ───────────────
+-- ── 3 · Class A: the fixture and the facts around it ───────────────
+-- fixture_reach('fixture.read', <the fixture>), in the shape: (1) at the
+-- home end, (1) at the away end, or an end my_fixture_ends() names.
 DROP POLICY IF EXISTS match_read ON match;
 CREATE POLICY match_read ON match
-  FOR SELECT USING (fixture_reach('fixture.read', match.id));
+  FOR SELECT USING (
+    app_can('fixture.read', match.school_id, match.team_code, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, match.id)
+    OR (match.away_school_id IS NOT NULL
+        AND app_can('fixture.read', match.away_school_id, match.away_team_code, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, match.id))
+    OR match.id IN (SELECT r.match_id FROM my_fixture_ends('fixture.read') r));
 
-DROP POLICY IF EXISTS match_toss_read ON match_toss;
-CREATE POLICY match_toss_read ON match_toss
-  FOR SELECT USING (fixture_reach('fixture.read', match_toss.match_id));
-
-DROP POLICY IF EXISTS match_broadcast_read ON match_broadcast;
-CREATE POLICY match_broadcast_read ON match_broadcast
-  FOR SELECT USING (fixture_reach('fixture.read', match_broadcast.match_id));
-
-DROP POLICY IF EXISTS drs_review_read ON drs_review;
-CREATE POLICY drs_review_read ON drs_review
-  FOR SELECT USING (fixture_reach('fixture.read', drs_review.match_id));
-
-DROP POLICY IF EXISTS match_official_read ON match_official;
-CREATE POLICY match_official_read ON match_official
-  FOR SELECT USING (fixture_reach('fixture.read', match_official.match_id));
-
-DROP POLICY IF EXISTS match_pitch_report_read ON match_pitch_report;
-CREATE POLICY match_pitch_report_read ON match_pitch_report
-  FOR SELECT USING (fixture_reach('fixture.read', match_pitch_report.match_id));
-
-DROP POLICY IF EXISTS match_weather_read ON match_weather;
-CREATE POLICY match_weather_read ON match_weather
-  FOR SELECT USING (fixture_reach('fixture.read', match_weather.match_id));
-
-DROP POLICY IF EXISTS match_conditions_read ON match_conditions;
-CREATE POLICY match_conditions_read ON match_conditions
-  FOR SELECT USING (fixture_reach('fixture.read', match_conditions.match_id));
-
-DROP POLICY IF EXISTS match_condition_override_read ON match_condition_override;
-CREATE POLICY match_condition_override_read ON match_condition_override
-  FOR SELECT USING (fixture_reach('fixture.read', match_condition_override.match_id));
+-- The satellites: the same question about the row's fixture.
+DO $satellites$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['match_toss', 'match_broadcast', 'drs_review', 'match_official', 'match_pitch_report',
+                           'match_weather', 'match_conditions', 'match_condition_override'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_read', t);
+    EXECUTE format($p$CREATE POLICY %1$I ON %2$I
+  FOR SELECT USING (
+    app_can('fixture.read', match_school(%2$I.match_id), match_team(%2$I.match_id), 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, %2$I.match_id)
+    OR (match_away_school(%2$I.match_id) IS NOT NULL
+        AND app_can('fixture.read', match_away_school(%2$I.match_id), match_away_team(%2$I.match_id), 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, %2$I.match_id))
+    OR %2$I.match_id IN (SELECT r.match_id FROM my_fixture_ends('fixture.read') r))$p$, t || '_read', t);
+  END LOOP;
+END $satellites$;
 
 -- db/69's third branch (a competition's published results) is kept.
 DROP POLICY IF EXISTS match_result_decision_read ON match_result_decision;
 CREATE POLICY match_result_decision_read ON match_result_decision
-  FOR SELECT USING (fixture_reach('fixture.read', match_result_decision.match_id)
-                    OR competition_visible(match_competition_of(match_result_decision.match_id)));
+  FOR SELECT USING (
+    app_can('fixture.read', match_school(match_result_decision.match_id), match_team(match_result_decision.match_id),
+            'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, match_result_decision.match_id)
+    OR (match_away_school(match_result_decision.match_id) IS NOT NULL
+        AND app_can('fixture.read', match_away_school(match_result_decision.match_id), match_away_team(match_result_decision.match_id),
+                    'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, match_result_decision.match_id))
+    OR match_result_decision.match_id IN (SELECT r.match_id FROM my_fixture_ends('fixture.read') r)
+    OR competition_visible(match_competition_of(match_result_decision.match_id)));
 
--- Each school reads its own side's row (db/47), now as the side.
+-- Each school reads its own side's row (db/47), now as the side: the one-row
+-- question as it stands (a publication is read a fixture at a time).
 DROP POLICY IF EXISTS fixture_publication_read ON fixture_publication;
 CREATE POLICY fixture_publication_read ON fixture_publication
   FOR SELECT USING (side_reach('fixture.read', fixture_publication.school_id, fixture_publication.team_code,
                                fixture_publication.match_id));
 
--- ── 3 · Class F: the bus, at its own end (header (c)) ──────────────
+-- ── 4 · Class F: the bus, at its own end, to whoever reads its fixture ──
+-- fixture_end_reach('transport.read', match, the trip's school, the host's
+-- team) AND (fixture_reach('fixture.read', match) OR he drives a trip to it),
+-- in the shape. Header (c) and (d). coalesce: an end with no team is an end.
 DROP POLICY IF EXISTS trip_read ON trip;
 CREATE POLICY trip_read ON trip
-  FOR SELECT USING (fixture_end_reach('transport.read', trip.match_id, trip.school_id, match_team(trip.match_id)));
+  FOR SELECT USING (
+    (app_can('transport.read', trip.school_id, match_team(trip.match_id), 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, trip.match_id)
+     OR (trip.match_id, trip.school_id, coalesce(match_team(trip.match_id), ''))
+        IN (SELECT r.match_id, r.school_id, coalesce(r.team_code, '') FROM my_fixture_ends('transport.read') r))
+    AND (app_can('fixture.read', match_school(trip.match_id), match_team(trip.match_id), 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, trip.match_id)
+         OR (match_away_school(trip.match_id) IS NOT NULL
+             AND app_can('fixture.read', match_away_school(trip.match_id), match_away_team(trip.match_id), 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, trip.match_id))
+         OR trip.match_id IN (SELECT r.match_id FROM my_fixture_ends('fixture.read') r)
+         OR trip.match_id IN (SELECT trip_driven_matches())));
 
--- ── 4 · Training: the side's sessions ──────────────────────────────
+-- ── 5 · Training: the side's sessions ──────────────────────────────
+-- side_reach('team.read', school, team, zeros), in the shape.
 DROP POLICY IF EXISTS training_session_read ON training_session;
 CREATE POLICY training_session_read ON training_session
-  FOR SELECT USING (side_reach('team.read', training_session.school_id, training_session.team_code,
-                               '00000000-0000-0000-0000-000000000000'::uuid));
+  FOR SELECT USING (
+    app_can('team.read', training_session.school_id, training_session.team_code,
+            'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+    OR (training_session.school_id, training_session.team_code) IN (SELECT s.school_id, s.team_code FROM my_sides('team.read') s));
 
--- ── 5 · Refuse to commit a file that did not do what it says ───────
+-- ── 6 · Refuse to commit a file that did not do what it says ───────
 DO $check$
 DECLARE
-  r    record;
-  q    text;
-  f    text;
-  want text[][] := ARRAY[
-    ['match',                    'match_read',                    'fixture_reach(''fixture.read''::text, id)'],
-    ['match_toss',               'match_toss_read',               'fixture_reach(''fixture.read''::text, match_id)'],
-    ['match_broadcast',          'match_broadcast_read',          'fixture_reach(''fixture.read''::text, match_id)'],
-    ['drs_review',               'drs_review_read',               'fixture_reach(''fixture.read''::text, match_id)'],
-    ['match_official',           'match_official_read',           'fixture_reach(''fixture.read''::text, match_id)'],
-    ['match_pitch_report',       'match_pitch_report_read',       'fixture_reach(''fixture.read''::text, match_id)'],
-    ['match_weather',            'match_weather_read',            'fixture_reach(''fixture.read''::text, match_id)'],
-    ['match_conditions',         'match_conditions_read',         'fixture_reach(''fixture.read''::text, match_id)'],
-    ['match_condition_override', 'match_condition_override_read', 'fixture_reach(''fixture.read''::text, match_id)'],
-    ['match_result_decision',    'match_result_decision_read',    '(fixture_reach(''fixture.read''::text, match_id) OR competition_visible(match_competition_of(match_id)))'],
-    ['fixture_publication',      'fixture_publication_read',      'side_reach(''fixture.read''::text, school_id, team_code, match_id)'],
-    ['trip',                     'trip_read',                     'fixture_end_reach(''transport.read''::text, match_id, school_id, match_team(match_id))'],
-    ['training_session',         'training_session_read',         'side_reach(''team.read''::text, school_id, team_code, ''00000000-0000-0000-0000-000000000000''::uuid)']];
-  i int;
+  r record;
+  q text;
+  f text;
+  t text;
 BEGIN
-  -- Each policy is exactly the one this file wrote: a permissive SELECT
-  -- policy whose whole text is the helper's question.
-  FOR i IN 1..array_length(want, 1) LOOP
+  -- Every re-created read: a permissive SELECT policy that asks the unnamed
+  -- branch with all-f and the named branches through the helpers, and never
+  -- with the all-zeros person (bar training's fixture argument, which is
+  -- "no fixture", and the person argument is all-f there too).
+  FOR r IN SELECT x.tbl, x.pol, x.must FROM (VALUES
+      ('match', 'match_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'away_school_id IS NOT NULL']),
+      ('match_toss', 'match_toss_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)']),
+      ('match_broadcast', 'match_broadcast_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)']),
+      ('drs_review', 'drs_review_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)']),
+      ('match_official', 'match_official_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)']),
+      ('match_pitch_report', 'match_pitch_report_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)']),
+      ('match_weather', 'match_weather_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)']),
+      ('match_conditions', 'match_conditions_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)']),
+      ('match_condition_override', 'match_condition_override_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)']),
+      ('match_result_decision', 'match_result_decision_read', ARRAY['my_fixture_ends(''fixture.read''::text)', 'match_away_school(match_id)',
+                                                                    'competition_visible(match_competition_of(match_id))']),
+      ('fixture_publication', 'fixture_publication_read', ARRAY['side_reach(''fixture.read''::text, school_id, team_code, match_id)']),
+      ('trip', 'trip_read', ARRAY['my_fixture_ends(''transport.read''::text)', 'school_id, match_team(match_id)',
+                                  'my_fixture_ends(''fixture.read''::text)', 'trip_driven_matches()']),
+      ('training_session', 'training_session_read', ARRAY['my_sides(''team.read''::text)'])) x(tbl, pol, must) LOOP
     SELECT pg_get_expr(p.polqual, p.polrelid) INTO q
       FROM pg_policy p
-     WHERE p.polrelid = to_regclass(want[i][1]) AND p.polname = want[i][2] AND p.polcmd = 'r' AND p.polpermissive;
-    IF q IS DISTINCT FROM want[i][3] THEN
-      RAISE EXCEPTION 'db/106: %.% is not the policy this file wrote: %', want[i][1], want[i][2], coalesce(q, 'missing');
+     WHERE p.polrelid = to_regclass(r.tbl) AND p.polname = r.pol AND p.polcmd = 'r' AND p.polpermissive;
+    IF q IS NULL OR EXISTS (SELECT 1 FROM unnest(r.must) m WHERE position(m IN q) = 0)
+       OR (r.pol <> 'fixture_publication_read' AND position('ffffffff-ffff-ffff-ffff-ffffffffffff' IN q) = 0)
+       OR replace(q, '''ffffffff-ffff-ffff-ffff-ffffffffffff''::uuid, ''00000000-0000-0000-0000-000000000000''::uuid)', '')
+            LIKE '%00000000-0000-0000-0000-000000000000%' THEN
+      RAISE EXCEPTION 'db/106: %.% is not the policy this file wrote: %', r.tbl, r.pol, coalesce(q, 'missing');
     END IF;
   END LOOP;
   -- The helpers: stable definers with a pinned path, for scrbrd_app and not
-  -- PUBLIC. side_reach() asks with all-f and about a named boy, never with
-  -- the all-zeros person that is a guardian's whole school; the end asks the
-  -- sheet, not withdrawn; fixture_reach() asks both ends.
+  -- PUBLIC. They ask with all-f and about a named boy, never with the
+  -- all-zeros person that is a guardian's whole school (my_sides() asks
+  -- about the boy with no fixture, which is the zeros FIXTURE argument).
   FOR r IN SELECT x.sig, x.must FROM (VALUES
              ('side_reach(text,uuid,text,uuid)', ARRAY['ffffffff-ffff-ffff-ffff-ffffffffffff', 'p.id, p_fixture', 'a.person_id = app_user_id()']),
              ('fixture_end_reach(text,uuid,uuid,text)', ARRAY['side_reach(p_capability, p_school, p_team, p_match)', 'NOT ms.withdrawn', 'ms.player_id, m.id', 'a.person_id = app_user_id()']),
-             ('fixture_reach(text,uuid)', ARRAY['m.school_id, m.team_code', 'm.away_school_id, m.away_team_code'])) x(sig, must) LOOP
+             ('fixture_reach(text,uuid)', ARRAY['m.school_id, m.team_code', 'm.away_school_id, m.away_team_code']),
+             ('my_fixture_ends(text)', ARRAY['NOT s.withdrawn', 'm.school_id, m.team_code, p.id, m.id', 'm.away_school_id, m.away_team_code, p.id, m.id', 'a.person_id = app_user_id()']),
+             ('my_sides(text)', ARRAY['p.school_id, p.team_code, p.id', 'a.person_id = app_user_id()']),
+             ('match_away_school(uuid)', ARRAY['away_school_id']),
+             ('match_away_team(uuid)', ARRAY['away_team_code'])) x(sig, must) LOOP
     SELECT p.prosrc INTO f FROM pg_proc p
      WHERE p.oid = to_regprocedure(r.sig) AND p.prosecdef AND p.provolatile = 's'
        AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'));
-    IF f IS NULL OR position('00000000-0000-0000-0000-000000000000' IN f) > 0
-       OR EXISTS (SELECT 1 FROM unnest(r.must) m WHERE position(m IN f) = 0) THEN
+    IF f IS NULL OR EXISTS (SELECT 1 FROM unnest(r.must) m WHERE position(m IN f) = 0)
+       OR (r.sig <> 'my_sides(text)' AND position('00000000-0000-0000-0000-000000000000' IN f) > 0) THEN
       RAISE EXCEPTION 'db/106: % is missing, not a stable definer with a pinned path, or does not ask what it says', r.sig;
     END IF;
     IF has_function_privilege('public', to_regprocedure(r.sig), 'EXECUTE')
@@ -378,9 +503,12 @@ BEGIN
     RAISE EXCEPTION 'db/106: a table this file narrows has another permissive read policy';
   END IF;
   -- The pad's tables are the host's, untouched (AV-D4).
-  IF EXISTS (SELECT 1 FROM pg_policy p
-              WHERE p.polrelid IN (to_regclass('scoring_session'), to_regclass('ball_event_quarantine'), to_regclass('scoring_audit'))
-                AND concat(pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid)) ~ '(side|fixture|fixture_end)_reach') THEN
-    RAISE EXCEPTION 'db/106: a pad table''s policy asks a reach helper';
-  END IF;
+  FOREACH t IN ARRAY ARRAY['scoring_session', 'ball_event_quarantine', 'scoring_audit'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_policy p
+                WHERE p.polrelid = to_regclass(t)
+                  AND concat(pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid))
+                      ~ '(side_reach|fixture_reach|fixture_end_reach|my_fixture_ends|my_sides)\(') THEN
+      RAISE EXCEPTION 'db/106: %''s policy asks a reach helper', t;
+    END IF;
+  END LOOP;
 END $check$;
