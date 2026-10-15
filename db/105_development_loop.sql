@@ -39,7 +39,9 @@
 --
 -- WHAT IT DOES TO A LIVE DATABASE
 --   Two new tables (empty), five permissive and three RESTRICTIVE policies, two
---   functions, one trigger. No existing row is changed. The two RESTRICTIVE
+--   functions, one trigger; the application may delete a plan's rows (db/06's
+--   default privileges give no DELETE) and may not write a target at all. No
+--   existing row is changed. The two RESTRICTIVE
 --   rules on training_attendance lock it for one statement each.
 --   A second paste changes nothing: IF NOT EXISTS, DROP … IF EXISTS, CREATE OR
 --   REPLACE throughout.
@@ -288,6 +290,20 @@ CREATE POLICY training_session_drill_delete ON training_session_drill
     (SELECT t.team_code FROM training_session t WHERE t.id = training_session_drill.session_id),
     '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- db/06's default privileges give the application SELECT, INSERT and UPDATE
+-- on a new table and never DELETE; replacing a plan needs it. A managed
+-- host's API roles get nothing of the table.
+GRANT SELECT, INSERT, UPDATE, DELETE ON training_session_drill TO scrbrd_app;
+DO $plan_platform_roles$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON training_session_drill FROM %I', r);
+    END IF;
+  END LOOP;
+END $plan_platform_roles$;
+
 /**
  * A plan's drill is the session's school's own or a platform drill
  * (school_id NULL, which every signed-in reader reads). A definer, so the
@@ -388,6 +404,11 @@ BEGIN
        OR (cmd = 'UPDATE' AND qual LIKE '%team.manage%' AND with_check LIKE '%team.manage%')
        OR (cmd = 'DELETE' AND qual LIKE '%team.manage%'));
   IF n <> 4 THEN RAISE EXCEPTION 'db/105: training_session_drill has % of its four policies', n; END IF;
+  IF NOT (has_table_privilege('scrbrd_app', 'training_session_drill', 'SELECT')
+          AND has_table_privilege('scrbrd_app', 'training_session_drill', 'INSERT')
+          AND has_table_privilege('scrbrd_app', 'training_session_drill', 'DELETE')) THEN
+    RAISE EXCEPTION 'db/105: the application cannot read, write or replace a plan';
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'training_session_drill'::regclass
                     AND tgname = 'training_session_drill_from_the_library' AND tgenabled = 'O') THEN
     RAISE EXCEPTION 'db/105: the plan''s library trigger is missing or disabled';
