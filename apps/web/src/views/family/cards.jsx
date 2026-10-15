@@ -166,7 +166,8 @@ export function NoticesCard({ child, role, onOpen }) {
  */
 export function NewsCard({ child, role }) {
   const { rows } = useLive("news", role);
-  const posts = rows.filter((p) => !p.draft && (p.scope !== "team" || p.audience === child.team)).slice(0, 3);
+  // A plan is not "posted" here: it is THE PLAN on its fixture (views/family/plan.jsx), and one notice in Notices.
+  const posts = rows.filter((p) => !p.draft && p.kind !== "plan" && (p.scope !== "team" || p.audience === child.team)).slice(0, 3);
   if (!posts.length) return null;
   return (
     <Card label="Posted" testid="news-card">

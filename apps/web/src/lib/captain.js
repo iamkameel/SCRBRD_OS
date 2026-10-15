@@ -284,3 +284,145 @@ export function overStory(commentary, innings, limit = null) {
     .map((g) => ({ key: g.key, over: g.over + 1, text: String(g.end.text) }));
   return limit == null ? rows : rows.slice(0, limit);
 }
+
+// ── The coach's plan (phase B, docs/design/SCRBRD-138_phaseB.md §5) ──
+
+/** The most a plan may say: the route refuses more, and the composer counts to it (§5.1). */
+export const PLAN_MAX = 1000;
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "Thu" or "Thu 20:10" for an instant, on the SA clock (UTC+2, no summer
+ * time), the way a byline reads: never a locale's guess at it.
+ * @param {string | null | undefined} iso
+ * @param {{ time?: boolean }} [o]
+ */
+export function planWhen(iso, { time = true } = {}) {
+  const t = Date.parse(String(iso ?? ""));
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t + 2 * 3600e3);
+  const day = DAYS[d.getUTCDay()];
+  return time ? `${day} ${d.toISOString().slice(11, 16)}` : day;
+}
+
+/**
+ * The title the screen makes for a plan, which is not the coach's to edit, so
+ * the notice's first line is always the fixture (§5.1): "The plan: v Kearsney,
+ * Sat 3 Oct".
+ * @param {string} opponent  @param {number | null | undefined} startMs  the fixture's start
+ */
+export function planTitle(opponent, startMs) {
+  const d = Number.isFinite(startMs) ? new Date(/** @type {number} */ (startMs) + 2 * 3600e3) : null;
+  const when = d ? `, ${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}` : "";
+  return `The plan: v ${String(opponent ?? "").trim() || "the opposition"}${when}`;
+}
+
+/**
+ * @typedef {{ id: string, title: string, body: string, author: string | null, publishedAt: string | null, mine: boolean,
+ *             noticeId: string | null, schoolId: string | null, teamCode: string | null }} Plan
+ */
+
+/**
+ * The `news` read's parameters for one fixture's plans: the read narrows to
+ * that fixture (services/api/read/read-api.mjs), so a plan is found however
+ * many newer posts the reader has, where the unnarrowed read is the newest
+ * 100. Every screen that draws a fixture's plan reads with this.
+ * @param {string | null | undefined} fixtureId
+ * @returns {{ fixtureId: string } | null}
+ */
+export const planRead = (fixtureId) => (fixtureId ? { fixtureId } : null);
+
+/**
+ * The plans for a fixture among the `news` read's rows, newest first: those
+ * with kind 'plan' and this fixture's id, and, where `side` names one, only
+ * that side's (a fixture between two of one school's sides has a plan for each;
+ * a reader who holds both ends reads both). Nothing here decides who may read
+ * a plan: the read did, and a row it did not return is not here.
+ * @param {any[] | null | undefined} rows  the adapted `news` rows (lib/live.js)
+ * @param {string | null | undefined} fixtureId
+ * @param {{ school: string | null, team: string | null } | null} [side]
+ * @returns {Plan[]}
+ */
+function plansFor(rows, fixtureId, side = null) {
+  if (!fixtureId) return [];
+  return (rows ?? [])
+    .filter((r) => r?.kind === "plan" && r.fixtureId === fixtureId
+      && (!side || ((side.school == null || r.schoolId === side.school) && (side.team == null || r.teamCode === side.team))))
+    .map((r) => ({ id: r.id, title: r.title, body: r.body, author: r.authorName ?? null, publishedAt: r.publishedAt ?? null, mine: r.mine === true,
+                   noticeId: r.noticeId ?? null, schoolId: r.schoolId ?? null, teamCode: r.teamCode ?? null }))
+    .sort((a, b) => String(b.publishedAt ?? "9").localeCompare(String(a.publishedAt ?? "9")));
+}
+
+/**
+ * THE live plan for a fixture (and side): sent, not withdrawn (a withdrawn
+ * plan is its author's draft again and has no `publishedAt`), and so the one
+ * the fixture screen, the captain's card and the Captain tab draw. Null when
+ * there is none, and then nothing is drawn and no place held (captain.jsx).
+ * @param {any[] | null | undefined} rows @param {string | null | undefined} fixtureId
+ * @param {{ school: string | null, team: string | null } | null} [side]
+ * @returns {Plan | null}
+ */
+export function planOf(rows, fixtureId, side = null) {
+  return plansFor(rows, fixtureId, side).find((p) => p.publishedAt != null) ?? null;
+}
+
+/**
+ * The reader's own unsent plan for a fixture (a draft he saved, or a plan he
+ * withdrew): his alone, by the read's own policy, and only ever offered back to
+ * him to send. There is no edit route, so it is sent as it is.
+ * @param {any[] | null | undefined} rows @param {string | null | undefined} fixtureId
+ * @param {{ school: string | null, team: string | null } | null} [side]
+ * @returns {Plan | null}
+ */
+export function draftPlanOf(rows, fixtureId, side = null) {
+  return plansFor(rows, fixtureId, side).find((p) => p.publishedAt == null && p.mine) ?? null;
+}
+
+/**
+ * What the routes say when they refuse a plan, in words for the coach's screen
+ * (and the refused words, when it is the list that refused). `e` is the
+ * ApiError (lib/api.js): `code`, and `data` the refusal's own body. Nothing is
+ * kept from the refusal but what is shown, and what the coach typed stays in
+ * his field (the screen's, not this function's).
+ * @param {any} e
+ * @returns {{ code: string, message: string, words: { word: string, cls: string }[] }}
+ */
+export function planRefusal(e) {
+  const code = String(e?.code ?? "failed");
+  const d = e?.data ?? {};
+  const max = Number.isFinite(d.max) ? d.max : PLAN_MAX;
+  const said = {
+    plan_exists: d.message || "The side already has a plan for this fixture.",
+    body_too_long: `A plan is at most ${String(max).replace(/\B(?=(\d{3})+$)/g, " ")} characters. Nothing has been cut: shorten it and send again.`,
+    fixture_not_this_side: "This fixture is not one your side plays in.",
+    plan_fixed: "A plan that has been sent cannot be moved to another fixture. Withdraw it and write it again.",
+    plan_needs_team_and_fixture: "A plan is for one side and one fixture.",
+    fixture_only_for_plan: "Only a plan is tied to a fixture.",
+    kind_invalid: "That kind of post is not known.",
+    not_permitted: "You do not hold the tier a plan to the side needs.",
+    no_such_draft: "That draft is not there any more.",
+    no_such_notice: "That plan is not there any more.",
+    title_required: "A plan needs a title.",
+    body_required: "A plan needs something in it.",
+  };
+  if (code === "refused_words") {
+    const words = Array.isArray(d.words) ? d.words.filter((w) => w && typeof w.word === "string") : [];
+    return { code, words, message: d.message || "This can't go to the side with those words in it. Change the words and send again." };
+  }
+  return { code, words: [], message: /** @type {Record<string, string>} */ (said)[code] ?? "That did not go. Your words are still here: try again." };
+}
+
+/**
+ * "Plan from Mr Dlamini · Thu": the captain's card line (§5.3). The news read
+ * names a live plan's author to the plan's readers, pupils and parents
+ * included (db/103's plan_author_name(), CSA SG-9). Where it has no name (the
+ * author's account is gone), "Plan for the side · Thu": nothing is guessed
+ * about who.
+ * @param {Plan} p
+ */
+export const planLine = (p) => [p.author ? `Plan from ${p.author}` : "Plan for the side", planWhen(p.publishedAt, { time: false })].filter(Boolean).join(" · ");
+
+/** "The plan · Mr Dlamini · Thu 20:10": the block's label (§5.2; the label role draws it in capitals). @param {Plan} p */
+export const planLabel = (p) => ["The plan", p.author || null, planWhen(p.publishedAt)].filter(Boolean).join(" · ");

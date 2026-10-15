@@ -290,6 +290,20 @@ function asNewsPost(r) {
     mayTakeDown: r.may_take_down === true,
     publicState: r.public_state ?? null,
     publicNames: r.public_names == null ? null : Number(r.public_names),
+    // The coach's plan (db/96, SCRBRD-138 phase B): a post is a 'post' or a
+    // 'plan', and a plan names the fixture and the side it is for. `noticeId`
+    // is the live plan's notice, for the block's Report (lib/captain.js planOf).
+    kind: r.kind ?? "post",
+    // The author's own name, or null where the reader may not read the
+    // author's account (a pupil and a parent hold no user.read): `author`
+    // above says "The office" then, which is not true of a coach's plan. A
+    // live plan's author is named to every reader of the plan (db/103), so
+    // for a plan this is null only when the author's account is gone.
+    authorName: r.author_name ?? null,
+    fixtureId: r.fixtureId ?? null,
+    noticeId: r.noticeId ?? null,
+    schoolId: r.school_id ?? null,
+    teamCode: r.team_code ?? null,
   };
 }
 

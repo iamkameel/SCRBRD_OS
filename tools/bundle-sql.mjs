@@ -386,6 +386,18 @@ SELECT
         AND has_function_privilege('scrbrd_app', to_regprocedure('feature_suppression_reason(uuid)'), 'EXECUTE')
         AND NOT has_column_privilege('scrbrd_app', to_regclass('feature_suppression'), 'reason', 'SELECT')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Who a module is hidden from is the school's",
+  -- db/103: a live plan's author is named to the plan's readers, and only the
+  -- name, only for a plan (SCRBRD-138 phase B's byline, CSA SG-9).
+  CASE WHEN to_regprocedure('plan_author_name(uuid)') IS NOT NULL
+        AND (SELECT prosecdef AND provolatile = 's' FROM pg_proc WHERE oid = to_regprocedure('plan_author_name(uuid)'))
+        AND coalesce(pg_get_functiondef(to_regprocedure('plan_author_name(uuid)')), '') LIKE '%news_plan_reach(%'
+        AND coalesce(pg_get_functiondef(to_regprocedure('plan_author_name(uuid)')), '') LIKE '%news_sheet_reach(n.fixture_id%'
+        AND coalesce(pg_get_functiondef(to_regprocedure('plan_author_name(uuid)')), '') LIKE '%n.kind = ''plan''%'
+        AND has_function_privilege('scrbrd_app', to_regprocedure('plan_author_name(uuid)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid = to_regprocedure('plan_author_name(uuid)')
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan names its author to the side",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

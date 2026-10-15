@@ -97,5 +97,6 @@
   "97_ball_event_away_read.sql",
   "100_ball_event_guardian_read.sql",
   "101_news_to_the_side.sql",
-  "102_suppression_read.sql"
+  "102_suppression_read.sql",
+  "103_plan_author_name.sql"
 ]

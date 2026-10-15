@@ -18,6 +18,7 @@ import { Panel, Quiet } from "../matchcentre/bits.jsx";
 import { OppositionDossier } from "../dossier.jsx";
 import { FeedDrawer } from "./FeedDrawer.jsx";
 import { PickSide } from "./PickSide.jsx";
+import { ThePlan } from "./ThePlan.jsx";
 import { useBowlerDay, useCockpit, useFeed } from "./useCockpit.js";
 
 /**
@@ -109,6 +110,9 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
           Signals ({loading ? "…" : feed.open.length})
         </button>
       </div>
+
+      {/* SCRBRD-138 phase B: the plan to the side, written here and read by the whole side on its fixture. */}
+      <ThePlan match={match} role={role} gate={gate} sheet={sheet}/>
 
       {loading && <Quiet testid="mc-coach-loading">Reading the day…</Quiet>}
 

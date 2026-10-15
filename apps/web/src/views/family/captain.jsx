@@ -8,8 +8,10 @@
  * and by nothing else: no role, no flag, no capability gained. Every element
  * is drawn from a read a team-mate already holds. What it never draws (§4):
  * anybody's health, load, guideline, availability, ratings or notes, the
- * opposition's dossier, a win chance. The coach's plan waits for phase B and
- * is not drawn here, nor is a place held for it.
+ * opposition's dossier, a win chance. The coach's plan (phase B) is not part
+ * of the Captain section: it is PlanBlock on the fixture (views/family/
+ * plan.jsx), above this section and for every boy and parent of the side, and
+ * this file draws only its one line on the card (C1) and nothing in the section.
  */
 import { useEffect, useState } from "react";
 import { bowlingLimit } from "@scrbrd/scoring";
@@ -19,7 +21,7 @@ import { useLive } from "../../lib/live.js";
 import { stat } from "../../lib/format.js";
 import { oversOf } from "../../lib/matchCentre.js";
 import { endOf, fixturesOf, opponentOf } from "../../lib/family.js";
-import { bandLine, bandOfTeam, captaincyOf, currentSchoolSeason, ordinal, pitchWords, sheetOf, termsOf } from "../../lib/captain.js";
+import { bandLine, bandOfTeam, captaincyOf, currentSchoolSeason, ordinal, pitchWords, planLine, planOf, planRead, sheetOf, termsOf } from "../../lib/captain.js";
 import { conditionsWords } from "../../scorer/conditionsLine.jsx";
 import { Action, Card, Line, whenOf } from "./parts.jsx";
 
@@ -76,7 +78,20 @@ export function CaptainCard({ me, role, matches, now, onOpen }) {
 
 function CaptainCardFor({ cap, next, me, role, onOpen }) {
   const { rows: sheet } = useLive("match_squad", role, 0, { matchId: next.id });
+  // Phase B (§5.3): the coach's plan for this fixture and his side, if one is live.
+  const { rows: news } = useLive("news", role, 0, planRead(next.id));
   const named = sheet.filter((r) => r.side === endOf(next, me)).length;
+  const plan = planOf(news, next.id, { school: me.school ?? null, team: me.team ?? null });
+  return <CaptainCardView cap={cap} next={next} me={me} named={named} plan={plan} onOpen={onOpen}/>;
+}
+
+/**
+ * The card, from what it was given (pure, so the test can draw it with and
+ * without a plan). The plan's line is drawn only with a live plan, after the
+ * count of the side; the card's one action opens the fixture, where the block
+ * is. The card draws when it did, so the line goes when the card goes.
+ */
+export function CaptainCardView({ cap, next, me, named, plan, onOpen }) {
   const isLive = next.status === "live";
   return (
     <Card label={`${cap.label} · ${[me.schoolName, me.team].filter(Boolean).join(" ")}`} testid="captain-card">
@@ -84,6 +99,7 @@ function CaptainCardFor({ cap, next, me, role, onOpen }) {
         v {opponentOf(next, me)} ({endOf(next, me)}) · {isLive ? "live now" : whenOf(next)}
       </p>
       <Line quiet testid="captain-card-side">{named ? `${named} named in the side` : "The side is not out yet"}</Line>
+      {plan && <Line testid="captain-card-plan">{planLine(plan)}</Line>}
       <div>
         <Action testid="captain-card-open" onClick={() => onOpen(next, isLive ? "match" : "fixture")}>
           {isLive ? "Open the match" : "Match day"}
