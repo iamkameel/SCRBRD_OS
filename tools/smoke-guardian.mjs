@@ -47,6 +47,15 @@ const NEW_PARENT = "88888888-0000-0000-0000-0000000000f1";
 const LONE_GUARD = "88888888-0000-0000-0000-0000000000f2";
 const SECOND_GUA = "88888888-0000-0000-0000-0000000000f3";
 
+// db/109: a link is ended by its id, with a kind and a reason. The office
+// finds the person's live link to the child (under its own RLS) and ends it.
+const REVOKE_LINK = `select * from guardian_link_revoke(
+  (select g.id from assignment_subject g join role_assignment a on a.id = g.assignment_id
+    where a.person_id = $1::uuid and a.role = 'guardian' and g.player_id = $2::uuid
+      and g.verification_state in ('pending','verified')
+      and (g.valid_until is null or g.valid_until > current_date)
+    order by g.created_at desc limit 1), $3::text, $4::text)`;
+
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (t) => console.log("\n" + t);
@@ -232,14 +241,12 @@ try {
      (await q("select is_minor, live_links from player_guardian_status where player_id=$1", [P_DLAMINI]))
        .every((r) => r.is_minor === true && r.live_links === 1));
   ok("revoking it is refused",
-     (await call(REGISTRAR, "select * from guardian_link_revoke($1,$2)",
-                 [SARAH, P_DLAMINI])).reason === "last_verified_link");
+     (await call(REGISTRAR, REVOKE_LINK, [SARAH, P_DLAMINI, null, null])).reason === "last_verified_link");
   await q(`insert into app_user (id, school_id, email, name, role)
            values ($1,$2,'second@example.invalid','P Dlamini','parent')`, [SECOND_GUA, HIL]);
   await call(REGISTRAR, "select * from guardian_link_establish($1,$2,'parent')", [SECOND_GUA, P_DLAMINI]);
   await call(REGISTRAR, "select * from guardian_link_verify($1,$2,'popia-2026-01')", [SECOND_GUA, P_DLAMINI]);
-  const rev = await call(REGISTRAR, "select * from guardian_link_revoke($1,$2,'moved out')",
-                         [SARAH, P_DLAMINI]);
+  const rev = await call(REGISTRAR, REVOKE_LINK, [SARAH, P_DLAMINI, "family_left", "moved out of the province"]);
   ok("...and permitted once a second guardian is in place", rev.ok === true);
   const revoked = (await q(`select g.* from assignment_subject g join role_assignment a on a.id=g.assignment_id
                              where a.person_id=$1 and g.player_id=$2 and g.verification_state='revoked'`,
