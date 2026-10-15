@@ -1,9 +1,11 @@
 # The pilot school's load
 
 **What this is.** The steps that turn the pilot school's lists into a working SCRBRD
-before the pilot starts on 15 October 2026. The school sends its staff list and squads
+before the pilot starts on Saturday 31 October 2026. The school sends its staff list and squads
 around 5 October. The load is planned for 6 October. Written 3 October 2026 against
 `ddac71f` (production at db/82).
+
+Pilot date: Saturday 31 October 2026 (Kameel, 15 Oct 2026). Schedule: wave 3 pasted and merged by 17 Oct; solo run 1 on 22 Oct; feature freeze from 26 Oct; solo run 2 on 27 Oct; production verify on 28 Oct; go/no-go on 29 Oct.
 
 **The rule behind every step.** Each row goes in through the app's own screen or
 route, signed in as a named person, so row-level security applies and the record
