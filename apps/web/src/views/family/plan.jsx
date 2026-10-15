@@ -11,16 +11,19 @@
  * WHO MAY READ IT is not decided here. The `news` read is: a plan is a team
  * post (db/12, db/96), so a boy of another side, the other school's coach and
  * the public have no row, and this file only picks the row for this fixture
- * and this side (lib/captain.js planOf). There is no reply, no reaction and no
- * "seen": the plan is read, and the one thing a reader can do is Report it,
- * which sends the notice to the school's safeguarding officer (lib/notifications
- * report(), the same call Notices makes). Withdrawn: gone on the next load.
+ * and this side (lib/captain.js planOf), from the read narrowed to the fixture
+ * (planRead), so an older fixture's plan is not lost behind newer posts. The
+ * label names the coach who wrote it to every reader of it (db/103, SG-9).
+ * There is no reply, no reaction and no "seen": the plan is read, and the one
+ * thing a reader can do is Report it, which sends the notice to the school's
+ * safeguarding officer (lib/notifications report(), the same call Notices
+ * makes). Withdrawn: gone on the next load.
  */
 import { useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
 import { report } from "../../lib/notifications.js";
-import { planLabel, planOf } from "../../lib/captain.js";
+import { planLabel, planOf, planRead } from "../../lib/captain.js";
 import { Action, Card } from "./parts.jsx";
 
 /**
@@ -70,7 +73,7 @@ export function PlanBlock({ plan, children }) {
  * @param {{ match: any, child: { school: string | null, team: string | null }, role: string }} p
  */
 export function FixturePlan({ match, child, role }) {
-  const { rows } = useLive("news", role);
+  const { rows } = useLive("news", role, 0, planRead(match.id));
   const plan = planOf(rows, match.id, { school: child.school ?? null, team: child.team ?? null });
   return plan ? <PlanBlock plan={plan}/> : null;
 }

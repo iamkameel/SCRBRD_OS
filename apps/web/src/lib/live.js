@@ -296,7 +296,9 @@ function asNewsPost(r) {
     kind: r.kind ?? "post",
     // The author's own name, or null where the reader may not read the
     // author's account (a pupil and a parent hold no user.read): `author`
-    // above says "The office" then, which is not true of a coach's plan.
+    // above says "The office" then, which is not true of a coach's plan. A
+    // live plan's author is named to every reader of the plan (db/103), so
+    // for a plan this is null only when the author's account is gone.
     authorName: r.author_name ?? null,
     fixtureId: r.fixtureId ?? null,
     noticeId: r.noticeId ?? null,

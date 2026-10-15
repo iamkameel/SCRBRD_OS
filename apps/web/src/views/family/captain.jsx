@@ -21,7 +21,7 @@ import { useLive } from "../../lib/live.js";
 import { stat } from "../../lib/format.js";
 import { oversOf } from "../../lib/matchCentre.js";
 import { endOf, fixturesOf, opponentOf } from "../../lib/family.js";
-import { bandLine, bandOfTeam, captaincyOf, currentSchoolSeason, ordinal, pitchWords, planLine, planOf, sheetOf, termsOf } from "../../lib/captain.js";
+import { bandLine, bandOfTeam, captaincyOf, currentSchoolSeason, ordinal, pitchWords, planLine, planOf, planRead, sheetOf, termsOf } from "../../lib/captain.js";
 import { conditionsWords } from "../../scorer/conditionsLine.jsx";
 import { Action, Card, Line, whenOf } from "./parts.jsx";
 
@@ -79,7 +79,7 @@ export function CaptainCard({ me, role, matches, now, onOpen }) {
 function CaptainCardFor({ cap, next, me, role, onOpen }) {
   const { rows: sheet } = useLive("match_squad", role, 0, { matchId: next.id });
   // Phase B (§5.3): the coach's plan for this fixture and his side, if one is live.
-  const { rows: news } = useLive("news", role);
+  const { rows: news } = useLive("news", role, 0, planRead(next.id));
   const named = sheet.filter((r) => r.side === endOf(next, me)).length;
   const plan = planOf(news, next.id, { school: me.school ?? null, team: me.team ?? null });
   return <CaptainCardView cap={cap} next={next} me={me} named={named} plan={plan} onOpen={onOpen}/>;

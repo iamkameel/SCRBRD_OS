@@ -4,7 +4,7 @@ import { api, signedIn } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
 import { boardInnings, teamOf } from "../../lib/matchCentre.js";
 import { endOf } from "../../lib/family.js";
-import { bowlerRows, inningsOf, matchupTypes, matchupWords, nextIn, notYetBowled, overStory, planOf, sheetOf } from "../../lib/captain.js";
+import { bowlerRows, inningsOf, matchupTypes, matchupWords, nextIn, notYetBowled, overStory, planOf, planRead, sheetOf } from "../../lib/captain.js";
 import { Board } from "../../ui/board.jsx";
 import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { bowlerCapWords } from "../../scorer/conditionsLine.jsx";
@@ -90,7 +90,7 @@ function useMatchups(ids) {
  * the fixture screen's block draws; the row opens words, never a child.
  */
 function PlanRow({ match, role, me }) {
-  const { rows } = useLive("news", role);
+  const { rows } = useLive("news", role, 0, planRead(match.id));
   const plan = planOf(rows, match.id, { school: me.school ?? null, team: me.team ?? null });
   const [open, setOpen] = useState(false);
   if (!plan) return null;
