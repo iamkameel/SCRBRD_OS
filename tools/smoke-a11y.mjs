@@ -84,9 +84,9 @@ const TYPE_FLOOR_CEILING = {
   // The public home page (home.html): 0 since the cinematic page (2026-10-07).
   landing:     0,
   login:       13,
-  dashboard:   17,
-  matchcentre: 17,
-  matchview:   17,
+  dashboard:   10,
+  matchcentre: 10,
+  matchview:   10,
   pad:         0,
   // Step 3b: the pad again, after an over is recorded, so the chips on the
   // board are on screen and counted. 0, like the pad.
@@ -117,8 +117,8 @@ const TYPE_FLOOR_CEILING = {
   // screens these two primitives share inherits it, and Career — the one
   // screen this walk had already found sub-floor instances on — drops
   // straight to the 18-item shell, matching Analytics.
-  analytics:   17,
-  career:      17,
+  analytics:   10,
+  career:      10,
   // SCRBRD-138 phase A (2026-10-02): the captain's view, on a phone, against
   // the walk's own API (tools/a11y-captain-mock.mjs). The card on a pupil's
   // Home, the section on his fixture, and the Captain tab fielding, batting
@@ -208,11 +208,11 @@ const TAP_FLOOR_CEILING = {
   // is counted is the shell's, not the view's: the skip link (119x34, on
   // every screen) and, on the fixture, the pupil fixture header's own "map"
   // link (29x17, STEP4 S3, found here and left for its own change).
-  captainhome:    1,
-  captainfixture: 2,
-  captainfield:   1,
-  captainbat:     1,
-  captainafter:   1,
+  captainhome:    0,
+  captainfixture: 0,
+  captainfield:   0,
+  captainbat:     0,
+  captainafter:   0,
   planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
   // SCRBRD-136/137: the cockpit's card, tab and drawer: every control 44px or more.
   cockpithome:   0,
@@ -1067,7 +1067,7 @@ async function listingWalk(theme, width) {
     ok("the director of sport signs in", await tid("os-main").count() === 1 || await tid("persona-bar").count() === 1);
 
     await goTo("matches");
-    await tid(`match-card-${LISTING_MATCH}`).click({ timeout: 5000 }).catch(() => {});
+    await tid(`match-card-${LISTING_MATCH}`).click({ timeout: 5000, position: { x: 14, y: 14 } }).catch(() => {});
     await page.waitForSelector('[data-testid="publish-listing"]', { timeout: 6000 }).catch(() => {});
     ok("the fixture's panel carries the listing line, the does-not-list form", /does not list/.test(await tid("publish-listing").innerText().catch(() => "")));
     await check("listingline", '[data-testid="publish-listing"]');
@@ -2301,6 +2301,7 @@ try {
   // ── I32: the match-day screens again, at the narrowest phone (320), in both themes ──
   // The staff shell is also asked at 375 and 414, and the display at all three. Every list of narrowAudit is empty.
   if (process.env.A11Y_SHOTS) await (await import("node:fs/promises")).mkdir(process.env.A11Y_SHOTS, { recursive: true });
+  if (ONLY && want("listing")) for (const th of /** @type {const} */ (["floodlit", "daylight"])) { await listingWalk(th, 1280); await listingWalk(th, 390); }
   for (const width of (process.env.A11Y_WIDTHS ?? "320,375,414").split(",").map(Number)) {
     NARROW = { width };
     for (const th of /** @type {const} */ (["floodlit", "daylight"]).filter((t) => !process.env.A11Y_THEME || t === process.env.A11Y_THEME)) {
