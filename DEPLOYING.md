@@ -1363,6 +1363,53 @@ to start without db/105 (`expected-migrations.json`); its `targets`,
 `training_plan` and `development_since` reads name the new tables.
 <!-- ── end db/105 ── -->
 
+<!-- ── db/106: a family reads its side's fixtures, trips and training ── -->
+#### A family reads its side's fixtures, trips and training (db/106)
+
+`db/106_reach_side.sql` is REACH group R-A (`docs/design/REACH_parent_pupil.md`
+§6.1), Kameel's decision of 2026-10-14 (REACH-D1, "the side only"). Until now
+every guardian read every fixture, every trip (with its driver, its pickup and
+notes that may name a child) and every training session at her school, and
+the browser filtered the list down to her child's side. Now a guardian reads
+her child's side's fixtures home and away, the one fixture he is on the team
+sheet of when he plays up, their buses at the bus's own school, and their
+training; nothing of another side at her school or any other. A pupil reads
+his side's, as before. Staff, a school-wide follower, the office and a driver
+read what they read. The away side's family and staff now also read the toss,
+the umpires, the pitch report, the weather, the playing conditions and the
+broadcast setting of their side's away fixture, which were the host's alone.
+A link that is pending, ended or revoked reads nothing of the child's side.
+
+**What it does to a live database.** Seven functions (`SECURITY DEFINER`,
+`STABLE`, pinned search path; `EXECUTE` revoked from `PUBLIC` and granted to
+`scrbrd_app`, and from a managed host's `anon`/`authenticated` where they
+exist): the rule, one row at a time (`side_reach`, `fixture_end_reach`,
+`fixture_reach`), and the same rule asked once per statement, which is what
+the policies call (`my_fixture_ends`, `my_sides`, and the away anchors
+`match_away_school`/`match_away_team` beside db/02's home ones). db/41's
+`trip_fixture_driver_only()` is replaced in place (same signature and grants:
+"a driver who reaches the fixture only as its driver" now asks match_read's
+new question). Thirteen read policies are dropped and created again
+(`match_read`, `trip_read`, `training_session_read`,
+`fixture_publication_read`, `match_result_decision_read` and the eight
+satellites' `*_read`), in the paste's one transaction. A trip is read at its
+own school's end, and only by someone who reads its fixture, as before. The
+file checks every policy's text and the helpers' grants before it commits.
+No table, column, row or write policy is touched. A second paste changes
+nothing. **One behaviour changes for every school at once, on the paste:**
+parents stop seeing other sides' fixtures, buses and nets; paste outside a
+match. Cost, on a forty-fixture season: a coach's or the director's fixture
+list as before (8–11 ms); a parent of two 34 ms for her list and 100 ms for
+her buses, where it was 9 and 47 (db/106's header has the figures).
+
+Paste `node tools/bundle-sql.mjs --apply 106` (after 102, and after 103–105 if
+they have shipped; the bundle names the one it needs first), then the verify
+bundle (§83 is its proof; the summary row "A family reads its side's fixtures"
+should read OK). **Schema first**: the API built with it refuses to start
+without db/106 (`expected-migrations.json`), and its `matches` read asks
+`my_fixture_ends()` which end the reader is at.
+<!-- ── end db/106 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh
