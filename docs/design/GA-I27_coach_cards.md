@@ -118,7 +118,7 @@ The trail is behind the same two gates as the card: the drawer's entry rule (136
 | **team manager** | yes (GA-I09 §3.1) | S1, S3, S4a, S6, S7, S8, S9, S10, S12 with trails; no load cards and **no sign one exists** | none (A3) | S2b, S2c, S11 and their reads' names anywhere on his drawer |
 | **analyst** | **no** (no `team.select`, no `player.workload.read`; GA-I24-I25 D12's bundle) | none | none: "coach's note" is never in a workspace (GA-I24-I25 D5, §4 item 2) | — |
 | **physio** (`medical`) | yes, by `player.workload.read` | S2b, S2c, S11 with trails; S3 not (needs `team.select`) | none: a coaching point is cricket, not clinical | — |
-| **pupil** (`player`, `selfaccess`; the captain) | **no** (136 §4.5: no subject-scoped role passes) | none; his surface is 138's tab | none through this design (C-D4) | another boy's figures in any form |
+| **pupil** (`player`, `selfaccess`; the captain) | **no** (136 §4.5: no subject-scoped role passes) | none; his surface is 138's tab | none through this design (C-D4) | another boy's figures in any form (Amended by REACH-D2, 14 Oct 2026: a pupil keeps reading team-mates' career and season figures; coaching points stay as decided in C-D4.) |
 | **parent** (`guardian`) | **no** | none | none | her child's coaching point by any route here; another boy's anything |
 | **scorer, office, official, media, spectator** | no (D3; GA-I09) | none | none | — |
 
