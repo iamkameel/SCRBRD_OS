@@ -33,8 +33,15 @@ import { ALL_CAPABILITIES, isCapability, CAPABILITIES, SENSITIVE, PLATFORM_ONLY 
  *
  * Emitted as a CHECK constraint on role_assignment, so it is enforced by the
  * database rather than by whoever is creating assignments that day.
+ *
+ * `player` joined on 14 October 2026 (REACH-D4, Kameel): a pupil's `player`
+ * row with no team is the same hole for a child — he reads every side at the
+ * school, every sheet, post and bus. The office gives every pupil a side; a
+ * boy not yet selected is on his age-group squad. db/01 is frozen, so its
+ * CHECK still lists the first three, and db/108 adds the player's own
+ * (TEAM_SCOPED_SINCE_01 in services/api/rls/generate-rls.mjs).
  */
-export const TEAM_SCOPED_ROLES = Object.freeze(["coach", "assistantcoach", "teammanager"]);
+export const TEAM_SCOPED_ROLES = Object.freeze(["coach", "assistantcoach", "teammanager", "player"]);
 
 /**
  * Roles whose assignment MUST name at least one person.

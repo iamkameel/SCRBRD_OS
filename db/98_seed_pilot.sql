@@ -374,8 +374,13 @@ INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000014', '11111111-1111-1111-1111-111111111111',
    'platform@example.invalid', 'Platform Ops', 'platformadmin');
 
+-- A `player` names his side (REACH-D4, db/108): the account seeded as
+-- spectator@example.invalid is a pupil on the 1st XI. Until 15 October 2026
+-- it was seeded with no team, which reaches every side at the school;
+-- tools/sql/fix-player-without-team.sql ends that row on a database that
+-- still holds it.
 INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
-  ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'player',          '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'player',          '11111111-1111-1111-1111-111111111111', '1XI'),
   ('a5510000-0000-0000-0000-000000000002', '88888888-0000-0000-0000-000000000002', 'scout',           '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000003', '88888888-0000-0000-0000-000000000003', 'medical',         '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000004', '88888888-0000-0000-0000-000000000004', 'coach',           '11111111-1111-1111-1111-111111111111', '1XI'),

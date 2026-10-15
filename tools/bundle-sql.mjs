@@ -386,6 +386,41 @@ SELECT
         AND has_function_privilege('scrbrd_app', to_regprocedure('feature_suppression_reason(uuid)'), 'EXECUTE')
         AND NOT has_column_privilege('scrbrd_app', to_regclass('feature_suppression'), 'reason', 'SELECT')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Who a module is hidden from is the school's",
+  -- db/107: the officials register is its keeper's (and an official's own
+  -- row); everybody else reads the panel by name and grade through
+  -- official_panel(). A school's grant note is its own and the platform's.
+  CASE WHEN to_regclass('official') IS NOT NULL
+        AND to_regprocedure('official_panel(uuid)') IS NOT NULL
+        AND to_regprocedure('official_conflict(uuid,uuid)') IS NOT NULL
+        AND to_regprocedure('app_enrolled_at(uuid)') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('official') AND p.polname = 'official_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%officiating.registry.manage%'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%app_enrolled()%')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('official_accreditation') AND p.polname = 'official_accreditation_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%app_enrolled()%')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('feature_grant') AND p.polname = 'feature_grant_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app_enrolled_at(school_id)%')
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('official_panel(uuid)'), to_regprocedure('official_conflict(uuid,uuid)'),
+                              to_regprocedure('app_enrolled_at(uuid)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('official_panel(uuid)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('official_panel(uuid)'), to_regprocedure('official_conflict(uuid,uuid)'),
+                                         to_regprocedure('app_enrolled_at(uuid)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The officials register is its keeper's",
+  -- db/108: a pupil's player role names his side, as a coach's does.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_constraint c
+                     WHERE c.conrelid = to_regclass('role_assignment')
+                       AND c.conname = 'role_assignment_player_team_scoped' AND c.contype = 'c' AND c.convalidated)
+        AND NOT EXISTS (SELECT 1 FROM role_assignment WHERE role = 'player' AND team_code IS NULL AND active)
+        AND to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)') IS NOT NULL
+        AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'))
+              LIKE '%IF r.role = ''player'' AND v_team IS NULL THEN%'
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A pupil is a pupil of a side",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
