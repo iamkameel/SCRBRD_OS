@@ -1374,18 +1374,23 @@ the browser filtered the list down to her child's side. Now a guardian reads
 her child's side's fixtures home and away, the one fixture he is on the team
 sheet of when he plays up, their buses at the bus's own school, and their
 training; nothing of another side at her school or any other. A pupil reads
-his side's, as before. Staff, a school-wide follower, the office and a driver
+his side's, as before, and (Kameel, 15 Oct) a boy playing up reads the one
+fixture whose team sheet names him, its toss, umpires and weather, and its
+bus, as his guardian does; nothing else of the older side, not its nets, and
+nothing of a fixture he was taken off. Nothing is added to a pupil's
+self-access. Staff, a school-wide follower, the office and a driver
 read what they read. The away side's family and staff now also read the toss,
 the umpires, the pitch report, the weather, the playing conditions and the
 broadcast setting of their side's away fixture, which were the host's alone.
 A link that is pending, ended or revoked reads nothing of the child's side.
 
-**What it does to a live database.** Seven functions (`SECURITY DEFINER`,
+**What it does to a live database.** Eight functions (`SECURITY DEFINER`,
 `STABLE`, pinned search path; `EXECUTE` revoked from `PUBLIC` and granted to
 `scrbrd_app`, and from a managed host's `anon`/`authenticated` where they
 exist): the rule, one row at a time (`side_reach`, `fixture_end_reach`,
 `fixture_reach`), and the same rule asked once per statement, which is what
-the policies call (`my_fixture_ends`, `my_sides`, and the away anchors
+the policies call (`my_fixture_ends`, `my_sides`, `my_own_boy` for "the
+reader is the boy on the sheet", and the away anchors
 `match_away_school`/`match_away_team` beside db/02's home ones). db/41's
 `trip_fixture_driver_only()` is replaced in place (same signature and grants:
 "a driver who reaches the fixture only as its driver" now asks match_read's
