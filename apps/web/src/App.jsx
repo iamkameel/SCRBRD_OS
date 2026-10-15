@@ -503,7 +503,7 @@ export default function SCRBRD_OS() {
     : <DashboardView role={role} onNav={setPage} onOpenScorer={openScorer}/>;
   const VIEW_MAP = {
     dashboard:    dashboardView,
-    matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNavProfile={(id)=>{setProfileTarget(id);setPage("profiles");}}/>,
+    matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNav={setPage} onNavProfile={(id)=>{setProfileTarget(id);setPage("profiles");}}/>,
     competitions: <CompetitionsHome  role={role} section={pageSection}/>,
     // Still a route (a saved session, a link): the Competitions home opened on Leagues.
     leagues:      <CompetitionsHome  role={role} section="leagues"/>,
