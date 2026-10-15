@@ -60,6 +60,7 @@ try {
   const plat  = await login("platform@example.invalid");   // platformadmin, no school
   const sarah = await login("sarah@example.invalid");      // director of sport at Hilton
   const coach = await login("coach@example.invalid");
+  const physio = await login("medical@example.invalid");  // L van Wyk, Hilton's physio
   const [{ id: PLAT_ID }] = await q(`select id from app_user where email = 'platform@example.invalid'`);
 
   group("A platform administrator stops at the schoolhouse door");
@@ -88,6 +89,17 @@ try {
   ok("...and none of those left a session behind",
      (await q(`select count(*)::int n from support_access`))[0].n === 0);
 
+  // GA-I19 (db/111): a physio's review of the seed's hamstring, so there is
+  // a review for a support session not to read. The director reads it (the
+  // control); support does not (Q7).
+  const HAMSTRING = "cccccccc-0000-0000-0000-000000000001";
+  const inAWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const reviewed = await api(`/api/injuries/${HAMSTRING}/reviews`, { method: "POST", token: physio,
+    body: { phaseAfter: "rehab", nextReviewOn: inAWeek, note: "Smoke: running progression, week three." } });
+  ok("the physio reviews the hamstring", reviewed.status === 200 && reviewed.body?.id);
+  ok("...and the director reads that review, phase and all",
+     (await read(`injury_reviews?injuryId=${HAMSTRING}`, sarah)).some((r) => r.id === reviewed.body?.id && r.phase_after === "rehab"));
+
   group("The door opens: one role, one school, an hour");
   const opened = await begin(plat, { schoolId: HIL, role: "directorofsport", reason: REASON });
   ok("a session begins", opened.status === 200 && opened.body?.id);
@@ -102,6 +114,14 @@ try {
   ok("a director's overview of injuries too — every one a Hilton boy's",
      injuries.length > 0 && injuries.every((i) => rosterIds.has(i.player_id)));
   ok("...but not the physio's notes — the role's tier, not the platform's", injuries.every((i) => i.notes == null));
+  // GA-I19 Q7: the injury rows as today, logged; the reviews hidden whole.
+  ok("...and no review of an injury: a support session reads none (GA-I19 Q7)",
+     (await read(`injury_reviews?injuryId=${HAMSTRING}`, plat)).length === 0);
+  ok("...nor anything of the physio's worklist", (await read("injury_worklist", plat)).length === 0);
+  const recordUnder = await api("/api/injuries", { method: "POST", token: plat,
+    body: { playerId: "aaaaaaaa-0000-0000-0000-000000000001", injuryType: "Side strain", severity: "minor",
+            dateInjured: new Date().toISOString().slice(0, 10), nextReviewOn: inAWeek } });
+  ok("...and records no injury", recordUnder.status === 403 && recordUnder.body?.error === "not_under_support");
   await read("matches", plat);
   const twice = await begin(plat, { schoolId: HIL, role: "directorofsport", reason: REASON });
   ok("the same session cannot be issued twice", twice.status === 422 && twice.body?.error === "already_live");
@@ -177,6 +197,22 @@ try {
      direct?.code === "23514" && /no support session/.test(direct?.message ?? ""));
   ok("...and left nothing behind",
      (await q(`select count(*)::int n from role_assignment where person_id = $1 and expires_at is not null`, [WATCHER]))[0].n === 0);
+
+  group("Support as the physio writes nothing clinical (GA-I19 D2, Q7)");
+  const asPhysio = await begin(plat, { schoolId: HIL, role: "medical", reason: "ticket 4413: the injuries form will not save" });
+  ok("a session as the physio begins", asPhysio.status === 200 && asPhysio.body?.id);
+  const rec = await api("/api/injuries", { method: "POST", token: plat,
+    body: { playerId: "aaaaaaaa-0000-0000-0000-000000000001", injuryType: "Side strain", severity: "minor",
+            dateInjured: new Date().toISOString().slice(0, 10), nextReviewOn: inAWeek } });
+  ok("...records no injury", rec.status === 403 && rec.body?.error === "not_under_support");
+  const rev = await api(`/api/injuries/${HAMSTRING}/reviews`, { method: "POST", token: plat,
+    body: { phaseAfter: "cleared" } });
+  ok("...clears nobody", rev.status === 403 && rev.body?.error === "not_under_support");
+  ok("...reads no review, though the role it borrowed reads every tier",
+     (await read(`injury_reviews?injuryId=${HAMSTRING}`, plat)).length === 0);
+  ok("...and the injury rows as today", (await read("injuries", plat)).length > 0);
+  ok("...and nothing was written", (await q(`select count(*)::int n from injury_review where injury_id = $1`, [HAMSTRING]))[0].n === 1);
+  await end(sarah, asPhysio.body?.id);
 
   group("Nothing else moved");
   ok("an ordinary appointment, with no hour hand, is untouched", (await read("players", sarah)).length > 0);
