@@ -44,10 +44,10 @@ per_match as (
     from bat a full join bowl b on a.player_id = b.player_id and a.match_id = b.match_id),
 latest as (
   select distinct on (player_id, category, metric) player_id, category, metric, score, assessed_on
-    from player_skill order by player_id, category, metric, assessed_on desc),
+    from player_skill where withdrawn_at is null order by player_id, category, metric, assessed_on desc),
 earliest as (
   select distinct on (player_id, category, metric) player_id, category, metric, score, assessed_on
-    from player_skill where assessed_on > sa_today() - 180 order by player_id, category, metric, assessed_on asc),
+    from player_skill where withdrawn_at is null and assessed_on > sa_today() - 180 order by player_id, category, metric, assessed_on asc),
 gate as (
   select e.school_id, e.team_code, sum(e.won)::numeric / nullif(sum(e.played), 0) as win_ratio
     from competition_entrant e join competition c on c.id = e.competition_id

@@ -48,6 +48,13 @@ export const CAPABILITIES = {
   "team.read":                   "See teams and squads",
   "team.manage":                 "Create and change teams",
   "team.select":                 "Pick a matchday squad",
+  // RUNNING A SESSION, and nothing else (GA-I26a; Kameel, 15 Oct): put the
+  // drills from the library on a session's plan, and take its register. Not
+  // team.manage, which also keeps the drill library, the kit register and the
+  // calendar: the team manager runs the session the coach scheduled. Held by
+  // every role that holds team.manage, and by the team manager; side-scoped
+  // as they are.
+  "team.training.run":           "Plan a training session and take its register",
   // AVAILABILITY, and deliberately not medical.status.read.
   //
   // Whether a boy is FIT is the physio's judgement. Whether he is AVAILABLE is
@@ -108,8 +115,10 @@ export const CAPABILITIES = {
   "clearance.manage":            "Record and revoke an adult's clearances",
   "player.performance.read":     "See a player's match figures",
   "player.performance.write":    "Record player performance",
-  "player.development.read":     "See development notes and skill ratings",
-  "player.development.write":    "Write development notes and skill ratings",
+  // Notes are player.note.* below; these are the numbers (GA-I26a §8: the
+  // label said "development notes", which this capability has never read).
+  "player.development.read":     "See skill ratings, their history and targets",
+  "player.development.write":    "Write skill ratings and set targets",
   // A COACH'S OWN WRITING ABOUT A CHILD, and narrower than the ratings it sits
   // beside. player.development.read is held by the pupil and by self-access —
   // a boy may read his own attribute scores, which is right. A note is a
@@ -481,7 +490,7 @@ export const LEVEL = Object.freeze({
   "user.read": 1, "user.invite": 1, "user.role.assign": 1, "audit.read": 1,
 
   // ── Squad & people ──
-  "team.read": 0, "team.manage": 1, "team.select": 1,
+  "team.read": 0, "team.manage": 1, "team.select": 1, "team.training.run": 1,
   // A small window into a child's home life — the file's own words.
   "availability.read": 2, "availability.declare": 2,
   "player.profile.read": 1, "player.profile.manage": 1,

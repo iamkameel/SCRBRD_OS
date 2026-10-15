@@ -34,6 +34,10 @@ const WALKS = [
   "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
+  // GA-I26a (db/104, db/105): a score keeps its assessor and is withdrawn, the
+  // coaching point on the note tier, the target, the side's plan and register
+  // (never `injured`), "since the last look", and the export refusals.
+  "assessment-history",
   // The owner's key, minted from outside the platform, and redeemed.
   "bootstrap",
   // The way out of quarantine: who may open it, and what a released ball is.

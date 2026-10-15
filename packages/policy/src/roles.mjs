@@ -174,7 +174,7 @@ const BUNDLES = {
     // director of sport cannot appoint their own supervisor.
     "user.role.assign",
     ...READ_TEAM, "school.read", "user.read", "user.invite",
-    "team.manage", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
+    "team.manage", "team.training.run", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
     "player.profile.manage", "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read", "player.age.read", "player.roster.read", "player.emergency.read", "player.emergency.manage",
@@ -202,7 +202,7 @@ const BUNDLES = {
     // configuring the institution — and it can only ever take something away.
     "school.feature.manage",
     ...READ_TEAM, "school.read", "school.manage", "user.read", "user.invite", "user.role.assign",
-    "team.manage", "fixture.create", "fixture.update", "fixture.cancel",
+    "team.manage", "team.training.run", "fixture.create", "fixture.update", "fixture.cancel",
     "sponsorship.read", "sponsorship.manage",
     "player.profile.manage", "player.pii.read", "player.biometric.read",
     "player.age.read", "player.identity.read", "guardian.link.manage",
@@ -218,7 +218,7 @@ const BUNDLES = {
   ],
   sportsadmin: ["clearance.read",
     "availability.read", "availability.declare",
-    ...READ_TEAM, "user.read", "team.manage", "team.select",
+    ...READ_TEAM, "user.read", "team.manage", "team.training.run", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
     "broadcast.publish",
     "player.profile.manage", "medical.status.read", "medical.nature.read", "player.age.read",
@@ -255,7 +255,7 @@ const BUNDLES = {
     // The kit and the drill library, for his own school. Not the roster or
     // the fixture list — those stay under the capabilities above; this is
     // narrowly what the club calls "running the equipment room and nets".
-    "team.manage",
+    "team.manage", "team.training.run",
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
     "player.note.read", "player.note.write",
@@ -286,7 +286,10 @@ const BUNDLES = {
   ],
   teammanager: [
     "availability.read", "availability.declare",
-    ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
+    ...READ_TEAM, "team.select",
+    // GA-I26a (Kameel, 15 Oct): he runs the session — its plan and its
+    // register — and not the library, the kit or the calendar (team.manage).
+    "team.training.run", "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read", "player.emergency.read",
     "transport.read", "news.publish.team",
     // SCRBRD-124 (db/70, §1.6).

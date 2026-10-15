@@ -5199,6 +5199,215 @@ CREATE OR REPLACE FUNCTION _v103_off_sheet(p_match uuid, p_player uuid) RETURNS 
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/103 (section 80) ─────────────────────────────────────────────
 
+-- ┌── db/104 (section 81). Corrections to a coach's judgement, and the coaching point
+-- One invented Hilton side (20XI) with the boy the judgements are about
+-- (Subject) and a team-mate (Mate, who holds the captaincy honour and his own
+-- `player` account), a Westville boy on the same fixture's sheet, and one
+-- person per reader AH-D3 names: two coaches of the side, the assistant, the
+-- team manager, the director of sport, the principal, the analyst, the physio,
+-- the scorer, the boy himself twice (his `player` account and his
+-- `selfaccess`), his parent (verified and consented, as the seed's are),
+-- Westville's coach of the side, a platform administrator (who begins a
+-- support session below) and the owner's key (a platform-wide assignment).
+-- Every name is invented.
+CREATE OR REPLACE FUNCTION _v104_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  ids jsonb; v_s uuid; v_m uuid; v_w uuid; f1 uuid; r record; v_u uuid; k text;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '20XI', 'Verify OneOhFour Subject', 1041, 'batter', U15) RETURNING id INTO v_s;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '20XI', 'Verify OneOhFour Mate', 1042, 'bowler', U15) RETURNING id INTO v_m;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, '20XI', 'Verify OneOhFour Visitor', 1043, 'batter', U15) RETURNING id INTO v_w;
+  ids := _v71_people('v104', ARRAY[
+    ARRAY['coach',     'coach',           HIL::text, '20XI', ''],
+    ARRAY['coach2',    'coach',           HIL::text, '20XI', ''],
+    ARRAY['assistant', 'assistantcoach',  HIL::text, '20XI', ''],
+    ARRAY['manager',   'teammanager',     HIL::text, '20XI', ''],
+    ARRAY['director',  'directorofsport', HIL::text, '',     ''],
+    ARRAY['principal', 'principal',       HIL::text, '',     ''],
+    ARRAY['analyst',   'analyst',         HIL::text, '',     ''],
+    ARRAY['medical',   'medical',         HIL::text, '',     ''],
+    ARRAY['scorer',    'scorer',          HIL::text, '',     ''],
+    ARRAY['boy',       'player',          HIL::text, '20XI', v_s::text],
+    ARRAY['self',      'selfaccess',      HIL::text, '',     v_s::text],
+    ARRAY['captain',   'player',          HIL::text, '20XI', v_m::text],
+    ARRAY['parent',    'guardian',        HIL::text, '',     ''],
+    ARRAY['mateparent','guardian',        HIL::text, '',     ''],
+    ARRAY['wesparent', 'guardian',        WES::text, '',     ''],
+    ARRAY['wescoach',  'coach',           WES::text, '20XI', '']]);
+  -- The boy's own file and each boy's parent's link: verified by his school's
+  -- office and consented (a boy is on a sheet only once registered).
+  FOR r IN SELECT a.id AS aid, a.role, x.p, x.verifier FROM role_assignment a,
+                  LATERAL (VALUES ((ids->>'self')::uuid, v_s, OFFICE), ((ids->>'parent')::uuid, v_s, OFFICE),
+                                  ((ids->>'mateparent')::uuid, v_m, OFFICE),
+                                  ((ids->>'wesparent')::uuid, v_w, '88888888-0000-0000-0000-00000000000d'::uuid))
+                          AS x(person, p, verifier)
+            WHERE a.person_id = x.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, CASE r.role WHEN 'selfaccess' THEN 'self' ELSE 'parent' END, 'verified', r.verifier, now(),
+            'granted', 'popia-2026-01', now(), r.verifier, current_date - 1);
+  END LOOP;
+  -- The team-mate holds the captaincy: an honour, which adds no capability.
+  INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
+  VALUES (v_m, HIL, '20XI', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
+  -- Two platform people: no school, as the seed's are.
+  FOREACH k IN ARRAY ARRAY['plat', 'owner'] LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (HIL, 'v104.' || k || '@example.invalid', 'V104 ' || initcap(k),
+            CASE k WHEN 'plat' THEN 'platformadmin' ELSE 'superadmin' END)
+    RETURNING id INTO v_u;
+    INSERT INTO role_assignment (person_id, role, school_id, team_code)
+    VALUES (v_u, CASE k WHEN 'plat' THEN 'platformadmin' ELSE 'superadmin' END, NULL, NULL);
+    ids := ids || jsonb_build_object(k, v_u);
+  END LOOP;
+  -- A fixture with the boy, the team-mate and the visitor on its sheet.
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '20XI', WES, '20XI', 'Westville 20XI', ((sa_today() - 2)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'complete') RETURNING id INTO f1;
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES
+    (f1, v_s, 'home', 1), (f1, v_m, 'home', 2), (f1, v_w, 'away', 1);
+  RETURN ids || jsonb_build_object('subject', v_s, 'mate', v_m, 'visitor', v_w, 'f1', f1);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Run one statement as whoever is calling, under row security, and say how
+-- it ended: 'ok', or its SQLSTATE. Not a definer: the point is the caller's
+-- own policies.
+CREATE OR REPLACE FUNCTION _v104_try(p_sql text) RETURNS text AS $$
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql;
+
+-- A row as the owner reads it, past row security: the claim is about what is
+-- STORED (who assessed, who withdrew), not about what a reader may see.
+CREATE OR REPLACE FUNCTION _v104_skill(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(s) FROM player_skill s WHERE s.id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v104_note(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(n) FROM development_note n WHERE n.id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/104 (section 81) ─────────────────────────────────────────────
+
+-- ┌── db/105 (section 82). The development loop: a target, the side's plan, the register
+-- One invented Hilton side (U19E) and another (U19F). On U19E: the boy the
+-- loop is about (Subject) and a team-mate (Mate, who holds the captaincy),
+-- each with ONE account holding `player` for the side and `selfaccess` for
+-- himself, as the seed's R Pillay does; the coach, the assistant, the team
+-- manager. School-wide: the director of sport, the principal, the analyst.
+-- The boy's parent (verified, consented). U19F's coach; Westville's coach of a
+-- U19E; a platform administrator for the support session. The Subject joined
+-- U19E sixty days ago, was rated twenty days ago (againstPace 7) and ten days
+-- ago (againstPace 9, footwork 10); U19E held sessions twelve, eight, six,
+-- four and two days ago, one three days ago that was cancelled and one in two
+-- days. The register: he was present eight days ago, late six days ago,
+-- absent four days ago; nobody took one two days ago; the Mate's row eight
+-- days ago was written `injured` before db/105 (as the owner). A retired
+-- Hilton drill, a Westville drill, and a note about the Mate. Every name is
+-- invented.
+CREATE OR REPLACE FUNCTION _v105_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  ids jsonb; v_s uuid; v_m uuid; r record; v_u uuid; k text; d int;
+  sess jsonb := '{}'; v_t uuid; v_retired uuid; v_wesdrill uuid; v_matenote uuid; v_k20 uuid; v_k10 uuid;
+BEGIN
+  PERFORM set_config('app.effective_on', (current_date - 60)::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U19E', 'Verify OneOhFive Subject', 1051, 'batter', U15) RETURNING id INTO v_s;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U19E', 'Verify OneOhFive Mate', 1052, 'bowler', U15) RETURNING id INTO v_m;
+  PERFORM set_config('app.effective_on', '', true);
+  ids := _v71_people('v105', ARRAY[
+    ARRAY['coach',      'coach',           HIL::text, 'U19E', ''],
+    ARRAY['assistant',  'assistantcoach',  HIL::text, 'U19E', ''],
+    ARRAY['manager',    'teammanager',     HIL::text, 'U19E', ''],
+    ARRAY['director',   'directorofsport', HIL::text, '',     ''],
+    ARRAY['principal',  'principal',       HIL::text, '',     ''],
+    ARRAY['analyst',    'analyst',         HIL::text, '',     ''],
+    ARRAY['self',       'player',          HIL::text, 'U19E', v_s::text],
+    ARRAY['mate',       'player',          HIL::text, 'U19E', v_m::text],
+    ARRAY['parent',     'guardian',        HIL::text, '',     ''],
+    ARRAY['othercoach', 'coach',           HIL::text, 'U19F', ''],
+    ARRAY['wescoach',   'coach',           WES::text, 'U19E', '']]);
+  -- Each boy's second assignment, about himself; the parent's link.
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES ((ids->>'self')::uuid, 'selfaccess', HIL), ((ids->>'mate')::uuid, 'selfaccess', HIL);
+  FOR r IN SELECT a.id AS aid, a.role, x.p FROM role_assignment a,
+                  LATERAL (VALUES ((ids->>'self')::uuid, v_s), ((ids->>'mate')::uuid, v_m),
+                                  ((ids->>'parent')::uuid, v_s)) AS x(person, p)
+            WHERE a.person_id = x.person AND a.role IN ('selfaccess', 'guardian') LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, CASE r.role WHEN 'selfaccess' THEN 'self' ELSE 'parent' END, 'verified', OFFICE, now(),
+            'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
+  VALUES (v_m, HIL, 'U19E', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (HIL, 'v105.plat@example.invalid', 'V105 Plat', 'platformadmin') RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES (v_u, 'platformadmin', NULL, NULL);
+  ids := ids || jsonb_build_object('plat', v_u);
+
+  -- His scores: two looks at batting, the coach's.
+  INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
+  VALUES (v_s, current_date - 20, (ids->>'coach')::uuid, 'technical', 'againstPace', 7) RETURNING id INTO v_k20;
+  INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
+  VALUES (v_s, current_date - 10, (ids->>'coach')::uuid, 'technical', 'againstPace', 9) RETURNING id INTO v_k10;
+  INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
+  VALUES (v_s, current_date - 10, (ids->>'coach')::uuid, 'technical', 'footwork', 10);
+
+  -- The side's sessions, at four in the afternoon.
+  FOREACH d IN ARRAY ARRAY[-12, -8, -6, -4, -3, -2, 2] LOOP
+    INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type, cancelled)
+    VALUES (HIL, 'U19E', 'Verify 105 nets ' || d, ((current_date + d)::timestamp + time '16:00') AT TIME ZONE 'Africa/Johannesburg',
+            90, 'batting', d = -3)
+    RETURNING id INTO v_t;
+    sess := sess || jsonb_build_object('d' || abs(d) || CASE WHEN d > 0 THEN 'ahead' ELSE '' END, v_t);
+  END LOOP;
+  INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type)
+  VALUES (HIL, 'U19F', 'Verify 105 other side', ((current_date - 5)::timestamp + time '16:00') AT TIME ZONE 'Africa/Johannesburg',
+          60, 'fielding') RETURNING id INTO v_t;
+  sess := sess || jsonb_build_object('other', v_t);
+  INSERT INTO training_attendance (session_id, player_id, status) VALUES
+    ((sess->>'d8')::uuid, v_s, 'present'), ((sess->>'d6')::uuid, v_s, 'late'), ((sess->>'d4')::uuid, v_s, 'absent'),
+    ((sess->>'d8')::uuid, v_m, 'injured');
+
+  INSERT INTO drill (school_id, name, category, duration_min, retired)
+  VALUES (HIL, 'Verify 105 retired drill', 'batting', 20, true) RETURNING id INTO v_retired;
+  INSERT INTO drill (school_id, name, category, duration_min)
+  VALUES (WES, 'Verify 105 Westville drill', 'batting', 20) RETURNING id INTO v_wesdrill;
+  INSERT INTO development_note (player_id, school_id, author_id, body)
+  VALUES (v_m, HIL, (ids->>'coach')::uuid, 'Verify 105: a note about the team-mate.') RETURNING id INTO v_matenote;
+
+  RETURN ids || sess || jsonb_build_object(
+    'p_subject', v_s, 'p_mate', v_m, 'k20', v_k20, 'k10', v_k10,
+    'throwdowns', (SELECT id FROM drill WHERE school_id IS NULL AND name = 'Throw-downs'),
+    'shortpitch', (SELECT id FROM drill WHERE school_id IS NULL AND name = 'Short-pitch defence'),
+    'retired', v_retired, 'wesdrill', v_wesdrill, 'matenote', v_matenote);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- When the boy joined his current side, moved as the owner: "a move" without
+-- moving him, to show the window starts at it.
+CREATE OR REPLACE FUNCTION _v105_joined(p_player uuid, p_on date) RETURNS void AS $$
+  UPDATE team_membership SET joined_on = p_on WHERE player_id = p_player AND left_on IS NULL;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A target as the owner reads it, past row security.
+CREATE OR REPLACE FUNCTION _v105_target(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(t) FROM development_target t WHERE t.id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/105 (section 82) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -21114,6 +21323,764 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 80
   -- └── db/103 (section 80) ──────────────────────────────────────────
+  -- ┌── section 81: corrections to a coach's judgement, and the coaching point (db/104) ──
+  -- GA-I26a slice A1 (AH-D2, AH-D3, AH-D5). The API half is
+  -- tools/smoke-assessment-history.mjs (the routes, the reads' access-log rows,
+  -- the ratings over standing scores).
+  --
+  -- What each label holds:
+  --   (score)      the coach's same-day revision is one row, his; the
+  --                assistant (no development.write) is refused by policy;
+  --                a second coach's same-day upsert is refused 45003 and his
+  --                next-day row is his own; a forged assessor is stamped over
+  --   (withdraw)   skill_withdraw(): refused to the boy, the assistant,
+  --                Westville's coach and an empty reason; made by the coach and,
+  --                on another row, by his colleague (any holder), the assessor
+  --                kept; a second withdrawal refused; a withdrawn score not
+  --                revised (45004); the same day re-rated on a new row
+  --   (reads)      `skills` (its query, verbatim) leaves the withdrawn row out;
+  --                `skills_history` returns it struck, with why
+  --   (point)      coaching_point_write(): written by the coach on a skill row
+  --                (author, no discipline, no adjustment, as-of the row's day);
+  --                refused to the assistant, the director, the principal, the
+  --                boy, Westville's coach; for a batterId not his, a skill row
+  --                not his, a team-mate or a visitor named from the sheet, a
+  --                never-word, an over-long body, an as-of or a head that
+  --                does not parse, a pointer over 4 KB; evidence_text on S11 by the
+  --                CHECK; a pointer inserted directly by policy
+  --   (readers)    the point read by the coach, the assistant, the director,
+  --                the principal; by nobody else: the boy (either account), his
+  --                parent, the captain over him, the team manager, the analyst,
+  --                the physio, the scorer, Westville's coach, the owner's key,
+  --                an anonymous session — and the boy's selfaccess DOES read his
+  --                scores, so the refusal is the note tier, not an empty account
+  --   (support)    a support session as the side's coach reads the boy's player
+  --                row, and no score and no point, and withdraws and writes none
+  --   (edit)       a point's body is not edited (45002); a plain note keeps its
+  --                author's edit and refuses a colleague's (45001) and a pointer
+  --                (45002); note_withdraw() by the director changes the two
+  --                columns alone; refused to the boy and Westville; a withdrawn
+  --                note is not revised (45004)
+  --   (doors)      the definers, the triggers, the cuts, the CHECKs
+  --
+  -- Falsified three times on 15 Oct, each red and then green on restoring:
+  -- (1) the trigger player_skill_keeps_its_assessor dropped (the API's old
+  -- re-attributing upsert, in effect): red at (score), "a colleague's
+  -- same-day upsert onto the coach's row ended ok, not 45003"; (2) the note
+  -- tier opened to the boy (player.note.read granted to selfaccess in
+  -- role_capability, I27's reach): red at (readers), "the self reads a note
+  -- or a coaching point about the boy"; (3) player_skill_not_support
+  -- dropped: red at (support), "a support session reads the boy's scores".
+  DECLARE
+    y      jsonb := _v104_stage();
+    HIL    uuid := '11111111-1111-1111-1111-111111111111';
+    SUBJ   uuid := (y->>'subject')::uuid;
+    M      uuid := (y->>'mate')::uuid;
+    F1     uuid := (y->>'f1')::uuid;
+    k      text;
+    got    text;
+    n      int;
+    v_ok   boolean;
+    v_why  text;
+    K1     uuid;   -- footwork, the coach's
+    K2     uuid;   -- footwork tomorrow, the colleague's
+    KT     uuid;   -- timing, the wrong boy: withdrawn
+    KT2    uuid;   -- timing re-rated the same day
+    KP     uuid;   -- power, the coach's, withdrawn by the colleague
+    KM     uuid;   -- the team-mate's footwork
+    PT     uuid;   -- the coaching point
+    NP     uuid;   -- a plain note
+    SUP    uuid;   -- the support session
+    upsert text := 'insert into player_skill (player_id, assessed_on, assessed_by, category, metric, score, note) '
+                   'values (%L, %s, app_user_id(), ''technical'', %L, %s, null) '
+                   'on conflict (player_id, assessed_on, category, metric) where withdrawn_at is null '
+                   'do update set score = excluded.score, note = excluded.note returning id';
+  BEGIN
+    -- (score)
+    PERFORM _as((y->>'coach')::uuid);
+    EXECUTE format(upsert, SUBJ, 'current_date', 'footwork', 11) INTO K1;
+    EXECUTE format(upsert, SUBJ, 'current_date', 'footwork', 12) INTO got;
+    PERFORM _assert(got::uuid = K1 AND (_v104_skill(K1)->>'score')::int = 12
+                    AND _v104_skill(K1)->>'assessed_by' = y->>'coach',
+      '§81 (score): the coach''s same-day revision is not one row, his, at 12');
+    PERFORM _as((y->>'assistant')::uuid);
+    PERFORM _assert(_v104_try(format(upsert, SUBJ, 'current_date', 'footwork', 14)) = '42501',
+      '§81 (score): the assistant coach rated the boy');
+    PERFORM _as((y->>'coach2')::uuid);
+    got := _v104_try(format(upsert, SUBJ, 'current_date', 'footwork', 9));
+    PERFORM _assert(got = '45003', format('§81 (score): a colleague''s same-day upsert onto the coach''s row ended %s, not 45003', got));
+    PERFORM _assert(_v104_try(format('update player_skill set score = 9 where id = %L', K1)) = '45003',
+      '§81 (score): a colleague revised the coach''s score directly');
+    PERFORM _assert((_v104_skill(K1)->>'score')::int = 12 AND _v104_skill(K1)->>'assessed_by' = y->>'coach',
+      '§81 (score): the coach''s row moved, or changed hands');
+    EXECUTE format(upsert, SUBJ, 'current_date + 1', 'footwork', 9) INTO K2;
+    PERFORM _assert(K2 <> K1 AND _v104_skill(K2)->>'assessed_by' = y->>'coach2',
+      '§81 (score): the colleague''s next-day rating is not a row of his own');
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
+    VALUES (SUBJ, current_date, (y->>'coach2')::uuid, 'technical', 'timing', 7) RETURNING id INTO KT;
+    PERFORM _assert(_v104_skill(KT)->>'assessed_by' = y->>'coach',
+      '§81 (score): an insert naming another assessor was not stamped with the writer');
+    EXECUTE format(upsert, SUBJ, 'current_date', 'power', 13) INTO KP;
+    EXECUTE format(upsert, M, 'current_date', 'footwork', 10) INTO KM;
+
+    -- (withdraw)
+    FOREACH k IN ARRAY ARRAY['self', 'assistant', 'wescoach', 'manager', 'parent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT w.ok, w.reason INTO v_ok, v_why FROM skill_withdraw(KT, 'rated the wrong boy') w;
+      PERFORM _assert(NOT v_ok AND v_why = 'not_permitted', format('§81 (withdraw): the %s withdrew a score (%s)', k, v_why));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM skill_withdraw(KT, '  ') w;
+    PERFORM _assert(NOT v_ok AND v_why = 'reason_required', '§81 (withdraw): a withdrawal without a reason was taken');
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM skill_withdraw(KT, 'rated the wrong boy') w;
+    PERFORM _assert(v_ok, format('§81 (withdraw): the coach could not withdraw his score (%s)', v_why));
+    PERFORM _assert(_v104_skill(KT)->>'assessed_by' = y->>'coach'
+                    AND _v104_skill(KT)->>'withdrawn_by' = y->>'coach'
+                    AND _v104_skill(KT)->>'withdrawn_reason' = 'rated the wrong boy'
+                    AND _v104_skill(KT)->>'withdrawn_at' IS NOT NULL
+                    AND (_v104_skill(KT)->>'score')::int = 7,
+      '§81 (withdraw): the withdrawn row lost its assessor or its score, or was not stamped');
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM skill_withdraw(KT, 'again') w;
+    PERFORM _assert(NOT v_ok AND v_why = 'already_withdrawn', '§81 (withdraw): a score was withdrawn twice');
+    PERFORM _assert(_v104_try(format('update player_skill set score = 8 where id = %L', KT)) = '45004',
+      '§81 (withdraw): a withdrawn score was revised');
+    PERFORM _assert(_v104_try(format('update player_skill set withdrawn_at = null, withdrawn_by = null where id = %L', KT)) = '45004',
+      '§81 (withdraw): a withdrawn score was put back');
+    EXECUTE format(upsert, SUBJ, 'current_date', 'timing', 14) INTO KT2;
+    PERFORM _assert(KT2 IS NOT NULL AND KT2 <> KT AND (_v104_skill(KT2)->>'score')::int = 14,
+      '§81 (withdraw): the same day could not be re-rated after a withdrawal');
+    PERFORM _as((y->>'coach2')::uuid);
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM skill_withdraw(KP, 'not watched; my mistake') w;
+    PERFORM _assert(v_ok AND _v104_skill(KP)->>'assessed_by' = y->>'coach' AND _v104_skill(KP)->>'withdrawn_by' = y->>'coach2',
+      format('§81 (withdraw): the colleague could not withdraw the coach''s score, or took it (%s)', v_why));
+
+    -- (reads) `skills` and `skills_history`, as services/api/read/read-api.mjs runs them
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT string_agg(x.metric || ':' || x.score, ',' ORDER BY x.metric) INTO got
+      FROM (select s.id, s.player_id, s.assessed_on, s.category, s.metric, s.score, p.full_name, p.team_code
+              from player_skill s join player p on p.id = s.player_id
+             where s.withdrawn_at is null
+             order by s.assessed_on desc, p.full_name) x
+     WHERE x.player_id = SUBJ AND x.assessed_on = current_date;
+    PERFORM _assert(got = 'footwork:12,timing:14', format('§81 (reads): `skills` gives today %s, not footwork 12 and timing 14', coalesce(got, 'nothing')));
+    SELECT count(*) FILTER (WHERE x.withdrawn_at IS NOT NULL AND x.withdrawn_reason IS NOT NULL), count(*) INTO n, k
+      FROM (select s.id, s.player_id, p.school_id, s.assessed_on, s.category, s.metric, s.score,
+                   s.assessed_by, a.name as assessed_by_name,
+                   s.withdrawn_at, s.withdrawn_by, w.name as withdrawn_by_name, s.withdrawn_reason
+              from player_skill s
+              join player p on p.id = s.player_id
+              left join app_user a on a.id = s.assessed_by
+              left join app_user w on w.id = s.withdrawn_by
+             where (SUBJ::uuid is null or s.player_id = SUBJ)
+             order by s.player_id, s.category, s.metric, s.assessed_on, s.id) x;
+    PERFORM _assert(n = 2 AND k::int = 5, format('§81 (reads): `skills_history` gives %s rows, %s struck, not 5 and 2', k, n));
+    PERFORM _as((y->>'self')::uuid);
+    SELECT count(*) INTO n FROM player_skill WHERE player_id = SUBJ;
+    PERFORM _assert(n = 5, format('§81 (reads): the boy reads %s of his own five scores', n));
+
+    -- (point)
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT c.ok, c.reason, c.id INTO v_ok, v_why, PT
+      FROM coaching_point_write(SUBJ, NULL, 'front foot is late to the pitch',
+                                jsonb_build_object('read', 'skills', 'params', jsonb_build_object('skillId', K1))) c;
+    PERFORM _assert(v_ok, format('§81 (point): the coach could not write a coaching point (%s)', v_why));
+    PERFORM _assert(_v104_note(PT)->>'author_id' = y->>'coach'
+                    AND _v104_note(PT)->>'about_discipline' IS NULL AND _v104_note(PT)->>'adjustment' IS NULL
+                    AND _v104_note(PT)->>'evidence_read' = 'skills'
+                    AND (_v104_note(PT)->>'evidence_as_of')::timestamptz = (current_date::timestamp AT TIME ZONE 'Africa/Johannesburg')
+                    AND _v104_note(PT)->'evidence_params'->>'skillId' = K1::text,
+      '§81 (point): the point is not the coach''s, pinned to the row, moving nothing');
+    FOREACH k IN ARRAY ARRAY['assistant', 'director', 'principal', 'self', 'boy', 'wescoach', 'manager'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT c.ok, c.reason INTO v_ok, v_why
+        FROM coaching_point_write(SUBJ, NULL, 'front foot is late to the pitch',
+                                  jsonb_build_object('read', 'skills', 'params', jsonb_build_object('skillId', K1))) c;
+      PERFORM _assert(NOT v_ok AND v_why = 'not_permitted', format('§81 (point): the %s wrote a coaching point (%s)', k, v_why));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    FOREACH k IN ARRAY ARRAY[
+        'batter|{"read":"matchups","asOf":"2026-10-01T10:00:00Z","params":{"batterId":"' || M || '"}}|front foot is late|evidence_names_another_boy',
+        'skill|{"read":"skills","params":{"skillId":"' || KM || '"}}|front foot is late|evidence_not_his',
+        'mate|{"read":"skills","params":{"skillId":"' || K1 || '"}}|plays like Verify OneOhFour Mate at his best|names_another_boy',
+        'visitor|{"read":"skills","params":{"skillId":"' || K1 || '"}}|watch Verify OneOhFour Visitor on the drive|names_another_boy',
+        'word|{"read":"skills","params":{"skillId":"' || K1 || '"}}|a hamstring niggle, so no short balls|forbidden_word',
+        'pct|{"read":"skills","params":{"skillId":"' || K1 || '"}}|bowled at 70 % of his pace|forbidden_word',
+        'long|{"read":"skills","params":{"skillId":"' || K1 || '"}}|' || repeat('x', 501) || '|body_length',
+        'noread|{"params":{"skillId":"' || K1 || '"}}|front foot is late|evidence_required',
+        'noasof|{"read":"matchups"}|front foot is late|evidence_as_of_required',
+        'badasof|{"read":"matchups","asOf":"the day after the nets"}|front foot is late|evidence_malformed',
+        'badhead|{"read":"matchups","asOf":"2026-10-01T10:00:00Z","head":"twelve"}|front foot is late|evidence_malformed',
+        'big|{"read":"matchups","asOf":"2026-10-01T10:00:00Z","params":{"pad":"' || repeat('x', 5000) || '"}}|front foot is late|evidence_too_large'] LOOP
+      SELECT c.ok, c.reason INTO v_ok, v_why
+        FROM coaching_point_write(SUBJ, F1, split_part(k, '|', 3), split_part(k, '|', 2)::jsonb) c;
+      PERFORM _assert(NOT v_ok AND v_why = split_part(k, '|', 4),
+        format('§81 (point): %s ended %s, not %s', split_part(k, '|', 1), coalesce(v_why, 'written'), split_part(k, '|', 4)));
+    END LOOP;
+    got := _v104_try(format('select * from coaching_point_write(%L, null, ''late on the pull'', %L::jsonb)', SUBJ,
+                            '{"read":"matchups","rule":"S11","asOf":"2026-10-01T10:00:00Z","text":["line one"]}'));
+    PERFORM _assert(got = '23514', format('§81 (point): evidence_text on an S11 card ended %s, not the CHECK', got));
+    got := _v104_try(format('insert into development_note (player_id, school_id, author_id, body, evidence_read, evidence_as_of) '
+                            'values (%L, %L, app_user_id(), ''a point by the back door'', ''skills'', now())', SUBJ, HIL));
+    PERFORM _assert(got = '42501', format('§81 (point): a pointer inserted directly by policy ended %s', got));
+
+    -- (readers)
+    FOREACH k IN ARRAY ARRAY['coach', 'coach2', 'assistant', 'director', 'principal'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM development_note WHERE id = PT) = 1,
+        format('§81 (readers): the %s does not read the coaching point', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['self', 'boy', 'parent', 'captain', 'manager', 'analyst', 'medical', 'scorer', 'wescoach', 'owner', 'plat'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM development_note WHERE player_id = SUBJ) = 0,
+        format('§81 (readers): the %s reads a note or a coaching point about the boy', k));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM development_note WHERE player_id = SUBJ) = 0
+                    AND (SELECT count(*) FROM player_skill WHERE player_id = SUBJ) = 0,
+      '§81 (readers): an anonymous session reads the boy''s judgements');
+    -- The refusals above are the note tier: the same people's reach of the scores.
+    PERFORM _as((y->>'self')::uuid);
+    PERFORM _assert((SELECT count(*) FROM player_skill WHERE player_id = SUBJ) > 0,
+      '§81 (readers): the boy reads none of his scores — his refusal above proves nothing');
+    PERFORM _as((y->>'owner')::uuid);
+    PERFORM _assert((SELECT count(*) FROM player_skill WHERE player_id = SUBJ) > 0,
+      '§81 (readers): the owner''s key reads none of the boy''s scores — its note refusal above proves nothing');
+    FOREACH k IN ARRAY ARRAY['boy', 'parent', 'captain', 'manager', 'analyst', 'medical', 'scorer', 'wescoach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM player_skill WHERE player_id = SUBJ) = 0,
+        format('§81 (readers): the %s reads the boy''s scores', k));
+    END LOOP;
+    PERFORM _as((y->>'captain')::uuid);
+    PERFORM _assert((SELECT count(*) FROM player WHERE id = SUBJ) = 1,
+      '§81 (readers): the captain does not read his team-mate''s player row — his refusals above prove nothing');
+
+    -- (support)
+    PERFORM _as((y->>'plat')::uuid);
+    SELECT b.ok, b.reason, b.id INTO v_ok, v_why, SUP
+      FROM support_access_begin(HIL, 'coach', 'Verify 104: ticket 1041 about the side', '20XI', 30) b;
+    PERFORM _assert(v_ok, format('§81 (support): the session was not begun (%s)', v_why));
+    PERFORM _assert((SELECT count(*) FROM player WHERE id = SUBJ) = 1,
+      '§81 (support): the session as the side''s coach reads no player row — its refusals below prove nothing');
+    PERFORM _assert((SELECT count(*) FROM player_skill WHERE player_id = SUBJ) = 0,
+      '§81 (support): a support session reads the boy''s scores');
+    PERFORM _assert((SELECT count(*) FROM development_note WHERE player_id = SUBJ) = 0,
+      '§81 (support): a support session reads a note or a point');
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM skill_withdraw(K2, 'support says so') w;
+    PERFORM _assert(NOT v_ok, '§81 (support): a support session withdrew a score');
+    SELECT c.ok INTO v_ok FROM coaching_point_write(SUBJ, NULL, 'front foot is late',
+                                                    jsonb_build_object('read', 'skills', 'params', jsonb_build_object('skillId', K1))) c;
+    PERFORM _assert(NOT v_ok, '§81 (support): a support session wrote a coaching point');
+    PERFORM _assert(_v104_try(format(upsert, SUBJ, 'current_date + 3', 'footwork', 3)) = '42501',
+      '§81 (support): a support session rated the boy');
+    PERFORM support_access_end(SUP);
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (edit)
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(_v104_try(format('update development_note set body = ''front foot is very late'' where id = %L', PT)) = '45002',
+      '§81 (edit): the author edited his coaching point');
+    INSERT INTO development_note (player_id, school_id, author_id, body, about_discipline, adjustment, observed_on)
+    SELECT SUBJ, player_school(SUBJ), app_user_id(), 'Quiet in the nets this week.', NULL, NULL, current_date
+     WHERE player_school(SUBJ) IS NOT NULL
+    RETURNING id INTO NP;
+    PERFORM _assert(_v104_try(format('update development_note set body = ''Quiet in the nets; spoke to him.'' where id = %L', NP)) = 'ok'
+                    AND _v104_note(NP)->>'body' = 'Quiet in the nets; spoke to him.',
+      '§81 (edit): the author could not edit his plain note');
+    PERFORM _assert(_v104_try(format('update development_note set evidence_read = ''skills'', evidence_as_of = now() where id = %L', NP)) = '45002',
+      '§81 (edit): a plain note gained a pointer by an edit');
+    PERFORM _as((y->>'assistant')::uuid);
+    PERFORM _assert(_v104_try(format('update development_note set body = ''Rewritten.'' where id = %L', NP)) = '45001',
+      '§81 (edit): a colleague edited the coach''s plain note');
+    PERFORM _assert(_v104_try(format('insert into development_note (player_id, school_id, author_id, body) '
+                                     'values (%L, %L, app_user_id(), ''Bowled well to the left-handers.'')', SUBJ, HIL)) = 'ok',
+      '§81 (edit): the assistant could not write a plain note');
+    FOREACH k IN ARRAY ARRAY['self', 'wescoach', 'principal', 'manager'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT w.ok, w.reason INTO v_ok, v_why FROM note_withdraw(PT) w;
+      PERFORM _assert(NOT v_ok AND v_why = 'not_permitted', format('§81 (edit): the %s withdrew the coaching point (%s)', k, v_why));
+    END LOOP;
+    got := (_v104_note(PT) - 'withdrawn_at' - 'withdrawn_by')::text;
+    PERFORM _as((y->>'director')::uuid);
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM note_withdraw(PT) w;
+    PERFORM _assert(v_ok AND (_v104_note(PT) - 'withdrawn_at' - 'withdrawn_by')::text = got
+                    AND _v104_note(PT)->>'withdrawn_by' = y->>'director' AND _v104_note(PT)->>'withdrawn_at' IS NOT NULL,
+      format('§81 (edit): the director''s withdrawal changed more than its two columns, or failed (%s)', v_why));
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM note_withdraw(PT) w;
+    PERFORM _assert(NOT v_ok AND v_why = 'already_withdrawn', '§81 (edit): a point was withdrawn twice');
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM development_note WHERE id = PT AND withdrawn_at IS NOT NULL) = 1,
+      '§81 (edit): the withdrawn point is no longer readable, struck, to the coach');
+    SELECT w.ok INTO v_ok FROM note_withdraw(NP) w;
+    PERFORM _assert(v_ok AND _v104_try(format('update development_note set body = ''Changed my mind.'' where id = %L', NP)) = '45004',
+      '§81 (edit): a withdrawn plain note was revised');
+
+    -- (doors)
+    FOREACH k IN ARRAY ARRAY['coaching_point_write(uuid,uuid,text,jsonb)', 'skill_withdraw(uuid,text)', 'note_withdraw(uuid)'] LOOP
+      PERFORM _assert((SELECT prosecdef AND provolatile = 'v' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                         FROM pg_proc WHERE oid = to_regprocedure(k)),
+        format('§81 (doors): %s is not a volatile SECURITY DEFINER with a pinned path', k));
+      PERFORM _assert(has_function_privilege('scrbrd_app', to_regprocedure(k), 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                       WHERE p.oid = to_regprocedure(k) AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                                         AND has_function_privilege(g.oid, to_regprocedure(k), 'EXECUTE')),
+        format('§81 (doors): %s is not the application''s alone', k));
+    END LOOP;
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', to_regprocedure('coaching_point_never(text)'), 'EXECUTE'),
+      '§81 (doors): the application calls the internal coaching_point_never');
+    PERFORM _assert((SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+                       AND (tablename, policyname) IN (('player_skill', 'player_skill_not_support'),
+                                                       ('development_note', 'development_note_not_support'),
+                                                       ('development_note', 'development_note_not_platform'),
+                                                       ('development_note', 'development_note_plain_insert'))) = 4,
+      '§81 (doors): the four RESTRICTIVE policies are not all there');
+    PERFORM _assert((SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+                      WHERE c.conrelid = 'development_note'::regclass AND c.conname = 'note_evidence_whole')
+                    = 'CHECK (((evidence_read IS NULL) OR (evidence_as_of IS NOT NULL)))',
+      '§81 (doors): a pointer without its as-of is not refused by the CHECK');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                                  AND tablename IN ('player_skill', 'development_note') AND cmd = 'DELETE'),
+      '§81 (doors): a judgement may be deleted');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 81
+  -- ┌── section 82: the development loop — a target, the side's plan, the register (db/105) ──
+  -- GA-I26a slice A2 (AH-D1, AH-D3, AH-D9). The API half is
+  -- tools/smoke-assessment-history.mjs (the routes, `injured` refused with
+  -- 422, the export refusals, the Training gate, the reads' log rows).
+  --
+  -- What each label holds:
+  --   (set)        target_set() by the coach over a standing 9: the row, on
+  --                that score, his; refused at 9 and 8 (already_there), at 21
+  --                (the CHECK), for a retired drill, another school's drill, a
+  --                note about the team-mate, a date gone by, and to the
+  --                assistant, the director, the team manager, the boy, his
+  --                parent, Westville's coach; a second target on the metric
+  --                replaces the first (struck 'replaced'), one open row
+  --   (withdraw)   target_withdraw(): refused to the boy and without a
+  --                reason; made by the coach; not twice
+  --   (readers)    the target read by the coach, the assistant, the director
+  --                and the boy himself; by nobody else: the principal, his
+  --                parent, the team manager, the analyst, the team-mate (his
+  --                own selfaccess included) who is captain, U19F's coach,
+  --                Westville's coach, an anonymous session; `targets` (its
+  --                query, verbatim) gives the boy no note id and the coach his
+  --   (writes)     no person writes development_target directly: INSERT,
+  --                UPDATE, DELETE refused to the coach
+  --   (plan)       the team manager plans U19E's sessions (platform drills)
+  --                under team.training.run (Kameel, 15 Oct), and the coach
+  --                too; the team manager, the boy, the parent, the team-mate,
+  --                the analyst and the director read the plan; U19F's coach,
+  --                Westville's coach and an anonymous session do not; the
+  --                assistant (whose bundle holds no team.training.run), the
+  --                parent and the boy write none; the team manager writes
+  --                none for U19F, another side; a Westville drill on a Hilton
+  --                plan is refused; the team manager replaces a plan (delete)
+  --   (register)   the team manager marks the boy present; `injured` refused
+  --                (insert and update) under the application's role; the
+  --                parent and the assistant write none, nor the team manager
+  --                on U19F's session; the team-mate's
+  --                `injured` row written
+  --                before db/105 reads back `excused` through
+  --                `training_attendance` (its query, verbatim)
+  --   (since)      `development_since` (its query, verbatim) for batting, as
+  --                the coach and as the boy: anchored ten days ago; four
+  --                sessions (not the cancelled one, not the one ahead, not
+  --                the one before the look), three with a register, present
+  --                one, late one, never the absence; throw-downs ran three
+  --                times and short-pitch once; the target's drill ran three
+  --                times and he was there for two. The team manager and the
+  --                parent get no rows. The anchor withdrawn: the window opens
+  --                back to twenty days and counts five. The window starts at
+  --                the day he joined his side when that is later.
+  --   (manager)    team.training.run is all he gained: the team manager is
+  --                still refused the drill library, the kit register and the
+  --                calendar (team.manage's), at his own side
+  --   (support)    a support session as U19E's coach reads no target and
+  --                sets none
+  --   (doors)      the definers, the privileges, the cuts, the trigger
+  --
+  -- Falsified three times on 15 Oct, each red and then green on restoring
+  -- (re-pasting db/105): (1) training_attendance_no_health_word dropped: red
+  -- at (register), "`injured` was written by the application"; (2)
+  -- development_target_read widened to player.profile.read (the register's
+  -- tier): red at (readers), "the principal reads the boy's targets"; (3) the
+  -- trigger training_session_drill_from_the_library dropped: red at (plan),
+  -- "a Westville drill went on a Hilton plan". And on team.training.run
+  -- (Kameel, 15 Oct): (4) the team manager's row taken out of role_capability:
+  -- red at (plan), his insert refused; (5) the plan's insert policy's side
+  -- scope dropped (team '*', with the school read past row security so the
+  -- session's own read policy, which also refuses him U19F's session, does not
+  -- mask it): red at (plan), "the team manager planned U19F's session, another
+  -- side's"; with the side kept and only the school read past row security it
+  -- stays green, so the side scope is what refuses him.
+  DECLARE
+    y      jsonb := _v105_stage();
+    HIL    uuid := '11111111-1111-1111-1111-111111111111';
+    SUBJ   uuid := (y->>'p_subject')::uuid;
+    MATE   uuid := (y->>'p_mate')::uuid;
+    TD     uuid := (y->>'throwdowns')::uuid;
+    SP     uuid := (y->>'shortpitch')::uuid;
+    BAT    text[] := ARRAY['technical.footwork','technical.timing','technical.power','technical.shotRange','technical.defence',
+                           'technical.againstPace','technical.againstSpin','mental.concentration','mental.composure',
+                           'mental.decisions','mental.bravery','tactical.strikeRotation','tactical.oppositionAnalysis',
+                           'tactical.deathOversExecution'];
+    Q_SINCE text := $qsince$with b as (
+             select p.id, p.school_id, p.team_code
+               from player p
+              where p.id = $1::uuid
+                and app_can('player.development.read', p.school_id, p.team_code, p.id,
+                            '00000000-0000-0000-0000-000000000000'::uuid)),
+           disc(discipline, attrs, ord) as (
+             values ('batting', $2::text[], 1), ('bowling', $3::text[], 2),
+                    ('fielding', $4::text[], 3), ('keeping', $5::text[], 4)),
+           a as (
+             select b.id as player_id, b.school_id, b.team_code, disc.discipline, disc.attrs, disc.ord,
+                    (select max(s.assessed_on) from player_skill s
+                      where s.player_id = b.id and s.withdrawn_at is null
+                        and (s.category || '.' || s.metric) = any(disc.attrs)) as anchor,
+                    (select max(m.joined_on) from team_membership m
+                      where m.player_id = b.id and m.left_on is null and m.team_code = b.team_code) as joined_on
+               from b cross join disc),
+           w as (
+             select a.*, case when a.anchor is null then null
+                              else greatest(a.anchor, coalesce(a.joined_on, a.anchor)) end as window_from
+               from a),
+           sess as (
+             select w.discipline, t.id as session_id,
+                    exists (select 1 from training_attendance r where r.session_id = t.id) as registered,
+                    (select r.status from training_attendance r where r.session_id = t.id and r.player_id = w.player_id) as his
+               from w join training_session t
+                 on w.window_from is not null
+                and t.school_id = w.school_id and t.team_code = w.team_code and not t.cancelled
+                and t.starts_at >= (w.window_from::timestamp at time zone 'Africa/Johannesburg')
+                and t.starts_at <= now())
+           select w.player_id, w.school_id, w.team_code, w.discipline, w.anchor, w.joined_on, w.window_from,
+                  case when w.window_from is null then null else
+                    (select count(*) from sess where sess.discipline = w.discipline)::int end as sessions,
+                  case when w.window_from is null then null else
+                    (select count(*) from sess where sess.discipline = w.discipline and sess.registered)::int end as registered,
+                  case when w.window_from is null then null else
+                    (select count(*) from sess where sess.discipline = w.discipline and sess.his = 'present')::int end as present,
+                  case when w.window_from is null then null else
+                    (select count(*) from sess where sess.discipline = w.discipline and sess.his = 'late')::int end as late,
+                  (select coalesce(jsonb_agg(jsonb_build_object('drillId', x.drill_id, 'name', x.name, 'times', x.times)
+                                             order by x.times desc, x.name), '[]'::jsonb)
+                     from (select k.drill_id, d.name, count(*)::int as times
+                             from sess join training_session_drill k on k.session_id = sess.session_id
+                             join drill d on d.id = k.drill_id
+                            where sess.discipline = w.discipline
+                            group by k.drill_id, d.name) x) as drills,
+                  (select coalesce(jsonb_agg(jsonb_build_object(
+                            'id', t.id, 'category', t.category, 'metric', t.metric, 'target_score', t.target_score,
+                            'set_on', t.set_on, 'due_on', t.due_on, 'drillId', t.drill_id, 'drillName', d.name,
+                            'drillRan', (select count(*) from sess join training_session_drill k
+                                           on k.session_id = sess.session_id and k.drill_id = t.drill_id
+                                          where sess.discipline = w.discipline),
+                            'drillAttended', (select count(*) from sess join training_session_drill k
+                                                on k.session_id = sess.session_id and k.drill_id = t.drill_id
+                                               where sess.discipline = w.discipline and sess.his in ('present', 'late')))
+                            order by t.category, t.metric), '[]'::jsonb)
+                     from development_target t left join drill d on d.id = t.drill_id
+                    where t.player_id = w.player_id and t.withdrawn_at is null
+                      and (t.category || '.' || t.metric) = any(w.attrs)) as targets
+             from w
+            order by w.ord$qsince$;
+    Q_TARGETS text := $qtargets$select t.id, t.player_id, t.school_id, t.category, t.metric, t.target_score,
+                  t.set_on, t.due_on, t.set_by, sb.name as set_by_name,
+                  t.drill_id, d.name as drill_name, d.category as drill_category,
+                  (select n.id from development_note n where n.id = t.note_id) as note_id,
+                  t.from_skill_id, fs.score as from_score, fs.assessed_on as from_assessed_on,
+                  fs.withdrawn_at is not null as from_withdrawn,
+                  now_s.score as standing_score, now_s.assessed_on as standing_on,
+                  (select min(r.assessed_on) from player_skill r
+                    where r.player_id = t.player_id and r.category = t.category and r.metric = t.metric
+                      and r.withdrawn_at is null and r.assessed_on >= t.set_on
+                      and r.score >= t.target_score) as reached_on,
+                  t.withdrawn_at, t.withdrawn_by, t.withdrawn_reason
+             from development_target t
+             left join app_user sb on sb.id = t.set_by
+             left join drill d on d.id = t.drill_id
+             left join player_skill fs on fs.id = t.from_skill_id
+             left join lateral (
+               select s.score, s.assessed_on from player_skill s
+                where s.player_id = t.player_id and s.category = t.category and s.metric = t.metric
+                  and s.withdrawn_at is null
+                order by s.assessed_on desc, s.id desc limit 1) now_s on true
+            where ($1::uuid is null or t.player_id = $1)
+            order by t.player_id, t.withdrawn_at nulls first, t.set_on desc, t.created_at desc$qtargets$;
+    Q_ATT  text := $qatt$select a.session_id, a.player_id,
+                  case when a.status = 'injured' then 'excused' else a.status end as status,
+                  p.full_name
+             from training_attendance a
+             join player p on p.id = a.player_id
+            where ($1::uuid is null or a.session_id = $1)
+            order by p.full_name$qatt$;
+    Q_PLAN text := $qplan$select x.session_id, x.position, x.drill_id, d.name, d.category,
+                  coalesce(x.minutes, d.duration_min) as minutes, x.minutes is null as default_minutes
+             from training_session_drill x
+             join drill d on d.id = x.drill_id
+            where ($1::uuid is null or x.session_id = $1)
+            order by x.session_id, x.position$qplan$;
+    k      text;
+    got    text;
+    j      jsonb;
+    n      int;
+    v_ok   boolean;
+    v_why  text;
+    T1     uuid;   -- the first target on againstPace
+    T2     uuid;   -- its replacement
+    SUP    uuid;
+  BEGIN
+    -- (set)
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT t.ok, t.reason, t.id INTO v_ok, v_why, T1 FROM target_set(SUBJ, 'technical', 'againstPace', 12, current_date + 45, TD, NULL) t;
+    PERFORM _assert(v_ok, format('§82 (set): the coach could not set a target (%s)', v_why));
+    PERFORM _assert(_v105_target(T1)->>'from_skill_id' = y->>'k10' AND _v105_target(T1)->>'set_by' = y->>'coach'
+                    AND (_v105_target(T1)->>'target_score')::int = 12 AND _v105_target(T1)->>'school_id' = HIL::text,
+      '§82 (set): the target does not stand on the standing 9, or is not the coach''s');
+    FOREACH k IN ARRAY ARRAY[
+        '9||||already_there', '8||||already_there',
+        '13|retired|||drill_retired', '13|wesdrill|||no_such_drill',
+        '13||matenote||note_not_his', '13|||past|due_in_past'] LOOP
+      SELECT t.ok, t.reason INTO v_ok, v_why
+        FROM target_set(SUBJ, 'technical', 'againstPace', split_part(k, '|', 1)::int,
+                        CASE WHEN split_part(k, '|', 4) = 'past' THEN current_date - 1 END,
+                        (y->>nullif(split_part(k, '|', 2), ''))::uuid, (y->>nullif(split_part(k, '|', 3), ''))::uuid) t;
+      PERFORM _assert(NOT v_ok AND v_why = split_part(k, '|', 5),
+        format('§82 (set): %s ended %s, not %s', k, coalesce(v_why, 'set'), split_part(k, '|', 5)));
+    END LOOP;
+    got := _v104_try(format('select * from target_set(%L, ''technical'', ''againstPace'', 21, null, null, null)', SUBJ));
+    PERFORM _assert(got = '23514', format('§82 (set): a target of 21 ended %s, not the CHECK', got));
+    FOREACH k IN ARRAY ARRAY['assistant', 'director', 'manager', 'self', 'parent', 'wescoach', 'principal'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT t.ok, t.reason INTO v_ok, v_why FROM target_set(SUBJ, 'technical', 'againstPace', 13, NULL, NULL, NULL) t;
+      PERFORM _assert(NOT v_ok AND v_why = 'not_permitted', format('§82 (set): the %s set a target (%s)', k, v_why));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT t.ok, t.reason, t.id INTO v_ok, v_why, T2 FROM target_set(SUBJ, 'technical', 'againstPace', 13, NULL, TD, NULL) t;
+    PERFORM _assert(v_ok AND T2 <> T1 AND _v105_target(T1)->>'withdrawn_reason' = 'replaced'
+                    AND _v105_target(T1)->>'withdrawn_by' = y->>'coach' AND _v105_target(T2)->>'withdrawn_at' IS NULL,
+      format('§82 (set): the second target did not replace the first (%s)', v_why));
+    PERFORM _assert((SELECT count(*) FROM development_target WHERE player_id = SUBJ AND metric = 'againstPace' AND withdrawn_at IS NULL) = 1
+                    AND (SELECT count(*) FROM development_target WHERE player_id = SUBJ AND metric = 'againstPace') = 2,
+      '§82 (set): not one open target and one struck on the metric');
+
+    -- (withdraw) on a target of its own (footwork), so the loop's stands
+    SELECT t.id INTO T1 FROM target_set(SUBJ, 'technical', 'footwork', 14, NULL, NULL, NULL) t;
+    PERFORM _as((y->>'self')::uuid);
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM target_withdraw(T1, 'not mine to keep') w;
+    PERFORM _assert(NOT v_ok AND v_why = 'not_permitted', '§82 (withdraw): the boy withdrew his own target');
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM target_withdraw(T1, '') w;
+    PERFORM _assert(NOT v_ok AND v_why = 'reason_required', '§82 (withdraw): a target was withdrawn without a reason');
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM target_withdraw(T1, 'set it on the wrong attribute') w;
+    PERFORM _assert(v_ok AND _v105_target(T1)->>'withdrawn_reason' = 'set it on the wrong attribute',
+      format('§82 (withdraw): the coach could not withdraw his target (%s)', v_why));
+    SELECT w.ok, w.reason INTO v_ok, v_why FROM target_withdraw(T1, 'again') w;
+    PERFORM _assert(NOT v_ok AND v_why = 'already_withdrawn', '§82 (withdraw): a target was withdrawn twice');
+
+    -- (readers)
+    FOREACH k IN ARRAY ARRAY['coach', 'assistant', 'director', 'self'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM development_target WHERE player_id = SUBJ) = 3,
+        format('§82 (readers): the %s does not read the boy''s three targets', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['principal', 'parent', 'manager', 'analyst', 'mate', 'othercoach', 'wescoach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM development_target WHERE player_id = SUBJ) = 0,
+        format('§82 (readers): the %s reads the boy''s targets', k));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM development_target) = 0, '§82 (readers): an anonymous session reads a target');
+    PERFORM _as((y->>'mate')::uuid);
+    PERFORM _assert((SELECT count(*) FROM player WHERE id = SUBJ) = 1,
+      '§82 (readers): the team-mate does not read the boy''s player row — his refusal above proves nothing');
+    -- `targets`, as the API runs it: the reasoning's id to staff, not to the boy.
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT c.id INTO T1 FROM coaching_point_write(SUBJ, NULL, 'gets across too early to the short ball',
+                                                  jsonb_build_object('read', 'skills', 'params', jsonb_build_object('skillId', y->>'k10'))) c;
+    SELECT t.id INTO T2 FROM target_set(SUBJ, 'technical', 'againstPace', 12, NULL, TD, T1) t;
+    EXECUTE 'select count(*) from (' || Q_TARGETS || ') z where z.id = $2 and z.note_id = $3 and z.standing_score = 9 and z.from_score = 9'
+      INTO n USING SUBJ, T2, T1;
+    PERFORM _assert(n = 1, '§82 (readers): `targets` does not give the coach the reasoning''s id and the standing 9');
+    PERFORM _as((y->>'self')::uuid);
+    EXECUTE 'select count(*) from (' || Q_TARGETS || ') z where z.id = $2 and z.note_id is null and z.target_score = 12'
+      INTO n USING SUBJ, T2;
+    PERFORM _assert(n = 1, '§82 (readers): `targets` gives the boy the reasoning''s id, or not his target');
+
+    -- (writes)
+    PERFORM _as((y->>'coach')::uuid);
+    FOREACH k IN ARRAY ARRAY[
+        format('insert into development_target (player_id, school_id, category, metric, target_score, set_by) '
+               'values (%L, %L, ''technical'', ''timing'', 15, app_user_id())', SUBJ, HIL),
+        format('update development_target set target_score = 20 where player_id = %L', SUBJ),
+        format('delete from development_target where player_id = %L', SUBJ)] LOOP
+      got := _v104_try(k);
+      PERFORM _assert(got = '42501', format('§82 (writes): a direct write on development_target ended %s: %s', got, left(k, 40)));
+    END LOOP;
+
+    -- (plan)
+    PERFORM _as((y->>'manager')::uuid);
+    INSERT INTO training_session_drill (session_id, drill_id, position) VALUES
+      ((y->>'d8')::uuid, TD, 1), ((y->>'d6')::uuid, TD, 1), ((y->>'d6')::uuid, SP, 2), ((y->>'d2')::uuid, TD, 1),
+      ((y->>'d12')::uuid, TD, 1), ((y->>'d3')::uuid, TD, 1);
+    PERFORM _assert(_v104_try(format('insert into training_session_drill (session_id, drill_id, position) values (%L, %L, 1)',
+                                     y->>'other', TD)) = '42501',
+      '§82 (plan): the team manager planned U19F''s session, another side''s');
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO training_session_drill (session_id, drill_id, position) VALUES ((y->>'d2ahead')::uuid, SP, 1);
+    PERFORM _assert(_v104_try(format('insert into training_session_drill (session_id, drill_id, position) values (%L, %L, 2)',
+                                     y->>'d8', y->>'wesdrill')) = '23514',
+      '§82 (plan): a Westville drill went on a Hilton plan');
+    FOREACH k IN ARRAY ARRAY['coach', 'manager', 'self', 'parent', 'mate', 'analyst', 'director'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      EXECUTE 'select count(*) from (' || Q_PLAN || ') z' INTO n USING (y->>'d6')::uuid;
+      PERFORM _assert(n = 2, format('§82 (plan): the %s reads %s of the session''s two drills', k, n));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['othercoach', 'wescoach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM training_session_drill WHERE session_id = (y->>'d6')::uuid) = 0,
+        format('§82 (plan): the %s reads U19E''s plan', k));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM training_session_drill) = 0, '§82 (plan): an anonymous session reads a plan');
+    FOREACH k IN ARRAY ARRAY['assistant', 'parent', 'self'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v104_try(format('insert into training_session_drill (session_id, drill_id, position) values (%L, %L, 3)', y->>'d6', y->>'throwdowns'));
+      PERFORM _assert(got = '42501', format('§82 (plan): the %s wrote the plan (%s)', k, got));
+    END LOOP;
+    PERFORM _as((y->>'manager')::uuid);
+    DELETE FROM training_session_drill WHERE session_id = (y->>'d2ahead')::uuid;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, '§82 (plan): the team manager could not replace a plan');
+
+    -- (register)
+    PERFORM _as((y->>'manager')::uuid);
+    PERFORM _assert(_v104_try(format('insert into training_attendance (session_id, player_id, status) values (%L, %L, ''present'')',
+                                     y->>'d12', SUBJ)) = 'ok',
+      '§82 (register): the team manager could not mark the boy present');
+    PERFORM _assert(_v104_try(format('insert into training_attendance (session_id, player_id, status) values (%L, %L, ''present'')',
+                                     y->>'other', MATE)) = '42501',
+      '§82 (register): the team manager took U19F''s register, another side''s');
+    PERFORM _assert(_v104_try(format('insert into training_attendance (session_id, player_id, status) values (%L, %L, ''injured'')',
+                                     y->>'d2', MATE)) = '42501',
+      '§82 (register): `injured` was written by the application');
+    PERFORM _assert(_v104_try(format('update training_attendance set status = ''injured'' where session_id = %L and player_id = %L',
+                                     y->>'d12', SUBJ)) = '42501',
+      '§82 (register): a row was changed to `injured` by the application');
+    FOREACH k IN ARRAY ARRAY['parent', 'assistant'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(_v104_try(format('insert into training_attendance (session_id, player_id, status) values (%L, %L, ''present'')',
+                                       y->>'d2', SUBJ)) = '42501',
+        format('§82 (register): the %s wrote the register', k));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    EXECUTE 'select string_agg(z.status, '','') from (' || Q_ATT || ') z where z.player_id = $2' INTO got USING (y->>'d8')::uuid, MATE;
+    PERFORM _assert(got = 'excused', format('§82 (register): the team-mate''s old `injured` row reads %s, not excused', coalesce(got, 'nothing')));
+    EXECUTE 'select count(*) from (' || Q_ATT || ') z where z.status = ''injured''' INTO n USING NULL::uuid;
+    PERFORM _assert(n = 0, '§82 (register): `training_attendance` returns the word `injured`');
+    -- The row written at twelve days stays out of the panel below: before the look.
+
+    -- (since)
+    FOREACH k IN ARRAY ARRAY['coach', 'self'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      EXECUTE 'select to_jsonb(z) from (' || Q_SINCE || ') z where z.discipline = ''batting'''
+        INTO j USING SUBJ, BAT, '{}'::text[], '{}'::text[], '{}'::text[];
+      PERFORM _assert((j->>'anchor')::date = current_date - 10 AND (j->>'sessions')::int = 4 AND (j->>'registered')::int = 3
+                      AND (j->>'present')::int = 1 AND (j->>'late')::int = 1
+                      AND j->'drills' = jsonb_build_array(jsonb_build_object('drillId', TD, 'name', 'Throw-downs', 'times', 3),
+                                                          jsonb_build_object('drillId', SP, 'name', 'Short-pitch defence', 'times', 1))
+                      AND jsonb_array_length(j->'targets') = 1
+                      AND (j->'targets'->0->>'drillRan')::int = 3 AND (j->'targets'->0->>'drillAttended')::int = 2
+                      AND (j->'targets'->0->>'target_score')::int = 12,
+        format('§82 (since): the %s reads batting as %s', k, coalesce(j::text, 'no row')));
+      PERFORM _assert(NOT (j ? 'absent') AND j::text NOT LIKE '%absent%' AND j::text NOT LIKE '%injured%',
+        format('§82 (since): the %s''s panel says an absence or a health word', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['manager', 'parent', 'mate', 'principal'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      EXECUTE 'select count(*) from (' || Q_SINCE || ') z' INTO n USING SUBJ, BAT, '{}'::text[], '{}'::text[], '{}'::text[];
+      PERFORM _assert(n = 0, format('§82 (since): the %s reads %s rows of the boy''s panel', k, n));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT w.ok INTO v_ok FROM skill_withdraw((y->>'k10')::uuid, 'Verify 105: the look was another boy''s') w;
+    UPDATE player_skill SET withdrawn_at = now(), withdrawn_reason = 'Verify 105: footwork too'
+     WHERE player_id = SUBJ AND metric = 'footwork' AND assessed_on = current_date - 10;
+    EXECUTE 'select to_jsonb(z) from (' || Q_SINCE || ') z where z.discipline = ''batting'''
+      INTO j USING SUBJ, BAT, '{}'::text[], '{}'::text[], '{}'::text[];
+    PERFORM _assert(v_ok AND (j->>'anchor')::date = current_date - 20 AND (j->>'sessions')::int = 5
+                    AND (j->>'present')::int = 2,
+      format('§82 (since): with the anchor withdrawn the window reads %s', coalesce(j::text, 'no row')));
+    PERFORM _v105_joined(SUBJ, current_date - 5);
+    EXECUTE 'select to_jsonb(z) from (' || Q_SINCE || ') z where z.discipline = ''batting'''
+      INTO j USING SUBJ, BAT, '{}'::text[], '{}'::text[], '{}'::text[];
+    PERFORM _assert((j->>'window_from')::date = current_date - 5 AND (j->>'sessions')::int = 2,
+      format('§82 (since): the window does not start at the day he joined the side: %s', coalesce(j::text, 'no row')));
+
+    -- (manager)
+    PERFORM _as((y->>'manager')::uuid);
+    PERFORM _assert(app_can('team.training.run', HIL, 'U19E', '00000000-0000-0000-0000-000000000000'::uuid,
+                            '00000000-0000-0000-0000-000000000000'::uuid)
+                    AND NOT app_can('team.manage', HIL, 'U19E', '00000000-0000-0000-0000-000000000000'::uuid,
+                                    '00000000-0000-0000-0000-000000000000'::uuid),
+      '§82 (manager): the team manager does not hold team.training.run without team.manage at his side');
+    FOREACH k IN ARRAY ARRAY[
+        format('insert into drill (school_id, name, category, duration_min) values (%L, ''Verify 105 manager drill'', ''batting'', 20)', HIL),
+        format('insert into equipment (school_id, kind, label, quantity) values (%L, ''bat'', ''Verify 105 bats'', 4)', HIL),
+        format('insert into training_session (school_id, team_code, title, starts_at, duration_min, session_type) '
+               'values (%L, ''U19E'', ''Verify 105 manager nets'', now() + interval ''3 days'', 60, ''batting'')', HIL)] LOOP
+      got := _v104_try(k);
+      PERFORM _assert(got = '42501', format('§82 (manager): the team manager wrote what team.manage keeps (%s): %s', got, left(k, 40)));
+    END LOOP;
+    UPDATE training_session SET title = 'Verify 105 moved by the manager' WHERE id = (y->>'d2ahead')::uuid;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0, '§82 (manager): the team manager rescheduled a session');
+
+    -- (support)
+    PERFORM _as((y->>'plat')::uuid);
+    SELECT b.ok, b.reason, b.id INTO v_ok, v_why, SUP
+      FROM support_access_begin(HIL, 'coach', 'Verify 105: ticket 1051 about the side', 'U19E', 30) b;
+    PERFORM _assert(v_ok AND (SELECT count(*) FROM player WHERE id = SUBJ) = 1,
+      format('§82 (support): the session was not begun, or reads no player row (%s)', v_why));
+    PERFORM _assert((SELECT count(*) FROM development_target WHERE player_id = SUBJ) = 0,
+      '§82 (support): a support session reads the boy''s targets');
+    SELECT t.ok INTO v_ok FROM target_set(SUBJ, 'technical', 'timing', 15, NULL, NULL, NULL) t;
+    PERFORM _assert(NOT v_ok, '§82 (support): a support session set a target');
+    PERFORM support_access_end(SUP);
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (doors)
+    FOREACH k IN ARRAY ARRAY['target_set(uuid,text,text,integer,date,uuid,uuid)', 'target_withdraw(uuid,text)'] LOOP
+      PERFORM _assert((SELECT prosecdef AND provolatile = 'v' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                         FROM pg_proc WHERE oid = to_regprocedure(k)),
+        format('§82 (doors): %s is not a volatile SECURITY DEFINER with a pinned path', k));
+      PERFORM _assert(has_function_privilege('scrbrd_app', to_regprocedure(k), 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                       WHERE p.oid = to_regprocedure(k) AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                                         AND has_function_privilege(g.oid, to_regprocedure(k), 'EXECUTE')),
+        format('§82 (doors): %s is not the application''s alone', k));
+    END LOOP;
+    PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'development_target', 'INSERT')
+                    AND NOT has_table_privilege('scrbrd_app', 'development_target', 'UPDATE')
+                    AND NOT has_table_privilege('scrbrd_app', 'development_target', 'DELETE'),
+      '§82 (doors): the application holds a write privilege on development_target');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'development_target'
+                                  AND cmd <> 'SELECT' AND permissive = 'PERMISSIVE'),
+      '§82 (doors): a permissive policy writes development_target');
+    PERFORM _assert((SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+                       AND (tablename, policyname) IN (('development_target', 'development_target_not_support'),
+                                                       ('training_attendance', 'training_attendance_no_health_word'),
+                                                       ('training_attendance', 'training_attendance_no_health_word_update'))) = 3,
+      '§82 (doors): the three RESTRICTIVE policies are not all there');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'training_session_drill_from_the_library' AND tgenabled = 'O')
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('training_session_drill_library()'), 'EXECUTE'),
+      '§82 (doors): the plan''s library trigger is missing, or the application may call it');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 82
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
