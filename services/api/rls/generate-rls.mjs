@@ -429,6 +429,9 @@ export const WITHDRAWN_SINCE_01 = {
   // team-mate is out and until when; db/55 withdraws it. (`enquiry`, a
   // coach-to-coach grant, keeps it: Kameel, 2026-09-28.)
   player: [{ after: "player.performance.read", capability: "medical.status.read" }],
+  // GA-I19 D3 (Kameel, 2026-10-15): the principal reads an injury at the
+  // status tier only; db/111 withdraws the nature tier.
+  principal: [{ after: "medical.status.read", capability: "medical.nature.read" }],
 };
 
 /**

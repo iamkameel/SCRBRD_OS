@@ -32,6 +32,9 @@
 --      the school's DSOs one safeguarding notice naming nobody, once.
 --   7. injury_retention_due(): when an injury record falls due for deletion
 --      (D11). Nothing deletes in this file; the purge is slice E.
+--   8. The principal reads an injury at the status tier only (D3; Kameel,
+--      2026-10-15): the medical.nature.read row db/01 gave him is withdrawn
+--      (WITHDRAWN_SINCE_01 in generate-rls.mjs keeps db/01 as it shipped).
 --
 -- THE LEGAL BASIS (D6, Q2). The information officer confirmed in writing
 -- that injury and injury_review stand under the guardian-link consent (POPIA
@@ -250,6 +253,13 @@ BEGIN
     cols);
 END
 $mask_injury$;
+
+
+-- ── 4b · The principal at the status tier (D3) ─────────────────────
+-- That a boy is out and until when; not what is wrong with him or how bad,
+-- nor the physio's clock. He keeps medical.status.read. Safe to run twice:
+-- it deletes the row if it is there.
+DELETE FROM role_capability WHERE role = 'principal' AND capability = 'medical.nature.read';
 
 
 -- ── 5 · Who may write, asked once for both doors (D2, D4) ──────────
@@ -805,5 +815,11 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM role_capability WHERE role = 'dso' AND capability LIKE 'medical.%') THEN
     RAISE EXCEPTION 'db/111: the DSO holds a medical capability';
+  END IF;
+  -- The principal: the status tier, and no more (D3).
+  IF NOT EXISTS (SELECT 1 FROM role_capability WHERE role = 'principal' AND capability = 'medical.status.read')
+     OR EXISTS (SELECT 1 FROM role_capability WHERE role = 'principal'
+                   AND capability IN ('medical.nature.read', 'medical.details.read', 'medical.write')) THEN
+    RAISE EXCEPTION 'db/111: the principal does not read injuries at the status tier alone';
   END IF;
 END $check$;

@@ -16,9 +16,10 @@
  *      medical.write; and a physio who is the boy's mother (Q6).
  *   3. THE REVIEW. A step to rehab, refused without a next review (Q10) and
  *      when clearing names one; nobody else may; an injury that is not there.
- *   4. THE TIERS, through `injury_reviews`: the coach, the director and the
- *      principal read the phase and never the note; the boy's parent and the
- *      boy read the note; a pupil and another side's coach read nothing.
+ *   4. THE TIERS, through `injury_reviews`: the coach and the director read
+ *      the phase and never the note; the principal reads the status tier
+ *      alone (D3); the boy's parent and the boy read the note; a pupil and
+ *      another side's coach read nothing.
  *   5. THE WORKLIST: the physio's alone, each row with its reason; nobody
  *      else holds a row of it; both reads are logged.
  *   6. CLEARED: "Cleared to play" for the coach, the boy fit again, and the
@@ -171,10 +172,19 @@ try {
   const coachSees = await by(coach);
   ok("his coach reads the two reviews, phase and clock", coachSees.length === 2 && coachSees.every((r) => r.phase_after && r.next_review_on));
   ok("...and never the note or who wrote it", coachSees.every((r) => r.note == null && r.reviewed_by == null));
-  for (const [who, token] of [["the director", director], ["the principal", principal]]) {
-    const seen = await by(token);
-    ok(`${who} reads the phase and never the note`, seen.length === 2 && seen.every((r) => r.phase_after && r.note == null && r.reviewed_by == null));
-  }
+  const dirSees = await by(director);
+  ok("the director reads the phase and never the note", dirSees.length === 2 && dirSees.every((r) => r.phase_after && r.note == null && r.reviewed_by == null));
+  // The principal: the status tier alone (D3; Kameel, 2026-10-15).
+  const headSees = await by(principal);
+  ok("the principal reads that each review happened and what it left him as, and not the phase",
+     headSees.length === 2 && headSees.every((r) => r.reviewed_at && r.restricted_after === true && r.phase_after == null
+                                                     && r.next_review_on == null && r.note == null));
+  const headRow = (await rows("injuries", principal)).find((r) => r.id === ID);
+  ok("...and of the injury, that he is out and until when, and not what or how bad",
+     headRow && headRow.restricted === true && headRow.rtw_date && headRow.date_injured
+     && headRow.injury_type == null && headRow.severity == null && headRow.phase == null && headRow.next_review_on == null,
+     JSON.stringify(headRow));
+  ok("...and his fitness word", (await rows("players", principal)).find((p) => p.id === WHITFIELD)?.fitness === "rehab");
   ok("another side's coach reads none", (await by(coach2)).length === 0);
   ok("a pupil reads none (K3)", (await by(pupil)).length === 0);
   ok("the DSO reads none", (await by(dso)).length === 0);

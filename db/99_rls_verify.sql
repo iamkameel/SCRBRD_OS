@@ -21328,12 +21328,15 @@ $v49$;
   --              is left when the last injury clears
   --   (tiers)    the reviews, column by column: the physio, the parent and the
   --              boy read every tier; 12XI's coach, assistant and manager, the
-  --              director, the principal, the office and the fitness coach
-  --              read phases and dates and never the note or its author; the
-  --              granted enquiry reads that a review happened and what it left
+  --              director, the office and the fitness coach read phases and
+  --              dates and never the note or its author; the principal and the
+  --              granted enquiry read that a review happened and what it left
   --              his availability as, and nothing of the phase; 20XI's coach,
   --              the team-mate, a scorer, a follower, Westville's physio and
   --              the DSO read none. And injury_masked's new columns, by tier
+  --   (principal) the status tier alone (D3, Kameel 2026-10-15): of the
+  --              injury row its restriction, its dates and his fitness word;
+  --              no type, severity, phase, next review or emergency mark
   --   (worklist) the physio's list: one reason each — overdue, return
   --              passed, due, no return date, new — in that order, with the
   --              clock; a quiet open injury is not on it; a boy who left is
@@ -21373,6 +21376,8 @@ $v49$;
   --   (worklist) app_can('medical.status.read') where it asks medical.write
   --              (red at the coach: 4 rows); the family cut removed (red at
   --              the mother-physio's list holding her son's two)
+  --   (tiers)    the principal's medical.nature.read row added back (red at the
+  --              principal: 5 phases and 4 next reviews where 0 were expected)
   --   (sg12)     the boy's name in the words (red at D10's words); the stamp
   --              guard removed (red at made severe a second time); the
   --              "becomes" rule removed (red at the injury already serious)
@@ -21579,8 +21584,8 @@ $v49$;
       SELECT x.who, x.r, x.ph, x.nt, x.b FROM (VALUES
         ('physio', 5, 5, 2, 5), ('parent', 5, 5, 2, 5), ('boy', 5, 5, 2, 5),
         ('coach', 5, 5, 0, 0), ('assistant', 5, 5, 0, 0), ('manager', 5, 5, 0, 0), ('director', 5, 5, 0, 0),
-        ('principal', 5, 5, 0, 0), ('office', 5, 5, 0, 0), ('fitness', 5, 5, 0, 0),
-        ('enquirer', 5, 0, 0, 0),
+        ('office', 5, 5, 0, 0), ('fitness', 5, 5, 0, 0),
+        ('principal', 5, 0, 0, 0), ('enquirer', 5, 0, 0, 0),
         ('coach20', 0, 0, 0, 0), ('mate', 0, 0, 0, 0), ('scorer', 0, 0, 0, 0), ('follower', 0, 0, 0, 0),
         ('wesphysio', 0, 0, 0, 0), ('dso', 0, 0, 0, 0)) AS x(who, r, ph, nt, b) LOOP
       PERFORM _as(CASE WHEN k = 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
@@ -21604,6 +21609,22 @@ $v49$;
         format('§88 (tiers): the %s reads injury_masked''s new columns wrong (row %s, next %s, emergency %s, author %s, recurs %s, return %s)',
                k, c_rows, c_next, c_phase, c_by, c_note, c_status));
     END LOOP;
+
+    -- ── (principal) the status tier alone (D3; Kameel, 2026-10-15) ──
+    -- That the boy is out, since when and until when, and his fitness word;
+    -- never what is wrong, how bad, the phase or the physio's next date.
+    PERFORM _as((y->>'principal')::uuid);
+    SELECT count(*)::int, count(injury_type)::int + count(severity)::int + count(phase)::int
+                          + count(next_review_on)::int + count(emergency_services)::int,
+           count(restricted)::int + count(rtw_date)::int + count(date_injured)::int
+      INTO c_rows, c_phase, c_status
+      FROM injury_masked WHERE id = I_RECUR;
+    PERFORM _assert(c_rows = 1 AND c_phase = 0 AND c_status = 3,
+      format('§88 (principal): the principal reads the recurrence as %s row, %s nature columns and %s of 3 status columns', c_rows, c_phase, c_status));
+    SELECT fitness INTO got FROM player_masked WHERE id = BOY;
+    PERFORM _assert(got = 'injured', format('§88 (principal): the principal reads the boy''s fitness as %s, not injured', coalesce(got, 'null')));
+    PERFORM _assert(NOT app_can('medical.nature.read', V_HIL, '12XI', BOY, '00000000-0000-0000-0000-000000000000'::uuid),
+      '§88 (principal): the principal holds medical.nature.read');
 
     -- ── (worklist) ──
     PERFORM _as(U_PHYSIO);
