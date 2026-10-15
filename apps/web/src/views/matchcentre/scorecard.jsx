@@ -40,10 +40,11 @@ export function InningsToggle({ match, innings, inningsSel, setInningsSel }) {
         return (
           <button key={i} type="button" aria-pressed={on} onClick={() => setInningsSel(i)} data-testid={`mc-innings-${i}`}
             className="pressBtn os-state"
-            style={{ flex: "1 1 0", minWidth: 0, minHeight: "44px", padding: `0 ${T.space.md}`, cursor: "pointer",
+            style={{ flex: "1 1 0", minWidth: 0, minHeight: "44px", padding: `${T.space.xs} ${T.space.md}`, cursor: "pointer",
               borderRadius: T.radius.md, border: `1px solid ${on ? T.content.primary : T.line.normal}`,
               background: on ? T.content.primary : "transparent", color: on ? T.surface.canvas : T.content.secondary,
-              fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              // The side's whole name, wrapped: a school's name is the one thing here that cannot be cut short (I32).
+              fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, lineHeight: 1.25, overflowWrap: "anywhere" }}>
             <SideName side={teamOf(match, inn.battingTeam)}/> innings
           </button>
         );

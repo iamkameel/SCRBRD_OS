@@ -62,10 +62,11 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, ...res
     : variant==="danger"?inkOn(D.rose)
     : D.textPrimary;
   const pad = size==="sm"?"5px 12px":size==="lg"?"12px 24px":"8px 18px";
-  const fs  = size==="sm"?"11px":size==="lg"?"14px":"12px";
+  // §3.2 and §3.5: 12px at the least, and 44px to tap, at every size (I32). "sm" was 11px and 28px.
+  const fs  = size==="sm"?"12px":size==="lg"?"14px":"12px";
   return (
     <button onClick={onClick} disabled={disabled} className="pressBtn" {...rest} style={{
-      padding:pad,borderRadius:D.pill,border:`1px solid ${variant==="ghost"?D.border:"transparent"}`,
+      minHeight:"44px",padding:pad,borderRadius:D.pill,border:`1px solid ${variant==="ghost"?D.border:"transparent"}`,
       background:bg,color:col,cursor:disabled?"not-allowed":"pointer",fontFamily:D.head,
       fontSize:fs,fontWeight:700,letterSpacing:"0.04em",opacity:disabled?0.4:1,
       boxShadow:variant==="primary"?`0 2px 12px ${D.indigo}33`:"none",

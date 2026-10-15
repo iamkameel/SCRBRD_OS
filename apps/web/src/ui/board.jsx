@@ -238,7 +238,9 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
           than its figures need (step 2: the pad fits a phone). */}
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md }}>
         <div style={{ minWidth: 0, display: "grid", gap: "2px" }}>
-          <div style={{ ...T.role.label, color: B.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {/* The team's name wraps rather than ending in an ellipsis: beside a 56px total on a 320px phone the column is
+              under 100px, and "WESTVILL…" does not say which side is batting (I32). */}
+          <div style={{ ...T.role.label, color: B.dim, overflowWrap: "anywhere" }}>
             {team}
           </div>
           {(overs != null || sub) && (

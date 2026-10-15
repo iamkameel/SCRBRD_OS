@@ -112,7 +112,7 @@ export default function PlanComposer({ match, side, title, opponent, sheet, onCl
             aria-describedby="plan-honesty plan-refusal plan-count" aria-invalid={refusal || over ? "true" : undefined}
             placeholder="What the side needs to hear before the day."
             style={{ ...T.role.control, width: "100%", boxSizing: "border-box", minHeight: "44px", padding: `${T.space.sm} ${T.space.md}`,
-              background: T.surface.interactive, color: T.content.primary, border: `1px solid ${refusal || over ? T.semantic.criticalText : T.line.normal}`,
+              background: T.surface.interactive, color: T.content.primary, border: `1px solid ${refusal || over ? T.semantic.criticalText : T.content.tertiary}`,
               borderRadius: T.radius.md, resize: "vertical", fontWeight: 400, lineHeight: 1.5 }}/>
           <p id="plan-count" data-testid="plan-count" style={{ ...T.role.body, fontSize: "14px", margin: 0, textAlign: "right",
             color: over ? T.semantic.criticalText : T.content.secondary, visibility: length >= 900 ? "visible" : "hidden" }}>

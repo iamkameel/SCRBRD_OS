@@ -273,4 +273,4 @@ const btn = () => ({ minHeight: "44px", padding: `0 ${T.space.lg}`, background: 
 const toggle = (/** @type {boolean} */ on) => ({ ...btn(), minWidth: "44px", border: `1px solid ${on ? T.content.primary : T.line.strong}`,
   background: on ? T.content.primary : "transparent", color: on ? inkOn(T.content.primary) : T.content.primary });
 const select = () => ({ minHeight: "44px", minWidth: "72px", padding: "0 10px", boxSizing: /** @type {const} */ ("border-box"), background: T.surface.base, color: T.content.primary,
-  border: `1px solid ${T.line.strong}`, borderRadius: T.radius.md, fontFamily: T.type.body, fontSize: "16px" });
+  border: `1px solid ${T.content.tertiary}`, borderRadius: T.radius.md, fontFamily: T.type.body, fontSize: "16px" });

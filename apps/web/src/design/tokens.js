@@ -892,6 +892,9 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   border-radius:${T.radius.sm};
   box-shadow:0 0 0 4px ${T.focus.halo};
 }
+/* A placeholder is text and reads at 4.5:1: the browser's own grey is 3.7:1 on a field in daylight, and a dim white
+   on one under lights. Full strength, because Firefox draws it at half (I32). */
+::placeholder{color:${T.content.tertiary};opacity:1}
 /* Never remove the ring without replacing it. */
 :focus:not(:focus-visible){outline:none}
 
@@ -899,6 +902,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
    Without it, reaching the scoring pad means tabbing through the whole of
    the navigation on every page. */
 .skip-link{position:absolute;left:-9999px;top:0;z-index:10000;
+  display:flex;align-items:center;min-height:44px;
   padding:10px 16px;border-radius:0 0 ${T.radius.md} 0;background:${T.focus.ring};color:${inkOn(T.focus.ring)};
   font-family:${T.type.head};font-size:12px;font-weight:700;text-decoration:none}
 .skip-link:focus{left:0}
@@ -955,6 +959,7 @@ button{touch-action:manipulation}
 .os-bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:400;display:none;gap:2px;
   background:${T.glass.film};backdrop-filter:${T.glass.blur};-webkit-backdrop-filter:${T.glass.blur};
   border-top:1px solid ${T.glass.edge};padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+.os-drawer:focus{outline:none}
 .os-drawer-scrim{position:fixed;inset:0;z-index:490;background:${T.glass.scrim}}
 .os-drawer{position:fixed;left:0;right:0;bottom:0;z-index:500;background:${T.surface.overlay};
   border-top:1px solid ${T.line.normal};border-radius:20px 20px 0 0;max-height:78vh;overflow-y:auto;
@@ -980,6 +985,16 @@ button{touch-action:manipulation}
 }
 @media(max-width:640px){
   .os-shell{--g-2:1fr;--g-3:1fr}
+  /* The search is its icon on a phone, still named by its aria-label, so the bar's other three controls keep their 44px (I32). */
+  .os-search{flex:0 0 auto!important;justify-content:center}
+  .os-search-text{display:none}
+}
+/* A phone at 200% zoom is under 200px wide: the bars wrap into a second row rather than run off the screen, and the
+   page leaves room under the taller bottom bar (I32). */
+@media(max-width:300px){
+  .os-topbar{height:auto!important;flex-wrap:wrap;padding:4px 8px!important;gap:4px 8px!important}
+  .os-bottomnav{flex-wrap:wrap}
+  .os-main{padding-bottom:calc(172px + env(safe-area-inset-bottom))!important}
 }
 /* §10 item 6 — a side's full name where there is room, its short code
    (school.code, "HIL 1XI") where there is not. Both are in the page; one
