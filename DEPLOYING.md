@@ -1235,6 +1235,43 @@ to start without db/102 (`expected-migrations.json`), and its
 database does not have.
 <!-- ── end db/102 ── -->
 
+<!-- ── db/103: the plan's byline, who wrote the side's plan ── -->
+#### The plan names its author (db/103)
+
+`db/103_plan_author_name.sql` closes a gap in SCRBRD-138 phase B. The design
+draws "Plan from Mr Dlamini · Thu", and CSA SG-9 says a pupil always knows which
+adult wrote to his side. But the `news` read took the author's name from
+`app_user`, which a pupil and a parent cannot read (they hold no `user.read`),
+so for them the plan said "The plan · Thu". `plan_author_name(post)` gives the
+author's display name for one post, and only when that post is a plan, live
+(sent, not withdrawn, not dated in the future) and one the caller already
+reads. It asks what `news_post`'s read policies ask: db/12's, db/96's
+narrowing to the side, and db/101's team sheet. It calls db/96's
+`news_plan_reach()` and db/101's `news_sheet_reach()` rather than copying
+them, so a boy playing up on the fixture's sheet, and his guardian, read the
+name too. It returns
+only the name. A draft, a withdrawn plan, another side's plan, an ordinary
+post, a post that is not there, and an anonymous caller all get null. Ordinary
+posts are unchanged: whether a post's author is named to pupils and parents is
+not decided.
+
+**What it does to a live database.** It adds one function: `SECURITY DEFINER`,
+`STABLE`, with a pinned search path, executable by `scrbrd_app` and not by
+`PUBLIC`, `anon` or `authenticated`. It adds no table, column, row or policy.
+`CREATE OR REPLACE` means a second paste changes nothing. The file checks
+itself and refuses to commit if the function is not what it says.
+
+Paste `node tools/bundle-sql.mjs --apply 103` after 101 (it calls db/101's
+`news_sheet_reach()` and refuses to commit without it), and after 100 and 102
+if they ship with it, then the verify bundle (§80 is its proof). The summary row "A plan names its author to the
+side" should read OK. **Schema first**: an API built with it refuses to start
+without db/103 (`expected-migrations.json`). Its `news` read names a live
+plan's author to the plan's readers and takes `fixtureId`, which narrows the
+read to one fixture's posts. The fixture screen, the captain's card, the
+Captain tab and the coach's tab read with it, so a plan stays findable when
+more than 100 newer posts sit above it.
+<!-- ── end db/103 ── -->
+
 <!-- ── db/107: the officials register and the grant notes, closed ── -->
 #### The officials register is its keeper's; a school's plan is its own (db/107)
 

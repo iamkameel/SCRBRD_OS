@@ -325,6 +325,34 @@ group("A. The cockpit's reads (SCRBRD-136/137 phase B §5, §1.4): the lead's fi
      rows.length === 1 && JSON.stringify(log[call]?.params) === '["2026-10-17","U15A"]' && begin >= 0 && begin < call);
 }
 
+group("A. The plan's byline and the fixture's plan (db/103, SCRBRD-138 phase B), held in the text");
+{
+  // Proved against Postgres in db/99 §80 and over HTTP by the pupil walk
+  // (tools/smoke-browser-pupil.mjs); this holds what the text must say.
+  const flat = (/** @type {string} */ s) => s.replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
+  const nw = READ_QUERIES.news, t = flat(nw.text);
+  const params = /** @type {(q: Record<string, string>) => unknown[]} */ (nw.params);
+  ok("a post's author is the account's name where the reader may read it, and a plan's otherwise plan_author_name()",
+     t.includes("coalesce(u.name, case when n.kind = 'plan' then plan_author_name(n.id) end) as author_name"));
+  ok("...the byline is asked of a plan and of nothing else", (t.match(/plan_author_name\(/g) ?? []).length === 1);
+  ok("...and nothing else of the author is returned", !/u\.(email|phone|role|school_id|player_id|child_ids|teams)\b/.test(t));
+  ok("fixtureId narrows to one fixture's posts and is otherwise no filter", t.includes("where ($1::uuid is null or n.fixture_id = $1::uuid)"));
+  ok("...the newest 100 still, and in the same order", /order by coalesce\(n\.published_at, n\.created_at\) desc limit 100$/.test(t));
+  const F = "77777777-0000-0000-0000-000000000001";
+  ok("...a fixture's id, or none", JSON.stringify(params({ fixtureId: F })) === `["${F}"]` && JSON.stringify(params({})) === "[null]"
+     && JSON.stringify(params(/** @type {any} */ (undefined))) === "[null]");
+  /** @param {Record<string, string>} q */
+  const refused = (q) => { try { params(q); return null; } catch (/** @type {any} */ e) { return `${e.status} ${e.message}`; } };
+  ok("...a fixture id that is not one is the caller's mistake", refused({ fixtureId: "match-1" }) === "400 bad_param:fixtureId"
+     && refused({ fixtureId: "'; select 1; --" }) === "400 bad_param:fixtureId");
+  const { pool, log } = fakePool({ "from news_post n": [{ id: "n1", kind: "plan", author_name: "C Hendricks" }] });
+  const rows = await readResource(pool, SECRET, bearer("uCoach"), "news", { fixtureId: F });
+  const call = log.findIndex((l) => l.text.includes("from news_post n"));
+  const begin = log.findIndex((l) => l.text.includes("app_session_begin"));
+  ok("...run under the caller's principal, with the fixture as given",
+     rows.length === 1 && JSON.stringify(log[call]?.params) === `["${F}"]` && begin >= 0 && begin < call);
+}
+
 // ── B. Client accessor ──
 group("B. Feature flags: mock vs live per resource");
 {

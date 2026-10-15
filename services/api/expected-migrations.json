@@ -98,6 +98,7 @@
   "100_ball_event_guardian_read.sql",
   "101_news_to_the_side.sql",
   "102_suppression_read.sql",
+  "103_plan_author_name.sql",
   "107_official_register_closed.sql",
   "108_player_team_scoped.sql"
 ]
