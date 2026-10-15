@@ -21660,9 +21660,9 @@ $v49$;
         ('I_OVER',  'overdue',        jsonb_build_object('due', T - 2, 'over', 2, 'since', T - 2)),
         ('I_RET',   'return_passed',  jsonb_build_object('due', T - 1, 'over', 1, 'since', T - 1)),
         ('I_MATE',  'due',            jsonb_build_object('due', T + 3, 'over', 0)),
-        ('I_NORTW', 'no_return_date', jsonb_build_object('due', T + 20, 'over', 0, 'since', T)),
-        ('I_RECUR', 'new',            jsonb_build_object('due', T + 14, 'over', 0, 'since', T)),
-        ('I_OWN',   'new',            jsonb_build_object('due', T + 20, 'over', 0, 'since', T)),
+        ('I_NORTW', 'no_return_date', jsonb_build_object('due', T + 20, 'over', 0, 'since', 'last_review')),
+        ('I_RECUR', 'new',            jsonb_build_object('due', T + 14, 'over', 0, 'since', 'last_review')),
+        ('I_OWN',   'new',            jsonb_build_object('due', T + 20, 'over', 0, 'since', 'last_review')),
         ('I_QUIET', NULL,             NULL),
         ('I_LEFT',  NULL,             NULL),
         ('I1',      NULL,             NULL)) AS x(label, want, clock) LOOP
@@ -21676,8 +21676,16 @@ $v49$;
         PERFORM _assert(n = 0, format('§88 (worklist): %s is on the physio''s list as %s', k, v_reason));
       ELSE
         PERFORM _assert(n = 1 AND v_reason = got, format('§88 (worklist): %s reads %s (%s rows), not %s', k, coalesce(v_reason, 'absent'), n, got));
+        -- 'last_review': the day of the injury's latest review, from the row's
+        -- own reviewed_at, in Johannesburg. Not T: T is sa_today() at the
+        -- transaction's start, and the doors stamp clock_timestamp(), so a run
+        -- that crosses midnight in South Africa reviewed "tomorrow".
         PERFORM _assert(T + c_rows = (j->>'due')::date AND c_phase = (j->>'over')::int
-                        AND (NOT j ? 'since' OR T + e_rows = (j->>'since')::date),
+                        AND (NOT j ? 'since'
+                             OR T + e_rows = CASE WHEN j->>'since' = 'last_review'
+                                                  THEN (SELECT (max((r->>'reviewed_at')::timestamptz) AT TIME ZONE 'Africa/Johannesburg')::date
+                                                          FROM jsonb_array_elements(_v111_reviews(v_id)) r)
+                                                  ELSE (j->>'since')::date END),
           format('§88 (worklist): %s''s clock reads due %s, over %s, since %s, not %s', k, T + c_rows, c_phase, T + e_rows, j));
       END IF;
     END LOOP;
