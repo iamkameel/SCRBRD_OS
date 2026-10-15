@@ -5349,6 +5349,19 @@ BEGIN
      WHERE key = 'injuries' AND person_id = p_person AND lifted_at IS NULL;
   END IF;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An injury already serious when db/111 ran: severe, and no DSO stamp, as a
+-- row written before the trigger existed would be. The trigger is held off
+-- for this one insert, inside the rolled-back transaction.
+CREATE OR REPLACE FUNCTION _v111_legacy_severe(p_player uuid) RETURNS uuid AS $$
+DECLARE v_id uuid;
+BEGIN
+  ALTER TABLE injury DISABLE TRIGGER injury_serious_watch;
+  INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured, restricted)
+  SELECT p.school_id, p.id, 'Old fracture', 'severe', sa_today() - 30, true FROM player p WHERE p.id = p_player
+  RETURNING id INTO v_id;
+  ALTER TABLE injury ENABLE TRIGGER injury_serious_watch;
+  RETURN v_id;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- injury_retention_due() is the database's own (not the application's).
 CREATE OR REPLACE FUNCTION _v111_due(p_player uuid) RETURNS date AS $$ SELECT injury_retention_due(p_player) $$
   LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -21336,7 +21349,9 @@ $v49$;
   --              under safeguarding.concern.read; the physio and the side's
   --              coach do not read it; a second edit and a review write no
   --              second; a moderate record writes none until it is made
-  --              severe, then one; a minor one with emergency services called
+  --              severe, then one, and none when it is eased and made severe
+  --              again; an injury already serious before db/111 writes none
+  --              on a later edit; a minor one with emergency services called
   --              writes one; the DSO reads no injury and no review
   --   (retention) NULL while he is at school; twelve months after he leaves
   --   (agree)    every review row the physio reads is one the owner holds,
@@ -21344,9 +21359,23 @@ $v49$;
   --   (doors2)   the functions: definers pinned, the worklist an invoker, the
   --              application's three and nobody else's
   --
-  -- Falsified once each (in the report of the slice-A build): a coach
-  -- reading the note; a parent-physio writing; a review with no date; the
-  -- review visible under support.
+  -- Falsified once each, by replacing the object inside this file's own
+  -- transaction and running the section; each went red at its label:
+  --   (tiers)    the note masked at the nature tier (red at the coach: 2 notes)
+  --   (family)   injury_write_refusal() without its family line (red at the
+  --              mother-physio recording her son)
+  --   (family)   injury_writer_is_family() as is_family_of() alone (red at the
+  --              physio whose claim is pending)
+  --   (review)   the door's next-review check and the table's CHECK both gone
+  --              (red at next_review_required, answered ok)
+  --   (support)  injury_review_not_support dropped (red at the support session
+  --              as the physio: every review at the school)
+  --   (worklist) app_can('medical.status.read') where it asks medical.write
+  --              (red at the coach: 4 rows); the family cut removed (red at
+  --              the mother-physio's list holding her son's two)
+  --   (sg12)     the boy's name in the words (red at D10's words); the stamp
+  --              guard removed (red at made severe a second time); the
+  --              "becomes" rule removed (red at the injury already serious)
   DECLARE
     y        jsonb := _v111_stage();
     V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
@@ -21705,6 +21734,15 @@ $v49$;
     PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): made severe, it wrote no notice');
     PERFORM _v111_serious(I_MOD, 'severe', true);
     PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): told twice about one injury');
+    -- Eased, then made severe again: told once (the stamp).
+    PERFORM _v111_serious(I_MOD, 'moderate', false);
+    PERFORM _v111_serious(I_MOD, 'severe', false);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): made severe a second time, the DSO was told twice');
+    -- Serious before db/111 ran, and never stamped: a later edit tells nobody
+    -- (the notice is for an injury that BECOMES serious).
+    v_id := _v111_legacy_severe(SIDE);
+    PERFORM _v111_serious(v_id, 'severe', true);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): an edit to an injury already serious before db/111 told the DSO');
     SELECT r.injury_id INTO I_EMS FROM injury_record(SIDE, 'Concussion, ambulance called', 'minor', T, true, T + 14, T + 2, true, NULL) r;
     PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 3, '§88 (sg12): emergency services called wrote no notice');
     PERFORM _as(U_DSO);
