@@ -183,8 +183,8 @@ group("B3b. Roles that must name a team, added after db/01 shipped");
   const in01 = shipped.match(/assignment_team_scoped CHECK \(\n  role NOT IN \(([^)]*)\) OR team_code IS NOT NULL\n\)/);
   ok("db/01 still emits assignment_team_scoped", !!in01);
   const listed01 = (in01?.[1] ?? "").split(",").map((s) => s.trim().replaceAll("'", ""));
-  ok("db/01's list is the shipped three, exactly",
-     listed01.join(",") === "coach,assistantcoach,teammanager", listed01.join(","));
+  ok(`db/01's list is the shipped three, exactly (it reads ${listed01.join(",")})`,
+     listed01.join(",") === "coach,assistantcoach,teammanager");
   for (const [role, file] of Object.entries(TEAM_SCOPED_SINCE_01)) {
     ok(`${role} is a team-scoped role in the model`, TEAM_SCOPED_ROLES.includes(role));
     ok(`${role} is not in db/01's constraint`, !listed01.includes(role));
