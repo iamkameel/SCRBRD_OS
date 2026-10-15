@@ -973,7 +973,7 @@ button{touch-action:manipulation}
   .os-shell{--g-4:repeat(2,1fr);--g-5:repeat(3,1fr)}
 }
 @media(max-width:880px){
-  .os-shell{--g-side-r:1fr;--g-side-l:1fr;--g-4:repeat(2,1fr);--g-5:repeat(2,1fr);
+  .os-shell{--g-side-r:minmax(0,1fr);--g-side-l:minmax(0,1fr);--g-4:repeat(2,1fr);--g-5:repeat(2,1fr);
     --g-league:1.7fr repeat(6,minmax(28px,1fr))}
   .os-main{padding:14px 12px calc(92px + env(safe-area-inset-bottom))!important}
   .os-kbd,.os-username{display:none!important}

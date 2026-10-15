@@ -1501,6 +1501,20 @@ async function narrowStaffWalk(theme) {
     await overlay("topbar-role", '[role="menu"]', "staffrolemenu", "the role menu");
     await overlay("topbar-search", '[role="dialog"][aria-label="Search"]', "staffsearch", "search");
 
+    // The KPI tiles (ui/primitives.jsx's KPICard: Injuries, Logistics): a label, a figure and a note, each 12px at the least,
+    // and the screens that draw them fit the width. Reached by the More drawer, as a coach reaches them.
+    for (const [dest, screen] of [["injuries", "staffinjuries"], ["logistics", "stafflogistics"]]) {
+      await tid("mnav-more").click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      await tid(`drawer-${dest}`).click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(900);
+      const kpi = await page.evaluate(() => [...document.querySelectorAll('[data-testid="kpi-card"] *')]
+        .filter((e) => [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()))
+        .map((e) => parseFloat(getComputedStyle(e).fontSize)));
+      ok(`${T_} @${W}: ${dest} draws KPI tiles (${kpi.length} texts in them)`, kpi.length > 0);
+      ok(`${T_} @${W}: ...every text in a KPI tile is 12px or more`, kpi.every((n) => n >= 12), kpi.filter((n) => n < 12).join(","));
+      await measure(page, theme, screen);
+    }
     await tid("mnav-matches").click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(1000);
     await measure(page, theme, "staffmatches");

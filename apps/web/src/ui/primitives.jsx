@@ -20,19 +20,19 @@ const Card = ({ children, sx, className="card-hover", onClick, ...rest }) => (
 
 // `icon` on a card or an empty state is a name from ui/icons.jsx.
 const KPICard = ({ label, value, sub, icon, color=D.indigo, trend }) => (
-  <Card sx={{padding:"16px 18px",cursor:"default"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-      <div>
-        <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"8px"}}>{label}</div>
+  <Card sx={{padding:"16px 18px",cursor:"default"}} data-testid="kpi-card">
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+      <div style={{minWidth:0}}>
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"8px",overflowWrap:"anywhere"}}>{label}</div>
         <div style={{fontFamily:D.mono,fontSize:"26px",fontWeight:500,color:textOn(color),lineHeight:1}}>{value}</div>
-        {sub&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"5px"}}>{sub}</div>}
+        {sub&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"5px"}}>{sub}</div>}
       </div>
       <div style={{width:"38px",height:"38px",borderRadius:D.md,background:color+"18",border:`1px solid ${color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0,color:textOn(color)}}>{isIcon(icon) ? <Icon name={icon}/> : icon}</div>
     </div>
     {trend!==undefined&&(
       <div style={{marginTop:"10px",display:"flex",alignItems:"center",gap:"5px"}}>
-        <span style={{color:trend>=0?D.emerald:D.rose,fontFamily:D.mono,fontSize:"11px"}}>{trend>=0?"▲":"▼"} {Math.abs(trend)}%</span>
-        <span style={{color:D.textMuted,fontSize:"11px",fontFamily:D.body}}>vs last month</span>
+        <span style={{color:trend>=0?D.emerald:D.rose,fontFamily:D.mono,fontSize:"12px"}}>{trend>=0?"▲":"▼"} {Math.abs(trend)}%</span>
+        <span style={{color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>vs last month</span>
       </div>
     )}
   </Card>

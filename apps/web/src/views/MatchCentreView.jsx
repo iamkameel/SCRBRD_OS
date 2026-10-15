@@ -225,7 +225,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto minmax(0,1fr)",gap:"12px",alignItems:"center"}}>
                     <div>
-                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary}}><SideName side={sides.home}/></div>
+                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary,overflowWrap:"anywhere"}}><SideName side={sides.home}/></div>
                       {m.scorecard?.home&&<div style={{...T.role.figure.md,color:isLive?D.emerald:D.textPrimary,marginTop:"4px"}}>{m.scorecard.home.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.home.overs})</span></div>}
                     </div>
                     <div style={{textAlign:"center"}}>
@@ -233,7 +233,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                       {m.result&&<div style={{fontFamily:D.body,fontSize:"12px",color:isLive?D.emerald:D.amber,marginTop:"4px",maxWidth:"120px"}}>{m.result}</div>}
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary}}><SideName side={sides.away}/></div>
+                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary,overflowWrap:"anywhere"}}><SideName side={sides.away}/></div>
                       {m.scorecard?.away&&<div style={{...T.role.figure.md,color:D.textPrimary,marginTop:"4px"}}>{m.scorecard.away.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.away.overs})</span></div>}
                     </div>
                   </div>
