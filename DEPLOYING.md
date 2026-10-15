@@ -1287,7 +1287,9 @@ never does, and the DSO reads only the kind and the date, inside an open
 concern. **Nobody reads it platform-wide** (Kameel, 15 October 2026): the
 platform administrator and the owner's key read a child's links and the ending
 reasons only inside a live support session at that school (db/22), as the role
-the session lent them, and the read is logged under the session. The guardian is told in one notice: "Your link to a child at {school}
+the session lent them, and the read is logged under the session. The same
+holds for ending one: a platform-wide caller is refused `not_permitted` by
+`guardian_link_revoke()` unless a support session is live at that school. The guardian is told in one notice: "Your link to a child at {school}
 ended on {date}. The school office can say why; the platform does not." Never
 the child's name, never the reason. What a revoked link takes with it is the
 existing rules', unchanged: his name off public pages until another guardian

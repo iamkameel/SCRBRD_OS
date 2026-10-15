@@ -198,7 +198,8 @@ END $door$;
  * The office ends one guardian link, saying how and why (ok, reason).
  * Refusals, in this order:
  *   not_signed_in · no_such_link (no link, or not a guardian's) ·
- *   not_permitted (no guardian.link.manage at the child's school) ·
+ *   not_permitted (no guardian.link.manage at the child's school, or a
+ *   platform-wide caller with no live support session there) ·
  *   own_link (nobody ends a link of their own: G1, as guardian_link_verify()
  *   refuses self_verified) · no_open_link (already ended, rejected or run
  *   out) · last_verified_link (db/08's rule: the child is a minor, or his
@@ -243,6 +244,14 @@ BEGIN
      OR NOT app_can('guardian.link.manage', v_school, '*'::text,
                     '00000000-0000-0000-0000-000000000000'::uuid,
                     '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+  -- No platform role gains school authority here (Kameel, 15 October 2026):
+  -- a caller holding a platform-wide assignment (the owner's key) ends a
+  -- family's link only inside a live support session at the child's school
+  -- (db/22), as the role the session lent it. db/104's shape. A school's own
+  -- holders are not platform-wide and are not asked.
+  IF app_is_platform_wide() AND app_support_access_id(v_school) IS NULL THEN
     RETURN QUERY SELECT false, 'not_permitted'; RETURN;
   END IF;
   IF v_person = v_me THEN RETURN QUERY SELECT false, 'own_link'; RETURN; END IF;
@@ -608,6 +617,11 @@ BEGIN
       RAISE EXCEPTION 'db/109: the application may call the internal %', f;
     END IF;
   END LOOP;
+  -- The door refuses a platform-wide caller outside a support session.
+  IF position('app_is_platform_wide()' IN (SELECT prosrc FROM pg_proc WHERE oid = 'guardian_link_revoke(uuid,text,text)'::regprocedure)) = 0
+     OR position('app_support_access_id(v_school)' IN (SELECT prosrc FROM pg_proc WHERE oid = 'guardian_link_revoke(uuid,text,text)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/109: guardian_link_revoke() does not refuse a platform-wide caller outside a support session';
+  END IF;
   -- The re-emits carry the ending row.
   FOREACH f IN ARRAY ARRAY['guardian_links_close_on_leaving(uuid,date)', 'guardian_links_reopen_at_school(uuid)',
                            'safeguarding_family(uuid)'] LOOP

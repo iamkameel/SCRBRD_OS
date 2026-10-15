@@ -18,6 +18,7 @@
  *   3b. The platform administrator (Kameel, 15 October 2026): nothing with no
  *      support session, nothing inside one at Westville; inside one at Hilton
  *      both links and the reason, logged under the session; ended, nothing.
+ *      The owner's key may not end a link with no support session (403).
  *   4. Mum, signed in, reads one notice: the school and the date, not the
  *      child, not the reason. Dad does not read it.
  *   5. D14: before, the public-name rule names him through Mum's consent;
@@ -208,6 +209,8 @@ try {
   ok("...on the access log under the session", stamped.length >= 1 && stamped.every((l) => l.support_access_id === hil.body?.id), JSON.stringify(stamped));
   await endSession(hil.body?.id);
   ok("the session ended: nothing again", ((await links(platform, S.boy)).body?.rows ?? []).length === 0);
+  r = await revoke(await tokenFor("owner@example.invalid"), S.boy, S.l_dad, body);
+  ok("the owner's key, with no support session, may not end a link: 403 not_permitted", r.status === 403 && r.body?.error === "not_permitted", JSON.stringify(r.body));
 
   // ── 4. The notice ──────────────────────────────────────────────
   group("Mum is told: the school and the date; not the child, not the reason");

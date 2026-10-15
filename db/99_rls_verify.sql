@@ -5170,18 +5170,25 @@ BEGIN
     ARRAY['dad',       'guardian',        HIL::text, '',     ''],
     ARRAY['gran',      'guardian',        HIL::text, '',     ''],
     ARRAY['aunt',      'guardian',        HIL::text, '',     ''],
+    ARRAY['uncle',     'guardian',        HIL::text, '',     ''],
     ARRAY['wesoffice', 'schooladmin',     WES::text, '',     '']]);
   -- A platform administrator: one platform-wide assignment, no school.
   INSERT INTO app_user (school_id, email, name, role)
   VALUES (NULL, 'v109.platform@example.invalid', 'V109 Platform', 'platformadmin') RETURNING id INTO v_p;
   INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'platformadmin', NULL);
   ids := ids || jsonb_build_object('platform', v_p);
+  -- An owner's key: a platform-wide superadmin, guardian.link.manage everywhere.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v109.owner@example.invalid', 'V109 Owner', 'superadmin') RETURNING id INTO v_p;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'superadmin', NULL);
+  ids := ids || jsonb_build_object('owner', v_p);
   ids := ids || jsonb_build_object('boy', v_boy, 'two', v_two, 'old', v_old,
     'l_mum',  _v109_link((ids->>'mum')::uuid,  v_boy),
     'l_dad',  _v109_link((ids->>'dad')::uuid,  v_boy),
     'l_gran', _v109_link((ids->>'gran')::uuid, v_two),
     'l_dad2', _v109_link((ids->>'dad')::uuid,  v_two),
-    'l_old',  _v109_link((ids->>'aunt')::uuid, v_old));
+    'l_old',  _v109_link((ids->>'aunt')::uuid, v_old),
+    'l_uncle', _v109_link((ids->>'uncle')::uuid, v_two));
   l := (ids->>'l_mum')::uuid;
   SELECT g.assignment_id INTO a FROM assignment_subject g WHERE g.id = l;
   -- What goes with her link (D14).
@@ -21308,6 +21315,8 @@ $v49$;
   --                session, nor inside one at Westville; inside one at Hilton
   --                it reads the kind and the reason; ended, nothing again
   --                (Kameel, 15 October 2026)
+  --   (owner)      the owner's key cannot end a link with no support session,
+  --                and can inside a live one at Hilton (the same day's rule)
   --   (dso)        inside the open concern the DSO reads the kind and the date
   --                and never the reason (Q10)
   --   (d14)        his public-name consent through Mum's link is no longer
@@ -21325,14 +21334,16 @@ $v49$;
   --                db/08's door without a kind or a reason
   --   (doors)      the functions' shape and grants, the policies
   --
-  -- Falsified six ways, each red for the right reason: the read policy's
+  -- Falsified seven ways, each red for the right reason: the read policy's
   -- DSO cut removed (red at (readers): the DSO reads the boy's ending row);
   -- the guardian admitted to her own row (red at (readers): Mum reads it);
   -- db/08's door given back to scrbrd_app (red at (writes)); the notice's
   -- door answering true for any notice (red at (notice): the forged notice
   -- reaches Mum); db/109's trigger on role_assignment_ending dropped (red at
   -- (role): Gran's link has no row); the RESTRICTIVE platform cut dropped (red
-  -- at (platform): read with no support session).
+  -- at (platform): read with no support session); the door's platform
+  -- refusal taken out (red at (owner): the owner's key ends a link with no
+  -- support session).
   DECLARE
     y       jsonb := _v109_stage();
     U_DSO   uuid := '88888888-0000-0000-0000-000000000057';
@@ -21478,6 +21489,24 @@ $v49$;
     PERFORM support_access_end(v_sess);
     PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
       '§86 (platform): the session ended and the platform administrator still reads the row');
+
+    -- (owner) No platform role gains school authority here: the owner's key
+    -- ends a family's link only inside a live support session at that school.
+    PERFORM _as((y->>'owner')::uuid);
+    got := _v109_revoke((y->>'l_uncle')::uuid, 'office', 'V109: the school asked the platform to end it');
+    PERFORM _assert(got = 'not_permitted', format('§86 (owner): the owner''s key with no support session was told %s', got));
+    PERFORM _assert((_v109_link_row((y->>'l_uncle')::uuid))->>'verification_state' = 'verified'
+                    AND _v109_ending((y->>'l_uncle')::uuid) IS NULL,
+      '§86 (owner): a refused revoke by the owner''s key moved the link, or wrote a row');
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('11111111-1111-1111-1111-111111111111', 'schooladmin', 'V109: Hilton asked the platform to help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (owner): the owner''s key could not begin a support session at Hilton');
+    got := _v109_revoke((y->>'l_uncle')::uuid, 'office', 'V109: the school asked the platform to end it');
+    PERFORM _assert(got = 'ok', format('§86 (owner): inside a session at Hilton the owner''s key was told %s', got));
+    PERFORM _assert((_v109_ending((y->>'l_uncle')::uuid))->>'kind' = 'office'
+                    AND ((_v109_ending((y->>'l_uncle')::uuid))->>'ended_by')::uuid = (y->>'owner')::uuid,
+      format('§86 (owner): the ending reads %s', _v109_ending((y->>'l_uncle')::uuid)));
+    PERFORM support_access_end(v_sess);
 
     -- (dso)
     PERFORM _as(U_DSO);
