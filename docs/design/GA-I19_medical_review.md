@@ -1,6 +1,6 @@
 # GA-I19 · The medical review worklist
 
-**Decided 2026-10-08 (Kameel): approved as recommended. Slice 0 now; slice A after Q0 and Q2 are answered.**
+**Decided 2026-10-08 (Kameel): approved as recommended. Slice 0 now; slice A after Q0 and Q2 are answered.** **Q0 and Q2 answered 15 Oct 2026 (Kameel): the information officer has confirmed. Slice A is building (db/111).**
 
 **Status:** design for Kameel's review (Fable, 2026-10-08). Nothing here is built.
 **Family:** SCRBRD-110 (fast-bowler workload, health data, POPIA consent).
@@ -317,7 +317,7 @@ CSA check SG-12, `DEPLOYING.md` paste list).
 |---|---|---|
 | **Q0** | Is there a `medical` assignment at the pilot school, or will there be before the pilot? | **If no:** build slice 0 only and move A–C after the pilot; a worklist with no reader is a paste for nobody. **If yes:** 0, A, B, C in that order. |
 | **Q1** | Scope: is "medical review" the physio's injury record, review and worklist (D1), with the wellness flag after the pilot? | **Yes.** The flag has no check-ins to read yet. |
-| **Q2** | **For the information officer:** does `injury` (and `injury_review`) stand under the guardian-link consent, on the school's and the physio's processing of health information for the child's care (POPIA s 26, s 27, s 32 — he names the subsection), and **not** under `health_monitoring_consent`? | **Confirm that reading in writing**, as for 110 §7.4. The fallback (gate on `health_consent_live()`) is one line and makes most pupils unrecordable. |
+| **Q2** | **For the information officer:** does `injury` (and `injury_review`) stand under the guardian-link consent, on the school's and the physio's processing of health information for the child's care (POPIA s 26, s 27, s 32 — he names the subsection), and **not** under `health_monitoring_consent`? | **Confirm that reading in writing**, as for 110 §7.4. The fallback (gate on `health_consent_live()`) is one line and makes most pupils unrecordable. **Confirmed by the information officer (Kameel, 15 Oct 2026).** |
 | **Q3** | Retention of `injury` and `injury_review`: 12 months after leaving (110's period, lifecycle D22's row), or a longer clinical period? | **12 months**, deleted through 110 phase 6's door. The officer may set longer; the shape stands. |
 | **Q4** | May a coach record a status-only injury when no physio is at the ground? | **No.** `match_availability` is his door; the physio records when she sees the boy. |
 | **Q5** | Does the director of sport see the worklist, or a count of reviews due? | **Neither.** He reads the Injuries screen on request (110 Q2). |
