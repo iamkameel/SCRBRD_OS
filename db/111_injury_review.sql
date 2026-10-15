@@ -260,7 +260,8 @@ $mask_injury$;
  * pending or verified, whatever its dates and whether or not its assignment
  * is still active — or is_family_of() (db/08). A physio who is his mother
  * reads him as his guardian; she writes nothing clinical about him under the
- * school's role (Q6). Internal: owner only.
+ * school's role (Q6), and her worklist leaves him off. It answers only about
+ * the caller herself, so the application may ask it (the worklist does).
  */
 CREATE OR REPLACE FUNCTION injury_writer_is_family(p_player uuid) RETURNS boolean AS $$
   SELECT is_family_of(p_player) OR EXISTS (
@@ -272,6 +273,7 @@ CREATE OR REPLACE FUNCTION injury_writer_is_family(p_player uuid) RETURNS boolea
        AND s.verification_state IN ('pending', 'verified'))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION injury_writer_is_family(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION injury_writer_is_family(uuid) TO scrbrd_app;
 
 /**
  * Why the caller may not write a clinical row about this boy at this school,
@@ -374,9 +376,10 @@ BEGIN
 
   -- The recording is the first review: the state the injury starts in. Its
   -- words are the injury's own notes, not copied here.
-  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_by, phase_after,
+  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_at, reviewed_by, phase_after,
                              restricted_after, rtw_date_after, next_review_on, note)
-  VALUES (v_school, p_player, v_id, app_user_id(), 'active', v_restr, p_rtw_date, p_next_review_on, NULL);
+  VALUES (v_school, p_player, v_id, clock_timestamp(), app_user_id(), 'active', v_restr, p_rtw_date,
+          p_next_review_on, NULL);
 
   RETURN QUERY SELECT true, NULL::text, v_id;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -444,11 +447,13 @@ BEGIN
   END IF;
   IF p_next_review_on < v_today THEN RETURN QUERY SELECT false, 'next_review_in_past', NULL::uuid; RETURN; END IF;
   SELECT max(r.reviewed_at) INTO v_last FROM injury_review r WHERE r.injury_id = p_injury;
-  IF v_last > now() THEN RETURN QUERY SELECT false, 'review_before_last', NULL::uuid; RETURN; END IF;
+  IF v_last > clock_timestamp() THEN RETURN QUERY SELECT false, 'review_before_last', NULL::uuid; RETURN; END IF;
 
-  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_by, phase_after,
+  -- clock_timestamp(), not now(): two reviews in one transaction still read
+  -- in the order they were made.
+  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_at, reviewed_by, phase_after,
                              restricted_after, rtw_date_after, next_review_on, note)
-  VALUES (i.school_id, i.player_id, i.id, app_user_id(), p_phase_after, v_restr, v_rtw,
+  VALUES (i.school_id, i.player_id, i.id, clock_timestamp(), app_user_id(), p_phase_after, v_restr, v_rtw,
           p_next_review_on, nullif(btrim(p_note), ''))
   RETURNING id INTO v_id;
 
@@ -526,7 +531,8 @@ CREATE TRIGGER injury_apply_review
  * medical.write — get no row, and a physio gets her own school's. A
  * platform-wide account, a support session and a pad credential get nothing
  * (as the doors refuse them). A boy with no open team membership at the
- * injury's school has left: off the list, his row untouched (D11).
+ * injury's school has left: off the list, his row untouched (D11). And a
+ * physio's own child is off hers: she may not review him (Q6).
  *
  * No notice is ever written from this: the list is her clock (Q10).
  */
@@ -551,6 +557,8 @@ RETURNS TABLE (injury_id uuid, school_id uuid, player_id uuid, reason text,
                    '00000000-0000-0000-0000-000000000000'::uuid)
        AND EXISTS (SELECT 1 FROM team_membership m
                     WHERE m.player_id = i.player_id AND m.school_id = i.school_id AND m.left_on IS NULL)
+       -- Her own child is not hers to review (Q6), so not on her list.
+       AND NOT injury_writer_is_family(i.player_id)
   ), why AS (
     SELECT o.*,
            (coalesce(o.last_at, o.created_at) AT TIME ZONE 'Africa/Johannesburg')::date AS last_on,
@@ -674,6 +682,7 @@ DECLARE
   t     text;
   v_def text;
   n     int;
+  v_arm text := 'school_id, \( SELECT p\.team_code\s+FROM player p\s+WHERE \(p\.id = injury\.player_id\)\), player_id, NULL::uuid\) THEN ';
 BEGIN
   -- Every definer pinned (db/16); the worklist is the one invoker.
   FOREACH f IN ARRAY ARRAY['injury_writer_is_family(uuid)', 'injury_write_refusal(uuid,uuid)',
@@ -690,9 +699,10 @@ BEGIN
     RAISE EXCEPTION 'db/111: injury_worklist() runs as its owner; it must read under the caller''s RLS';
   END IF;
 
-  -- The application's three doors, and nobody else's.
+  -- The application's three doors (and the worklist's family check), and nobody else's.
   FOREACH f IN ARRAY ARRAY['injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)',
-                           'injury_review_record(uuid,text,boolean,date,date,text)', 'injury_worklist()'] LOOP
+                           'injury_review_record(uuid,text,boolean,date,date,text)', 'injury_worklist()',
+                           'injury_writer_is_family(uuid)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE') THEN
       RAISE EXCEPTION 'db/111: the application cannot call %', f;
     END IF;
@@ -707,7 +717,7 @@ BEGIN
       RAISE EXCEPTION 'db/111: % is executable by PUBLIC', f;
     END IF;
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['injury_writer_is_family(uuid)', 'injury_write_refusal(uuid,uuid)',
+  FOREACH f IN ARRAY ARRAY['injury_write_refusal(uuid,uuid)',
                            'injury_apply_review()', 'injury_serious_watch()', 'injury_retention_due(uuid)'] LOOP
     IF has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE') THEN
       RAISE EXCEPTION 'db/111: the application can call the internal %', f;
@@ -760,10 +770,12 @@ BEGIN
   v_def := pg_get_viewdef('injury_masked'::regclass);
   SELECT count(*) INTO n FROM regexp_matches(v_def, 'CASE\s+WHEN app_can\(', 'g');
   IF n <> 9 THEN RAISE EXCEPTION 'db/111: injury_masked masks % column(s), expected db/09''s five and four', n; END IF;
-  IF v_def !~ 'app_can\(''medical\.nature\.read''::text[^)]*\)\s+THEN next_review_on'
-     OR v_def !~ 'app_can\(''medical\.nature\.read''::text[^)]*\)\s+THEN emergency_services'
-     OR v_def !~ 'app_can\(''medical\.details\.read''::text[^)]*\)\s+THEN recorded_by'
-     OR v_def !~ 'app_can\(''medical\.details\.read''::text[^)]*\)\s+THEN dso_notified_at' THEN
+  -- Each arm as Postgres prints it: the capability, the boy's school, his
+  -- side through the player row, the boy, then the column.
+  IF v_def !~ ('app_can\(''medical\.nature\.read''::text, ' || v_arm || 'next_review_on\M')
+     OR v_def !~ ('app_can\(''medical\.nature\.read''::text, ' || v_arm || 'emergency_services\M')
+     OR v_def !~ ('app_can\(''medical\.details\.read''::text, ' || v_arm || 'recorded_by\M')
+     OR v_def !~ ('app_can\(''medical\.details\.read''::text, ' || v_arm || 'dso_notified_at\M') THEN
     RAISE EXCEPTION 'db/111: injury_masked does not place the new columns on their tiers';
   END IF;
   IF v_def ~ 'THEN (date_injured|rtw_date|restricted|recurs_injury_id)\M' THEN
