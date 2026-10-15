@@ -31,7 +31,9 @@
 --      severe injury, or one where emergency services were called, writes
 --      the school's DSOs one safeguarding notice naming nobody, once.
 --   7. injury_retention_due(): when an injury record falls due for deletion
---      (D11). Nothing deletes in this file; the purge is slice E.
+--      (D11). Nothing deletes in this file; the purge is slice E. And
+--      injury_left_on(), invoker: the day he left the injury's school, for
+--      the Injuries screen's "left the school" mark (D11).
 --   8. The principal reads an injury at the status tier only (D3; Kameel,
 --      2026-10-15): the medical.nature.read row db/01 gave him is withdrawn
 --      (WITHDRAWN_SINCE_01 in generate-rls.mjs keeps db/01 as it shipped).
@@ -119,6 +121,9 @@ CREATE TABLE IF NOT EXISTS injury_review (
   next_review_on   date,
   -- The physio's words: the clinical sub-phase lives here (D7, Q11).
   note             text CHECK (note IS NULL OR btrim(note) <> ''),
+  -- The review injury_record() writes at the recording, and no other: the
+  -- screens say "Recorded" from this, not from a timing guess. Status tier.
+  is_recording     boolean NOT NULL DEFAULT false,
   FOREIGN KEY (injury_id, player_id, school_id) REFERENCES injury (id, player_id, school_id) ON DELETE CASCADE,
   -- Q10: a next review is named on every review that does not clear him,
   -- and on none that does.
@@ -129,6 +134,8 @@ CREATE TABLE IF NOT EXISTS injury_review (
 CREATE INDEX IF NOT EXISTS injury_review_injury ON injury_review (injury_id, reviewed_at);
 CREATE INDEX IF NOT EXISTS injury_review_player ON injury_review (player_id);
 CREATE INDEX IF NOT EXISTS injury_review_school ON injury_review (school_id);
+-- One recording per injury.
+CREATE UNIQUE INDEX IF NOT EXISTS injury_review_one_recording ON injury_review (injury_id) WHERE is_recording;
 
 COMMENT ON TABLE injury_review IS
   'A physio''s dated look at one injury and the state it left it in (GA-I19 D1, D2). Written by injury_record() and injury_review_record() alone; read through injury_review_masked, tier by tier (D3); hidden from a support session (Q7).';
@@ -387,9 +394,9 @@ BEGIN
   -- The recording is the first review: the state the injury starts in. Its
   -- words are the injury's own notes, not copied here.
   INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_at, reviewed_by, phase_after,
-                             restricted_after, rtw_date_after, next_review_on, note)
+                             restricted_after, rtw_date_after, next_review_on, note, is_recording)
   VALUES (v_school, p_player, v_id, clock_timestamp(), app_user_id(), 'active', v_restr, p_rtw_date,
-          p_next_review_on, NULL);
+          p_next_review_on, NULL, true);
 
   RETURN QUERY SELECT true, NULL::text, v_id;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -642,6 +649,29 @@ CREATE TRIGGER injury_serious_watch
   FOR EACH ROW EXECUTE FUNCTION injury_serious_watch();
 
 
+-- ── 9b · Whether he has left the injury's school (D11) ─────────────
+/**
+ * The day he left the school this injury is at: his latest membership there
+ * that has closed, when none there is open. NULL while he is enrolled there,
+ * and NULL for a reader who cannot read his memberships at all, so no reader
+ * is told he left on less than his own read. Sourced from team_membership
+ * as the lifecycle's leaving is (the db/62 path). SECURITY INVOKER: it reads
+ * nothing the caller's own RLS does not already give him, so it widens
+ * nothing; every reader of an injury's status tier holds player.profile.read
+ * over the boy, which is team_membership's read. The `injuries` read draws
+ * the Injuries screen's "left the school" mark from it.
+ */
+CREATE OR REPLACE FUNCTION injury_left_on(p_player uuid, p_school uuid) RETURNS date AS $$
+  SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM team_membership m
+                                WHERE m.player_id = p_player AND m.school_id = p_school AND m.left_on IS NULL)
+              THEN (SELECT max(m.left_on) FROM team_membership m
+                     WHERE m.player_id = p_player AND m.school_id = p_school)
+         END
+$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION injury_left_on(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION injury_left_on(uuid, uuid) TO scrbrd_app;
+
+
 -- ── 10 · When an injury record falls due for deletion (D11, Q3) ────
 /**
  * Twelve months after he left the school system: his last school
@@ -676,7 +706,7 @@ BEGIN
           'injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)',
           'injury_review_record(uuid,text,boolean,date,date,text)',
           'injury_apply_review()', 'injury_worklist()', 'injury_serious_watch()',
-          'injury_retention_due(uuid)'] LOOP
+          'injury_retention_due(uuid)', 'injury_left_on(uuid,uuid)'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END LOOP;
       EXECUTE format('REVOKE ALL ON injury_review, injury_review_masked FROM %I', r);
@@ -705,14 +735,15 @@ BEGIN
       RAISE EXCEPTION 'db/111: % is not SECURITY DEFINER with a pinned search_path', f;
     END IF;
   END LOOP;
-  IF (SELECT prosecdef FROM pg_proc WHERE oid = 'injury_worklist()'::regprocedure) THEN
-    RAISE EXCEPTION 'db/111: injury_worklist() runs as its owner; it must read under the caller''s RLS';
+  IF (SELECT prosecdef FROM pg_proc WHERE oid = 'injury_worklist()'::regprocedure)
+     OR (SELECT prosecdef FROM pg_proc WHERE oid = 'injury_left_on(uuid,uuid)'::regprocedure) THEN
+    RAISE EXCEPTION 'db/111: injury_worklist() or injury_left_on() runs as its owner; each must read under the caller''s RLS';
   END IF;
 
   -- The application's three doors (and the worklist's family check), and nobody else's.
   FOREACH f IN ARRAY ARRAY['injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)',
                            'injury_review_record(uuid,text,boolean,date,date,text)', 'injury_worklist()',
-                           'injury_writer_is_family(uuid)'] LOOP
+                           'injury_writer_is_family(uuid)', 'injury_left_on(uuid,uuid)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE') THEN
       RAISE EXCEPTION 'db/111: the application cannot call %', f;
     END IF;

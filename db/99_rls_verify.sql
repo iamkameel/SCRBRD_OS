@@ -24333,6 +24333,10 @@ $v49$;
   --              hers, and the claiming physio's boy off hers; nobody without
   --              medical.write gets a row, nor the owner's key, nor
   --              Westville's physio a Hilton row
+  --   (left)     injury_left_on(): the day the leaver left, to the physio,
+  --              his coach and the principal; NULL for a boy still there and
+  --              to another side's coach. And (record)/(tiers): is_recording
+  --              marks the recording alone, read at the status tier
   --   (support)  a support session as the physio, and as the sports office: no
   --              review row, no worklist, both doors not_under_support; the
   --              injury rows themselves as today (Q7)
@@ -24365,6 +24369,8 @@ $v49$;
   --   (worklist) app_can('medical.status.read') where it asks medical.write
   --              (red at the coach: 4 rows); the family cut removed (red at
   --              the mother-physio's list holding her son's two)
+  --   (record)   injury_record() writing is_recording false (red at the recording)
+  --   (left)     injury_left_on() as a definer (red at 20XI's coach, given the date)
   --   (tiers)    the principal's medical.nature.read row added back (red at the
   --              principal: 5 phases and 4 next reviews where 0 were expected)
   --   (sg12)     the boy's name in the words (red at D10's words); the stamp
@@ -24425,7 +24431,8 @@ $v49$;
     j := _v111_reviews(I1);
     PERFORM _assert(jsonb_array_length(j) = 1 AND (j->0->>'reviewed_by')::uuid = U_PHYSIO AND j->0->>'phase_after' = 'active'
                     AND (j->0->>'restricted_after')::boolean AND (j->0->>'next_review_on')::date = T + 14
-                    AND (j->0->>'rtw_date_after')::date = T + 21 AND j->0->>'note' IS NULL,
+                    AND (j->0->>'rtw_date_after')::date = T + 21 AND j->0->>'note' IS NULL
+                    AND (j->0->>'is_recording')::boolean,
       format('§88 (record): the recording is not one review, by her, of the state recorded: %s', j));
     PERFORM _assert(_v111_notices(I1) = ARRAY['Injury recorded'],
       format('§88 (record): the recording wrote %s, not one "Injury recorded"', _v111_notices(I1)));
@@ -24504,7 +24511,8 @@ $v49$;
                     AND (j->>'next_review_on')::date = T + 7,
       format('§88 (review): rehab did not reach the injury row, or moved what it was not given: %s', j));
     j := _v111_reviews(I1);
-    PERFORM _assert(jsonb_array_length(j) = 2 AND (j->1->>'restricted_after')::boolean AND (j->1->>'rtw_date_after')::date = T + 21,
+    PERFORM _assert(jsonb_array_length(j) = 2 AND (j->1->>'restricted_after')::boolean AND (j->1->>'rtw_date_after')::date = T + 21
+                    AND NOT (j->1->>'is_recording')::boolean,
       format('§88 (review): the review row does not state the whole state after it: %s', j->1));
     PERFORM _assert(_v111_fitness(BOY) = 'rehab', format('§88 (fitness): in rehab his fitness reads %s', _v111_fitness(BOY)));
     PERFORM _assert(_v111_notices(I1) = ARRAY['Injury recorded'],
@@ -24588,6 +24596,10 @@ $v49$;
                k, c_rows, c_phase, c_next, c_note, c_by, e_rows, e_phase, e_note, e_by));
       SELECT count(*)::int INTO c_rows FROM injury_review WHERE player_id = BOY;
       PERFORM _assert(c_rows = e_rows, format('§88 (tiers): the %s reads %s rows of the table, not %s', k, c_rows, e_rows));
+      -- is_recording is the status tier's: the two recordings (I1's, I_RECUR's), to every reader of a row.
+      SELECT count(*) FILTER (WHERE is_recording)::int INTO c_rows FROM injury_review_masked WHERE player_id = BOY;
+      PERFORM _assert(c_rows = CASE WHEN e_rows = 5 THEN 2 ELSE 0 END,
+        format('§88 (tiers): the %s reads %s recordings among the boy''s reviews', k, c_rows));
       -- injury_masked's new columns, on the open recurrence.
       SELECT count(*)::int, count(next_review_on)::int, count(emergency_services)::int, count(recorded_by)::int,
              count(recurs_injury_id)::int, count(rtw_date)::int
@@ -24665,6 +24677,17 @@ $v49$;
       format('§88 (worklist): the list is not overdue, return passed, due, no return date, new: %s', j));
     SELECT count(*)::int INTO n FROM injury_masked WHERE id = I_LEFT AND injury_type IS NOT NULL;
     PERFORM _assert(n = 1, '§88 (worklist): the physio no longer reads the injury of the boy who left');
+    -- (left) the "left the school" mark, under each reader's own RLS: the day
+    -- he left to the physio, his coach and the principal (status tier); NULL
+    -- for a boy still there; NULL to a reader of neither (20XI's coach).
+    FOREACH k IN ARRAY ARRAY['physio', 'coach', 'principal', 'coach20'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(injury_left_on(LEAVER, V_HIL) IS NOT DISTINCT FROM CASE WHEN k = 'coach20' THEN NULL ELSE T END
+                      AND injury_left_on(BOY, V_HIL) IS NULL,
+        format('§88 (left): the %s reads the leaver as left on %s and the boy as left on %s', k,
+               injury_left_on(LEAVER, V_HIL), injury_left_on(BOY, V_HIL)));
+    END LOOP;
+    PERFORM _as(U_PHYSIO);
     PERFORM _assert((_v111_injury(I_LEFT)->>'phase') = 'active', '§88 (worklist): leaving changed his injury row');
     PERFORM _as((y->>'mumphysio')::uuid);
     SELECT count(*) FILTER (WHERE w.injury_id IN (I_NORTW, I_OWN))::int, count(*) FILTER (WHERE w.injury_id = I_RECUR)::int
