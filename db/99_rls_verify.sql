@@ -5350,6 +5350,10 @@ CREATE OR REPLACE FUNCTION _v106_unnamed(p_cap text, p_match uuid) RETURNS boole
           AND app_can(p_cap, m.away_school_id, m.away_team_code, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id))
     FROM match m WHERE m.id = p_match
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The seed's own fixtures (98_seed_pilot.sql's 77777777-… ids), as the owner.
+CREATE OR REPLACE FUNCTION _v106_seed_matches() RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(id), '{}') FROM match WHERE id::text LIKE '77777777-%'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/106 (section 83) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -21123,15 +21127,15 @@ $v49$;
   --   (spelling)  for every stage reader and fixture end, app_can() with NULL
   --               and with all-f answer alike (§5 item 2)
   --   (literal)   for every person holding an assignment and every staged or
-  --               scored fixture, fixture_reach() under fixture.read and
+  --               seed fixture, fixture_reach() under fixture.read and
   --               transport.read equals §2.5's text spelled out over every
   --               boy on the side and sheet (_v106_lit_fixture), and
   --               side_reach() under team.read equals it on every side
   --   (agree)     §6.1 proof 1: for every person and every fixture with a
   --               ball, ball_event_read (db/100) admits exactly the fixtures
-  --               fixture_reach('fixture.read') does; for every guardian, the
-  --               fixtures my_child_fixtures() returns are exactly those
-  --               fixture_reach() gives; for every person and every plan's
+  --               match_read does, which (shape) holds to fixture_reach();
+  --               for every guardian, the fixtures my_child_fixtures()
+  --               returns are exactly match_read's; for every person and every plan's
   --               side, news_plan_reach() (db/96) is news.read and
   --               side_reach('team.read'); for every guardian and plan,
   --               db/101's reach (side or sheet) is news.read and
@@ -21270,7 +21274,7 @@ $v49$;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(format('%s/%s', x.f, x.cap), ' ') INTO bad
-        FROM (SELECT f0 AS f, c.cap FROM unnest(FX || _v106_ball_matches()) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
+        FROM (SELECT f0 AS f, c.cap FROM unnest(FX || _v106_seed_matches()) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
        WHERE fixture_reach(x.cap, x.f) IS DISTINCT FROM _v106_lit_fixture(x.cap, x.f);
       PERFORM _assert(bad IS NULL, format('§83 (literal): for %s fixture_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(format('%s/%s', s.school, s.team), ' ') INTO bad
@@ -21279,15 +21283,24 @@ $v49$;
       PERFORM _assert(bad IS NULL, format('§83 (literal): for %s side_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
     END LOOP;
 
-    -- (agree) 1: db/100's log
+    -- (agree) 1: db/100's log. For every person, the fixtures whose balls he
+    -- reads are exactly the scored fixtures match_read shows him (bar the
+    -- fixture a driver reads only as its driver, which shows no ball); (shape)
+    -- below holds match_read to fixture_reach() on every one of them.
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(x::text, ' ') INTO bad
-        FROM unnest(_v106_ball_matches()) x
-       WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = x) IS DISTINCT FROM fixture_reach('fixture.read', x);
-      PERFORM _assert(bad IS NULL, format('§83 (agree): for %s ball_event_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
-      n := n + (SELECT count(*) FROM unnest(_v106_ball_matches()) x WHERE fixture_reach('fixture.read', x));
+        FROM ((SELECT DISTINCT b.match_id FROM ball_event b)
+              EXCEPT (SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
+                       AND NOT trip_fixture_driver_only(m.id))) d(x);
+      PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads the balls of %s, which match_read does not give him', u, left(bad, 300)));
+      SELECT string_agg(x::text, ' ') INTO bad
+        FROM ((SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
+                AND NOT trip_fixture_driver_only(m.id))
+              EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b)) d(x);
+      PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads %s through match_read and none of its balls', u, left(bad, 300)));
+      n := n + (SELECT count(DISTINCT b.match_id) FROM ball_event b);
     END LOOP;
     PERFORM _assert(n > 0 AND cardinality(_v106_ball_matches()) > 1 AND cardinality(ppl) > 20,
       format('§83 (agree): the log comparison ran over %s people, %s fixtures and %s reads: it proves nothing',
@@ -21298,8 +21311,8 @@ $v49$;
       PERFORM _as(u);
       PERFORM _assert(
         (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(my_child_fixtures()) x)
-          = (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(_v106_all_matches()) x WHERE fixture_reach('fixture.read', x)),
-        format('§83 (agree): for the guardian %s my_child_fixtures() and fixture_reach() give different fixtures', u));
+          = (SELECT coalesce(array_agg(m.id ORDER BY m.id), '{}') FROM match m),
+        format('§83 (agree): for the guardian %s my_child_fixtures() and match_read give different fixtures', u));
       n := n + cardinality(my_child_fixtures());
     END LOOP;
     PERFORM _assert(n > 10, format('§83 (agree): the guardians'' fixtures number %s: it proves nothing', n));
