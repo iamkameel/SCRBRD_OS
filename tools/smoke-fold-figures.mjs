@@ -91,6 +91,8 @@ import {
 } from "@scrbrd/scoring";
 import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef, isWicketBall } from "@scrbrd/scoring";
 import { resultFromRow } from "@scrbrd/scoring";   // SCRBRD-130 R1
+import { deriveFacts, FACT_KIND } from "@scrbrd/scoring";   // Recognition R1
+import { matchFoldContext } from "../services/api/write/events-api.mjs";
 import { baseCard, TYPED as BOOK_TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
 // SCRBRD-114 phase 3a: the logs a result is proved on (result.test.mjs folds the same).
 import { RESULT_LOGS, RESULT_SIDES, RESULT_NAMES, RESULT_STARTS_AT } from "../packages/scoring/test/result-logs.mjs";
@@ -675,6 +677,23 @@ function keeperEdge(/** @type {number} */ no) {
   return b.ev;
 }
 
+// Recognition R1: a hundred brought up from 98 by a six (104 not out), and a
+// five-for with a hat-trick in it — bowled, caught, a wide between (neither
+// makes nor breaks one), lbw; then a run out (not his), a stumping off a
+// wide (his, db/87, but not a ball of the over) and hit wicket, his fifth;
+// then the last man in reaches fifty (54) and the centurion ends on 106.
+// Written out so the facts' parity with player_milestone is never vacuous;
+// no random draw, so every innings before it is the one it was.
+const RECOGNITION_EDGE = [
+  "run:6", "run:6", "run:6", "run:6", "run:6", "run:6",
+  "run:1", "run:6", "run:6", "run:6", "run:6", "run:6",
+  "run:1", "run:6", "run:6", "run:6", "run:6", "run:2",
+  "run:1", "run:6", "run:6", "run:0", "run:0", "run:0",
+  "W:bowled", "W:caught", "Wd:0", "W:lbw", "RO:st:0", "XWd:stumped:0", "W:hit_wicket", "run:0",
+  "run:1", "run:6", "run:6", "run:6", "run:6", "run:6",
+  "run:1", "run:6", "run:6", "run:6", "run:6", "run:0",
+];
+
 // ── Expectations, from the fold ──────────────────────────────────
 /** @param {Map<string, any>} m @param {string} k @param {() => any} init */
 const at = (m, k, init) => { if (!m.has(k)) m.set(k, init()); return m.get(k); };
@@ -1084,6 +1103,10 @@ try {
   const keeperNo = no;
   edgeInnings.push({ no, what: "the wicket-keeper: named, his catch by name, a free hit's saved stumping, the gloves changed mid-over" });
   logs.push(keeperEdge(no));
+  no++;
+  const recognitionNo = no;
+  edgeInnings.push({ no, what: "a hundred from 98 by a six; a five-for with a hat-trick across a wide, a run out and a stumping off a wide" });
+  logs.push(scripted(no, RECOGNITION_EDGE, [P1, P2, P3, HIL_1XI[4], ...OTHERS]));
   const lifted = await writeLogs(logs, scorer);
   console.log(lifted ? "  (the door lifted for the legacy rows, and put back)" : "  (no door to lift: the code before db/43)");
 
@@ -1935,6 +1958,52 @@ try {
   ok("the API refuses a catch off a wide by the Laws' name (not_out_off_wide), and writes the ball after it",
      res2?.refused?.length === 1 && res2.refused[0].idempotencyKey === caughtOffWide.id && res2.refused[0].reason === "not_out_off_wide"
      && res2?.accepted?.length === 1 && res2.accepted[0].idempotencyKey === dot.id, JSON.stringify(res2));
+
+  group("Recognition R1: deriveFacts() is player_milestone — fifties, hundreds, five-fors, hat-tricks — over every match");
+  {
+    // Every match the database holds a log for: the seed's, and every one
+    // this walk wrote (its generated innings, the edges, the conditioned and
+    // declaration matches, the scorebook's, the results', the door's). Each
+    // folded from its rows read back, with the server's own context, and its
+    // facts held to SQL's innings-grain milestones, row for row.
+    const KINDS = Object.values(FACT_KIND);
+    // A log with no innings_start is not one the fold can attribute: the
+    // fold reads the crease from `batters` and `bowler` events, never a
+    // ball's own striker_id (events.mjs, "deriveInnings() does not read
+    // these"). The seed's 77777777-…-0004 is such a log — bare balls with
+    // striker_id, written by SQL, never by a pad — so SQL's figures for it
+    // (player_innings, and the milestones on them) are not the fold's for
+    // any reader, not only these. Named and counted, not compared.
+    const ids = (await q(`select match_id from ball_event group by match_id
+                           having bool_or(kind = 'innings_start')`)).map((r) => r.match_id);
+    const bare = (await q(`select match_id, count(*) n from ball_event group by match_id
+                            having not bool_or(kind = 'innings_start')`));
+    console.log(`  ${bare.length} match(es) with no innings_start, not a log the fold attributes: ` +
+                bare.map((r) => `${r.match_id} (${r.n} rows)`).join(", "));
+    /** @type {string[]} */ const bad = [];
+    /** @type {Record<string, number>} */ const seen = {};
+    let summarised = 0;
+    for (const id of ids) {
+      const evs = (await q(`select * from ball_event where match_id = $1 order by seq`, [id])).map(fromRow);
+      const facts = deriveFacts(evs, null, { ctx: await matchFoldContext(pool, id) });
+      const want = facts.milestones.map((m) => `${m.player}|${m.kind}|${m.value}|${m.innings}`).sort();
+      const got = (await q(`select player_id, kind, value, innings from player_milestone where match_id = $1 and kind = any($2)`, [id, KINDS]))
+        .map((r) => `${r.player_id}|${r.kind}|${r.value}|${r.innings}`).sort();
+      if (want.join() !== got.join()) bad.push(`match ${id}: facts [${want.join(" ")}], SQL [${got.join(" ")}]`);
+      for (const m of facts.milestones) { seen[m.kind] = (seen[m.kind] ?? 0) + 1; if (m.at == null) summarised++; }
+    }
+    console.log(`  ${ids.length} matches; ${KINDS.map((k) => `${seen[k] ?? 0} ${k}`).join(", ")}; ${summarised} from a scorebook (no ball)`);
+    ok(`...not vacuous: at least one of each kind (${KINDS.map((k) => seen[k] ?? 0).join("/")})`, KINDS.every((k) => (seen[k] ?? 0) >= 1));
+    ok(`every match's milestones agree, row for row (${ids.length} matches)`, bad.length === 0, show(bad));
+    // The written-out edge, said exactly: the hundred from 98, the five-for
+    // and its hat-trick, each at its ball.
+    const edge = deriveFacts(rows.map(fromRow)).milestones.filter((m) => m.innings === recognitionNo);
+    const said = edge.map((m) => `${m.kind}:${m.value}@${m.at?.over}.${m.at?.ball}`).join(" ");
+    ok("the edge: a hundred (106) reached at 3.3, a hat-trick at 4.3 and a five-for at 4.5 — the wide and the stumping off it "
+       + "not balls of the over — and the last man's fifty (54) at 6.5",
+       said === "hundred:106@3.3 hat_trick:3@4.3 five_for:5@4.5 fifty:54@6.5"
+       && edge[0].player === P1 && edge[1].player === HIL_1XI[3] && edge[2].player === HIL_1XI[3] && edge[3].player === OTHERS[3], said);
+  }
 } catch (err) {
   ok(`the walk threw: ${/** @type {any} */ (err).message?.slice(0, 200)}`, false);
   console.log(/** @type {any} */ (err).stack?.split("\n").slice(0, 5).join("\n"));
