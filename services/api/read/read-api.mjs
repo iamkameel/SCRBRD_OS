@@ -633,6 +633,11 @@ export const READ_QUERIES = {
   // reads and nothing else. An ordinary post is as before: a pupil and a
   // parent hold no user.read, so its author_name stays null for them.
   //
+  // A draft plan (db/110): `wasSent` says whether it was ever sent, so the
+  // coach's tab offers Delete only on one never sent (a withdrawn plan is
+  // kept), and `urgency` refills the composer's "Send to phones too" when he
+  // changes it.
+  //
   // `fixtureId`, optional, narrows to one fixture's posts (its plans: a post
   // has no fixture), so the fixture screen finds the plan however many newer
   // posts there are; the list is otherwise the newest 100. A narrowing, never
@@ -646,6 +651,7 @@ export const READ_QUERIES = {
                        and x.retracts_id is null and x.retracted_at is null
                      order by x.published_at desc limit 1) end as "noticeId",
                   n.title, n.body, n.published_at, n.created_at,
+                  n.urgency, (n.first_sent_at is not null) as "wasSent",
                   s.name as school_name, c.name as competition_name,
                   coalesce(u.name, case when n.kind = 'plan' then plan_author_name(n.id) end) as author_name,
                   (n.author_id = app_user_id()) as mine,
