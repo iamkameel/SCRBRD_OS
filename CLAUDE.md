@@ -64,7 +64,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   GA-I24/I25: two players' figures side by side and the analyst's workspace;
   who may compare or combine which children's figures, across a squad, a
   family or a school, what combining reveals that the parts don't, and how
-  the other school's squad names may appear).
+  the other school's squad names may appear) and assessment history (added
+  2026-10-14, gap analysis GA-I26a: what a coach records about a child's
+  skills over time and the drills that follow; who may read it, the child,
+  his parents, other coaches; how long it is kept; and the coaching points
+  of coach cards slice 2 that stand on it).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
@@ -130,6 +134,28 @@ the work itself:
 Haiku's output is reviewed by the lead before it lands on a branch that goes
 to `main`. Its limits above still stand: no code, tests, SQL, policy or minors'
 data.
+
+## Saving progress
+
+Added 2026-10-14 (Kameel): always save our progress before we hit session
+limits. A usage limit or a container restart stops work without warning, and
+nothing left only on the container's disk outlives the session. No hook can
+see a limit coming, so the rule is a cadence, not a trigger:
+
+- **Every builder** commits and pushes its own branch (`claude/wip-*`) after
+  each step that passes its checks, and at least every 30 minutes of work. A
+  step half done goes up as a `WIP:` commit. Every brief says so. Nothing
+  waits in a worktree for the end of the task.
+- **The lead** pushes a branch as soon as it changes it, commits before any
+  long run (a full walk set, a long verify), and keeps the Build Board current
+  after every event. The board is the record of where each thread stands and
+  what its next step is, so a fresh session can pick up from it.
+- **The hourly board sweep** also checks every running agent's branch for
+  unpushed work and tells that agent to push it.
+- **After a stop** (a limit, a restart): start the local Postgres again if it
+  is down (`pg_ctlcluster 16 main start`), resume each stopped agent with a
+  message rather than starting it afresh, and re-read the board before
+  anything else.
 
 ## Design skills
 

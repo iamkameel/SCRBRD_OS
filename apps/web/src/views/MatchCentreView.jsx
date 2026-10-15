@@ -31,7 +31,7 @@ import { PickSideEntry } from "./cockpit/PickSide.jsx";
 // A hand on the page: any of these means the person is steering, so the held scroll below lets go.
 const HAND = ["wheel", "touchstart", "pointerdown", "keydown"];
 
-function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
+function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
   useTheme();
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
@@ -77,6 +77,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // changes, and lets go the moment the person scrolls, touches or presses a key. Instant, never smooth: a
   // correction that animates is a second movement, and that keeps prefers-reduced-motion honoured without asking.
   const wantDetails = useRef(false);
+  // A coach's signal card (S8, GA-I27 §5.2) opens this fixture's duties: the
+  // list with its details panel, as the Readiness screen's row does.
+  const openDuties = (m) => { setOpenM(null); setCoachOn(null); setFilter("all"); setTeamFilter(null); wantDetails.current = true; setSelMatch(m); };
   useEffect(() => {
     if (!wantDetails.current || !selMatch) return;
     wantDetails.current = false;
@@ -152,7 +155,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
     return (
       <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={canScore(role)}
         initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false} initialCorrections={coachOn?.corrections ?? false}
-        onOpenScorer={onOpenScorer} onNavProfile={onNavProfile}
+        onOpenScorer={onOpenScorer} onNavProfile={onNavProfile} onNav={onNav} onOpenDuties={openDuties}
         matches={MATCHES} onOpenFixture={openFixture} onTeamResults={teamResults}/>
     );
   }

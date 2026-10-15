@@ -151,7 +151,7 @@ function useMatchLog(match, players) {
   const folded = useMemo(() => (state.events ? deriveMatch(state.events, state.fold ?? {}) : null), [state.events, state.fold]);
   return {
     loading: state.loading, error: state.error, events: state.events, fold: state.fold ?? {}, demo: !!demo,
-    recovered: state.recovered, okAt: state.okAt, stale: state.stale, refreshing: state.refreshing, failed: state.failed, refresh,
+    recovered: state.recovered, head: state.head, okAt: state.okAt, stale: state.stale, refreshing: state.refreshing, failed: state.failed, refresh,
     innings: folded ? folded.innings : (demo?.innings ?? []),
     result: folded ? folded.result : null,
     overs: match.overs || folded?.innings?.[0]?.overs || demo?.cfg?.overs || 20,
@@ -332,7 +332,7 @@ function TabBar({ tab, setTab, tabs = TABS }) {
  * not one this reader may open (§2.1 P4). Everything else is the Match Centre
  * as every signed-in reader has it.
  */
-function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false }) {
+function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDuties = null, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
@@ -456,7 +456,10 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
     focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine, par, fold: log.fold, settled,
     captain, terms: captain || staff ? termsOf(log.fold) : null,
-    staff, eventCount: log.events?.length ?? 0, initialDrawer };
+    staff, eventCount: log.events?.length ?? 0, initialDrawer,
+    // The coach's evidence trail (GA-I27 §4.1): the log's head seq and when it was read, its "Updated · refresh", and where a card's link goes.
+    head: log.events ? log.head : null, okAt: log.okAt, log: log.demo ? null : { stale: log.stale, refreshing: log.refreshing, failed: log.failed, okAt: log.okAt, refresh: log.refresh },
+    onNav, onOpenDuties };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>

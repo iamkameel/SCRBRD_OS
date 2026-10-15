@@ -1,6 +1,6 @@
 # SCRBRD-138 phase B — The plan to the side: the design
 
-**Status:** decided (Kameel, 2026-10-14: "Approve all seven as recommended"). Merged as #136 on 2026-10-14. Nothing built; building starts when a wave 1 lane frees (from 16 October).
+**Status:** decided (Kameel, 2026-10-14: "Approve all seven as recommended"). Merged as #136 on 2026-10-14. db/96 and the route built: #148, merged 14 Oct 2026; the screens are in #152.
 **Source:** `docs/design/SCRBRD-138_captains_view.md` (§3.2 C1, §3.3 C2, §5.2, §9 phase B, D5, D6, A3; the lead's note at line 8); `db/12_news.sql`; `db/91_notification_one_stream.sql`; `db/57_safeguarding_dso.sql` (SG-9's trigger); `docs/policy/CSA_SAFEGUARDING_CHECK.md` SG-9, SG-10, K3; `docs/design/SAFEGUARDING_DSO.md` §1, §4.4, §9.1; `docs/design/STEP4_parent_pupil.md` §1.2, §2.2, §3.3; `docs/policy/PUBLIC_DATA.md` §3, §5a; ADR 0003; `packages/policy/src/roles.mjs` 250–335; `services/api/ai/ai-service.mjs`.
 **Reader:** the product owner first; then the Opus agent who builds the migration, the route and the filter, and the Sonnet agent who builds the composer and the block. Plain words come first in each section. Names in the sketches are the seed's illustrative ones (Hilton, Kearsney, D Erasmus, R Pillay, K Naidoo, Mr Dlamini), never a real child's.
 **Scope:** phase B only. Phase C (a server-side `is_captain_of()`, a captain's note to the side) is named only where phase B must leave room for it (§6).

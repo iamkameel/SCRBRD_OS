@@ -237,6 +237,9 @@ const ENTRY_LIMIT_KB = 500;
 const OUTSIDE_ENTRY = [
   ["a view (SettingsView)",  "dob-gaps"],
   ["the scorer (sheets.jsx)", "revise-target"],
+  // GA-I27 §5.1: the coach's evidence trail is the cockpit's first lazy
+  // boundary (FeedDrawer.jsx), fetched on the first "Where this comes from".
+  ["the evidence trail (EvidenceTrail.jsx)", "evidence-trail-figures"],
 ];
 const others = js.filter((f) => !entryGraph.includes(f)).map((f) => readFileSync(f, "utf8"));
 const entryKB = Math.round(entryGraph.reduce((n, f) => n + statSync(f).size, 0) / 1024);
