@@ -15,6 +15,9 @@
  *      read the link, is told it is not there (404). Nothing moves.
  *   3. The office revokes Mum's link (custody). The read now shows it ended,
  *      how, by whom and why; the director of sport reads the reason too.
+ *   3b. The platform administrator (Kameel, 15 October 2026): nothing with no
+ *      support session, nothing inside one at Westville; inside one at Hilton
+ *      both links and the reason, logged under the session; ended, nothing.
  *   4. Mum, signed in, reads one notice: the school and the date, not the
  *      child, not the reason. Dad does not read it.
  *   5. D14: before, the public-name rule names him through Mum's consent;
@@ -183,6 +186,28 @@ try {
   ok("...and his standing: one verified link left", after.every((x) => x.live_links === 1 && x.standing === "active"));
   const sarahRow = ((await links(sarah, S.boy)).body?.rows ?? []).find((x) => x.link_id === S.l_mum);
   ok("the director of sport (audit.read) reads the kind and the reason", sarahRow?.ending_kind === "custody" && sarahRow?.ending_reason === WHY);
+
+  // ── 3b. The platform administrator (Kameel, 15 October 2026) ─────
+  group("The platform administrator reads a child's links only inside a support session at his school");
+  const platform = await tokenFor("platform@example.invalid");
+  const session = async (schoolId, reason) =>
+    api("/api/support/access", { method: "POST", token: platform, body: { schoolId, role: "schooladmin", reason, minutes: 30 } });
+  const endSession = (id) => api(`/api/support/access/${id}/end`, { method: "POST", token: platform });
+  ok("with no support session, it reads nothing", ((await links(platform, S.boy)).body?.rows ?? []).length === 0);
+  const wes = await session("22222222-2222-2222-2222-222222222222", "Westville asked for help with a roster");
+  ok("a support session at Westville begins", !!wes.body?.id, JSON.stringify(wes.body));
+  ok("...inside it, Hilton's boy's links are not there", ((await links(platform, S.boy)).body?.rows ?? []).length === 0);
+  await endSession(wes.body?.id);
+  const hil = await session(HILTON, "Hilton asked for help with a family's links");
+  ok("a support session at Hilton begins", !!hil.body?.id, JSON.stringify(hil.body));
+  const inside = (await links(platform, S.boy)).body?.rows ?? [];
+  ok("...inside it, both links, the ending's kind and reason among them",
+     inside.length === 2 && inside.some((x) => x.link_id === S.l_mum && x.ending_kind === "custody" && x.ending_reason === WHY),
+     JSON.stringify(inside.map((x) => [x.ending_kind, x.ending_reason])));
+  const stamped = await q(`select support_access_id from access_log where resource = 'child_links' and person_id = (select id from app_user where email = 'platform@example.invalid')`);
+  ok("...on the access log under the session", stamped.length >= 1 && stamped.every((l) => l.support_access_id === hil.body?.id), JSON.stringify(stamped));
+  await endSession(hil.body?.id);
+  ok("the session ended: nothing again", ((await links(platform, S.boy)).body?.rows ?? []).length === 0);
 
   // ── 4. The notice ──────────────────────────────────────────────
   group("Mum is told: the school and the date; not the child, not the reason");

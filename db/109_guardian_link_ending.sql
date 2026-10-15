@@ -43,10 +43,14 @@
 -- standing: a holder of safeguarding.concern.read at the school reads it
 -- only through an open concern, where safeguarding_family() (db/57,
 -- re-emitted here) now lists the child's ended links with their kind and
--- date and never the reason (Q10). A pad credential reads none of it.
+-- date and never the reason (Q10). A pad credential reads none of it. And
+-- never a platform-wide holder (the platform administrator, the owner's key)
+-- outside a live support session at that school (db/22; Kameel,
+-- 15 October 2026): inside one it reads as the role the session lent it.
 --
 -- WHAT IT CHANGES ON A LIVE DATABASE
---   guardian_link_ending    new table, RLS, SELECT only to the application
+--   guardian_link_ending    new table, RLS, SELECT only to the application;
+--                           RESTRICTIVE guardian_link_ending_not_platform
 --   guardian_link_revoke(uuid, text, text)   new: the one door, (link, kind,
 --                           reason). Answers in words, refuses in this order:
 --                           not_signed_in · no_such_link · not_permitted ·
@@ -143,6 +147,24 @@ BEGIN
       );
   END IF;
 END $read$;
+-- Never platform-wide (Kameel, 15 October 2026): a holder of a platform-wide
+-- assignment (the platform administrator, the owner's key) reads a row only
+-- inside a live support session at that row's school
+-- (db/22). Outside one, its platform-wide user.role.assign and audit.read
+-- reach no family here; inside one it reads as the role the session lent it.
+-- A school's own holders are not platform-wide and read as before. db/104's
+-- shape: the platform question asked once per statement (an InitPlan).
+DO $platform$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'guardian_link_ending'
+                    AND policyname = 'guardian_link_ending_not_platform') THEN
+    CREATE POLICY guardian_link_ending_not_platform ON guardian_link_ending AS RESTRICTIVE
+      FOR SELECT USING (
+        NOT (SELECT app_is_platform_wide())
+        OR app_support_access_id(guardian_link_ending.school_id) IS NOT NULL
+      );
+  END IF;
+END $platform$;
 SELECT pad_scope_guard_install('guardian_link_ending'::regclass);
 GRANT SELECT ON guardian_link_ending TO scrbrd_app;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON guardian_link_ending FROM scrbrd_app;
@@ -529,6 +551,11 @@ BEGIN
                     AND policyname = 'guardian_link_ending_read' AND cmd = 'SELECT'
                     AND qual LIKE '%safeguarding.concern.read%' AND qual LIKE '%app_user_id()%') THEN
     RAISE EXCEPTION 'db/109: guardian_link_ending_read is not the policy this file wrote';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'guardian_link_ending'
+                    AND policyname = 'guardian_link_ending_not_platform' AND permissive = 'RESTRICTIVE' AND cmd = 'SELECT'
+                    AND qual LIKE '%app_is_platform_wide()%' AND qual LIKE '%app_support_access_id(%') THEN
+    RAISE EXCEPTION 'db/109: guardian_link_ending is readable platform-wide outside a support session';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'notification'
                     AND policyname = 'notification_link_ended' AND permissive = 'PERMISSIVE' AND cmd = 'SELECT') THEN

@@ -412,6 +412,8 @@ SELECT
         AND has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_ending_notice_is_mine(uuid)'), 'EXECUTE')
         AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'notification' AND policyname = 'notification_link_ended')
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_assignment_ending_links' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'guardian_link_ending'
+                     AND policyname = 'guardian_link_ending_not_platform' AND permissive = 'RESTRICTIVE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A link's ending is the office's to read",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'

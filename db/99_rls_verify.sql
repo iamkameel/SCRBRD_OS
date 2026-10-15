@@ -5151,7 +5151,7 @@ DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
   WES uuid := '22222222-2222-2222-2222-222222222222';
   OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
-  ids jsonb; v_boy uuid; v_two uuid; v_old uuid; l uuid; a uuid; v_m uuid; v_d uuid; v_o uuid; v_s uuid; v_c uuid;
+  ids jsonb; v_boy uuid; v_two uuid; v_old uuid; l uuid; a uuid; v_m uuid; v_d uuid; v_o uuid; v_s uuid; v_c uuid; v_p uuid;
 BEGIN
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (HIL, 'U15A', 'Verify OneOhNine Boy', 1091, 'batter', make_date(extract(year FROM sa_today())::int - 15, 3, 1))
@@ -5171,6 +5171,11 @@ BEGIN
     ARRAY['gran',      'guardian',        HIL::text, '',     ''],
     ARRAY['aunt',      'guardian',        HIL::text, '',     ''],
     ARRAY['wesoffice', 'schooladmin',     WES::text, '',     '']]);
+  -- A platform administrator: one platform-wide assignment, no school.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v109.platform@example.invalid', 'V109 Platform', 'platformadmin') RETURNING id INTO v_p;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'platformadmin', NULL);
+  ids := ids || jsonb_build_object('platform', v_p);
   ids := ids || jsonb_build_object('boy', v_boy, 'two', v_two, 'old', v_old,
     'l_mum',  _v109_link((ids->>'mum')::uuid,  v_boy),
     'l_dad',  _v109_link((ids->>'dad')::uuid,  v_boy),
@@ -21299,6 +21304,10 @@ $v49$;
   --   (readers)    the office and the director of sport read the kind and the
   --                reason; Mum, the coach, the DSO and Westville's office read
   --                no row; the DSO reads none of the child's links either (D12)
+  --   (platform)   the platform administrator reads no row with no support
+  --                session, nor inside one at Westville; inside one at Hilton
+  --                it reads the kind and the reason; ended, nothing again
+  --                (Kameel, 15 October 2026)
   --   (dso)        inside the open concern the DSO reads the kind and the date
   --                and never the reason (Q10)
   --   (d14)        his public-name consent through Mum's link is no longer
@@ -21316,13 +21325,14 @@ $v49$;
   --                db/08's door without a kind or a reason
   --   (doors)      the functions' shape and grants, the policies
   --
-  -- Falsified five ways, each red for the right reason: the read policy's
+  -- Falsified six ways, each red for the right reason: the read policy's
   -- DSO cut removed (red at (readers): the DSO reads the boy's ending row);
   -- the guardian admitted to her own row (red at (readers): Mum reads it);
   -- db/08's door given back to scrbrd_app (red at (writes)); the notice's
   -- door answering true for any notice (red at (notice): the forged notice
   -- reaches Mum); db/109's trigger on role_assignment_ending dropped (red at
-  -- (role): Gran's link has no row).
+  -- (role): Gran's link has no row); the RESTRICTIVE platform cut dropped (red
+  -- at (platform): read with no support session).
   DECLARE
     y       jsonb := _v109_stage();
     U_DSO   uuid := '88888888-0000-0000-0000-000000000057';
@@ -21343,6 +21353,8 @@ $v49$;
     v_extra uuid;
     v_stray uuid;
     v_birth date;
+    v_ok    boolean;
+    v_sess  uuid;
   BEGIN
     -- (q13)
     PERFORM _v109_disable((y->>'dad')::uuid);
@@ -21446,7 +21458,29 @@ $v49$;
     PERFORM _assert((SELECT count(*) FROM assignment_subject g WHERE g.player_id = B) = 0,
       '§86 (readers): the DSO reads the boy''s links by standing (D12)');
 
+    -- (platform) Kameel, 15 October 2026: never platform-wide; inside a live
+    -- support session at the boy's school, and only there.
+    PERFORM _as((y->>'platform')::uuid);
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): the platform administrator reads the boy''s ending row with no support session');
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('22222222-2222-2222-2222-222222222222', 'schooladmin', 'V109: Westville asked for help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (platform): a support session at Westville could not be begun');
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): inside a session at Westville, the platform administrator reads Hilton''s ending row');
+    PERFORM support_access_end(v_sess);
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('11111111-1111-1111-1111-111111111111', 'schooladmin', 'V109: Hilton asked for help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (platform): a support session at Hilton could not be begun');
+    SELECT x.kind || ':' || x.reason INTO got FROM guardian_link_ending x WHERE x.link_id = L_MUM;
+    PERFORM _assert(got = 'custody:' || WHY,
+      format('§86 (platform): inside a session at Hilton, the platform administrator reads %s', coalesce(got, 'no row')));
+    PERFORM support_access_end(v_sess);
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): the session ended and the platform administrator still reads the row');
+
     -- (dso)
+    PERFORM _as(U_DSO);
     v_j := safeguarding_family((y->>'concern')::uuid);
     PERFORM _assert(v_j -> 'ended' @> jsonb_build_array(jsonb_build_object('kind', 'custody', 'endsOn', current_date,
                                                                           'linkId', L_MUM)),

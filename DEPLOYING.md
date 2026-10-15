@@ -1284,7 +1284,10 @@ the reason: the office revoking one (`custody`, `family_left`, `guardian_asked`,
 his parents keep the link until his birthday, `left_school` when he left as an
 adult; no reason, no actor). The office and its auditors read it; the guardian
 never does, and the DSO reads only the kind and the date, inside an open
-concern. The guardian is told in one notice: "Your link to a child at {school}
+concern. **Nobody reads it platform-wide** (Kameel, 15 October 2026): the
+platform administrator and the owner's key read a child's links and the ending
+reasons only inside a live support session at that school (db/22), as the role
+the session lent them, and the read is logged under the session. The guardian is told in one notice: "Your link to a child at {school}
 ended on {date}. The school office can say why; the platform does not." Never
 the child's name, never the reason. What a revoked link takes with it is the
 existing rules', unchanged: his name off public pages until another guardian
@@ -1292,14 +1295,14 @@ answers (db/47), the health consent through it (db/60), her lift seats (db/70).
 
 New routes: `POST /api/players/:id/guardians/:link/revoke { kind, reason }`, and
 the office's read `GET /api/read/child_links?playerId=…` (every link of a child,
-in every state; `user.role.assign` or `guardian.link.manage` at the school;
-every read logged). The old `POST /api/players/:id/guardians/revoke
+in every state; `user.role.assign` or `guardian.link.manage` at the school,
+never platform-wide outside a support session there; every read logged). The old `POST /api/players/:id/guardians/revoke
 { guardianId, note }` still works, now through the new door (kind `office`
 unless one is sent; the note is the reason, so it needs ten characters).
 Squad → a pupil → Edit Profile gains a Family links panel.
 
-**What it does to a live database.** Adds the table, its indexes and its read
-policy, three functions (`guardian_link_revoke(uuid, text, text)`,
+**What it does to a live database.** Adds the table, its indexes, its read
+policy and a RESTRICTIVE one (`guardian_link_ending_not_platform`), three functions (`guardian_link_revoke(uuid, text, text)`,
 `guardian_link_ending_notice_is_mine(uuid)`, the trigger function
 `role_assignment_ending_links()`), one trigger on `role_assignment_ending`, and
 a notification read policy (`notification_link_ended`). Re-emits db/62's

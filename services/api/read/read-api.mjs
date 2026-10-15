@@ -412,6 +412,11 @@ export const READ_QUERIES = {
    * nothing. `ending_reason` comes through guardian_link_ending's own policy
    * (D13): guardian.link.manage, or audit.read without safeguarding.concern.read.
    *
+   * NEVER PLATFORM-WIDE (Kameel, 15 October 2026): a platform-wide holder
+   * (the platform administrator, the owner's key) reads a child's links only
+   * inside a live support session at that school (db/22);
+   * guardian_link_ending holds the same line in its own RESTRICTIVE policy.
+   *
    * `born` is never read: `is_minor` is the server's word. Logged, every read
    * (logsReads): it lists the adults around a child, and "who read this boy's
    * family" is a question the DSO answers from the log.
@@ -443,6 +448,8 @@ export const READ_QUERIES = {
                            '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
                    or app_can('user.role.assign', player_school(g.player_id), '*'::text,
                               '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+              and (not (select app_is_platform_wide())
+                   or app_support_access_id(player_school(g.player_id)) is not null)
             order by g.created_at desc, g.id`,
     params: (q) => {
       const id = q?.playerId || null;
