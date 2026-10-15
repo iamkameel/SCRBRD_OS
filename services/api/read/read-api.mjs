@@ -397,6 +397,64 @@ export const READ_QUERIES = {
   },
 
   /**
+   * A CHILD'S LINKS, EVERY STATE (account lifecycle slice 3, D12; db/109).
+   *
+   * Every guardian link of one child — pending, verified, rejected, revoked,
+   * dated out — newest first, with who decided what and when, and how each
+   * one ended. The office's read: it has to see the links to work them.
+   *
+   * WHO: user.role.assign or guardian.link.manage at the child's school,
+   * asked here in so many words. db/01's assignment_subject_read already
+   * admits those two (A4), but it also admits a parent to her OWN row, and
+   * this read is not hers: she reads her links through her own screens. So a
+   * parent, a coach and the DSO (who holds neither: SAFEGUARDING §1 item 2;
+   * she reads a family through safeguarding_family(), inside a concern) get
+   * nothing. `ending_reason` comes through guardian_link_ending's own policy
+   * (D13): guardian.link.manage, or audit.read without safeguarding.concern.read.
+   *
+   * `born` is never read: `is_minor` is the server's word. Logged, every read
+   * (logsReads): it lists the adults around a child, and "who read this boy's
+   * family" is a question the DSO answers from the log.
+   */
+  child_links: {
+    text: `select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
+                  a.person_id as guardian_id, u.name as guardian_name, u.email as guardian_email,
+                  u.active as account_active,
+                  (a.active and (a.valid_from is null or a.valid_from <= current_date)
+                            and (a.valid_until is null or a.valid_until > current_date)) as role_live,
+                  g.relationship, g.verification_state, vb.name as verified_by_name, g.verified_at, g.verified_note,
+                  g.consent_state, g.consent_version, g.consent_at,
+                  g.valid_from, g.valid_until, cb.name as created_by_name, g.created_at,
+                  (g.verification_state in ('pending', 'verified') and g.valid_from <= current_date
+                     and (g.valid_until is null or g.valid_until > current_date)) as live,
+                  e.kind as ending_kind, e.ends_on as ending_on, e.ended_at, eb.name as ended_by_name,
+                  e.reason as ending_reason,
+                  s.registration_state as standing, s.is_minor, s.live_links, s.consented_links
+             from assignment_subject g
+             join role_assignment a on a.id = g.assignment_id and a.role = 'guardian'
+             left join app_user u  on u.id = a.person_id
+             left join app_user vb on vb.id = g.verified_by
+             left join app_user cb on cb.id = g.created_by
+             left join guardian_link_ending e on e.link_id = g.id
+             left join app_user eb on eb.id = e.ended_by
+             left join player_guardian_status s on s.player_id = g.player_id
+            where g.player_id = $1::uuid
+              and (app_can('guardian.link.manage', player_school(g.player_id), '*'::text,
+                           '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+                   or app_can('user.role.assign', player_school(g.player_id), '*'::text,
+                              '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+            order by g.created_at desc, g.id`,
+    params: (q) => {
+      const id = q?.playerId || null;
+      if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        const e = /** @type {DressedError} */ (new Error("bad_param:playerId")); e.status = 400; throw e;
+      }
+      return [id];
+    },
+    logsReads: (q) => (q?.playerId ? [q.playerId] : []),
+  },
+
+  /**
    * Appointments, and WHO MADE EACH ONE.
    *
    * role_assignment is readable by the person it is about and by anyone
@@ -3099,6 +3157,9 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   users:    ["email"],
   // The same columns as `users`, disabled accounts included (logsReads).
   accounts: ["email"],
+  // A child's guardians and why a link ended (db/109): every read is logged
+  // (logsReads); these name what came back.
+  child_links: ["guardian_email", "ending_reason"],
   // Dotted, because a rating is nested. What is disclosed here is a named
   // coach's judgement of a named child and the number it has moved to — which
   // is the development record, and as restricted as the assessment it is
@@ -3137,7 +3198,7 @@ const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      // which is always logged, names the child it counted.
                      emergency_contact_count: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
-                     users: "id", accounts: "id", ratings: "player_id", notes: "player_id",
+                     users: "id", accounts: "id", child_links: "player_id", ratings: "player_id", notes: "player_id",
                      disciplinary_records: "player_id",
                      opposition_squad: "player_id" };
 
