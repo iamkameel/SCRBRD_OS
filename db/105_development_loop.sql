@@ -38,7 +38,8 @@
 --     existing rows are untouched and the read shows them as `excused`.
 --
 -- WHAT IT DOES TO A LIVE DATABASE
---   Two new tables (empty), five permissive and three RESTRICTIVE policies, two
+--   Two new tables (empty), five permissive and three RESTRICTIVE policies
+--   (and db/50's five pad guards on them), two
 --   functions, one trigger; the application may delete a plan's rows (db/06's
 --   default privileges give no DELETE) and may not write a target at all. No
 --   existing row is changed. The two RESTRICTIVE
@@ -99,8 +100,8 @@ CREATE POLICY development_target_read ON development_target FOR SELECT
                  development_target.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
 DROP POLICY IF EXISTS development_target_not_support ON development_target;
 CREATE POLICY development_target_not_support ON development_target AS RESTRICTIVE FOR ALL
-  USING (app_support_access_id(development_target.school_id) IS NULL)
-  WITH CHECK (app_support_access_id(development_target.school_id) IS NULL);
+  USING ((SELECT app_support_access_id()) IS NULL OR app_support_access_id(development_target.school_id) IS NULL)
+  WITH CHECK ((SELECT app_support_access_id()) IS NULL OR app_support_access_id(development_target.school_id) IS NULL);
 
 -- And no write privilege either: a door that is only shut by a missing
 -- policy is one CREATE POLICY from open.
@@ -339,6 +340,11 @@ CREATE POLICY training_attendance_no_health_word_update ON training_attendance A
   USING (true) WITH CHECK (status <> 'injured');
 
 
+-- ── A pad's resume credential reaches neither table (db/50) ───────
+SELECT pad_scope_guard_install('development_target'::regclass)
+     + pad_scope_guard_install('training_session_drill'::regclass) AS pad_guards;
+
+
 -- ── Who may call these: the application, and nobody else ──────────
 DO $revoke_platform_roles$
 DECLARE r text; f text;
@@ -409,6 +415,10 @@ BEGIN
           AND has_table_privilege('scrbrd_app', 'training_session_drill', 'DELETE')) THEN
     RAISE EXCEPTION 'db/105: the application cannot read, write or replace a plan';
   END IF;
+  SELECT count(*) INTO n FROM pg_policies
+   WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE' AND policyname LIKE 'pad\_scope\_%'
+     AND tablename IN ('development_target', 'training_session_drill');
+  IF n <> 5 THEN RAISE EXCEPTION 'db/105: % of the five pad guards exist (db/50)', n; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'training_session_drill'::regclass
                     AND tgname = 'training_session_drill_from_the_library' AND tgenabled = 'O') THEN
     RAISE EXCEPTION 'db/105: the plan''s library trigger is missing or disabled';

@@ -173,9 +173,14 @@ CREATE TRIGGER player_skill_keeps_its_assessor
 -- and no support ticket needs it (AH-D3). For every command: a support
 -- session writes none either. db/60's shape.
 DROP POLICY IF EXISTS player_skill_not_support ON player_skill;
+-- `(SELECT app_support_access_id()) IS NULL` first: an InitPlan, asked once
+-- per statement, true for everybody without a live support session anywhere,
+-- so the per-row question is asked only of a support session.
 CREATE POLICY player_skill_not_support ON player_skill AS RESTRICTIVE FOR ALL
-  USING (app_support_access_id(player_school(player_skill.player_id)) IS NULL)
-  WITH CHECK (app_support_access_id(player_school(player_skill.player_id)) IS NULL);
+  USING ((SELECT app_support_access_id()) IS NULL
+         OR app_support_access_id(player_school(player_skill.player_id)) IS NULL)
+  WITH CHECK ((SELECT app_support_access_id()) IS NULL
+              OR app_support_access_id(player_school(player_skill.player_id)) IS NULL);
 
 
 -- ── 2 · development_note: the coaching point's pointer, and withdrawal ──
@@ -300,12 +305,12 @@ CREATE POLICY development_note_plain_insert ON development_note AS RESTRICTIVE F
 -- its body. db/57's shape for a concern.
 DROP POLICY IF EXISTS development_note_not_support ON development_note;
 CREATE POLICY development_note_not_support ON development_note AS RESTRICTIVE FOR ALL
-  USING (app_support_access_id(development_note.school_id) IS NULL)
-  WITH CHECK (app_support_access_id(development_note.school_id) IS NULL);
+  USING ((SELECT app_support_access_id()) IS NULL OR app_support_access_id(development_note.school_id) IS NULL)
+  WITH CHECK ((SELECT app_support_access_id()) IS NULL OR app_support_access_id(development_note.school_id) IS NULL);
 DROP POLICY IF EXISTS development_note_not_platform ON development_note;
 CREATE POLICY development_note_not_platform ON development_note AS RESTRICTIVE FOR ALL
-  USING (NOT app_is_platform_wide())
-  WITH CHECK (NOT app_is_platform_wide());
+  USING (NOT (SELECT app_is_platform_wide()))
+  WITH CHECK (NOT (SELECT app_is_platform_wide()));
 
 
 -- ── 3 · The words a coaching point refuses ─────────────────────────
