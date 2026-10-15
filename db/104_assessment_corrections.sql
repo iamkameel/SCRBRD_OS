@@ -345,7 +345,9 @@ REVOKE ALL ON FUNCTION coaching_point_never(text) FROM PUBLIC;
  * forbidden_word (NEVER_ON_THE_COCKPIT); names_another_boy (a full name from
  * the fixture's sheet, or from his own side's roster: a point never names
  * two boys); no_such_match; evidence_required; evidence_names_another_boy;
- * evidence_not_his (a skill row of another boy, or none); evidence_as_of_required.
+ * evidence_not_his (a skill row of another boy, or none); evidence_as_of_required;
+ * evidence_malformed (a head or an as-of that does not parse); evidence_too_large
+ * (the pointer over 4 KB).
  * evidence_text with a rule other than S2a/S5 is refused by the column's
  * CHECK (23514), as the design proves it.
  *
@@ -364,6 +366,7 @@ DECLARE
   v_asof   timestamptz;
   v_skill  uuid;
   v_text   text[];
+  v_head   int;
   v_id     uuid;
 BEGIN
   IF v_me IS NULL THEN
@@ -405,6 +408,11 @@ BEGIN
     RETURN QUERY SELECT false, 'names_another_boy'::text, NULL::uuid; RETURN;
   END IF;
 
+  -- The body is capped at 500; the pointer is capped too, so a caller cannot
+  -- park an arbitrary document on a child's record.
+  IF pg_column_size(p_evidence) > 4096 THEN
+    RETURN QUERY SELECT false, 'evidence_too_large'::text, NULL::uuid; RETURN;
+  END IF;
   IF v_read IS NULL OR v_read !~ '^[a-z][a-z_]{1,39}$' THEN
     RETURN QUERY SELECT false, 'evidence_required'::text, NULL::uuid; RETURN;
   END IF;
@@ -423,9 +431,17 @@ BEGIN
       RETURN QUERY SELECT false, 'evidence_not_his'::text, NULL::uuid; RETURN;
     END IF;
   END IF;
-  IF p_evidence ? 'asOf' AND nullif(p_evidence->>'asOf', '') IS NOT NULL THEN
-    v_asof := (p_evidence->>'asOf')::timestamptz;
-  END IF;
+  -- A head or an as-of that does not parse is a refusal with a reason, not
+  -- an error out of the function.
+  BEGIN
+    IF p_evidence ? 'asOf' AND nullif(p_evidence->>'asOf', '') IS NOT NULL THEN
+      v_asof := (p_evidence->>'asOf')::timestamptz;
+    END IF;
+    v_head := (nullif(p_evidence->>'head', ''))::int;
+  EXCEPTION WHEN invalid_text_representation OR invalid_datetime_format OR datetime_field_overflow
+                 OR numeric_value_out_of_range OR invalid_parameter_value THEN
+    RETURN QUERY SELECT false, 'evidence_malformed'::text, NULL::uuid; RETURN;
+  END;
   IF v_asof IS NULL THEN
     RETURN QUERY SELECT false, 'evidence_as_of_required'::text, NULL::uuid; RETURN;
   END IF;
@@ -438,7 +454,7 @@ BEGIN
                                 evidence_head, evidence_as_of, evidence_text)
   VALUES (p.id, p.school_id, v_me, v_body, NULL, NULL, current_date, p_match,
           nullif(p_evidence->>'rule', ''), v_read, v_params,
-          (p_evidence->>'head')::int, v_asof, v_text)
+          v_head, v_asof, v_text)
   RETURNING development_note.id INTO v_id;
   RETURN QUERY SELECT true, NULL::text, v_id;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;

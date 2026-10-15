@@ -36,8 +36,11 @@
  *     the word on the screen, read out, his words kept (and the server's own
  *     refusal shows the same way); writes a clean one; the captain's card
  *     shows the line; a team-mate's fixture screen and a parent's show the
- *     block, above the captain's section; a boy of another side has no plan in
- *     his Home or his reads; the Captain tab's row opens; the coach withdraws;
+ *     block, above the captain's section, each naming the coach who wrote it
+ *     (db/103: "Plan from C Hendricks"), and every one of them found behind
+ *     101 newer posts, read narrowed to the fixture; a boy of another side
+ *     has no plan in his Home or his reads, nor its author;
+ *     the Captain tab's row opens; the coach withdraws;
  *     the block, the line and the row are gone on the next load, Notices says
  *     it was withdrawn, and no notification row carries a recipient.
  *
@@ -755,12 +758,34 @@ try {
       body: JSON.stringify({ scope: "team", schoolId: HIL, teamCode: "1XI", kind: "plan", fixtureId: FIELD, title: "The plan: v Westville (field)", body: FIELD_TEXT, publish: true }) })).json();
     ok("the plan for the played match is sent through the API", !!fieldPost.id && fieldPost.kind === "plan", JSON.stringify(fieldPost));
 
+    // ── The plan behind more than 100 newer posts (db/103's follow-up) ──
+    // The unnarrowed news read is the newest 100, so 101 newer school posts
+    // push both plans out of it; every screen below finds its plan through the
+    // read narrowed to the fixture (lib/captain.js planRead). Written as the
+    // owner (no author, no child), and removed with their notices at the end.
+    const FILLER = (await q(`insert into news_post (scope, school_id, title, body, published_at)
+                             select 'school', $1, 'Nets on the bottom field, week ' || g, 'Nets at three.', now()
+                               from generate_series(1, 101) g returning id`, [HIL])).map((r) => r.id);
+    const capToken = await tokenFor("pillay@example.invalid");
+    const parentToken = await tokenFor("parent@example.invalid");
+    /** @param {string} token @param {string} [fixture] */
+    const newsOf = async (token, fixture) => (await (await fetch(`${API}/api/read/news${fixture ? `?fixtureId=${fixture}` : ""}`,
+      { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+    ok("101 newer posts push the plan out of the newest 100: the unnarrowed read no longer has it", FILLER.length === 101
+       && !(await newsOf(capToken)).some((n) => n.id === sent.id) && !(await newsOf(parentToken)).some((n) => n.id === sent.id));
+    for (const [who, token] of [["the captain", capToken], ["the parent", parentToken]]) {
+      const day = await newsOf(token, DAY);
+      ok(`...read for the fixture, ${who} has the plan, its author named and nothing else of him`,
+         day.length === 1 && day[0].id === sent.id && day[0].kind === "plan" && day[0].author_name === "C Hendricks"
+         && !Object.keys(day[0]).some((key) => /email|phone|author_id|role/i.test(key)), JSON.stringify(day.map((n) => [n.title, n.author_name])));
+    }
+
     // ── The captain's card shows the line; his fixture shows the block above his section ──
     const cap = await open();
     ok("R Pillay (the captain) signs in", await signInAs(cap.page, "pillay@example.invalid"));
     await cap.page.waitForTimeout(1500);
-    // A pupil and a parent hold no user.read, so the news read gives them no author name (reported); the card then says "for the side".
-    ok("his card says Plan from the coach (or for the side) and the day, after the count of the side", /^Plan (from C Hendricks|for the side) · \w{3}$/.test((await inner(cap.page, "captain-card-plan")).trim())
+    // A pupil and a parent hold no user.read; the news read names a live plan's author to its readers all the same (db/103, SG-9).
+    ok("his card says Plan from the coach, by name, and the day, after the count of the side", /^Plan from C Hendricks · \w{3}$/.test((await inner(cap.page, "captain-card-plan")).trim())
        && (await orderOf(cap.page)).join().includes("captain-card-side,captain-card-plan"), await inner(cap.page, "captain-card-plan"));
     ok("...the card names no boy and no word of the plan", !/Whitfield|Naidoo|Seven|toss|bus/i.test(await inner(cap.page, "captain-card")));
     const f7 = await floors(cap.page);
@@ -771,7 +796,7 @@ try {
     ok("his fixture draws THE PLAN under the team sheet and above his Captain section",
        order.indexOf("fixture-teamsheet") < order.indexOf("plan-block") && order.indexOf("plan-block") < order.indexOf("captain-section") && order.indexOf("plan-block") > -1, order.join());
     const capPlan = await inner(cap.page, "plan-block");
-    ok("...author where he may read it, time and the whole body; and a Report, which is the post's own", /^THE PLAN · (C HENDRICKS · )?\w{3} \d\d:\d\d/i.test(capPlan) && !/office/i.test(capPlan) && capPlan.includes(PLAN_TEXT.slice(-40)) && await tid(cap.page, "plan-report").count() === 1, capPlan);
+    ok("...the author by name, the time and the whole body; and a Report, which is the post's own", /^THE PLAN · C HENDRICKS · \w{3} \d\d:\d\d/i.test(capPlan) && !/office/i.test(capPlan) && capPlan.includes(PLAN_TEXT.slice(-40)) && await tid(cap.page, "plan-report").count() === 1, capPlan);
     ok("...the Captain section holds no second copy of it", !(await inner(cap.page, "captain-section")).includes("open the bowling"));
     ok("...no reply, no reaction, no Edit anywhere on it", await tid(cap.page, "plan-block").locator("textarea, input, select").count() === 0 && !/>Edit<|reply|seen by/i.test(await tid(cap.page, "plan-block").innerHTML()));
     const f8 = await floors(cap.page);
@@ -788,7 +813,7 @@ try {
     const tabOrder = await orderOf(cap.page);
     ok("the Captain tab has the plan's row after the Board, closed", tabOrder.indexOf("mc-captain-board") > -1 && tabOrder.indexOf("mc-captain-board") < tabOrder.indexOf("mc-captain-plan-row")
        && await tid(cap.page, "mc-captain-plan-row").getAttribute("aria-expanded") === "false" && await tid(cap.page, "mc-captain-plan-body").count() === 0, tabOrder.join());
-    ok("...a row of 44px or more, labelled THE PLAN with the author", (await tid(cap.page, "mc-captain-plan-row").boundingBox())?.height >= 44 && /^The plan( · C Hendricks)?\s*(Open)?$/i.test((await inner(cap.page, "mc-captain-plan-row")).replace(/\s+/g, " ").trim()), await inner(cap.page, "mc-captain-plan-row"));
+    ok("...a row of 44px or more, labelled THE PLAN with the author", (await tid(cap.page, "mc-captain-plan-row").boundingBox())?.height >= 44 && /^The plan · C Hendricks\s*(Open)?$/i.test((await inner(cap.page, "mc-captain-plan-row")).replace(/\s+/g, " ").trim()), await inner(cap.page, "mc-captain-plan-row"));
     await tid(cap.page, "mc-captain-plan-row").click({ timeout: 4000 }).catch(() => {});
     await cap.page.waitForTimeout(400);
     ok("it opens to the whole body (aria-expanded), as a cut", await tid(cap.page, "mc-captain-plan-row").getAttribute("aria-expanded") === "true"
@@ -808,7 +833,7 @@ try {
     await tid(tm.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
     await tm.page.waitForTimeout(2000);
     const tmPlan = await inner(tm.page, "plan-block");
-    ok("his fixture screen shows the block: the whole body, and never 'the office'", /^THE PLAN · (C HENDRICKS · )?\w{3} \d\d:\d\d/i.test(tmPlan) && !/office/i.test(tmPlan) && tmPlan.includes(PLAN_TEXT.slice(0, 40)) && tmPlan.includes("07:00."), tmPlan);
+    ok("his fixture screen shows the block: the coach by name, the whole body, and never 'the office'", /^THE PLAN · C HENDRICKS · \w{3} \d\d:\d\d/i.test(tmPlan) && !/office/i.test(tmPlan) && tmPlan.includes(PLAN_TEXT.slice(0, 40)) && tmPlan.includes("07:00."), tmPlan);
     ok("...and no Captain section", await tid(tm.page, "captain-section").count() === 0);
     const f10 = await floors(tm.page);
     ok(`the team-mate's fixture: nothing under 12px (${f10.small.length}), nothing tapped under 44px (${f10.tiny.length})`, f10.small.length === 0 && f10.tiny.length === 0, [...f10.small, ...f10.tiny].slice(0, 4).join(" · "));
@@ -824,7 +849,7 @@ try {
     await tid(pa.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
     await pa.page.waitForTimeout(2000);
     const paPlan = await inner(pa.page, "plan-block");
-    ok("her fixture screen shows the same block", /^THE PLAN · (C HENDRICKS · )?\w{3} \d\d:\d\d/i.test(paPlan) && !/office/i.test(paPlan) && paPlan.includes(PLAN_TEXT.slice(0, 40)), paPlan);
+    ok("her fixture screen shows the same block, the coach by name", /^THE PLAN · C HENDRICKS · \w{3} \d\d:\d\d/i.test(paPlan) && !/office/i.test(paPlan) && paPlan.includes(PLAN_TEXT.slice(0, 40)), paPlan);
     await tid(pa.page, "plan-report").click({ timeout: 4000 }).catch(() => {});
     await pa.page.waitForTimeout(1500);
     ok("...she reports it in one tap, and is told where it went", /Reported to the school's safeguarding officer|Reported, but your school has no safeguarding officer/.test(await inner(pa.page, "plan-report-said")), await inner(pa.page, "plan-report-said"));
@@ -840,6 +865,7 @@ try {
     const otToken = await tokenFor(OTHER_EMAIL);
     const otNews = (await (await fetch(`${API}/api/read/news`, { headers: { authorization: `Bearer ${otToken}` } })).json()).rows ?? [];
     ok("...and the news read hands him no plan, nor any notice of one", !otNews.some((n) => n.kind === "plan") && !otNews.some((n) => /^The plan/.test(n.title)), JSON.stringify(otNews.map((n) => n.title)));
+    ok("...nor does it read for the fixture: no row, so no author's name", (await newsOf(otToken, DAY)).length === 0 && (await newsOf(otToken, FIELD)).length === 0);
     const otNotices = (await (await fetch(`${API}/api/read/notifications`, { headers: { authorization: `Bearer ${otToken}` } })).json()).rows ?? [];
     ok("...his notices carry none either", !otNotices.some((n) => n.subject_id === sent.id || n.subject_id === fieldPost.id));
     ok("no scoping refusals and no page errors", ot.refusals.length === 0 && ot.errors.length === 0, ot.refusals[0] ?? ot.errors.join(" | "));
@@ -891,6 +917,12 @@ try {
     const named = await q(`select count(*)::int as n from notification n where n.recipient_id is not null
                             and (n.subject_id = any($1::uuid[]) or n.retracts_id in (select id from notification where subject_id = any($1::uuid[])))`, [ids]);
     ok("no notification row of either plan, or of its withdrawal, carries a recipient_id", named[0].n === 0, named[0].n);
+
+    // ── The 101 newer posts go, with their notices ──
+    await q(`delete from notification where subject_kind = 'news' and subject_id = any($1::uuid[])`, [FILLER]);
+    await q(`delete from news_post where id = any($1::uuid[])`, [FILLER]);
+    ok("the walk's 101 newer posts are gone, and their notices", (await q(`select count(*)::int as n from news_post where id = any($1::uuid[])`, [FILLER]))[0].n === 0
+       && (await q(`select count(*)::int as n from notification where subject_id = any($1::uuid[])`, [FILLER]))[0].n === 0);
   }
   await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [keptAgain]);
   ok("the walk leaves no live captaincy of his behind", (await q(`select count(*)::int as n from honour where player_id = $1 and withdrawn_at is null`, [PILLAY]))[0].n === 0);

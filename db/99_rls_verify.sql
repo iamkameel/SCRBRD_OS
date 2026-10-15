@@ -5123,6 +5123,82 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/102 (section 79) ─────────────────────────────────────────────
 
+-- ┌── db/103 (section 80). The plan's byline: who wrote the side's plan
+-- Its own sides, so §76's plans and readers do not meet it: Hilton's 10XI
+-- (the plan's side) and 11XI (another side), and Westville's 10XI. On 10XI:
+-- a captain named on the sheet, a boy on the roster and not on it, the
+-- captain's guardian (verified and consented), the coach and the team
+-- manager. On 11XI: its coach, a boy and his guardian, and a second boy
+-- who plays up, named on 10XI's sheet for the fixture, with his own
+-- guardian (db/101's team sheet). At Westville: the 10XI coach and a boy. A follower (spectator) and the finance office, who
+-- hold news.read school-wide and read no side; and an account with no
+-- assignment at all. Two fixtures: 10XI at home to Westville's 10XI (the
+-- plan's, and Westville's plan's from the away end), and 11XI's. As the
+-- owner; every name is invented, and the staff read as "V103 Coach" and so on.
+CREATE OR REPLACE FUNCTION _v103_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  ids jsonb; v_cap uuid; v_res uuid; v_b uuid; v_up uuid; v_w uuid; v_s uuid; f1 uuid; f2 uuid; r record;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '10XI', 'Verify OneOhThree Captain', 1031, 'batter', U15) RETURNING id INTO v_cap;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '10XI', 'Verify OneOhThree Reserve', 1032, 'bowler', U15) RETURNING id INTO v_res;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '11XI', 'Verify OneOhThree Bside', 1033, 'batter', U15) RETURNING id INTO v_b;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '11XI', 'Verify OneOhThree Playsup', 1035, 'bowler', U15) RETURNING id INTO v_up;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, '10XI', 'Verify OneOhThree Westville', 1034, 'batter', U15) RETURNING id INTO v_w;
+  ids := _v71_people('v103', ARRAY[
+    ARRAY['coach',      'coach',          HIL::text, '10XI', ''],
+    ARRAY['manager',    'teammanager',    HIL::text, '10XI', ''],
+    ARRAY['captain',    'player',         HIL::text, '10XI', v_cap::text],
+    ARRAY['reserve',    'player',         HIL::text, '10XI', v_res::text],
+    ARRAY['guardian',   'guardian',       HIL::text, '',     ''],
+    ARRAY['bcoach',     'coach',          HIL::text, '11XI', ''],
+    ARRAY['bboy',       'player',         HIL::text, '11XI', v_b::text],
+    ARRAY['bparent',    'guardian',       HIL::text, '',     ''],
+    ARRAY['upboy',      'player',         HIL::text, '11XI', v_up::text],
+    ARRAY['upparent',   'guardian',       HIL::text, '',     ''],
+    ARRAY['wescoach',   'coach',          WES::text, '10XI', ''],
+    ARRAY['wesboy',     'player',         WES::text, '10XI', v_w::text],
+    ARRAY['follower',   'spectator',      HIL::text, '',     ''],
+    ARRAY['finance',    'finance',        HIL::text, '',     '']]);
+  -- Somebody signed in who holds nothing anywhere.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (HIL, 'v103.stranger@example.invalid', 'V103 Stranger', 'spectator') RETURNING id INTO v_s;
+  FOR r IN SELECT a.id AS aid, x.p FROM role_assignment a,
+                  LATERAL (VALUES ((ids->>'guardian')::uuid, v_cap), ((ids->>'bparent')::uuid, v_b),
+                                  ((ids->>'upparent')::uuid, v_up)) AS x(person, p)
+            WHERE a.person_id = x.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '10XI', WES, '10XI', 'Westville 10XI', ((sa_today() + 2)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f1;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '11XI', 'Verify OneOhThree Visitors', ((sa_today() + 2)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f2;
+  -- The sheet: the captain, and the 11XI boy playing up; the reserve is on the roster only.
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES (f1, v_cap, 'home', 1), (f1, v_up, 'home', 2);
+  RETURN ids || jsonb_build_object('stranger', v_s, 'f1', f1, 'f2', f2, 'p_up', v_up);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Withdraw a boy from a fixture's sheet, as the API does (withdrawn = true,
+-- the row kept), as the owner: the coach's own write is the API's, proved by
+-- its walks, and this section is about what the byline does once he is off.
+CREATE OR REPLACE FUNCTION _v103_off_sheet(p_match uuid, p_player uuid) RETURNS integer AS $$
+  WITH d AS (UPDATE match_squad SET withdrawn = true WHERE match_id = p_match AND player_id = p_player AND NOT withdrawn RETURNING 1)
+  SELECT count(*)::int FROM d
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/103 (section 80) ─────────────────────────────────────────────
+
 -- ┌── db/104 (section 81). Corrections to a coach's judgement, and the coaching point
 -- One invented Hilton side (20XI) with the boy the judgements are about
 -- (Subject) and a team-mate (Mate, who holds the captaincy honour and his own
@@ -21036,6 +21112,217 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 79
+  -- ┌── db/103 (section 80) ──────────────────────────────────────────
+  -- ── 80. The plan's byline: who wrote the side's plan (db/103) ──
+  -- SCRBRD-138 phase B's "Plan from …" and CSA SG-9: a pupil knows which
+  -- adult wrote to his side. plan_author_name(post) gives the author's name
+  -- of a live plan to a reader of that plan, and nothing to anybody else.
+  -- Every write below is a person's, through scrbrd_app under RLS;
+  -- _v103_stage() stages as the owner.
+  --
+  -- What each label holds:
+  --   (readers)  the 10XI coach sends a plan for 10XI's fixture; its author's
+  --              name reads to the captain (on the sheet), a boy on the
+  --              roster and not on it, the captain's guardian, the team
+  --              manager and the coach himself; and the pupil and the parent
+  --              still read no row of the coach's account (nothing else
+  --              about him is opened)
+  --   (side)     11XI's plan, and Westville's plan for the same fixture from
+  --              the away end, name nobody to a 10XI reader; their own sides
+  --              read their own authors
+  --   (sheet)    a 11XI boy named on the fixture's sheet (playing up), and
+  --              his guardian, read the author's name of the 10XI plan
+  --              (db/101's news_post_read_sheet); Westville's plan they do
+  --              not; once he is withdrawn from the sheet, neither reads it
+  --   (others)   a 11XI boy and his guardian, Westville's coach and boy, a
+  --              follower, the finance office, a signed-in account holding
+  --              nothing, and an anonymous session get no name for the plan
+  --   (draft)    the coach's draft plan for the fixture names nobody, to the
+  --              side or to its author: the byline is a live plan's
+  --   (post)     an ordinary 10XI post, which the captain and the guardian
+  --              do read, names nobody through this function (ordinary posts
+  --              are as before)
+  --   (nothing)  a post that is not there, and no post at all, answer null
+  --   (agree)    for every reader above and every post staged here, the name
+  --              comes back exactly when the reader reads the row as a live
+  --              plan under news_post's own policies, before the withdrawal
+  --              and after it
+  --   (withdrawn) once the coach withdraws the plan, nobody gets its author
+  --   (doors)    a stable SECURITY DEFINER with a pinned path, returning one
+  --              text; the application's to call and not PUBLIC's, nor a
+  --              managed host's API roles'
+  --
+  -- Falsified once each, by replacing the function in the database and
+  -- running this file; each went red at its label:
+  --   (side)     asking app_can('news.read') at the side where it asks
+  --              news_plan_reach() (red at the captain's guardian, on the
+  --              11XI plan: a guardian's school-wide assignment, db/96 §4)
+  --   (post)     without "n.kind = 'plan'" (red at the captain, on the
+  --              ordinary post)
+  --   (draft)    without "n.published_at IS NOT NULL AND …" (red at the
+  --              captain, on the draft)
+  --   (sheet)    without "OR news_sheet_reach(...)" (red at the boy playing
+  --              up, on the sheet)
+  DECLARE
+    y        jsonb := _v103_stage();
+    V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
+    V_WES    uuid := '22222222-2222-2222-2222-222222222222';
+    F1       uuid := (y->>'f1')::uuid;
+    F2       uuid := (y->>'f2')::uuid;
+    EVERYONE text[] := ARRAY['coach', 'manager', 'captain', 'reserve', 'guardian', 'bcoach', 'bboy', 'bparent',
+                             'upboy', 'upparent', 'wescoach', 'wesboy', 'follower', 'finance', 'stranger'];
+    P uuid; D uuid; O uuid; B uuid; W uuid;
+    k  text;
+    x  uuid;
+    got text;
+  BEGIN
+    -- The posts: the 10XI plan, a 10XI draft plan for the same fixture and
+    -- an ordinary 10XI post, all the coach's; 11XI's plan; Westville's.
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_HIL, '10XI', 'The plan: v Westville 10XI', 'Bat first if we win it.', now(), 'plan', F1)
+    RETURNING id INTO P;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_HIL, '10XI', 'The plan: v Westville 10XI', 'Bowl first instead.', NULL, 'plan', F1)
+    RETURNING id INTO D;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, '10XI', 'Verify 103 nets', 'Nets at three on Thursday.', now())
+    RETURNING id INTO O;
+    PERFORM _as((y->>'bcoach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_HIL, '11XI', 'The plan: v Visitors', 'Bowl first if we win it.', now(), 'plan', F2)
+    RETURNING id INTO B;
+    PERFORM _as((y->>'wescoach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_WES, '10XI', 'The plan: at Hilton 10XI', 'Bat first if we win it.', now(), 'plan', F1)
+    RETURNING id INTO W;
+    PERFORM _assert(P IS NOT NULL AND D IS NOT NULL AND O IS NOT NULL AND B IS NOT NULL AND W IS NOT NULL,
+      '§80: a post was not staged');
+
+    -- (readers)
+    FOREACH k IN ARRAY ARRAY['captain', 'reserve', 'guardian', 'manager', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := plan_author_name(P);
+      PERFORM _assert(got = 'V103 Coach', format('§80 (readers): the %s reads the plan''s author as %s', k, coalesce(got, 'null')));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['captain', 'guardian'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM app_user u WHERE u.id = (y->>'coach')::uuid) = 0,
+        format('§80 (readers): the %s reads the coach''s account', k));
+    END LOOP;
+
+    -- (side)
+    FOREACH k IN ARRAY ARRAY['captain', 'reserve', 'guardian'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(plan_author_name(B) IS NULL AND plan_author_name(W) IS NULL,
+        format('§80 (side): the %s reads the author of another side''s plan (%s, %s)', k, plan_author_name(B), plan_author_name(W)));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['bboy', 'bparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(plan_author_name(B) = 'V103 Bcoach', format('§80 (side): the %s does not read his own side''s plan''s author', k));
+    END LOOP;
+    PERFORM _as((y->>'wesboy')::uuid);
+    PERFORM _assert(plan_author_name(W) = 'V103 Wescoach', '§80 (side): the Westville boy does not read his side''s plan''s author');
+
+    -- (sheet)
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P) = 1,
+        format('§80 (sheet): the %s does not read the 10XI plan through the sheet, so this proves nothing', k));
+      got := plan_author_name(P);
+      PERFORM _assert(got = 'V103 Coach', format('§80 (sheet): the %s, on the sheet, reads the plan''s author as %s', k, coalesce(got, 'null')));
+      PERFORM _assert(plan_author_name(W) IS NULL AND plan_author_name(D) IS NULL,
+        format('§80 (sheet): the %s reads the author of Westville''s plan or of the draft', k));
+    END LOOP;
+
+    -- (others)
+    FOREACH k IN ARRAY ARRAY['bboy', 'bparent', 'bcoach', 'wescoach', 'wesboy', 'follower', 'finance', 'stranger'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := plan_author_name(P);
+      PERFORM _assert(got IS NULL, format('§80 (others): the %s reads the 10XI plan''s author as %s', k, got));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(plan_author_name(P) IS NULL AND plan_author_name(B) IS NULL AND plan_author_name(W) IS NULL,
+      '§80 (others): an anonymous session reads a plan''s author');
+
+    -- (draft)
+    FOREACH k IN ARRAY ARRAY['captain', 'reserve', 'guardian', 'manager', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := plan_author_name(D);
+      PERFORM _assert(got IS NULL, format('§80 (draft): the %s reads the draft plan''s author as %s', k, got));
+    END LOOP;
+
+    -- (post)
+    FOREACH k IN ARRAY ARRAY['captain', 'guardian', 'manager', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = O) = 1,
+        format('§80 (post): the %s does not read the ordinary 10XI post, so this proves nothing', k));
+      got := plan_author_name(O);
+      PERFORM _assert(got IS NULL, format('§80 (post): the %s reads an ordinary post''s author through the plan''s byline as %s', k, got));
+    END LOOP;
+
+    -- (nothing)
+    PERFORM _as((y->>'captain')::uuid);
+    PERFORM _assert(plan_author_name(gen_random_uuid()) IS NULL AND plan_author_name(NULL) IS NULL,
+      '§80 (nothing): a post that is not there has an author');
+
+    -- (agree)
+    FOREACH k IN ARRAY EVERYONE LOOP
+      PERFORM _as((y->>k)::uuid);
+      FOREACH x IN ARRAY ARRAY[P, D, O, B, W] LOOP
+        PERFORM _assert((plan_author_name(x) IS NOT NULL)
+                        = EXISTS (SELECT 1 FROM news_post n WHERE n.id = x AND n.kind = 'plan' AND n.published_at IS NOT NULL),
+          format('§80 (agree): for the %s, the byline of %s (%s) and the read of it as a live plan disagree',
+                 k, CASE x WHEN P THEN 'the 10XI plan' WHEN D THEN 'the draft' WHEN O THEN 'the post'
+                           WHEN B THEN 'the 11XI plan' ELSE 'Westville''s plan' END, coalesce(plan_author_name(x), 'null')));
+      END LOOP;
+    END LOOP;
+
+    -- (sheet), off it: withdrawn from the sheet, the boy and his guardian
+    -- read neither the plan nor its author.
+    PERFORM _assert(_v103_off_sheet(F1, (y->>'p_up')::uuid) = 1, '§80 (sheet): the boy was not withdrawn from the sheet');
+    FOREACH k IN ARRAY ARRAY['upboy', 'upparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := plan_author_name(P);
+      PERFORM _assert(got IS NULL AND (SELECT count(*) FROM news_post n WHERE n.id = P) = 0,
+        format('§80 (sheet): off the sheet, the %s reads the plan''s author as %s', k, coalesce(got, 'null')));
+      FOREACH x IN ARRAY ARRAY[P, D, O, B, W] LOOP
+        PERFORM _assert((plan_author_name(x) IS NOT NULL)
+                        = EXISTS (SELECT 1 FROM news_post n WHERE n.id = x AND n.kind = 'plan' AND n.published_at IS NOT NULL),
+          format('§80 (agree): off the sheet, for the %s, the byline of a post and the read of it disagree', k));
+      END LOOP;
+    END LOOP;
+
+    -- (withdrawn)
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(_withdraw_91(P) = 'ok', '§80 (withdrawn): the author could not withdraw the plan');
+    FOREACH k IN ARRAY EVERYONE LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := plan_author_name(P);
+      PERFORM _assert(got IS NULL, format('§80 (withdrawn): the %s reads the withdrawn plan''s author as %s', k, got));
+      FOREACH x IN ARRAY ARRAY[P, D, O, B, W] LOOP
+        PERFORM _assert((plan_author_name(x) IS NOT NULL)
+                        = EXISTS (SELECT 1 FROM news_post n WHERE n.id = x AND n.kind = 'plan' AND n.published_at IS NOT NULL),
+          format('§80 (agree): after the withdrawal, for the %s, the byline of a post and the read of it disagree', k));
+      END LOOP;
+    END LOOP;
+
+    -- (doors)
+    PERFORM _assert((SELECT prosecdef AND provolatile = 's' AND NOT proretset AND prorettype = 'text'::regtype
+                            AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                       FROM pg_proc WHERE oid = to_regprocedure('plan_author_name(uuid)')),
+      '§80 (doors): plan_author_name is not a stable SECURITY DEFINER returning one text with a pinned path');
+    PERFORM _assert(has_function_privilege('scrbrd_app', to_regprocedure('plan_author_name(uuid)'), 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                     WHERE p.oid = to_regprocedure('plan_author_name(uuid)') AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+      '§80 (doors): plan_author_name is not the application''s alone');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                                   AND has_function_privilege(g.oid, to_regprocedure('plan_author_name(uuid)'), 'EXECUTE')),
+      '§80 (doors): a managed host''s API role can call plan_author_name');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 80
+  -- └── db/103 (section 80) ──────────────────────────────────────────
   -- ┌── section 81: corrections to a coach's judgement, and the coaching point (db/104) ──
   -- GA-I26a slice A1 (AH-D2, AH-D3, AH-D5). The API half is
   -- tools/smoke-assessment-history.mjs (the routes, the reads' access-log rows,
@@ -21058,7 +21345,8 @@ $v49$;
   --                refused to the assistant, the director, the principal, the
   --                boy, Westville's coach; for a batterId not his, a skill row
   --                not his, a team-mate or a visitor named from the sheet, a
-  --                never-word, an over-long body; evidence_text on S11 by the
+  --                never-word, an over-long body, an as-of or a head that
+  --                does not parse, a pointer over 4 KB; evidence_text on S11 by the
   --                CHECK; a pointer inserted directly by policy
   --   (readers)    the point read by the coach, the assistant, the director,
   --                the principal; by nobody else: the boy (either account), his
@@ -21220,7 +21508,10 @@ $v49$;
         'pct|{"read":"skills","params":{"skillId":"' || K1 || '"}}|bowled at 70 % of his pace|forbidden_word',
         'long|{"read":"skills","params":{"skillId":"' || K1 || '"}}|' || repeat('x', 501) || '|body_length',
         'noread|{"params":{"skillId":"' || K1 || '"}}|front foot is late|evidence_required',
-        'noasof|{"read":"matchups"}|front foot is late|evidence_as_of_required'] LOOP
+        'noasof|{"read":"matchups"}|front foot is late|evidence_as_of_required',
+        'badasof|{"read":"matchups","asOf":"the day after the nets"}|front foot is late|evidence_malformed',
+        'badhead|{"read":"matchups","asOf":"2026-10-01T10:00:00Z","head":"twelve"}|front foot is late|evidence_malformed',
+        'big|{"read":"matchups","asOf":"2026-10-01T10:00:00Z","params":{"pad":"' || repeat('x', 5000) || '"}}|front foot is late|evidence_too_large'] LOOP
       SELECT c.ok, c.reason INTO v_ok, v_why
         FROM coaching_point_write(SUBJ, F1, split_part(k, '|', 3), split_part(k, '|', 2)::jsonb) c;
       PERFORM _assert(NOT v_ok AND v_why = split_part(k, '|', 4),

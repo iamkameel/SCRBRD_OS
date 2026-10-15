@@ -161,6 +161,10 @@ try {
     ok("a team-mate named in full is refused", named.status === 422 && named.body?.error === "names_another_boy");
     const tier = await point(coach, "late on the pull", { read: "matchups", rule: "S11", asOf: new Date().toISOString(), text: ["line"] });
     ok("a card's lines on an S11 point are refused by the CHECK", tier.status === 422);
+    const bad = await point(coach, "late on the pull", { read: "matchups", asOf: "the day after the nets" });
+    ok("an as-of that does not parse is a reason, not a 500", bad.status === 400 && bad.body?.error === "evidence_malformed");
+    const big = await point(coach, "late on the pull", { read: "matchups", asOf: new Date().toISOString(), params: { pad: "x".repeat(5000) } });
+    ok("a pointer over 4 KB is refused", big.status === 413 && big.body?.error === "evidence_too_large");
     await q(`delete from access_log`);
     ok("the coach reads it", (await read("coaching_points", coach, `?playerId=${P_SELF}`)).some((p) => p.id === pointId));
     const [log] = await q(`select record_count, fields from access_log where resource = 'coaching_points'`);

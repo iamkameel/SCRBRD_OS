@@ -287,6 +287,8 @@ export function developmentCorrectionRoutes({ pool, secret }) {
     evidence_names_another_boy: 422,
     evidence_not_his: 422,
     evidence_as_of_required: 400,
+    evidence_malformed: 400,
+    evidence_too_large: 413,
     // target_set() (db/105)
     unknown_metric: 400,
     already_there: 422,
