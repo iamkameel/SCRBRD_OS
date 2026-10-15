@@ -959,7 +959,7 @@ button{touch-action:manipulation}
 .os-bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:400;display:none;gap:2px;
   background:${T.glass.film};backdrop-filter:${T.glass.blur};-webkit-backdrop-filter:${T.glass.blur};
   border-top:1px solid ${T.glass.edge};padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
-.os-drawer:focus{outline:none}
+.os-drawer:focus:not(:focus-visible){outline:none}
 .os-drawer-scrim{position:fixed;inset:0;z-index:490;background:${T.glass.scrim}}
 .os-drawer{position:fixed;left:0;right:0;bottom:0;z-index:500;background:${T.surface.overlay};
   border-top:1px solid ${T.line.normal};border-radius:20px 20px 0 0;max-height:78vh;overflow-y:auto;

@@ -146,6 +146,15 @@ async function open({ viewport = DESK, scheme = "light", reduced = false } = {})
   await offline(ctx);
   const page = await ctx.newPage();
   const errors = [], refusals = [];
+  // Every script the page loads, in the order it arrived, with its body read at once. The trail's chunk is found by what is
+  // IN it (its figures' test id, the marker tools/check-bundle.mjs holds out of the entry graph), not by its file's name,
+  // and not from performance.getEntriesByType("resource"): that buffer holds 250 entries and the page's own reads fill it,
+  // so a script asked for late can be missing from it on a slow runner (the red on #168).
+  /** @type {{url: string, text: Promise<string>}[]} */
+  const scripts = [];
+  // @ts-ignore a Playwright page takes a property
+  page.__scripts = scripts;
+  page.on("response", (r) => { if (r.request().resourceType() === "script") scripts.push({ url: r.url(), text: r.text().catch(() => "") }); });
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
     const t = m.text();
@@ -210,6 +219,9 @@ async function openTrails(page) {
     buttons: els.length, collapsedFirst: els.every((e) => e.getAttribute("aria-expanded") === "false"),
     minH: Math.min(...els.map((e) => e.getBoundingClientRect().height)) }));
   const btns = page.locator('[data-testid="signals"] article [data-testid^="signal-trail-"]');
+  // How many scripts had arrived when the first trail was asked for: the trail's own must come after.
+  // @ts-ignore
+  page.__askedAfter ??= page.__scripts?.length ?? 0;
   for (let i = 0; i < before.buttons; i++) await btns.nth(i).click({ timeout: 4000 });
   await page.waitForFunction((n) => document.querySelectorAll('[data-testid="evidence-trail"]').length >= n, before.buttons, { timeout: 8000 }).catch(() => {});
   const expanded = await page.$$eval('[data-testid="signals"] article [data-testid^="signal-trail-"]', (els) => els.filter((e) => e.getAttribute("aria-expanded") === "true"
@@ -583,7 +595,19 @@ try {
   ok(`trails open, phone: nothing under 12px (${f2b.small.length}), nothing tapped under 44px (${f2b.tiny.length}), every link 44px (${links.join()})`,
      f2b.small.length === 0 && f2b.tiny.length === 0 && links.length > 0 && links.every((h) => h >= 44), [...f2b.small, ...f2b.tiny].slice(0, 4).join(" · "));
   ok("the figures are in the figure face, tabular", await c.page.$$eval('[data-testid="evidence-trail-figures"] dd', (els) => els.length > 0 && els.every((e) => /DM Mono/.test(getComputedStyle(e).fontFamily) && getComputedStyle(e).fontVariantNumeric.includes("tabular-nums"))));
-  ok("the trail chunk loaded on asking: a separate script, not the Match Centre's", await c.page.evaluate(() => performance.getEntriesByType("resource").some((r) => /\/assets\/EvidenceTrail-[^/]+\.js$/.test(r.name))));
+  // The real event: wait for the script that holds the trail's figures to have been answered, then look at what came before.
+  const MARKER = "evidence-trail-figures";
+  // @ts-ignore
+  const loadedScripts = /** @type {{url: string, text: Promise<string>}[]} */ (c.page.__scripts);
+  // @ts-ignore
+  const askedAfter = /** @type {number} */ (c.page.__askedAfter ?? 0);
+  const holds = async () => (await Promise.all(loadedScripts.map(async (s, i) => ({ i, url: s.url, has: (await s.text).includes(MARKER) })))).filter((s) => s.has);
+  for (let i = 0; i < 40 && !(await holds()).length; i++) await c.page.waitForTimeout(250);
+  const holders = await holds();
+  ok(`the trail chunk loaded on asking: one script holds the trail, a separate one, and it arrived after the first ask (${holders.map((h) => `${h.i}/${askedAfter}`).join()})`,
+     holders.length === 1 && holders[0].i >= askedAfter && askedAfter > 0, holders.map((h) => h.url).join(" "));
+  ok("...and none of the scripts the Match Centre loaded before it holds the trail", loadedScripts.slice(0, askedAfter).length > 0
+     && (await Promise.all(loadedScripts.slice(0, askedAfter).map(async (s) => (await s.text).includes(MARKER)))).every((h) => !h));
   // Tab stays inside the drawer with the links in it, and Escape still closes it.
   for (let i = 0; i < 80; i++) await c.page.keyboard.press("Tab");
   ok("with every trail open, Tab stays inside the drawer", await c.page.evaluate(() => !!document.activeElement?.closest('[data-testid="signals"]')));
