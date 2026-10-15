@@ -27,7 +27,6 @@ import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
 import { combineReads } from "./readState.js";
 import { asNotification } from "./notifications.js";
-import { asChildLink } from "./familyLinks.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
@@ -1182,8 +1181,10 @@ const ADAPT = {
   users: asUser,
   // Every account, disabled ones included: People's read (account lifecycle D5).
   accounts: asUser,
-  // A child's guardian links, every state, for the office (db/109, D12).
-  child_links: asChildLink,
+  // A child's guardian links, every state, for the office (db/109, D12). The
+  // rows as the server sends them: views/familylinks.jsx maps them with
+  // lib/familyLinks.js asChildLink(), which stays out of the entry chunk.
+  child_links: (r) => r,
   grounds: asGround,
   training: asTraining,
   training_attendance: asAttendance,

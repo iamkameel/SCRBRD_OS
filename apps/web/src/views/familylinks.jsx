@@ -24,7 +24,7 @@ import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { holdsCapability } from "../rbac/index.js";
 import {
-  REASON_MAX, REVOKE_KINDS, consequenceWords, isLastVerified, linkStateWords, mayOfferRevoke,
+  REASON_MAX, REVOKE_KINDS, asChildLink, consequenceWords, isLastVerified, linkStateWords, mayOfferRevoke,
   reasonOk, revokeWords, standingLine,
 } from "../lib/familyLinks.js";
 import { DBtn, dField, dHead, dNote } from "./publicname.jsx";
@@ -41,7 +41,7 @@ export function FamilyLinks({ role, player }) {
   const [open, setOpen] = useState(/** @type {string | null} */ (null));
   const [done, setDone] = useState("");
   const mayRevoke = holdsCapability(role, "guardian.link.manage");
-  const links = read.rows ?? [];
+  const links = (read.rows ?? []).map(asChildLink);
 
   return (
     <div data-testid="family-links">

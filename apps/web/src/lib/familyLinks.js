@@ -43,7 +43,8 @@ export function reasonOk(text) {
 }
 
 /**
- * The adapter for the `child_links` read (lib/live.js ADAPT).
+ * One row of the `child_links` read, as the panel draws it. lib/live.js passes
+ * the rows through as sent, so this stays out of the entry chunk.
  * @param {any} r  one row as the read returns it
  */
 export function asChildLink(r) {
