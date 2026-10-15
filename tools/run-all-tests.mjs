@@ -362,6 +362,9 @@ const SUITES = [
   ["revision", "services/api/revision.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
+  // The Claude Code usage report and status line: each reply counted once, in
+  // its tier and its Johannesburg day; an unfinished reply's output estimated.
+  ["claude-usage", "tools/claude/usage.test.mjs"],
   // The typecheck strict list only grows, and names nothing that is not there.
   ["ts-scope", "tools/typecheck-scope.test.mjs"],
   // The browser walks' shards: every walk in exactly one, for n = 1 to 6, and
