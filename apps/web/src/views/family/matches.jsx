@@ -23,6 +23,7 @@ import { Icon } from "../../ui/icons.jsx";
 import { AvailabilityBlock, Back, BusCard, Card, Line, OpenRow, StateChip, TeamSheetLine, Title, WeatherLine, whenOf } from "./parts.jsx";
 import { useFold } from "./useFold.js";
 import { CaptainSection, useCaptaincy } from "./captain.jsx";
+import { FixturePlan } from "./plan.jsx";
 // SCRBRD-124 (db/70): lifts to this fixture, where a family or a pupil asks for a seat.
 import { FixtureLifts } from "../lifts.jsx";
 
@@ -156,6 +157,8 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
         <TeamSheetLine match={match} child={child} role={role} self={self}/>
         {self && !cap && <SideSheet match={match} role={role}/>}
       </Card>
+      {/* SCRBRD-138 phase B: the coach's plan to the side, for every boy and parent it reaches, above the captain's section. */}
+      <FixturePlan match={match} child={child} role={role}/>
       {self && cap && <CaptainSection match={match} child={child} role={role} label={cap.label}/>}
     </>
   );

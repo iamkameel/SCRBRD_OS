@@ -4,11 +4,12 @@ import { api, signedIn } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
 import { boardInnings, teamOf } from "../../lib/matchCentre.js";
 import { endOf } from "../../lib/family.js";
-import { bowlerRows, inningsOf, matchupTypes, matchupWords, nextIn, notYetBowled, overStory, sheetOf } from "../../lib/captain.js";
+import { bowlerRows, inningsOf, matchupTypes, matchupWords, nextIn, notYetBowled, overStory, planOf, sheetOf } from "../../lib/captain.js";
 import { Board } from "../../ui/board.jsx";
 import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { bowlerCapWords } from "../../scorer/conditionsLine.jsx";
 import { ShotWheel } from "../../scorer/charts.jsx";
+import { ReportPlan } from "../family/plan.jsx";
 import { Panel, Quiet } from "./bits.jsx";
 
 /**
@@ -28,10 +29,14 @@ import { Panel, Quiet } from "./bits.jsx";
  * a reason, never a boy's own limit (D4) — and no line at all where the
  * document has no cap. It is drawn while the innings is in play.
  *
+ * THE ONE ROW THAT OPENS is the coach's plan (phase B, PlanRow below), after the
+ * Board: it opens the plan's own words, which the whole side may already read on
+ * the fixture, and never a child.
+ *
  * WHAT IT NEVER DRAWS (§4): availability in any form (D7), anybody's health,
  * load, assessment or note, the opposition's dossier (D9), a win chance or a
- * threat level. No row on it opens: nothing here is a button, so no child of
- * another school is reached from it (D8). Matchups are his own batters against
+ * threat level. No row on it opens a person: nothing here is a button but the
+ * plan's row, so no child of another school is reached from it (D8). Matchups are his own batters against
  * bowling TYPES; the read names only bowlers the reader may read, and a type
  * with nothing to say is not drawn.
  */
@@ -77,6 +82,39 @@ function useMatchups(ids) {
   return by;
 }
 
+/**
+ * THE PLAN's row (phase B, docs/design/SCRBRD-138_phaseB.md §5.4): the coach's
+ * plan for this fixture and his side, one row of 44px that opens to the whole
+ * body as a cut (no slide), closed by default so the Board stays first, with
+ * `aria-expanded`. Drawn only while a live plan exists. It is the same plan
+ * the fixture screen's block draws; the row opens words, never a child.
+ */
+function PlanRow({ match, role, me }) {
+  const { rows } = useLive("news", role);
+  const plan = planOf(rows, match.id, { school: me.school ?? null, team: me.team ?? null });
+  const [open, setOpen] = useState(false);
+  if (!plan) return null;
+  return (
+    <Panel testid="mc-captain-plan">
+      <h2 style={{ margin: 0 }}>
+        <button type="button" aria-expanded={open} aria-controls="mc-captain-plan-body" data-testid="mc-captain-plan-row" className="os-state"
+          onClick={() => setOpen((o) => !o)}
+          style={{ width: "100%", minHeight: "48px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: T.space.md,
+            padding: `${T.space.sm} ${T.space.lg}`, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", color: T.content.primary }}>
+          <span style={{ ...T.role.label, color: T.content.secondary }}>{["The plan", plan.author].filter(Boolean).join(" · ")}</span>
+          <span style={{ ...T.role.body, fontSize: "14px", fontWeight: 600 }}>{open ? "Close" : "Open"}</span>
+        </button>
+      </h2>
+      {open && (
+        <div id="mc-captain-plan-body" data-testid="mc-captain-plan-body" style={{ padding: `0 ${T.space.lg} ${T.space.md}`, display: "grid", gap: T.space.sm }}>
+          <p style={{ ...body(), whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{plan.body}</p>
+          {!plan.mine && <ReportPlan noticeId={plan.noticeId} testid="mc-captain-plan-report"/>}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 export function CaptainTab({ match, role, innings, result, commentary, overs, phone, captain, terms, shownRuns }) {
   const me = captain.me;
   const { rows: squad } = useLive("match_squad", role, 0, { matchId: match.id });
@@ -94,6 +132,7 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
     return (
       <section data-testid="mc-captain" aria-label={`${captain.label}'s view`} style={{ display: "grid", gap: T.space.lg }}>
         <Quiet testid="mc-captain-empty">Nothing has been scored yet. This tab fills as the match is played.</Quiet>
+        <PlanRow match={match} role={role} me={me}/>
       </section>
     );
   }
@@ -117,6 +156,8 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
       </p>
 
       {props && <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-captain-board"/>}
+
+      <PlanRow match={match} role={role} me={me}/>
 
       {coming.length > 0 && (
         <Part label="Next in" testid="mc-captain-next-in">

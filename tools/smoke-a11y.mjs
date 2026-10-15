@@ -128,6 +128,10 @@ const TYPE_FLOOR_CEILING = {
   captainfield:   0,
   captainbat:     0,
   captainafter:   0,
+  // SCRBRD-138 phase B (2026-10-14): the coach's plan, on a phone. THE PLAN block on a pupil's fixture, the Captain tab's row
+  // opened, the coach's composer empty and refused (the refusal read out), and his own block with Withdraw asked. New
+  // screens, so born at 0: nothing of the shell is priced in, because each is measured inside its own region.
+  planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
   // SCRBRD-133 G1: the ground display at its three sizes — 1920×1080,
   // 1024×768, 390×844 — over every panel the rotation shows. Every size is
   // max(12px, vmin), so 0 from the first measurement, and kept there.
@@ -208,6 +212,7 @@ const TAP_FLOOR_CEILING = {
   captainfield:   1,
   captainbat:     1,
   captainafter:   1,
+  planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
   // SCRBRD-136/137: the cockpit's card, tab and drawer: every control 44px or more.
   cockpithome:   0,
   cockpitday:    0,
@@ -272,6 +277,7 @@ const CONTRAST_CEILING = {
   // (board.dim lifted) on the daylight one.
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
+              planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0, pickside: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
@@ -282,6 +288,7 @@ const CONTRAST_CEILING = {
               scorerhome: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
+              planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0, pickside: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
@@ -324,6 +331,7 @@ const EMOJI_CEILING = {
   captainfield:   0,
   captainbat:     0,
   captainafter:   0,
+  planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
   // SCRBRD-136/137: the coach's cockpit.
   cockpithome:   0,
   cockpitday:    0,
@@ -642,8 +650,8 @@ async function captainWalk(theme) {
   const tid = (id) => page.locator(`[data-testid="${id}"]`);
   const tap = async (id, ms = 800) => { await tid(id).click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(ms); };
   /** Measure a screen, and have every control on it named. */
-  const check = async (screen) => {
-    await measure(page, theme, screen);
+  const check = async (screen, region = null) => {
+    await measure(page, theme, screen, region);
     const unnamed = await unnamedControlsOf(page);
     ok(`${T_} ${screen}: every control has a name`, unnamed.length === 0, unnamed.slice(0, 4).join(", "));
   };
@@ -659,11 +667,20 @@ async function captainWalk(theme) {
     await page.waitForTimeout(2200);
     ok("the pupil signs in, to his own app", await tid("persona-bar").count() === 1);
     ok("Home carries the Captain card", await tid("captain-card").count() === 1);
+    ok("...with the plan's line, which says nothing of who where the reader may not read the name", /^Plan for the side · \w{3}$/.test((await tid("captain-card-plan").innerText({ timeout: 2000 }).catch(() => "")).trim()));
     await check("captainhome");
 
     await tap("mnav-mymatches", 1500);
     await tap(`fixture-row-${MATCH.day}`, 1800);
     ok("the fixture carries the Captain section", await tid("captain-section").count() === 1);
+    // THE PLAN (SCRBRD-138 phase B): one block, a heading a screen reader can walk to, the whole body, a Report with a name,
+    // above the Captain section, and no control that writes anything.
+    const onPage = await page.$$eval('[data-testid]', (els) => els.map((e) => e.getAttribute("data-testid")));
+    ok("...and THE PLAN above it: a headed region with the whole body", onPage.indexOf("plan-block") > -1 && onPage.indexOf("plan-block") < onPage.indexOf("captain-section")
+       && await tid("plan-block").locator("h2").count() === 1 && /bus leaves/i.test(await tid("plan-body").innerText({ timeout: 2000 }).catch(() => "")));
+    ok("...named for what it is, with one Report button and nothing to type into", (await tid("plan-block").getAttribute("aria-label")) === "The plan · Thu 20:10"
+       && await tid("plan-report").getAttribute("aria-label") === "Report this plan" && await tid("plan-block").locator("textarea, input, select").count() === 0);
+    await check("planblock", '[data-testid="plan-block"]');
     await check("captainfixture");
     await tap("family-back", 600);
 
@@ -677,6 +694,14 @@ async function captainWalk(theme) {
         ok("...with the next in, from the sheet", /Pillay/.test(await tid("mc-captain-next-in").innerText({ timeout: 2000 }).catch(() => "")));
       }
       await check(screen);
+      // The plan's row: closed after the Board, an expanded state a screen reader announces, the words behind it when opened.
+      ok(`...and THE PLAN's row after the Board, closed (aria-expanded false, the words not in the page)`, await tid("mc-captain-plan-row").getAttribute("aria-expanded") === "false" && await tid("mc-captain-plan-body").count() === 0);
+      if (screen === "captainfield") {
+        await tap("mc-captain-plan-row", 500);
+        ok("...opened: aria-expanded true, controlling the body, the whole plan", await tid("mc-captain-plan-row").getAttribute("aria-expanded") === "true"
+           && await tid("mc-captain-plan-row").getAttribute("aria-controls") === "mc-captain-plan-body" && /Keep the field up/.test(await tid("mc-captain-plan-body").innerText({ timeout: 2000 }).catch(() => "")));
+        await check("planrow", '[data-testid="mc-captain-plan"]');
+      }
       await tap("mc-back", 700);
     }
     await tap(`played-row-${MATCH.played}`, 1800);
@@ -711,7 +736,7 @@ async function cockpitWalk(theme) {
   const handle = cockpitApi();
   await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
     const u = new URL(route.request().url());
-    const r = handle(route.request().method(), u.pathname, u.searchParams);
+    const r = handle(route.request().method(), u.pathname, u.searchParams, route.request().postData());
     return route.fulfill({ status: r.status, contentType: "application/json", body: JSON.stringify(r.body) });
   });
   const page = await ctx.newPage();
@@ -748,6 +773,42 @@ async function cockpitWalk(theme) {
     await page.waitForTimeout(500);
     ok("...with the day, the side and the week drawn", await tid("coach-day").count() === 1 && await tid("coach-side").count() === 1 && await tid("coach-week").count() === 1);
     await check("cockpitday", '[data-testid="mc-coach"]');
+
+    // THE PLAN (SCRBRD-138 phase B), by keyboard: the composer opens with the field focused, a refusal is read out
+    // (a polite live region the field is described by) with the refused word named, a clean plan goes and shows as his
+    // own block, Withdraw asks once and Keep it closes the question.
+    await tid("plan-write").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="plan-composer"]', { timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    ok("Enter on Write the plan opens the composer, and focus is in the field", await tid("plan-composer").count() === 1 && await page.evaluate(() => document.activeElement?.id) === "plan-body");
+    ok("...the field has a label, and the honesty line is read with it", await page.locator('label[for="plan-body"]').count() === 1
+       && /plan-honesty/.test(await page.locator("#plan-body").getAttribute("aria-describedby") ?? "") && /Read by every boy in the side and their parents/.test(await tid("plan-honesty").innerText()));
+    ok("...the title is made for him and is not a field", /^The plan: v Verify Cockpit XI/.test((await tid("plan-title").innerText()).trim()) && await page.locator('#plan-body ~ input, [data-testid="plan-title"] input').count() === 0);
+    await check("plancomposer", '[data-testid="plan-composer"]');
+    await page.keyboard.type("Naidoo is on four overs, physio says no more.");
+    await page.waitForFunction(() => /physio/.test(document.querySelector('[data-testid="plan-refusal-message"]')?.innerText ?? ""), null, { timeout: 4000 }).catch(() => {});
+    ok("a refusal is read out: a polite live region, the field described by it and marked invalid, the word named",
+       await tid("plan-refusal").getAttribute("aria-live") === "polite" && /plan-refusal/.test(await page.locator("#plan-body").getAttribute("aria-describedby") ?? "")
+       && await page.locator("#plan-body").getAttribute("aria-invalid") === "true" && /This can't go to the side with physio in it\./.test(await tid("plan-refusal").innerText())
+       && /Words to change: physio/.test(await tid("plan-refused-words").innerText()));
+    ok("...Send and Save are disabled while it stands, and nothing he typed is lost", await tid("plan-send").isDisabled() && await tid("plan-save").isDisabled()
+       && (await page.locator("#plan-body").inputValue()).includes("physio says no more"));
+    await check("planrefusal", '[data-testid="plan-composer"]');
+    await page.locator("#plan-body").fill("Bat first if we win the toss. Open with Whitfield and Naidoo.");
+    await page.waitForFunction(() => !(document.querySelector('[data-testid="plan-refusal"]')?.innerText ?? "").trim(), null, { timeout: 4000 }).catch(() => {});
+    ok("the refusal clears when the words change, and the field is no longer marked invalid", (await tid("plan-refusal").innerText()).trim() === ""
+       && await page.locator("#plan-body").getAttribute("aria-invalid") === null && !(await tid("plan-send").isDisabled()));
+    await tid("plan-send").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="plan-block"]', { timeout: 5000 }).catch(() => {});
+    ok("Send by keyboard: the plan is out, and the block is his own, with Withdraw and nothing to Edit", await tid("plan-block").count() === 1 && await tid("plan-withdraw").count() === 1
+       && await page.locator("button", { hasText: /^Edit$/ }).count() === 0 && await tid("plan-report").count() === 0);
+    await tap("plan-withdraw", 400);
+    ok("Withdraw asks once, in words, and says the side will be told", /The side will be told it was withdrawn/.test(await tid("plan-withdraw-ask").innerText().catch(() => "")));
+    await check("plancoach", '[data-testid="plan-block"]');
+    await tap("plan-withdraw-no", 300);
+    ok("Keep it closes the question and the plan stays out", await tid("plan-withdraw-ask").count() === 0 && await tid("plan-block").count() === 1);
 
     // Pick the side, by keyboard: the dialog opens with focus inside, Tab stays inside, Escape closes it and focus comes back.
     await tid("pick-side-open").focus();

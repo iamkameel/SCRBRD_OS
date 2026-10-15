@@ -99,6 +99,9 @@ export async function api(path, { method = "GET", body, timeoutMs = 10000, autho
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       const err = new ApiError(res.status, data?.error, path, data?.detail);
+      // The refusal's own body (a plan's refused words, a second plan's
+      // author), for the one screen that says it in words.
+      err.data = data;
       // A resume credential's stale proof is answered with the server's
       // clock, which the pad signs by from then on (padKey.js).
       if (typeof data?.serverTime === "number") err.serverTime = data.serverTime;

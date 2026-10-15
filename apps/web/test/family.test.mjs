@@ -23,7 +23,10 @@ import { AnalyticsTab } from "../src/views/matchcentre/tabs.jsx";
 import {
   captaincyOf, currentSchoolSeason, sheetOf, nextIn, inningsOf, bowlerRows, notYetBowled, bandOfTeam, bandLine, pitchWords,
   bowlingType, matchupTypes, matchupWords, termsOf, overStory, NEVER_ON_THE_TAB,
+  planOf, draftPlanOf, planLine, planLabel, planTitle, planRefusal,
 } from "../src/lib/captain.js";
+import { PlanBlock } from "../src/views/family/plan.jsx";
+import { CaptainCardView } from "../src/views/family/captain.jsx";
 import { bowlerCapWords } from "../src/scorer/conditionsLine.jsx";
 import { bowlingLimit } from "@scrbrd/scoring";
 
@@ -359,6 +362,60 @@ group("GA-I20 A1: each child's count on Family is his own; nothing sums them (D1
   const a = todoOf({ ...reads, child: ROHAN }), b = todoOf({ ...reads, child: ANIKA });
   ok("R Pillay '2 to do' (his answer and his missing number); D Mkhize '1 to do' (his answer)", countWords(a) === "2 to do" && countWords(b) === "1 to do", [countWords(a), countWords(b)]);
   ok("...and the words of each count are his own: no '3 to do' anywhere", ![countWords(a), countWords(b)].includes("3 to do"));
+}
+
+group("SCRBRD-138 phase B: the coach's plan is the live one for the fixture and the side, and nothing else");
+{
+  const row = (o = {}) => ({ id: "n1", kind: "plan", fixtureId: "m-sat", schoolId: HIL, teamCode: "1XI", title: "The plan: v Kearsney, Sat 3 Oct",
+    body: "Bat first if we win it.", authorName: "Mr Dlamini", publishedAt: "2026-10-01T18:10:00Z", mine: false, draft: false, noticeId: "nt1", ...o });
+  const side = { school: HIL, team: "1XI" };
+  const rows = [row(), row({ id: "n0", kind: "post", fixtureId: null, title: "Training moved" }), row({ id: "n2", fixtureId: "m-other", body: "Another fixture." })];
+  ok("the live plan for the fixture", planOf(rows, "m-sat", side)?.id === "n1" && planOf(rows, "m-sat")?.body === "Bat first if we win it.");
+  ok("...nothing for another fixture, and nothing for none", planOf(rows, "m-none", side) === null && planOf(rows, null, side) === null && planOf(rows, undefined) === null);
+  ok("...an ordinary post is never a plan, even with the fixture's id on it", planOf([row({ kind: "post" })], "m-sat", side) === null);
+  ok("...a withdrawn plan (his draft again: no publishedAt) is not live, and a draft is no plan", planOf([row({ publishedAt: null, draft: true, mine: true })], "m-sat", side) === null);
+  ok("...the other side's plan for the same fixture is not this side's", planOf([row({ teamCode: "2XI" })], "m-sat", side) === null
+     && planOf([row({ schoolId: WES })], "m-sat", side) === null && planOf([row({ teamCode: "2XI" })], "m-sat", { school: HIL, team: "2XI" })?.id === "n1");
+  ok("...of two sent, the newest", planOf([row({ id: "old", publishedAt: "2026-10-01T10:00:00Z" }), row({ id: "new", publishedAt: "2026-10-02T10:00:00Z" })], "m-sat")?.id === "new");
+  ok("no rows, no plan", planOf([], "m-sat", side) === null && planOf(null, "m-sat", side) === null);
+  const mine = draftPlanOf([row({ id: "d1", publishedAt: null, mine: true })], "m-sat", side);
+  ok("his own unsent plan is his draft; a live plan and somebody else's are not", mine?.id === "d1" && draftPlanOf([row()], "m-sat", side) === null
+     && draftPlanOf([row({ publishedAt: null, mine: false })], "m-sat", side) === null);
+  ok("the byline: the author and the day, SA time", planLine(planOf(rows, "m-sat")) === "Plan from Mr Dlamini · Thu" && planLabel(planOf(rows, "m-sat")) === "The plan · Mr Dlamini · Thu 20:10", planLabel(planOf(rows, "m-sat")));
+  const nameless = planOf([row({ authorName: null })], "m-sat");
+  ok("a reader who may not read the author's name is told nothing about who, and never 'the office'",
+     planLine(nameless) === "Plan for the side · Thu" && planLabel(nameless) === "The plan · Thu 20:10" && !/office/i.test(planLine(nameless) + planLabel(nameless)));
+  ok("...the title the screen makes is the fixture, never the coach's", planTitle("Kearsney", Date.parse("2026-10-03T07:00:00Z")) === "The plan: v Kearsney, Sat 3 Oct"
+     && planTitle("", null) === "The plan: v the opposition");
+}
+
+group("SCRBRD-138 phase B: a refusal is said in words, with the refused words, and nothing is lost");
+{
+  const r = planRefusal({ code: "refused_words", data: { words: [{ word: "physio", cls: "health" }], message: "This can't go to the side with physio in it." } });
+  ok("the list's refusal: its message and its words", r.words[0].word === "physio" && /physio/.test(r.message));
+  ok("a second plan names who wrote the first", /Mr Dlamini/.test(planRefusal({ code: "plan_exists", data: { message: "The side already has a plan for this fixture, by Mr Dlamini, Thu 20:10." } }).message));
+  ok("too long: the limit, spaced, and nothing cut", /1 000 characters/.test(planRefusal({ code: "body_too_long", data: { max: 1000 } }).message) && /Nothing has been cut/.test(planRefusal({ code: "body_too_long", data: { max: 1000 } }).message));
+  ok("the guard's codes are sentences, never a code", ["fixture_not_this_side", "plan_fixed", "plan_needs_team_and_fixture", "fixture_only_for_plan", "kind_invalid", "not_permitted"]
+     .every((c) => { const m = planRefusal({ code: c }).message; return m.includes(" ") && !m.includes("_"); }));
+  ok("an unknown failure keeps the coach's words", /still here/.test(planRefusal({ code: "x" }).message) && /still here/.test(planRefusal(null).message));
+}
+
+group("SCRBRD-138 phase B: THE PLAN block and C1's line");
+{
+  const plan = { id: "n1", title: "t", body: "Bat first if we win it.\nNaidoo and Smith open the bowling.", author: "Mr Dlamini", publishedAt: "2026-10-01T18:10:00Z", mine: false, noticeId: "nt1", schoolId: HIL, teamCode: "1XI" };
+  const html = renderToStaticMarkup(h(PlanBlock, { plan }));
+  ok("the block: label with author and time, the whole body, a Report", /data-testid="plan-block"/.test(html) && /Mr Dlamini/.test(html) && /Thu 20:10/.test(html)
+     && /Naidoo and Smith open the bowling/.test(html) && /data-testid="plan-report"/.test(html));
+  ok("...no Edit, no reply, no 'seen'", !/>Edit</.test(html) && !/reply|reaction|seen/i.test(html));
+  ok("...its author is not offered Report on his own plan", !/plan-report/.test(renderToStaticMarkup(h(PlanBlock, { plan: { ...plan, mine: true } }))));
+  ok("...a reader the notice does not reach has nothing to report", !/plan-report/.test(renderToStaticMarkup(h(PlanBlock, { plan: { ...plan, noticeId: null } }))));
+  const next = { id: "m-sat", schoolId: HIL, homeTeam: "1XI", awayTeam: "Kearsney", status: "upcoming", startsAt: "2026-10-03T07:00:00Z", date: "2026-10-03", time: "09:00" };
+  const me = { id: "p-rohan", name: "R Pillay", school: HIL, schoolName: "Hilton College", team: "1XI" };
+  const card = (plan_) => renderToStaticMarkup(h(CaptainCardView, { cap: { label: "Captain" }, next, me, named: 11, plan: plan_, onOpen: () => {} }));
+  ok("the card draws the line with a plan, after the count of the side", /data-testid="captain-card-plan"/.test(card(plan)) && /Plan from Mr Dlamini · Thu/.test(card(plan))
+     && card(plan).indexOf("captain-card-side") < card(plan).indexOf("captain-card-plan"));
+  ok("...and no line, and no place held for one, without a plan", !/captain-card-plan|plan/i.test(card(null)) && card(null) === card(undefined));
+  ok("...the line names no player and passes the never-words", !/Naidoo|Smith/.test(card(plan)) && !NEVER_ON_THE_TAB.test(planLine(plan)));
 }
 
 console.log(`\n${"─".repeat(52)}\nFAMILY APPS: ${pass} passed, ${fail} failed`);

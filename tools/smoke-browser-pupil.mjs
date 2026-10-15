@@ -31,7 +31,17 @@
  *     scoring package), says no injury, fitness word, guideline,
  *     availability or reason, offers no row to open, and puts no child of
  *     another school on screen beyond the log's own names.
+ *   - THE COACH'S PLAN (SCRBRD-138 phase B, docs/design/SCRBRD-138_phaseB.md
+ *     §7.3): the coach writes a plan with "physio" in it and is refused with
+ *     the word on the screen, read out, his words kept (and the server's own
+ *     refusal shows the same way); writes a clean one; the captain's card
+ *     shows the line; a team-mate's fixture screen and a parent's show the
+ *     block, above the captain's section; a boy of another side has no plan in
+ *     his Home or his reads; the Captain tab's row opens; the coach withdraws;
+ *     the block, the line and the row are gone on the next load, Notices says
+ *     it was withdrawn, and no notification row carries a recipient.
  *
+
  * Every fixture here takes an explicit date.
  *
  *   node tools/migrate.mjs --reset --seed
@@ -149,10 +159,10 @@ async function go(page, key) {
   return (await tid(page, "os-main").getAttribute("data-page")) === key;
 }
 /** §3.2 and §3.5 over the main area, the header and the bar. */
-async function floors(page) {
-  return page.evaluate(() => {
+async function floors(page, roots = '[data-testid="os-main"], [data-testid="persona-bar"], [data-testid="mnav"]') {
+  return page.evaluate((sel) => {
     const small = [], tiny = [];
-    for (const root of document.querySelectorAll('[data-testid="os-main"], [data-testid="persona-bar"], [data-testid="mnav"]')) {
+    for (const root of document.querySelectorAll(sel)) {
       for (const n of [root, ...root.querySelectorAll("*")]) {
         if (n.closest(".sr-only")) continue;
         const cs = getComputedStyle(n);
@@ -165,7 +175,7 @@ async function floors(page) {
       }
     }
     return { small, tiny };
-  });
+  }, roots);
 }
 
 try {
@@ -451,7 +461,7 @@ try {
   dbg("CARD", card);
   ok("the Home card says Captain, his side, and the match live now", /^CAPTAIN/i.test(card) && /1XI/i.test(card) && /live now/.test(card) && /v Westville/.test(card), card);
   ok("...a count of the side and no name on it", /\d+ named in the side/.test(card) && !/Whitfield|Bekker|Naidoo|Seven|Mate Six/.test(card), card);
-  ok("...no plan line: the coach's plan is phase B", !/plan/i.test(card));
+  ok("...no plan line while no plan is out, and no place held for one", !/plan/i.test(card) && await tid(c.page, "captain-card-plan").count() === 0);
   const f1 = await floors(c.page);
   ok(`Home with the card: nothing read under 12px (${f1.small.length}), nothing tapped under 44px (${f1.tiny.length})`, f1.small.length === 0 && f1.tiny.length === 0, [...f1.small, ...f1.tiny].slice(0, 4).join(" · "));
 
@@ -473,7 +483,7 @@ try {
   const side = await inner(c.page, "captain-side");
   ok("...the side, by name and place, once on the screen", /6 named/i.test(side) && [WHITFIELD, BEKKER, NAIDOO, PILLAY, SEVEN, SIX].every((id) => side.includes(nm[id])) && await tid(c.page, "side-sheet").count() === 1, side);
   ok("...this season's figures for a boy on the sheet, in the figure line", /inns · \d+ runs · avg \d/.test(await inner(c.page, `captain-season-${PILLAY}`)), await inner(c.page, `captain-season-${PILLAY}`));
-  ok("...nothing of the plan, and no place held for it", !/plan/i.test(sec));
+  ok("...no plan block while no plan is out, and no place held for one; the section never holds one", !/plan/i.test(sec) && await tid(c.page, "plan-block").count() === 0);
   const secAll = await inner(c.page, "os-main");
   ok("...and no team-mate's injury, answer or reason anywhere on the screen (D7, K3)",
      !HEALTH.test(secAll) && !/physio says rest|illness/i.test(secAll) && await tid(c.page, `availability-state-${BEKKER}`).count() === 0, secAll.match(HEALTH)?.[0]);
@@ -642,6 +652,245 @@ try {
     });
     ok("...and nothing in the tab loops or pulses", anims === 0, anims);
     await rm.close();
+  }
+  // ══ SCRBRD-138 phase B: the coach's plan to the side ════════════════════
+  // docs/design/SCRBRD-138_phaseB.md §7.3. The honour from the group above is
+  // still live. The two live fixtures of phase A are played out first, so the
+  // captain's card is for DAY (tomorrow, upcoming), where the plan is written
+  // in the browser; the played FIELD match carries a second plan, written
+  // through the API, for the Captain tab's row (an upcoming fixture has no
+  // match screen on the pupil's app, and a live one no fixture screen).
+  group("The coach's plan (SCRBRD-138 phase B): refused with the word, sent, read by the side, withdrawn");
+  {
+    const PLAN_TEXT = "Bat first if we win the toss. Whitfield and Naidoo open the bowling, Seven first change. The bus leaves at 07:15: be at the Chapel car park by 07:00.";
+    const FIELD_TEXT = "Keep the field up for the first six overs, then spread it.";
+    const OTHER_EMAIL = "otherside.pupil@example.invalid";
+    const OTHER_USER = "cafe0000-0000-0000-0000-0000000000b1";
+    await q(`update match set status = 'complete' where id = any($1::uuid[])`, [[FIELD, BAT]]);
+    // A boy of the 2XI, with an account of his own: another side at the same school.
+    const TWO = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
+                          values ($1, '2XI', 'V Other Side', 77, 'batter', current_date - interval '19 years') returning id`, [HIL]))[0].id;
+    await q(`insert into app_user (id, school_id, email, name, role, player_id, teams) values ($1, $2, $3, 'V Other Side', 'player', $4, '{2XI}')`, [OTHER_USER, HIL, OTHER_EMAIL, TWO]);
+    await q(`insert into role_assignment (id, person_id, role, school_id, team_code) values
+               ('a5510000-0000-0000-0000-0000000000b1', $1, 'player', $2, '2XI'), ('a5510000-0000-0000-0000-0000000000b2', $1, 'selfaccess', $2, NULL)`, [OTHER_USER, HIL]);
+    await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+             values ('a5510000-0000-0000-0000-0000000000b2', $1, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c')`, [TWO]);
+    const plans = () => q(`select id, kind, fixture_id, school_id, team_code, published_at, urgency, author_id from news_post where kind = 'plan' and fixture_id = any($1::uuid[]) order by created_at`, [[DAY, FIELD]]);
+    const orderOf = (page) => page.$$eval("[data-testid]", (els) => els.map((e) => e.getAttribute("data-testid")));
+    const tokenFor = async (email) => (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, deviceId: "plan-walk" }) })).json()).token;
+
+    // ── The coach writes it, in the browser ──
+    const co = await open();
+    await signInAs(co.page, "coach@example.invalid");
+    ok("the coach signs in", await tid(co.page, "os-main").count() === 1);
+    ok("...the Matches list opens his fixture", await go(co.page, "matches") && await tid(co.page, `mc-open-${DAY}`).count() === 1);
+    await tid(co.page, `mc-open-${DAY}`).click({ timeout: 5000 }).catch(() => {});
+    await co.page.waitForTimeout(1800);
+    await tid(co.page, "mc-tab-coach").click({ timeout: 4000 }).catch(() => {});
+    await co.page.waitForTimeout(1500);
+    ok("the Coach tab offers 'Write the plan' and draws no block (none is out)", await tid(co.page, "plan-write").count() === 1 && await tid(co.page, "plan-block").count() === 0);
+    await tid(co.page, "plan-write").click({ timeout: 4000 }).catch(() => {});
+    await co.page.waitForTimeout(1200);
+    ok("the composer opens, with the field focused", await tid(co.page, "plan-composer").count() === 1
+       && await co.page.evaluate(() => document.activeElement?.id) === "plan-body");
+    ok("...its title is made for him: the fixture, v Westville, with the day", /^The plan: v Westville.*, \w{3} \d{1,2} \w{3}$/.test((await inner(co.page, "plan-title")).trim()), await inner(co.page, "plan-title"));
+    const sheetLine = await inner(co.page, "plan-sheet");
+    ok("...the side he published, read-only, by name and place", [WHITFIELD, BEKKER, NAIDOO, PILLAY, SEVEN, SIX].every((id) => sheetLine.includes(nm[id])) && await tid(co.page, "plan-sheet").locator("input, textarea, button").count() === 0, sheetLine);
+    const honesty = await inner(co.page, "plan-honesty");
+    ok("...the honesty line above Send: every boy and parent, kept, a DSO, the other side's boys",
+       /Read by every boy in the side and their parents\. Kept with the fixture; a DSO can open it\. Name the other side's boys only as the public scorecard does\./.test(honesty), honesty);
+    ok("...no per-boy field and no attachment", await tid(co.page, "plan-composer").locator("input[type=file], select").count() === 0);
+    const f6 = await floors(co.page, '[data-testid="mc-coach"]');
+    ok(`the composer at phone width: nothing under 12px (${f6.small.length}), nothing tapped under 44px (${f6.tiny.length})`, f6.small.length === 0 && f6.tiny.length === 0, [...f6.small, ...f6.tiny].slice(0, 4).join(" · "));
+
+    // The refusal: physio. The word is on the screen, read out, and his words stay.
+    await co.page.locator("#plan-body").fill("Naidoo is on four overs, physio says no more.");
+    await co.page.waitForFunction(() => /physio/.test(document.querySelector('[data-testid="plan-refusal-message"]')?.innerText ?? ""), null, { timeout: 5000 }).catch(() => {});
+    const said = await inner(co.page, "plan-refusal");
+    ok("refused with the word on the screen: this can't go to the side with physio in it", /This can't go to the side with physio in it\./.test(said) && /A boy's health is not for it\./.test(said), said);
+    ok("...the refused word is named", /Words to change: physio/.test(await inner(co.page, "plan-refused-words")));
+    ok("...it is read out: a polite live region, which the field is described by",
+       await tid(co.page, "plan-refusal").getAttribute("aria-live") === "polite" && /plan-refusal/.test(await co.page.locator("#plan-body").getAttribute("aria-describedby") ?? "")
+       && await co.page.locator("#plan-body").getAttribute("aria-invalid") === "true");
+    ok("...Send and Save are off until the words change", await tid(co.page, "plan-send").isDisabled() && await tid(co.page, "plan-save").isDisabled());
+    ok("...and what he typed is still there", (await co.page.locator("#plan-body").inputValue()).includes("physio says no more"));
+    ok("...nothing was written: no plan, no draft, no notice", (await plans()).length === 0);
+
+    // The server's own refusal (a list longer than this bundle's) is shown the same way, with his words kept.
+    const isNews = (u) => u.pathname === "/api/news";
+    const refuse = (route) => route.request().method() !== "POST" ? route.fallback()
+      : route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "refused_words", words: [{ word: "catchy", cls: "derisive" }],
+        message: "This can't go to the side with catchy in it. A plan is read by every boy in the side and their parents. The side reads this about a team-mate. Change the words and send again." }) });
+    await co.page.route(isNews, refuse);
+    await co.page.locator("#plan-body").fill("A catch is a catch.");
+    await tid(co.page, "plan-send").click({ timeout: 4000 }).catch(() => {});
+    await co.page.waitForFunction(() => /catchy/.test(document.querySelector('[data-testid="plan-refusal-message"]')?.innerText ?? ""), null, { timeout: 5000 }).catch(() => {});
+    ok("the server's refusal is on the screen too, its word named, and his words are kept",
+       /with catchy in it/.test(await inner(co.page, "plan-refusal")) && /Words to change: catchy/.test(await inner(co.page, "plan-refused-words"))
+       && (await co.page.locator("#plan-body").inputValue()) === "A catch is a catch.");
+    await co.page.unroute(isNews, refuse);
+
+    // A clean plan goes.
+    await co.page.locator("#plan-body").fill(PLAN_TEXT);
+    await co.page.waitForTimeout(700);
+    ok("a clean plan: no refusal, Send is on", (await inner(co.page, "plan-refusal")).trim() === "" && !(await tid(co.page, "plan-send").isDisabled()));
+    await tid(co.page, "plan-send").click({ timeout: 4000 }).catch(() => {});
+    await co.page.waitForFunction(() => !!document.querySelector('[data-testid="plan-block"]'), null, { timeout: 8000 }).catch(() => {});
+    const sentRows = await plans();
+    const sent = sentRows.find((r) => r.fixture_id === DAY);
+    ok("it is sent: one plan, to the 1XI of Hilton, for the fixture, in the app only", sentRows.length === 1 && sent?.team_code === "1XI" && sent?.school_id === HIL
+       && sent?.published_at != null && sent?.urgency === "low" && sent?.author_id === coachId, JSON.stringify(sentRows));
+    const mine = await inner(co.page, "plan-block");
+    ok("...the coach's tab now draws THE PLAN: his name, the whole body", /C Hendricks/i.test(mine) && mine.includes(PLAN_TEXT.slice(0, 40)) && mine.includes("07:00."), mine);
+    ok("...with Withdraw, and no Edit (there is no edit route), no Report on his own", await tid(co.page, "plan-withdraw").count() === 1
+       && await co.page.locator("button", { hasText: /^Edit$/ }).count() === 0 && await tid(co.page, "plan-report").count() === 0);
+    ok("...and nothing to write another with", await tid(co.page, "plan-write").count() === 0);
+    const noticeOf = (await q(`select id, recipient_id, subject_kind, urgency from notification where subject_id = $1 and kind = 'notice'`, [sent.id]));
+    ok("its notice is the post's own: no recipient, no child", noticeOf.length === 1 && noticeOf[0].recipient_id === null && noticeOf[0].subject_kind === "news", JSON.stringify(noticeOf));
+
+    // The plan for the played FIELD match, for the Captain tab's row: through the API, as the coach.
+    const coachToken = await tokenFor("coach@example.invalid");
+    const fieldPost = await (await fetch(`${API}/api/news`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${coachToken}` },
+      body: JSON.stringify({ scope: "team", schoolId: HIL, teamCode: "1XI", kind: "plan", fixtureId: FIELD, title: "The plan: v Westville (field)", body: FIELD_TEXT, publish: true }) })).json();
+    ok("the plan for the played match is sent through the API", !!fieldPost.id && fieldPost.kind === "plan", JSON.stringify(fieldPost));
+
+    // ── The captain's card shows the line; his fixture shows the block above his section ──
+    const cap = await open();
+    ok("R Pillay (the captain) signs in", await signInAs(cap.page, "pillay@example.invalid"));
+    await cap.page.waitForTimeout(1500);
+    // A pupil and a parent hold no user.read, so the news read gives them no author name (reported); the card then says "for the side".
+    ok("his card says Plan from the coach (or for the side) and the day, after the count of the side", /^Plan (from C Hendricks|for the side) · \w{3}$/.test((await inner(cap.page, "captain-card-plan")).trim())
+       && (await orderOf(cap.page)).join().includes("captain-card-side,captain-card-plan"), await inner(cap.page, "captain-card-plan"));
+    ok("...the card names no boy and no word of the plan", !/Whitfield|Naidoo|Seven|toss|bus/i.test(await inner(cap.page, "captain-card")));
+    const f7 = await floors(cap.page);
+    ok(`Home with the line: nothing under 12px (${f7.small.length}), nothing tapped under 44px (${f7.tiny.length})`, f7.small.length === 0 && f7.tiny.length === 0, [...f7.small, ...f7.tiny].slice(0, 4).join(" · "));
+    await tid(cap.page, "captain-card-open").click({ timeout: 4000 }).catch(() => {});
+    await cap.page.waitForTimeout(2200);
+    const order = await orderOf(cap.page);
+    ok("his fixture draws THE PLAN under the team sheet and above his Captain section",
+       order.indexOf("fixture-teamsheet") < order.indexOf("plan-block") && order.indexOf("plan-block") < order.indexOf("captain-section") && order.indexOf("plan-block") > -1, order.join());
+    const capPlan = await inner(cap.page, "plan-block");
+    ok("...author where he may read it, time and the whole body; and a Report, which is the post's own", /^THE PLAN · (C HENDRICKS · )?\w{3} \d\d:\d\d/i.test(capPlan) && !/office/i.test(capPlan) && capPlan.includes(PLAN_TEXT.slice(-40)) && await tid(cap.page, "plan-report").count() === 1, capPlan);
+    ok("...the Captain section holds no second copy of it", !(await inner(cap.page, "captain-section")).includes("open the bowling"));
+    ok("...no reply, no reaction, no Edit anywhere on it", await tid(cap.page, "plan-block").locator("textarea, input, select").count() === 0 && !/>Edit<|reply|seen by/i.test(await tid(cap.page, "plan-block").innerHTML()));
+    const f8 = await floors(cap.page);
+    ok(`his fixture with the block: nothing under 12px (${f8.small.length}), nothing tapped under 44px (${f8.tiny.length})`, f8.small.length === 0 && f8.tiny.length === 0, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
+
+    // ── The Captain tab's row, on the played match ──
+    await tid(cap.page, "family-back").click({ timeout: 4000 }).catch(() => {});
+    await cap.page.waitForTimeout(500);
+    await go(cap.page, "mymatches");
+    await tid(cap.page, `played-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
+    await cap.page.waitForTimeout(2200);
+    await tid(cap.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+    await cap.page.waitForTimeout(1500);
+    const tabOrder = await orderOf(cap.page);
+    ok("the Captain tab has the plan's row after the Board, closed", tabOrder.indexOf("mc-captain-board") > -1 && tabOrder.indexOf("mc-captain-board") < tabOrder.indexOf("mc-captain-plan-row")
+       && await tid(cap.page, "mc-captain-plan-row").getAttribute("aria-expanded") === "false" && await tid(cap.page, "mc-captain-plan-body").count() === 0, tabOrder.join());
+    ok("...a row of 44px or more, labelled THE PLAN with the author", (await tid(cap.page, "mc-captain-plan-row").boundingBox())?.height >= 44 && /^The plan( · C Hendricks)?\s*(Open)?$/i.test((await inner(cap.page, "mc-captain-plan-row")).replace(/\s+/g, " ").trim()), await inner(cap.page, "mc-captain-plan-row"));
+    await tid(cap.page, "mc-captain-plan-row").click({ timeout: 4000 }).catch(() => {});
+    await cap.page.waitForTimeout(400);
+    ok("it opens to the whole body (aria-expanded), as a cut", await tid(cap.page, "mc-captain-plan-row").getAttribute("aria-expanded") === "true"
+       && (await inner(cap.page, "mc-captain-plan-body")).includes(FIELD_TEXT));
+    ok("...and the whole tab, row open, still says nothing it never says", !NEVER.test(await cap.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "")));
+    const f9 = await floors(cap.page);
+    ok(`the tab with the row open: nothing under 12px (${f9.small.length}), nothing tapped under 44px (${f9.tiny.length})`, f9.small.length === 0 && f9.tiny.length === 0, [...f9.small, ...f9.tiny].slice(0, 4).join(" · "));
+    ok("no scoping refusals and no page errors in the captain's sitting", cap.refusals.length === 0 && cap.errors.length === 0, cap.refusals[0] ?? cap.errors.join(" | "));
+    await cap.ctx.close();
+
+    // ── A team-mate (no honour) reads the same block ──
+    const tm = await open();
+    ok("a team-mate signs in", await signInAs(tm.page, MATE_EMAIL));
+    await tm.page.waitForTimeout(1200);
+    ok("...no card, so no line", await tid(tm.page, "captain-card").count() === 0 && await tid(tm.page, "captain-card-plan").count() === 0);
+    await go(tm.page, "mymatches");
+    await tid(tm.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
+    await tm.page.waitForTimeout(2000);
+    const tmPlan = await inner(tm.page, "plan-block");
+    ok("his fixture screen shows the block: the whole body, and never 'the office'", /^THE PLAN · (C HENDRICKS · )?\w{3} \d\d:\d\d/i.test(tmPlan) && !/office/i.test(tmPlan) && tmPlan.includes(PLAN_TEXT.slice(0, 40)) && tmPlan.includes("07:00."), tmPlan);
+    ok("...and no Captain section", await tid(tm.page, "captain-section").count() === 0);
+    const f10 = await floors(tm.page);
+    ok(`the team-mate's fixture: nothing under 12px (${f10.small.length}), nothing tapped under 44px (${f10.tiny.length})`, f10.small.length === 0 && f10.tiny.length === 0, [...f10.small, ...f10.tiny].slice(0, 4).join(" · "));
+    ok("no scoping refusals and no page errors", tm.refusals.length === 0 && tm.errors.length === 0, tm.refusals[0] ?? tm.errors.join(" | "));
+    await tm.ctx.close();
+
+    // ── The parent reads it too, and reports it in one tap ──
+    const pa = await open();
+    ok("a parent signs in", await signInAs(pa.page, "parent@example.invalid"));
+    await pa.page.waitForTimeout(1200);
+    await pa.page.locator("nav button", { hasText: /^Matches$/ }).first().click({ timeout: 6000 }).catch(() => {});
+    await pa.page.waitForTimeout(1500);
+    await tid(pa.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
+    await pa.page.waitForTimeout(2000);
+    const paPlan = await inner(pa.page, "plan-block");
+    ok("her fixture screen shows the same block", /^THE PLAN · (C HENDRICKS · )?\w{3} \d\d:\d\d/i.test(paPlan) && !/office/i.test(paPlan) && paPlan.includes(PLAN_TEXT.slice(0, 40)), paPlan);
+    await tid(pa.page, "plan-report").click({ timeout: 4000 }).catch(() => {});
+    await pa.page.waitForTimeout(1500);
+    ok("...she reports it in one tap, and is told where it went", /Reported to the school's safeguarding officer|Reported, but your school has no safeguarding officer/.test(await inner(pa.page, "plan-report-said")), await inner(pa.page, "plan-report-said"));
+    ok("no scoping refusals and no page errors", pa.refusals.length === 0 && pa.errors.length === 0, pa.refusals[0] ?? pa.errors.join(" | "));
+    await pa.ctx.close();
+
+    // ── A boy on another side sees none ──
+    const ot = await open();
+    ok("a boy of the 2XI signs in", await signInAs(ot.page, OTHER_EMAIL));
+    await ot.page.waitForTimeout(1200);
+    const otHome = await inner(ot.page, "os-main");
+    ok("his Home has no plan and no line", !/The plan|Plan from|open the bowling/i.test(otHome) && await tid(ot.page, "plan-block").count() === 0 && await tid(ot.page, "captain-card-plan").count() === 0);
+    const otToken = await tokenFor(OTHER_EMAIL);
+    const otNews = (await (await fetch(`${API}/api/read/news`, { headers: { authorization: `Bearer ${otToken}` } })).json()).rows ?? [];
+    ok("...and the news read hands him no plan, nor any notice of one", !otNews.some((n) => n.kind === "plan") && !otNews.some((n) => /^The plan/.test(n.title)), JSON.stringify(otNews.map((n) => n.title)));
+    const otNotices = (await (await fetch(`${API}/api/read/notifications`, { headers: { authorization: `Bearer ${otToken}` } })).json()).rows ?? [];
+    ok("...his notices carry none either", !otNotices.some((n) => n.subject_id === sent.id || n.subject_id === fieldPost.id));
+    ok("no scoping refusals and no page errors", ot.refusals.length === 0 && ot.errors.length === 0, ot.refusals[0] ?? ot.errors.join(" | "));
+    await ot.ctx.close();
+
+    // ── The coach withdraws ──
+    await tid(co.page, "plan-withdraw").click({ timeout: 4000 }).catch(() => {});
+    await co.page.waitForTimeout(400);
+    ok("Withdraw asks once, and says the side will be told", /Withdraw this plan\? The side will be told it was withdrawn\./.test(await inner(co.page, "plan-withdraw-ask")));
+    await tid(co.page, "plan-withdraw-yes").click({ timeout: 4000 }).catch(() => {});
+    await co.page.waitForTimeout(1800);
+    ok("...and the block is gone from his own tab, the plan his draft again, to send as it stands",
+       await tid(co.page, "plan-block").count() === 0 && await tid(co.page, "plan-draft").count() === 1 && /Withdrawn\. The side has been told\./.test(await inner(co.page, "plan-said"))
+       && await tid(co.page, "plan-draft-send").count() === 1 && await co.page.locator("button", { hasText: /^Edit$/ }).count() === 0);
+    ok("the row is withdrawn, not deleted: unpublished, and its notice retracted", (await q(`select published_at from news_post where id = $1`, [sent.id]))[0].published_at === null
+       && (await q(`select count(*)::int as n from notification where subject_id = $1 and kind = 'notice' and retracted_at is not null`, [sent.id]))[0].n === 1);
+    ok("no coach page errors", co.errors.length === 0 && co.refusals.length === 0, co.refusals[0] ?? co.errors.join(" | "));
+    await co.ctx.close();
+    const wf = await (await fetch(`${API}/api/news/${fieldPost.id}/withdraw`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${coachToken}` }, body: "{}" })).json();
+    ok("the played match's plan is withdrawn through the API", wf.published === false, JSON.stringify(wf));
+
+    // ── Gone on the next load, and Notices says it was withdrawn ──
+    const gone = await open();
+    ok("the captain signs in again", await signInAs(gone.page, "pillay@example.invalid"));
+    await gone.page.waitForTimeout(1500);
+    ok("his card has no plan line", await tid(gone.page, "captain-card").count() === 1 && await tid(gone.page, "captain-card-plan").count() === 0);
+    ok("...Notices says it was withdrawn", /withdrawn/i.test(await inner(gone.page, "notices-card")), await inner(gone.page, "notices-card"));
+    await tid(gone.page, "captain-card-open").click({ timeout: 4000 }).catch(() => {});
+    await gone.page.waitForTimeout(2000);
+    ok("...his fixture has no block, and no place held for one", await tid(gone.page, "plan-block").count() === 0 && await tid(gone.page, "captain-section").count() === 1);
+    await tid(gone.page, "family-back").click({ timeout: 4000 }).catch(() => {});
+    await go(gone.page, "mymatches");
+    await tid(gone.page, `played-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
+    await gone.page.waitForTimeout(2000);
+    await tid(gone.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+    await gone.page.waitForTimeout(1200);
+    ok("...and the Captain tab has no row", await tid(gone.page, "mc-captain-plan-row").count() === 0 && await tid(gone.page, "mc-captain-board").count() === 1);
+    await gone.ctx.close();
+    const tm2 = await open();
+    await signInAs(tm2.page, MATE_EMAIL);
+    await go(tm2.page, "mymatches");
+    await tid(tm2.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
+    await tm2.page.waitForTimeout(1800);
+    ok("the team-mate's fixture has no block either", await tid(tm2.page, "fixture-title").count() === 1 && await tid(tm2.page, "plan-block").count() === 0);
+    await tm2.ctx.close();
+
+    // ── No notice of a plan names a child ──
+    const ids = [sent.id, fieldPost.id];
+    const named = await q(`select count(*)::int as n from notification n where n.recipient_id is not null
+                            and (n.subject_id = any($1::uuid[]) or n.retracts_id in (select id from notification where subject_id = any($1::uuid[])))`, [ids]);
+    ok("no notification row of either plan, or of its withdrawal, carries a recipient_id", named[0].n === 0, named[0].n);
   }
   await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [keptAgain]);
   ok("the walk leaves no live captaincy of his behind", (await q(`select count(*)::int as n from honour where player_id = $1 and withdrawn_at is null`, [PILLAY]))[0].n === 0);

@@ -82,8 +82,18 @@ export function captainApi() {
     ],
   };
 
+  // SCRBRD-138 phase B: the coach's plan to the side, for three of the four fixtures, as a pupil reads it. A pupil holds
+  // no user.read, so the author's name comes back null and the screens say "for the side".
+  const plan = (fixtureId, n, body) => ({ id: `ca000000-0000-0000-0000-0000000000b${n}`, scope: "team", school_id: HIL, team_code: "1XI", competition_id: null, kind: "plan", fixtureId,
+    noticeId: `ca000000-0000-0000-0000-0000000000c${n}`, title: "The plan: v Westville Boys' High 1XI", body, published_at: "2026-10-01T18:10:00.000Z", created_at: "2026-10-01T18:10:00.000Z",
+    school_name: "Hilton College", competition_name: null, author_name: null, mine: false, may_approve: false, may_take_down: false, public_state: null, public_names: null });
   /** @type {Record<string, (q: URLSearchParams) => any[]>} */
   const reads = {
+    news: () => [
+      plan(MATCH.day, 1, "Bat first if we win the toss. Whitfield and Naidoo open the bowling, Seven first change.\nThe bus leaves at 07:15: be at the Chapel car park by 07:00."),
+      plan(MATCH.field, 2, "Keep the field up for the first six overs, then spread it."),
+      plan(MATCH.bat, 3, "Rotate the strike. Singles first, boundaries when the ball is old."),
+    ],
     players: () => ORDER.map((k) => ({ id: IDS[k], school_id: HIL, school_name: "Hilton College", full_name: NAMES[k], team_code: "1XI", squad_no: PLAYERS[k].no,
       playing_role: PLAYERS[k].role, batting_style: "R", bowling_arm: null, bowling_style: k === "naidoo" ? "F" : null, fitness: null })),
     users: () => [{ id: session.user.id, school_id: HIL, email: session.user.email, name: session.user.name, role: "player", active: true, last_seen_at: null, teams: ["1XI"], player_id: IDS.pillay }],
