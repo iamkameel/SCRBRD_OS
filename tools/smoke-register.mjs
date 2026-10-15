@@ -195,6 +195,20 @@ try {
        (await appoint(head, [{ duty: "umpire", officialId: "not-a-uuid" }])).status === 400);
 
     // The fallback is untouched: a typed name with no register id still works,
+    // The conflict flag (db/107: official_conflict()). An official whose
+    // account holds a role at the host school is named as a conflict to an
+    // appointer who can see that role; one with no account cannot be checked,
+    // and says so with null rather than false.
+    const PILLAY_UMP = "0a000000-0000-0000-0000-000000000002";
+    await q(`update official set person_id = (select id from app_user where email = 'registrar@example.invalid') where id = $1`, [PILLAY_UMP]);
+    const c = await appoint(head, [{ duty: "umpire", officialId: NDLOVU }, { duty: "third_umpire", officialId: PILLAY_UMP }]);
+    const byId = Object.fromEntries((c.body?.standing ?? []).map((s) => [s.officialId, s]));
+    ok("an official with an account holding a role at the school is flagged as a conflict",
+       c.status === 200 && byId[PILLAY_UMP]?.conflict === true, JSON.stringify(c.body));
+    ok("...and one with no account cannot be checked, and says so", byId[NDLOVU]?.conflict === null);
+    ok("...and the appointment still carries no date of birth or contact",
+       !JSON.stringify(c.body).match(/born|id_number|idNumber|email|phone/));
+
     // because a parent standing in at short notice must not be blocked.
     const p = await appoint(head, [{ duty: "umpire", name: "A Willing Parent" }]);
     ok("a typed name with no register id still appoints", p.status === 200);
