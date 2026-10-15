@@ -273,7 +273,7 @@ export function assessmentRoutes({ pool, secret }) {
  * not listed keeps 403, as guardianLinkRoutes does.
  */
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
-export function correctionRoutes({ pool, secret }) {
+export function developmentCorrectionRoutes({ pool, secret }) {
   /** @type {Record<string, number>} */
   const REFUSAL_STATUS = {
     no_such_player: 404,
@@ -287,6 +287,13 @@ export function correctionRoutes({ pool, secret }) {
     evidence_names_another_boy: 422,
     evidence_not_his: 422,
     evidence_as_of_required: 400,
+    // target_set() (db/105)
+    unknown_metric: 400,
+    already_there: 422,
+    no_such_drill: 404,
+    drill_retired: 422,
+    note_not_his: 422,
+    due_in_past: 422,
   };
   /**
    * @param {string} sql
@@ -314,6 +321,12 @@ export function correctionRoutes({ pool, secret }) {
   };
   const uuidOrNull = (/** @type {unknown} */ v) =>
     typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+  const targetSet = call(
+    `select ok, reason, id from target_set($1, $2, $3, $4, $5::date, $6, $7)`,
+    (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000",
+              req.body.category, req.body.metric, Number(req.body.targetScore),
+              typeof req.body.dueOn === "string" && req.body.dueOn ? req.body.dueOn : null,
+              uuidOrNull(req.body.drillId), uuidOrNull(req.body.noteId)]);
   return {
     // POST /players/:id/coaching-points { matchId?, body, evidence: { read, asOf?, rule?, params?, head?, text? } }
     coachingPoint: call(
@@ -330,6 +343,25 @@ export function correctionRoutes({ pool, secret }) {
     noteWithdraw: call(
       `select ok, reason from note_withdraw($1)`,
       (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000"]),
+    // POST /players/:id/targets { category, metric, targetScore, dueOn?, drillId?, noteId? }
+    // The attribute is checked against the rubric here, as an assessment's
+    // is (validateAssessment): target_set() keeps no SQL copy of TREE.
+    target: async (req, res) => {
+      const b = req.body || {};
+      const allowed = ASSESSMENT_SHAPE[b.category];
+      if (!allowed || !allowed.includes(b.metric))
+        return res.status(400).json({ error: `unknown_metric:${b.category}.${b.metric}` });
+      const score = Number(b.targetScore);
+      if (!Number.isInteger(score)) return res.status(400).json({ error: "bad_score" });
+      const due = typeof b.dueOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.dueOn) ? b.dueOn : null;
+      if (b.dueOn != null && b.dueOn !== "" && !due) return res.status(400).json({ error: "bad_due_on" });
+      return targetSet(req, res);
+    },
+    // POST /targets/:id/withdraw { reason }
+    targetWithdraw: call(
+      `select ok, reason from target_withdraw($1, $2)`,
+      (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000",
+                typeof req.body?.reason === "string" ? req.body.reason : null]),
   };
 }
 

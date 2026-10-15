@@ -476,14 +476,36 @@ export const READ_QUERIES = {
              left join coach c on c.id = t.coach_id
             order by t.starts_at`,
   },
+  // `injured` is never READ as a status (GA-I26a AH-D9): the register is a
+  // side-shared table and the reason for an absence is a medical fact, which
+  // lives behind medical.status.read. A row written before db/105 stopped the
+  // word reads as `excused`; the route no longer writes it.
   training_attendance: {
-    text: `select a.session_id, a.player_id, a.status, p.full_name
+    text: `select a.session_id, a.player_id,
+                  case when a.status = 'injured' then 'excused' else a.status end as status,
+                  p.full_name
              from training_attendance a
              join player p on p.id = a.player_id
             where ($1::uuid is null or a.session_id = $1)
             order by p.full_name`,
     // Optional: the whole register this person may see, or one session's.
     params: q => [q?.sessionId || null],
+  },
+
+  /**
+   * A session's plan, keyed to the drill library (GA-I26a §1.3, db/105):
+   * which drills, in order, for how long. Read under the session's own
+   * team.read, through training_session_drill's policy; it names no boy.
+   * The legacy free-text `drills` on `training` stays, drawn as "Other".
+   */
+  training_plan: {
+    text: `select x.session_id, x.position, x.drill_id, d.name, d.category,
+                  coalesce(x.minutes, d.duration_min) as minutes, x.minutes is null as default_minutes
+             from training_session_drill x
+             join drill d on d.id = x.drill_id
+            where ($1::uuid is null or x.session_id = $1)
+            order by x.session_id, x.position`,
+    params: (q) => [UUID_RE.test(String(q?.sessionId ?? "")) ? q.sessionId : null],
   },
 
   // Development assessments. Governed by player.development.read, which
@@ -524,6 +546,127 @@ export const READ_QUERIES = {
             where ($1::uuid is null or s.player_id = $1)
             order by s.player_id, s.category, s.metric, s.assessed_on, s.id`,
     params: (q) => [UUID_RE.test(String(q?.playerId ?? "")) ? q.playerId : null],
+  },
+
+  /**
+   * A boy's targets (GA-I26a §1.2, db/105), open and withdrawn, under
+   * player.development.read for his current side: his coach, the assistant,
+   * the director, and he himself. Met-or-not is READ, never stored: the
+   * newest standing score on the metric, and the first standing score at or
+   * above the target since it was set. `note_id` only where the reader may
+   * read the note (staff); the boy reads the target, not the reasoning.
+   * The score it stood on comes with whether it has since been withdrawn.
+   */
+  targets: {
+    text: `select t.id, t.player_id, t.school_id, t.category, t.metric, t.target_score,
+                  t.set_on, t.due_on, t.set_by, sb.name as set_by_name,
+                  t.drill_id, d.name as drill_name, d.category as drill_category,
+                  (select n.id from development_note n where n.id = t.note_id) as note_id,
+                  t.from_skill_id, fs.score as from_score, fs.assessed_on as from_assessed_on,
+                  fs.withdrawn_at is not null as from_withdrawn,
+                  now_s.score as standing_score, now_s.assessed_on as standing_on,
+                  (select min(r.assessed_on) from player_skill r
+                    where r.player_id = t.player_id and r.category = t.category and r.metric = t.metric
+                      and r.withdrawn_at is null and r.assessed_on >= t.set_on
+                      and r.score >= t.target_score) as reached_on,
+                  t.withdrawn_at, t.withdrawn_by, t.withdrawn_reason
+             from development_target t
+             left join app_user sb on sb.id = t.set_by
+             left join drill d on d.id = t.drill_id
+             left join player_skill fs on fs.id = t.from_skill_id
+             left join lateral (
+               select s.score, s.assessed_on from player_skill s
+                where s.player_id = t.player_id and s.category = t.category and s.metric = t.metric
+                  and s.withdrawn_at is null
+                order by s.assessed_on desc, s.id desc limit 1) now_s on true
+            where ($1::uuid is null or t.player_id = $1)
+            order by t.player_id, t.withdrawn_at nulls first, t.set_on desc, t.created_at desc`,
+    params: (q) => [UUID_RE.test(String(q?.playerId ?? "")) ? q.playerId : null],
+  },
+
+  /**
+   * "Since the last look" (GA-I26a §4.2): one row per discipline for one
+   * boy. The anchor is the newest STANDING assessment among the discipline's
+   * attributes (DISCIPLINES, passed in as for `ratings`), and the window runs
+   * from it — or from the day he joined his current side, if later — to now,
+   * over his CURRENT side's sessions that were not cancelled.
+   *
+   * It counts what he ATTENDED and never what he missed (GA-I24-I25 D8):
+   * present and late, the sessions that took a register at all, the plan's
+   * drills and how often each ran, and per open target in the discipline how
+   * often its drill ran and how often he was there for it. No absence figure,
+   * no reason, no health word.
+   *
+   * Invoker rights, and a gate: the boy's row is returned only to a reader
+   * who holds player.development.read for him (the same question his scores'
+   * policy asks), so the team manager and a parent get no rows rather than a
+   * panel of counts. Inside, row security is the floor: a reader who may not
+   * read the side's sessions gets no session counts.
+   */
+  development_since: {
+    text: `with b as (
+             select p.id, p.school_id, p.team_code
+               from player p
+              where p.id = $1::uuid
+                and app_can('player.development.read', p.school_id, p.team_code, p.id,
+                            '00000000-0000-0000-0000-000000000000'::uuid)),
+           disc(discipline, attrs, ord) as (
+             values ('batting', $2::text[], 1), ('bowling', $3::text[], 2),
+                    ('fielding', $4::text[], 3), ('keeping', $5::text[], 4)),
+           a as (
+             select b.id as player_id, b.school_id, b.team_code, disc.discipline, disc.attrs, disc.ord,
+                    (select max(s.assessed_on) from player_skill s
+                      where s.player_id = b.id and s.withdrawn_at is null
+                        and (s.category || '.' || s.metric) = any(disc.attrs)) as anchor,
+                    (select max(m.joined_on) from team_membership m
+                      where m.player_id = b.id and m.left_on is null and m.team_code = b.team_code) as joined_on
+               from b cross join disc),
+           w as (
+             select a.*, case when a.anchor is null then null
+                              else greatest(a.anchor, coalesce(a.joined_on, a.anchor)) end as window_from
+               from a),
+           sess as (
+             select w.discipline, t.id as session_id,
+                    exists (select 1 from training_attendance r where r.session_id = t.id) as registered,
+                    (select r.status from training_attendance r where r.session_id = t.id and r.player_id = w.player_id) as his
+               from w join training_session t
+                 on w.window_from is not null
+                and t.school_id = w.school_id and t.team_code = w.team_code and not t.cancelled
+                and t.starts_at >= (w.window_from::timestamp at time zone 'Africa/Johannesburg')
+                and t.starts_at <= now())
+           select w.player_id, w.school_id, w.team_code, w.discipline, w.anchor, w.joined_on, w.window_from,
+                  case when w.window_from is null then null else
+                    (select count(*) from sess where sess.discipline = w.discipline)::int end as sessions,
+                  case when w.window_from is null then null else
+                    (select count(*) from sess where sess.discipline = w.discipline and sess.registered)::int end as registered,
+                  case when w.window_from is null then null else
+                    (select count(*) from sess where sess.discipline = w.discipline and sess.his = 'present')::int end as present,
+                  case when w.window_from is null then null else
+                    (select count(*) from sess where sess.discipline = w.discipline and sess.his = 'late')::int end as late,
+                  (select coalesce(jsonb_agg(jsonb_build_object('drillId', x.drill_id, 'name', x.name, 'times', x.times)
+                                             order by x.times desc, x.name), '[]'::jsonb)
+                     from (select k.drill_id, d.name, count(*)::int as times
+                             from sess join training_session_drill k on k.session_id = sess.session_id
+                             join drill d on d.id = k.drill_id
+                            where sess.discipline = w.discipline
+                            group by k.drill_id, d.name) x) as drills,
+                  (select coalesce(jsonb_agg(jsonb_build_object(
+                            'id', t.id, 'category', t.category, 'metric', t.metric, 'target_score', t.target_score,
+                            'set_on', t.set_on, 'due_on', t.due_on, 'drillId', t.drill_id, 'drillName', d.name,
+                            'drillRan', (select count(*) from sess join training_session_drill k
+                                           on k.session_id = sess.session_id and k.drill_id = t.drill_id
+                                          where sess.discipline = w.discipline),
+                            'drillAttended', (select count(*) from sess join training_session_drill k
+                                                on k.session_id = sess.session_id and k.drill_id = t.drill_id
+                                               where sess.discipline = w.discipline and sess.his in ('present', 'late')))
+                            order by t.category, t.metric), '[]'::jsonb)
+                     from development_target t left join drill d on d.id = t.drill_id
+                    where t.player_id = w.player_id and t.withdrawn_at is null
+                      and (t.category || '.' || t.metric) = any(w.attrs)) as targets
+             from w
+            order by w.ord`,
+    params: (q) => [UUID_RE.test(String(q?.playerId ?? "")) ? q.playerId : null,
+                    ...DISCIPLINE_NAMES.map((d) => DISCIPLINES[d])],
   },
 
   /**
@@ -3173,6 +3316,11 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   // coaching point is a note.
   skills_history:  ["score"],
   coaching_points: ["body"],
+  // A target is a coach's judgement of where a named child should be (N5's
+  // class), and "since the last look" names his last assessment and his
+  // targets (db/105).
+  targets:           ["target_score"],
+  development_since: ["anchor", "targets"],
   // A disciplinary matter about a named child, and what the school decided to
   // do about it. Nothing here is masked — discipline.read gates the row — so
   // this entry is the ONLY reason an ordinary school-side read of one is
@@ -3203,6 +3351,7 @@ const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
                      users: "id", accounts: "id", ratings: "player_id", notes: "player_id",
                      skills_history: "player_id", coaching_points: "player_id",
+                     targets: "player_id", development_since: "player_id",
                      disciplinary_records: "player_id",
                      opposition_squad: "player_id" };
 
@@ -3326,6 +3475,17 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
 export function liveResources() { return Object.keys(READ_QUERIES); }
 
 /**
+ * The reads the CSV route refuses (GA-I26a AH-D4): every development
+ * judgement — the scores and their history, the ratings built on them, the
+ * notes and coaching points, the targets and "since the last look". Until
+ * db/105's build the route served `skills`, `ratings` and `notes` like any
+ * other read.
+ */
+export const NOT_EXPORTED = Object.freeze(new Set([
+  "skills", "skills_history", "ratings", "notes", "coaching_points", "targets", "development_since",
+]));
+
+/**
  * The same read, as a file.
  *
  * EVERY GUARANTEE COMES FROM readResource() AND NONE FROM HERE. Row-level
@@ -3348,6 +3508,14 @@ export function liveResources() { return Object.keys(READ_QUERIES); }
  * @param {Record<string, string>} [query]
  */
 export async function exportResource(pool, secret, bearer, resource, query = {}) {
+  // A coach's judgement of a child does not leave as a file (GA-I26a AH-D4;
+  // GA-I24-I25 D9's rule, extended). Refused before the read, so nothing is
+  // read and nothing is logged: the screen is where these are seen.
+  if (NOT_EXPORTED.has(resource)) {
+    const e = /** @type {DressedError} */ (new Error("not_exported"));
+    e.status = 403; e.code = "not_exported";
+    throw e;
+  }
   const rows = await readResource(pool, secret, bearer, resource, query);
   const columns = rows.length
     ? Object.keys(rows[0])

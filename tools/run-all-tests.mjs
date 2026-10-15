@@ -29,6 +29,8 @@ const SUITES = [
   ["words",    "packages/policy/test/words.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
+  // GA-I26a §1.5: every attribute pinned to the drill categories that suit it.
+  ["drillmap", "packages/scoring/test/drillmap.test.mjs"],
   ["readiness","packages/scoring/test/readiness.test.mjs"],
   // What a scoring command may be: the Laws the server enforces at commit.
   ["laws",     "packages/scoring/test/laws.test.mjs"],

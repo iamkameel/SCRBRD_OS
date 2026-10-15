@@ -411,6 +411,31 @@ SELECT
                                               ('development_note', 'development_note_not_platform'),
                                               ('development_note', 'development_note_plain_insert'))) = 4
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A score keeps its assessor; a point is a note",
+  -- db/105: a target is written by its functions alone and read under the
+  -- boy's development tier; the side's plan is keyed to the library; the
+  -- register takes no health word.
+  CASE WHEN to_regclass('development_target') IS NOT NULL
+        AND to_regclass('training_session_drill') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('development_target'))
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('training_session_drill'))
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('development_target'), 'INSERT')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('development_target'), 'UPDATE')
+        AND to_regprocedure('target_set(uuid,text,text,integer,date,uuid,uuid)') IS NOT NULL
+        AND to_regprocedure('target_withdraw(uuid,text)') IS NOT NULL
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('target_set(uuid,text,text,integer,date,uuid,uuid)'),
+                              to_regprocedure('target_withdraw(uuid,text)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('target_set(uuid,text,text,integer,date,uuid,uuid)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('target_set(uuid,text,text,integer,date,uuid,uuid)'),
+                                         to_regprocedure('target_withdraw(uuid,text)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'training_session_drill_from_the_library' AND tgenabled = 'O')
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+              AND (tablename, policyname) IN (('development_target', 'development_target_not_support'),
+                                              ('training_attendance', 'training_attendance_no_health_word'),
+                                              ('training_attendance', 'training_attendance_no_health_word_update'))) = 3
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A target is the coach's; the plan is the side's",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

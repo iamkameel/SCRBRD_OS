@@ -1278,6 +1278,45 @@ first**: the API built with it refuses to start without db/104
 not have.
 <!-- ── end db/104 ── -->
 
+<!-- ── db/105: the development loop — a target, the side's plan, the register ── -->
+#### The development loop: a target, the side's plan, the register (db/105)
+
+`db/105_development_loop.sql` is GA-I26a slice A2 (Kameel, 15 Oct: AH-D1,
+AH-D3, AH-D6, AH-D9 as recommended). **A coach sets a target** on one
+attribute of one boy (a number above where he stands, a date, the drill for
+it, and the reasoning as a staff-only note). The boy reads his own targets;
+his parents, the principal, the team manager and a team-mate do not. Whether
+he reached it is read off his scores, never stored. **A session's plan is
+keyed to the drill library** and read by the side, parents included, as the
+session is; it names no boy. **The register gets its route**, which never
+writes `injured`: that is a health word on a list the side reads, and an old
+`injured` row now reads as `excused`.
+
+**What it does to a live database.** Two new empty tables
+(`development_target`, `training_session_drill`) under row security: the
+first with one read policy, a `RESTRICTIVE` support cut and no write policy
+or write privilege at all (its doors are `target_set` and `target_withdraw`,
+`SECURITY DEFINER`, pinned search path, `scrbrd_app` alone); the second with
+the session's four policies and a trigger refusing another school's drill.
+Two `RESTRICTIVE` policies on `training_attendance` refuse `injured` from the
+application's role. No existing row is changed. Refuses to run before db/104.
+A second paste changes nothing.
+
+**Behaviour the paste and the deploy change.** The Training screen's
+navigation is gated by `team.read` (it was `player.development.read`), so
+parents, pupils, the team manager and the analyst find it; what they see in
+it is what row security already gave them. The CSV export
+(`GET /api/export/:resource`) now refuses `skills`, `ratings`, `notes` and
+the new development reads with `403 not_exported`; it served the first three
+before.
+
+Paste `node tools/bundle-sql.mjs --apply 105` (after 104), then the verify
+bundle (§82 is its proof). The summary row "A target is the coach's; the plan
+is the side's" should read OK. **Schema first**: the API built with it refuses
+to start without db/105 (`expected-migrations.json`); its `targets`,
+`training_plan` and `development_since` reads name the new tables.
+<!-- ── end db/105 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

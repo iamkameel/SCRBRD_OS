@@ -98,5 +98,6 @@
   "100_ball_event_guardian_read.sql",
   "101_news_to_the_side.sql",
   "102_suppression_read.sql",
-  "104_assessment_corrections.sql"
+  "104_assessment_corrections.sql",
+  "105_development_loop.sql"
 ]

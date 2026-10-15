@@ -33,6 +33,10 @@
  *   POST /api/players/:id/coaching-points         a coaching point: a note with its evidence (db/104)
  *   POST /api/skills/:id/withdraw                 withdraw a score, with a reason (db/104)
  *   POST /api/notes/:id/withdraw                  withdraw a note or a coaching point (db/104)
+ *   POST /api/players/:id/targets                 set a target on one attribute (db/105)
+ *   POST /api/targets/:id/withdraw                withdraw a target, with a reason (db/105)
+ *   POST /api/training/:id/plan                   a session's plan from the drill library (db/105)
+ *   POST /api/training/:id/attendance             a session's register; never `injured` (db/105)
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
  *   POST /api/assignments/:id/end { reason }      end one role (db/77), the row withdrawn, never deleted
@@ -68,7 +72,7 @@ import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
-import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes, correctionRoutes } from "./write/assessment-api.mjs";
+import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes, developmentCorrectionRoutes } from "./write/assessment-api.mjs";
 import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
@@ -394,8 +398,9 @@ const read    = readRoute({ pool, secret: SECRET });
 const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
-// GA-I26a A1 (db/104): withdrawing a score or a note, and the coaching point.
-const corrections = correctionRoutes({ pool, secret: SECRET });
+// GA-I26a A1/A2 (db/104, db/105): withdrawing a score or a note, the coaching
+// point, and a target.
+const development = developmentCorrectionRoutes({ pool, secret: SECRET });
 const conduct = disciplineRoutes({ pool, secret: SECRET });
 // GA-I36 N2: an approved amendment's void and a released held ball drop the
 // fixture's public cache once committed (afterCommit, as the publication
@@ -822,6 +827,11 @@ const PLAYER_ROUTES = [
   // could still schedule — the half-working setting smoke-modules.mjs
   // describes, found by making that walk try every module's write.
   [/^\/api\/training$/,                              "POST", training.schedule, "training"],
+  // GA-I26a A2 (db/105): a session's plan, keyed to the drill library and
+  // replaced whole, and its register (never `injured`). Both under
+  // team.manage through the session; Training's, so tagged with it.
+  [/^\/api\/training\/([^/]+)\/plan$/,            "POST", training.plan, "training"],
+  [/^\/api\/training\/([^/]+)\/attendance$/,      "POST", training.attendance, "training"],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],
@@ -948,9 +958,13 @@ const PLAYER_ROUTES = [
   // writes; tagged with Skills, whose screen writes it. Withdrawing a score
   // is Skills' too. Withdrawing a note is untagged, as writing one is: a
   // school that switched Skills off can still take back what was written.
-  [/^\/api\/players\/([^/]+)\/coaching-points$/, "POST", corrections.coachingPoint, "skills"],
-  [/^\/api\/skills\/([^/]+)\/withdraw$/,       "POST", corrections.skillWithdraw, "skills"],
-  [/^\/api\/notes\/([^/]+)\/withdraw$/,        "POST", corrections.noteWithdraw],
+  [/^\/api\/players\/([^/]+)\/coaching-points$/, "POST", development.coachingPoint, "skills"],
+  [/^\/api\/skills\/([^/]+)\/withdraw$/,       "POST", development.skillWithdraw, "skills"],
+  [/^\/api\/notes\/([^/]+)\/withdraw$/,        "POST", development.noteWithdraw],
+  // GA-I26a A2 (db/105): a target, set and withdrawn only through
+  // target_set() and target_withdraw(), under the coach's own write. Skills'.
+  [/^\/api\/players\/([^/]+)\/targets$/,        "POST", development.target, "skills"],
+  [/^\/api\/targets\/([^/]+)\/withdraw$/,       "POST", development.targetWithdraw, "skills"],
   // A disciplinary matter (SCRBRD-053). No module tag: a school cannot switch
   // off a safeguarding record the way it switches off Analytics, and the
   // module gate can only ever refuse — so tagging this would be a setting
