@@ -108,7 +108,9 @@ group("A2. A withdrawn notice, and the one that says so, are the same pointer (d
                        title: "A notice was withdrawn", body: "'Fifty for D Erasmus' was withdrawn after the scorecard was corrected." };
   const breach = { id: "40170000-0000-0000-0000-0000000000a3", kind: "welfare", urgency: "medium", retracts_id: NOTICE,
                    title: "A notice was withdrawn", body: "'Bowling directive exceeded' was withdrawn after the scorecard was corrected." };
-  for (const [what, row] of [["the withdrawn fifty", fifty], ["the withdrawal", withdrawal], ["a breach's withdrawal", breach]]) {
+  /** @type {Array<[string, { id: string }]>} */
+  const rows = [["the withdrawn fifty", fifty], ["the withdrawal", withdrawal], ["a breach's withdrawal", breach]];
+  for (const [what, row] of rows) {
     const p = buildPayload(row);
     const wire = JSON.stringify(p);
     ok(`${what} travels as the pointer, and nothing else`, p.kind === "pointer"
