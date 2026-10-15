@@ -199,10 +199,53 @@ export const READ_QUERIES = {
   },
   injuries: {
     masked: true,
-    text: `select id, player_id, injury_type, severity, date_injured, rtw_date,
-                  phase, restricted, notes, physio           -- notes/physio masked per role
+    // GA-I19 (db/111): emergency_services and next_review_on at the nature
+    // tier, recorded_by at the clinical tier, recurs_injury_id (a link) at
+    // the status tier. dso_notified_at is not read here: that the DSO was
+    // told is the safeguarding record's, not the Injuries screen's.
+    text: `select id, school_id, player_id, injury_type, severity, date_injured, rtw_date,
+                  phase, restricted, notes, physio,          -- notes/physio masked per role
+                  emergency_services, next_review_on,        -- nature tier (db/111)
+                  recorded_by,                               -- clinical tier (db/111)
+                  recurs_injury_id, created_at,
+                  -- Whether he has left the school the injury is at, and
+                  -- when: the screens' "left the school" mark (D11). Read
+                  -- under the caller's own RLS on team_membership, so it is
+                  -- the status tier's and widens nothing.
+                  injury_left_on(player_id, school_id) as left_on,
+                  (injury_left_on(player_id, school_id) is not null) as left_school
              from injury_masked
             order by date_injured desc`,
+  },
+  /**
+   * ONE INJURY'S REVIEWS, as a dated history (GA-I19 D3, db/111). Each row
+   * at the reader's own tier, from injury_review_masked: that a review
+   * happened and what it left his availability as for anybody who reads the
+   * injury row; the phase and the next review for the nature tier; the note
+   * and its author for the clinical tier. A support session reads none (Q7).
+   * Logged when a nature or clinical column comes back.
+   */
+  injury_reviews: {
+    masked: true,
+    text: `select r.id, r.school_id, r.player_id, r.injury_id, r.reviewed_at,
+                  r.is_recording,                            -- the recording itself ("Recorded")
+                  r.restricted_after, r.rtw_date_after,
+                  r.phase_after, r.next_review_on,           -- nature tier
+                  r.note, r.reviewed_by                      -- clinical tier
+             from injury_review_masked r
+            where r.injury_id = $1
+            order by r.reviewed_at, r.id`,
+    params: (q) => [req(q, "injuryId")],
+  },
+  /**
+   * THE PHYSIO'S WORKLIST (GA-I19 D3, D8, db/111): every open injury she
+   * holds medical.write over, each with one reason and its clock. Nobody
+   * else gets a row, so nobody else has a count of reviews due to show
+   * (D5). Every row is a nature-tier read of a child: logged on the reason.
+   */
+  injury_worklist: {
+    text: `select w.injury_id, w.school_id, w.player_id, w.reason, w.since, w.due_on, w.days_over
+             from injury_worklist() w`,
   },
   /**
    * Point-era balls for one match, for the continuous heat map.
@@ -3102,7 +3145,16 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   // `fitness` since SCRBRD-117 (db/58): the injury status tier, a health signal.
   players:  ["email", "phone", "born", "hometown", "houseatschool",
              "address", "guardian", "height", "weight", "id_number", "fitness"],
-  injuries: ["injury_type", "severity", "phase", "notes", "physio"],
+  // db/111 adds the nature tier's emergency_services and next_review_on, the
+  // clinical tier's recorded_by, and the DSO's stamp (not read by `injuries`,
+  // watched so that any read that returns it is logged).
+  injuries: ["injury_type", "severity", "phase", "notes", "physio",
+             "emergency_services", "next_review_on", "recorded_by", "dso_notified_at"],
+  // GA-I19: a review's phase and clock (nature), and the physio's words and
+  // who wrote them (clinical).
+  injury_reviews: ["phase_after", "next_review_on", "note", "reviewed_by"],
+  // The worklist: every row is why a named boy needs the physio, and when.
+  injury_worklist: ["reason", "due_on"],
   emergency_contacts: ["phone", "phone_alt", "email"],
   trip_contacts:      ["phone", "phone_alt", "email"],
   // A certificate's own number is enough to impersonate its holder at the
@@ -3150,6 +3202,7 @@ const pick = (/** @type {any} */ row, /** @type {string} */ path) =>
 /** Which id column identifies the CHILD a row is about, for the log. */
 /** @type {Record<string, string>} */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
+                     injury_reviews: "player_id", injury_worklist: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
                      // Not logged on an ordinary read (no contact comes back);
                      // named here so a platform-wide or support read of it,
