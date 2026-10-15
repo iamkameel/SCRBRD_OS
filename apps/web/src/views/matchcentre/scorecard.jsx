@@ -186,7 +186,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
   const byKey = new Map((commentary ?? []).map((c) => [c.key, c]));
   return (
     <div>
-      <div data-testid="mc-innings-head" data-from-scorebook={inn.summarised ? "true" : undefined} style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md,
+      <div data-testid="mc-innings-head" data-from-scorebook={inn.summarised ? "true" : undefined} style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md,
         padding: `${T.space.md} ${T.space.lg}`, background: T.board.face, color: T.board.figure, borderRadius: `${T.radius.lg} ${T.radius.lg} 0 0` }}>
         <span style={{ ...T.role.title.md, color: T.board.figure, minWidth: 0 }}>
           <SideName side={side}/>

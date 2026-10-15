@@ -98,7 +98,7 @@ function WormChart({innings,match,events=null}){
           )))}
         </g>
       </svg>
-      <div style={{display:"flex",gap:"16px",marginTop:"8px"}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"4px 16px",marginTop:"8px"}}>
         {inn1&&<div style={{display:"flex",alignItems:"center",gap:"5px"}}>
           <div style={{width:"18px",height:"2px",background:D.sky,borderRadius:"1px"}}/>
           <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{inn1.battingTeam}</span>
@@ -297,7 +297,7 @@ function BowlerChart({inn}){
           const econ=(b.balls>0?b.runs/(b.balls/6):0).toFixed(2);
           const econCol=parseFloat(econ)<6?D.emerald:parseFloat(econ)<9?D.amber:D.rose;
           return (
-            <div key={b.id} style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:"8px",alignItems:"center",
+            <div key={b.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto auto auto",gap:"8px",alignItems:"center",
               padding:"8px 10px",background:D.surf2,borderRadius:D.md,
               border:"1px solid "+(b.id===inn.bowler?D.orange+"44":D.border)}}>
               <span style={{fontFamily:D.body,fontSize:"12px",color:b.id===inn.bowler?D.orange:D.textPrimary,fontWeight:500}}>{b.name}{b.id===inn.bowler?"*":""}</span>
