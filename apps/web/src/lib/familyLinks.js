@@ -62,7 +62,7 @@ export function asChildLink(r) {
     endingKind: r.ending_kind ?? null, endingOn: day(r.ending_on), endedBy: r.ended_by_name ?? null,
     // Only to guardian.link.manage, or audit.read without the DSO's standing (D13).
     endingReason: r.ending_reason ?? null,
-    standing: r.standing ?? null, isMinor: r.is_minor === true,
+    regState: r.standing ?? null, isMinor: r.is_minor === true,
     liveLinks: Number(r.live_links ?? 0), consentedLinks: Number(r.consented_links ?? 0),
   };
 }
@@ -86,7 +86,7 @@ export function standingLine(links) {
   const verified = `${n} verified link${n === 1 ? "" : "s"}`;
   const consent = n === 0 ? "" : first.consentedLinks === n
     ? (n === 1 ? " · terms agreed" : " · terms agreed on both") : ` · terms agreed on ${first.consentedLinks}`;
-  return `${STANDING[first.standing] ?? "Unknown"} · ${verified}${consent}`;
+  return `${STANDING[first.regState] ?? "Unknown"} · ${verified}${consent}`;
 }
 
 /**

@@ -38,7 +38,7 @@ group("The adapter");
   const l = asChildLink(row());
   ok("keeps the link, the guardian, the state and the dates",
      l.id === "l1" && l.guardianName === "FL Mum" && l.state === "verified" && l.verifiedAt === "2026-09-25" && l.validFrom === "2026-09-15");
-  ok("carries the standing as the server says it", l.standing === "active" && l.isMinor && l.liveLinks === 2);
+  ok("carries the standing as the server says it", l.regState === "active" && l.isMinor && l.liveLinks === 2);
   ok("never a date of birth", !("born" in l) && !Object.keys(l).some((k) => /born|birth/i.test(k)));
   ok("no reason unless the read gave one", l.endingReason === null && asChildLink(row({ ending_reason: "a reason here" })).endingReason === "a reason here");
 }
