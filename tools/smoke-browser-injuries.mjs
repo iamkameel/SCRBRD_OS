@@ -87,10 +87,10 @@ const q = async (t, p) => (await pool.query(t, p)).rows;
 const browser = await chromium.launch({ ...launchOptions() });
 
 /** A sitting: its page, the page's errors and refusals, and every worklist request it made. */
-async function open({ phone = false, theme = "floodlit", reduced = false } = {}) {
+async function open({ phone = false, narrow = false, theme = "floodlit", reduced = false } = {}) {
   const ctx = await browser.newContext({
-    viewport: phone ? { width: 390, height: 844 } : { width: 1280, height: 900 },
-    ...(phone ? { isMobile: true, hasTouch: true } : {}),
+    viewport: narrow ? { width: 320, height: 640 } : phone ? { width: 390, height: 844 } : { width: 1280, height: 900 },
+    ...(phone || narrow ? { isMobile: true, hasTouch: true } : {}),
     ...(reduced ? { reducedMotion: "reduce" } : {}),
   });
   await offline(ctx);
@@ -160,7 +160,6 @@ async function floors(page, roots) {
   }, roots);
 }
 const focusedId = (page) => page.evaluate(() => document.activeElement?.id || document.activeElement?.getAttribute("data-testid") || document.activeElement?.tagName);
-const saToday = async () => String((await q(`select to_char(sa_today(), 'YYYY-MM-DD') as d`))[0].d);
 const plus = async (n) => String((await q(`select to_char(sa_today() + $1::int, 'YYYY-MM-DD') as d`, [n]))[0].d);
 const human = async (iso) => String((await q(`select to_char($1::date, 'Dy FMDD Mon') as d`, [iso]))[0].d);
 
@@ -193,7 +192,6 @@ try {
   const [{ n: gone }] = await q(`select count(*)::int as n from team_membership where player_id = $1 and left_on is null`, [LEAVER]);
   ok("the fixture boy has left (no open membership)", gone === 0);
   const [{ id: PHYSIO_ID }] = await q(`select id from app_user where email = 'medical@example.invalid'`);
-  const today = await saToday();
 
   // ── 1. The physio ────────────────────────────────────────────────
   group("1. The physio: Reviews due, the Record form, the Review form");
@@ -338,6 +336,34 @@ try {
   ok(`her screen: nothing under 12px (${fd.small.length}), nothing tapped under 44px (${fd.tiny.length})`, fd.small.length === 0 && fd.tiny.length === 0, [...fd.small, ...fd.tiny].slice(0, 4).join(" · "));
   ok("no page error, no client-side scoping", p.errors.length === 0 && p.refusals.length === 0, [...p.errors, ...p.refusals].join(" | "));
   await p.ctx.close();
+
+  // ── 1b. The physio at 320px ────────────────────────────────────
+  group("1b. The physio at 320px: nothing clipped, nothing past the edge");
+  const n = await open({ narrow: true });
+  const N = n.page;
+  ok("she signs in on a narrow phone", await signIn(N, "medical@example.invalid"));
+  await tid(N, "mnav-more").click({ timeout: 5000 }).catch(() => {});
+  await N.waitForTimeout(500);
+  const dr = N.locator('[data-testid="drawer-injuries"]');
+  if (await dr.count()) await dr.click({ timeout: 5000 }).catch(() => {});
+  await N.waitForTimeout(1800);
+  ok("Injuries opens from the drawer", await tid(N, "reviews-due").count() === 1);
+  await N.waitForTimeout(800);
+  const wide = () => N.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  await tid(N, "record-injury-open").click({ timeout: 5000 });
+  await N.waitForTimeout(400);
+  ok("the Record form fits 320px", (await wide()) <= 0, String(await wide()));
+  const fits = await N.$eval('[data-testid="record-injury-form"]', (f) => [...f.querySelectorAll("input, select, textarea, button")]
+    .filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 || e.getBoundingClientRect().left < -1).map((e) => e.getAttribute("data-testid") || e.tagName));
+  ok("...every field and button inside it", fits.length === 0, fits.join());
+  await tid(N, "record-cancel").click();
+  await tid(N, `review-due-${PILLAY_INJ}`).click({ timeout: 5000 });
+  await N.waitForTimeout(1200);
+  await tid(N, "review-open").click({ timeout: 5000 });
+  await N.waitForTimeout(400);
+  ok("the Review form and the report fit 320px", (await wide()) <= 0, String(await wide()));
+  ok("no page error", n.errors.length === 0 && n.refusals.length === 0, [...n.errors, ...n.refusals].join(" | "));
+  await n.ctx.close();
 
   // ── 2. The coach and the director ───────────────────────────────
   const secrets = (await q(`select notes, physio from injury where id = $1`, [PILLAY_INJ]))[0];
