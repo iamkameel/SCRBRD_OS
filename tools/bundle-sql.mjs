@@ -323,10 +323,69 @@ SELECT
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_plan_guard' AND tgenabled = 'O')
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_public_not_plan' AND tgenabled = 'O')
         AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('news_post_plan_live') AND i.indisunique)
-        AND NOT has_function_privilege('scrbrd_app', 'news_post_plan_guard()', 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('news_post_plan_guard()'), 'EXECUTE')
         AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
               AND (tablename, policyname) IN (('news_post', 'news_post_plan_side'), ('notification', 'notification_plan_side'))) = 2
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan is one per side, to the side",
+  -- db/97: the ball log follows the fixture; the away side reads its match
+  -- (SCRBRD-136/137 away visibility, AV-D1). The writes stay the host's.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read'
+                       AND p.polcmd = 'r' AND p.polpermissive
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%match_team(%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%away_school_id%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%away_team_code%')
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                         WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_insert'
+                           AND pg_get_expr(p.polwithcheck, p.polrelid) LIKE '%away\\_%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The away side reads its fixture's balls",
+  -- db/100: a parent reads the ball log of his child's side's fixtures, asked
+  -- about the child (never the all-zeros person); the writes stay the host's.
+  CASE WHEN to_regclass('ball_event') IS NOT NULL
+        AND to_regprocedure('my_child_fixtures()') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('ball_event') AND p.polname = 'ball_event_read'
+                       AND p.polcmd = 'r' AND p.polpermissive
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%my_child_fixtures()%'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%00000000-0000-0000-0000-000000000000%')
+        AND (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('my_child_fixtures()'))
+        AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('my_child_fixtures()')) LIKE '%p.id, m.id)%'
+        AND has_function_privilege('scrbrd_app', to_regprocedure('my_child_fixtures()'), 'EXECUTE')
+        AND NOT has_function_privilege('public', to_regprocedure('my_child_fixtures()'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                         WHERE p.polrelid = to_regclass('ball_event') AND p.polname = 'ball_event_insert'
+                           AND pg_get_expr(p.polwithcheck, p.polrelid) LIKE '%my\\_child\\_fixtures%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A parent reads his child's side's balls",
+  -- db/101: a team post and its notice reach the side only; a boy on a
+  -- fixture's sheet, and his guardians, read that fixture's plan.
+  CASE WHEN to_regprocedure('news_sheet_reach(uuid,uuid,text)') IS NOT NULL
+        AND to_regprocedure('news_team_notice_reach(uuid)') IS NOT NULL
+        AND to_regprocedure('news_notice_sheet(uuid,uuid,text)') IS NOT NULL
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('news_sheet_reach(uuid,uuid,text)'), to_regprocedure('news_team_notice_reach(uuid)'),
+                              to_regprocedure('news_notice_sheet(uuid,uuid,text)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('news_sheet_reach(uuid,uuid,text)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('news_sheet_reach(uuid,uuid,text)'), to_regprocedure('news_team_notice_reach(uuid)'),
+                                         to_regprocedure('news_notice_sheet(uuid,uuid,text)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND cmd = 'SELECT'
+              AND ((permissive = 'RESTRICTIVE' AND (tablename, policyname) IN
+                     (('news_post', 'news_post_team_side'), ('notification', 'notification_team_side')))
+                OR (permissive = 'PERMISSIVE' AND (tablename, policyname) IN
+                     (('news_post', 'news_post_read_sheet'), ('notification', 'notification_read_sheet'))))) = 4
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'news_post'
+                     AND policyname = 'news_post_plan_side' AND qual LIKE '%news_sheet_reach(%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A team post is the side's; the sheet reads its plan",
+  -- db/102: a module hidden from a named person is read by that school's
+  -- managers and by him, and its reason only through its function.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('feature_suppression') AND p.polname = 'feature_suppression_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%(person_id = app_user_id())%school.feature.manage%')
+        AND to_regprocedure('feature_suppression_reason(uuid)') IS NOT NULL
+        AND has_function_privilege('scrbrd_app', to_regprocedure('feature_suppression_reason(uuid)'), 'EXECUTE')
+        AND NOT has_column_privilege('scrbrd_app', to_regclass('feature_suppression'), 'reason', 'SELECT')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Who a module is hidden from is the school's",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

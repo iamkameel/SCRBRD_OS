@@ -147,7 +147,7 @@ const TYPE_FLOOR_CEILING = {
   cockpithome:   0,
   cockpitday:    0,
   cockpitlive:   0,
-  cockpitdrawer: 0, cockpitlivedrawer: 0,
+  cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0,
   // Pick the side (2026-10-03): the coach's dialog naming the side, opened from the Coach
   // tab's side panel, on a phone; measured inside its own region. Born at 0, and kept there.
   pickside:      0,
@@ -217,7 +217,7 @@ const TAP_FLOOR_CEILING = {
   cockpithome:   0,
   cockpitday:    0,
   cockpitlive:   0,
-  cockpitdrawer: 0, cockpitlivedrawer: 0, pickside: 0,
+  cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0, pickside: 0,
   // GA-I13: the scorer's home, inside its region: every control 44px or more.
   scorerhome: 0,
   // SCRBRD-140: the sign-in screens: every control 44px or more.
@@ -278,7 +278,7 @@ const CONTRAST_CEILING = {
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
-              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, pickside: 0,
+              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0, pickside: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
@@ -289,7 +289,7 @@ const CONTRAST_CEILING = {
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
-              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, pickside: 0,
+              cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0, pickside: 0,
               signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
@@ -336,7 +336,7 @@ const EMOJI_CEILING = {
   cockpithome:   0,
   cockpitday:    0,
   cockpitlive:   0,
-  cockpitdrawer: 0, cockpitlivedrawer: 0, pickside: 0,
+  cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0, pickside: 0,
   // SCRBRD-140: the sign-in screens.
   signuplogin:    0,
   signupclaim:    0,
@@ -720,7 +720,8 @@ async function captainWalk(theme) {
  * THE COACH'S COCKPIT (SCRBRD-136/137 phase A): a signed-in coach of the 1XI, on
  * a phone, against tools/a11y-cockpit-mock.mjs — no server, no database. The
  * match-day card on his Dashboard, the Coach tab before the first ball and with
- * the match live, and the feed's drawer. Each is measured inside its own region
+ * the match live, and the feed's drawer, closed and with every card's evidence
+ * trail open (GA-I27, cockpittrail). Each is measured inside its own region
  * (the card, the tab, the drawer) by the same ratchets as the rest (12px, 44px,
  * AA, emoji), every control is named, and the drawer is reached by keyboard:
  * focus moves into it, Tab stays inside, Escape closes it and focus comes back.
@@ -831,6 +832,36 @@ async function cockpitWalk(theme) {
     await check("cockpitdrawer", '[data-testid="signals"]');
     for (let i = 0; i < 40; i++) await page.keyboard.press("Tab");
     ok("Tab stays inside the open drawer", await page.evaluate(() => !!document.activeElement?.closest('[data-testid="signals"]')));
+    // GA-I27: "Where this comes from", by keyboard. Enter on the first card's
+    // disclosure opens its trail (aria-expanded, the trail named by
+    // aria-controls) with focus left on the button; Tab reaches the trail's
+    // link; then every card's trail open is measured inside the drawer.
+    const trailBtn = page.locator('[data-testid="signals"] article [data-testid^="signal-trail-"]').first();
+    await trailBtn.focus();
+    ok("each card has the disclosure, collapsed, by its name", await trailBtn.getAttribute("aria-expanded") === "false" && /^Where this comes from$/.test((await trailBtn.innerText()).trim()));
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="evidence-trail"]', { timeout: 6000 }).catch(() => {});
+    ok("Enter opens the trail: aria-expanded, the trail it controls, and focus stays on the button",
+       await trailBtn.getAttribute("aria-expanded") === "true"
+       && await page.evaluate(() => { const b = document.activeElement; return !!b?.getAttribute("data-testid")?.startsWith("signal-trail-") && document.getElementById(b.getAttribute("aria-controls") ?? "")?.getAttribute("data-testid") === "evidence-trail"; }));
+    ok("...the trail says its read and its time, and lists its figures as terms and values",
+       await page.evaluate(() => { const t = document.querySelector('[data-testid="evidence-trail"]'); return !!t && /as at \d\d:\d\d/.test(t.querySelector('[data-testid="evidence-trail-line"]')?.textContent ?? "")
+         && t.querySelectorAll("dl dt").length > 0 && t.querySelectorAll("dl dt").length === t.querySelectorAll("dl dd").length; }));
+    if (await page.locator('[data-testid="evidence-trail"] [data-testid="evidence-trail-link"]').count()) {
+      let reached = false;
+      for (let i = 0; i < 6 && !reached; i++) { await page.keyboard.press("Tab"); reached = await page.evaluate(() => document.activeElement?.getAttribute("data-testid") === "evidence-trail-link"); }
+      ok("...Tab reaches its link, a link by role", reached && await page.evaluate(() => document.activeElement?.tagName === "A" && !!document.activeElement.getAttribute("href")));
+    }
+    await trailBtn.focus();
+    await page.keyboard.press("Space");
+    await page.waitForTimeout(200);
+    ok("Space closes it again, and the trail goes", await trailBtn.getAttribute("aria-expanded") === "false" && await page.locator('[data-testid="evidence-trail"]').count() === 0);
+    const all = page.locator('[data-testid="signals"] article [data-testid^="signal-trail-"]');
+    for (let i = 0, k = await all.count(); i < k; i++) await all.nth(i).click({ timeout: 3000 }).catch(() => {});
+    await page.waitForFunction((k) => document.querySelectorAll('[data-testid="evidence-trail"]').length >= k, await all.count(), { timeout: 6000 }).catch(() => {});
+    await check("cockpittrail", '[data-testid="signals"]');
+    for (let i = 0; i < 60; i++) await page.keyboard.press("Tab");
+    ok("with every trail open, Tab stays inside the drawer", await page.evaluate(() => !!document.activeElement?.closest('[data-testid="signals"]')));
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
     ok("Escape closes it and focus returns to the button that opened it", await tid("signals").count() === 0 && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "coach-signals-open");

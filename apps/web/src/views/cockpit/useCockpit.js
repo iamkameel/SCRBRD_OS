@@ -20,6 +20,10 @@ import { evaluate, isSeen, markSeen, unseen } from "../../lib/signals.js";
  *
  * Nothing here writes. Nothing here is authority.
  *
+ * WHEN EACH READ ANSWERED (GA-I27 §4.1): `reads.at[name]` is the moment each
+ * read's rows arrived, by the read's own name, kept beside the rows so a
+ * card's evidence trail can say "as at 14:02". A read that failed has no time.
+ *
  * @param {{match: any, gate: ReturnType<typeof import("../../lib/cockpit.js").cockpitGate>, lifts?: boolean, matchups?: boolean, seen?: unknown}} o
  *   `seen`: what the match's log has grown to; the live reads are made again when it moves.
  */
@@ -46,26 +50,30 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
     let cancelled = false;
     if (quiet.current) quiet.current = false; else setLoading(true);
     const q = { matchId: /** @type {string} */ (id) };
+    /** @type {Record<string, number>} */
+    const at = {};
+    /** The read's rows, its answer time noted under its name; a read that failed (null) has none. @template T @param {string} name @param {Promise<T> | null} p @returns {Promise<T | null>} */
+    const timed = (name, p) => (p == null ? Promise.resolve(null) : p.then((r) => { if (r != null) at[name] = Date.now(); return r; }));
     (async () => {
-      const squad = await readLive("match_squad", q);
+      const squad = await timed("match_squad", readLive("match_squad", q));
       const sheet = (squad ?? []).filter((r) => r.side === end && !r.twelfth);
       const [readiness, workload, spells, phases, trips, duties, officials, pitch, weather, conditions, notices, opposition, directives,
         liftRows, liftExc] = await Promise.all([
-        panels.side ? readLive("readiness", q) : null,
-        panels.load ? readLive("workload", teamCode ? { teamCode } : null) : null,
-        panels.load ? readLive("bowling_spells", q) : null,
+        panels.side ? timed("readiness", readLive("readiness", q)) : null,
+        panels.load ? timed("workload", readLive("workload", teamCode ? { teamCode } : null)) : null,
+        panels.load ? timed("bowling_spells", readLive("bowling_spells", q)) : null,
         match.status !== "upcoming" ? readLive("phases", q) : null,
-        panels.bus ? readLive("trips", q) : null,
-        panels.day ? readLive("match_duties", q) : null,
+        panels.bus ? timed("trips", readLive("trips", q)) : null,
+        panels.day ? timed("match_duties", readLive("match_duties", q)) : null,
         panels.day ? readLive("officials", q) : null,
         panels.day ? readLive("pitch_report", q) : null,
-        panels.day ? readLive("weather") : null,
-        panels.day ? api(`/api/matches/${id}/playing-conditions`).catch(() => null) : null,
-        readLive("notifications"),
+        panels.day ? timed("weather", readLive("weather")) : null,
+        panels.day ? timed("playing-conditions", api(`/api/matches/${id}/playing-conditions`).catch(() => null)) : null,
+        timed("notifications", readLive("notifications")),
         panels.opposition ? readLive("opposition_context", q) : null,
         panels.day ? readLive("bowling_directives") : null,
-        lifts && panels.lifts ? api(`/api/matches/${id}/lifts/expected`).then((r) => r.rows ?? []).catch(() => null) : null,
-        lifts && panels.liftOffice && school ? api(`/api/lifts/exceptions?schoolId=${school}&matchId=${id}`).then((r) => r.rows ?? []).catch(() => null) : null,
+        lifts && panels.lifts ? timed("lift_expected", api(`/api/matches/${id}/lifts/expected`).then((r) => r.rows ?? []).catch(() => null)) : null,
+        lifts && panels.liftOffice && school ? timed("lift_exceptions", api(`/api/lifts/exceptions?schoolId=${school}&matchId=${id}`).then((r) => r.rows ?? []).catch(() => null)) : null,
       ]);
       // Our boys against pace and spin: one read per boy on the sheet, with its coverage beside it.
       let by = null;
@@ -75,6 +83,8 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
           return [r.playerId, rows ? { rows, coverage: cov?.[0] ? { attributable: cov[0].attributable, deliveries: cov[0].deliveries } : null } : null];
         }));
         by = Object.fromEntries(pairs.filter(([, v]) => v));
+        // One time for the batch: the moment the last boy's two reads answered.
+        if (pairs.some(([, v]) => v)) { at.matchups = Date.now(); at.matchup_coverage = at.matchups; }
       }
       if (cancelled) return;
       setReads({
@@ -87,6 +97,7 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
         terms: termsFromConditions(conditions),
         notices, opposition: opposition?.[0] ?? null, directives,
         lifts: liftRows == null ? null : liftRows, liftExceptions: liftExc, matchups: by,
+        at,
       });
       setLoading(false);
     })();
@@ -101,7 +112,9 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
     const q = { matchId: /** @type {string} */ (id) };
     const t = setTimeout(async () => {
       const [spells, workload] = await Promise.all([readLive("bowling_spells", q), readLive("workload", teamCode ? { teamCode } : null)]);
-      if (!cancelled) setReads((r) => ({ ...r, spells: spells ?? r.spells, workload: workload ?? r.workload }));
+      const now = Date.now();
+      if (!cancelled) setReads((r) => ({ ...r, spells: spells ?? r.spells, workload: workload ?? r.workload,
+        at: { ...r.at, ...(spells ? { bowling_spells: now } : {}), ...(workload ? { workload: now } : {}) } }));
     }, 400);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,13 +135,14 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
  * Its own hook, called once `fielding` is known: useCockpit() is called before
  * the tab has a fold, so it takes no `fielding`.
  *
- * `null` until it answers, and when it fails: S2c then draws nothing.
+ * `rows` is `null` until it answers, and when it fails: S2c then draws
+ * nothing. `at` is when the rows on hand answered (GA-I27 §4.1).
  *
  * @param {{match: any, gate: any, fielding?: {inPlay: boolean}[], seen?: unknown}} o
- * @returns {any[] | null}
+ * @returns {{rows: any[] | null, at: number | null}}
  */
 export function useBowlerDay({ match, gate, fielding = [], seen = 0 }) {
-  const [rows, setRows] = useState(/** @type {any[] | null} */ (null));
+  const [got, setRows] = useState(/** @type {{rows: any[] | null, at: number | null}} */ ({ rows: null, at: null }));
   const inPlay = fielding.some((f) => f.inPlay);
   const on = !!gate?.panels?.load && inPlay && !!match?.id && signedIn();
   const startsAt = Date.parse(String(match?.startsAt ?? ""));
@@ -136,15 +150,16 @@ export function useBowlerDay({ match, gate, fielding = [], seen = 0 }) {
   const date = Number.isFinite(startsAt) ? saDay(startsAt) : match?.date ?? null;
   const teamCode = gate?.teamCode ?? null;
   useEffect(() => {
-    if (!on || !date) { setRows(null); return undefined; }
+    if (!on || !date) { setRows({ rows: null, at: null }); return undefined; }
     let cancelled = false;
     const t = setTimeout(async () => {
       const r = await readLive("bowler_day", teamCode ? { date, teamCode } : { date });
-      if (!cancelled) setRows((prev) => r ?? prev);
+      const at = Date.now();
+      if (!cancelled) setRows((prev) => (r ? { rows: r, at } : prev));
     }, 400);
     return () => { cancelled = true; clearTimeout(t); };
   }, [on, date, teamCode, seen]);
-  return on ? rows : null;
+  return on ? got : { rows: null, at: null };
 }
 
 /**
@@ -153,9 +168,13 @@ export function useBowlerDay({ match, gate, fielding = [], seen = 0 }) {
  * useBowlerDay(), where the tab has them; the dashboard's card has none and
  * the three bowler rules draw nothing there.
  *
- * @param {{match: any, gate: any, cockpit: ReturnType<typeof useCockpit>, fielding?: {inn: any, i: number, inPlay: boolean}[], capFor?: ((balls: number) => string | null) | null, bowlerDay?: any[] | null, docDayFor?: ((band: string) => number | null) | null}} o
+ * The evidence trail's time (GA-I27 §4.1): each read's answer time from
+ * `reads.at`, the day read's as `dayAt`, and the match's log as `foldAt` with
+ * its `head` (the highest `seq` on screen), where the tab has them.
+ *
+ * @param {{match: any, gate: any, cockpit: ReturnType<typeof useCockpit>, fielding?: {inn: any, i: number, inPlay: boolean}[], capFor?: ((balls: number) => string | null) | null, bowlerDay?: any[] | null, dayAt?: number | null, docDayFor?: ((band: string) => number | null) | null, head?: number | null, foldAt?: number | null}} o
  */
-export function useFeed({ match, gate, cockpit, fielding = [], capFor = null, bowlerDay = null, docDayFor = null }) {
+export function useFeed({ match, gate, cockpit, fielding = [], capFor = null, bowlerDay = null, dayAt = null, docDayFor = null, head = null, foldAt = null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(t); }, []);
   const { reads, loading } = cockpit;
@@ -168,8 +187,10 @@ export function useFeed({ match, gate, cockpit, fielding = [], capFor = null, bo
       liftExceptions: reads.liftExceptions ?? null, weather: reads.weather ?? null, duties: reads.duties ?? null,
       conditions: reads.conditions ?? { state: "failed", cap: null, freeHit: null }, notices: reads.notices ?? null,
       matchups: reads.matchups ?? null, fielding, capFor, bowlerDay, docDayFor,
+      at: { ...(reads.at ?? {}), ...(dayAt != null ? { bowler_day: dayAt } : {}), ...(foldAt != null ? { fold: foldAt } : {}) },
+      head: head ?? null,
     });
-  }, [now, match, gate, loading, reads, fielding, capFor, bowlerDay, docDayFor]);
+  }, [now, match, gate, loading, reads, fielding, capFor, bowlerDay, dayAt, docDayFor, head, foldAt]);
 
   const person = profile()?.user?.id ?? null;
   const [seen, setSeen] = useState(() => loadSeen(person));

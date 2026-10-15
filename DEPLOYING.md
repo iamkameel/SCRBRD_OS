@@ -1042,6 +1042,85 @@ with it refuses to start without db/94 (`expected-migrations.json`) and serves
 `GET /api/read/bowler_day?date=YYYY-MM-DD&teamCode=…`. The web app reads it
 only on the Coach tab, and only while our side fields.
 <!-- ── end db/94 ── -->
+<!-- ── db/97: the ball log follows the fixture ── -->
+#### The away side reads its fixture's balls (db/97)
+
+`db/97_ball_event_away_read.sql` is SCRBRD-136/137 away visibility
+(`docs/design/SCRBRD-136-137_away_visibility.md`, approved by Kameel on
+2026-10-14; AV-D1 to AV-D5). A fixture's `match` row was already readable by
+either side's `fixture.read` holders, but every ball of it carries the host's
+school, and `ball_event_read` (db/02) asked only the host. So at an away
+fixture the visiting coach, pupils and spectators saw the fixture and none of
+it: no scorecard, no spells, no wheel. `ball_event_read` now has
+`match_read`'s two branches: the host's, unchanged, or `fixture.read` at the
+fixture's away school and away team. Every read of the log follows (they are
+`security_invoker` down to `ball_event`); every per-boy gate on top of it
+still asks per boy, so the host's boys' load, records and wheels stay the
+host's. The pad's tables (`scoring_session`, `ball_event_quarantine`,
+`scoring_audit`) and every write stay the host's: nothing lets the away side
+score. A guardian's reads are unchanged (the log asks about nobody in
+particular, at either side's fixtures).
+
+**What it does to a live database.** It drops `ball_event_read` on
+`ball_event` and creates it again with the away branch, in the paste's one
+transaction; the file checks the policy's text before it commits. No table,
+column, row, function or grant is added or changed, and no other policy is
+touched. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 97` (after 94; 95 and 96 are not
+needed first), then the verify bundle (§75 is its proof; the summary row "The
+away side reads its fixture's balls" should read OK). **Schema first**: the
+API built with it refuses to start without db/97 (`expected-migrations.json`).
+The API it ships with also asks a boy's record before `player_shot_points`
+draws his wheel and before `matchup_coverage` counts a named batter's balls,
+so the visiting school reads a shared fixture's balls but not the host's boy
+across fixtures. No screen changes.
+<!-- ── end db/97 ── -->
+<!-- ── db/100: a parent reads his child's side's balls ── -->
+#### A parent reads the ball log of his child's side's fixtures (db/100)
+
+`db/100_ball_event_guardian_read.sql` is Kameel's decision of 2026-10-14:
+a guardian reads the balls of fixtures his child's side plays, home and away;
+per-boy figures stay gated as they are. Until now `ball_event_read` asked
+`fixture.read` about nobody in particular, which a guardian's assignment (it
+names his children) never answers, so a parent saw his son's fixture on his
+list and none of it: the family cards and the Match Centre in family mode
+folded an empty log. `ball_event_read` keeps db/97's host and away branches
+word for word and gains a third: the fixture is one `my_child_fixtures()`
+returns, a new helper that answers the caller alone. It lists the fixtures
+whose side, at either end, has on it a child the caller's own verified link
+names, each asked of `app_can()` about that child. "On the side" is the
+child's team at that end's school, or the fixture's team sheet
+(`match_squad`, not withdrawn), so a boy playing up for an older side is
+followed into that match. It never asks with the all-zeros person
+`match_read` uses, which for a school-wide guardian assignment would open
+every fixture at the school. Another side's fixture at the same school, and
+any fixture at another school, read nothing; a link that ends reads nothing
+from the next query. The per-boy gates still ask per boy: other boys' wheels,
+careers and matchups join `player`, which a parent reads for his own child
+only, and the load (`bowling_spells`' directive, `workload`, `bowler_day`)
+asks `player.workload.read`, which a guardian does not hold. The pad's tables
+and every write are unchanged.
+
+**What it does to a live database.** It creates `my_child_fixtures()` (a
+`SECURITY DEFINER` function taking no argument; `EXECUTE` revoked from
+`PUBLIC` and granted to `scrbrd_app`), then drops `ball_event_read` on
+`ball_event` and creates it again with the guardian branch, in the paste's
+one transaction; the file checks the policy's and the helper's text and
+grants before it commits. No table, column or row is added or changed, and no
+other policy is touched. A second paste changes nothing. The helper runs once
+per read of the log, not once per ball: on the seed, every read compared (a
+coach's own match, the away coach's, a refused fixture, a career view) costs
+what it did under db/97 within a few milliseconds, planning is unchanged, and
+a guardian's helper call is about 5 ms (db/100's header has the figures).
+
+Paste `node tools/bundle-sql.mjs --apply 100` (after 97), then the verify
+bundle (§77 is its proof; the summary row "A parent reads his child's side's
+balls" should read OK, and "The away side reads its fixture's balls" still
+does). **Schema first**: the API built with it refuses to start without
+db/100 (`expected-migrations.json`). No API text or screen changes: the
+parent's screens already read `GET /api/matches/:id/events`.
+<!-- ── end db/100 ── -->
 
 <!-- ── db/96: the plan to the side, a team post tagged to a fixture ── -->
 #### The coach's plan to the side (db/96)
@@ -1081,6 +1160,80 @@ answers a second live plan with `409 plan_exists` and who wrote the first, and
 returns `kind`, `fixtureId` and `noticeId` on the `news` read. No screen
 writes a plan until the composer ships (B5).
 <!-- ── end db/96 ── -->
+
+<!-- ── db/101: news to the side, a team post and the team sheet ── -->
+#### News to the side: a team post, and the team sheet (db/101)
+
+`db/101_news_to_the_side.sql` is two decisions of Kameel's (2026-10-14).
+**A team post reaches the side only**: an ordinary post to a side (scope
+`team`) and its notice now read as a plan does since db/96, to `news.read`
+and `team.read` at the side, a guardian through a child on it, and its author
+always. Before it, a guardian of a boy on another side and every school-wide
+role that reads no side (a follower, finance, sponsorship, a driver,
+facilities) read every side's posts and their notices. School and league
+posts are unchanged. **A boy on the team sheet reads his match's plan**: a
+boy named on a fixture's sheet at the plan's end (not withdrawn), and his
+guardians, read that fixture's plan and its notice even when his own side is
+another (a boy playing up), and nothing else of that side. A boy taken off the
+sheet loses it.
+
+**What it does to a live database.** Three functions (`news_sheet_reach`,
+`news_team_notice_reach`, `news_notice_sheet`), db/96's `news_notice_reach`
+replaced in place (same signature and grants), two `RESTRICTIVE` and two
+permissive `SELECT` policies (`news_post_team_side`, `notification_team_side`,
+`news_post_read_sheet`, `notification_read_sheet`), each created only when
+`pg_policies` does not have it, and **one `ALTER POLICY`**: db/96's
+`news_post_plan_side` gains the sheet (a restrictive policy would otherwise
+refuse the boy playing up). Nothing is dropped. No row is inserted, changed
+or deleted. Nothing grants a write. **One behaviour changes for every school
+at once, on the paste:** parents and followers stop seeing other sides' team
+posts and their notices in News and Notices, and stop being pushed them.
+The ALTER and the policies lock `news_post` and `notification` for the
+length of one statement each; paste outside a match.
+
+Paste `node tools/bundle-sql.mjs --apply 101` (after 96, and after 97 and
+100 where those have shipped), then the verify bundle (§78 is its proof; the
+summary row "A team post is the side's; the sheet reads its plan" should read
+OK). **Schema first**: an API built with it refuses to start without db/101
+(`expected-migrations.json`). The API needs nothing new from it: the `news`
+and `notifications` reads return what the database's policies let through,
+so they answer the narrower set on the paste.
+<!-- ── end db/101 ── -->
+
+<!-- ── db/102: who a module was hidden from is the school's to read ── -->
+#### Who a module was hidden from is the school's to read (db/102)
+
+`db/102_suppression_read.sql` closes a leak found on 2026-10-14 before anyone
+used the feature (production held no row naming a person). A school can hide
+a module from one named person, with a free-text reason. Until now anybody
+enrolled at any school could read those rows, and `module_suppressions` gave
+them the person's name and the reason. Now a row naming a person is read only
+by a holder of `school.feature.manage` at that school and by the person named.
+He reads that the module is hidden from him, not why: the application no
+longer selects `feature_suppression.reason`, and `feature_suppression_reason(id)`
+gives the reason to the school's managers (and, for a school-wide row, to
+whoever reads the row, as before). Who a module is hidden from still resolves
+as before, because `feature_enabled()` and `my_feature_enabled()` read the
+table as its owner. `module_settings` gives its `people_hidden` count to the
+school's managers and null to everybody else.
+
+**What it does to a live database.** Replaces the `feature_suppression_read`
+policy. Refuses to run if that policy is not the one db/81 left (or this
+file's own). Takes `SELECT` on `feature_suppression` from `scrbrd_app`, and
+from a managed host's `anon`/`authenticated` where they hold it, and grants
+it back on every column but `reason`. `INSERT` and `UPDATE` are unchanged.
+Adds one function: `SECURITY DEFINER`, `STABLE`, pinned search path,
+executable by `scrbrd_app` and not `PUBLIC`. No table, no row. A second paste
+changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 102` (after 94, and after 96–101 if
+they have shipped; the bundle names the one it needs first), then the verify
+bundle (§79 is its proof). The summary row "Who a module is hidden from is
+the school's" should read OK. **Schema first**: the API built with it refuses
+to start without db/102 (`expected-migrations.json`), and its
+`module_suppressions` read calls `feature_suppression_reason()`, which an older
+database does not have.
+<!-- ── end db/102 ── -->
 
 ### 5 · Cloud Run, the first time
 

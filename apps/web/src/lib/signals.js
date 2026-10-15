@@ -28,6 +28,7 @@
 import { busOf, isMatchDay, isSoon, saTime, shortDate, LOAD_SENTENCE, weatherWords } from "./cockpit.js";
 import { EXCEPTION_WORDS } from "./liftWords.js";
 import { matchupTypes } from "./captain.js";
+import { clockWords } from "./corrections.js";
 
 /** The matchup floor (D14): thirty balls against a type, the dossier's own floor for a strike rate. */
 export const MATCHUP_FLOOR = 30;
@@ -63,6 +64,38 @@ export const RULES = Object.freeze({
 export const RULE_ORDER = Object.freeze(Object.keys(RULES));
 
 /**
+ * THE EVIDENCE TRAIL (GA-I27 slice 1, C1; docs/design/GA-I27_coach_cards.md
+ * §1.2, §2): what each card's working stands on. The trail is a view of the
+ * rows the rule already read, in the browser (C-D2): no new read, no new
+ * gate, no row. Per rule, the read it names (one of its `source` names; "fold"
+ * for the frozen log), the window and the denominator in words, the reads
+ * whose answer time is its "as at", whether it stands on the match's log (and
+ * so says the head `seq`, GA-I36 D1), and the existing screen that holds the
+ * rest (C-D3), opened under the screen's own gate. The figures are each
+ * rule's own, passed to card() beside its lines.
+ */
+const TRAINING = { route: "training", label: "Open the load on Training" };
+const SQUAD = { route: "squad", label: "Open Squad" };
+const LIFTS = { route: "squad", label: "Open the lifts on Squad" };
+export const TRAILS = Object.freeze({
+  S1:  { read: "trips",              reads: ["trips", "match_squad", "lift_expected"], window: "this fixture",                      denominator: "seats on the bus, boys named",          unit: "boys",  screen: { route: "logistics", section: "transport", label: "Open Transport" } },
+  S2a: { read: "fold",               reads: ["fold"],                 window: "this innings",                       denominator: "balls bowled, against the frozen conditions", unit: "balls", fold: true, screen: { route: "scorecard", label: "Open the scorecard" } },
+  S2b: { read: "bowling_spells",     reads: ["bowling_spells"],       window: "the open spell",                     denominator: "overs, of the directive's spell",     unit: "overs", fold: true, screen: TRAINING },
+  S2c: { read: "bowler_day",         reads: ["bowler_day"],           window: "the fixture's date, every match",    denominator: "overs, of the day's limit",           unit: "overs", screen: TRAINING },
+  S3:  { read: "readiness",          reads: ["readiness"],            window: "this fixture",                       denominator: null,                                  unit: null,    screen: SQUAD },
+  S4a: { read: "lift_expected",      reads: ["lift_expected"],        window: "the fixture's day",                  denominator: "lifts and the boys in them",          unit: "lifts", screen: LIFTS },
+  S4b: { read: "lift_exceptions",    reads: ["lift_exceptions"],      window: "the fixture's day",                  denominator: null,                                  unit: null,    screen: LIFTS },
+  S5:  { read: "matchups",           reads: ["matchups", "matchup_coverage"], window: "every match of his you may read", denominator: "balls attributable, of the balls he faced", unit: "balls", screen: { route: "profile", label: "Open his profile" } },
+  S6:  { read: "match_squad",        reads: ["match_squad"],          window: "this fixture",                       denominator: `of a side of ${SIDE}`,                unit: "boys",  screen: SQUAD },
+  S7:  { read: "readiness",          reads: ["readiness"],            window: "this fixture",                       denominator: null,                                  unit: null,    screen: SQUAD },
+  S8:  { read: "match_duties",       reads: ["match_duties"],         window: "this fixture",                       denominator: "the scorer's and the umpire's slots", unit: null,    screen: { route: "duties", label: "Open the duties" } },
+  S9:  { read: "weather",            reads: ["weather"],              window: "the fixture's day",                  denominator: "the read's own words",                unit: null,    screen: null },
+  S10: { read: "playing-conditions", reads: ["playing-conditions"],   window: "this fixture",                       denominator: "the conditions document",             unit: null,    screen: { route: "competitions", label: "Open the conditions" } },
+  S11: { read: "workload",           reads: ["workload"],             window: "the 7 days to today",                denominator: "overs begun, every match",            unit: "overs", screen: TRAINING },
+  S12: { read: "notifications",      reads: ["notifications"],        window: "as published",                       denominator: null,                                  unit: null,    screen: { route: "notifications", label: "Open Alerts" } },
+});
+
+/**
  * @typedef {object} Card
  * @property {string} rule     "S1" … "S12"
  * @property {string} base     what a dismissal is filed under: the rule and the thing it is about
@@ -74,18 +107,48 @@ export const RULE_ORDER = Object.freeze(Object.keys(RULES));
  * @property {string} source   the read it came from
  * @property {boolean} dismissable
  * @property {number} [growth] a dismissal holds until `count` has grown by this much (S5)
+ * @property {Evidence} evidence the card's working: the figures it stands on, from the rows the rule read (GA-I27)
+ */
+
+/**
+ * @typedef {{label: string, value: string | number, unit?: string}} Figure
+ * @typedef {object} Evidence
+ * @property {string} read          the read's name as read-api names it, or "fold" for the match's log
+ * @property {Record<string, string | number>} params  what the read was about; a boy only when the card names him
+ * @property {string} window        words
+ * @property {string | null} denominator  words, or null where the figure is a count of rows
+ * @property {string | null} unit
+ * @property {Figure[]} figures     drawn only from fields the rule read
+ * @property {number | null} asOf   ms: when the oldest of its reads answered (Ctx.at), stamped by evaluate()
+ * @property {number | null} head   the match's head seq, fold-derived cards only (Ctx.head), stamped by evaluate()
+ * @property {{route: string, label: string, section?: string} | null} screen  an existing screen, opened under its own gate
  */
 
 /**
  * @param {string} rule  @param {string} base  @param {string} key  @param {string[]} lines
- * @param {number} count  @param {{dismissable?: boolean, growth?: number, via?: string[]}} [o]
+ * @param {number} count  @param {{dismissable?: boolean, growth?: number, via?: string[], figures?: (Figure | null | false)[], params?: Record<string, string | number>}} [o]
  * @returns {Card}
  */
 const card = (rule, base, key, lines, count, o = {}) => ({
   rule, base, key, title: RULES[/** @type {keyof typeof RULES} */ (rule)].title, lines: lines.filter(Boolean), count,
   via: o.via ?? [...RULES[/** @type {keyof typeof RULES} */ (rule)].via], source: RULES[/** @type {keyof typeof RULES} */ (rule)].source,
   dismissable: o.dismissable !== false, ...(o.growth ? { growth: o.growth } : {}),
+  evidence: trail(rule, o.figures ?? [], o.params ?? {}),
 });
+
+/** A card's trail before evaluate() stamps its time: the rule's TRAILS row and its own figures. @param {string} rule @param {(Figure | null | false)[]} figures @param {Record<string, string | number>} params @returns {Evidence} */
+function trail(rule, figures, params) {
+  const t = TRAILS[/** @type {keyof typeof TRAILS} */ (rule)];
+  return { read: t.read, params, window: t.window, denominator: t.denominator, unit: t.unit,
+    figures: /** @type {Figure[]} */ (figures.filter(Boolean)), asOf: null, head: null, screen: t.screen };
+}
+
+/** A figure: a label, the value as the row has it, and its unit where it has one. @param {string} label @param {string | number} value @param {string} [unit] @returns {Figure} */
+const fig = (label, value, unit) => (unit ? { label, value, unit } : { label, value });
+/** The unit for a count: "1 ball", "2 balls". @param {number} n @param {string} one @param {string} [many] */
+const per = (n, one, many = `${one}s`) => (n === 1 ? one : many);
+/** Yes, no, or not said, for a field that may be absent. @param {boolean | null | undefined} b */
+const yesNo = (b) => (b === true ? "yes" : b === false ? "no" : "not said");
 
 const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {string} */ many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -113,6 +176,8 @@ const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {s
  * @property {Record<string, {rows: any[], coverage: {attributable: number, deliveries: number} | null}> | null} matchups
  * @property {{inn: any, i: number, inPlay: boolean}[]} fielding  our fielding innings
  * @property {((balls: number) => string | null) | null} capFor  the pad's cap sentence for the frozen conditions
+ * @property {Record<string, number> | null} [at]  when each read answered (ms), by the read's name; "fold" is the match's log (GA-I27 §4.1)
+ * @property {number | null} [head]  the match's head seq: the highest the log has reached (GA-I36 D1)
  */
 
 const ours = (/** @type {Ctx} */ c) => (c.squad ?? []).filter((r) => r.side === c.gate.end);
@@ -140,7 +205,13 @@ export function ruleS1(c) {
     ? `Bus seats ${bus.capacity} · ${all.length} named (lifts not counted)`
     : `Bus seats ${bus.capacity} · ${all.length} named, ${byLift} by lift → ${travelling} travelling`;
   return [card("S1", "S1", `S1:${bus.capacity}/${all.length}/${byLift ?? "x"}/${bus.seatsTaken}`,
-    [head, over ? `${bus.seatsTaken} seats are marked taken on a bus of ${bus.capacity}` : null], Math.max(short, over))];
+    [head, over ? `${bus.seatsTaken} seats are marked taken on a bus of ${bus.capacity}` : null], Math.max(short, over), { figures: [
+      fig("seats on the bus", bus.capacity, per(bus.capacity, "seat")),
+      fig("seats marked taken", bus.seatsTaken, per(bus.seatsTaken, "seat")),
+      fig("named", all.length, per(all.length, "boy")),
+      byLift == null ? fig("by lift", "not counted") : fig("by lift", byLift, per(byLift, "boy")),
+      fig("travelling by bus", travelling, per(travelling, "boy")),
+    ] })];
 }
 
 // ── S2a · A bowler at the competition's cap ────────────
@@ -156,7 +227,8 @@ export function ruleS2a(c) {
       if (!(b.balls > 0)) continue;
       const words = c.capFor(b.balls);
       if (!words || (!inPlay && !pastCap(words))) continue;
-      out.push(card("S2a", `S2a:${i}:${b.id}`, `S2a:${i}:${b.id}:${words}`, [`${b.name} · ${words}`], 1, { dismissable: !inPlay }));
+      out.push(card("S2a", `S2a:${i}:${b.id}`, `S2a:${i}:${b.id}:${words}`, [`${b.name} · ${words}`], 1, { dismissable: !inPlay,
+        figures: [fig("balls bowled", b.balls, per(b.balls, "ball")), fig("the conditions", words)], params: { innings: i, playerId: b.id } }));
     }
   }
   return out;
@@ -175,7 +247,9 @@ export function ruleS2b(c) {
     if (!open || open.pace !== true || open.maxSpell == null || open.overs < open.maxSpell - 1) continue;
     const who = inn.bowlers?.find((/** @type {any} */ b) => b.id === open.bowlerId)?.name ?? open.name;
     out.push(card("S2b", `S2b:${i}:${open.bowlerId}`, `S2b:${i}:${open.bowlerId}:${open.spellNo}:${open.overs}`,
-      [`${who} · spell ${open.overs} of ${open.maxSpell} (${open.ageBand ? `${open.ageBand} ` : ""}directive)`], 1, { dismissable: false }));
+      [`${who} · spell ${open.overs} of ${open.maxSpell} (${open.ageBand ? `${open.ageBand} ` : ""}directive)`], 1, { dismissable: false,
+        figures: [fig("spell", open.spellNo), fig("overs in it", open.overs, per(open.overs, "over")), fig("the directive's spell", open.maxSpell, per(open.maxSpell, "over")),
+          open.ageBand ? fig("age band", open.ageBand) : null], params: { innings: i, playerId: open.bowlerId } }));
   }
   return out;
 }
@@ -219,7 +293,9 @@ export function ruleS2c(c) {
       const line = d.oversToday >= max
         ? `${who} · ${d.oversToday} of ${max} today`
         : `${who} · ${d.oversToday} of ${max} today${matches} (${d.ageBand ? `${d.ageBand} ` : ""}${whose})`;
-      out.push(card("S2c", `S2c:${i}:${d.playerId}`, `S2c:${i}:${d.playerId}:${d.oversToday}:${max}`, [line], d.oversToday, { dismissable: false }));
+      out.push(card("S2c", `S2c:${i}:${d.playerId}`, `S2c:${i}:${d.playerId}:${d.oversToday}:${max}`, [line], d.oversToday, { dismissable: false,
+        figures: [fig("overs today", d.oversToday, per(d.oversToday, "over")), fig("the day's limit", max, per(max, "over")), fig("whose limit", whose),
+          fig("matches today", d.matchesToday ?? 1), d.ageBand ? fig("age band", d.ageBand) : null], params: { innings: i, playerId: d.playerId } }));
     }
   }
   return out;
@@ -239,7 +315,10 @@ export function ruleS3(c) {
     const line = state === "restricted" ? `${r.name} · restricted${r.returnDate ? ` · back ${shortDate(r.returnDate)}` : ""}`
       : state === "unavailable" ? `${r.name} · on the sheet · marked unavailable (${said})`
       : `${r.name} · on the sheet · asked again: the fixture has moved`;
-    return [card("S3", `S3:${r.playerId}`, `S3:${r.playerId}:${state}:${restricted ? r.returnDate ?? "" : ""}`, [line], 1)];
+    return [card("S3", `S3:${r.playerId}`, `S3:${r.playerId}:${state}:${restricted ? r.returnDate ?? "" : ""}`, [line], 1, {
+      figures: [fig("on the sheet", "yes"), fig("state", state === "again" ? "asked again" : state),
+        state === "unavailable" ? fig("who said it", said) : null,
+        state === "restricted" && r.returnDate ? fig("back", shortDate(r.returnDate) ?? "not said") : null], params: { playerId: r.playerId } })];
   });
 }
 
@@ -254,7 +333,8 @@ export function ruleS4a(c) {
     `${l.count} arriving by lift`,
     l.notLeft ? `${plural(l.notLeft, "lift")} not marked as leaving` : null,
     l.handedOverUnconfirmed ? `${l.handedOverUnconfirmed} handed over, not yet confirmed` : null,
-  ], l.count)];
+  ], l.count, { figures: [fig("arriving by lift", l.count, per(l.count, "boy")), fig("not marked as leaving", l.notLeft, per(l.notLeft, "lift")),
+    fig("handed over, not yet confirmed", l.handedOverUnconfirmed, per(l.handedOverUnconfirmed, "boy"))] })];
 }
 
 // ── S4b · A lift exception (the office's) ──────────────
@@ -265,7 +345,8 @@ export function ruleS4b(c) {
   return c.liftExceptions.map((r) => card("S4b", `S4b:${r.seatId}`, `S4b:${r.seatId}:${r.kind}`, [
     `${r.name} · ${/** @type {Record<string, string>} */ (EXCEPTION_WORDS)[r.kind] ?? r.kind}`,
     `${r.leg === "out" ? "To the fixture" : "Home"}${r.driverName ? ` with ${r.driverName}` : ""}${r.since ? ` · since ${saTime(r.since)}` : ""}`,
-  ], 1));
+  ], 1, { figures: [fig("what", /** @type {Record<string, string>} */ (EXCEPTION_WORDS)[r.kind] ?? r.kind), fig("leg", r.leg === "out" ? "to the fixture" : "home"),
+    r.since ? fig("since", saTime(r.since) ?? "not said") : null], params: { seatId: r.seatId } }));
 }
 
 // ── S5 · A matchup with enough balls ───────────────────
@@ -280,9 +361,13 @@ export function ruleS5(c) {
     for (const t of matchupTypes(m.rows)) {
       if (t.balls < MATCHUP_FLOOR) continue;
       const cov = m.coverage && m.coverage.deliveries > 0 ? `${m.coverage.attributable} of ${m.coverage.deliveries} balls attributable` : null;
+      const has = !!(m.coverage && m.coverage.deliveries > 0);
       out.push(card("S5", `S5:${r.playerId}:${t.type}`, `S5:${r.playerId}:${t.type}:${t.balls}`, [
         `${r.name} v ${t.type} · ${plural(t.balls, "ball")} · ${plural(t.runs, "run")} · ${t.out === 0 ? "not out" : t.out === 1 ? "out once" : `out ${t.out} times`}`, cov,
-      ], t.balls, { growth: MATCHUP_GROWTH }));
+      ], t.balls, { growth: MATCHUP_GROWTH, figures: [fig("against", t.type), fig("balls", t.balls, per(t.balls, "ball")), fig("runs", t.runs, per(t.runs, "run")),
+        fig("out", t.out, t.out === 1 ? "time" : "times"),
+        has ? fig("attributable", m.coverage.attributable, per(m.coverage.attributable, "ball")) : null,
+        has ? fig("of the balls he faced", m.coverage.deliveries, per(m.coverage.deliveries, "ball")) : null], params: { playerId: r.playerId, type: t.type } }));
     }
   }
   return out;
@@ -295,7 +380,8 @@ export function ruleS6(c) {
   if (!c.gate.panels.select || !c.squad || !isSoon(c.match, c.now)) return [];
   const n = named(c).length;
   if (n >= SIDE) return [];
-  return [card("S6", "S6", `S6:${n}`, [n === 0 ? "The sheet is empty" : `${n} named · a side needs ${SIDE}`], n)];
+  return [card("S6", "S6", `S6:${n}`, [n === 0 ? "The sheet is empty" : `${n} named · a side needs ${SIDE}`], n, {
+    figures: [fig("named", n, per(n, "boy")), fig("a side", SIDE, "boys")] })];
 }
 
 // ── S7 · Unanswered ────────────────────────────────────
@@ -311,7 +397,7 @@ export function ruleS7(c) {
   return [card("S7", "S7", `S7:${none}/${again}`, [
     none ? `${none} ${none === 1 ? "has" : "have"} not answered` : null,
     again ? `${again} to answer again (the fixture moved)` : null,
-  ], none + again)];
+  ], none + again, { figures: [fig("not answered", none), fig("to answer again", again)] })];
 }
 
 // ── S8 · Nobody on record ──────────────────────────────
@@ -322,7 +408,8 @@ export function ruleS8(c) {
   const has = new Set(c.duties.map((r) => r.duty));
   const day = shortDate(c.match.startsAt ?? c.match.date) ?? "the day";
   return ["scorer", "umpire"].filter((duty) => !has.has(duty))
-    .map((duty) => card("S8", `S8:${duty}`, `S8:${duty}`, [`No ${duty} on record for ${day}`], 1));
+    .map((duty) => card("S8", `S8:${duty}`, `S8:${duty}`, [`No ${duty} on record for ${day}`], 1, {
+      figures: [fig("slot", duty), fig("on record", "nobody"), fig("the day", day)] }));
 }
 
 // ── S9 · Weather ───────────────────────────────────────
@@ -336,7 +423,8 @@ export function ruleS9(c) {
   return [card("S9", "S9", `S9:${rain}:${w.playable}:${w.forecast ?? ""}`, [
     w.forecast ?? null,
     [weatherWords(w), rain && w.rainChancePct != null ? `${w.rainChancePct} in 100 chance of rain` : null].filter(Boolean).join(" · "),
-  ], 1)];
+  ], 1, { figures: [w.forecast ? fig("forecast", w.forecast) : null, w.rainChancePct != null ? fig("chance of rain", w.rainChancePct, "in 100") : null,
+    fig("playable", yesNo(w.playable))] })];
 }
 
 // ── S10 · No playing conditions ────────────────────────
@@ -355,7 +443,8 @@ export function ruleS10(c) {
     "No playing conditions are set for this fixture: the pad will use the platform defaults",
     [cap == null ? "no cap on a bowler's overs" : `${plural(cap, "over")} a bowler`,
       freeHit === true ? "a free hit after a no-ball" : freeHit === false ? "no free hit" : null].filter(Boolean).join(" · "),
-  ], 1)];
+  ], 1, { figures: [fig("conditions", "the platform defaults"), cap == null ? fig("cap", "none") : fig("cap", cap, `${per(cap, "over")} a bowler`),
+    fig("free hit", yesNo(freeHit))] })];
 }
 
 // ── S11 · A bowler's week ──────────────────────────────
@@ -366,7 +455,9 @@ export function ruleS11(c) {
   const sheet = new Set(named(c).map((r) => r.playerId));
   return c.workload.filter((w) => w.pace === true && sheet.has(w.playerId) && (w.loadWord === "rising" || w.loadWord === "spike"))
     .map((w) => card("S11", `S11:${w.playerId}`, `S11:${w.playerId}:${w.loadWord}`,
-      [`${w.name} · ${plural(w.overs7d ?? 0, "over")} this week · ${w.loadWord}${w.estimated7d ? " (estimate)" : ""}`, LOAD_SENTENCE], 1));
+      [`${w.name} · ${plural(w.overs7d ?? 0, "over")} this week · ${w.loadWord}${w.estimated7d ? " (estimate)" : ""}`, LOAD_SENTENCE], 1, {
+        figures: [fig("overs this week", w.overs7d ?? 0, per(w.overs7d ?? 0, "over")), fig("the word", w.loadWord), fig("an estimate", w.estimated7d ? "yes" : "no")],
+        params: { playerId: w.playerId } }));
 }
 
 // ── S12 · A notice for this fixture ────────────────────
@@ -387,7 +478,8 @@ export const S12_KINDS = Object.freeze(["welfare", "notice", "lift"]);
 export function ruleS12(c) {
   if (!c.notices) return [];
   return c.notices.filter((n) => S12_KINDS.includes(n.type) && n.subjectKind === "match" && n.subjectId === c.match?.id)
-    .map((n) => card("S12", `S12:${n.id}`, `S12:${n.id}`, [n.title, n.body].filter((x) => x != null && x !== ""), 1));
+    .map((n) => card("S12", `S12:${n.id}`, `S12:${n.id}`, [n.title, n.body].filter((x) => x != null && x !== ""), 1, {
+      figures: [fig("kind", n.type)], params: { notificationId: n.id } }));
 }
 
 /** Every rule, in the fixed order. */
@@ -401,7 +493,34 @@ const EVALUATE = [ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, r
 export function evaluate(c) {
   if (!c?.gate || !c.match) return [];
   // A dismissal is filed under the fixture too: seeing "the bus is short" for Saturday says nothing of next week's.
-  return EVALUATE.flatMap((rule) => rule(c)).map((k) => ({ ...k, base: `${c.match.id}:${k.base}` }));
+  return EVALUATE.flatMap((rule) => rule(c)).map((k) => ({ ...k, base: `${c.match.id}:${k.base}`, evidence: stamp(k, c) }));
+}
+
+/**
+ * The trail's time, from the context alone (this module has no clock): when
+ * its reads answered, the oldest of them, so "as at" never claims a read is
+ * newer than it is; and, for a card that stands on the match's log, the head
+ * `seq` (GA-I36 D1). A read with no time is no "as at", never an invented one.
+ * @param {Card} k @param {Ctx} c @returns {Evidence}
+ */
+function stamp(k, c) {
+  const t = /** @type {{reads: string[], read: string, fold?: boolean}} */ (TRAILS[/** @type {keyof typeof TRAILS} */ (k.rule)]);
+  const at = c.at ?? {};
+  const times = t.reads.map((r) => at[r]).filter((x) => Number.isFinite(x));
+  const asOf = Number.isFinite(at[t.read]) && times.length ? Math.min(...times) : null;
+  const head = t.fold === true && Number.isFinite(c.head) ? /** @type {number} */ (c.head) : null;
+  return { ...k.evidence, asOf, head };
+}
+
+/**
+ * The trail's source line (GA-I27 §5.1): "workload · the 7 days to today ·
+ * overs begun, every match · as at 14:02 · head 412". `now` is the context's,
+ * so a read from another day says its date. No time, no "as at".
+ * @param {Evidence} e @param {number} now @returns {string}
+ */
+export function trailLine(e, now) {
+  const at = e.asOf != null ? clockWords(e.asOf, now) : "";
+  return [e.read, e.window, e.denominator, at ? `as at ${at}` : null, e.head != null ? `head ${e.head}` : null].filter(Boolean).join(" · ");
 }
 
 // ── Dismissal: "I have seen this" (D13) ────────────────
