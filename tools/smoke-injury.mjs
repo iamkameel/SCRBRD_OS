@@ -26,6 +26,8 @@
  *      cleared injury not reviewed again.
  *   7. SG-12: a severe injury tells the DSO, naming nobody; the coach is not
  *      told that.
+ *   8. LEFT: the `injuries` read marks a boy who left the school, for the
+ *      readers of his row, and `injury_reviews` marks the recording.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-injury.mjs
@@ -171,6 +173,7 @@ try {
   const by = async (token, id = ID) => rows(`injury_reviews?injuryId=${id}`, token);
   const coachSees = await by(coach);
   ok("his coach reads the two reviews, phase and clock", coachSees.length === 2 && coachSees.every((r) => r.phase_after && r.next_review_on));
+  ok("...the first marked as the recording, the step not", coachSees[0]?.is_recording === true && coachSees[1]?.is_recording === false);
   ok("...and never the note or who wrote it", coachSees.every((r) => r.note == null && r.reviewed_by == null));
   const dirSees = await by(director);
   ok("the director reads the phase and never the note", dirSees.length === 2 && dirSees.every((r) => r.phase_after && r.note == null && r.reviewed_by == null));
@@ -239,6 +242,18 @@ try {
      && stored.subject_id === null && stored.subject_person_id === null && stored.team_code === null, JSON.stringify(stored));
   ok("the coach is not told that", !(await rows("notifications", coach)).some((n) => n.kind === "safeguarding"));
   ok("...though he is told the injury, as before", (await rows("notifications", coach)).some((n) => n.subject_id === sev.body?.id && n.title === "Injury recorded"));
+
+  // ── 8. Left the school ─────────────────────────────────────────
+  group("8. A boy who leaves is marked, for every reader of his row");
+  const stayed = (await rows("injuries", coach)).find((r) => r.id === ID);
+  ok("a boy still at school is not marked", stayed?.left_school === false && stayed?.left_on == null, JSON.stringify(stayed));
+  await q(`update team_membership set left_on = sa_today() where player_id = $1 and left_on is null`, [NAIDOO]);
+  const today = (await q(`select sa_today()::text d`))[0].d;
+  for (const [who, token] of [["the physio", physio], ["his coach", coach], ["the principal", principal]]) {
+    const r = (await rows("injuries", token)).find((x) => x.id === sev.body?.id);
+    ok(`${who} reads him as left the school today`, r?.left_school === true && String(r?.left_on).slice(0, 10) === today, JSON.stringify(r && { left: r.left_school, on: r.left_on }));
+  }
+  ok("...and a pupil still reads no row of his", !(await rows("injuries", pupil)).some((x) => x.id === sev.body?.id));
 } catch (e) {
   ok(`the injury walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {
