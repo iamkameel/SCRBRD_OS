@@ -21298,8 +21298,8 @@ $v49$;
     PERFORM _assert(_said_89(F) = 1, format('§90 (withdrawn): %s withdrawal(s) were sent, not one', _said_89(F)));
     SELECT (e->>'id')::uuid INTO W FROM jsonb_array_elements(_v113_about(BAT)) e WHERE (e->>'retracts_id')::uuid = F;
     j := _row_89(W);
-    PERFORM _assert(j->>'title' = 'A notice was withdrawn'
-                    AND j->>'body' = '''Fifty for Verify OneThirteen Opener'' was withdrawn after the scorecard was corrected.'
+    -- (its title is (names)'s to hold)
+    PERFORM _assert(j->>'body' = '''Fifty for Verify OneThirteen Opener'' was withdrawn after the scorecard was corrected.'
                     AND j->>'kind' = 'recognition' AND j->>'urgency' = 'low' AND j->>'required_capability' = 'news.read'
                     AND j->>'retracted_at' IS NULL AND j->>'published_by' IS NULL,
       format('§90 (withdrawn): the withdrawal is not the design''s: %s', j));
