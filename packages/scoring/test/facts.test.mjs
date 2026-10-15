@@ -205,6 +205,14 @@ group("D. The hat-trick: three of his balls of the over in a row (Q8)");
   ]);
   ok("across his overs, the other bowler's over between: a hat-trick", ms(across, Q[0]).some((m) => m.kind === F.HAT_TRICK), across.milestones);
 
+  const wide = deriveFacts([...open(), bw(Q[0]), W("bowled"), inAt(P[2]), wd(0), W("bowled"), inAt(P[3]), W("bowled"), inAt(P[4])]);
+  ok("W, a wide, W, W: a hat-trick (a wide is not one of his balls of the over: it does not break it)",
+     ms(wide, Q[0]).filter((m) => m.kind === F.HAT_TRICK).length === 1
+     && wide.moments.filter((m) => m.kind === M.HAT_TRICK_BALL).length === 1, wide.moments);
+  const noBall = deriveFacts([...open(), bw(Q[0]), W("bowled"), inAt(P[2]), W("bowled"), inAt(P[3]), nb(1), r(0), W("bowled"), inAt(P[4])]);
+  ok("W, W, a no-ball, its free hit (a dot), W: no hat-trick — the free hit is a ball of the over",
+     !noBall.milestones.some((m) => m.kind === F.HAT_TRICK), noBall.milestones);
+
   // A wide, a stumping off a wide and a no-ball neither make nor break one.
   // A declaration match (no free hit after a no-ball, SCRBRD-113), so the
   // ball after the no-ball can be a wicket: the fold's context is passed on.
