@@ -85,8 +85,8 @@ export function OpenRow({ onClick, testid, children, aside, label }) {
       style={{ width: "100%", minHeight: "48px", display: "flex", alignItems: "center", gap: T.space.md, textAlign: "left",
         padding: `${T.space.sm} ${T.space.md}`, background: "transparent", border: `1px solid ${T.line.subtle}`,
         borderRadius: T.radius.md, cursor: "pointer", color: T.content.primary }}>
-      <span style={{ flex: 1, minWidth: 0, display: "grid", gap: "2px" }}>{children}</span>
-      {aside && <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary, whiteSpace: "nowrap" }}>{aside}</span>}
+      <span style={{ flex: 1, minWidth: 0, display: "grid", gap: "2px", overflowWrap: "anywhere" }}>{children}</span>
+      {aside && <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary, flex: "0 1 auto", textAlign: "right" }}>{aside}</span>}
       <Icon name="chevron-down" style={{ transform: "rotate(-90deg)", color: T.content.tertiary, flexShrink: 0 }}/>
     </button>
   );

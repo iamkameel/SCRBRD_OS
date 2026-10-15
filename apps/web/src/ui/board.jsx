@@ -255,7 +255,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
             </div>
           )}
         </div>
-        <div className={pad ? "os-board-total" : undefined} style={{ ...big, color: B.figure, whiteSpace: "nowrap", flexShrink: 0 }} data-testid={`${testid}-total`}>
+        <div className={pad ? "os-board-total" : "os-board-card-total"} style={{ ...big, color: B.figure, whiteSpace: "nowrap", flexShrink: 0 }} data-testid={`${testid}-total`}>
           <Figure value={total ?? 0} testid={`${testid}-runs`}/>
           <span style={{ color: B.dim }}>/</span>
           <Figure value={wickets ?? 0} testid={`${testid}-wickets`}/>

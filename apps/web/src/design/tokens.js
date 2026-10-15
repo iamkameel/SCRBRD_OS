@@ -997,7 +997,8 @@ button{touch-action:manipulation}
   .os-main{padding-bottom:calc(172px + env(safe-area-inset-bottom))!important}
   /* A scorecard's six columns do not fit 188px: the table scrolls inside its own box instead of the names going to nothing. */
   .mc-table{overflow-x:auto!important}
-  .mc-table>*{min-width:280px}
+  .mc-table>*{min-width:340px}
+  .os-board-card-total{font-size:36px!important}
   /* The wheel is under 140px across: the positions around its rim would sit on one another, and the field still says them in a sentence. */
   [data-testid="field-labels"] [data-rim]{display:none}
 }
