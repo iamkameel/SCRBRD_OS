@@ -1235,6 +1235,49 @@ to start without db/102 (`expected-migrations.json`), and its
 database does not have.
 <!-- ── end db/102 ── -->
 
+<!-- ── db/104: corrections to a coach's judgement, and the coaching point ── -->
+#### Corrections to a coach's judgement, and the coaching point (db/104)
+
+`db/104_assessment_corrections.sql` is GA-I26a slice A1 (Kameel, 15 Oct:
+AH-D2, AH-D3, AH-D5 as recommended). **A score keeps its assessor.** Before
+it, a colleague who rated a boy on the same day as his coach overwrote the
+number and took the authorship. Now a coach corrects his own score that day,
+as before; anybody else's same-day upsert is refused (`403 not_the_assessor`)
+and he rates on his own row. **A wrong score or note is withdrawn, not
+deleted**: it stays, struck, with who withdrew it and why, and every screen
+that reads the standing score (Skills, the ratings, the focus areas, the
+rewards score) stops counting it. **A coaching point is a development note
+with its evidence pointer**, read only by the note's readers (coach,
+assistant, director, principal) and never by the boy, his parents or a
+platform-wide account.
+
+**What it does to a live database.** Three nullable columns on
+`player_skill` and nine on `development_note` (no rewrite). `player_skill`'s
+unique key on (player, day, category, metric) becomes a partial unique index
+over standing rows (`player_skill_standing`), so a withdrawn score does not
+hold its slot. One new trigger (`player_skill_keeps_its_assessor`), one
+trigger function replaced in place (`development_note_author()`, same
+trigger), four `RESTRICTIVE` policies (`player_skill_not_support`,
+`development_note_not_support`, `development_note_not_platform`,
+`development_note_plain_insert`), and four functions: `coaching_point_write`,
+`skill_withdraw`, `note_withdraw` (`SECURITY DEFINER`, pinned search path,
+executable by `scrbrd_app` alone) and the internal `coaching_point_never`.
+No row is inserted, changed or deleted. **One behaviour changes for every
+school at once, on the paste:** the owner's key (a platform-wide assignment)
+and a support session stop reading development notes, and a support session
+stops reading skill ratings. Each statement locks `player_skill` or
+`development_note` briefly; paste outside a coaching session. A second paste
+changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 104` (after 102, and after 103 where
+it has shipped), then the verify bundle (§81 is its proof). The summary row
+"A score keeps its assessor; a point is a note" should read OK. **Schema
+first**: the API built with it refuses to start without db/104
+(`expected-migrations.json`); its assessment upsert names the partial index
+(`ON CONFLICT … WHERE withdrawn_at IS NULL`), which an older database does
+not have.
+<!-- ── end db/104 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

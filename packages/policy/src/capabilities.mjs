@@ -108,8 +108,10 @@ export const CAPABILITIES = {
   "clearance.manage":            "Record and revoke an adult's clearances",
   "player.performance.read":     "See a player's match figures",
   "player.performance.write":    "Record player performance",
-  "player.development.read":     "See development notes and skill ratings",
-  "player.development.write":    "Write development notes and skill ratings",
+  // Notes are player.note.* below; these are the numbers (GA-I26a §8: the
+  // label said "development notes", which this capability has never read).
+  "player.development.read":     "See skill ratings, their history and targets",
+  "player.development.write":    "Write skill ratings and set targets",
   // A COACH'S OWN WRITING ABOUT A CHILD, and narrower than the ratings it sits
   // beside. player.development.read is held by the pupil and by self-access —
   // a boy may read his own attribute scores, which is right. A note is a

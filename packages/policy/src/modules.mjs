@@ -95,7 +95,8 @@ export const MODULES = {
   skills: {
     kind: "module", label: "Skills", nav: "skills",
     capability: "player.development.read",
-    reads: ["skills"],
+    // skills_history: every score, withdrawn ones struck (GA-I26a, db/104).
+    reads: ["skills", "skills_history"],
   },
   training: {
     kind: "module", label: "Training", nav: "training",

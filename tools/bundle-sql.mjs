@@ -386,6 +386,31 @@ SELECT
         AND has_function_privilege('scrbrd_app', to_regprocedure('feature_suppression_reason(uuid)'), 'EXECUTE')
         AND NOT has_column_privilege('scrbrd_app', to_regclass('feature_suppression'), 'reason', 'SELECT')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Who a module is hidden from is the school's",
+  -- db/104: a score keeps its assessor and is withdrawn, never overwritten by
+  -- a colleague; a coaching point is a note, written by its function alone.
+  CASE WHEN to_regclass('player_skill_standing') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('player_skill_standing')
+                       AND i.indisunique AND i.indpred IS NOT NULL)
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'player_skill_keeps_its_assessor' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name = 'development_note' AND column_name = 'evidence_read')
+        AND to_regprocedure('coaching_point_write(uuid,uuid,text,jsonb)') IS NOT NULL
+        AND to_regprocedure('skill_withdraw(uuid,text)') IS NOT NULL
+        AND to_regprocedure('note_withdraw(uuid)') IS NOT NULL
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('coaching_point_write(uuid,uuid,text,jsonb)'),
+                              to_regprocedure('skill_withdraw(uuid,text)'), to_regprocedure('note_withdraw(uuid)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('coaching_point_write(uuid,uuid,text,jsonb)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('coaching_point_write(uuid,uuid,text,jsonb)'),
+                                         to_regprocedure('skill_withdraw(uuid,text)'), to_regprocedure('note_withdraw(uuid)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+              AND (tablename, policyname) IN (('player_skill', 'player_skill_not_support'),
+                                              ('development_note', 'development_note_not_support'),
+                                              ('development_note', 'development_note_not_platform'),
+                                              ('development_note', 'development_note_plain_insert'))) = 4
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A score keeps its assessor; a point is a note",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

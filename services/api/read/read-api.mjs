@@ -490,12 +490,40 @@ export const READ_QUERIES = {
   // neither spectator nor guardian holds — a parent reads their child's
   // profile and availability, and a coaching judgement of their technique is
   // not a document the platform hands over on its own.
+  //
+  // STANDING rows only (db/104, GA-I26a AH-D5): a withdrawn score stays in the
+  // table, struck, and is read through `skills_history`; here, where the
+  // client takes the newest row per attribute as "where he stands", it would
+  // be a judgement the coach took back. `id` so a score can be withdrawn and a
+  // coaching point pinned to it.
   skills: {
-    text: `select s.player_id, s.assessed_on, s.category, s.metric, s.score,
+    text: `select s.id, s.player_id, s.assessed_on, s.category, s.metric, s.score,
                   p.full_name, p.team_code
              from player_skill s
              join player p on p.id = s.player_id
+            where s.withdrawn_at is null
             order by s.assessed_on desc, p.full_name`,
+  },
+
+  /**
+   * Every score ever given one boy, withdrawn ones included and struck
+   * (GA-I26a §4.1): the history strip. Same reader as `skills`
+   * (player.development.read, the boy himself among them) and the same log:
+   * each open is one access-log row against him (RESTRICTED_FIELDS). Who
+   * gave each score, and who withdrew it and why. `school_id` so the log
+   * lands at his school.
+   */
+  skills_history: {
+    text: `select s.id, s.player_id, p.school_id, s.assessed_on, s.category, s.metric, s.score,
+                  s.assessed_by, a.name as assessed_by_name,
+                  s.withdrawn_at, s.withdrawn_by, w.name as withdrawn_by_name, s.withdrawn_reason
+             from player_skill s
+             join player p on p.id = s.player_id
+             left join app_user a on a.id = s.assessed_by
+             left join app_user w on w.id = s.withdrawn_by
+            where ($1::uuid is null or s.player_id = $1)
+            order by s.player_id, s.category, s.metric, s.assessed_on, s.id`,
+    params: (q) => [UUID_RE.test(String(q?.playerId ?? "")) ? q.playerId : null],
   },
 
   /**
@@ -540,15 +568,45 @@ export const READ_QUERIES = {
    * is a note nobody can weigh — "who said this" is most of what a reader needs
    * before deciding what to do about it.
    */
+  //
+  // A withdrawn note is still a note (db/104): it comes back struck, with who
+  // withdrew it. `is_point` marks a coaching point; its pointer is read
+  // through `coaching_points`.
   notes: {
     text: `select n.id, n.player_id, n.school_id, n.body, n.about_discipline,
                   n.adjustment, n.observed_on, n.created_at, n.updated_at,
                   n.author_id, a.name as author_name,
-                  p.full_name, p.team_code
+                  p.full_name, p.team_code,
+                  n.withdrawn_at, n.withdrawn_by, n.evidence_read is not null as is_point
              from development_note n
              join player p on p.id = n.player_id
              left join app_user a on a.id = n.author_id
             order by n.observed_on desc, n.created_at desc`,
+  },
+
+  /**
+   * Coaching points (GA-I27 C3–C4, built on the note by GA-I26a AH-D2): a
+   * development_note carrying its evidence pointer. Read under the note's own
+   * policy, player.note.read — coach, assistant, director, principal; never
+   * the boy, his parents, a team-mate, the team manager, the analyst — and
+   * logged as notes are. Withdrawn points come back struck. Optionally one
+   * boy's, or one fixture's.
+   */
+  coaching_points: {
+    text: `select n.id, n.player_id, n.school_id, n.body, n.observed_on, n.created_at,
+                  n.author_id, a.name as author_name, p.full_name, p.team_code,
+                  n.match_id, n.evidence_rule, n.evidence_read, n.evidence_params,
+                  n.evidence_head, n.evidence_as_of, n.evidence_text,
+                  n.withdrawn_at, n.withdrawn_by
+             from development_note n
+             join player p on p.id = n.player_id
+             left join app_user a on a.id = n.author_id
+            where n.evidence_read is not null
+              and ($1::uuid is null or n.player_id = $1)
+              and ($2::uuid is null or n.match_id = $2)
+            order by n.created_at desc`,
+    params: (q) => [UUID_RE.test(String(q?.playerId ?? "")) ? q.playerId : null,
+                    UUID_RE.test(String(q?.matchId ?? "")) ? q.matchId : null],
   },
 
   /**
@@ -2808,6 +2866,7 @@ function ratingsQuery() {
                               s.category, s.metric, s.score, s.assessed_on
                          from player_skill s
                         where s.player_id = p.id
+                          and s.withdrawn_at is null
                           and (s.category || '.' || s.metric) = any($${n}::text[])
                         order by s.category, s.metric, s.assessed_on desc) x
              ) ${d}_a on true
@@ -2817,6 +2876,7 @@ function ratingsQuery() {
                 where dn.player_id = p.id
                   and dn.about_discipline = '${d}'
                   and dn.adjustment is not null
+                  and dn.withdrawn_at is null
                   and (${d}_a.anchor is null or dn.observed_on >= ${d}_a.anchor)
              ) ${d}_n on true`);
   });
@@ -3109,6 +3169,10 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   // group that may read it is deliberately narrow. Every read is logged, which
   // is what makes the narrowness answerable rather than merely convenient.
   notes:    ["body"],
+  // GA-I26a (db/104): the history is the same judgement as `skills`, and a
+  // coaching point is a note.
+  skills_history:  ["score"],
+  coaching_points: ["body"],
   // A disciplinary matter about a named child, and what the school decided to
   // do about it. Nothing here is masked — discipline.read gates the row — so
   // this entry is the ONLY reason an ordinary school-side read of one is
@@ -3138,6 +3202,7 @@ const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contact_count: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
                      users: "id", accounts: "id", ratings: "player_id", notes: "player_id",
+                     skills_history: "player_id", coaching_points: "player_id",
                      disciplinary_records: "player_id",
                      opposition_squad: "player_id" };
 

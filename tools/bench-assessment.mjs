@@ -113,6 +113,7 @@ function referenceQuery() {
                               s.category, s.metric, s.score, s.assessed_on
                          from player_skill s
                         where s.player_id = p.id
+                          and s.withdrawn_at is null
                           and (s.category || '.' || s.metric) = any($${n}::text[])
                         order by s.category, s.metric, s.assessed_on desc) x
              ) ${d}_a on true
@@ -122,6 +123,7 @@ function referenceQuery() {
                 where dn.player_id = p.id
                   and dn.about_discipline = '${d}'
                   and dn.adjustment is not null
+                  and dn.withdrawn_at is null
                   and (${d}_a.anchor is null or dn.observed_on >= ${d}_a.anchor)
              ) ${d}_n on true`);
   });

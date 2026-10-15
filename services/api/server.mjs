@@ -30,6 +30,9 @@
  *   POST /api/auth/users/:id/disable · /enable { reason }   the office ends an account's sessions, saying why (db/85, db/90)
  *   GET  /api/auth/users/:id/preview              what disabling an account would cut (db/90)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
+ *   POST /api/players/:id/coaching-points         a coaching point: a note with its evidence (db/104)
+ *   POST /api/skills/:id/withdraw                 withdraw a score, with a reason (db/104)
+ *   POST /api/notes/:id/withdraw                  withdraw a note or a coaching point (db/104)
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
  *   POST /api/assignments/:id/end { reason }      end one role (db/77), the row withdrawn, never deleted
@@ -65,7 +68,7 @@ import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
-import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
+import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes, correctionRoutes } from "./write/assessment-api.mjs";
 import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
@@ -391,6 +394,8 @@ const read    = readRoute({ pool, secret: SECRET });
 const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
+// GA-I26a A1 (db/104): withdrawing a score or a note, and the coaching point.
+const corrections = correctionRoutes({ pool, secret: SECRET });
 const conduct = disciplineRoutes({ pool, secret: SECRET });
 // GA-I36 N2: an approved amendment's void and a released held ball drop the
 // fixture's public cache once committed (afterCommit, as the publication
@@ -938,6 +943,14 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
   [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
+  // GA-I26a A1 (db/104). A coaching point is a note carrying its evidence
+  // pointer, written by coaching_point_write() under the coach's own two
+  // writes; tagged with Skills, whose screen writes it. Withdrawing a score
+  // is Skills' too. Withdrawing a note is untagged, as writing one is: a
+  // school that switched Skills off can still take back what was written.
+  [/^\/api\/players\/([^/]+)\/coaching-points$/, "POST", corrections.coachingPoint, "skills"],
+  [/^\/api\/skills\/([^/]+)\/withdraw$/,       "POST", corrections.skillWithdraw, "skills"],
+  [/^\/api\/notes\/([^/]+)\/withdraw$/,        "POST", corrections.noteWithdraw],
   // A disciplinary matter (SCRBRD-053). No module tag: a school cannot switch
   // off a safeguarding record the way it switches off Analytics, and the
   // module gate can only ever refuse — so tagging this would be a setting

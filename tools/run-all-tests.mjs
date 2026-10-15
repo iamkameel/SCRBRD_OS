@@ -196,6 +196,9 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // A coaching point's never-words, in JavaScript and in db/104's SQL, are
+  // one list (GA-I27 §6; GA-I26a §2.2).
+  ["coachingpoint", "apps/web/test/coachingPoint.test.mjs"],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
   // per-fixture count: "N to resolve" and "Could not read X", a failed read
