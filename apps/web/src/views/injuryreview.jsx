@@ -360,7 +360,7 @@ export function ReviewForm({ injury, onSaved, onCancel }) {
  * next review date) and calls a look a review. `recordingNote` is the injury's
  * own note, shown on the recording (db/111 writes the first row without one),
  * where the reader's tier returned it. `recordedAt` is when the injury row was
- * made: the oldest review is the recording only when it was made then (the
+ * made: the oldest review is the recording only when it was made then, within seconds (the
  * seed's injuries, and any older than the door, have no recording row, and a
  * first look must not be called one).
  */
@@ -372,7 +372,7 @@ export function InjuryHistory({ injuryId, role, nonce = 0, physio = false, recor
   // The server orders oldest first; people read newest first.
   const rows = [...read.rows].reverse();
   const oldest = rows[rows.length - 1];
-  const recordingId = oldest && recordedAt && Math.abs(new Date(oldest.at).getTime() - new Date(recordedAt).getTime()) < 120000 ? oldest.id : null;
+  const recordingId = oldest && recordedAt && Math.abs(new Date(oldest.at).getTime() - new Date(recordedAt).getTime()) < 5000 ? oldest.id : null;
   return (
     <div data-testid={testid} style={{ display: "grid", gap: T.space.sm }}>
       <h3 style={s.h3}>History</h3>
