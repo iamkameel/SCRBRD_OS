@@ -5123,6 +5123,215 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/102 (section 79) ─────────────────────────────────────────────
 
+-- ┌── db/106 (section 83). REACH R-A: a family reads its side's fixtures
+-- Invented, as the owner; every name is a placeholder. Hilton's 6XI, 7XI and
+-- 8XI and Westville's 6XI and 8XI, a third school's 6XI. Boys: A (Hilton
+-- 6XI), UP (Hilton 7XI, on f1's sheet playing up for the 6XI, withdrawn from
+-- f5's), B (Hilton 8XI), W (Westville 6XI), E (Hilton 6XI), N (Hilton 9XI).
+-- Fixtures: f1 Hilton 6XI v Westville 6XI at Hilton; f2 the return at
+-- Westville; f3 Hilton 7XI; f4 and f5 Hilton 6XI's next two, against schools
+-- not on the platform (A on f4's sheet; UP picked for f5 and withdrawn); f6
+-- Hilton 8XI; f7 the third school's 6XI; f8 Westville 8XI. Trips: t1 and t1b
+-- (two Hilton buses to f1; t1 driven by GDRIVER, t1b's notes name a boy),
+-- t2 (Westville's bus to f2), t3, t4, t6 (Hilton's, t6's notes name B), t8
+-- (Westville's to f8). Training: s6, s7, s8 at Hilton, sw at Westville. The
+-- toss, an umpire and the weather at f1, f2 and f6; fixture_publication rows
+-- for f1's two ends and f6's.
+CREATE OR REPLACE FUNCTION _v106_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  KRS uuid; ids jsonb; v_s uuid; v_stranger uuid;
+  c_a uuid; c_up uuid; c_b uuid; c_w uuid; c_e uuid; c_n uuid;
+  f1 uuid; f2 uuid; f3 uuid; f4 uuid; f5 uuid; f6 uuid; f7 uuid; f8 uuid;
+  t1 uuid; t1b uuid; t2 uuid; t3 uuid; t4 uuid; t6 uuid; t8 uuid;
+  s6 uuid; s7 uuid; s8 uuid; sw uuid;
+  D timestamp := (sa_today() + 2)::timestamp + time '09:30';
+BEGIN
+  INSERT INTO school (code, name, kind, province) VALUES ('V106K', 'Verify OneOhSix College', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO KRS;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '6XI', 'Verify OneOhSix Opener', 1061, 'batter', U15) RETURNING id INTO c_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '7XI', 'Verify OneOhSix Climber', 1062, 'bowler', U15) RETURNING id INTO c_up;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '8XI', 'Verify OneOhSix Eighth', 1063, 'batter', U15) RETURNING id INTO c_b;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, '6XI', 'Verify OneOhSix Visitor', 1064, 'batter', U15) RETURNING id INTO c_w;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '6XI', 'Verify OneOhSix Ended', 1065, 'batter', U15) RETURNING id INTO c_e;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '9XI', 'Verify OneOhSix Teamless', 1066, 'batter', U15) RETURNING id INTO c_n;
+  ids := _v71_people('v106', ARRAY[
+    ARRAY['g1',       'guardian',    HIL::text, '',    ''],    -- A's, one child
+    ARRAY['g2',       'guardian',    HIL::text, '',    ''],    -- B's at Hilton and W's at Westville
+    ARRAY['gup',      'guardian',    HIL::text, '',    ''],    -- UP's, who plays up
+    ARRAY['g3',       'guardian',    HIL::text, '',    ''],    -- E's, the link ended today
+    ARRAY['g4',       'guardian',    HIL::text, '',    ''],    -- A's too, never verified
+    ARRAY['g5',       'guardian',    HIL::text, '',    ''],    -- A's too, revoked
+    ARRAY['wesg',     'guardian',    WES::text, '',    ''],    -- W's alone, the away family
+    ARRAY['gdriver',  'guardian',    HIL::text, '',    ''],    -- B's, and a Hilton driver
+    ARRAY['aboy',     'player',      HIL::text, '6XI', c_a::text],
+    ARRAY['upboy',    'player',      HIL::text, '7XI', c_up::text],
+    ARRAY['coach6',   'coach',       HIL::text, '6XI', ''],
+    ARRAY['coach7',   'coach',       HIL::text, '7XI', ''],
+    ARRAY['spec',     'spectator',   HIL::text, '',    ''],    -- school-wide follower
+    ARRAY['spec6',    'spectator',   HIL::text, '6XI', ''],    -- scoped by the office to the 6XI
+    ARRAY['office',   'schooladmin', HIL::text, '',    ''],
+    ARRAY['wescoach', 'coach',       WES::text, '6XI', ''],
+    ARRAY['teamless', 'player',      HIL::text, '',    c_n::text]]);  -- the R-D case: a pupil with no team
+  PERFORM _v100_link((ids->>'g1')::uuid, HIL, c_a);
+  PERFORM _v100_link((ids->>'g2')::uuid, HIL, c_b);
+  PERFORM _v100_link((ids->>'g2')::uuid, WES, c_w);
+  PERFORM _v100_link((ids->>'gup')::uuid, HIL, c_up);
+  PERFORM _v100_link((ids->>'g3')::uuid, HIL, c_e, 'verified', current_date);
+  PERFORM _v100_link((ids->>'g4')::uuid, HIL, c_a, 'pending');
+  PERFORM _v100_link((ids->>'g5')::uuid, HIL, c_a, 'revoked');
+  PERFORM _v100_link((ids->>'wesg')::uuid, WES, c_w);
+  PERFORM _v100_link((ids->>'gdriver')::uuid, HIL, c_b);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gdriver')::uuid, 'driver', HIL);
+  -- The two pupils each hold self-access naming themselves, as R Pillay does.
+  FOR v_s, v_stranger IN SELECT x.person, x.boy FROM (VALUES ((ids->>'aboy')::uuid, c_a), ((ids->>'upboy')::uuid, c_up)) x(person, boy) LOOP
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_s, 'selfaccess', HIL) RETURNING id INTO v_s;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (v_s, v_stranger, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v106.stranger@example.invalid', 'V106 Stranger', 'spectator')
+  RETURNING id INTO v_stranger;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '6XI', WES, '6XI', 'Verify OneOhSix Westville', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f1;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (WES, '6XI', HIL, '6XI', 'Verify OneOhSix Hilton', (D + interval '7 days') AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f2;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '7XI', 'Verify OneOhSix Sevens', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f3;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '6XI', 'Verify OneOhSix Next', (D + interval '14 days') AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f4;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '6XI', 'Verify OneOhSix After', (D + interval '21 days') AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f5;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, '8XI', 'Verify OneOhSix Eights', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f6;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (KRS, '6XI', 'Verify OneOhSix Neither', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f7;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (WES, '8XI', 'Verify OneOhSix Westville Eights', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f8;
+  -- The sheets. UP plays up for the 6XI at f1 and was withdrawn from f5.
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES
+    (f1, c_a, 'home', 1), (f1, c_up, 'home', 2), (f1, c_w, 'away', 1), (f4, c_a, 'home', 1);
+  INSERT INTO match_squad (match_id, player_id, side, batting_no, withdrawn) VALUES (f5, c_up, 'home', 3, true);
+  -- The buses: each written by the school whose bus it is (the host's).
+  INSERT INTO trip (match_id, school_id, driver_id, pickup, notes) VALUES
+    (f1, HIL, (ids->>'gdriver')::uuid, 'V106 main gate', 'V106 first bus') RETURNING id INTO t1;
+  INSERT INTO trip (match_id, school_id, pickup, notes) VALUES
+    (f1, HIL, 'V106 chapel', 'V106 collect the Opener at the chapel') RETURNING id INTO t1b;
+  INSERT INTO trip (match_id, school_id, pickup, notes) VALUES (f2, WES, 'V106 Westville gate', 'V106 Westville bus') RETURNING id INTO t2;
+  INSERT INTO trip (match_id, school_id, pickup) VALUES (f3, HIL, 'V106 sevens') RETURNING id INTO t3;
+  INSERT INTO trip (match_id, school_id, pickup) VALUES (f4, HIL, 'V106 next') RETURNING id INTO t4;
+  INSERT INTO trip (match_id, school_id, pickup, notes) VALUES (f6, HIL, 'V106 eights', 'V106 the Eighth rides in front') RETURNING id INTO t6;
+  INSERT INTO trip (match_id, school_id, pickup) VALUES (f8, WES, 'V106 Westville eights') RETURNING id INTO t8;
+  INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type) VALUES
+    (HIL, '6XI', 'V106 sixes nets', D AT TIME ZONE 'Africa/Johannesburg', 60, 'batting') RETURNING id INTO s6;
+  INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type) VALUES
+    (HIL, '7XI', 'V106 sevens nets', D AT TIME ZONE 'Africa/Johannesburg', 60, 'batting') RETURNING id INTO s7;
+  INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type) VALUES
+    (HIL, '8XI', 'V106 eights nets', D AT TIME ZONE 'Africa/Johannesburg', 60, 'batting') RETURNING id INTO s8;
+  INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type) VALUES
+    (WES, '6XI', 'V106 Westville nets', D AT TIME ZONE 'Africa/Johannesburg', 60, 'batting') RETURNING id INTO sw;
+  -- The facts around three fixtures, each written at its host.
+  INSERT INTO match_toss (match_id, school_id, won_by, decision) VALUES (f1, HIL, 'home', 'bat'), (f2, WES, 'away', 'bowl'), (f6, HIL, 'home', 'bat');
+  INSERT INTO match_official (match_id, school_id, duty, person_name) VALUES
+    (f1, HIL, 'umpire', 'V106 Umpire One'), (f2, WES, 'umpire', 'V106 Umpire Two'), (f6, HIL, 'umpire', 'V106 Umpire Six');
+  INSERT INTO match_weather (match_id, condition) VALUES (f1, 'sunny'), (f2, 'cloudy'), (f6, 'sunny');
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by) VALUES
+    (f1, 'home', HIL, '6XI', true, OFFICE), (f1, 'away', WES, '6XI', true, '88888888-0000-0000-0000-00000000000d'),
+    (f6, 'home', HIL, '8XI', false, OFFICE);
+  RETURN ids || jsonb_build_object('krs', KRS, 'stranger', v_stranger,
+    'a', c_a, 'up', c_up, 'b', c_b, 'w', c_w, 'e', c_e, 'n', c_n,
+    'f1', f1, 'f2', f2, 'f3', f3, 'f4', f4, 'f5', f5, 'f6', f6, 'f7', f7, 'f8', f8,
+    't1', t1, 't1b', t1b, 't2', t2, 't3', t3, 't4', t4, 't6', t6, 't8', t8,
+    's6', s6, 's7', s7, 's8', s8, 'sw', sw);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The stage's name for an id ('f1', 't1b', …), for reading a set as words.
+CREATE OR REPLACE FUNCTION _v106_label(z jsonb, p uuid) RETURNS text AS $$
+  SELECT min(key) FROM jsonb_each_text(z) WHERE value = p::text
+$$ LANGUAGE sql IMMUTABLE;
+
+-- §2.5's text, spelled out apart from the build: every boy on the side,
+-- every boy on the sheet (header (b)'s filters, which proof 1 needs). As the
+-- owner, about the caller app.user_id names.
+CREATE OR REPLACE FUNCTION _v106_lit_side(p_cap text, p_school uuid, p_team text, p_fixture uuid) RETURNS boolean AS $$
+  SELECT app_can(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)
+      OR EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND p.team_code = p_team
+                    AND app_can(p_cap, p_school, p_team, p.id, p_fixture))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_lit_fixture(p_cap text, p_match uuid) RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM match m WHERE m.id = p_match AND (
+       _v106_lit_side(p_cap, m.school_id, m.team_code, m.id)
+    OR (m.away_school_id IS NOT NULL AND _v106_lit_side(p_cap, m.away_school_id, m.away_team_code, m.id))
+    OR EXISTS (SELECT 1 FROM match_squad ms JOIN player p ON p.id = ms.player_id
+                WHERE ms.match_id = m.id AND NOT ms.withdrawn
+                  AND p.school_id = CASE WHEN ms.side = 'away' THEN m.away_school_id ELSE m.school_id END
+                  AND app_can(p_cap,
+                              CASE WHEN ms.side = 'away' THEN m.away_school_id ELSE m.school_id END,
+                              CASE WHEN ms.side = 'away' THEN m.away_team_code ELSE m.team_code END,
+                              ms.player_id, m.id))))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What db/09 and db/39 asked before this file, as the owner about the caller:
+-- the all-zeros person at both anchors (match), the host's (trip, the
+-- satellites), the session's side (training).
+CREATE OR REPLACE FUNCTION _v106_old_match(p_match uuid) RETURNS boolean AS $$
+  SELECT app_can('fixture.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+      OR app_can('fixture.read', m.away_school_id, m.away_team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+    FROM match m WHERE m.id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_old_trip(p_trip uuid) RETURNS boolean AS $$
+  SELECT app_can('transport.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+    FROM trip t JOIN match m ON m.id = t.match_id WHERE t.id = p_trip
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_old_training(p_session uuid) RETURNS boolean AS $$
+  SELECT app_can('team.read', s.school_id, s.team_code, '00000000-0000-0000-0000-000000000000'::uuid,
+                 '00000000-0000-0000-0000-000000000000'::uuid)
+    FROM training_session s WHERE s.id = p_session
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The whole population, as the owner: every person holding an active
+-- assignment; the fixtures that have a ball; every plan's side; the people
+-- whose every active assignment is a guardian's.
+CREATE OR REPLACE FUNCTION _v106_people() RETURNS uuid[] AS $$
+  SELECT array_agg(DISTINCT person_id) FROM role_assignment WHERE active
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_guardians_only() RETURNS uuid[] AS $$
+  SELECT array_agg(person_id) FROM (SELECT person_id FROM role_assignment WHERE active
+                                     GROUP BY person_id HAVING bool_and(role = 'guardian')) g
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_ball_matches() RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(DISTINCT match_id), '{}') FROM ball_event
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_all_matches() RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(id), '{}') FROM match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_plans() RETURNS TABLE (fixture uuid, school uuid, team text) AS $$
+  SELECT DISTINCT n.fixture_id, n.school_id, n.team_code FROM news_post n
+   WHERE n.kind = 'plan' AND n.scope = 'team' AND n.fixture_id IS NOT NULL
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v106_sides() RETURNS TABLE (school uuid, team text) AS $$
+  SELECT DISTINCT school_id, team_code FROM training_session
+  UNION SELECT DISTINCT school_id, team_code FROM player WHERE team_code IS NOT NULL
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- §5 item 2: app_can() asked with NULL and with all-f answers alike, at both
+-- ends of a fixture, as the owner about the caller.
+CREATE OR REPLACE FUNCTION _v106_spelling(p_cap text, p_match uuid) RETURNS boolean AS $$
+  SELECT bool_and(app_can(p_cap, e.s, e.t, NULL, m.id)
+                  IS NOT DISTINCT FROM app_can(p_cap, e.s, e.t, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id))
+    FROM match m, LATERAL (VALUES (m.school_id, m.team_code), (m.away_school_id, m.away_team_code)) e(s, t)
+   WHERE m.id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/106 (section 83) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -5626,6 +5835,18 @@ BEGIN
   PERFORM _as(U_PARENT);
   SELECT count(*) INTO n FROM match;
   PERFORM _assert(n > 0, 'guardian cannot see any fixture');
+  -- ...and since db/106 (REACH-D1, "the side only") only her child's side's:
+  -- R Pillay's 1XI at either end, or a fixture whose sheet names him. This
+  -- read n > 0 alone while match_read asked with the all-zeros person, which
+  -- for a guardian is every fixture at her school (the seed's U16B one too).
+  SELECT count(*) INTO n FROM match m
+   WHERE NOT ((m.school_id = HIL AND m.team_code = '1XI') OR (m.away_school_id = HIL AND m.away_team_code = '1XI')
+              OR EXISTS (SELECT 1 FROM match_squad s WHERE s.match_id = m.id AND s.player_id = P_INJURED AND NOT s.withdrawn));
+  PERFORM _assert(n = 0, format('guardian sees %s fixture(s) of a side her child is not on (db/106)', n));
+  PERFORM _as(U_OWNER);
+  SELECT count(*) INTO n FROM match WHERE school_id = HIL AND team_code = 'U16B';
+  PERFORM _assert(n > 0, 'the seed has no U16B fixture, so the guardian''s side-only read above proves nothing');
+  PERFORM _as(U_PARENT);
   SELECT count(*) INTO n FROM match WHERE school_id = WES;
   PERFORM _assert(n = 0, 'guardian sees fixtures at a school they are not attached to');
 
@@ -5764,11 +5985,20 @@ BEGIN
   SELECT count(*) INTO n FROM training_attendance WHERE player_id = P_INJURED;
   PERFORM _assert(n = 1, 'guardian cannot see their own child''s attendance');
 
-  -- A guardian may read the SESSION (team.read, school-wide assignment) while
-  -- reading only one row of the REGISTER. That asymmetry is the entire reason
-  -- the two are separate tables.
-  SELECT count(*) INTO n FROM training_session;
-  PERFORM _assert(n > 1, 'guardian should still see the training schedule itself');
+  -- A guardian may read the SESSION while reading only one row of the
+  -- REGISTER. That asymmetry is the entire reason the two are separate tables.
+  -- Since db/106 (REACH-D1) the session is her child's side's alone
+  -- (side_reach('team.read')): this read n > 1 while training_session_read
+  -- asked with the all-zeros person, which gave her every side's nets at the
+  -- school, the U16B's included.
+  SELECT count(*) INTO n FROM training_session WHERE school_id = HIL AND team_code = '1XI';
+  PERFORM _assert(n >= 1, 'guardian should still see her child''s side''s training schedule itself');
+  SELECT count(*) INTO n FROM training_session WHERE NOT (school_id = HIL AND team_code = '1XI');
+  PERFORM _assert(n = 0, format('guardian sees %s training session(s) of a side her child is not on (db/106)', n));
+  PERFORM _as(U_OWNER);
+  SELECT count(*) INTO n FROM training_session WHERE school_id = HIL AND team_code <> '1XI';
+  PERFORM _assert(n > 0, 'the seed has no other side''s session, so the guardian''s side-only read above proves nothing');
+  PERFORM _as(U_PARENT);
 
   -- player_skill: a coach's assessment of a named child. The guardian holds no
   -- player.development.read at all, so this is empty for them — a parent reads
@@ -20827,6 +21057,284 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 79
+
+  -- ┌── db/106 (section 83) ─────────────────────────────────────────────
+  -- ── 83. REACH R-A: a family reads its side's fixtures, trips and training (db/106) ──
+  -- docs/design/REACH_parent_pupil.md §6.1, REACH-D1 ("the side only", Kameel,
+  -- 2026-10-14). Rows are _v106_stage()'s, invented. What each label holds:
+  --   (reader)    each reader's whole set of the stage's fixtures (match),
+  --               trips, training sessions, the toss/umpire/weather of f1, f2,
+  --               f6 (each table alike) and fixture_publication rows, against
+  --               the set the design gives him:
+  --                 g1 (A's, one child): the 6XI's fixtures home and away and
+  --                   nothing else; the away fixture's toss, umpire and weather
+  --                   (new: home-only before); the 6XI's buses at Hilton, not
+  --                   Westville's bus to f2, not the 8XI's (t6, whose notes
+  --                   name B); the 6XI's nets
+  --                 g2 (two schools): B's side at Hilton and W's at Westville
+  --                   and nothing else at either; each school's bus at its
+  --                   own end only
+  --                 gup (UP plays up): f1 by the sheet and his own side's f3;
+  --                   not the 6XI's next (f4) nor f5, from whose sheet UP was
+  --                   withdrawn; f1's buses; his own side's nets only
+  --                 upboy (UP himself): f3 only, NOT f1 — his selfaccess holds
+  --                   no fixture.read and his team assignment is the 7XI's;
+  --                   db/100's log answers him the same. §2.2 says he reads
+  --                   f1: a capability question recorded for Kameel, not built
+  --                 aboy (a pupil): his side's, home and away, as before
+  --                 wesg (the away family): her side's two; Hilton's bus to
+  --                   f1 never; f1's toss, umpire and weather (new)
+  --                 gdriver (B's, and a driver): B's side; f1 only through
+  --                   the trip he drives (db/41), and of f1's buses his own
+  --                   alone (trip_fixture_driver_only now asks fixture_reach)
+  --                 coach6, coach7, wescoach, spec (school-wide), spec6
+  --                   (scoped to the 6XI), office, teamless: as before
+  --                 g3 (ended), g4 (pending), g5 (revoked), a stranger, an
+  --                   anonymous session: nothing
+  --   (unchanged) every reader whose assignments name nobody reads the stage's
+  --               fixtures, trips and training exactly as db/09 gave them
+  --   (team-less) the pupil whose `player` row has no team (R-D's case) reads
+  --               through fixture_reach() exactly what the unnamed branch
+  --               gives at either end, and no more
+  --   (spelling)  for every stage reader and fixture end, app_can() with NULL
+  --               and with all-f answer alike (§5 item 2)
+  --   (literal)   for every person holding an assignment and every staged or
+  --               scored fixture, fixture_reach() under fixture.read and
+  --               transport.read equals §2.5's text spelled out over every
+  --               boy on the side and sheet (_v106_lit_fixture), and
+  --               side_reach() under team.read equals it on every side
+  --   (agree)     §6.1 proof 1: for every person and every fixture with a
+  --               ball, ball_event_read (db/100) admits exactly the fixtures
+  --               fixture_reach('fixture.read') does; for every guardian, the
+  --               fixtures my_child_fixtures() returns are exactly those
+  --               fixture_reach() gives; for every person and every plan's
+  --               side, news_plan_reach() (db/96) is news.read and
+  --               side_reach('team.read'); for every guardian and plan,
+  --               db/101's reach (side or sheet) is news.read and
+  --               fixture_end_reach('team.read') at the plan's end
+  --   (text)      each re-created policy is the helper's question and nothing
+  --               else; no pad table asks a helper
+  --   (ended)     g1's own link ended mid-section: his next read is nothing
+  --
+  -- Cost (§5 item 11), measured on this database on 2026-10-15 by
+  -- EXPLAIN (ANALYZE) outside this file (median of 15, ms, execution):
+  -- see db/106's header and the build report for the figures.
+  --
+  -- Falsified (each by putting the wrong definition in the database and
+  -- running this section; each went red where named):
+  --   db/09's match_read (zeros) back: (reader) g1 reads f3, f6
+  --   side_reach() without its named-boy branch: (reader) g1, g2, wesg read
+  --     nothing; (agree) ball_event_read admits what fixture_reach refuses
+  --   fixture_end_reach() without the sheet: (reader) gup loses f1 and t1
+  --   trip_read as fixture_reach() over both ends: (reader) wesg reads t1, t1b
+  --   db/41's trip_fixture_driver_only() (zeros) back: (reader) gdriver
+  --     reads t1b
+  DECLARE
+    z    jsonb := _v106_stage();
+    FX   uuid[];
+    TX   uuid[];
+    SX   uuid[];
+    want jsonb;
+    ZERO uuid := '00000000-0000-0000-0000-000000000000';
+    ALLF uuid := 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    ppl  uuid[];
+    k    text;
+    g    text;
+    e    text;
+    u    uuid;
+    f    uuid;
+    n    int;
+    bad  text;
+    rr   record;
+  BEGIN
+    FX := ARRAY[(z->>'f1')::uuid, (z->>'f2')::uuid, (z->>'f3')::uuid, (z->>'f4')::uuid,
+                (z->>'f5')::uuid, (z->>'f6')::uuid, (z->>'f7')::uuid, (z->>'f8')::uuid];
+    TX := ARRAY[(z->>'t1')::uuid, (z->>'t1b')::uuid, (z->>'t2')::uuid, (z->>'t3')::uuid,
+                (z->>'t4')::uuid, (z->>'t6')::uuid, (z->>'t8')::uuid];
+    SX := ARRAY[(z->>'s6')::uuid, (z->>'s7')::uuid, (z->>'s8')::uuid, (z->>'sw')::uuid];
+    ppl := _v106_people();
+
+    -- (reader): m fixtures · t trips · s training · x toss/umpire/weather · p publication
+    want := '{
+      "g1":       {"m": "f1 f2 f4 f5",       "t": "t1 t1b t4",       "s": "s6",       "x": "f1 f2",    "p": "f1-home"},
+      "g2":       {"m": "f1 f2 f6",          "t": "t2 t6",           "s": "s8 sw",    "x": "f1 f2 f6", "p": "f1-away f6-home"},
+      "gup":      {"m": "f1 f3",             "t": "t1 t1b t3",       "s": "s7",       "x": "f1",       "p": ""},
+      "upboy":    {"m": "f3",                "t": "t3",              "s": "s7",       "x": "",         "p": ""},
+      "aboy":     {"m": "f1 f2 f4 f5",       "t": "t1 t1b t4",       "s": "s6",       "x": "f1 f2",    "p": "f1-home"},
+      "wesg":     {"m": "f1 f2",             "t": "t2",              "s": "sw",       "x": "f1 f2",    "p": "f1-away"},
+      "gdriver":  {"m": "f1 f6",             "t": "t1 t3 t4 t6",     "s": "s8",       "x": "f6",       "p": "f6-home"},
+      "coach6":   {"m": "f1 f2 f4 f5",       "t": "t1 t1b t4",       "s": "s6",       "x": "f1 f2",    "p": "f1-home"},
+      "coach7":   {"m": "f3",                "t": "t3",              "s": "s7",       "x": "",         "p": ""},
+      "wescoach": {"m": "f1 f2",             "t": "t2",              "s": "sw",       "x": "f1 f2",    "p": "f1-away"},
+      "spec":     {"m": "f1 f2 f3 f4 f5 f6", "t": "",                "s": "",         "x": "f1 f2 f6", "p": "f1-home f6-home"},
+      "spec6":    {"m": "f1 f2 f4 f5",       "t": "",                "s": "",         "x": "f1 f2",    "p": "f1-home"},
+      "office":   {"m": "f1 f2 f3 f4 f5 f6", "t": "t1 t1b t3 t4 t6", "s": "s6 s7 s8", "x": "f1 f2 f6", "p": "f1-home f6-home"},
+      "teamless": {"m": "f1 f2 f3 f4 f5 f6", "t": "t1 t1b t3 t4 t6", "s": "s6 s7 s8", "x": "f1 f2 f6", "p": "f1-home f6-home"},
+      "g3":       {"m": "", "t": "", "s": "", "x": "", "p": ""},
+      "g4":       {"m": "", "t": "", "s": "", "x": "", "p": ""},
+      "g5":       {"m": "", "t": "", "s": "", "x": "", "p": ""},
+      "stranger": {"m": "", "t": "", "s": "", "x": "", "p": ""},
+      "anon":     {"m": "", "t": "", "s": "", "x": "", "p": ""}}'::jsonb;
+    FOR k IN SELECT jsonb_object_keys(want) LOOP
+      IF k = 'anon' THEN PERFORM set_config('app.user_id', '', true); ELSE PERFORM _as((z->>k)::uuid); END IF;
+      g := concat_ws(' | ',
+        (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, id) l FROM match WHERE id = ANY (FX)) x),
+        (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, id) l FROM trip WHERE id = ANY (TX)) x),
+        (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, id) l FROM training_session WHERE id = ANY (SX)) x),
+        (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, match_id) l FROM match_toss WHERE match_id = ANY (FX)) x),
+        (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, match_id) l FROM match_official WHERE match_id = ANY (FX)) x),
+        (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, match_id) l FROM match_weather WHERE match_id = ANY (FX)) x),
+        (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, match_id) || '-' || side l FROM fixture_publication WHERE match_id = ANY (FX)) x));
+      e := concat_ws(' | ', want->k->>'m', want->k->>'t', want->k->>'s', want->k->>'x', want->k->>'x', want->k->>'x', want->k->>'p');
+      PERFORM _assert(g = e, format('§83 (reader): the %s reads [%s], the design gives [%s] (fixtures | trips | training | toss | umpire | weather | publication)', k, g, e));
+    END LOOP;
+
+    -- (unchanged): every reader naming nobody, exactly as db/09 gave
+    FOREACH k IN ARRAY ARRAY['coach6', 'coach7', 'wescoach', 'spec', 'spec6', 'office', 'teamless'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      PERFORM _assert(
+        (SELECT coalesce(array_agg(id ORDER BY id), '{}') FROM match WHERE id = ANY (FX))
+          = (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(FX) x WHERE _v106_old_match(x))
+        AND (SELECT coalesce(array_agg(id ORDER BY id), '{}') FROM trip WHERE id = ANY (TX))
+          = (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(TX) x WHERE _v106_old_trip(x))
+        AND (SELECT coalesce(array_agg(id ORDER BY id), '{}') FROM training_session WHERE id = ANY (SX))
+          = (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(SX) x WHERE _v106_old_training(x)),
+        format('§83 (unchanged): the %s reads a fixture, trip or session other than db/09 gave', k));
+    END LOOP;
+
+    -- (team-less): fixture_reach() gives him the unnamed branch at either end and nothing more
+    PERFORM _as((z->>'teamless')::uuid);
+    SELECT string_agg(_v106_label(z, x), ' ' ORDER BY _v106_label(z, x)) INTO bad
+      FROM unnest(FX) x
+     WHERE fixture_reach('fixture.read', x) IS DISTINCT FROM
+           (SELECT app_can('fixture.read', m.school_id, m.team_code, ALLF, m.id)
+                   OR app_can('fixture.read', m.away_school_id, m.away_team_code, ALLF, m.id)
+              FROM match m WHERE m.id = x);
+    PERFORM _assert(bad IS NULL, format('§83 (team-less): fixture_reach() gives the team-less pupil more or less than the unnamed branch at %s', bad));
+
+    -- (spelling): NULL and all-f answer alike, at both ends of each fixture
+    FOR k IN SELECT jsonb_object_keys(want) LOOP
+      IF k = 'anon' THEN CONTINUE; END IF;
+      PERFORM _as((z->>k)::uuid);
+      SELECT string_agg(format('%s/%s', _v106_label(z, x.f), x.cap), ' ') INTO bad
+        FROM (SELECT f0 AS f, c.cap FROM unnest(FX) f0, (VALUES ('fixture.read'), ('transport.read'), ('team.read')) c(cap)) x
+       WHERE NOT _v106_spelling(x.cap, x.f);
+      PERFORM _assert(bad IS NULL, format('§83 (spelling): as the %s, NULL and all-f answer apart at %s', k, bad));
+    END LOOP;
+
+    -- (literal): the build is §2.5's text, for everyone, everywhere staged or scored
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      SELECT string_agg(format('%s/%s', x.f, x.cap), ' ') INTO bad
+        FROM (SELECT f0 AS f, c.cap FROM unnest(FX || _v106_ball_matches()) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
+       WHERE fixture_reach(x.cap, x.f) IS DISTINCT FROM _v106_lit_fixture(x.cap, x.f);
+      PERFORM _assert(bad IS NULL, format('§83 (literal): for %s fixture_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
+      SELECT string_agg(format('%s/%s', s.school, s.team), ' ') INTO bad
+        FROM _v106_sides() s
+       WHERE side_reach('team.read', s.school, s.team, ZERO) IS DISTINCT FROM _v106_lit_side('team.read', s.school, s.team, ZERO);
+      PERFORM _assert(bad IS NULL, format('§83 (literal): for %s side_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
+    END LOOP;
+
+    -- (agree) 1: db/100's log
+    n := 0;
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      SELECT string_agg(x::text, ' ') INTO bad
+        FROM unnest(_v106_ball_matches()) x
+       WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = x) IS DISTINCT FROM fixture_reach('fixture.read', x);
+      PERFORM _assert(bad IS NULL, format('§83 (agree): for %s ball_event_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
+      n := n + (SELECT count(*) FROM unnest(_v106_ball_matches()) x WHERE fixture_reach('fixture.read', x));
+    END LOOP;
+    PERFORM _assert(n > 0 AND cardinality(_v106_ball_matches()) > 1 AND cardinality(ppl) > 20,
+      format('§83 (agree): the log comparison ran over %s people, %s fixtures and %s reads: it proves nothing',
+             cardinality(ppl), cardinality(_v106_ball_matches()), n));
+    -- (agree) 2: db/100's helper, for every guardian
+    n := 0;
+    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+      PERFORM _as(u);
+      PERFORM _assert(
+        (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(my_child_fixtures()) x)
+          = (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(_v106_all_matches()) x WHERE fixture_reach('fixture.read', x)),
+        format('§83 (agree): for the guardian %s my_child_fixtures() and fixture_reach() give different fixtures', u));
+      n := n + cardinality(my_child_fixtures());
+    END LOOP;
+    PERFORM _assert(n > 10, format('§83 (agree): the guardians'' fixtures number %s: it proves nothing', n));
+    -- (agree) 3: db/96's side, for everyone; db/101's sheet, for every guardian
+    PERFORM _assert((SELECT count(*) FROM _v106_plans()) > 0, '§83 (agree): no plan is staged to compare');
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      SELECT string_agg(format('%s/%s', p.school, p.team), ' ') INTO bad
+        FROM _v106_plans() p
+       WHERE news_plan_reach(p.school, p.team) IS DISTINCT FROM
+             (app_can('news.read', p.school, p.team, ZERO, ZERO) AND side_reach('team.read', p.school, p.team, ZERO));
+      PERFORM _assert(bad IS NULL, format('§83 (agree): for %s news_plan_reach() and side_reach() answer apart at %s', u, bad));
+    END LOOP;
+    n := 0;
+    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+      PERFORM _as(u);
+      SELECT string_agg(format('%s/%s', p.school, p.team), ' ') INTO bad
+        FROM _v106_plans() p
+       WHERE (news_plan_reach(p.school, p.team) OR news_sheet_reach(p.fixture, p.school, p.team)) IS DISTINCT FROM
+             (app_can('news.read', p.school, p.team, ZERO, ZERO) AND fixture_end_reach('team.read', p.fixture, p.school, p.team));
+      PERFORM _assert(bad IS NULL, format('§83 (agree): for the guardian %s db/101''s plan reach and fixture_end_reach() answer apart at %s', u, bad));
+      n := n + (SELECT count(*) FROM _v106_plans() p
+                 WHERE news_sheet_reach(p.fixture, p.school, p.team) AND NOT news_plan_reach(p.school, p.team));
+    END LOOP;
+    PERFORM _assert(n > 0, '§83 (agree): no guardian reaches a plan by the sheet alone: the sheet comparison proves nothing');
+
+    -- (text)
+    SELECT string_agg(x.tbl || '.' || x.pol, ' ') INTO bad
+      FROM (VALUES
+        ('match', 'match_read', 'fixture_reach(''fixture.read''::text, id)'),
+        ('match_toss', 'match_toss_read', 'fixture_reach(''fixture.read''::text, match_id)'),
+        ('match_broadcast', 'match_broadcast_read', 'fixture_reach(''fixture.read''::text, match_id)'),
+        ('drs_review', 'drs_review_read', 'fixture_reach(''fixture.read''::text, match_id)'),
+        ('match_official', 'match_official_read', 'fixture_reach(''fixture.read''::text, match_id)'),
+        ('match_pitch_report', 'match_pitch_report_read', 'fixture_reach(''fixture.read''::text, match_id)'),
+        ('match_weather', 'match_weather_read', 'fixture_reach(''fixture.read''::text, match_id)'),
+        ('match_conditions', 'match_conditions_read', 'fixture_reach(''fixture.read''::text, match_id)'),
+        ('match_condition_override', 'match_condition_override_read', 'fixture_reach(''fixture.read''::text, match_id)'),
+        ('match_result_decision', 'match_result_decision_read', '(fixture_reach(''fixture.read''::text, match_id) OR competition_visible(match_competition_of(match_id)))'),
+        ('fixture_publication', 'fixture_publication_read', 'side_reach(''fixture.read''::text, school_id, team_code, match_id)'),
+        ('trip', 'trip_read', 'fixture_end_reach(''transport.read''::text, match_id, school_id, match_team(match_id))'),
+        ('training_session', 'training_session_read', 'side_reach(''team.read''::text, school_id, team_code, ''00000000-0000-0000-0000-000000000000''::uuid)')
+      ) x(tbl, pol, q)
+     WHERE NOT EXISTS (SELECT 1 FROM pg_policy p
+                        WHERE p.polrelid = to_regclass(x.tbl) AND p.polname = x.pol AND p.polcmd = 'r' AND p.polpermissive
+                          AND pg_get_expr(p.polqual, p.polrelid) = x.q);
+    PERFORM _assert(bad IS NULL, format('§83 (text): %s is not the policy db/106 wrote', bad));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_policy p
+                                 WHERE p.polrelid IN (to_regclass('scoring_session'), to_regclass('ball_event_quarantine'),
+                                                      to_regclass('scoring_audit'))
+                                   AND concat(pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid))
+                                       ~ '(side|fixture|fixture_end)_reach'),
+      '§83 (text): a pad table''s policy asks a reach helper');
+    PERFORM _assert((SELECT bool_and(p.prosecdef AND p.provolatile = 's'
+                                     AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
+                                     AND has_function_privilege('scrbrd_app', p.oid, 'EXECUTE')
+                                     AND NOT has_function_privilege('public', p.oid, 'EXECUTE'))
+                       FROM pg_proc p
+                      WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'),
+                                      to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
+                                      to_regprocedure('fixture_reach(text,uuid)')))
+                    AND (SELECT count(*) FROM pg_proc p
+                          WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'),
+                                          to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
+                                          to_regprocedure('fixture_reach(text,uuid)'))) = 3,
+      '§83 (text): a reach helper is missing, not a stable definer with a pinned path, or not scrbrd_app''s alone');
+
+    -- (ended), last: g1's own link ends, and his next read has nothing
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v100_end_link((z->>'g1')::uuid, (z->>'a')::uuid);
+    PERFORM _as((z->>'g1')::uuid);
+    PERFORM _assert((SELECT count(*) FROM match WHERE id = ANY (FX)) = 0
+                    AND (SELECT count(*) FROM trip WHERE id = ANY (TX)) = 0
+                    AND (SELECT count(*) FROM training_session WHERE id = ANY (SX)) = 0
+                    AND (SELECT count(*) FROM match_toss WHERE match_id = ANY (FX)) = 0,
+      '§83 (ended): A''s guardian reads a fixture, trip, session or toss after his link ended');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 83
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

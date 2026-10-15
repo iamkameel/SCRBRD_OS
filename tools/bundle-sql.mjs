@@ -386,6 +386,29 @@ SELECT
         AND has_function_privilege('scrbrd_app', to_regprocedure('feature_suppression_reason(uuid)'), 'EXECUTE')
         AND NOT has_column_privilege('scrbrd_app', to_regclass('feature_suppression'), 'reason', 'SELECT')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Who a module is hidden from is the school's",
+  -- db/106: a family reads its side's fixtures, trips and training, through
+  -- side_reach()/fixture_reach(), never the all-zeros person (REACH R-A).
+  CASE WHEN to_regprocedure('side_reach(text,uuid,text,uuid)') IS NOT NULL
+        AND to_regprocedure('fixture_end_reach(text,uuid,uuid,text)') IS NOT NULL
+        AND to_regprocedure('fixture_reach(text,uuid)') IS NOT NULL
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'), to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
+                              to_regprocedure('fixture_reach(text,uuid)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('fixture_reach(text,uuid)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'), to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
+                                         to_regprocedure('fixture_reach(text,uuid)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policy p
+              WHERE p.polcmd = 'r' AND p.polpermissive
+                AND (p.polrelid, p.polname) IN ((to_regclass('match'), 'match_read'), (to_regclass('trip'), 'trip_read'),
+                                                (to_regclass('training_session'), 'training_session_read'),
+                                                (to_regclass('match_toss'), 'match_toss_read'),
+                                                (to_regclass('match_official'), 'match_official_read'),
+                                                (to_regclass('match_weather'), 'match_weather_read'),
+                                                (to_regclass('match_conditions'), 'match_conditions_read'))
+                AND pg_get_expr(p.polqual, p.polrelid) ~ '^\\(?(side|fixture|fixture_end)_reach\\(') = 7
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A family reads its side's fixtures",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
