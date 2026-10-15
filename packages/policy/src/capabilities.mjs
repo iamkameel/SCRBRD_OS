@@ -48,6 +48,13 @@ export const CAPABILITIES = {
   "team.read":                   "See teams and squads",
   "team.manage":                 "Create and change teams",
   "team.select":                 "Pick a matchday squad",
+  // RUNNING A SESSION, and nothing else (GA-I26a; Kameel, 15 Oct): put the
+  // drills from the library on a session's plan, and take its register. Not
+  // team.manage, which also keeps the drill library, the kit register and the
+  // calendar: the team manager runs the session the coach scheduled. Held by
+  // every role that holds team.manage, and by the team manager; side-scoped
+  // as they are.
+  "team.training.run":           "Plan a training session and take its register",
   // AVAILABILITY, and deliberately not medical.status.read.
   //
   // Whether a boy is FIT is the physio's judgement. Whether he is AVAILABLE is
@@ -483,7 +490,7 @@ export const LEVEL = Object.freeze({
   "user.read": 1, "user.invite": 1, "user.role.assign": 1, "audit.read": 1,
 
   // ── Squad & people ──
-  "team.read": 0, "team.manage": 1, "team.select": 1,
+  "team.read": 0, "team.manage": 1, "team.select": 1, "team.training.run": 1,
   // A small window into a child's home life — the file's own words.
   "availability.read": 2, "availability.declare": 2,
   "player.profile.read": 1, "player.profile.manage": 1,

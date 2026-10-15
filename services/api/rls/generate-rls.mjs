@@ -493,6 +493,8 @@ export const ADDED_SINCE_01 = {
   // ── end SCRBRD-124 ──
   // ── SCRBRD-130 R2: the DLS resource table (db/75) ──
   "platform.reference.manage":   "75_dls_table.sql",
+  // ── GA-I26a: running a training session, its plan and register (db/105) ──
+  "team.training.run":           "105_development_loop.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

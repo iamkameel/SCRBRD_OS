@@ -35,14 +35,15 @@ export function trainingRoutes({ pool, secret }) {
   /**
    * A session this person may read and manage, or a refusal that says which:
    * 404 for one he cannot read, 403 for one he reads and may not change. A
-   * refusal only, asked with the capability the table's own policies ask, so
+   * refusal only, asked with the capability the tables' own write policies ask
+   * (team.training.run, db/105: the plan and the register), so
    * an empty plan (delete, insert nothing) is not reported as saved to
    * somebody the policy would have stopped.
    * @param {import("../api-types.mjs").Db} client @param {string} id
    */
   const mayManage = async (client, id) => {
     const { rows: [t] } = await client.query(
-      `select app_can('team.manage', t.school_id, t.team_code,
+      `select app_can('team.training.run', t.school_id, t.team_code,
                       '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid) as may
          from training_session t where t.id = $1`, [id]);
     if (!t) throw err("no_such_session", 404);
@@ -84,7 +85,8 @@ export function trainingRoutes({ pool, secret }) {
     // The side's plan, keyed to the drill library (GA-I26a §1.3, db/105),
     // replaced whole: the rows go and the new ones come in, in order, in one
     // transaction. It names no boy. training_session_drill's policies decide
-    // (team.manage through the session) and its trigger refuses another
+    // (team.training.run through the session: the coach, the team manager,
+    // the director, the office) and its trigger refuses another
     // school's drill (23514 → 422). POST rather than the design's PUT: the
     // dispatcher reads a body for POST and PATCH, and the browser's CORS list
     // allows no PUT.

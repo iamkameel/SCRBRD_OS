@@ -30,16 +30,27 @@
 --     target_withdraw(id, reason): SECURITY DEFINER, pinned path, scrbrd_app
 --     only; each asks player.development.write for the boy's current side.
 --   + training_session_drill: the side's plan, keyed to the drill library.
---     Names no boy, carries no target. Read under team.read and written under
---     team.manage, through its session, exactly as training_session is (db/09).
+--     Names no boy, carries no target. Read under team.read, as the session
+--     is (db/09), and written under team.training.run, through its session.
 --     A drill from another school's library is refused by trigger.
+--   + team.training.run, a new capability (Kameel, 15 Oct): plan a session
+--     and take its register, and nothing else. Held by every role that holds
+--     team.manage (coach, director of sport, school admin, sports admin, the
+--     owner's key) and by the TEAM MANAGER, who holds no team.manage and so
+--     is still refused the drill library, the kit register and the calendar.
+--     Side-scoped as team.manage is: the assignment's team against the
+--     session's.
+--   + training_attendance: its write policies (db/09's, under team.manage)
+--     re-created under team.training.run; the read is unchanged.
 --   + training_attendance: the application never writes `injured` (AH-D9:
 --     a health word on a register the side reads). Two RESTRICTIVE rules;
 --     existing rows are untouched and the read shows them as `excused`.
 --
 -- WHAT IT DOES TO A LIVE DATABASE
 --   Two new tables (empty), five permissive and three RESTRICTIVE policies
---   (and db/50's five pad guards on them), two
+--   (and db/50's five pad guards on them); one capability and six
+--   role_capability rows; training_attendance's two write policies replaced
+--   (same anchors, the new capability); two
 --   functions, one trigger; the application may delete a plan's rows (db/06's
 --   default privileges give no DELETE) and may not write a target at all. No
 --   existing row is changed. The two RESTRICTIVE
@@ -56,6 +67,21 @@ BEGIN
     RAISE EXCEPTION 'db/105 needs db/104 (player_skill.withdrawn_at): paste 104 first';
   END IF;
 END $needs_104$;
+
+
+-- ── 0b · Running a session: team.training.run ─────────────────────
+-- The catalogue row and one role_capability row per holder in roles.mjs
+-- (services/api/rls/generate-rls.mjs ADDED_SINCE_01; rls.test.mjs holds the
+-- list to the model). Scope is the assignment's, as for every capability.
+INSERT INTO capability (name) VALUES ('team.training.run') ON CONFLICT (name) DO NOTHING;
+INSERT INTO role_capability (role, capability) VALUES
+  ('superadmin',      'team.training.run'),
+  ('directorofsport', 'team.training.run'),
+  ('schooladmin',     'team.training.run'),
+  ('sportsadmin',     'team.training.run'),
+  ('coach',           'team.training.run'),
+  ('teammanager',     'team.training.run')
+ON CONFLICT DO NOTHING;
 
 
 -- ── 1 · development_target ─────────────────────────────────────────
@@ -256,8 +282,8 @@ CREATE TABLE IF NOT EXISTS training_session_drill (
 );
 CREATE INDEX IF NOT EXISTS training_session_drill_drill ON training_session_drill (drill_id);
 
--- A satellite of training_session, in its spelling (db/09): read team.read,
--- write team.manage, resolved through the session. When REACH R-A re-creates
+-- A satellite of training_session: read team.read, as the session is (db/09);
+-- written under team.training.run, resolved through the session. When REACH R-A re-creates
 -- training_session_read as side_reach(), this one is on its list.
 ALTER TABLE training_session_drill ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS training_session_drill_read   ON training_session_drill;
@@ -270,23 +296,23 @@ CREATE POLICY training_session_drill_read ON training_session_drill
     (SELECT t.team_code FROM training_session t WHERE t.id = training_session_drill.session_id),
     '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 CREATE POLICY training_session_drill_insert ON training_session_drill
-  FOR INSERT WITH CHECK (app_can('team.manage',
+  FOR INSERT WITH CHECK (app_can('team.training.run',
     (SELECT t.school_id FROM training_session t WHERE t.id = training_session_drill.session_id),
     (SELECT t.team_code FROM training_session t WHERE t.id = training_session_drill.session_id),
     '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 CREATE POLICY training_session_drill_update ON training_session_drill
-  FOR UPDATE USING (app_can('team.manage',
+  FOR UPDATE USING (app_can('team.training.run',
     (SELECT t.school_id FROM training_session t WHERE t.id = training_session_drill.session_id),
     (SELECT t.team_code FROM training_session t WHERE t.id = training_session_drill.session_id),
     '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
-  WITH CHECK (app_can('team.manage',
+  WITH CHECK (app_can('team.training.run',
     (SELECT t.school_id FROM training_session t WHERE t.id = training_session_drill.session_id),
     (SELECT t.team_code FROM training_session t WHERE t.id = training_session_drill.session_id),
     '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 -- A plan is replaced whole (the route deletes and inserts): it names nobody,
 -- so taking a row off it removes no record of a child.
 CREATE POLICY training_session_drill_delete ON training_session_drill
-  FOR DELETE USING (app_can('team.manage',
+  FOR DELETE USING (app_can('team.training.run',
     (SELECT t.school_id FROM training_session t WHERE t.id = training_session_drill.session_id),
     (SELECT t.team_code FROM training_session t WHERE t.id = training_session_drill.session_id),
     '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
@@ -325,6 +351,28 @@ DROP TRIGGER IF EXISTS training_session_drill_from_the_library ON training_sessi
 CREATE TRIGGER training_session_drill_from_the_library
   BEFORE INSERT OR UPDATE ON training_session_drill
   FOR EACH ROW EXECUTE FUNCTION training_session_drill_library();
+
+
+-- ── 3b · Who takes the register: team.training.run ─────────────────
+-- db/09's two write policies, re-created under the new capability with the
+-- same anchors (the session's school and side, the row's boy). The read
+-- policy (player.profile.read) is untouched. No DELETE policy, as before.
+DROP POLICY IF EXISTS training_attendance_insert ON training_attendance;
+CREATE POLICY training_attendance_insert ON training_attendance
+  FOR INSERT WITH CHECK (app_can('team.training.run',
+    (SELECT t.school_id FROM training_session t WHERE t.id = training_attendance.session_id),
+    (SELECT t.team_code FROM training_session t WHERE t.id = training_attendance.session_id),
+    training_attendance.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+DROP POLICY IF EXISTS training_attendance_update ON training_attendance;
+CREATE POLICY training_attendance_update ON training_attendance
+  FOR UPDATE USING (app_can('team.training.run',
+    (SELECT t.school_id FROM training_session t WHERE t.id = training_attendance.session_id),
+    (SELECT t.team_code FROM training_session t WHERE t.id = training_attendance.session_id),
+    training_attendance.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
+  WITH CHECK (app_can('team.training.run',
+    (SELECT t.school_id FROM training_session t WHERE t.id = training_attendance.session_id),
+    (SELECT t.team_code FROM training_session t WHERE t.id = training_attendance.session_id),
+    training_attendance.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
 
 -- ── 4 · The register says no health word (AH-D9) ──────────────────
@@ -402,14 +450,33 @@ BEGIN
                                           ('training_attendance', 'training_attendance_no_health_word_update', 'UPDATE'));
   IF n <> 3 THEN RAISE EXCEPTION 'db/105: % of the three RESTRICTIVE policies exist as written', n; END IF;
 
-  -- The plan: four policies, read under team.read, written under team.manage.
+  -- The plan: four policies, read under team.read, written under team.training.run.
   SELECT count(*) INTO n FROM pg_policies
    WHERE schemaname = 'public' AND tablename = 'training_session_drill' AND permissive = 'PERMISSIVE'
      AND ((cmd = 'SELECT' AND qual LIKE '%team.read%')
-       OR (cmd = 'INSERT' AND with_check LIKE '%team.manage%')
-       OR (cmd = 'UPDATE' AND qual LIKE '%team.manage%' AND with_check LIKE '%team.manage%')
-       OR (cmd = 'DELETE' AND qual LIKE '%team.manage%'));
+       OR (cmd = 'INSERT' AND with_check LIKE '%team.training.run%')
+       OR (cmd = 'UPDATE' AND qual LIKE '%team.training.run%' AND with_check LIKE '%team.training.run%')
+       OR (cmd = 'DELETE' AND qual LIKE '%team.training.run%'));
   IF n <> 4 THEN RAISE EXCEPTION 'db/105: training_session_drill has % of its four policies', n; END IF;
+  -- The register: written under the new capability, read as before.
+  SELECT count(*) INTO n FROM pg_policies
+   WHERE schemaname = 'public' AND tablename = 'training_attendance' AND permissive = 'PERMISSIVE'
+     AND ((policyname = 'training_attendance_insert' AND cmd = 'INSERT' AND with_check LIKE '%team.training.run%')
+       OR (policyname = 'training_attendance_update' AND cmd = 'UPDATE' AND qual LIKE '%team.training.run%'
+           AND with_check LIKE '%team.training.run%')
+       OR (policyname = 'training_attendance_read' AND cmd = 'SELECT' AND qual LIKE '%player.profile.read%'));
+  IF n <> 3 THEN RAISE EXCEPTION 'db/105: training_attendance has % of its three policies as written', n; END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND permissive = 'PERMISSIVE'
+                AND tablename IN ('training_attendance', 'training_session_drill') AND cmd <> 'SELECT'
+                AND coalesce(qual, '') || coalesce(with_check, '') LIKE '%team.manage%') THEN
+    RAISE EXCEPTION 'db/105: a plan or register write still asks team.manage';
+  END IF;
+  -- The capability: six holders, the team manager among them.
+  SELECT count(*) INTO n FROM role_capability WHERE capability = 'team.training.run'
+     AND role IN ('superadmin', 'directorofsport', 'schooladmin', 'sportsadmin', 'coach', 'teammanager');
+  IF n <> 6 OR (SELECT count(*) FROM role_capability WHERE capability = 'team.training.run') <> 6 THEN
+    RAISE EXCEPTION 'db/105: team.training.run is held by % of its six roles, or by others', n;
+  END IF;
   IF NOT (has_table_privilege('scrbrd_app', 'training_session_drill', 'SELECT')
           AND has_table_privilege('scrbrd_app', 'training_session_drill', 'INSERT')
           AND has_table_privilege('scrbrd_app', 'training_session_drill', 'DELETE')) THEN

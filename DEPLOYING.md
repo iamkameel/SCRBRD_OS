@@ -1327,16 +1327,25 @@ he reached it is read off his scores, never stored. **A session's plan is
 keyed to the drill library** and read by the side, parents included, as the
 session is; it names no boy. **The register gets its route**, which never
 writes `injured`: that is a health word on a list the side reads, and an old
-`injured` row now reads as `excused`.
+`injured` row now reads as `excused`. **The team manager runs the session**
+(Kameel, 15 Oct): a new capability, `team.training.run`, lets him set a
+session's plan and take its register at his own side, and nothing else. He is
+still refused the drill library, the kit register and scheduling, which stay
+under `team.manage`. Every role that holds `team.manage` holds the new one
+too, so nobody loses a write. The assistant coach holds neither.
 
 **What it does to a live database.** Two new empty tables
 (`development_target`, `training_session_drill`) under row security: the
 first with one read policy, a `RESTRICTIVE` support cut and no write policy
 or write privilege at all (its doors are `target_set` and `target_withdraw`,
 `SECURITY DEFINER`, pinned search path, `scrbrd_app` alone); the second with
-the session's four policies and a trigger refusing another school's drill.
-Two `RESTRICTIVE` policies on `training_attendance` refuse `injured` from the
-application's role. No existing row is changed. Refuses to run before db/104.
+four policies (read under `team.read`, written under `team.training.run`)
+and a trigger refusing another school's drill. One capability row and six
+`role_capability` rows (`team.training.run`: coach, director of sport, school
+admin, sports admin, the owner's key, the team manager).
+`training_attendance`'s two write policies are re-created under
+`team.training.run` with the same anchors (its read is unchanged), and two
+`RESTRICTIVE` policies refuse `injured` from the application's role. No existing row is changed. Refuses to run before db/104.
 A second paste changes nothing.
 
 **Behaviour the paste and the deploy change.** The Training screen's

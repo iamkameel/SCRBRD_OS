@@ -829,7 +829,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/training$/,                              "POST", training.schedule, "training"],
   // GA-I26a A2 (db/105): a session's plan, keyed to the drill library and
   // replaced whole, and its register (never `injured`). Both under
-  // team.manage through the session; Training's, so tagged with it.
+  // team.training.run through the session (the team manager holds it, and
+  // not team.manage); Training's, so tagged with it.
   [/^\/api\/training\/([^/]+)\/plan$/,            "POST", training.plan, "training"],
   [/^\/api\/training\/([^/]+)\/attendance$/,      "POST", training.attendance, "training"],
   // A competition's tiers, and who sits in which. competition.manage at the

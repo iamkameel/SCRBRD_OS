@@ -443,6 +443,9 @@ SELECT
                                          to_regprocedure('target_withdraw(uuid,text)'))
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
         AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'training_session_drill_from_the_library' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM role_capability WHERE role = 'teammanager' AND capability = 'team.training.run')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'training_attendance'
+                     AND policyname = 'training_attendance_insert' AND with_check LIKE '%team.training.run%')
         AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
               AND (tablename, policyname) IN (('development_target', 'development_target_not_support'),
                                               ('training_attendance', 'training_attendance_no_health_word'),

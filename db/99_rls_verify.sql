@@ -21668,17 +21668,19 @@ $v49$;
   --                query, verbatim) gives the boy no note id and the coach his
   --   (writes)     no person writes development_target directly: INSERT,
   --                UPDATE, DELETE refused to the coach
-  --   (plan)       the coach plans U19E's sessions (platform drills); the
-  --                team manager, the boy, the parent, the team-mate, the
-  --                analyst and the director read the plan; U19F's coach,
+  --   (plan)       the team manager plans U19E's sessions (platform drills)
+  --                under team.training.run (Kameel, 15 Oct), and the coach
+  --                too; the team manager, the boy, the parent, the team-mate,
+  --                the analyst and the director read the plan; U19F's coach,
   --                Westville's coach and an anonymous session do not; the
-  --                assistant, the team manager, the parent and the boy write
-  --                none (neither bundle holds team.manage: the lead's review,
-  --                fact 1; see the build report); a Westville drill on a Hilton
-  --                plan is refused; the coach replaces a plan (delete)
-  --   (register)   the coach marks the boy present; `injured` refused
+  --                assistant (whose bundle holds no team.training.run), the
+  --                parent and the boy write none; the team manager writes
+  --                none for U19F, another side; a Westville drill on a Hilton
+  --                plan is refused; the team manager replaces a plan (delete)
+  --   (register)   the team manager marks the boy present; `injured` refused
   --                (insert and update) under the application's role; the
-  --                team manager and the parent write none; the team-mate's
+  --                parent and the assistant write none, nor the team manager
+  --                on U19F's session; the team-mate's
   --                `injured` row written
   --                before db/105 reads back `excused` through
   --                `training_attendance` (its query, verbatim)
@@ -21692,6 +21694,9 @@ $v49$;
   --                parent get no rows. The anchor withdrawn: the window opens
   --                back to twenty days and counts five. The window starts at
   --                the day he joined his side when that is later.
+  --   (manager)    team.training.run is all he gained: the team manager is
+  --                still refused the drill library, the kit register and the
+  --                calendar (team.manage's), at his own side
   --   (support)    a support session as U19E's coach reads no target and
   --                sets none
   --   (doors)      the definers, the privileges, the cuts, the trigger
@@ -21702,7 +21707,14 @@ $v49$;
   -- development_target_read widened to player.profile.read (the register's
   -- tier): red at (readers), "the principal reads the boy's targets"; (3) the
   -- trigger training_session_drill_from_the_library dropped: red at (plan),
-  -- "a Westville drill went on a Hilton plan".
+  -- "a Westville drill went on a Hilton plan". And on team.training.run
+  -- (Kameel, 15 Oct): (4) the team manager's row taken out of role_capability:
+  -- red at (plan), his insert refused; (5) the plan's insert policy's side
+  -- scope dropped (team '*', with the school read past row security so the
+  -- session's own read policy, which also refuses him U19F's session, does not
+  -- mask it): red at (plan), "the team manager planned U19F's session, another
+  -- side's"; with the side kept and only the school read past row security it
+  -- stays green, so the side scope is what refuses him.
   DECLARE
     y      jsonb := _v105_stage();
     HIL    uuid := '11111111-1111-1111-1111-111111111111';
@@ -21910,10 +21922,15 @@ $v49$;
     END LOOP;
 
     -- (plan)
-    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _as((y->>'manager')::uuid);
     INSERT INTO training_session_drill (session_id, drill_id, position) VALUES
       ((y->>'d8')::uuid, TD, 1), ((y->>'d6')::uuid, TD, 1), ((y->>'d6')::uuid, SP, 2), ((y->>'d2')::uuid, TD, 1),
-      ((y->>'d12')::uuid, TD, 1), ((y->>'d3')::uuid, TD, 1), ((y->>'d2ahead')::uuid, SP, 1);
+      ((y->>'d12')::uuid, TD, 1), ((y->>'d3')::uuid, TD, 1);
+    PERFORM _assert(_v104_try(format('insert into training_session_drill (session_id, drill_id, position) values (%L, %L, 1)',
+                                     y->>'other', TD)) = '42501',
+      '§82 (plan): the team manager planned U19F''s session, another side''s');
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO training_session_drill (session_id, drill_id, position) VALUES ((y->>'d2ahead')::uuid, SP, 1);
     PERFORM _assert(_v104_try(format('insert into training_session_drill (session_id, drill_id, position) values (%L, %L, 2)',
                                      y->>'d8', y->>'wesdrill')) = '23514',
       '§82 (plan): a Westville drill went on a Hilton plan');
@@ -21929,28 +21946,31 @@ $v49$;
     END LOOP;
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert((SELECT count(*) FROM training_session_drill) = 0, '§82 (plan): an anonymous session reads a plan');
-    FOREACH k IN ARRAY ARRAY['assistant', 'manager', 'parent', 'self'] LOOP
+    FOREACH k IN ARRAY ARRAY['assistant', 'parent', 'self'] LOOP
       PERFORM _as((y->>k)::uuid);
       got := _v104_try(format('insert into training_session_drill (session_id, drill_id, position) values (%L, %L, 3)', y->>'d6', y->>'throwdowns'));
       PERFORM _assert(got = '42501', format('§82 (plan): the %s wrote the plan (%s)', k, got));
     END LOOP;
-    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _as((y->>'manager')::uuid);
     DELETE FROM training_session_drill WHERE session_id = (y->>'d2ahead')::uuid;
     GET DIAGNOSTICS n = ROW_COUNT;
-    PERFORM _assert(n = 1, '§82 (plan): the coach could not replace a plan');
+    PERFORM _assert(n = 1, '§82 (plan): the team manager could not replace a plan');
 
     -- (register)
-    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _as((y->>'manager')::uuid);
     PERFORM _assert(_v104_try(format('insert into training_attendance (session_id, player_id, status) values (%L, %L, ''present'')',
                                      y->>'d12', SUBJ)) = 'ok',
-      '§82 (register): the coach could not mark the boy present');
+      '§82 (register): the team manager could not mark the boy present');
+    PERFORM _assert(_v104_try(format('insert into training_attendance (session_id, player_id, status) values (%L, %L, ''present'')',
+                                     y->>'other', MATE)) = '42501',
+      '§82 (register): the team manager took U19F''s register, another side''s');
     PERFORM _assert(_v104_try(format('insert into training_attendance (session_id, player_id, status) values (%L, %L, ''injured'')',
                                      y->>'d2', MATE)) = '42501',
       '§82 (register): `injured` was written by the application');
     PERFORM _assert(_v104_try(format('update training_attendance set status = ''injured'' where session_id = %L and player_id = %L',
                                      y->>'d12', SUBJ)) = '42501',
       '§82 (register): a row was changed to `injured` by the application');
-    FOREACH k IN ARRAY ARRAY['parent', 'manager', 'assistant'] LOOP
+    FOREACH k IN ARRAY ARRAY['parent', 'assistant'] LOOP
       PERFORM _as((y->>k)::uuid);
       PERFORM _assert(_v104_try(format('insert into training_attendance (session_id, player_id, status) values (%L, %L, ''present'')',
                                        y->>'d2', SUBJ)) = '42501',
@@ -21998,6 +22018,25 @@ $v49$;
       INTO j USING SUBJ, BAT, '{}'::text[], '{}'::text[], '{}'::text[];
     PERFORM _assert((j->>'window_from')::date = current_date - 5 AND (j->>'sessions')::int = 2,
       format('§82 (since): the window does not start at the day he joined the side: %s', coalesce(j::text, 'no row')));
+
+    -- (manager)
+    PERFORM _as((y->>'manager')::uuid);
+    PERFORM _assert(app_can('team.training.run', HIL, 'U19E', '00000000-0000-0000-0000-000000000000'::uuid,
+                            '00000000-0000-0000-0000-000000000000'::uuid)
+                    AND NOT app_can('team.manage', HIL, 'U19E', '00000000-0000-0000-0000-000000000000'::uuid,
+                                    '00000000-0000-0000-0000-000000000000'::uuid),
+      '§82 (manager): the team manager does not hold team.training.run without team.manage at his side');
+    FOREACH k IN ARRAY ARRAY[
+        format('insert into drill (school_id, name, category, duration_min) values (%L, ''Verify 105 manager drill'', ''batting'', 20)', HIL),
+        format('insert into equipment (school_id, kind, label, quantity) values (%L, ''bat'', ''Verify 105 bats'', 4)', HIL),
+        format('insert into training_session (school_id, team_code, title, starts_at, duration_min, session_type) '
+               'values (%L, ''U19E'', ''Verify 105 manager nets'', now() + interval ''3 days'', 60, ''batting'')', HIL)] LOOP
+      got := _v104_try(k);
+      PERFORM _assert(got = '42501', format('§82 (manager): the team manager wrote what team.manage keeps (%s): %s', got, left(k, 40)));
+    END LOOP;
+    UPDATE training_session SET title = 'Verify 105 moved by the manager' WHERE id = (y->>'d2ahead')::uuid;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0, '§82 (manager): the team manager rescheduled a session');
 
     -- (support)
     PERFORM _as((y->>'plat')::uuid);

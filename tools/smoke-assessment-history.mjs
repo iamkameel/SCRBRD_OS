@@ -227,10 +227,16 @@ try {
     const plan = (/** @type {string} */ t, /** @type {string} */ id, /** @type {object[]} */ drills) => post(`/api/training/${id}/plan`, t, { drills });
     ok("the coach plans a session from the library", (await plan(coach, s3, [{ drillId: TD }, { drillId: SP, minutes: 10 }])).status === 200);
     ok("...and another", (await plan(coach, s1, [{ drillId: TD }])).status === 200);
-    // The team manager holds no team.manage (the lead's review, fact 1): the
-    // design's §3.2 has him writing the plan; the bundle does not. See the
-    // build report.
-    ok("the team manager may not plan (his bundle holds no team.manage)", (await plan(manager, s3, [{ drillId: TD }])).status === 403);
+    // team.training.run (Kameel, 15 Oct): the team manager runs the session
+    // the coach scheduled, its plan and its register, and nothing else.
+    ok("the team manager plans it too", (await plan(manager, s3, [{ drillId: TD }, { drillId: SP, minutes: 10 }])).status === 200);
+    const [other] = await q(`insert into training_session (school_id, team_code, title, starts_at, duration_min, session_type)
+                             values ($1, 'U16B', 'AH another side', now() - interval '1 day', 60, 'fielding') returning id`, [HIL]);
+    ok("...but not another side's session", [403, 404].includes((await plan(manager, other.id, [{ drillId: TD }])).status));
+    ok("...and not the drill library", (await post("/api/drills", manager, { schoolId: HIL, name: "AH manager drill", category: "batting", durationMin: 20 })).status === 403);
+    ok("...nor the kit register", (await post("/api/equipment", manager, { schoolId: HIL, kind: "bat", label: "AH bats", quantity: 4 })).status === 403);
+    ok("...nor the calendar", (await post("/api/training", manager, { schoolId: HIL, teamCode: "1XI", title: "AH manager nets",
+      sessionType: "batting", startsAt: new Date(Date.now() + 3 * 86400000).toISOString(), durationMin: 60 })).status === 403);
     ok("...nor the assistant", (await plan(assistant, s3, [{ drillId: TD }])).status === 403);
     ok("...nor a parent", (await plan(parent, s3, [{ drillId: TD }])).status === 403);
     const [wes] = await q(`insert into drill (school_id, name, category, duration_min) values ('22222222-2222-2222-2222-222222222222', 'AH Westville drill', 'batting', 20) returning id`);
@@ -248,7 +254,8 @@ try {
     ok("...and re-marks him (an upsert, one row)", (await mark(coach, s3, [{ playerId: P_SELF, status: "present" }])).status === 200
        && (await q(`select count(*)::int n from training_attendance where session_id = $1`, [s3]))[0].n === 1);
     ok("a parent may not take the register", (await mark(parent, s3, [{ playerId: P_SELF, status: "present" }])).status === 403);
-    ok("...nor the team manager", (await mark(manager, s3, [{ playerId: P_SELF, status: "present" }])).status === 403);
+    ok("the team manager takes the register too", (await mark(manager, s3, [{ playerId: P_SELF, status: "present" }])).status === 200);
+    ok("...but not the assistant", (await mark(assistant, s3, [{ playerId: P_SELF, status: "present" }])).status === 403);
     const visitor = await mark(coach, s3, [{ playerId: P_WES, status: "present" }]);
     ok("another school's boy is not filed on the register", visitor.status === 422 || visitor.status === 403);
     const seeded = (await read("training_attendance", coach, `?sessionId=${SEEDED_SESSION}`)).find((r) => r.player_id === P_SELF);
