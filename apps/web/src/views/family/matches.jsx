@@ -143,7 +143,7 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
           <Line>
             <Icon name="map-pin"/> {match.venue}
             {maps && <> · <a href={maps} target="_blank" rel="noreferrer" aria-label={`Map of ${match.venue}`}
-              style={{ color: T.content.primary, display: "inline-flex", alignItems: "center", minHeight: "44px", padding: "0 4px" }}>map</a></>}
+              style={{ color: T.content.primary, display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "44px", minWidth: "44px", padding: "0 4px" }}>map</a></>}
           </Line>
         )}
         <Umpires match={match} role={role}/>

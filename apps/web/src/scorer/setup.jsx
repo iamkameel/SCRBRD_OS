@@ -48,11 +48,11 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
   const SUBSTEP_LABELS=["Batting Order","Openers","Opening Bowler"];
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:"16px",minWidth:0}}>
       {/* Sub-step tabs */}
-      <div style={{display:"flex",gap:"4px"}}>
+      <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
         {SUBSTEP_LABELS.map((l,i)=>(
-          <button type="button" key={i} disabled={i>=subStep} aria-current={i===subStep?"step":undefined} style={{flex:1,textAlign:"center",padding:"7px 4px",minHeight:"44px",borderRadius:D.md,cursor:i<subStep?"pointer":"default",
+          <button type="button" key={i} disabled={i>=subStep} aria-current={i===subStep?"step":undefined} style={{flex:"1 1 auto",textAlign:"center",padding:"7px 4px",minHeight:"44px",borderRadius:D.md,cursor:i<subStep?"pointer":"default",
             background:i===subStep?D.indigo+"20":i<subStep?D.emerald+"10":"transparent",
             border:`1px solid ${i===subStep?D.indigo+"55":i<subStep?D.emerald+"33":D.border}`,
             fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",

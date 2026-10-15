@@ -1306,6 +1306,47 @@ async function practiceWalk(theme) {
     await page.waitForTimeout(1200);
 
     await check("practicepad");
+    if (NARROW) {
+      // I32: the pad as it is played — a ball scored (the over's chips on the board), a wicket's sheet, the pad's menu and
+      // the views on its bar — each held to the same lists, and each sheet closed by Escape with focus back on its key.
+      const back = async (name, key) => ok(`${T_} @${NARROW.width}: Escape closes ${name}, and focus is back on ${key}`,
+        await page.evaluate((k) => document.activeElement?.getAttribute("data-testid") === k || document.activeElement?.getAttribute("aria-label") === k, key));
+      // The pad's menu, by keyboard: its items, then Basic Scoring, which puts the one-tap keys and the Wicket key on the pad.
+      await tid("pad-menu").focus();
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('[data-testid="pad-menu-panel"]', { timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      await check("padmenu", { label: false, root: '[data-testid="pad-menu-panel"]' });
+      await tid("pad-basic-scoring").click({ timeout: 3000 }).catch(() => {});
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(400);
+      ok(`${T_} @${NARROW.width}: Escape closes the pad's menu`, await page.locator('[data-testid="pad-menu-panel"]').count() === 0);
+      await back("the pad's menu", "pad-menu");
+      await tap("run-1", 1900);
+      await tap("run-4", 1900);
+      await check("padover", { label: false });
+      await page.locator('button[aria-label="Wicket"]').first().focus().catch(() => {});
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('[role="dialog"]', { timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await check("padwicket", { label: false, root: '[role="dialog"]' });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(400);
+      ok(`${T_} @${NARROW.width}: Escape closes the dismissal sheet`, await page.locator('[role="dialog"]').count() === 0);
+      await back("the dismissal sheet", "Wicket");
+      for (const [view, id] of [["Cards", "padcards"], ["Analysis", "padanalysis"]]) {
+        await page.locator('[data-testid="pad-tabs"] button', { hasText: new RegExp(view) }).click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(600);
+        await check(id, { label: false });
+      }
+      for (const [sub, id] of [["Signals", "padsignals"], ["Intelligence", "padintelligence"]]) {
+        await page.locator("button", { hasText: new RegExp(`^\\s*${sub}\\s*$`) }).first().click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(500);
+        await check(id, { label: false });
+      }
+      await page.locator('[data-testid="pad-tabs"] button', { hasText: /Score/ }).click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
     await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 }).catch(() => {});
     await tap("pad-practice-weather", 600);
     await tap("pw-overcast", 150);

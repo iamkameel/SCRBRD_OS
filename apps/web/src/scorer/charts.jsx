@@ -627,11 +627,11 @@ function AnalysisDashboard({inn,match,curIn,innings,events=null}){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
       {/* Sub-nav */}
-      <div style={{display:"flex",gap:"6px"}}>
+      <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
         {[["charts","chart-column","Charts"],["signals","radio-tower","Signals"],["intelligence","brain","Intelligence"]].map(([id,ic,label])=>(
           <button key={id} onClick={()=>setActiveView(id)} className="pressBtn" style={{
-            padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
-            fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",
+            padding:"7px 16px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",border:"none",
+            fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",
             background:activeView===id?D.grad:T.fill.field,
             color:activeView===id?T.light.ink:D.textMuted,
             boxShadow:activeView===id?"0 4px 16px "+D.indigo+"40":"none",

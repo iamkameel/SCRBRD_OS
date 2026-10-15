@@ -195,7 +195,7 @@ const SignalBar = ({ label, value, pct, color, center }) => (
   <div>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:"5px"}}>
       <Lbl>{label}</Lbl>
-      <span style={{fontFamily:D.mono,fontSize:"11px",color:textOn(color||D.textPrimary)}}>{value}</span>
+      <span style={{fontFamily:D.mono,fontSize:"12px",color:textOn(color||D.textPrimary)}}>{value}</span>
     </div>
     <div style={{height:"3px",borderRadius:"2px",background:D.surf3,overflow:"hidden",position:"relative"}}>
       {center

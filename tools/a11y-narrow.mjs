@@ -129,6 +129,11 @@ export const narrowAudit = (page, { root = null, tap = 44, floor = 12 } = {}) =>
     const limit = main ? main.getBoundingClientRect().right : W;
     const over = [...document.body.querySelectorAll("*")].filter((el) => el.getBoundingClientRect().width && el.getBoundingClientRect().right > limit + 1 && !(scrollsSideways(el) && getComputedStyle(el).position !== "absolute"));
     // The outermost boxes past the edge first: they are the ones a rule on a parent can fix.
+    if (over[0]) {
+      const chain = [];
+      for (let e = over[0]; e && e !== document.body && chain.length < 8; e = e.parentElement) { const r = e.getBoundingClientRect(); chain.push(`${e.tagName.toLowerCase()}${e.getAttribute("data-testid") ? "#" + e.getAttribute("data-testid") : ""} ${Math.round(r.left)}..${Math.round(r.right)} ${getComputedStyle(e).display}`); }
+      out.sideways.push(`chain: ${chain.join(" < ")}`);
+    }
     for (const el of over.slice(0, 5)) out.sideways.push(`wide: ${describe(el)} ${Math.round(el.getBoundingClientRect().left)}..${Math.round(el.getBoundingClientRect().right)} (display ${getComputedStyle(el).display}, minWidth ${getComputedStyle(el).minWidth}, width ${getComputedStyle(el).width})`);
   }
 
