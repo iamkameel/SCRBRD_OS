@@ -207,7 +207,13 @@ export const READ_QUERIES = {
                   phase, restricted, notes, physio,          -- notes/physio masked per role
                   emergency_services, next_review_on,        -- nature tier (db/111)
                   recorded_by,                               -- clinical tier (db/111)
-                  recurs_injury_id, created_at
+                  recurs_injury_id, created_at,
+                  -- Whether he has left the school the injury is at, and
+                  -- when: the screens' "left the school" mark (D11). Read
+                  -- under the caller's own RLS on team_membership, so it is
+                  -- the status tier's and widens nothing.
+                  injury_left_on(player_id, school_id) as left_on,
+                  (injury_left_on(player_id, school_id) is not null) as left_school
              from injury_masked
             order by date_injured desc`,
   },
@@ -222,6 +228,7 @@ export const READ_QUERIES = {
   injury_reviews: {
     masked: true,
     text: `select r.id, r.school_id, r.player_id, r.injury_id, r.reviewed_at,
+                  r.is_recording,                            -- the recording itself ("Recorded")
                   r.restricted_after, r.rtw_date_after,
                   r.phase_after, r.next_review_on,           -- nature tier
                   r.note, r.reviewed_by                      -- clinical tier

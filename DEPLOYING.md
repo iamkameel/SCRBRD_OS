@@ -1315,7 +1315,10 @@ read OK. **Schema first**: an API built with it refuses to start without
 db/111 (`expected-migrations.json`). Its new routes are `POST /api/injuries`
 and `POST /api/injuries/:id/reviews`, and its new reads are `injury_reviews`
 and `injury_worklist`, all behind the Injuries module. The `injuries` read
-also returns the new columns, masked by tier.
+also returns the new columns, masked by tier, and `left_on` / `left_school`
+(the day the boy left the injury's school, from `injury_left_on()`, which
+runs as the caller); `injury_reviews` returns `is_recording` (the review
+`injury_record()` wrote at the recording).
 <!-- ── end db/111 ── -->
 
 ### 5 · Cloud Run, the first time
