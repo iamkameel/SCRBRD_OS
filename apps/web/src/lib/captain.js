@@ -325,6 +325,16 @@ export function planTitle(opponent, startMs) {
  */
 
 /**
+ * The `news` read's parameters for one fixture's plans: the read narrows to
+ * that fixture (services/api/read/read-api.mjs), so a plan is found however
+ * many newer posts the reader has, where the unnarrowed read is the newest
+ * 100. Every screen that draws a fixture's plan reads with this.
+ * @param {string | null | undefined} fixtureId
+ * @returns {{ fixtureId: string } | null}
+ */
+export const planRead = (fixtureId) => (fixtureId ? { fixtureId } : null);
+
+/**
  * The plans for a fixture among the `news` read's rows, newest first: those
  * with kind 'plan' and this fixture's id, and, where `side` names one, only
  * that side's (a fixture between two of one school's sides has a plan for each;
@@ -405,9 +415,11 @@ export function planRefusal(e) {
 }
 
 /**
- * "Plan from Mr Dlamini · Thu": the captain's card line (§5.3). Where the
- * reader may not read the author's name (the news read gives a pupil or a
- * parent none), "Plan for the side · Thu": nothing is said about who.
+ * "Plan from Mr Dlamini · Thu": the captain's card line (§5.3). The news read
+ * names a live plan's author to the plan's readers, pupils and parents
+ * included (db/103's plan_author_name(), CSA SG-9). Where it has no name (the
+ * author's account is gone), "Plan for the side · Thu": nothing is guessed
+ * about who.
  * @param {Plan} p
  */
 export const planLine = (p) => [p.author ? `Plan from ${p.author}` : "Plan for the side", planWhen(p.publishedAt, { time: false })].filter(Boolean).join(" · ");
