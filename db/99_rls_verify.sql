@@ -5256,7 +5256,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- notices (not the "withdrawn" ones), each with whether it was retracted.
 CREATE OR REPLACE FUNCTION _v110_versions(p_post uuid) RETURNS text AS $$
   SELECT coalesce(string_agg(x.body || CASE WHEN x.retracted_at IS NOT NULL THEN ' (retracted)' ELSE ' (live)' END,
-                             ' / ' ORDER BY x.published_at, x.created_at), '')
+                             ' / ' ORDER BY x.published_at, (x.retracted_at IS NULL), x.id), '')
     FROM notification x
    WHERE x.kind = 'notice' AND x.subject_kind = 'news' AND x.subject_id = p_post AND x.retracts_id IS NULL
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -21278,7 +21278,9 @@ $v49$;
 
     -- (sent)
     PERFORM _as((y->>'coach')::uuid);
-    EXECUTE format(ins, V_HIL, 'The plan: v Visitors', 'Bat first if we win it.', 'now()', F1) INTO P;
+    -- Sent an hour ago, so its first date and a later sending differ (this
+    -- file is one transaction: now() does not move).
+    EXECUTE format(ins, V_HIL, 'The plan: v Visitors', 'Bat first if we win it.', 'now() - interval ''1 hour''', F1) INTO P;
     PERFORM _assert(_v110_row(P) = 'plan | Bat first if we win it. | low | t | t', format('§87 (sent): the sent plan reads %s', _v110_row(P)));
     FOREACH k IN ARRAY ARRAY[
       format('UPDATE news_post SET body = %L WHERE id = %L', 'Bowl first after all.', P),
@@ -21313,9 +21315,11 @@ $v49$;
     SELECT d.reason INTO got FROM news_plan_discard(P) d;
     PERFORM _assert(got = 'plan_kept' AND _v110_row(P) <> 'gone', format('§87 (withdrawn): after clearing the date, discarding answered %s', got));
     got := (SELECT first_sent_at::text FROM news_post WHERE id = P);
-    PERFORM _assert(_app_89(format('UPDATE news_post SET published_at = now() WHERE id = %L AND published_at IS NULL', P)) = 'ok'
+    k := _app_89(format('UPDATE news_post SET published_at = now() WHERE id = %L AND published_at IS NULL', P));
+    PERFORM _assert(k = 'ok'
                     AND _v110_row(P) = 'plan | Bowl first after all. Captain opens. | low | t | t'
-                    AND (SELECT first_sent_at::text FROM news_post WHERE id = P) = got,
+                    AND (SELECT first_sent_at::text FROM news_post WHERE id = P) = got
+                    AND (SELECT first_sent_at < published_at FROM news_post WHERE id = P),
       format('§87 (withdrawn): sent again, it reads %s and its first date moved', _v110_row(P)));
 
     -- (history)
