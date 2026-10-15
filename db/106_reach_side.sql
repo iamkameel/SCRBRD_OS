@@ -74,17 +74,21 @@
 --       asks (1) at the away end without reading match under the caller's
 --       row security (db/39's reason).
 --
---   Measured, the same season, median of 15, ms execution (planning < 0.3):
+--   Measured, the same season, median of 15, ms execution (planning < 0.3),
+--   EXPLAIN (ANALYZE) of SELECT * as the reader, on 2026-10-15:
 --                                   db/09     first build    this file
---     match, guardian of two          9.5        508           34–45
---     match, 1XI coach               11.0        427            9
---     match, director                 7.7        353            8
---     match, pupil (self-access)        –        452           19–22
---     trip,  guardian of two         43          295           62
---     trip,  1XI coach               57          256           29–31
---     toss,  guardian of two         16 (db/39)    –           29
---     toss,  1XI coach                7 (db/39)    –           10
---     training, guardian of two         –          –            8
+--     match, guardian of two          8.5        508           34
+--     match, 1XI coach               11.4        427           10
+--     match, director                 7.9        353            8
+--     match, pupil (self-access)        –        452           25
+--     trip,  guardian of two         47          295          100
+--     trip,  1XI coach               51          256           38
+--     trip,  director                  –           –           39
+--     toss,  guardian of two         16 (db/39)    –           30
+--     toss,  1XI coach                7 (db/39)    –            7
+--     training, guardian of two         –          –           16
+--     training, 1XI coach               –          –           12
+--   §2.5's every-boy text in match_read: guardian 649, coach 552.
 --   The guardian's figure grows with her children's fixtures (app_can() per
 --   fixture of each child's side, once per statement), not with the school's.
 --   On the seed every read is under 13 ms. db/99 §83 (shape) proves, for

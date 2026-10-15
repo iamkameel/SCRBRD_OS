@@ -21150,9 +21150,10 @@ $v49$;
   --   (ended)     g1's own link ended mid-section: his next read is nothing
   --
   -- Cost (§5 item 11) is in db/106's header: on a forty-fixture season the
-  -- fixture list costs a guardian of two 34–45 ms (db/09: 9.5), a coach 9
-  -- (11), the director 8 (8); her trips 62 (43); the first build, which put
-  -- the one-row helpers in the policies, cost every reader 350–500 ms.
+  -- fixture list costs a guardian of two 34 ms (db/09: 8.5), a coach 10
+  -- (11), the director 8 (8); her trips 100 (47), a coach's 38 (51); the
+  -- first build, which put the one-row helpers in the policies, cost every
+  -- reader 350–500 ms.
   --
   -- Falsified five ways, each by putting the wrong definition in the database
   -- and running this section alone with each assertion made to report rather

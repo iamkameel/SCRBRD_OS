@@ -1271,8 +1271,8 @@ No table, column, row or write policy is touched. A second paste changes
 nothing. **One behaviour changes for every school at once, on the paste:**
 parents stop seeing other sides' fixtures, buses and nets; paste outside a
 match. Cost, on a forty-fixture season: a coach's or the director's fixture
-list as before (8–11 ms); a parent of two about 35–45 ms (db/106's header has
-the figures).
+list as before (8–11 ms); a parent of two 34 ms for her list and 100 ms for
+her buses, where it was 9 and 47 (db/106's header has the figures).
 
 Paste `node tools/bundle-sql.mjs --apply 106` (after 102, and after 103–105 if
 they have shipped; the bundle names the one it needs first), then the verify
