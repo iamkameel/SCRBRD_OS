@@ -386,6 +386,21 @@ SELECT
         AND has_function_privilege('scrbrd_app', to_regprocedure('feature_suppression_reason(uuid)'), 'EXECUTE')
         AND NOT has_column_privilege('scrbrd_app', to_regclass('feature_suppression'), 'reason', 'SELECT')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Who a module is hidden from is the school's",
+  -- db/109: every ending of a guardian link is recorded with a kind (and the
+  -- office's reason), read by the office and never by the guardian or the
+  -- DSO by standing; db/08's door without a kind or a reason is closed.
+  CASE WHEN to_regclass('guardian_link_ending') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('guardian_link_ending'))
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('guardian_link_ending') AND p.polname = 'guardian_link_ending_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app_user_id()%safeguarding.concern.read%')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('guardian_link_ending'), 'INSERT')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_revoke(uuid,text,text)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_revoke(uuid,uuid,text)'), 'EXECUTE')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_ending_notice_is_mine(uuid)'), 'EXECUTE')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'notification' AND policyname = 'notification_link_ended')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_assignment_ending_links' AND tgenabled = 'O')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A link's ending is the office's to read",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

@@ -87,7 +87,10 @@
 
 -- ── 1 · The row (D13) ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS guardian_link_ending (
-  link_id     uuid PRIMARY KEY REFERENCES assignment_subject(id) ON DELETE CASCADE,
+  link_id     uuid PRIMARY KEY,
+  -- The link's own key is (assignment_id, player_id, id): the foreign key
+  -- runs through all three, as db/47's and db/60's consents do.
+  assignment_id uuid NOT NULL,
   -- Copied, so the row reads alone and its policy needs no join.
   player_id   uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
   school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
@@ -103,6 +106,8 @@ CREATE TABLE IF NOT EXISTS guardian_link_ending (
   ends_on     date NOT NULL,
   ended_at    timestamptz NOT NULL DEFAULT now(),
   notice_id   uuid REFERENCES notification(id) ON DELETE SET NULL,
+  FOREIGN KEY (assignment_id, player_id, link_id)
+    REFERENCES assignment_subject (assignment_id, player_id, id) ON DELETE CASCADE,
   CONSTRAINT guardian_link_ending_reason_kept
     CHECK (kind IN ('majority', 'left_school') OR length(btrim(coalesce(reason, ''))) >= 10),
   CONSTRAINT guardian_link_ending_by_whom
@@ -265,8 +270,8 @@ BEGIN
           'news.read', false, 'system', g.id, v_person)
   RETURNING id INTO v_notice;
 
-  INSERT INTO guardian_link_ending AS e (link_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on, notice_id)
-  VALUES (g.id, g.player_id, v_school, v_person, v_kind, v_why, v_me, v_until, v_notice)
+  INSERT INTO guardian_link_ending AS e (link_id, assignment_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on, notice_id)
+  VALUES (g.id, g.assignment_id, g.player_id, v_school, v_person, v_kind, v_why, v_me, v_until, v_notice)
   -- A link db/62 had dated to his birthday when he left is still live and may
   -- be revoked; the revocation is now how it ends.
   ON CONFLICT (link_id) DO UPDATE
@@ -287,8 +292,8 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 -- now ended by the role.
 CREATE OR REPLACE FUNCTION role_assignment_ending_links() RETURNS trigger AS $$
 BEGIN
-  INSERT INTO guardian_link_ending AS e (link_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on, notice_id)
-  SELECT g.id, g.player_id, coalesce(player_school(g.player_id), NEW.school_id), NEW.person_id,
+  INSERT INTO guardian_link_ending AS e (link_id, assignment_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on, notice_id)
+  SELECT g.id, g.assignment_id, g.player_id, coalesce(player_school(g.player_id), NEW.school_id), NEW.person_id,
          'role_ended', NEW.reason, NEW.ended_by, g.valid_until, NEW.notice_id
     FROM assignment_subject g
    WHERE g.assignment_id = NEW.assignment_id
@@ -356,10 +361,10 @@ BEGIN
        AND s.verification_state IN ('pending', 'verified')
        AND (s.valid_until IS NULL
             OR s.valid_until > greatest(p_left_on, majority_on(p.born), s.valid_from))
-    RETURNING s.id, s.player_id, s.valid_until, a.person_id, coalesce(p.school_id, a.school_id) AS school_id, p.born),
+    RETURNING s.id, s.assignment_id, s.player_id, s.valid_until, a.person_id, coalesce(p.school_id, a.school_id) AS school_id, p.born),
   noted AS (
-    INSERT INTO guardian_link_ending AS e (link_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on)
-    SELECT c.id, c.player_id, c.school_id, c.person_id,
+    INSERT INTO guardian_link_ending AS e (link_id, assignment_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on)
+    SELECT c.id, c.assignment_id, c.player_id, c.school_id, c.person_id,
            CASE WHEN c.valid_until = majority_on(c.born) AND majority_on(c.born) > p_left_on
                 THEN 'majority' ELSE 'left_school' END,
            NULL, NULL, c.valid_until
