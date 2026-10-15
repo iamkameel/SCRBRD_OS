@@ -892,7 +892,7 @@ try {
     ok("Change it opens the composer on the plan's own words, to Send again",
        /^CHANGE THE PLAN/i.test((await inner(co.page, "plan-composer")).trim()) && (await co.page.locator("#plan-body").inputValue()) === PLAN_TEXT
        && /^Send again$/.test((await inner(co.page, "plan-send")).trim()) && /^Save changes$/.test((await inner(co.page, "plan-save")).trim()));
-    const f11 = await floors(co.page);
+    const f11 = await floors(co.page, '[data-testid="plan-composer"]');
     ok(`the composer, changing: nothing under 12px (${f11.small.length}), nothing tapped under 44px (${f11.tiny.length})`, f11.small.length === 0 && f11.tiny.length === 0, [...f11.small, ...f11.tiny].slice(0, 4).join(" · "));
     await tid(co.page, "plan-cancel").click({ timeout: 4000 }).catch(() => {});
     await co.page.waitForTimeout(400);
