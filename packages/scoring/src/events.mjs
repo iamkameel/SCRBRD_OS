@@ -1930,6 +1930,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const asPlayerId = (v) => (typeof v === "string" && UUID.test(v) ? v : null);
 
 /**
+ * Is this reference a player SCRBRD holds a row for — the reference toRow()
+ * puts in a uuid column — and not a name the scorer typed? The same test, so
+ * a reader of the fold (facts.mjs) and SQL's `striker_id IS NOT NULL` agree on
+ * who can hold a figure.
+ * @param {unknown} v  @returns {v is string}
+ */
+export const isPlayerId = (v) => asPlayerId(v) != null;
+
+/**
  * Client event → a `ball_event` row body for POST /matches/:id/events.
  *
  * @param {Readonly<Record<string, any>>} ev  any event (a LogEvent), read

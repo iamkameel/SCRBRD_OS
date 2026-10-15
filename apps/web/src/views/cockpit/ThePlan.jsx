@@ -27,7 +27,7 @@ import { roleGrants } from "@scrbrd/policy/roles";
 import { T } from "../../design/tokens.js";
 import { api } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
-import { draftPlanOf, planOf, planRefusal, planTitle } from "../../lib/captain.js";
+import { draftPlanOf, planOf, planRead, planRefusal, planTitle } from "../../lib/captain.js";
 import { startMs } from "../../lib/cockpit.js";
 import { sidesOf } from "../../lib/matchCentre.js";
 import { Action, Card, Line } from "../family/parts.jsx";
@@ -40,7 +40,7 @@ const PlanComposer = lazy(() => import("./PlanComposer.jsx"));
  */
 export function ThePlan({ match, role, gate, sheet }) {
   const [nonce, setNonce] = useState(0);
-  const { rows, loading } = useLive("news", role, nonce);
+  const { rows, loading } = useLive("news", role, nonce, planRead(match.id));
   const [composing, setComposing] = useState(false);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
