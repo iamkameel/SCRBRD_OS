@@ -5,10 +5,13 @@
  * db/99_rls_verify.sql already asserts these policies against a raw
  * connection. This walk asserts the same boundary THROUGH THE API, as real
  * people holding real tokens, because that is the path a browser takes and
- * the two can disagree: a masked view is only load-bearing if the read
- * endpoint actually goes through it, and a query written against `official`
- * instead of `official_masked` would pass every database assertion and leak
- * an umpire's ID number to every school in the country.
+ * the two can disagree. Since db/107 (REACH-D5) the table itself is closed to
+ * everybody but the register's keeper (and an official reading his own row);
+ * the panel is official_panel(), which names its columns. So the boundary no
+ * longer rests on the read route remembering a masked view: a route that
+ * joins `official` raw gets NULLs for everyone the policy does not admit,
+ * which is what this walk asserts, for a school, a coach, a follower, a pupil
+ * and a parent, and the opposite for the keeper.
  */
 import { spawn } from "node:child_process";
 import pg from "pg";
@@ -53,6 +56,8 @@ try {
   const coach   = await login("coach@example.invalid");     // coach, 1XI
   const watcher = await login("watcher@example.invalid");   // spectator
   const plat    = await login("platform@example.invalid");  // platformadmin
+  const pupil   = await login("spectator@example.invalid");  // a pupil (player, 1XI)
+  const parent  = await login("parent@example.invalid");     // guardian of R Pillay
 
   group("The panel is readable, because a scorecard already says who stood");
   {
@@ -89,6 +94,14 @@ try {
     ok("...and no contact details", one?.email == null && one?.phone == null);
     ok("a coach is refused the same", (await register(coach)).find((o) => o.id === NDLOVU)?.id_number == null);
     ok("so is a spectator", (await register(watcher)).find((o) => o.id === NDLOVU)?.born == null);
+    // db/107: a pupil and a parent read the panel by name, and no row of the
+    // register carries a date of birth, an ID number or a contact for them.
+    for (const [who, tok] of [["a pupil", pupil], ["a parent", parent]]) {
+      const rows = await register(tok);
+      ok(`${who} reads the panel by name`, rows.length >= 5 && rows.some((o) => o.full_name === "E Ndlovu"));
+      ok(`...and nothing that makes anybody on it a person`,
+         rows.every((o) => o.born == null && o.id_number == null && o.email == null && o.phone == null));
+    }
 
     const asUnion = (await register(plat)).find((o) => o.id === NDLOVU);
     ok("the register's keeper reads the date of birth", asUnion?.born != null);
