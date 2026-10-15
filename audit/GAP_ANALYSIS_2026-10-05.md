@@ -35,6 +35,9 @@ ticket takes a SCRBRD number, and that number is noted here.
 ## Decided 2026-10-08 (Kameel)
 
 1. The solo pilot run planned for 8 October is postponed, with no new date. Kameel: "Ignore the solo run. It's postponed. Let's go as far as we can with production."
+
+   Pilot date: Saturday 31 October 2026 (Kameel, 15 Oct 2026). Schedule: wave 3 pasted and merged by 17 Oct; solo run 1 on 22 Oct; feature freeze from 26 Oct; solo run 2 on 27 Oct; production verify on 28 Oct; go/no-go on 29 Oct.
+
 2. Pulled forward from after the pilot, to build now: notifications S1–S5, corrections everywhere (GA-I36), account lifecycle slices 2–7, and the recognition build. Four build agents at once.
 3. Live updates: keep polling (public page and ground display every 5 s, Match Centre every 15 s). The realtime hub (`services/api/realtime`) is not mounted and stays parked. For corrections, an approved amendment or a released ball drops the public cache after commit; screens learn of it on their next poll ("Updated · refresh"). This replaces the hub broadcast in the corrections design's N2. GA-I36 is pulled forward 8 Oct; A0+A1 building, polling (decision 3).
 4. Scorer claim (GA-I13): claiming a fixture stays as it is. A scorer with the team's scoring assignment may claim any fixture of that team. The appointment shapes the scorer home's list (appointed fixtures first, then the team's others); it is not required to claim.

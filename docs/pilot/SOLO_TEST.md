@@ -2,6 +2,8 @@
 
 Postponed 2026-10-08 (Kameel); no new date yet.
 
+Pilot date: Saturday 31 October 2026 (Kameel, 15 Oct 2026). Schedule: wave 3 pasted and merged by 17 Oct; solo run 1 on 22 Oct; feature freeze from 26 Oct; solo run 2 on 27 Oct; production verify on 28 Oct; go/no-go on 29 Oct.
+
 One person tests all of SCRBRD, end to end, on the demo copy. Kameel was to run it from 8 October 2026, as the 15 October pilot. Westville's real pilot is postponed.
 
 The demo copy is the `scrbrd-demo` Supabase project and its own Render service (`DEMO_COPY.md`). Every person in it is invented. Every address ends `@example.invalid`. Production is never touched.
