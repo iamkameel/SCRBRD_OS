@@ -46,6 +46,7 @@
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
  *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
  *   POST /api/news/:id/public/{request,approve,withdraw}  a notice on the public home page (db/83)
+ *   POST /api/news/:id/edit · /delete             change an unsent plan; throw away one never sent (db/110)
  *   GET/POST /api/players/:id/public-name      a child's public-name consent (and …/never-public, the mark)
  *   GET/POST /api/schools/:id/public-names     a school's names-off switch per age group
  *   GET  /api/public/…, /live/:id, /scorecard/:id  the signed-out pages (off unless
@@ -792,6 +793,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/news$/,                                 "POST", news.publish],
   [/^\/api\/news\/([^/]+)\/publish$/,               "POST", news.send],
   [/^\/api\/news\/([^/]+)\/withdraw$/,              "POST", news.withdraw],
+  [/^\/api\/news\/([^/]+)\/edit$/,                  "POST", news.edit],
+  [/^\/api\/news\/([^/]+)\/delete$/,                "POST", news.discard],
   // The public home page (SCRBRD-142 §3, db/83). The three functions decide
   // who: the author asks; a school-wide publisher who is not the author
   // approves; the author or any publisher at the school takes it down.
