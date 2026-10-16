@@ -176,8 +176,16 @@ async function nav(page, label) {
 async function openDossier(page, matchId) {
   const btn = page.locator(`[data-testid="dossier-open-${matchId}"]`);
   if (!(await btn.count())) return false;
+  // The dossier says "Reading…" until its two reads answer. A fixed 1.8 s
+  // judged that placeholder whenever they took longer (PR #167's shard 2/4,
+  // 30ec815's first run: seven checks down, every one about the drawn
+  // panel). Wait for both answers, whatever they are (a 403 for a feature
+  // that is off is an answer), then give the panel a moment to draw.
+  const answered = (what) => page.waitForResponse((r) => r.url().includes(`/api/read/${what}`), { timeout: 15000 }).catch(() => null);
+  const reads = Promise.all([answered("opposition_context"), answered("opposition_squad")]);
   await btn.click({ timeout: 5000 }).catch(() => {});
-  await page.waitForTimeout(1800);
+  await reads;
+  await page.waitForTimeout(400);
   return (await page.locator('[data-testid="dossier"]').count()) === 1;
 }
 const closeDossier = async (page) => {
