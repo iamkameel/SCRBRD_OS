@@ -975,7 +975,7 @@ BEGIN
     RETURN QUERY SELECT CASE WHEN o.state = 'under_review' THEN 'provisional' ELSE o.state END, false,
       NULL::uuid, CASE WHEN o.state = 'official' THEN o.confirmed_at END, NULL::text, o.head_seq, NULL::timestamptz,
       NULL::timestamptz, NULL::text, NULL::text, NULL::timestamptz,
-      NULL::timestamptz, CASE WHEN o.state IN ('provisional', 'not_finished') THEN coalesce(o.lapsed_at, o.withdrawn_at) END,
+      NULL::timestamptz, CASE WHEN o.state IN ('provisional', 'not_finished') THEN o.lapsed_at END,
       NULL::text, NULL::timestamptz, NULL::text, NULL::text, NULL::text,
       false, NULL::text, false, false, false;
     RETURN;
