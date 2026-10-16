@@ -331,7 +331,7 @@ try {
       await page.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
       await page.waitForFunction(() => !!document.querySelector('[data-testid="public-official"] [data-state]'), null, { timeout: 8000 }).catch(() => {});
       return { state: await page.locator('[data-testid="public-official"] [data-state]').getAttribute("data-state").catch(() => null),
-               words: await tid(page, "public-official").innerText().catch(() => "") };
+               words: (await tid(page, "public-official").innerText().catch(() => "")).replace(/\s+/g, " ").trim() };
     };
     const a = await visit(`/live/${pub2}`);
     const before = await label(a.page);

@@ -6211,7 +6211,9 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v111_future_review(p_injury uuid) RETURNS void AS $$
   INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_at, reviewed_by, phase_after,
                              restricted_after, rtw_date_after, next_review_on)
-  SELECT i.school_id, i.player_id, i.id, now() + interval '1 hour', i.recorded_by, i.phase, i.restricted,
+  -- clock_timestamp(), not now(): the verify is one transaction, and one that
+  -- waited an hour on the cluster's GRANT lock read now() + 1 hour as past.
+  SELECT i.school_id, i.player_id, i.id, clock_timestamp() + interval '1 hour', i.recorded_by, i.phase, i.restricted,
          i.rtw_date, i.next_review_on
     FROM injury i WHERE i.id = p_injury
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
