@@ -237,6 +237,9 @@ const SUITES = [
   // is read from the log, not stored), and the bowling-ceiling refusal in words.
   ["state-label", "apps/web/test/state-label.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["source-line", "apps/web/test/source-line.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I24-I25 S1: two players side by side — the floor at 29 and 30, the
+  // pinned columns, who may be picked, no absence, types only, nothing kept.
+  ["compare", "apps/web/test/compare.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I23: the Analytics performance tab's season bars are the career_by_season
   // read, per player per season, and no invented figure is drawn signed in.
   ["season-bars", "apps/web/test/season-bars.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

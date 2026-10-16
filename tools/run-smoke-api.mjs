@@ -394,6 +394,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // passport and his own file; no team-mate's injury, fitness or return date
   // (K3, db/55); 12px and 44px at phone width.
   "browser-pupil",
+  // GA-I24-I25 S1: Compare on Analytics — the picker holds only readable
+  // players (a coach's side, an analyst's school, never a boy who has left),
+  // the thirty-ball floor and the counts, no forbidden field or read, nothing
+  // kept; a pupil against one team-mate only; a parent with no Compare.
+  "browser-compare",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
   "browser-public",
   // SCRBRD-083 C1–C5: the parent's switch on her child's file, the office's

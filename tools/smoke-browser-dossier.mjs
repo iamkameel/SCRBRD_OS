@@ -332,8 +332,10 @@ try {
   ok("...with at least one figure actually withheld", thin.length > 0, `${thin.length} withheld`);
   if (thin.length) {
     const t = await coach.page.locator(`[data-testid="dossier-player-${thin[0].player_id}"]`).innerText();
+    // evidence_label()'s own words (GA-I24-I25 D4: one scale, the dossier's
+    // and the compare screen's), or the scorebook's "balls not recorded".
     ok("...whose row names the evidence rather than a number",
-       /too thin|no log|thin|not recorded/i.test(t), t.replace(/\s+/g, " "));
+       /\binsufficient\b|\bnone\b|balls not recorded/.test(t), t.replace(/\s+/g, " "));
   }
   ok("...and at least one stated", stated.length > 0, `${stated.length} stated`);
 
