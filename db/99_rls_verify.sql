@@ -25891,8 +25891,24 @@ $v49$;
   --               permissive read on each table, and no read under
   --               player.profile.read left on either
   --
-  -- Falsified, each change made as the owner before this file ran:
-  --   (filled in below, with each red's message)
+  -- Falsified, each change made as the owner before this section ran (the
+  -- section alone, cut from this file, on 16 Oct 2026), each red the first:
+  --   passport_consent_read back to db/08's       → (coach) red: wescoach at the
+  --     (player.profile.read, zeros, '*')            receiving school reads
+  --                                                  [A>WES,M>WES]
+  --   passport: the family alone, no office term  → (office) red: the receiving
+  --                                                  wesoffice reads []
+  --   passport: the office at the BOY's school    → (office) red: the receiving
+  --     (player_school) instead of to_school_id      wesoffice reads []
+  --   player_scouting_consent_read back to db/08  → (team-mate) red: the pupil
+  --                                                  aboy reads [A,M(w)]
+  --   scouting: the coach term as                 → (team-mate) red: the pupil
+  --     player.profile.read ("as today")             aboy reads [A,M(w)]
+  --   scouting: no coach term                     → (coach) red: coach18 reads []
+  --   scouting: the coach term at '*' (any side)  → (coach) red: coach18 reads
+  --                                                  [A,B,M(w)]
+  --   scouting: no office term                    → (office) red: office reads []
+  --   scouting: no family term                    → (family) red: ga reads []
   DECLARE
     y   jsonb := _v115_stage();
     got text;
