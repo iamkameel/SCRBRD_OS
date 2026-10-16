@@ -29,6 +29,8 @@ const SUITES = [
   ["words",    "packages/policy/test/words.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
+  // GA-I26a §1.5: every attribute pinned to the drill categories that suit it.
+  ["drillmap", "packages/scoring/test/drillmap.test.mjs"],
   ["readiness","packages/scoring/test/readiness.test.mjs"],
   // What a scoring command may be: the Laws the server enforces at commit.
   ["laws",     "packages/scoring/test/laws.test.mjs"],
@@ -199,6 +201,9 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // A coaching point's never-words, in JavaScript and in db/104's SQL, are
+  // one list (GA-I27 §6; GA-I26a §2.2).
+  ["coachingpoint", "apps/web/test/coachingPoint.test.mjs"],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
   // per-fixture count: "N to resolve" and "Could not read X", a failed read
