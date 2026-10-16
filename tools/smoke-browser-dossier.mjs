@@ -181,13 +181,25 @@ async function openDossier(page, matchId) {
   // 30ec815's first run: seven checks down, every one about the drawn
   // panel). Wait for both answers, whatever they are (a 403 for a feature
   // that is off is an answer), then give the panel a moment to draw.
-  const answered = (what) => page.waitForResponse((r) => r.url().includes(`/api/read/${what}`), { timeout: 15000 }).catch(() => null);
-  const reads = Promise.all([answered("opposition_context"), answered("opposition_squad")]);
+  //
+  // The dossier's OWN two reads: the ones this click sends, for this
+  // fixture. Other screens read opposition_context too (the coach's landing
+  // page does, for his next fixture, which is this one), and the first fix
+  // here waited on any answer of that name, so it could be satisfied by a
+  // landing read while the dossier's own sat queued behind the landing's
+  // others (527ba29, the same seven down). `lastDossierReads` says, when a
+  // check fails, what the panel's reads answered and when.
+  const t0 = Date.now();
+  const sent = (what) => page.waitForRequest((q) => q.url().includes(`/api/read/${what}?matchId=${matchId}`), { timeout: 15000 })
+    .then(async (q) => { const r = await q.response(); return `${what} ${r ? r.status() : "no answer"} @${Date.now() - t0}ms`; })
+    .catch(() => `${what} not sent or not answered in 15 s`);
+  const reads = Promise.all([sent("opposition_context"), sent("opposition_squad")]);
   await btn.click({ timeout: 5000 }).catch(() => {});
-  await reads;
+  lastDossierReads = (await reads).join(" · ");
   await page.waitForTimeout(400);
   return (await page.locator('[data-testid="dossier"]').count()) === 1;
 }
+let lastDossierReads = "";
 const closeDossier = async (page) => {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
@@ -296,7 +308,8 @@ try {
   const body = await dossier.innerText();
   if (DEBUG) console.log("[debug] dossier:\n" + body);
 
-  ok("the squad table is drawn", (await coach.page.locator('[data-testid="dossier-squad"]').count()) === 1);
+  ok("the squad table is drawn", (await coach.page.locator('[data-testid="dossier-squad"]').count()) === 1,
+     `${lastDossierReads} · ${body.replace(/\s+/g, " ").slice(0, 200)}`);
   ok("...naming the other side's players", /Mkhize/.test(body) && /Botha/.test(body));
   ok("...and saying whose side it is", /Westville/i.test(body));
   ok("the header counts the games the figures came from", /Games read/i.test(body));
