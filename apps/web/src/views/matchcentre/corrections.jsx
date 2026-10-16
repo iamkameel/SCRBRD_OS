@@ -85,9 +85,10 @@ export function pendingWords(list) {
 
 /**
  * @param {{match: any, events: any[], fold: any, commentary: any[], list: {amendments: any[], held: any[]} | null,
- *           onClose: () => void, onDecided: () => void}} p
+ *           onClose: () => void, onDecided: () => void, official?: boolean}} p
+ *   official: the result is official (or under review) now (db/114): approving reopens it, and the sheet says so first
  */
-export function CorrectionsSheet({ match, events, fold, commentary, list, onClose, onDecided }) {
+export function CorrectionsSheet({ match, events, fold, commentary, list, onClose, onDecided, official = false }) {
   const [serverBefore, setServerBefore] = useState(/** @type {string | null} */ (null));
   const [said, setSaid] = useState(/** @type {Record<string, {ok: boolean, text: string}>} */ ({}));
   const [busy, setBusy] = useState(/** @type {string | null} */ (null));
@@ -195,6 +196,11 @@ export function CorrectionsSheet({ match, events, fold, commentary, list, onClos
               </p>
               {a.reason && <p data-testid={`corr-reason-${a.id}`} style={{ ...small(), color: T.content.primary, borderLeft: `3px solid ${T.line.normal}`, paddingLeft: T.space.sm }}>{a.reason}</p>}
               <p style={{ ...small(), color: T.content.secondary }}>Approving removes this ball; nothing replaces it.</p>
+              {official && a.canDecide && (
+                <p data-testid={`corr-reopens-${a.id}`} style={{ ...small(), color: T.content.primary, fontWeight: 600 }}>
+                  This result is official; approving reopens it, and both schools and the organiser are told.
+                </p>
+              )}
               {effectList(a.id)}
               {a.mine && (
                 <p data-testid={`corr-mine-${a.id}`} style={{ ...small(), color: T.content.secondary }}>

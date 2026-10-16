@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
-import { api } from "../../lib/api.js";
+import { api, signedIn } from "../../lib/api.js";
 import { officialWords, whenWords } from "../../lib/official.js";
-import { signedIn } from "../../lib/session.js";
 import { StateLabel } from "../../ui/stateLabel.jsx";
 import { Icon } from "../../ui/icons.jsx";
 import { CardHead, Panel } from "./bits.jsx";
@@ -163,7 +162,7 @@ export function OfficialPanel({ official, step, setStep, result }) {
         {(step === "dispute" || step === "clear" || step === "withdraw") && (
           <div data-testid={`mc-official-${step}-sheet`} style={{ display: "grid", gap: T.space.sm }}>
             <p style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>
-              {step === "dispute" ? `Say what is wrong with it. The result is under review until the ${o.disputedAs ? "" : ""}organiser clears it or a correction reopens it; nothing in the table moves.${closes ? ` The window closes ${closes}.` : ""}`
+              {step === "dispute" ? `Say what is wrong with it. The result is under review until it is cleared or a correction reopens it; nothing in the table moves.${closes ? ` The window closes ${closes}.` : ""}`
                 : step === "clear" ? "Say why the result stands. It is official again."
                 : "Say why. The result is provisional again and both schools are told."}
             </p>

@@ -67,6 +67,8 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
     }
     // GA-I36 O7: the fixture opens on its Corrections sheet.
     if (want.view === "corrections") { setCoachOn({ tab: null, drawer: false, corrections: true }); setOpenM(m); return; }
+    // OFFICIAL_RESULT: a results row opens the fixture, where its Official result panel is.
+    if (want.view === "result") { setCoachOn({ tab: null, drawer: false }); setOpenM(m); return; }
     setCoachOn({ tab: "coach", drawer: want.drawer });
     setOpenM(m);
   }, [MATCHES]);
