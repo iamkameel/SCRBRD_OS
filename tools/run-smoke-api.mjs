@@ -167,6 +167,9 @@ const WALKS = [
   "workload",
   // SCRBRD-110 phase 1 (db/60): the nets band and the health consent, over HTTP.
   "load",
+  // GA-I19 slice A (db/111): the physio records and reviews an injury, her
+  // worklist, each reader's tier, the refusals in words, and SG-12.
+  "injury",
   // SCRBRD-110 phase 0 (db/62): the guardian link past eighteen — open while
   // he is at school, ended when he leaves — and option C for the public name.
   "link18",
@@ -389,6 +392,13 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
   // the eighteen card, and the sign-up row — both themes, 12px and 44px.
   "browser-consent",
+  // GA-I19 slice B (db/111): the Injuries screens. The physio's Reviews due, the
+  // Record and Review forms (next review required, +7 and +14, clearing asks
+  // first), the left-the-school mark; the coach and the director read it with
+  // no review word, note or count and never ask for the worklist; the
+  // principal reads status only; the parent's and the boy's Health history;
+  // 12px, 44px, Daylight, reduced motion.
+  "browser-injuries",
   // Playing conditions, phase 1 (db/61, SCRBRD-114): a fixture arranged in a
   // league pre-filled from its conditions; the pad's words; the bowled after
   // a no-ball standing where the league says no free hit.

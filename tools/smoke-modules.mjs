@@ -96,6 +96,12 @@ try {
   const after = await read("injuries", medic);
   ok("the read is refused for everyone at that school", after.status === 403);
   ok("...naming the module rather than a generic failure", after.body?.module === "injuries");
+  // GA-I19 (db/111): the physio's worklist and an injury's reviews are the
+  // module's reads too.
+  const list = await read("injury_worklist", medic);
+  ok("...and the physio's worklist is refused with it", list.status === 403 && list.body?.module === "injuries");
+  const hist = await read("injury_reviews?injuryId=cccccccc-0000-0000-0000-000000000001", medic);
+  ok("...and an injury's review history", hist.status === 403 && hist.body?.module === "injuries");
   ok("...and the medic still holds the capability — nothing was revoked",
      (await q(`select count(*)::int c from role_capability
                 where role = 'medical' and capability = 'medical.details.read'`))[0].c === 1);
@@ -340,6 +346,13 @@ try {
       { module: "fields", token: head,
         write: (k) => post(`/api/grounds/${g}/condition`, head, { drainageMin: 100 + k }),
         landed: (k) => count(`select count(*)::int c from ground_condition where ground_id = $1 and drainage_min = $2`, [g, 100 + k]) },
+      // GA-I19 (db/111): the physio records an injury. Gated here and in
+      // injury_record() itself (module_off), which db/99 §88 proves.
+      { module: "injuries", token: medic,
+        write: (k) => post("/api/injuries", medic, { playerId: P, injuryType: `Gate probe ${k}`, severity: "minor",
+          dateInjured: new Date().toISOString().slice(0, 10),
+          nextReviewOn: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) }),
+        landed: (k) => count(`select count(*)::int c from injury where injury_type = $1`, [`Gate probe ${k}`]) },
       { module: "logistics", token: registrar,
         write: (k) => post("/api/vehicles", registrar, { schoolId: HIL, registration: `KZN 7${String(k).padStart(2, "0")} AA`, description: "probe", kind: "minibus", capacity: 8 }),
         landed: (k) => count(`select count(*)::int c from vehicle where registration = $1`, [`KZN 7${String(k).padStart(2, "0")} AA`]) },
@@ -362,7 +375,7 @@ try {
     // by a route — staff, analytics, leagues, competitions — have nothing to
     // gate on the way in, and are absent on purpose.
     const covered = new Set(WRITES.map((w) => w.module));
-    for (const key of ["officials", "training", "skills", "sponsors", "fields", "logistics"]) {
+    for (const key of ["officials", "training", "skills", "sponsors", "fields", "logistics", "injuries"]) {
       ok(`the table covers ${key}`, covered.has(key));
     }
   }

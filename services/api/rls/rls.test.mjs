@@ -277,6 +277,10 @@ group("D. Column masking, per row");
 for (const [table, def] of Object.entries(TABLES)) {
   const masked = maskedColumns(def);
   if (!Object.keys(masked).length) continue;
+  // A table added after db/09 (TABLES_ADDED_SINCE_09) has its view in the
+  // generated block of its own file, as its policies are (group C2): the
+  // same assertions, held to that file (injury_review, db/111, is the first).
+  const SQL = policySql(table);
   ok(`${table}_masked is generated`, new RegExp(`VIEW ${table}_masked`).test(SQL));
   // security_invoker is the one that decides WHOSE policies apply. Without it
   // the view runs as its owner, who owns the table underneath and bypasses
