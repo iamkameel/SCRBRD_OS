@@ -202,6 +202,29 @@ group("§11.2  The scorer records, the umpire officiates, a third party approves
      !ALL_CAPABILITIES.some((c) => /scoring/.test(c) && /officiat/.test(c)));
 }
 
+// ── D5 The confirmer is never a hand on the log (OFFICIAL_RESULT, db/114) ──
+group("D5  Whoever makes a result official files no correction to it");
+{
+  // OFFICIAL_RESULT §5: the two sets that must stay disjoint, as the two
+  // amendment capabilities are. The role half is here; db/114's row check
+  // (result_hand_on_log(), refusal `you_wrote_this_log`, db/99 §91 (hands))
+  // is the half that keeps a director of sport who scored the match himself,
+  // or approved its correction, from confirming it.
+  const confirmers = new Set(others("result.confirm"));
+  const requesters = new Set(others("scoring.amend.request"));
+  ok("nobody may both request a correction and confirm a result",
+     confirmers.size > 0 && requesters.size > 0 && [...confirmers].every((r) => !requesters.has(r)),
+     `confirm ${[...confirmers].join(",")} · request ${[...requesters].join(",")}`);
+  ok("result.confirm is the organiser's, the director of sport's and the principal's (§5), and the owner's",
+     [...confirmers].sort().join() === "competitionadmin,directorofsport,principal" && caps("superadmin").includes("result.confirm"),
+     [...confirmers].join(","));
+  ok("...every confirmer approves corrections too (a second hand, never the first)",
+     [...confirmers].every((r) => caps(r).includes("scoring.amend.approve")), [...confirmers].join(","));
+  ok("no scorer, coach, family, pupil or watcher confirms a result",
+     ["scorer", "coach", "assistantcoach", "teammanager", "sportsadmin", "guardian", "player", "selfaccess",
+      "spectator", "media", "scout", "official"].every((r) => !caps(r).includes("result.confirm")));
+}
+
 // ── §11.3 Coach vs medical authority ─────────────────────
 group("§11.3  A coach learns what safe participation requires, not the file");
 for (const r of ["coach", "assistantcoach"]) {
