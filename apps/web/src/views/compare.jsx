@@ -57,8 +57,9 @@ function useReadFor(resource, params, nonce) {
   return state;
 }
 
-const figure = { ...T.role.figure.sm, fontSize: "16px", color: T.content.primary };
-const word = { fontFamily: T.type.body, fontSize: "12px", lineHeight: 1.3, color: T.content.secondary };
+// Functions, not constants: tokens are read at render, so a theme change reaches them.
+const figure = () => ({ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary });
+const word = () => ({ fontFamily: T.type.body, fontSize: "12px", lineHeight: 1.3, color: T.content.secondary });
 
 /** A cell: the figure, and under it the word that says why a dash is a dash. */
 function Cell({ c, testid, align }) {
@@ -66,8 +67,8 @@ function Cell({ c, testid, align }) {
     <td data-testid={testid} data-held={c.held ? "true" : undefined}
       style={{ padding: `${T.space.sm} ${T.space.xs}`, textAlign: align, verticalAlign: "top",
         borderTop: `1px solid ${T.line.subtle}` }}>
-      <span style={{ ...figure, display: "block" }}>{c.text}</span>
-      {c.word && <span data-testid={`${testid}-word`} style={{ ...word, display: "block" }}>{c.word}</span>}
+      <span style={{ ...figure(), display: "block" }}>{c.text}</span>
+      {c.word && <span data-testid={`${testid}-word`} style={{ ...word(), display: "block" }}>{c.word}</span>}
     </td>
   );
 }
@@ -89,7 +90,7 @@ function Pair({ caption, a, b, rows, testid }) {
         {rows.map((r) => (
           <tr key={r.key} data-testid={`${testid}-${r.key}`}>
             <Cell c={r.a} testid={`${testid}-${r.key}-a`} align="right"/>
-            <th scope="row" style={{ ...word, fontWeight: 600, textAlign: "center", padding: `${T.space.sm} ${T.space.xs}`,
+            <th scope="row" style={{ ...word(), fontWeight: 600, textAlign: "center", padding: `${T.space.sm} ${T.space.xs}`,
               borderTop: `1px solid ${T.line.subtle}`, verticalAlign: "top" }}>{r.label}</th>
             <Cell c={r.b} testid={`${testid}-${r.key}-b`} align="left"/>
           </tr>
@@ -115,17 +116,17 @@ function FloorLine({ under, unit, testid }) {
   if (!under.length) return null;
   const who = under.map((s) => `${s.name}, ${s.n == null ? "balls not recorded" : `${s.n} ${unit}`}`).join("; ");
   return (
-    <p data-testid={testid} style={{ ...word, fontSize: "13px", margin: 0 }}>
+    <p data-testid={testid} style={{ ...word(), fontSize: "13px", margin: 0 }}>
       {`Not enough balls to compare these rates. Each needs ${COMPARE_FLOOR} legal balls before it is divided: ${who}. The counts are shown; the rates are not.`}
     </p>
   );
 }
 
-const selectStyle = {
+const selectStyle = () => ({
   width: "100%", minHeight: "44px", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
   background: T.surface.interactive, color: T.content.primary, border: `1px solid ${T.line.normal}`,
   ...T.role.control,
-};
+});
 
 /** A picker: the players offered, grouped by side, never the one in the other column. */
 function Picker({ id, label, value, onChange, players, exclude, testid }) {
@@ -133,7 +134,7 @@ function Picker({ id, label, value, onChange, players, exclude, testid }) {
   return (
     <div style={{ display: "grid", gap: T.space.xs, minWidth: 0 }}>
       <label htmlFor={id} style={{ ...T.role.label, color: T.content.secondary }}>{label}</label>
-      <select id={id} data-testid={testid} value={value} onChange={(e) => onChange(e.target.value)} style={selectStyle}>
+      <select id={id} data-testid={testid} value={value} onChange={(e) => onChange(e.target.value)} style={selectStyle()}>
         <option value="">Choose a player</option>
         {groups.map(([team, ps]) => (
           <optgroup key={team} label={team}>
@@ -225,7 +226,7 @@ export function Compare({ role, self = null }) {
             players={offered} exclude={aId} testid="compare-pick-b"/>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>
-          <span data-testid="compare-as-at" style={{ ...word, fontSize: "13px" }}>
+          <span data-testid="compare-as-at" style={{ ...word(), fontSize: "13px" }}>
             {settled ? (asAtWords(asAt) ?? "Reading the figures…") : "Reading the figures…"}
           </span>
           <button type="button" data-testid="compare-reread" onClick={() => setNonce((n) => n + 1)} className="pressBtn os-state"
@@ -315,7 +316,7 @@ function MatchupPanel({ A, B, names, mA, mB, cA, cB, onRetry }) {
             ]}/>
         ))
       ) : said.state === "ok" || said.state === "empty" ? (
-        <p data-testid="compare-matchups-none" style={{ ...word, fontSize: "13px", margin: 0 }}>
+        <p data-testid="compare-matchups-none" style={{ ...word(), fontSize: "13px", margin: 0 }}>
           Neither has faced a ball from a bowler with a record here yet, so there is no bowling type to count against.
         </p>
       ) : <ReadState compact read={said} onRetry={onRetry} testId="compare-matchups-read-state"/>}
