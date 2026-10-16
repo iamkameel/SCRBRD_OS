@@ -11152,8 +11152,16 @@ BEGIN
     -- caller himself (my_own_boy()), asked of app_can('fixture.read', …, <him>,
     -- …) at his own side. The same bound: under pad scope app_can() answers
     -- only the credential's own match; no argument; nobody else's sheet.
+    -- result_official_notices (db/114, OFFICIAL_RESULT): asks no capability;
+    -- 'fixture.read' is the capability its notices require of their reader,
+    -- as progression_check's. Nobody's to call: db/114's doors and triggers
+    -- call it as the owner.
+    -- result_staff (db/114): asks 'scoring.edit' among the capabilities that
+    -- make a reader "staff" for D11's words, and answers false under pad scope
+    -- before it asks anything (NOT app_pad_scoped()); nobody's to call.
     PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,scoring_arm_handover,scoring_claim,'
+                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,'
+                             || 'result_official_notices,result_staff,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 

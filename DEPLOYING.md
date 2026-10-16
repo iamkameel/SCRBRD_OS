@@ -1737,6 +1737,95 @@ The summary row "A correction takes back what it falsified" should read OK.
 shows withdrawn rows and stubs (S1).
 <!-- ── end db/113 ── -->
 
+<!-- ── db/114: when a result becomes official ── -->
+#### A result becomes official when a second person confirms it (db/114)
+
+`db/114_official_result.sql` is slice S1 of `docs/design/OFFICIAL_RESULT.md`
+(Kameel approved D1–D14 and Q1–Q8 on 8 October 2026, as recommended). Before
+it, nothing could honestly be called official: a finished match had a status
+and a result read off the log, and "Looks right" only hid a banner on one phone.
+
+**What it does.**
+- A result is **official** when a confirmation names the log's current head
+  (`max(seq)`) and the result's current hash, and no dispute stands on it.
+  The confirmation is stored. "Official" is never stored: it is read off the
+  row every time, so any correction (an approved amendment, a released held
+  ball, a late ball, a decision, a status change) makes the result
+  **provisional** again by itself. Three triggers stamp when and why it lapsed,
+  take back the "Official result" notice silently (`superseded`) and tell both
+  sides once, at medium, that the result was reopened.
+- **Who confirms.** For a league or cup fixture, the organiser:
+  `result.confirm` at the competition's organising school, or, for a
+  competition with no organising school, a `competitionadmin` appointed with
+  no school (Q1). A competition's frozen conditions may say
+  `results.confirmed_by = home_school` or `either_school` instead. For a
+  friendly, the home school's director of sport or principal. The home
+  school's confirmation stands alone when the away side is not on SCRBRD (Q8).
+  The confirmer is never a hand on the log: not its scorer, not the requester
+  or approver of an applied correction, not the releaser of a held ball, not
+  the typist or confirmer of a scorebook import (`you_wrote_this_log`, D5).
+- **Disputes.** Within `results.dispute_days` (7 by default, Q2), either
+  school's director or principal, or the organiser, may dispute a confirmed
+  result with a note. Staff then read "Under review". The public and families
+  read "Provisional" (Q3). The organiser clears it; for a friendly, a holder at
+  either school who did not dispute it. The confirmer may withdraw his own
+  confirmation within the window (Q5). An abandoned match with no ball bowled
+  may be confirmed (Q6). Nothing waits for the word: the table, progression,
+  careers and honours read the log as before (D10). The table now says how
+  many of its results are provisional.
+
+**What it does to a live database.** One capability, `result.confirm`
+(catalogue row; held by `superadmin`, `directorofsport`, `principal` and
+`competitionadmin`). Two playing-condition keys (`results.confirmed_by`,
+`results.dispute_days`, table part, no platform default, so no document
+changes). One table, `match_result_confirmation`, empty, with its generated
+read policy and a pad guard. The application may read its plain columns
+only, never who confirmed or disputed and never a note, and may write
+nothing. A guard trigger: a row is never changed but to stamp it, once per
+stamp, and never deleted except with its match. Four triggers: one each on
+`ball_event` (per statement), `match_result_decision` and `match` (status),
+plus `public_data_changed` on the new table. Thirty new functions with a
+pinned path, all `SECURITY DEFINER` but the guard (which runs as its caller,
+as db/69's does). Seven are the application's
+(`match_confirmable`, `match_result_confirm`, `match_result_dispute`,
+`match_result_dispute_clear`, `match_result_confirmation_withdraw`,
+`match_official_state`, `results_to_confirm`). The rest are nobody's to call.
+It restates three reads, each dropped and made again because its columns
+change: `public_match_result()` gains `official` and `official_at`;
+`competition_standing_rows()` (db/73's body, otherwise exactly) and the view
+`competition_standing` gain `provisional_results`; and
+`public_competition_standing()` gains it too. Their grants are restated as
+db/69 and db/71 gave them. No existing row is changed. The file refuses a
+wrong base: it needs db/113, db/89's `notification_retract()`, db/71's public
+result and db/73's table. It checks itself. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 114` after 113, then the verify
+bundle (§91 is its proof). The summary row "A result is official when a
+second hand confirms it" should read OK. **Schema first**: an API built with
+it refuses to start without db/114 (`expected-migrations.json`). The API gains
+six routes (`GET /api/matches/:id/official`, `POST /api/matches/:id/confirm`,
+`POST /api/matches/:id/dispute`, `POST /api/results/disputes/:id/clear`,
+`POST /api/results/confirmations/:id/withdraw`, `GET /api/results/to-confirm`).
+
+**Setup step for the pilot (A7): the pilot league needs an organiser account,
+or nothing in it can become official.** Every league result stays
+"Provisional", which is true, until somebody holds `result.confirm` for the
+league. Do one of these:
+1. **Recommended (Q1).** Appoint the league's organiser as `competitionadmin`.
+   If the pilot competition has an organising school (`competition.school_id`),
+   make the assignment at that school. If it has none, as the seeded "KZN
+   Schools T20 League" has none, make the assignment with no school. That
+   person then confirms every league result, and clears disputes.
+2. **If there is no organiser to appoint**, publish a conditions version for
+   the competition that sets `results.confirmed_by` to `either_school` (or
+   `home_school`) with its source. Fixtures fixed under it are then confirmed
+   by the schools' directors of sport or principals. Fixtures already fixed
+   keep the document they were fixed with. Do not widen a role instead.
+
+Friendlies need nothing: the home school's director of sport or principal
+confirms them.
+<!-- ── end db/114 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

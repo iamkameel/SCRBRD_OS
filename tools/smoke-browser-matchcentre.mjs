@@ -670,6 +670,67 @@ try {
   ok("no console errors (spectator)", watcher.errors.length === 0, watcher.errors.join(" | "));
   await watcher.ctx.close();
 
+  // ── OFFICIAL_RESULT (db/114, D11–D13, §6 "Walks") ──
+  group("OFFICIAL_RESULT: the label on the result, and who is offered Confirm");
+  const ofs = await open();
+  ok("the scorer signs in again", await signIn(ofs.page, /scorer@example\.invalid|Scorer/));
+  ok("the decided fixture opens", await openMatch(ofs.page, fx.live));
+  const ofsLabel = await until(ofs.page, () => document.querySelector('[data-testid="mc-official"] [data-state]')?.getAttribute("data-state") ?? "", 8000)
+    ? await ofs.page.locator('[data-testid="mc-official"] [data-state]').getAttribute("data-state") : null;
+  ok("the result header says Provisional (a correction awaits approval)", ofsLabel === "provisional",
+     await tid(ofs.page, "mc-official").innerText().catch(() => "∅"));
+  ok("...in a polite live region, so a change on a poll is announced",
+     (await tid(ofs.page, "mc-official").getAttribute("aria-live")) === "polite" && (await tid(ofs.page, "mc-official").getAttribute("role")) === "status");
+  ok("the scorer of the log is never offered Confirm", await tid(ofs.page, "mc-official-confirm").count() === 0
+     && await tid(ofs.page, "mc-confirm-result").count() === 0);
+  ok("the full-time prompt says Looks right is this phone's and does not make it official (D13)",
+     /does not make the result official/.test(await tid(ofs.page, "mc-confirm-device").innerText().catch(() => "")));
+  ok("no console errors (scorer, official)", ofs.errors.length === 0, ofs.errors.join(" | "));
+  await ofs.ctx.close();
+
+  // The scorer's request is withdrawn (his own door, db/02): nothing pending.
+  await q(`update scoring_amendment set state = 'withdrawn' where match_id = $1 and state = 'pending'`, [fx.live]);
+  const pr = await open();
+  ok("the principal signs in", await signIn(pr.page, /principal@example\.invalid|Principal/));
+  ok("the decided fixture opens", await openMatch(pr.page, fx.live));
+  ok("she is offered Confirm result (the home school's, and no hand of hers on the log)",
+     await until(pr.page, () => !!document.querySelector('[data-testid="mc-official-confirm"]'), 8000));
+  const confirmBox = await tid(pr.page, "mc-official-confirm").boundingBox();
+  ok("...a 44px target", (confirmBox?.height ?? 0) >= 44, JSON.stringify(confirmBox));
+  await tid(pr.page, "mc-official-confirm").click();
+  ok("the sheet says what it does, and the head it pins",
+     /This makes the result official, as the scorecard stands now \(head \d+\)\. Both schools are told\./.test(await tid(pr.page, "mc-official-confirm-words").innerText().catch(() => "")),
+     await tid(pr.page, "mc-official-confirm-words").innerText().catch(() => "∅"));
+  await tid(pr.page, "mc-official-confirm-go").click();
+  ok("confirmed, in words", await until(pr.page, () => /the result is official/.test(document.querySelector('[data-testid="mc-official-said"]')?.textContent ?? ""), 8000));
+  ok("the header now says Official result, confirmed by the home school",
+     await until(pr.page, () => /Official result · confirmed by the home school/.test(document.querySelector('[data-testid="mc-official"]')?.textContent ?? ""), 8000),
+     await tid(pr.page, "mc-official").innerText().catch(() => "∅"));
+  const [{ n: confRows }] = await q(`select count(*)::int n from match_result_confirmation where match_id = $1 and lapsed_at is null and withdrawn_at is null`, [fx.live]);
+  ok("...one standing confirmation in the database", confRows === 1, confRows);
+  ok("she may withdraw her own, within the window", await tid(pr.page, "mc-official-withdraw").count() === 1);
+  ok("no console errors (principal)", pr.errors.length === 0, pr.errors.join(" | "));
+  await pr.ctx.close();
+
+  // A correction asked after it is official: the approver's sheet warns that approving reopens it.
+  const scTok = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "scorer@example.invalid", deviceId: "mc-official" }) })).json().then((b) => b.token).catch(() => null);
+  const [{ key: lastBall }] = await q(`select idempotency_key as key from ball_event_live where match_id = $1 and kind = 'ball' order by seq desc limit 1`, [fx.live]);
+  const asked = await fetch(`${API}/api/matches/${fx.live}/amendments`, { method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${scTok}` },
+    body: JSON.stringify({ targetKey: lastBall, reason: "Smoke walk: the last ball, asked after the result was official." }) });
+  ok("the scorer asks for a correction to the official result", asked.status === 200, asked.status);
+  const dos2 = await open();
+  ok("the director of sport signs in", await signIn(dos2.page, /sarah@example\.invalid|Director/));
+  ok("the decided fixture opens", await openMatch(dos2.page, fx.live));
+  ok("its corrections are one tap away", await until(dos2.page, () => !!document.querySelector('[data-testid="mc-corrections-open"]'), 8000));
+  await tid(dos2.page, "mc-corrections-open").click();
+  ok("the approver is told, before he taps, that approving reopens an official result",
+     await until(dos2.page, () => /approving reopens it, and both schools and the organiser are told/.test(document.querySelector('[data-testid^="corr-reopens-"]')?.textContent ?? ""), 8000));
+  ok("no console errors (director, official)", dos2.errors.length === 0, dos2.errors.join(" | "));
+  await dos2.ctx.close();
+  // ── end OFFICIAL_RESULT ──
+
   group("At 390 wide: the sides by code, and nothing wider than the screen");
   const ph = await open({ viewport: PHONE, scheme: "light" });
   await signIn(ph.page, /sarah@example\.invalid|Director/);
