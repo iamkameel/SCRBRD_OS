@@ -601,6 +601,25 @@ SELECT
         AND to_regprocedure('milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)') IS NOT NULL
         AND to_regprocedure('milestone_still_holds(uuid,text,uuid,smallint,integer)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A correction takes back what it falsified",
+  -- db/115: a family's consents are the family's (REACH R-B, O5/O6). The
+  -- passport consent is read by the family and the office it names; the
+  -- scouting decision by the family, his office and his own side's coach.
+  -- Neither reads player.profile.read any more (db/08's reach). Only
+  -- to_regprocedure()/to_regclass(), so the row reads PROBLEM rather than
+  -- failing the query on a database without db/115.
+  CASE WHEN to_regprocedure('is_family_of(uuid)') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('passport_consent') AND p.polname = 'passport_consent_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%is_family_of(player_id)%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%guardian.link.manage%'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%player.profile.read%')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('player_scouting_consent') AND p.polname = 'player_scouting_consent_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%is_family_of(player_id)%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%guardian.link.manage%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%player.development.read%'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%player.profile.read%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A family's consents are the family's",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

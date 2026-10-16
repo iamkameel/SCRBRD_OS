@@ -36,3 +36,67 @@ export function heldTeams() {
 export function holdsAsHeld(role, capability, held = heldRoles()) {
   return held.length ? held.some((r) => roleGrants(r, capability)) : holdsCapability(role, capability);
 }
+
+/*
+ * WHOSE CONSENTS THIS PERSON READS (REACH R-B, db/115). Presentation only,
+ * like everything above: it decides which boys a consent card lists and what
+ * its empty state says, so that a boy whose decision the server will not
+ * show this reader is not drawn as "no decision recorded". The rows
+ * themselves come from the server under the table's own policy; a wrong
+ * answer here mislabels a line and grants nothing.
+ */
+
+/** The links that make a person a boy's family: db/08's is_family_of() reads these two, verified. */
+const FAMILY_LINKS = Object.freeze(["guardian", "selfaccess"]);
+
+/**
+ * The boys the signed-in person is family of: the ones his guardian or
+ * self-access links name (the session lists only live links).
+ * @param {any[]} [assignments]  the session's assignments; read from it by default (the test passes them)
+ * @returns {Set<string>}
+ */
+export function familyOf(assignments = profile()?.assignments ?? []) {
+  return new Set(assignments.filter((a) => FAMILY_LINKS.includes(a.role)).flatMap((a) => a.subjects ?? []));
+}
+
+/**
+ * Does one assignment reach this boy for this capability, as app_can() scopes
+ * it: his school, his side (unless the question is school-wide), and, if it
+ * names anybody, him.
+ */
+function reaches(a, capability, player, wholeSchool) {
+  if (FAMILY_LINKS.includes(a.role) || !roleGrants(a.role, capability)) return false;
+  if (a.school && a.school !== player.school) return false;
+  if (!wholeSchool && a.team && a.team !== player.team) return false;
+  const named = a.subjects ?? [];
+  return named.length === 0 || named.includes(player.id);
+}
+
+/**
+ * May this person read this boy's scouting decision? player_scouting_consent_read
+ * (db/115): his family, the office at his school (guardian.link.manage), and
+ * his own side's coach (player.development.read at his side). In the demo,
+ * which has no assignments, every boy on the screen.
+ * @param {{ id: string, school?: string | null, team?: string | null }} player
+ * @param {any[]} [assignments]
+ */
+export function readsScoutingOf(player, assignments = profile()?.assignments ?? []) {
+  if (!assignments.length) return true;
+  if (familyOf(assignments).has(player.id)) return true;
+  return assignments.some((a) => reaches(a, "guardian.link.manage", player, true)
+                              || reaches(a, "player.development.read", player, false));
+}
+
+/**
+ * Whose passport consents does this person read? passport_consent_read
+ * (db/115): a boy's family reads the schools it has named ("family"); the
+ * office of a school named (guardian.link.manage there) reads the consents
+ * naming that school ("office"); a coach, a pupil, or a parent of another
+ * family reads none (null). In the demo, "family", as the screen always drew.
+ * @param {any[]} [assignments]
+ * @returns {"family" | "office" | null}
+ */
+export function passportConsentReader(assignments = profile()?.assignments ?? []) {
+  if (!assignments.length || familyOf(assignments).size > 0) return "family";
+  return assignments.some((a) => !FAMILY_LINKS.includes(a.role) && roleGrants(a.role, "guardian.link.manage")) ? "office" : null;
+}

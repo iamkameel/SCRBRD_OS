@@ -6573,6 +6573,98 @@ CREATE OR REPLACE FUNCTION _v113_breaches(p_player uuid) RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/113 (section 90) ─────────────────────────────────────────────
 
+-- ┌── db/115 (section 92). REACH R-B: a family's consents are the family's
+-- Invented, as the owner; every name is a placeholder. Boys: A and M, team-
+-- mates on Hilton's 18XI, each a pupil with his own `player` role and self-
+-- access link, each with a guardian; B on Hilton's 19XI; W on Westville's
+-- 18XI (the same team code at another school), with a guardian. A third
+-- school X, on the platform with nobody at it. Passport consents: A → WES,
+-- M → WES, A → X, and M → X withdrawn. Scouting decisions: A granted, M
+-- withdrawn, B granted, W granted. The readers, one assignment each.
+CREATE OR REPLACE FUNCTION _v115_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  X uuid; ids jsonb; v_a uuid; c_a uuid; c_m uuid; c_b uuid; c_w uuid; k text;
+BEGIN
+  INSERT INTO school (code, name, kind, province) VALUES ('V115X', 'Verify OneFifteen College', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO X;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '18XI', 'Verify OneFifteen Able',  1151, 'batter', U15) RETURNING id INTO c_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '18XI', 'Verify OneFifteen Mate',  1152, 'bowler', U15) RETURNING id INTO c_m;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '19XI', 'Verify OneFifteen Other', 1153, 'batter', U15) RETURNING id INTO c_b;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, '18XI', 'Verify OneFifteen Wes',   1154, 'batter', U15) RETURNING id INTO c_w;
+  ids := _v71_people('v115', ARRAY[
+    ARRAY['ga',           'guardian',        HIL::text, '',     ''],   -- A's
+    ARRAY['gm',           'guardian',        HIL::text, '',     ''],   -- M's
+    ARRAY['aboy',         'player',          HIL::text, '18XI', c_a::text],
+    ARRAY['mboy',         'player',          HIL::text, '18XI', c_m::text],
+    ARRAY['coach18',      'coach',           HIL::text, '18XI', ''],
+    ARRAY['asst18',       'assistantcoach',  HIL::text, '18XI', ''],
+    ARRAY['manager18',    'teammanager',     HIL::text, '18XI', ''],
+    ARRAY['coach19',      'coach',           HIL::text, '19XI', ''],
+    ARRAY['dos',          'directorofsport', HIL::text, '',     ''],
+    ARRAY['office',       'schooladmin',     HIL::text, '',     ''],
+    ARRAY['principal',    'principal',       HIL::text, '',     ''],
+    ARRAY['scorer',       'scorer',          HIL::text, '',     ''],
+    ARRAY['medical',      'medical',         HIL::text, '',     ''],
+    ARRAY['analyst',      'analyst',         HIL::text, '',     ''],
+    ARRAY['scout',        'scout',           HIL::text, '',     ''],
+    ARRAY['spec',         'spectator',       HIL::text, '',     ''],
+    ARRAY['wesoffice',    'schooladmin',     WES::text, '',     ''],
+    ARRAY['wesprincipal', 'principal',       WES::text, '',     ''],
+    ARRAY['wescoach',     'coach',           WES::text, '18XI', ''],
+    ARRAY['wesdos',       'directorofsport', WES::text, '',     ''],
+    ARRAY['wesg',         'guardian',        WES::text, '',     ''],   -- W's: a parent at the receiving school
+    ARRAY['wesmate',      'player',          WES::text, '18XI', '']]); -- W's team-mate, a pupil there
+  PERFORM _v100_link((ids->>'ga')::uuid, HIL, c_a);
+  PERFORM _v100_link((ids->>'gm')::uuid, HIL, c_m);
+  PERFORM _v100_link((ids->>'wesg')::uuid, WES, c_w);
+  -- Each pupil also holds self-access over his own record, as R Pillay does.
+  FOREACH k IN ARRAY ARRAY['aboy', 'mboy'] LOOP
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>k)::uuid, 'selfaccess', HIL)
+    RETURNING id INTO v_a;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (v_a, CASE k WHEN 'aboy' THEN c_a ELSE c_m END, 'self', 'verified', OFFICE, now(),
+            'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES (c_a, WES), (c_m, WES), (c_a, X), (c_m, X);
+  UPDATE passport_consent SET withdrawn_at = now() WHERE player_id = c_m AND to_school_id = X;
+  INSERT INTO player_scouting_consent (player_id, consent_state) VALUES
+    (c_a, 'granted'), (c_m, 'withdrawn'), (c_b, 'granted'), (c_w, 'granted');
+  RETURN ids || jsonb_build_object('A', c_a, 'M', c_m, 'B', c_b, 'W', c_w, 'X', X);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the CALLER reads of the staged rows, under his own row security (these
+-- two are invoker functions, so the policies stand in front of them), as one
+-- sorted line: a passport consent as boy>school, '(w)' when withdrawn; a
+-- scouting decision as the boy, '(w)' when withdrawn.
+CREATE OR REPLACE FUNCTION _v115_passport(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t), '') FROM (
+    SELECT CASE c.player_id WHEN (y->>'A')::uuid THEN 'A' WHEN (y->>'M')::uuid THEN 'M' ELSE '?' END
+           || '>' || CASE c.to_school_id WHEN '22222222-2222-2222-2222-222222222222'::uuid THEN 'WES'
+                                         WHEN (y->>'X')::uuid THEN 'X' ELSE '?' END
+           || CASE WHEN c.withdrawn_at IS NOT NULL THEN '(w)' ELSE '' END AS t
+      FROM passport_consent c
+     WHERE c.player_id IN ((y->>'A')::uuid, (y->>'M')::uuid, (y->>'B')::uuid, (y->>'W')::uuid)) s
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION _v115_scouting(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t), '') FROM (
+    SELECT CASE c.player_id WHEN (y->>'A')::uuid THEN 'A' WHEN (y->>'M')::uuid THEN 'M'
+                            WHEN (y->>'B')::uuid THEN 'B' WHEN (y->>'W')::uuid THEN 'W' END
+           || CASE WHEN c.consent_state = 'withdrawn' THEN '(w)' ELSE '' END AS t
+      FROM player_scouting_consent c
+     WHERE c.player_id IN ((y->>'A')::uuid, (y->>'M')::uuid, (y->>'B')::uuid, (y->>'W')::uuid)) s
+$$ LANGUAGE sql STABLE;
+-- └── db/115 (section 92) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -25758,6 +25850,168 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 90
   -- └── db/113 (section 90) ──────────────────────────────────────────
+  -- ┌── db/115 (section 92) ──────────────────────────────────────────
+  -- ── 92. A family's consents are the family's (db/115, REACH R-B) ──
+  -- Kameel, 16 Oct 2026. Passport consent: office only. Scouting consent:
+  -- keep the coach. Staged by _v115_stage(); every read is the caller's own,
+  -- under row security (_v115_passport(), _v115_scouting()).
+  --
+  -- What each label holds:
+  --   (family)    a guardian reads her child's passport consents (live and
+  --               withdrawn) and scouting decision, and no other family's at
+  --               the same receiving school or on the same side; the boy
+  --               reads his own through his self-access link
+  --   (team-mate) O6: a pupil reads no team-mate's scouting decision, though
+  --               his `player` role holds player.profile.read across the side;
+  --               nor does a pupil at Westville read W's
+  --   (office)    the office of the school a passport consent names reads
+  --               what names it and nothing naming another school; the office
+  --               at the boy's school reads his side's and other sides'
+  --               scouting decisions, and not another school's; the owner's
+  --               key reads all
+  --   (coach)     decision 1: the receiving school's coach, its director of
+  --               sport, a parent and a pupil there read no passport consent,
+  --               and the coach still opens the passport (passport_open(),
+  --               passport_name()), and not one nobody named his school for.
+  --               Decision 2: his own side's coach and assistant coach read
+  --               the side's scouting decisions; another side's coach reads
+  --               his own side's and none of these; the coach of the same
+  --               team code at another school reads only his own boy's; the
+  --               director of sport reads his school's (school-wide
+  --               player.development.read)
+  --   (sending)   §6.2: a coach at the sending school reads no passport
+  --               consent; nor do his office, principal or director of sport
+  --               (the school concerned is the one the row names)
+  --   (nobody)    the team manager, scorer, physio, analyst, scout and a
+  --               spectator read neither table's staged rows
+  --   (writes)    the receiving office cannot name a school for a boy; a coach
+  --               cannot decide a scouting consent; the guardian can, and
+  --               reads the change
+  --   (doors)     both read policies exactly as db/115 wrote them, the only
+  --               permissive read on each table, and no read under
+  --               player.profile.read left on either
+  --
+  -- Falsified, each change made as the owner before this file ran:
+  --   (filled in below, with each red's message)
+  DECLARE
+    y   jsonb := _v115_stage();
+    got text;
+    who text;
+    v_ok boolean;
+    v_reason text;
+  BEGIN
+    -- (family)
+    FOR who, got IN SELECT * FROM (VALUES ('ga', 'A>WES,A>X'), ('aboy', 'A>WES,A>X'),
+                                          ('gm', 'M>WES,M>X(w)'), ('mboy', 'M>WES,M>X(w)')) v LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_passport(y) = got,
+        format('§92 (family): %s reads passport consents [%s], not [%s]', who, _v115_passport(y), got));
+    END LOOP;
+    FOR who, got IN SELECT * FROM (VALUES ('ga', 'A'), ('gm', 'M(w)'), ('wesg', 'W')) v LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_scouting(y) = got,
+        format('§92 (family): %s reads scouting decisions [%s], not [%s]', who, _v115_scouting(y), got));
+    END LOOP;
+
+    -- (team-mate)
+    FOR who, got IN SELECT * FROM (VALUES ('aboy', 'A'), ('mboy', 'M(w)'), ('wesmate', '')) v LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_scouting(y) = got,
+        format('§92 (team-mate): the pupil %s reads scouting decisions [%s], not [%s]', who, _v115_scouting(y), got));
+    END LOOP;
+
+    -- (office)
+    FOR who, got IN SELECT * FROM (VALUES ('wesoffice', 'A>WES,M>WES'), ('wesprincipal', 'A>WES,M>WES')) v LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_passport(y) = got,
+        format('§92 (office): the receiving %s reads passport consents [%s], not [%s]', who, _v115_passport(y), got));
+    END LOOP;
+    FOR who, got IN SELECT * FROM (VALUES ('office', 'A,B,M(w)'), ('principal', 'A,B,M(w)'),
+                                          ('wesoffice', 'W'), ('wesprincipal', 'W')) v LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_scouting(y) = got,
+        format('§92 (office): %s reads scouting decisions [%s], not [%s]', who, _v115_scouting(y), got));
+    END LOOP;
+    PERFORM _as(U_OWNER);
+    PERFORM _assert(_v115_passport(y) = 'A>WES,A>X,M>WES,M>X(w)' AND _v115_scouting(y) = 'A,B,M(w),W',
+      format('§92 (office): the owner''s key reads [%s] and [%s]', _v115_passport(y), _v115_scouting(y)));
+
+    -- (coach) decision 1: the receiving school reads the passport, not the consents
+    FOREACH who IN ARRAY ARRAY['wescoach', 'wesdos', 'wesg', 'wesmate'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_passport(y) = '',
+        format('§92 (coach): %s at the receiving school reads passport consents [%s]', who, _v115_passport(y)));
+    END LOOP;
+    PERFORM _as((y->>'wescoach')::uuid);
+    PERFORM _assert(passport_open((y->>'A')::uuid) AND passport_name((y->>'A')::uuid) = 'Verify OneFifteen Able',
+      '§92 (coach): the receiving coach can no longer open the passport his school was named for');
+    PERFORM _assert(NOT passport_open((y->>'B')::uuid) AND passport_name((y->>'B')::uuid) IS NULL,
+      '§92 (coach): the receiving coach opens a passport nobody named his school for');
+    -- decision 2: his own side's coach reads the side's scouting decisions
+    FOR who, got IN SELECT * FROM (VALUES ('coach18', 'A,M(w)'), ('asst18', 'A,M(w)'), ('coach19', 'B'),
+                                          ('wescoach', 'W'), ('dos', 'A,B,M(w)'), ('wesdos', 'W')) v LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_scouting(y) = got,
+        format('§92 (coach): %s reads scouting decisions [%s], not [%s]', who, _v115_scouting(y), got));
+    END LOOP;
+
+    -- (sending)
+    FOREACH who IN ARRAY ARRAY['coach18', 'asst18', 'dos', 'office', 'principal'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_passport(y) = '',
+        format('§92 (sending): %s at the sending school reads passport consents [%s]', who, _v115_passport(y)));
+    END LOOP;
+
+    -- (nobody)
+    FOREACH who IN ARRAY ARRAY['manager18', 'coach19', 'scorer', 'medical', 'analyst', 'scout', 'spec'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(_v115_passport(y) = '' AND (who = 'coach19' OR _v115_scouting(y) = ''),
+        format('§92 (nobody): %s reads [%s] and [%s]', who, _v115_passport(y), _v115_scouting(y)));
+    END LOOP;
+
+    -- (writes)
+    PERFORM _as((y->>'wesoffice')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'B')::uuid, WES);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§92 (writes): the receiving office named its own school for a boy');
+    PERFORM _as((y->>'coach18')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set((y->>'A')::uuid, false) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_a_consented_guardian',
+      format('§92 (writes): the coach''s scouting decision was answered %s/%s', v_ok, v_reason));
+    PERFORM _as((y->>'ga')::uuid);
+    SELECT s.ok INTO v_ok FROM scouting_consent_set((y->>'A')::uuid, false) s;
+    PERFORM _assert(v_ok AND _v115_scouting(y) = 'A(w)',
+      format('§92 (writes): the guardian''s withdrawal answered %s and reads [%s]', v_ok, _v115_scouting(y)));
+    PERFORM _as((y->>'aboy')::uuid);
+    PERFORM _assert(_v115_scouting(y) = 'A(w)',
+      format('§92 (writes): the boy reads his withdrawn decision as [%s]', _v115_scouting(y)));
+
+    -- (doors)
+    PERFORM _assert((SELECT pg_get_expr(p.polqual, p.polrelid) FROM pg_policy p
+                      WHERE p.polrelid = 'passport_consent'::regclass AND p.polname = 'passport_consent_read'
+                        AND p.polcmd = 'r' AND p.polpermissive)
+                    = '(is_family_of(player_id) OR app_can(''guardian.link.manage''::text, to_school_id, ''*''::text, ''00000000-0000-0000-0000-000000000000''::uuid, ''00000000-0000-0000-0000-000000000000''::uuid))',
+      '§92 (doors): passport_consent_read is not db/115''s');
+    PERFORM _assert((SELECT pg_get_expr(p.polqual, p.polrelid) FROM pg_policy p
+                      WHERE p.polrelid = 'player_scouting_consent'::regclass AND p.polname = 'player_scouting_consent_read'
+                        AND p.polcmd = 'r' AND p.polpermissive)
+                    = '(is_family_of(player_id) OR app_can(''guardian.link.manage''::text, player_school(player_id), ''*''::text, ''00000000-0000-0000-0000-000000000000''::uuid, ''00000000-0000-0000-0000-000000000000''::uuid) OR app_can(''player.development.read''::text, player_school(player_id), player_team(player_id), player_id, ''00000000-0000-0000-0000-000000000000''::uuid))',
+      '§92 (doors): player_scouting_consent_read is not db/115''s');
+    PERFORM _assert((SELECT count(*) FROM pg_policy p
+                      WHERE p.polrelid IN ('passport_consent'::regclass, 'player_scouting_consent'::regclass)
+                        AND p.polpermissive AND p.polcmd IN ('r', '*')) = 2
+                    AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                                     WHERE p.polrelid IN ('passport_consent'::regclass, 'player_scouting_consent'::regclass)
+                                       AND p.polpermissive
+                                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%player.profile.read%'),
+      '§92 (doors): a second permissive read, or a player.profile.read one, stands on the consent tables');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 92
+  -- └── db/115 (section 92) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
