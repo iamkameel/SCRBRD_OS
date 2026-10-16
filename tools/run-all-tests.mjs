@@ -240,6 +240,10 @@ const SUITES = [
   // vehicle and a trip, and signing out everywhere. Who is offered, what is
   // asked, the order of the sign-out, and a refusal in words for every code.
   ["guardian-link-screen", "apps/web/test/guardian-link.test.mjs"],
+  // A child's family links for the office (account lifecycle slice 3, db/109):
+  // the standing line, each kind in words, Revoke offered only where it can
+  // work, D14 said before the tap, every refusal held to db/109.
+  ["family-links-screen", "apps/web/test/family-links.test.mjs"],
   ["transport-book", "apps/web/test/transport-book.test.mjs"],
   ["sign-out-everywhere", "apps/web/test/sign-out-everywhere.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,

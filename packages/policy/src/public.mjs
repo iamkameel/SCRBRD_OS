@@ -254,6 +254,12 @@ export const NEVER_PUBLIC = Object.freeze({
   // of her child's contacts is hers.
   lift_offer: "N4",
   lift_driver_declaration: "N4",
+
+  // ── db/109, account lifecycle slice 3 ──
+  // N4. How and why a guardian's link to a child ended: who his guardians
+  // were, and the office's words about a family (a custody order, most of
+  // all). Never on a page, never to the parent (D13); the whole table.
+  guardian_link_ending: "N4",
 });
 
 /**

@@ -31,6 +31,7 @@
  *   GET  /api/auth/users/:id/preview              what disabling an account would cut (db/90)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   POST /api/players/:id/access-request          ask that player's coach for access
+ *   POST /api/players/:id/guardians/:link/revoke { kind, reason }   the office ends one guardian link, saying how and why (db/109)
  *   POST /api/access-requests/:id/decide          answer such a request
  *   POST /api/assignments/:id/end { reason }      end one role (db/77), the row withdrawn, never deleted
  *   GET  /api/matches/:id/events?since=           incremental sync
@@ -66,6 +67,7 @@ import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
+import { guardianEndingRoutes } from "./write/guardian-ending-api.mjs";
 import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
@@ -401,6 +403,8 @@ const quarantine = quarantineRoutes({ pool, secret: SECRET, onChange: (note) => 
 // GA-I36 N1: the corrections waiting on a match, and across the reader's matches.
 const corrections = correctionRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
+// Account lifecycle slice 3 (db/109): one link ended, with a kind and a reason.
+const guardEnd = guardianEndingRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
@@ -956,6 +960,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/guardians$/,             "POST", guard.establish],
   [/^\/api\/players\/([^/]+)\/guardians\/verify$/,     "POST", guard.verify],
   [/^\/api\/players\/([^/]+)\/guardians\/revoke$/,     "POST", guard.revoke],
+  // One link, by its id, with a kind and a reason (db/109, D13).
+  [/^\/api\/players\/([^/]+)\/guardians\/([^/]+)\/revoke$/,  "POST", guardEnd.revoke],
   [/^\/api\/players\/([^/]+)\/guardians\/consent$/,    "POST", guard.consent],
   [/^\/api\/players\/([^/]+)\/guardians\/withdraw$/,   "POST", guard.withdraw],
   [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],

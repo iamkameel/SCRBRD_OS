@@ -189,6 +189,11 @@ const WALKS = [
   // enabled, he signs in again; the principal and the DSO refused; nobody
   // acts on their own account.
   "accounts",
+  // A child's links, and the reason for an ending (account lifecycle slice 3,
+  // db/109): the office's child_links read and who reads nothing; the revoke
+  // route's refusals; a revocation with its kind and reason, the parent's
+  // no-name notice, his name off public pages; the last verified link kept.
+  "family-links",
   // The audit log, read (SCRBRD-132 B2, db/79): under audit.read, one school
   // at a time, a child in initials, never a safeguarding row or a reason,
   // and every read of it on the record. (smoke-audit is access_log's own.)
