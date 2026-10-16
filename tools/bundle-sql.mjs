@@ -451,6 +451,34 @@ SELECT
                                               ('training_attendance', 'training_attendance_no_health_word'),
                                               ('training_attendance', 'training_attendance_no_health_word_update'))) = 3
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A target is the coach's; the plan is the side's",
+  -- db/106: a family reads its side's fixtures, trips and training, asked
+  -- about her child through the reach helpers, never the all-zeros person
+  -- (REACH R-A).
+  CASE WHEN (SELECT count(*) FROM pg_proc p
+              WHERE p.prosecdef
+                AND p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'), to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
+                              to_regprocedure('fixture_reach(text,uuid)'), to_regprocedure('my_fixture_ends(text)'),
+                              to_regprocedure('my_sides(text)'), to_regprocedure('match_away_school(uuid)'),
+                              to_regprocedure('match_away_team(uuid)'))) = 7
+        AND has_function_privilege('scrbrd_app', to_regprocedure('my_fixture_ends(text)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'), to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
+                                         to_regprocedure('fixture_reach(text,uuid)'), to_regprocedure('my_fixture_ends(text)'),
+                                         to_regprocedure('my_sides(text)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policy p
+              WHERE p.polcmd = 'r' AND p.polpermissive
+                AND (p.polrelid, p.polname) IN ((to_regclass('match'), 'match_read'), (to_regclass('trip'), 'trip_read'),
+                                                (to_regclass('training_session'), 'training_session_read'),
+                                                (to_regclass('match_toss'), 'match_toss_read'),
+                                                (to_regclass('match_official'), 'match_official_read'),
+                                                (to_regclass('match_weather'), 'match_weather_read'),
+                                                (to_regclass('match_conditions'), 'match_conditions_read'))
+                AND pg_get_expr(p.polqual, p.polrelid) ~ '(my_fixture_ends|my_sides)\\(') = 7
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                         WHERE p.polrelid = to_regclass('match') AND p.polname = 'match_read'
+                           AND pg_get_expr(p.polqual, p.polrelid) LIKE '%00000000-0000-0000-0000-000000000000%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A family reads its side's fixtures",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

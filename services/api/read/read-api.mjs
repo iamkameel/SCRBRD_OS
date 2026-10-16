@@ -140,14 +140,22 @@ export const READ_QUERIES = {
                   -- label itself. Nothing is disclosed that the label has not.
                   (select s.code from school s where s.id = m.school_id)      as home_code,
                   (select s.code from school s where s.id = m.away_school_id) as away_code,
-                  -- WHICH END THIS READER IS AT, answered by the same decision
-                  -- function the policy used to hand them the row. A reader who
-                  -- holds fixture.read over the home side is at home; one who
-                  -- got the row through the away scope is away. A platform
-                  -- reader holds both and comes back 'home', which is correct
+                  -- WHICH END THIS READER IS AT, answered by the same question
+                  -- the policy used to hand them the row (db/106's
+                  -- match_read, in its set-once shape). A reader at the home
+                  -- end, as staff or as a boy's family (his side, or his name
+                  -- on the home sheet when he plays up), is at home; one who
+                  -- got the row through the away end is away. A platform
+                  -- reader is at both and comes back 'home', which is correct
                   -- in the only sense available: they are not a participant.
+                  -- Not the all-zeros person: for a parent at the host whose
+                  -- only child there plays for the visitors, that answered
+                  -- 'home'.
                   (case when app_can('fixture.read', m.school_id, m.team_code,
-                                     '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+                                     'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id)
+                          or (m.id, m.school_id, coalesce(m.team_code, ''))
+                             in (select r.match_id, r.school_id, coalesce(r.team_code, '')
+                                   from my_fixture_ends('fixture.read') r)
                         then 'home' else 'away' end)                     as my_side,
                   t.won_by   as toss_won_by,
                   t.decision as toss_decision,
