@@ -494,7 +494,10 @@ const playing = playingConditionsRoutes({ pool, secret: SECRET });
 const planner = plannerRoutes({ pool, secret: SECRET });
 const league = leagueRoutes({ pool, secret: SECRET });
 // SCRBRD-114 phase 3a (db/69): match results and the league table.
-const results = resultsRoutes({ pool, secret: SECRET });
+// OFFICIAL_RESULT S1 (db/114): a confirmation, a dispute, a clearing or a
+// withdrawal drops the fixture's public entry and the tables once committed
+// (afterCommit, as the amendment route's): polling, no hub.
+const results = resultsRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 // SCRBRD-130: the rain rule's reads.
 const rain = rainRoutes({ pool, secret: SECRET });
 // The scorebook importer (SCRBRD-120, db/63). Its photos go to the private
@@ -921,6 +924,16 @@ const PLAYER_ROUTES = [
   [/^\/api\/competitions\/([^/]+)\/adjustments$/,              "POST", results.adjust],
   [/^\/api\/points-adjustments\/([^/]+)\/withdraw$/,           "POST", results.withdrawAdjustment],
   [/^\/api\/matches\/([^/]+)\/playing-conditions\/refix-table$/, "POST", results.refixTable],
+  // ── OFFICIAL_RESULT S1 (db/114): when a result becomes official ──
+  // Every rule is a db/114 definer's: who may confirm (result.confirm at the
+  // organiser, or the home school's for a friendly), never a hand on the log,
+  // the dispute window, and who reads which words.
+  [/^\/api\/matches\/([^/]+)\/official$/,                      "GET",  results.official],
+  [/^\/api\/matches\/([^/]+)\/confirm$/,                       "POST", results.confirm],
+  [/^\/api\/matches\/([^/]+)\/dispute$/,                       "POST", results.dispute],
+  [/^\/api\/results\/disputes\/([^/]+)\/clear$/,              "POST", results.clearDispute],
+  [/^\/api\/results\/confirmations\/([^/]+)\/withdraw$/,      "POST", results.withdrawConfirmation],
+  [/^\/api\/results\/to-confirm$/,                              "GET",  results.toConfirm],
   // ── SCRBRD-130 R3 (db/74): venue par, at a ground and at a match ──
   [/^\/api\/grounds\/([^/]+)\/venue-par$/,                     "GET",  rain.groundVenuePar],
   [/^\/api\/matches\/([^/]+)\/venue-par$/,                     "GET",  rain.matchVenuePar],

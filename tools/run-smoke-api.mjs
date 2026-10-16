@@ -69,6 +69,12 @@ const WALKS = [
   // re-fix, an amendment that flips a result, and the signed-out reads.
   "results",
   // ── end SCRBRD-114 phase 3a ──
+  // ── OFFICIAL_RESULT S1 (db/114): when a result becomes official — the
+  // organiser confirms a league result, a correction pending blocks it, the
+  // public page says it at once (and a second process within the TTL), a
+  // dispute and its clearing, a reopening by amendment and a re-confirmation,
+  // a withdrawal, and a friendly's confirmer who was a hand on its log. ──
+  "official",
   // ── SCRBRD-114 phase 3b (db/71): the super over ──
   // A cup tie and a friendly's, scored on the real write path; the cup tie
   // waits for its super over; the Laws and the document at the door; the

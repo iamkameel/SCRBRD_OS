@@ -54,10 +54,13 @@
 --   functions     + match_head_seq, match_verified (RECOGNITION R3's, one
 --                   definition, this file's), match_seals_stand,
 --                   result_confirmer_of, result_dispute_days,
---                   result_confirm_as, result_dispute_as, result_staff,
---                   result_hand_on_log, result_confirm_blocker, result_official_at,
---                   result_is_official, match_official_core,
---                   result_official_notices, result_lapse
+--                   result_confirm_platform, result_school_holds,
+--                   result_scope_holds, result_confirm_as, result_dispute_as,
+--                   result_staff, result_hand_on_log, result_official_at,
+--                   result_is_official, result_confirm_blocker,
+--                   match_official_core, result_official_notices,
+--                   result_official_unsay, result_lapse, the guard and the
+--                   three lapse trigger functions
 --                   (the system's own; nobody may call them)
 --                 + match_confirmable, match_result_confirm,
 --                   match_result_dispute, match_result_dispute_clear,
@@ -382,6 +385,32 @@ CREATE OR REPLACE FUNCTION result_confirm_platform() RETURNS boolean AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION result_confirm_platform() FROM PUBLIC;
 
+-- A school's own result.confirm: app_can() at that school and side, AND held
+-- through an assignment AT that school by a school's role — the director of
+-- sport, the principal — or the platform's (superadmin). An assignment with
+-- no school reaches every school in app_can(): without the second half, a
+-- league organiser appointed platform-wide (the seed's, for a league with no
+-- organising school) would confirm every school's friendlies as their "home
+-- school" (D3 says the home school's director or principal). The second half
+-- asks the assignment's own live-ness as app_can() does (active, dated, not
+-- expired, no duty suspension); app_can() remains the decision.
+CREATE OR REPLACE FUNCTION result_school_holds(p_school uuid, p_team text, p_match uuid) RETURNS boolean AS $$
+  SELECT p_school IS NOT NULL
+     AND app_can('result.confirm', p_school, p_team, '00000000-0000-0000-0000-000000000000'::uuid, p_match)
+     AND EXISTS (SELECT 1 FROM role_assignment a
+                   JOIN role_capability rc ON rc.role = a.role AND rc.capability = 'result.confirm'
+                  WHERE a.person_id = app_user_id() AND a.active
+                    AND ((a.school_id = p_school AND a.role <> 'competitionadmin'
+                          AND (a.team_code IS NULL OR a.team_code = p_team)
+                          AND (a.fixture_id IS NULL OR a.fixture_id = p_match))
+                         OR (a.school_id IS NULL AND a.role = 'superadmin'))
+                    AND (a.valid_from IS NULL OR a.valid_from <= current_date)
+                    AND (a.valid_until IS NULL OR a.valid_until > current_date)
+                    AND (a.expires_at IS NULL OR a.expires_at > now())
+                    AND NOT EXISTS (SELECT 1 FROM duty_suspension d WHERE d.assignment_id = a.id AND d.lifted_at IS NULL))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION result_school_holds(uuid, text, uuid) FROM PUBLIC;
+
 -- The three scopes result.confirm is asked at: the organiser (competition
 -- fixtures), the home school's side, the away school's side. A person as
 -- himself: never a pad's credential, never a support session.
@@ -392,10 +421,8 @@ CREATE OR REPLACE FUNCTION result_scope_holds(p_match uuid, p_scope text) RETURN
                 WHEN 'organiser' THEN m.competition_id IS NOT NULL
                      AND app_can('result.confirm', competition_organiser(m.competition_id), '*'::text,
                                  '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
-                WHEN 'home_school' THEN
-                     app_can('result.confirm', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
-                WHEN 'away_school' THEN m.away_school_id IS NOT NULL
-                     AND app_can('result.confirm', m.away_school_id, m.away_team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+                WHEN 'home_school' THEN result_school_holds(m.school_id, m.team_code, m.id)
+                WHEN 'away_school' THEN result_school_holds(m.away_school_id, m.away_team_code, m.id)
                 ELSE false END
          FROM match m WHERE m.id = p_match), false)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -1268,7 +1295,7 @@ BEGIN
       FOREACH f IN ARRAY ARRAY[
           'match_result_confirmation_guard()', 'match_head_seq(uuid)', 'match_verified(uuid)', 'match_seals_stand(uuid)',
           'result_confirmer_of(uuid)', 'result_dispute_days(uuid)', 'result_confirm_platform()',
-          'result_scope_holds(uuid,text)', 'result_confirm_as(uuid)', 'result_dispute_as(uuid)', 'result_staff(uuid)',
+          'result_school_holds(uuid,text,uuid)', 'result_scope_holds(uuid,text)', 'result_confirm_as(uuid)', 'result_dispute_as(uuid)', 'result_staff(uuid)',
           'result_hand_on_log(uuid,uuid)', 'result_official_at(uuid,text)', 'result_is_official(uuid,text)',
           'result_confirm_blocker(uuid)', 'match_official_core(uuid)', 'result_official_notices(uuid,text,timestamptz)', 'result_official_unsay(uuid[])',
           'result_lapse(uuid,text)', 'match_result_confirmation_lapse_events()', 'match_result_confirmation_lapse_decision()',
@@ -1369,7 +1396,8 @@ BEGIN
   -- The system's own: pinned definers nobody may call.
   FOREACH f IN ARRAY ARRAY['match_head_seq(uuid)', 'match_verified(uuid)', 'match_seals_stand(uuid)',
                            'result_confirmer_of(uuid)', 'result_dispute_days(uuid)', 'result_confirm_platform()',
-                           'result_scope_holds(uuid,text)', 'result_confirm_as(uuid)', 'result_dispute_as(uuid)',
+                           'result_school_holds(uuid,text,uuid)', 'result_scope_holds(uuid,text)', 'result_confirm_as(uuid)',
+                           'result_dispute_as(uuid)',
                            'result_staff(uuid)', 'result_hand_on_log(uuid,uuid)', 'result_official_at(uuid,text)',
                            'result_is_official(uuid,text)',
                            'result_confirm_blocker(uuid)', 'match_official_core(uuid)',

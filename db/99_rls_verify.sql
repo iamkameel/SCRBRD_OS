@@ -6573,6 +6573,7 @@ CREATE OR REPLACE FUNCTION _v113_breaches(p_player uuid) RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/113 (section 90) ─────────────────────────────────────────────
 
+
 -- ┌── db/114 (section 91). When a result becomes official
 -- Two Hilton sides of their own (U17F for a friendly against Westville's
 -- U17F; U17E, U17D, U17C in a league of their own with no organising school)
@@ -25958,8 +25959,9 @@ $v49$;
   --   (when)       a live match → not_finished; an unsealed innings →
   --                innings_unsealed; a pending amendment → amendment_pending;
   --                a held ball → ball_held (D6, in that order of asking)
-  --   (who)        a friendly: the scorer, the coach, the away director →
-  --                not_permitted; a league fixture: either director →
+  --   (who)        a friendly: the scorer, the coach, the away director, a
+  --                league organiser appointed with no school → not_permitted;
+  --                a league fixture: either director →
   --                not_permitted, the organiser may; a document saying
   --                home_school lets the home director and not the away one;
   --                either_school lets the away one too (D2–D4, Q1, Q8)
@@ -25998,6 +26000,7 @@ $v49$;
   --   (review)  result_official_at() reading a disputed row as official
   --   (lapse)   the ball_event lapse trigger dropped
   --   (caps)    result.confirm granted to the scorer
+  --   (who)     result_school_holds() without its own-school half
   DECLARE
     y   jsonb := _v114_stage();
     F   uuid := (y->>'F')::uuid;
@@ -26055,7 +26058,9 @@ $v49$;
     PERFORM _v114_hold(F, SCO, true);
 
     -- (who) a friendly is the home school's.
-    FOREACH k IN ARRAY ARRAY['scorer', 'coach', 'wdos', 'wescoach', 'follower'] LOOP
+    -- (the league's organiser too: appointed with no school, app_can() reaches
+    -- every school, and a friendly is still not his, D3)
+    FOREACH k IN ARRAY ARRAY['scorer', 'coach', 'wdos', 'wescoach', 'follower', 'org'] LOOP
       PERFORM _as((y->>k)::uuid);
       SELECT * INTO r FROM match_result_confirm(F);
       PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§91 (who): the %s confirming the friendly answered %s', k, r.reason));
