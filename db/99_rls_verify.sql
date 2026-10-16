@@ -21572,6 +21572,25 @@ $v49$;
       PERFORM _assert(g = e, format('§83 (reader): the %s reads [%s], the design gives [%s] (fixtures | trips | training | toss | umpire | weather | publication)', k, g, e));
     END LOOP;
 
+    -- (both): a mother of two boys on two sides keeps both boys. REACH-D1
+    -- narrows the rows about a SIDE, never her children: g2 reads B's and W's
+    -- own player rows and no other boy's of the stage, and each boy's own
+    -- side's fixture without the other's sheet (f6, B's 8XI at Hilton; f2,
+    -- W's 6XI at Westville, which names neither). The browser walk's
+    -- two-school guardian (Sarah, §49 (own)) is the same case on the seed.
+    PERFORM _as((z->>'g2')::uuid);
+    SELECT string_agg(l, ' ' ORDER BY l) INTO bad
+      FROM (SELECT CASE p.id WHEN (z->>'a')::uuid THEN 'A' WHEN (z->>'up')::uuid THEN 'UP' WHEN (z->>'b')::uuid THEN 'B'
+                             WHEN (z->>'w')::uuid THEN 'W' WHEN (z->>'e')::uuid THEN 'E' WHEN (z->>'n')::uuid THEN 'N'
+                             WHEN (z->>'m')::uuid THEN 'M' END l
+              FROM player p
+             WHERE p.id IN ((z->>'a')::uuid, (z->>'up')::uuid, (z->>'b')::uuid, (z->>'w')::uuid,
+                            (z->>'e')::uuid, (z->>'n')::uuid, (z->>'m')::uuid)) x;
+    PERFORM _assert(bad IS NOT DISTINCT FROM 'B W',
+      format('§83 (both): the guardian of two boys on two sides reads the stage''s boys [%s], not [B W]', coalesce(bad, '')));
+    PERFORM _assert((SELECT count(*) FROM match WHERE id IN ((z->>'f6')::uuid, (z->>'f2')::uuid)) = 2,
+      '§83 (both): the guardian of two boys on two sides lost one boy''s own side''s fixture');
+
     -- (unchanged): every reader naming nobody, exactly as db/09 gave
     FOREACH k IN ARRAY ARRAY['coach6', 'coach7', 'wescoach', 'spec', 'spec6', 'office', 'teamless'] LOOP
       PERFORM _as((z->>k)::uuid);
