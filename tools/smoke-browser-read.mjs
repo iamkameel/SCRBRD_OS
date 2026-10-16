@@ -404,8 +404,11 @@ try {
        await s.page.evaluate(() => { try { return localStorage.getItem("scrbrd.family.child"); } catch { return null; } }) === DM);
     await st("nav-family").click({ timeout: 6000 }).catch(() => {});
     await s.page.waitForTimeout(1800);
+    const famCards = await s.page.$$eval('[data-testid^="family-child-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
+    const famText = await st("family-file").innerText().catch(() => "");
     ok("her Family is both children, a card each, and nobody else",
-       await s.page.locator('[data-testid^="family-child-"]').count() === 2 && !SCHOOL_OTHERS.test(await st("family-file").innerText().catch(() => "")));
+       famCards.length === 2 && !SCHOOL_OTHERS.test(famText),
+       `${famCards.join(",")} · ${famText.match(SCHOOL_OTHERS)?.[0] ?? ""} · ${famText.replace(/\s+/g, " ").slice(0, 400)}`);
     ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
   }
