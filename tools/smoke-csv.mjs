@@ -376,6 +376,89 @@ try {
        (back.body?.errors ?? []).every((e) => /cannot tell them apart/.test(e.message)));
   }
 
+  group("Another school's boys do not leave as a file (GA-I24-I25 D9, A1)");
+  {
+    // Every read here crosses the tenant line on a grant that CLOSES: the
+    // dossier at the first ball, the passport and the scouting list when the
+    // family withdraws. A file kept on a laptop closes with none of them, so
+    // it would be the standing file each grant exists to prevent. Until this
+    // walk the route served all five like any other read.
+    const platform = await login("platform@example.invalid");
+    const wesCoach = await login("coach.wes@example.invalid");
+    const scout    = await login("analyst@example.invalid");   // seeded as a SCOUT
+    const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";     // parent@'s son
+    const MKHIZE = "bbbbbbbb-0000-0000-0000-000000000001";     // Westville 1XI
+    const scorer = (await q(`select id from app_user where email='scorer@example.invalid'`))[0].id;
+    const fixture = async (days, status, away = true) =>
+      (await q(`insert into match (school_id, team_code, away_school_id, away_team_code, opponent,
+                                   starts_at, sport, format, overs, status)
+                values ($1,'1XI',$2,$3,$4, now() + make_interval(days => $5), 'cricket','T20',20,$6)
+                returning id`, [HIL, away ? WES : null, away ? "1XI" : null,
+                                away ? "x" : "Michaelhouse", days, status]))[0].id;
+    const balls = async (matchId, n, striker, tag) => {
+      for (let i = 1; i <= n; i++) {
+        await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                                         idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id)
+                 values ($1,$2,$3,1,1,$4,'d',$5,$3, now(),'ball','run',1,$6)`,
+                [matchId, HIL, i, scorer, `csv-${tag}-${matchId}-${i}`, striker]);
+      }
+    };
+
+    // The dossier, inside its window.
+    await api("/api/admin/features/opposition", { method: "POST", token: platform,
+      body: { enabled: true, reason: "CSV walk: the dossier is a screen, not a file." } });
+    const past = await fixture(-20, "complete");
+    await balls(past, 12, MKHIZE, "opp");
+    const soon = await fixture(2, "scheduled");
+    const readSquad = await api(`/api/read/opposition_squad?matchId=${soon}`, { token: coach });
+    ok("inside the window the coach still reads their squad on the screen",
+       readSquad.status === 200 && (readSquad.body?.rows ?? []).some((r) => r.player_id === MKHIZE));
+    const readCtx = await api(`/api/read/opposition_context?matchId=${soon}`, { token: coach });
+    ok("...and the dossier's header", readCtx.status === 200 && readCtx.body?.rows?.[0]?.open === true);
+    const logged = async () => (await q(
+      `select count(*)::int c from access_log where resource in ('opposition_squad','opposition_context')`))[0].c;
+    const before = await logged();
+    for (const r of ["opposition_squad", "opposition_context"]) {
+      const e = await exportRaw(r, coach, `?matchId=${soon}`);
+      const body = await e.json().catch(() => null);
+      ok(`THE EXPORT OF ${r} IS REFUSED inside the window`, e.status === 403 && body?.error === "not_exported");
+      ok(`...as a refusal, not a file`, !/text\/csv/.test(e.headers.get("content-type") ?? ""));
+    }
+    ok("...refused before the read, so nothing was read to refuse it", (await logged()) === before);
+    ok("the away coach's export is refused the same way",
+       (await exportRaw("opposition_squad", wesCoach, `?matchId=${soon}`)).status === 403);
+    ok("...while the screen read still files its log row against the other school",
+       (await api(`/api/read/opposition_squad?matchId=${soon}`, { token: coach })).status === 200
+       && (await q(`select school_id from access_log where resource='opposition_squad'
+                     order by occurred_at desc limit 1`))[0]?.school_id === WES);
+
+    // The passport, which a family opens to one named school.
+    const granted = await api("/api/passport/consent", { method: "POST", token: parent,
+      body: { playerId: PILLAY, schoolId: WES } });
+    ok("his mother names Westville", granted.status === 200);
+    ok("Westville's coach reads his passport on the screen",
+       ((await api(`/api/read/passport?playerId=${PILLAY}`, { token: wesCoach })).body?.rows ?? []).length > 0);
+    ok("...and the consent naming them",
+       ((await api("/api/read/passport_consents", { token: wesCoach })).body?.rows ?? []).length === 1);
+    ok("THE PASSPORT DOES NOT LEAVE AS A FILE",
+       (await exportRaw("passport", wesCoach, `?playerId=${PILLAY}`)).status === 403);
+    ok("...nor the list of consents naming another school's boys",
+       (await exportRaw("passport_consents", wesCoach)).status === 403);
+    // It carries his coach's ratings, which do not leave as a file from the
+    // Skills screen either (AH-D4): the same rule by the other door.
+    ok("...nor at his own school, where it carries his ratings",
+       (await exportRaw("passport", coach, `?playerId=${PILLAY}`)).status === 403);
+
+    // The scouting list: a family's consent, withdrawn at any time.
+    ok("the scouting list does not leave as a file", (await exportRaw("scouting_candidates", scout)).status === 403);
+
+    // Nothing else moved: the roster and the training calendar still export.
+    ok("the office's roster still exports", (await exportRaw("players", office)).status === 200);
+    ok("...and the coach's own", (await exportRaw("players", coach)).status === 200);
+    await api("/api/admin/features/opposition", { method: "POST", token: platform,
+      body: { enabled: false, reason: "CSV walk done." } });
+  }
+
 } catch (e) {
   fail++; console.log("\n  ✗ threw:", e.message);
   if (serverErr.length) console.log(serverErr.join("").slice(-2000));
