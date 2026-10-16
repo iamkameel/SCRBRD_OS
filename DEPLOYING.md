@@ -1700,6 +1700,43 @@ proof). The summary row "A moved pupil follows his new side" should read OK.
 route writes `player.team_code` as before, and the trigger does the rest.
 <!-- ── end db/112 ── -->
 
+<!-- ── db/113: a correction takes back what it falsified ── -->
+#### A voided ball withdraws the notices it caused (db/113)
+
+`db/113_correction_retracts_notices.sql` is GA-I36 slice A2 with
+NOTIFICATIONS slice S5. Before it, a fifty reached on a ball later voided kept
+its "Fifty for D Erasmus" notice for ever: the scorecard said 46 and the
+side's Notices said fifty. The same was true of a hundred, a five-for, a
+hat-trick, a career mark and a bowling-directive breach. Now a void (the pad's
+undo or an approved amendment) re-asks each notice its ball could have caused.
+A notice that no longer holds is withdrawn through db/89's
+`notification_retract()`: it leaves every list, opens as a stub, and one
+notice, "A notice was withdrawn", goes to exactly the people who had the
+original. A breach that no longer holds is hidden from the workload screens
+and from `workload()`'s count, and the row is kept. A mark that is reached
+again returns in place. It is the same notice with its figure brought up to
+date, and nothing new is sent. A void, or a released held ball, also drops
+the fixture's public page from the cache at commit.
+
+**What it does to a live database.** It adds two columns to `bowling_breach`
+(`retracted_at` and `notice_id`), one to `milestone_notice` (`notice_id`), one
+RESTRICTIVE read policy on `bowling_breach`, three triggers on `ball_event`
+(two on a void, and `public_data_changed` on a void or a released ball), and
+five functions, none of them callable by the application. It restates
+`milestone_notify()`, `bowling_breach_watch()` and `workload()` (db/60's, with
+one line added). It backfills the two `notice_id` links where exactly one
+notification matches, and the output names the counts. Nothing is retracted
+on the paste: a notice standing on a ball voided before it stays as it was.
+Nothing is dropped. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 113` after 89 and 91 (it calls
+db/89's `notification_retract()`), then the verify bundle (§90 is its proof).
+The summary row "A correction takes back what it falsified" should read OK.
+**Schema first**: an API built with it refuses to start without db/113
+(`expected-migrations.json`). No route or screen changes. Notices already
+shows withdrawn rows and stubs (S1).
+<!-- ── end db/113 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh
