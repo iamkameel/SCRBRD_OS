@@ -243,6 +243,11 @@ export const NEVER_PUBLIC = Object.freeze({
   // disclosure — and its giver is N4 besides.
   health_monitoring_consent: "N2",
 
+  // ── db/105, GA-I26a: the development loop ──
+  // N5. A target is a coach's judgement of where a named child should be,
+  // and the score it stood on: the whole table.
+  development_target: "N5",
+
   // ── db/70, SCRBRD-124 phase 1: parent lift clubs ──
   // N4. Who travels with whom, when, and with which adult: a child's
   // movements and his family's arrangements. The row's existence is the
