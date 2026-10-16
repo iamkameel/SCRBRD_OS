@@ -169,6 +169,9 @@ const BUNDLES = {
     "player.performance.read", "medical.status.read", "audit.read",
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
+    // OFFICIAL_RESULT D3 (db/114): she confirms a friendly at her school, if
+    // her hand is not on its log, and disputes a result within its window.
+    "result.confirm",
     // A child who must never appear on a public page (db/47, C5).
     "player.public.withhold",
     // SCRBRD-124 (db/70): the school's lift policy, signed or withdrawn — the
@@ -194,6 +197,9 @@ const BUNDLES = {
     "sponsorship.read",
     "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
     "scoring.amend.approve",
+    // OFFICIAL_RESULT D3 (db/114): he confirms a friendly at his school —
+    // never one whose log he scored (D5, the row check) — and disputes.
+    "result.confirm",
     // SCRBRD-120: he signs a scorebook import for a match in no competition
     // (a league's is its administrator's: db/63), and never types one.
     "scoring.import.read", "scoring.import.confirm",
@@ -545,6 +551,9 @@ const BUNDLES = {
     // panel: accreditation, grade and whether somebody still stands at all.
     "officiating.registry.manage",
     "discipline.read", "scoring.correct", "scoring.amend.approve",
+    // OFFICIAL_RESULT D2, Q1 (db/114): the organiser confirms his league's
+    // results, disputes and clears.
+    "result.confirm",
     // SCRBRD-120: he signs a scorebook import for a match in his league.
     "scoring.import.read", "scoring.import.confirm",
     "news.publish.competition",
