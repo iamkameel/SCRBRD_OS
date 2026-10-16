@@ -6424,6 +6424,12 @@ CREATE OR REPLACE FUNCTION _v112_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
                                   WHERE player_id = p_id AND sport = 'cricket' AND left_on IS NULL)
     WHEN 'teamless_live' THEN (SELECT count(*)::text FROM role_assignment WHERE role = 'player' AND team_code IS NULL AND active)
     WHEN 'disagree' THEN (SELECT count(*)::text FROM player_assignment_disagreements())
+    -- the boys whose accounts' rows disagree, by id, and by name and sides
+    WHEN 'disagree_boys' THEN (SELECT coalesce(string_agg(DISTINCT d.player_id::text, ',' ORDER BY d.player_id::text), '')
+                                 FROM player_assignment_disagreements() d)
+    WHEN 'disagree_names' THEN (SELECT coalesce(string_agg(DISTINCT p.full_name || ' (' || coalesce(d.player_team, 'no side')
+                                                           || ', role on ' || d.assignment_team || ')', '; '), '')
+                                  FROM player_assignment_disagreements() d JOIN player p ON p.id = d.player_id)
     WHEN 'owner_balls' THEN (SELECT count(*)::text FROM ball_event WHERE match_id = p_id)
     WHEN 'seed_live' THEN (SELECT string_agg(id::text || ':' || team_code, ' ' ORDER BY id) FROM role_assignment
                             WHERE role = 'player' AND active AND id::text LIKE 'a5510000-%')
@@ -6462,9 +6468,10 @@ CREATE OR REPLACE FUNCTION _v112_grant(p_person uuid, p_team text) RETURNS void 
   VALUES (p_person, 'player', '11111111-1111-1111-1111-111111111111', p_team)
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- db/112's one-time correction, run again. As the owner: "boys:ended:opened".
-CREATE OR REPLACE FUNCTION _v112_correct() RETURNS text AS $$
-  SELECT count(*)::text || ':' || coalesce(sum(ended), 0)::text || ':' || coalesce(sum(opened), 0)::text
+-- db/112's one-time correction, run again. As the owner: what it did, per
+-- boy, {"<player id>": "ended:opened"}.
+CREATE OR REPLACE FUNCTION _v112_correct() RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_object_agg(player_id::text, ended || ':' || opened), '{}')
     FROM player_assignment_correct()
 $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -10874,8 +10881,12 @@ BEGIN
     -- Under pad scope app_can() answers only the credential's own match, so
     -- the most it returns is the match the credential already reads; it
     -- takes no argument and answers nobody about anybody else.
+    -- my_own_sheet_fixtures (db/112): the fixtures whose sheet names the
+    -- caller himself (my_own_boy()), asked of app_can('fixture.read', …, <him>,
+    -- …) at his own side. The same bound: under pad scope app_can() answers
+    -- only the credential's own match; no argument; nobody else's sheet.
     PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,scoring_arm_handover,scoring_claim,'
+                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
@@ -21542,7 +21553,10 @@ $v49$;
   --                 school's coach) and every fixture, row security admits
   --                 exactly db/97's host and away branches: the guardian
   --                 branch gives nobody else anything. B's own coach (14XI)
-  --                 and B himself read none of f1, where B played up
+  --                 reads none of f1, where B played up. B himself reads
+  --                 every ball of f1 since db/112 (Kameel, 15 Oct 2026: the
+  --                 boy playing up reads his match's balls; §89 is its
+  --                 proof), and nothing else beyond db/97's branches
   --   (pad)         neither guardian reads f1's session, held ball or audit
   --                 row (each exists); g1 cannot write a ball to f1
   --   (text)        ball_event_read keeps db/97's two branches (match_team(
@@ -21692,15 +21706,17 @@ $v49$;
       FOREACH f IN ARRAY ARRAY[F1, F2, F3, F4, F5, F6] LOOP
         rr := _v97_rule(f);
         SELECT count(*) INTO n FROM ball_event b WHERE b.match_id = f;
-        PERFORM _assert(n = rr.either,
+        -- db/112: B, on f1's sheet at his own school's end, reads all of it.
+        PERFORM _assert(n = CASE WHEN k = 'pupilb' AND f = F1 THEN rr.total ELSE rr.either END,
           format('§77 (rule): as %s, row security admits %s balls of a fixture where db/97''s branches give %s (host %s, away %s, of %s)',
                  k, n, rr.either, rr.host, rr.away, rr.total));
       END LOOP;
     END LOOP;
     FOREACH k IN ARRAY ARRAY['coachb', 'pupilb'] LOOP
       PERFORM _as((z->>k)::uuid);
-      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = F1) = 0 AND (SELECT count(*) FROM ball_event WHERE match_id = F3) = 6,
-        format('§77 (rule): as %s, f1 (B playing up) or f3 (B''s side) reads other than db/97 gave', k));
+      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = F1) = CASE k WHEN 'pupilb' THEN 18 ELSE 0 END
+                      AND (SELECT count(*) FROM ball_event WHERE match_id = F3) = 6,
+        format('§77 (rule): as %s, f1 (B playing up: his own since db/112, not his coach''s) or f3 (B''s side) reads other than it should', k));
     END LOOP;
 
     -- (pad)
@@ -25074,13 +25090,15 @@ $v49$;
   --   (none)       the office moves nb to no side: the move is made, his row
   --                on U14E is ended, kept, and none is opened; no live
   --                `player` row names no side; he reads none of U14E's
-  --   (idempotent) the one-time correction, after moves made before this file
-  --                (the carry switched off) and a row written by hand: it
-  --                carries each boy once (1 to his side, 1 left with a
-  --                duplicate, 1 with no side ended), nothing then disagrees,
-  --                and a second run changes nothing at all; the seed's two
-  --                `player` rows (R Pillay's, and spectator@'s, no boy's) are
-  --                as they were
+  --   (idempotent) the moves leave no row out of step but those earlier
+  --                sections staged so; the one-time correction, after moves
+  --                made before this file (the carry switched off) and rows
+  --                written by hand: it carries each boy once (tm ended 1 and
+  --                opened 1 on his side, mb's stray row ended, nb's ended: he
+  --                has no side), and the earlier sections' too; nothing then
+  --                disagrees, and a second run changes nothing at all; the
+  --                seed's two `player` rows (R Pillay's, and spectator@'s, no
+  --                boy's) are as they were
   --   (playing up) up reads every ball of f16a (home) and f16w (away), the
   --                matches he is on the sheet of, and none of f16b, the older
   --                side's other match; and his own side's f14 as before. His
@@ -25102,18 +25120,21 @@ $v49$;
   --                definers no one but the owner may call; the sheet helper
   --                scrbrd_app's alone
   --
-  -- Falsified, each change made as the owner before this file ran, each red
-  -- and then put back (DEPLOYING.md, db/112):
-  --   the trigger disabled (no carry)               → (carry) red: mb still
-  --                                                    held U14E:live
-  --   the carry opening the new row with p_team NULL → (none) red: the move
-  --     on a move to no side (carry to NULL)           to no side raised
+  -- Falsified on 16 Oct 2026, each change made as the owner in the same
+  -- transaction before this section ran (so a ROLLBACK put it back), each
+  -- red, and green again without it:
+  --   the trigger disabled (no carry)               → (carry) red: "after the
+  --                                                    move mb's account holds
+  --                                                    U14E:live"
+  --   the carry opening the new row whatever the    → (none) red: "the move to
+  --     side (carry to NULL)                           no side was refused:
   --                                                    role_assignment_player_
-  --                                                    team_scoped
-  --   my_own_sheet_fixtures() without the sheet       → (playing up) red: up
-  --     (every fixture at his school)                  read f16b's balls
-  --   my_own_sheet_fixtures() without NOT withdrawn   → (withdrawn) red: wd
-  --                                                    read f16a's balls
+  --                                                    team_scoped"
+  --   my_own_sheet_fixtures() without the sheet     → (before) red: mb, on no
+  --     (every fixture at his school's ends)           sheet, read the balls of
+  --                                                    f14 f15 f16a f16b f16w
+  --   my_own_sheet_fixtures() without NOT withdrawn → (withdrawn) red: wd read
+  --                                                    f16a's balls
   DECLARE
     z        jsonb := _v112_stage();
     OFFICE   uuid;
@@ -25131,6 +25152,8 @@ $v49$;
     bad      text;
     ppl      uuid[];
     v_child  uuid[];
+    v_base   text;
+    j        jsonb;
   BEGIN
     OFFICE := (z->>'office')::uuid;
     MB := (z->>'mb')::uuid; SB := (z->>'sb')::uuid; NB := (z->>'nb')::uuid; UPB := (z->>'up')::uuid;
@@ -25139,6 +25162,7 @@ $v49$;
     U_WD := (z->>'u_wd')::uuid; U_TM := (z->>'u_tm')::uuid; U_PA := (z->>'u_pa')::uuid; U_TWO := (z->>'u_two')::uuid;
     G := (z->>'g')::uuid; GUP := (z->>'gup')::uuid;
     v_seed := _v112_fact('seed_live');
+    v_base := _v112_fact('disagree_boys');
 
     -- ── (before) ──
     PERFORM _as(U_MB);
@@ -25255,18 +25279,25 @@ $v49$;
     PERFORM _assert(n > 10, format('§89 (guardians): %s guardians compared: it proves nothing', n));
 
     -- ── (idempotent) ──
-    -- Nothing disagrees after moves made through the trigger.
-    PERFORM _assert(_v112_fact('disagree') = '0',
-      format('§89 (idempotent): %s rows disagree after the moves', _v112_fact('disagree')));
+    -- The moves made through the trigger left nothing out of step: the boys
+    -- whose rows disagree are the ones earlier sections staged that way (an
+    -- account handed a side its boy is not on, a stage's shortcut), and no
+    -- more.
+    PERFORM _assert(_v112_fact('disagree_boys') = v_base,
+      format('§89 (idempotent): after the moves the boys out of step are [%s], before them [%s]: %s',
+             _v112_fact('disagree_boys'), v_base, _v112_fact('disagree_names')));
     -- Moves made before this file: tm moved with the carry off; mb given a
     -- second row on his old side by hand; nb, on no side, given one by hand.
     PERFORM _v112_move_untracked(TM, 'U15E');
     PERFORM _v112_grant(U_MB, 'U14E');
     PERFORM _v112_grant(U_NB, 'U14E');
-    PERFORM _assert(_v112_fact('disagree') = '3',
-      format('§89 (idempotent): the stale state staged %s disagreements, not 3', _v112_fact('disagree')));
-    got := _v112_correct();
-    PERFORM _assert(got = '3:3:1', format('§89 (idempotent): the correction answered boys:ended:opened %s, not 3:3:1', got));
+    PERFORM _assert((SELECT count(*) FROM unnest(string_to_array(_v112_fact('disagree_boys'), ',')) x
+                      WHERE x::uuid IN (TM, MB, NB)) = 3,
+      format('§89 (idempotent): the stale state staged [%s]', _v112_fact('disagree_names')));
+    j := _v112_correct();
+    PERFORM _assert(j->>TM::text = '1:1' AND j->>MB::text = '1:0' AND j->>NB::text = '1:0'
+                    AND (SELECT count(*) FROM jsonb_object_keys(j)) = 3 + coalesce(cardinality(string_to_array(nullif(v_base, ''), ',')), 0),
+      format('§89 (idempotent): the correction answered %s (tm 1:1, mb 1:0, nb 1:0, and the %s staged out of step before)', j, v_base));
     PERFORM _assert(_v112_roles(U_TM) = 'U14E:ended U15E:live'
                     AND _v112_roles(U_MB) = 'U14E:ended U14E:ended U15E:live'
                     AND _v112_roles(U_NB) = 'U14E:ended U14E:ended',
@@ -25274,9 +25305,9 @@ $v49$;
              _v112_roles(U_TM), _v112_roles(U_MB), _v112_roles(U_NB)));
     PERFORM _assert(_v112_fact('disagree') = '0', '§89 (idempotent): a row still disagrees after the correction');
     v_all := _v112_fact('all_assignments');
-    got := _v112_correct();
-    PERFORM _assert(got = '0:0:0' AND _v112_fact('all_assignments') = v_all,
-      format('§89 (idempotent): a second correction answered %s, or changed an assignment', got));
+    j := _v112_correct();
+    PERFORM _assert(j = '{}'::jsonb AND _v112_fact('all_assignments') = v_all,
+      format('§89 (idempotent): a second correction answered %s, or changed an assignment', j));
     PERFORM _assert(_v112_fact('seed_live') = v_seed
                     AND v_seed LIKE '%a5510000-0000-0000-0000-000000000001:1XI%'
                     AND v_seed LIKE '%a5510000-0000-0000-0000-00000000000c:1XI%',
