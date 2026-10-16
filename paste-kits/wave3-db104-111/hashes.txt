@@ -1,0 +1,12 @@
+# wave 3 paste kit (db/104-111), generated from claude/wip-wave3-integration at 4789aeb
+# sha256, first 8, as the migrator and the ledger record it (check-ledger.sql's sha8)
+ce45ad78  104_assessment_corrections.sql
+43ddf277  105_development_loop.sql
+7ab32317  106_reach_side.sql
+c98c12f9  107_official_register_closed.sql
+cb81ce81  108_player_team_scoped.sql
+eb6d78dc  109_guardian_link_ending.sql
+f84d91d8  110_plan_drafts.sql
+81d69180  111_injury_review.sql
+# not a migration, no ledger row (pasted as 05, before 108):
+ed808450  fix-player-without-team.sql
