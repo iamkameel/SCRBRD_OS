@@ -45,7 +45,7 @@ export const ENROL_MESSAGE = {
   email_belongs_to_another_school: "That email address already belongs to an account at another school.",
   player_is_an_adult: "Guardian access ends at eighteen, and this person has turned eighteen.",
   player_date_of_birth_required: "Capture this person's date of birth first — guardian access is worked out from it.",
-  team_required: "Choose the side this person coaches or manages.",
+  team_required: "Choose the side this person coaches or manages. A pupil's side is his own on the roster: give him one there first.",
   team_code_invalid: "That is not a side this platform knows.",
   platform_role_needs_no_school: "That role belongs to no school, so it cannot be given at one.",
   not_requestable: "That role cannot be given this way.",
@@ -194,7 +194,10 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const teamScoped = TEAM_SCOPED_ROLES.includes(f.role);
+  // A coach's side is chosen here. A pupil's is team-scoped too (REACH-D4,
+  // db/108) but is not chosen: it is his own side on the roster, sent below
+  // from the boy picked, and the server takes it from the roster as well.
+  const teamScoped = TEAM_SCOPED_ROLES.includes(f.role) && !PUPIL_ROLES.includes(f.role);
   // Which roles name a person. A guardian's, a pupil's own-record access and an
   // enquiry's are about a child (the policy's list); a pupil's own account is
   // for one more — the pupil — and a pupil's account is one per child, so it is

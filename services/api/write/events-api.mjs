@@ -1640,25 +1640,17 @@ export function officialRoutes({ pool, secret }) {
             let panel = o.panel == null ? null : String(o.panel).slice(0, 200);
 
             if (o.officialId != null) {
-              // Read the register under the caller's own identity — the read
-              // policy is "anybody signed in", so this needs no widening, and
-              // going through official_masked rather than the table means a
-              // school appointing somebody still does not learn their date of
-              // birth as a side effect of appointing them.
+              // Read the panel under the caller's own identity, through
+              // official_panel() (db/107): the register's table is closed to
+              // everybody but its keeper, and the panel names its columns, so
+              // a school appointing somebody does not learn their date of
+              // birth as a side effect of appointing them. official_conflict()
+              // answers the conflict-of-interest question over the role rows
+              // the caller could read himself, as this query did before.
               const { rows } = await client.query(
-                `select o.id, o.full_name, o.panel, o.active,
-                        official_level(o.id) as level,
-                        (select count(*)::int from official_accreditation a
-                          where a.official_id = o.id) as accreditations,
-                        o.person_id is not null as linked,
-                        (o.person_id is not null and exists (
-                           select 1 from role_assignment ra
-                            where ra.person_id = o.person_id and ra.active
-                              and ra.school_id = match_school($2)
-                              and (ra.valid_until is null or ra.valid_until > current_date)
-                         )) as conflict
-                   from official_masked o
-                  where o.id = $1`,
+                `select o.id, o.full_name, o.panel, o.active, o.level, o.accreditations, o.linked,
+                        official_conflict(o.id, $2) as conflict
+                   from official_panel($1) o`,
                 [o.officialId, req.params.id]);
               const reg = rows[0];
               if (!reg) throw err("no_such_official", 404);

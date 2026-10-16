@@ -5199,6 +5199,190 @@ CREATE OR REPLACE FUNCTION _v103_off_sheet(p_match uuid, p_player uuid) RETURNS 
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/103 (section 80) ─────────────────────────────────────────────
 
+
+-- ┌── db/107 (section 84). The officials register and the grant notes, closed
+-- Invented people, one per reader the policies are about, each enrolled (the
+-- parents' links verified, as the seed's are), so a row they do not read is
+-- the policy refusing them, not an account that reads nothing. Three
+-- officials: an adult umpire on no account (U1), a PUPIL who scores and is
+-- on the register linked to his own account (S1: PUBLIC_DATA §5a, the child
+-- this table can hold), and an umpire linked to the account of a Hilton
+-- follower (C1: the appoint route's conflict flag; a role the principal reads
+-- and the coach does not). The keeper is a competition
+-- administrator (officiating.registry.manage, platform-wide). The opposition
+-- feature is granted at Hilton and revoked at Westville, each with a note.
+CREATE OR REPLACE FUNCTION _v107_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  WOFFICE uuid := '88888888-0000-0000-0000-00000000000d';
+  ids jsonb; v_boy uuid; v_sboy uuid; v_wboy uuid; v_a uuid;
+  u1 uuid; s1 uuid; c1 uuid; m uuid; v_sborn date;
+BEGIN
+  v_sborn := make_date(extract(year FROM sa_today())::int - 15, 4, 2);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneOhSeven Boy', 1071, 'batter', make_date(extract(year FROM sa_today())::int - 15, 3, 1))
+  RETURNING id INTO v_boy;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneOhSeven Scorer', 1072, 'batter', v_sborn)
+  RETURNING id INTO v_sboy;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, '1XI', 'Verify OneOhSeven Westville Boy', 1073, 'batter', make_date(extract(year FROM sa_today())::int - 15, 5, 1))
+  RETURNING id INTO v_wboy;
+  ids := _v71_people('v107', ARRAY[
+    ARRAY['pupil',     'player',           HIL::text, '1XI', v_boy::text],
+    ARRAY['scorer',    'player',           HIL::text, '1XI', v_sboy::text],
+    ARRAY['parent',    'guardian',         HIL::text, '',    ''],
+    ARRAY['coach',     'coach',            HIL::text, '1XI', ''],
+    ARRAY['principal', 'principal',        HIL::text, '',    ''],
+    ARRAY['office',    'schooladmin',      HIL::text, '',    ''],
+    ARRAY['wesoffice', 'schooladmin',      WES::text, '',    ''],
+    ARRAY['wesparent', 'guardian',         WES::text, '',    ''],
+    ARRAY['linked',    'spectator',        HIL::text, '',    '']]);
+  -- The register's keeper belongs to no school (_v71_people writes one).
+  INSERT INTO app_user (email, name, role) VALUES ('v107.keeper@example.invalid', 'V107 Keeper', 'competitionadmin')
+  RETURNING id INTO v_a;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES (v_a, 'competitionadmin', NULL, NULL);
+  ids := ids || jsonb_build_object('keeper', v_a);
+  FOR v_a IN SELECT a.id FROM role_assignment a WHERE a.person_id IN ((ids->>'parent')::uuid, (ids->>'wesparent')::uuid) LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    SELECT v_a, CASE WHEN a.person_id = (ids->>'parent')::uuid THEN v_boy ELSE v_wboy END, 'parent', 'verified',
+           CASE WHEN a.person_id = (ids->>'parent')::uuid THEN OFFICE ELSE WOFFICE END, now(), 'granted', 'popia-2026-01', now(),
+           CASE WHEN a.person_id = (ids->>'parent')::uuid THEN OFFICE ELSE WOFFICE END, current_date - 1
+      FROM role_assignment a WHERE a.id = v_a;
+  END LOOP;
+  -- An account with no school and no assignment: signed in, enrolled nowhere.
+  INSERT INTO app_user (email, name, role) VALUES ('v107.drifter@example.invalid', 'V107 Drifter', 'spectator')
+  RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('drifter', v_a);
+
+  INSERT INTO official (full_name, born, id_number, email, phone, panel) VALUES
+    ('Verify OneOhSeven Umpire', '1980-01-01', '8001015000080', 'v107.umpire@example.invalid', '+27 82 555 1071', 'V107 Umpires')
+  RETURNING id INTO u1;
+  INSERT INTO official (full_name, born, id_number, email, phone, panel, person_id) VALUES
+    ('Verify OneOhSeven Scorer', v_sborn, to_char(v_sborn, 'YYMMDD') || '5000081', 'v107.scorer@example.invalid',
+     '+27 82 555 1072', 'V107 Scorers', (ids->>'scorer')::uuid)
+  RETURNING id INTO s1;
+  INSERT INTO official (full_name, born, id_number, email, phone, panel, person_id) VALUES
+    ('Verify OneOhSeven Linked Umpire', '1978-02-02', '7802025000082', 'v107.linkedump@example.invalid',
+     '+27 82 555 1073', 'V107 Umpires', (ids->>'linked')::uuid)
+  RETURNING id INTO c1;
+  INSERT INTO official_accreditation (official_id, level, issued_by, valid_from, valid_until) VALUES
+    (u1, 'level1', 'V107', current_date - 100, current_date + 100),
+    (s1, 'club',   'V107', current_date - 10,  NULL);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', 'Verify OneOhSeven XI', ((sa_today() + 5)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+
+  INSERT INTO feature_grant (key, school_id, granted, note) VALUES
+    ('opposition', HIL, true,  'v107: Hilton plan note'),
+    ('opposition', WES, false, 'v107: Westville plan note')
+  ON CONFLICT (key, school_id) DO UPDATE SET granted = EXCLUDED.granted, note = EXCLUDED.note;
+
+  RETURN ids || jsonb_build_object('boy', v_boy, 'sboy', v_sboy, 'u1', u1, 's1', s1, 'c1', c1, 'm', m,
+                                   'n_officials', (SELECT count(*) FROM official));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What a reader would have been told before db/107: the appoint route's own
+-- conflict test, run under the caller's row security with the person named.
+-- The person is passed in because the caller can no longer read it; the
+-- role_assignment rows are read as the CALLER (SECURITY INVOKER).
+CREATE OR REPLACE FUNCTION _v107_conflict_before(p_person uuid, p_match uuid) RETURNS boolean AS $$
+  SELECT p_person IS NOT NULL AND EXISTS (
+           SELECT 1 FROM role_assignment ra
+            WHERE ra.person_id = p_person AND ra.active
+              AND ra.school_id = match_school(p_match)
+              AND (ra.valid_until IS NULL OR ra.valid_until > current_date))
+$$ LANGUAGE sql STABLE;
+-- └── db/107 (section 84) ─────────────────────────────────────────────
+
+-- ┌── db/108 (section 85). A pupil is a pupil of a side
+-- Two Hilton boys, one on a side (U15A) and one on none, and a third and
+-- fourth for enrolment; accounts that ask for a `player` role, and the
+-- requests, written as the owner (a request is the asker's own INSERT; the
+-- decision is the office's, below, as the office).
+CREATE OR REPLACE FUNCTION _v108_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  ids jsonb; v_placed uuid; v_unplaced uuid; v_e1 uuid; v_e2 uuid; v_u uuid; k text; r jsonb := '{}';
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15A', 'Verify OneOhEight Placed',   1081, 'batter', make_date(extract(year FROM sa_today())::int - 14, 3, 1))
+  RETURNING id INTO v_placed;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, NULL,   'Verify OneOhEight Unplaced', 1082, 'batter', make_date(extract(year FROM sa_today())::int - 14, 4, 1))
+  RETURNING id INTO v_unplaced;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U14A', 'Verify OneOhEight Enrolled', 1083, 'batter', make_date(extract(year FROM sa_today())::int - 13, 3, 1))
+  RETURNING id INTO v_e1;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, NULL,   'Verify OneOhEight Unenrolled', 1084, 'batter', make_date(extract(year FROM sa_today())::int - 13, 4, 1))
+  RETURNING id INTO v_e2;
+  ids := _v71_people('v108', ARRAY[ARRAY['office', 'schooladmin', HIL::text, '', '']]);
+  -- The askers: accounts at Hilton with no assignment yet, one per request.
+  FOREACH k IN ARRAY ARRAY['r1', 'r2', 'r3', 'r4', 'r5', 'direct'] LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (HIL, 'v108.' || k || '@example.invalid', 'V108 ' || upper(k), 'player') RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object('u_' || k, v_u);
+  END LOOP;
+  -- r1: names the placed boy and no team; r2: the unplaced boy and no team;
+  -- r3: no boy and no team; r4: the unplaced boy and a team the asker names;
+  -- r5: the unplaced boy and no team, the decider names one.
+  INSERT INTO role_request (person_id, role, school_id, team_code, player_id) VALUES
+    ((ids->>'u_r1')::uuid, 'player', HIL, NULL,  v_placed)   RETURNING id INTO v_u; r := r || jsonb_build_object('r1', v_u);
+  INSERT INTO role_request (person_id, role, school_id, team_code, player_id) VALUES
+    ((ids->>'u_r2')::uuid, 'player', HIL, NULL,  v_unplaced) RETURNING id INTO v_u; r := r || jsonb_build_object('r2', v_u);
+  INSERT INTO role_request (person_id, role, school_id, team_code, player_id) VALUES
+    ((ids->>'u_r3')::uuid, 'player', HIL, NULL,  NULL)       RETURNING id INTO v_u; r := r || jsonb_build_object('r3', v_u);
+  INSERT INTO role_request (person_id, role, school_id, team_code, player_id) VALUES
+    ((ids->>'u_r4')::uuid, 'player', HIL, '2XI', v_unplaced) RETURNING id INTO v_u; r := r || jsonb_build_object('r4', v_u);
+  INSERT INTO role_request (person_id, role, school_id, team_code, player_id) VALUES
+    ((ids->>'u_r5')::uuid, 'player', HIL, NULL,  v_unplaced) RETURNING id INTO v_u; r := r || jsonb_build_object('r5', v_u);
+  RETURN ids || r || jsonb_build_object('placed', v_placed, 'unplaced', v_unplaced, 'e1', v_e1, 'e2', v_e2);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A write as the OWNER, which no policy stands in front of: only the CHECK.
+-- Answers the SQLSTATE and the constraint it named, or 'ok' and the new id.
+CREATE OR REPLACE FUNCTION _v108_raw(p_person uuid, p_team text, p_active boolean) RETURNS text AS $$
+DECLARE v_id uuid; v_con text;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, active, revoked_at)
+  VALUES (p_person, 'player', '11111111-1111-1111-1111-111111111111', p_team, p_active,
+          CASE WHEN p_active THEN NULL ELSE now() END)
+  RETURNING id INTO v_id;
+  RETURN 'ok:' || v_id;
+EXCEPTION WHEN check_violation THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN '23514:' || coalesce(nullif(v_con, ''), SQLERRM);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Reactivate an ended row as the owner. db/01's trigger refuses; the CHECK
+-- is the floor under it. Answers what refused.
+CREATE OR REPLACE FUNCTION _v108_reactivate(p_id uuid) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  UPDATE role_assignment SET active = true, revoked_at = NULL, revoked_by = NULL WHERE id = p_id;
+  RETURN 'ok';
+EXCEPTION WHEN check_violation THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN '23514:' || coalesce(nullif(v_con, ''), SQLERRM);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Facts about the whole table, as the owner.
+CREATE OR REPLACE FUNCTION _v108_fact(p_what text, p_id uuid DEFAULT NULL) RETURNS text AS $$
+  SELECT CASE p_what
+    WHEN 'teamless_live' THEN (SELECT count(*)::text FROM role_assignment WHERE role = 'player' AND team_code IS NULL AND active)
+    WHEN 'team_of' THEN (SELECT coalesce(team_code, '(none)') FROM role_assignment WHERE id = p_id)
+    WHEN 'held' THEN (SELECT coalesce(string_agg(role || '@' || coalesce(team_code, '-'), ',' ORDER BY role), '')
+                        FROM role_assignment WHERE person_id = p_id AND active)
+    WHEN 'request' THEN (SELECT state || ':' || coalesce(team_code, '-') FROM role_request WHERE id = p_id)
+    WHEN 'account' THEN (SELECT count(*)::text FROM app_user WHERE lower(email) = 'v108.enrol2@example.invalid')
+  END
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/108 (section 85) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -6130,12 +6314,19 @@ BEGIN
   -- A school-scoped principal reads the panel. This is deliberate, not a
   -- leak: a director of sport about to appoint somebody has to see who is on
   -- it and at what grade, and the names are announced at the toss anyway.
+  -- CHANGED BY DESIGN in db/107 (REACH-D5, Kameel 14 Oct 2026): she reads the
+  -- panel through official_panel(), which names its columns, and NO row of
+  -- the table itself — it holds ID numbers, and its keeper alone reads it.
+  -- This assertion was `count(*) FROM official = 1`; §84 is the full proof.
   PERFORM _as(U_SARAH);
+  SELECT count(*) INTO n FROM official_panel(O_UMPIRE);
+  PERFORM _assert(n = 1, 'a school cannot see the officials panel at all');
   SELECT count(*) INTO n FROM official WHERE id = O_UMPIRE;
-  PERFORM _assert(n = 1, 'a school cannot see the officials register at all');
+  PERFORM _assert(n = 0, 'a school reads the officials register''s raw row (db/107 closed it)');
 
-  -- ...and reads NOTHING that makes them a person. This is the assertion the
-  -- masked view exists for: same row, same reader, columns withheld.
+  -- ...and reads NOTHING that makes them a person. Since db/107 the masked
+  -- view returns her no row at all (it is security_invoker over the closed
+  -- table), which is the stronger form of the same assertion.
   SELECT born INTO v_born FROM official_masked WHERE id = O_UMPIRE;
   PERFORM _assert(v_born IS NULL, 'a school reads an official''s date of birth');
   SELECT count(*) INTO n FROM official_masked
@@ -6164,11 +6355,17 @@ BEGIN
 
   -- The grade is a span, so it answers "today", and stops answering when it
   -- lapses. A register that cannot tell those apart cannot refuse an
-  -- appointment, which is the whole reason for keeping one.
-  SELECT official_level(O_UMPIRE) INTO v_level;
+  -- appointment, which is the whole reason for keeping one. Sarah reads the
+  -- grade through the panel (db/107: the accreditations are the keeper's);
+  -- the span itself is asked of the keeper, who reads them.
+  SELECT p.level INTO v_level FROM official_panel(O_UMPIRE) p;
   PERFORM _assert(v_level = 'level2', 'a current accreditation does not read as current');
+  PERFORM _as(U_PLAT);
+  SELECT official_level(O_UMPIRE) INTO v_level;
+  PERFORM _assert(v_level = 'level2', 'a current accreditation does not read as current to the keeper');
   SELECT official_level(O_UMPIRE, current_date + 500) INTO v_level;
   PERFORM _assert(v_level IS NULL, 'a lapsed accreditation still reads as current');
+  PERFORM _as(U_SARAH);
 
   -- ── A pupil without a date of birth cannot be written ─────────
   --
@@ -16763,18 +16960,25 @@ $v49$;
     -- ── (d14) the sixteen, before and after ──
     PERFORM _as(U_OFFICE);
     PERFORM _assert(app_enrolled(), '§60 (d14): the office is not enrolled');
-    FOR t IN SELECT x FROM unnest(ARRAY['official', 'official_accreditation', 'season', 'sport', 'feature_flag', 'load_unit',
+    -- CHANGED BY DESIGN in db/107 (REACH-D5 and the grant note, Kameel 14 Oct
+    -- 2026): `official` and `official_accreditation` left this list — the
+    -- office no longer reads them (their keeper does; §84) — and with
+    -- feature_grant (now app_enrolled_at(school_id)) they left the count
+    -- below, which was sixteen.
+    FOR t IN SELECT x FROM unnest(ARRAY['season', 'sport', 'feature_flag', 'load_unit',
                                         'bowling_directive', 'clearance_requirement', 'clearance_kind_max_days',
                                         'playing_condition_key', 'rulebook_clause', 'rulebook_clause_age', 'drill',
                                         'sponsor_category']) x LOOP
       EXECUTE format('SELECT count(*) FROM %I', t.x) INTO k;
       PERFORM _assert(k > 0, format('§60 (d14): the office reads no %s, so the narrowing proved nothing', t.x));
     END LOOP;
+    SELECT (SELECT count(*) FROM official) + (SELECT count(*) FROM official_accreditation) INTO k;
+    PERFORM _assert(k = 0, format('§60 (d14): the office reads %s rows of the officials register (db/107 closed it)', k));
     SELECT string_agg(tablename || '.' || policyname, ', ') INTO detail FROM pg_policies
      WHERE schemaname = 'public' AND coalesce(qual, '') ~ 'app_user_id\(\) IS NOT NULL';
     PERFORM _assert(detail IS NULL, format('§60 (d14): a policy still opens on any signed-in account: %s', detail));
     SELECT count(*) INTO k FROM pg_policies WHERE schemaname = 'public' AND qual ~ 'app_enrolled\(\)';
-    PERFORM _assert(k = 16, format('§60 (d14): %s policies read app_enrolled(), expected sixteen', k));
+    PERFORM _assert(k = 13, format('§60 (d14): %s policies read app_enrolled(), expected thirteen (sixteen less db/107''s three)', k));
 
     -- ── (grant) the office answers; the next statement sees it ──
     SELECT d.ok, d.reason INTO v_ok, v_reason FROM decide_role_request(v_req, true, 'Known to the sportsmaster.', NULL, NULL) d;
@@ -21114,6 +21318,392 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 80
   -- └── db/103 (section 80) ──────────────────────────────────────────
+
+
+  -- ┌── section 84: the officials register and the grant notes, closed (db/107) ──
+  -- REACH-D5 (Kameel, 14 Oct 2026): `official` held ID numbers, dates of
+  -- birth, emails and phones — a pupil who scores among them — and every
+  -- enrolled person read it raw. And feature_grant's note, the platform's
+  -- words about one school's plan, reached every school. The API walks are
+  -- tools/smoke-register.mjs, tools/smoke-officials.mjs (the appoint route)
+  -- and tools/smoke-modules.mjs ("A school's plan is its own").
+  --
+  -- What each label holds:
+  --   (closed)   a pupil, a parent, a coach, the principal, the office,
+  --              Westville's office and a Westville parent read no row of
+  --              `official`, `official_accreditation` or `official_masked`;
+  --              the register's query (read-api.mjs, verbatim) gives each of
+  --              them every official by name, with born, id_number, email
+  --              and phone NULL on every row — the pupil-scorer's included
+  --   (keeper)   the register's keeper (a competition administrator) and the
+  --              platform read every row raw, and the register query gives
+  --              them the ID number and the date of birth
+  --   (own)      the pupil who scores reads his own row and grade, raw, and
+  --              nobody else's; the register gives him his own date of birth
+  --              and no other
+  --   (panel)    the panel's grade, accreditations and account flag; nothing
+  --              to an account enrolled nowhere, nothing to a pad credential
+  --   (appoint)  the appoint route's query (events-api.mjs, verbatim) as the
+  --              principal, the coach and Westville's office: the conflict
+  --              flag equals what the route's own query answered before
+  --              db/107, reader by reader (_v107_conflict_before)
+  --   (grant)    Hilton's people read Hilton's grant row and its note and not
+  --              Westville's; Westville's the reverse; the platform both;
+  --              module_settings (verbatim) gives another school's
+  --              school_granted and grant_note NULL; the account enrolled
+  --              nowhere reads none
+  --   (resolve)  the module still resolves for everybody as before: on at
+  --              Hilton (granted), off at Westville (revoked), through the
+  --              definers, whoever asks
+  --   (writes)   the keeper adds an official and an accreditation and retires
+  --              one (INSERT/UPDATE … RETURNING, as officials-register-api
+  --              does); the platform writes a grant row with ON CONFLICT, as
+  --              scouting-api does
+  --   (doors)    the three policies' text, one permissive read each; the
+  --              panel's column list against the never-list; the three
+  --              functions stable definers for scrbrd_app alone
+  --
+  -- Falsified, each change made in the database as the owner before this
+  -- file ran (and undone after), red at its own label:
+  --   official_read put back to app_enrolled()          → (closed) red: the
+  --                                                        pupil reads a raw row
+  --   official_panel()'s gate made `true`               → (panel) red: a pad
+  --                                                        credential reads the
+  --                                                        panel (8 rows)
+  --   feature_grant_read put back to app_enrolled()     → (grant) red: a Hilton
+  --                                                        pupil reads Westville's
+  --                                                        note
+  --   official_conflict() without the caller's
+  --   role_assignment_read predicate                    → (appoint) red: the
+  --                                                        coach is told of a
+  --                                                        conflict he could not
+  --                                                        see before
+  DECLARE
+    y        jsonb := _v107_stage();
+    HIL      uuid := '11111111-1111-1111-1111-111111111111';
+    WES      uuid := '22222222-2222-2222-2222-222222222222';
+    U_PLAT   uuid := '88888888-0000-0000-0000-000000000014';
+    U1       uuid := (y->>'u1')::uuid;
+    S1       uuid := (y->>'s1')::uuid;
+    C1       uuid := (y->>'c1')::uuid;
+    M        uuid := (y->>'m')::uuid;
+    N_ALL    int  := (y->>'n_officials')::int;
+    k        text;
+    got      text;
+    n        int;
+    n2       int;
+    v_new    uuid;
+    v_other  uuid;
+  BEGIN
+    -- (closed)
+    FOREACH k IN ARRAY ARRAY['pupil', 'parent', 'coach', 'principal', 'office', 'wesoffice', 'wesparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(app_enrolled(), format('§84 (closed): the %s is not enrolled, so this proves nothing', k));
+      SELECT (SELECT count(*) FROM official) + (SELECT count(*) FROM official_accreditation)
+             + (SELECT count(*) FROM official_masked) INTO n;
+      PERFORM _assert(n = 0, format('§84 (closed): the %s reads %s rows of the officials register, raw or masked', k, n));
+      -- official_register, as services/api/read/read-api.mjs runs it.
+      SELECT count(*), count(*) FILTER (WHERE q.born IS NOT NULL OR q.id_number IS NOT NULL
+                                            OR q.email IS NOT NULL OR q.phone IS NOT NULL)
+        INTO n, n2
+        FROM (select o.id, o.full_name, o.panel, o.active,
+                     r.born, r.id_number, r.email, r.phone,
+                     o.level, o.accredited_until, o.accreditations
+                from official_panel() o
+                left join official r on r.id = o.id
+               order by o.full_name, o.id) q;
+      PERFORM _assert(n = N_ALL AND n2 = 0,
+        format('§84 (closed): the register gives the %s %s of %s officials, %s with a date of birth, ID number or contact', k, n, N_ALL, n2));
+      PERFORM _assert((SELECT string_agg(q.full_name, ',' ORDER BY q.full_name) FROM official_panel() q WHERE q.id IN (U1, S1, C1))
+                      = 'Verify OneOhSeven Linked Umpire,Verify OneOhSeven Scorer,Verify OneOhSeven Umpire',
+        format('§84 (closed): the %s does not read the panel by name', k));
+    END LOOP;
+
+    -- (keeper)
+    FOREACH k IN ARRAY ARRAY['keeper', 'platform'] LOOP
+      PERFORM _as(CASE WHEN k = 'platform' THEN U_PLAT ELSE (y->>k)::uuid END);
+      SELECT count(*) INTO n FROM official;
+      PERFORM _assert(n = N_ALL, format('§84 (keeper): the %s reads %s of %s officials raw', k, n, N_ALL));
+      SELECT q.id_number || '|' || q.born INTO got
+        FROM (select o.id, r.born, r.id_number
+                from official_panel() o left join official r on r.id = o.id) q WHERE q.id = U1;
+      PERFORM _assert(got = '8001015000080|1980-01-01', format('§84 (keeper): the register gives the %s %s for the umpire', k, coalesce(got, 'nothing')));
+      PERFORM _assert((SELECT count(*) FROM official_accreditation WHERE official_id IN (U1, S1)) = 2,
+        format('§84 (keeper): the %s does not read the accreditations', k));
+    END LOOP;
+
+    -- (own)
+    PERFORM _as((y->>'scorer')::uuid);
+    SELECT string_agg(o.full_name, ',') INTO got FROM official o;
+    PERFORM _assert(got = 'Verify OneOhSeven Scorer', format('§84 (own): the pupil who scores reads %s raw, not his own row alone', coalesce(got, 'nothing')));
+    SELECT string_agg(a.level, ',') INTO got FROM official_accreditation a;
+    PERFORM _assert(got = 'club', format('§84 (own): the pupil who scores reads accreditations %s, not his own alone', coalesce(got, 'none')));
+    SELECT count(*) FILTER (WHERE q.born IS NOT NULL), count(*) FILTER (WHERE q.id = S1 AND q.id_number IS NOT NULL)
+      INTO n, n2
+      FROM (select o.id, r.born, r.id_number from official_panel() o left join official r on r.id = o.id) q;
+    PERFORM _assert(n = 1 AND n2 = 1, format('§84 (own): the register gives the pupil who scores %s dates of birth (his own: %s)', n, n2));
+
+    -- (panel)
+    PERFORM _as((y->>'pupil')::uuid);
+    SELECT string_agg(format('%s:%s:%s:%s', p.panel, coalesce(p.level, '-'), p.accreditations, p.linked), ',' ORDER BY p.full_name) INTO got
+      FROM official_panel() p WHERE p.id IN (U1, S1, C1);
+    PERFORM _assert(got = 'V107 Umpires:-:0:t,V107 Scorers:club:1:t,V107 Umpires:level1:1:f',
+      format('§84 (panel): the pupil reads the panel as %s', coalesce(got, 'nothing')));
+    PERFORM _assert((SELECT count(*) FROM official_panel(U1)) = 1 AND (SELECT count(*) FROM official_panel(gen_random_uuid())) = 0,
+      '§84 (panel): the panel asked for one official does not answer one row, or answers for an id that is none');
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT count(*) INTO n FROM official_panel();
+    n2 := CASE WHEN official_conflict(C1, M) IS NULL THEN 0 ELSE 1 END;
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(n = 0 AND n2 = 0, format('§84 (panel): a pad credential reads %s panel rows, or the conflict flag', n));
+    PERFORM _as((y->>'drifter')::uuid);
+    PERFORM _assert(NOT app_enrolled(), '§84 (panel): the drifter is enrolled, so this proves nothing');
+    PERFORM _assert((SELECT count(*) FROM official_panel()) = 0 AND official_conflict(C1, M) IS NULL,
+      '§84 (panel): an account enrolled nowhere reads the panel, or the conflict flag');
+
+    -- (appoint)
+    FOREACH k IN ARRAY ARRAY['principal', 'coach', 'wesoffice'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      -- The appoint route's query, as services/api/write/events-api.mjs runs
+      -- it ($1 the official, $2 the match).
+      SELECT format('%s:%s:%s', q.full_name, q.linked, q.conflict) INTO got
+        FROM (select o.id, o.full_name, o.panel, o.active, o.level, o.accreditations, o.linked,
+                     official_conflict(o.id, M) as conflict
+                from official_panel(C1) o) q;
+      PERFORM _assert(got = format('Verify OneOhSeven Linked Umpire:t:%s', _v107_conflict_before((y->>'linked')::uuid, M)),
+        format('§84 (appoint): the %s is answered %s for the linked umpire; before db/107 the conflict was %s',
+               k, coalesce(got, 'nothing'), _v107_conflict_before((y->>'linked')::uuid, M)));
+      SELECT format('%s:%s:%s', q.full_name, q.linked, q.conflict) INTO got
+        FROM (select o.id, o.full_name, o.panel, o.active, o.level, o.accreditations, o.linked,
+                     official_conflict(o.id, M) as conflict
+                from official_panel(U1) o) q;
+      PERFORM _assert(got = 'Verify OneOhSeven Umpire:f:f',
+        format('§84 (appoint): the unlinked umpire reads to the %s as %s', k, coalesce(got, 'nothing')));
+    END LOOP;
+    -- The values themselves, so the agreement above is not two NULLs agreeing.
+    PERFORM _as((y->>'principal')::uuid);
+    PERFORM _assert(official_conflict(C1, M), '§84 (appoint): the principal is not told the linked umpire holds a role at Hilton');
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(NOT official_conflict(C1, M), '§84 (appoint): the coach is told of a role he cannot read');
+
+    -- (grant)
+    FOREACH k IN ARRAY ARRAY['pupil', 'parent', 'coach', 'principal', 'office', 'wesoffice', 'wesparent'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT string_agg(CASE WHEN g.school_id = HIL THEN 'hil' ELSE 'wes' END || ':' || g.note, ',') INTO got
+        FROM feature_grant g WHERE g.key = 'opposition';
+      PERFORM _assert(got = CASE WHEN k LIKE 'wes%' THEN 'wes:v107: Westville plan note' ELSE 'hil:v107: Hilton plan note' END,
+        format('§84 (grant): the %s reads the opposition grants as %s', k, coalesce(got, 'nothing')));
+      -- module_settings, as services/api/read/read-api.mjs runs it, asked
+      -- about the OTHER school.
+      v_other := CASE WHEN k LIKE 'wes%' THEN HIL ELSE WES END;
+      SELECT format('%s|%s|%s', m.school_granted, m.grant_note, m.resolved) INTO got
+        FROM (select f.key, f.kind, f.label, f.enabled as platform_default,
+                     f.locked, f.reason, f.changed_at,
+                     g.granted as school_granted, g.note as grant_note,
+                     feature_enabled(f.key, v_other::uuid, null) as resolved
+                from feature_flag f
+                left join feature_grant g on g.key = f.key and g.school_id = v_other
+               order by f.kind, f.key) m
+       WHERE m.key = 'opposition';
+      PERFORM _assert(got = CASE WHEN k LIKE 'wes%' THEN '||t' ELSE '||f' END,
+        format('§84 (grant): module_settings gives the %s the other school''s opposition row as %s', k, got));
+    END LOOP;
+    PERFORM _as(U_PLAT);
+    PERFORM _assert((SELECT count(*) FROM feature_grant g WHERE g.key = 'opposition' AND g.note LIKE 'v107:%') = 2,
+      '§84 (grant): the platform does not read both schools'' grant rows');
+    PERFORM _as((y->>'drifter')::uuid);
+    PERFORM _assert((SELECT count(*) FROM feature_grant) = 0, '§84 (grant): an account enrolled nowhere reads a grant row');
+
+    -- (resolve)
+    FOREACH k IN ARRAY ARRAY['pupil', 'parent', 'wesoffice', 'wesparent', 'drifter'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(feature_enabled('opposition', HIL, NULL) AND NOT feature_enabled('opposition', WES, NULL),
+        format('§84 (resolve): opposition does not resolve on at Hilton and off at Westville for the %s', k));
+    END LOOP;
+    PERFORM _as((y->>'pupil')::uuid);
+    PERFORM _assert(my_feature_enabled('opposition'), '§84 (resolve): the Hilton pupil reads opposition as off');
+    PERFORM _as((y->>'wesparent')::uuid);
+    PERFORM _assert(NOT my_feature_enabled('opposition'), '§84 (resolve): the Westville parent reads opposition as on');
+
+    -- (writes)
+    PERFORM _as((y->>'keeper')::uuid);
+    INSERT INTO official (full_name, born, panel) VALUES ('Verify OneOhSeven New', '1985-05-05', 'V107 Umpires')
+    RETURNING id INTO v_new;
+    INSERT INTO official_accreditation (official_id, level, issued_by, valid_from)
+    VALUES (v_new, 'club', 'V107', current_date) RETURNING official_id::text INTO got;
+    PERFORM _assert(v_new IS NOT NULL AND got = v_new::text, '§84 (writes): the keeper could not add an official and grade him');
+    UPDATE official SET active = false WHERE id = v_new AND active RETURNING id::text INTO got;
+    PERFORM _assert(got = v_new::text, '§84 (writes): the keeper could not retire an official');
+    PERFORM _as(U_PLAT);
+    INSERT INTO feature_grant (key, school_id, granted, note, changed_by, changed_at)
+    VALUES ('opposition', WES, true, 'v107: a write', app_user_id(), now())
+    ON CONFLICT (key, school_id) DO UPDATE SET granted = EXCLUDED.granted, note = EXCLUDED.note,
+                                               changed_by = EXCLUDED.changed_by, changed_at = EXCLUDED.changed_at
+    RETURNING note INTO got;
+    PERFORM _assert(got = 'v107: a write', '§84 (writes): the platform could not write a grant over an existing row');
+
+    -- (doors)
+    PERFORM _assert((SELECT string_agg(p.polrelid::regclass::text || '=' || pg_get_expr(p.polqual, p.polrelid), ' ; '
+                                       ORDER BY p.polrelid::regclass::text)
+                       FROM pg_policy p
+                      WHERE p.polcmd = 'r' AND p.polpermissive
+                        AND p.polrelid IN ('official'::regclass, 'official_accreditation'::regclass, 'feature_grant'::regclass))
+                    = 'feature_grant=(app_enrolled_at(school_id) OR app_holds(''platform.feature.manage''::text)) ; '
+                      'official=(app_can(''officiating.registry.manage''::text) OR ((person_id IS NOT NULL) AND (person_id = app_user_id()))) ; '
+                      'official_accreditation=(app_can(''officiating.registry.manage''::text) OR (EXISTS ( SELECT 1' || chr(10)
+                      || '   FROM official o' || chr(10)
+                      || '  WHERE ((o.id = official_accreditation.official_id) AND (o.person_id = app_user_id())))))',
+      '§84 (doors): the three read policies are not db/107''s, or one table has a second permissive read');
+    SELECT string_agg(a.n, ',' ORDER BY a.i) INTO got
+      FROM pg_proc p, unnest(p.proargnames, p.proargmodes) WITH ORDINALITY AS a(n, m, i)
+     WHERE p.oid = 'official_panel(uuid)'::regprocedure AND a.m = 't';
+    PERFORM _assert(got = 'id,full_name,panel,active,level,accredited_until,accreditations,linked'
+                    AND got !~ '(^|,)(born|id_number|email|phone|person_id|created_by|created_at)(,|$)',
+      format('§84 (doors): official_panel() returns %s', got));
+    FOREACH k IN ARRAY ARRAY['app_enrolled_at(uuid)', 'official_panel(uuid)', 'official_conflict(uuid,uuid)'] LOOP
+      PERFORM _assert((SELECT prosecdef AND provolatile = 's' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                         FROM pg_proc WHERE oid = to_regprocedure(k)),
+        format('§84 (doors): %s is not a stable SECURITY DEFINER with a pinned path', k));
+      PERFORM _assert(has_function_privilege('scrbrd_app', to_regprocedure(k), 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                       WHERE p.oid = to_regprocedure(k) AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                                         AND has_function_privilege(g.oid, to_regprocedure(k), 'EXECUTE')),
+        format('§84 (doors): %s is not the application''s alone', k));
+    END LOOP;
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 84
+
+  -- ┌── section 85: a pupil is a pupil of a side (db/108) ──
+  -- REACH-D4 (Kameel, 14 Oct 2026): a `player` row with no team passed
+  -- app_can()'s team test for every side at the school. The migration's own
+  -- refusal on a database that holds one, and the fix file that clears it,
+  -- are proved by tools/smoke-player-team.mjs (they cannot be proved here:
+  -- this file runs after the migration).
+  --
+  -- What each label holds:
+  --   (check)    a live `player` row with no team is refused — through the
+  --              application's INSERT policy as the office, and as the owner,
+  --              whom no policy stops — by role_assignment_player_team_scoped
+  --              by name; with a team it is written
+  --   (history)  an ENDED `player` row with no team is history, not a breach:
+  --              it is written, and reactivating it is refused (db/01's
+  --              trigger, with this CHECK beneath it)
+  --   (grant)    decide_role_request() as the office: a request naming a boy
+  --              on a side and no team is granted with HIS side; a boy on no
+  --              side, or no boy, is refused by name (team_required), nothing
+  --              written and the request still pending; a team the asker or
+  --              the decider names is kept
+  --   (enrol)    enrol_person() for a pupil takes his side from the roster; a
+  --              pupil on no side is refused by name and no account is left
+  --   (seed)     the whole table holds no live team-less `player` row, and
+  --              the seed's spectator@ account is on the 1st XI
+  --   (doors)    the constraint as written and validated; db/01's coach rule
+  --              untouched; the grant door derives
+  --
+  -- Falsified, each change made as the owner before this file ran:
+  --   the CHECK dropped                                 → (check) red: the
+  --                                                        office wrote a
+  --                                                        team-less player row
+  --   role_request_grant_as() put back to db/92's text  → (grant) red: the
+  --                                                        request for the boy
+  --                                                        on U15A raised the
+  --                                                        CHECK instead of
+  --                                                        taking his side
+  -- and the walk (tools/smoke-player-team.mjs), each change made to the file
+  -- on disk and undone after:
+  --   db/108's refusal block removed                    → red: db/108 ran on a
+  --                                                        database holding a
+  --                                                        team-less row (and
+  --                                                        then failed to
+  --                                                        VALIDATE, unnamed)
+  --   the fix file's approved-accounts test removed     → red: it ended another
+  --                                                        account's row
+  DECLARE
+    y        jsonb := _v108_stage();
+    HIL      uuid := '11111111-1111-1111-1111-111111111111';
+    got      text;
+    v_ok     boolean;
+    v_reason text;
+    v_asg    uuid;
+    v_user   uuid;
+    v_id     uuid;
+  BEGIN
+    -- (check)
+    PERFORM _as((y->>'office')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO role_assignment (person_id, role, school_id, team_code)
+      VALUES ((y->>'u_direct')::uuid, 'player', HIL, NULL);
+    EXCEPTION WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS got = CONSTRAINT_NAME;
+    END;
+    PERFORM _assert(got = 'role_assignment_player_team_scoped',
+      format('§85 (check): the office''s team-less player row answered %s', got));
+    INSERT INTO role_assignment (person_id, role, school_id, team_code)
+    VALUES ((y->>'u_direct')::uuid, 'player', HIL, '3XI') RETURNING id INTO v_id;
+    PERFORM _assert(v_id IS NOT NULL, '§85 (check): the office could not appoint a pupil to a side');
+    got := _v108_raw((y->>'u_direct')::uuid, NULL, true);
+    PERFORM _assert(got = '23514:role_assignment_player_team_scoped',
+      format('§85 (check): the owner''s team-less player row answered %s', got));
+
+    -- (history)
+    got := _v108_raw((y->>'u_direct')::uuid, NULL, false);
+    PERFORM _assert(got LIKE 'ok:%', format('§85 (history): an ended team-less player row answered %s', got));
+    got := _v108_reactivate(substring(got FROM 4)::uuid);
+    PERFORM _assert(got LIKE '23514:%', format('§85 (history): reactivating an ended team-less player row answered %s', got));
+
+    -- (grant)
+    SELECT d.ok, d.reason, d.assignment_id INTO v_ok, v_reason, v_asg FROM decide_role_request((y->>'r1')::uuid, true, 'v108', NULL, NULL) d;
+    PERFORM _assert(v_ok AND _v108_fact('team_of', v_asg) = 'U15A' AND _v108_fact('request', (y->>'r1')::uuid) = 'granted:U15A',
+      format('§85 (grant): the boy on U15A was answered %s/%s with side %s', v_ok, v_reason, _v108_fact('team_of', v_asg)));
+    FOREACH got IN ARRAY ARRAY['r2', 'r3'] LOOP
+      SELECT d.ok, d.reason, d.assignment_id INTO v_ok, v_reason, v_asg FROM decide_role_request((y->>got)::uuid, true, 'v108', NULL, NULL) d;
+      PERFORM _assert(NOT v_ok AND v_reason = 'team_required' AND v_asg IS NULL
+                      AND _v108_fact('held', (y->>('u_' || got))::uuid) = ''
+                      AND _v108_fact('request', (y->>got)::uuid) = 'pending:-',
+        format('§85 (grant): %s was answered %s/%s, holds [%s], request %s', got, v_ok, v_reason,
+               _v108_fact('held', (y->>('u_' || got))::uuid), _v108_fact('request', (y->>got)::uuid)));
+    END LOOP;
+    SELECT d.ok, d.assignment_id INTO v_ok, v_asg FROM decide_role_request((y->>'r4')::uuid, true, 'v108', NULL, NULL) d;
+    PERFORM _assert(v_ok AND _v108_fact('team_of', v_asg) = '2XI', '§85 (grant): the side the asker named was not kept');
+    SELECT d.ok, d.assignment_id INTO v_ok, v_asg FROM decide_role_request((y->>'r5')::uuid, true, 'v108', NULL, 'U14A') d;
+    PERFORM _assert(v_ok AND _v108_fact('team_of', v_asg) = 'U14A', '§85 (grant): the side the office named was not kept');
+
+    -- (enrol)
+    SELECT e.ok, e.reason, e.user_id, e.assignment_id INTO v_ok, v_reason, v_user, v_asg
+      FROM enrol_person('v108.enrol1@example.invalid', 'V108 Enrol One', 'player', HIL, NULL, (y->>'e1')::uuid) e;
+    PERFORM _assert(v_ok AND _v108_fact('team_of', v_asg) = 'U14A',
+      format('§85 (enrol): the boy on U14A was enrolled %s/%s with side %s', v_ok, v_reason, _v108_fact('team_of', v_asg)));
+    SELECT e.ok, e.reason INTO v_ok, v_reason
+      FROM enrol_person('v108.enrol2@example.invalid', 'V108 Enrol Two', 'player', HIL, NULL, (y->>'e2')::uuid) e;
+    PERFORM _assert(NOT v_ok AND v_reason = 'team_required' AND _v108_fact('account') = '0',
+      format('§85 (enrol): the boy on no side was answered %s/%s and %s account(s) left', v_ok, v_reason, _v108_fact('account')));
+
+    -- (seed)
+    PERFORM _assert(_v108_fact('teamless_live') = '0',
+      format('§85 (seed): %s live team-less player rows on the record', _v108_fact('teamless_live')));
+    PERFORM _assert(_v108_fact('team_of', 'a5510000-0000-0000-0000-000000000001') = '1XI',
+      '§85 (seed): the seed''s spectator@ account is not a pupil of the 1st XI');
+
+    -- (doors)
+    PERFORM _assert((SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+                      WHERE c.conrelid = 'role_assignment'::regclass AND c.conname = 'role_assignment_player_team_scoped'
+                        AND c.contype = 'c' AND c.convalidated)
+                    = 'CHECK (((role <> ''player''::text) OR (team_code IS NOT NULL) OR (NOT active)))',
+      '§85 (doors): role_assignment_player_team_scoped is not db/108''s, or not validated');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_constraint
+                             WHERE conrelid = 'role_assignment'::regclass AND conname = 'assignment_team_scoped' AND convalidated
+                               AND pg_get_constraintdef(oid) LIKE '%coach%assistantcoach%teammanager%'
+                               AND pg_get_constraintdef(oid) NOT LIKE '%player%'),
+      '§85 (doors): db/01''s assignment_team_scoped moved');
+    PERFORM _assert((SELECT prosecdef AND prosrc LIKE '%IF r.role = ''player'' AND v_team IS NULL THEN%'
+                       FROM pg_proc WHERE oid = 'role_request_grant_as(uuid,uuid,text,uuid,text)'::regprocedure),
+      '§85 (doors): role_request_grant_as() does not derive a pupil''s side');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 85
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

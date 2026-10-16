@@ -203,7 +203,8 @@ try {
                         "official", "player", "guardian", "spectator", "driver"]) {
       ok(`a school administrator can appoint a ${role}`,
          ALLOWED(await grant(who.registrar, who.coach, role, HIL,
-                             ["coach", "assistantcoach", "teammanager"].includes(role) ? "U15A" : null)));
+                             // A pupil names his side too (REACH-D4, db/108).
+                             ["coach", "assistantcoach", "teammanager", "player"].includes(role) ? "U15A" : null)));
     }
     ok("a director of sport can appoint a physiotherapist",
        ALLOWED(await grant(who.sarah, who.coach, "medical", HIL)));

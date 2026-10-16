@@ -948,11 +948,15 @@ export const READ_QUERIES = {
   /**
    * The officials register: who is on the panel, and at what grade.
    *
-   * Read through official_masked, never the table, so the columns that make
-   * an official a person rather than a name — date of birth, ID number,
-   * contact — arrive as NULL for everyone but the union that keeps the
-   * register. The row itself is open to anybody signed in, which is the same
-   * disclosure the scorecard already makes.
+   * The panel is official_panel() (db/107): a definer read that names its
+   * columns — name, panel, standing, grade — to anybody enrolled, which is
+   * the same disclosure the scorecard already makes. The table itself is
+   * closed (db/107, REACH-D5): only the union that keeps the register reads
+   * a row of it, and an official his own. So the columns that make an
+   * official a person rather than a name — date of birth, ID number,
+   * contact — come from a LEFT JOIN to the raw table, and arrive as NULL for
+   * everyone the table's policy does not let through. Row security is the
+   * floor here, not this query's discipline.
    *
    * `level` and `lapsed` are DERIVED on every read rather than stored, for
    * the reason a batting average is: an accreditation is a span, and a grade
@@ -963,14 +967,11 @@ export const READ_QUERIES = {
    */
   official_register: {
     text: `select o.id, o.full_name, o.panel, o.active,
-                  o.born, o.id_number, o.email, o.phone,
-                  official_level(o.id) as level,
-                  (select max(a.valid_until) from official_accreditation a
-                    where a.official_id = o.id) as accredited_until,
-                  (select count(*)::int from official_accreditation a
-                    where a.official_id = o.id) as accreditations
-             from official_masked o
-            order by o.full_name`,
+                  r.born, r.id_number, r.email, r.phone,
+                  o.level, o.accredited_until, o.accreditations
+             from official_panel() o
+             left join official r on r.id = o.id
+            order by o.full_name, o.id`,
   },
 
   // The state of the square, scoped through the fixture exactly as weather is.
