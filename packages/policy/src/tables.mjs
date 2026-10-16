@@ -71,6 +71,18 @@ const viaMatch = (table) => ({
   team:   `(match_team(${table}.match_id))`,
 });
 /**
+ * A row about one boy, anchored as his injury row is: his school as the row
+ * states it, his CURRENT side through the player row (under the caller's own
+ * RLS, so the defence in depth above holds), and the boy himself. The
+ * injury entry spells the same three out by hand, as db/09 shipped them.
+ * @param {string} table
+ */
+const viaPlayer = (table) => ({
+  school: "school_id",
+  team:   `(SELECT p.team_code FROM player p WHERE p.id = ${table}.player_id)`,
+  person: "player_id",
+});
+/**
  * A scope-anchor map: resource dimension → SQL column or expression. A null
  * value declares the dimension absent on purpose.
  * @typedef {{school?: string|null, team?: string|null, person?: string|null, fixture?: string|null, season?: string|null}} Anchors
@@ -379,13 +391,45 @@ export const TABLES = {
       // loads, selection, return-to-play — so everyone who picks or manages a
       // side holds it, and a guardian holds it for their own children. A pupil
       // does not.
-      "medical.nature.read": ["injury_type", "severity", "phase"],
+      //
+      // GA-I19 (db/111) adds two here: whether emergency services were
+      // called (how bad, in other words), and when the physio will next see
+      // him (the clinical plan's clock). Neither is availability.
+      "medical.nature.read": ["injury_type", "severity", "phase", "emergency_services", "next_review_on"],
       // The clinical record itself. A minor's health information. Medical
       // staff, the child, their parent, and the coach of the side that child
       // currently plays for — the last by scope: a coach assignment must name
       // a team and the anchors below resolve through the player, so a coach
       // reads the notes for their own squad and nobody else's.
-      "medical.details.read": ["notes", "physio"],
+      //
+      // GA-I19 (db/111): who recorded it, and when the DSO was told of a
+      // serious one (SG-12). The first is the author of a clinical record;
+      // the second says a safeguarding notice went out about this child.
+      "medical.details.read": ["notes", "physio", "recorded_by", "dso_notified_at"],
+    },
+    // recurs_injury_id (db/111) is unmasked: a link from one injury row to an
+    // earlier one of the same boy's, which says nothing the two rows do not.
+  },
+
+  injury_review: {
+    // GA-I19 (db/111): each later look at an injury by the physio, dated, with
+    // the state it left the injury in. The injury row carries the current
+    // state; these are its history. Read as the injury row is read, tier for
+    // tier (D3): that a review happened, on which day, and what it left the
+    // boy's availability as, at the status tier; the phase and when he is
+    // next seen at the nature tier; the physio's words and who wrote them at
+    // the clinical tier.
+    //
+    // Written by nobody through a policy: db/111 takes INSERT and UPDATE
+    // away from the application, and injury_review_record() is the one door.
+    // The generated write policies below therefore have no privilege to grant.
+    // Hidden whole from a support session (db/111, Q7).
+    read:  "medical.status.read",
+    write: "medical.write",
+    anchors: viaPlayer("injury_review"),
+    masked: {
+      "medical.nature.read":  ["phase_after", "next_review_on"],
+      "medical.details.read": ["note", "reviewed_by"],
     },
   },
 

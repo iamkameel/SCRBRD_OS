@@ -140,14 +140,22 @@ export const READ_QUERIES = {
                   -- label itself. Nothing is disclosed that the label has not.
                   (select s.code from school s where s.id = m.school_id)      as home_code,
                   (select s.code from school s where s.id = m.away_school_id) as away_code,
-                  -- WHICH END THIS READER IS AT, answered by the same decision
-                  -- function the policy used to hand them the row. A reader who
-                  -- holds fixture.read over the home side is at home; one who
-                  -- got the row through the away scope is away. A platform
-                  -- reader holds both and comes back 'home', which is correct
+                  -- WHICH END THIS READER IS AT, answered by the same question
+                  -- the policy used to hand them the row (db/106's
+                  -- match_read, in its set-once shape). A reader at the home
+                  -- end, as staff or as a boy's family (his side, or his name
+                  -- on the home sheet when he plays up), is at home; one who
+                  -- got the row through the away end is away. A platform
+                  -- reader is at both and comes back 'home', which is correct
                   -- in the only sense available: they are not a participant.
+                  -- Not the all-zeros person: for a parent at the host whose
+                  -- only child there plays for the visitors, that answered
+                  -- 'home'.
                   (case when app_can('fixture.read', m.school_id, m.team_code,
-                                     '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+                                     'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id)
+                          or (m.id, m.school_id, coalesce(m.team_code, ''))
+                             in (select r.match_id, r.school_id, coalesce(r.team_code, '')
+                                   from my_fixture_ends('fixture.read') r)
                         then 'home' else 'away' end)                     as my_side,
                   t.won_by   as toss_won_by,
                   t.decision as toss_decision,
@@ -199,10 +207,53 @@ export const READ_QUERIES = {
   },
   injuries: {
     masked: true,
-    text: `select id, player_id, injury_type, severity, date_injured, rtw_date,
-                  phase, restricted, notes, physio           -- notes/physio masked per role
+    // GA-I19 (db/111): emergency_services and next_review_on at the nature
+    // tier, recorded_by at the clinical tier, recurs_injury_id (a link) at
+    // the status tier. dso_notified_at is not read here: that the DSO was
+    // told is the safeguarding record's, not the Injuries screen's.
+    text: `select id, school_id, player_id, injury_type, severity, date_injured, rtw_date,
+                  phase, restricted, notes, physio,          -- notes/physio masked per role
+                  emergency_services, next_review_on,        -- nature tier (db/111)
+                  recorded_by,                               -- clinical tier (db/111)
+                  recurs_injury_id, created_at,
+                  -- Whether he has left the school the injury is at, and
+                  -- when: the screens' "left the school" mark (D11). Read
+                  -- under the caller's own RLS on team_membership, so it is
+                  -- the status tier's and widens nothing.
+                  injury_left_on(player_id, school_id) as left_on,
+                  (injury_left_on(player_id, school_id) is not null) as left_school
              from injury_masked
             order by date_injured desc`,
+  },
+  /**
+   * ONE INJURY'S REVIEWS, as a dated history (GA-I19 D3, db/111). Each row
+   * at the reader's own tier, from injury_review_masked: that a review
+   * happened and what it left his availability as for anybody who reads the
+   * injury row; the phase and the next review for the nature tier; the note
+   * and its author for the clinical tier. A support session reads none (Q7).
+   * Logged when a nature or clinical column comes back.
+   */
+  injury_reviews: {
+    masked: true,
+    text: `select r.id, r.school_id, r.player_id, r.injury_id, r.reviewed_at,
+                  r.is_recording,                            -- the recording itself ("Recorded")
+                  r.restricted_after, r.rtw_date_after,
+                  r.phase_after, r.next_review_on,           -- nature tier
+                  r.note, r.reviewed_by                      -- clinical tier
+             from injury_review_masked r
+            where r.injury_id = $1
+            order by r.reviewed_at, r.id`,
+    params: (q) => [req(q, "injuryId")],
+  },
+  /**
+   * THE PHYSIO'S WORKLIST (GA-I19 D3, D8, db/111): every open injury she
+   * holds medical.write over, each with one reason and its clock. Nobody
+   * else gets a row, so nobody else has a count of reviews due to show
+   * (D5). Every row is a nature-tier read of a child: logged on the reason.
+   */
+  injury_worklist: {
+    text: `select w.injury_id, w.school_id, w.player_id, w.reason, w.since, w.due_on, w.days_over
+             from injury_worklist() w`,
   },
   /**
    * Point-era balls for one match, for the continuous heat map.
@@ -394,6 +445,71 @@ export const READ_QUERIES = {
              from app_user
             order by name`,
     logsReads: () => [],
+  },
+
+  /**
+   * A CHILD'S LINKS, EVERY STATE (account lifecycle slice 3, D12; db/109).
+   *
+   * Every guardian link of one child — pending, verified, rejected, revoked,
+   * dated out — newest first, with who decided what and when, and how each
+   * one ended. The office's read: it has to see the links to work them.
+   *
+   * WHO: user.role.assign or guardian.link.manage at the child's school,
+   * asked here in so many words. db/01's assignment_subject_read already
+   * admits those two (A4), but it also admits a parent to her OWN row, and
+   * this read is not hers: she reads her links through her own screens. So a
+   * parent, a coach and the DSO (who holds neither: SAFEGUARDING §1 item 2;
+   * she reads a family through safeguarding_family(), inside a concern) get
+   * nothing. `ending_reason` comes through guardian_link_ending's own policy
+   * (D13): guardian.link.manage, or audit.read without safeguarding.concern.read.
+   *
+   * NEVER PLATFORM-WIDE (Kameel, 15 October 2026): a platform-wide holder
+   * (the platform administrator, the owner's key) reads a child's links only
+   * inside a live support session at that school (db/22);
+   * guardian_link_ending holds the same line in its own RESTRICTIVE policy.
+   *
+   * `born` is never read: `is_minor` is the server's word. Logged, every read
+   * (logsReads): it lists the adults around a child, and "who read this boy's
+   * family" is a question the DSO answers from the log.
+   */
+  child_links: {
+    text: `select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
+                  a.person_id as guardian_id, u.name as guardian_name, u.email as guardian_email,
+                  u.active as account_active,
+                  (a.active and (a.valid_from is null or a.valid_from <= current_date)
+                            and (a.valid_until is null or a.valid_until > current_date)) as role_live,
+                  g.relationship, g.verification_state, vb.name as verified_by_name, g.verified_at, g.verified_note,
+                  g.consent_state, g.consent_version, g.consent_at,
+                  g.valid_from, g.valid_until, cb.name as created_by_name, g.created_at,
+                  (g.verification_state in ('pending', 'verified') and g.valid_from <= current_date
+                     and (g.valid_until is null or g.valid_until > current_date)) as live,
+                  e.kind as ending_kind, e.ends_on as ending_on, e.ended_at, eb.name as ended_by_name,
+                  e.reason as ending_reason,
+                  s.registration_state as standing, s.is_minor, s.live_links, s.consented_links
+             from assignment_subject g
+             join role_assignment a on a.id = g.assignment_id and a.role = 'guardian'
+             left join app_user u  on u.id = a.person_id
+             left join app_user vb on vb.id = g.verified_by
+             left join app_user cb on cb.id = g.created_by
+             left join guardian_link_ending e on e.link_id = g.id
+             left join app_user eb on eb.id = e.ended_by
+             left join player_guardian_status s on s.player_id = g.player_id
+            where g.player_id = $1::uuid
+              and (app_can('guardian.link.manage', player_school(g.player_id), '*'::text,
+                           '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+                   or app_can('user.role.assign', player_school(g.player_id), '*'::text,
+                              '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+              and (not (select app_is_platform_wide())
+                   or app_support_access_id(player_school(g.player_id)) is not null)
+            order by g.created_at desc, g.id`,
+    params: (q) => {
+      const id = q?.playerId || null;
+      if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        const e = /** @type {DressedError} */ (new Error("bad_param:playerId")); e.status = 400; throw e;
+      }
+      return [id];
+    },
+    logsReads: (q) => (q?.playerId ? [q.playerId] : []),
   },
 
   /**
@@ -834,6 +950,11 @@ export const READ_QUERIES = {
   // reads and nothing else. An ordinary post is as before: a pupil and a
   // parent hold no user.read, so its author_name stays null for them.
   //
+  // A draft plan (db/110): `wasSent` says whether it was ever sent, so the
+  // coach's tab offers Delete only on one never sent (a withdrawn plan is
+  // kept), and `urgency` refills the composer's "Send to phones too" when he
+  // changes it.
+  //
   // `fixtureId`, optional, narrows to one fixture's posts (its plans: a post
   // has no fixture), so the fixture screen finds the plan however many newer
   // posts there are; the list is otherwise the newest 100. A narrowing, never
@@ -847,6 +968,7 @@ export const READ_QUERIES = {
                        and x.retracts_id is null and x.retracted_at is null
                      order by x.published_at desc limit 1) end as "noticeId",
                   n.title, n.body, n.published_at, n.created_at,
+                  n.urgency, (n.first_sent_at is not null) as "wasSent",
                   s.name as school_name, c.name as competition_name,
                   coalesce(u.name, case when n.kind = 'plan' then plan_author_name(n.id) end) as author_name,
                   (n.author_id = app_user_id()) as mine,
@@ -1149,11 +1271,15 @@ export const READ_QUERIES = {
   /**
    * The officials register: who is on the panel, and at what grade.
    *
-   * Read through official_masked, never the table, so the columns that make
-   * an official a person rather than a name — date of birth, ID number,
-   * contact — arrive as NULL for everyone but the union that keeps the
-   * register. The row itself is open to anybody signed in, which is the same
-   * disclosure the scorecard already makes.
+   * The panel is official_panel() (db/107): a definer read that names its
+   * columns — name, panel, standing, grade — to anybody enrolled, which is
+   * the same disclosure the scorecard already makes. The table itself is
+   * closed (db/107, REACH-D5): only the union that keeps the register reads
+   * a row of it, and an official his own. So the columns that make an
+   * official a person rather than a name — date of birth, ID number,
+   * contact — come from a LEFT JOIN to the raw table, and arrive as NULL for
+   * everyone the table's policy does not let through. Row security is the
+   * floor here, not this query's discipline.
    *
    * `level` and `lapsed` are DERIVED on every read rather than stored, for
    * the reason a batting average is: an accreditation is a span, and a grade
@@ -1164,14 +1290,11 @@ export const READ_QUERIES = {
    */
   official_register: {
     text: `select o.id, o.full_name, o.panel, o.active,
-                  o.born, o.id_number, o.email, o.phone,
-                  official_level(o.id) as level,
-                  (select max(a.valid_until) from official_accreditation a
-                    where a.official_id = o.id) as accredited_until,
-                  (select count(*)::int from official_accreditation a
-                    where a.official_id = o.id) as accreditations
-             from official_masked o
-            order by o.full_name`,
+                  r.born, r.id_number, r.email, r.phone,
+                  o.level, o.accredited_until, o.accreditations
+             from official_panel() o
+             left join official r on r.id = o.id
+            order by o.full_name, o.id`,
   },
 
   // The state of the square, scoped through the fixture exactly as weather is.
@@ -3305,7 +3428,16 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   // `fitness` since SCRBRD-117 (db/58): the injury status tier, a health signal.
   players:  ["email", "phone", "born", "hometown", "houseatschool",
              "address", "guardian", "height", "weight", "id_number", "fitness"],
-  injuries: ["injury_type", "severity", "phase", "notes", "physio"],
+  // db/111 adds the nature tier's emergency_services and next_review_on, the
+  // clinical tier's recorded_by, and the DSO's stamp (not read by `injuries`,
+  // watched so that any read that returns it is logged).
+  injuries: ["injury_type", "severity", "phase", "notes", "physio",
+             "emergency_services", "next_review_on", "recorded_by", "dso_notified_at"],
+  // GA-I19: a review's phase and clock (nature), and the physio's words and
+  // who wrote them (clinical).
+  injury_reviews: ["phase_after", "next_review_on", "note", "reviewed_by"],
+  // The worklist: every row is why a named boy needs the physio, and when.
+  injury_worklist: ["reason", "due_on"],
   emergency_contacts: ["phone", "phone_alt", "email"],
   trip_contacts:      ["phone", "phone_alt", "email"],
   // A certificate's own number is enough to impersonate its holder at the
@@ -3321,6 +3453,9 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   users:    ["email"],
   // The same columns as `users`, disabled accounts included (logsReads).
   accounts: ["email"],
+  // A child's guardians and why a link ended (db/109): every read is logged
+  // (logsReads); these name what came back.
+  child_links: ["guardian_email", "ending_reason"],
   // Dotted, because a rating is nested. What is disclosed here is a named
   // coach's judgement of a named child and the number it has moved to — which
   // is the development record, and as restricted as the assessment it is
@@ -3362,13 +3497,14 @@ const pick = (/** @type {any} */ row, /** @type {string} */ path) =>
 /** Which id column identifies the CHILD a row is about, for the log. */
 /** @type {Record<string, string>} */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
+                     injury_reviews: "player_id", injury_worklist: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
                      // Not logged on an ordinary read (no contact comes back);
                      // named here so a platform-wide or support read of it,
                      // which is always logged, names the child it counted.
                      emergency_contact_count: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
-                     users: "id", accounts: "id", ratings: "player_id", notes: "player_id",
+                     users: "id", accounts: "id", child_links: "player_id", ratings: "player_id", notes: "player_id",
                      skills_history: "player_id", coaching_points: "player_id",
                      targets: "player_id", development_since: "player_id",
                      disciplinary_records: "player_id",

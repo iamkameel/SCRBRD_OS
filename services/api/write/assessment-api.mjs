@@ -500,10 +500,18 @@ export function guardianLinkRoutes({ pool, secret }) {
       `select * from guardian_link_verify($1, $2, $3, $4)`,
       (req) => [req.body?.guardianId, req.params.id,
                 req.body?.consentVersion || null, req.body?.note || null])),
-    // POST /players/:id/guardians/revoke { guardianId, note? }
+    // POST /players/:id/guardians/revoke { guardianId, kind?, reason? (or note) }
+    // db/109: the link is found under RLS and ended through the door that
+    // takes a kind and a reason (kind 'office' unless one is given).
     revoke: handle(call(
-      `select * from guardian_link_revoke($1, $2, $3)`,
-      (req) => [req.body?.guardianId, req.params.id, req.body?.note || null])),
+      `select * from guardian_link_revoke(
+         (select g.id from assignment_subject g join role_assignment a on a.id = g.assignment_id
+           where a.person_id = $1::uuid and a.role = 'guardian' and g.player_id = $2::uuid
+             and g.verification_state in ('pending', 'verified')
+             and (g.valid_until is null or g.valid_until > current_date)
+           order by g.created_at desc limit 1), $3::text, $4::text)`,
+      (req) => [req.body?.guardianId, req.params.id, req.body?.kind || "office",
+                req.body?.reason ?? req.body?.note ?? null])),
     // POST /players/:id/guardians/consent { guardianId, consentVersion }
     consent: handle(call(
       `select * from guardian_consent_record($1, $2, $3)`,

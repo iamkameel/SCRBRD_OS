@@ -38,6 +38,7 @@
  *   POST /api/training/:id/plan                   a session's plan from the drill library (db/105)
  *   POST /api/training/:id/attendance             a session's register; never `injured` (db/105)
  *   POST /api/players/:id/access-request          ask that player's coach for access
+ *   POST /api/players/:id/guardians/:link/revoke { kind, reason }   the office ends one guardian link, saying how and why (db/109)
  *   POST /api/access-requests/:id/decide          answer such a request
  *   POST /api/assignments/:id/end { reason }      end one role (db/77), the row withdrawn, never deleted
  *   GET  /api/matches/:id/events?since=           incremental sync
@@ -45,6 +46,7 @@
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
  *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
  *   POST /api/news/:id/public/{request,approve,withdraw}  a notice on the public home page (db/83)
+ *   POST /api/news/:id/edit · /delete             change an unsent plan; throw away one never sent (db/110)
  *   GET/POST /api/players/:id/public-name      a child's public-name consent (and …/never-public, the mark)
  *   GET/POST /api/schools/:id/public-names     a school's names-off switch per age group
  *   GET  /api/public/…, /live/:id, /scorecard/:id  the signed-out pages (off unless
@@ -73,6 +75,7 @@ import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes, developmentCorrectionRoutes } from "./write/assessment-api.mjs";
+import { guardianEndingRoutes } from "./write/guardian-ending-api.mjs";
 import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
@@ -104,6 +107,7 @@ import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
 import { workloadRoutes } from "./write/workload-api.mjs";
 import { loadRoutes } from "./write/load-api.mjs";
+import { injuryRoutes } from "./write/injury-api.mjs";
 import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
@@ -411,6 +415,8 @@ const quarantine = quarantineRoutes({ pool, secret: SECRET, onChange: (note) => 
 // GA-I36 N1: the corrections waiting on a match, and across the reader's matches.
 const corrections = correctionRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
+// Account lifecycle slice 3 (db/109): one link ended, with a kind and a reason.
+const guardEnd = guardianEndingRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
@@ -475,6 +481,7 @@ const news = newsRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
 const load = loadRoutes({ pool, secret: SECRET });
+const injuries = injuryRoutes({ pool, secret: SECRET });
 const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
 // A publish or withdrawal drops the public cache's entry before it answers,
@@ -788,6 +795,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/news$/,                                 "POST", news.publish],
   [/^\/api\/news\/([^/]+)\/publish$/,               "POST", news.send],
   [/^\/api\/news\/([^/]+)\/withdraw$/,              "POST", news.withdraw],
+  [/^\/api\/news\/([^/]+)\/edit$/,                  "POST", news.edit],
+  [/^\/api\/news\/([^/]+)\/delete$/,                "POST", news.discard],
   // The public home page (SCRBRD-142 §3, db/83). The three functions decide
   // who: the author asks; a school-wide publisher who is not the author
   // approves; the author or any publisher at the school takes it down.
@@ -817,6 +826,12 @@ const PLAYER_ROUTES = [
   // this route still answers a direct POST, and its record counts again the
   // day the school switches the module on.
   [/^\/api\/players\/([^/]+)\/consents\/health$/,    "POST", load.healthConsent],
+  // The physio's injury record and its reviews (GA-I19 slice A, db/111).
+  // Each calls one SECURITY DEFINER function that decides who may: the
+  // physio at the boy's school, never his family, never under a support
+  // session (injury-api.mjs). Module-gated on Injuries, as the function is.
+  [/^\/api\/injuries$/,                               "POST", injuries.record, "injuries"],
+  [/^\/api\/injuries\/([^/]+)\/reviews$/,              "POST", injuries.review, "injuries"],
   // A boy joins the roster one at a time, under the same authority as the
   // bulk CSV import (player.profile.manage).
   [/^\/api\/players$/,                               "POST", rosterAdd.add],
@@ -984,6 +999,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/guardians$/,             "POST", guard.establish],
   [/^\/api\/players\/([^/]+)\/guardians\/verify$/,     "POST", guard.verify],
   [/^\/api\/players\/([^/]+)\/guardians\/revoke$/,     "POST", guard.revoke],
+  // One link, by its id, with a kind and a reason (db/109, D13).
+  [/^\/api\/players\/([^/]+)\/guardians\/([^/]+)\/revoke$/,  "POST", guardEnd.revoke],
   [/^\/api\/players\/([^/]+)\/guardians\/consent$/,    "POST", guard.consent],
   [/^\/api\/players\/([^/]+)\/guardians\/withdraw$/,   "POST", guard.withdraw],
   [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],

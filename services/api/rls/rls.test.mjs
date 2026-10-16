@@ -10,7 +10,8 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, MASKED_SINCE_09, TABLES_ADDED_SINCE_09, NARROWED_SINCE, GENERATED_BEGIN, GENERATED_END, tablesAddedIn, spliceTablesAdded, maskPairs } from "./generate-rls.mjs";
+import { TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
+import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, TEAM_SCOPED_SINCE_01, MASKED_SINCE_09, TABLES_ADDED_SINCE_09, NARROWED_SINCE, GENERATED_BEGIN, GENERATED_END, tablesAddedIn, spliceTablesAdded, maskPairs } from "./generate-rls.mjs";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -171,6 +172,32 @@ group("B3. Roles added after db/01 shipped");
      shipped.includes(`capabilities across ${ROLES.length - Object.keys(ROLES_ADDED_SINCE_01).length} roles.`));
 }
 
+// ── B3b. Roles that must name a team, added after db/01 shipped ──
+// db/01's assignment_team_scoped CHECK lists what TEAM_SCOPED_ROLES held when
+// it shipped; a role added since is enforced by its own CHECK in the db/NN
+// TEAM_SCOPED_SINCE_01 names (REACH-D4: `player`, db/108).
+group("B3b. Roles that must name a team, added after db/01 shipped");
+{
+  const DB = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "db");
+  const shipped = authz();
+  const in01 = shipped.match(/assignment_team_scoped CHECK \(\n  role NOT IN \(([^)]*)\) OR team_code IS NOT NULL\n\)/);
+  ok("db/01 still emits assignment_team_scoped", !!in01);
+  const listed01 = (in01?.[1] ?? "").split(",").map((s) => s.trim().replaceAll("'", ""));
+  ok(`db/01's list is the shipped three, exactly (it reads ${listed01.join(",")})`,
+     listed01.join(",") === "coach,assistantcoach,teammanager");
+  for (const [role, file] of Object.entries(TEAM_SCOPED_SINCE_01)) {
+    ok(`${role} is a team-scoped role in the model`, TEAM_SCOPED_ROLES.includes(role));
+    ok(`${role} is not in db/01's constraint`, !listed01.includes(role));
+    const path = join(DB, file);
+    ok(`${file} exists`, existsSync(path));
+    const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+    ok(`${file} adds a CHECK that a ${role} names a team`,
+       new RegExp(`CHECK \\(role <> '${role}' OR team_code IS NOT NULL`).test(text));
+  }
+  ok("every team-scoped role is enforced somewhere: db/01, or a file named here",
+     TEAM_SCOPED_ROLES.every((r) => listed01.includes(r) || r in TEAM_SCOPED_SINCE_01));
+}
+
 // No role-shaped decision function survives in the SQL. Scoring authority is
 // app_can('scoring.edit', ...) over assignments; a can_score(role) helper would
 // answer the question without a scope, which is how the old model leaked.
@@ -277,6 +304,10 @@ group("D. Column masking, per row");
 for (const [table, def] of Object.entries(TABLES)) {
   const masked = maskedColumns(def);
   if (!Object.keys(masked).length) continue;
+  // A table added after db/09 (TABLES_ADDED_SINCE_09) has its view in the
+  // generated block of its own file, as its policies are (group C2): the
+  // same assertions, held to that file (injury_review, db/111, is the first).
+  const SQL = policySql(table);
   ok(`${table}_masked is generated`, new RegExp(`VIEW ${table}_masked`).test(SQL));
   // security_invoker is the one that decides WHOSE policies apply. Without it
   // the view runs as its owner, who owns the table underneath and bypasses

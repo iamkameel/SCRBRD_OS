@@ -115,7 +115,7 @@ export const MODULES = {
     // Owned outright, and the consequence is intended: a school that switches
     // off Injuries stops seeing injury rows on the dashboard and on a player's
     // profile too, not merely on the Injuries screen.
-    reads: ["injuries"],
+    reads: ["injuries", "injury_reviews", "injury_worklist"],
   },
   logistics: {
     kind: "module", label: "Logistics", nav: "logistics",

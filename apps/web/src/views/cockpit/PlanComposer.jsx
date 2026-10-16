@@ -19,9 +19,13 @@
  * typing, not on every letter. What the coach typed is never cleared by a
  * refusal, a failure or a reload of the plan beneath it.
  *
- * WHAT IT DOES NOT HAVE: a per-boy field, an attachment, a reply. There is no
- * edit route either: a plan that is sent is changed by withdrawing it (it is
- * then a draft) and sending it; a draft is sent as saved.
+ * WHAT IT DOES NOT HAVE: a per-boy field, an attachment, a reply.
+ *
+ * CHANGING AN UNSENT PLAN (db/110, Kameel 15 Oct). Given `draft`, the composer
+ * opens on that plan's words and loudness and saves or sends through
+ * POST /api/news/:id/edit: a plan never sent, or one withdrawn (which comes
+ * back to its author to change and send again). A plan out with the side is
+ * not changed here; it is withdrawn first.
  *
  * This file is its own lazy chunk (CoachTab loads it on the first tap), which
  * is where the word list's bytes go: the entry bundle does not carry them.
@@ -48,11 +52,12 @@ const spaced = (n) => String(n).replace(/\B(?=(\d{3})+$)/g, " ");
  *   sheet: { playerId: string, name: string, battingNo: number | null, twelfth: boolean }[],
  *   onClose: () => void,
  *   onDone: (what: "sent" | "saved") => void,
+ *   draft?: { id: string, body: string, urgency: string, wasSent: boolean } | null,
  * }} p
  */
-export default function PlanComposer({ match, side, title, opponent, sheet, onClose, onDone }) {
-  const [body, setBody] = useState("");
-  const [phones, setPhones] = useState(false);
+export default function PlanComposer({ match, side, title, opponent, sheet, onClose, onDone, draft = null }) {
+  const [body, setBody] = useState(draft?.body ?? "");
+  const [phones, setPhones] = useState(draft?.urgency === "medium");
   const [busy, setBusy] = useState(/** @type {null | "send" | "save"} */ (null));
   const [serverSaid, setServerSaid] = useState(/** @type {null | { code: string, message: string, words: { word: string, cls: string }[] }} */ (null));
   const field = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
@@ -76,10 +81,16 @@ export default function PlanComposer({ match, side, title, opponent, sheet, onCl
     if (blocked) return;
     setBusy(how); setServerSaid(null);
     try {
-      await api("/api/news", { method: "POST", body: {
-        scope: "team", schoolId: side.school, teamCode: side.team, kind: "plan", fixtureId: match.id,
-        title, body: body.trim(), publish: how === "send", urgency: phones ? "medium" : "low",
-      } });
+      if (draft) {
+        await api(`/api/news/${draft.id}/edit`, { method: "POST", body: {
+          body: body.trim(), urgency: phones ? "medium" : "low", send: how === "send",
+        } });
+      } else {
+        await api("/api/news", { method: "POST", body: {
+          scope: "team", schoolId: side.school, teamCode: side.team, kind: "plan", fixtureId: match.id,
+          title, body: body.trim(), publish: how === "send", urgency: phones ? "medium" : "low",
+        } });
+      }
       onDone(how === "send" ? "sent" : "saved");
     } catch (/** @type {any} */ e) {
       setServerSaid(planRefusal(e));
@@ -91,7 +102,7 @@ export default function PlanComposer({ match, side, title, opponent, sheet, onCl
   const twelfth = sheet.filter((r) => r.twelfth).map((r) => r.name);
 
   return (
-    <Card label="Write the plan" testid="plan-composer">
+    <Card label={draft ? "Change the plan" : "Write the plan"} testid="plan-composer">
       <form onSubmit={(e) => { e.preventDefault(); void go("send"); }} style={{ display: "grid", gap: T.space.md }} noValidate>
         <Line strong testid="plan-title">{title}</Line>
         <Line quiet>The title is made for you, from the fixture: v {opponent}.</Line>
@@ -153,8 +164,8 @@ export default function PlanComposer({ match, side, title, opponent, sheet, onCl
 
         <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Action testid="plan-cancel" onClick={onClose} disabled={busy != null}>Cancel</Action>
-          <Action testid="plan-save" disabled={blocked} onClick={() => { void go("save"); }}>{busy === "save" ? "Saving…" : "Save draft"}</Action>
-          <Action testid="plan-send" primary disabled={blocked} type="submit">{busy === "send" ? "Sending…" : "Send to the side"}</Action>
+          <Action testid="plan-save" disabled={blocked} onClick={() => { void go("save"); }}>{busy === "save" ? "Saving…" : draft ? "Save changes" : "Save draft"}</Action>
+          <Action testid="plan-send" primary disabled={blocked} type="submit">{busy === "send" ? "Sending…" : draft?.wasSent ? "Send again" : "Send to the side"}</Action>
         </div>
       </form>
     </Card>

@@ -151,6 +151,10 @@ const WALKS = [
   // The notification system's missing half: publishing a notice, and getting
   // it onto a phone without re-deciding who may have it.
   "push",
+  // The coach's unsent plan (db/110, Kameel 15 Oct): a draft changed and
+  // deleted by its author alone; a plan out with the side kept and not
+  // changed; a withdrawn one changed and sent again, never deleted.
+  "plan-drafts",
   // The rewards algorithm's coefficients, and the fact that nobody can read
   // them — including the people whose boys the figure is about.
   "rewards",
@@ -171,6 +175,9 @@ const WALKS = [
   "workload",
   // SCRBRD-110 phase 1 (db/60): the nets band and the health consent, over HTTP.
   "load",
+  // GA-I19 slice A (db/111): the physio records and reviews an injury, her
+  // worklist, each reader's tier, the refusals in words, and SG-12.
+  "injury",
   // SCRBRD-110 phase 0 (db/62): the guardian link past eighteen — open while
   // he is at school, ended when he leaves — and option C for the public name.
   "link18",
@@ -193,6 +200,11 @@ const WALKS = [
   // enabled, he signs in again; the principal and the DSO refused; nobody
   // acts on their own account.
   "accounts",
+  // A child's links, and the reason for an ending (account lifecycle slice 3,
+  // db/109): the office's child_links read and who reads nothing; the revoke
+  // route's refusals; a revocation with its kind and reason, the parent's
+  // no-name notice, his name off public pages; the last verified link kept.
+  "family-links",
   // The audit log, read (SCRBRD-132 B2, db/79): under audit.read, one school
   // at a time, a child in initials, never a safeguarding row or a reason,
   // and every read of it on the record. (smoke-audit is access_log's own.)
@@ -220,8 +232,17 @@ const WALKS = [
   // the tenant line, bounded by a fixture, a window and a column list.
   "opposition",
   // The officials register: a panel that belongs to no school, read
-  // through official_masked so a name is public and a person is not.
+  // through official_panel() so a name is public and a person is not
+  // (db/107 closed the table itself to all but its keeper).
   "register",
+  // db/108 and tools/sql/fix-player-without-team.sql, pasted in the order
+  // DEPLOYING.md gives, on a database holding a team-less pupil role.
+  "player-team",
+  // db/112 over HTTP: the office moves a pupil and his `player` role follows
+  // him (ended on the old side, made on the new, never on no side); he reads
+  // his new side's fixtures, nets, plan and balls and none of his old side's,
+  // bar the one match he plays up into, every ball of it; his mother agrees.
+  "player-move",
   // The gaps db/10 and db/11 could only warn about, and the one write route
   // that closes the first of them.
   "dob-gaps",

@@ -379,7 +379,7 @@ group("...and the check can fail");
   const wholeGone = /** @type {Record<string, string>} */ ({ ...NEVER_PUBLIC });
   delete wholeGone.injury;
   ok("a whole table dropped names every masked column on it",
-     unplaced(wholeGone, {}).sort().join() === "injury.injury_type,injury.notes,injury.phase,injury.physio,injury.severity");
+     unplaced(wholeGone, {}).sort().join() === "injury.dso_notified_at,injury.emergency_services,injury.injury_type,injury.next_review_on,injury.notes,injury.phase,injury.physio,injury.recorded_by,injury.severity");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -423,6 +423,8 @@ const HAND_WRITTEN_SINCE_47 = {
   lift_seat: {},
   // db/105: a coach's target for a boy is never public as a whole (N5).
   development_target: {},
+  // db/109: how and why a guardian's link ended is never public as a whole (N4).
+  guardian_link_ending: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */
