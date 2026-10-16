@@ -398,6 +398,19 @@ SELECT
                          WHERE p.oid = to_regprocedure('plan_author_name(uuid)')
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan names its author to the side",
+  -- db/110: a draft plan is changed and thrown away by its author; a sent
+  -- plan is kept, and not changed while it is out (Kameel, 15 Oct).
+  CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news_post' AND column_name = 'first_sent_at')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_plan_drafts' AND tgenabled = 'O'
+                     AND tgfoid = to_regprocedure('news_post_plan_drafts()'))
+        AND coalesce(pg_get_functiondef(to_regprocedure('news_plan_discard(uuid)')), '') LIKE '%n.first_sent_at IS NOT NULL%'
+        AND has_function_privilege('scrbrd_app', to_regprocedure('news_plan_discard(uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('news_post_plan_drafts()'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('news_plan_discard(uuid)'), to_regprocedure('news_post_plan_drafts()'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('news_post'), 'DELETE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A draft plan is its author's to change or throw away",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

@@ -5199,6 +5199,69 @@ CREATE OR REPLACE FUNCTION _v103_off_sheet(p_match uuid, p_player uuid) RETURNS 
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/103 (section 80) ─────────────────────────────────────────────
 
+-- ┌── db/110 (section 87). The coach's draft plan: changed, and thrown away
+-- Its own side, Hilton's 12XI, so no other section's plans meet it: its
+-- coach (the author), a second coach of the side, the team manager, a boy
+-- on it and his guardian (verified and consented). Two fixtures, 12XI at
+-- home to visitors SCRBRD does not host. As the owner; every name invented.
+CREATE OR REPLACE FUNCTION _v110_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  ids jsonb; v_p uuid; f1 uuid; f2 uuid; r record;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneTen Captain', 1101, 'batter', U15) RETURNING id INTO v_p;
+  ids := _v71_people('v110', ARRAY[
+    ARRAY['coach',    'coach',       HIL::text, '12XI', ''],
+    ARRAY['coach2',   'coach',       HIL::text, '12XI', ''],
+    ARRAY['manager',  'teammanager', HIL::text, '12XI', ''],
+    ARRAY['captain',  'player',      HIL::text, '12XI', v_p::text],
+    ARRAY['guardian', 'guardian',    HIL::text, '',     '']]);
+  FOR r IN SELECT a.id AS aid FROM role_assignment a WHERE a.person_id = (ids->>'guardian')::uuid LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, v_p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '12XI', 'Verify OneTen Visitors', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f1;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '12XI', 'Verify OneTen Second Visitors', ((sa_today() + 10)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f2;
+  RETURN ids || jsonb_build_object('f1', f1, 'f2', f2);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A plan's words changed through a door that is not db/12's update policy:
+-- as the owner, with whoever the session says is asking (app.user_id). What
+-- a later definer would be. Answers ok, or the constraint that refused.
+CREATE OR REPLACE FUNCTION _v110_door_edit(p_post uuid, p_body text) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  UPDATE news_post SET body = p_body WHERE id = p_post;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN coalesce(nullif(v_con, ''), SQLSTATE);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One post as the owner sees it: there or not, its words, and its date.
+CREATE OR REPLACE FUNCTION _v110_row(p_post uuid) RETURNS text AS $$
+  SELECT coalesce((SELECT concat_ws(' | ', n.kind, n.body, n.urgency, (n.published_at IS NOT NULL), (n.first_sent_at IS NOT NULL))
+                     FROM news_post n WHERE n.id = p_post), 'gone')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The words each sending of one post went out with, oldest first: its
+-- notices (not the "withdrawn" ones), each with whether it was retracted.
+CREATE OR REPLACE FUNCTION _v110_versions(p_post uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(x.body || CASE WHEN x.retracted_at IS NOT NULL THEN ' (retracted)' ELSE ' (live)' END,
+                             ' / ' ORDER BY x.published_at, (x.retracted_at IS NULL), x.id), '')
+    FROM notification x
+   WHERE x.kind = 'notice' AND x.subject_kind = 'news' AND x.subject_id = p_post AND x.retracts_id IS NULL
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/110 (section 87) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -21114,6 +21177,196 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 80
   -- └── db/103 (section 80) ──────────────────────────────────────────
+  -- ┌── db/110 (section 87) ──────────────────────────────────────────
+  -- ── 87. The coach's draft plan: changed, and thrown away (db/110) ──
+  -- Kameel, 15 Oct (final): a plan never sent is its author's to edit and to
+  -- delete; a withdrawn plan is his to edit and send again, never to delete;
+  -- a plan out with the side is not changed in place. Every write below is a
+  -- person's, through scrbrd_app under RLS, unless it says it is a door;
+  -- _v110_stage(), _v110_row() and _v110_versions() stage or only read.
+  --
+  -- What each label holds:
+  --   (draft)     the coach saves a draft plan; he changes its words and its
+  --               urgency, and it stays a plan never sent
+  --   (author)    the second coach and the team manager change nothing of it
+  --               (db/12's update policy: no row); through a door that is not
+  --               the policy, the second coach is refused
+  --               news_post_plan_author and its author is let through
+  --   (delete)    nobody but its author throws it away (no_such_draft, the
+  --               row kept), nor an anonymous session; its author does, and
+  --               it is gone; an ordinary draft post is no plan to discard;
+  --               the application still holds no DELETE on news_post
+  --   (sent)      a plan sent is dated; its words and urgency are refused
+  --               while it is out (news_post_plan_sent), and discarding it
+  --               answers plan_kept, the row kept
+  --   (withdrawn) withdrawn, it keeps its date; its author changes it, and
+  --               nobody else does; it is never discarded (plan_kept), even
+  --               after he tries to clear the date; he sends it again, and
+  --               its first date stands
+  --   (history)   the plan's two sendings stand in its notices, in order:
+  --               the first, retracted, with the words it went out with; the
+  --               second, live, with the new words; the boy reads the new
+  --               plan
+  --   (insert)    a date the caller writes on a draft is not kept; a plan
+  --               sent at once is dated at once
+  --   (post)      an ordinary post sent is still its author's to edit, as
+  --               before (the decision is the plan's)
+  --   (doors)     the guard is the trigger's alone; news_plan_discard is a
+  --               SECURITY DEFINER with a pinned path, the application's
+  --               alone
+  --
+  -- Falsified once each, by replacing the object in the database and running
+  -- this file; each went red at its label:
+  --   (withdrawn) news_plan_discard() without "OR n.first_sent_at IS NOT
+  --               NULL" (red at the withdrawn plan discarded)
+  --   (author)    news_post_plan_drafts() without its author clause (red at
+  --               the second coach's door)
+  --   (sent)      news_post_plan_drafts() without its sent clause (red at
+  --               the author changing the live plan's words)
+  DECLARE
+    y   jsonb := _v110_stage();
+    V_HIL uuid := '11111111-1111-1111-1111-111111111111';
+    F1  uuid := (y->>'f1')::uuid;
+    F2  uuid := (y->>'f2')::uuid;
+    D uuid; P uuid; X uuid; O uuid; Q uuid;
+    k   text;
+    got text;
+    ins text := $q$INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+                   VALUES ('team', %L, '12XI', %L, %L, %s, 'plan', %L) RETURNING id$q$;
+  BEGIN
+    -- (draft)
+    PERFORM _as((y->>'coach')::uuid);
+    EXECUTE format(ins, V_HIL, 'The plan: v Visitors', 'Bat first if we win it.', 'NULL', F1) INTO D;
+    got := _app_89(format('UPDATE news_post SET body = %L, urgency = ''medium'' WHERE id = %L', 'Bowl first if we win it.', D));
+    PERFORM _assert(got = 'ok' AND _v110_row(D) = 'plan | Bowl first if we win it. | medium | f | f',
+      format('§87 (draft): the author changing his draft answered %s, and it reads %s', got, _v110_row(D)));
+
+    -- (author)
+    FOREACH k IN ARRAY ARRAY['coach2', 'manager', 'captain'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _app_89(format('UPDATE news_post SET body = %L WHERE id = %L', 'Not his to change.', D));
+      PERFORM _assert(_v110_row(D) = 'plan | Bowl first if we win it. | medium | f | f',
+        format('§87 (author): the %s changed the coach''s draft (%s): %s', k, got, _v110_row(D)));
+    END LOOP;
+    PERFORM _as((y->>'coach2')::uuid);
+    got := _v110_door_edit(D, 'Not his to change.');
+    PERFORM _assert(got = 'news_post_plan_author' AND _v110_row(D) LIKE 'plan | Bowl first if we win it.%',
+      format('§87 (author): through a door, the second coach changing the draft answered %s', got));
+    PERFORM _as((y->>'coach')::uuid);
+    got := _v110_door_edit(D, 'Bowl first if we win it. Captain opens.');
+    PERFORM _assert(got = 'ok', format('§87 (author): through a door, the author changing his draft answered %s', got));
+
+    -- (delete)
+    FOREACH k IN ARRAY ARRAY['coach2', 'manager', 'captain', 'guardian'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT d.reason INTO got FROM news_plan_discard(D) d;
+      PERFORM _assert(got = 'no_such_draft' AND _v110_row(D) <> 'gone',
+        format('§87 (delete): the %s discarding the coach''s draft answered %s (%s)', k, got, _v110_row(D)));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT d.reason INTO got FROM news_plan_discard(D) d;
+    PERFORM _assert(got = 'not_permitted' AND _v110_row(D) <> 'gone', format('§87 (delete): an anonymous session answered %s', got));
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, '12XI', 'Verify 110 nets', 'Nets at three.', NULL) RETURNING id INTO O;
+    SELECT d.reason INTO got FROM news_plan_discard(O) d;
+    PERFORM _assert(got = 'no_such_draft' AND _v110_row(O) <> 'gone', format('§87 (delete): an ordinary draft post was discarded as a plan (%s)', got));
+    SELECT d.ok::text || coalesce(d.reason, '') INTO got FROM news_plan_discard(D) d;
+    PERFORM _assert(got = 'true' AND _v110_row(D) = 'gone', format('§87 (delete): the author discarding his draft answered %s (%s)', got, _v110_row(D)));
+    got := _app_89(format('DELETE FROM news_post WHERE id = %L', O));
+    PERFORM _assert(got = '42501' AND _v110_row(O) <> 'gone', format('§87 (delete): the application deleted a post directly (%s)', got));
+
+    -- (sent)
+    PERFORM _as((y->>'coach')::uuid);
+    -- Sent an hour ago, so its first date and a later sending differ (this
+    -- file is one transaction: now() does not move).
+    EXECUTE format(ins, V_HIL, 'The plan: v Visitors', 'Bat first if we win it.', 'now() - interval ''1 hour''', F1) INTO P;
+    PERFORM _assert(_v110_row(P) = 'plan | Bat first if we win it. | low | t | t', format('§87 (sent): the sent plan reads %s', _v110_row(P)));
+    FOREACH k IN ARRAY ARRAY[
+      format('UPDATE news_post SET body = %L WHERE id = %L', 'Bowl first after all.', P),
+      format('UPDATE news_post SET title = %L WHERE id = %L', 'The plan, again', P),
+      format('UPDATE news_post SET urgency = ''medium'' WHERE id = %L', P),
+      format('UPDATE news_post SET body = %L, published_at = NULL WHERE id = %L', 'Bowl first after all.', P)] LOOP
+      got := _app_89(k);
+      PERFORM _assert(got = 'news_post_plan_sent', format('§87 (sent): %s answered %s', left(k, 90), got));
+    END LOOP;
+    SELECT d.reason INTO got FROM news_plan_discard(P) d;
+    PERFORM _assert(got = 'plan_kept' AND _v110_row(P) = 'plan | Bat first if we win it. | low | t | t',
+      format('§87 (sent): discarding the live plan answered %s (%s)', got, _v110_row(P)));
+
+    -- (withdrawn)
+    PERFORM _assert(_withdraw_91(P) = 'ok', '§87 (withdrawn): the author could not withdraw the plan');
+    PERFORM _assert(_v110_row(P) = 'plan | Bat first if we win it. | low | f | t', format('§87 (withdrawn): the withdrawn plan reads %s', _v110_row(P)));
+    FOREACH k IN ARRAY ARRAY['coach2', 'manager'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _app_89(format('UPDATE news_post SET body = %L WHERE id = %L', 'Not his to change.', P));
+      PERFORM _assert(_v110_row(P) LIKE 'plan | Bat first if we win it.%', format('§87 (withdrawn): the %s changed the withdrawn plan (%s)', k, got));
+      SELECT d.reason INTO got FROM news_plan_discard(P) d;
+      PERFORM _assert(got = 'no_such_draft' AND _v110_row(P) <> 'gone', format('§87 (withdrawn): the %s discarding it answered %s', k, got));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    got := _app_89(format('UPDATE news_post SET body = %L WHERE id = %L', 'Bowl first after all. Captain opens.', P));
+    PERFORM _assert(got = 'ok' AND _v110_row(P) = 'plan | Bowl first after all. Captain opens. | low | f | t',
+      format('§87 (withdrawn): the author changing the withdrawn plan answered %s (%s)', got, _v110_row(P)));
+    SELECT d.reason INTO got FROM news_plan_discard(P) d;
+    PERFORM _assert(got = 'plan_kept' AND _v110_row(P) <> 'gone', format('§87 (withdrawn): discarding the withdrawn plan answered %s (%s)', got, _v110_row(P)));
+    got := _app_89(format('UPDATE news_post SET first_sent_at = NULL WHERE id = %L', P));
+    PERFORM _assert(_v110_row(P) LIKE '% | t', format('§87 (withdrawn): clearing the date answered %s and it reads %s', got, _v110_row(P)));
+    SELECT d.reason INTO got FROM news_plan_discard(P) d;
+    PERFORM _assert(got = 'plan_kept' AND _v110_row(P) <> 'gone', format('§87 (withdrawn): after clearing the date, discarding answered %s', got));
+    got := (SELECT first_sent_at::text FROM news_post WHERE id = P);
+    k := _app_89(format('UPDATE news_post SET published_at = now() WHERE id = %L AND published_at IS NULL', P));
+    PERFORM _assert(k = 'ok'
+                    AND _v110_row(P) = 'plan | Bowl first after all. Captain opens. | low | t | t'
+                    AND (SELECT first_sent_at::text FROM news_post WHERE id = P) = got
+                    AND (SELECT first_sent_at < published_at FROM news_post WHERE id = P),
+      format('§87 (withdrawn): sent again, it reads %s and its first date moved', _v110_row(P)));
+
+    -- (history)
+    got := _v110_versions(P);
+    PERFORM _assert(got = 'Bat first if we win it. (retracted) / Bowl first after all. Captain opens. (live)',
+      format('§87 (history): the plan''s sendings read %s', got));
+    FOREACH k IN ARRAY ARRAY['captain', 'guardian'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT n.body FROM news_post n WHERE n.id = P) = 'Bowl first after all. Captain opens.',
+        format('§87 (history): the %s does not read the plan sent again', k));
+    END LOOP;
+
+    -- (insert)
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id, first_sent_at)
+    VALUES ('team', V_HIL, '12XI', 'The plan: v Second Visitors', 'Bat first.', NULL, 'plan', F2, now() - interval '1 day') RETURNING id INTO X;
+    PERFORM _assert(_v110_row(X) = 'plan | Bat first. | low | f | f', format('§87 (insert): a forged date on a draft reads %s', _v110_row(X)));
+    SELECT d.ok::text INTO got FROM news_plan_discard(X) d;
+    PERFORM _assert(got = 'true' AND _v110_row(X) = 'gone', '§87 (insert): the draft with a forged date could not be discarded');
+
+    -- (post)
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, '12XI', 'Verify 110 nets moved', 'Nets at four.', now()) RETURNING id INTO Q;
+    got := _app_89(format('UPDATE news_post SET body = %L WHERE id = %L', 'Nets at five.', Q));
+    PERFORM _assert(got = 'ok' AND _v110_row(Q) = 'post | Nets at five. | low | t | f',
+      format('§87 (post): the author editing his sent post answered %s (%s)', got, _v110_row(Q)));
+
+    -- (doors)
+    PERFORM _assert((SELECT prosecdef AND provolatile = 'v' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                       FROM pg_proc WHERE oid = to_regprocedure('news_plan_discard(uuid)'))
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('news_plan_discard(uuid)'), 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                     WHERE p.oid = to_regprocedure('news_plan_discard(uuid)') AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                                       AND has_function_privilege(g.oid, to_regprocedure('news_plan_discard(uuid)'), 'EXECUTE')),
+      '§87 (doors): news_plan_discard is not a SECURITY DEFINER with a pinned path, the application''s alone');
+    PERFORM _assert((SELECT prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                       FROM pg_proc WHERE oid = to_regprocedure('news_post_plan_drafts()'))
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('news_post_plan_drafts()'), 'EXECUTE')
+                    AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'news_post'::regclass AND tgname = 'news_post_plan_drafts'
+                                   AND tgenabled = 'O'),
+      '§87 (doors): the guard is callable by the application, or not the trigger''s');
+    PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'news_post', 'DELETE'), '§87 (doors): the application may delete a post');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 87
+  -- └── db/110 (section 87) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

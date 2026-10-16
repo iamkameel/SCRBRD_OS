@@ -882,6 +882,23 @@ try {
        && await tid(co.page, "plan-draft-send").count() === 1 && await co.page.locator("button", { hasText: /^Edit$/ }).count() === 0);
     ok("the row is withdrawn, not deleted: unpublished, and its notice retracted", (await q(`select published_at from news_post where id = $1`, [sent.id]))[0].published_at === null
        && (await q(`select count(*)::int as n from notification where subject_id = $1 and kind = 'notice' and retracted_at is not null`, [sent.id]))[0].n === 1);
+    // db/110 (Kameel, 15 Oct): a withdrawn plan is his to change and send again, never to delete.
+    ok("the withdrawn plan says it is kept, and offers Send again and Change it, and no Delete",
+       /^YOUR WITHDRAWN PLAN/i.test((await inner(co.page, "plan-draft")).trim()) && /cannot be deleted/.test(await inner(co.page, "plan-draft-state"))
+       && /^Send again$/.test((await inner(co.page, "plan-draft-send")).trim()) && await tid(co.page, "plan-draft-edit").count() === 1
+       && await tid(co.page, "plan-draft-delete").count() === 0, await inner(co.page, "plan-draft"));
+    await tid(co.page, "plan-draft-edit").click({ timeout: 4000 }).catch(() => {});
+    await co.page.waitForFunction(() => !!document.querySelector('[data-testid="plan-composer"]'), null, { timeout: 5000 }).catch(() => {});
+    ok("Change it opens the composer on the plan's own words, to Send again",
+       /^CHANGE THE PLAN/i.test((await inner(co.page, "plan-composer")).trim()) && (await co.page.locator("#plan-body").inputValue()) === PLAN_TEXT
+       && /^Send again$/.test((await inner(co.page, "plan-send")).trim()) && /^Save changes$/.test((await inner(co.page, "plan-save")).trim()));
+    const f11 = await floors(co.page, '[data-testid="plan-composer"]');
+    ok(`the composer, changing: nothing under 12px (${f11.small.length}), nothing tapped under 44px (${f11.tiny.length})`, f11.small.length === 0 && f11.tiny.length === 0, [...f11.small, ...f11.tiny].slice(0, 4).join(" · "));
+    await tid(co.page, "plan-cancel").click({ timeout: 4000 }).catch(() => {});
+    await co.page.waitForTimeout(400);
+    ok("...Cancel closes it with nothing changed, focus back on Change it", await tid(co.page, "plan-composer").count() === 0 && await tid(co.page, "plan-draft").count() === 1
+       && await co.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "plan-draft-edit"
+       && (await q(`select body from news_post where id = $1`, [sent.id]))[0].body === PLAN_TEXT);
     ok("no coach page errors", co.errors.length === 0 && co.refusals.length === 0, co.refusals[0] ?? co.errors.join(" | "));
     await co.ctx.close();
     const wf = await (await fetch(`${API}/api/news/${fieldPost.id}/withdraw`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${coachToken}` }, body: "{}" })).json();
