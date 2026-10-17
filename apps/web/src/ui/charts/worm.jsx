@@ -119,8 +119,11 @@ export function Worm({ lines, balls, target = null, par = null, revised = null, 
           <span key={`${l.id}-${w.n}`} aria-hidden="true" data-testid={`${testid}-wicket`} style={{ ...label, fontWeight: 700,
             left: `calc(${pc(X(w.ball))} - 0.35em)`, top: `calc(${pc(Y(w.runs))} - 1.25em)`, color: l.tone === "dim" ? palette.dim : palette.main }}>W</span>
         )))}
+        {/* The first and the last figure sit inside the plot's edges, not centred on them, so neither is cut by the
+            panel on a phone (I32). */}
         {ticks.map((o) => (
-          <span key={o} aria-hidden="true" style={{ ...label, top: "calc(100% + 0.25em)", left: `calc(${pc(X(o * 6))} - 0.5ch)`, color: palette.text }}>{o}</span>
+          <span key={o} aria-hidden="true" style={{ ...label, top: "calc(100% + 0.25em)", color: palette.text,
+            ...(X(o * 6) <= 0 ? { left: 0 } : X(o * 6) >= 1000 ? { right: 0 } : { left: `calc(${pc(X(o * 6))} - 0.5ch)` }) }}>{o}</span>
         ))}
       </div>
       <figcaption data-testid={`${testid}-legend`} className={textClass} style={{ ...textStyle, color: palette.text, marginTop: "1.2em", lineHeight: 1.35 }}>

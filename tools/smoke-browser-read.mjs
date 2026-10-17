@@ -2057,7 +2057,7 @@ try {
     // something for the rest. A blank row would be the screen falling silent
     // on the question it exists to answer, and a "pending" would be inventing
     // an obligation nobody recorded.
-    await c.page.locator('[data-testid^="match-card-"]').first().click({ timeout: 5000 }).catch(() => {});
+    await c.page.locator('[data-testid^="match-card-"]').first().click({ timeout: 5000, position: { x: 14, y: 14 } }).catch(() => {});
     await c.page.waitForTimeout(1400);
     const roster = c.page.locator('[data-testid="duty-roster"]');
     if (await roster.count() === 0) {
@@ -2315,7 +2315,7 @@ try {
     // Cross-check against the fixture's own screen — not a second opinion,
     // the same claim asked twice.
     await tid("nav-matches").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
-    await c.page.locator(`[data-testid="match-card-${MATCH}"]`).click({ timeout: 4000 });
+    await c.page.locator(`[data-testid="match-card-${MATCH}"]`).click({ timeout: 4000, position: { x: 14, y: 14 } });
     await c.page.waitForTimeout(600);
     const rosterText = await tid("duty-covered").innerText();
     ok(`the fixture's own duty roster agrees: "${rosterText.trim()}"`, rosterText.trim() === overviewText.trim());
