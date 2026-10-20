@@ -459,9 +459,12 @@ try {
     ok("the score a parent folds is the score the coach reads", (await score(parent, SHARED)) === (await score(coach, SHARED))
        && (await score(parent, SHARED)) !== "[]");
 
-    // Refused: another side's fixture.
-    const seen = ((await rows("matches", null, parent)) ?? []).some((m) => m.id === SECONDS);
-    ok("our parent sees the 2XI's fixture on his list (match_read, unchanged)...", seen);
+    // Refused: another side's fixture. Since db/106 (REACH-D1, "the side
+    // only") it is not on his list either; until then match_read asked with
+    // the all-zeros person and gave him every fixture at the school.
+    const mine = (await rows("matches", null, parent)) ?? [];
+    ok("our parent no longer sees the 2XI's fixture on his list (db/106)...",
+       mine.length > 0 && !mine.some((m) => m.id === SECONDS), mine.length);
     ok("...and reads none of its balls: it is not his son's side's", ((await log(parent, SECONDS)) ?? []).length === 0);
     ok("...nor its score", (await score(parent, SECONDS)) === "[]");
     ok("Westville's parent reads none of it either", ((await log(awayParent, SECONDS)) ?? []).length === 0);
