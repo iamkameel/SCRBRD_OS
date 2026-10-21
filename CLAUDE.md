@@ -132,8 +132,12 @@ the work itself:
 2. **After Kameel decides:** Haiku records the decision in the design doc, the
    backlog, the roadmap and the gap analysis plan, word for word as decided.
 3. **After a merge:** Haiku updates the status rows the merge closes (roadmap,
-   gap analysis plan, `DEPLOYING.md`'s paste list where a migration shipped).
-   It doesn't touch `db/SHIPPED.sha256`; that stays with the lead.
+   gap analysis plan, the backlog `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`,
+   `DEPLOYING.md`'s paste list where a migration shipped). In the backlog, a
+   closed entry is struck through with the PR and commit that closed it, never
+   deleted; a slice of an entry is marked partly done (added 2026-10-21,
+   Kameel, after 80 merges went unrecorded there). It doesn't touch
+   `db/SHIPPED.sha256`; that stays with the lead.
 4. **Gap lists:** where a plan says "gaps to list" (for example, acceptance
    evidence against the walks we have), Haiku lists them and Opus decides what
    to build.
