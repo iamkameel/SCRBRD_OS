@@ -27,6 +27,7 @@
 import { runAsPrincipal, who } from "../auth/auth-db.mjs";
 import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
          PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE, CONDITION, KIND, conditionsOf } from "@scrbrd/scoring";
+import { safeErr } from "../log-safe.mjs";
 /** @import { Pool, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest, RouteDeps, DressedError } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs): pg's
 // carry a SQLSTATE `code` (and `table`, `constraint`, `detail`), this
@@ -690,7 +691,7 @@ export function eventRoutes({ pool, secret }) {
         // other route in this file answers that 403 not_permitted; this one
         // answered 500 and logged it as unexpected.
         if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
-        if (!e.status) console.error("append →", e.code || "", e.message, e.detail || "", e.column || "");
+        if (!e.status) console.error("append →", safeErr(e));
         res.status(e.status || 500).json({ error: e.code || e.message });
       }
     },

@@ -394,6 +394,25 @@ group("J. A correction changes the fold, and the facts follow it (GA-I36)");
   ok("the fifth wicket amended away (and its new batter): four of his, no five-for; the hat-trick stands",
      brief(ms(af, Q[0])).join() === "hat_trick:01:3:i0" && af.bowling[0].wickets === 4, brief(af.milestones));
   ok("...and its moment is gone with it", !af.moments.some((m) => m.kind === M.BOWLER_WICKETS), af.moments);
+
+  // db/113's cases (db/99 §90), as the fold has them: what the notice
+  // retraction and the un-retract re-ask of SQL, the facts say of the log.
+  const to52 = [...open(), bw(Q[0]), r(6), r(6), r(6), r(6), r(6), r(6), bw(Q[1]), r(1), r(6), r(4), r(6)];   // the single brings him back on strike
+  const six = to52[to52.length - 1];
+  ok("db/113: a six from 46 to 52 is the fifty, at that ball", ms(deriveFacts(to52), P[0])[0]?.at?.id === six.id
+     && ms(deriveFacts(to52), P[0])[0]?.value === 52);
+  const at46 = [...to52, I(voidEvent({ target: six.id }))];
+  ok("db/113: the six voided, 46, no fifty: the notice no longer holds", ms(deriveFacts(at46), P[0]).length === 0);
+  const at50 = [...at46, I(ball({ type: BALL_TYPE.RUN, value: 4 }))];
+  const b50 = ms(deriveFacts(at50), P[0]);
+  ok("db/113: a four in its place, 50: one fifty, at the four", b50.length === 1 && b50[0].value === 50
+     && b50[0].at?.id === at50[at50.length - 1].id, b50);
+  const head = [...open(), bw(Q[0]), W("bowled"), inAt(P[2])];
+  const dot = r(0);
+  const gap = [...head, dot, W("bowled"), inAt(P[3]), W("bowled"), inAt(P[4])];
+  ok("db/113: W, dot, W, W is no hat-trick", !ms(deriveFacts(gap), Q[0]).some((m) => m.kind === F.HAT_TRICK));
+  ok("db/113: the dot voided, the corrected history holds a hat-trick",
+     ms(deriveFacts([...gap, I(voidEvent({ target: dot.id }))]), Q[0]).some((m) => m.kind === F.HAT_TRICK));
 }
 
 // ── K. player_milestone, pinned ──────────────────────────

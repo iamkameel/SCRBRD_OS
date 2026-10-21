@@ -5,13 +5,14 @@ Nothing here uses any other Firebase project. Three pieces:
 
 | Piece | Where | How it gets there |
 |---|---|---|
-| Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
-| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | by hand (5), or the same workflow, from the root `Dockerfile` |
-| Database | Cloud SQL, Postgres 16, `africa-south1` | by hand, once, then by hand for every schema change |
+| Client (`apps/web`) | Render, the same service as the API (`SERVE_CLIENT`) | built and served by the API's own process on every deploy of `main` |
+| API (`services/api`) | Render, `scrbrd.onrender.com`, from `render.yaml` | Render deploys `main` by itself, from `render.yaml`; the first deploy is New → Blueprint, as in "The whole thing in one service" above |
+| Database | Supabase Postgres, Free | by hand, once, then by hand for every schema change |
 
-Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
-browser talks to one origin and the client is built with `VITE_API_BASE=""`.
-Realtime is plain HTTP, so the rewrite carries everything the client needs.
+The API serves the client from its own process, so the browser talks to one
+origin and the client is built with `VITE_API_BASE=""`. The Firebase Hosting and
+Cloud Run arrangement below (`firebase.json`, `deploy.yml`) is the alternative
+road; production does not use it.
 
 ## Where to run all of this
 
@@ -56,6 +57,11 @@ instance-hours a month. Set the repository variable `SCRBRD_HEALTH_URL`
 (Settings → Secrets and variables → Actions → Variables) to the service's
 `/api/health` address; unset, the job does nothing. Run it once by hand from
 the Actions tab to see it answer 200.
+The job also fails, and GitHub emails the repository owner, when production is
+bad: no answer, an answer other than 200, a body that is not JSON, or a body
+without `ok: true` and `db: "ok"`. It tries up to three times (75 seconds each,
+20 apart) so a sleeping server booting does not count. For the pilot this is the
+only alert there is.
 
 ### The deployed revision
 
@@ -1414,7 +1420,6 @@ should read OK). **Schema first**: the API built with it refuses to start
 without db/106 (`expected-migrations.json`), and its `matches` read asks
 `my_fixture_ends()` which end the reader is at.
 <!-- ── end db/106 ── -->
-
 <!-- ── db/107: the officials register and the grant notes, closed ── -->
 #### The officials register is its keeper's; a school's plan is its own (db/107)
 
@@ -1699,6 +1704,43 @@ proof). The summary row "A moved pupil follows his new side" should read OK.
 (`expected-migrations.json`). The API itself needs nothing new: the move
 route writes `player.team_code` as before, and the trigger does the rest.
 <!-- ── end db/112 ── -->
+
+<!-- ── db/113: a correction takes back what it falsified ── -->
+#### A voided ball withdraws the notices it caused (db/113)
+
+`db/113_correction_retracts_notices.sql` is GA-I36 slice A2 with
+NOTIFICATIONS slice S5. Before it, a fifty reached on a ball later voided kept
+its "Fifty for D Erasmus" notice for ever: the scorecard said 46 and the
+side's Notices said fifty. The same was true of a hundred, a five-for, a
+hat-trick, a career mark and a bowling-directive breach. Now a void (the pad's
+undo or an approved amendment) re-asks each notice its ball could have caused.
+A notice that no longer holds is withdrawn through db/89's
+`notification_retract()`: it leaves every list, opens as a stub, and one
+notice, "A notice was withdrawn", goes to exactly the people who had the
+original. A breach that no longer holds is hidden from the workload screens
+and from `workload()`'s count, and the row is kept. A mark that is reached
+again returns in place. It is the same notice with its figure brought up to
+date, and nothing new is sent. A void, or a released held ball, also drops
+the fixture's public page from the cache at commit.
+
+**What it does to a live database.** It adds two columns to `bowling_breach`
+(`retracted_at` and `notice_id`), one to `milestone_notice` (`notice_id`), one
+RESTRICTIVE read policy on `bowling_breach`, three triggers on `ball_event`
+(two on a void, and `public_data_changed` on a void or a released ball), and
+five functions, none of them callable by the application. It restates
+`milestone_notify()`, `bowling_breach_watch()` and `workload()` (db/60's, with
+one line added). It backfills the two `notice_id` links where exactly one
+notification matches, and the output names the counts. Nothing is retracted
+on the paste: a notice standing on a ball voided before it stays as it was.
+Nothing is dropped. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 113` after 89 and 91 (it calls
+db/89's `notification_retract()`), then the verify bundle (§90 is its proof).
+The summary row "A correction takes back what it falsified" should read OK.
+**Schema first**: an API built with it refuses to start without db/113
+(`expected-migrations.json`). No route or screen changes. Notices already
+shows withdrawn rows and stubs (S1).
+<!-- ── end db/113 ── -->
 
 ### 5 · Cloud Run, the first time
 

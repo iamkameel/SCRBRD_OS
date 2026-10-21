@@ -593,6 +593,14 @@ SELECT
                          WHERE a.role = 'player' AND a.active AND a.fixture_id IS NULL AND a.expires_at IS NULL
                            AND a.team_code IS DISTINCT FROM p.team_code)
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A moved pupil follows his new side",
+  -- db/113: a void takes back the milestone and breach notices it falsified,
+  -- and a re-reached mark returns in place (GA-I36 A2, NOTIFICATIONS S5).
+  CASE WHEN to_regprocedure('milestone_retract()') IS NOT NULL
+        AND to_regprocedure('bowling_breach_retract()') IS NOT NULL
+        AND to_regprocedure('notification_unretract(uuid)') IS NOT NULL
+        AND to_regprocedure('milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)') IS NOT NULL
+        AND to_regprocedure('milestone_still_holds(uuid,text,uuid,smallint,integer)') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A correction takes back what it falsified",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

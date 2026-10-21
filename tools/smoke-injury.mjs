@@ -42,7 +42,10 @@ const HIL = "11111111-1111-1111-1111-111111111111";
 const WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001"; // James Whitfield, 1XI, uninjured in the seed
 const NAIDOO = "aaaaaaaa-0000-0000-0000-000000000003";    // S Naidoo, 1XI
 const HAMSTRING = "cccccccc-0000-0000-0000-000000000001"; // R Pillay's, in the seed
-const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+// Calendar days in Johannesburg, as sa_today() counts them: a UTC date is a
+// day behind for two hours after South African midnight, and the doors judge
+// "in the future" and "already past" by sa_today().
+const day = (n) => new Date(Date.now() + n * 86400000).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
