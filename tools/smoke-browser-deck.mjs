@@ -244,7 +244,20 @@ try {
   // Real components, on data built in the browser, in frames nobody can
   // operate. Every id below is one the component itself carries, so a slide
   // that quietly turned into a picture, or into a hand-drawn mock, fails here.
-  const goTo = async (id) => { await deck().locator(`[data-testid="deck-dot-${id}"]`).click(); await page.waitForTimeout(1300); };
+  // The slide is judged once it is the deck's slide and its entrance has run:
+  // a control measured mid-entrance (scaled) read 43px under load. Looping
+  // animations never finish, so only finite ones are waited for.
+  const goTo = async (id) => {
+    await deck().locator(`[data-testid="deck-dot-${id}"]`).click();
+    await page.waitForTimeout(1300);
+    await page.locator(`[data-testid="deck"][data-slide="${id}"]`).waitFor({ timeout: WAIT }).catch(() => {});
+    await page.evaluate((ms) => Promise.race([
+      Promise.all(document.getAnimations()
+        .filter((a) => Number.isFinite(a.effect?.getComputedTiming?.().endTime))
+        .map((a) => a.finished.catch(() => {}))),
+      new Promise((r) => setTimeout(r, ms)),
+    ]), WAIT).catch(() => {});
+  };
   const inertFrames = () => page.evaluate(() => [...document.querySelectorAll('[data-testid="deck"] .deck-dev')].map((f) => ({
     id: f.getAttribute("data-testid"), inert: f.querySelector(".deck-dev-screen")?.inert === true,
     events: getComputedStyle(f.querySelector(".deck-dev-screen")).pointerEvents })));
