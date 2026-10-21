@@ -201,8 +201,36 @@ const basicPad = async () => {
   if (!(await has("basic-pad"))) { await tap("pad-menu").catch(() => {}); await tap("pad-basic-scoring").catch(() => {}); }
   await page.waitForTimeout(300);
 };
-/** Let the outbox send and the server answer. */
-const settle = async () => { await page.waitForTimeout(2600); };
+/**
+ * This match's events still waiting in the pad's outbox (packages/sync: an
+ * `evt:` key per unsent event, under `<match>:<device>:`, deleted once the
+ * server has acknowledged it). -1 when the store cannot be read.
+ */
+const outboxPending = () => page.evaluate((prefix) => new Promise((resolve) => {
+  const req = indexedDB.open("scrbrd-outbox", 1);
+  req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains("queue")) req.result.createObjectStore("queue"); };
+  req.onerror = () => resolve(-1);
+  req.onsuccess = () => {
+    const db = req.result;
+    const k = db.transaction("queue", "readonly").objectStore("queue").getAllKeys();
+    k.onsuccess = () => { db.close(); resolve(k.result.filter((x) => String(x).startsWith(prefix) && String(x).includes(":evt:")).length); };
+    k.onerror = () => { db.close(); resolve(-1); };
+  };
+}), `${MATCH}:`).catch(() => -1);
+/**
+ * Let the outbox send and the server answer: until nothing of this match is
+ * left unsent, twice in a row (15 s bound). A fixed 2.6 s used to stand here,
+ * and under load the server's row count was taken before the last ball had
+ * synced, so a later slice of the log was judged one row early.
+ */
+const settle = async () => {
+  const until = Date.now() + 15000;
+  let empty = 0;
+  while (Date.now() < until && empty < 2) {
+    await page.waitForTimeout(200);
+    empty = (await outboxPending()) === 0 ? empty + 1 : 0;
+  }
+};
 
 /** The board, the server's rows and the API's live score say the same. */
 const agree = async (label, innings) => {
