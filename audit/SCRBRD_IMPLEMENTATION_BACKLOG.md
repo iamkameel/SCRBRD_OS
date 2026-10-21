@@ -3962,6 +3962,12 @@ DLS line and a venue-par line on the signed-out public page (design §9, departu
 
 ### SCRBRD-132 — Prototype leftovers: invented data and dead controls (2026-10-01)
 
+**Partly done 2026-10-08:** GA-I19 slice 0: the Injuries screen speaks the database's phase words (#101).
+
+**Partly done 2026-10-08:** Account lifecycle slice 2: a reason, a preview and a notice (db/90) (#107).
+
+**Partly done 2026-10-10:** Analytics: real season-by-season bars, no invented figures (GA-I23 slice 1) (#115).
+
 The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/PROTOTYPE_LEFTOVERS.md`.
 
 - **Wave A (Sonnet, screens):** in progress. Invented audit entries come down; ground tasks are read from duties; the Equipment copy is removed in favour of the kit register; real school names; the Skills axis is 1–20; Management tabs follow capabilities; Squad availability and profile edits; dead injury buttons hidden; Fields drawing fixed. Management users show all roles, with Add role.
@@ -4027,6 +4033,14 @@ This needs a season-per-player read, shared with SCRBRD-132 Wave B.
 
 ### SCRBRD-136 — The coach's match-day cockpit (2026-10-01)
 
+**Partly done 2026-10-09:** Coach tab: the shot wheel gets the Match Centre's filters (GA-I28) (#111).
+
+**Partly done 2026-10-14:** SCRBRD-136/137 cockpit phase B: the owed proofs and bowler_day (db/94) (#141).
+
+**Partly done 2026-10-14:** Design: away visibility, the ball log follows the fixture (#143).
+
+**Partly done 2026-10-14:** SCRBRD-136/137 away visibility: the ball log follows the fixture (db/97) (#147).
+
 **Decided (Kameel, 2026-10-02):** see SCRBRD-137 and the design.
 
 **Phase B decided (Kameel, 2026-10-13, "yes to all"), with #135:** signal_ack keeps the device store ("keep the device store; do not build the table now", PB-D5); `bowler_day`'s gate and holder list are confirmed ("confirm", PB-D1); phase C stays as an option with its measured trigger ("keep, with the trigger in §7", PB-D9). Design: `docs/design/SCRBRD-136-137_phaseB.md`. Built after the pilot, B0 proofs first.
@@ -4047,6 +4061,14 @@ Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `Coac
 
 ### SCRBRD-137 — An intelligence feed of real signals (2026-10-01)
 
+**Partly done 2026-10-14:** SCRBRD-136/137 cockpit phase B: the owed proofs and bowler_day (db/94) (#141).
+
+**Partly done 2026-10-14:** GA-I27 design: evidence-linked coach cards (#142).
+
+**Partly done 2026-10-14:** SCRBRD-136/137 away visibility: the ball log follows the fixture (db/97) (#147).
+
+**Partly done 2026-10-15:** Coach cards slice 1: "Where this comes from" on every signal card (GA-I27 C1 + C2) (#151).
+
 **Decided (Kameel, 2026-10-02), with SCRBRD-136:** D1–D16 of `docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md` as recommended. Phase A (the Coach tab, the Dashboard card and the drawer over existing reads, no migration) first; the lead's three read findings are one small Opus fix beside it.
 
 beta-2's Intelligence drawer has five fixed cards, among them "+18% win equity", "workload risk 86%" and a pitch rating. Here each card is a rule over data we hold, and it shows its evidence and its count.
@@ -4062,6 +4084,12 @@ beta-2's Intelligence drawer has five fixed cards, among them "+18% win equity",
 
 ### SCRBRD-138 — The captain's view (2026-10-01)
 
+**Partly done 2026-10-14:** SCRBRD-138 phase B: the coach's plan to the side, and the word list (db/96) (#148).
+
+**Partly done 2026-10-15:** Captain's plan screens (SCRBRD-138 phase B, B5–B7): write, read, report and withdraw the plan (#152).
+
+**Partly done 2026-10-15:** db/103: the plan names its author to the side; a fixture's plan read past the 100-post cap (#158).
+
 **Decided (Kameel, 2026-10-02):** D1–D11 as the design recommends. Phase A (the view over reads that exist, no migration) first; phase B (the coach's plan to the side) after.
 
 Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same screen for whoever holds the captaincy honour (`recognition`, kind `captain`), never a role. A captain is a pupil reading his team-mates' data, so what he may see is the design's question.
@@ -4076,6 +4104,8 @@ Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same scree
 **Phase B decided (Kameel, 2026-10-14, "Approve all seven as recommended"), with #136:** PB-D1 the post, `db/96`; PB-D3 the side; PB-D4 "do not narrow" (by role); PB-D6 the list as code in packages/policy; PB-D8 the plan only, for now; PB-D9 the AI tone line out; PB-D11 the post's retention. Design: `docs/design/SCRBRD-138_phaseB.md`. Migration db/96. Built from 16 October.
 
 ### SCRBRD-140 — Sign-up with Google, and linking an account to a school (2026-10-02)
+
+**Partly done 2026-10-14:** SCRBRD-140 phase 2: the staff register and the request cooldown (db/92-93) (#140).
 
 Kameel, 2026-10-02: *"Can we use Google OAuth via Firebase? Can users just sign up and then later be linked to their school, or select a school and it must get passed against a school-provided register."* Added to Fable's list the same day ("security isn't cheap"). Design: `docs/design/SCRBRD-140_signup_and_school_linking.md`.
 
@@ -4372,6 +4402,9 @@ old side; the pad's super-over screens are the next Sonnet item.
 **Tie-breaks (Kameel, 2026-09-30, from the `sundayMatches` review):** `result.tie_break` (`none` | `super_over`) is reserved in the catalogue but the fold cannot play a super over. Phase 3 (match results) must: play a super over as its own innings pair (one over, two wickets, the Laws and the fold as for any innings), and support whatever tie rule the KZN bye-laws name instead (e.g. fewer wickets lost, or shared points). The fixture planner's knockouts (SCRBRD-123) need a winner, so this comes before knockout rounds are published.
 
 ### SCRBRD-115 — K3: a pupil does not read whether a team-mate is out
+
+**Partly done 2026-10-09:** Readiness and availability: the clinical column is null, not "cleared", for a reader without medical.status.read (#120).
+
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** safeguarding (CSA_SAFEGUARDING_CHECK K3; SAFEGUARDING_DSO §6.3)
 **Decided (Kameel, 2026-09-27):** withdraw `medical.status.read` from `player` and `enquiry` (check §5 Q12; design
 §10 Q8). CSA's Safeguarding Policy p52 item 6 says a child's medical needs are "not in general view to other ...
@@ -4705,6 +4738,17 @@ unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information of
 `apply-57`, then `apply-58`, then `verify`, then add both to `db/SHIPPED.sha256`.
 
 ### Redesign step 4 — the parent's app and the pupil's app (phase A built)
+
+**Partly done 2026-10-08:** GA-I20 A1: the parent's action list, per child, with what she agreed to (#106).
+
+**Partly done 2026-10-15:** Design: what a parent and a pupil read, table by table (REACH) (#149).
+
+**Partly done 2026-10-15:** db/100 + db/101: parents read their child's side's balls; team posts reach the side only (#155).
+
+**Partly done 2026-10-21:** REACH R-C + R-D: officials' records closed (db/107); a pupil's role names his side (db/108) (#162).
+
+**Partly done 2026-10-21:** REACH R-A: a family reads only its child's side's fixtures, buses and training (db/106) (#167).
+
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** design (Fable, `docs/design/STEP4_parent_pupil.md`,
 decided by Kameel 2026-09-27), built by Opus
 **Phase A built 2026-10-01 (Opus), no migration.** The persona menus (G12: Home · Matches · Notices · Family for a
@@ -4718,6 +4762,9 @@ D (photo consent record), E (SCRBRD-110's cards), F (invoices, if Q1 says yes); 
 scorecard's row expansion for another child (§10 departure 11).
 
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
+
+**Partly done 2026-10-09:** Critical: Pro Mode's wide asks the runs and the wicket, as Focus Mode does (#119).
+
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
 Already true and ticked in the checklist: strike rotation, instant taps, fixed button positions, one icon style,
