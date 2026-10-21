@@ -3507,9 +3507,20 @@ export function liveResources() { return Object.keys(READ_QUERIES); }
  * notes and coaching points, the targets and "since the last look". Until
  * db/105's build the route served `skills`, `ratings` and `notes` like any
  * other read.
+ *
+ * And every read that crosses the tenant line to name ANOTHER SCHOOL'S BOYS
+ * (GA-I24-I25 D9, A1). Each rests on a grant that closes, and a file closes
+ * with none of them: the dossier (`opposition_squad`, `opposition_context`)
+ * at the first ball, the passport (`passport`, `passport_consents`) and the
+ * scouting list (`scouting_candidates`) when the family withdraws. A CSV of
+ * any of them is the standing file on another school's child the grant was
+ * shaped to prevent. The passport carries the boy's ratings as well, which
+ * are refused above by the other door. Until the compare build the route
+ * served all five.
  */
 export const NOT_EXPORTED = Object.freeze(new Set([
   "skills", "skills_history", "ratings", "notes", "coaching_points", "targets", "development_since",
+  "opposition_squad", "opposition_context", "passport", "passport_consents", "scouting_candidates",
 ]));
 
 /**
