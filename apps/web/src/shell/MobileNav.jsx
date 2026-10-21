@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { NAV_META, groupNav } from "../design/roles.js";
 import { useSports, sportBadge } from "../lib/features.js";
 import { useMenu } from "../lib/homeNav.js";
@@ -54,7 +54,7 @@ function SportSwitcher() {
                ?? { code:"cricket", label:"Cricket" };
   return (
     <div style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,position:"relative"}}>
-      <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>ScrbrdOS · Sport</div>
+      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>ScrbrdOS · Sport</div>
       <button onClick={()=>setOpen(!open)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",borderRadius:D.md,background:D.emerald+"10",border:`1px solid ${D.emerald}28`,cursor:"pointer"}}>
         <span style={{fontSize:"14px",color:D.emerald}}><Icon name={SPORT_ICON[current.code] ?? "shirt"}/></span>
         <span style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.emerald}}>{current.label}</span>
@@ -94,10 +94,34 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
   const inviteBadge = (/** @type {number} */ n) => (
     <span data-testid="mnav-invites-badge" aria-hidden="true" style={{position:"absolute",top:"2px",right:"calc(50% - 20px)",background:T.semantic.warning,color:inkOn(T.semantic.warning),borderRadius:D.pill,padding:"0 5px",fontFamily:D.mono,fontSize:"12px",fontWeight:700,minWidth:"16px"}}>{n}</span>
   );
-  // A persona's bar (step 4 §2.0) is four short words and no More, so its
-  // labels can meet the 12px floor (§3.2); a staff bar of five keeps its
-  // small caps until the drawer is redrawn.
+  // A persona's bar (step 4 §2.0) is four short words and no More, so its items
+  // share the bar equally. A staff bar of five sizes each item to its word
+  // instead, so "Dashboard" and "Newsfeed" keep their 12px (§3.2) on a 320px
+  // phone, where five equal fifths are too narrow for them (I32).
   const roomy = rest.length === 0;
+  const drawer = useRef(/** @type {HTMLDivElement | null} */ (null));
+  // The drawer is a modal: focus moves in, Tab stays inside, Escape closes, and focus goes back to More. The buttons
+  // below are drawn by a component made inside this render, so the one that opened it is a new node by now; More is
+  // found again by its test id, not remembered.
+  const closeMore = () => {
+    setMoreOpen(false);
+    requestAnimationFrame(() => /** @type {HTMLElement | null} */ (document.querySelector('[data-testid="mnav-more"]'))?.focus());
+  };
+  useEffect(() => {
+    if (!moreOpen) return;
+    drawer.current?.focus();
+    const onKey = (/** @type {KeyboardEvent} */ e) => {
+      if (e.key === "Escape") { e.stopPropagation(); closeMore(); return; }
+      if (e.key !== "Tab" || !drawer.current) return;
+      const f = [...drawer.current.querySelectorAll("button:not([disabled])")];
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === drawer.current)) { e.preventDefault(); /** @type {HTMLElement} */ (last).focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); /** @type {HTMLElement} */ (first).focus(); }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [moreOpen]);
   const Item = ({ k, isMore }) => {
     const m = isMore ? { icon:"menu", label:"More" } : NAV_META[k];
     const isActive = isMore ? moreActive : active===k;
@@ -109,15 +133,15 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
         data-testid={isMore?"mnav-more":`mnav-${k}`}
         aria-current={isActive&&!isMore?"page":undefined}
         aria-expanded={isMore?moreOpen:undefined}
-        // The 8px uppercase label under each icon is decorative reinforcement.
-        // Naming the button outright means it is announced once, properly,
-        // rather than as an emoji followed by a shouted abbreviation.
+        // The label under each icon is decorative reinforcement. Naming the
+        // button outright means it is announced once, properly, rather than
+        // as an icon followed by its word.
         aria-label={name}
         style={{
-        flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",padding:"7px 2px",
+        flex:roomy?1:"1 1 auto",minWidth:"44px",display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",padding:"7px 2px",
         background:isActive?D.indigo+"16":"transparent",border:"none",borderRadius:D.md,cursor:"pointer",position:"relative",minHeight:"52px",justifyContent:"center"}}>
         <span aria-hidden="true" style={{fontSize:"17px",lineHeight:1,color:isActive?D.textPrimary:D.textSecondary}}><Icon name={m.icon}/></span>
-        <span aria-hidden="true" style={{fontFamily:roomy?D.body:D.head,fontSize:roomy?"12px":"8px",fontWeight:700,letterSpacing:roomy?"0.02em":"0.08em",textTransform:roomy?"none":"uppercase",whiteSpace:"nowrap",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
+        <span aria-hidden="true" style={{fontFamily:D.body,fontSize:"12px",fontWeight:700,letterSpacing:"0",lineHeight:1.15,textAlign:"center",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
         {isBell&&notifCount>0&&<span data-testid="mnav-alerts-badge" style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:inkOn(D.rose),borderRadius:D.pill,padding:"0 5px",fontFamily:D.mono,fontSize:"12px",fontWeight:700,minWidth:"16px"}}>{notifCount}</span>}
         {waiting>0&&inviteBadge(waiting)}
       </button>
@@ -127,26 +151,26 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
     <>
       {moreOpen&&(
         <>
-          <div className="os-drawer-scrim" data-testid="drawer-scrim" onClick={()=>setMoreOpen(false)}/>
-          <div className="os-drawer" data-testid="drawer" role="dialog" aria-label="All modules">
+          <div className="os-drawer-scrim" data-testid="drawer-scrim" aria-hidden="true" onClick={closeMore}/>
+          <div className="os-drawer" data-testid="drawer" ref={drawer} tabIndex={-1} role="dialog" aria-modal="true" aria-label="All modules">
             <div style={{width:"36px",height:"4px",borderRadius:D.pill,background:D.borderMed,margin:"0 auto 12px"}}/>
-            <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>ScrbrdOS · Sport</div>
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>ScrbrdOS · Sport</div>
             <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"14px"}}>
               {sports.map(s=>{
                 const b = sportBadge(s);
                 const tone = BADGE_TONE[b.tone] ?? D.textMuted;
                 return (
-                <span key={s.code} style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 10px",borderRadius:D.pill,fontFamily:D.head,fontSize:"9px",fontWeight:700,
+                <span key={s.code} style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 10px",borderRadius:D.pill,fontFamily:D.head,fontSize:"12px",fontWeight:700,
                   background:s.enabled?tone+"14":"transparent",border:`1px solid ${s.enabled?tone+"33":D.border}`,color:s.enabled?tone:D.textMuted}}>
                   <Icon name={SPORT_ICON[s.code] ?? "shirt"}/> {s.label}
-                  <span style={{fontSize:"9px",color:tone}}>{b.text}</span>
+                  <span style={{fontSize:"12px",color:tone}}>{b.text}</span>
                 </span>);
               })}
             </div>
             {/* The same groups the sidebar draws, from the same place. */}
             {groupNav(nav).map(g=>(
               <div key={g.key} role="group" aria-labelledby={`drawer-group-${g.key}`} data-testid={`drawer-group-${g.key}`} style={{marginBottom:"12px"}}>
-                <div id={`drawer-group-${g.key}`} style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>{g.label}</div>
+                <div id={`drawer-group-${g.key}`} style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>{g.label}</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:"8px"}}>
                   {g.items.map(k=>{
                     const m = NAV_META[k]; const isActive = active===k;
@@ -159,7 +183,7 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
                         background:isActive?D.indigo+"16":D.surf2,border:`1px solid ${isActive?D.indigo+"33":D.border}`,
                         borderRadius:D.lg,cursor:"pointer"}}>
                         <span style={{fontSize:"18px",color:isActive?D.textPrimary:D.textSecondary}}><Icon name={m.icon}/></span>
-                        <span style={{fontFamily:D.body,fontSize:"10px",fontWeight:isActive?600:400,color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
+                        <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:isActive?600:400,color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
                         {waiting>0&&inviteBadge(waiting)}
                       </button>
                     );
@@ -179,7 +203,7 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
                   background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.lg,cursor:"pointer"}}>
                 <span aria-hidden="true" style={{fontSize:"16px",color:D.textSecondary}}><Icon name="log-out"/></span>
                 <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Sign out</span>
-                {userName&&<span style={{marginLeft:"auto",fontFamily:D.body,fontSize:"10px",color:D.textMuted,
+                {userName&&<span style={{marginLeft:"auto",fontFamily:D.body,fontSize:"12px",color:D.textMuted,
                   overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"45%"}}>{userName}</span>}
               </button>
             </div>

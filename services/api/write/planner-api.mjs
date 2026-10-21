@@ -41,6 +41,7 @@ import {
   pairings, plan, toFixtureDrafts, knownFixtureEnd, fixtureLength,
   PLAN_FORMAT, PLAN_REASON_TEXT, LOCK_STALE, DRAFT_HELD, PLAN_LIMITS,
 } from "@scrbrd/scoring/planner";
+import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, Handler, Db } from "../api-types.mjs" */
 /** @import { Plan, PlanWindow, PlanKnown, PlanLock, PlanRules, PlannedFixture, PairedFixture, PlanSide } from "@scrbrd/scoring/planner" */
 
@@ -427,7 +428,7 @@ export function plannerRoutes({ pool, secret }) {
         return res.status(422).json({ error: "plan_input_invalid", detail: e.message.slice(9) });
       }
       const status = e.status || 500;
-      if (status >= 500) console.error("planner →", e.code || "", e.message);
+      if (status >= 500) console.error("planner →", safeErr(e));
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };

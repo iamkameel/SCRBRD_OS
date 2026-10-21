@@ -403,9 +403,19 @@ try {
     ok("the chosen child is remembered on this device",
        await s.page.evaluate(() => { try { return localStorage.getItem("scrbrd.family.child"); } catch { return null; } }) === DM);
     await st("nav-family").click({ timeout: 6000 }).catch(() => {});
-    await s.page.waitForTimeout(1800);
+    // Family reads my_children afresh on arrival and says "Reading your
+    // family…" until it answers; a count taken on a fixed clock counted that
+    // placeholder whenever the read took longer than the wait (PR #167's red
+    // run, under a concurrent db/99 verify). Wait for the read to answer —
+    // its cards drawn, or its refusal said — and then judge what it drew.
+    await s.page.locator('[data-testid="family-file"] [data-testid^="family-child-"], [data-testid="family-none"]:not(:has-text("Reading your family"))')
+      .first().waitFor({ timeout: 15000 }).catch(() => {});
+    await s.page.waitForTimeout(500);
+    const famCards = await s.page.$$eval('[data-testid^="family-child-"]', (els) => els.map((e) => e.getAttribute("data-testid")).sort());
+    const famText = await st("family-file").innerText().catch(() => "");
     ok("her Family is both children, a card each, and nobody else",
-       await s.page.locator('[data-testid^="family-child-"]').count() === 2 && !SCHOOL_OTHERS.test(await st("family-file").innerText().catch(() => "")));
+       famCards.join() === [`family-child-${KD}`, `family-child-${DM}`].sort().join() && !SCHOOL_OTHERS.test(famText),
+       `${famCards.join(",")} · ${famText.match(SCHOOL_OTHERS)?.[0] ?? ""} · ${famText.replace(/\s+/g, " ").slice(0, 400)}`);
     ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
   }
@@ -2057,7 +2067,7 @@ try {
     // something for the rest. A blank row would be the screen falling silent
     // on the question it exists to answer, and a "pending" would be inventing
     // an obligation nobody recorded.
-    await c.page.locator('[data-testid^="match-card-"]').first().click({ timeout: 5000 }).catch(() => {});
+    await c.page.locator('[data-testid^="match-card-"]').first().click({ timeout: 5000, position: { x: 14, y: 14 } }).catch(() => {});
     await c.page.waitForTimeout(1400);
     const roster = c.page.locator('[data-testid="duty-roster"]');
     if (await roster.count() === 0) {
@@ -2315,7 +2325,7 @@ try {
     // Cross-check against the fixture's own screen — not a second opinion,
     // the same claim asked twice.
     await tid("nav-matches").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
-    await c.page.locator(`[data-testid="match-card-${MATCH}"]`).click({ timeout: 4000 });
+    await c.page.locator(`[data-testid="match-card-${MATCH}"]`).click({ timeout: 4000, position: { x: 14, y: 14 } });
     await c.page.waitForTimeout(600);
     const rosterText = await tid("duty-covered").innerText();
     ok(`the fixture's own duty roster agrees: "${rosterText.trim()}"`, rosterText.trim() === overviewText.trim());

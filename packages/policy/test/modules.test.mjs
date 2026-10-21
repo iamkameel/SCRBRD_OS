@@ -15,6 +15,7 @@
 import { readFileSync } from "node:fs";
 import { MODULES, FEATURES, SPORTS, SWITCHABLE, OWNER_OF_READ, MODULE_OF_NAV, sportFlagKey } from "../src/modules.mjs";
 import { ALL_CAPABILITIES } from "../src/capabilities.mjs";
+import { roleGrants } from "../src/roles.mjs";
 import { fileURLToPath } from "node:url";
 import { migrationFiles, migrationNumber } from "../../../services/api/migration-names.mjs";
 
@@ -150,6 +151,21 @@ group("G. Every gated destination is a real one");
   for (const own of ["dashboard", "settings", "notifications", "profiles"]) {
     ok(`${own} cannot be switched off`, !MODULE_OF_NAV[own]);
   }
+}
+
+group("H. Training is gated by what its table asks (GA-I26a AH-D8)");
+{
+  // training_session's read policy is team.read (db/09). A nav gate on a
+  // narrower capability hid the screen from a parent and a pupil who may read
+  // "training moved to 06:30"; the data inside is row security's to give.
+  ok("Training's capability is team.read", MODULES.training.capability === "team.read");
+  for (const role of ["guardian", "player", "teammanager", "analyst", "coach"])
+    ok(`...which ${role} holds`, roleGrants(role, "team.read"));
+  ok("Training owns its plan's read", OWNER_OF_READ.training_plan === "training");
+  ok("Skills owns the history, the targets and the panel",
+     ["skills_history", "targets", "development_since"].every((r) => OWNER_OF_READ[r] === "skills"));
+  ok("a coaching point is a note: no module owns it, as none owns notes",
+     !OWNER_OF_READ.coaching_points && !OWNER_OF_READ.notes);
 }
 
 console.log(`\n${"─".repeat(52)}\nMODULES SUITE: ${pass} passed, ${fail} failed`);

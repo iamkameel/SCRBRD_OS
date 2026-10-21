@@ -40,10 +40,11 @@ export function InningsToggle({ match, innings, inningsSel, setInningsSel }) {
         return (
           <button key={i} type="button" aria-pressed={on} onClick={() => setInningsSel(i)} data-testid={`mc-innings-${i}`}
             className="pressBtn os-state"
-            style={{ flex: "1 1 0", minWidth: 0, minHeight: "44px", padding: `0 ${T.space.md}`, cursor: "pointer",
+            style={{ flex: "1 1 0", minWidth: 0, minHeight: "44px", padding: `${T.space.xs} ${T.space.md}`, cursor: "pointer",
               borderRadius: T.radius.md, border: `1px solid ${on ? T.content.primary : T.line.normal}`,
               background: on ? T.content.primary : "transparent", color: on ? T.surface.canvas : T.content.secondary,
-              fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              // The side's whole name, wrapped: a school's name is the one thing here that cannot be cut short (I32).
+              fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, lineHeight: 1.25, overflowWrap: "anywhere" }}>
             <SideName side={teamOf(match, inn.battingTeam)}/> innings
           </button>
         );
@@ -185,7 +186,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
   const byKey = new Map((commentary ?? []).map((c) => [c.key, c]));
   return (
     <div>
-      <div data-testid="mc-innings-head" data-from-scorebook={inn.summarised ? "true" : undefined} style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md,
+      <div data-testid="mc-innings-head" data-from-scorebook={inn.summarised ? "true" : undefined} style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md,
         padding: `${T.space.md} ${T.space.lg}`, background: T.board.face, color: T.board.figure, borderRadius: `${T.radius.lg} ${T.radius.lg} 0 0` }}>
         <span style={{ ...T.role.title.md, color: T.board.figure, minWidth: 0 }}>
           <SideName side={side}/>
@@ -211,7 +212,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
         </span>
       </div>
 
-      <div role="table" aria-label="Batting" style={{ border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
+      <div role="table" aria-label="Batting" className="mc-table" style={{ border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
         <HeadRow cols={COLS} label="Batting" icon="bat" heads={["R", "B", "4s", "6s", "SR"]}/>
         {inn.batsmen.map((b) => (
           <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
@@ -247,7 +248,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
       </div>
 
       {inn.bowlers.length > 0 && (
-        <div role="table" aria-label="Bowling" data-testid="mc-bowling" style={{ border: `1px solid ${T.line.normal}`, marginTop: T.space.lg, borderRadius: T.radius.lg, overflow: "hidden" }}>
+        <div role="table" aria-label="Bowling" data-testid="mc-bowling" className="mc-table" style={{ border: `1px solid ${T.line.normal}`, marginTop: T.space.lg, borderRadius: T.radius.lg, overflow: "hidden" }}>
           <HeadRow cols={BOWL_COLS} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
           {inn.bowlers.map((bw) => (
             <div key={bw.id} role="row" data-focus={focus?.has(bw.id) ? "true" : undefined}

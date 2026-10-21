@@ -96,6 +96,12 @@ try {
   const after = await read("injuries", medic);
   ok("the read is refused for everyone at that school", after.status === 403);
   ok("...naming the module rather than a generic failure", after.body?.module === "injuries");
+  // GA-I19 (db/111): the physio's worklist and an injury's reviews are the
+  // module's reads too.
+  const list = await read("injury_worklist", medic);
+  ok("...and the physio's worklist is refused with it", list.status === 403 && list.body?.module === "injuries");
+  const hist = await read("injury_reviews?injuryId=cccccccc-0000-0000-0000-000000000001", medic);
+  ok("...and an injury's review history", hist.status === 403 && hist.body?.module === "injuries");
   ok("...and the medic still holds the capability — nothing was revoked",
      (await q(`select count(*)::int c from role_capability
                 where role = 'medical' and capability = 'medical.details.read'`))[0].c === 1);
@@ -246,6 +252,25 @@ try {
      (await grant("scouting", platform, { schoolId: HIL, granted: false, note: "Plan lapsed." })).status === 200
        && (await read("scouting_candidates", registrar)).status === 403);
   await flag("scouting", platform, { enabled: true, reason: "Back in the base tier." });
+
+  // db/107 (the grant note, Kameel 14 Oct 2026): the platform's note about a
+  // school's plan is that school's and the platform's. It used to come back,
+  // as grant_note, for whatever schoolId anybody enrolled asked about.
+  group("A school's plan is its own: another school reads no grant and no note");
+  {
+    const row = async (token, school) => ((await read("module_settings", token, `?schoolId=${school}`)).body?.rows ?? [])
+      .find((r) => r.key === "scouting");
+    const own = await row(registrar, HIL);
+    ok("Hilton's office reads Hilton's grant and the platform's note on it",
+       own?.school_granted === false && own?.grant_note === "Plan lapsed.", JSON.stringify(own));
+    const theirs = await row(wesAdmin, HIL);
+    ok("Westville's office asking about Hilton gets the row with no grant and no note",
+       !!theirs && theirs.school_granted == null && theirs.grant_note == null, JSON.stringify(theirs));
+    ok("...though the module still resolves for Hilton as it is (the definer reads the grant)",
+       theirs?.resolved === own?.resolved);
+    const plat = await row(platform, HIL);
+    ok("the platform reads every school's note", plat?.grant_note === "Plan lapsed.");
+  }
   await q(`delete from feature_grant where key = 'scouting'`);
 
   group("A locked feature is nobody's to sell");
@@ -340,6 +365,13 @@ try {
       { module: "fields", token: head,
         write: (k) => post(`/api/grounds/${g}/condition`, head, { drainageMin: 100 + k }),
         landed: (k) => count(`select count(*)::int c from ground_condition where ground_id = $1 and drainage_min = $2`, [g, 100 + k]) },
+      // GA-I19 (db/111): the physio records an injury. Gated here and in
+      // injury_record() itself (module_off), which db/99 §88 proves.
+      { module: "injuries", token: medic,
+        write: (k) => post("/api/injuries", medic, { playerId: P, injuryType: `Gate probe ${k}`, severity: "minor",
+          dateInjured: new Date().toISOString().slice(0, 10),
+          nextReviewOn: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) }),
+        landed: (k) => count(`select count(*)::int c from injury where injury_type = $1`, [`Gate probe ${k}`]) },
       { module: "logistics", token: registrar,
         write: (k) => post("/api/vehicles", registrar, { schoolId: HIL, registration: `KZN 7${String(k).padStart(2, "0")} AA`, description: "probe", kind: "minibus", capacity: 8 }),
         landed: (k) => count(`select count(*)::int c from vehicle where registration = $1`, [`KZN 7${String(k).padStart(2, "0")} AA`]) },
@@ -362,7 +394,7 @@ try {
     // by a route — staff, analytics, leagues, competitions — have nothing to
     // gate on the way in, and are absent on purpose.
     const covered = new Set(WRITES.map((w) => w.module));
-    for (const key of ["officials", "training", "skills", "sponsors", "fields", "logistics"]) {
+    for (const key of ["officials", "training", "skills", "sponsors", "fields", "logistics", "injuries"]) {
       ok(`the table covers ${key}`, covered.has(key));
     }
   }

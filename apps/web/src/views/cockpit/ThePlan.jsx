@@ -10,9 +10,12 @@
  *                                 staff has Report, as a reader does. There is
  *                                 NO Edit: a sent plan is changed by withdrawing
  *                                 it, which makes it his draft again.
- *   he has an unsent plan         his draft (saved, or withdrawn), as it is,
- *                                 with Send. There is no edit route and none is
- *                                 drawn; the words are checked again on Send.
+ *   he has an unsent plan         his draft, as it is (db/110, Kameel 15 Oct):
+ *                                 never sent: Send, Change it (the composer, on
+ *                                 its words) and Delete (asked once); withdrawn:
+ *                                 Send again and Change it, and no Delete: the
+ *                                 side read it, and it is kept. The words are
+ *                                 checked again on every save and send.
  *   he may write one              "Write the plan", which opens the composer
  *                                 (a lazy chunk, PlanComposer.jsx).
  *   none of these                 nothing, and no place held.
@@ -42,6 +45,8 @@ export function ThePlan({ match, role, gate, sheet }) {
   const [nonce, setNonce] = useState(0);
   const { rows, loading } = useLive("news", role, nonce, planRead(match.id));
   const [composing, setComposing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [askingDelete, setAskingDelete] = useState(false);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState(/** @type {string | null} */ (null));
@@ -49,7 +54,10 @@ export function ThePlan({ match, role, gate, sheet }) {
   const writeBtn = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const wasComposing = useRef(false);
   useEffect(() => {
-    if (wasComposing.current && !composing) writeBtn.current?.focus();
+    // Back from the composer: to the button that opened it (Write, or the draft's Change it).
+    if (wasComposing.current && !composing) {
+      (writeBtn.current ?? /** @type {HTMLElement | null} */ (document.querySelector('[data-testid="plan-draft-edit"]')))?.focus();
+    }
     wasComposing.current = composing;
   }, [composing]);
 
@@ -83,9 +91,14 @@ export function ThePlan({ match, role, gate, sheet }) {
   if (composing) {
     return (
       <Suspense fallback={<Line quiet>Opening the composer…</Line>}>
-        <PlanComposer match={match} side={{ school: gate.school, team: /** @type {string} */ (gate.teamCode) }} title={title} opponent={opponent}
-          sheet={sheet} onClose={() => setComposing(false)}
-          onDone={(what) => { setComposing(false); setSaid(what === "sent" ? "Sent to the side." : "Saved as a draft. It is yours alone until you send it."); setNonce((n) => n + 1); }}/>
+        <PlanComposer match={match} side={{ school: gate.school, team: /** @type {string} */ (gate.teamCode) }} title={editing && draft ? draft.title : title} opponent={opponent}
+          sheet={sheet} onClose={() => { setComposing(false); setEditing(false); }}
+          draft={editing && draft ? { id: draft.id, body: draft.body, urgency: draft.urgency, wasSent: draft.wasSent } : null}
+          onDone={(what) => {
+            setComposing(false); setEditing(false);
+            setSaid(what === "sent" ? "Sent to the side." : editing ? "Saved. It is yours alone until you send it." : "Saved as a draft. It is yours alone until you send it.");
+            setNonce((n) => n + 1);
+          }}/>
       </Suspense>
     );
   }
@@ -122,18 +135,48 @@ export function ThePlan({ match, role, gate, sheet }) {
   }
 
   if (draft) {
+    // Never sent: his to change, send or delete. Withdrawn: the side read it,
+    // so it is kept: his to change and send again, never to delete (db/110).
+    const withdrawn = draft.wasSent;
     return (
-      <Card label="Your draft plan" testid="plan-draft">
+      <Card label={withdrawn ? "Your withdrawn plan" : "Your draft plan"} testid="plan-draft">
         <p data-testid="plan-draft-body" style={{ ...T.role.body, color: T.content.primary, margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{draft.body}</p>
-        <Line quiet>Not sent. Only you can read it. It is sent as it stands: to change it, write the plan again.</Line>
+        <Line quiet testid="plan-draft-state">
+          {withdrawn
+            ? "Withdrawn, and the side was told. Only you can read it now. Change it and send it again, or leave it. It was sent once, so it is kept and cannot be deleted."
+            : "Not sent. Only you can read it. Change it, send it, or delete it."}
+        </Line>
         {problemLines}
         {status}
-        <div>
-          <Action testid="plan-draft-send" primary disabled={busy}
-            onClick={() => { void run(() => api(`/api/news/${draft.id}/publish`, { method: "POST", body: {} }), "Sent to the side."); }}>
-            {busy ? "Sending…" : "Send to the side"}
-          </Action>
-        </div>
+        {!askingDelete ? (
+          <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+            <Action testid="plan-draft-send" primary disabled={busy}
+              onClick={() => { void run(() => api(`/api/news/${draft.id}/publish`, { method: "POST", body: {} }), "Sent to the side."); }}>
+              {busy ? "Sending…" : withdrawn ? "Send again" : "Send to the side"}
+            </Action>
+            <Action testid="plan-draft-edit" disabled={busy} onClick={() => { setProblem(null); setSaid(null); setEditing(true); setComposing(true); }}>
+              Change it
+            </Action>
+            {!withdrawn && (
+              <Action testid="plan-draft-delete" disabled={busy} onClick={() => { setProblem(null); setSaid(null); setAskingDelete(true); }}>
+                Delete
+              </Action>
+            )}
+          </div>
+        ) : (
+          <>
+            <p data-testid="plan-delete-ask" style={{ ...T.role.body, margin: 0, color: T.content.primary }}>
+              Delete this draft? It was never sent, so nobody else has read it. It cannot be brought back.
+            </p>
+            <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+              <Action testid="plan-delete-yes" primary disabled={busy}
+                onClick={() => { void run(() => api(`/api/news/${draft.id}/delete`, { method: "POST", body: {} }), "Deleted.").then(() => setAskingDelete(false)); }}>
+                {busy ? "Deleting…" : "Delete it"}
+              </Action>
+              <Action testid="plan-delete-no" disabled={busy} onClick={() => setAskingDelete(false)}>Keep it</Action>
+            </div>
+          </>
+        )}
       </Card>
     );
   }

@@ -243,6 +243,21 @@ group("K3  A pupil reads no team-mate's injury, at any tier");
      others("medical.status.read").join(" "));
 }
 
+// ── REACH-D4 · A pupil is a pupil of a side ──────────────
+// A `player` row with no team passed app_can()'s team test for every side at
+// the school (db/50): a boy with no side read every sheet, post and bus.
+// Decided 14 October 2026 (Kameel): `player` is team-scoped, like a coach;
+// db/108 is the CHECK. His own record stays subject-scoped (selfaccess).
+// Falsified by taking `player` back out of TEAM_SCOPED_ROLES: red here.
+group("REACH-D4  A pupil's `player` assignment names his side");
+{
+  ok("player is team-scoped, as a coach is", TEAM_SCOPED_ROLES.includes("player"));
+  ok("...and not subject-scoped: his own record is selfaccess's",
+     !SUBJECT_SCOPED_ROLES.includes("player") && SUBJECT_SCOPED_ROLES.includes("selfaccess"));
+  ok("the coaching roles are still team-scoped",
+     ["coach", "assistantcoach", "teammanager"].every((r) => TEAM_SCOPED_ROLES.includes(r)));
+}
+
 // ── §11.4 School administration vs safeguarding ──────────
 // ── SG · Safeguarding: nobody but a DSO reads a concern ──
 // CSA Safeguarding Policy p15–17, p52 item 5, p63; docs/design/SAFEGUARDING_DSO.md

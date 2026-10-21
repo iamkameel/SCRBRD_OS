@@ -9,8 +9,8 @@
  * must keep reproducing the shipped bytes. A capability change is therefore
  * three edits, not one: roles.mjs (the truth for a fresh install and the
  * client), a new db/NN with the DELETE/INSERT for a database that already
- * has db/01, and WITHDRAWN_SINCE_01, ADDED_SINCE_01 or ROLES_ADDED_SINCE_01 below so the emitted
- * db/01 does not move. DEPLOYING.md, "Changing the schema after go-live",
+ * has db/01, and WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 or
+ * TEAM_SCOPED_SINCE_01 below so the emitted db/01 does not move. DEPLOYING.md, "Changing the schema after go-live",
  * has the procedure.
  *
  * What this emits
@@ -351,7 +351,7 @@ GRANT EXECUTE ON FUNCTION app_holds(text) TO PUBLIC;
  * enforced on the next migration without anyone remembering to edit SQL.
  */
 function teamScopedConstraint() {
-  const list = TEAM_SCOPED_ROLES.map(q).join(", ");
+  const list = TEAM_SCOPED_ROLES.filter((r) => !(r in TEAM_SCOPED_SINCE_01)).map(q).join(", ");
   return `${banner("Assignments that must name a team")}
 -- A NULL team_code widens to every team in the school. That is right for a
 -- head of sport and wrong for a coach: a coach reaches a player's medical
@@ -429,6 +429,9 @@ export const WITHDRAWN_SINCE_01 = {
   // team-mate is out and until when; db/55 withdraws it. (`enquiry`, a
   // coach-to-coach grant, keeps it: Kameel, 2026-09-28.)
   player: [{ after: "player.performance.read", capability: "medical.status.read" }],
+  // GA-I19 D3 (Kameel, 2026-10-15): the principal reads an injury at the
+  // status tier only; db/111 withdraws the nature tier.
+  principal: [{ after: "medical.status.read", capability: "medical.nature.read" }],
 };
 
 /**
@@ -444,6 +447,26 @@ export const ROLES_ADDED_SINCE_01 = {
   fitness: "60_workload_consent_count.sql",
 };
 const roleIn01 = (/** @type {string} */ role) => !(role in ROLES_ADDED_SINCE_01);
+
+/**
+ * Roles that joined TEAM_SCOPED_ROLES after db/01 shipped.
+ *
+ * db/01's assignment_team_scoped CHECK is emitted from TEAM_SCOPED_ROLES, and
+ * db/01 is frozen, so a role that must name a team from some later date is
+ * left out of that emission and the db/NN named here adds its own CHECK: a
+ * fresh install and production reach the same state by the same path, as
+ * ROLES_ADDED_SINCE_01 does for a whole role. rls.test.mjs holds each entry
+ * to it: the role is in TEAM_SCOPED_ROLES, absent from db/01's constraint,
+ * and named by a CHECK in the file. Never retires.
+ *
+ * `player` (REACH-D4, Kameel, 14 October 2026): a `player` row with no team
+ * passed app_can()'s team test for every side at the school, so a pupil with
+ * no side read every side's sheet, posts and buses. db/108 adds
+ * role_assignment_player_team_scoped.
+ */
+export const TEAM_SCOPED_SINCE_01 = Object.freeze({
+  player: "108_player_team_scoped.sql",
+});
 
 /**
  * The mirror: capabilities that did not exist when db/01 shipped.
@@ -493,6 +516,8 @@ export const ADDED_SINCE_01 = {
   // ── end SCRBRD-124 ──
   // ── SCRBRD-130 R2: the DLS resource table (db/75) ──
   "platform.reference.manage":   "75_dls_table.sql",
+  // ── GA-I26a: running a training session, its plan and register (db/105) ──
+  "team.training.run":           "105_development_loop.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
@@ -727,6 +752,13 @@ const asShippedIn09 = (table, def) => withoutLaterMasks(table, REANCHORED_IN_39.
  */
 export const MASKED_SINCE_09 = Object.freeze({
   player: { file: "58_player_fitness_masked.sql", masked: { "medical.status.read": ["fitness"] } },
+  // GA-I19 (db/111): the injury row's four new sensitive columns, each on the
+  // tier D3 places it. db/111 rebuilds injury_masked with db/09's five and
+  // these, so a column the table gains never reaches a reader unmasked.
+  injury: { file: "111_injury_review.sql", masked: {
+    "medical.nature.read":  ["emergency_services", "next_review_on"],
+    "medical.details.read": ["recorded_by", "dso_notified_at"],
+  } },
 });
 
 /** @param {string} table @param {TableDef} def @returns {TableDef} */
@@ -793,6 +825,10 @@ export const TABLES_ADDED_SINCE_09 = Object.freeze({
   // ── end SCRBRD-114 phase 3a ──
   // ── SCRBRD-114 phase 3c: knockout progression ──
   match_progression:             "72_knockout_progression.sql",
+  // ── GA-I19 slice A: the physio's review of an injury ──
+  // The first later table with masked columns: its *_masked view is
+  // generated into the same block, after its policies (tablesAddedIn()).
+  injury_review:                 "111_injury_review.sql",
 });
 const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
 
@@ -806,7 +842,11 @@ export const GENERATED_END = "-- └── END GENERATED";
  */
 export function tablesAddedIn(file) {
   const tables = Object.keys(TABLES).filter((t) => TABLES_ADDED_SINCE_09[t] === file);
-  return [GENERATED_BEGIN, ...tables.map((t) => tablePolicy(t, asShippedIn(t, TABLES[t]))), "", GENERATED_END].join("\n");
+  // A later table that masks columns gets its *_masked view here too, built
+  // exactly as db/09 builds one. A table with no masks adds nothing, so the
+  // blocks already shipped (db/60 to db/72) are emitted byte for byte as before.
+  const views = tables.filter((t) => hasMasks(TABLES[t])).map((t) => maskView(t, asShippedIn(t, TABLES[t])));
+  return [GENERATED_BEGIN, ...tables.map((t) => tablePolicy(t, asShippedIn(t, TABLES[t]))), ...views, "", GENERATED_END].join("\n");
 }
 
 /**
@@ -887,15 +927,27 @@ export function maskPairs(table, def) {
     .join(", ");
 }
 
+/** Does this table mask any column? @param {TableDef} def */
+const hasMasks = (def) => Object.keys(def.masked ?? {}).length > 0 || Object.keys(def.maskedAnyTeam ?? {}).length > 0;
+
 function maskViews() {
   const out = [banner("Column-masking views")];
   for (const [table, current] of Object.entries(TABLES)) {
     if (!tableIn09(table)) continue;
     const def = asShippedIn09(table, current);
-    const masked = def.masked ?? {};
-    const maskedAnyTeam = def.maskedAnyTeam ?? {};
-    if (!Object.keys(masked).length && !Object.keys(maskedAnyTeam).length) continue;
+    if (!hasMasks(def)) continue;
+    out.push(maskView(table, def));
+  }
+  return out.join("\n");
+}
 
+/**
+ * One table's *_masked view, as the DO block that builds it. db/09 emits one
+ * per table it names (maskViews()); a table added after db/09 gets its own in
+ * the generated block of the file that creates it (tablesAddedIn()).
+ * @param {string} table @param {TableDef} def
+ */
+function maskView(table, def) {
     // column → { capability, team anchor }
     //
     // The TEAM anchor varies per capability, which is what lets one table show
@@ -910,7 +962,7 @@ function maskViews() {
     //                   home address.
     const pairs = maskPairs(table, def);
 
-    out.push(`
+    return `
 -- ${table}_masked — every column listed explicitly, each sensitive one gated
 -- by its own capability and evaluated PER ROW.
 --
@@ -955,9 +1007,7 @@ BEGIN
     'CREATE OR REPLACE VIEW ${table}_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM ${table}',
     cols);
 END
-$mask_${table}$;`);
-  }
-  return out.join("\n");
+$mask_${table}$;`;
 }
 
 function assignmentPolicies() {

@@ -32,10 +32,10 @@ export function RateTrack({ track, palette, textClass, textStyle = {}, testid = 
     transform: `translateX(${at(v).toFixed(2)}%)`, transition: `transform ${T.motion.control} ${T.motion.swift}` });
   return (
     <div data-testid={testid} data-kind={track.kind} className={textClass}
-      style={{ display: "flex", alignItems: "center", gap: "0.6em", minWidth: 0, ...textStyle, color: palette.text }}>
+      style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.3em 0.6em", minWidth: 0, ...textStyle, color: palette.text }}>
       <span className="sr-only">{track.said}</span>
       <span aria-hidden="true" data-testid={`${testid}-from`} style={{ whiteSpace: "nowrap" }}>{track.from.label} {track.from.text}</span>
-      <span aria-hidden="true" style={{ position: "relative", flex: "1 1 auto", minWidth: "48px", height: "1.1em" }}>
+      <span aria-hidden="true" style={{ position: "relative", flex: "1 1 auto", minWidth: "48px", height: "1.1em", overflow: "clip", overflowClipMargin: "0.5em" }}>
         <span style={{ position: "absolute", left: 0, right: 0, top: "50%", height: "2px", marginTop: "-1px", background: palette.line }}/>
         {/* Each tick rides a full-width layer moved by transform alone, so a new figure slides without a layout. */}
         {[track.from, track.to].map((end, i) => (
