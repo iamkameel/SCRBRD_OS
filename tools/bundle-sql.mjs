@@ -398,6 +398,152 @@ SELECT
                          WHERE p.oid = to_regprocedure('plan_author_name(uuid)')
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A plan names its author to the side",
+  -- db/104: a score keeps its assessor and is withdrawn, never overwritten by
+  -- a colleague; a coaching point is a note, written by its function alone.
+  CASE WHEN to_regclass('player_skill_standing') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('player_skill_standing')
+                       AND i.indisunique AND i.indpred IS NOT NULL)
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'player_skill_keeps_its_assessor' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name = 'development_note' AND column_name = 'evidence_read')
+        AND to_regprocedure('coaching_point_write(uuid,uuid,text,jsonb)') IS NOT NULL
+        AND to_regprocedure('skill_withdraw(uuid,text)') IS NOT NULL
+        AND to_regprocedure('note_withdraw(uuid)') IS NOT NULL
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('coaching_point_write(uuid,uuid,text,jsonb)'),
+                              to_regprocedure('skill_withdraw(uuid,text)'), to_regprocedure('note_withdraw(uuid)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('coaching_point_write(uuid,uuid,text,jsonb)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('coaching_point_write(uuid,uuid,text,jsonb)'),
+                                         to_regprocedure('skill_withdraw(uuid,text)'), to_regprocedure('note_withdraw(uuid)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+              AND (tablename, policyname) IN (('player_skill', 'player_skill_not_support'),
+                                              ('development_note', 'development_note_not_support'),
+                                              ('development_note', 'development_note_not_platform'),
+                                              ('development_note', 'development_note_plain_insert'))) = 4
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A score keeps its assessor; a point is a note",
+  -- db/105: a target is written by its functions alone and read under the
+  -- boy's development tier; the side's plan is keyed to the library; the
+  -- register takes no health word.
+  CASE WHEN to_regclass('development_target') IS NOT NULL
+        AND to_regclass('training_session_drill') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('development_target'))
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('training_session_drill'))
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('development_target'), 'INSERT')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('development_target'), 'UPDATE')
+        AND to_regprocedure('target_set(uuid,text,text,integer,date,uuid,uuid)') IS NOT NULL
+        AND to_regprocedure('target_withdraw(uuid,text)') IS NOT NULL
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('target_set(uuid,text,text,integer,date,uuid,uuid)'),
+                              to_regprocedure('target_withdraw(uuid,text)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('target_set(uuid,text,text,integer,date,uuid,uuid)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('target_set(uuid,text,text,integer,date,uuid,uuid)'),
+                                         to_regprocedure('target_withdraw(uuid,text)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'training_session_drill_from_the_library' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM role_capability WHERE role = 'teammanager' AND capability = 'team.training.run')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'training_attendance'
+                     AND policyname = 'training_attendance_insert' AND with_check LIKE '%team.training.run%')
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+              AND (tablename, policyname) IN (('development_target', 'development_target_not_support'),
+                                              ('training_attendance', 'training_attendance_no_health_word'),
+                                              ('training_attendance', 'training_attendance_no_health_word_update'))) = 3
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A target is the coach's; the plan is the side's",
+  -- db/106: a family reads its side's fixtures, trips and training, asked
+  -- about her child through the reach helpers, never the all-zeros person
+  -- (REACH R-A).
+  CASE WHEN (SELECT count(*) FROM pg_proc p
+              WHERE p.prosecdef
+                AND p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'), to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
+                              to_regprocedure('fixture_reach(text,uuid)'), to_regprocedure('my_fixture_ends(text)'),
+                              to_regprocedure('my_sides(text)'), to_regprocedure('match_away_school(uuid)'),
+                              to_regprocedure('match_away_team(uuid)'))) = 7
+        AND has_function_privilege('scrbrd_app', to_regprocedure('my_fixture_ends(text)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('side_reach(text,uuid,text,uuid)'), to_regprocedure('fixture_end_reach(text,uuid,uuid,text)'),
+                                         to_regprocedure('fixture_reach(text,uuid)'), to_regprocedure('my_fixture_ends(text)'),
+                                         to_regprocedure('my_sides(text)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policy p
+              WHERE p.polcmd = 'r' AND p.polpermissive
+                AND (p.polrelid, p.polname) IN ((to_regclass('match'), 'match_read'), (to_regclass('trip'), 'trip_read'),
+                                                (to_regclass('training_session'), 'training_session_read'),
+                                                (to_regclass('match_toss'), 'match_toss_read'),
+                                                (to_regclass('match_official'), 'match_official_read'),
+                                                (to_regclass('match_weather'), 'match_weather_read'),
+                                                (to_regclass('match_conditions'), 'match_conditions_read'))
+                AND pg_get_expr(p.polqual, p.polrelid) ~ '(my_fixture_ends|my_sides)\\(') = 7
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                         WHERE p.polrelid = to_regclass('match') AND p.polname = 'match_read'
+                           AND pg_get_expr(p.polqual, p.polrelid) LIKE '%00000000-0000-0000-0000-000000000000%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A family reads its side's fixtures",
+  -- db/107: the officials register is its keeper's (and an official's own
+  -- row); everybody else reads the panel by name and grade through
+  -- official_panel(). A school's grant note is its own and the platform's.
+  CASE WHEN to_regclass('official') IS NOT NULL
+        AND to_regprocedure('official_panel(uuid)') IS NOT NULL
+        AND to_regprocedure('official_conflict(uuid,uuid)') IS NOT NULL
+        AND to_regprocedure('app_enrolled_at(uuid)') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('official') AND p.polname = 'official_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%officiating.registry.manage%'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%app_enrolled()%')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('official_accreditation') AND p.polname = 'official_accreditation_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%app_enrolled()%')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('feature_grant') AND p.polname = 'feature_grant_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app_enrolled_at(school_id)%')
+        AND (SELECT bool_and(p.prosecdef) FROM pg_proc p
+              WHERE p.oid IN (to_regprocedure('official_panel(uuid)'), to_regprocedure('official_conflict(uuid,uuid)'),
+                              to_regprocedure('app_enrolled_at(uuid)')))
+        AND has_function_privilege('scrbrd_app', to_regprocedure('official_panel(uuid)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('official_panel(uuid)'), to_regprocedure('official_conflict(uuid,uuid)'),
+                                         to_regprocedure('app_enrolled_at(uuid)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The officials register is its keeper's",
+  -- db/108: a pupil's player role names his side, as a coach's does.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_constraint c
+                     WHERE c.conrelid = to_regclass('role_assignment')
+                       AND c.conname = 'role_assignment_player_team_scoped' AND c.contype = 'c' AND c.convalidated)
+        AND NOT EXISTS (SELECT 1 FROM role_assignment WHERE role = 'player' AND team_code IS NULL AND active)
+        AND to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)') IS NOT NULL
+        AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'))
+              LIKE '%IF r.role = ''player'' AND v_team IS NULL THEN%'
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A pupil is a pupil of a side",
+  -- db/109: every ending of a guardian link is recorded with a kind (and the
+  -- office's reason), read by the office and never by the guardian or the
+  -- DSO by standing; db/08's door without a kind or a reason is closed.
+  CASE WHEN to_regclass('guardian_link_ending') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('guardian_link_ending'))
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('guardian_link_ending') AND p.polname = 'guardian_link_ending_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app_user_id()%safeguarding.concern.read%')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('guardian_link_ending'), 'INSERT')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_revoke(uuid,text,text)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_revoke(uuid,uuid,text)'), 'EXECUTE')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_ending_notice_is_mine(uuid)'), 'EXECUTE')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'notification' AND policyname = 'notification_link_ended')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_assignment_ending_links' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'guardian_link_ending'
+                     AND policyname = 'guardian_link_ending_not_platform' AND permissive = 'RESTRICTIVE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A link's ending is the office's to read",
+  -- db/110: a draft plan is changed and thrown away by its author; a sent
+  -- plan is kept, and not changed while it is out (Kameel, 15 Oct).
+  CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news_post' AND column_name = 'first_sent_at')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_plan_drafts' AND tgenabled = 'O'
+                     AND tgfoid = to_regprocedure('news_post_plan_drafts()'))
+        AND coalesce(pg_get_functiondef(to_regprocedure('news_plan_discard(uuid)')), '') LIKE '%n.first_sent_at IS NOT NULL%'
+        AND has_function_privilege('scrbrd_app', to_regprocedure('news_plan_discard(uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('news_post_plan_drafts()'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('news_plan_discard(uuid)'), to_regprocedure('news_post_plan_drafts()'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('news_post'), 'DELETE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A draft plan is its author's to change or throw away",
   -- db/111: the physio's injury record (GA-I19 slice A, with SG-12's injury
   -- half): two doors and the worklist, the review table hidden from support,
   -- the application writing neither table directly, and the DSO's watch.
