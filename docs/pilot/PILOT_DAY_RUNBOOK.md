@@ -4,7 +4,7 @@ Saturday 31 October 2026. Westville Boys' High School v [opponent]. One fixture 
 
 Pilot date: Saturday 31 October 2026 (Kameel, 15 Oct 2026). Schedule: wave 3 pasted and merged by 17 Oct; solo run 1 on 22 Oct; feature freeze from 26 Oct; solo run 2 on 27 Oct; production verify on 28 Oct; go/no-go on 29 Oct.
 
-Fill in before the day: [opponent], [match link from the Match Centre]. The people to call are under **Who to call**.
+Fill in before the day: [opponent], [match link from the Match Centre]. The people to call are under Who to call.
 
 Every button name below is written as the app shows it. The scorers' own one-page guide is `docs/pilot/SCORER_HELP.md`.
 
@@ -16,10 +16,10 @@ These are roles, not names. The numbers for each role are on the printed card ea
 
 | role | for |
 |---|---|
-| **the match-day lead** | the pill says **For review**; the server or database is down; the app shows something it should not; a phone is lost; whether to import after play |
+| the match-day lead | the pill says **For review**; the server or database is down; the app shows something it should not; a phone is lost; whether to import after play |
 | **the school office** | **Waiting for your school office**; a sign-in code; no scoring button on an account |
-| **the second reader** | a compromise decision when the lead is the subject or is busy on the field; the person the lead phones at T + 1 hour |
-| **the standby scorer** | the handover; the paper book if the first phone dies |
+| the second reader | a compromise decision when the lead is the subject or is busy on the field; the person the lead phones at T + 1 hour |
+| the standby scorer | the handover; the paper book if the first phone dies |
 
 ---
 
@@ -122,24 +122,24 @@ If the signal is back but the pill does not move, see 'The server or the databas
 
 Signs: the pill stays **Held** or **On device** although the phone has signal; the health address does not answer, or shows `"db":"unreachable"`; the pavilion screen says "reconnecting".
 
-1. **Keep scoring on the pad.** Every ball is saved on the phone before it counts. Nothing is lost while the phone works. Do not reload, clear the match or sign out.
-2. **The paper scorebook is kept as always**, ball by ball. Today it is the second record: check it against the pad at the end of every over, not only at the innings.
-3. **No handover while the server is down.** If the scoring phone dies, the standby does not claim the match. From that ball the paper book is the only record; the standby writes the time and the over on it and scores on paper.
-4. **Tell the match-day lead.** The lead decides nothing during play except whether to suspend the service deliberately (see "The app shows something it should not"). Play goes on.
-5. **When the server returns the balls send by themselves.** Wait for **Sent**. The pavilion screen catches up on its own.
-6. **After the match** the lead opens the scorecard and compares it with the book. If every ball is there, nothing more is done. If balls are missing (a lost or dead phone, balls **For review** that cannot be released, a cleared match), the lead imports the book through the scorebook importer, typed by hand (the reader stays off), and the imported balls carry their source. Either way the lead writes a register entry.
+1. Keep scoring on the pad. Every ball is saved on the phone before it counts. Nothing is lost while the phone works. Do not reload, clear the match or sign out.
+2. The paper scorebook is kept as always, ball by ball. Today it is the second record: check it against the pad at the end of every over, not only at the innings.
+3. No handover while the server is down. If the scoring phone dies, the standby does not claim the match. From that ball the paper book is the only record; the standby writes the time and the over on it and scores on paper.
+4. Tell the match-day lead. The lead decides nothing during play except whether to suspend the service deliberately (see "The app shows something it should not"). Play goes on.
+5. When the server returns the balls send by themselves. Wait for **Sent**. The pavilion screen catches up on its own.
+6. After the match the lead opens the scorecard and compares it with the book. If every ball is there, nothing more is done. If balls are missing (a lost or dead phone, balls **For review** that cannot be released, a cleared match), the lead imports the book through the scorebook importer, typed by hand (the reader stays off), and the imported balls carry their source. Either way the lead writes a register entry.
 
 ### The app shows something it should not
 
 Another school's boy's details, a name on the pavilion screen where a position should be, a date of birth, anything that is not yours to see.
 
-1. **Do not photograph it, screenshot it or forward it.** Note the time and which screen.
-2. **Tell the match-day lead at once.** The lead can take the public page down (**Withdraw**) in a minute and every public page off in a few. The match goes on on the pad.
+1. Do not photograph it, screenshot it or forward it. Note the time and which screen.
+2. Tell the match-day lead at once. The lead can take the public page down (**Withdraw**) in a minute and every public page off in a few. The match goes on on the pad.
 3. The lead writes a register entry; the information officer and the second reader decide within 24 hours whether families are told.
 
 ### A phone with the app signed in is lost
 
-1. **Tell the match-day lead at once.** The lead or the school office disables that account and signs it out everywhere.
+1. Tell the match-day lead at once. The lead or the school office disables that account and signs it out everywhere.
 2. If it was the scoring phone, the lead force-releases the match so the standby can claim it. Balls that had not been sent are on paper only; the standby carries on from the book.
 3. The register entry says whether the phone was locked, when the account was disabled, and what was on it.
 
@@ -162,7 +162,7 @@ Another school's boy's details, a name on the pavilion screen where a position s
 - [ ] Home side published and the pavilion screen shows **Before the toss**
 - [ ] Pavilion Wi-Fi tested
 - [ ] Phones charged
-- [ ] The roles under **Who to call** known to both scorers, and the numbers on the printed card
+- [ ] The roles under Who to call known to both scorers, and the numbers on the printed card
 
 ### For solo run 2 (27 October) and the production verify (28 October)
 
