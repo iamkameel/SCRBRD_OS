@@ -1,6 +1,6 @@
 # Data events and security compromises: POPIA s22, the match-day outage, and the audit log
 
-Design for Kameel's review (Fable, 2026-10-21). Status: the 19 questions in §13 are decided as recommended (Kameel, 21 Oct 2026); the pilot items P1–P10 (§12.1) are next. Nothing is built. Kameel added this
+Design for Kameel's review (Fable, 2026-10-21). Status: merged 21 Oct 2026 (#177). The 19 questions in §13 are decided as recommended (Kameel, 21 Oct 2026); the pilot items P1–P10 (§12.1) carry their status in that table. Kameel added this
 problem to Fable's list on 2026-10-21 as "incidents and breaches"; this document
 does not use either word for it (§2).
 
@@ -768,15 +768,15 @@ progress").
 
 | # | what | tier | notes |
 |---|---|---|---|
-| **P1** | The runbook text of §10.2, the four roles of §10.3, the checks of §10.4, in `PILOT_DAY_RUNBOOK.md`; a paper step in `SCORER_HELP.md` "No signal" | Haiku | word for word from this design after Kameel's edits; the lead reads it before it lands |
+| **P1** | The runbook text of §10.2, the four roles of §10.3, the checks of §10.4, in `PILOT_DAY_RUNBOOK.md`; a paper step in `SCORER_HELP.md` "No signal" | Haiku | word for word from this design after Kameel's edits; the lead reads it before it lands. **Partly done (runbook text merged 21 Oct 2026, #179); the `SCORER_HELP.md` paper step is not written yet.** |
 | **P2** | The decision chain: Kameel names the second reader for the pilot (D6) and asks Westville for its information officer's name and the office contact; both written in `docs/policy/INFORMATION_OFFICER.md` with the deputy designation when it comes | Kameel; Haiku records | a decision, not code |
-| **P3** | `docs/policy/DATA_EVENT_TEMPLATE.md` (§7.1–7.2 as headings, no data) and the rule that the register lives where a dump may live (D16) | Haiku | the pilot's entries are files on the encrypted disk |
-| **P4** | Logging hygiene fix (D24): `server.mjs:1461`, `scorebook-api.mjs:467/502/521`, `owner-recovery-api.mjs:50/59/62` | **Opus** | four small edits where a mistake is silent; the unit test may follow (A12) |
-| **P5** | `docs/pilot/PRODUCTION_SHEET.md` (D27) and the DEPLOYING.md:9-10 correction | Haiku drafts; the lead fills the provider facts | no secret, no phone number |
+| **P3** | `docs/policy/DATA_EVENT_TEMPLATE.md` (§7.1–7.2 as headings, no data) and the rule that the register lives where a dump may live (D16) | Haiku | the pilot's entries are files on the encrypted disk. **Done (merged 21 Oct 2026, #179).** |
+| **P4** | Logging hygiene fix (D24): `server.mjs:1461`, `scorebook-api.mjs:467/502/521`, `owner-recovery-api.mjs:50/59/62` | **Opus** | four small edits where a mistake is silent; the unit test may follow (A12). **Done (merged 21 Oct 2026, #180).** |
+| **P5** | `docs/pilot/PRODUCTION_SHEET.md` (D27) and the DEPLOYING.md:9-10 correction | Haiku drafts; the lead fills the provider facts | no secret, no phone number. **Drafted (merged 21 Oct 2026, #179); the lead's provider facts are not yet filled in.** |
 | **P6** | The checks of §10.4 run on solo run 2 and the production verify; results written on the runbook's checklist | the lead | confirms the pad's `Held` behaviour this design leans on |
-| **P7** | `docs/pilot/SECRETS_ROTATION.md` (D26) | Haiku drafts; the lead fills paths | — |
+| **P7** | `docs/pilot/SECRETS_ROTATION.md` (D26) | Haiku drafts; the lead fills paths | **Drafted (merged 21 Oct 2026, #179); the lead's dashboard paths are not yet filled in.** |
 | **P8** | Confirm on production that `scorebook_reader` is off for every school and stays off through the pilot (D30, Q14); confirm who holds `platformadmin` (D22) | the lead | a read, not a change |
-| **P9** | `keep-warm.yml` exits non-zero when health is not `ok:true, db:ok` (and, once A5 lands, when `audit_failed > 0`), so GitHub emails the owner on failure; today it only warns in its own log (`keep-warm.yml:52-57`) | **Sonnet** | one workflow change; the only alert the pilot will have |
+| **P9** | `keep-warm.yml` exits non-zero when health is not `ok:true, db:ok` (and, once A5 lands, when `audit_failed > 0`), so GitHub emails the owner on failure; today it only warns in its own log (`keep-warm.yml:52-57`) | **Sonnet** | one workflow change; the only alert the pilot will have. **Done (merged 21 Oct 2026, #178).** |
 | **P10** | Decide Q11: whether `OWNER_RECOVERY_SECRET` is unset for the pilot week | Kameel | — |
 
 ### 12.2 After the pilot
