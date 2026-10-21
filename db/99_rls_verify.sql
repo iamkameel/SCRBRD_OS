@@ -5467,8 +5467,11 @@ BEGIN
     ARRAY['spec',     'spectator',   HIL::text, '',    ''],    -- school-wide follower
     ARRAY['spec6',    'spectator',   HIL::text, '6XI', ''],    -- scoped by the office to the 6XI
     ARRAY['office',   'schooladmin', HIL::text, '',    ''],
-    ARRAY['wescoach', 'coach',       WES::text, '6XI', ''],
-    ARRAY['teamless', 'player',      HIL::text, '',    c_n::text]]);  -- the R-D case: a pupil with no team
+    ARRAY['wescoach', 'coach',       WES::text, '6XI', '']]);
+  -- R-D's case, a pupil whose `player` row has no team, is no longer staged
+  -- here: since db/108 (§85) no live such row can be written (the CHECK
+  -- role_assignment_player_team_scoped), so §85 holds that case, not §83.
+  -- (Wave 3 integration: db/106 and db/108 were built side by side.)
   PERFORM _v100_link((ids->>'g1')::uuid, HIL, c_a);
   PERFORM _v100_link((ids->>'g2')::uuid, HIL, c_b);
   PERFORM _v100_link((ids->>'g2')::uuid, WES, c_w);
@@ -22612,14 +22615,14 @@ $v49$;
   --                   no bus to a fixture he cannot read (t3, t4), though his
   --                   driver's transport.read is school-wide (db/106 (d))
   --                 coach6, coach7, wescoach, spec (school-wide), spec6
-  --                   (scoped to the 6XI), office, teamless: as before
+  --                   (scoped to the 6XI), office: as before
   --                 g3 (ended), g4 (pending), g5 (revoked), a stranger, an
   --                   anonymous session: nothing
   --   (unchanged) every reader whose assignments name nobody reads the stage's
   --               fixtures, trips and training exactly as db/09 gave them
-  --   (team-less) the pupil whose `player` row has no team (R-D's case) reads
-  --               through fixture_reach() exactly what the unnamed branch
-  --               gives at either end, and no more
+  --   (team-less) retired at the wave 3 integration: db/108 (§85) refuses
+  --               the team-less `player` row this reader was, so it cannot
+  --               be staged; §85 proves none is live and none can be written
   --   (spelling)  for every stage reader and fixture end, app_can() with NULL
   --               and with all-f answer alike (§5 item 2)
   --   (literal)   for every person holding an assignment and every staged or
@@ -22723,7 +22726,6 @@ $v49$;
       "spec":     {"m": "f1 f2 f3 f4 f5 f6", "t": "",                "s": "",         "x": "f1 f2 f6", "p": "f1-home f6-home"},
       "spec6":    {"m": "f1 f2 f4 f5",       "t": "",                "s": "",         "x": "f1 f2",    "p": "f1-home"},
       "office":   {"m": "f1 f2 f3 f4 f5 f6", "t": "t1 t1b t3 t4 t6", "s": "s6 s7 s8", "x": "f1 f2 f6", "p": "f1-home f6-home"},
-      "teamless": {"m": "f1 f2 f3 f4 f5 f6", "t": "t1 t1b t3 t4 t6", "s": "s6 s7 s8", "x": "f1 f2 f6", "p": "f1-home f6-home"},
       "g3":       {"m": "", "t": "", "s": "", "x": "", "p": ""},
       "g4":       {"m": "", "t": "", "s": "", "x": "", "p": ""},
       "g5":       {"m": "", "t": "", "s": "", "x": "", "p": ""},
@@ -22763,7 +22765,7 @@ $v49$;
       '§83 (both): the guardian of two boys on two sides lost one boy''s own side''s fixture');
 
     -- (unchanged): every reader naming nobody, exactly as db/09 gave
-    FOREACH k IN ARRAY ARRAY['coach6', 'coach7', 'wescoach', 'spec', 'spec6', 'office', 'teamless'] LOOP
+    FOREACH k IN ARRAY ARRAY['coach6', 'coach7', 'wescoach', 'spec', 'spec6', 'office'] LOOP
       PERFORM _as((z->>k)::uuid);
       PERFORM _assert(
         (SELECT coalesce(array_agg(id ORDER BY id), '{}') FROM match WHERE id = ANY (FX))
@@ -22775,12 +22777,9 @@ $v49$;
         format('§83 (unchanged): the %s reads a fixture, trip or session other than db/09 gave', k));
     END LOOP;
 
-    -- (team-less): fixture_reach() gives him the unnamed branch at either end and nothing more
-    PERFORM _as((z->>'teamless')::uuid);
-    SELECT string_agg(_v106_label(z, x), ' ' ORDER BY _v106_label(z, x)) INTO bad
-      FROM unnest(FX) x
-     WHERE fixture_reach('fixture.read', x) IS DISTINCT FROM _v106_unnamed('fixture.read', x);
-    PERFORM _assert(bad IS NULL, format('§83 (team-less): fixture_reach() gives the team-less pupil more or less than the unnamed branch at %s', bad));
+    -- (team-less): retired at the wave 3 integration. The reader it asked
+    -- about, a live `player` row with no team, is refused by db/108's CHECK;
+    -- §85 (check) and (seed) are the proof now.
 
     -- (spelling): NULL and all-f answer alike, at both ends of each fixture
     FOR k IN SELECT jsonb_object_keys(want) LOOP
