@@ -421,6 +421,10 @@ const HAND_WRITTEN_SINCE_47 = {
   health_monitoring_consent: {},
   // db/70: a boy's seat on a parent's lift is never public as a whole (N4).
   lift_seat: {},
+  // db/105: a coach's target for a boy is never public as a whole (N5).
+  development_target: {},
+  // db/109: how and why a guardian's link ended is never public as a whole (N4).
+  guardian_link_ending: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */

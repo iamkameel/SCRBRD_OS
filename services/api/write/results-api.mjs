@@ -22,6 +22,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resultFromRow, resultWords } from "@scrbrd/scoring";
+import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, Handler, IdHandler } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -67,7 +68,7 @@ export function resultsRoutes({ pool, secret }) {
       if (e.code === "23514") return res.status(422).json({ error: "value_invalid", detail: e.message });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
-      if (status >= 500) console.error("results →", e.code || "", e.message);
+      if (status >= 500) console.error("results →", safeErr(e));
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };

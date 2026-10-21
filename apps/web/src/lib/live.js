@@ -300,6 +300,10 @@ function asNewsPost(r) {
     // live plan's author is named to every reader of the plan (db/103), so
     // for a plan this is null only when the author's account is gone.
     authorName: r.author_name ?? null,
+    // A plan's draft (db/110): sent before (a withdrawn plan, kept) or never
+    // (its author's to delete), and how loud it is to go.
+    wasSent: r.wasSent === true,
+    urgency: r.urgency ?? "low",
     fixtureId: r.fixtureId ?? null,
     noticeId: r.noticeId ?? null,
     schoolId: r.school_id ?? null,
@@ -335,8 +339,9 @@ function asDutySuspension(r) {
  * was never on the ladder and somebody who needs to renew.
  *
  * born / idNumber / email / phone arrive NULL for every reader but the union
- * that keeps the register. That is the mask doing its job, not missing data,
- * so they are passed through as null rather than defaulted to anything.
+ * that keeps the register (and an official reading his own row): the table
+ * is closed to everybody else (db/107). That is the policy doing its job, not
+ * missing data, so they are passed through as null rather than defaulted.
  */
 function asRegisteredOfficial(r) {
   return {
@@ -1222,6 +1227,10 @@ const ADAPT = {
   users: asUser,
   // Every account, disabled ones included: People's read (account lifecycle D5).
   accounts: asUser,
+  // A child's guardian links, every state, for the office (db/109, D12). The
+  // rows as the server sends them: views/familylinks.jsx maps them with
+  // lib/familyLinks.js asChildLink(), which stays out of the entry chunk.
+  child_links: (r) => r,
   grounds: asGround,
   training: asTraining,
   training_attendance: asAttendance,

@@ -1,6 +1,6 @@
 # School office quick sheet
 
-15 October 2026. Westville Boys' High School v [opponent].
+Saturday 31 October 2026. Westville Boys' High School v [opponent].
 
 ## The order of the load
 

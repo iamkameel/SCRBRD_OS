@@ -5,13 +5,14 @@ Nothing here uses any other Firebase project. Three pieces:
 
 | Piece | Where | How it gets there |
 |---|---|---|
-| Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
-| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | by hand (5), or the same workflow, from the root `Dockerfile` |
-| Database | Cloud SQL, Postgres 16, `africa-south1` | by hand, once, then by hand for every schema change |
+| Client (`apps/web`) | Render, the same service as the API (`SERVE_CLIENT`) | built and served by the API's own process on every deploy of `main` |
+| API (`services/api`) | Render, `scrbrd.onrender.com`, from `render.yaml` | Render deploys `main` by itself, from `render.yaml`; the first deploy is New → Blueprint, as in "The whole thing in one service" above |
+| Database | Supabase Postgres, Free | by hand, once, then by hand for every schema change |
 
-Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
-browser talks to one origin and the client is built with `VITE_API_BASE=""`.
-Realtime is plain HTTP, so the rewrite carries everything the client needs.
+The API serves the client from its own process, so the browser talks to one
+origin and the client is built with `VITE_API_BASE=""`. The Firebase Hosting and
+Cloud Run arrangement below (`firebase.json`, `deploy.yml`) is the alternative
+road; production does not use it.
 
 ## Where to run all of this
 
@@ -56,6 +57,11 @@ instance-hours a month. Set the repository variable `SCRBRD_HEALTH_URL`
 (Settings → Secrets and variables → Actions → Variables) to the service's
 `/api/health` address; unset, the job does nothing. Run it once by hand from
 the Actions tab to see it answer 200.
+The job also fails, and GitHub emails the repository owner, when production is
+bad: no answer, an answer other than 200, a body that is not JSON, or a body
+without `ok: true` and `db: "ok"`. It tries up to three times (75 seconds each,
+20 apart) so a sleeping server booting does not count. For the pilot this is the
+only alert there is.
 
 ### The deployed revision
 
@@ -1272,6 +1278,326 @@ Captain tab and the coach's tab read with it, so a plan stays findable when
 more than 100 newer posts sit above it.
 <!-- ── end db/103 ── -->
 
+<!-- ── db/104: corrections to a coach's judgement, and the coaching point ── -->
+#### Corrections to a coach's judgement, and the coaching point (db/104)
+
+`db/104_assessment_corrections.sql` is GA-I26a slice A1 (Kameel, 15 Oct:
+AH-D2, AH-D3, AH-D5 as recommended). **A score keeps its assessor.** Before
+it, a colleague who rated a boy on the same day as his coach overwrote the
+number and took the authorship. Now a coach corrects his own score that day,
+as before; anybody else's same-day upsert is refused (`403 not_the_assessor`)
+and he rates on his own row. **A wrong score or note is withdrawn, not
+deleted**: it stays, struck, with who withdrew it and why, and every screen
+that reads the standing score (Skills, the ratings, the focus areas, the
+rewards score) stops counting it. **A coaching point is a development note
+with its evidence pointer**, read only by the note's readers (coach,
+assistant, director, principal) and never by the boy, his parents or a
+platform-wide account.
+
+**What it does to a live database.** Three nullable columns on
+`player_skill` and nine on `development_note` (no rewrite). `player_skill`'s
+unique key on (player, day, category, metric) becomes a partial unique index
+over standing rows (`player_skill_standing`), so a withdrawn score does not
+hold its slot. One new trigger (`player_skill_keeps_its_assessor`), one
+trigger function replaced in place (`development_note_author()`, same
+trigger), four `RESTRICTIVE` policies (`player_skill_not_support`,
+`development_note_not_support`, `development_note_not_platform`,
+`development_note_plain_insert`), and four functions: `coaching_point_write`,
+`skill_withdraw`, `note_withdraw` (`SECURITY DEFINER`, pinned search path,
+executable by `scrbrd_app` alone) and the internal `coaching_point_never`.
+No row is inserted, changed or deleted. **One behaviour changes for every
+school at once, on the paste:** the owner's key (a platform-wide assignment)
+and a support session stop reading development notes, and a support session
+stops reading skill ratings. Each statement locks `player_skill` or
+`development_note` briefly; paste outside a coaching session. A second paste
+changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 104` (after 102, and after 103 where
+it has shipped), then the verify bundle (§81 is its proof). The summary row
+"A score keeps its assessor; a point is a note" should read OK. **Schema
+first**: the API built with it refuses to start without db/104
+(`expected-migrations.json`); its assessment upsert names the partial index
+(`ON CONFLICT … WHERE withdrawn_at IS NULL`), which an older database does
+not have.
+<!-- ── end db/104 ── -->
+
+<!-- ── db/105: the development loop — a target, the side's plan, the register ── -->
+#### The development loop: a target, the side's plan, the register (db/105)
+
+`db/105_development_loop.sql` is GA-I26a slice A2 (Kameel, 15 Oct: AH-D1,
+AH-D3, AH-D6, AH-D9 as recommended). **A coach sets a target** on one
+attribute of one boy (a number above where he stands, a date, the drill for
+it, and the reasoning as a staff-only note). The boy reads his own targets;
+his parents, the principal, the team manager and a team-mate do not. Whether
+he reached it is read off his scores, never stored. **A session's plan is
+keyed to the drill library** and read by the side, parents included, as the
+session is; it names no boy. **The register gets its route**, which never
+writes `injured`: that is a health word on a list the side reads, and an old
+`injured` row now reads as `excused`. **The team manager runs the session**
+(Kameel, 15 Oct): a new capability, `team.training.run`, lets him set a
+session's plan and take its register at his own side, and nothing else. He is
+still refused the drill library, the kit register and scheduling, which stay
+under `team.manage`. Every role that holds `team.manage` holds the new one
+too, so nobody loses a write. The assistant coach holds neither.
+
+**What it does to a live database.** Two new empty tables
+(`development_target`, `training_session_drill`) under row security: the
+first with one read policy, a `RESTRICTIVE` support cut and no write policy
+or write privilege at all (its doors are `target_set` and `target_withdraw`,
+`SECURITY DEFINER`, pinned search path, `scrbrd_app` alone); the second with
+four policies (read under `team.read`, written under `team.training.run`)
+and a trigger refusing another school's drill. One capability row and six
+`role_capability` rows (`team.training.run`: coach, director of sport, school
+admin, sports admin, the owner's key, the team manager).
+`training_attendance`'s two write policies are re-created under
+`team.training.run` with the same anchors (its read is unchanged), and two
+`RESTRICTIVE` policies refuse `injured` from the application's role. No existing row is changed. Refuses to run before db/104.
+A second paste changes nothing.
+
+**Behaviour the paste and the deploy change.** The Training screen's
+navigation is gated by `team.read` (it was `player.development.read`), so
+parents, pupils, the team manager and the analyst find it; what they see in
+it is what row security already gave them. The CSV export
+(`GET /api/export/:resource`) now refuses `skills`, `ratings`, `notes` and
+the new development reads with `403 not_exported`; it served the first three
+before.
+
+Paste `node tools/bundle-sql.mjs --apply 105` (after 104), then the verify
+bundle (§82 is its proof). The summary row "A target is the coach's; the plan
+is the side's" should read OK. **Schema first**: the API built with it refuses
+to start without db/105 (`expected-migrations.json`); its `targets`,
+`training_plan` and `development_since` reads name the new tables.
+<!-- ── end db/105 ── -->
+
+<!-- ── db/106: a family reads its side's fixtures, trips and training ── -->
+#### A family reads its side's fixtures, trips and training (db/106)
+
+`db/106_reach_side.sql` is REACH group R-A (`docs/design/REACH_parent_pupil.md`
+§6.1), Kameel's decision of 2026-10-14 (REACH-D1, "the side only"). Until now
+every guardian read every fixture, every trip (with its driver, its pickup and
+notes that may name a child) and every training session at her school, and
+the browser filtered the list down to her child's side. Now a guardian reads
+her child's side's fixtures home and away, the one fixture he is on the team
+sheet of when he plays up, their buses at the bus's own school, and their
+training; nothing of another side at her school or any other. A pupil reads
+his side's, as before, and (Kameel, 15 Oct) a boy playing up reads the one
+fixture whose team sheet names him, its toss, umpires and weather, and its
+bus, as his guardian does; nothing else of the older side, not its nets, and
+nothing of a fixture he was taken off. Nothing is added to a pupil's
+self-access. Staff, a school-wide follower, the office and a driver
+read what they read. The away side's family and staff now also read the toss,
+the umpires, the pitch report, the weather, the playing conditions and the
+broadcast setting of their side's away fixture, which were the host's alone.
+A link that is pending, ended or revoked reads nothing of the child's side.
+
+**What it does to a live database.** Eight functions (`SECURITY DEFINER`,
+`STABLE`, pinned search path; `EXECUTE` revoked from `PUBLIC` and granted to
+`scrbrd_app`, and from a managed host's `anon`/`authenticated` where they
+exist): the rule, one row at a time (`side_reach`, `fixture_end_reach`,
+`fixture_reach`), and the same rule asked once per statement, which is what
+the policies call (`my_fixture_ends`, `my_sides`, `my_own_boy` for "the
+reader is the boy on the sheet", and the away anchors
+`match_away_school`/`match_away_team` beside db/02's home ones). db/41's
+`trip_fixture_driver_only()` is replaced in place (same signature and grants:
+"a driver who reaches the fixture only as its driver" now asks match_read's
+new question). Thirteen read policies are dropped and created again
+(`match_read`, `trip_read`, `training_session_read`,
+`fixture_publication_read`, `match_result_decision_read` and the eight
+satellites' `*_read`), in the paste's one transaction. A trip is read at its
+own school's end, and only by someone who reads its fixture, as before. The
+file checks every policy's text and the helpers' grants before it commits.
+No table, column, row or write policy is touched. A second paste changes
+nothing. **One behaviour changes for every school at once, on the paste:**
+parents stop seeing other sides' fixtures, buses and nets; paste outside a
+match. Cost, on a forty-fixture season: a coach's or the director's fixture
+list as before (8–11 ms); a parent of two 34 ms for her list and 100 ms for
+her buses, where it was 9 and 47 (db/106's header has the figures).
+
+Paste `node tools/bundle-sql.mjs --apply 106` (after 102, and after 103–105 if
+they have shipped; the bundle names the one it needs first), then the verify
+bundle (§83 is its proof; the summary row "A family reads its side's fixtures"
+should read OK). **Schema first**: the API built with it refuses to start
+without db/106 (`expected-migrations.json`), and its `matches` read asks
+`my_fixture_ends()` which end the reader is at.
+<!-- ── end db/106 ── -->
+<!-- ── db/107: the officials register and the grant notes, closed ── -->
+#### The officials register is its keeper's; a school's plan is its own (db/107)
+
+`db/107_official_register_closed.sql` is REACH-D5 and the grant-note decision
+(Kameel, 14 October 2026). **The officials register** held an umpire's or a
+scorer's date of birth, ID number, email and phone, and every enrolled person
+at every school, pupils and parents included, could read the table raw; the
+API was safe only because one route read a masked view. Now the table is read
+by the body that keeps it (`officiating.registry.manage`, platform-wide) and
+by an official reading his own row, and by nobody else. Everybody who needs a
+name and a grade, to appoint an umpire or to read the register screen, reads
+`official_panel()`, which names its columns (name, panel, standing, grade,
+how many accreditations, whether he has an account) and never returns a date
+of birth, an ID number, an address or a phone. **A school's plan**
+(`feature_grant`, with the platform's free-text note) was readable by anybody
+enrolled anywhere, so `module_settings` gave one school's note to another's
+parents. Now a school's own people and the platform read its rows, nobody
+else; which modules are on still resolves for everyone exactly as before.
+
+**What it does to a live database.** Replaces three read policies
+(`official_read`, `official_accreditation_read`, `feature_grant_read`); refuses
+to run if any is not what db/81 left (or this file's own). Adds three
+functions (`app_enrolled_at`, `official_panel`, `official_conflict`): `SECURITY
+DEFINER`, `STABLE`, pinned search path, executable by `scrbrd_app` and not
+`PUBLIC`. No table, column, row or table grant changes; a second paste changes
+nothing. **One behaviour changes on the paste:** a school's coach, director of
+sport or principal who opens the officials screen still sees the panel and
+its grades, and no longer receives a date of birth or contact for anybody
+(they already arrived empty through the API); a parent or pupil asking the
+modules read about another school gets no grant row.
+
+Paste `node tools/bundle-sql.mjs --apply 107` (after 102, and after 103–106
+where those have shipped; the bundle names the one it needs first), then the
+verify bundle (§84 is its proof). The summary row "The officials register is
+its keeper's" should read OK. **Schema first**: the API built with it reads
+`official_panel()` and `official_conflict()` and refuses to start without
+db/107 (`expected-migrations.json`).
+<!-- ── end db/107 ── -->
+
+<!-- ── db/108: a pupil is a pupil of a side ── -->
+#### A pupil is a pupil of a side (db/108)
+
+`db/108_player_team_scoped.sql` is REACH-D4 (Kameel, 14 October 2026: "player
+becomes team-scoped (a CHECK, like coach). Yes."). A pupil's `player` role
+with no team reached every side at his school: every sheet, post and bus
+list. A new CHECK, `role_assignment_player_team_scoped`, makes a live `player`
+role name a side, as db/01's has always made a coach's; and the one door
+every grant passes (`role_request_grant_as()`) takes a pupil's side from the
+roster when nobody named one, or refuses by name (`team_required`).
+
+**FIRST, with Kameel's yes: `tools/sql/fix-player-without-team.sql`.** On 14
+October production and the demo database each held exactly one live `player`
+role with no team: the seeded test account `spectator@example.invalid`, not a
+pupil. db/108 refuses to run while one exists ("Nothing was changed"), and it
+does not change live data itself. The fix file ends that one role
+(`active = false`; the row, its dates and its provenance stay, and the account
+can be given the role again with a side). It ends only the account it names,
+and stops without changing anything if it finds a team-less `player` role on
+any other account, or on an account linked to a pupil on the roster: a pupil
+is given a side by the office, not ended. Paste it in the SQL Editor, read its
+notice ("ended 1 team-less player role(s)…") and the empty result under it,
+then paste db/108. On a rebuilt database (the seed now puts that account on
+the 1st XI) the fix file finds nothing and says so.
+
+**What db/108 does to a live database.** Adds one CHECK constraint
+(`NOT VALID`, then `VALIDATE`, under a lock with a ten-second `lock_timeout`;
+ended roles are exempt, since an ended role reaches nothing and is never
+reactivated). Re-emits `role_request_grant_as()` (db/92) with one block,
+md5-guarded; same signature, rights and settings. No row is inserted, changed
+or deleted; a second paste changes nothing. Paste outside a busy hour: the
+lock is held for the length of one table scan of `role_assignment`.
+
+Paste `tools/sql/fix-player-without-team.sql` (with Kameel's yes), then `node
+tools/bundle-sql.mjs --apply 108` (after 107), then the verify bundle (§85 is
+its proof). The summary row "A pupil is a pupil of a side" should read OK. The
+API needs nothing new from it: a refusal comes back as `team_required`, which
+the request, enrolment and register routes already answer in words.
+<!-- ── end db/108 ── -->
+
+<!-- ── db/109: account lifecycle slice 3, a child's links ── -->
+#### A child's links, and the reason for an ending (account lifecycle slice 3, db/109)
+
+`db/109_guardian_link_ending.sql` is slice 3 of `docs/design/ACCOUNT_LIFECYCLE.md`
+(§4; D11–D14, Q8, Q10, Q13). Every ending of a guardian link is now recorded in
+a new table, `guardian_link_ending`, with a kind and, when a person ended it,
+the reason: the office revoking one (`custody`, `family_left`, `guardian_asked`,
+`office`, with a reason of ten characters or more), a guardian role ended
+(`role_ended`, the role's reason), or the boy leaving school (`majority` when
+his parents keep the link until his birthday, `left_school` when he left as an
+adult; no reason, no actor). The office and its auditors read it; the guardian
+never does, and the DSO reads only the kind and the date, inside an open
+concern. **Nobody reads it platform-wide** (Kameel, 15 October 2026): the
+platform administrator and the owner's key read a child's links and the ending
+reasons only inside a live support session at that school (db/22), as the role
+the session lent them, and the read is logged under the session. The same
+holds for ending one: a platform-wide caller is refused `not_permitted` by
+`guardian_link_revoke()` unless a support session is live at that school. The guardian is told in one notice: "Your link to a child at {school}
+ended on {date}. The school office can say why; the platform does not." Never
+the child's name, never the reason. What a revoked link takes with it is the
+existing rules', unchanged: his name off public pages until another guardian
+answers (db/47), the health consent through it (db/60), her lift seats (db/70).
+
+New routes: `POST /api/players/:id/guardians/:link/revoke { kind, reason }`, and
+the office's read `GET /api/read/child_links?playerId=…` (every link of a child,
+in every state; `user.role.assign` or `guardian.link.manage` at the school,
+never platform-wide outside a support session there; every read logged). The old `POST /api/players/:id/guardians/revoke
+{ guardianId, note }` still works, now through the new door (kind `office`
+unless one is sent; the note is the reason, so it needs ten characters).
+Squad → a pupil → Edit Profile gains a Family links panel.
+
+**What it does to a live database.** Adds the table, its indexes, its read
+policy and a RESTRICTIVE one (`guardian_link_ending_not_platform`), three functions (`guardian_link_revoke(uuid, text, text)`,
+`guardian_link_ending_notice_is_mine(uuid)`, the trigger function
+`role_assignment_ending_links()`), one trigger on `role_assignment_ending`, and
+a notification read policy (`notification_link_ended`). Re-emits db/62's
+`guardian_links_close_on_leaving()` and `guardian_links_reopen_at_school()` and
+db/57's `safeguarding_family()`, each md5-guarded against the body in place.
+**Takes EXECUTE on db/08's `guardian_link_revoke(uuid, uuid, text)`** from
+`PUBLIC`, the application and a managed host's API roles: the function stays
+(nothing is dropped), but only the owner can call it. No row is inserted,
+changed or deleted; links revoked or dated out before the paste have no ending
+row and read "no reason recorded". A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 109` (after 103, and after 104–108 if
+they have shipped; the bundle names the one it needs first), then the verify
+bundle (§86 is its proof; the summary row "A link's ending is the office's to
+read" should read OK). **Schema first**: the API built with it refuses to start
+without db/109 (`expected-migrations.json`). Between the paste and that API,
+the old API's revoke answers "not permitted" and changes nothing; everything
+else works.
+<!-- ── end db/109 ── -->
+
+<!-- ── db/110: the coach's draft plan, changed and thrown away ── -->
+#### A draft plan is its author's to change or delete (db/110)
+
+`db/110_plan_drafts.sql` puts Kameel's decision of 15 Oct 2026 into the
+database:
+- A plan that was never sent can be changed and deleted by its author.
+- A withdrawn plan can be changed and sent again, but never deleted.
+- A plan out with the side is not changed in place; it is withdrawn first.
+
+Withdrawing a plan makes it its author's draft again, so `news_post` gains
+`first_sent_at`, the date a plan was first sent. The trigger stamps it, it is
+never taken from the caller, and it is never cleared. Existing plans are
+dated from `published_at`, or, for a plan already withdrawn, from its first
+notice. The trigger `news_post_plan_drafts` refuses two things:
+- A change to a live plan's words or urgency (`news_post_plan_sent`).
+- A change to a plan by anybody but its author (`news_post_plan_author`),
+  whichever door the change comes through.
+
+`news_plan_discard(post)` is the only way a plan is deleted: by its author,
+and only for a plan never sent. The application still holds no `DELETE` on
+`news_post`. A withdrawn plan's first sending stays in its retracted notice
+(db/91), and sending it again writes a new notice, so both versions are kept.
+
+**What it does to a live database.**
+- Adds one column, with no table rewrite.
+- Dates the existing plans: it updates `first_sent_at` alone, which no notice
+  trigger reads.
+- Adds one trigger (`CREATE OR REPLACE TRIGGER`) and two `SECURITY DEFINER`
+  functions with a pinned search path. `news_plan_discard` is executable by
+  `scrbrd_app` only; the trigger's function by nobody.
+- Changes no policy or grant, and writes or changes no notice. Nothing is
+  dropped. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 110` after 103 (and after 104–109
+if they ship with it), then the verify bundle (§87 is its proof). The summary
+row "A draft plan is its author's to change or throw away" should read OK.
+
+**Schema first.** An API built with it refuses to start without db/110
+(`expected-migrations.json`). It serves `POST /api/news/:id/edit` and
+`POST /api/news/:id/delete`, and its `news` read returns `wasSent` and
+`urgency`. The coach's tab offers the following on his unsent plan:
+- **Change it** on any unsent plan.
+- **Delete**, asked once, on a plan never sent.
+- **Send again** on a withdrawn plan.
+<!-- ── end db/110 ── -->
+
 <!-- ── db/111: the physio's injury record, its reviews and her worklist ── -->
 #### The physio records and reviews an injury (db/111)
 
@@ -1320,6 +1646,101 @@ also returns the new columns, masked by tier, and `left_on` / `left_school`
 runs as the caller); `injury_reviews` returns `is_recording` (the review
 `injury_record()` wrote at the recording).
 <!-- ── end db/111 ── -->
+
+<!-- ── db/112: a moved pupil follows his new side; a boy playing up reads his match's balls ── -->
+#### A moved pupil follows his new side (db/112)
+
+`db/112_assignment_follows_side.sql` is SR-1 of `docs/design/SEASON_ROLLOVER.md`
+(§1.2, §8; Kameel decided its questions on 15 October 2026, as recommended),
+with the playing-up ball log (Kameel, 15 October 2026: yes).
+
+**What was wrong.** A pupil's side is stored on his `player` row and again on
+his `player` role. Moving him (`POST /api/players/:id/team`, or the CSV
+import) changed only the first, so after a move he kept reading his **old**
+side's fixtures, plans, nets and bus as one of its players, and none of his
+new side's, while his parent read the new side.
+
+**What it does.**
+- A new trigger on `player`, `player_assignment_follows_side`, runs when a
+  boy's side changes. Every live `player` role of **his own accounts** (his
+  account's `player_id`, or a verified self-access link naming him) at his
+  school follows it. The old role is **ended** (kept, stamped with who moved
+  him and when) and a new one is made on the new side. db/01 forbids
+  re-pointing a role, so it is ended and made again rather than edited. A
+  move to **no side** ends the role and makes none: a live `player` role never
+  names no side (db/108's CHECK). A guardian's, a coach's and every other role,
+  and every link, are never touched. Nobody is sent a notice.
+- **A one-time correction**, in the paste: any live `player` role that
+  disagrees with the boy's side today is put right by the same rule. Its
+  NOTICE names each one ("corrected N boy(s): ended …, opened …") or says
+  "nothing to correct". On the seed it finds nothing: R Pillay's role is on
+  his side, and spectator@'s account is no boy's. **Production's count is
+  unknown until the paste: read the NOTICE and keep it.** A second paste
+  finds none.
+- `ball_event_read` gains a fourth branch, `my_own_sheet_fixtures()`: a boy
+  playing up (on an older side's sheet, not withdrawn, at his own school's
+  end) reads that match's balls, as he already reads the fixture (db/106).
+  Not another match of the older side's; a withdrawn boy reads none. db/100's
+  three branches and `my_child_fixtures()` are unchanged, so a parent reads
+  what she read before.
+
+**What it does to a live database.** Six new functions, all `SECURITY
+DEFINER` with a pinned path: five that only the owner may call (the trigger's
+`player_assignment_follows_side()`, `player_assignment_carry()`,
+`player_own_accounts()`, `player_assignment_disagreements()`,
+`player_assignment_correct()`), and `my_own_sheet_fixtures()`, which
+`scrbrd_app` may call and `PUBLIC` may not. One trigger on `player`.
+`ball_event_read` is dropped and made again with the fourth branch, guarded:
+the file stops if the policy in place is not db/100's. The correction locks
+`role_assignment` (`SHARE ROW EXCLUSIVE`, ten-second `lock_timeout`) for one
+block. No table, column, index, table grant or capability changes. db/01,
+db/08's history trigger, db/108's CHECK and `role_request_grant_as()` are
+not touched. The file checks itself. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 112` after 111 (it needs db/100,
+db/106 and db/108), read its NOTICE, then the verify bundle (§89 is its
+proof). The summary row "A moved pupil follows his new side" should read OK.
+**Schema first**: an API built with it refuses to start without db/112
+(`expected-migrations.json`). The API itself needs nothing new: the move
+route writes `player.team_code` as before, and the trigger does the rest.
+<!-- ── end db/112 ── -->
+
+<!-- ── db/113: a correction takes back what it falsified ── -->
+#### A voided ball withdraws the notices it caused (db/113)
+
+`db/113_correction_retracts_notices.sql` is GA-I36 slice A2 with
+NOTIFICATIONS slice S5. Before it, a fifty reached on a ball later voided kept
+its "Fifty for D Erasmus" notice for ever: the scorecard said 46 and the
+side's Notices said fifty. The same was true of a hundred, a five-for, a
+hat-trick, a career mark and a bowling-directive breach. Now a void (the pad's
+undo or an approved amendment) re-asks each notice its ball could have caused.
+A notice that no longer holds is withdrawn through db/89's
+`notification_retract()`: it leaves every list, opens as a stub, and one
+notice, "A notice was withdrawn", goes to exactly the people who had the
+original. A breach that no longer holds is hidden from the workload screens
+and from `workload()`'s count, and the row is kept. A mark that is reached
+again returns in place. It is the same notice with its figure brought up to
+date, and nothing new is sent. A void, or a released held ball, also drops
+the fixture's public page from the cache at commit.
+
+**What it does to a live database.** It adds two columns to `bowling_breach`
+(`retracted_at` and `notice_id`), one to `milestone_notice` (`notice_id`), one
+RESTRICTIVE read policy on `bowling_breach`, three triggers on `ball_event`
+(two on a void, and `public_data_changed` on a void or a released ball), and
+five functions, none of them callable by the application. It restates
+`milestone_notify()`, `bowling_breach_watch()` and `workload()` (db/60's, with
+one line added). It backfills the two `notice_id` links where exactly one
+notification matches, and the output names the counts. Nothing is retracted
+on the paste: a notice standing on a ball voided before it stays as it was.
+Nothing is dropped. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 113` after 89 and 91 (it calls
+db/89's `notification_retract()`), then the verify bundle (§90 is its proof).
+The summary row "A correction takes back what it falsified" should read OK.
+**Schema first**: an API built with it refuses to start without db/113
+(`expected-migrations.json`). No route or screen changes. Notices already
+shows withdrawn rows and stubs (S1).
+<!-- ── end db/113 ── -->
 
 ### 5 · Cloud Run, the first time
 

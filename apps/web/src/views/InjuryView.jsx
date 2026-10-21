@@ -157,7 +157,7 @@ function InjuryView({ role }) {
                         <Badge color={inj.restricted?D.rose:D.emerald}>{inj.restricted?"Restricted":"Not restricted"}</Badge>
                         {hasLeftSchool(inj)&&<Badge color={D.textMuted} data-testid={`left-school-${inj.id}`}>Left the school</Badge>}
                       </span>
-                      <span style={{display:"block",...text,fontWeight:500,color:inj.type?sc:D.textMuted,marginBottom:"4px",fontStyle:inj.type?"normal":"italic"}}>{withheld(inj.type,"Details withheld")}</span>
+                      <span style={{display:"block",...text,fontWeight:500,color:inj.type?sc:D.textMuted,marginBottom:"4px",overflowWrap:"anywhere",fontStyle:inj.type?"normal":"italic"}}>{withheld(inj.type,"Details withheld")}</span>
                       <span style={{display:"block",...text,color:D.textMuted,marginBottom:"8px"}}>
                         Phase: <span style={{color:D.textSecondary,fontWeight:500}}>{withheld(phaseWord(inj.phase),"—")}</span>{inj.physio ? ` · Physio: ${inj.physio}` : ""}
                       </span>

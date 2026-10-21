@@ -127,7 +127,7 @@ const Sep = ({ sx }) => <div style={{height:"1px",background:D.border,...sx}} />
 const Badge = ({ children, color, sx, ...rest }) => (
   <span {...rest} style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em",
     textTransform:"uppercase",padding:"3px 8px",borderRadius:D.pill,
-    background:`${color||D.indigo}1e`,color:textOn(color||D.indigo),
+    background:`${color||D.indigo}14`,color:textOn(color||D.indigo),
     border:`1px solid ${color||D.indigo}30`,flexShrink:0,...sx}}>{children}</span>
 );
 
@@ -195,7 +195,7 @@ const SignalBar = ({ label, value, pct, color, center }) => (
   <div>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:"5px"}}>
       <Lbl>{label}</Lbl>
-      <span style={{fontFamily:D.mono,fontSize:"11px",color:textOn(color||D.textPrimary)}}>{value}</span>
+      <span style={{fontFamily:D.mono,fontSize:"12px",color:textOn(color||D.textPrimary)}}>{value}</span>
     </div>
     <div style={{height:"3px",borderRadius:"2px",background:D.surf3,overflow:"hidden",position:"relative"}}>
       {center

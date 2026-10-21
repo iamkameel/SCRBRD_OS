@@ -321,7 +321,8 @@ export function planTitle(opponent, startMs) {
 
 /**
  * @typedef {{ id: string, title: string, body: string, author: string | null, publishedAt: string | null, mine: boolean,
- *             noticeId: string | null, schoolId: string | null, teamCode: string | null }} Plan
+ *             noticeId: string | null, schoolId: string | null, teamCode: string | null,
+ *             wasSent: boolean, urgency: string }} Plan
  */
 
 /**
@@ -351,7 +352,8 @@ function plansFor(rows, fixtureId, side = null) {
     .filter((r) => r?.kind === "plan" && r.fixtureId === fixtureId
       && (!side || ((side.school == null || r.schoolId === side.school) && (side.team == null || r.teamCode === side.team))))
     .map((r) => ({ id: r.id, title: r.title, body: r.body, author: r.authorName ?? null, publishedAt: r.publishedAt ?? null, mine: r.mine === true,
-                   noticeId: r.noticeId ?? null, schoolId: r.schoolId ?? null, teamCode: r.teamCode ?? null }))
+                   noticeId: r.noticeId ?? null, schoolId: r.schoolId ?? null, teamCode: r.teamCode ?? null,
+                   wasSent: r.wasSent === true, urgency: r.urgency ?? "low" }))
     .sort((a, b) => String(b.publishedAt ?? "9").localeCompare(String(a.publishedAt ?? "9")));
 }
 
@@ -403,6 +405,8 @@ export function planRefusal(e) {
     kind_invalid: "That kind of post is not known.",
     not_permitted: "You do not hold the tier a plan to the side needs.",
     no_such_draft: "That draft is not there any more.",
+    plan_sent: d.message || "A plan that is out with the side is not changed. Withdraw it first: it comes back to you to change and send again.",
+    plan_kept: d.message || "A plan that was sent is kept, so it cannot be deleted. You can change it and send it again.",
     no_such_notice: "That plan is not there any more.",
     title_required: "A plan needs a title.",
     body_required: "A plan needs something in it.",

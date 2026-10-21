@@ -228,6 +228,56 @@ export const DERIVABLE_DISCIPLINES = Object.freeze(["batting", "bowling"]);
 export const COACH_ONLY_DISCIPLINES = Object.freeze(["fielding", "keeping"]);
 
 /**
+ * The drill library's categories (db/08 `drill.category`), in its own order.
+ */
+export const DRILL_CATEGORIES = Object.freeze(["batting", "bowling", "fielding", "keeping", "fitness", "tactical"]);
+
+/**
+ * Which drill categories suit an attribute (GA-I26a §1.5): the one bridge
+ * between the four vocabularies that otherwise map to nothing — the
+ * assessment's groups, the disciplines, the library's categories and a
+ * session's type.
+ *
+ *   - every discipline whose list (DISCIPLINES) holds `${category}.${metric}`;
+ *   - plus `fitness` for a physical attribute;
+ *   - plus `tactical` for a tactical one.
+ *
+ * An attribute in no discipline and neither group — leadership, teamwork,
+ * work rate, determination — maps to nothing, which is honest: no drill in
+ * the library teaches them. An unknown attribute maps to nothing too.
+ *
+ * Used ONLY to order a drill picker (matching categories first), never to
+ * refuse a drill: a coach who puts a fielding drill against a batter's
+ * concentration is coaching, not mistyping. No SQL copy; the server never
+ * needs it.
+ * @param {string} category  a group of TREE
+ * @param {string} metric    an attribute of that group
+ * @returns {Set<string>}    a fresh set of DRILL_CATEGORIES
+ */
+export function drillCategoriesFor(category, metric) {
+  /** @type {Set<string>} */
+  const out = new Set();
+  if (!(/** @type {Record<string, readonly string[]>} */ (TREE))[category]?.includes(metric)) return out;
+  const key = `${category}.${metric}`;
+  for (const [discipline, attrs] of Object.entries(DISCIPLINES)) if (attrs.includes(key)) out.add(discipline);
+  if (category === "physical") out.add("fitness");
+  if (category === "tactical") out.add("tactical");
+  return out;
+}
+
+/**
+ * The drill categories a session's type starts its plan editor on (GA-I26a
+ * §1.5): its own for a single-discipline session, every category for a mixed
+ * one. A default filter, never a refusal.
+ * @param {string} sessionType  one of db/08's training_session.session_type
+ * @returns {Set<string>}
+ */
+export function drillCategoriesForSession(sessionType) {
+  if (["batting", "bowling", "fielding", "fitness"].includes(sessionType)) return new Set([sessionType]);
+  return new Set(DRILL_CATEGORIES);
+}
+
+/**
  * Behavioural anchors at four-point intervals. A coach picks the anchor that
  * fits and may nudge within the band.
  *

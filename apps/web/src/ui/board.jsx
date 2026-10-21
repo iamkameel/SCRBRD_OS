@@ -236,9 +236,12 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
           the figures on the right, as a board has them. The left column sits
           beside the total rather than under it, so the board is no taller
           than its figures need (step 2: the pad fits a phone). */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md }}>
-        <div style={{ minWidth: 0, display: "grid", gap: "2px" }}>
-          <div style={{ ...T.role.label, color: B.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      {/* Wraps only where the team's column would be under 6em beside the total: at 200% zoom on a phone the total sits under it (I32). */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md }}>
+        <div style={{ minWidth: 0, flex: "1 1 6em", display: "grid", gap: "2px" }}>
+          {/* The team's name wraps rather than ending in an ellipsis: beside a 56px total on a 320px phone the column is
+              under 100px, and "WESTVILL…" does not say which side is batting (I32). */}
+          <div style={{ ...T.role.label, color: B.dim, overflowWrap: "anywhere" }}>
             {team}
           </div>
           {(overs != null || sub) && (
@@ -252,7 +255,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
             </div>
           )}
         </div>
-        <div className={pad ? "os-board-total" : undefined} style={{ ...big, color: B.figure, whiteSpace: "nowrap", flexShrink: 0 }} data-testid={`${testid}-total`}>
+        <div className={pad ? "os-board-total" : "os-board-card-total"} style={{ ...big, color: B.figure, whiteSpace: "nowrap", flexShrink: 0 }} data-testid={`${testid}-total`}>
           <Figure value={total ?? 0} testid={`${testid}-runs`}/>
           <span style={{ color: B.dim }}>/</span>
           <Figure value={wickets ?? 0} testid={`${testid}-wickets`}/>
@@ -269,7 +272,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
                 const lit = !marked || b.onStrike;
                 return (
                   <span key={b.name} data-testid={`${testid}-batter`} data-on-strike={b.onStrike ? "true" : undefined}
-                    style={{ ...T.role.figure.sm, color: lit ? B.figure : B.dim, whiteSpace: "nowrap" }}>
+                    style={{ ...T.role.figure.sm, color: lit ? B.figure : B.dim, overflowWrap: "anywhere" }}>
                     {/* The on-strike marker is a shape as well as a colour, and is said. */}
                     <span aria-hidden="true" style={{ color: b.onStrike ? B.lime : "transparent", marginRight: T.space.xs }}>●</span>
                     {b.onStrike && <span className="sr-only">on strike: </span>}
@@ -288,14 +291,14 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
           {(partnership || bowler) && (
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: `${T.space.xs} ${T.space.sm}` }}>
               {partnership && (
-                <span data-testid={`${testid}-partnership`} style={{ ...T.role.figure.sm, color: B.figure, whiteSpace: "nowrap" }}>
+                <span data-testid={`${testid}-partnership`} style={{ ...T.role.figure.sm, color: B.figure, overflowWrap: "anywhere" }}>
                   <span style={{ fontFamily: T.type.body, color: B.dim }}>Partnership</span>{" "}
                   <Figure value={partnership.runs ?? 0}/>
                   {partnership.balls != null && <span style={{ color: B.dim }}> ({partnership.balls})</span>}
                 </span>
               )}
               {bowler && (
-                <span data-testid={`${testid}-bowler`} style={{ ...T.role.figure.sm, color: B.figure, whiteSpace: "nowrap", marginLeft: "auto" }}>
+                <span data-testid={`${testid}-bowler`} style={{ ...T.role.figure.sm, color: B.figure, overflowWrap: "anywhere", marginLeft: "auto" }}>
                   <span style={{ fontFamily: T.type.body }}>{bowler.name}</span>{" "}
                   <Figure value={`${bowler.wickets ?? 0}/${bowler.runs ?? 0}`}/>
                   {bowler.overs != null && <span style={{ color: B.dim }}> ({bowler.overs})</span>}
@@ -305,7 +308,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
           )}
           {chips.length > 0 && (
             <div data-testid={`${testid}-over`}
-              style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end", gap: T.space.xs }}>
+              style={{ position: "relative", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end", gap: T.space.xs }}>
               <span className="sr-only">This over: {chips.map((c) => c.say).join(", ")}</span>
               {thisOver.map((b, i) => <Chip key={i} mark={b}/>)}
             </div>

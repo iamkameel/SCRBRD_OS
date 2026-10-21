@@ -59,9 +59,10 @@
  */
 
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
-  penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
+  penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers, isKeeperRef, keeperOf } from "./replay.mjs";
 import { countsInOver, isWicketBall } from "./events.mjs";
+import { deriveFacts, MOMENT_KIND } from "./facts.mjs";   // Recognition R1: the milestones are the facts'
 import { positionName, sectorOf, batHandOf, SECTORS } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
 import { revisedTargetSuffix } from "./result.mjs";   // SCRBRD-130 R1
@@ -391,6 +392,17 @@ export function deriveCommentary(events = [], options = {}) {
 
   const foldCtx = options.ctx ?? {};
   const { byInnings, numbers, match, final, credits } = matchWalk(events, foldCtx);
+  // The milestones a ball brought up are deriveFacts()'s moments (facts.mjs,
+  // Recognition R1): one reading of the fold for the commentary, the pad and
+  // the recognition SQL mirrors. Keyed as this walk keys an event: its
+  // innings and its position in that innings' log (the same split).
+  /** @type {Map<string, import("./facts.mjs").Moment[]>} */
+  const momentsAt = new Map();
+  for (const m of deriveFacts(events, null, { ctx: foldCtx }).moments) {
+    const k = `${m.at.innings}:${m.at.index}`;
+    const list = momentsAt.get(k);
+    if (list) list.push(m); else momentsAt.set(k, [m]);
+  }
 
   /** @type {CommentaryItem[]} */
   const out = [];
@@ -417,9 +429,6 @@ export function deriveCommentary(events = [], options = {}) {
     let wicketsAtOverStart = 0;
     /** @type {Map<string, number>} */ const maidens = new Map();
     /** @type {Map<number, string>} */ const overBowler = new Map();
-    // Each bowler's legal deliveries, in order: was it a wicket that is his?
-    // For the hat-trick: three in three, as the pad's own overlay counts it.
-    /** @type {Map<string, boolean[]>} */ const bowlerRun = new Map();
     /** @type {{at: number, balls: number} | null} */ let lastAnnounce = null;
     // The last keeper line, while no ball has been bowled since it: a keeper
     // named again then replaces it (the scorer changed his mind), saying who
@@ -613,23 +622,20 @@ export function deriveCommentary(events = [], options = {}) {
           });
           push(key, entry.over, entry.ballInOver + 1, kind, text);
 
-          // Milestones this delivery brought up.
+          // Milestones this delivery brought up: the facts' moments, in the
+          // order they give them (the batter's marks, then the bowler's), with
+          // a partnership's between, which is the pair's and nobody's fact.
           const pos = { over: entry.over, ball: entry.ballInOver + 1 };
-          if (strikerId != null) {
-            const a = prev.bat.get(strikerId)?.runs ?? 0, b = cur.bat.get(strikerId);
-            if (b) {
-              for (const mark of [50, 100, 150, 200, 250, 300]) {
-                if (a < mark && b.runs >= mark) {
-                  const S = who(strikerId, "batter");
-                  const text2 = mark === 50
-                    ? choose(key, "fifty", [`Fifty for ${S}, from ${b.balls} balls.`, `${S} reaches fifty, from ${b.balls} balls.`])
-                    : mark === 100
-                      ? choose(key, "hundred", [`A hundred for ${S}, from ${b.balls} balls.`, `${S} reaches a hundred, from ${b.balls} balls.`])
-                      : `${S} reaches ${mark}, from ${b.balls} balls.`;
-                  push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, text2);
-                }
-              }
-            }
+          const here = momentsAt.get(`${n}:${index}`) ?? [];
+          for (const m of here) {
+            if (m.kind !== MOMENT_KIND.BATTER_MARK) continue;
+            const S = who(m.player, "batter");
+            const text2 = m.mark === 50
+              ? choose(key, "fifty", [`Fifty for ${S}, from ${m.balls} balls.`, `${S} reaches fifty, from ${m.balls} balls.`])
+              : m.mark === 100
+                ? choose(key, "hundred", [`A hundred for ${S}, from ${m.balls} balls.`, `${S} reaches a hundred, from ${m.balls} balls.`])
+                : `${S} reaches ${m.mark}, from ${m.balls} balls.`;
+            push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, text2);
           }
           const samePair = cur.wickets === prev.wickets && cur.cp.bat1 === prev.cp.bat1 && cur.cp.bat2 === prev.cp.bat2
             && cur.cp.bat1 != null && cur.cp.bat2 != null;
@@ -642,26 +648,19 @@ export function deriveCommentary(events = [], options = {}) {
               }
             }
           }
-          if (bowlerId != null) {
-            const a = prev.bowl.get(bowlerId)?.wickets ?? 0, b = cur.bowl.get(bowlerId);
-            if (b && b.wickets > a && b.wickets >= 5) {
+          // The bowler's fifth wicket and each after it, and the hat-trick
+          // (Q8: three of his balls of the over in a row, each a wicket of his
+          // that stood; a wide or a no-ball neither makes nor breaks one, as
+          // SQL's bowler_hat_trick reads it): the facts', not counted here.
+          for (const m of here) {
+            const B = who(m.player, "bowler");
+            if (m.kind === MOMENT_KIND.BOWLER_WICKETS) {
               push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE,
-                `${cap(words(b.wickets))} wickets for ${who(bowlerId, "bowler")}: ${b.wickets}/${b.runs}.`);
-            }
-            // A hat-trick is three of the bowler's balls of the over in a
-            // row: one that does not count (a wide, a no-ball, 17.3.2.5)
-            // neither makes nor breaks it, as SQL's bowler_hat_trick reads it.
-            if (countsInOver(ev)) {
-              const mine = isWicketBall(ev) && !entry.freeHitSaved && chargedToBowler(normaliseDismissal(ev.dismissal));
-              const run = bowlerRun.get(bowlerId) ?? [];
-              run.push(mine);
-              bowlerRun.set(bowlerId, run);
-              const [x, y, z] = run.slice(-3);
-              if (mine && run.length >= 3 && x && y && z && !run[run.length - 4]) {
-                push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `A hat-trick for ${who(bowlerId, "bowler")}.`);
-              } else if (mine && run.length >= 2 && run[run.length - 2] && !(run.length >= 3 && run[run.length - 3])) {
-                push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `${who(bowlerId, "bowler")} is on a hat-trick.`);
-              }
+                `${cap(words(/** @type {number} */ (m.wickets)))} wickets for ${B}: ${m.wickets}/${m.runs}.`);
+            } else if (m.kind === MOMENT_KIND.HAT_TRICK) {
+              push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `A hat-trick for ${B}.`);
+            } else if (m.kind === MOMENT_KIND.HAT_TRICK_BALL) {
+              push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `${B} is on a hat-trick.`);
             }
           }
           // The over is done: its summary goes out with whatever happens next.

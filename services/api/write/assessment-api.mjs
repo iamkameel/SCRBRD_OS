@@ -76,10 +76,20 @@ export function validateAssessment(body) {
 /**
  * Record an assessment.
  *
- * Upserts on (player, date, category, metric): a coach revising a rating on the
- * same day is correcting themselves, not filing a second opinion. A rating on
- * a LATER date is a new row, because the history is the point of a development
- * record — the trend is what a coach is actually looking at.
+ * Upserts on (player, date, category, metric) among the STANDING rows: a
+ * coach revising his own rating on the same day is correcting himself, not
+ * filing a second opinion. A rating on a LATER date is a new row, because the
+ * history is the point of a development record — the trend is what a coach is
+ * actually looking at.
+ *
+ * The upsert never takes the authorship (db/104, GA-I26a AH-D5). It used to
+ * set `assessed_by = excluded.assessed_by`, so a colleague who rated the same
+ * boy on the same day overwrote the number and became its author. Now the
+ * row's assessor is fixed by player_skill_revision(), and a colleague's upsert
+ * onto it is refused (45003, `not_the_assessor`): he rates on his own row,
+ * dated another day, or the score is withdrawn first (skill_withdraw()). A
+ * withdrawn row holds no slot in the key, so a same-day re-rating after a
+ * withdrawal is a new row.
  * @param {Pool} pool
  * @param {string} secret
  * @param {string | undefined} bearer  the Authorization header, as sent
@@ -98,10 +108,9 @@ export async function recordAssessment(pool, secret, bearer, playerId, body) {
         `insert into player_skill
            (player_id, assessed_on, assessed_by, category, metric, score, note)
          values ($1, coalesce($2::date, current_date), app_user_id(), $3, $4, $5, $6)
-         on conflict (player_id, assessed_on, category, metric)
+         on conflict (player_id, assessed_on, category, metric) where withdrawn_at is null
          do update set score = excluded.score,
-                       note = excluded.note,
-                       assessed_by = excluded.assessed_by
+                       note = excluded.note
          returning id`,
         [playerId, assessedOn, r.category, r.metric, r.score, note]);
       // An INSERT's command tag always carries a count; pg's type allows null
@@ -201,18 +210,29 @@ export async function reviseNote(pool, secret, bearer, noteId, body) {
   });
 }
 
+/**
+ * What each of the development triggers' refusals means to a caller.
+ * @type {Record<string, [number, string]>}
+ */
+const NOTE_REFUSALS = {
+  "42501": [403, "not_permitted"],
+  "45001": [403, "not_the_author"],
+  "45002": [409, "withdraw_not_edit"],
+  "45003": [403, "not_the_assessor"],
+  "45004": [409, "withdrawn"],
+};
+
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function developmentNoteRoutes({ pool, secret }) {
   /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
     catch (/** @type {any} */ e) {
-      const status = (e.code === "42501" || e.code === "45001") ? 403 : (e.status || 500);
       // 42501 is row-level security: this player is not yours. 45001 is the
       // note trigger: the player is yours and the note is somebody else's.
-      const msg = e.code === "45001" ? "not_the_author"
-                : e.code === "42501" ? "not_permitted"
-                : (e.message || "error");
+      // 45002: a coaching point is withdrawn, not edited (db/104). 45004: a
+      // withdrawn note is not revised.
+      const [status, msg] = NOTE_REFUSALS[e.code] ?? [e.status || 500, e.message || "error"];
       res.status(status).json({ error: msg });
     }
   };
@@ -235,11 +255,115 @@ export function assessmentRoutes({ pool, secret }) {
         res.json(await recordAssessment(
           pool, secret, req.headers?.authorization, req.params.id, req.body || {}));
       } catch (/** @type {any} */ e) {
-        // 42501 is the policy refusing the write outright.
-        const status = e.code === "42501" ? 403 : (e.status || 500);
-        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+        // 42501 is the policy refusing the write outright; 45003 is a
+        // colleague's same-day row (rate on your own); 45004 a withdrawn one.
+        const [status, msg] = NOTE_REFUSALS[e.code] ?? [e.status || 500, e.message || "error"];
+        res.status(status).json({ error: msg });
       }
     },
+  };
+}
+
+/**
+ * Corrections and the coaching point (db/104, GA-I26a slice A1).
+ *
+ * Each handler calls one definer function, which decides: the coach's own
+ * write for the boy's current side, a support session refused, the words. This
+ * layer shapes the body and maps the function's reason to a status. A reason
+ * not listed keeps 403, as guardianLinkRoutes does.
+ */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
+export function developmentCorrectionRoutes({ pool, secret }) {
+  /** @type {Record<string, number>} */
+  const REFUSAL_STATUS = {
+    no_such_player: 404,
+    no_such_match: 404,
+    already_withdrawn: 409,
+    reason_required: 400,
+    body_length: 400,
+    forbidden_word: 422,
+    names_another_boy: 422,
+    evidence_required: 400,
+    evidence_names_another_boy: 422,
+    evidence_not_his: 422,
+    evidence_as_of_required: 400,
+    evidence_malformed: 400,
+    evidence_too_large: 413,
+    // target_set() (db/105)
+    unknown_metric: 400,
+    already_there: 422,
+    no_such_drill: 404,
+    drill_retired: 422,
+    note_not_his: 422,
+    due_in_past: 422,
+  };
+  /**
+   * @param {string} sql
+   * @param {(req: ApiRequest) => unknown[]} params
+   * @returns {Handler}
+   */
+  const call = (sql, params) => async (req, res) => {
+    try {
+      const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const { rows } = await client.query(sql, params(req));
+        const r = rows[0] ?? { ok: false, reason: "no_result" };
+        if (r.ok === false) throw err(r.reason || "refused", REFUSAL_STATUS[r.reason] ?? 403);
+        return r;
+      });
+      res.json(out);
+    } catch (/** @type {any} */ e) {
+      // 23514: a CHECK on the row (evidence_text on a card whose lines are
+      // not the reader's to copy; db/104's note_evidence_text_tier).
+      if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
+      if (e.code === "22P02" || e.code === "22007" || e.code === "22008")
+        return res.status(400).json({ error: "bad_value" });
+      const [status, msg] = NOTE_REFUSALS[e.code] ?? [e.status || 500, e.message || "error"];
+      res.status(status).json({ error: msg });
+    }
+  };
+  const uuidOrNull = (/** @type {unknown} */ v) =>
+    typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+  const targetSet = call(
+    `select ok, reason, id from target_set($1, $2, $3, $4, $5::date, $6, $7)`,
+    (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000",
+              req.body.category, req.body.metric, Number(req.body.targetScore),
+              typeof req.body.dueOn === "string" && req.body.dueOn ? req.body.dueOn : null,
+              uuidOrNull(req.body.drillId), uuidOrNull(req.body.noteId)]);
+  return {
+    // POST /players/:id/coaching-points { matchId?, body, evidence: { read, asOf?, rule?, params?, head?, text? } }
+    coachingPoint: call(
+      `select ok, reason, id from coaching_point_write($1, $2, $3, $4::jsonb)`,
+      (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000",
+                uuidOrNull(req.body?.matchId), String(req.body?.body ?? ""),
+                JSON.stringify(req.body?.evidence && typeof req.body.evidence === "object" ? req.body.evidence : {})]),
+    // POST /skills/:id/withdraw { reason }
+    skillWithdraw: call(
+      `select ok, reason from skill_withdraw($1, $2)`,
+      (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000",
+                typeof req.body?.reason === "string" ? req.body.reason : null]),
+    // POST /notes/:id/withdraw
+    noteWithdraw: call(
+      `select ok, reason from note_withdraw($1)`,
+      (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000"]),
+    // POST /players/:id/targets { category, metric, targetScore, dueOn?, drillId?, noteId? }
+    // The attribute is checked against the rubric here, as an assessment's
+    // is (validateAssessment): target_set() keeps no SQL copy of TREE.
+    target: async (req, res) => {
+      const b = req.body || {};
+      const allowed = ASSESSMENT_SHAPE[b.category];
+      if (!allowed || !allowed.includes(b.metric))
+        return res.status(400).json({ error: `unknown_metric:${b.category}.${b.metric}` });
+      const score = Number(b.targetScore);
+      if (!Number.isInteger(score)) return res.status(400).json({ error: "bad_score" });
+      const due = typeof b.dueOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.dueOn) ? b.dueOn : null;
+      if (b.dueOn != null && b.dueOn !== "" && !due) return res.status(400).json({ error: "bad_due_on" });
+      return targetSet(req, res);
+    },
+    // POST /targets/:id/withdraw { reason }
+    targetWithdraw: call(
+      `select ok, reason from target_withdraw($1, $2)`,
+      (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000",
+                typeof req.body?.reason === "string" ? req.body.reason : null]),
   };
 }
 
@@ -376,10 +500,18 @@ export function guardianLinkRoutes({ pool, secret }) {
       `select * from guardian_link_verify($1, $2, $3, $4)`,
       (req) => [req.body?.guardianId, req.params.id,
                 req.body?.consentVersion || null, req.body?.note || null])),
-    // POST /players/:id/guardians/revoke { guardianId, note? }
+    // POST /players/:id/guardians/revoke { guardianId, kind?, reason? (or note) }
+    // db/109: the link is found under RLS and ended through the door that
+    // takes a kind and a reason (kind 'office' unless one is given).
     revoke: handle(call(
-      `select * from guardian_link_revoke($1, $2, $3)`,
-      (req) => [req.body?.guardianId, req.params.id, req.body?.note || null])),
+      `select * from guardian_link_revoke(
+         (select g.id from assignment_subject g join role_assignment a on a.id = g.assignment_id
+           where a.person_id = $1::uuid and a.role = 'guardian' and g.player_id = $2::uuid
+             and g.verification_state in ('pending', 'verified')
+             and (g.valid_until is null or g.valid_until > current_date)
+           order by g.created_at desc limit 1), $3::text, $4::text)`,
+      (req) => [req.body?.guardianId, req.params.id, req.body?.kind || "office",
+                req.body?.reason ?? req.body?.note ?? null])),
     // POST /players/:id/guardians/consent { guardianId, consentVersion }
     consent: handle(call(
       `select * from guardian_consent_record($1, $2, $3)`,
