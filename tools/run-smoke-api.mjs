@@ -674,12 +674,22 @@ const sh = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", stdio: ["igno
 
 let allPass = true;
 const summary = [];
+// On GitHub Actions a failing walk is also written as an annotation, which
+// the check-runs API returns: a job's log is served from another host, and
+// without this the only thing readable about a red shard is "exit code 1".
+// Newlines become %0A, the workflow command's own escape.
+const annotate = (title, lines) => {
+  if (!process.env.GITHUB_ACTIONS) return;
+  const esc = (t) => String(t).replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A");
+  console.log(`::error title=${esc(title).replace(/[:,]/g, " ")}::${esc(lines.join("\n").slice(0, 3000))}`);
+};
 
 for (const walk of run) {
   const reset = sh("node", ["tools/migrate.mjs", "--reset", "--seed"]);
   if (reset.status !== 0) {
     console.log(`✗ ${walk.padEnd(14)} could not reset the database`);
     console.log((reset.stdout + reset.stderr).split("\n").slice(-6).join("\n"));
+    annotate(`${walk}: could not reset the database`, (reset.stdout + reset.stderr).split("\n").slice(-6));
     allPass = false; summary.push({ walk, ok: false, passed: 0 });
     continue;
   }
@@ -695,6 +705,7 @@ for (const walk of run) {
   // On failure show the failing assertions, not the whole walk: the group
   // headings are context and the ✗ lines are the finding.
   if (!ok) console.log(out.split("\n").filter((l) => l.includes("✗") || l.includes("Error")).slice(0, 10).join("\n"));
+  if (!ok) annotate(`${walk}: ${m ? m[0] : "no summary"}`, out.split("\n").filter((l) => l.includes("✗") || l.includes("Error")).slice(0, 10));
 }
 
 const total = summary.reduce((a, s) => a + s.passed, 0);
