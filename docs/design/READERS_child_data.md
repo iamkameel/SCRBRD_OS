@@ -1,6 +1,6 @@
 # Who sees a child's data — one map across every design
 
-Status: **design, for Kameel's review** (Fable, 21 Oct 2026). Built from the reader sections of every design on `origin/main` at ab79828, the policy code in `packages/policy/src/`, and the decisions already recorded. Nothing here reopens a decision Kameel has made; where two decided texts disagree, that is a finding (§5). Opus builds from this; Haiku records the answers.
+Status: **design, for Kameel's review** (Fable, 21 Oct 2026). Built from the reader sections of every design on `origin/main` at ab79828, the policy code in `packages/policy/src/`, and the decisions already recorded. Nothing here reopens a decision Kameel has made; where two decided texts disagree, that is a finding (§4). Opus builds from this; Haiku records the answers.
 
 Every line cites `file:line` on that commit. No child's name or data appears; the roles are the readers.
 
@@ -19,7 +19,7 @@ Every design already stands on the same eight rules. They are stated here once s
 7. **Every restricted read is logged, a parent may ask who read, and a push carries a pointer and no name** (`INCIDENTS_AND_BREACHES.md:531-544`; `NOTIFICATIONS.md:261-270`).
 8. **Nothing widens by the clock; an ending is an act; a "no" from anyone competent wins** (`SCRBRD-110_workload.md:561-562`; `SCRBRD-124_lift_clubs.md:473`; `SEASON_ROLLOVER.md:440`).
 
-**Found:** 9 conflicts between decided texts (§5), 12 cells no design decides (§6), 13 places the code seems to differ from the designs (§7), and 16 questions for Kameel (§8). The three that matter most: the parent of an eighteen-year-old at school (two designs still end her reads on the birthday; the signed-off rule keeps them open); `audit.read` opening reasons four designs say the DSO and the office never see; and a departed boy's clinical record (one design cuts the physio off, one keeps her on).
+**Found:** 9 conflicts between decided texts (§4), 12 cells no design decides (§5), 13 places the code seems to differ from the designs (§6), and 16 questions for Kameel (§7). The three that matter most: the parent of an eighteen-year-old at school (two designs still end her reads on the birthday; the signed-off rule keeps them open); `audit.read` opening reasons four designs say the DSO and the office never see; and a departed boy's clinical record (one design cuts the physio off, one keeps her on).
 
 ---
 
@@ -35,7 +35,7 @@ Sensitivity is `capabilities.mjs:487-600`'s scale: 0 public, 1 internal, 2 restr
 | A4 | **Contact and home** | email, phone, address, guardian text, hometown, boarding house | 2 | `player.*` (`player.pii.read`) |
 | A5 | **Body measures** | height, weight | 3 | `player.height/weight` (`player.biometric.read`) |
 | B | **This match's figures** | the log, the scorecard, the board | 0 | `ball_event` (`fixture.read`, both anchors, `SCRBRD-136-137_away_visibility.md:74-84`) |
-| B2 | **Career and season figures, per boy** | `career`, `career_by_season`, wheel, dismissal breakdown, matchups | 0 in code (see §7 X7) | views over `ball_event_career` (`player.performance.read`) |
+| B2 | **Career and season figures, per boy** | `career`, `career_by_season`, wheel, dismissal breakdown, matchups | 0 in code (see §6 X7) | views over `ball_event_career` (`player.performance.read`) |
 | C | **Availability** | the answer, who said it, `reason_kind`, `note` | 2 | `match_availability`, `_history` (`availability.read`) |
 | D | **The team sheet** | the eleven, order, the captain mark (SR-6, not built) | 1 | `match_squad` (`player.profile.read`, per side); `fixture_sheet()` for the family (REACH R-H, not built) |
 | E | **Honours and recognition** | honours, caps, milestones, bests, records; withdrawn mark; `withdrawn_reason`; nominations | 0–3 | `honour` (`player.profile.read`); reason masked (`recognition.decide`, design); nominations: none yet |
@@ -99,7 +99,7 @@ The information officer (Kameel) is not a role; his reads are the owner key's (`
 
 ## 3 · The map, class by class
 
-Each table lists the readers who **may**, with the condition and the source. The line under it says who may not, where a design says so in words. "Undecided" means no design and no code line settles it (§6 ranks these). "Logged" means `log_restricted_read()` writes an `access_log` row. Where the designs agree the row says so in one word.
+Each table lists the readers who **may**, with the condition and the source. The line under it says who may not, where a design says so in words. "Undecided" means no design and no code line settles it (§5 ranks these). "Logged" means `log_restricted_read()` writes an `access_log` row. Where the designs agree the row says so in one word.
 
 ### A · Roster identity (name, team, role, styles, age group)
 
@@ -211,7 +211,7 @@ The citation is read by team-mates and is public only when the boy is named (`RE
 | physio | everything at her school; the worklist | `medical.write`; a departed boy: **conflict 3** | `GA-I19_medical_review.md:102, 194` |
 | coach, assistant | status and nature | own side, current side only; the cockpit shows status alone | `roles.mjs:241-256`; `SCRBRD-136-137_coach_cockpit_and_feed.md:191-192` |
 | team manager, sportsadmin, office, director, S&C | status and nature | as the bundles hold them | `GA-I19_medical_review.md:104-106` |
-| principal | **design says status; code gives nature too** (§7 X1) | | `GA-I19_medical_review.md:105`; `roles.mjs:166` |
+| principal | **design says status; code gives nature too** (§6 X1) | | `GA-I19_medical_review.md:105`; `roles.mjs:166` |
 | enquiry (a coach granted one boy) | status | out or not, until when; never what is wrong | `SAFEGUARDING_DSO.md:660-662` |
 | DSO | **none**; the SG-12 notice says "a serious injury", no name | holds no `medical.*` | `GA-I19_medical_review.md:109, 125` |
 | a former coach after a move | none | current-side anchoring; SR Q8 | `SEASON_ROLLOVER.md:165, 528` |
@@ -354,3 +354,170 @@ Agreed.
 | V data events | the officer and the deputy (`compromise.*`); **`audit.read` at a school** reads its own school's events and the count of its subjects; families told by email and a `compromise` notice; a pupil under 18 never a recipient; the DSO told only for a child at risk, through a concern | | `INCIDENTS_AND_BREACHES.md:447-456, 251-252, 261-285` |
 
 The DSO holds `audit.read` (`roles.mjs:529`), which is why classes V, R and K3 appear again in conflict 2.
+
+---
+
+## 4 · Conflicts between decided texts
+
+Each quotes both texts, says what breaks if a builder follows one and not the other, and gives a resolution. None reopens a decision; each picks the decision that governs and names the text to correct.
+
+### Conflict 1 · The parent of an eighteen-year-old at school
+
+- `STEP4_parent_pupil.md:461`: *"The parent, after the day. The child's card on Family becomes a closed card: 'Your link to Rohan ended on 14 Mar 2029. His record is his own now.' The switcher drops him. His past fixtures and his figures are gone from her app."* And `:465`: *"Health monitoring: … the guardian's consent lapses on the day … collection pauses and staff reads stop until he says yes."*
+- `REACH_parent_pupil.md:84`: *"At eighteen: nothing changes for him; his guardian's link ends by its date (STEP4 §3.3; the SCRBRD-110 Q7 exception for health is that design's, not this one's)."*
+- Against: `SCRBRD-110_workload.md:552`: *"A guardian link's `valid_until` is the later of the child's eighteenth birthday and the day he leaves the school system; while he is at school it is open."* Signed off by the information officer (`:579`), built as db/52/db/62, and relied on by `ACCOUNT_LIFECYCLE.md:557` (*"18, at school: nothing ends"*), `GA-I20_parent_action_list.md:150`, `SCRBRD-124_lift_clubs.md:293`, `SEASON_ROLLOVER.md:526` and `SCRBRD-083_public_pages.md:583-593` (option C).
+
+**What breaks.** A builder of the family screens from STEP4 or REACH closes the parent's card and ends every read on the birthday, while the database keeps her link live: the screen says "his record is his own now" to a parent who can still open his injury record and withdraw his public name. Two sources of truth about the same link, on the same phone.
+
+**Resolution.** SCRBRD-110 §7.4 governs every read, not health alone: the link is open while he is at school; her reads continue; her acts after 18 are "no" only (public name, health monitoring, a lift seat); the card closes on the later of leaving and the birthday. Haiku corrects STEP4 §3.3 (both paragraphs) and REACH §2.2's "At eighteen" line to say so. Q1.
+
+### Conflict 2 · `audit.read` opens reasons the designs say the DSO and the office never see
+
+The `dso` bundle holds `audit.read` so a DSO can answer "who read this child's record" (`SAFEGUARDING_DSO.md:135-136`; `roles.mjs:529`). Four designs then hand `audit.read` a second job, and each contradicts itself or the DSO's stated reach:
+
+1. `ACCOUNT_LIFECYCLE.md:513-514`: the revocation reason is *"Readable by `guardian.link.manage` or `audit.read` at the school; never by the guardian; never by the DSO by standing"* — the DSO holds `audit.read`, so it reads every revocation reason by standing, custody reasons included.
+2. `ACCOUNT_LIFECYCLE.md:763, 807`: the disable reason is read by *"`user.invite` or `audit.read`"* — the DSO reads why any account at the school was disabled; `:241` says the DSO sees *"nothing by standing"* of an account's state.
+3. `SCRBRD-140_phase2_register.md:208-209`: the staff register is read by *"`user.role.assign` or `audit.read` at the school"* and *"What the DSO sees: nothing by standing"* — both cannot hold.
+4. `RECOGNITION_design.md:117`: `withdrawn_reason` is *"masked under `recognition.decide`, with the withdrawer and `audit.read` also able to read it"*, while the matrix at `:98` says the office reads the reason *"no (D4) unless it withdrew"* — the office holds `audit.read` (`roles.mjs:222`), so it reads every reason; the DSO too, though `:102` says *"through `audit_log()` on a concern"*.
+5. `INCIDENTS_AND_BREACHES.md:451-452`: *"`audit.read` at a school reads the events whose `schools` include that school"* — so the DSO reads the breach register, while `:252` tells the DSO *"only when a child is at risk"* and through a concern.
+
+**What breaks.** Every one of those tables, built as written, gives the DSO a standing read of custody reasons, dismissal reasons, honour withdrawals (which may be conduct matters) and the breach register, and gives the office the honour reasons D4 keeps from it. The separation these designs promise exists on paper only.
+
+**Resolution.** `audit.read` opens the access log and nothing else. A reason stays with the capability of the act that wrote it: revocation reasons under `guardian.link.manage`; disable reasons under `user.invite`; honour reasons under `recognition.decide` and the withdrawer; the staff register under `user.role.assign`; data events under `compromise.read` and, for the school's own, a school's principal (its information officer) through a named capability rather than `audit.read`. Opus adds a separation assertion: no table's read policy names `audit.read` except `access_log` and the audit screen's own reads. Q2.
+
+### Conflict 3 · A departed pupil's clinical record
+
+- `ACCOUNT_LIFECYCLE.md:451` (Q9, decided 7 Oct as recommended): *"should departed pupils' clinical records be cut from staff reads except the office's, until purge? Recommendation: yes, a `RESTRICTIVE` policy on the masked health, note, rating and discipline tables, false for a departed player unless the caller is the office, a live guardian or the pupil himself."* `GA-I26a_assessment_history.md:302` builds on it.
+- `GA-I19_medical_review.md:194` (decided 8 Oct): a pupil leaves, *"the worklist excludes a departed boy …; the Injuries screen marks his row 'left the school'; the physio reads it until retention."*
+
+**What breaks.** AL slice 4's RESTRICTIVE cut hides the row the GA-I19 screen is drawn to show; whichever lands second either reopens the physio's read or breaks the screen.
+
+**Resolution.** AL Q9 governs: it was decided first, covers four tables, and a physio's sight of a boy who has left is the thing SR Q8 and K3 exist to narrow. GA-I19 D11's row becomes "the office holds it until purge; the physio's read ends on departure and returns if he re-enrols". Q3.
+
+### Conflict 4 · The director of sport and lift exceptions by name
+
+- `GA-I27_coach_cards.md:117`: *"director of sport … S4b through `transport.lift.oversee` (D10)"*; `SCRBRD-124_lift_clubs.md:259` assumed the director holds it.
+- `GA-I09-I11_match_day_queue.md:44`: *"`directorofsport` … lifts: no (holds neither lift capability)"*; `roles.mjs:176-204` agrees: no `transport.lift.*` on the bundle.
+
+**What breaks.** A builder of GA-I27's drawer draws S4b (a child's name and a lift exception) for a reader whose bundle refuses the read; the card fails silently or, if the builder "fixes" the bundle, widens a level-2 read of children's names without a decision.
+
+**Resolution.** The code and GA-I09 stand; GA-I27's director row loses S4b (he gets S4a's head count as the coach does). If Kameel wants the director to see exceptions, it is one line in `roles.mjs` and a decision, not a drawer. Q4.
+
+### Conflict 5 · SEASON_ROLLOVER gives the parent and the coach a "discipline tier"
+
+- `SEASON_ROLLOVER.md:118`: the parent reads *"her child's file, consents, contacts, availability history, injuries, **discipline tier**, figures, honours …"*; `:148`: the new coach reads *"his injury record, availability, workload, contacts, **discipline tier**"*.
+- `STEP4_parent_pupil.md:641` (Q5): *"`guardian` does not hold `discipline.read` … Not in step 4."* `roles.mjs:257-280, 401-416`: neither `coach` nor `guardian` holds `discipline.read`; `SCRBRD-136-137_coach_cockpit_and_feed.md:197`: discipline is *"not his"*.
+
+**What breaks.** A builder of the rollover's family or coach reads adds a conduct read for two roles that STEP4 Q5 and the bundles refuse.
+
+**Resolution.** Strike "discipline tier" from both rows; SR changes no reader (its own never-list item 8). Q5 asks only whether to confirm.
+
+### Conflict 6 · The DSO and a withdrawn honour
+
+- `RECOGNITION_design.md:102` (the matrix): DSO, withdrawn honour: *"yes"*.
+- `RECOGNITION_design.md:115` (D3): *"A withdrawn honour leaves every screen … for every reader except: the pupil himself, his guardian, and a holder of `recognition.decide` or `recognition.manage`."*
+
+**What breaks.** Small: a DSO screen that lists a withdrawn honour, or a `recognition()` filter that must special-case a role (ADR 0003 forbids it).
+
+**Resolution.** D3 governs; the matrix row reads "absent; through the audit on a concern". Q6.
+
+### Conflict 7 · PUBLIC_DATA has not taken the twelve-year-old's "no"
+
+- `SAFEGUARDING_DSO.md:616-620` (K1, decided CSA Q6, 27 Sep): *"a 'no' only, from 12 … `public_name_consent_set()` accepts a pupil's record from his 12th birthday when `p_yes = false` … PUBLIC_DATA C1/C4 gain the sentence; that wording is Kameel's."*
+- `docs/policy/PUBLIC_DATA.md:87-99`: C1 names *"a verified guardian"* only; C6 starts at 18. No sentence about 12.
+
+**What breaks.** PUBLIC_DATA is "the rule every public page is built against" (`:5`); a builder of `public_name_facts()` from it ignores a pupil's refused record and names a boy who said no.
+
+**Resolution.** Kameel words the sentence; Haiku adds it to C1 and C4 and marks whether db/47's function already takes it (§6 X11). Q7.
+
+### Conflict 8 · An eighteen-year-old pupil as a notice's named recipient
+
+- `INCIDENTS_AND_BREACHES.md:282-284`: *"A pupil of 18 or more with `selfaccess` is his own data subject and receives his own"* `compromise` notice.
+- `CSA_SAFEGUARDING_CHECK.md:544-546` (SG-9 rule 2, decided): *"`recipient_id` … never names a pupil, unless the notice is the system's own … A test asserts this."* `SAFEGUARDING_DSO.md:324-325` makes it a test; `NOTIFICATIONS.md:141-142`: *"He reads a row addressed to him alone only when it is `system`."*
+
+**What breaks.** `person_is_pupil()` is true for an eighteen-year-old still at school, so db/57's trigger refuses the row INCIDENTS writes, or the builder loosens the trigger for every kind.
+
+**Resolution.** `compromise` joins `system` as a kind the system itself writes to one person; the trigger admits `recipient_id` naming a pupil for those two kinds only, and only when the pupil is 18 or more. Q8.
+
+### Conflict 9 · What the owner's key holds
+
+- `ACCOUNT_LIFECYCLE.md:774`: *"`superadmin` holds every capability above as it holds everything outside `safeguarding.*`"*; `SCRBRD-124_lift_clubs.md:262` the same.
+- `RECOGNITION_design.md:123` (D7, decided 7 Oct): *"`recognition.*` joins `safeguarding.*` in the carve-out from `superadmin`."*
+
+**What breaks.** A builder of the recognition tables adds the RESTRICTIVE cut and finds the key still holds `recognition.manage` (`roles.mjs:108` filters `safeguarding.` alone); or a builder of AL assumes the key can record a departure's honour withdrawal and cannot.
+
+**Resolution.** D7 is the later and narrower decision and stands; `roles.mjs:108` gains the second prefix when recognition's first migration lands; AL §7 and 124 §2.1 are reworded to "everything outside `safeguarding.*` and `recognition.*`". No question: the decision exists.
+
+**Resolved already, recorded here so nobody reopens it:** GA-I27 C-D4's *"another boy's figures in any form"* was amended on 14 Oct to REACH-D2's "leave them open" (`GA-I27_coach_cards.md:121`); SEASON_ROLLOVER applies it (`:127`).
+
+---
+
+## 5 · Gaps: cells no design decides
+
+Ranked by the harm if a builder guesses wrong. "Harm" is what a wrong guess discloses about a child.
+
+| # | gap | where a builder would guess | harm |
+|---|---|---|---|
+| **G1** | **The league organiser and conduct.** `competitionadmin` holds `discipline.read` (`roles.mjs:544`, level 3). No design says which disciplinary records a league reads: its own fixtures' umpire reports, or every record at every entrant school. OFFICIAL_RESULT and the planner are silent. | `disciplinary_record`'s policy (db/25) when the organiser's reads are built | **high**: a conduct record about a child read by an outside body, school-wide |
+| **G2** | **A concern about a child of the other school.** A Westville parent at a Hilton fixture sees a Hilton boy mistreated. `safeguarding_raise()` routes by *the school* (`SAFEGUARDING_DSO.md:294-302`) and picks the child from *"people the reporter can already see"* (`CSA_SAFEGUARDING_CHECK.md:406`); she can see him only as a name on the scorecard. Which tenant holds it, and may she name him? | the form's school picker; the routing function | **high**: a concern lost, or held by the wrong school |
+| **G3** | **The transport coordinator and emergency contacts.** `transportcoordinator` holds `player.emergency.read` school-wide (`roles.mjs:485`). SCRBRD-124 gives the office *"counts; exceptions by name"* and the driver contacts *"on the day"* (`:358, 361`); nothing designs a coordinator's standing read of every child's contacts. | left as is | **medium-high**: every family's numbers to a volunteer role |
+| **G4** | **A pupil who scores at a fixture.** A scorer holds `player.profile.read` over the fixture (`roles.mjs:316`); a pupil may be the scorer, of either school (`PUBLIC_DATA.md:160-161`; `SCRBRD-136-137_coach_cockpit_and_feed.md:367`). What of the host's eleven does an away pupil scorer read beyond the sheet's names: the masked profile row, honours, the training register (U)? REACH-D5 closed `official`; nothing bounds the scorer's profile read. | the pad's squad read | **medium**: a child's roster row and honours to a child of the other school |
+| **G5** | **The under-18 pupil's own "who read my record".** INCIDENTS D20 gives the view to a live guardian *"or the pupil himself at 18+"* (`:533`). The right of access is the child's too (`roles.mjs:381-385`'s reasoning for his clinical notes). Under 18: nothing, or through the parent only? | the route's gate | **medium**: either a right withheld or a log of adults' reads shown to a child |
+| **G6** | **The parent and her child's disciplinary record.** STEP4 Q5 deferred it (*"raise it with the information officer"*, `:641`); nothing since decides. The office tells parents by letter; the app says nothing, not even that a record exists. | a family screen | **medium**: a widening of a level-3 read, or a parent who learns from her son's phone (he reads it, `:642`) what the app will not tell her |
+| **G7** | **An enquiry grant and the family.** A coach granted one named boy reads his profile and status for a week (`roles.mjs:346-365`). `medical.status.read` is level 2 and may not be in the logged set; no design says the family can see, on "who read my record", that another coach was granted him. | the access-log view's fields | **medium**: a disclosure the parent cannot ask about |
+| **G8** | **Photos and `media_consent`.** K1's `media_consent` (`SAFEGUARDING_DSO.md:621-628`) and SCRBRD-092's in-app photos are not built; STEP4 draws the card as *"Registered users at his school may see photos of him"* (`:490-492`). Who at the school: the side, the school, the other school's family at a shared fixture? | the photo table's policy | **medium**: a child's face to a wider room than the consent named |
+| **G9** | **Media's standing reach.** `media` holds `player.profile.read` and `player.performance.read` school-wide (`roles.mjs:490`); no design places the role beyond RECOGNITION's matrix (`:100`). Does the media officer read the training register (U), availability-free but side-shared? | nothing | **low-medium**: a roster and attendance to a publishing role |
+| **G10** | **The pupil's own emergency contacts.** STEP4 Q7 (`:643`) deferred it; still open. | — | **low**: a correct widening left undone |
+| **G11** | **Invoices.** `guardian` holds `invoice.read` with nothing behind it (STEP4 Q1, `:637`); a table built later inherits a read nobody designed. | a future table | **low** |
+| **G12** | **A child reads his own ID number.** `selfaccess` holds `player.identity.read` (`roles.mjs:394`, level 4). No screen draws it, and no design says whether a thirteen-year-old's Me screen should. | the Me screen | **low**: the most dangerous field about a child, on his own phone |
+
+Not gaps, because a design decides them and the map says so: a sibling (REACH class D), a coach who is also a parent (`GA-I19_medical_review.md:121`; `RECOGNITION_design.md:129`), the nomination row (`RECOGNITION_design.md:179`), the analyst and the register (`GA-I26a_assessment_history.md:220`), the wellness share's witnesses (`SCRBRD-110_workload.md:451`), and a disabled pupil's reads (`ACCOUNT_LIFECYCLE.md:197`).
+
+---
+
+## 6 · The designs against the code — Opus to confirm
+
+Read from the lines the map points to and nothing else. Each is a place where `packages/policy/src/` seems to say something the designs do not, or the reverse. None is built on here; each is a check for Opus before a brief.
+
+| # | where | what seems to differ | Opus to confirm |
+|---|---|---|---|
+| **X1** | `roles.mjs:166` | `principal` holds `medical.nature.read`; `GA-I19_medical_review.md:105` says *"principal: status (as today)"*. | which is "today"; if the code, correct the design row (Q9) |
+| **X2** | `roles.mjs:108` | the owner's key filters `safeguarding.` only; RECOGNITION D7 carves out `recognition.*`; `recognition.decide` (reconciliation Q5) is not in `capabilities.mjs`. | both wait on recognition's first migration; AL §7's sentence is stale (conflict 9) |
+| **X3** | `roles.mjs:544` | `competitionadmin` holds `discipline.read` (level 3); no design gives a league a conduct read (G1). | what `disciplinary_record`'s policy lets a platform-wide or school-scoped organiser read today |
+| **X4** | `roles.mjs:485` | `transportcoordinator` holds `player.emergency.read` school-wide (G3). | whether any route serves it; whether `lift_contacts()` or the trip screen is the only consumer |
+| **X5** | `roles.mjs:176-204` | `directorofsport` holds no `transport.lift.oversee`; `SCRBRD-124_lift_clubs.md:259` assumed it and `GA-I27_coach_cards.md:117` relies on it (conflict 4). | the bundle as shipped in db/70 |
+| **X6** | `roles.mjs:529` | `dso` holds `audit.read`; five designs let `audit.read` open reasons and registers (conflict 2). | which shipped policies already name `audit.read` beside a reason column (`scoring_amendment`, `account_status_change`, db/90) |
+| **X7** | `capabilities.mjs:513` | `player.performance.read` is level 0, *"a scorecard, meant to be public"*; but the per-boy career, season and wheel it also opens are what A4 forbids in public and what REACH and GA-I24-I25 call a dossier. Level 0 keeps it out of `SENSITIVE` and out of logging by construction. | whether level 1 changes any test; GA-I24-I25 §6 already chose not to log `career` |
+| **X8** | `capabilities.mjs:510` | `recognition.manage` is level 0 though it writes an honour and (today) its reason. | low; the reason moves under `recognition.decide` with X2 |
+| **X9** | `notifications.mjs:11` | `KINDS` has no `compromise` (INCIDENTS D1, decided 21 Oct); the SG-9 trigger refuses a pupil as recipient (conflict 8). | expected, unbuilt; the trigger's shape when it is |
+| **X10** | `tables.mjs:124-169` | `player.fitness` masked under `medical.status.read` (SCRBRD-117; `SAFEGUARDING_DSO.md:663-665`). | that the mask shipped and `player_masked` honours it |
+| **X11** | db/47 (not read here) | `public_name_consent_set()` accepting a pupil's `refused` record from 12 (K1, conflict 7). | built or not; if not, it is a line in the backlog with Kameel's sentence |
+| **X12** | `REACH_parent_pupil.md:247-263` | fourteen mismatches decided 14 Oct (M3 trips school-wide, O5/O6 consents to every family, O4 `official` open, O8 team-less pupil, O-N notices). The map above states the decided rule, not today's policy. | which have landed since ab79828 (db/100–102 were "in hand"); O8 verified live first |
+| **X13** | `roles.mjs:365` | `enquiry` keeps `medical.status.read` (decided 28 Sep). `GA-I20_parent_action_list.md`'s access-log view and INCIDENTS D20 map `fields` to words; whether a level-2 status read is in the logged set decides G7. | the `RESTRICTED_FIELDS` list |
+
+---
+
+## 7 · Questions for Kameel
+
+Each is one decision, with the recommendation and one line of why. "As recommended" is an answer.
+
+1. **Eighteen at school, every read.** Confirm SCRBRD-110 §7.4 governs all of a parent's reads (not health alone): the link stays open while he is at school; she keeps reading; after 18 she may say "no" and never a new "yes". STEP4 §3.3 and REACH §2.2 are corrected. *Recommend: yes.* It is the signed-off rule and the database already does it.
+2. **`audit.read` opens the log and nothing else.** Revocation reasons, disable reasons, honour reasons, the staff register and the breach register each stay under the capability of the act that wrote them; no read policy names `audit.read` but the log's. *Recommend: yes.* The DSO must answer "who read", not "why was she revoked".
+3. **A departed boy's clinical record.** AL Q9 (office, family and the boy until purge; staff cut) over GA-I19 D11 (the physio reads until retention). *Recommend: AL Q9*; a re-enrolment reopens the physio's read.
+4. **The director of sport and lift exceptions by name.** Leave him without `transport.lift.oversee` (GA-I09, the code) and amend GA-I27. *Recommend: leave it.* The office and the coordinator hold it; a level-2 read of children's names is not a drawer's to add.
+5. **SEASON_ROLLOVER's "discipline tier".** Strike it from the parent's and the coach's rows. *Recommend: strike.* STEP4 Q5 stands; nothing widens on a move.
+6. **The DSO and a withdrawn honour.** D3's list (absent) over the matrix (yes). *Recommend: D3.* The DSO reaches it through the audit on a concern.
+7. **The twelve-year-old's "no" in PUBLIC_DATA.** Word the sentence for C1 and C4. *Recommend:* "From his twelfth birthday a pupil may refuse his own name on public pages; his refusal stands whatever a guardian says. His 'yes' counts from eighteen."
+8. **A `compromise` notice to a pupil of eighteen.** Let the SG-9 trigger admit `recipient_id` naming a pupil for `system` and `compromise` only, and only at 18 or more. *Recommend: yes.* He is the data subject; under 18 his guardians are told.
+9. **The principal's injury tier.** Status and nature (the code) or status only (GA-I19 D3). *Recommend: the code stands*; the head reads what the office reads. Correct the design row.
+10. **The league organiser and conduct (G1).** Remove `discipline.read` from `competitionadmin`, or scope it to records arising from its own competition's fixtures through a definer read. *Recommend: scope it, logged.* A league needs the umpire's report on its match, not a school's file.
+11. **A concern about the other school's child (G2).** Route by the child's school when the reporter names a boy on the other side's sheet; the reporter's own DSO is told a concern exists, no name. *Recommend: yes.* The child's DSO is the one who can act.
+12. **The transport coordinator's contacts (G3).** Narrow `player.emergency.read` to the boys on a trip he coordinates, on the day, through a logged function; no standing school-wide read. *Recommend: narrow.* The driver already gets exactly that for lifts.
+13. **A pupil scorer and the host's eleven (G4).** Opus lists what a fixture-scoped `player.profile.read` reaches at the host; the pad's squad read is cut to names, order and styles. *Recommend: cut.* A child of the other school scoring needs names, not profiles.
+14. **The under-18 pupil's "who read my record" (G5).** From 18 only in v1; under 18 through the parent. *Recommend: 18.* A log of adults' reads is a conversation for the family, not a list on a child's phone.
+15. **The parent and the disciplinary record (G6).** Still defer, or decide now. *Recommend: defer to the information officer's next sign-off*, with one change now: the app never shows a parent a record it holds about her child without telling her one exists — so the letter stays the channel and the app stays silent.
+16. **A child's own ID number on Me (G12).** Draw it never; the right of access is met by the office on request. *Recommend: never on a screen.* Level 4 on a thirteen-year-old's phone is the breach the register is designed for.
+
+---
+
+*Sources read for this map:* the reader sections named in Haiku's ground map of 21 Oct 2026, `docs/policy/PUBLIC_DATA.md` whole, and `packages/policy/src/roles.mjs:100-554`, `capabilities.mjs:452-615`, `tables.mjs:120-169`, `public.mjs:139-208`. Nothing else was searched.
