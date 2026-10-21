@@ -6571,14 +6571,15 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- └── db/113 (section 90) ─────────────────────────────────────────────
 -- ┌── db/117 (section 91). The dated side: a family keeps the season of the
 -- side a boy was on (SR-2), and the move voids his seats on it (SR-4).
--- Invented, as the owner; every name a placeholder. Hilton's 41XI, 42XI and
--- 43XI. Boys: A (43XI from t-90, 41XI from t-60; the section moves him to the
--- 42XI from t-10: three membership rows), C (joined the 42XI at t-10: the
--- newcomer), M (41XI from t-60, never moved). t is today. Fixtures, by day:
--- f43a (43XI, t-100: before A's first row), f43b (43XI, t-75), f41a (41XI,
--- t-30), f41w (Westville's 41XI v Hilton's 41XI at Westville, t-25), f41d and
--- f42d (each side's on t-10, the move's own day), f42a (42XI, t-30), f41n and
--- f42n (t+5), f41s (41XI, t+12, A on its home sheet). Buses to f41a, f41n,
+-- Invented, as the owner; every name a placeholder. Hilton's 15XI, 19XI and
+-- 14XI; the labels call them 41, 42 and 43 (f41a is a 15XI fixture, f42a a
+-- 19XI one, f43a a 14XI one), and so do the readers (coach41, coach42). Boys: A (14XI from t-90, 15XI from t-60; the section moves him to the
+-- 19XI from t-10: three membership rows), C (joined the 19XI at t-10: the
+-- newcomer), M (15XI from t-60, never moved). t is today. Fixtures, by day:
+-- f43a (14XI, t-100: before A's first row), f43b (14XI, t-75), f41a (15XI,
+-- t-30), f41w (Westville's 15XI v Hilton's 15XI at Westville, t-25), f41d and
+-- f42d (each side's on t-10, the move's own day), f42a (19XI, t-30), f41n and
+-- f42n (t+5), f41s (15XI, t+12, A on its home sheet). Buses to f41a, f41n,
 -- f42a. Nets s41a, s42a (t-30), s42d (t-10), s41n, s42n (t+3). Posts: team
 -- posts n41a, n42a (published t-30), n41n, n42n (published now); plans p41a
 -- (f41a's) and p41n (f41n's). Balls on f41a (6), f42a (12), f41n (18). A lift
@@ -6595,25 +6596,25 @@ DECLARE
   c_a uuid; c_c uuid; c_m uuid;
   k text; tm text; dd int; aw boolean;
 BEGIN
-  -- A: 43XI from t-90, then 41XI from t-60, each dated as the move route dates it.
+  -- A: 14XI from t-90, then 15XI from t-60, each dated as the move route dates it.
   PERFORM set_config('app.effective_on', (t - 90)::text, true);
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (HIL, '43XI', 'Verify OneOneSeven Mover', 1171, 'batter', U15) RETURNING id INTO c_a;
+    (HIL, '14XI', 'Verify OneOneSeven Mover', 1171, 'batter', U15) RETURNING id INTO c_a;
   PERFORM set_config('app.effective_on', (t - 60)::text, true);
-  UPDATE player SET team_code = '41XI' WHERE id = c_a;
+  UPDATE player SET team_code = '15XI' WHERE id = c_a;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (HIL, '41XI', 'Verify OneOneSeven Stayer', 1172, 'batter', U15) RETURNING id INTO c_m;
+    (HIL, '15XI', 'Verify OneOneSeven Stayer', 1172, 'batter', U15) RETURNING id INTO c_m;
   PERFORM set_config('app.effective_on', (t - 10)::text, true);
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (HIL, '42XI', 'Verify OneOneSeven Newcomer', 1173, 'batter', U15) RETURNING id INTO c_c;
+    (HIL, '19XI', 'Verify OneOneSeven Newcomer', 1173, 'batter', U15) RETURNING id INTO c_c;
   PERFORM set_config('app.effective_on', '', true);
   ids := _v71_people('v117', ARRAY[
     ARRAY['g',       'guardian',    HIL::text, '',     ''],     -- A's mother
     ARRAY['gc',      'guardian',    HIL::text, '',     ''],     -- C's, the newcomer's
     ARRAY['gm',      'guardian',    HIL::text, '',     ''],     -- M's, and the lift's driver
-    ARRAY['aboy',    'player',      HIL::text, '41XI', c_a::text],
-    ARRAY['coach41', 'coach',       HIL::text, '41XI', ''],
-    ARRAY['coach42', 'coach',       HIL::text, '42XI', ''],
+    ARRAY['aboy',    'player',      HIL::text, '15XI', c_a::text],
+    ARRAY['coach41', 'coach',       HIL::text, '15XI', ''],
+    ARRAY['coach42', 'coach',       HIL::text, '19XI', ''],
     ARRAY['spec',    'spectator',   HIL::text, '',     ''],
     ARRAY['office',  'schooladmin', HIL::text, '',     '']]);
   PERFORM _v100_link((ids->>'g')::uuid, HIL, c_a);
@@ -6626,10 +6627,10 @@ BEGIN
   z := jsonb_build_object('a', c_a, 'c', c_c, 'm', c_m);
   -- The fixtures, each at 10:00 in Johannesburg on its day.
   FOR k, tm, dd, aw IN SELECT * FROM (VALUES
-      ('f43a', '43XI', -100, false), ('f43b', '43XI', -75, false), ('f41a', '41XI', -30, false),
-      ('f41w', '41XI', -25, true),   ('f41d', '41XI', -10, false), ('f42d', '42XI', -10, false),
-      ('f42a', '42XI', -30, false),  ('f41n', '41XI', 5, false),   ('f42n', '42XI', 5, false),
-      ('f41s', '41XI', 12, false)) x LOOP
+      ('f43a', '14XI', -100, false), ('f43b', '14XI', -75, false), ('f41a', '15XI', -30, false),
+      ('f41w', '15XI', -25, true),   ('f41d', '15XI', -10, false), ('f42d', '19XI', -10, false),
+      ('f42a', '19XI', -30, false),  ('f41n', '15XI', 5, false),   ('f42n', '19XI', 5, false),
+      ('f41s', '15XI', 12, false)) x LOOP
     IF aw THEN
       INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
       VALUES (WES, tm, HIL, tm, 'Verify OneOneSeven Hilton', ((t + dd)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
@@ -6650,27 +6651,27 @@ BEGIN
     RETURNING id INTO v_id;
     z := z || jsonb_build_object('t' || substr(k, 2), v_id);
   END LOOP;
-  FOR k, tm, dd IN SELECT * FROM (VALUES ('s41a', '41XI', -30), ('s42a', '42XI', -30), ('s42d', '42XI', -10),
-                                         ('s41n', '41XI', 3), ('s42n', '42XI', 3)) x LOOP
+  FOR k, tm, dd IN SELECT * FROM (VALUES ('s41a', '15XI', -30), ('s42a', '19XI', -30), ('s42d', '19XI', -10),
+                                         ('s41n', '15XI', 3), ('s42n', '19XI', 3)) x LOOP
     INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type)
     VALUES (HIL, tm, 'V117 ' || k, ((t + dd)::timestamp + time '15:00') AT TIME ZONE 'Africa/Johannesburg', 60, 'batting')
     RETURNING id INTO v_id;
     z := z || jsonb_build_object(k, v_id);
   END LOOP;
-  FOR k, tm, dd IN SELECT * FROM (VALUES ('n41a', '41XI', -30), ('n42a', '42XI', -30), ('n41n', '41XI', 0), ('n42n', '42XI', 0)) x LOOP
+  FOR k, tm, dd IN SELECT * FROM (VALUES ('n41a', '15XI', -30), ('n42a', '19XI', -30), ('n41n', '15XI', 0), ('n42n', '19XI', 0)) x LOOP
     INSERT INTO news_post (scope, school_id, team_code, kind, title, body, published_at, author_id)
     VALUES ('team', HIL, tm, 'post', 'V117 ' || k, 'V117 a word to the side',
             CASE WHEN dd = 0 THEN now() - interval '1 minute' ELSE ((t + dd)::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg' END,
-            (ids->>('coach' || substr(tm, 1, 2)))::uuid)
+            (ids->>(CASE tm WHEN '15XI' THEN 'coach41' ELSE 'coach42' END))::uuid)
     RETURNING id INTO v_id;
     z := z || jsonb_build_object(k, v_id);
   END LOOP;
   INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
-  VALUES ('team', HIL, '41XI', 'plan', (z->>'f41a')::uuid, 'V117 p41a', 'V117 meet at the nets',
+  VALUES ('team', HIL, '15XI', 'plan', (z->>'f41a')::uuid, 'V117 p41a', 'V117 meet at the nets',
           ((t - 31)::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg', (ids->>'coach41')::uuid) RETURNING id INTO v_id;
   z := z || jsonb_build_object('p41a', v_id);
   INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
-  VALUES ('team', HIL, '41XI', 'plan', (z->>'f41n')::uuid, 'V117 p41n', 'V117 meet at the pavilion',
+  VALUES ('team', HIL, '15XI', 'plan', (z->>'f41n')::uuid, 'V117 p41n', 'V117 meet at the pavilion',
           now() - interval '1 minute', (ids->>'coach41')::uuid) RETURNING id INTO v_id;
   z := z || jsonb_build_object('p41n', v_id);
   -- The lifts: M's mother drives to f41n (A's seat, asked by A's mother, and
@@ -6681,7 +6682,7 @@ BEGIN
   RETURNING id INTO v_d;
   FOR k IN SELECT unnest(ARRAY['f41n', 'f41s']) LOOP
     INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
-    SELECT HIL, m.id, '41XI', 'out', (ids->>'gm')::uuid, v_d, 3, 'school', m.starts_at - interval '90 minutes', m.starts_at
+    SELECT HIL, m.id, '15XI', 'out', (ids->>'gm')::uuid, v_d, 3, 'school', m.starts_at - interval '90 minutes', m.starts_at
       FROM match m WHERE m.id = (z->>k)::uuid
     RETURNING id INTO v_o;
     z := z || jsonb_build_object('o' || substr(k, 2), v_o);
@@ -6757,7 +6758,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- Facts, as the owner.
 CREATE OR REPLACE FUNCTION _v117_fact(p_what text, p_id uuid DEFAULT NULL) RETURNS text AS $$
   SELECT CASE p_what
-    -- a boy's membership rows, oldest first, days from today: "43XI:-90..-60"
+    -- a boy's membership rows, oldest first, days from today: "14XI:-90..-60"
     WHEN 'rows' THEN (SELECT string_agg(format('%s:%s..%s', team_code, joined_on - sa_today(), coalesce((left_on - sa_today())::text, '')),
                                         ' ' ORDER BY joined_on, coalesce(left_on, 'infinity'::date), id)
                         FROM team_membership WHERE player_id = p_id)
@@ -25582,8 +25583,10 @@ $v49$;
     PERFORM _assert(_v112_balls((z->>'f16a')::uuid) = 18 AND _v112_balls((z->>'f16w')::uuid) = 30
                     AND _v112_balls((z->>'f16b')::uuid) = 0,
       '§89 (guardians): up''s mother does not read the balls of the matches he is on the sheet of, and only those');
-    PERFORM _assert(_v112_fact('child_md5') = '78db5a4d195937ed800efc92e0489516',
-      '§89 (guardians): my_child_fixtures() is not db/100''s');
+    -- db/100's, or since db/117 db/100's dated on the fixture's day (§91):
+    -- db/112 itself does not touch it.
+    PERFORM _assert(_v112_fact('child_md5') IN ('78db5a4d195937ed800efc92e0489516', '69846e82142ceea5c17809122f375706'),
+      '§89 (guardians): my_child_fixtures() is not db/100''s, nor db/117''s');
     n := 0;
     FOREACH u IN ARRAY _v106_guardians_only() LOOP
       PERFORM _as(u);
@@ -25997,6 +26000,256 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 90
   -- └── db/113 (section 90) ──────────────────────────────────────────
+
+  -- ┌── db/117 (section 91) ──────────────────────────────────────────
+  -- ── 91. The dated side: a family keeps the season of the side a boy was on (SR-2); the move voids his seats (SR-4) ──
+  -- docs/design/SEASON_ROLLOVER.md §1.3, §2.10, §3.1 step 2a, §8.2 (Kameel,
+  -- 15 Oct 2026: D1; Q2 as recommended). Rows are _v117_stage()'s, invented;
+  -- the move and its undoing are the office's own UPDATE of player.team_code
+  -- through scrbrd_app with app.effective_on set, as the move route
+  -- (roster-api.mjs) writes them. The HTTP half is tools/smoke-player-move.mjs.
+  -- What each label holds:
+  --   (before)     on the 15XI since t-60 (the 14XI t-90..t-60), A's mother
+  --                reads the 15XI's rows from t-60 on and the 14XI's of his
+  --                time there (f43b, not f43a); A himself the same, his
+  --                14XI fixture by branch (5); the newcomer's mother reads the
+  --                19XI's from t-10 only (Q2): not f42a, its bus or its
+  --                t-30 post; M's mother the 15XI's
+  --   (move)       the office moves A to the 19XI from t-10: the history's
+  --                three rows; his `player` row carried (db/112); his links
+  --                and consents untouched (§8.2's §49 and db/47 assertions)
+  --   (after)      his mother keeps the 15XI's season up to t-10 (f41a, f41w
+  --                away, f41d the move's day, its bus, nets, post and plan,
+  --                the balls of f41a), keeps f41s by the sheet, gains the
+  --                19XI's from t-10 (f42d, f42n, s42d, s42n, n42n) and NOT
+  --                its earlier rows (f42a, its bus, nets, post, balls: Q2);
+  --                loses the 15XI's after the move (f41n, its bus, nets, the
+  --                post and plan of now). A himself: the same old season by
+  --                (5), his new side whole by his `player` row (1), and NOT
+  --                his old side's posts and plans (db/117 header §4: a gap
+  --                for Kameel, not built)
+  --   (unchanged)  every other reader reads exactly what he read before the
+  --                move: the newcomer's and M's mothers, both coaches, the
+  --                school-wide spectator, the office
+  --   (seats)      A's seat on the lift to f41n (after the move, the side he
+  --                left) is void, ended by the office; his seat to f41s (his
+  --                name on its sheet) and M's seat to f41n stand; the driver
+  --                and A's mother are each told, once
+  --   (literal)    for every person holding an assignment and every staged or
+  --                seed fixture, fixture_reach() under fixture.read and
+  --                transport.read equals §2.10's rule spelled out with
+  --                side_on() over every boy (_v117_lit_fixture); for every
+  --                session side_reach_on() equals it on the session's day;
+  --                and db/106's spelling (player.team_code, _v106_lit_fixture)
+  --                answers APART for A's mother at f41a and f42a (the
+  --                rewrite did something)
+  --   (shape)      for every person, match_read admits exactly fixture_reach()
+  --                (and db/41's driver), trip_read the §83 formula,
+  --                training_session_read side_reach_on() on the session's
+  --                day, the log the fixtures match_read gives, and for every
+  --                guardian my_child_fixtures() is match_read; for every
+  --                team post, news_plan_reach() on its day is news.read and
+  --                side_reach_on('team.read') on that day
+  --   (undo)       a move back the same day (§3.3): four rows, both kept; his
+  --                mother reads the 15XI's from t-10 on again and the 19XI's
+  --                t-10 day only; the voided seat stays void (no un-void)
+  --   (doors)      the void trigger enabled beside db/08's and db/112's;
+  --                side_on() and side_day() scrbrd_app's alone; my_sides()
+  --                returns the spans; no job on a clock (§8.3 item 12)
+  --
+  -- Falsified on 21 Oct 2026 (see the slice's report): each change made as
+  -- the owner before this section ran, red, then green without it.
+  DECLARE
+    z      jsonb := _v117_stage();
+    OFFICE uuid;
+    A uuid; G uuid; GM uuid; ABOY uuid;
+    FX     uuid[];
+    ppl    uuid[];
+    got    text;
+    want   text;
+    v_about text;
+    v_before jsonb := '{}';
+    k      text;
+    u      uuid;
+    n      int;
+    bad    text;
+    t      date := sa_today();
+    ZERO   uuid := '00000000-0000-0000-0000-000000000000';
+  BEGIN
+    OFFICE := (z->>'office')::uuid; A := (z->>'a')::uuid; G := (z->>'g')::uuid; GM := (z->>'gm')::uuid;
+    ABOY := (z->>'aboy')::uuid;
+    FX := ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^f4');
+
+    -- ── (before) ──
+    PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..',
+      format('§91 (before): A''s rows are %s', _v117_fact('rows', A)));
+    FOR k, want IN SELECT * FROM (VALUES
+        ('g',    'fixtures [f41a f41d f41n f41s f41w f43b] trips [t41a t41n] training [s41a s41n] posts [n41a n41n p41a p41n] balls [f41a f41n]'),
+        ('aboy', 'fixtures [f41a f41d f41n f41s f41w f43b] trips [t41a t41n] training [s41a s41n] posts [n41a n41n p41a p41n] balls [f41a f41n]'),
+        ('gm',   'fixtures [f41a f41d f41n f41s f41w] trips [t41a t41n] training [s41a s41n] posts [n41a n41n p41a p41n] balls [f41a f41n]'),
+        ('gc',   'fixtures [f42d f42n] trips [] training [s42d s42n] posts [n42n] balls []')) x LOOP
+      PERFORM _as((z->>k)::uuid);
+      got := _v117_reads(z);
+      PERFORM _assert(got = want, format('§91 (before): the %s reads %s, the design gives %s', k, got, want));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['gc', 'gm', 'coach41', 'coach42', 'spec', 'office'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      v_before := v_before || jsonb_build_object(k, _v117_reads(z));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    v_about := _v117_fact('about_him', A);
+    PERFORM _assert(_v117_fact('lift_notices', G) = '' AND _v117_fact('lift_notices', GM) = '',
+      '§91 (before): a lift notice is there before the move');
+
+    -- ── (move) ──
+    PERFORM _as(OFFICE);
+    PERFORM set_config('app.effective_on', (t - 10)::text, true);
+    UPDATE player SET team_code = '19XI' WHERE id = A;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM set_config('app.effective_on', '', true);
+    PERFORM _assert(n = 1, '§91 (move): the office could not move A');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..-10 19XI:-10..',
+      format('§91 (move): A''s rows are %s', _v117_fact('rows', A)));
+    PERFORM _assert(_v112_roles(ABOY) = '15XI:ended 19XI:live',
+      format('§91 (move): A''s own `player` rows are %s (db/112''s carry)', _v112_roles(ABOY)));
+    PERFORM _assert(_v117_fact('about_him', A) = v_about,
+      '§91 (move): the move changed a link or a consent of A''s (§8.2: §49, db/47)');
+
+    -- ── (after) ──
+    FOR k, want IN SELECT * FROM (VALUES
+        ('g',    'fixtures [f41a f41d f41s f41w f42d f42n f43b] trips [t41a] training [s41a s42d s42n] posts [n41a n42n p41a] balls [f41a]'),
+        ('aboy', 'fixtures [f41a f41d f41s f41w f42a f42d f42n f43b] trips [t41a t42a] training [s41a s42a s42d s42n] posts [n42a n42n] balls [f41a f42a]')) x LOOP
+      PERFORM _as((z->>k)::uuid);
+      got := _v117_reads(z);
+      PERFORM _assert(got = want, format('§91 (after): the %s reads %s, the design gives %s', k, got, want));
+    END LOOP;
+
+    -- ── (unchanged) ──
+    FOREACH k IN ARRAY ARRAY['gc', 'gm', 'coach41', 'coach42', 'spec', 'office'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      got := _v117_reads(z);
+      PERFORM _assert(got = v_before->>k, format('§91 (unchanged): the %s read %s before the move and %s after', k, v_before->>k, got));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+
+    -- ── (seats) ──
+    PERFORM _assert(_v117_fact('seat', (z->>'seat_a_41n')::uuid) = 'void:' || OFFICE::text
+                    AND _v117_fact('seat', (z->>'seat_a_41s')::uuid) = 'requested:-'
+                    AND _v117_fact('seat', (z->>'seat_m_41n')::uuid) = 'requested:-',
+      format('§91 (seats): after the move A''s seat to f41n is %s, to f41s %s; M''s to f41n %s',
+             _v117_fact('seat', (z->>'seat_a_41n')::uuid), _v117_fact('seat', (z->>'seat_a_41s')::uuid),
+             _v117_fact('seat', (z->>'seat_m_41n')::uuid)));
+    PERFORM _assert(_v117_fact('lift_notices', GM) = 'A seat was withdrawn'
+                    AND _v117_fact('lift_notices', G) = 'A seat on a lift was withdrawn',
+      format('§91 (seats): the driver was told [%s], A''s mother [%s]', _v117_fact('lift_notices', GM), _v117_fact('lift_notices', G)));
+
+    -- ── (literal) ──
+    ppl := _v106_people();
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      SELECT string_agg(format('%s/%s', coalesce(_v106_label(z, x.f), x.f::text), x.cap), ' ') INTO bad
+        FROM (SELECT f0 AS f, c.cap FROM unnest(FX || _v106_seed_matches()) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
+       WHERE fixture_reach(x.cap, x.f) IS DISTINCT FROM _v117_lit_fixture(x.cap, x.f);
+      PERFORM _assert(bad IS NULL, format('§91 (literal): for %s fixture_reach() and §2.10''s rule answer apart at %s', u, left(bad, 300)));
+      SELECT string_agg(coalesce(_v106_label(z, s.id), s.id::text), ' ') INTO bad
+        FROM _v117_sessions() s
+       WHERE side_reach_on('team.read', s.school_id, s.team_code, ZERO, s.day)
+             IS DISTINCT FROM _v117_lit_side('team.read', s.school_id, s.team_code, ZERO, s.day);
+      PERFORM _assert(bad IS NULL, format('§91 (literal): for %s side_reach_on() and §2.10''s rule answer apart at sessions %s', u, left(bad, 300)));
+    END LOOP;
+    PERFORM _as(G);
+    PERFORM _assert(fixture_reach('fixture.read', (z->>'f41a')::uuid) AND NOT _v106_lit_fixture('fixture.read', (z->>'f41a')::uuid)
+                    AND NOT fixture_reach('fixture.read', (z->>'f42a')::uuid) AND _v106_lit_fixture('fixture.read', (z->>'f42a')::uuid),
+      '§91 (literal): db/106''s spelling (the side now) and the dated rule do not answer apart for A''s mother at f41a and f42a');
+
+    -- ── (shape) ──
+    n := 0;
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      SELECT string_agg(coalesce(_v106_label(z, x), x::text), ' ') INTO bad
+        FROM unnest(FX || _v106_ball_matches()) x
+       WHERE EXISTS (SELECT 1 FROM match m WHERE m.id = x)
+             IS DISTINCT FROM (fixture_reach('fixture.read', x) OR x IN (SELECT trip_driven_matches()));
+      PERFORM _assert(bad IS NULL, format('§91 (shape): for %s match_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
+      SELECT string_agg(coalesce(_v106_label(z, s.id), s.id::text), ' ') INTO bad
+        FROM _v117_sessions() s
+       WHERE EXISTS (SELECT 1 FROM training_session v WHERE v.id = s.id)
+             IS DISTINCT FROM side_reach_on('team.read', s.school_id, s.team_code, ZERO, s.day);
+      PERFORM _assert(bad IS NULL, format('§91 (shape): for %s training_session_read and side_reach_on() answer apart at %s', u, left(bad, 300)));
+      SELECT string_agg(coalesce(_v106_label(z, x.id), x.id::text), ' ') INTO bad
+        FROM _v106_trips() x
+       WHERE EXISTS (SELECT 1 FROM trip v WHERE v.id = x.id)
+             IS DISTINCT FROM (((fixture_end_reach('transport.read', x.match_id, x.school_id, x.team_code)
+                                 AND (fixture_reach('fixture.read', x.match_id) OR x.match_id IN (SELECT trip_driven_matches())))
+                                OR (coalesce(x.driver_id = app_user_id(), false)
+                                    AND app_can('transport.read', x.school_id, x.team_code, ZERO, x.match_id)))
+                               AND (coalesce(x.driver_id = app_user_id(), false) OR NOT trip_fixture_driver_only(x.match_id)));
+      PERFORM _assert(bad IS NULL, format('§91 (shape): for %s trip_read and fixture_end_reach() answer apart at %s', u, left(bad, 300)));
+      SELECT string_agg(x::text, ' ') INTO bad
+        FROM (((SELECT DISTINCT b.match_id FROM ball_event b)
+               EXCEPT (SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches()) AND NOT trip_fixture_driver_only(m.id)))
+              UNION ALL
+              ((SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches()) AND NOT trip_fixture_driver_only(m.id))
+               EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b))) d(x);
+      PERFORM _assert(bad IS NULL, format('§91 (shape): %s reads balls apart from match_read at %s', u, left(bad, 300)));
+      SELECT string_agg(coalesce(_v106_label(z, p.id), p.id::text), ' ') INTO bad
+        FROM _v117_posts() p
+       WHERE news_plan_reach(p.school, p.team, p.day) IS DISTINCT FROM
+             (app_can('news.read', p.school, p.team, ZERO, ZERO) AND side_reach_on('team.read', p.school, p.team, ZERO, p.day));
+      PERFORM _assert(bad IS NULL, format('§91 (shape): for %s news_plan_reach() and side_reach_on() answer apart at posts %s', u, left(bad, 300)));
+    END LOOP;
+    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+      PERFORM _as(u);
+      PERFORM _assert(
+        (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(my_child_fixtures()) x)
+          = (SELECT coalesce(array_agg(m.id ORDER BY m.id), '{}') FROM match m),
+        format('§91 (shape): for the guardian %s my_child_fixtures() and match_read give different fixtures', u));
+      n := n + cardinality(my_child_fixtures());
+    END LOOP;
+    PERFORM _assert(n > 10 AND cardinality(ppl) > 20 AND (SELECT count(*) FROM _v117_posts()) >= 6,
+      format('§91 (shape): %s guardian fixtures, %s people, %s posts compared: it proves nothing', n, cardinality(ppl), (SELECT count(*) FROM _v117_posts())));
+
+    -- ── (undo) ──
+    PERFORM _as(OFFICE);
+    PERFORM set_config('app.effective_on', (t - 10)::text, true);
+    UPDATE player SET team_code = '15XI' WHERE id = A;
+    PERFORM set_config('app.effective_on', '', true);
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..-10 19XI:-10..-10 15XI:-10..',
+      format('§91 (undo): A''s rows are %s', _v117_fact('rows', A)));
+    FOR k, want IN SELECT * FROM (VALUES
+        ('g',    'fixtures [f41a f41d f41n f41s f41w f42d f43b] trips [t41a t41n] training [s41a s41n s42d] posts [n41a n41n p41a p41n] balls [f41a f41n]'),
+        ('aboy', 'fixtures [f41a f41d f41n f41s f41w f42d f43b] trips [t41a t41n] training [s41a s41n s42d] posts [n41a n41n p41a p41n] balls [f41a f41n]')) x LOOP
+      PERFORM _as((z->>k)::uuid);
+      got := _v117_reads(z);
+      PERFORM _assert(got = want, format('§91 (undo): the %s reads %s, the design gives %s', k, got, want));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v117_fact('seat', (z->>'seat_a_41n')::uuid) = 'void:' || OFFICE::text
+                    AND _v117_fact('lift_notices', G) = 'A seat on a lift was withdrawn'
+                    AND _v117_fact('about_him', A) = v_about,
+      '§91 (undo): the move back un-voided the seat, told someone again, or changed a link or consent');
+
+    -- ── (doors) ──
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'player'::regclass AND tgname = 'player_move_voids_seats' AND tgenabled = 'O')
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('player_move_voids_seats()'), 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('side_on(uuid,uuid,date)'), 'EXECUTE')
+                    AND NOT has_function_privilege('public', to_regprocedure('side_on(uuid,uuid,date)'), 'EXECUTE')
+                    AND NOT has_function_privilege('public', to_regprocedure('side_day(uuid)'), 'EXECUTE')
+                    AND pg_get_function_result(to_regprocedure('my_sides(text)'))
+                        = 'TABLE(school_id uuid, team_code text, joined_on date, left_on date)'
+                    AND (SELECT position('my_own_side_fixtures()' IN pg_get_expr(p.polqual, p.polrelid)) > 0
+                           FROM pg_policy p WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read')
+                    AND (SELECT position('sa_date(training_session.starts_at)' IN pg_get_expr(p.polqual, p.polrelid)) > 0
+                           FROM pg_policy p WHERE p.polrelid = 'training_session'::regclass AND p.polname = 'training_session_read'),
+      '§91 (doors): the void trigger, the helpers'' grants, my_sides()''s spans or the dated policies are not what db/117 wrote');
+    PERFORM _assert(to_regclass('cron.job') IS NULL, '§91 (doors): a job runs on a clock (cron.job exists)');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.effective_on', '', true);
+  -- └── end of section 91
+  -- └── db/117 (section 91) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
