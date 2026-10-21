@@ -127,6 +127,10 @@ async function go(page, key) {
 }
 /** The options a picker offers, as ids, the placeholder aside. */
 const options = (page, id) => page.$$eval(`[data-testid="${id}"] option`, (os) => os.map((o) => o.value).filter(Boolean));
+/** Wait for Compare's career read to answer (its prompt, its "none", or a read state that is not loading), never a fixed time. */
+const answered = (page) => page.waitForFunction(() => !!document.querySelector(
+  '[data-testid="compare-prompt"], [data-testid="compare-none"], [data-testid="compare-read-state"]:not([data-state="loading"])'),
+  null, { timeout: 20000 }).then(() => true).catch(() => false);
 /** Wait for the compare panels to have read. */
 const settled = (page) => page.waitForFunction(() => {
   const e = document.querySelector('[data-testid="compare-as-at"]');
@@ -250,7 +254,7 @@ try {
   // held below are the ones from here on.
   const cFrom = c.asked.length;
   await tid(c.page, "analytics-view-compare").click({ timeout: 5000 }).catch(() => {});
-  await c.page.waitForTimeout(1500);
+  ok("the career read behind the picker answers", await answered(c.page));
   ok("the Compare sub-view draws", await tid(c.page, "compare").count() === 1 && await tid(c.page, "compare").getAttribute("data-mode") === "staff");
   ok("...and asks for two players before drawing a figure", /Choose two players/.test(await inner(c.page, "compare-prompt")) && await tid(c.page, "compare-bat-table").count() === 0);
   const offeredA = await options(c.page, "compare-pick-a");
@@ -348,8 +352,7 @@ try {
   ok("the analyst signs in", await signIn(a.page, "analyst.cmp@example.invalid"));
   ok("...and Analytics is his", await go(a.page, "analytics"));
   await tid(a.page, "analytics-view-compare").click({ timeout: 5000 }).catch(() => {});
-  await a.page.waitForTimeout(1500);
-  await a.page.waitForFunction(() => document.querySelectorAll('[data-testid="compare-pick-a"] option').length > 1, null, { timeout: 9000 }).catch(() => {});
+  ok("the career read behind his picker answers", await answered(a.page));
   const offered = await options(a.page, "compare-pick-a");
   if (!offered.length) console.log("    (analyst's compare said:", (await inner(a.page, "compare")).replace(/\s+/g, " ").slice(0, 300), ")");
   const schoolWithSide = analystCareer.filter((r) => r.school_id === HIL && r.team_code);
@@ -394,7 +397,7 @@ try {
   ok("Passport opens", await go(p.page, "passport"));
   const pFrom = p.asked.length;
   await tid(p.page, "passport-tab-compare").click({ timeout: 5000 }).catch(() => {});
-  await p.page.waitForTimeout(1500);
+  ok("the career read behind his picker answers", await answered(p.page));
   ok("the card is his: 'Me v a team-mate'", await tid(p.page, "compare").getAttribute("data-mode") === "pupil" && /Me v a team-mate/i.test(await inner(p.page, "compare-head")));
   ok("HE IS THE LEFT COLUMN, and not a choice", /R Pillay/.test(await inner(p.page, "compare-self")) && await tid(p.page, "compare-pick-a").count() === 0);
   ok("ONE PICKER: never two team-mates against each other", await p.page.locator('[data-testid="compare"] select').count() === 1);
