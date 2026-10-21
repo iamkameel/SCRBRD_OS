@@ -45,9 +45,11 @@ export function ownerRecoveryRoutes({ pool, secret }) {
 
       if (!configured) throw err("recovery_not_configured", 501);
       if (!secretsMatch(given, configured)) {
-        // The email is logged, the secret never is — this line is the only
-        // record an attempt happened, for the operator's own server logs.
-        console.error(`owner/recover ${at} refused: wrong recovery secret (email=${email || "(none)"})`);
+        // These lines are the only record an attempt happened, for the
+        // operator's own server logs: the time and the outcome. Neither the
+        // secret nor the email is logged (INCIDENTS_AND_BREACHES §9.1, D24);
+        // the owner knows his own address.
+        console.error(`owner/recover ${at} refused: wrong recovery secret`);
         throw err("not_permitted", 403);
       }
       if (!email) throw err("email_required", 400);
@@ -56,10 +58,10 @@ export function ownerRecoveryRoutes({ pool, secret }) {
       const { rows } = await pool.query(`select * from owner_recovery_issue($1, $2, $3)`, [email, hash, expiresInSec]);
       const r = rows[0];
       if (!r?.ok) {
-        console.error(`owner/recover ${at} refused: ${r?.reason || "no_result"} (email=${email})`);
+        console.error(`owner/recover ${at} refused: ${r?.reason || "no_result"} (email matched the owner: false)`);
         throw err(r?.reason || "not_owner", 404);
       }
-      console.error(`owner/recover ${at} issued a code for ${email}`);
+      console.error(`owner/recover ${at} issued a code (email matched the owner: true)`);
       // The one moment this code exists in readable form — same rule as
       // every other login code in this codebase.
       return { code: raw, expiresAt: r.expires_at };
