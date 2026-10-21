@@ -246,6 +246,25 @@ try {
      (await grant("scouting", platform, { schoolId: HIL, granted: false, note: "Plan lapsed." })).status === 200
        && (await read("scouting_candidates", registrar)).status === 403);
   await flag("scouting", platform, { enabled: true, reason: "Back in the base tier." });
+
+  // db/107 (the grant note, Kameel 14 Oct 2026): the platform's note about a
+  // school's plan is that school's and the platform's. It used to come back,
+  // as grant_note, for whatever schoolId anybody enrolled asked about.
+  group("A school's plan is its own: another school reads no grant and no note");
+  {
+    const row = async (token, school) => ((await read("module_settings", token, `?schoolId=${school}`)).body?.rows ?? [])
+      .find((r) => r.key === "scouting");
+    const own = await row(registrar, HIL);
+    ok("Hilton's office reads Hilton's grant and the platform's note on it",
+       own?.school_granted === false && own?.grant_note === "Plan lapsed.", JSON.stringify(own));
+    const theirs = await row(wesAdmin, HIL);
+    ok("Westville's office asking about Hilton gets the row with no grant and no note",
+       !!theirs && theirs.school_granted == null && theirs.grant_note == null, JSON.stringify(theirs));
+    ok("...though the module still resolves for Hilton as it is (the definer reads the grant)",
+       theirs?.resolved === own?.resolved);
+    const plat = await row(platform, HIL);
+    ok("the platform reads every school's note", plat?.grant_note === "Plan lapsed.");
+  }
   await q(`delete from feature_grant where key = 'scouting'`);
 
   group("A locked feature is nobody's to sell");

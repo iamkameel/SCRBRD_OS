@@ -23,6 +23,7 @@
  * the rest.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, Handler, Db } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,7 +62,7 @@ export function leagueRoutes({ pool, secret }) {
       if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
-      if (status >= 500) console.error("league →", e.code || "", e.message);
+      if (status >= 500) console.error("league →", safeErr(e));
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };

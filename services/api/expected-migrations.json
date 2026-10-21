@@ -101,5 +101,7 @@
   "103_plan_author_name.sql",
   "104_assessment_corrections.sql",
   "105_development_loop.sql",
-  "106_reach_side.sql"
+  "106_reach_side.sql",
+  "107_official_register_closed.sql",
+  "108_player_team_scoped.sql"
 ]

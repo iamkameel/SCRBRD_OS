@@ -5,13 +5,14 @@ Nothing here uses any other Firebase project. Three pieces:
 
 | Piece | Where | How it gets there |
 |---|---|---|
-| Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
-| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | by hand (5), or the same workflow, from the root `Dockerfile` |
-| Database | Cloud SQL, Postgres 16, `africa-south1` | by hand, once, then by hand for every schema change |
+| Client (`apps/web`) | Render, the same service as the API (`SERVE_CLIENT`) | built and served by the API's own process on every deploy of `main` |
+| API (`services/api`) | Render, `scrbrd.onrender.com`, from `render.yaml` | Render deploys `main` by itself, from `render.yaml`; the first deploy is New → Blueprint, as in "The whole thing in one service" above |
+| Database | Supabase Postgres, Free | by hand, once, then by hand for every schema change |
 
-Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
-browser talks to one origin and the client is built with `VITE_API_BASE=""`.
-Realtime is plain HTTP, so the rewrite carries everything the client needs.
+The API serves the client from its own process, so the browser talks to one
+origin and the client is built with `VITE_API_BASE=""`. The Firebase Hosting and
+Cloud Run arrangement below (`firebase.json`, `deploy.yml`) is the alternative
+road; production does not use it.
 
 ## Where to run all of this
 
@@ -56,6 +57,11 @@ instance-hours a month. Set the repository variable `SCRBRD_HEALTH_URL`
 (Settings → Secrets and variables → Actions → Variables) to the service's
 `/api/health` address; unset, the job does nothing. Run it once by hand from
 the Actions tab to see it answer 200.
+The job also fails, and GitHub emails the repository owner, when production is
+bad: no answer, an answer other than 200, a body that is not JSON, or a body
+without `ok: true` and `db: "ok"`. It tries up to three times (75 seconds each,
+20 apart) so a sleeping server booting does not count. For the pilot this is the
+only alert there is.
 
 ### The deployed revision
 
@@ -1414,6 +1420,84 @@ should read OK). **Schema first**: the API built with it refuses to start
 without db/106 (`expected-migrations.json`), and its `matches` read asks
 `my_fixture_ends()` which end the reader is at.
 <!-- ── end db/106 ── -->
+<!-- ── db/107: the officials register and the grant notes, closed ── -->
+#### The officials register is its keeper's; a school's plan is its own (db/107)
+
+`db/107_official_register_closed.sql` is REACH-D5 and the grant-note decision
+(Kameel, 14 October 2026). **The officials register** held an umpire's or a
+scorer's date of birth, ID number, email and phone, and every enrolled person
+at every school, pupils and parents included, could read the table raw; the
+API was safe only because one route read a masked view. Now the table is read
+by the body that keeps it (`officiating.registry.manage`, platform-wide) and
+by an official reading his own row, and by nobody else. Everybody who needs a
+name and a grade, to appoint an umpire or to read the register screen, reads
+`official_panel()`, which names its columns (name, panel, standing, grade,
+how many accreditations, whether he has an account) and never returns a date
+of birth, an ID number, an address or a phone. **A school's plan**
+(`feature_grant`, with the platform's free-text note) was readable by anybody
+enrolled anywhere, so `module_settings` gave one school's note to another's
+parents. Now a school's own people and the platform read its rows, nobody
+else; which modules are on still resolves for everyone exactly as before.
+
+**What it does to a live database.** Replaces three read policies
+(`official_read`, `official_accreditation_read`, `feature_grant_read`); refuses
+to run if any is not what db/81 left (or this file's own). Adds three
+functions (`app_enrolled_at`, `official_panel`, `official_conflict`): `SECURITY
+DEFINER`, `STABLE`, pinned search path, executable by `scrbrd_app` and not
+`PUBLIC`. No table, column, row or table grant changes; a second paste changes
+nothing. **One behaviour changes on the paste:** a school's coach, director of
+sport or principal who opens the officials screen still sees the panel and
+its grades, and no longer receives a date of birth or contact for anybody
+(they already arrived empty through the API); a parent or pupil asking the
+modules read about another school gets no grant row.
+
+Paste `node tools/bundle-sql.mjs --apply 107` (after 102, and after 103–106
+where those have shipped; the bundle names the one it needs first), then the
+verify bundle (§84 is its proof). The summary row "The officials register is
+its keeper's" should read OK. **Schema first**: the API built with it reads
+`official_panel()` and `official_conflict()` and refuses to start without
+db/107 (`expected-migrations.json`).
+<!-- ── end db/107 ── -->
+
+<!-- ── db/108: a pupil is a pupil of a side ── -->
+#### A pupil is a pupil of a side (db/108)
+
+`db/108_player_team_scoped.sql` is REACH-D4 (Kameel, 14 October 2026: "player
+becomes team-scoped (a CHECK, like coach). Yes."). A pupil's `player` role
+with no team reached every side at his school: every sheet, post and bus
+list. A new CHECK, `role_assignment_player_team_scoped`, makes a live `player`
+role name a side, as db/01's has always made a coach's; and the one door
+every grant passes (`role_request_grant_as()`) takes a pupil's side from the
+roster when nobody named one, or refuses by name (`team_required`).
+
+**FIRST, with Kameel's yes: `tools/sql/fix-player-without-team.sql`.** On 14
+October production and the demo database each held exactly one live `player`
+role with no team: the seeded test account `spectator@example.invalid`, not a
+pupil. db/108 refuses to run while one exists ("Nothing was changed"), and it
+does not change live data itself. The fix file ends that one role
+(`active = false`; the row, its dates and its provenance stay, and the account
+can be given the role again with a side). It ends only the account it names,
+and stops without changing anything if it finds a team-less `player` role on
+any other account, or on an account linked to a pupil on the roster: a pupil
+is given a side by the office, not ended. Paste it in the SQL Editor, read its
+notice ("ended 1 team-less player role(s)…") and the empty result under it,
+then paste db/108. On a rebuilt database (the seed now puts that account on
+the 1st XI) the fix file finds nothing and says so.
+
+**What db/108 does to a live database.** Adds one CHECK constraint
+(`NOT VALID`, then `VALIDATE`, under a lock with a ten-second `lock_timeout`;
+ended roles are exempt, since an ended role reaches nothing and is never
+reactivated). Re-emits `role_request_grant_as()` (db/92) with one block,
+md5-guarded; same signature, rights and settings. No row is inserted, changed
+or deleted; a second paste changes nothing. Paste outside a busy hour: the
+lock is held for the length of one table scan of `role_assignment`.
+
+Paste `tools/sql/fix-player-without-team.sql` (with Kameel's yes), then `node
+tools/bundle-sql.mjs --apply 108` (after 107), then the verify bundle (§85 is
+its proof). The summary row "A pupil is a pupil of a side" should read OK. The
+API needs nothing new from it: a refusal comes back as `team_required`, which
+the request, enrolment and register routes already answer in words.
+<!-- ── end db/108 ── -->
 
 ### 5 · Cloud Run, the first time
 

@@ -220,8 +220,12 @@ const WALKS = [
   // the tenant line, bounded by a fixture, a window and a column list.
   "opposition",
   // The officials register: a panel that belongs to no school, read
-  // through official_masked so a name is public and a person is not.
+  // through official_panel() so a name is public and a person is not
+  // (db/107 closed the table itself to all but its keeper).
   "register",
+  // db/108 and tools/sql/fix-player-without-team.sql, pasted in the order
+  // DEPLOYING.md gives, on a database holding a team-less pupil role.
+  "player-team",
   // The gaps db/10 and db/11 could only warn about, and the one write route
   // that closes the first of them.
   "dob-gaps",

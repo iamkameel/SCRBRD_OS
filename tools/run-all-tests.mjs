@@ -344,6 +344,10 @@ const SUITES = [
   // client store holds the list and the count every badge reads.
   ["notif-contract", "packages/policy/test/notifications.test.mjs"],
   ["receipts", "services/api/notify/receipts.test.mjs"],
+  // No personal value in a server log (INCIDENTS_AND_BREACHES §9.1, D24):
+  // safeErr() over a duplicate email and ID number, and every console call
+  // under services/ walked for a DETAIL, an email, a name or a raw message.
+  ["log-hygiene", "services/api/log-safe.test.mjs"],
   ["notif-store", "apps/web/test/notifications-store.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an
