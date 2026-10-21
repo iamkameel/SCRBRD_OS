@@ -704,7 +704,8 @@ try {
   await tid(pr.page, "mc-official-confirm-go").click();
   ok("confirmed, in words", await until(pr.page, () => /the result is official/.test(document.querySelector('[data-testid="mc-official-said"]')?.textContent ?? ""), 8000));
   ok("the header now says Official result, confirmed by the home school",
-     await until(pr.page, () => /Official result · confirmed by the home school/.test(document.querySelector('[data-testid="mc-official"]')?.textContent ?? ""), 8000),
+     await until(pr.page, () => !!document.querySelector('[data-testid="mc-official"] [data-state="official"]')
+       && /^Official result ?· confirmed by the home school, /.test(document.querySelector('[data-testid="mc-official"]')?.textContent ?? ""), 8000),
      await tid(pr.page, "mc-official").innerText().catch(() => "∅"));
   const [{ n: confRows }] = await q(`select count(*)::int n from match_result_confirmation where match_id = $1 and lapsed_at is null and withdrawn_at is null`, [fx.live]);
   ok("...one standing confirmation in the database", confRows === 1, confRows);
