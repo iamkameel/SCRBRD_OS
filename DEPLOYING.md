@@ -5,13 +5,14 @@ Nothing here uses any other Firebase project. Three pieces:
 
 | Piece | Where | How it gets there |
 |---|---|---|
-| Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
+| Client (`apps/web`) | Render, the same service as the API (`SERVE_CLIENT`) | built and served by the API's own process on every deploy of `main` |
 | API (`services/api`) | Render, `scrbrd.onrender.com`, from `render.yaml` | Render deploys `main` by itself, from `render.yaml`; the first deploy is New → Blueprint, as in "The whole thing in one service" above |
 | Database | Supabase Postgres, Free | by hand, once, then by hand for every schema change |
 
-Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
-browser talks to one origin and the client is built with `VITE_API_BASE=""`.
-Realtime is plain HTTP, so the rewrite carries everything the client needs.
+The API serves the client from its own process, so the browser talks to one
+origin and the client is built with `VITE_API_BASE=""`. The Firebase Hosting and
+Cloud Run arrangement below (`firebase.json`, `deploy.yml`) is the alternative
+road; production does not use it.
 
 ## Where to run all of this
 
