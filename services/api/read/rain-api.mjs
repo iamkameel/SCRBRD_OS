@@ -75,6 +75,7 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { deriveMatch, fromRow, parAt, parAtWords, venueParWords, parReport, formatKind } from "@scrbrd/scoring";
 import { dlsTable, dlsTarget, dlsWords, differenceWords, resourcesOf, structuralProblems, DLS_STATUS } from "@scrbrd/scoring";
 import { EVENT_COLUMNS } from "../write/events-api.mjs";
+import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, Handler, IdHandler } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -106,7 +107,7 @@ export function rainRoutes({ pool, secret }) {
       if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
-      if (status >= 500) console.error("rain →", e.code || "", e.message);
+      if (status >= 500) console.error("rain →", safeErr(e));
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };

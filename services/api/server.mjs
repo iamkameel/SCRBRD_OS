@@ -30,7 +30,15 @@
  *   POST /api/auth/users/:id/disable · /enable { reason }   the office ends an account's sessions, saying why (db/85, db/90)
  *   GET  /api/auth/users/:id/preview              what disabling an account would cut (db/90)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
+ *   POST /api/players/:id/coaching-points         a coaching point: a note with its evidence (db/104)
+ *   POST /api/skills/:id/withdraw                 withdraw a score, with a reason (db/104)
+ *   POST /api/notes/:id/withdraw                  withdraw a note or a coaching point (db/104)
+ *   POST /api/players/:id/targets                 set a target on one attribute (db/105)
+ *   POST /api/targets/:id/withdraw                withdraw a target, with a reason (db/105)
+ *   POST /api/training/:id/plan                   a session's plan from the drill library (db/105)
+ *   POST /api/training/:id/attendance             a session's register; never `injured` (db/105)
  *   POST /api/players/:id/access-request          ask that player's coach for access
+ *   POST /api/players/:id/guardians/:link/revoke { kind, reason }   the office ends one guardian link, saying how and why (db/109)
  *   POST /api/access-requests/:id/decide          answer such a request
  *   POST /api/assignments/:id/end { reason }      end one role (db/77), the row withdrawn, never deleted
  *   GET  /api/matches/:id/events?since=           incremental sync
@@ -66,7 +74,8 @@ import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
-import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
+import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes, developmentCorrectionRoutes } from "./write/assessment-api.mjs";
+import { guardianEndingRoutes } from "./write/guardian-ending-api.mjs";
 import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
@@ -117,6 +126,7 @@ import { MatchHub } from "./realtime/realtime.mjs";
 import { schemaRefusal } from "./schema-guard.mjs";
 import { revisionFromEnv } from "./revision.mjs";
 import { appUrl, port } from "../../tools/db-url.mjs";
+import { safeErr } from "./log-safe.mjs";
 /** @import { IncomingMessage, ServerResponse } from "node:http" */
 /** @import { Handler, IdHandler, ExactHandler } from "./api-types.mjs" */
 
@@ -392,6 +402,9 @@ const read    = readRoute({ pool, secret: SECRET });
 const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
+// GA-I26a A1/A2 (db/104, db/105): withdrawing a score or a note, the coaching
+// point, and a target.
+const development = developmentCorrectionRoutes({ pool, secret: SECRET });
 const conduct = disciplineRoutes({ pool, secret: SECRET });
 // GA-I36 N2: an approved amendment's void and a released held ball drop the
 // fixture's public cache once committed (afterCommit, as the publication
@@ -402,6 +415,8 @@ const quarantine = quarantineRoutes({ pool, secret: SECRET, onChange: (note) => 
 // GA-I36 N1: the corrections waiting on a match, and across the reader's matches.
 const corrections = correctionRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
+// Account lifecycle slice 3 (db/109): one link ended, with a kind and a reason.
+const guardEnd = guardianEndingRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
@@ -456,7 +471,7 @@ const staffRegister = registerRoutes({ pool, secret: SECRET });
 // production and verifies only a project that is not scrbrd-os.
 const firebase = (() => {
   try { return verifierFromEnv({ dev: DEV }); }
-  catch (/** @type {any} */ e) { console.error(e.message); process.exit(1); }
+  catch (/** @type {any} */ e) { console.error(safeErr(e)); process.exit(1); }
 })();
 const signIn = signInRoutes({ pool, secret: SECRET, verifier: firebase.verifier,
                               trustProxyHops: Number(process.env.PUBLIC_TRUST_PROXY_HOPS || 0) });
@@ -820,6 +835,12 @@ const PLAYER_ROUTES = [
   // could still schedule — the half-working setting smoke-modules.mjs
   // describes, found by making that walk try every module's write.
   [/^\/api\/training$/,                              "POST", training.schedule, "training"],
+  // GA-I26a A2 (db/105): a session's plan, keyed to the drill library and
+  // replaced whole, and its register (never `injured`). Both under
+  // team.training.run through the session (the team manager holds it, and
+  // not team.manage); Training's, so tagged with it.
+  [/^\/api\/training\/([^/]+)\/plan$/,            "POST", training.plan, "training"],
+  [/^\/api\/training\/([^/]+)\/attendance$/,      "POST", training.attendance, "training"],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],
@@ -941,6 +962,18 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
   [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
+  // GA-I26a A1 (db/104). A coaching point is a note carrying its evidence
+  // pointer, written by coaching_point_write() under the coach's own two
+  // writes; tagged with Skills, whose screen writes it. Withdrawing a score
+  // is Skills' too. Withdrawing a note is untagged, as writing one is: a
+  // school that switched Skills off can still take back what was written.
+  [/^\/api\/players\/([^/]+)\/coaching-points$/, "POST", development.coachingPoint, "skills"],
+  [/^\/api\/skills\/([^/]+)\/withdraw$/,       "POST", development.skillWithdraw, "skills"],
+  [/^\/api\/notes\/([^/]+)\/withdraw$/,        "POST", development.noteWithdraw],
+  // GA-I26a A2 (db/105): a target, set and withdrawn only through
+  // target_set() and target_withdraw(), under the coach's own write. Skills'.
+  [/^\/api\/players\/([^/]+)\/targets$/,        "POST", development.target, "skills"],
+  [/^\/api\/targets\/([^/]+)\/withdraw$/,       "POST", development.targetWithdraw, "skills"],
   // A disciplinary matter (SCRBRD-053). No module tag: a school cannot switch
   // off a safeguarding record the way it switches off Analytics, and the
   // module gate can only ever refuse — so tagging this would be a setting
@@ -959,6 +992,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/guardians$/,             "POST", guard.establish],
   [/^\/api\/players\/([^/]+)\/guardians\/verify$/,     "POST", guard.verify],
   [/^\/api\/players\/([^/]+)\/guardians\/revoke$/,     "POST", guard.revoke],
+  // One link, by its id, with a kind and a reason (db/109, D13).
+  [/^\/api\/players\/([^/]+)\/guardians\/([^/]+)\/revoke$/,  "POST", guardEnd.revoke],
   [/^\/api\/players\/([^/]+)\/guardians\/consent$/,    "POST", guard.consent],
   [/^\/api\/players\/([^/]+)\/guardians\/withdraw$/,   "POST", guard.withdraw],
   [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],
@@ -1219,7 +1254,7 @@ async function servePad(req, res) {
     out.flush();
   } catch (/** @type {any} */ err) {
     const r = padRefusal(err);
-    if (r.status >= 500) console.error(`${req.method} ${url.pathname} (pad) →`, err.code || "", err.message);
+    if (r.status >= 500) console.error(`${req.method} ${url.pathname} (pad) →`, safeErr(err));
     json(res, r.status, r.body);
   }
 }
@@ -1432,8 +1467,10 @@ const server = createServer(async (req, res) => {
     return json(res, 404, { error: "not_found" });
   } catch (/** @type {any} */ err) {   // CaughtError in api-types.mjs
     // A bare SQLSTATE in a response is unhelpful and a stack trace in one is
-    // unsafe; the detail goes to the log, the code goes to the client.
-    if (!err.status) console.error(`${req.method} ${path} →`, err.code || "", err.message, err.detail || "");
+    // unsafe; the code goes to the client. The log takes the code, the
+    // constraint and the table, never Postgres's DETAIL: on a unique
+    // violation that is the duplicate email or ID number (log-safe.mjs, D24).
+    if (!err.status) console.error(`${req.method} ${path} →`, safeErr(err));
     return json(res, err.status || 500, { error: err.code || err.message || "internal_error" });
   }
 });

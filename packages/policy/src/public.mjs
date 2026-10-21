@@ -243,6 +243,11 @@ export const NEVER_PUBLIC = Object.freeze({
   // disclosure — and its giver is N4 besides.
   health_monitoring_consent: "N2",
 
+  // ── db/105, GA-I26a: the development loop ──
+  // N5. A target is a coach's judgement of where a named child should be,
+  // and the score it stood on: the whole table.
+  development_target: "N5",
+
   // ── db/70, SCRBRD-124 phase 1: parent lift clubs ──
   // N4. Who travels with whom, when, and with which adult: a child's
   // movements and his family's arrangements. The row's existence is the
@@ -254,6 +259,12 @@ export const NEVER_PUBLIC = Object.freeze({
   // of her child's contacts is hers.
   lift_offer: "N4",
   lift_driver_declaration: "N4",
+
+  // ── db/109, account lifecycle slice 3 ──
+  // N4. How and why a guardian's link to a child ended: who his guardians
+  // were, and the office's words about a family (a custody order, most of
+  // all). Never on a page, never to the parent (D13); the whole table.
+  guardian_link_ending: "N4",
 });
 
 /**

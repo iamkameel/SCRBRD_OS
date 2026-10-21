@@ -9,8 +9,8 @@
  * must keep reproducing the shipped bytes. A capability change is therefore
  * three edits, not one: roles.mjs (the truth for a fresh install and the
  * client), a new db/NN with the DELETE/INSERT for a database that already
- * has db/01, and WITHDRAWN_SINCE_01, ADDED_SINCE_01 or ROLES_ADDED_SINCE_01 below so the emitted
- * db/01 does not move. DEPLOYING.md, "Changing the schema after go-live",
+ * has db/01, and WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 or
+ * TEAM_SCOPED_SINCE_01 below so the emitted db/01 does not move. DEPLOYING.md, "Changing the schema after go-live",
  * has the procedure.
  *
  * What this emits
@@ -351,7 +351,7 @@ GRANT EXECUTE ON FUNCTION app_holds(text) TO PUBLIC;
  * enforced on the next migration without anyone remembering to edit SQL.
  */
 function teamScopedConstraint() {
-  const list = TEAM_SCOPED_ROLES.map(q).join(", ");
+  const list = TEAM_SCOPED_ROLES.filter((r) => !(r in TEAM_SCOPED_SINCE_01)).map(q).join(", ");
   return `${banner("Assignments that must name a team")}
 -- A NULL team_code widens to every team in the school. That is right for a
 -- head of sport and wrong for a coach: a coach reaches a player's medical
@@ -446,6 +446,26 @@ export const ROLES_ADDED_SINCE_01 = {
 const roleIn01 = (/** @type {string} */ role) => !(role in ROLES_ADDED_SINCE_01);
 
 /**
+ * Roles that joined TEAM_SCOPED_ROLES after db/01 shipped.
+ *
+ * db/01's assignment_team_scoped CHECK is emitted from TEAM_SCOPED_ROLES, and
+ * db/01 is frozen, so a role that must name a team from some later date is
+ * left out of that emission and the db/NN named here adds its own CHECK: a
+ * fresh install and production reach the same state by the same path, as
+ * ROLES_ADDED_SINCE_01 does for a whole role. rls.test.mjs holds each entry
+ * to it: the role is in TEAM_SCOPED_ROLES, absent from db/01's constraint,
+ * and named by a CHECK in the file. Never retires.
+ *
+ * `player` (REACH-D4, Kameel, 14 October 2026): a `player` row with no team
+ * passed app_can()'s team test for every side at the school, so a pupil with
+ * no side read every side's sheet, posts and buses. db/108 adds
+ * role_assignment_player_team_scoped.
+ */
+export const TEAM_SCOPED_SINCE_01 = Object.freeze({
+  player: "108_player_team_scoped.sql",
+});
+
+/**
  * The mirror: capabilities that did not exist when db/01 shipped.
  *
  * db/01 inserts the whole catalogue and every bundle, so a new name in
@@ -493,6 +513,8 @@ export const ADDED_SINCE_01 = {
   // ── end SCRBRD-124 ──
   // ── SCRBRD-130 R2: the DLS resource table (db/75) ──
   "platform.reference.manage":   "75_dls_table.sql",
+  // ── GA-I26a: running a training session, its plan and register (db/105) ──
+  "team.training.run":           "105_development_loop.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

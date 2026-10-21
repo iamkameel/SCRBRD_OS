@@ -33,8 +33,15 @@ import { ALL_CAPABILITIES, isCapability, CAPABILITIES, SENSITIVE, PLATFORM_ONLY 
  *
  * Emitted as a CHECK constraint on role_assignment, so it is enforced by the
  * database rather than by whoever is creating assignments that day.
+ *
+ * `player` joined on 14 October 2026 (REACH-D4, Kameel): a pupil's `player`
+ * row with no team is the same hole for a child — he reads every side at the
+ * school, every sheet, post and bus. The office gives every pupil a side; a
+ * boy not yet selected is on his age-group squad. db/01 is frozen, so its
+ * CHECK still lists the first three, and db/108 adds the player's own
+ * (TEAM_SCOPED_SINCE_01 in services/api/rls/generate-rls.mjs).
  */
-export const TEAM_SCOPED_ROLES = Object.freeze(["coach", "assistantcoach", "teammanager"]);
+export const TEAM_SCOPED_ROLES = Object.freeze(["coach", "assistantcoach", "teammanager", "player"]);
 
 /**
  * Roles whose assignment MUST name at least one person.
@@ -174,7 +181,7 @@ const BUNDLES = {
     // director of sport cannot appoint their own supervisor.
     "user.role.assign",
     ...READ_TEAM, "school.read", "user.read", "user.invite",
-    "team.manage", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
+    "team.manage", "team.training.run", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
     "player.profile.manage", "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read", "player.age.read", "player.roster.read", "player.emergency.read", "player.emergency.manage",
@@ -202,7 +209,7 @@ const BUNDLES = {
     // configuring the institution — and it can only ever take something away.
     "school.feature.manage",
     ...READ_TEAM, "school.read", "school.manage", "user.read", "user.invite", "user.role.assign",
-    "team.manage", "fixture.create", "fixture.update", "fixture.cancel",
+    "team.manage", "team.training.run", "fixture.create", "fixture.update", "fixture.cancel",
     "sponsorship.read", "sponsorship.manage",
     "player.profile.manage", "player.pii.read", "player.biometric.read",
     "player.age.read", "player.identity.read", "guardian.link.manage",
@@ -218,7 +225,7 @@ const BUNDLES = {
   ],
   sportsadmin: ["clearance.read",
     "availability.read", "availability.declare",
-    ...READ_TEAM, "user.read", "team.manage", "team.select",
+    ...READ_TEAM, "user.read", "team.manage", "team.training.run", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
     "broadcast.publish",
     "player.profile.manage", "medical.status.read", "medical.nature.read", "player.age.read",
@@ -255,7 +262,7 @@ const BUNDLES = {
     // The kit and the drill library, for his own school. Not the roster or
     // the fixture list — those stay under the capabilities above; this is
     // narrowly what the club calls "running the equipment room and nets".
-    "team.manage",
+    "team.manage", "team.training.run",
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
     "player.note.read", "player.note.write",
@@ -286,7 +293,10 @@ const BUNDLES = {
   ],
   teammanager: [
     "availability.read", "availability.declare",
-    ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
+    ...READ_TEAM, "team.select",
+    // GA-I26a (Kameel, 15 Oct): he runs the session — its plan and its
+    // register — and not the library, the kit or the calendar (team.manage).
+    "team.training.run", "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read", "player.emergency.read",
     "transport.read", "news.publish.team",
     // SCRBRD-124 (db/70, §1.6).

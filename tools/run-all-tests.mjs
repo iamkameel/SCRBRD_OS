@@ -29,6 +29,8 @@ const SUITES = [
   ["words",    "packages/policy/test/words.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
+  // GA-I26a §1.5: every attribute pinned to the drill categories that suit it.
+  ["drillmap", "packages/scoring/test/drillmap.test.mjs"],
   ["readiness","packages/scoring/test/readiness.test.mjs"],
   // What a scoring command may be: the Laws the server enforces at commit.
   ["laws",     "packages/scoring/test/laws.test.mjs"],
@@ -199,6 +201,9 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // A coaching point's never-words, in JavaScript and in db/104's SQL, are
+  // one list (GA-I27 §6; GA-I26a §2.2).
+  ["coachingpoint", "apps/web/test/coachingPoint.test.mjs"],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
   // per-fixture count: "N to resolve" and "Could not read X", a failed read
@@ -240,6 +245,10 @@ const SUITES = [
   // vehicle and a trip, and signing out everywhere. Who is offered, what is
   // asked, the order of the sign-out, and a refusal in words for every code.
   ["guardian-link-screen", "apps/web/test/guardian-link.test.mjs"],
+  // A child's family links for the office (account lifecycle slice 3, db/109):
+  // the standing line, each kind in words, Revoke offered only where it can
+  // work, D14 said before the tap, every refusal held to db/109.
+  ["family-links-screen", "apps/web/test/family-links.test.mjs"],
   ["transport-book", "apps/web/test/transport-book.test.mjs"],
   ["sign-out-everywhere", "apps/web/test/sign-out-everywhere.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The playing-conditions screen's words (SCRBRD-114): a figure and its unit,
@@ -339,6 +348,10 @@ const SUITES = [
   // client store holds the list and the count every badge reads.
   ["notif-contract", "packages/policy/test/notifications.test.mjs"],
   ["receipts", "services/api/notify/receipts.test.mjs"],
+  // No personal value in a server log (INCIDENTS_AND_BREACHES §9.1, D24):
+  // safeErr() over a duplicate email and ID number, and every console call
+  // under services/ walked for a DETAIL, an email, a name or a raw message.
+  ["log-hygiene", "services/api/log-safe.test.mjs"],
   ["notif-store", "apps/web/test/notifications-store.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an

@@ -5,7 +5,7 @@
  *   B. client getData() serves mock when a resource is not flagged live, and
  *      hits the API (with bearer) when it is; failures never silently fall back.
  */
-import { readResource, READ_QUERIES, RESTRICTED_FIELDS, liveResources } from "./read-api.mjs";
+import { readResource, READ_QUERIES, RESTRICTED_FIELDS, liveResources, NOT_EXPORTED, exportResource } from "./read-api.mjs";
 import { createDataClient } from "./data-client.mjs";
 import { signToken } from "../auth/auth.mjs";
 
@@ -355,6 +355,34 @@ group("A. The plan's byline and the fixture's plan (db/103, SCRBRD-138 phase B),
 }
 
 // ── B. Client accessor ──
+group("A. Another school's boys do not leave as a file (GA-I24-I25 D9, A1)");
+{
+  // Derived, not listed: every read whose SQL calls one of the functions
+  // that cross the tenant line to name another school's children. A new read
+  // over any of them lands refused, or this fails and says which.
+  const CROSSING = /\b(opposition_squad|opposition_context|opposition_side|passport|passport_name|scouting_candidates)\s*\(/;
+  const crossing = Object.entries(READ_QUERIES).filter(([, d]) => CROSSING.test(d.text ?? "")).map(([r]) => r);
+  ok("the crossing reads are found at all", crossing.length >= 5);
+  for (const r of crossing) ok(`${r} is refused as a file`, NOT_EXPORTED.has(r));
+  // Refused before the read: nothing reaches the pool, so nothing is read or
+  // logged in order to refuse it.
+  for (const r of ["opposition_squad", "opposition_context"]) {
+    const { pool, log } = fakePool({ [r]: [{ player_id: "p1", full_name: "Their Boy" }] });
+    let status = 0, code = "";
+    try { await exportResource(pool, SECRET, bearer("uCoach"), r, { matchId: "m1" }); }
+    catch (/** @type {any} */ e) { status = e.status; code = e.code; }
+    ok(`exporting ${r} is a 403 not_exported`, status === 403 && code === "not_exported");
+    ok("...with no statement sent", log.length === 0);
+  }
+  // ...while the same read on the screen is untouched.
+  {
+    const { pool } = fakePool({ "opposition_squad(": [{ player_id: "p1", school_id: "s2", full_name: "Their Boy" }] });
+    const rows = await readResource(pool, SECRET, bearer("uCoach"), "opposition_squad", { matchId: "m1" });
+    ok("the screen read still answers", rows.length === 1);
+  }
+  ok("an ordinary roster export is not refused", !NOT_EXPORTED.has("players") && !NOT_EXPORTED.has("career"));
+}
+
 group("B. Feature flags: mock vs live per resource");
 {
   /** @type {string[]} */

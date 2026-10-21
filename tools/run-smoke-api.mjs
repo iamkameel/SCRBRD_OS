@@ -34,6 +34,10 @@ const WALKS = [
   "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
+  // GA-I26a (db/104, db/105): a score keeps its assessor and is withdrawn, the
+  // coaching point on the note tier, the target, the side's plan and register
+  // (never `injured`), "since the last look", and the export refusals.
+  "assessment-history",
   // The owner's key, minted from outside the platform, and redeemed.
   "bootstrap",
   // The way out of quarantine: who may open it, and what a released ball is.
@@ -193,6 +197,11 @@ const WALKS = [
   // enabled, he signs in again; the principal and the DSO refused; nobody
   // acts on their own account.
   "accounts",
+  // A child's links, and the reason for an ending (account lifecycle slice 3,
+  // db/109): the office's child_links read and who reads nothing; the revoke
+  // route's refusals; a revocation with its kind and reason, the parent's
+  // no-name notice, his name off public pages; the last verified link kept.
+  "family-links",
   // The audit log, read (SCRBRD-132 B2, db/79): under audit.read, one school
   // at a time, a child in initials, never a safeguarding row or a reason,
   // and every read of it on the record. (smoke-audit is access_log's own.)
@@ -220,8 +229,12 @@ const WALKS = [
   // the tenant line, bounded by a fixture, a window and a column list.
   "opposition",
   // The officials register: a panel that belongs to no school, read
-  // through official_masked so a name is public and a person is not.
+  // through official_panel() so a name is public and a person is not
+  // (db/107 closed the table itself to all but its keeper).
   "register",
+  // db/108 and tools/sql/fix-player-without-team.sql, pasted in the order
+  // DEPLOYING.md gives, on a database holding a team-less pupil role.
+  "player-team",
   // The gaps db/10 and db/11 could only warn about, and the one write route
   // that closes the first of them.
   "dob-gaps",
