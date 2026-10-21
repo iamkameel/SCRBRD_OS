@@ -516,7 +516,10 @@ try {
     await closeDossier(coach.page);
     ok("Analytics opens", await nav(coach.page, /Analytics/));
     ok("...and the Head-to-Head tab", await click(coach.page, /Head-to-Head/, 4000));
-    await coach.page.waitForTimeout(1600);
+    // Its source line is drawn only once derby_record has answered: wait for
+    // it (15 s bound), not a fixed 1.6 s, then judge what was drawn.
+    await coach.page.locator('[data-testid="source-line-h2h"]').waitFor({ timeout: 15000 }).catch(() => {});
+    await afterReads(coach.page, 300);
     const h2h = await text(coach.page);
     if (DEBUG) console.log("[debug] h2h:\n" + h2h.slice(0, 900));
     // The fabricated table this replaced, identified by ITS OWN strings
@@ -544,7 +547,13 @@ try {
   group("Match-ups say how much of the log they speak for");
   {
     ok("the Match-ups tab opens", await click(coach.page, /Match-ups/, 4000));
-    await coach.page.waitForTimeout(1600);
+    // The coverage card and its source line are drawn only once BOTH reads
+    // have answered (matchups, then matchup_coverage). A fixed 1.6 s judged
+    // the bare app chrome on a loaded runner (#166, shard 2). Wait for the
+    // line the checks below read (15 s bound: an error or a refusal draws no
+    // line, and the checks then say so), and for any read still on the wire.
+    await coach.page.locator('[data-testid="source-line-matchups"]').waitFor({ timeout: 15000 }).catch(() => {});
+    await afterReads(coach.page, 300);
     const mu = await text(coach.page);
     if (DEBUG) console.log("[debug] matchups:\n" + mu.slice(0, 900));
     ok("the coverage is stated", /Deliveries attributed/i.test(mu));
@@ -565,7 +574,10 @@ try {
   group("Phases are folded from the log, not typed in");
   {
     ok("the Phases tab opens", await click(coach.page, /^Phases$/, 4000));
-    await coach.page.waitForTimeout(1800);
+    // Drawn only once the phases read has answered: wait for its source line
+    // (15 s bound), not a fixed 1.8 s, then judge what was drawn.
+    await coach.page.locator('[data-testid="source-line-phases"]').waitFor({ timeout: 15000 }).catch(() => {});
+    await afterReads(coach.page, 300);
     const ph = await text(coach.page);
     if (DEBUG) console.log("[debug] phases:\n" + ph.slice(0, 1200));
 
