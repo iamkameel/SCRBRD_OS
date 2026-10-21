@@ -68,7 +68,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   2026-10-14, gap analysis GA-I26a: what a coach records about a child's
   skills over time and the drills that follow; who may read it, the child,
   his parents, other coaches; how long it is kept; and the coaching points
-  of coach cards slice 2 that stand on it).
+  of coach cards slice 2 that stand on it) and incidents and breaches (added
+  2026-10-21: what counts as a breach of children's data under POPIA section
+  22, who decides and who is told, the Information Regulator, the school and
+  families, and when; the match-day outage fallback to the paper scorebook and
+  the importer; and what the audit log must keep to answer for it).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
