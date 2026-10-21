@@ -106,6 +106,8 @@ A boy's recognition is a part of his sporting record, so it is read by the peopl
 | **superadmin, platformadmin** | **no** (D7); support reaches a school as one of its roles for an hour, audited | | | | | | | | | |
 | **the public** (signed out) | **A5:** `is_public`, named by L2, never-public absent (D12) | **never** | **never** (`NEVER_PUBLIC`) | **A6:** the live page's line, named by L2 | **never** (A11) | **never** (A11) | never | never | never | never |
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q6):** the DSO's withdrawn-honour cell in the matrix above reads "absent; through the audit on a concern". D3 governs over the matrix.
+
 ### 2.4 Decisions
 
 **D1 · The read rule stands.** A boy's honours, achievements and bests are read under `player.profile.read` and `player.performance.read` as today. No new read capability for the sporting facts; the new capabilities are for deciding (A5, A6) and for the board (D22).
@@ -115,6 +117,8 @@ A boy's recognition is a part of his sporting record, so it is read by the peopl
 **D3 · A withdrawn honour leaves every screen another child can open and stays on three.** `recognition()`, `passport()` and the honours board keep filtering `withdrawn_at IS NULL` for every reader except: the pupil himself (`selfaccess`), his guardian, and a holder of `recognition.decide` or `recognition.manage` at his school. For those three the row is returned with `withdrawn_on` and reads "Half colours 2026 · withdrawn 3 Oct 2026". Nothing says why. SCRBRD-138 §1.3's "nothing is demoted on a screen a team-mate sees" holds because the team-mate's screen simply no longer has the row.
 
 **D4 · `withdrawn_reason` is masked at the table.** Today `honour.masked` is `{}`, so any reader of the row could select a reason that may be a conduct matter. It becomes masked under `recognition.decide`, with the withdrawer and `audit.read` also able to read it. The pupil does not read it through `selfaccess`, though he reads his own conduct record: the text was written about a decision, not for him, and may name a third party ("awarded in error; the century was D Erasmus's"). The school tells the family in person, as it would any conduct matter. The reason never leaves the database to a screen a child can open, to a parent, to the side's coach unless he wrote it, or to the public (`NEVER_PUBLIC` already lists it).
+
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2):** `withdrawn_reason` is read under `recognition.decide` and by the withdrawer only. `audit.read` no longer reads it, so the "and `audit.read` also able to read it" above does not apply; the office reads the reason only if it withdrew.
 
 **D5 · Every honour names its decider.** `honour.decided_by` (an `app_user` at the school) is added beside `awarded_by` (the recorder). Existing rows are backfilled with `awarded_by`. For `player_of_match` it must hold `recognition.match.award` over the side; for the rest, `recognition.decide`. When the office records a decision it did not make (A5), the named decider is sent a staff notice ("The office recorded Full colours for R Pillay as your decision, 3 Oct"), so a false attribution is seen by the person it names. Pupils and parents see the decider as a role word ("decided by the coach"); staff see the name; the audit holds both.
 
@@ -312,6 +316,8 @@ Times are the fixture's time zone; a date is added once it is not today; nothing
 | **D23** | A pupil sees each record as a chronology, never an ordered list of his side; his passport shows his own bests and any record of his; the family app draws no board; the Awards tab's rankings and MVP are hidden from pupils and parents. |
 | **D24** | School Records is the headline group; other groups under a labelled filter; the spec's four empty states. |
 | **D25** | A record is noticed to the side at verification, not on the ball. |
+
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2 and Q6):** D4 reads "masked to `recognition.decide` and the withdrawer; never the pupil, the parent, the side's coach (unless he withdrew), or the public." `audit.read` is removed from it. D3 (above) governs the DSO's withdrawn-honour read: "absent; through the audit on a concern".
 
 ---
 
