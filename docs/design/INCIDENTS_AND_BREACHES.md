@@ -1,6 +1,6 @@
 # Data events and security compromises: POPIA s22, the match-day outage, and the audit log
 
-Design for Kameel's review (Fable, 2026-10-21). Nothing is built. Kameel added this
+Design for Kameel's review (Fable, 2026-10-21). Status: the 19 questions in §13 are decided as recommended (Kameel, 21 Oct 2026); the pilot items P1–P10 (§12.1) are next. Nothing is built. Kameel added this
 problem to Fable's list on 2026-10-21 as "incidents and breaches"; this document
 does not use either word for it (§2).
 
@@ -807,62 +807,62 @@ Each with the recommendation, so "as recommended" is an answer.
 
 1. **Words.** *data event* for everything in the register, *security compromise* for
    the s22 subset, notice kind `compromise`, table `data_event` (D1).
-   **Recommend: yes.**
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 2. **The second reader.** Designate a deputy information officer in writing, not a
    person you supervise; until then, the school's own information officer is the
    second reader for its pupils' events; disagreement means notify (D6).
-   **Recommend: yes, and ask Westville for its officer's name at the go/no-go.**
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes, and ask Westville for its officer's name at the go/no-go.
 3. **Responsible party or operator.** SCRBRD prepares every notice; the school's
    officer co-signs those about its pupils; one Regulator notice in both names (D4).
-   **Recommend: yes, with the lawyer confirming the standing (Q17).**
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes, with the lawyer confirming the standing (Q17).
 4. **The clock.** Contain T+1h; classify and tell the school T+24h; the Regulator
    by T+72h from discovery for a compromise; families with the Regulator or by
-   T+7d; review T+30d (D10). **Recommend: as written.**
+   T+7d; review T+30d (D10). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: as written.
 5. **The lost-phone threshold.** A locked phone whose account is disabled and signed
    out within the hour is a data event, not a compromise; unlocked, or used after
-   loss, is a compromise (kind 1). **Recommend: yes, marked [lawyer].**
+   loss, is a compromise (kind 1). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes, marked [lawyer].
 6. **The pilot's kill switch.** Suspend the Render service; `PUBLIC_PAGES` off for
    the public; the deputy gets a Render login before 31 October (D11). Read-only
-   mode after the pilot (D12). **Recommend: yes.**
+   mode after the pilot (D12). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 7. **Register retention.** 7 years after the closing note; the school's `audit.read`
-   holders read their own school's events (D15). **Recommend: yes.**
+   holders read their own school's events (D15). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 8. **The audit log.** 5-year retention; restricted and platform reads refused when
    they cannot be logged, ordinary reads served and counted; single-record file reads
-   and exports logged (D17–D19). **Recommend: yes.**
+   and exports logged (D17–D19). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 9. **The parent's view** shows the reader's role and school, not the name; the office
-   gives the name on request (D20). **Recommend: yes.**
+   gives the name on request (D20). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 10. **`platformadmin`'s platform-wide `audit.read`** narrowed to support sessions
-    after the pilot (D22). **Recommend: yes.**
+    after the pilot (D22). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 11. **Owner recovery during the pilot week.** Unset `OWNER_RECOVERY_SECRET` from 26
     October to the day after the pilot, if DEPLOYING.md's gate means an unset secret
-    closes the route; set it again after. **Recommend: yes, if you will not need it
-    that week.**
+    closes the route; set it again after. **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes, if you will not need it
+    that week.
 12. **The match-day decision.** Nobody switches to paper; the pad is the first
     record and the book the second; the lead decides after play whether the importer
-    fills a gap, and writes an entry either way (D28). **Recommend: yes.**
+    fills a gap, and writes an entry either way (D28). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 13. **The family route.** Email under s22(4)(b) from the officer, co-signed by the
     school's officer; a `compromise` notice in the app; the school's channel at the
     school's choice; the website only for a public-page scope or at the Regulator's
-    direction (D8). **Recommend: yes.**
+    direction (D8). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 14. **The reader.** `scorebook_reader` stays off at every school until the sign-off's
     item 1 (retention and training terms) is confirmed in writing; the signature of
     2 October is read as conditional on items 1–7, as it says (D30).
-    **Recommend: yes.**
+    **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 15. **At the school.** The principal (as the school's information officer) always;
     the DSO only for S1, through a concern; the director of sport and office for
-    what they must do (D7). **Recommend: yes.**
+    what they must do (D7). **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes.
 16. **Keep-warm fails loud** so GitHub emails you on a failed health check (P9).
-    **Recommend: yes, before the freeze.**
+    **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: yes, before the freeze.
 17. **A lawyer.** One hour with a South African privacy lawyer on §3.4, §4.2 (s56)
     and D4, before the pilot if one can be found this week, otherwise before the
     first school beyond Westville; the templates of A12 are what they mark up.
-    **Recommend: before the first school beyond Westville at the latest.**
+    **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: before the first school beyond Westville at the latest.
 18. **IP addresses in the sign-in log** (D23). An IP is personal information under
-    POPIA and would make the log itself something to protect. **Recommend: no IP in
-    v1; device class and method only.**
+    POPIA and would make the log itself something to protect. **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: no IP in
+    v1; device class and method only.
 19. **The 72 hours.** The Act says "as soon as reasonably possible"; 72 hours is our
-    own ceiling. Keep it as a ceiling, or set a shorter one? **Recommend: keep 72 as
-    the ceiling and aim for 24 when the scope is already known.**
+    own ceiling. Keep it as a ceiling, or set a shorter one? **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: keep 72 as
+    the ceiling and aim for 24 when the scope is already known.
 
 ## 14 · Doc conflicts this design needs settled
 
