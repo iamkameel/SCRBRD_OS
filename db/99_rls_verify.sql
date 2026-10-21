@@ -6569,6 +6569,221 @@ CREATE OR REPLACE FUNCTION _v113_breaches(p_player uuid) RETURNS jsonb AS $$
   SELECT coalesce(jsonb_agg(to_jsonb(b) ORDER BY b.noticed_at, b.kind), '[]'::jsonb) FROM bowling_breach b WHERE b.bowler_id = p_player
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/113 (section 90) ─────────────────────────────────────────────
+-- ┌── db/117 (section 91). The dated side: a family keeps the season of the
+-- side a boy was on (SR-2), and the move voids his seats on it (SR-4).
+-- Invented, as the owner; every name a placeholder. Hilton's 41XI, 42XI and
+-- 43XI. Boys: A (43XI from t-90, 41XI from t-60; the section moves him to the
+-- 42XI from t-10: three membership rows), C (joined the 42XI at t-10: the
+-- newcomer), M (41XI from t-60, never moved). t is today. Fixtures, by day:
+-- f43a (43XI, t-100: before A's first row), f43b (43XI, t-75), f41a (41XI,
+-- t-30), f41w (Westville's 41XI v Hilton's 41XI at Westville, t-25), f41d and
+-- f42d (each side's on t-10, the move's own day), f42a (42XI, t-30), f41n and
+-- f42n (t+5), f41s (41XI, t+12, A on its home sheet). Buses to f41a, f41n,
+-- f42a. Nets s41a, s42a (t-30), s42d (t-10), s41n, s42n (t+3). Posts: team
+-- posts n41a, n42a (published t-30), n41n, n42n (published now); plans p41a
+-- (f41a's) and p41n (f41n's). Balls on f41a (6), f42a (12), f41n (18). A lift
+-- driven by M's mother to f41n with seats for A (asked by A's mother) and M,
+-- and one to f41s with a seat for A.
+CREATE OR REPLACE FUNCTION _v117_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  t date := sa_today();
+  ids jsonb; z jsonb := '{}'; v_id uuid; v_a uuid; v_d uuid; v_o uuid; l record;
+  c_a uuid; c_c uuid; c_m uuid;
+  k text; tm text; dd int; aw boolean;
+BEGIN
+  -- A: 43XI from t-90, then 41XI from t-60, each dated as the move route dates it.
+  PERFORM set_config('app.effective_on', (t - 90)::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '43XI', 'Verify OneOneSeven Mover', 1171, 'batter', U15) RETURNING id INTO c_a;
+  PERFORM set_config('app.effective_on', (t - 60)::text, true);
+  UPDATE player SET team_code = '41XI' WHERE id = c_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '41XI', 'Verify OneOneSeven Stayer', 1172, 'batter', U15) RETURNING id INTO c_m;
+  PERFORM set_config('app.effective_on', (t - 10)::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '42XI', 'Verify OneOneSeven Newcomer', 1173, 'batter', U15) RETURNING id INTO c_c;
+  PERFORM set_config('app.effective_on', '', true);
+  ids := _v71_people('v117', ARRAY[
+    ARRAY['g',       'guardian',    HIL::text, '',     ''],     -- A's mother
+    ARRAY['gc',      'guardian',    HIL::text, '',     ''],     -- C's, the newcomer's
+    ARRAY['gm',      'guardian',    HIL::text, '',     ''],     -- M's, and the lift's driver
+    ARRAY['aboy',    'player',      HIL::text, '41XI', c_a::text],
+    ARRAY['coach41', 'coach',       HIL::text, '41XI', ''],
+    ARRAY['coach42', 'coach',       HIL::text, '42XI', ''],
+    ARRAY['spec',    'spectator',   HIL::text, '',     ''],
+    ARRAY['office',  'schooladmin', HIL::text, '',     '']]);
+  PERFORM _v100_link((ids->>'g')::uuid, HIL, c_a);
+  PERFORM _v100_link((ids->>'gc')::uuid, HIL, c_c);
+  PERFORM _v100_link((ids->>'gm')::uuid, HIL, c_m);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'aboy')::uuid, 'selfaccess', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, c_a, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  z := jsonb_build_object('a', c_a, 'c', c_c, 'm', c_m);
+  -- The fixtures, each at 10:00 in Johannesburg on its day.
+  FOR k, tm, dd, aw IN SELECT * FROM (VALUES
+      ('f43a', '43XI', -100, false), ('f43b', '43XI', -75, false), ('f41a', '41XI', -30, false),
+      ('f41w', '41XI', -25, true),   ('f41d', '41XI', -10, false), ('f42d', '42XI', -10, false),
+      ('f42a', '42XI', -30, false),  ('f41n', '41XI', 5, false),   ('f42n', '42XI', 5, false),
+      ('f41s', '41XI', 12, false)) x LOOP
+    IF aw THEN
+      INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+      VALUES (WES, tm, HIL, tm, 'Verify OneOneSeven Hilton', ((t + dd)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+              'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+    ELSE
+      INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+      VALUES (HIL, tm, 'Verify OneOneSeven ' || k, ((t + dd)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+              'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+    END IF;
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES ((z->>'f41s')::uuid, c_a, 'home', 1);
+  PERFORM _v71_bowl((z->>'f41a')::uuid, OFFICE, ARRAY[NULL]::uuid[]);
+  PERFORM _v71_bowl((z->>'f42a')::uuid, OFFICE, ARRAY[NULL, NULL]::uuid[]);
+  PERFORM _v71_bowl((z->>'f41n')::uuid, OFFICE, ARRAY[NULL, NULL, NULL]::uuid[]);
+  FOR k IN SELECT unnest(ARRAY['f41a', 'f41n', 'f42a']) LOOP
+    INSERT INTO trip (match_id, school_id, pickup, notes) VALUES ((z->>k)::uuid, HIL, 'V117 gate', 'V117 bus to ' || k)
+    RETURNING id INTO v_id;
+    z := z || jsonb_build_object('t' || substr(k, 2), v_id);
+  END LOOP;
+  FOR k, tm, dd IN SELECT * FROM (VALUES ('s41a', '41XI', -30), ('s42a', '42XI', -30), ('s42d', '42XI', -10),
+                                         ('s41n', '41XI', 3), ('s42n', '42XI', 3)) x LOOP
+    INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type)
+    VALUES (HIL, tm, 'V117 ' || k, ((t + dd)::timestamp + time '15:00') AT TIME ZONE 'Africa/Johannesburg', 60, 'batting')
+    RETURNING id INTO v_id;
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  FOR k, tm, dd IN SELECT * FROM (VALUES ('n41a', '41XI', -30), ('n42a', '42XI', -30), ('n41n', '41XI', 0), ('n42n', '42XI', 0)) x LOOP
+    INSERT INTO news_post (scope, school_id, team_code, kind, title, body, published_at, author_id)
+    VALUES ('team', HIL, tm, 'post', 'V117 ' || k, 'V117 a word to the side',
+            CASE WHEN dd = 0 THEN now() - interval '1 minute' ELSE ((t + dd)::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg' END,
+            (ids->>('coach' || substr(tm, 1, 2)))::uuid)
+    RETURNING id INTO v_id;
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
+  VALUES ('team', HIL, '41XI', 'plan', (z->>'f41a')::uuid, 'V117 p41a', 'V117 meet at the nets',
+          ((t - 31)::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg', (ids->>'coach41')::uuid) RETURNING id INTO v_id;
+  z := z || jsonb_build_object('p41a', v_id);
+  INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
+  VALUES ('team', HIL, '41XI', 'plan', (z->>'f41n')::uuid, 'V117 p41n', 'V117 meet at the pavilion',
+          now() - interval '1 minute', (ids->>'coach41')::uuid) RETURNING id INTO v_id;
+  z := z || jsonb_build_object('p41n', v_id);
+  -- The lifts: M's mother drives to f41n (A's seat, asked by A's mother, and
+  -- M's) and to f41s (A's seat: he is on its sheet).
+  INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
+                                       insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
+  VALUES ((ids->>'gm')::uuid, HIL, 'V117 blue estate', 'V117 GP', 3, true, true, true, true, true, 1, current_date + 300)
+  RETURNING id INTO v_d;
+  FOR k IN SELECT unnest(ARRAY['f41n', 'f41s']) LOOP
+    INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
+    SELECT HIL, m.id, '41XI', 'out', (ids->>'gm')::uuid, v_d, 3, 'school', m.starts_at - interval '90 minutes', m.starts_at
+      FROM match m WHERE m.id = (z->>k)::uuid
+    RETURNING id INTO v_o;
+    z := z || jsonb_build_object('o' || substr(k, 2), v_o);
+    SELECT g.assignment_id, g.id INTO l FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id
+     WHERE a.person_id = (ids->>'g')::uuid AND g.player_id = c_a;
+    INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id,
+                           guardian_link_id, requested_by, state)
+    VALUES (v_o, NULL, NULL, NULL, NULL, c_a, 'guardian', l.assignment_id, l.id, (ids->>'g')::uuid, 'requested')
+    RETURNING id INTO v_id;
+    z := z || jsonb_build_object('seat_a_' || substr(k, 2), v_id);
+  END LOOP;
+  SELECT g.assignment_id, g.id INTO l FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id
+   WHERE a.person_id = (ids->>'gm')::uuid AND g.player_id = c_m;
+  INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id,
+                         guardian_link_id, requested_by, state)
+  VALUES ((z->>'o41n')::uuid, NULL, NULL, NULL, NULL, c_m, 'guardian', l.assignment_id, l.id, (ids->>'gm')::uuid, 'requested')
+  RETURNING id INTO v_id;
+  z := z || jsonb_build_object('seat_m_41n', v_id);
+  RETURN ids || z;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the caller reads of the stage, under his own row security: each
+-- table by the stage's labels, sorted.
+CREATE OR REPLACE FUNCTION _v117_reads(z jsonb) RETURNS text AS $$
+  SELECT format('fixtures [%s] trips [%s] training [%s] posts [%s] balls [%s]',
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, m.id) l FROM match m
+       WHERE m.id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^f4')) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, v.id) l FROM trip v
+       WHERE v.id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^t4')) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, s.id) l FROM training_session s
+       WHERE s.id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^s4')) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, n.id) l FROM news_post n
+       WHERE n.id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^[np]4')) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT DISTINCT _v106_label(z, b.match_id) l FROM ball_event b
+       WHERE b.match_id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^f4')) x))
+$$ LANGUAGE sql STABLE;
+
+-- §2.10's rule, spelled out apart from the build, with side_on(): every boy
+-- who was on the side on the row's day (not only the boys the caller's links
+-- name), and the boy himself (spelled apart from my_own_boy()) asked at his
+-- own side. As the owner, about the caller app.user_id names.
+CREATE OR REPLACE FUNCTION _v117_self(p_player uuid) RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM app_user u WHERE u.id = app_user_id() AND u.player_id = p_player)
+      OR EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+                  WHERE a.person_id = app_user_id() AND a.role = 'selfaccess' AND a.active
+                    AND (a.valid_from IS NULL OR a.valid_from <= current_date)
+                    AND (a.valid_until IS NULL OR a.valid_until > current_date)
+                    AND (a.expires_at IS NULL OR a.expires_at > now())
+                    AND g.player_id = p_player AND g.verification_state = 'verified'
+                    AND g.valid_from <= current_date AND (g.valid_until IS NULL OR g.valid_until > current_date))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v117_lit_side(p_cap text, p_school uuid, p_team text, p_fixture uuid, p_on date) RETURNS boolean AS $$
+  SELECT app_can(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)
+      OR EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND p_team IN (SELECT side_on(p.id, p_school, p_on))
+                    AND app_can(p_cap, p_school, p_team, p.id, p_fixture))
+      OR EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND p_team IN (SELECT side_on(p.id, p_school, p_on))
+                    AND _v117_self(p.id) AND app_can(p_cap, p.school_id, p.team_code, p.id, p_fixture))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v117_lit_fixture(p_cap text, p_match uuid) RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM match m WHERE m.id = p_match AND (
+       _v117_lit_side(p_cap, m.school_id, m.team_code, m.id, sa_date(m.starts_at))
+    OR (m.away_school_id IS NOT NULL AND _v117_lit_side(p_cap, m.away_school_id, m.away_team_code, m.id, sa_date(m.starts_at)))
+    OR EXISTS (SELECT 1 FROM match_squad ms JOIN player p ON p.id = ms.player_id
+                WHERE ms.match_id = m.id AND NOT ms.withdrawn
+                  AND p.school_id = CASE WHEN ms.side = 'away' THEN m.away_school_id ELSE m.school_id END
+                  AND app_can(p_cap,
+                              CASE WHEN ms.side = 'away' THEN m.away_school_id ELSE m.school_id END,
+                              CASE WHEN ms.side = 'away' THEN m.away_team_code ELSE m.team_code END,
+                              ms.player_id, m.id))
+    OR _v106_self_sheet(p_cap, m.id)))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Facts, as the owner.
+CREATE OR REPLACE FUNCTION _v117_fact(p_what text, p_id uuid DEFAULT NULL) RETURNS text AS $$
+  SELECT CASE p_what
+    -- a boy's membership rows, oldest first, days from today: "43XI:-90..-60"
+    WHEN 'rows' THEN (SELECT string_agg(format('%s:%s..%s', team_code, joined_on - sa_today(), coalesce((left_on - sa_today())::text, '')),
+                                        ' ' ORDER BY joined_on, coalesce(left_on, 'infinity'::date), id)
+                        FROM team_membership WHERE player_id = p_id)
+    -- a seat's state, and who ended it
+    WHEN 'seat' THEN (SELECT state || ':' || coalesce(ended_by::text, '-') FROM lift_seat WHERE id = p_id)
+    -- lift notices to one person: their titles, sorted
+    WHEN 'lift_notices' THEN (SELECT coalesce(string_agg(title, ' / ' ORDER BY title), '')
+                                FROM notification WHERE recipient_id = p_id AND kind IN ('lift', 'system') AND subject_kind = 'match')
+    -- everything about a boy that is not about a side: his links and his consents
+    WHEN 'about_him' THEN (SELECT md5(concat(
+                             (SELECT string_agg(concat_ws('|', g.id, g.assignment_id, g.verification_state, g.valid_from, g.valid_until,
+                                                          g.consent_state, g.consent_version), ';' ORDER BY g.id)
+                                FROM assignment_subject g WHERE g.player_id = p_id),
+                             (SELECT string_agg(to_jsonb(c)::text, ';' ORDER BY c.id) FROM public_name_consent c WHERE c.player_id = p_id),
+                             (SELECT string_agg(to_jsonb(c)::text, ';' ORDER BY c.id) FROM health_monitoring_consent c WHERE c.player_id = p_id))))
+  END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Every session and every team post, with its day, as the owner.
+CREATE OR REPLACE FUNCTION _v117_sessions() RETURNS TABLE (id uuid, school_id uuid, team_code text, day date) AS $$
+  SELECT id, school_id, team_code, sa_date(starts_at) FROM training_session
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v117_posts() RETURNS TABLE (id uuid, school uuid, team text, day date) AS $$
+  SELECT n.id, n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at)
+    FROM news_post n WHERE n.scope = 'team'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/117 (section 91) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
