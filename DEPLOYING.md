@@ -6,8 +6,8 @@ Nothing here uses any other Firebase project. Three pieces:
 | Piece | Where | How it gets there |
 |---|---|---|
 | Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
-| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | by hand (5), or the same workflow, from the root `Dockerfile` |
-| Database | Cloud SQL, Postgres 16, `africa-south1` | by hand, once, then by hand for every schema change |
+| API (`services/api`) | Render, `scrbrd.onrender.com`, from `render.yaml` | Render deploys `main` by itself, from `render.yaml`; the first deploy is New → Blueprint, as in "The whole thing in one service" above |
+| Database | Supabase Postgres, Free | by hand, once, then by hand for every schema change |
 
 Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
 browser talks to one origin and the client is built with `VITE_API_BASE=""`.
