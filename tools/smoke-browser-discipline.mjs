@@ -256,7 +256,7 @@ try {
     ok("the tab shows nothing of his to her", /0 matters/.test(await tid(dos.page, "conduct-count").innerText().catch(() => "")));
     await tid(dos.page, "conduct-record-body").fill("Not a matter for this school.");
     await tid(dos.page, "conduct-record-submit").click();
-    await dos.page.waitForTimeout(1800);
+    await afterReads(dos.page, 1800);
     const said = await tid(dos.page, "conduct-record-refused").innerText().catch(() => "");
     ok("the refusal is shown in words", /Refused — your role does not reach/.test(said), said);
     ok("...not a claim that it was recorded", await tid(dos.page, "conduct-record-done").count() === 0);
@@ -273,7 +273,7 @@ try {
   ok("his fixture is in Match Centre", await toMatch(ump.page, M_STOOD));
   ok("he is offered the report", await tid(ump.page, "incident-open").count() === 1);
   await tid(ump.page, "incident-open").click();
-  await ump.page.waitForTimeout(1800);
+  await afterReads(ump.page, 1800);
   const options = await ump.page.$$eval('[data-testid="incident-player"] option', (os) => os.map((o) => ({ v: o.value, t: o.textContent })));
   if (DEBUG) console.log("[debug] who he can name:", JSON.stringify(options));
   const bowled = options.find((o) => /out, bowled/.test(o.t));
@@ -288,7 +288,7 @@ try {
   await ump.page.selectOption('[data-testid="incident-player"]', P_BEKKER);
   await tid(ump.page, "incident-body").fill("Showed dissent at an lbw decision.");
   await tid(ump.page, "incident-submit").click();
-  await ump.page.waitForTimeout(1800);
+  await afterReads(ump.page, 1800);
   const refused = await tid(ump.page, "incident-refused").innerText().catch(() => "");
   ok("with his appointment withdrawn, the refusal is shown in words", /Refused — your role does not reach/.test(refused), refused);
   ok("...and no confirmation is shown", await tid(ump.page, "incident-recorded").count() === 0);
@@ -300,7 +300,7 @@ try {
   const INCIDENT = "Threw the ball at the stumps after being bowled, and swore at the bowler.";
   await tid(ump.page, "incident-body").fill(INCIDENT);
   await tid(ump.page, "incident-submit").click();
-  await ump.page.waitForTimeout(2000);
+  await afterReads(ump.page, 2000);
   const conf = await tid(ump.page, "incident-recorded").innerText().catch(() => "");
   ok("reinstated, he is told it landed", /Recorded — the school has it/.test(conf), conf);
   const [incident] = await matters(`where match_id = '${M_STOOD}'`);

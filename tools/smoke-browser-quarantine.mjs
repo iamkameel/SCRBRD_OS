@@ -40,6 +40,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4329);
 const API_PORT = port(8798);
@@ -109,6 +110,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -203,7 +205,7 @@ try {
   // not a 4xx. A component that trusted the HTTP status alone would show
   // nothing wrong here.
   ok("she tries to release one", await click(dos.page, /^Release$/, 4000));
-  await dos.page.waitForTimeout(900);
+  await afterReads(dos.page, 900);
   const afterOwn = await panel(dos.page).innerText();
   if (DEBUG) console.log("[debug] after her own attempt:\n" + afterOwn);
   ok("the refusal is shown in the panel, not swallowed", /sent this ball yourself/i.test(afterOwn), afterOwn.slice(0, 300));
@@ -219,7 +221,7 @@ try {
   const beforeRelease = await panel(principal.page).innerText();
   ok("...showing the same two waiting balls", /2 waiting/.test(beforeRelease));
   ok("she releases the first one", await click(principal.page, /^Release$/, 4000));
-  await principal.page.waitForTimeout(1200);
+  await afterReads(principal.page, 1200);
   const afterRelease = await panel(principal.page).innerText();
   if (DEBUG) console.log("[debug] after release:\n" + afterRelease);
   ok("it disappears from the panel — one left waiting", /1 waiting/.test(afterRelease));
@@ -246,7 +248,7 @@ try {
   // The released wicket emptied the striker's end, so the held single cannot
   // go in now: the server folds the log, asks lawsRefusal(), writes nothing.
   ok("she tries to release the one left", await click(principal.page, /^Release$/, 4000));
-  await principal.page.waitForTimeout(1200);
+  await afterReads(principal.page, 1200);
   const refusedByLaws = await panel(principal.page).innerText();
   if (DEBUG) console.log("[debug] after the Laws refused:\n" + refusedByLaws);
   ok("the refusal names the Law, in words", /The Laws refuse this ball: there was no batter at one end/.test(refusedByLaws), refusedByLaws.slice(0, 300));
@@ -259,7 +261,7 @@ try {
 
   group("Discarding the second writes nothing, and it does not come back");
   ok("she discards the one left", await click(principal.page, /^Discard$/, 4000));
-  await principal.page.waitForTimeout(1200);
+  await afterReads(principal.page, 1200);
   const afterDiscard = await panel(principal.page).innerText();
   ok("the panel is empty", /Nothing waiting for review/.test(afterDiscard), afterDiscard);
   const afterDiscardLog = await eventsLog(scorerTok);

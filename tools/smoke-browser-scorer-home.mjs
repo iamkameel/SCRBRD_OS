@@ -261,7 +261,7 @@ try {
   let tapped = 0;
   for (const f of ["1", "4"]) if (await score(f)) tapped++;
   ok("two balls with no signal", tapped === 2, tapped);
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const boardC = await board();
   const device = await page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
   const queued = ((await outbox()) ?? []).filter((k) => k.startsWith(`${MINE}:${device}:evt:`)).length;

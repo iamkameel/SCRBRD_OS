@@ -230,7 +230,7 @@ try {
   ok("no errors while scoring", errors.length === errsBefore);
 
   // Give the outbox a moment; it flushes on record and retries on a timer.
-  await page.waitForTimeout(4000);
+  await afterReads(page, 4000);
   const rows = await dbq(
     `select kind, ball_type, value, device_id, epoch, bowler_id, striker_id, payload
        from ball_event where id > $1 order by id`, [highWater]);
@@ -288,7 +288,7 @@ try {
   // four (5) and a wide (1): the fold's 23. The old worm said 13.
   ok(`the board counts the extras (${boardText})`, boardRuns === 23);
   await page.locator('[data-testid="pad-tabs"] button', { hasText: /Analysis/ }).first().click({ timeout: 4000 }).catch(() => {});
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const worm = await page.evaluate(() => {
     const line = document.querySelector('[data-testid="worm-line"][data-innings="0"]');
     if (!line) return null;

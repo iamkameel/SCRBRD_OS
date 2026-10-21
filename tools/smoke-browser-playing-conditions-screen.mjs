@@ -271,7 +271,7 @@ try {
   const editFloors = await floors(p);
   ok("with an editor open: nothing under 12px, nothing pressed under 44px", floorsOk(editFloors), floorsWhy(editFloors));
   await cap.locator('[data-testid="pc-save"]').click();
-  await p.waitForTimeout(700);
+  await afterReads(p, 700);
   const cit = await said(p, "pc-error-citation");
   ok("with no citation the database refuses it, and the refusal is explained beside the field",
      /must say where it comes from/.test(cit) && /document, the clause and the date/.test(cit) && !/citation_required/.test(cit), cit);
@@ -280,7 +280,7 @@ try {
   await cap.locator('[data-testid="pc-f-clause"]').fill("7.3");
   await cap.locator('[data-testid="pc-f-docdate"]').fill("2026-09-15");
   await cap.locator('[data-testid="pc-save"]').click();
-  await p.waitForTimeout(800);
+  await afterReads(p, 800);
   const capRow = await said(p, "pc-figure-bowling.max_overs_per_bowler_innings");
   ok("cited, it is saved, and its source is worded: document, clause, date", /5 overs/.test(capRow) && /KZNCU Schools Bye-laws, clause 7\.3, 15 Sep/.test(capRow), capRow);
   ok("a bad value is refused beside the field, by the figure's name, not its key", await (async () => {
@@ -311,7 +311,7 @@ try {
   const conf = await said(p, "pc-publish-confirm");
   ok("publishing asks first, in the page: the version, its day, the count", /Publish version 1/.test(conf) && new RegExp(`2 of ${M} figures are confirmed`).test(conf), conf);
   await tap(p, "pc-publish-yes");
-  await p.waitForTimeout(700);
+  await afterReads(p, 700);
   const refused = await said(p, "pc-error-publish");
   ok("for today it is refused, in plain words: a day after today, move the date",
      /after today/.test(refused) && /tomorrow or later/.test(refused) && !/effective_from_not_future/.test(refused), refused);

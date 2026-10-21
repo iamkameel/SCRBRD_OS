@@ -229,7 +229,7 @@ try {
   // ── P7a: who to ring, changed and removed ──
   ok("Family opens again", await nav(parent.page, /^Family$/));
   await ptid(`family-open-ring-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-  await parent.page.waitForTimeout(1200);
+  await afterReads(parent.page, 1200);
   const ring = await ptid("who-to-ring").innerText({ timeout: 4000 }).catch(() => "");
   ok("who to ring lists his two numbers in order", /1\. D Pillay/.test(ring) && /2\. S Pillay/.test(ring));
   ok("...and says, from the policy, who else can see them", /Who else can see these: .*Coach/.test(ring));
@@ -254,7 +254,7 @@ try {
 
   // ── P7b: his record, the ID number behind a tap ──
   await ptid(`family-open-record-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   const rec = await ptid("their-record").innerText({ timeout: 4000 }).catch(() => "");
   // The seed's birthdays are relative to today (db/98), so the day is read, not pinned.
   const bornWords = (await owner.query(`select to_char(born, 'FMDD Mon YYYY') as d from player where id = $1`, [PILLAY])).rows[0]?.d;
@@ -277,7 +277,7 @@ try {
   ok("Westville is offered from the server's list", !!wesOption);
   if (wesOption) await parent.page.selectOption('select[aria-label="Which school"]', wesOption);
   ok("they name it", await click(parent.page, /Name this school/));
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   const named = await text(parent.page);
   ok("the grant appears, naming the boy and the school", /Pillay/.test(named) && /Westville/.test(named) && !/No school has been named/.test(named));
   ok("they take it back", await click(parent.page, /^Withdraw$/));
@@ -342,7 +342,7 @@ try {
     ok("...his squad screen opens", await nav(c.page, /Squad/));
     await c.page.locator('[data-testid="availability-panel"]').first().waitFor({ timeout: 6000 }).catch(() => {});
     await c.page.selectOption('select[aria-label="Which fixture"]', DECL).catch(() => {});
-    await c.page.waitForTimeout(1500);
+    await afterReads(c.page, 1500);
     const row = await c.page.locator(`[data-testid="availability-row-${PILLAY}"]`).first().innerText({ timeout: 4000 }).catch(() => "");
     ok("...and shows her declaration as the parent's: unavailable, said by D Pillay", /Unavailable/i.test(row) && /Said by D Pillay/i.test(row), row);
     await c.ctx.close();
@@ -401,7 +401,7 @@ try {
     const SCHOOL_OTHERS = /Pillay|Bekker|Naidoo|Cele|Whitfield|Botha|Khumalo|Mahlangu|Sithole/;
     for (const [id, name, other, school] of [[KD, "K Dlamini", "D Mkhize", "Hilton College"], [DM, "D Mkhize", "K Dlamini", "Westville Boys' High"]]) {
       await st(`child-chip-${id}`).click({ timeout: 4000 }).catch(() => {});
-      await s.page.waitForTimeout(1800);
+      await afterReads(s.page, 1800);
       const body = await st("family-home-body").innerText({ timeout: 4000 }).catch(() => "");
       ok(`${name}'s Home names ${name}, at ${school}`, await st("family-home-body").getAttribute("data-child") === id
          && body.includes(name) && body.includes(school), body.slice(0, 160));
@@ -566,7 +566,7 @@ try {
     const save = p.locator("button", { hasText: /^Save \d+ rating/ }).first();
     ok("...and the save button counts what was actually moved", await save.count() > 0);
     await save.click();
-    await p.waitForTimeout(2000);
+    await afterReads(p, 2000);
     const after = await text(p);
     ok("the form closes on a successful save", !/Assessment —/.test(after));
     // The read path re-runs, so the new number is on screen without a reload.
@@ -584,7 +584,7 @@ try {
     await p.locator("textarea").first().fill("Smoke: works hard in the nets without being asked.");
     await p.waitForTimeout(150);
     await p.locator("button", { hasText: /^Save note$/ }).first().click();
-    await p.waitForTimeout(2000);
+    await afterReads(p, 2000);
     const after = await text(p);
     ok("the composer closes on a successful save", !/Development note —/.test(after));
     ok("...and the note is on screen without a reload", /works hard in the nets/.test(after));
@@ -963,7 +963,7 @@ try {
     ok("his own side's boys are on the list", !!ownSide);
     await sel.selectOption(ownSide);
     ok("he issues it to one of his own", await click(c.page, /^Issue$/, 4000));
-    await c.page.waitForTimeout(1800);
+    await afterReads(c.page, 1800);
     const held = await reg.innerText();
     ok("...and the register says who has it since when", /since \d{4}-\d{2}-\d{2}/.test(held));
     ok("he takes it back", await click(c.page, /Given back/, 4000));
@@ -1724,7 +1724,7 @@ try {
       for (const k of keys) {
         const before = s.errors.length;
         await s.page.locator(`[data-testid="nav-${k}"]`).click({ timeout: 6000 }).catch(() => broken.push(`${k}: no click`));
-        await s.page.waitForTimeout(700);
+        await afterReads(s.page, 700);
         const at = await s.page.locator('[data-testid="os-main"]').getAttribute("data-page", { timeout: 3000 }).catch(() => null);
         if (at !== k) broken.push(`${k}: landed on ${at}`);
         if (s.errors.length > before) broken.push(`${k}: ${s.errors.slice(before).join("; ").slice(0, 120)}`);
@@ -2420,7 +2420,7 @@ try {
       ok("...with the moved fixture coming up, his boy's answer on its row reading needs reconfirming",
          /Needs reconfirming/i.test(await g.page.locator(`[data-testid="fixture-chip-${m}"]`).first().innerText({ timeout: 6000 }).catch(() => "")));
       await g.page.locator(`[data-testid="fixture-row-${m}"]`).first().click({ timeout: 4000 }).catch(() => {});
-      await g.page.waitForTimeout(1500);
+      await afterReads(g.page, 1500);
       const ptext = await g.page.locator('[data-testid="fixture-availability"]').first().innerText({ timeout: 4000 }).catch(() => "");
       ok("the fixture opens, for the moved fixture", /Verify 122 XI/.test(await g.page.locator('[data-testid="fixture-title"]').innerText().catch(() => "")));
       const state = (p, who) => p.locator(`[data-testid="availability-state-${who}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
@@ -2820,7 +2820,7 @@ try {
       await afterReads(P.page, 1500);
       ok("she adds a number there", (await owner.query(`select count(*)::int n from emergency_contact where player_id = $1 and active`, [PILLAY])).rows[0].n === 1);
       await at(`family-todo-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-      await P.page.waitForTimeout(800);
+      await afterReads(P.page, 800);
       const back = await settled(P.page);
       ok("his count opens his Home, and the row is gone: 'Nothing to do for R Pillay'", await at("family-home").count() === 1 && back === "Nothing to do for R Pillay"
          && await at(`todo-row-R9-${PILLAY}`).count() === 0, back);
@@ -2849,7 +2849,7 @@ try {
       ok("R Pillay's parent asks for a seat for him", asked.status === 200, asked.body);
       const D = await open();
       ok("the driver signs in", await signInAs(D.page, "parent.whitfield@example.invalid"));
-      await D.page.waitForTimeout(800);
+      await afterReads(D.page, 800);
       const dCount = await settled(D.page);
       const dCard = await todo(D.page).innerText().catch(() => "");
       ok("the driver's list: '1 request for a seat on your lift there for … v Verify GA-I20 Lift XI', counted, and no boy's name (R5)",
@@ -2910,7 +2910,7 @@ try {
       await owner.query(`insert into role_request (person_id, role, school_id, note, requested_at) values ($1, 'guardian', $2, 'For my younger son', now() - interval '4 days')`, [naidooId, HIL]);
       const N = await open();
       ok("the parent whose link has ended signs in", await signInAs(N.page, "parent.naidoo@example.invalid"));
-      await N.page.waitForTimeout(1500);
+      await afterReads(N.page, 1500);
       const none = await N.page.locator('[data-testid="family-none"]').innerText({ timeout: 6000 }).catch(() => "");
       ok("her request is said as pending, with the school and how long ago, and never as approved",
          /Your request to be linked to a child at Hilton College is with the office · asked 4 days ago\. This does not mean it was approved\./.test(none)
@@ -2944,7 +2944,7 @@ try {
     ok("the skills screen opens", await nav(C.page, /Skills/));
     const at = (id) => C.page.locator(`[data-testid="${id}"]`);
     const said = async () => (await at("skills-read-state").innerText({ timeout: 4000 }).catch(() => "")).trim();
-    await C.page.waitForTimeout(800);
+    await afterReads(C.page, 800);
     const body = await text(C.page);
     ok("the detail says 'Could not read skills assessments.'", /Could not read skills assessments\./.test(await said()), await said());
     ok("...it is an alert, and says which state it is", await attr(at("skills-read-state"), "data-state") === "failed" && await attr(at("skills-read-state"), "role") === "alert");
@@ -3002,7 +3002,7 @@ try {
     ok("a Retry is offered, at least 44px tall", !!box && box.height >= 44, box);
     failing = false;
     await retry.click({ timeout: 4000 }).catch(() => {});
-    await C.page.waitForTimeout(1800);
+    await afterReads(C.page, 1800);
     const t1 = await cardText();
     ok("after Retry the card draws the fixture it read (no failure sentence, no 'none')", !/Could not read/.test(t1) && !/No fixture is arranged/.test(t1) && /\bv\b|Verify|vs/i.test(t1), t1);
     ok("...the retried read is the first one, same path and params", asked.length >= 2 && asked[0] === asked.at(-1), asked.slice(0, 2));

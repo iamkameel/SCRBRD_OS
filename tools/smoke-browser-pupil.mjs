@@ -289,11 +289,11 @@ try {
   await tid(s.page, `played-row-${PLAYED}`).click({ timeout: 4000 }).catch(() => {});
   await s.page.waitForTimeout(2000);
   await tid(s.page, "mc-tab-scorecard").click({ timeout: 4000 }).catch(() => {});
-  await s.page.waitForTimeout(800);
+  await afterReads(s.page, 800);
   const lit = await s.page.$$eval('[data-testid="mc-bat-row"][data-focus="true"]', (els) => els.map((e) => e.innerText));
   ok("the scorecard lights his row, and only his, with a word", lit.length === 1 && /R Pillay/.test(lit[0]) && /\bYou\b/i.test(lit[0]), lit.join(" | "));
   await tid(s.page, "mc-tab-analytics").click({ timeout: 4000 }).catch(() => {});
-  await s.page.waitForTimeout(800);
+  await afterReads(s.page, 800);
   const whose = await s.page.$$eval('[aria-label="Whose shots"] button', (els) => els.map((e) => e.innerText.trim()));
   ok("Analytics offers a wheel for him only, beside the whole innings", whose.join() === "Whole innings,R Pillay", whose.join());
   await tid(s.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
@@ -473,7 +473,7 @@ try {
   // C2 — the fixture's Captain section.
   ok("Matches opens", await go(c.page, "mymatches"));
   await tid(c.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
-  await c.page.waitForTimeout(2200);
+  await afterReads(c.page, 2200);
   const sec = await inner(c.page, "captain-section");
   dbg("SECTION", sec);
   // The day line fills in two steps (the format first, then the conditions'
@@ -500,11 +500,11 @@ try {
   await tid(c.page, "family-back").click({ timeout: 4000 }).catch(() => {});
   await c.page.waitForTimeout(500);
   await tid(c.page, `live-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
-  await c.page.waitForTimeout(2200);
+  await afterReads(c.page, 2200);
   const tabs = await c.page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
   ok("the Match Centre has a Captain tab after the Summary", tabs.join() === "summary,captain,scorecard,commentary,partnerships,analytics,details", tabs.join());
   await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
-  await c.page.waitForTimeout(1500);
+  await afterReads(c.page, 1500);
   const field = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
   dbg("FIELDING", field);
   ok("the tab is labelled for what he is", /^CAPTAIN/i.test(await inner(c.page, "mc-captain-label")), await inner(c.page, "mc-captain-label"));
@@ -536,7 +536,7 @@ try {
   await tid(c.page, `live-row-${BAT}`).click({ timeout: 4000 }).catch(() => {});
   await c.page.waitForTimeout(2200);
   await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
-  await c.page.waitForTimeout(1500);
+  await afterReads(c.page, 1500);
   const batTab = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
   dbg("BATTING", batTab);
   const nextInText = await inner(c.page, "mc-captain-next-in");
@@ -555,7 +555,7 @@ try {
   await tid(c.page, `played-row-${PLAYED}`).click({ timeout: 4000 }).catch(() => {});
   await c.page.waitForTimeout(2200);
   await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
-  await c.page.waitForTimeout(2000);
+  await afterReads(c.page, 2000);
   const after = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
   dbg("AFTER", after);
   ok("after the match: his batters' innings in words", /Our innings, in words/i.test(after) && after.includes(nm[PILLAY]), after.slice(0, 300));
@@ -794,7 +794,7 @@ try {
     const f7 = await floors(cap.page);
     ok(`Home with the line: nothing under 12px (${f7.small.length}), nothing tapped under 44px (${f7.tiny.length})`, f7.small.length === 0 && f7.tiny.length === 0, [...f7.small, ...f7.tiny].slice(0, 4).join(" · "));
     await tid(cap.page, "captain-card-open").click({ timeout: 4000 }).catch(() => {});
-    await cap.page.waitForTimeout(2200);
+    await afterReads(cap.page, 2200);
     const order = await orderOf(cap.page);
     ok("his fixture draws THE PLAN under the team sheet and above his Captain section",
        order.indexOf("fixture-teamsheet") < order.indexOf("plan-block") && order.indexOf("plan-block") < order.indexOf("captain-section") && order.indexOf("plan-block") > -1, order.join());
@@ -812,7 +812,7 @@ try {
     await tid(cap.page, `played-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
     await cap.page.waitForTimeout(2200);
     await tid(cap.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
-    await cap.page.waitForTimeout(1500);
+    await afterReads(cap.page, 1500);
     const tabOrder = await orderOf(cap.page);
     ok("the Captain tab has the plan's row after the Board, closed", tabOrder.indexOf("mc-captain-board") > -1 && tabOrder.indexOf("mc-captain-board") < tabOrder.indexOf("mc-captain-plan-row")
        && await tid(cap.page, "mc-captain-plan-row").getAttribute("aria-expanded") === "false" && await tid(cap.page, "mc-captain-plan-body").count() === 0, tabOrder.join());
@@ -834,7 +834,7 @@ try {
     ok("...no card, so no line", await tid(tm.page, "captain-card").count() === 0 && await tid(tm.page, "captain-card-plan").count() === 0);
     await go(tm.page, "mymatches");
     await tid(tm.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
-    await tm.page.waitForTimeout(2000);
+    await afterReads(tm.page, 2000);
     const tmPlan = await inner(tm.page, "plan-block");
     ok("his fixture screen shows the block: the coach by name, the whole body, and never 'the office'", /^THE PLAN · C HENDRICKS · \w{3} \d\d:\d\d/i.test(tmPlan) && !/office/i.test(tmPlan) && tmPlan.includes(PLAN_TEXT.slice(0, 40)) && tmPlan.includes("07:00."), tmPlan);
     ok("...and no Captain section", await tid(tm.page, "captain-section").count() === 0);
@@ -850,7 +850,7 @@ try {
     await pa.page.locator("nav button", { hasText: /^Matches$/ }).first().click({ timeout: 6000 }).catch(() => {});
     await pa.page.waitForTimeout(1500);
     await tid(pa.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
-    await pa.page.waitForTimeout(2000);
+    await afterReads(pa.page, 2000);
     const paPlan = await inner(pa.page, "plan-block");
     ok("her fixture screen shows the same block, the coach by name", /^THE PLAN · C HENDRICKS · \w{3} \d\d:\d\d/i.test(paPlan) && !/office/i.test(paPlan) && paPlan.includes(PLAN_TEXT.slice(0, 40)), paPlan);
     await tid(pa.page, "plan-report").click({ timeout: 4000 }).catch(() => {});
@@ -862,7 +862,7 @@ try {
     // ── A boy on another side sees none ──
     const ot = await open();
     ok("a boy of the 2XI signs in", await signInAs(ot.page, OTHER_EMAIL));
-    await ot.page.waitForTimeout(1200);
+    await afterReads(ot.page, 1200);
     const otHome = await inner(ot.page, "os-main");
     ok("his Home has no plan and no line", !/The plan|Plan from|open the bowling/i.test(otHome) && await tid(ot.page, "plan-block").count() === 0 && await tid(ot.page, "captain-card-plan").count() === 0);
     const otToken = await tokenFor(OTHER_EMAIL);

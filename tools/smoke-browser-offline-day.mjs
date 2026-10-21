@@ -235,7 +235,7 @@ const signInFromLanding = async () => {
 };
 const openFixture = async () => {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -317,7 +317,7 @@ try {
   await tap("toss-won-home");
   await tap("toss-decision-bat");
   await tap("toss-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const tossQueued = await outboxKeys();
   ok("the toss answered with no signal is queued on disk (SCRBRD-075)", tossQueued?.includes(`${device}:toss:pending`), JSON.stringify(tossQueued));
   ok("the scorer is on the pad", await onPad());
@@ -328,7 +328,7 @@ try {
   let tapped = 0;
   for (const f of ["1", "4", "0"]) if (await score(f)) tapped++;
   ok("three balls with no signal", tapped === 3, tapped);
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const pB = await padIds();
   const qB = (await outboxKeys())?.filter((k) => k.includes(":evt:")) ?? [];
   ok("every event is in the pad's saved log AND queued in the outbox", pB.length >= 7 && qB.length === pB.length, `${pB.length} v ${qB.length}`);
@@ -342,7 +342,7 @@ try {
   ok("...and its saved log is the one before the reload", same(await padIds(), pB));
   ok("the toss is not asked again", (await tid("toss-sheet").count()) === 0);
   ok("scoring goes on", (await onPad()) && await score("2"));
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const pC = await padIds();
   const qC = (await outboxKeys())?.filter((k) => k.includes(":evt:")) ?? [];
   ok("the new ball is saved and queued too", pC.length === pB.length + 1 && qC.length === pC.length, `${pC.length} / ${qC.length}`);

@@ -418,7 +418,7 @@ try {
     ok("a parent: no card on Home", (await tid(s.page, "day-matchday").count()) === 0);
     await go(s.page, "fixtures");
     await tid(s.page, `live-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
-    await s.page.waitForTimeout(2000);
+    await afterReads(s.page, 2000);
     const tabs = await tabIds(s.page);
     ok("a parent: the live match has the six tabs and no Coach", tabs.length > 0 && !tabs.includes("coach"), tabs.join());
     await s.ctx.close();
@@ -427,7 +427,7 @@ try {
     ok("a pupil: no card on Home", (await tid(p.page, "day-matchday").count()) === 0);
     await go(p.page, "mymatches");
     await tid(p.page, `live-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
-    await p.page.waitForTimeout(2000);
+    await afterReads(p.page, 2000);
     const tabs2 = await tabIds(p.page);
     ok("a pupil: the live match has the six tabs and no Coach", tabs2.length > 0 && !tabs2.includes("coach"), tabs2.join());
     await p.ctx.close();
@@ -742,7 +742,7 @@ try {
     ok(`two cards: nothing under 12px (${f6.small.length}), nothing tapped under 44px (${f6.tiny.length})`, f6.small.length === 0 && f6.tiny.length === 0, [...f6.small, ...f6.tiny].slice(0, 4).join(" · "));
     await c2.locator('[data-testid="matchday-open"]').click({ timeout: 4000 });
     await l.page.waitForFunction(() => document.querySelector('[data-testid="mc-coach"]'), null, { timeout: 12000 }).catch(() => {});
-    await l.page.waitForTimeout(800);
+    await afterReads(l.page, 800);
     const mv = await inner(l.page, "match-view");
     ok("tapping the second card opens THAT fixture's Coach tab", await tid(l.page, "mc-coach").count() === 1 && /Michaelhouse/.test(mv) && !/Verify Cockpit XI/.test(mv), mv.slice(0, 160));
     await l.ctx.close();
@@ -792,12 +792,12 @@ try {
     ok("tonight's fixture is a group, and the duty count line is the roster's", await tid(r.page, `readiness-fixture-${DAY}`).count() === 1 && await tid(r.page, `readiness-covered-${DAY}`).count() === 1);
     const coveredText = (await inner(r.page, `readiness-covered-${DAY}`)).trim();
     await r.page.setViewportSize(PHONE);
-    await r.page.waitForTimeout(700);
+    await afterReads(r.page, 700);
     const f8 = await floors(r.page);
     ok(`at 390: nothing under 12px (${f8.small.length}), every row at least 44px (${f8.tiny.length})`, f8.small.length === 0 && f8.tiny.length === 0, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
     ok("...Michaelhouse's group names the umpire that is on record as not a blocker, and a missing scorer as one", /No scorer on record/.test(await tid(r.page, `readiness-fixture-${MICH}`).innerText()) && !/No umpire on record/.test(await tid(r.page, `readiness-fixture-${MICH}`).innerText()));
     await r.page.locator(`[data-testid="queue-group"][data-match="${MICH}"] [data-rule="O4"] button`).first().click({ timeout: 4000 });
-    await r.page.waitForTimeout(1500);
+    await afterReads(r.page, 1500);
     const box = await tid(r.page, "match-details").boundingBox().catch(() => null);
     ok("tapping a row opens that fixture's duties, on the Match Centre", await tid(r.page, "os-main").getAttribute("data-page") === "matches"
        && await tid(r.page, "match-details").getAttribute("data-match") === MICH && await tid(r.page, "duty-roster").count() === 1);

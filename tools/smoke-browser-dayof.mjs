@@ -244,7 +244,7 @@ try {
   group("1. A driver signs in and sees his own trip and its fixture — and no other driver's");
   const driver = await open();
   ok("the seeded driver signs in", await signIn(driver.page, "driver@example.invalid"));
-  await driver.page.waitForTimeout(1000);
+  await afterReads(driver.page, 1000);
   const landing = await text(driver.page);
   ok("the day-of driver screen is drawn", await tid(driver.page, "dayof-driver").count() === 1);
   ok("...not the ordinary dashboard (day sheet)", await tid(driver.page, "day-next").count() === 0 && await tid(driver.page, "day-sheet").count() === 0);
@@ -314,13 +314,13 @@ try {
   ok("the driver signs in again", await signIn(driver2.page, "driver@example.invalid"));
   await afterReads(driver2.page, 1000);
   ok("he taps \"We've left\"", await click(driver2.page, /We've left/, 4000));
-  await driver2.page.waitForTimeout(1500);
+  await afterReads(driver2.page, 1500);
   const [afterDepart] = await dbq(`select departed_at, arrived_at from trip where id = $1`, [tripId]);
   ok("...and the database holds a departure time", !!afterDepart?.departed_at && !afterDepart?.arrived_at);
   ok("...and the card says he is on the road", /On the road/i.test(await text(driver2.page)));
 
   ok("he taps \"We've arrived\"", await click(driver2.page, /We've arrived/, 4000));
-  await driver2.page.waitForTimeout(1500);
+  await afterReads(driver2.page, 1500);
   const [afterArrive] = await dbq(`select departed_at, arrived_at from trip where id = $1`, [tripId]);
   ok("...and the database holds an arrival time, after the departure",
      !!afterArrive?.arrived_at && afterArrive.arrived_at >= afterArrive.departed_at);

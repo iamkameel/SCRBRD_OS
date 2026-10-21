@@ -154,7 +154,7 @@ const padOpen = async (match) => ((await readSaved(match))?.events?.[0] ?? []).f
 /** Open a fixture's scorer from the Match Centre, by the opponent's name. */
 async function openFixture(opponent) {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate((name) => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -299,7 +299,7 @@ try {
   ok("...each a squad member as before: id, name and batting hand",
      padA?.squad?.[0]?.name === "Verify Side 11" && padA.squad.every((p) => p.batHand === "R"), JSON.stringify(padA?.squad?.[0]));
   ok("...and no twelfth man on the event, as before", (padA?.twelfthMan ?? null) === null);
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   const srvA = await serverOpen(NAMED);
   ok("the server's innings_start says the same", srvA?.id === padA?.id && JSON.stringify(ids(srvA?.squad)) === JSON.stringify(want), JSON.stringify(ids(srvA?.squad)));
   const shA = await openersSheet();
@@ -350,7 +350,7 @@ try {
   // Out next ball: the next sheet lists him with his score, marked.
   await wicketSheet("bowled");
   await tap("wicket-confirm");
-  await page.waitForTimeout(900);
+  await afterReads(page, 900);
   const marks = await tid("off-side-mark").allTextContents();
   ok("the batting sheet marks him, and only him: \"typed in — not on the named side\"",
      marks.length === 1 && marks[0] === "typed in — not on the named side", JSON.stringify(marks));

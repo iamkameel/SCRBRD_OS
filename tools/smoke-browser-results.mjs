@@ -239,7 +239,7 @@ try {
   ok("the same table", (await table(wes.page)) === "Hilton 1st XI=4@1 Westville 1st XI=4@2 Hilton 2nd XI=0@3", await table(wes.page));
   ok("no decision, no adjustment offered", (await tid(wes.page, "decision-open").count()) === 0 && (await tid(wes.page, "adjust-open").count()) === 0);
   await wes.page.setViewportSize({ width: 390, height: 844 });
-  await wes.page.waitForTimeout(800);
+  await afterReads(wes.page, 800);
   const f2 = await floors(wes.page, "standings");
   ok("E: the floors at 390 wide, and no sideways scroll", floorsOk(f2) && f2.sideways <= 0, `${floorsWhy(f2)} sideways ${f2.sideways}`);
   ok("no console errors", wes.errors.length === 0, wes.errors.join(" | "));

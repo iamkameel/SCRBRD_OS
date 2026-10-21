@@ -198,7 +198,7 @@ const basicPad = async () => {
 };
 const openScorer = async (matchId) => {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   const opened = await page.evaluate((id) => {
     const card = document.querySelector(`[data-testid="match-card-${id}"]`);
     const b = [...(card?.querySelectorAll("button") ?? [])].find((x) => /Start Scoring|Open Live Scorer/i.test(x.textContent || ""));

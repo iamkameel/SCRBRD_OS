@@ -246,7 +246,7 @@ try {
   await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -425,7 +425,7 @@ try {
   // ── E ────────────────────────────────────────────────────────
   group("E. An old sector-era ball of the left-hander's is worded for him");
   await tap("mc-tab-commentary").catch(() => {});
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const lines = await page.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => e.innerText));
   const sector = lines.find((l) => /Naidoo/.test(l) && /cut/.test(l) && /(one run|a single|they take one)/.test(l));
   ok(`the screen's sector 3, for him, is point: "${sector}"`, !!sector && /cut to point/.test(sector) && !/square leg/.test(sector), lines.slice(0, 6).join(" | "));

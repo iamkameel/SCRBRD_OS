@@ -203,7 +203,7 @@ const onPad = async () => {
 /** Match Centre → the 1XI v Michaelhouse card → its scorer. */
 const openFixture = async () => {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -299,7 +299,7 @@ try {
   let tapped = 0;
   for (const face of ["2", "4", "6"]) if (await score(face)) tapped++;
   ok("three balls with no signal", tapped === 3, tapped);
-  await page.waitForTimeout(900);
+  await afterReads(page, 900);
   const withSix = await padIds();
   const SIX = withSix.at(-1);
   ok("all three are waiting in the outbox", same((await queuedOnDisk())?.slice(-3), withSix.slice(-3)), JSON.stringify(await queuedOnDisk()));

@@ -164,7 +164,7 @@ const openMichaelhouse = async (page) => page.evaluate(() => {
 /** Open the Michaelhouse fixture's pad from the dashboard, as the handover walk does. */
 async function openPad(who) {
   await who.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await who.page.waitForTimeout(1200);
+  await afterReads(who.page, 1200);
   const opened = await openMichaelhouse(who.page);
   await who.page.waitForTimeout(2000);
   return opened;
@@ -332,7 +332,7 @@ try {
   await B.page.fill('[data-testid="handover-verify-overs"]', String(Math.floor(before.b / 6)));
   await B.page.fill('[data-testid="handover-verify-balls"]', String(before.b % 6));
   await tid(B.page, "handover-verify-confirm").click({ timeout: 3000 });
-  await B.page.waitForTimeout(1000);
+  await afterReads(B.page, 1000);
   const after = await sessionRow();
   ok("the token moved to B, under a new generation", after?.state === "active" && after?.epoch === armed.epoch + 1, JSON.stringify({ after, armed }));
   const [director] = await dbq(`select id from app_user where email = 'sarah@example.invalid'`);

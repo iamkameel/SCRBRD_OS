@@ -583,7 +583,7 @@ try {
   const k = lg.page;
   ok("the league's administrator signs in", await signIn(k, "league@example.invalid"));
   ok("Matches → the league fixture → Review and confirm", await toFixture(k, ML) && (await (async () => { await tid(k, `sb-open-${oL.body.id}`).waitFor({ timeout: 6000 }).catch(() => {}); await tap(k, `sb-open-${oL.body.id}`); await tid(k, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
-  await k.waitForTimeout(800);
+  await afterReads(k, 800);
   const readL = await said(k, "sb-read-0");
   ok("the card names the school's boys to him, though he reads no roster of theirs", readL.includes(names[P[0]]) && readL.includes(names[P[5]]) && !/name not shown/.test(readL), readL.slice(0, 300));
   ok("he may decide it: Confirm and Return are offered", (await tid(k, "sb-confirm-go").count()) === 1 && (await tid(k, "sb-return-go").count()) === 1);
@@ -739,7 +739,7 @@ try {
   const y = day.page;
   ok("the director of sport signs in, in Daylight", await signIn(y, "sarah@example.invalid"));
   ok("Matches → the third fixture → Review and confirm (as the owner's, not hers to confirm... she may)", await toFixture(y, M3) && (await (async () => { await tid(y, `sb-open-${o3.body.id}`).waitFor({ timeout: 6000 }).catch(() => {}); await tap(y, `sb-open-${o3.body.id}`); await tid(y, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
-  await y.waitForTimeout(800);
+  await afterReads(y, 800);
   const theme = await y.evaluate(() => document.documentElement.dataset.theme);
   const fDay = await floors(y, "sb-root");
   ok("the theme is Daylight and the page is light", theme === "daylight" && /rgb\((2[0-9]{2}|1[89][0-9]), /.test(fDay.bg), `${theme} ${fDay.bg}`);

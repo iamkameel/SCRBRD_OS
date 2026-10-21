@@ -227,7 +227,7 @@ try {
   await clearBlockers(outgoing.page);
   const next = outgoing.page.locator("button:not([disabled])", { hasText: /^1$/ }).first();
   if (await next.count()) await next.click({ timeout: 2500 }).catch(() => {});
-  await outgoing.page.waitForTimeout(3000);
+  await afterReads(outgoing.page, 3000);
   const afterCancel = await dbq(`select epoch from ball_event where match_id = $1 order by seq`, [MATCH]);
   ok("the next ball reaches the log", afterCancel.length === n0 + 1, `${afterCancel.length} v ${n0 + 1}`);
   ok("...under the generation the cancel took", afterCancel.at(-1)?.epoch === back?.epoch, JSON.stringify(afterCancel.at(-1)));
@@ -359,7 +359,7 @@ try {
   await third.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
   await afterReads(third.page, 1200);
   ok("opens the same fixture", await openMichaelhouse(third.page));
-  await third.page.waitForTimeout(3000);
+  await afterReads(third.page, 3000);
   const s2 = await serverLog();
   const p2 = await padLog(third.page);
   ok("its pad's log is the server's log, id for id", same((p2 ?? []).map((e) => e?.id), s2.map((r) => r.id)), `${p2?.length} v ${s2.length}`);

@@ -186,7 +186,7 @@ try {
   ok("...and is offered the Support tab", await openTab(plat.page, "support"));
   ok("the panel is drawn", await tid(plat.page, "support-access").count() === 1);
   ok("...with nothing begun yet", /You have not begun a support session/.test(await tid(plat.page, "support-access").innerText()));
-  await plat.page.waitForTimeout(800);
+  await afterReads(plat.page, 800);
   const schoolOptions = await tid(plat.page, "support-school").locator("option").allInnerTexts();
   ok("the schools come from the server", schoolOptions.includes("Hilton College"), schoolOptions.join(" | "));
   const roleOptions = await tid(plat.page, "support-role").locator("option").evaluateAll((os) => os.map((o) => o.value));
@@ -201,7 +201,7 @@ try {
   await tid(plat.page, "support-school").selectOption(HIL);
   await tid(plat.page, "support-role").selectOption("directorofsport");
   await tid(plat.page, "support-begin").click({ timeout: 6000 });
-  await plat.page.waitForTimeout(1200);
+  await afterReads(plat.page, 1200);
   const noReason = await tid(plat.page, "support-refused").innerText().catch(() => "");
   if (DEBUG) console.log("[debug] refused without a reason:", noReason);
   ok("a begin with no reason is refused, in words", /at least ten characters/i.test(noReason), noReason);
@@ -216,7 +216,7 @@ try {
 
   await tid(plat.page, "support-reason").fill(REASON);
   await tid(plat.page, "support-begin").click({ timeout: 6000 });
-  await plat.page.waitForTimeout(1800);
+  await afterReads(plat.page, 1800);
   const begun = await tid(plat.page, "support-begun").innerText().catch(() => "");
   if (DEBUG) console.log("[debug] begun:", begun);
   ok("with a reason, the session begins", /Begun at Hilton College as Director of Sport/.test(begun), begun);
@@ -236,7 +236,7 @@ try {
   const count1 = await live.locator('[data-testid="support-countdown"]').innerText().catch(() => "");
   const shown = Number(count1.match(/^(\d+) min/)?.[1]);
   ok("...counting down to the server's expires_at", /min \d\d s left/.test(count1) && shown >= 58 && shown <= 59, count1);
-  await plat.page.waitForTimeout(2100);
+  await afterReads(plat.page, 2100);
   const count2 = await live.locator('[data-testid="support-countdown"]').innerText().catch(() => "");
   ok("...and the clock moves", count2 !== count1, `${count1} → ${count2}`);
 
@@ -244,7 +244,7 @@ try {
      (await tid(plat.page, "support-reason").inputValue()) === "");
   await tid(plat.page, "support-reason").fill(REASON);
   await tid(plat.page, "support-begin").click({ timeout: 6000 });
-  await plat.page.waitForTimeout(1200);
+  await afterReads(plat.page, 1200);
   const twice =await tid(plat.page, "support-refused").innerText().catch(() => "");
   ok("the same session twice is refused, in words", /already have a session open/i.test(twice), twice);
   ok("...and only one session exists", (await sessionsInDb()).length === 1);
@@ -264,7 +264,7 @@ try {
   // ── Ended from the platform side ─────────────────────────────────
   group("Ended early from the platform side, it is over for the school too");
   await live.locator('[data-testid="support-end"]').click({ timeout: 6000 });
-  await plat.page.waitForTimeout(1800);
+  await afterReads(plat.page, 1800);
   const endedText = await tid(plat.page, `support-session-${S}`).innerText().catch(() => "");
   if (DEBUG) console.log("[debug] platform row, ended:", endedText);
   ok("the operator's row says it is over, and by whom", /Over/i.test(endedText) && /ended .* by Platform Ops/.test(endedText), endedText);

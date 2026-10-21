@@ -360,13 +360,13 @@ try {
   const af = await floors(off.page, '[data-testid="audit-log"]');
   ok("the log is on the 12px and 44px floors", af.small.length === 0 && af.taps.length === 0, af.small.concat(af.taps).slice(0, 4).join(" | "));
   await tid(off.page, "audit-kind").selectOption("access");
-  await off.page.waitForTimeout(1200);
+  await afterReads(off.page, 1200);
   const kinds = await off.page.locator('[data-testid="audit-row"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
   ok("filtered by kind, it lists that kind alone", kinds.length > 0 && kinds.every((k) => k === "access"), kinds.join());
   // Roles granted as well as ended (db/80): the seed's appointments were made
   // by nobody, and the tab says the system made them.
   await tid(off.page, "audit-kind").selectOption("role");
-  await off.page.waitForTimeout(1200);
+  await afterReads(off.page, 1200);
   const roleKinds = await off.page.locator('[data-testid="audit-row"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
   const roleText = await tid(off.page, "audit-log").innerText().catch(() => "");
   ok("filtered to roles, it lists roles alone", roleKinds.length > 0 && roleKinds.every((k) => k === "role"), roleKinds.join());
@@ -589,7 +589,7 @@ try {
     r.onerror = () => reject(r.error);
   }));
   await gk.page.reload({ waitUntil: "networkidle" });
-  await gk.page.waitForTimeout(1200);
+  await afterReads(gk.page, 1200);
   const gkTabs = await tabsShown(gk.page);
   ok("his tabs are what the policy says: Ground tasks, and no Users, Squad, Fixtures, Broadcast or Audit",
      JSON.stringify(gkTabs) === JSON.stringify(tabsFor("facilities")) && JSON.stringify(gkTabs) === JSON.stringify(["grounds"]), gkTabs.join());
@@ -618,7 +618,7 @@ try {
   ok("Add user is offered to it", await tid(pf1.page, "add-user").count() === 1);
   ok("...and it is not told it cannot assign roles", await tid(pf1.page, "people-readonly").count() === 0);
   await tid(pf1.page, "add-user").click({ timeout: 5000 }).catch(() => {});
-  await pf1.page.waitForTimeout(800);
+  await afterReads(pf1.page, 800);
   const pfSchools = await tid(pf1.page, "enrol-school").locator("option").evaluateAll((os) => os.map((o) => o.textContent.trim()).filter((t) => !/^Choose/.test(t))).catch(() => []);
   ok("the form asks which school, offering every school on the platform", pfSchools.includes("Hilton College") && pfSchools.includes("Westville Boys' High"), pfSchools.join());
   ok("...and picks none for it: a tenant-less account is never guessed into a school",
@@ -686,7 +686,7 @@ try {
   ok("...and reaches Management → Users", await toUsers(own.page));
   ok("Add user is offered", await tid(own.page, "add-user").count() === 1);
   await tid(own.page, "add-user").click({ timeout: 5000 }).catch(() => {});
-  await own.page.waitForTimeout(800);
+  await afterReads(own.page, 800);
   const ownOffered = await tid(own.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
   ok("every school role is offered, and neither platform key: those belong to no school",
      JSON.stringify([...ownOffered].sort()) === JSON.stringify(atSchool(GRANTABLE_ROLES.superadmin))
@@ -849,7 +849,7 @@ try {
   ok("the registrar signs in", await signIn(ph.page, "registrar@example.invalid"));
   ok("...and reaches the list", await toUsers(ph.page));
   await ph.page.setViewportSize({ width: 390, height: 844 });
-  await ph.page.waitForTimeout(800);
+  await afterReads(ph.page, 800);
   // The shell clips its own overflow, so the document never scrolls sideways
   // whatever is drawn; what is asked instead is that nothing in the list is
   // drawn past the edge of the screen.

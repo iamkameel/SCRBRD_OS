@@ -169,7 +169,7 @@ try {
   ok("...T20 at 25 overs", format === "T20" && overs === "25", `${format} ${overs}`);
   ok("the preview says so", /T20 · 25 overs/.test(await dos.page.locator('[data-testid="fixture-preview"]').innerText()));
   ok("he arranges it", await click(dos.page, /Arrange Fixture/, 4000));
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   const [m] = await dbq(`select id, competition_id, format, overs from match where opponent = $1`, [OPPONENT]);
   ok("the fixture is stored in the league, at 25 overs", m?.competition_id === LEAGUE && m?.overs === 25 && m?.format === "T20", JSON.stringify(m));
   ok("no console errors (director of sport)", dos.errors.length === 0, dos.errors.join(" | "));
@@ -238,7 +238,7 @@ try {
   await afterReads(page, 800);
   ok("the bowled after the no-ball stands: the next batter is asked for", await typeBatter());
   for (let i = 0; i < 5; i++) { await tap("run-0", 3000); await page.waitForTimeout(150); }
-  await page.waitForTimeout(2800);
+  await afterReads(page, 2800);
   const [live] = await dbq(`select wickets, legal_balls from match_live_score where match_id = $1 and innings = 0`, [MATCH]);
   ok("the API's live score has the wicket: no free hit in this league", Number(live?.wickets) === 1 && Number(live?.legal_balls) === 6, JSON.stringify(live));
   const [fixed] = await dbq(`select set_version, doc->'play'->>'format.free_hit' as fh from match_conditions where match_id = $1`, [MATCH]);

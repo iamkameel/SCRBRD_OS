@@ -472,7 +472,7 @@ try {
   await tap(org.page, "pl-format-double_round_robin");
   await fill(org.page, "pl-rule-restMinutes", 14400);
   await tap(org.page, "pl-generate");
-  await org.page.waitForTimeout(1200);
+  await afterReads(org.page, 1200);
   const unsched = await tid(org.page, "pl-unscheduled").count();
   ok("with ten days' rest, some fixtures have no slot", unsched >= 1, await said(org.page, "pl-summary"));
   ok("...each with its reasons in plain words", /would not have its rest/.test(await said(org.page, "pl-unscheduled")), await said(org.page, "pl-unscheduled"));
@@ -512,7 +512,7 @@ try {
   await afterReads(org.page, 800);
   ok("a locked fixture can be unlocked", (await org.page.locator('[data-testid="pl-fixture"][data-locked="yes"]').count()) === 0);
   await org.page.locator(`[data-testid="pl-fixture"][data-fixture="${firstId}"] [data-testid="pl-lock"]`).click();
-  await org.page.waitForTimeout(800);
+  await afterReads(org.page, 800);
   const vBeforePublish = await dbq(`select version, state from fixture_plan where competition_id = $1 order by version`, [C]);
   await shot(org.page, "8-draw");
   const fDraw = await floors(org.page, "pl-root");
@@ -673,7 +673,7 @@ try {
   ok("the organiser signs in on a phone", await signIn(ph.page, "league@example.invalid"));
   await nav(ph.page, /^Competitions\d*$/);
   await ph.page.setViewportSize({ width: 390, height: 844 });
-  await ph.page.waitForTimeout(1200);
+  await afterReads(ph.page, 1200);
   const hasNew = await has(ph.page, "new-competition");
   ok("\"+ New Competition\" is reachable at 390 wide", hasNew);
   if (hasNew) {
@@ -699,7 +699,7 @@ try {
   await nav(day.page, /^Competitions\d*$/);
   await day.page.locator("button", { hasText: new RegExp(LEAGUE_NAME) }).first().click().catch(() => {});
   await tap(day.page, "open-planner").catch(() => {});
-  await day.page.waitForTimeout(1500);
+  await afterReads(day.page, 1500);
   const theme = await day.page.evaluate(() => document.documentElement.dataset.theme);
   const fDay = await floors(day.page, "pl-root");
   ok("in Daylight the planner is light, with the same floors", theme === "daylight" && /rgb\((2[0-9]{2}|1[89][0-9]), /.test(fDay.bg) && floorsOk(fDay), `${theme} ${fDay.bg} ${floorsWhy(fDay)}`);
@@ -707,7 +707,7 @@ try {
   // The wizard, from a league still part-made (the walk's league is complete by now).
   await day.page.locator("button", { hasText: /Walk Cup Two/ }).first().click();
   await tap(day.page, "finish-setup");
-  await day.page.waitForTimeout(1200);
+  await afterReads(day.page, 1200);
   const fDayW = await floors(day.page, "lw-root");
   ok("in Daylight the wizard has the same floors", floorsOk(fDayW), floorsWhy(fDayW));
   ok("no console errors (Daylight)", day.errors.length === 0, day.errors.join(" | "));

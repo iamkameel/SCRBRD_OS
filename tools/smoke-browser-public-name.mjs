@@ -223,7 +223,7 @@ try {
   ok("the section keeps the floors", ef.small.length === 0 && ef.tiny.length === 0, [...ef.small, ...ef.tiny].slice(0, 4).join(" · "));
   await tid(office.page, "never-public-reason-input").fill(REASON);
   await tid(office.page, "never-public-set").click();
-  await office.page.waitForTimeout(1500);
+  await afterReads(office.page, 1500);
   const mark = await q(`select reason, ended_on from player_never_public where player_id = $1`, [BEKKER]);
   ok("she marks him: the database holds the mark and its reason", mark.length === 1 && mark[0].reason === REASON && mark[0].ended_on === null, JSON.stringify(mark));
   ok("...her screen says so, with the reason", /Marked since/.test(await tid(office.page, "never-public-state").innerText().catch(() => ""))
@@ -250,7 +250,7 @@ try {
   const g = await q(`select a.person_id from role_assignment a join assignment_subject s on s.assignment_id = a.id
                       where s.player_id = $1 and a.role = 'guardian'`, [BEKKER]);
   await tid(office.page, `public-name-withdraw-${g[0].person_id}`).click();
-  await office.page.waitForTimeout(1500);
+  await afterReads(office.page, 1500);
   const r2 = await records();
   ok("the office records a no on the family's word: her record end-dated as withdrawn", r2.length === 1 && r2[0].end_reason === "withdrawn", JSON.stringify(r2));
   ok("...the office's screen says off", /Off since .*turned off by you/.test(await tid(office.page, `public-name-guardian-state-${g[0].person_id}`).innerText().catch(() => "")));

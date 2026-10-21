@@ -222,7 +222,7 @@ try {
   ok("...the card is back: \"Not now\" was this device only",
      (await tid(another.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
   await tid(another.page, `health-consent-prompt-yes-${PILLAY}`).click();
-  await another.page.waitForTimeout(1500);
+  await afterReads(another.page, 1500);
   let firstRecs = await records(PILLAY);
   ok("Yes calls the same endpoint the switch does: the database holds her yes",
      firstRecs.length === 1 && firstRecs[0].given_by === "guardian" && firstRecs[0].open, JSON.stringify(firstRecs));
@@ -284,7 +284,7 @@ try {
   ok("Settings → Me opens", await toMe(declines.page));
   ok("the card is there before she answers", (await tid(declines.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
   await tid(declines.page, `health-consent-prompt-no-${PILLAY}`).click();
-  await declines.page.waitForTimeout(1500);
+  await afterReads(declines.page, 1500);
   const declineRecs = await records(PILLAY);
   ok("No calls the same endpoint: the database holds a refusal, already closed",
      declineRecs.length === 1 && declineRecs[0].given_by === "guardian" && declineRecs[0].end_reason === "refused" && !declineRecs[0].open,

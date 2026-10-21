@@ -50,6 +50,7 @@ import pg from "pg";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const PORT = port(8852);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -103,6 +104,7 @@ async function visitor() {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = /** @type {string[]} */ ([]);
   const requests = /** @type {{url: string, auth: string | null}[]} */ ([]);
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
@@ -266,10 +268,11 @@ try {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce", extraHTTPHeaders: { "x-forwarded-for": `10.85.0.${++ipN}` } });
     await offline(ctx);
     const page = await ctx.newPage();
+    watchReads(page);
     const errors = /** @type {string[]} */ ([]);
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
-    await page.waitForTimeout(800);
+    await afterReads(page, 800);
     const still = await page.evaluate(() => {
       const hidden = [];
       for (const el of document.querySelectorAll("main section, main li, main article, main figure, main h1, main h2, main p")) {
@@ -401,6 +404,7 @@ try {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.1.${++ipN}` } });
       await offline(ctx);
       const page = await ctx.newPage();
+      watchReads(page);
       const errors = /** @type {string[]} */ ([]);
       page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
       page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error: ${m.text()}`); });

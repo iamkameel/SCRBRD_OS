@@ -245,7 +245,7 @@ try {
   ok("the database holds the side in that order, with the twelfth and no number for him",
     have1.length === 12 && have1[0] === "Verify Pick 11|1|false" && have1[10] === "Verify Pick 01|11|false" && have1[11] === "Verify Pick 12|null|true"
     && want1.every((w) => have1.includes(w)), have1.join(" ; "));
-  await c.page.waitForTimeout(800);
+  await afterReads(c.page, 800);
   const sideText = await inner(c.page, "coach-side");
   ok("the Coach tab shows the sheet, with no reload", (await c.page.evaluate(() => window.__marker)) === "same page"
     && await tid(c.page, `coach-side-${boy["11"]}`).count() === 1 && await tid(c.page, `coach-side-${boy["12"]}`).count() === 1 && !/No sheet has been published/.test(sideText), sideText.slice(0, 200));
@@ -276,7 +276,7 @@ try {
   ok("he is in the draft at number 3", (await tid(d.page, `pick-no-${boy.old}`).inputValue()) === "3");
   d.posts.length = 0;
   await tid(d.page, "pick-side-save").click();
-  await d.page.waitForTimeout(1200);
+  await afterReads(d.page, 1200);
   const refused = await inner(d.page, `pick-note-${boy.old}`);
   ok("the screen is still open", await tid(d.page, "pick-side").count() === 1);
   ok("the trigger's own words are beside him", /Verify Pick Old is \d+ on 1 January and cannot play U14A: the limit is 14/.test(refused), refused);
@@ -457,7 +457,7 @@ try {
   ok("the elder is in the draft, marked from 1XI", await tid(u.page, `pick-${ELDER}`).getAttribute("data-picked") === "xi" && (await inner(u.page, `pick-from-${ELDER}`)).trim() === "from 1XI");
   u.posts.length = 0;
   await tid(u.page, "pick-side-save").click();
-  await u.page.waitForTimeout(1200);
+  await afterReads(u.page, 1200);
   const refused8 = await inner(u.page, `pick-note-${ELDER}`);
   ok("the trigger's own words are beside him", /Verify Up Elder is \d+ on 1 January and cannot play U14A: the limit is 14/.test(refused8), refused8);
   ok("...nobody else carries a note, the screen stays open, one request was made", await u.page.locator('[data-testid^="pick-note-"]').count() === 1 && await tid(u.page, "pick-side").count() === 1 && u.posts.length === 1);

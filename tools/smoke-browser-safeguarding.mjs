@@ -166,7 +166,7 @@ try {
   await tid(parent.page, "sg-how-told").click();
   await tid(parent.page, "sg-account").fill(ACCOUNT);
   ok("he sends it", await click(parent.page, /^Send to the DSO$/, 6000));
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   const sent = await tid(parent.page, "sg-sent").innerText().catch(() => "");
   const reference = (await tid(parent.page, "sg-reference").innerText().catch(() => "")).trim();
   ok("he is told it was received, with a reference", /Received\. The DSO has it\./.test(sent) && /^SG-[0-9A-Z]{4}-\d{4}$/.test(reference), sent);
@@ -194,7 +194,7 @@ try {
      /of 24/.test(await row.innerText().catch(() => "")) && (await row.locator('[data-testid="sg-clock"]').getAttribute("data-overdue")) === "false");
   ok("...with no name in the list", !/Pillay|D Pillay/.test(await row.innerText().catch(() => "")));
   await row.click();
-  await dso.page.waitForTimeout(1500);
+  await afterReads(dso.page, 1500);
   const record = await tid(dso.page, "sg-concern").innerText().catch(() => "");
   ok("she reads the account as written", (await tid(dso.page, "sg-account-read").innerText().catch(() => "")) === ACCOUNT);
   ok("...and who raised it", /D Pillay/.test(record), record.slice(0, 300));

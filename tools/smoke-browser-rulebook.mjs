@@ -129,7 +129,7 @@ try {
   const dos = await open();
   ok("the director of sport signs in", await signIn(dos.page, /sarah@example\.invalid|Director/));
   ok("the rulebook opens", await nav(dos.page, "rulebook"));
-  await dos.page.waitForTimeout(800);
+  await afterReads(dos.page, 800);
   const book = await tid(dos.page, "rulebook").innerText().catch(() => "");
   if (DEBUG) console.log("[debug] rulebook:\n" + book.slice(0, 1500));
   ok("Medical & Safety is offered as a category of platform clauses",

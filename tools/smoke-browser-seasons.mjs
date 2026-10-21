@@ -168,7 +168,7 @@ try {
 
   group("Choosing a season with nothing recorded shows an honest empty state, not 2026's rows left over");
   ok("2025 is chosen", await seasonBtn(dos.page, "2025").click().then(() => true).catch(() => false));
-  await dos.page.waitForTimeout(900);
+  await afterReads(dos.page, 900);
   const y2025 = await archive(dos.page).innerText();
   if (DEBUG) console.log("[debug] archive on 2025:\n" + y2025);
   ok("no competitions are claimed for 2025", /No competitions recorded for 2025/.test(y2025), y2025.slice(0, 400));
@@ -178,7 +178,7 @@ try {
 
   group("Choosing 2026 again brings its competition and fixtures straight back");
   ok("2026 is chosen again", await seasonBtn(dos.page, "2026").click().then(() => true).catch(() => false));
-  await dos.page.waitForTimeout(900);
+  await afterReads(dos.page, 900);
   const back = await archive(dos.page).innerText();
   ok("the league is back", /KZN Schools T20 League/.test(back));
   ok("the fixtures are back", (await dos.page.locator('[data-testid^="season-fixture-"]').count()) === 4);

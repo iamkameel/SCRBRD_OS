@@ -360,7 +360,7 @@ try {
   const ink = await dayDos.page.$eval('[data-testid="listing-switch"]', (b) => ({ c: getComputedStyle(b).color, bg: getComputedStyle(b).backgroundColor })).catch(() => null);
   ok("...its word is drawn in an ink that is not its own background", ink && ink.c !== ink.bg, JSON.stringify(ink));
   await tid(dayDos.page, "listing-switch").click({ timeout: 4000 }).catch(() => {});
-  await dayDos.page.waitForTimeout(1200);
+  await afterReads(dayDos.page, 1200);
   const f5on = await floors(dayDos.page, `listing-${HIL}`);
   const ink5 = await inkOf(dayDos.page);
   ok("...switched on, in Daylight: the floors hold and the word is not its own background", await tid(dayDos.page, "listing-switch").getAttribute("aria-checked") === "true"
@@ -375,7 +375,7 @@ try {
   await dayOff.page.waitForTimeout(400);
   await tid(dayOff.page, "add-ground-name").fill("Memorial Oval");
   await tid(dayOff.page, "add-ground-save").click({ timeout: 4000 }).catch(() => {});
-  await dayOff.page.waitForTimeout(1200);
+  await afterReads(dayOff.page, 1200);
   const f6 = await floors(dayOff.page, "add-ground-form");
   ok("the form, refusal showing: light page, floors kept", /rgb\((2[0-9]{2}|1[89][0-9]), /.test(f6.bg) && kept(f6) && await tid(dayOff.page, "add-ground-refused").count() === 1, `${f6.bg} ${why(f6)}`);
   ok("no page error at phone width", dayDos.errors.length === 0 && dayOff.errors.length === 0, [...dayDos.errors, ...dayOff.errors].join(" | "));

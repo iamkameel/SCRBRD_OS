@@ -462,7 +462,7 @@ try {
   ok("the coach signs in", await signIn(c.page, "coach@example.invalid"));
   ok("he reaches To resolve", await queue(c.page));
   await c.page.setViewportSize(PHONE);           // the phone's bottom bar keeps To resolve under More: arrive on the laptop, then read it at 390
-  await c.page.waitForTimeout(700);
+  await afterReads(c.page, 700);
   const cg = await c.page.$$eval('[data-testid="queue-group"]', (els) => els.map((e) => e.getAttribute("data-match")));
   ok("his groups: A (1XI) and B (2XI) tomorrow in start order, the called-off one, then Michaelhouse (1XI); never C (3XI)", cg.slice(0, 4).join() === [A, B, OFF, MICH].join() && !cg.includes(C), cg.join());
   ok("no office list: nothing here is the office's", await tid(c.page, "queue-office").count() === 0);
