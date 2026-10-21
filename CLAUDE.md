@@ -72,7 +72,10 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   2026-10-21: what counts as a breach of children's data under POPIA section
   22, who decides and who is told, the Information Regulator, the school and
   families, and when; the match-day outage fallback to the paper scorebook and
-  the importer; and what the audit log must keep to answer for it).
+  the importer; and what the audit log must keep to answer for it) and who
+  sees a child's data (added 2026-10-21: one map, across every design, of who
+  may read each piece of a child's data and under what condition; where two
+  designs disagree; and the questions for Kameel that settle each one).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
