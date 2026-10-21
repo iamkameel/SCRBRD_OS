@@ -41,6 +41,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5299);
 const API_PORT = port(8799);
@@ -86,6 +87,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -313,7 +315,7 @@ try {
 
   group("C. Reload with no signal: neither the pad nor the outbox brings it back");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(3000);
+  await afterReads(page, 3000);
   // The app shell comes back from the service worker, and the live fixture's
   // pad reopens from what is on disk (SCRBRD-078) — it used to leave the
   // scorer on the shell. What persisted is read from disk as well.
@@ -328,7 +330,7 @@ try {
   // the next load. (Reclaiming bumps the epoch; the two balls queued under
   // the last one are this device's own and go live — not to quarantine.)
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("the pad comes back online", await backOnPad());
   ok("...and sends what it held", await pillSays(/^Sent$/), await pill());
   const s1 = await serverIds();
@@ -350,7 +352,7 @@ try {
   const cutEvents = (route) => (route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue());
   await page.route(`${API}/api/matches/*/events`, cutEvents);
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("the pad comes back, with nothing to send: the log is the server's", (await backOnPad()) && await pillSays(/^Sent$/), await pill());
   const beforeE = await padIds();
   const FOUR = beforeE.at(-1);

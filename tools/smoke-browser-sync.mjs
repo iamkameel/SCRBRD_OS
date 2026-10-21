@@ -26,6 +26,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4325);
 const API_PORT = port(8794);
@@ -71,6 +72,7 @@ const dbq = async (text, params) => (await pool.query(text, params)).rows;
 
 const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
+watchReads(page);
 await offline(page.context());
 
 const errors = [];
@@ -158,7 +160,7 @@ try {
 
   group("Opening a real fixture");
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   ok("the fixture list came from the server", !/Demonstration fixtures/i.test(await text()));
 
   // A high-water mark, not just a count. The assertions below are about the

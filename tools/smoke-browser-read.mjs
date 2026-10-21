@@ -35,6 +35,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4326);
 const API_PORT = port(8795);
@@ -78,6 +79,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const refusals = [], errors = [];
   page.on("pageerror", (e) => { errors.push(e.message); });
   page.on("console", (m) => {
@@ -245,7 +247,7 @@ try {
      && changed[1].phone === "+27 31 000 0099" && changed[1].active === true, JSON.stringify(changed));
   ok("...and the screen shows the new number", /\+27 31 000 0099/.test(await ptid("who-to-ring").innerText().catch(() => "")));
   await ptid(`contact-retire-${changed[1]?.id}`).click({ timeout: 4000 }).catch(() => {});
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   ok("she removes it: retired in the database, gone from the screen",
      (await owner.query(`select active from emergency_contact where id = $1`, [changed[1]?.id])).rows[0]?.active === false
      && !/\+27 31 000 0099/.test(await ptid("who-to-ring").innerText().catch(() => "")));
@@ -266,7 +268,7 @@ try {
   // gate itself is walked at the API (tools/smoke-passport.mjs); this is the
   // screen doing exactly what the family asked, nothing more.
   await ptid(`family-open-consents-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   ok("Consents opens the passport and scouting consents as they are",
      await ptid("passport-tab").count() === 1 && await ptid("scouting-consent-section").count() === 1);
   ok("no school is named yet", /No school has been named/.test(await text(parent.page)));
@@ -279,7 +281,7 @@ try {
   const named = await text(parent.page);
   ok("the grant appears, naming the boy and the school", /Pillay/.test(named) && /Westville/.test(named) && !/No school has been named/.test(named));
   ok("they take it back", await click(parent.page, /^Withdraw$/));
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   ok("...and the row says withdrawn", /withdrawn/i.test(await text(parent.page)));
 
   // ── P3: a declaration, from the fixture, lands where the coach reads it ──
@@ -294,7 +296,7 @@ try {
      values ($1, '11111111-1111-1111-1111-111111111111', '2027-03-06 07:15+02', 'the Chapel car park')`, [DECL]).catch(() => {});
   ok("Matches opens", await nav(parent.page, /^Matches$/));
   await ptid(`fixture-row-${DECL}`).click({ timeout: 6000 }).catch(() => {});
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   ok("the fixture opens: where, when and the bus", /Verify Step4 XI/.test(await ptid("fixture-title").innerText().catch(() => ""))
      && /Leaves 07:15 · the Chapel car park/.test(await ptid("bus-card").innerText().catch(() => "")));
   ok("...his answer is not given yet", /No answer yet/.test(await ptid(`availability-state-${PILLAY}`).innerText().catch(() => "")));
@@ -302,7 +304,7 @@ try {
   await parent.page.selectOption(`[data-testid="availability-reason-${PILLAY}"]`, "travel").catch(() => {});
   await ptid(`availability-note-${PILLAY}`).fill("Away for a family wedding").catch(() => {});
   await ptid(`availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   ok("she tells the coach: unavailable, said by her", /Unavailable/.test(await ptid(`availability-state-${PILLAY}`).innerText().catch(() => ""))
      && /said by you/.test(await ptid(`availability-by-${PILLAY}`).innerText().catch(() => "")));
   const said = (await owner.query(
@@ -351,6 +353,7 @@ try {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await offline(ctx);
     const page = await ctx.newPage();
+    watchReads(page);
     const errs = []; page.on("pageerror", (e) => errs.push(e.message));
     await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
     await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
@@ -364,7 +367,7 @@ try {
     ok(`Home at phone width: nothing read under 12px (${f.small.length})`, f.small.length === 0, f.small.slice(0, 4).join(" · "));
     ok(`...nothing tapped under 44px (${f.tiny.length})`, f.tiny.length === 0, f.tiny.slice(0, 4).join(" · "));
     await page.locator('[data-testid="persona-signout"]').click({ timeout: 4000 }).catch(() => {});
-    await page.waitForTimeout(1200);
+    await afterReads(page, 1200);
     ok("...which signs her out", await page.locator('[data-testid="os-main"]').count() === 0);
     ok("no page errors on the phone", errs.length === 0, errs.join(" | "));
     await ctx.close();
@@ -928,7 +931,7 @@ try {
     await signIn(c.page, /Coach/);
     await c.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
     ok("the drills tab opens", await click(c.page, /^drills$/i, 4000));
-    await c.page.waitForTimeout(1200);
+    await afterReads(c.page, 1200);
     ok("the coach is offered a drill of his own", await click(c.page, /\+ Drill/, 4000));
     await c.page.waitForTimeout(600);
     const form = c.page.locator('[data-testid="add-drill"]');
@@ -936,7 +939,7 @@ try {
     await form.locator('input[type="text"]').first().fill("Screen-walk slip catching");
     await form.locator('input[type="number"]').first().fill("15");
     ok("he adds it", await click(c.page, /Add it/, 4000));
-    await c.page.waitForTimeout(1800);
+    await afterReads(c.page, 1800);
     ok("...and it is on the library, from the server", /Screen-walk slip catching/.test(await text(c.page)));
 
     await c.page.locator('[data-testid="nav-logistics"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
@@ -953,7 +956,7 @@ try {
     if (otherSide) {
       await sel.selectOption(otherSide);
       await click(c.page, /^Issue$/, 4000);
-      await c.page.waitForTimeout(1500);
+      await afterReads(c.page, 1500);
       ok("a boy on another side is refused, and the screen says so", /not_permitted|refused/i.test(await reg.innerText()));
     } else { ok("a boy on another side is refused, and the screen says so", true); }
     const ownSide = await sel.evaluate((el) => [...el.options].find((o) => /· 1XI/.test(o.text))?.value);
@@ -964,7 +967,7 @@ try {
     const held = await reg.innerText();
     ok("...and the register says who has it since when", /since \d{4}-\d{2}-\d{2}/.test(held));
     ok("he takes it back", await click(c.page, /Given back/, 4000));
-    await c.page.waitForTimeout(1800);
+    await afterReads(c.page, 1800);
     ok("...and it is not held any more", !/since \d{4}-\d{2}-\d{2}/.test(await reg.innerText()));
     ok("no console errors on either screen", c.errors.length === 0);
     ok("...and no scoping refusals", c.refusals.length === 0);
@@ -1001,7 +1004,7 @@ try {
     const email = `walk.enrol.${Date.now()}@example.invalid`;
     await c.page.locator('[role="dialog"] input[type="email"]').fill(email);
     ok("she enrols him", await click(c.page, /^Enrol$/, 4000));
-    await c.page.waitForTimeout(2200);
+    await afterReads(c.page, 2200);
 
     // The code is the deliverable: there is no email channel, so the office
     // reads it off the screen and hands it over.
@@ -1047,7 +1050,7 @@ try {
     ok("...and nothing was said as set", await head.page.locator('[data-testid="ceiling-done"]').count() === 0);
     await nums.nth(0).fill("7");
     ok("she sets it", await click(head.page, /Set the ceiling/, 4000));
-    await head.page.waitForTimeout(1800);
+    await afterReads(head.page, 1800);
     ok("...and the screen reports the school's own numbers back", /7 per spell, 18 per day/.test(await card.innerText()));
     ok("no console errors", head.errors.length === 0);
     await head.ctx.close();
@@ -1170,7 +1173,7 @@ try {
     ok("the checklist marks every requirement done once the form is complete", checkMarks === 3);
 
     ok("he arranges it", await click(c.page, /Arrange Fixture/, 4000));
-    await c.page.waitForTimeout(1500);
+    await afterReads(c.page, 1500);
     ok("the modal closes on success", await c.page.locator('[data-testid="fixture-preview"]').count() === 0);
 
     // Not the ladder — that is scoped to a competition this fixture was never
@@ -1513,7 +1516,7 @@ try {
     // every other screen uses — not just the modal closing.
     await modal.locator("select").nth(0).selectOption("");         // clear the clashing squad no
     await addBtn.click({ timeout: 4000 });
-    await c.page.waitForTimeout(1200);
+    await afterReads(c.page, 1200);
     ok("saving closes the modal", await modal.count() === 0);
     const tok = await (await fetch(`${API}/api/auth/dev-login`, {
       method: "POST", headers: { "content-type": "application/json" },
@@ -1559,7 +1562,7 @@ try {
     await s.page.locator('input[type="email"]').first().fill("n.zulu@example.invalid");
     await click(s.page, /Continue/, 4000);                                   // profile
     await click(s.page, /Enter SCRBRD/, 4000);                               // tour → request
-    await s.page.waitForTimeout(1500);
+    await afterReads(s.page, 1500);
     ok("the flow ends in a request, not a role", await s.page.locator('[data-testid="request-sent"]').count() === 1);
     ok("...and says so in words", /Hilton College has your request/.test(await text(s.page)));
     await click(s.page, /Back to sign in/, 4000); await s.page.waitForTimeout(500);
@@ -1623,7 +1626,7 @@ try {
     ok("no console errors after typing a child's name", s.errors.length === 0, s.errors.join(" | "));
     await click(s.page, /Continue/, 4000);                                   // parent_link
     await click(s.page, /Enter SCRBRD/, 4000);                               // tour → request
-    await s.page.waitForTimeout(1500);
+    await afterReads(s.page, 1500);
     ok("the flow still ends in a request", await s.page.locator('[data-testid="request-sent"]').count() === 1);
     await s.ctx.close();
 
@@ -1665,14 +1668,14 @@ try {
     await s.page.locator('input[type="email"]').first().fill("f.ailer@example.invalid");
     await click(s.page, /Continue/, 4000);
     await click(s.page, /Enter SCRBRD/, 4000);
-    await s.page.waitForTimeout(1200);
+    await afterReads(s.page, 1200);
     ok("the refusal is named on the tour screen, not left silent",
        await s.page.locator('[data-testid="onboard-submit-error"]').isVisible());
     ok("...and the flow has not moved on to the request-sent screen",
        await s.page.locator('[data-testid="request-sent"]').count() === 0);
     ok("the button works again — this was not a dead end",
        await click(s.page, /Enter SCRBRD/, 4000));
-    await s.page.waitForTimeout(1200);
+    await afterReads(s.page, 1200);
     ok("the retry actually reaches the server this time",
        await s.page.locator('[data-testid="request-sent"]').count() === 1);
     await s.ctx.close();
@@ -1776,6 +1779,7 @@ try {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await offline(ctx);
     const page = await ctx.newPage();
+    watchReads(page);
     const errors = []; page.on("pageerror", (e) => { errors.push(e.message); });
     await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
     await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
@@ -1916,6 +1920,7 @@ try {
       const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       await offline(ctx);
       const page = await ctx.newPage();
+      watchReads(page);
       const errors = []; page.on("pageerror", (e) => { errors.push(e.message); });
       await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
       await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
@@ -1963,7 +1968,7 @@ try {
     ok("...next to who is signed in", /Director of Sport/i.test(foot));
 
     await tid("sidebar-signout").click({ timeout: 4000 });
-    await c.page.waitForTimeout(1200);
+    await afterReads(c.page, 1200);
 
     // The login screen (SCRBRD-142: the app's own landing page is gone; the
     // public home page is at /), not a blank shell and not the dashboard.
@@ -1973,7 +1978,7 @@ try {
        (await c.page.locator("#login-email").count()) > 0);
 
     await c.page.reload({ waitUntil: "networkidle" });
-    await c.page.waitForTimeout(1500);
+    await afterReads(c.page, 1500);
     ok("...and a reload does not put the shell back",
        (await c.page.locator('[data-testid="os-main"]').count()) === 0);
 
@@ -2060,14 +2065,14 @@ try {
     const d = await open();
     await signIn(d.page, /Director of Sport/);
     await d.page.locator('[data-testid="nav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
-    await d.page.waitForTimeout(1200);
+    await afterReads(d.page, 1200);
     ok("the director of sport is offered Schedule Match", (await d.page.locator("button", { hasText: /Schedule Match/ }).count()) === 1);
     ok("no console errors (director)", d.errors.length === 0, d.errors.join(" | "));
     await d.ctx.close();
     const c = await open();
     await signIn(c.page, /Head Coach/);
     await c.page.locator('[data-testid="nav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
-    await c.page.waitForTimeout(1200);
+    await afterReads(c.page, 1200);
     ok("a coach, who holds no fixture.create, is not", (await c.page.locator("button", { hasText: /Schedule Match/ }).count()) === 0);
 
     // ── SCRBRD-037. The duty roster, and the empty case especially ──
@@ -2105,7 +2110,7 @@ try {
     const d = await open();
     await signIn(d.page, /Director of Sport/);
     await d.page.locator('[data-testid="nav-officials"]').first().click({ timeout: 6000 }).catch(() => {});
-    await d.page.waitForTimeout(1500);
+    await afterReads(d.page, 1500);
     ok("a director of sport is not offered the register", (await d.page.locator('[data-testid="add-official"]').count()) === 0);
     await d.ctx.close();
 
@@ -2120,7 +2125,7 @@ try {
     await l.page.locator('[data-testid="official-name"]').fill(`Walk Umpire ${stamp}`, { timeout: 4000 });
     await l.page.locator('[data-testid="official-born"]').fill("1981-07-19", { timeout: 4000 });
     await l.page.locator('[data-testid="official-save"]').click({ timeout: 4000 });
-    await l.page.waitForTimeout(2000);
+    await afterReads(l.page, 2000);
     ok("the new official appears on the register", (await text(l.page)).includes(`Walk Umpire ${stamp}`));
     ok("no console errors (register)", l.errors.length === 0, l.errors.join(" | "));
     await l.ctx.close();
@@ -2162,7 +2167,7 @@ try {
     ok("...and the shell says it is a demonstration", (await c.page.locator('[data-testid="demo-banner"]').count()) === 1
        && /nothing is saved/i.test(await text(c.page)));
     await c.page.locator('[data-testid="nav-squad"]').first().click({ timeout: 6000 }).catch(() => {});
-    await c.page.waitForTimeout(800);
+    await afterReads(c.page, 800);
     ok("...on the next screen too", (await c.page.locator('[data-testid="demo-banner"]').count()) === 1);
     await c.page.locator('[data-testid="demo-banner-signin"]').click({ timeout: 4000 });
     await c.page.waitForTimeout(600);
@@ -2219,7 +2224,7 @@ try {
       // the one the sweep failed on, and a dialog that closes visually while
       // leaving a backdrop behind would still pass the line above.
       await tid("nav-rulebook").click({ timeout: 4000 }).catch(() => {});
-      await c.page.waitForTimeout(800);
+      await afterReads(c.page, 800);
       ok("...and the menu works again afterwards",
          await tid("os-main").getAttribute("data-page") === "rulebook",
          "a nav click that lands nowhere means something invisible is still over the page");
@@ -2271,7 +2276,7 @@ try {
     await tid("pitch-report-bounceRating").selectOption("7");
     await tid("pitch-report-notes").fill("Two-paced early on, truer after lunch.");
     await tid("pitch-report-submit").click({ timeout: 4000 });
-    await c.page.waitForTimeout(700);
+    await afterReads(c.page, 700);
     ok("saving it closes the form with a confirmation", await tid("pitch-report-saved").count() === 1);
     await c.page.locator('button', { hasText: /^Close$/ }).first().click({ timeout: 3000 });
     await c.page.waitForTimeout(400);
@@ -2427,7 +2432,7 @@ try {
          && await g.page.locator(`[data-testid="availability-row-${WHITFIELD}"]`).count() === 0
          && await g.page.locator(`[data-testid="availability-state-${WHITFIELD}"]`).count() === 0);
       await g.page.locator(`[data-testid="availability-again-${PILLAY}"]`).first().click({ timeout: 4000 }).catch(() => {});
-      await g.page.waitForTimeout(1500);
+      await afterReads(g.page, 1500);
       ok("one tap answers again: available", /^available$/i.test((await state(g.page, PILLAY)).trim())
          && await g.page.locator(`[data-testid="availability-was-${PILLAY}"]`).count() === 0);
       const row = (await owner.query(
@@ -2459,7 +2464,7 @@ try {
       const asking = await c.page.locator('[data-testid="availability-asking"]').first().innerText({ timeout: 3000 }).catch(() => "");
       ok("...and the panel counts one to answer again", /^1 to answer again$/i.test(asking.trim()));
       await c.page.locator(`[data-testid="availability-set-${WHITFIELD}-available"]`).first().click({ timeout: 4000 }).catch(() => {});
-      await c.page.waitForTimeout(1500);
+      await afterReads(c.page, 1500);
       ok("the coach records a new answer from there", /^available$/i.test((await state(c.page, WHITFIELD)).trim())
          && await c.page.locator('[data-testid="availability-asking"]').count() === 0);
       ok("no scoping refusals or console errors for the coach", c.refusals.length === 0 && c.errors.length === 0);
@@ -2492,7 +2497,7 @@ try {
       await c.page.waitForTimeout(500);
       await c.page.locator("#login-email").fill(email);
       await click(c.page, /^Sign In$/, 5000);
-      await c.page.waitForTimeout(2000);
+      await afterReads(c.page, 2000);
       ok("the U16B-only coach signs in", /Match Centre|Dashboard/i.test(await text(c.page)));
 
       ok("Squad opens", await nav(c.page, /Squad/));
@@ -2529,10 +2534,10 @@ try {
          && await sq("squad-card-" + KD).count() === 1);
       ok("...and the school's other side is one tap away", await sq("squad-team-1XI").count() === 1);
       await sq("squad-card-" + KD).click({ timeout: 4000 }).catch(() => {});
-      await s.page.waitForTimeout(800);
+      await afterReads(s.page, 800);
       ok("a boy opened on U16B shows his panel", /SEASON STATS/.test(await text(s.page)));
       await sq("squad-team-1XI").click({ timeout: 4000 }).catch(() => {});
-      await s.page.waitForTimeout(800);
+      await afterReads(s.page, 800);
       ok("changing side to 1XI clears the open boy, and the 1XI roster shows",
          !/SEASON STATS/.test(await text(s.page)) && await sq("squad-card-" + KD).count() === 0
          && await s.page.locator('[data-testid^="squad-card-"]').count() >= 1);
@@ -2653,12 +2658,12 @@ try {
 
       // ── Declaring at the door drops the row ──
       await at(`todo-row-${T}`).click({ timeout: 4000 }).catch(() => {});
-      await A.page.waitForTimeout(1200);
+      await afterReads(A.page, 1200);
       ok("the row's door opens the fixture, where she answers today", /Verify GA-I20 XI/.test(await at("fixture-title").innerText().catch(() => ""))
          && await at(`availability-set-${PILLAY}-available`).count() === 1);
       await at(`availability-set-${PILLAY}-available`).click({ timeout: 4000 }).catch(() => {});
       await at(`availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-      await A.page.waitForTimeout(1500);
+      await afterReads(A.page, 1500);
       ok("she declares him available", /^available$/i.test((await at(`availability-state-${PILLAY}`).innerText().catch(() => "")).trim())
          && (await owner.query(`select status from match_availability where match_id = $1 and player_id = $2`, [T, PILLAY])).rows[0]?.status === "available");
       await at("family-back").click({ timeout: 4000 }).catch(() => {});
@@ -2804,7 +2809,7 @@ try {
          && !/\d{3} \d{3} \d{4}|\+27/.test(await todo(P.page).innerText()), [r9, r9Row]);
       ok("...and the count it came from wrote nothing to the access log (no number was read)", await logRowsFor(PILLAY) === logged);
       await at(`todo-row-R9-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-      await P.page.waitForTimeout(1800);
+      await afterReads(P.page, 1800);
       ok("its door opens Family with Who to ring open on his card, saying nobody is on record", await at("family-file").count() === 1 && await at("who-to-ring").count() === 1
          && /No one is on record to ring/.test(await at("who-to-ring").innerText().catch(() => "")));
       ok("his card on Family carries his own count: '1 to do'", /1 to do/.test(await at(`family-todo-count-${PILLAY}`).innerText({ timeout: 6000 }).catch(() => "")));
@@ -2812,7 +2817,7 @@ try {
       await at("contact-name").fill("Verify Contact").catch(() => {});
       await at("contact-phone").fill("082 555 0199").catch(() => {});
       await at("contact-save").click({ timeout: 4000 }).catch(() => {});
-      await P.page.waitForTimeout(1500);
+      await afterReads(P.page, 1500);
       ok("she adds a number there", (await owner.query(`select count(*)::int n from emergency_contact where player_id = $1 and active`, [PILLAY])).rows[0].n === 1);
       await at(`family-todo-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
       await P.page.waitForTimeout(800);
@@ -2866,11 +2871,11 @@ try {
          && /you or R Pillay's other parent · by \w{3} \d\d:\d\d/.test(r3Row) && /Lifts/.test(r3Row), [r3, r3Row]);
       ok("...and the list says what a lift's by-when is", /For a lift, it is the meeting time/.test(await at("todo-clock").innerText().catch(() => "")));
       await at(`todo-row-R3-${asked.body?.seatId}`).click({ timeout: 4000 }).catch(() => {});
-      await P.page.waitForTimeout(1800);
+      await afterReads(P.page, 1800);
       ok("its door opens the fixture, where the lifts block asks her to confirm again", /Verify GA-I20 Lift XI/.test(await at("fixture-title").innerText().catch(() => ""))
          && await at(`lift-reconfirm-${OUT}-${PILLAY}`).count() === 1);
       await at(`lift-reconfirm-${OUT}-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-      await P.page.waitForTimeout(1500);
+      await afterReads(P.page, 1500);
       ok("she confirms again", (await owner.query(`select state, guardian_ok_version = (select version from lift_offer where id = $1) ok from lift_seat where offer_id = $1`, [OUT])).rows[0]?.ok === true);
       await at("family-back").click({ timeout: 4000 }).catch(() => {});
       const r3After = await settled(P.page);
@@ -2951,7 +2956,7 @@ try {
     ok("a Retry is offered, and it is at least 44px tall", !!box && box.height >= 44 && box.width >= 44, box);
     const before = asked.length;
     await retry.click({ timeout: 4000 }).catch(() => {});
-    await C.page.waitForTimeout(1200);
+    await afterReads(C.page, 1200);
     ok("a retry while it still fails asks again and still says so", asked.length > before && /Could not read skills assessments\./.test(await said()), asked.length - before);
     failing = false;
     await at("skills-read-state-retry").click({ timeout: 4000 }).catch(() => {});

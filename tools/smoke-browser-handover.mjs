@@ -30,6 +30,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4327);
 const API_PORT = port(8796);
@@ -77,6 +78,7 @@ async function openAs(label) {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -185,7 +187,7 @@ try {
   outgoing = await openAs(/Scorer/);
   ok("the scorer signs in", /Match Centre|Dashboard/i.test(await outgoing.text()));
   await outgoing.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await outgoing.page.waitForTimeout(1200);
+  await afterReads(outgoing.page, 1200);
   ok("opened the real fixture", await openMichaelhouse(outgoing.page));
   await outgoing.page.waitForTimeout(2000);
   await clearBlockers(outgoing.page);
@@ -219,7 +221,7 @@ try {
   ok("armed", armed?.state === "handover_pending", JSON.stringify(armed));
   await outgoing.page.locator('[data-testid="handover-cancel"]').click({ timeout: 5000 }).catch(() => {});
   const back = await waitFor((r) => r?.state === "active" && r?.epoch === armed?.epoch + 1);
-  await outgoing.page.waitForTimeout(800);
+  await afterReads(outgoing.page, 800);
   ok("the cancel took the token back, under the next generation", back?.state === "active" && back?.epoch === armed?.epoch + 1, JSON.stringify(back));
   const n0 = (await serverLog()).length;
   await clearBlockers(outgoing.page);
@@ -257,9 +259,9 @@ try {
   incoming = await openAs(/Director of Sport/);
   ok("the director of sport signs in", /Match Centre|Dashboard/i.test(await incoming.text()));
   await incoming.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await incoming.page.waitForTimeout(1200);
+  await afterReads(incoming.page, 1200);
   ok("opened the same fixture", await openMichaelhouse(incoming.page));
-  await incoming.page.waitForTimeout(2000);
+  await afterReads(incoming.page, 2000);
 
   ok("her own claim did not silently take the token", (await dbq(
     `select state from scoring_session where match_id = '77777777-0000-0000-0000-000000000002'`))[0]?.state === "handover_pending");
@@ -303,7 +305,7 @@ try {
 
   group("The outgoing device finds out");
   // Its own poll runs every 2.5s; give it two ticks.
-  await outgoing.page.waitForTimeout(6000);
+  await afterReads(outgoing.page, 6000);
   ok("it reports having handed over, not an error",
      /Handed over/i.test(await outgoing.text()));
   ok("...and no longer offers a handover button of its own — there is nothing left to hand over",
@@ -337,7 +339,7 @@ try {
   await incoming.page.waitForTimeout(400);
   const one = incoming.page.locator("button:not([disabled])", { hasText: /^1$/ }).first();
   const tapped = (await one.count()) > 0 && await one.click({ timeout: 2500 }).then(() => true, () => false);
-  await incoming.page.waitForTimeout(3000);
+  await afterReads(incoming.page, 3000);
   ok("the incoming scorer taps a ball", tapped);
   const s1 = await serverLog();
   const p1 = await padLog(incoming.page);
@@ -355,7 +357,7 @@ try {
   third = await openAs(/Head Coach/);
   ok("the coach signs in", /Match Centre|Dashboard/i.test(await third.text()));
   await third.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await third.page.waitForTimeout(1200);
+  await afterReads(third.page, 1200);
   ok("opens the same fixture", await openMichaelhouse(third.page));
   await third.page.waitForTimeout(3000);
   const s2 = await serverLog();

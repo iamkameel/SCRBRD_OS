@@ -45,6 +45,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5293);
 const API_PORT = port(8793);
@@ -103,6 +104,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -218,7 +220,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
 
   const device = await page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
@@ -311,7 +313,7 @@ try {
   await page.waitForTimeout(300);
   ok("recording again asks first", await tid("held-confirm").count() === 1);
   await confirmYes();
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("nothing is held", await tid("held-empty").count() === 1);
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
@@ -355,7 +357,7 @@ try {
   await confirmYes();
   ok("nothing is held", await tid("held-empty").count() === 1);
   await page.keyboard.press("Escape");
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   ok("the pill says Sent", /\bSent\b/.test(await text()));
 
   const s3 = await serverLog();

@@ -44,6 +44,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5341);
 const API_PORT = port(8841);
@@ -118,6 +119,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -306,7 +308,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(1200);
@@ -417,7 +419,7 @@ try {
   const first = parseBoard(await board());
   const firstLive = (await agree("first innings over", 0)).live;
   await tap("review-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("the break sheet says the chase opens on the credit",
      /Michaelhouse start their innings on 5 \(penalty runs\)/.test(await said("innings2-penalty-note")), await said("innings2-penalty-note"));
   const breakTarget = Number(((await page.locator('[role="dialog"]').first().innerText().catch(() => "")) || "").match(/need\s*\n?\s*(\d+)/i)?.[1]);

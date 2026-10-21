@@ -46,6 +46,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5631);
 const API_PORT = port(5632);
@@ -100,6 +101,7 @@ async function open({ width = 1280, height = 900 } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height }, ...(width < 500 ? { isMobile: true, hasTouch: true } : {}) });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error: ${m.text()}`); });
@@ -318,7 +320,7 @@ try {
   await tid(dirc.page, `squad-card-${BEKKER}`).click({ timeout: 6000 }).catch(() => {});
   await dirc.page.waitForTimeout(600);
   await tid(dirc.page, "player-edit-profile").click({ timeout: 4000 }).catch(() => {});
-  await dirc.page.waitForTimeout(1500);
+  await afterReads(dirc.page, 1500);
   ok("the director is on Edit Profile", await tid(dirc.page, "edit-profile").count() === 1);
   ok("...and is not offered Guardian links (she does not hold the capability)", await tid(dirc.page, "guardian-links").count() === 0 && !/Guardian links/.test(await inner(dirc.page, "edit-profile")));
   const coach = await open(); all.push(coach);
@@ -470,7 +472,7 @@ try {
   const dir2 = await open(); all.push(dir2);
   ok("the director of sport signs in", await signIn(dir2.page, "sarah@example.invalid"));
   ok("Logistics opens (director)", await go(dir2.page, "logistics"));
-  await dir2.page.waitForTimeout(800);
+  await afterReads(dir2.page, 800);
   ok("the director sees the transport page and is not offered Book a bus", await tid(dir2.page, "os-main").count() === 1 && /upcoming away trips/i.test(await inner(dir2.page, "os-main")) && await tid(dir2.page, "transport-book").count() === 0 && await tid(dir2.page, "transport-add-vehicle-open").count() === 0);
   const dirToken = await login("sarah@example.invalid", "device-solo-dir");
   const forcedVehicle = await call("/api/vehicles", { method: "POST", token: dirToken, body: { schoolId: HIL, registration: "SOLO FORCED", description: "x", kind: "minibus", capacity: 10 } });
@@ -500,7 +502,7 @@ try {
   ok("the coach signs in", await signIn(me.page, SELF));
   ok("Settings opens", await go(me.page, "settings"));
   await me.page.getByRole("tab", { name: /^Me/ }).click();
-  await me.page.waitForTimeout(800);
+  await afterReads(me.page, 800);
   ok("Sign out everywhere is on Me, beside Ways to sign in", await wait(me.page, "sign-out-everywhere") && await tid(me.page, "sign-ins").count() === 1);
   ok("it says what it does before it is pressed", /every phone, tablet and computer/.test(await inner(me.page, "sign-out-everywhere")));
   ok("the question has not been asked yet", await tid(me.page, "sign-out-everywhere-confirm").count() === 0);
@@ -525,7 +527,7 @@ try {
   // OK: this device follows the server.
   await tid(me.page, "sign-out-everywhere-yes").click();
   await me.page.waitForSelector("#login-email, [data-testid='login-email']", { timeout: 8000 }).catch(() => {});
-  await me.page.waitForTimeout(800);
+  await afterReads(me.page, 800);
   ok("once the server answers OK, this device is signed out: the sign-in screen is shown", await tid(me.page, "os-main").count() === 0 && (await me.page.locator("#login-email").count() > 0 || /Sign In|Log in|Continue with Google/i.test(await me.page.$eval("body", (e) => e.innerText))));
   const e1 = await epoch();
   ok("the database moved the epoch, for this person, by this person, and says why", e1.epoch === e0.epoch + 1 && e1.reason === "signed_out_everywhere" && e1.bumped_by === selfId, JSON.stringify(e1));

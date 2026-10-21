@@ -38,6 +38,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4345);
 const API_PORT = port(8845);
@@ -80,6 +81,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -141,7 +143,7 @@ try {
   ok("the director of sport signs in", await signIn(dos.page, /sarah@example\.invalid|Director/));
   ok("the Leagues screen opens", await nav(dos.page, /Leagues/));
   ok("the History tab is offered", await click(dos.page, /^History$/i, 4000));
-  await dos.page.waitForTimeout(1200);
+  await afterReads(dos.page, 1200);
   ok("the archive renders", await archive(dos.page).count() === 1);
 
   group("Every seeded school season is on the list, the current one marked");

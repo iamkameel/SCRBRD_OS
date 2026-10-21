@@ -36,6 +36,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4363);
 const API_PORT = port(8898);
@@ -85,6 +86,7 @@ async function open({ theme = "floodlit", width = 1280, height = 900 } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -217,7 +219,7 @@ try {
   ok("her school does not list: the line says so, that the fixture will not appear, and where to change it",
      /^Your school does not list its matches on the SCRBRD home page: this fixture will not appear there\. You can change that in Settings → School\.$/.test(await line(dos.page)), await line(dos.page));
   await tid(dos.page, "publish-home-toggle").click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("she publishes the home side", /published/.test(await tid(dos.page, "publish-home-state").innerText()) && !/not published/.test(await tid(dos.page, "publish-home-state").innerText()));
   ok("published is not listed: the public list does not carry it", !(await live()).fixtures.some((f) => f.id === today));
   ok("...and the line is still the does-not-list one", /does not list/.test(await line(dos.page)));
@@ -235,7 +237,7 @@ try {
   const f1 = await floors(dos.page, `listing-${HIL}`);
   ok("at 1280 wide: nothing under 12px, no control under 44px", kept(f1), why(f1));
   await sw.click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("she lists: the switch says listed, and the database holds it", await sw.getAttribute("aria-checked") === "true" && (await listed()) === true);
   const inkOf = (page) => page.$eval('[data-testid="listing-switch"]', (b) => ({ c: getComputedStyle(b).color, bg: getComputedStyle(b).backgroundColor })).catch(() => null);
   const onInk = await inkOf(dos.page);
@@ -250,17 +252,17 @@ try {
   ok("listed and published: the line says this fixture will appear there",
      await line(dos.page) === "Your school lists its matches on the SCRBRD home page: this fixture will appear there.", await line(dos.page));
   await tid(dos.page, "publish-home-toggle").click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("she withdraws the side: the public list drops it", await carries(today, false));
   ok("...and the line says it needs publishing", /will appear there once you publish it/.test(await line(dos.page)), await line(dos.page));
   await tid(dos.page, "publish-home-toggle").click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("she publishes again: it is back", await carries(today, true) && /this fixture will appear there\.$/.test(await line(dos.page)));
 
   ok("Settings → School again", await toSchool(dos.page));
   ok("the switch still says listed (read from the database, not remembered)", await tid(dos.page, "listing-switch").getAttribute("aria-checked") === "true");
   await tid(dos.page, "listing-switch").click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("she switches off: the database holds it", await tid(dos.page, "listing-switch").getAttribute("aria-checked") === "false" && (await listed()) === false);
   ok("...and the public list drops the fixture on the next read", await carries(today, false));
   ok("Match Centre → the panel: the line says the school does not list", await toPanel(dos.page, today) && /does not list/.test(await line(dos.page)));
@@ -281,7 +283,7 @@ try {
   ok("...keeping the floors", kept(f2), why(f2));
   const before = await listed();
   await tid(side.page, "listing-switch").click({ force: true, timeout: 2000 }).catch(() => {});
-  await side.page.waitForTimeout(800);
+  await afterReads(side.page, 800);
   ok("pressing it changes nothing", (await listed()) === before && await tid(side.page, "listing-switch").getAttribute("aria-checked") === "false");
   ok("no page error on his screen", side.errors.length === 0, side.errors.join(" | "));
 
@@ -336,7 +338,7 @@ try {
 
   await tid(office.page, "add-ground-name").fill("memorial   OVAL");
   await tid(office.page, "add-ground-save").click();
-  await office.page.waitForTimeout(1200);
+  await afterReads(office.page, 1200);
   ok("the same name again, in another case: refused in the promised words", (await tid(office.page, "add-ground-refused").innerText().catch(() => "")) === DUPLICATE,
      await tid(office.page, "add-ground-refused").innerText().catch(() => ""));
   ok("...and nothing was added", (await q(`select count(*)::int as n from ground where school_id = $1 and lower(name) = 'memorial oval'`, [HIL]))[0].n === 1);

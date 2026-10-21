@@ -37,6 +37,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4344);
 const API_PORT = port(8844);
@@ -92,6 +93,7 @@ async function open(apiBase = API) {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -207,7 +209,7 @@ try {
 
   await tid(plat.page, "support-reason").fill("fix");
   await tid(plat.page, "support-begin").click({ timeout: 6000 });
-  await plat.page.waitForTimeout(1200);
+  await afterReads(plat.page, 1200);
   ok("a reason nobody could act on is refused the same way",
      /at least ten characters/i.test(await tid(plat.page, "support-refused").innerText().catch(() => "")));
   ok("...and still nothing was written", (await sessionsInDb()).length === 0);

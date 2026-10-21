@@ -43,6 +43,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4390);
 const API_PORT = port(8990);
@@ -98,6 +99,7 @@ async function open({ width = 1280, height = 900, theme = "floodlit" } = {}) {
     ...(width < 500 ? { isMobile: true, hasTouch: true } : {}) });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], posts = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -259,7 +261,7 @@ try {
   await signIn(d.page, "u14coach@example.invalid");
   await go(d.page, "matches");
   await tid(d.page, `match-card-${M}`).click();
-  await d.page.waitForTimeout(800);
+  await afterReads(d.page, 800);
   ok("the fixture's Match Details has Pick the side", await tid(d.page, "pick-side-entry").count() === 1);
   await tid(d.page, "pick-side-entry").click();
   ok("it opens", await dialog(d.page));
@@ -292,7 +294,7 @@ try {
   ok("both boys on number 5 are named", /same batting number/.test(await inner(d.page, `pick-note-${boy["04"]}`)) && /same batting number/.test(await inner(d.page, `pick-note-${boy["05"]}`)));
   d.posts.length = 0;
   await tid(d.page, "pick-side-save").click();
-  await d.page.waitForTimeout(800);
+  await afterReads(d.page, 800);
   ok("the foot says it in the route's words", /Two boys have the same batting number\. Each number goes to one boy\. Nothing was saved\./.test(await inner(d.page, "pick-side-said")));
   ok("no request reached the squad route", d.posts.length === 0, d.posts.join(" | "));
   ok("the database is unchanged", JSON.stringify(await side(M)) === JSON.stringify(before));

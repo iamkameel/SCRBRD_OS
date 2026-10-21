@@ -44,6 +44,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4330);
 const API_PORT = port(8799);
@@ -86,6 +87,7 @@ const dbq = async (text, params) => (await pool.query(text, params)).rows;
 
 const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
+watchReads(page);
 await offline(page.context());
 
 const errors = [];
@@ -204,7 +206,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
 
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });

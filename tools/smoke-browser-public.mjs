@@ -40,6 +40,7 @@ import { buildPublicFixture, EXPECTED, HIL } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
 import { ball, batters, bowler, inningsStart, BALL_TYPE } from "@scrbrd/scoring";
 import { RATE } from "../services/api/public/public-api.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const PORT = port(8848);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -84,6 +85,7 @@ async function visit(/** @type {string} */ path, { width = 1280, init = null } =
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.84.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   if (init) await page.addInitScript(init);
   const errors = [];
   const requests = [];
@@ -263,7 +265,7 @@ try {
     ok("a fresh load says nothing", (await said()) === "");
     ok("the chase's board has no \"At this rate\": it shows the required rate", /Need \d+ off \d+/.test(await tid(lv.page, "mc-board-sub").innerText().catch(() => ""))
        && !/At this rate/.test(await tid(lv.page, "mc-board-sub").innerText().catch(() => "")));
-    await lv.page.waitForTimeout(6500);
+    await afterReads(lv.page, 6500);
     ok("...and a re-read or two with nothing new says nothing either", (await said()) === "", await said());
 
     await put(1, ball({ type: BALL_TYPE.RUN, value: 4 }));
@@ -347,6 +349,7 @@ try {
     const codes = await Promise.all(Array.from({ length: RATE.burst + 10 }, hit));
     const answered = codes.filter((c) => c === 200).length;
     const page = await ctx.newPage();
+    watchReads(page);
     await page.setExtraHTTPHeaders({ "x-forwarded-for": "10.84.9.9" });
     // The page itself, opened with the bucket empty: drained again first,
     // each try, so a token that refilled since does not let it through.

@@ -33,6 +33,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5297);
 const API_PORT = port(8797);
@@ -88,6 +89,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -158,7 +160,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   ok("neither fixture has a toss or a ball yet",
      (await dbq(`select 1 from match_toss where match_id = any($1)`, [[MICHAELHOUSE, KEARSNEY]])).length === 0
@@ -213,7 +215,7 @@ try {
   const confirmText = (await tid("toss-confirm").first().innerText()).trim();
   ok("the answer is read back before it is used: Kearsney College to bat", /Kearsney College to bat/i.test(confirmText), confirmText);
   await tap("toss-confirm");
-  await page.waitForTimeout(3000);
+  await afterReads(page, 3000);
   ok("the sheet is gone", await tid("toss-sheet").count() === 0);
 
   const pad2 = await padOpen(KEARSNEY);

@@ -26,6 +26,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5295);
 const API_PORT = port(8795);
@@ -68,6 +69,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -143,7 +145,7 @@ try {
   ok("the preview names the opponent as typed", preview.includes(OPPONENT), preview);
 
   ok("he arranges it", await click(dos.page, /Arrange Fixture/, 4000));
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("the form closes on success", await dos.page.locator('[data-testid="fixture-preview"]').count() === 0);
 
   group("The fixture just arranged is really back on Match Centre's own list");

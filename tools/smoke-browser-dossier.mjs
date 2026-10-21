@@ -46,6 +46,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4329);
 const API_PORT = port(8798);
@@ -132,6 +133,7 @@ async function open() {
   const ctx = await browser.newContext({ viewport: { width: 1420, height: 900 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const refusals = [], errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
@@ -498,7 +500,7 @@ try {
     const any = await parent.page.locator('[data-testid^="dossier-open-"]').count();
     ok("no fixture offers them a dossier button", any === 0, `${any} buttons`);
     await parent.page.locator('[data-testid^="fixture-row-"]').first().click({ timeout: 4000 }).catch(() => {});
-    await parent.page.waitForTimeout(1200);
+    await afterReads(parent.page, 1200);
     ok("...nor does a fixture's own screen", await parent.page.locator('[data-testid="fixture-detail"]').count() === 1
        && await parent.page.locator('[data-testid^="dossier-open-"]').count() === 0);
     await parent.ctx.close();

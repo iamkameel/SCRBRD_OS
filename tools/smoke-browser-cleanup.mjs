@@ -35,6 +35,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5481);
 const API_PORT = port(5482);
@@ -79,6 +80,7 @@ async function open() {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -280,7 +282,7 @@ try {
   ok("...and the screen says so, from the server's re-read", /marked doubtful/.test(await sa.innerText())
      && /doubtful/i.test(await tid(dir.page, "set-availability-state").innerText()));
   await tid(dir.page, "set-availability-available").click();
-  await dir.page.waitForTimeout(1800);
+  await afterReads(dir.page, 1800);
   ok("a second answer replaces the first",
      (await q(`select status from match_availability where match_id = $1 and player_id = $2`, [m.id, PILLAY]))[0]?.status === "available");
   const af = await floors(dir.page, "set-availability");
@@ -350,7 +352,7 @@ try {
   // The sample registry may stay in a demonstration.
   await tid(demo.page, "topbar-search").click({ timeout: 6000 });
   await demo.page.fill('input[aria-label="Search, or ask Stats-Magic"]', "Kearsney");
-  await demo.page.waitForTimeout(800);
+  await afterReads(demo.page, 800);
   ok("search in a demonstration still has the sample schools", await tid(demo.page, "search-school").count() === 1);
   await demo.page.keyboard.press("Escape");
 

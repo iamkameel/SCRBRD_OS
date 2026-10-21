@@ -40,6 +40,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5351);
 const API_PORT = port(8851);
@@ -109,6 +110,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -241,7 +243,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(1200);
@@ -379,7 +381,7 @@ try {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await tid(`mc-open-${MATCH}`).first().click({ timeout: 5000 }).catch(() => {});
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   ok("the match opens", await has("match-view"));
   await tap("mc-tab-analytics").catch(() => {});
   await page.waitForTimeout(800);

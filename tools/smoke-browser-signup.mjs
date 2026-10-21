@@ -58,6 +58,7 @@ import { generateKeyPairSync, createSign } from "node:crypto";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { SIGNIN_NOTICE } from "../apps/web/src/lib/signinNotice.js";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4385);
 const API_PORT = port(8985);
@@ -133,6 +134,7 @@ async function open({ viewport = DESK, scheme = "light" } = {}) {
     return { idToken: h.next, email: JSON.parse(Buffer.from(h.next.split(".")[1], "base64url").toString()).email };
   });
   const page = await ctx.newPage();
+  watchReads(page);
   h.page = page;
   page.on("pageerror", (e) => h.errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) h.errors.push(m.text()); });
@@ -325,7 +327,7 @@ try {
 
     // Withdraw the Wesley one.
     await P.locator('[data-testid="request-withdraw"]').first().click();
-    await P.waitForTimeout(1200);
+    await afterReads(P, 1200);
     ok("one can be withdrawn", (await P.locator('[data-testid="request-withdrawn"]').count()) === 1 || (await P.locator('[data-testid="request-pending"]').count()) === 1);
 
     // A staff request she keeps: coach at Hilton.
@@ -377,7 +379,7 @@ try {
     ok("...not the no-school screen", (await tid(h.page, "pending-requests").count()) === 0);
     ok("Settings → Me opens", await settingsTab(h.page, "me"));
     await h.page.waitForSelector('[data-testid="sign-ins"]', { timeout: 6000 }).catch(() => {});
-    await h.page.waitForTimeout(800);
+    await afterReads(h.page, 800);
     ok("Me carries Ways to sign in, with her Google account and no uid", (await tid(h.page, "sign-in-live").count()) === 1 && (await tid(h.page, "sign-in-email").first().innerText()) === NEW_EMAIL && !(await tid(h.page, "sign-ins").innerText()).includes(NEW_UID));
     ok("...and the signed paragraph, word for word", sentence(await tid(h.page, "sign-ins-notice").innerText()).includes(sentence(SIGNIN_NOTICE)));
 
@@ -399,7 +401,7 @@ try {
     h.next = idToken(ALT_UID, ALT_EMAIL);
     await tid(h.page, "sign-in-add").click();
     await h.page.waitForSelector('[data-testid="sign-ins-done"]', { timeout: 6000 }).catch(() => {});
-    await h.page.waitForTimeout(800);
+    await afterReads(h.page, 800);
     ok("a fresh second Google account is added", /Added/.test(await tid(h.page, "sign-ins-done").innerText().catch(() => "")) && (await tid(h.page, "sign-in-live").count()) === 2, await text(h.page).then((t) => t.slice(0, 100)));
     const fl = await floors(h.page, '[data-testid="sign-ins"]');
     ok("Ways to sign in: nothing under 12px, nothing under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].join(" | "));
@@ -463,7 +465,7 @@ try {
 
     await parentClaim.locator('[data-testid="claim-confirm"]').click();
     await o.page.waitForSelector('[data-testid="claims-done"]', { timeout: 6000 }).catch(() => {});
-    await o.page.waitForTimeout(800);
+    await afterReads(o.page, 800);
     ok("one tap confirms it, said in words", /Confirmed/.test(await tid(o.page, "claims-done").innerText().catch(() => "")));
     ok("...and it leaves the list", (await o.page.locator('[data-testid="claim"]', { hasText: "parent@example.invalid" }).count()) === 0);
 
@@ -582,7 +584,7 @@ try {
     await P.waitForSelector('[data-testid="register-withdrawn"]', { timeout: 6000 }).catch(() => {});
     ok("withdrawn: said in words, and gone from the open list", /Withdrawn: Walk Ended is off the register\./.test(await tid(P, "register-withdrawn").innerText().catch(() => "")) && (await rowOf(ENDED).count()) === 0);
     await tid(P, "register-filter-withdrawn").click();
-    await P.waitForTimeout(700);
+    await afterReads(P, 700);
     ok("...and on the Withdrawn list, 'Withdrawn <day> by <name>'", /Withdrawn \d{1,2} [A-Z][a-z]{2} by /.test(await rowOf(ENDED).innerText().catch(() => "")), await rowOf(ENDED).innerText().catch(() => ""));
     await tid(P, "register-filter-open").click();
 
@@ -629,7 +631,7 @@ try {
     const fj = await floors(L.page, '[data-testid="join-school"]');
     ok("the claimed block: nothing under 12px, nothing under 44px", fj.small.length === 0 && fj.tiny.length === 0, [...fj.small, ...fj.tiny].join(" | "));
     await tid(L.page, "join-claimed-continue").click();
-    await L.page.waitForTimeout(2200);
+    await afterReads(L.page, 2200);
     ok("Open the school enters the school, with no second sign-in", await inShell(L.page), (await text(L.page)).slice(0, 120));
     ok("no page errors on the join screen", L.errors.length === 0, L.errors.join(" | "));
     await L.ctx.close();
@@ -639,12 +641,12 @@ try {
     await tid(P, "mgmt-tab-users").click().catch(() => {});
     await P.waitForSelector('[data-testid="people-search"]', { timeout: 6000 }).catch(() => {});
     await tid(P, "people-search").fill(LISTED);
-    await P.waitForTimeout(1500);
+    await afterReads(P, 1500);
     ok("People says where the appointments came from, beside End role", (await P.locator('[data-testid="role-origin"]', { hasText: "From the staff register, listed" }).count()) >= 2 && (await P.locator('[data-testid="end-role"]').count()) >= 2, (await P.locator('[data-testid="role-origin"]').count()));
     ok("Settings → Import opens again", await settingsTab(P, "import"));
     await P.waitForSelector('[data-testid="register-panel"]', { timeout: 6000 }).catch(() => {});
     await tid(P, "register-filter-claimed").click();
-    await P.waitForTimeout(800);
+    await afterReads(P, 800);
     ok("the Claimed list says 'Joined <day>'", /Joined \d{1,2} [A-Z][a-z]{2}/.test(await rowOf(LISTED).first().innerText().catch(() => "")), await rowOf(LISTED).first().innerText().catch(() => ""));
 
     // ── Somebody the office did not list ──
@@ -677,7 +679,7 @@ try {
     await T.ctx.close();
     await tid(P, "register-filter-open").click();
     await tid(P, "register-filter-claimed").click();
-    await P.waitForTimeout(800);
+    await afterReads(P, 800);
     ok("the office's Claimed list says why it was only requested", /Requested instead — the uploader may no longer grant Scorer here/.test(await rowOf(LATE).first().innerText().catch(() => "")), await rowOf(LATE).first().innerText().catch(() => ""));
 
     // ── A pause, and the DSO ──
@@ -718,7 +720,7 @@ try {
     const notice = D.page.locator('[data-testid="notice-row"]', { hasText: "An account has been paused from asking" }).first();
     ok("the DSO is told of the pause", (await notice.count()) === 1);
     await notice.locator('[data-testid="notice-open"]').click();
-    await D.page.waitForTimeout(1200);
+    await afterReads(D.page, 1200);
     ok("the notice names nobody", !/Walk|@/.test(await notice.innerText()), await notice.innerText());
     ok("...and carries 'Lift the pause'", (await notice.locator('[data-testid="pause-lift-open"]').count()) === 1);
     await notice.locator('[data-testid="pause-lift-open"]').click();
@@ -749,7 +751,7 @@ try {
     await P.waitForSelector('[data-testid="register-cleared"]', { timeout: 6000 }).catch(() => {});
     ok("cleared, in words", /^Cleared \d+ rows?\.$/.test(sentence(await tid(P, "register-cleared").innerText().catch(() => ""))), await tid(P, "register-cleared").innerText().catch(() => ""));
     await tid(P, "register-filter-withdrawn").click();
-    await P.waitForTimeout(800);
+    await afterReads(P, 800);
     ok("...and the withdrawn row no longer carries a name or an address", (await rowOf(ENDED).count()) === 0 && /Name cleared/.test(await tid(P, "register-list").innerText().catch(() => "")));
 
     ok("no page errors on the office's screens", o.errors.length === 0, o.errors.join(" | "));

@@ -37,6 +37,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5305);
 const API_PORT = port(8805);
@@ -101,6 +102,7 @@ async function open() {
   const ctx = await browser.newContext({ viewport: { width: 360, height: 740 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -310,7 +312,7 @@ try {
   // From the phone, with the buttons on his card.
   const driver2 = await open();
   ok("the driver signs in again", await signIn(driver2.page, "driver@example.invalid"));
-  await driver2.page.waitForTimeout(1000);
+  await afterReads(driver2.page, 1000);
   ok("he taps \"We've left\"", await click(driver2.page, /We've left/, 4000));
   await driver2.page.waitForTimeout(1500);
   const [afterDepart] = await dbq(`select departed_at, arrived_at from trip where id = $1`, [tripId]);
@@ -350,7 +352,7 @@ try {
   await gk.page.locator('[data-testid="gk-pitch-favours"]').selectOption("seam");
   await gk.page.locator('[data-testid="gk-pitch-notes"]').fill("Browser walk: dried out since Tuesday.");
   ok("she files it", await click(gk.page, /^File pitch report$/, 4000));
-  await gk.page.waitForTimeout(1500);
+  await afterReads(gk.page, 1500);
   ok("...and the screen confirms it", await tid(gk.page, "gk-pitch-saved").count() === 1);
   const [filed] = await dbq(`select surface, favours, notes from match_pitch_report where match_id = $1`, [matchId]);
   ok("...and it is really in the database, from this phone and nobody else's",

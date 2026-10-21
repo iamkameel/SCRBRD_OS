@@ -51,6 +51,7 @@ import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { fixConditions } from "./fixture-captain.mjs";
 import { NEVER_ON_THE_COCKPIT } from "../apps/web/src/lib/cockpitNever.js";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4396);
 const API_PORT = port(8996);
@@ -114,6 +115,7 @@ async function open({ viewport = DESK, scheme = "light", reduced = false } = {})
     ...(viewport.width < 500 ? { isMobile: true, hasTouch: true } : {}) });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], refusals = [], asked = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -345,16 +347,16 @@ try {
   ok("the side row opens THAT fixture's Coach tab (A, Kearsney)", await tid(d.page, "mc-coach").count() === 1 && /QA Kearsney XI/.test(mv) && !/QA Michaelhouse/.test(mv), mv.slice(0, 200));
   await queue(d.page);
   await tid(d.page, `queue-open-${C}:S8:scorer`).click({ timeout: 4000 }).catch(async () => { await d.page.locator(`[data-testid="queue-group"][data-match="${C}"] [data-rule="O4"] button`).first().click({ timeout: 4000 }); });
-  await d.page.waitForTimeout(1500);
+  await afterReads(d.page, 1500);
   ok("the duties row opens THAT fixture's duties: the Match Centre's details for C, with its duty roster", await tid(d.page, "os-main").getAttribute("data-page") === "matches"
      && await tid(d.page, "match-details").getAttribute("data-match") === C && await tid(d.page, "duty-roster").count() === 1);
   await queue(d.page);
   await d.page.locator(`[data-testid="queue-group"][data-match="${A}"] [data-rule="S1"] button`).first().click({ timeout: 4000 });
-  await d.page.waitForTimeout(1200);
+  await afterReads(d.page, 1200);
   ok("the bus row opens Logistics", await tid(d.page, "os-main").getAttribute("data-page") === "logistics");
   await queue(d.page);
   await d.page.locator(`[data-testid="queue-group"][data-match="${OFF}"] [data-rule="O5"] button`).first().click({ timeout: 4000 });
-  await d.page.waitForTimeout(1500);
+  await afterReads(d.page, 1500);
   ok("the called-off row opens the fixture", await tid(d.page, "match-details").getAttribute("data-match") === OFF);
 
   // ══ 3 · The bus ═════════════════════════════════════════════════════════
@@ -381,7 +383,7 @@ try {
   ok("the other fixtures are untouched: they read everything", (await group_(d.page, A).locator('[data-testid="queue-unread"]').count()) === 0 && (await group_(d.page, B).locator('[data-testid="queue-unread"]').count()) === 0);
   await d.page.unroute(kill);
   await tid(d.page, "queue-retry").first().click({ timeout: 4000 });
-  await d.page.waitForTimeout(2500);
+  await afterReads(d.page, 2500);
   ok("'Try again' reads it again: the rows are back and the failure is gone", (await rowsOf(d.page, C)).filter((r) => r.rule === "O4").length === 2 && (await group_(d.page, C).locator('[data-testid="queue-unread"]').count()) === 0 && nums(await headerText(d.page))?.failed === 0, await headerText(d.page));
 
   // ══ 5 · Later ═══════════════════════════════════════════════════════════
@@ -391,7 +393,7 @@ try {
   const tog = tid(d.page, "queue-later-toggle");
   ok(`'Later · ${total} fixtures', closed`, new RegExp(`^Later · ${total} fixtures`).test((await tog.innerText()).trim()) && await tog.getAttribute("aria-expanded") === "false", await tog.innerText());
   const before = d.asked.length;
-  await d.page.waitForTimeout(800);
+  await afterReads(d.page, 800);
   ok("a folded fixture makes none of its reads", !d.asked.slice(0).some((u) => LATER.some((id) => u.includes(id)) || u.includes(KEARSNEY)));
   const groupsBefore = await d.page.locator('[data-testid="queue-group"]').count();
   await tog.click({ timeout: 4000 });
@@ -445,11 +447,11 @@ try {
   const fo = await floors(o.page);
   ok(`the office's screen: nothing under 12px (${fo.small.length}), nothing tapped under 44px (${fo.tiny.length})`, fo.small.length === 0 && fo.tiny.length === 0, [...fo.small, ...fo.tiny].slice(0, 4).join(" · "));
   await tid(o.page, `queue-open-office:${HIL}:O1`).click({ timeout: 4000 });
-  await o.page.waitForTimeout(1500);
+  await afterReads(o.page, 1500);
   ok("O1 opens Management, with its requests to answer", await tid(o.page, "os-main").getAttribute("data-page") === "management" && await tid(o.page, "requests-panel").count() === 1);
   await queue(o.page);
   await tid(o.page, `queue-open-office:${HIL}:O2`).click({ timeout: 4000 });
-  await o.page.waitForTimeout(1500);
+  await afterReads(o.page, 1500);
   ok("O2 opens Settings, People, with the claim to confirm", await tid(o.page, "os-main").getAttribute("data-page") === "settings" && await tid(o.page, "claim").count() >= 1);
   ok("no page errors on the office's screens", o.errors.length === 0 && o.refusals.length === 0, [...o.errors, ...o.refusals].join(" | "));
   await o.ctx.close();

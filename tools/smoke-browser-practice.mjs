@@ -44,6 +44,7 @@ import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5395);
 const API_PORT = port(8915);
@@ -115,6 +116,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 const dialogs = [];
 const sockets = [];
@@ -311,7 +313,7 @@ try {
     && (await tid("practice-overs-20").getAttribute("aria-checked")) === "true", (await text()).slice(0, 300));
   ok("...the weather with it: Overcast, and the hint's numbers, by Google, as captured", (await tid("practice-weather-overcast").getAttribute("aria-pressed")) === "true"
     && /17°C/.test(await tid("practice-weather-hint").innerText().catch(() => "")), (await text()).slice(0, 300));
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("...and the weather was not asked for again", hintReqs().length === askedBeforeReload, `${hintReqs().length} ${askedBeforeReload}`);
   ok("no sideways scroll at 390", await noSideways());
   await shot("01-match");
@@ -428,7 +430,7 @@ try {
   ok("no sideways scroll at 390", await noSideways());
   await shot("08-resume");
   await tap("practice-resume");
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   ok("Resume: the pad is back, labelled", (await has("pad-titlebar")) && (await labelShown()).startsWith(LABEL), await labelShown());
   await ensureBasic();
   ok("...the same score, wickets and overs: 5 for 0, 0.3 overs", (await board()) === "5 for 0, 0.3 overs", await board());
@@ -523,7 +525,7 @@ try {
     db.close();
   });
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("after another reload the start screen still offers Resume for the match in progress", await has("practice-resume-card"));
   await tap("practice-list-open");
   ok("the list is labelled", (await labelShown()) === LABEL, await labelShown());
@@ -565,7 +567,7 @@ try {
   await tap("practice-back");
   ok("back on the start screen: nothing to resume", !(await has("practice-resume-card")) && (await has("start-practice")));
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   ok("a reload now returns to the shell, with no practice match offered", !(await has("practice-resume-card")));
 
   group("G. The whole walk");

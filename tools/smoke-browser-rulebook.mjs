@@ -30,6 +30,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4351);
 const API_PORT = port(8851);
@@ -75,6 +76,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -160,7 +162,7 @@ try {
 
   group("The load panel cites the clause beside a real seeded bowler's limit");
   ok("the Training screen opens", await nav(dos.page, "training"));
-  await dos.page.waitForTimeout(1000);
+  await afterReads(dos.page, 1000);
   ok("the load panel is drawn for the director of sport", await tid(dos.page, "load-panel").count() === 1);
   const row = await tid(dos.page, `load-row-${KHUMALO}`).innerText().catch(() => "");
   if (DEBUG) console.log("[debug] Khumalo row:\n" + row);

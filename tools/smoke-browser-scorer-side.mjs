@@ -61,6 +61,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5397);
 const API_PORT = port(8918);
@@ -116,6 +117,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -281,7 +283,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
 
   // ══ A ═════════════════════════════════════════════════════════════════
@@ -324,7 +326,7 @@ try {
   await page.waitForTimeout(700);
   await wicketSheet("bowled");
   await tap("wicket-confirm");
-  await page.waitForTimeout(900);
+  await afterReads(page, 900);
   ok("a wicket: the incoming batter's sheet offers the side", await page.locator('[data-testid="batter-choice"]').count() === 9,
      String(await page.locator('[data-testid="batter-choice"]').count()));
   ok("...and no unlisted player can be typed in", await page.locator('input[aria-label="Player name"]').count() === 0);

@@ -65,6 +65,7 @@ import { ATTACK, PLAY, captainLogs, fixConditions } from "./fixture-captain.mjs"
 import { writeEvents } from "./fixture-matchcentre.mjs";
 import { entryTable, LOAD_SENTENCE } from "../apps/web/src/lib/cockpit.js";
 import { NEVER_ON_THE_COCKPIT } from "../apps/web/src/lib/cockpitNever.js";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4380);
 const API_PORT = port(8980);
@@ -145,6 +146,7 @@ async function open({ viewport = DESK, scheme = "light", reduced = false } = {})
   if (SA_LATE) await ctx.clock.install({ time: browserNow() });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], refusals = [], scripts = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   // Which scripts the page fetched, seen from outside it. Not the page's own
@@ -602,7 +604,7 @@ try {
     await a.waitFor({ timeout: 6000 }).catch(() => {});
     const label = await a.innerText().catch(() => "");
     await a.click({ timeout: 4000 }).catch(() => {});
-    await c.page.waitForTimeout(2500);
+    await afterReads(c.page, 2500);
     ok(`${rule}'s link "${label}" ${what}`, label !== "" && await check() && (await tid(c.page, "signals").count()) === 0, `${label} → ${await c.page.$eval('[data-testid="os-main"]', (e) => e.getAttribute("data-page")).catch(() => "?")}`);
   };
   const pageIs = (k) => async () => (await c.page.$eval('[data-testid="os-main"]', (e) => e.getAttribute("data-page")).catch(() => "")) === k;
@@ -703,7 +705,7 @@ try {
   const cardCount = Number((await inner(d.page, "matchday-count")).match(/\d+/)?.[0]);
   ok("...the side in a line: ten named, five to chase, two restricted", /10 named/.test(await inner(d.page, "matchday-side")) && /2 restricted/.test(await inner(d.page, "matchday-side")), await inner(d.page, "matchday-side"));
   await tid(d.page, "matchday-signals").click({ timeout: 4000 });
-  await d.page.waitForTimeout(3500);
+  await afterReads(d.page, 3500);
   ok("one tap on the count opens the Coach tab of that fixture, with the drawer open", await tid(d.page, "mc-coach").count() === 1 && await tid(d.page, "signals").count() === 1);
   const drawerOpen = Number((await inner(d.page, "signals-count")).match(/\d+/)?.[0]);
   ok(`...and the card's count (${cardCount}) is the drawer's (${drawerOpen})`, cardCount === drawerOpen);
@@ -762,7 +764,7 @@ try {
     ok("five fixtures in the week: three cards, tonight first, in order", (await ids()).join() === [DAY, X[0], X[1]].join(), (await ids()).join());
     const tog = tid(f.page, "matchday-later-toggle");
     ok("...and the other two fold under 'Later · 2 fixtures', closed", /Later · 2 fixtures/.test(await tog.innerText()) && await tog.getAttribute("aria-expanded") === "false", await tog.innerText());
-    await f.page.waitForTimeout(1500);
+    await afterReads(f.page, 1500);
     ok("...a folded fixture makes none of its reads until it is opened", !asked.some((u) => u.includes(`matchId=${MICH}`) || u.includes(`matchId=${X[2]}`) || u.includes(`/matches/${MICH}/`)));
     const f7 = await floors(f.page, '[data-testid="day-matchday"], [data-testid="matchday-later"]');
     ok(`the fold: nothing under 12px (${f7.small.length}), nothing tapped under 44px (${f7.tiny.length})`, f7.small.length === 0 && f7.tiny.length === 0, [...f7.small, ...f7.tiny].slice(0, 4).join(" · "));
@@ -805,7 +807,7 @@ try {
     ok("back on To resolve, tonight's row opens its own fixture", await go(r.page, "readiness"));
     await r.page.waitForFunction(() => { const q = document.querySelector('[data-testid="queue"]'); return q && !/Reading/.test(q.innerText); }, null, { timeout: 30000 }).catch(() => {});
     await r.page.locator(`[data-testid="queue-group"][data-match="${DAY}"] [data-rule="O4"] button`).first().click({ timeout: 4000 });
-    await r.page.waitForTimeout(1500);
+    await afterReads(r.page, 1500);
     ok("...tonight's: its details, not Michaelhouse's", await tid(r.page, "match-details").getAttribute("data-match") === DAY && await tid(r.page, "match-details").count() === 1);
     const rosterText = (await inner(r.page, "duty-covered")).trim();
     ok(`...and its duty roster says what the row said ("${coveredText}")`, rosterText === coveredText, rosterText);

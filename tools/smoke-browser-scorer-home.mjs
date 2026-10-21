@@ -34,6 +34,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5313);
 const API_PORT = port(8816);
@@ -83,6 +84,7 @@ async function open() {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
     if (m.type() !== "error") return;
@@ -276,7 +278,7 @@ try {
 
   group("D. Reloaded with no signal: the Resume card is still there, and one tap reopens the pad");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("the home opens again", await home(), (await text()).slice(0, 200));
   ok("Resume on this device: the same fixture, the same count", await until(async () => Number(await attr(`resume-${MINE}`, "data-pending")) === queued, 8000),
      await attr(`resume-${MINE}`, "data-pending"));
@@ -303,7 +305,7 @@ try {
   let homeE = false;
   for (let i = 0; i < 30 && !homeE; i++) { homeE = (await tE("scorer-home").count()) === 1; if (!homeE) await E.page.waitForTimeout(300); }
   ok("he lands on the scorer's home", homeE, (await E.page.$eval("body", (el) => el.innerText).catch(() => "")).slice(0, 200));
-  await E.page.waitForTimeout(1500);
+  await afterReads(E.page, 1500);
   ok("Resume: nothing on this device", (await tE("scorer-resume-empty").count()) === 1);
   ok("Today and next: no fixture he may score, said as that",
      /No fixture you may score is arranged from today on/.test(await tE("scorer-fixtures").innerText().catch(() => "")));

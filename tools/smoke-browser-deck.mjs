@@ -45,6 +45,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4328);
 const API_PORT = port(8797);
@@ -88,6 +89,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1380, height: 860 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [], refusals = [], sceneRequests = [], requests = [];
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => {
@@ -140,7 +142,7 @@ try {
   const navBtn = page.locator("nav button", { hasText: /Pitch Deck/ }).first();
   ok("Pitch Deck is on the menu", await navBtn.count() === 1);
   await navBtn.click({ timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("the deck is on screen", await count('[data-testid="deck"]') === 1);
   ok("...and only now was the three.js chunk fetched, once", sceneRequests.length === 1, sceneRequests.join(", "));
 
@@ -153,10 +155,10 @@ try {
      initial === "webgl" ? (await count('[data-testid="deck-stage"] canvas')) === 1 && (await count('[data-testid="deck-stage"] svg')) === 0
                          : (await count('[data-testid="deck-stage"] svg')) === 1 && (await count('[data-testid="deck-stage"] canvas')) === 0);
   await page.locator('[data-testid="deck-3d-toggle"]').click();
-  await page.waitForTimeout(700);
+  await afterReads(page, 700);
   ok("3D off swaps in the flat wheel", (await stageMode()) === "fallback" && (await count('[data-testid="deck-stage"] svg')) === 1 && (await count('[data-testid="deck-stage"] canvas')) === 0);
   await page.locator('[data-testid="deck-3d-toggle"]').click();
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   ok("3D on restores what the browser had", (await stageMode()) === initial, await stageMode());
   ok("...without fetching the library again", sceneRequests.length === 1);
 

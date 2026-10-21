@@ -34,6 +34,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4342);
 const API_PORT = port(8842);
@@ -92,6 +93,7 @@ async function open(apiBase = API) {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], reads = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -184,13 +186,13 @@ try {
     const demo = tid(d.page, "login-demo");
     ok("the demonstration is offered with no server", await demo.count() === 1);
     await demo.click({ timeout: 6000 }).catch(() => {});
-    await d.page.waitForTimeout(2000);
+    await afterReads(d.page, 2000);
     ok("the demo's profiles screen opens", await nav(d.page, "profiles"));
     await d.page.locator('[data-testid^="roster-player-"]').first().click({ timeout: 6000 }).catch(() => {});
-    await d.page.waitForTimeout(1200);
+    await afterReads(d.page, 1200);
     ok("a demo school administrator is drawn the tab (the gate is by capability)", await conductTab(d.page).count() === 1);
     await conductTab(d.page).first().click({ timeout: 6000 }).catch(() => {});
-    await d.page.waitForTimeout(800);
+    await afterReads(d.page, 800);
     ok("...which says to sign in", await tid(d.page, "conduct-signed-out").count() === 1);
     ok("...and invents no matter", await d.page.locator('[data-testid^="conduct-matter-"]').count() === 0);
     ok("...and offers no form that could not be sent", await tid(d.page, "conduct-record-form").count() === 0);
@@ -215,7 +217,7 @@ try {
   const ACCOUNT = "Left the nets without permission and was rude to the groundsman.";
   await tid(dos.page, "conduct-record-body").fill(ACCOUNT);
   await tid(dos.page, "conduct-record-submit").click();
-  await dos.page.waitForTimeout(2000);
+  await afterReads(dos.page, 2000);
   ok("she is told it was recorded", await tid(dos.page, "conduct-record-done").count() === 1);
   const [filed] = await matters(`where player_id = '${P_SELF}'`);
   ok("Postgres has the matter, about him, with no fixture, as hers",
@@ -369,7 +371,7 @@ try {
     ok("...where his conduct record is behind a tap, unread", await tid(s.page, "me-conduct-show").count() === 1
        && !(await text(s.page)).includes(ACCOUNT) && s.reads.length === 0, s.reads.join(" "));
     await tid(s.page, "me-conduct-show").click({ timeout: 4000 }).catch(() => {});
-    await s.page.waitForTimeout(1500);
+    await afterReads(s.page, 1500);
     ok("he asks: the record is read once, and his own matter is there", s.reads.length === 1
        && (await tid(s.page, "me-conduct").innerText().catch(() => "")).includes(ACCOUNT), s.reads.join(" "));
     ok("he is not offered an incident report on a fixture", await tid(s.page, "incident-panel").count() === 0);

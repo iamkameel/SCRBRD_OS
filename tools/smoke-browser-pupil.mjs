@@ -62,6 +62,7 @@ import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
 import { capWords } from "@scrbrd/scoring";
 import { ATTACK, buildCaptainFixtures, fixConditions, PLAY } from "./fixture-captain.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4366);
 const API_PORT = port(8966);
@@ -125,6 +126,7 @@ async function open({ phone = true } = {}) {
   const ctx = await browser.newContext(phone ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : {});
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], refusals = [], reads = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -259,7 +261,7 @@ try {
 
   group("He answers for himself, from the fixture");
   await tid(s.page, "next-fixture-open").click({ timeout: 4000 }).catch(() => {});
-  await s.page.waitForTimeout(1500);
+  await afterReads(s.page, 1500);
   ok("the fixture opens", /Verify Pupil XI/.test(await inner(s.page, "fixture-title")));
   const sheet = await inner(s.page, "side-sheet");
   ok("the team sheet: his side, by name and place", /R Pillay/.test(sheet) && /James Whitfield/.test(sheet) && /T Bekker/.test(sheet));
@@ -272,7 +274,7 @@ try {
   await tid(s.page, `availability-set-${PILLAY}-doubtful`).click({ timeout: 4000 }).catch(() => {});
   await s.page.selectOption(`[data-testid="availability-reason-${PILLAY}"]`, "illness").catch(() => {});
   await tid(s.page, `availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
-  await s.page.waitForTimeout(1500);
+  await afterReads(s.page, 1500);
   ok("he says doubtful, and the screen says he said it",
      /Doubtful/.test(await inner(s.page, `availability-state-${PILLAY}`)) && /said by you/.test(await inner(s.page, `availability-by-${PILLAY}`)));
   const row = (await q(`select status, reason_kind, declared_by from match_availability where match_id = $1 and player_id = $2`, [NEXT, PILLAY]))[0];
@@ -303,10 +305,10 @@ try {
   ok("...and his average, figures first", /AVG 34/.test(await inner(s.page, "passport-board")));
   ok("the season tab carries his season", /34 runs/.test(await inner(s.page, "passport-panel-season")));
   await tid(s.page, "passport-tab-wheel").click({ timeout: 4000 }).catch(() => {});
-  await s.page.waitForTimeout(1500);
+  await afterReads(s.page, 1500);
   ok("the Wheel tab draws his own wheel (SCRBRD-102)", await tid(s.page, "career-wagon-wheel").count() === 1);
   await tid(s.page, "passport-tab-honours").click({ timeout: 4000 }).catch(() => {});
-  await s.page.waitForTimeout(1200);
+  await afterReads(s.page, 1200);
   ok("the Honours tab draws", await tid(s.page, "passport-milestones").count() === 1 && await tid(s.page, "passport-honours").count() === 1);
   const fp = await floors(s.page);
   ok(`Passport at phone width: nothing read under 12px (${fp.small.length})`, fp.small.length === 0, fp.small.slice(0, 4).join(" · "));
@@ -324,7 +326,7 @@ try {
   ok("...and the physio's notes, which are his to read", !!notes && (await inner(s.page, "injury-notes")).includes(notes.slice(0, 20)), notes);
   ok("his conduct record was not read before he asked for it (§9 Q6)", s.reads.length === 0, s.reads.join(" "));
   await tid(s.page, "me-conduct-show").click({ timeout: 4000 }).catch(() => {});
-  await s.page.waitForTimeout(1500);
+  await afterReads(s.page, 1500);
   ok("...and is, when he does", s.reads.length === 1 && await tid(s.page, "me-conduct").count() === 1);
   await tid(s.page, "me-record-show").click({ timeout: 4000 }).catch(() => {});
   await s.page.waitForTimeout(1500);
@@ -456,7 +458,7 @@ try {
   group("Captain: the card on Home, the section on the fixture, the tab in the match");
   const c = await open();
   ok("R Pillay signs in", await signInAs(c.page, "pillay@example.invalid"));
-  await c.page.waitForTimeout(1200);
+  await afterReads(c.page, 1200);
   ok("his next fixture is still first, ahead of the card",
      await c.page.$$eval('[data-testid="next-fixture"], [data-testid="captain-card"]', (els) => els.map((e) => e.getAttribute("data-testid")).join()) === "next-fixture,captain-card");
   const card = await inner(c.page, "captain-card");
@@ -640,6 +642,7 @@ try {
     const rm = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
     await offline(rm);
     const page = await rm.newPage();
+    watchReads(page);
     await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
     await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
     await signInAs(page, "pillay@example.invalid");
@@ -647,7 +650,7 @@ try {
     await tid(page, `live-row-${BAT}`).click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(2000);
     await tid(page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await afterReads(page, 1500);
     ok("the device asks for reduced motion", await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches));
     const anims = await page.evaluate(() => {
       const p = document.querySelector('[data-testid="mc-panel-captain"]');
@@ -691,10 +694,10 @@ try {
     await tid(co.page, `mc-open-${DAY}`).click({ timeout: 5000 }).catch(() => {});
     await co.page.waitForTimeout(1800);
     await tid(co.page, "mc-tab-coach").click({ timeout: 4000 }).catch(() => {});
-    await co.page.waitForTimeout(1500);
+    await afterReads(co.page, 1500);
     ok("the Coach tab offers 'Write the plan' and draws no block (none is out)", await tid(co.page, "plan-write").count() === 1 && await tid(co.page, "plan-block").count() === 0);
     await tid(co.page, "plan-write").click({ timeout: 4000 }).catch(() => {});
-    await co.page.waitForTimeout(1200);
+    await afterReads(co.page, 1200);
     ok("the composer opens, with the field focused", await tid(co.page, "plan-composer").count() === 1
        && await co.page.evaluate(() => document.activeElement?.id) === "plan-body");
     ok("...its title is made for him: the fixture, v Westville, with the day", /^The plan: v Westville.*, \w{3} \d{1,2} \w{3}$/.test((await inner(co.page, "plan-title")).trim()), await inner(co.page, "plan-title"));
@@ -736,7 +739,7 @@ try {
 
     // A clean plan goes.
     await co.page.locator("#plan-body").fill(PLAN_TEXT);
-    await co.page.waitForTimeout(700);
+    await afterReads(co.page, 700);
     ok("a clean plan: no refusal, Send is on", (await inner(co.page, "plan-refusal")).trim() === "" && !(await tid(co.page, "plan-send").isDisabled()));
     await tid(co.page, "plan-send").click({ timeout: 4000 }).catch(() => {});
     await co.page.waitForFunction(() => !!document.querySelector('[data-testid="plan-block"]'), null, { timeout: 8000 }).catch(() => {});
@@ -783,7 +786,7 @@ try {
     // ── The captain's card shows the line; his fixture shows the block above his section ──
     const cap = await open();
     ok("R Pillay (the captain) signs in", await signInAs(cap.page, "pillay@example.invalid"));
-    await cap.page.waitForTimeout(1500);
+    await afterReads(cap.page, 1500);
     // A pupil and a parent hold no user.read; the news read names a live plan's author to its readers all the same (db/103, SG-9).
     ok("his card says Plan from the coach, by name, and the day, after the count of the side", /^Plan from C Hendricks · \w{3}$/.test((await inner(cap.page, "captain-card-plan")).trim())
        && (await orderOf(cap.page)).join().includes("captain-card-side,captain-card-plan"), await inner(cap.page, "captain-card-plan"));
@@ -827,7 +830,7 @@ try {
     // ── A team-mate (no honour) reads the same block ──
     const tm = await open();
     ok("a team-mate signs in", await signInAs(tm.page, MATE_EMAIL));
-    await tm.page.waitForTimeout(1200);
+    await afterReads(tm.page, 1200);
     ok("...no card, so no line", await tid(tm.page, "captain-card").count() === 0 && await tid(tm.page, "captain-card-plan").count() === 0);
     await go(tm.page, "mymatches");
     await tid(tm.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
@@ -851,7 +854,7 @@ try {
     const paPlan = await inner(pa.page, "plan-block");
     ok("her fixture screen shows the same block, the coach by name", /^THE PLAN · C HENDRICKS · \w{3} \d\d:\d\d/i.test(paPlan) && !/office/i.test(paPlan) && paPlan.includes(PLAN_TEXT.slice(0, 40)), paPlan);
     await tid(pa.page, "plan-report").click({ timeout: 4000 }).catch(() => {});
-    await pa.page.waitForTimeout(1500);
+    await afterReads(pa.page, 1500);
     ok("...she reports it in one tap, and is told where it went", /Reported to the school's safeguarding officer|Reported, but your school has no safeguarding officer/.test(await inner(pa.page, "plan-report-said")), await inner(pa.page, "plan-report-said"));
     ok("no scoping refusals and no page errors", pa.refusals.length === 0 && pa.errors.length === 0, pa.refusals[0] ?? pa.errors.join(" | "));
     await pa.ctx.close();
@@ -876,7 +879,7 @@ try {
     await co.page.waitForTimeout(400);
     ok("Withdraw asks once, and says the side will be told", /Withdraw this plan\? The side will be told it was withdrawn\./.test(await inner(co.page, "plan-withdraw-ask")));
     await tid(co.page, "plan-withdraw-yes").click({ timeout: 4000 }).catch(() => {});
-    await co.page.waitForTimeout(1800);
+    await afterReads(co.page, 1800);
     ok("...and the block is gone from his own tab, the plan his draft again, to send as it stands",
        await tid(co.page, "plan-block").count() === 0 && await tid(co.page, "plan-draft").count() === 1 && /Withdrawn\. The side has been told\./.test(await inner(co.page, "plan-said"))
        && await tid(co.page, "plan-draft-send").count() === 1 && await co.page.locator("button", { hasText: /^Edit$/ }).count() === 0);
@@ -890,25 +893,25 @@ try {
     // ── Gone on the next load, and Notices says it was withdrawn ──
     const gone = await open();
     ok("the captain signs in again", await signInAs(gone.page, "pillay@example.invalid"));
-    await gone.page.waitForTimeout(1500);
+    await afterReads(gone.page, 1500);
     ok("his card has no plan line", await tid(gone.page, "captain-card").count() === 1 && await tid(gone.page, "captain-card-plan").count() === 0);
     ok("...Notices says it was withdrawn", /withdrawn/i.test(await inner(gone.page, "notices-card")), await inner(gone.page, "notices-card"));
     await tid(gone.page, "captain-card-open").click({ timeout: 4000 }).catch(() => {});
-    await gone.page.waitForTimeout(2000);
+    await afterReads(gone.page, 2000);
     ok("...his fixture has no block, and no place held for one", await tid(gone.page, "plan-block").count() === 0 && await tid(gone.page, "captain-section").count() === 1);
     await tid(gone.page, "family-back").click({ timeout: 4000 }).catch(() => {});
     await go(gone.page, "mymatches");
     await tid(gone.page, `played-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
     await gone.page.waitForTimeout(2000);
     await tid(gone.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
-    await gone.page.waitForTimeout(1200);
+    await afterReads(gone.page, 1200);
     ok("...and the Captain tab has no row", await tid(gone.page, "mc-captain-plan-row").count() === 0 && await tid(gone.page, "mc-captain-board").count() === 1);
     await gone.ctx.close();
     const tm2 = await open();
     await signInAs(tm2.page, MATE_EMAIL);
     await go(tm2.page, "mymatches");
     await tid(tm2.page, `fixture-row-${DAY}`).click({ timeout: 4000 }).catch(() => {});
-    await tm2.page.waitForTimeout(1800);
+    await afterReads(tm2.page, 1800);
     ok("the team-mate's fixture has no block either", await tid(tm2.page, "fixture-title").count() === 1 && await tid(tm2.page, "plan-block").count() === 0);
     await tm2.ctx.close();
 

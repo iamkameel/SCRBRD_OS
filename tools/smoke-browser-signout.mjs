@@ -32,6 +32,7 @@ import { appUrl, port } from "./db-url.mjs";
 import { deriveMatch, fromRow, inningsStart, inningsSummary, inningsEnd, toRow } from "@scrbrd/scoring";
 import { bookCard } from "./book-innings.mjs";
 import { lineFor } from "../apps/web/src/lib/family.js";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4341);
 const API_PORT = port(8811);
@@ -114,6 +115,7 @@ try {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
@@ -179,7 +181,7 @@ try {
   ok("D Pillay (parent) signs in on the same page", await signIn(page, /parent@example\.invalid/));
   const mine = await card(page);
   ok("...his card reads the same match: no score recorded", NONE.test(mine), mine);
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("the pupil's read was answered late, after the parent's own", answered > 0, answered);
   ok("when the late answer lands, the parent's card is unchanged", (await card(page)) === mine, await card(page));
   await remount(page);

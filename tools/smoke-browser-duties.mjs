@@ -24,6 +24,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4354);
 const API_PORT = port(8854);
@@ -70,6 +71,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], reasons = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -167,7 +169,7 @@ try {
   await panel(office.page, D).locator('[data-testid="duty-reason"]').fill(REASON);
   await confirm.click({ timeout: 6000 });
   ok("with a reason, it is drawn suspended", await settle(office.page, D, "suspended"));
-  await office.page.waitForTimeout(800);
+  await afterReads(office.page, 800);
   ok("...the office sees its own reason", (await text(office.page)).includes(REASON));
   const [open1] = await dbq(`select reason, suspended_by from duty_suspension where duty_id = $1 and lifted_at is null`, [D]);
   ok("...and the database holds it, with who", open1?.reason === REASON && !!open1?.suspended_by, JSON.stringify(open1));

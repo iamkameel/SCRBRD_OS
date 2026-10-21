@@ -44,6 +44,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4334);
 const API_PORT = port(8856);
@@ -93,6 +94,7 @@ async function openAs(label) {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -379,7 +381,7 @@ try {
 
   group("A cannot send from here: a further ball is saved on A and goes nowhere");
   const tapAgain = await tapFace(A.page, "1");
-  await A.page.waitForTimeout(6000);
+  await afterReads(A.page, 6000);
   ok("a ball tapped on A afterwards is taken", tapAgain);
   const qMore = (await queued(A.page)) ?? [];
   ok("...queued behind the other two", qMore.length === 3 && same(qMore.slice(0, 2).map((e) => e.id), offIds), JSON.stringify(qMore));

@@ -30,6 +30,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5391);
 const API_PORT = port(8891);
@@ -83,6 +84,7 @@ async function open(viewport = { width: 1280, height: 800 }) {
   const ctx = await browser.newContext({ viewport });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -233,7 +235,7 @@ try {
   await tap("key-wicket");
   await tap("wicket-mode-bowled");
   await tap("wicket-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("the bowled after the no-ball stands: the next batter is asked for", await typeBatter());
   for (let i = 0; i < 5; i++) { await tap("run-0", 3000); await page.waitForTimeout(150); }
   await page.waitForTimeout(2800);

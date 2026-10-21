@@ -54,6 +54,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5317);
 const API_PORT = port(8817);
@@ -120,6 +121,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -222,7 +224,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(1200);
@@ -437,10 +439,10 @@ try {
   await click(/Wicket/, 2500);
   await tap("wicket-mode-bowled");
   await tap("wicket-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("a fourth wicket ends the innings (a squad of five), and the review sheet opens", await tid("innings-review").count() === 1);
   await tid("review-confirm").click({ timeout: 4000 });
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("the scorer starts the second innings from the break sheet", await click(/Start 2nd Innings/, 4000));
   await page.waitForTimeout(800);
   // Michaelhouse has no seeded roster: its batters are typed in. The home
@@ -589,7 +591,7 @@ try {
   ok("a wicket opens the batting-order sheet, asking for the next batter", await enterField.count() === 1);
   await enterField.fill("Batter 11");
   await enterField.press("Enter");
-  await page.waitForTimeout(900);
+  await afterReads(page, 900);
   ok("Enter sent the batter in: the sheet is closed", await enterField.count() === 0 && !/Batting Order/.test(await text()));
   ok("...and the closing Enter did not press the Wicket key again: no second wicket sheet", await tid("wicket-confirm").count() === 0 && await tid("wicket-mode-stumped").count() === 0);
   const en = await agree("after the wicket and Enter", 1);

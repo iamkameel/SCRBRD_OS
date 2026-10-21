@@ -34,6 +34,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4362);
 const API_PORT = port(8899);
@@ -82,6 +83,7 @@ async function open({ theme = "floodlit", width = 1280, height = 900 } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -196,7 +198,7 @@ try {
   ok("at 390 wide: nothing under 12px, no control under 44px, nothing wider than the card", fl.small.length === 0 && fl.tiny.length === 0 && !fl.wide,
      [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
   await sw.click();
-  await mum.page.waitForTimeout(1500);
+  await afterReads(mum.page, 1500);
   ok("she turns it on: the switch says on", await sw.getAttribute("aria-checked") === "true"
      && /On since .*recorded by you/.test(await tid(mum.page, `public-name-state-${BEKKER}`).innerText()));
   const r1 = await records();
@@ -240,7 +242,7 @@ try {
      mumText.match(/never show this child|never-public|marked since/i)?.[0]);
 
   await tid(office.page, "never-public-end").click();
-  await office.page.waitForTimeout(1500);
+  await afterReads(office.page, 1500);
   ok("the office removes the mark: end-dated, not deleted", (await q(`select ended_on is not null as ended from player_never_public where player_id = $1`, [BEKKER]))
        .map((r) => r.ended).join() === "true");
   ok("...and T Bekker is named again on the next request", (await named()).includes("T Bekker"));
@@ -261,7 +263,7 @@ try {
   ok("no page error on the office's screen", office.errors.length === 0, office.errors.join(" | "));
   // She says yes again, for section 3.
   await tid(mum.page, `public-name-switch-${BEKKER}`).click();
-  await mum.page.waitForTimeout(1500);
+  await afterReads(mum.page, 1500);
   ok("she says yes again, and he is named", (await named()).includes("T Bekker"));
 
   // ── 3. The director of sport ────────────────────────────────────
@@ -278,12 +280,12 @@ try {
   const nf = await floors(dos.page, `names-off-${HIL}`);
   ok("...keeping the floors", nf.small.length === 0 && nf.tiny.length === 0, [...nf.small, ...nf.tiny].slice(0, 4).join(" · "));
   await tid(dos.page, "names-off-open").click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("open sides off: the switch says so, and the database holds it", await tid(dos.page, "names-off-open").getAttribute("aria-checked") === "true"
      && (await q(`select names_off from public_names_off where school_id = $1 and age_group = 'open'`, [HIL]))[0]?.names_off === true);
   ok("...and T Bekker (1XI) is not named on the next request", !(await named()).includes("T Bekker"));
   await tid(dos.page, "names-off-open").click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("back on: named again", await tid(dos.page, "names-off-open").getAttribute("aria-checked") === "false" && (await named()).includes("T Bekker"));
   ok("no page error on her screen", dos.errors.length === 0, dos.errors.join(" | "));
 

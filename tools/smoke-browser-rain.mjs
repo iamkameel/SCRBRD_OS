@@ -51,6 +51,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5371);
 const API_PORT = port(8871);
@@ -126,6 +127,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -158,6 +160,7 @@ const openAs = async (email) => {
   const c = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await offline(c);
   const p = await c.newPage();
+  watchReads(p);
   p.on("pageerror", (e) => errors.push(`pageerror (${email}): ${e.message}`));
   p.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error (${email}): ${m.text()}`); });
   await p.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
@@ -258,10 +261,10 @@ try {
   group("F. The operator's DLS table screen (the synthetic table only)");
   const ops = await openAs("platform@example.invalid");
   await ptid(ops, "nav-settings").first().click({ timeout: 6000 });
-  await ops.waitForTimeout(1200);
+  await afterReads(ops, 1200);
   ok("Settings offers the operator the DLS table tab", (await ops.locator("#settings-tab-dls").count()) === 1);
   await ops.locator("#settings-tab-dls").click({ timeout: 4000 });
-  await ops.waitForTimeout(1200);
+  await afterReads(ops, 1200);
   ok("...whose list is drawn from the server", (await ptid(ops, "dls-tables").count()) === 1);
   const fillMeta = async () => {
     await ptid(ops, "dls-title").fill(SYNTHETIC_TITLE);
@@ -303,7 +306,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(1200);
@@ -463,7 +466,7 @@ try {
   await coach.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
   await coach.waitForTimeout(1500);
   await ptid(coach, `mc-open-${MATCH}`).click({ timeout: 6000 }).catch(() => {});
-  await coach.waitForTimeout(1800);
+  await afterReads(coach, 1800);
   ok("the coach opens the fixture", (await ptid(coach, "match-view").count()) === 1);
   ok(`the rain panel says the server's calculated line (${await psaid(coach, "mc-rain-calculated")})`, after?.status === "ok"
      && await waitWords(coach, "mc-rain-calculated", /SCRBRD calculates/) && (await psaid(coach, "mc-rain-calculated")) === after?.words,

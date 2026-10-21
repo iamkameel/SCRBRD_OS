@@ -56,6 +56,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { GRANTABLE_ROLES, roleGrants } from "../packages/policy/src/roles.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4372);
 const API_PORT = port(8912);
@@ -108,6 +109,7 @@ async function open(apiBase = API, viewport = { width: 1280, height: 900 }) {
   const ctx = await browser.newContext({ viewport });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -420,7 +422,7 @@ try {
   ok("...and every control in it is 44px", dfl.taps.length === 0, dfl.taps.slice(0, 5).join(" | "));
   await tid(off.page, "enrol-team").selectOption("2XI");
   await tid(off.page, "enrol-submit").click({ timeout: 5000 });
-  await off.page.waitForTimeout(2200);
+  await afterReads(off.page, 2200);
   ok("the dialog closes on the server's yes", await off.page.locator('[role="dialog"]').count() === 0);
   ok("...and says what was done", /Added Coach \(2XI\) to A Wessels's account/.test(await tid(off.page, "people-notice").innerText().catch(() => "")));
   const wAfter = await chips(rowOf(off.page, WESSELS));
@@ -454,7 +456,7 @@ try {
   ok("it asks for a reason before it will end anything", await tid(again.page, "end-role-confirm").isDisabled());
   await tid(again.page, "end-role-reason").fill("Moved to umpiring this term only");
   await tid(again.page, "end-role-confirm").click({ timeout: 5000 });
-  await again.page.waitForTimeout(2200);
+  await afterReads(again.page, 2200);
   ok("...and says what was done", /Ended Coach \(2XI\) for A Wessels/.test(await tid(again.page, "people-notice").innerText().catch(() => "")));
   const wEnded = await chips(rowOf(again.page, WESSELS));
   ok("the coach role now reads ended; the scorer role is untouched", wEnded.some((c) => c.role === "coach" && /ended/.test(c.text))
@@ -485,7 +487,7 @@ try {
     await route.continue({ postData: JSON.stringify({ ...body, role: "medical" }) });
   });
   await tid(again.page, "enrol-submit").click({ timeout: 5000 });
-  await again.page.waitForTimeout(1800);
+  await afterReads(again.page, 1800);
   ok("the post went out, with the role swapped for one she cannot grant", sent?.role === "official" && sent?.email === "coach2@example.invalid", JSON.stringify(sent));
   const err = tid(again.page, "enrol-error");
   const said = await err.innerText().catch(() => "");
@@ -518,10 +520,10 @@ try {
   await tid(again.page, "enrol-role").selectOption("scorer");
   ok("a sign-in code is asked for by default for a new account", await tid(again.page, "enrol-code").isChecked());
   await tid(again.page, "enrol-submit").click({ timeout: 5000 });
-  await again.page.waitForTimeout(2200);
+  await afterReads(again.page, 2200);
   ok("the code comes back once", await tid(again.page, "issued-code").count() === 1 && (await tid(again.page, "issued-code").innerText()).trim().length >= 6);
   await click(again.page, /^Done$/, 4000);
-  await again.page.waitForTimeout(1500);
+  await afterReads(again.page, 1500);
   ok("...and the new person is on the list with the role", (await chips(rowOf(again.page, newEmail))).some((c) => c.role === "scorer" && c.state === "live"));
   const created = await q(`select u.id, count(a.id)::int as n from app_user u left join role_assignment a on a.person_id = u.id where u.email = $1 group by u.id`, [newEmail]);
   ok("...and Postgres holds the account with that one appointment", created.length === 1 && created[0].n === 1, JSON.stringify(created));
@@ -533,7 +535,7 @@ try {
   await tid(again.page, "enrol-role").selectOption("official");
   await tid(again.page, "enrol-code").uncheck();
   await tid(again.page, "enrol-submit").click({ timeout: 5000 });
-  await again.page.waitForTimeout(2200);
+  await afterReads(again.page, 2200);
   ok("an email that already belongs to someone gets the role on their account", (await accountsFor(WESSELS)).length === 1
      && (await heldIn(WESSELS)).some((a) => a.role === "official" && a.active));
   await again.ctx.close();
@@ -636,7 +638,7 @@ try {
   await tid(pf1.page, "enrol-school").selectOption(WES).catch(() => {});
   ok("...and is enabled once Westville is chosen", await tid(pf1.page, "enrol-submit").isEnabled().catch(() => false));
   await tid(pf1.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
-  await pf1.page.waitForTimeout(2200);
+  await afterReads(pf1.page, 2200);
   ok("the server says yes and the dialog closes", await pf1.page.locator('[role="dialog"]').count() === 0
      && /Opened an account for P Walkcoach as Coach \(U15A\)/.test(await tid(pf1.page, "people-notice").innerText().catch(() => "")));
   const pfDb = await q(`select a.role, a.team_code, a.school_id::text as school, a.active, a.created_by from role_assignment a
@@ -672,7 +674,7 @@ try {
   await tid(pf2.page, "enrol-code").uncheck().catch(() => {});
   ok("Settings' Enrol is enabled for it once a school is chosen", await tid(pf2.page, "enrol-submit").isEnabled().catch(() => false));
   await tid(pf2.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
-  await pf2.page.waitForTimeout(2200);
+  await afterReads(pf2.page, 2200);
   ok("...and the scorer is appointed at Westville",
      (await q(`select a.role from role_assignment a join app_user u on u.id = a.person_id where u.email = $1 and a.school_id = $2 and a.active`, [pfScorer, WES])).some((a) => a.role === "scorer"));
   ok("no console errors in Settings", pf2.errors.length === 0, pf2.errors.join(" | "));
@@ -700,7 +702,7 @@ try {
   await tid(own.page, "enrol-email").fill(ownMedic).catch(() => {});
   await tid(own.page, "enrol-code").uncheck().catch(() => {});
   await tid(own.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
-  await own.page.waitForTimeout(2200);
+  await afterReads(own.page, 2200);
   ok("a clinical appointment the office may not make is made, at Westville",
      (await q(`select a.role from role_assignment a join app_user u on u.id = a.person_id where u.email = $1 and a.school_id = $2 and a.active`, [ownMedic, WES])).some((a) => a.role === "medical"));
   ok("no console errors on the owner's session", own.errors.length === 0, own.errors.join(" | "));
@@ -741,7 +743,7 @@ try {
     await route.continue({ postData: JSON.stringify({ ...JSON.parse(req.postData() || "{}"), role: "medical" }) });
   });
   await tid(wes.page, "enrol-submit").click({ timeout: 5000 });
-  await wes.page.waitForTimeout(1800);
+  await afterReads(wes.page, 1800);
   ok("a medical appointment forced past the picker is refused by the server, in words",
      (await tid(wes.page, "enrol-error").getAttribute("data-code").catch(() => "")) === "not_permitted"
      && /you may not do that here/i.test(await tid(wes.page, "enrol-error").innerText().catch(() => "")));
@@ -871,7 +873,7 @@ try {
   const none = await open();
   ok("the registrar signs in", await signIn(none.page, "registrar@example.invalid") && await toUsers(none.page));
   await tid(none.page, "mgmt-tab-grounds").click({ timeout: 5000 });
-  await none.page.waitForTimeout(1500);
+  await afterReads(none.page, 1500);
   ok("nothing is invented to fill the space", await none.page.locator('[data-testid="ground-duty"]').count() === 0);
   ok("...one plain line says so", (await tid(none.page, "ground-duties-none").innerText().catch(() => "")).trim() === "No fixtures are coming up at your grounds.");
   ok("no console errors", none.errors.length === 0, none.errors.join(" | "));

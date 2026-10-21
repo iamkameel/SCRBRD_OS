@@ -34,6 +34,7 @@ import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { toRow } from "@scrbrd/scoring";
 import { buildLog } from "../packages/scoring/test/result-logs.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const PORT = port(8902);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -102,6 +103,7 @@ async function open(theme = "floodlit", viewport = { width: 1280, height: 900 },
   const ctx = await browser.newContext({ viewport, extraHTTPHeaders: { "x-forwarded-for": `10.69.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("dialog", (d) => { d.dismiss().catch(() => {}); });
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
@@ -192,11 +194,11 @@ try {
   await sheet.locator('[data-testid="decision-side-home"]').click();
   await sheet.locator('[data-testid="decision-reason"]').fill("late");
   await sheet.locator('[data-testid="decision-save"]').click();
-  await p.waitForTimeout(800);
+  await afterReads(p, 800);
   ok("a short reason is refused, in words", (await words(tid(p, "decision-error"))) === "Say why, in ten characters or more.", await words(tid(p, "decision-error")));
   await sheet.locator('[data-testid="decision-reason"]').fill("Hilton's 2nd XI did not arrive at the ground");
   await sheet.locator('[data-testid="decision-save"]').click();
-  await p.waitForTimeout(1800);
+  await afterReads(p, 1800);
   ok("the walkover lands, said", /Recorded: Walkover to Westville Boys' High 1XI/.test(await words(tid(p, "standings-said"))), await words(tid(p, "standings-said")));
   ok("...the result in words, decided by the organiser",
      (await words(p.locator(`[data-testid="result-row"][data-match="${L.m2}"] [data-testid="result-text"]`))) === "Walkover to Westville Boys' High 1XI"
@@ -213,7 +215,7 @@ try {
   await tid(p, "adjust-points").fill("-2");
   await tid(p, "adjust-reason").fill("umpires' report: dissent after the walkover");
   await tid(p, "adjust-save").click();
-  await p.waitForTimeout(1800);
+  await afterReads(p, 1800);
   ok("−2 for conduct lands, said, and the table has it",
      /−2 to Walk 069 Westville 1st XI/.test(await words(tid(p, "standings-said"))) && (await table(p)) === "Hilton 1st XI=4@1 Westville 1st XI=2@2 Hilton 2nd XI=0@3",
      `${await words(tid(p, "standings-said"))} | ${await table(p)}`);
@@ -222,7 +224,7 @@ try {
   await tid(p, "adjustment-withdraw-open").first().click();
   await tid(p, "adjustment-withdraw-note").first().fill("the umpires withdrew the report");
   await tid(p, "adjustment-withdraw").first().click();
-  await p.waitForTimeout(1800);
+  await afterReads(p, 1800);
   ok("withdrawn with a note: the table restored, the adjustment kept and struck",
      (await table(p)) === "Hilton 1st XI=4@1 Westville 1st XI=4@2 Hilton 2nd XI=0@3"
      && (await p.locator('[data-testid="adjustment-row"][data-withdrawn="yes"]').count()) === 1, await table(p));
@@ -255,7 +257,7 @@ try {
   ok("the walkover is on the fixture list", (await openBtn.count()) === 1);
   if (await openBtn.count()) {
     await openBtn.click({ timeout: 5000 });
-    await ds.page.waitForTimeout(2000);
+    await afterReads(ds.page, 2000);
     ok("the result line is the server's: a fold of an empty log has none",
        (await words(tid(ds.page, "mc-result"))) === "Walkover to Westville Boys' High 1XI", await words(tid(ds.page, "mc-result")));
   }
@@ -270,7 +272,7 @@ try {
   group("D. Signed out: the served fixture says the result, sides named, no reason");
   await q(`insert into fixture_publication (match_id, side, school_id, team_code, published, set_by) values ($1, 'home', $2, '1XI', true, $3)`, [L.m2, WES, OWNER]);
   const pub = await open("floodlit", { width: 390, height: 844 }, `/live/${L.m2}`);
-  await pub.page.waitForTimeout(1500);
+  await afterReads(pub.page, 1500);
   ok("the public page says the walkover, in the server's words", (await words(tid(pub.page, "mc-result"))) === "Walkover to Westville Boys' High 1XI",
      await words(tid(pub.page, "mc-result")));
   const body = await pub.page.$eval("body", (el) => el.innerText);

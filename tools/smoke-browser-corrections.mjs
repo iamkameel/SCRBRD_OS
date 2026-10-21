@@ -32,6 +32,7 @@ import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { buildPublicFixture, HIL } from "./fixture-public.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const PORT = port(8849);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -75,6 +76,7 @@ async function open(path = "/app", { width = 1280 } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   await page.addInitScript(`window.__SCRBRD_LIVE_MS__ = 1000; window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
   const errors = [];
   const bodies = [];
@@ -235,7 +237,7 @@ try {
     ok(`${who}: ...said in a live region`, await tid(b.page, "mc-stale-region").getAttribute("role") === "status");
     const m = await measure(b.page, "mc-stale");
     ok(`${who}: ...a 44px target on the 12px floor`, m.h >= 44 && m.fs >= 12, JSON.stringify(m));
-    await b.page.waitForTimeout(2500);
+    await afterReads(b.page, 2500);
     ok(`${who}: the figures have not moved under the reader`, (await tid(b.page, "mc-scores").innerText()) === before);
     await tid(b.page, "mc-stale").click();
     ok(`${who}: on the tap the total falls by the four`, await until(b.page, (r) => {

@@ -43,6 +43,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4359);
 const API_PORT = port(8896);
@@ -94,6 +95,7 @@ async function open(theme = "floodlit") {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -250,7 +252,7 @@ try {
   ok("nothing in it is set under 12px", f.small.length === 0, f.small.slice(0, 4).join(" · "));
   ok("nothing pressed in it is under 44px", f.tiny.length === 0, f.tiny.slice(0, 4).join(" · "));
   await sw.click();
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   ok("one switch turns it on", (await sw.getAttribute("aria-checked").catch(() => null)) === "true"
      && /On — agreed by you/.test(await tid(parent.page, `health-consent-state-${PILLAY}`).innerText().catch(() => "")));
   let recs = await records(PILLAY);
