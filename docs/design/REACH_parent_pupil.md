@@ -83,6 +83,8 @@ This design asks none of them to change. §6.1's first proof is that the general
 - **A boy with no team** (`player` with `team_code` NULL): today `a.team_code IS NULL` passes every team (`db/50:224`) and he reads every side at the school — every sheet, every post, every bus, every team-mate-level row. The rule is that **`player` is team-scoped** like `coach` (§7 D4); until that lands, no such row may exist (§5 item 1).
 - **At eighteen:** nothing changes for him; his guardian's link ends by its date (STEP4 §3.3; the SCRBRD-110 Q7 exception for health is that design's, not this one's).
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q1):** the "At eighteen" line above is superseded in its date. Her link stays open while he is at school (SCRBRD-110 §7.4); from 18 she may say "no" and never a new "yes"; the link ends on the later of his leaving school and his 18th birthday.
+
 **The rule, as the argument.** Identical to the guardian's: the row's player id for a boy, `side_reach()`/`fixture_reach()` for a side, zeros + `'*'` for the school. His `player` row passes the side rule through the unnamed branch (the team argument scopes it); his `selfaccess` row passes the boy rule for himself.
 
 ### 2.3 A self-registered follower (`spectator`)

@@ -284,6 +284,8 @@ guardians are. A pupil of 18 or more with `selfaccess` is his own data subject a
 receives his own. Nothing names a child on a lock screen: the push is the pointer
 (§4.5).
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q8):** `compromise` joins `system` as a kind the system itself writes to one person. The SG-9 trigger admits a `recipient_id` naming a pupil for those two kinds only, and only when the pupil is 18 or more. The rule for under-18s above stands: his guardians are the recipients.
+
 ### 4.5 The `compromise` notice
 
 **D9.** A new kind, added to `NOTIFICATIONS.md` D1's list and db/89's CHECK in the
@@ -454,6 +456,8 @@ mentioning it.
   own events. The school never reads another school's rows or subjects.
 - Every read of the register writes an `access_log` row with resource `data_event`,
   as `audit_log()` does for itself (db/79:66-72).
+
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2):** `audit.read` at a school no longer reads the events, the notes or the count of its subjects. `audit.read` opens the access log and nothing else. The school's own events reach its principal, its information officer, through a named capability (for Opus to name), not `audit.read`; `compromise.read` stays as above.
 - The register appears in the audit log (db/79) as a new kind `event`, one row per
   note, with the reference and the note kind and **no body**: the free text stays
   behind its own door, as db/79's "NOT here" list requires.

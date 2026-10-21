@@ -122,6 +122,8 @@ Every read rule built so far is one of two shapes. Knowing which is the whole of
 
 Two children at two schools, a link pending, ended or revoked: as REACH §2.1, nothing here touches `app_can()`'s link test.
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q5, with Q15):** the parent's "discipline tier" in the row above is not in her reads. She gets it only after Westville's information officer signs off, as READERS Q15 defers it; until then the app says nothing of a discipline record, as the letter stays the channel.
+
 ### 2.2 The pupil
 
 **Plain words.** D Erasmus's Matches list keeps his U14A season and gains U15A's from the day he joined. Through `selfaccess` he reads his own file at every tier the bundle gives him, unchanged. Through his `player` assignment — now carried to U15A by SR-1 — he reads what U15A reads together: the sheet, the log, the bus, the nets, the posts. Of his old team-mates he now reads nothing new and nothing he could not read before: their names on U14A's 2026 sheets and scorecards (a fixture he may still read), their honours and caps on the U14A board of that season (row-anchored, §5.2). Their season figures and career pages: REACH-D2 left them open to a team-mate; after the move he is no longer their team-mate at team scope, so `player.performance.read` at U14A no longer fits him — the move narrows, which is right, and the scorecards he keeps (Q4) still show their figures for the matches he played.
@@ -149,6 +151,8 @@ Two children at two schools, a link pending, ended or revoked: as REACH §2.1, n
 | the "since the last look" panel | the window starts at the move: "U15A since 1 Jan" (AH-D6) | — | the panel counts only sessions of his **current** side |
 | U14A's 2026 fixtures, sheets, log | no (unless school-wide) | — | unnamed, team-scoped at U15A; row-anchored on U14A |
 | the boy's U14A 2026 register rows | no | — | `training_attendance` anchors on the session's side |
+
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q5):** the coach keeps the discipline tier in the row above: "Coaches now, parents later." The row stands for the coach. Today the coach holds no `discipline.read` (`roles.mjs`; SCRBRD-136-137 says discipline is "not his"), so Opus settles the capability before the row is drawn.
 
 Authorship: every row keeps `assessed_by`, `author_id`, `set_by`; the strip says "R Pillay, coach" or, once his assignment has ended, "a former coach" (AH-D6 "a coach leaves"). Nobody's authorship is erased (D5).
 

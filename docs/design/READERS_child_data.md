@@ -2,6 +2,8 @@
 
 Status: **design, for Kameel's review** (Fable, 21 Oct 2026). Built from the reader sections of every design on `origin/main` at ab79828, the policy code in `packages/policy/src/`, and the decisions already recorded. Nothing here reopens a decision Kameel has made; where two decided texts disagree, that is a finding (§4). Opus builds from this; Haiku records the answers.
 
+**Decided 21 Oct 2026 (Kameel): Q1–Q4 and Q6–Q16 as recommended; Q5 as below.** The decisions are listed under §7.
+
 Every line cites `file:line` on that commit. No child's name or data appears; the roles are the readers.
 
 ---
@@ -517,6 +519,27 @@ Each is one decision, with the recommendation and one line of why. "As recommend
 14. **The under-18 pupil's "who read my record" (G5).** From 18 only in v1; under 18 through the parent. *Recommend: 18.* A log of adults' reads is a conversation for the family, not a list on a child's phone.
 15. **The parent and the disciplinary record (G6).** Still defer, or decide now. *Recommend: defer to the information officer's next sign-off*, with one change now: the app never shows a parent a record it holds about her child without telling her one exists — so the letter stays the channel and the app stays silent.
 16. **A child's own ID number on Me (G12).** Draw it never; the right of access is met by the office on request. *Recommend: never on a screen.* Level 4 on a thirteen-year-old's phone is the breach the register is designed for.
+
+### Decisions
+
+Decided 21 Oct 2026 (Kameel). Each line states what governs. The designs named in §4 and §5 carry a dated line beside the text they change; the old text stays.
+
+- **Q1 · As recommended.** SCRBRD-110 §7.4 governs every parent read, not health alone: the link stays open while he is at school and her reads continue; after 18 her acts are "no" only; the card closes on the later of his leaving school and his 18th birthday. STEP4 §3.3 and REACH §2.2 corrected.
+- **Q2 · As recommended.** `audit.read` opens the access log and nothing else. Revocation reasons, disable reasons, honour reasons, the staff register and the breach register each stay under the capability of the act that wrote them; no read policy names `audit.read` but the log's.
+- **Q3 · As recommended.** AL Q9 governs a departed boy's clinical record: the office, the family and the boy until purge; staff cut. A re-enrolment reopens the physio's read. GA-I19 D11 corrected.
+- **Q4 · As recommended.** The director of sport is left without `transport.lift.oversee` (GA-I09, the code). GA-I27's director row loses S4b.
+- **Q5 · Kameel's own answer, not the recommendation.** "Keep SEASON_ROLLOVER's discipline view for the coach. A parent gets it only after Westville's information officer signs off, as Q15 says." Kameel: "Coaches now, parents later".
+- **Q6 · As recommended.** D3 governs: a withdrawn honour is absent for the DSO, who reaches it through the audit on a concern. RECOGNITION's matrix corrected.
+- **Q7 · As recommended.** PUBLIC_DATA C1 and C4 gain the sentence: "From his twelfth birthday a pupil may refuse his own name on public pages; his refusal stands whatever a guardian says. His 'yes' counts from eighteen."
+- **Q8 · As recommended.** The SG-9 trigger admits a `recipient_id` naming a pupil for `system` and `compromise` only, and only at 18 or more. INCIDENTS D8 corrected.
+- **Q9 · As recommended.** The code stands: the principal reads status and nature; the head reads what the office reads. GA-I19 D3 corrected.
+- **Q10 · As recommended (READERS only).** `competitionadmin`'s `discipline.read` is scoped to records arising from its own competition's fixtures, through a definer read, logged.
+- **Q11 · As recommended (READERS only).** A concern about the other school's child routes by the child's school when the reporter names a boy on the other side's sheet; the reporter's own DSO is told a concern exists, with no name.
+- **Q12 · As recommended (READERS only).** The transport coordinator's `player.emergency.read` is narrowed to the boys on a trip he coordinates, on the day, through a logged function; no standing school-wide read.
+- **Q13 · As recommended (READERS only).** The pad's squad read for a pupil scorer is cut to names, order and styles; Opus lists what a fixture-scoped `player.profile.read` reaches at the host first.
+- **Q14 · As recommended (READERS only).** A pupil's "who read my record" is shown from 18 only in v1; under 18 it goes through the parent.
+- **Q15 · As recommended (READERS only).** The parent's disciplinary record is deferred to the information officer's next sign-off; the app never shows a parent a record it holds about her child without telling her one exists, so the letter stays the channel and the app stays silent.
+- **Q16 · As recommended (READERS only).** A child's own ID number is never drawn on a screen; the right of access is met by the office on request.
 
 ---
 

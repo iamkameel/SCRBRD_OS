@@ -110,6 +110,8 @@ an existing tier and the `injury_masked` view is re-emitted in `db/NN` so they a
 | **office under a support session** | `injury` as today, logged | `injury_review`: a `RESTRICTIVE` policy hides it, as 110 §6.5 hides check-ins (Q7 asks whether `injury` should follow) |
 | **scorer, spectator, analyst, media, scout, public** | nothing | — |
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q9):** the principal reads status and nature, as the code gives it (`roles.mjs:166`). The row above that reads "principal: status (as today)" is corrected to "principal: status and nature". The head reads what the office reads.
+
 *Rejected — a `medical.review.read` capability for the worklist:* ADR 0003's test fails; the person who may act on
 a review is exactly the `medical.write` holder, and "the capability is the owner" (GA-I09 D10).
 
@@ -197,6 +199,8 @@ down that a boy may not bowl is worse for the boy than the record is.
 | **retention** | `injury` and `injury_review`: **12 months after he leaves the school system**, then **delete**, through 110 phase 6's door (`health_records_purge()` gains the two tables; `health_purge_log` counts them) and a `retention.mjs` entry (lifecycle D22: kind `health: injuries`, anchor leaving). The clock cannot be `health_retention_due()` as built: it is NULL for a boy with no consent row (`db/60:339`), and most injured boys will have none. A sibling `injury_retention_due(p_player)` = last school membership's `left_on` + 12 months, NULL while enrolled. | lifecycle §6.2 names "SCRBRD-110 §7.5's period" for `injury`; this is that period on a workable anchor. Q3 asks whether a clinical record wants longer. |
 | **a parent's link ends** | her read ends with it; the record is the school's | lifecycle part 3 |
 | **a disabled account** | reads nothing; writes nothing; rows untouched | lifecycle part 1 |
+
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q3; ACCOUNT_LIFECYCLE Q9):** for a pupil who leaves, the row "a pupil leaves" is changed: the office holds the open rows until purge, and the physio's read ends on departure and returns if he re-enrols. The worklist exclusion and the "left the school" mark stand.
 
 *Rejected — auto-clearing an open injury on departure:* a clearance is a clinical act; "left" is a fact about enrolment.
 *Rejected — keeping injuries with the identity for 5 years:* the platform is not the practitioner's clinical file; the officer may say otherwise (Q3), and the shape — a date, a due list, a logged purge — stands either way.
