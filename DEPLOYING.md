@@ -1272,6 +1272,148 @@ Captain tab and the coach's tab read with it, so a plan stays findable when
 more than 100 newer posts sit above it.
 <!-- ── end db/103 ── -->
 
+<!-- ── db/104: corrections to a coach's judgement, and the coaching point ── -->
+#### Corrections to a coach's judgement, and the coaching point (db/104)
+
+`db/104_assessment_corrections.sql` is GA-I26a slice A1 (Kameel, 15 Oct:
+AH-D2, AH-D3, AH-D5 as recommended). **A score keeps its assessor.** Before
+it, a colleague who rated a boy on the same day as his coach overwrote the
+number and took the authorship. Now a coach corrects his own score that day,
+as before; anybody else's same-day upsert is refused (`403 not_the_assessor`)
+and he rates on his own row. **A wrong score or note is withdrawn, not
+deleted**: it stays, struck, with who withdrew it and why, and every screen
+that reads the standing score (Skills, the ratings, the focus areas, the
+rewards score) stops counting it. **A coaching point is a development note
+with its evidence pointer**, read only by the note's readers (coach,
+assistant, director, principal) and never by the boy, his parents or a
+platform-wide account.
+
+**What it does to a live database.** Three nullable columns on
+`player_skill` and nine on `development_note` (no rewrite). `player_skill`'s
+unique key on (player, day, category, metric) becomes a partial unique index
+over standing rows (`player_skill_standing`), so a withdrawn score does not
+hold its slot. One new trigger (`player_skill_keeps_its_assessor`), one
+trigger function replaced in place (`development_note_author()`, same
+trigger), four `RESTRICTIVE` policies (`player_skill_not_support`,
+`development_note_not_support`, `development_note_not_platform`,
+`development_note_plain_insert`), and four functions: `coaching_point_write`,
+`skill_withdraw`, `note_withdraw` (`SECURITY DEFINER`, pinned search path,
+executable by `scrbrd_app` alone) and the internal `coaching_point_never`.
+No row is inserted, changed or deleted. **One behaviour changes for every
+school at once, on the paste:** the owner's key (a platform-wide assignment)
+and a support session stop reading development notes, and a support session
+stops reading skill ratings. Each statement locks `player_skill` or
+`development_note` briefly; paste outside a coaching session. A second paste
+changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 104` (after 102, and after 103 where
+it has shipped), then the verify bundle (§81 is its proof). The summary row
+"A score keeps its assessor; a point is a note" should read OK. **Schema
+first**: the API built with it refuses to start without db/104
+(`expected-migrations.json`); its assessment upsert names the partial index
+(`ON CONFLICT … WHERE withdrawn_at IS NULL`), which an older database does
+not have.
+<!-- ── end db/104 ── -->
+
+<!-- ── db/105: the development loop — a target, the side's plan, the register ── -->
+#### The development loop: a target, the side's plan, the register (db/105)
+
+`db/105_development_loop.sql` is GA-I26a slice A2 (Kameel, 15 Oct: AH-D1,
+AH-D3, AH-D6, AH-D9 as recommended). **A coach sets a target** on one
+attribute of one boy (a number above where he stands, a date, the drill for
+it, and the reasoning as a staff-only note). The boy reads his own targets;
+his parents, the principal, the team manager and a team-mate do not. Whether
+he reached it is read off his scores, never stored. **A session's plan is
+keyed to the drill library** and read by the side, parents included, as the
+session is; it names no boy. **The register gets its route**, which never
+writes `injured`: that is a health word on a list the side reads, and an old
+`injured` row now reads as `excused`. **The team manager runs the session**
+(Kameel, 15 Oct): a new capability, `team.training.run`, lets him set a
+session's plan and take its register at his own side, and nothing else. He is
+still refused the drill library, the kit register and scheduling, which stay
+under `team.manage`. Every role that holds `team.manage` holds the new one
+too, so nobody loses a write. The assistant coach holds neither.
+
+**What it does to a live database.** Two new empty tables
+(`development_target`, `training_session_drill`) under row security: the
+first with one read policy, a `RESTRICTIVE` support cut and no write policy
+or write privilege at all (its doors are `target_set` and `target_withdraw`,
+`SECURITY DEFINER`, pinned search path, `scrbrd_app` alone); the second with
+four policies (read under `team.read`, written under `team.training.run`)
+and a trigger refusing another school's drill. One capability row and six
+`role_capability` rows (`team.training.run`: coach, director of sport, school
+admin, sports admin, the owner's key, the team manager).
+`training_attendance`'s two write policies are re-created under
+`team.training.run` with the same anchors (its read is unchanged), and two
+`RESTRICTIVE` policies refuse `injured` from the application's role. No existing row is changed. Refuses to run before db/104.
+A second paste changes nothing.
+
+**Behaviour the paste and the deploy change.** The Training screen's
+navigation is gated by `team.read` (it was `player.development.read`), so
+parents, pupils, the team manager and the analyst find it; what they see in
+it is what row security already gave them. The CSV export
+(`GET /api/export/:resource`) now refuses `skills`, `ratings`, `notes` and
+the new development reads with `403 not_exported`; it served the first three
+before.
+
+Paste `node tools/bundle-sql.mjs --apply 105` (after 104), then the verify
+bundle (§82 is its proof). The summary row "A target is the coach's; the plan
+is the side's" should read OK. **Schema first**: the API built with it refuses
+to start without db/105 (`expected-migrations.json`); its `targets`,
+`training_plan` and `development_since` reads name the new tables.
+<!-- ── end db/105 ── -->
+
+<!-- ── db/106: a family reads its side's fixtures, trips and training ── -->
+#### A family reads its side's fixtures, trips and training (db/106)
+
+`db/106_reach_side.sql` is REACH group R-A (`docs/design/REACH_parent_pupil.md`
+§6.1), Kameel's decision of 2026-10-14 (REACH-D1, "the side only"). Until now
+every guardian read every fixture, every trip (with its driver, its pickup and
+notes that may name a child) and every training session at her school, and
+the browser filtered the list down to her child's side. Now a guardian reads
+her child's side's fixtures home and away, the one fixture he is on the team
+sheet of when he plays up, their buses at the bus's own school, and their
+training; nothing of another side at her school or any other. A pupil reads
+his side's, as before, and (Kameel, 15 Oct) a boy playing up reads the one
+fixture whose team sheet names him, its toss, umpires and weather, and its
+bus, as his guardian does; nothing else of the older side, not its nets, and
+nothing of a fixture he was taken off. Nothing is added to a pupil's
+self-access. Staff, a school-wide follower, the office and a driver
+read what they read. The away side's family and staff now also read the toss,
+the umpires, the pitch report, the weather, the playing conditions and the
+broadcast setting of their side's away fixture, which were the host's alone.
+A link that is pending, ended or revoked reads nothing of the child's side.
+
+**What it does to a live database.** Eight functions (`SECURITY DEFINER`,
+`STABLE`, pinned search path; `EXECUTE` revoked from `PUBLIC` and granted to
+`scrbrd_app`, and from a managed host's `anon`/`authenticated` where they
+exist): the rule, one row at a time (`side_reach`, `fixture_end_reach`,
+`fixture_reach`), and the same rule asked once per statement, which is what
+the policies call (`my_fixture_ends`, `my_sides`, `my_own_boy` for "the
+reader is the boy on the sheet", and the away anchors
+`match_away_school`/`match_away_team` beside db/02's home ones). db/41's
+`trip_fixture_driver_only()` is replaced in place (same signature and grants:
+"a driver who reaches the fixture only as its driver" now asks match_read's
+new question). Thirteen read policies are dropped and created again
+(`match_read`, `trip_read`, `training_session_read`,
+`fixture_publication_read`, `match_result_decision_read` and the eight
+satellites' `*_read`), in the paste's one transaction. A trip is read at its
+own school's end, and only by someone who reads its fixture, as before. The
+file checks every policy's text and the helpers' grants before it commits.
+No table, column, row or write policy is touched. A second paste changes
+nothing. **One behaviour changes for every school at once, on the paste:**
+parents stop seeing other sides' fixtures, buses and nets; paste outside a
+match. Cost, on a forty-fixture season: a coach's or the director's fixture
+list as before (8–11 ms); a parent of two 34 ms for her list and 100 ms for
+her buses, where it was 9 and 47 (db/106's header has the figures).
+
+Paste `node tools/bundle-sql.mjs --apply 106` (after 102, and after 103–105 if
+they have shipped; the bundle names the one it needs first), then the verify
+bundle (§83 is its proof; the summary row "A family reads its side's fixtures"
+should read OK). **Schema first**: the API built with it refuses to start
+without db/106 (`expected-migrations.json`), and its `matches` read asks
+`my_fixture_ends()` which end the reader is at.
+<!-- ── end db/106 ── -->
 <!-- ── db/107: the officials register and the grant notes, closed ── -->
 #### The officials register is its keeper's; a school's plan is its own (db/107)
 

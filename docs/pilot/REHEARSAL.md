@@ -1,6 +1,6 @@
 # Dress rehearsal, 8 October 2026
 
-Kameel, two or three phones and a TV. Westville Boys' High School, pilot on 15 October. Tick each box as you go. Write every problem in the log at the end, with the time.
+Kameel, two or three phones and a TV. Westville Boys' High School, pilot on Saturday 31 October 2026. Tick each box as you go. Write every problem in the log at the end, with the time.
 
 ## Read first: what a practice match is
 
@@ -8,7 +8,7 @@ A practice match is scored on the real pad, with typed teams and names. It is ke
 
 So a practice match cannot show **Sent**, a handover, the ground display or a public page: none of these exist for it. Steps marked P use a practice match, on production, with invented names only. Never type a real child's name.
 
-Steps marked S need a fixture on a server. Production has no seed, and its roster holds the school's real boys after the 6 October load. A test fixture there would put real children in the ball log, which cannot be deleted. So do S steps only on a demonstration copy (a separate database with the seed: DEMO_COPY.md). If there is none, skip them: they are first seen on 15 October.
+Steps marked S need a fixture on a server. Production has no seed, and its roster holds the school's real boys after the 6 October load. A test fixture there would put real children in the ball log, which cannot be deleted. So do S steps only on a demonstration copy (a separate database with the seed: DEMO_COPY.md). If there is none, skip them: they are first seen on Saturday 31 October 2026.
 
 ## 1. Wake the service (P)
 
@@ -20,7 +20,7 @@ Steps marked S need a fixture on a server. Production has no seed, and its roste
 
 ☐ Phone A: tap **Continue with Google**. Phone B: type your email and a fresh office code in **Sign-in code**, tap **Sign In**. Phone C: either. You should reach the app, not **Waiting for your school office**. A code works once: note who issued it.
 
-☐ Tap **Match Centre** (bottom bar, or under **More**). The 15 October fixture is listed with **Start Scoring →** (or **Open Live Scorer →** once live). Do not open it.
+☐ Tap **Match Centre** (bottom bar, or under **More**). The Saturday 31 October 2026 fixture is listed with **Start Scoring →** (or **Open Live Scorer →** once live). Do not open it.
 
 ## 3. Pick the side (look only)
 

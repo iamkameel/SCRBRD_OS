@@ -1,6 +1,8 @@
 # Pilot match day runbook
 
-15 October 2026. Westville Boys' High School v [opponent]. One fixture scored on the app and shown on the pavilion screen.
+Saturday 31 October 2026. Westville Boys' High School v [opponent]. One fixture scored on the app and shown on the pavilion screen.
+
+Pilot date: Saturday 31 October 2026 (Kameel, 15 Oct 2026). Schedule: wave 3 pasted and merged by 17 Oct; solo run 1 on 22 Oct; feature freeze from 26 Oct; solo run 2 on 27 Oct; production verify on 28 Oct; go/no-go on 29 Oct.
 
 Fill in before the day: [opponent], [match link from the Match Centre], [who to call].
 
