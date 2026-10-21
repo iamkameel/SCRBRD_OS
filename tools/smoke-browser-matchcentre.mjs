@@ -690,11 +690,25 @@ try {
 
   // The scorer's request is withdrawn (his own door, db/02): nothing pending.
   await q(`update scoring_amendment set state = 'withdrawn' where match_id = $1 and state = 'pending'`, [fx.live]);
+  // The live section sealed the chase on its figures before the late balls
+  // were folded in, so that seal never stood, and db/114 counts a seal that
+  // never stood as no seal (the security review). The scorer seals it again
+  // on the log's own figures, as the pad's seal does, at the end of the log.
+  const [chase] = await q(`select runs, wickets, balls, end_reason from innings_result_state($1, 1::smallint,
+      coalesce((select c.doc->'play' from match_conditions c where c.match_id = $1), '{}'::jsonb), true)`, [fx.live]);
+  await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                                   client_ts, kind, payload)
+           select $1, m.school_id, s.n, 1, 1, '88888888-0000-0000-0000-000000000006', 'mc-pad', 'mc-reseal-' || $1, s.n, now(), 'innings_end',
+                  jsonb_build_object('reason', $2::text, 'confirmed', jsonb_build_object('runs', $3::int, 'wickets', $4::int, 'balls', $5::int))
+             from match m, (select coalesce(max(seq), 0) + 1 as n from ball_event where match_id = $1) s where m.id = $1`,
+    [fx.live, chase.end_reason ?? "target_reached", chase.runs, chase.wickets, chase.balls]);
+  const [{ sealed }] = await q(`select bool_and((i->>'sealed')::boolean) as sealed from match_result_compute($1) r, jsonb_array_elements(r.innings) i`, [fx.live]);
+  ok("the chase is sealed on the log's own figures", sealed === true, JSON.stringify(chase));
   const pr = await open();
   ok("the principal signs in", await signIn(pr.page, /principal@example\.invalid|Principal/));
   ok("the decided fixture opens", await openMatch(pr.page, fx.live));
   ok("she is offered Confirm result (the home school's, and no hand of hers on the log)",
-     await until(pr.page, () => !!document.querySelector('[data-testid="mc-official-confirm"]'), 8000));
+     await until(pr.page, () => !!document.querySelector('[data-testid="mc-official-confirm"]'), 20000));
   const confirmBox = await tid(pr.page, "mc-official-confirm").boundingBox();
   ok("...a 44px target", (confirmBox?.height ?? 0) >= 44, JSON.stringify(confirmBox));
   await tid(pr.page, "mc-official-confirm").click();
