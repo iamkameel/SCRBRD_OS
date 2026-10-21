@@ -35,7 +35,7 @@ This design settles:
   (§4).
 - **The clock.** Contain within the hour; classify within 24 hours; the school's own
   information officer told within 24 hours; the Regulator within 72 hours of
-  classifying a compromise; families with the Regulator or within 7 days; a review
+  discovery for a compromise; families with the Regulator or within 7 days; a review
   at 30 days (§5).
 - **Containment.** What can be switched off today (Render's suspend, `PUBLIC_PAGES`,
   a module flag, an account, a session, a secret) and the read-only mode that follows
@@ -143,7 +143,7 @@ per event (§4).
 |---|---|---|
 | **S1** a child at risk | whereabouts, a lift, a never-public mark's reason, anything safeguarding, an address or a school beside a name for a child with the mark | the DSO, within the hour, by a safeguarding concern; the school's principal by phone |
 | **S2** special personal information | health, discipline, an ID number, a full record (profile with contacts), a guardian's details, a dump | the school's information officer within 24 hours; the Regulator and families if a compromise |
-| **S3** identifying data only | names, initials and surnames, team sheets, ages groups, the fact of a sign-in | the school's information officer within 24 hours; notify if a compromise, in proportion |
+| **S3** identifying data only | names, initials and surnames, team sheets, age groups, the fact of a sign-in | the school's information officer within 24 hours; notify if a compromise, in proportion |
 | **S4** no personal data | a secret with no evidence of use, an outage with no loss, a near miss | the register only; the 30-day review |
 
 ### 3.4 POPIA s22 as I read it
@@ -816,8 +816,8 @@ Each with the recommendation, so "as recommended" is an answer.
    officer co-signs those about its pupils; one Regulator notice in both names (D4).
    **Recommend: yes, with the lawyer confirming the standing (Q17).**
 4. **The clock.** Contain T+1h; classify and tell the school T+24h; the Regulator
-   T+72h after classifying a compromise; families with the Regulator or by T+7d;
-   review T+30d (D10). **Recommend: as written.**
+   by T+72h from discovery for a compromise; families with the Regulator or by
+   T+7d; review T+30d (D10). **Recommend: as written.**
 5. **The lost-phone threshold.** A locked phone whose account is disabled and signed
    out within the hour is a data event, not a compromise; unlocked, or used after
    loss, is a compromise (kind 1). **Recommend: yes, marked [lawyer].**
