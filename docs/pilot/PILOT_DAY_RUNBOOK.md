@@ -4,9 +4,22 @@ Saturday 31 October 2026. Westville Boys' High School v [opponent]. One fixture 
 
 Pilot date: Saturday 31 October 2026 (Kameel, 15 Oct 2026). Schedule: wave 3 pasted and merged by 17 Oct; solo run 1 on 22 Oct; feature freeze from 26 Oct; solo run 2 on 27 Oct; production verify on 28 Oct; go/no-go on 29 Oct.
 
-Fill in before the day: [opponent], [match link from the Match Centre], [who to call].
+Fill in before the day: [opponent], [match link from the Match Centre]. The people to call are under **Who to call**.
 
 Every button name below is written as the app shows it. The scorers' own one-page guide is `docs/pilot/SCORER_HELP.md`.
+
+---
+
+## Who to call
+
+These are roles, not names. The numbers for each role are on the printed card each scorer carries. They are not in this repository.
+
+| role | for |
+|---|---|
+| **the match-day lead** | the pill says **For review**; the server or database is down; the app shows something it should not; a phone is lost; whether to import after play |
+| **the school office** | **Waiting for your school office**; a sign-in code; no scoring button on an account |
+| **the second reader** | a compromise decision when the lead is the subject or is busy on the field; the person the lead phones at T + 1 hour |
+| **the standby scorer** | the handover; the paper book if the first phone dies |
 
 ---
 
@@ -23,8 +36,8 @@ Every button name below is written as the app shows it. The scorers' own one-pag
 
 1. Charge both scorers' phones and restart them.
 2. Each scorer opens `https://scrbrd.onrender.com/app` on their own phone (the home page at `https://scrbrd.onrender.com` has a **Log in** link to it). They tap **Continue with Google**, or type their email and the code from the school office in **Sign-in code** and tap **Sign In**. A code works once and expires, so ask the office for a fresh one on the morning if it was used.
-3. If the screen says **Waiting for your school office**, the office has not linked that account yet. Ask [who to call].
-4. Tap **Match Centre** (the bottom bar on a phone, or under **More**). The fixture must be listed. While it is upcoming its button reads **Start Scoring →**; once live it reads **Open Live Scorer →**. If there is no button, that account is not offered scoring: tell [who to call].
+3. If the screen says **Waiting for your school office**, the office has not linked that account yet. Ask the school office.
+4. Tap **Match Centre** (the bottom bar on a phone, or under **More**). The fixture must be listed. While it is upcoming its button reads **Start Scoring →**; once live it reads **Open Live Scorer →**. If there is no button, that account is not offered scoring: tell the school office.
 5. Rehearse on a practice match, not the real fixture: **Open SCRBRD Scorer**, then **Start Practice Match**. Score a few balls, a **Wicket** and an **Undo**. A practice match stays on the phone and is never counted.
 6. **Do not** score balls on the real fixture before the match.
 
@@ -83,7 +96,7 @@ The server turned some balls down. They stay on that phone and still count on it
 
 ### Pill says For review
 
-The server held balls sent under a token the phone no longer held. They are not in the scorebook. A supervisor decides on each one. Call [who to call].
+The server held balls sent under a token the phone no longer held. They are not in the scorebook. A supervisor decides on each one. Call the match-day lead.
 
 ### No signal at the ground
 
@@ -91,6 +104,8 @@ The server held balls sent under a token the phone no longer held. They are not 
 2. If the page reloads or the phone restarts, the pad reopens with its score. If a bar says **Sign in**, tap it and sign in again. If the old code has been used, ask the office for a new one.
 3. When signal returns the balls send by themselves. Wait for **Sent**.
 4. There is no handover without signal.
+
+If the signal is back but the pill does not move, see 'The server or the database is down'.
 
 ### A bar says another device holds the match
 
@@ -102,6 +117,31 @@ The server held balls sent under a token the phone no longer held. They are not 
 
 - **Last updated** followed by a time and "reconnecting", bottom right: the screen has lost its connection. Check the pavilion Wi-Fi.
 - The screen says **This display is no longer available.** The side has been withdrawn from the public page.
+
+### The server or the database is down
+
+Signs: the pill stays **Held** or **On device** although the phone has signal; the health address does not answer, or shows `"db":"unreachable"`; the pavilion screen says "reconnecting".
+
+1. **Keep scoring on the pad.** Every ball is saved on the phone before it counts. Nothing is lost while the phone works. Do not reload, clear the match or sign out.
+2. **The paper scorebook is kept as always**, ball by ball. Today it is the second record: check it against the pad at the end of every over, not only at the innings.
+3. **No handover while the server is down.** If the scoring phone dies, the standby does not claim the match. From that ball the paper book is the only record; the standby writes the time and the over on it and scores on paper.
+4. **Tell [the match-day lead].** The lead decides nothing during play except whether to suspend the service deliberately (see "The app shows something it should not"). Play goes on.
+5. **When the server returns the balls send by themselves.** Wait for **Sent**. The pavilion screen catches up on its own.
+6. **After the match** the lead opens the scorecard and compares it with the book. If every ball is there, nothing more is done. If balls are missing (a lost or dead phone, balls **For review** that cannot be released, a cleared match), the lead imports the book through the scorebook importer, typed by hand (the reader stays off), and the imported balls carry their source. Either way the lead writes a register entry.
+
+### The app shows something it should not
+
+Another school's boy's details, a name on the pavilion screen where a position should be, a date of birth, anything that is not yours to see.
+
+1. **Do not photograph it, screenshot it or forward it.** Note the time and which screen.
+2. **Tell [the match-day lead] at once.** The lead can take the public page down (**Withdraw**) in a minute and every public page off in a few. The match goes on on the pad.
+3. The lead writes a register entry; the information officer and the second reader decide within 24 hours whether families are told.
+
+### A phone with the app signed in is lost
+
+1. **Tell [the match-day lead] at once.** The lead or the school office disables that account and signs it out everywhere.
+2. If it was the scoring phone, the lead force-releases the match so the standby can claim it. Balls that had not been sent are on paper only; the standby carries on from the book.
+3. The register entry says whether the phone was locked, when the account was disabled, and what was on it.
 
 ---
 
@@ -122,4 +162,13 @@ The server held balls sent under a token the phone no longer held. They are not 
 - [ ] Home side published and the pavilion screen shows **Before the toss**
 - [ ] Pavilion Wi-Fi tested
 - [ ] Phones charged
-- [ ] [who to call] known to both scorers
+- [ ] The roles under **Who to call** known to both scorers, and the numbers on the printed card
+
+### For solo run 2 (27 October) and the production verify (28 October)
+
+- [ ] With the API stopped (or suspended on Render), score six balls on a practice match: the pill says **Held**, not **Refused**; on resume they go to **Sent**.
+- [ ] With the API up and the database string wrong (a test server), the same: the server's 5xx leaves balls **Held**.
+- [ ] `PUBLIC_PAGES` off and on again: the pavilion page 404s, then returns, within a few minutes; note the time it took.
+- [ ] `account_set_active(false)` on a test scorer mid-practice: the pad stops sending and holds; enabled again and signed in, it sends.
+- [ ] A parent's question "who read my child's record" can be answered from "On the record: who read what" by the office in under five minutes.
+- [ ] The register template is on the lead's encrypted disk; both scorers hold the card; the second reader knows they are it.
