@@ -138,6 +138,12 @@ async function openMatch(page, id) {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(1500);
   const btn = tid(page, `mc-open-${id}`);
+  // Match Centre draws a fixture's card only once its reads answer (matches,
+  // staff, grounds, competitions, weather), and on the first opening those
+  // queue behind the previous screen's: 1.4-2.3 s measured, against the fixed
+  // wait before this look. Give the card up to 10 s to be drawn; one that is
+  // never drawn is judged exactly as before.
+  await btn.first().waitFor({ timeout: 10000 }).catch(() => {});
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
   await page.waitForTimeout(1800);
