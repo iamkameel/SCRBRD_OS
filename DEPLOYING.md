@@ -56,6 +56,11 @@ instance-hours a month. Set the repository variable `SCRBRD_HEALTH_URL`
 (Settings → Secrets and variables → Actions → Variables) to the service's
 `/api/health` address; unset, the job does nothing. Run it once by hand from
 the Actions tab to see it answer 200.
+The job also fails, and GitHub emails the repository owner, when production is
+bad: no answer, an answer other than 200, a body that is not JSON, or a body
+without `ok: true` and `db: "ok"`. It tries up to three times (75 seconds each,
+20 apart) so a sleeping server booting does not count. For the pilot this is the
+only alert there is.
 
 ### The deployed revision
 
