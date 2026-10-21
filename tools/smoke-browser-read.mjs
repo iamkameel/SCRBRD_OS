@@ -125,6 +125,15 @@ async function signIn(page, who) {
  * whatever viewport the page has.
  */
 async function floors(page) {
+  // Measured at rest. A control's box includes its transform, and a pressed
+  // .pressBtn is scale(0.96), easing back over 150 ms (design/tokens.js), so a
+  // measurement taken in that window reads a 44 px button as 43.x: Home at
+  // phone width once reported 'BUTTON 44px "Change"' right after the sign-in
+  // tap. Wait for every running CSS transition to finish (up to 2 s), then
+  // measure as before. Endless animations (a pulse, a spinner) are not
+  // transitions and are not waited on.
+  await page.waitForFunction(() => document.getAnimations().every((a) => !(a instanceof CSSTransition) || a.playState !== "running"),
+    null, { timeout: 2000 }).catch(() => {});
   return page.evaluate(() => {
     const small = [], tiny = [];
     for (const root of document.querySelectorAll('[data-testid="os-main"], [data-testid="persona-bar"], [data-testid="mnav"]')) {

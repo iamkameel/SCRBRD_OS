@@ -202,6 +202,11 @@ const onPad = async () => {
 const openFixture = async () => {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(1200);
+  // Match Centre draws the fixture's card and its scoring button once its
+  // reads answer, which on a first opening can take past the 1.2 s above:
+  // wait up to 10 s for a scoring button, then search exactly as before.
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")),
+    null, { timeout: 10000 }).catch(() => {});
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {

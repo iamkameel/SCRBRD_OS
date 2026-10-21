@@ -202,7 +202,15 @@ const basicPad = async () => {
   await page.waitForTimeout(300);
 };
 /** Let the outbox send and the server answer. */
-const settle = async () => { await page.waitForTimeout(2600); };
+// 2.6 s for the pad to send what it just recorded, and then, while its pill
+// still says "Sending N", up to 10 s more. A fixed 2.6 s alone was short when
+// the runner was busy: the short run's two rows had not reached the server
+// ("the server has two more rows, in order" and the API's total behind the
+// board, 2 runs of 3 here).
+const settle = async () => {
+  await page.waitForTimeout(2600);
+  await page.waitForFunction(() => !/\bSending \d+/.test(document.body.innerText), null, { timeout: 10000 }).catch(() => {});
+};
 
 /** The board, the server's rows and the API's live score say the same. */
 const agree = async (label, innings) => {

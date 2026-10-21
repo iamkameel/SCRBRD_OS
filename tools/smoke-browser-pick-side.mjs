@@ -143,6 +143,9 @@ async function openMatch(page, id) {
   await btn.first().waitFor({ timeout: 10000 }).catch(() => {});
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
+  // The fixture's view is drawn once its chunk and reads arrive, which a busy
+  // runner can take past the fixed wait below: give it up to 10 s first.
+  await tid(page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(1800);
   return (await tid(page, "match-view").count()) === 1;
 }
