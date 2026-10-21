@@ -33,6 +33,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resultFromRow, resultWords } from "@scrbrd/scoring";
+import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, Handler, IdHandler } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -103,7 +104,7 @@ export function resultsRoutes({ pool, secret, onChange }) {
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
       // A server error says nothing of itself to the caller: no message, no detail.
-      if (status >= 500) { console.error("results →", e.code || "", e.message); return res.status(status).json({ error: "error" }); }
+      if (status >= 500) { console.error("results →", safeErr(e)); return res.status(status).json({ error: "error" }); }
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };

@@ -127,6 +127,7 @@ import { MatchHub } from "./realtime/realtime.mjs";
 import { schemaRefusal } from "./schema-guard.mjs";
 import { revisionFromEnv } from "./revision.mjs";
 import { appUrl, port } from "../../tools/db-url.mjs";
+import { safeErr } from "./log-safe.mjs";
 /** @import { IncomingMessage, ServerResponse } from "node:http" */
 /** @import { Handler, IdHandler, ExactHandler } from "./api-types.mjs" */
 
@@ -471,7 +472,7 @@ const staffRegister = registerRoutes({ pool, secret: SECRET });
 // production and verifies only a project that is not scrbrd-os.
 const firebase = (() => {
   try { return verifierFromEnv({ dev: DEV }); }
-  catch (/** @type {any} */ e) { console.error(e.message); process.exit(1); }
+  catch (/** @type {any} */ e) { console.error(safeErr(e)); process.exit(1); }
 })();
 const signIn = signInRoutes({ pool, secret: SECRET, verifier: firebase.verifier,
                               trustProxyHops: Number(process.env.PUBLIC_TRUST_PROXY_HOPS || 0) });
@@ -1274,7 +1275,7 @@ async function servePad(req, res) {
     out.flush();
   } catch (/** @type {any} */ err) {
     const r = padRefusal(err);
-    if (r.status >= 500) console.error(`${req.method} ${url.pathname} (pad) →`, err.code || "", err.message);
+    if (r.status >= 500) console.error(`${req.method} ${url.pathname} (pad) →`, safeErr(err));
     json(res, r.status, r.body);
   }
 }
@@ -1487,8 +1488,10 @@ const server = createServer(async (req, res) => {
     return json(res, 404, { error: "not_found" });
   } catch (/** @type {any} */ err) {   // CaughtError in api-types.mjs
     // A bare SQLSTATE in a response is unhelpful and a stack trace in one is
-    // unsafe; the detail goes to the log, the code goes to the client.
-    if (!err.status) console.error(`${req.method} ${path} →`, err.code || "", err.message, err.detail || "");
+    // unsafe; the code goes to the client. The log takes the code, the
+    // constraint and the table, never Postgres's DETAIL: on a unique
+    // violation that is the duplicate email or ID number (log-safe.mjs, D24).
+    if (!err.status) console.error(`${req.method} ${path} →`, safeErr(err));
     return json(res, err.status || 500, { error: err.code || err.message || "internal_error" });
   }
 });

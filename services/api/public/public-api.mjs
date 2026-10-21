@@ -85,6 +85,7 @@ import { ANON, withPrincipal } from "../auth/auth.mjs";
 import { ROBOTS } from "@scrbrd/policy/public";
 import { projectLog } from "./redact.mjs";
 import { resultFromRow, resultWords, parReport, formatKind, dlsTable, DLS_STATUS, PAR_AT_LABEL, PAR_AT_METHOD, PAR_TRACK, RRR_TREND } from "@scrbrd/scoring";
+import { safeErr } from "../log-safe.mjs";
 /** @import { IncomingMessage, ServerResponse } from "node:http" */
 /** @import { Pool, Db } from "../api-types.mjs" */
 /** @import { PublicLog, PersonRow, LogRow } from "./redact.mjs" */
@@ -658,7 +659,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       try {
         send(res, 200, JSON.stringify(await live()), { cache: LIVE_EDGE }, head);
       } catch (/** @type {any} */ err) {
-        console.error(`GET ${path} (public) →`, err.code || "", err.message);
+        console.error(`GET ${path} (public) →`, safeErr(err));
         send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
       }
       return true;
@@ -670,7 +671,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       try {
         send(res, 200, JSON.stringify(await news()), { cache: TEAM_LEVEL }, head);
       } catch (/** @type {any} */ err) {
-        console.error(`GET ${path} (public) →`, err.code || "", err.message);
+        console.error(`GET ${path} (public) →`, safeErr(err));
         send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
       }
       return true;
@@ -685,7 +686,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
         send(res, 200, JSON.stringify({ competitionId: cid, rows, provisionalResults: rows[0]?.provisionalResults ?? 0 }),
           { cache: TEAM_LEVEL }, head);
       } catch (/** @type {any} */ err) {
-        console.error(`GET ${path} (public) →`, err.code || "", err.message);
+        console.error(`GET ${path} (public) →`, safeErr(err));
         send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
       }
       return true;
@@ -731,7 +732,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
         send(res, 200, JSON.stringify({ matchId: id, sectors: await shots(id, h, hot) }), { cache: TEAM_LEVEL }, head);
       }
     } catch (/** @type {any} */ err) {
-      console.error(`GET ${path} (public) →`, err.code || "", err.message);
+      console.error(`GET ${path} (public) →`, safeErr(err));
       send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
     }
     return true;

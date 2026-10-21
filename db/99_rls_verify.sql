@@ -5122,6 +5122,178 @@ BEGIN
   RETURN ids || jsonb_build_object('boy', v_boy, 'n1', n1, 'n2', n2, 's1', s1, 'w1', w1);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/102 (section 79) ─────────────────────────────────────────────
+-- ┌── db/109 (section 86). Account lifecycle slice 3: a child's links, and the reason for an ending
+-- Written as the owner, the way the system's own definers write, each the
+-- one thing an assertion needs.
+--
+-- The stage: three Hilton boys (Boy, 15, U15A; Two, 14, U14A; Old, 19 and
+-- still at school, 1XI), the office, the director of sport, a coach, three
+-- guardians (Mum and Dad of Boy; Gran and Dad of Two; Aunt of Old) and
+-- Westville's office. Mum's links carry everything a revocation takes with
+-- it: a public-name "yes" and a health-monitoring "yes" given ten days ago
+-- through her link, and a seat she asked for on Dad's lift tomorrow. Boy has
+-- an emergency contact. The seed's DSO (N Dube) is the DSO, and an open
+-- concern names Boy.
+CREATE OR REPLACE FUNCTION _v109_link(p_person uuid, p_player uuid) RETURNS uuid AS $$
+DECLARE a uuid; l uuid;
+BEGIN
+  SELECT r.id INTO a FROM role_assignment r WHERE r.person_id = p_person AND r.role = 'guardian' AND r.active LIMIT 1;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now() - interval '20 days',
+          'granted', 'popia-2026-01', now() - interval '20 days', '88888888-0000-0000-0000-00000000000c', current_date - 30)
+  RETURNING id INTO l;
+  RETURN l;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v109_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  ids jsonb; v_boy uuid; v_two uuid; v_old uuid; l uuid; a uuid; v_m uuid; v_d uuid; v_o uuid; v_s uuid; v_c uuid; v_p uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15A', 'Verify OneOhNine Boy', 1091, 'batter', make_date(extract(year FROM sa_today())::int - 15, 3, 1))
+  RETURNING id INTO v_boy;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U14A', 'Verify OneOhNine Two', 1092, 'bowler', make_date(extract(year FROM sa_today())::int - 14, 3, 1))
+  RETURNING id INTO v_two;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneOhNine Old', 1093, 'batter', make_date(extract(year FROM sa_today())::int - 19, 3, 1))
+  RETURNING id INTO v_old;
+  ids := _v71_people('v109', ARRAY[
+    ARRAY['office',    'schooladmin',     HIL::text, '',     ''],
+    ARRAY['dos',       'directorofsport', HIL::text, '',     ''],
+    ARRAY['coach',     'coach',           HIL::text, 'U15A', ''],
+    ARRAY['mum',       'guardian',        HIL::text, '',     ''],
+    ARRAY['dad',       'guardian',        HIL::text, '',     ''],
+    ARRAY['gran',      'guardian',        HIL::text, '',     ''],
+    ARRAY['aunt',      'guardian',        HIL::text, '',     ''],
+    ARRAY['uncle',     'guardian',        HIL::text, '',     ''],
+    ARRAY['wesoffice', 'schooladmin',     WES::text, '',     '']]);
+  -- A platform administrator: one platform-wide assignment, no school.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v109.platform@example.invalid', 'V109 Platform', 'platformadmin') RETURNING id INTO v_p;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'platformadmin', NULL);
+  ids := ids || jsonb_build_object('platform', v_p);
+  -- An owner's key: a platform-wide superadmin, guardian.link.manage everywhere.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v109.owner@example.invalid', 'V109 Owner', 'superadmin') RETURNING id INTO v_p;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'superadmin', NULL);
+  ids := ids || jsonb_build_object('owner', v_p);
+  ids := ids || jsonb_build_object('boy', v_boy, 'two', v_two, 'old', v_old,
+    'l_mum',  _v109_link((ids->>'mum')::uuid,  v_boy),
+    'l_dad',  _v109_link((ids->>'dad')::uuid,  v_boy),
+    'l_gran', _v109_link((ids->>'gran')::uuid, v_two),
+    'l_dad2', _v109_link((ids->>'dad')::uuid,  v_two),
+    'l_old',  _v109_link((ids->>'aunt')::uuid, v_old),
+    'l_uncle', _v109_link((ids->>'uncle')::uuid, v_two));
+  l := (ids->>'l_mum')::uuid;
+  SELECT g.assignment_id INTO a FROM assignment_subject g WHERE g.id = l;
+  -- What goes with her link (D14).
+  INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+  VALUES (v_boy, 'guardian', a, l, 'popia-2026-01', current_date - 10, OFFICE);
+  INSERT INTO health_monitoring_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+  VALUES (v_boy, 'guardian', a, l, 'v109', current_date - 10, OFFICE);
+  INSERT INTO emergency_contact (player_id, priority, name, relationship, phone)
+  VALUES (v_boy, 1, 'V109 Mum', 'mother', '+27 82 109 0001') RETURNING id INTO v_c;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', 'Verify OneOhNine XI', ((current_date + 3)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO v_m;
+  INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
+                                       insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
+  VALUES ((ids->>'dad')::uuid, HIL, 'Silver hatchback', 'V109 GP', 3, true, true, true, true, true, 1, current_date + 300)
+  RETURNING id INTO v_d;
+  INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at,
+                          fixture_starts_at)
+  VALUES (HIL, v_m, 'U15A', 'out', (ids->>'dad')::uuid, v_d, 3, 'school',
+          ((current_date + 3)::timestamp + time '07:30') AT TIME ZONE 'Africa/Johannesburg', now())
+  RETURNING id INTO v_o;
+  INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id,
+                         guardian_link_id, requested_by, state)
+  VALUES (v_o, HIL, v_m, 'U15A', 'out', v_boy, 'guardian', a, l, (ids->>'mum')::uuid, 'requested')
+  RETURNING id INTO v_s;
+  INSERT INTO safeguarding_concern (reference, tenant_id, school_id, about_kind, subject_player_id,
+                                    nature, certainty, account)
+  VALUES ('SG-V109-0109', HIL, HIL, 'child', v_boy, '{neglect}', 'suspicion', 'A concern raised for db/99 section 86 only.')
+  RETURNING id INTO v_c;
+  RETURN ids || jsonb_build_object('seat', v_s, 'concern', v_c);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- guardian_link_revoke() as the CALLER, its refusal as text ('ok' when it
+-- ended the link), or the SQLSTATE of whatever raised instead of answering.
+-- Not a definer.
+CREATE OR REPLACE FUNCTION _v109_revoke(p_link uuid, p_kind text, p_reason text) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  SELECT coalesce(o.reason, 'ok') INTO v FROM guardian_link_revoke(p_link, p_kind, p_reason) o;
+  RETURN v;
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+
+-- The ending row of one link, whole, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_ending(p_link uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(e) FROM guardian_link_ending e WHERE e.link_id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- One link, whole, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_link_row(p_link uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(g) FROM assignment_subject g WHERE g.id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A notice, whole, past RLS.
+CREATE OR REPLACE FUNCTION _v109_notice(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(n) FROM notification n WHERE n.id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Health consent, the one gate every health read asks (db/60), past RLS.
+CREATE OR REPLACE FUNCTION _v109_health(p_player uuid) RETURNS boolean AS $$
+  SELECT health_consent_live(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The public-name facts (db/47, db/62), as the public read path asks them.
+CREATE OR REPLACE FUNCTION _v109_facts(p_player uuid) RETURNS jsonb AS $$
+  SELECT public_name_facts(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy leaves the school system today (his open membership closes), or
+-- comes back (a new one opens), and db/62's deferred triggers are fired.
+CREATE OR REPLACE FUNCTION _v109_leave(p_player uuid) RETURNS void AS $$
+BEGIN
+  UPDATE team_membership SET left_on = current_date WHERE player_id = p_player AND left_on IS NULL;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_return(p_player uuid) RETURNS void AS $$
+BEGIN
+  INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
+  SELECT p.id, p.school_id, 'cricket', p.team_code, current_date, 'moved' FROM player p WHERE p.id = p_player;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How many contacts a boy has, past RLS (D14: they stay).
+CREATE OR REPLACE FUNCTION _v109_contacts(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM emergency_contact WHERE player_id = p_player AND active
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The access log's child_links reads of one child, past RLS.
+CREATE OR REPLACE FUNCTION _v109_logged(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM access_log WHERE resource = 'child_links' AND p_player = ANY (record_ids)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Disable an account as the owner would (Q13), and its guardian role's id.
+CREATE OR REPLACE FUNCTION _v109_disable(p_user uuid) RETURNS void AS $$
+  UPDATE app_user SET active = false WHERE id = p_user
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_role(p_user uuid) RETURNS uuid AS $$
+  SELECT id FROM role_assignment WHERE person_id = p_user AND role = 'guardian' AND active LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A second role for a person (and its end), as the office's grant writes one.
+CREATE OR REPLACE FUNCTION _v109_grant(p_user uuid, p_role text) RETURNS uuid AS $$
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES (p_user, p_role, '11111111-1111-1111-1111-111111111111') RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_ungrant(p_id uuid) RETURNS void AS $$
+  UPDATE role_assignment SET active = false WHERE id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/109 (section 86) ─────────────────────────────────────────────
+
 -- ┌── db/103 (section 80). The plan's byline: who wrote the side's plan
 -- Its own sides, so §76's plans and readers do not meet it: Hilton's 10XI
 -- (the plan's side) and 11XI (another side), and Westville's 10XI. On 10XI:
@@ -5855,179 +6027,6 @@ CREATE OR REPLACE FUNCTION _v108_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
   END
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/108 (section 85) ─────────────────────────────────────────────
-
--- ┌── db/109 (section 86). Account lifecycle slice 3: a child's links, and the reason for an ending
--- Written as the owner, the way the system's own definers write, each the
--- one thing an assertion needs.
---
--- The stage: three Hilton boys (Boy, 15, U15A; Two, 14, U14A; Old, 19 and
--- still at school, 1XI), the office, the director of sport, a coach, three
--- guardians (Mum and Dad of Boy; Gran and Dad of Two; Aunt of Old) and
--- Westville's office. Mum's links carry everything a revocation takes with
--- it: a public-name "yes" and a health-monitoring "yes" given ten days ago
--- through her link, and a seat she asked for on Dad's lift tomorrow. Boy has
--- an emergency contact. The seed's DSO (N Dube) is the DSO, and an open
--- concern names Boy.
-CREATE OR REPLACE FUNCTION _v109_link(p_person uuid, p_player uuid) RETURNS uuid AS $$
-DECLARE a uuid; l uuid;
-BEGIN
-  SELECT r.id INTO a FROM role_assignment r WHERE r.person_id = p_person AND r.role = 'guardian' AND r.active LIMIT 1;
-  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
-                                  consent_state, consent_version, consent_at, created_by, valid_from)
-  VALUES (a, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now() - interval '20 days',
-          'granted', 'popia-2026-01', now() - interval '20 days', '88888888-0000-0000-0000-00000000000c', current_date - 30)
-  RETURNING id INTO l;
-  RETURN l;
-END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
-CREATE OR REPLACE FUNCTION _v109_stage() RETURNS jsonb AS $$
-DECLARE
-  HIL uuid := '11111111-1111-1111-1111-111111111111';
-  WES uuid := '22222222-2222-2222-2222-222222222222';
-  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
-  ids jsonb; v_boy uuid; v_two uuid; v_old uuid; l uuid; a uuid; v_m uuid; v_d uuid; v_o uuid; v_s uuid; v_c uuid; v_p uuid;
-BEGIN
-  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (HIL, 'U15A', 'Verify OneOhNine Boy', 1091, 'batter', make_date(extract(year FROM sa_today())::int - 15, 3, 1))
-  RETURNING id INTO v_boy;
-  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (HIL, 'U14A', 'Verify OneOhNine Two', 1092, 'bowler', make_date(extract(year FROM sa_today())::int - 14, 3, 1))
-  RETURNING id INTO v_two;
-  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (HIL, '1XI', 'Verify OneOhNine Old', 1093, 'batter', make_date(extract(year FROM sa_today())::int - 19, 3, 1))
-  RETURNING id INTO v_old;
-  ids := _v71_people('v109', ARRAY[
-    ARRAY['office',    'schooladmin',     HIL::text, '',     ''],
-    ARRAY['dos',       'directorofsport', HIL::text, '',     ''],
-    ARRAY['coach',     'coach',           HIL::text, 'U15A', ''],
-    ARRAY['mum',       'guardian',        HIL::text, '',     ''],
-    ARRAY['dad',       'guardian',        HIL::text, '',     ''],
-    ARRAY['gran',      'guardian',        HIL::text, '',     ''],
-    ARRAY['aunt',      'guardian',        HIL::text, '',     ''],
-    ARRAY['uncle',     'guardian',        HIL::text, '',     ''],
-    ARRAY['wesoffice', 'schooladmin',     WES::text, '',     '']]);
-  -- A platform administrator: one platform-wide assignment, no school.
-  INSERT INTO app_user (school_id, email, name, role)
-  VALUES (NULL, 'v109.platform@example.invalid', 'V109 Platform', 'platformadmin') RETURNING id INTO v_p;
-  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'platformadmin', NULL);
-  ids := ids || jsonb_build_object('platform', v_p);
-  -- An owner's key: a platform-wide superadmin, guardian.link.manage everywhere.
-  INSERT INTO app_user (school_id, email, name, role)
-  VALUES (NULL, 'v109.owner@example.invalid', 'V109 Owner', 'superadmin') RETURNING id INTO v_p;
-  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'superadmin', NULL);
-  ids := ids || jsonb_build_object('owner', v_p);
-  ids := ids || jsonb_build_object('boy', v_boy, 'two', v_two, 'old', v_old,
-    'l_mum',  _v109_link((ids->>'mum')::uuid,  v_boy),
-    'l_dad',  _v109_link((ids->>'dad')::uuid,  v_boy),
-    'l_gran', _v109_link((ids->>'gran')::uuid, v_two),
-    'l_dad2', _v109_link((ids->>'dad')::uuid,  v_two),
-    'l_old',  _v109_link((ids->>'aunt')::uuid, v_old),
-    'l_uncle', _v109_link((ids->>'uncle')::uuid, v_two));
-  l := (ids->>'l_mum')::uuid;
-  SELECT g.assignment_id INTO a FROM assignment_subject g WHERE g.id = l;
-  -- What goes with her link (D14).
-  INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
-  VALUES (v_boy, 'guardian', a, l, 'popia-2026-01', current_date - 10, OFFICE);
-  INSERT INTO health_monitoring_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
-  VALUES (v_boy, 'guardian', a, l, 'v109', current_date - 10, OFFICE);
-  INSERT INTO emergency_contact (player_id, priority, name, relationship, phone)
-  VALUES (v_boy, 1, 'V109 Mum', 'mother', '+27 82 109 0001') RETURNING id INTO v_c;
-  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-  VALUES (HIL, 'U15A', 'Verify OneOhNine XI', ((current_date + 3)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
-          'cricket', 'T20', 20, 'scheduled')
-  RETURNING id INTO v_m;
-  INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
-                                       insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
-  VALUES ((ids->>'dad')::uuid, HIL, 'Silver hatchback', 'V109 GP', 3, true, true, true, true, true, 1, current_date + 300)
-  RETURNING id INTO v_d;
-  INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at,
-                          fixture_starts_at)
-  VALUES (HIL, v_m, 'U15A', 'out', (ids->>'dad')::uuid, v_d, 3, 'school',
-          ((current_date + 3)::timestamp + time '07:30') AT TIME ZONE 'Africa/Johannesburg', now())
-  RETURNING id INTO v_o;
-  INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id,
-                         guardian_link_id, requested_by, state)
-  VALUES (v_o, HIL, v_m, 'U15A', 'out', v_boy, 'guardian', a, l, (ids->>'mum')::uuid, 'requested')
-  RETURNING id INTO v_s;
-  INSERT INTO safeguarding_concern (reference, tenant_id, school_id, about_kind, subject_player_id,
-                                    nature, certainty, account)
-  VALUES ('SG-V109-0109', HIL, HIL, 'child', v_boy, '{neglect}', 'suspicion', 'A concern raised for db/99 section 86 only.')
-  RETURNING id INTO v_c;
-  RETURN ids || jsonb_build_object('seat', v_s, 'concern', v_c);
-END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- guardian_link_revoke() as the CALLER, its refusal as text ('ok' when it
--- ended the link), or the SQLSTATE of whatever raised instead of answering.
--- Not a definer.
-CREATE OR REPLACE FUNCTION _v109_revoke(p_link uuid, p_kind text, p_reason text) RETURNS text AS $$
-DECLARE v text;
-BEGIN
-  SELECT coalesce(o.reason, 'ok') INTO v FROM guardian_link_revoke(p_link, p_kind, p_reason) o;
-  RETURN v;
-EXCEPTION WHEN OTHERS THEN
-  RETURN SQLSTATE;
-END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
-
--- The ending row of one link, whole, as the owner reads it.
-CREATE OR REPLACE FUNCTION _v109_ending(p_link uuid) RETURNS jsonb AS $$
-  SELECT to_jsonb(e) FROM guardian_link_ending e WHERE e.link_id = p_link
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- One link, whole, as the owner reads it.
-CREATE OR REPLACE FUNCTION _v109_link_row(p_link uuid) RETURNS jsonb AS $$
-  SELECT to_jsonb(g) FROM assignment_subject g WHERE g.id = p_link
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- A notice, whole, past RLS.
-CREATE OR REPLACE FUNCTION _v109_notice(p_id uuid) RETURNS jsonb AS $$
-  SELECT to_jsonb(n) FROM notification n WHERE n.id = p_id
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- Health consent, the one gate every health read asks (db/60), past RLS.
-CREATE OR REPLACE FUNCTION _v109_health(p_player uuid) RETURNS boolean AS $$
-  SELECT health_consent_live(p_player)
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- The public-name facts (db/47, db/62), as the public read path asks them.
-CREATE OR REPLACE FUNCTION _v109_facts(p_player uuid) RETURNS jsonb AS $$
-  SELECT public_name_facts(p_player)
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- A boy leaves the school system today (his open membership closes), or
--- comes back (a new one opens), and db/62's deferred triggers are fired.
-CREATE OR REPLACE FUNCTION _v109_leave(p_player uuid) RETURNS void AS $$
-BEGIN
-  UPDATE team_membership SET left_on = current_date WHERE player_id = p_player AND left_on IS NULL;
-  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
-  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
-END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-CREATE OR REPLACE FUNCTION _v109_return(p_player uuid) RETURNS void AS $$
-BEGIN
-  INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
-  SELECT p.id, p.school_id, 'cricket', p.team_code, current_date, 'moved' FROM player p WHERE p.id = p_player;
-  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
-  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
-END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- How many contacts a boy has, past RLS (D14: they stay).
-CREATE OR REPLACE FUNCTION _v109_contacts(p_player uuid) RETURNS integer AS $$
-  SELECT count(*)::int FROM emergency_contact WHERE player_id = p_player AND active
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- The access log's child_links reads of one child, past RLS.
-CREATE OR REPLACE FUNCTION _v109_logged(p_player uuid) RETURNS integer AS $$
-  SELECT count(*)::int FROM access_log WHERE resource = 'child_links' AND p_player = ANY (record_ids)
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- Disable an account as the owner would (Q13), and its guardian role's id.
-CREATE OR REPLACE FUNCTION _v109_disable(p_user uuid) RETURNS void AS $$
-  UPDATE app_user SET active = false WHERE id = p_user
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-CREATE OR REPLACE FUNCTION _v109_role(p_user uuid) RETURNS uuid AS $$
-  SELECT id FROM role_assignment WHERE person_id = p_user AND role = 'guardian' AND active LIMIT 1
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- A second role for a person (and its end), as the office's grant writes one.
-CREATE OR REPLACE FUNCTION _v109_grant(p_user uuid, p_role text) RETURNS uuid AS $$
-  INSERT INTO role_assignment (person_id, role, school_id)
-  VALUES (p_user, p_role, '11111111-1111-1111-1111-111111111111') RETURNING id
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-CREATE OR REPLACE FUNCTION _v109_ungrant(p_id uuid) RETURNS void AS $$
-  UPDATE role_assignment SET active = false WHERE id = p_id
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- └── db/109 (section 86) ─────────────────────────────────────────────
-
 -- ┌── db/110 (section 87). The coach's draft plan: changed, and thrown away
 -- Its own side, Hilton's 12XI, so no other section's plans meet it: its
 -- coach (the author), a second coach of the side, the team manager, a boy
@@ -6090,7 +6089,6 @@ CREATE OR REPLACE FUNCTION _v110_versions(p_post uuid) RETURNS text AS $$
    WHERE x.kind = 'notice' AND x.subject_kind = 'news' AND x.subject_id = p_post AND x.retracts_id IS NULL
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/110 (section 87) ─────────────────────────────────────────────
-
 -- ┌── db/111 (section 88). The physio's injury record, its reviews and her worklist
 -- Its own sides, so no other section's injuries meet it: Hilton's 12XI (the
 -- boy, a team-mate, a boy whose mother is a physio, and a boy who leaves),
@@ -6490,7 +6488,6 @@ CREATE OR REPLACE FUNCTION _v112_db100(p_match uuid, p_child uuid[]) RETURNS boo
                OR p_match = ANY (p_child)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/112 (section 89) ─────────────────────────────────────────────
-
 -- ┌── db/113 (section 90). A correction takes back what it falsified
 -- A Hilton side of its own (U19F): a batter who reaches a fifty on a six
 -- (D Erasmus's case), a partner whose fifty stands, a U13 pace bowler who
@@ -23699,6 +23696,25 @@ $v49$;
       PERFORM _assert(g = e, format('§83 (reader): the %s reads [%s], the design gives [%s] (fixtures | trips | training | toss | umpire | weather | publication)', k, g, e));
     END LOOP;
 
+    -- (both): a mother of two boys on two sides keeps both boys. REACH-D1
+    -- narrows the rows about a SIDE, never her children: g2 reads B's and W's
+    -- own player rows and no other boy's of the stage, and each boy's own
+    -- side's fixture without the other's sheet (f6, B's 8XI at Hilton; f2,
+    -- W's 6XI at Westville, which names neither). The browser walk's
+    -- two-school guardian (Sarah, §49 (own)) is the same case on the seed.
+    PERFORM _as((z->>'g2')::uuid);
+    SELECT string_agg(l, ' ' ORDER BY l) INTO bad
+      FROM (SELECT CASE p.id WHEN (z->>'a')::uuid THEN 'A' WHEN (z->>'up')::uuid THEN 'UP' WHEN (z->>'b')::uuid THEN 'B'
+                             WHEN (z->>'w')::uuid THEN 'W' WHEN (z->>'e')::uuid THEN 'E' WHEN (z->>'n')::uuid THEN 'N'
+                             WHEN (z->>'m')::uuid THEN 'M' END l
+              FROM player p
+             WHERE p.id IN ((z->>'a')::uuid, (z->>'up')::uuid, (z->>'b')::uuid, (z->>'w')::uuid,
+                            (z->>'e')::uuid, (z->>'n')::uuid, (z->>'m')::uuid)) x;
+    PERFORM _assert(bad IS NOT DISTINCT FROM 'B W',
+      format('§83 (both): the guardian of two boys on two sides reads the stage''s boys [%s], not [B W]', coalesce(bad, '')));
+    PERFORM _assert((SELECT count(*) FROM match WHERE id IN ((z->>'f6')::uuid, (z->>'f2')::uuid)) = 2,
+      '§83 (both): the guardian of two boys on two sides lost one boy''s own side''s fixture');
+
     -- (unchanged): every reader naming nobody, exactly as db/09 gave
     FOREACH k IN ARRAY ARRAY['coach6', 'coach7', 'wescoach', 'spec', 'spec6', 'office'] LOOP
       PERFORM _as((z->>k)::uuid);
@@ -25200,9 +25216,9 @@ $v49$;
         ('I_OVER',  'overdue',        jsonb_build_object('due', T - 2, 'over', 2, 'since', T - 2)),
         ('I_RET',   'return_passed',  jsonb_build_object('due', T - 1, 'over', 1, 'since', T - 1)),
         ('I_MATE',  'due',            jsonb_build_object('due', T + 3, 'over', 0)),
-        ('I_NORTW', 'no_return_date', jsonb_build_object('due', T + 20, 'over', 0, 'since', T)),
-        ('I_RECUR', 'new',            jsonb_build_object('due', T + 14, 'over', 0, 'since', T)),
-        ('I_OWN',   'new',            jsonb_build_object('due', T + 20, 'over', 0, 'since', T)),
+        ('I_NORTW', 'no_return_date', jsonb_build_object('due', T + 20, 'over', 0, 'since', 'last_review')),
+        ('I_RECUR', 'new',            jsonb_build_object('due', T + 14, 'over', 0, 'since', 'last_review')),
+        ('I_OWN',   'new',            jsonb_build_object('due', T + 20, 'over', 0, 'since', 'last_review')),
         ('I_QUIET', NULL,             NULL),
         ('I_LEFT',  NULL,             NULL),
         ('I1',      NULL,             NULL)) AS x(label, want, clock) LOOP
@@ -25216,8 +25232,16 @@ $v49$;
         PERFORM _assert(n = 0, format('§88 (worklist): %s is on the physio''s list as %s', k, v_reason));
       ELSE
         PERFORM _assert(n = 1 AND v_reason = got, format('§88 (worklist): %s reads %s (%s rows), not %s', k, coalesce(v_reason, 'absent'), n, got));
+        -- 'last_review': the day of the injury's latest review, from the row's
+        -- own reviewed_at, in Johannesburg. Not T: T is sa_today() at the
+        -- transaction's start, and the doors stamp clock_timestamp(), so a run
+        -- that crosses midnight in South Africa reviewed "tomorrow".
         PERFORM _assert(T + c_rows = (j->>'due')::date AND c_phase = (j->>'over')::int
-                        AND (NOT j ? 'since' OR T + e_rows = (j->>'since')::date),
+                        AND (NOT j ? 'since'
+                             OR T + e_rows = CASE WHEN j->>'since' = 'last_review'
+                                                  THEN (SELECT (max((r->>'reviewed_at')::timestamptz) AT TIME ZONE 'Africa/Johannesburg')::date
+                                                          FROM jsonb_array_elements(_v111_reviews(v_id)) r)
+                                                  ELSE (j->>'since')::date END),
           format('§88 (worklist): %s''s clock reads due %s, over %s, since %s, not %s', k, T + c_rows, c_phase, T + e_rows, j));
       END IF;
     END LOOP;

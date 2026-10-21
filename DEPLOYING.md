@@ -5,13 +5,14 @@ Nothing here uses any other Firebase project. Three pieces:
 
 | Piece | Where | How it gets there |
 |---|---|---|
-| Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
-| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | by hand (5), or the same workflow, from the root `Dockerfile` |
-| Database | Cloud SQL, Postgres 16, `africa-south1` | by hand, once, then by hand for every schema change |
+| Client (`apps/web`) | Render, the same service as the API (`SERVE_CLIENT`) | built and served by the API's own process on every deploy of `main` |
+| API (`services/api`) | Render, `scrbrd.onrender.com`, from `render.yaml` | Render deploys `main` by itself, from `render.yaml`; the first deploy is New → Blueprint, as in "The whole thing in one service" above |
+| Database | Supabase Postgres, Free | by hand, once, then by hand for every schema change |
 
-Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
-browser talks to one origin and the client is built with `VITE_API_BASE=""`.
-Realtime is plain HTTP, so the rewrite carries everything the client needs.
+The API serves the client from its own process, so the browser talks to one
+origin and the client is built with `VITE_API_BASE=""`. The Firebase Hosting and
+Cloud Run arrangement below (`firebase.json`, `deploy.yml`) is the alternative
+road; production does not use it.
 
 ## Where to run all of this
 
@@ -56,6 +57,11 @@ instance-hours a month. Set the repository variable `SCRBRD_HEALTH_URL`
 (Settings → Secrets and variables → Actions → Variables) to the service's
 `/api/health` address; unset, the job does nothing. Run it once by hand from
 the Actions tab to see it answer 200.
+The job also fails, and GitHub emails the repository owner, when production is
+bad: no answer, an answer other than 200, a body that is not JSON, or a body
+without `ok: true` and `db: "ok"`. It tries up to three times (75 seconds each,
+20 apart) so a sleeping server booting does not count. For the pilot this is the
+only alert there is.
 
 ### The deployed revision
 
@@ -1414,7 +1420,6 @@ should read OK). **Schema first**: the API built with it refuses to start
 without db/106 (`expected-migrations.json`), and its `matches` read asks
 `my_fixture_ends()` which end the reader is at.
 <!-- ── end db/106 ── -->
-
 <!-- ── db/107: the officials register and the grant notes, closed ── -->
 #### The officials register is its keeper's; a school's plan is its own (db/107)
 

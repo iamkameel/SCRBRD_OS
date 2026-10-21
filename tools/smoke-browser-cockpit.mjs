@@ -145,8 +145,13 @@ async function open({ viewport = DESK, scheme = "light", reduced = false } = {})
   if (SA_LATE) await ctx.clock.install({ time: browserNow() });
   await offline(ctx);
   const page = await ctx.newPage();
-  const errors = [], refusals = [];
+  const errors = [], refusals = [], scripts = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  // Which scripts the page fetched, seen from outside it. Not the page's own
+  // performance.getEntriesByType("resource"): a late run installs the fake
+  // clock above, and its performance object answers every getEntries* call
+  // with [] — the trail-chunk check failed on every run from 22:00 SA time.
+  page.on("response", (r) => { if (/\.js$/.test(new URL(r.url()).pathname)) scripts.push(new URL(r.url()).pathname); });
   page.on("console", (m) => {
     const t = m.text();
     if (/\[scrbrd\] getData\(/.test(t)) refusals.push(t);
@@ -154,7 +159,7 @@ async function open({ viewport = DESK, scheme = "light", reduced = false } = {})
   });
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
-  return { ctx, page, errors, refusals };
+  return { ctx, page, errors, refusals, scripts };
 }
 const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
 const text = (page) => page.$eval("body", (el) => el.innerText);
@@ -583,7 +588,7 @@ try {
   ok(`trails open, phone: nothing under 12px (${f2b.small.length}), nothing tapped under 44px (${f2b.tiny.length}), every link 44px (${links.join()})`,
      f2b.small.length === 0 && f2b.tiny.length === 0 && links.length > 0 && links.every((h) => h >= 44), [...f2b.small, ...f2b.tiny].slice(0, 4).join(" · "));
   ok("the figures are in the figure face, tabular", await c.page.$$eval('[data-testid="evidence-trail-figures"] dd', (els) => els.length > 0 && els.every((e) => /DM Mono/.test(getComputedStyle(e).fontFamily) && getComputedStyle(e).fontVariantNumeric.includes("tabular-nums"))));
-  ok("the trail chunk loaded on asking: a separate script, not the Match Centre's", await c.page.evaluate(() => performance.getEntriesByType("resource").some((r) => /\/assets\/EvidenceTrail-[^/]+\.js$/.test(r.name))));
+  ok("the trail chunk loaded on asking: a separate script, not the Match Centre's", c.scripts.some((p) => /^\/assets\/EvidenceTrail-[^/]+\.js$/.test(p)), c.scripts.filter((p) => p.startsWith("/assets/")).slice(-6).join(" "));
   // Tab stays inside the drawer with the links in it, and Escape still closes it.
   for (let i = 0; i < 80; i++) await c.page.keyboard.press("Tab");
   ok("with every trail open, Tab stays inside the drawer", await c.page.evaluate(() => !!document.activeElement?.closest('[data-testid="signals"]')));

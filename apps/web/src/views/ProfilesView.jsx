@@ -707,7 +707,15 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>Choose a player, coach or staff member from the list to view their full profile.</div>
             </Card>
           )}
-          {selId&&selPlayer&&<PlayerProfile p={selPlayer}/>}
+          {/* Called, not mounted as <PlayerProfile/>: it is declared inside
+              this component, so as an element its type was new on every
+              render and React remounted the whole profile each time this
+              view re-rendered (a tab click, a late read, the notices badge).
+              That threw away the Conduct tab's form mid-use: the refusal, the
+              "Recorded." note and anything typed into the account. It holds
+              no hooks, so calling it keeps its children (ConductTab, the
+              cards below it) mounted, with their state. */}
+          {selId&&selPlayer&&PlayerProfile({p:selPlayer})}
           {selId&&selCoach&&!selPlayer&&<CoachProfile c={selCoach}/>}
           {selId&&selStaff&&!selPlayer&&!selCoach&&(
             <Card sx={{padding:"24px"}}>
