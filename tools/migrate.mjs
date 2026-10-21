@@ -200,5 +200,10 @@ if (args.has("--seed")) {
 
 if (args.has("--verify")) {
   console.log("\nVerifying RLS against the live database…");
-  psql(["-f", join(DB_DIR, "99_rls_verify.sql")], "99_rls_verify.sql");
+  // JIT off for the session, as readResource() has it for every read. The
+  // verifier's statements pass the same RLS policies, so their cost estimates
+  // pass jit_above_cost on a few rows and each one compiled before it ran: the
+  // whole file took 35 min here with JIT and 19.5 min without (21 Oct 2026).
+  // A SET, not a startup option, so a session pooler passes it through.
+  psql(["-c", "SET jit = off", "-f", join(DB_DIR, "99_rls_verify.sql")], "99_rls_verify.sql");
 }
