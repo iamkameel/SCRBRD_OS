@@ -85,6 +85,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   so it does not spend its budget exploring. Kameel may allow two at once for
   a day (he did on 2026-10-07: account lifecycle beside recognition).
 - Reviewing another agent's work stays with Opus.
+- **A read-only audit when Kameel asks** (added 2026-10-21, Kameel): beside
+  design, Fable may audit code it is given a reading list for, such as a
+  red-team of everything that reaches a child's data. It writes a findings
+  document; it does not fix, build, run tests or search beyond the list.
+  Opus fixes from the findings. One audit at a time, on Kameel's say each time.
 
 ### Opus 5.5 (`model: "opus"`) — where a mistake is expensive or silent
 
