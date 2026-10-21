@@ -98,10 +98,12 @@ export function resultsRoutes({ pool, secret, onChange }) {
     try { res.json(await fn(req)); }
     catch (/** @type {any} */ e) {
       if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
-      if (e.code === "23514") return res.status(422).json({ error: "value_invalid", detail: e.message });
+      // A CHECK refused it: the code, never the database's own words.
+      if (e.code === "23514") return res.status(422).json({ error: "value_invalid" });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
-      if (status >= 500) console.error("results →", e.code || "", e.message);
+      // A server error says nothing of itself to the caller: no message, no detail.
+      if (status >= 500) { console.error("results →", e.code || "", e.message); return res.status(status).json({ error: "error" }); }
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };

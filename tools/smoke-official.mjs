@@ -118,7 +118,7 @@ async function score(token, match, innings) {
 }
 
 /** The fixture notices about a match, as the owner reads them. */
-const notes = (m) => q(`select school_id, team_code, scope_level, urgency, title, body, retraction_kind, retracts_id, subject_person_id
+const notes = (m) => q(`select school_id, team_code, scope_level, urgency, title, body, retraction_kind, retracts_id, subject_person_id, recipient_id
                           from notification where kind = 'fixture' and subject_kind = 'match' and subject_id = $1
                          order by published_at, id`, [m]);
 
@@ -256,8 +256,12 @@ try {
   ok("the official notices taken back superseded, saying nothing; the reopening said to both sides at medium",
      n2.filter((n) => n.urgency === "low" && n.retraction_kind === "superseded").length === 2
      && n2.filter((n) => n.retracts_id).length === 0
-     && n2.filter((n) => n.urgency === "medium" && n.title.startsWith("Result reopened · ")
+     && n2.filter((n) => n.urgency === "medium" && n.scope_level === "team" && n.title.startsWith("Result reopened · ")
                          && n.body.includes("is no longer official: the scorecard was corrected at")).length === 2, JSON.stringify(n2));
+  const [{ id: LEAGUE }] = await q(`select id from app_user where email = 'league@example.invalid'`);
+  ok("...and the league's organiser by name (it has no organising school: D8, D9)",
+     n2.filter((n) => n.scope_level === "competition" && n.recipient_id === LEAGUE && n.urgency === "medium"
+                      && n.body.includes("the scorecard was corrected at")).length === 1, JSON.stringify(n2));
   const pubE = await api(`/api/public/matches/${M1}`);
   ok("the public page follows at once: not official", pubE.body?.match?.result?.official === false, show(pubE));
   const e2 = await post(`/api/matches/${M1}/confirm`, lg);
@@ -270,7 +274,7 @@ try {
   const e5 = await post(`/api/results/confirmations/${e2.body?.id}/withdraw`, lg, { note: "confirmed before the umpires' sheet arrived" });
   const e6 = await official(M1, lg);
   ok("withdrawn within the window: provisional, and both sides told", e5.body?.ok === true && e6.body?.state === "provisional"
-     && (await notes(M1)).filter((n) => n.body.includes("the confirmation was withdrawn at")).length === 2, `${show(e5)} ${show(e6)}`);
+     && (await notes(M1)).filter((n) => n.scope_level === "team" && n.body.includes("the confirmation was withdrawn at")).length === 2, `${show(e5)} ${show(e6)}`);
 
   // ── F ──────────────────────────────────────────────────────────
   group("F. A friendly whose away side is not on the platform (Q8, D5)");

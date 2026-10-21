@@ -1753,9 +1753,13 @@ and a result read off the log, and "Looks right" only hid a banner on one phone.
   ball, a late ball, a decision, a status change) makes the result
   **provisional** again by itself. Three triggers stamp when and why it lapsed,
   take back the "Official result" notice silently (`superseded`) and tell both
-  sides once, at medium, that the result was reopened.
+  sides once, at medium, that the result was reopened. The organiser is told
+  too: the competition's scope where it has an organising school, otherwise
+  each `competitionadmin` appointed with no school, by name.
 - **Who confirms.** For a league or cup fixture, the organiser:
-  `result.confirm` at the competition's organising school, or, for a
+  `result.confirm` and `competition.manage` at the competition's organising
+  school (its `competitionadmin`, never that school's own director of sport
+  or principal, who would otherwise sign off his own side's win), or, for a
   competition with no organising school, a `competitionadmin` appointed with
   no school (Q1). A competition's frozen conditions may say
   `results.confirmed_by = home_school` or `either_school` instead. For a
@@ -1824,6 +1828,21 @@ league. Do one of these:
 
 Friendlies need nothing: the home school's director of sport or principal
 confirms them.
+
+**Worth knowing (no action).**
+- `results.confirmed_by` and `results.dispute_days` sit in the conditions'
+  table part, so the organiser's re-fix of a played match's table figures
+  (`match_conditions_refix_table()`) can change who may confirm it, and its
+  window, after it was played.
+- A side re-pointed on the match row (its school or team changed) moves the
+  result's hash without a lapse stamp, because no trigger watches those columns.
+  "Official" stays right: it is derived from the head and the hash on every
+  read, so the result reads provisional at once; only the audit's "when and
+  why" is missing. The next confirmation stamps the old row first.
+- Only a void that `scoring_amendment` names as an approved amendment's
+  `applied_key`, or a released ball with its accepted quarantine row, counts
+  as a two-hand change after a seal. What a void's payload says counts for
+  nothing, because the pad can write it.
 <!-- ── end db/114 ── -->
 
 ### 5 · Cloud Run, the first time

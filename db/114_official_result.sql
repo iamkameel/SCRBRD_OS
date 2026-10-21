@@ -75,8 +75,10 @@
 --   honour waits for the word (D10): the table counts what it counted.
 --
 -- WHO MAY CONFIRM (D2, D3, D4, Q1, Q8). A competition fixture: the
--- organiser — result.confirm at the competition's organising school (for a
--- league with no organising school, a platform-wide holder) — always; the
+-- organiser — result.confirm AND competition.manage at the competition's
+-- organising school (for a league with no organising school, a platform-wide
+-- holder), so the competition's administrator, never the organising school's
+-- own director of sport or principal — always; the
 -- home school's holder too where the match's frozen document says
 -- results.confirmed_by = home_school; either school's where it says
 -- either_school. A friendly: the home school's holder (the director of
@@ -107,8 +109,9 @@
 -- WHAT IS SAID (D11, §3 "notices"). Kind `fixture` (D1's closed list), to
 -- each side's team scope under fixture.read — never a child's name, never who
 -- confirmed or disputed, never a reason: official → low; reopened or
--- withdrawn → medium, to both sides and to the organiser where the
--- competition has an organising school, and the official notice retracted
+-- withdrawn → medium, to both sides and to the organiser (its competition
+-- scope, or, for a league with no organising school, each competition
+-- administrator appointed with no school, by recipient), and the official notice retracted
 -- `superseded` without a second word (db/89's notification_retract(…, false):
 -- the "reopened" notice is the one thing said, so nobody is told twice).
 -- Each lives a week past the later of the fixture and the telling.
@@ -319,9 +322,13 @@ REVOKE ALL ON FUNCTION match_verified(uuid) FROM PUBLIC;
 
 -- D6's seal test, for confirming: every innings of the log was sealed by the
 -- scorer and either the seal stands, or the innings has changed since its
--- seal ONLY through the two-hand paths — an approved amendment's void
--- (payload names the amendment; db/38, db/69) or a ball released from the
--- hold (recovered; db/14, db/37). A void of an earlier ball moves the
+-- seal ONLY through the two-hand paths, and at least once — an approved
+-- amendment's void (the void scoring_amendment names as its applied_key, in
+-- state approved: db/38, db/69) or a ball released from the hold (recovered,
+-- with the accepted quarantine row of its key: db/14, db/37). Never a
+-- payload's word for it: the pad carries a client's unmapped keys into the
+-- payload (events.mjs toRow()), so "amendment" in a void's payload proves
+-- nothing. A void of an earlier ball moves the
 -- figures the seal read back, so the seal no longer "stands"; the pad cannot
 -- seal a complete match again (db/33). Without this, a result corrected by
 -- amendment could never be confirmed again, which D8 and D9 require.
@@ -337,10 +344,18 @@ CREATE OR REPLACE FUNCTION match_seals_stand(p_match uuid) RETURNS boolean AS $$
           AND NOT EXISTS (
             SELECT 1 FROM ball_event_live e
              WHERE e.match_id = p_match AND e.innings = x.innings AND e.kind = 'innings_end'
+               AND EXISTS (SELECT 1 FROM ball_event a
+                            WHERE a.match_id = p_match AND a.innings = x.innings AND a.seq > e.seq)
                AND NOT EXISTS (SELECT 1 FROM ball_event a
                                 WHERE a.match_id = p_match AND a.innings = x.innings AND a.seq > e.seq
-                                  AND NOT ((a.kind = 'void' AND a.payload ? 'amendment' AND a.payload ? 'approved_by')
-                                           OR a.recovered))))
+                                  AND NOT ((a.kind = 'void'
+                                            AND EXISTS (SELECT 1 FROM scoring_amendment s
+                                                         WHERE s.match_id = p_match AND s.state = 'approved'
+                                                           AND s.applied_key = a.idempotency_key))
+                                           OR (a.recovered
+                                               AND EXISTS (SELECT 1 FROM ball_event_quarantine q
+                                                            WHERE q.match_id = p_match AND q.resolution = 'accepted'
+                                                              AND q.idempotency_key = a.idempotency_key))))))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION match_seals_stand(uuid) FROM PUBLIC;
 
@@ -418,8 +433,17 @@ CREATE OR REPLACE FUNCTION result_scope_holds(p_match uuid, p_scope text) RETURN
   SELECT app_user_id() IS NOT NULL AND NOT app_pad_scoped() AND app_support_access_id() IS NULL
      AND coalesce((
        SELECT CASE p_scope
+                -- The organiser: result.confirm AND competition.manage at the
+                -- organiser, as db/69's decisions ask it. The organising
+                -- school's director of sport or principal holds result.confirm
+                -- there and not competition.manage: without the second, a
+                -- school organising a league would confirm its own wins as
+                -- "the organiser", read the other side's dispute and clear it
+                -- (D2: "the home side signs off its own win").
                 WHEN 'organiser' THEN m.competition_id IS NOT NULL
                      AND app_can('result.confirm', competition_organiser(m.competition_id), '*'::text,
+                                 '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+                     AND app_can('competition.manage', competition_organiser(m.competition_id), '*'::text,
                                  '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
                 WHEN 'home_school' THEN result_school_holds(m.school_id, m.team_code, m.id)
                 WHEN 'away_school' THEN result_school_holds(m.away_school_id, m.away_team_code, m.id)
@@ -486,18 +510,20 @@ REVOKE ALL ON FUNCTION result_staff(uuid) FROM PUBLIC;
 -- whole log is at or below its head, so every row of it is asked.
 --   scorer    the scorer_user_id of any event (an amendment's void is the
 --             requester's, db/69; a released ball the submitter's, db/14)
---   approver  the approved_by of an amendment's void
---   amendment the requester or decider of an applied amendment
+--   approver  the decider of an applied amendment (scoring_amendment's
+--             decided_by: the record, never a void's payload, which the pad
+--             can write)
+--   amendment the requester of an applied amendment
 --   releaser  whoever released a held ball into the log
 --   import    whoever typed, submitted or confirmed a scorebook import of it
 CREATE OR REPLACE FUNCTION result_hand_on_log(p_match uuid, p_user uuid) RETURNS text AS $$
   SELECT CASE
     WHEN p_user IS NULL THEN NULL
     WHEN EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = p_match AND b.scorer_user_id = p_user) THEN 'scorer'
-    WHEN EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = p_match AND b.kind = 'void'
-                    AND b.payload->>'approved_by' = p_user::text) THEN 'approver'
     WHEN EXISTS (SELECT 1 FROM scoring_amendment a WHERE a.match_id = p_match AND a.state = 'approved'
-                    AND (a.requested_by = p_user OR a.decided_by = p_user)) THEN 'amendment'
+                    AND a.decided_by = p_user) THEN 'approver'
+    WHEN EXISTS (SELECT 1 FROM scoring_amendment a WHERE a.match_id = p_match AND a.state = 'approved'
+                    AND a.requested_by = p_user) THEN 'amendment'
     WHEN EXISTS (SELECT 1 FROM ball_event_quarantine q WHERE q.match_id = p_match AND q.resolution = 'accepted'
                     AND q.resolved_by = p_user) THEN 'releaser'
     WHEN EXISTS (SELECT 1 FROM scorebook_import s WHERE s.match_id = p_match AND s.state = 'confirmed'
@@ -605,7 +631,9 @@ REVOKE ALL ON FUNCTION match_official_core(uuid) FROM PUBLIC;
 -- pupil and the staff of the side read it; no child is named, no person, no
 -- reason. p_what:
 --   official    low, to both sides                       (returns their ids)
---   correction  medium, both sides and the organiser:  "…the scorecard was corrected at 18:42…"
+--   correction  medium, both sides and the organiser (for a league with no
+--               organising school, each competition administrator appointed
+--               with no school, by recipient):  "…the scorecard was corrected at 18:42…"
 --   decision    medium, the same:                       "…a decision on the result was recorded or withdrawn at…"
 --   status      medium, the same:                       "…the match's status changed at…"
 --   withdrawn   medium, the same:                       "…the confirmation was withdrawn at…"
@@ -652,13 +680,28 @@ BEGIN
     RETURNING id INTO v_id;
     v_ids := v_ids || v_id;
   END LOOP;
-  -- The organiser hears a reopening, where the competition has a school
-  -- (progression_check()'s rule, db/72).
+  -- The organiser hears a reopening (D8, D9). A competition with an
+  -- organising school: one notice to its competition scope under
+  -- competition.manage (progression_check()'s rule, db/72). One with none
+  -- (the pilot's league): one notice to each competition administrator
+  -- appointed with no school, by recipient — the people who answer for it —
+  -- filed under the home school, which their platform-wide assignment reads.
   IF p_what <> 'official' AND m.competition_id IS NOT NULL THEN
     INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
                               required_capability, is_public, subject_kind, subject_id, expires_at)
     SELECT c.school_id, NULL, 'competition', 'fixture', v_urg, v_title, v_body, 'competition.manage', false, 'match', p_match, v_life
       FROM competition c WHERE c.id = m.competition_id AND c.school_id IS NOT NULL;
+    INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                              required_capability, is_public, subject_kind, subject_id, recipient_id, expires_at)
+    SELECT m.school_id, NULL, 'competition', 'fixture', v_urg, v_title, v_body, 'competition.manage', false, 'match', p_match,
+           a.person_id, v_life
+      FROM competition c
+      JOIN (SELECT DISTINCT r.person_id FROM role_assignment r
+             WHERE r.role = 'competitionadmin' AND r.active AND r.school_id IS NULL
+               AND (r.valid_from IS NULL OR r.valid_from <= current_date)
+               AND (r.valid_until IS NULL OR r.valid_until > current_date)
+               AND (r.expires_at IS NULL OR r.expires_at > now())) a ON true
+     WHERE c.id = m.competition_id AND c.school_id IS NULL;
   END IF;
   RETURN v_ids;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -939,9 +982,10 @@ GRANT EXECUTE ON FUNCTION match_result_confirmation_withdraw(uuid, text) TO scrb
 -- facts: the state with under_review read as provisional (Q3, D11), when it
 -- was confirmed or reopened — never who, never the role, never a dispute.
 -- Staff read the role words, the dispute's side and time, the blocker, and
--- what they may do. A dispute's words reach the organiser, the disputant and
--- audit.read at either school, and nobody else (a dispute may be about a
--- boy's innings); the withdrawal's words, the confirmer and the same.
+-- what they may do. A dispute's words reach the organiser, the disputant,
+-- audit.read at the disputing school and, for a friendly, whoever may settle
+-- it; never the other school of a competition fixture (a dispute may be about
+-- a boy's innings). The withdrawal's words: its confirmer and the organiser.
 CREATE OR REPLACE FUNCTION match_official_state(p_match uuid)
 RETURNS TABLE (state text, staff boolean, confirmation_id uuid, confirmed_at timestamptz, confirmed_as text,
                head_seq integer, window_closes_at timestamptz,
@@ -964,13 +1008,21 @@ BEGIN
   IF NOT FOUND THEN RETURN; END IF;
   v_staff := result_staff(p_match);
   SELECT m.competition_id INTO v_comp FROM match m WHERE m.id = p_match;
-  v_note_reader := v_staff AND (result_scope_holds(p_match, 'organiser')
-                   OR (o.disputed_by IS NOT NULL AND o.disputed_by = v_me)
-                   OR EXISTS (SELECT 1 FROM match m WHERE m.id = p_match
-                                 AND (app_can('audit.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
-                                      OR (m.away_school_id IS NOT NULL
-                                          AND app_can('audit.read', m.away_school_id, m.away_team_code,
-                                                      '00000000-0000-0000-0000-000000000000'::uuid, m.id)))));
+  -- The dispute's words: the organiser (who settles a competition's), the
+  -- disputant, audit.read at the DISPUTING side's school, and — a friendly
+  -- having no organiser — whoever may settle it (a result.confirm holder of
+  -- either school). Never the other school of a competition fixture: the
+  -- organiser stands between the two.
+  v_note_reader := v_staff AND o.disputed_by IS NOT NULL
+                   AND (result_scope_holds(p_match, 'organiser')
+                        OR o.disputed_by = v_me
+                        OR (v_comp IS NULL AND (result_scope_holds(p_match, 'home_school') OR result_scope_holds(p_match, 'away_school')))
+                        OR EXISTS (SELECT 1 FROM match m WHERE m.id = p_match
+                                      AND ((o.disputed_as = 'home_school'
+                                            AND app_can('audit.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id))
+                                           OR (o.disputed_as = 'away_school' AND m.away_school_id IS NOT NULL
+                                               AND app_can('audit.read', m.away_school_id, m.away_team_code,
+                                                           '00000000-0000-0000-0000-000000000000'::uuid, m.id)))));
   IF NOT v_staff THEN
     RETURN QUERY SELECT CASE WHEN o.state = 'under_review' THEN 'provisional' ELSE o.state END, false,
       NULL::uuid, CASE WHEN o.state = 'official' THEN o.confirmed_at END, NULL::text, o.head_seq, NULL::timestamptz,
@@ -982,7 +1034,7 @@ BEGIN
   END IF;
   SELECT * INTO q FROM match_confirmable(p_match);
   v_open := o.standing_id IS NOT NULL AND clock_timestamp() <= o.window_closes_at;
-  IF v_note_reader OR (o.last_id IS NOT NULL AND
+  IF result_scope_holds(p_match, 'organiser') OR (o.last_id IS NOT NULL AND
                        (SELECT x.confirmed_by FROM match_result_confirmation x WHERE x.id = o.last_id) = v_me) THEN
     SELECT x.withdrawn_note INTO v_w FROM match_result_confirmation x WHERE x.id = o.last_id;
   END IF;
@@ -1440,6 +1492,22 @@ BEGIN
      OR NOT has_table_privilege('scrbrd_app', 'competition_standing', 'SELECT') THEN
     RAISE EXCEPTION 'db/114: competition_standing runs as its owner, or the application lost it';
   END IF;
+  -- The organiser is the competition's administrator (competition.manage),
+  -- and a two-hand event is the one the second hand's record names, never a
+  -- payload's word for it (the security review).
+  SELECT prosrc INTO src FROM pg_proc WHERE oid = 'result_scope_holds(uuid,text)'::regprocedure;
+  IF position('app_can(''competition.manage'', competition_organiser(m.competition_id)' IN src) = 0 THEN
+    RAISE EXCEPTION 'db/114: the organiser is not asked competition.manage';
+  END IF;
+  SELECT prosrc INTO src FROM pg_proc WHERE oid = 'match_seals_stand(uuid)'::regprocedure;
+  IF position('payload' IN src) > 0 OR position('s.applied_key = a.idempotency_key' IN src) = 0 THEN
+    RAISE EXCEPTION 'db/114: match_seals_stand() trusts a payload, or does not ask the amendment';
+  END IF;
+  SELECT prosrc INTO src FROM pg_proc WHERE oid = 'result_hand_on_log(uuid,uuid)'::regprocedure;
+  IF position('approved_by' IN src) > 0 THEN
+    RAISE EXCEPTION 'db/114: result_hand_on_log() reads the approver from a payload';
+  END IF;
+
   -- The lapse retracts through db/89's door and says the one word.
   SELECT prosrc INTO src FROM pg_proc WHERE oid = 'result_official_unsay(uuid[])'::regprocedure;
   IF position('notification_retract(v, ''superseded'', false)' IN src) = 0 THEN

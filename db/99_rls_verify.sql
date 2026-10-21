@@ -6576,6 +6576,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- └── db/113 (section 90) ─────────────────────────────────────────────
 
 
+
 -- ┌── db/114 (section 91). When a result becomes official
 -- Two Hilton sides of their own (U17F for a friendly against Westville's
 -- U17F; U17E, U17D, U17C in a league of their own with no organising school)
@@ -6655,7 +6656,8 @@ BEGIN
     'coach',   _v114_person('coach',   'coach',           HIL, 'U17F'),
     'follower', _v114_person('follower', 'spectator',     HIL, NULL),
     'wescoach', _v114_person('wescoach', 'coach',         WES, 'U17F'),
-    'outsider', _v114_person('outsider', 'coach',         WES, 'U14A'));
+    'outsider', _v114_person('outsider', 'coach',         WES, 'U14A'),
+    'horg',    _v114_person('horg',    'competitionadmin', HIL, NULL));
   -- Two hats: the same person is a director of sport too (Sarah's case).
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'twohats')::uuid, 'directorofsport', HIL);
 
@@ -6698,6 +6700,38 @@ BEGIN
   UPDATE match SET status = 'complete' WHERE id IN ((ids->>'L')::uuid, (ids->>'L2')::uuid, (ids->>'L3')::uuid,
                                                    (ids->>'T')::uuid, (ids->>'U')::uuid);
   UPDATE match SET status = 'abandoned' WHERE id = (ids->>'A')::uuid;
+  -- H: a league Hilton itself organises (competition.school_id = Hilton),
+  -- Hilton U15E v Westville U15E, played and complete; its administrator is
+  -- 'horg', a competitionadmin at Hilton (the security review's case).
+  INSERT INTO competition (school_id, name, comp_type, format, level)
+  VALUES (HIL, 'Verify OneFourteen Hilton Cup', 'league', 'T20', 'school') RETURNING id INTO v_c;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name)
+  VALUES (v_c, HIL, 'U15E', 'V114 Hilton U15E'), (v_c, WES, 'U15E', 'V114 Westville U15E');
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+  VALUES (HIL, 'U15E', WES, 'U15E', 'x', v_t0, 'cricket', 'T20', 1, 'live', v_c) RETURNING id INTO m;
+  ids := ids || jsonb_build_object('H', m, 'hcomp', v_c);
+  PERFORM _v114_innings(m, 0::smallint, 'U15E', 'Westville U15E', ARRAY[1, 1, 1, 1, 1, 1], NULL, (ids->>'scorer')::uuid);
+  PERFORM _v114_innings(m, 1::smallint, 'Westville U15E', 'U15E', ARRAY[0, 0, 0, 0, 0, 0], 7, (ids->>'scorer')::uuid);
+  -- FG: a friendly, both innings sealed, then a pad void after the first seal
+  -- whose payload forges an amendment approved by Hilton's director.
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15D', WES, 'U15D', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('FG', m);
+  k := (_v114_innings(m, 0::smallint, 'U15D', 'Westville U15D', ARRAY[1, 1, 1, 1, 1, 1], NULL, (ids->>'scorer')::uuid))[1];
+  PERFORM _v114_innings(m, 1::smallint, 'Westville U15D', 'U15D', ARRAY[0, 0, 0, 0, 0, 0], 7, (ids->>'scorer')::uuid);
+  PERFORM _v114_ev(m, 0::smallint, 'void', NULL, NULL,
+    jsonb_build_object('target', k, 'amendment', gen_random_uuid(), 'approved_by', ids->>'hdos'), (ids->>'scorer')::uuid);
+  -- BS: a friendly whose first innings carries a seal that never stood (it
+  -- reads back 99 runs) and nothing after it.
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15C', WES, 'U15C', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('BS', m);
+  PERFORM _v114_innings(m, 0::smallint, 'U15C', 'Westville U15C', ARRAY[1, 1, 1, 1, 1, 1], NULL, (ids->>'scorer')::uuid, false);
+  PERFORM _v114_ev(m, 0::smallint, 'innings_end', NULL, NULL,
+    '{"reason": "overs_complete", "confirmed": {"runs": 99, "wickets": 0, "balls": 6}}'::jsonb, (ids->>'scorer')::uuid);
+  PERFORM _v114_innings(m, 1::smallint, 'Westville U15C', 'U15C', ARRAY[0, 0, 0, 0, 0, 0], 7, (ids->>'scorer')::uuid);
+  UPDATE match SET status = 'complete' WHERE id IN ((ids->>'H')::uuid, (ids->>'FG')::uuid, (ids->>'BS')::uuid);
+
   -- Both sides of F published: the signed-out page serves it.
   INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
   VALUES ((ids->>'F')::uuid, 'home', HIL, 'U17F', true, (ids->>'hdos')::uuid);
@@ -6746,9 +6780,14 @@ CREATE OR REPLACE FUNCTION _v114_notes(p_match uuid) RETURNS jsonb AS $$
   SELECT coalesce(jsonb_agg(jsonb_build_object('id', n.id, 'school', n.school_id, 'team', n.team_code, 'scope', n.scope_level,
                                                'urgency', n.urgency, 'title', n.title, 'body', n.body, 'cap', n.required_capability,
                                                'retracted', n.retraction_kind, 'retracts', n.retracts_id, 'person', n.subject_person_id,
+                                               'recipient', n.recipient_id,
                                                'live', n.expires_at > now())
                             ORDER BY n.published_at, n.id), '[]'::jsonb)
     FROM notification n WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.kind = 'fixture'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Is this person a hand on the match's log (D5), as the owner asks it?
+CREATE OR REPLACE FUNCTION _v114_hand(p_match uuid, p_user uuid) RETURNS text AS $$
+  SELECT result_hand_on_log(p_match, p_user)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v114_fact(p_match uuid) RETURNS jsonb AS $$
   SELECT jsonb_build_object('head', match_head_seq(p_match),
@@ -25997,8 +26036,17 @@ $v49$;
   --                are identical before and after (D10) and provisional_results
   --                falls by one, in the table and its public read; a home
   --                dispute only the organiser clears; his withdrawal within the
-  --                window → provisional and both sides told
+  --                window → provisional, both sides told, and — the league
+  --                having no organising school — its administrator by name
   --   (window)     eight days on: a dispute and a withdrawal → window_closed
+  --   (organiser)  a league Hilton organises: Hilton's director gets
+  --                not_permitted on confirm and clear and never reads
+  --                Westville's note; the cup's administrator confirms as the
+  --                organiser, reads it and clears it (the security review)
+  --   (forged)     a pad void whose payload forges an approved amendment:
+  --                the seal is broken (innings_unsealed) and the director it
+  --                names is no hand on the log
+  --   (badseal)    a seal that never stood, with nothing after it, is no seal
   --   (abandoned)  abandoned before a ball: confirmable, and official (Q6)
   --   (reads)      a reader of neither side reads no state; a pad's credential
   --                opens no door; the application cannot write the table nor
@@ -26011,6 +26059,10 @@ $v49$;
   --   (lapse)   the ball_event lapse trigger dropped
   --   (caps)    result.confirm granted to the scorer
   --   (who)     result_school_holds() without its own-school half
+  --   (organiser) result_scope_holds() without competition.manage
+  --   (forged)  match_seals_stand() trusting the void's payload again
+  --   (badseal) match_seals_stand() without "a two-hand event after the seal"
+  --   (league)  result_official_notices() without the organiser's recipient notice
   DECLARE
     y   jsonb := _v114_stage();
     F   uuid := (y->>'F')::uuid;
@@ -26236,8 +26288,18 @@ $v49$;
     SELECT * INTO r FROM match_result_confirmation_withdraw(c1, 'Verify 114: confirmed the wrong fixture');
     PERFORM _assert(r.ok AND (SELECT s.state FROM match_official_state(L) s) = 'provisional'
                     AND (SELECT count(*) FROM jsonb_array_elements(_v114_notes(L)) e
-                          WHERE e->>'urgency' = 'medium' AND e->>'body' LIKE '%the confirmation was withdrawn at%') = 2,
+                          WHERE e->>'urgency' = 'medium' AND e->>'scope' = 'team'
+                            AND e->>'body' LIKE '%the confirmation was withdrawn at%') = 2,
       format('§91 (league): the withdrawal: %s / %s', r.reason, _v114_notes(L)));
+    -- ...and the organiser is told too: the league has no organising school,
+    -- so each competition administrator appointed with no school, by name (D8, D9).
+    PERFORM _assert((SELECT count(*) FROM jsonb_array_elements(_v114_notes(L)) e
+                      WHERE e->>'scope' = 'competition' AND (e->>'recipient')::uuid = ORG AND e->>'urgency' = 'medium'
+                        AND e->>'cap' = 'competition.manage' AND e->>'body' LIKE '%the confirmation was withdrawn at%') = 1
+                    AND (SELECT count(*) FROM jsonb_array_elements(_v114_notes(L)) e
+                          WHERE e->>'scope' = 'competition' AND (e->>'recipient')::uuid = HDOS) = 0
+                    AND EXISTS (SELECT 1 FROM my_notifications n WHERE n.subject_id = L AND n.title LIKE 'Result reopened · %'),
+      format('§91 (league): the organiser of a league with no organising school was not told, or does not read it: %s', _v114_notes(L)));
 
     -- (window)
     SELECT * INTO r FROM match_result_confirm(L);
@@ -26255,6 +26317,46 @@ $v49$;
     SELECT * INTO r FROM match_result_confirm(AM);
     PERFORM _assert(r.ok AND (SELECT s.state FROM match_official_state(AM) s) = 'official',
       format('§91 (abandoned): an abandoned match with no ball was not made official: %s', r.reason));
+
+    -- (organiser) a league Hilton organises: its administrator is the
+    -- organiser; Hilton's director is a school's, never the organiser.
+    PERFORM _as(HDOS);
+    SELECT * INTO r FROM match_result_confirm((y->>'H')::uuid);
+    PERFORM _assert(r.reason = 'not_permitted', format('§91 (organiser): the organising school''s director confirmed its own win: %s', r.reason));
+    PERFORM _as((y->>'horg')::uuid);
+    SELECT * INTO r FROM match_result_confirm((y->>'H')::uuid);
+    PERFORM _assert(r.ok AND _v114_rows((y->>'H')::uuid)->0->>'confirmed_as' = 'organiser',
+      format('§91 (organiser): the cup''s administrator could not confirm as organiser: %s / %s', r.reason, _v114_rows((y->>'H')::uuid)));
+    c1 := r.confirmation_id;
+    PERFORM _as(WDOS);
+    SELECT * INTO r FROM match_result_dispute((y->>'H')::uuid, 'Verify 114: Westville''s book has the sixth ball a dot');
+    PERFORM _assert(r.ok, format('§91 (organiser): Westville could not dispute: %s', r.reason));
+    PERFORM _as(HDOS);
+    SELECT * INTO o FROM match_official_state((y->>'H')::uuid);
+    PERFORM _assert(o.state = 'under_review' AND o.dispute_note IS NULL AND NOT o.can_clear,
+      format('§91 (organiser): Hilton''s director reads Westville''s note, or may clear it: %s', to_jsonb(o)));
+    SELECT * INTO r FROM match_result_dispute_clear(c1, 'Verify 114: Hilton says it stands');
+    PERFORM _assert(r.reason = 'not_permitted', format('§91 (organiser): Hilton''s director cleared the dispute against it: %s', r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM results_to_confirm() t WHERE t.match_id = (y->>'H')::uuid),
+      '§91 (organiser): Hilton''s director is offered the dispute against Hilton to settle');
+    PERFORM _as((y->>'horg')::uuid);
+    SELECT * INTO o FROM match_official_state((y->>'H')::uuid);
+    PERFORM _assert(o.dispute_note LIKE 'Verify 114: Westville%' AND o.can_clear,
+      format('§91 (organiser): the administrator does not read the note, or may not clear: %s', to_jsonb(o)));
+    SELECT * INTO r FROM match_result_dispute_clear(c1, 'Verify 114: both books checked; it stands');
+    PERFORM _assert(r.ok, format('§91 (organiser): the administrator could not clear: %s', r.reason));
+
+    -- (forged) a pad void whose payload claims an approved amendment counts
+    -- for nothing: the seal is broken, and the director it names is no hand.
+    PERFORM _as(HDOS);
+    SELECT * INTO r FROM match_confirmable((y->>'FG')::uuid);
+    PERFORM _assert(r.reason = 'innings_unsealed' AND NOT (_v114_fact((y->>'FG')::uuid)->>'seals')::boolean
+                    AND _v114_hand((y->>'FG')::uuid, HDOS) IS NULL,
+      format('§91 (forged): a forged amendment payload answered %s, seals %s, hand %s', r.reason,
+             _v114_fact((y->>'FG')::uuid)->>'seals', _v114_hand((y->>'FG')::uuid, HDOS)));
+    -- (badseal) a seal that never stood, with nothing after it, is no seal.
+    SELECT * INTO r FROM match_confirmable((y->>'BS')::uuid);
+    PERFORM _assert(r.reason = 'innings_unsealed', format('§91 (badseal): a seal that never stood answered %s', r.reason));
 
     -- (reads)
     PERFORM _as((y->>'outsider')::uuid);
