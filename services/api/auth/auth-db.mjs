@@ -16,6 +16,7 @@ import {
   signToken, verifyToken, principalFromClaims, withPrincipal,
   newMagicCode, magicHash, AuthError, CODE_TTL_SEC, TOKEN,
 } from "./auth.mjs";
+import { safeErr } from "../log-safe.mjs";
 /** @import { Db, Pool } from "../api-types.mjs" */
 /** @import { Principal } from "./auth.mjs" */
 
@@ -342,7 +343,7 @@ export async function runAsUnit(pool, secret, bearer, body) {
     }));
     unit.state.finished = true;
     for (const f of unit.after) {
-      try { f(); } catch (/** @type {any} */ e) { console.error("after commit:", e?.message ?? e); }
+      try { f(); } catch (/** @type {any} */ e) { console.error("after commit:", safeErr(e)); }
     }
     return value;
   } catch (e) {
