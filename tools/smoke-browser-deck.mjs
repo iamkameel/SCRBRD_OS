@@ -50,6 +50,9 @@ const WEB_PORT = port(4328);
 const API_PORT = port(8797);
 const API = `http://127.0.0.1:${API_PORT}`;
 const DEBUG = !!process.env.BROWSER_DECK_DEBUG;
+// A generous bound on a wait for data or a render, never a fixed sleep: the
+// wait ends the moment the screen is in the state the check judges.
+const WAIT = 15000;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
 let pass = 0, fail = 0;
@@ -210,11 +213,19 @@ try {
   ok("no filter chip is offered for a line the wheel cannot draw", (await count('[data-testid="deck-key-W"]')) === 0);
 
   await deck().locator('[data-testid="deck-dot-school"]').click();
-  await page.waitForTimeout(1800);
+  await page.locator('[data-testid="deck"][data-slide="school"]').waitFor({ timeout: WAIT }).catch(() => {});
   ok("the school slide is reached from its dot (it has no digit)", (await slideNow()) === "school");
+  // The slide says "Reading…" until GET /api/read/summary answers. A fixed
+  // 1.8 s judged that placeholder whenever the read was slower: on a freshly
+  // reset database (no statistics yet) Postgres JIT-compiled it for 10 s
+  // (21 Oct 2026, fixed in readResource()). Wait for the read to answer —
+  // live, refused or failed — then judge what it drew.
+  await page.locator('[data-testid="deck-summary-source"]:not(:has-text("Reading"))')
+    .waitFor({ timeout: WAIT }).catch(() => {});
   const summary = page.locator('[data-testid="deck-summary"]');
-  ok("the school slide's figures came from the server, not the demo", (await summary.getAttribute("data-live")) === "true");
-  ok("...and say what they are scoped to", /summary read/i.test(await page.locator('[data-testid="deck-summary-source"]').innerText()));
+  const source = await page.locator('[data-testid="deck-summary-source"]').innerText().catch(() => "");
+  ok("the school slide's figures came from the server, not the demo", (await summary.getAttribute("data-live")) === "true", source);
+  ok("...and say what they are scoped to", /summary read/i.test(source), source);
 
   await deck().locator('[data-testid="deck-dot-roadmap"]').click();
   await page.waitForTimeout(1200);
