@@ -33,10 +33,16 @@ BEGIN
 END $role_exists$;
 
 -- Postgres 16 no longer lets a CREATEROLE role SET ROLE to a role it created
--- without an explicit membership carrying the SET option.
+-- without an explicit membership carrying the SET option. Granted only when
+-- it is not held already: role membership is cluster-wide, and a GRANT that
+-- changes nothing still locks its pg_auth_members row until this file's
+-- ROLLBACK, so every other database's verify on the cluster queued behind
+-- this one for its whole run.
 DO $grant$
 BEGIN
-  EXECUTE format('GRANT scrbrd_app TO %I WITH SET TRUE', current_user);
+  IF NOT pg_has_role(current_user, 'scrbrd_app', 'SET') THEN
+    EXECUTE format('GRANT scrbrd_app TO %I WITH SET TRUE', current_user);
+  END IF;
 EXCEPTION WHEN duplicate_object OR invalid_grant_operation THEN NULL;
 END $grant$;
 

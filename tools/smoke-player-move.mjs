@@ -18,6 +18,16 @@
  *   4. His mother reads the same side he does.
  *   5. The route still refuses a move to no side, and nothing changes.
  *
+ * And db/117 (SEASON_ROLLOVER S2, the dated side; db/99 §91 is its proof):
+ *   6. After the move his mother still reads the 1XI's fixture, bus, nets,
+ *      plan and balls of last month (D1), not the 1XI's bus ahead, and none
+ *      of the U16B's rows from before he joined (Q2); he keeps the same
+ *      season's fixture, bus, nets and balls, but not its plan (db/117
+ *      header §4, reported to Kameel).
+ *   7. The move voided his mother's seat on a lift to the 1XI's fixture
+ *      ahead (SR-4), kept the one to the match whose sheet names him, and
+ *      told her and the driver once each.
+ *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-player-move.mjs
  */
@@ -130,6 +140,50 @@ try {
   s.pOld = await plan(FROM, s.fOld, COACH);
   s.pNew = await plan(TO, s.fNew, SARAH);
 
+  // The dated side (db/117), as the owner, apart from `s` so groups 1-5 read
+  // as they did: rows of last month for both sides (the boy has been on the
+  // 1XI since the seed's 15 January), and his mother's seats on lifts to two
+  // 1XI fixtures ahead — fOld (the side he will leave) and fUp (whose sheet
+  // names him), driven by the 1XI's coach.
+  const P = new Date(Date.now() - 10 * 86400e3).toISOString();
+  const d = {};
+  d.fPast = (await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, $2, 'Smoke Move Last Month', $3, 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, FROM, P]))[0].id;
+  d.fNewPast = (await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, $2, 'Smoke Move New Side Last Month', $3, 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, TO, P]))[0].id;
+  await bowl(d.fPast, SARAH, "fPast");
+  d.tPast = (await q(`insert into trip (match_id, school_id, pickup) values ($1, $2, 'Smoke move gate') returning id`, [d.fPast, HIL]))[0].id;
+  d.tOld = (await q(`insert into trip (match_id, school_id, pickup) values ($1, $2, 'Smoke move gate') returning id`, [s.fOld, HIL]))[0].id;
+  d.sPast = (await q(`insert into training_session (school_id, team_code, title, starts_at, duration_min, session_type)
+       values ($1, $2, 'Smoke move last month nets', $3, 60, 'batting') returning id`, [HIL, FROM, P]))[0].id;
+  d.pPast = (await q(`insert into news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
+       values ('team', $1, $2, 'plan', $3, 'Smoke move last month plan', 'Smoke move: last month', $4::timestamptz - interval '1 day', $5)
+       returning id`, [HIL, FROM, d.fPast, P, COACH]))[0].id;
+  const MUM = await idOf(mother);
+  const decl = (await q(`insert into lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
+                                                              insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
+       values ($1, $2, 'Smoke move estate', 'SMOKE GP', 3, true, true, true, true, true, 1, current_date + 300) returning id`, [COACH, HIL]))[0].id;
+  const link = (await q(`select g.assignment_id, g.id from assignment_subject g join role_assignment a on a.id = g.assignment_id
+                          where a.person_id = $1 and a.role = 'guardian' and g.player_id = $2 limit 1`, [MUM, PILLAY]))[0];
+  for (const k of ["fOld", "fUp"]) {
+    const o = (await q(`insert into lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
+         select $1, m.id, $2, 'out', $3, $4, 3, 'school', m.starts_at - interval '90 minutes', m.starts_at from match m where m.id = $5
+         returning id`, [HIL, FROM, COACH, decl, s[k]]))[0].id;
+    d["seat_" + k] = (await q(`insert into lift_seat (offer_id, player_id, consent_by, guardian_assignment_id, guardian_link_id, requested_by, state)
+         values ($1, $2, 'guardian', $3, $4, $5, 'requested') returning id`, [o, PILLAY, link.assignment_id, link.id, MUM]))[0].id;
+  }
+  /** What a reader reads of the dated rows, through the API, by label. */
+  const readsDated = async (token) => {
+    const label = (id) => Object.keys(d).find((k) => d[k] === id);
+    const pick = (rows) => (rows ?? []).map((r) => label(r.id)).filter(Boolean).sort().join(" ");
+    const balls = (await api(`/api/matches/${d.fPast}/events`, { token })).body?.events?.length ?? 0;
+    return `fixtures [${pick((await api("/api/read/matches", { token })).body?.rows)}]`
+      + ` trips [${pick((await api("/api/read/trips", { token })).body?.rows)}]`
+      + ` training [${pick((await api("/api/read/training", { token })).body?.rows)}]`
+      + ` plans [${pick((await api("/api/read/news", { token })).body?.rows)}] balls [fPast:${balls}]`;
+  };
+  const datedBefore = { boy: await readsDated(boy), mum: await readsDated(mum) };
+
   group("1 · Before: on the 1XI he reads the 1XI's, and none of the U16B's");
   {
     const got = await reads(boy, s);
@@ -175,6 +229,33 @@ try {
     ok("an empty side is refused", r.status === 400 && r.body?.error === "team_required", JSON.stringify(r.body));
     const p = (await roles()).filter((x) => x.role === "player" && x.active);
     ok("...and his role is still on the U16B", p.length === 1 && p[0].team_code === TO);
+  }
+
+  group("6 · The dated side (db/117): his mother keeps the 1XI's last month, and gains none of the U16B's");
+  {
+    const want = "fixtures [fPast] trips [tOld tPast] training [sPast] plans [pPast] balls [fPast:6]";
+    ok("before the move, his mother reads the 1XI's last month and its bus ahead", datedBefore.mum === want, datedBefore.mum);
+    ok("...and so does he", datedBefore.boy === want, datedBefore.boy);
+    const g = await readsDated(mum);
+    ok("after it, she still reads the 1XI's fixture, bus, nets, plan and balls of last month, not its bus ahead, and nothing of the U16B's before he joined",
+       g === "fixtures [fPast] trips [tPast] training [sPast] plans [pPast] balls [fPast:6]", g);
+    const b = await readsDated(boy);
+    // He keeps his old season's fixture, bus, nets and balls by branch (5);
+    // the U16B's past is his by his `player` role, as every team-mate's; the
+    // 1XI's plan of last month is not his (db/117 header §4: reported).
+    ok("he still reads the 1XI's fixture, bus, nets and balls of last month, and the U16B's fixture as one of its players",
+       b === "fixtures [fNewPast fPast] trips [tPast] training [sPast] plans [] balls [fPast:6]", b);
+  }
+
+  group("7 · The move voided his mother's seat to the side he left, and told her");
+  {
+    const seat = async (id) => (await q(`select state, ended_by from lift_seat where id = $1`, [id]))[0];
+    const old = await seat(d.seat_fOld), up = await seat(d.seat_fUp);
+    ok("the seat to the 1XI's fixture ahead is void, ended by the director", old?.state === "void" && old?.ended_by === SARAH, JSON.stringify(old));
+    ok("...the seat to the match whose sheet names him stands", up?.state === "requested", JSON.stringify(up));
+    const told = async (id) => (await q(`select title from notification where recipient_id = $1 and kind = 'lift' and subject_id = $2`, [id, s.fOld])).map((r) => r.title).join(" / ");
+    ok("his mother is told, once", (await told(MUM)) === "A seat on a lift was withdrawn", await told(MUM));
+    ok("...and the driver, once, without why", (await told(COACH)) === "A seat was withdrawn", await told(COACH));
   }
 } catch (e) {
   fail++; console.log("\n  ✗ threw:", e.message);

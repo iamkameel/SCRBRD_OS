@@ -134,10 +134,24 @@
 --
 -- ── 6 · COST (§2.10, refused over twice db/106's 34 ms) ─────────────
 -- Measured on the forty-fixture season db/106 measured (five Hilton sides,
--- 204 fixtures, 200 buses), with the reader's boy holding three membership
--- rows (two moves), median of 15, ms execution, EXPLAIN (ANALYZE) of SELECT *
--- as the reader; db/106 and this file on the same rows, the same database:
---   [filled in from tools/bench-reach.mjs: see the slice's report]
+-- 204 fixtures a quarter of them away, 200 buses, 100 nets), the guardian's
+-- elder boy holding three membership rows (two moves), median of 15 after
+-- two warm-ups, ms execution, EXPLAIN (ANALYZE) of SELECT * as the reader
+-- under scrbrd_app; db/106's definitions (with db/100's and db/112's) put
+-- back in a rolled-back transaction on the same rows, same database, on
+-- 2026-10-21 (a shared machine: two runs each, both shown):
+--                                   db/106          this file
+--     match, guardian of two      13.5  11.1      16.9  16.4
+--     match, 1XI coach            14.5  14.1      19.0  17.9
+--     match, director             18.2  14.0      14.2  14.1
+--     match, pupil                11.4  11.1      15.6  16.0
+--     trip,  guardian of two      41.6  37.6      42.4  42.8
+--     trip,  director             89.2  74.7      67.6  71.8
+--     toss,  guardian of two       4.1   3.4       8.6   8.6
+--     training, guardian of two    3.8   3.8       6.3   6.1
+--     log,   guardian of two       7.2   6.9       8.6   9.9
+-- The guardian of two's fixture list is 1.3-1.5x db/106's here and a
+-- quarter of §2.10's ceiling (twice db/106's recorded 34 ms).
 -- The set helpers join team_membership in place (as an index probe on
 -- (player_id, school_id, joined_on), added here) rather than calling the
 -- definer side_on() per fixture: a definer SQL function called inside
