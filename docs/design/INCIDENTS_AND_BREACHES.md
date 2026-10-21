@@ -387,3 +387,498 @@ every write route and a mistake there is silent.
 | `outage` | §10 |
 | `reader_exposure` | flag off, key removed; record `read_by` (provider, model, time, hashes) from the import |
 
+## 7 · The register
+
+### 7.1 Shape
+
+**D13.** Two tables and no UPDATE on either, as `access_log` is written (db/08:62-65):
+
+- `data_event`: one row per event, written once at discovery. `id`, `reference`
+  (`DE-7K3M-2026`, the safeguarding reference's shape), `kind` (§3.2), `severity`
+  (§3.3), `discovered_at`, `discovered_by` (an `app_user`, or null with
+  `reporter_text` for a provider's email), `summary` (free text, ≤ 500, written so
+  that it names no child: "a roster read by an account that should not have held the
+  role"), `schools uuid[]` (every school whose people are in scope), `created_at`.
+- `data_event_note`: the entry's history, one row per act, append-only:
+  `event_id`, `at`, `by`, `kind` (`contained`, `evidence`, `classified`,
+  `dissented`, `school_told`, `dso_concern_raised` (the concern's reference only,
+  never its content), `regulator_notified`, `families_notified`, `held_back_s22_3`,
+  `review`, `closed`, `note`), `body` (free text), `classification`
+  (`compromise | near_miss | outage | not_personal_data`, on a `classified` row),
+  `counterpart` (`app_user`, on `classified` and `dissented`: the second reader),
+  `subjects_count integer`, `regulator_reference text`.
+
+The current state of an event is the newest note of each kind; the officer's screen
+(A11) folds them. A wrong note is corrected by a later note, as a wrong ball is by an
+amendment. `closed_at` and the other clock columns of §5 are views over the notes,
+not columns to update.
+
+### 7.2 What the entry records, in words
+
+Who discovered it and when; what was seen or could have been; which stores, tables
+and column classes (health, discipline, identity, contact, safeguarding), never the
+values; whose data by count per school and, in the subjects list, by id; who had
+access in the window and how we know (the `access_log` rows' keys, a provider's
+ticket number, a Render log line's time); what we switched off and when; the
+classification and both signatures; who was told, when, by which route, and the text
+sent; what the Regulator said; what changed afterwards.
+
+### 7.3 The subjects list
+
+**D14.** `data_event_subject (event_id, player_id, school_id, data_classes text[])`,
+append-only, written by the lead and officer as the scope becomes known, read only
+under `compromise.manage`. It exists so that `compromise_notify(event_id)` can write
+one `compromise` notice per live verified guardian of every listed child (and to
+the child himself at 18+), and produce the officer's email list (the guardians'
+emails, once, for the s22(4)(b) mail) without the officer pasting ids into SQL. It
+holds ids, not names; the screen resolves them under the reader's own policy.
+Removing a child wrongly added is a note (`subject_withdrawn`) and a second row with
+`withdrawn = true`, never a DELETE.
+
+`compromise_notify()` also writes, on a new event, one `compromise` row each to the
+officer and the deputy ("A data event was opened: DE-…") so that the deputy learns of
+every event the hour it is recorded and the owner cannot hold one back by not
+mentioning it.
+
+### 7.4 Who reads, who writes, how long
+
+**D15.**
+
+- `compromise.manage` (write `data_event`, `_note`, `_subject`; call
+  `compromise_notify()`): the officer and the deputy. A platform capability in its own
+  bundle, held by `superadmin` and by a new `deputyinfoofficer` platform role that
+  holds nothing else. Not `platformadmin`.
+- `compromise.read`: the same two, platform-wide; and `audit.read` at a school reads
+  the events whose `schools` include that school, the notes, and the count of its
+  own subjects. The school's principal is its information officer and must see its
+  own events. The school never reads another school's rows or subjects.
+- Every read of the register writes an `access_log` row with resource `data_event`,
+  as `audit_log()` does for itself (db/79:66-72).
+- The register appears in the audit log (db/79) as a new kind `event`, one row per
+  note, with the reference and the note kind and **no body**: the free text stays
+  behind its own door, as db/79's "NOT here" list requires.
+- **Retention: 7 years after the closing note**, then the rows are deleted; the
+  subjects list is deleted at 7 years too. The Regulator may ask years later, and
+  role endings are kept 7 years already (`ACCOUNT_LIFECYCLE.md` D22). Q7.
+
+### 7.5 Before the table exists
+
+**D16.** For the pilot, the register is a document, not a table: one file per event,
+from the template `docs/policy/DATA_EVENT_TEMPLATE.md` (the fields of §7.1–7.2 as
+headings; no data in the repository), kept **where a dump may live and nowhere else**
+(`BACKUP_RESTORE.md` §3: an encrypted disk, a password-managed passphrase, never a
+chat). When the table lands, the pilot's entries are typed into it by the officer as
+notes dated when they happened. A pilot with no entry is itself an entry: "no data
+event recorded, 31 October 2026", signed by both.
+
+## 8 · The audit log
+
+What the Regulator or a parent will ask is: who read this child's record, when, from
+where, and how do you know the log is whole. Today the log cannot answer the last part,
+and it answers the first part only for some reads.
+
+### 8.1 Failed writes
+
+`log_restricted_read()` ends `EXCEPTION WHEN OTHERS THEN NULL` (db/08:592;
+db/20:56-57). A failed log write is invisible. **D17**, in a new `db/NN` that
+re-creates the function as db/20 and db/22 did:
+
+- the function **returns boolean** (true: logged; false: not), and in the exception
+  branch does `RAISE WARNING 'access_log write failed: %', SQLSTATE` with **SQLSTATE
+  only**, never `SQLERRM` or a value, so the warning reaches the Postgres log
+  (Supabase's) with nothing personal in it;
+- the API's callers (`read-api.mjs:3480-3494`; `audit_log()`; db/63:1266) read the
+  boolean. **A platform-wide or support-session read, and any read that returned a
+  restricted column, is refused when it cannot be logged** (fail closed: the
+  response is `503 audit_unavailable`, and the row is not returned). **An ordinary
+  school reader's read that would be logged for another reason is served and
+  counted** (fail open): a coach at the ground is not locked out of his roster by a
+  logging hiccup, and the count is the evidence that it happened;
+- the API keeps an in-memory counter of failed log writes since boot and exposes it
+  on `/api/health` as `"audit_failed": n`. Keep-warm treats `n > 0` as a warning
+  (§12 P9's change makes warnings loud).
+
+### 8.2 Which reads are logged
+
+Today an ordinary school reader is logged only when a watched column comes back
+non-null (`read-api.mjs:3488-3494`); a routine roster read is not. Logging every list
+render would make the log unreadable and tell a parent nothing he cares about.
+**D18**: the log must hold, for every child,
+
+1. every read that returned a restricted column (exists);
+2. every read by a platform-wide or support-session reader (exists);
+3. **every single-record read of a child's file**: the profile view, the family
+   screen's view of one child, the dossier, regardless of which columns came back
+   (new: the row's `record_ids` is one child and `fields` says `profile`);
+4. **every export**: a CSV, a printable Passport, a report that leaves the screen
+   (new; the CSV refusal just merged in #174 is the place the row is written);
+5. every read of the audit log and the register (exists for the log; §7.4 for the
+   register).
+
+Not logged: a team sheet, a scorecard, a match list, a fixture. Those are the match
+record and a name on them is the public rule's business, not the log's.
+
+### 8.3 Retention
+
+**D19.** `access_log` rows are deleted **5 years** after `occurred_at`, as
+`ACCOUNT_LIFECYCLE.md` D22 recommends; never minimised (a log with holes is not a
+log). `access_log_purge_due()` runs on the one scheduler (§12 A9) and writes one row
+to the log saying how many rows it removed and up to which date. Nothing is purged
+while an open data event names that period in its evidence note. Q8.
+
+### 8.4 The parent's view
+
+db/08:506 promises a parent a view of who read their child's record; none exists
+(map §1). **D20.** `my_child_access_log(player_id, before_key, limit)`, SECURITY
+DEFINER, for a live verified guardian of that child (or the pupil himself at 18+):
+rows whose `record_ids` include the child, newest first, each saying **when, the
+reader's role and school** ("a coach at Westville Boys' High School"; "the school
+office"; "SCRBRD support, in a support session the office approved"; "the platform")
+and **what kind of record** (`fields` mapped to plain words: "his profile", "his
+injury record", "his contact details"). Not the reader's name: s23(1)(b) gives the
+data subject the identity *or categories* of those who had access, the category is
+what a parent can act on, and a named coach on a parent's phone is a conversation the
+school should have in person. The office gives the name on request, from Who Read
+What. Safeguarding rows are hidden from this view as from every other (db/57:563;
+db/79:169), and the view's own read is logged. The Family screen gains "Who has seen
+his record" (Sonnet, A6). Q9.
+
+For the pilot, a parent who asks is answered by the school office from "On the record:
+who read what" (`SettingsView.jsx:1187`), and the runbook says so (§10.4).
+
+### 8.5 After a restore
+
+A restore ends the log at the dump's moment (`BACKUP_RESTORE.md:321-322`). **D21.**
+A restore is always a data event of kind `outage` whose evidence note records the
+gap (dump time to restore time), whether the old database's log could still be read
+and where its copy is, and every withdrawal and erasure put back by hand. The first
+`access_log` row after a restore is written by the lead, resource `restore`, so the
+log itself shows the seam.
+
+### 8.6 Platform-wide `audit.read`
+
+`platformadmin` holds `audit.read` platform-wide (db/01:234; db/86), so the platform
+reads every school's log at rest, and nobody wrote down that this is meant (map §1).
+**D22.** After the pilot, `platformadmin`'s `audit.read` applies **only inside a
+support session at that school** (db/22), stamped as every support read is. The
+owner key keeps it (it keeps everything; that is what the second reader is for). For
+the pilot: list who holds `platformadmin` today; if it is Kameel alone, nothing
+changes on the day. Q10.
+
+### 8.7 Sign-ins
+
+`auth_session` rows are kept a day past expiry (db/85). "Did anyone sign in as the
+office last month, and from what" cannot be answered. **D23.** A `sign_in_log`
+(person, at, method `google | code`, device class from the user agent, no IP in v1,
+Q18) kept **1 year**, written by `app_session_begin()`, read under `audit.read` at
+the person's schools and by the person themself on Me. Small; after the pilot.
+
+## 9 · Logging hygiene and secrets
+
+### 9.1 No personal value in a server log
+
+**D24.** The rule: a server log line may carry a code, a route, an id, a time and a
+count. Never a value a person typed or a value that is a person (an email, an ID
+number, a name, a DETAIL string, a request body). Where it stands today:
+
+| place | today | change |
+|---|---|---|
+| `server.mjs:1461` | logs `err.code`, `err.message`, **`err.detail`**; a unique violation on `app_user.email` or `official.id_number` puts the value in DETAIL | log `err.code` and `err.constraint`; drop `detail`; for `err.message`, log it only when `err.code` is not a Postgres code (Postgres messages can embed values) |
+| `scorebook-api.mjs:467, :502, :521` | logs `e.detail` | same |
+| `owner-recovery-api.mjs:50, :59, :62` | logs the email on every attempt, deliberately | log whether the email matched the owner (`true/false`) and the time; the email never. The owner knows his own address |
+| `public-api.mjs:659-731` | logs the path with ids | stands: ids and no names |
+| `server.mjs:1471` | masks the database password | stands |
+
+A unit test walks `services/api` for `console.error(` and `console.log(` calls whose
+arguments include `.detail`, `.email`, `.id_number` or a request body and fails on
+any (Opus writes it beside the fix, A12 lists it; the fix itself is pilot-critical,
+§12 P4).
+
+### 9.2 Who reads the provider logs, for how long
+
+The repository says nothing about Render's or Supabase's log retention or who can
+read them (map §9, §14). **D25.** The production sheet (§9.4) records, for each of
+Render, Supabase and Firebase: the account email, who holds the login (today: Kameel;
+the deputy after §4.2), the plan's log retention as read from the provider's page on
+the day the sheet is written, and whether the provider's Postgres logs include failed
+statements. Postgres by default logs the text of a failing statement; the API's
+queries are parameterised, so the text should carry `$1` placeholders and not
+values, but the lead confirms that on Supabase's log viewer with one deliberate
+failed insert on a test row, and writes the answer on the sheet.
+
+### 9.3 The secrets sheet
+
+Rotation is written for two secrets and not for the rest (map §9). **D26.**
+`docs/pilot/SECRETS_ROTATION.md` (Haiku drafts from this table; the lead fills the
+dashboard paths; **no secret value ever appears in it**):
+
+| secret | where set | rotating it | consequence |
+|---|---|---|---|
+| `SESSION_SECRET` | Render | set a new value, redeploy | everyone signs in again; on a match day, last and never mid-innings |
+| `DATABASE_URL` (the `scrbrd_app` password) | Supabase, then Render | reset the role's password; set the string; redeploy | the API is down for the redeploy |
+| the owner connection string (`SCRBRD_PROD_OWNER_URL`) | GitHub secret; Kameel's machine | reset the owner password in Supabase; update the secret | the drill workflow needs the new one |
+| `OWNER_RECOVERY_SECRET` | Render | set a new value or unset | recovery closed until set |
+| `PUBLIC_PSEUDONYM_SECRET` | Render | set a new value (32+) | every public pseudonym changes; shared public links to pseudonymous ids stop resolving. Rotate only on exposure |
+| `BACKUP_PASSPHRASE` | GitHub secret; password manager | new passphrase; re-encrypt kept dumps; delete the drill's encrypted artifacts made under the old one | — |
+| `ANTHROPIC_API_KEY` | Render | revoke in the provider console; set the new one | the reader and Stats Magic pause |
+| `GOOGLE_WEATHER_API_KEY` | Render | DEPLOYING.md:375 | weather pauses |
+| Firebase service credentials, FCM | Firebase console; Render | revoke, reissue | push pauses; sign-in may pause |
+| Supabase service and anon keys, Storage | Supabase | regenerate | the photo store pauses |
+
+### 9.4 The production sheet
+
+The docs disagree on where production lives (map §0, §13). **D27.**
+`docs/pilot/PRODUCTION_SHEET.md`, one page: for each of the API (Render,
+`scrbrd.onrender.com`), the database (Supabase Postgres, Free), the photo store
+(Supabase Storage), the web app (Firebase Hosting), sign-in (Firebase Auth / Google),
+push (FCM), the backups (Kameel's encrypted dumps; the drill's encrypted GitHub
+artifacts), the reader (Anthropic, flag off): the provider, the region if known, the
+account email, who holds the login, the status page, how the provider notifies a
+breach (which inbox), the log retention (§9.2), and the switches of §6.1 with their
+dashboard paths. DEPLOYING.md:9-10 (Cloud Run, Cloud SQL) is corrected to match
+(Haiku). No secret and no phone number on the sheet.
+
+## 10 · The match-day outage at Westville
+
+### 10.1 The principle
+
+The pad writes every ball to the phone before it counts it (`sync-engine.mjs:1-16`),
+and the app shell is cached (`sw.js`). The paper scorebook is kept by the school's
+scorer or the umpires through every match already; the runbook compares the pad to
+"the umpires' book" at each innings end. So there is **no switch to paper**: paper is
+always the second record, the pad is always the first, and the only decision is made
+after play: *is the pad's record whole, or does the importer fill a gap?* **D28:**
+that decision is the lead's, and it is a register entry either way.
+
+### 10.2 The runbook text
+
+To add to `docs/pilot/PILOT_DAY_RUNBOOK.md` under "If something goes wrong" (Haiku,
+word for word, after Kameel's edits; §12 P1):
+
+> ### The server or the database is down
+>
+> Signs: the pill stays **Held** or **On device** although the phone has signal; the
+> health address does not answer, or shows `"db":"unreachable"`; the pavilion screen
+> says "reconnecting".
+>
+> 1. **Keep scoring on the pad.** Every ball is saved on the phone before it counts.
+>    Nothing is lost while the phone works. Do not reload, clear the match or sign
+>    out.
+> 2. **The paper scorebook is kept as always**, ball by ball. Today it is the second
+>    record: check it against the pad at the end of every over, not only at the
+>    innings.
+> 3. **No handover while the server is down.** If the scoring phone dies, the standby
+>    does not claim the match. From that ball the paper book is the only record; the
+>    standby writes the time and the over on it and scores on paper.
+> 4. **Tell [the match-day lead].** The lead decides nothing during play except
+>    whether to suspend the service deliberately (see "The app shows something it
+>    should not"). Play goes on.
+> 5. **When the server returns the balls send by themselves.** Wait for **Sent**. The
+>    pavilion screen catches up on its own.
+> 6. **After the match** the lead opens the scorecard and compares it with the book.
+>    If every ball is there, nothing more is done. If balls are missing (a lost or
+>    dead phone, balls **For review** that cannot be released, a cleared match), the
+>    lead imports the book through the scorebook importer, typed by hand (the reader
+>    stays off), and the imported balls carry their source. Either way the lead writes
+>    a register entry.
+>
+> ### The app shows something it should not
+>
+> Another school's boy's details, a name on the pavilion screen where a position should
+> be, a date of birth, anything that is not yours to see.
+>
+> 1. **Do not photograph it, screenshot it or forward it.** Note the time and which
+>    screen.
+> 2. **Tell [the match-day lead] at once.** The lead can take the public page down
+>    (**Withdraw**) in a minute and every public page off in a few. The match goes on
+>    on the pad.
+> 3. The lead writes a register entry; the information officer and the second reader
+>    decide within 24 hours whether families are told.
+>
+> ### A phone with the app signed in is lost
+>
+> 1. **Tell [the match-day lead] at once.** The lead or the school office disables that
+>    account and signs it out everywhere.
+> 2. If it was the scoring phone, the lead force-releases the match so the standby
+>    can claim it. Balls that had not been sent are on paper only; the standby carries
+>    on from the book.
+> 3. The register entry says whether the phone was locked, when the account was
+>    disabled, and what was on it.
+
+And under "No signal at the ground", one line after step 4: "If the signal is back
+but the pill does not move, see 'The server or the database is down'."
+
+### 10.3 Who to call
+
+**D29.** The runbook's "[who to call]" is four roles, and the numbers live on a
+printed card each scorer carries, never in this repository:
+
+| role | for | who at the pilot |
+|---|---|---|
+| **the match-day lead** | the pill says **For review**; the server or database is down; the app shows something it should not; a phone is lost; whether to import after play | Kameel, at the ground |
+| **the school office** | **Waiting for your school office**; a sign-in code; no scoring button on an account | a named Westville office person, agreed with the school by 29 October |
+| **the second reader** | a compromise decision when the lead is the subject or is busy on the field; the person the lead phones at T + 1 hour | Westville's information officer until a deputy is named (§4.2) |
+| **the standby scorer** | the handover; the paper book if the first phone dies | the second scorer |
+
+Phone numbers go on the card at the go/no-go on 29 October. The repository holds the
+roles, the card holds the numbers.
+
+### 10.4 Before the day: checks the design needs
+
+For solo run 2 (27 October) and the production verify (28 October), added to the
+runbook's checklist (§12 P6):
+
+- [ ] With the API stopped (or suspended on Render), score six balls on a practice
+      match: the pill says **Held**, not **Refused**; on resume they go to **Sent**.
+- [ ] With the API up and the database string wrong (a test server), the same: the
+      server's 5xx leaves balls **Held**.
+- [ ] `PUBLIC_PAGES` off and on again: the pavilion page 404s, then returns, within a
+      few minutes; note the time it took.
+- [ ] `account_set_active(false)` on a test scorer mid-practice: the pad stops sending
+      and holds; enabled again and signed in, it sends.
+- [ ] A parent's question "who read my child's record" can be answered from "On the
+      record: who read what" by the office in under five minutes.
+- [ ] The register template is on the lead's encrypted disk; both scorers hold the
+      card; the second reader knows they are it.
+
+## 11 · Third parties
+
+**D30.** Each provider is an operator (or a sub-operator) for the data it holds for
+us, and a breach at a provider is a data event of kind `provider` the moment its
+notice reaches the inbox on the production sheet:
+
+| provider | what of ours it holds | when its breach is announced |
+|---|---|---|
+| **Render** | the API process, every environment secret (§9.3), the API's stderr logs (which must by then carry no personal value, §9.1), the request metadata | rotate every secret Render held, in the sheet's order; the register entry lists which secrets, and the log retention tells the window; a compromise only where a secret shows use or a log carried a value |
+| **Supabase** | the database (everything), the Storage bucket (scorebook photos of both sides' boys), the Postgres logs, the Auth tables if any | the Postgres project is the database: a confirmed breach of it is kind 6's scope (every school, every family) and the Regulator's notice goes in 72 hours; rotate `scrbrd_app` and the owner string; the dumps are the recovery |
+| **Anthropic** (the reader) | page photos in transit, and whatever its terms keep; the sign-off's item 1 is still "to confirm" (`SCOREBOOK_READER_SIGNOFF.md`) | **the flag stays off until item 1 is confirmed in writing** (Q14); while it is off, no photo has left the platform and there is nothing to notify. When it is on: the `read_by` hashes say which pages, the import says which match, the register entry names the match and both schools' officers are told |
+| **Firebase / Google** | sign-in identities and emails, hosting, push tokens | a sign-in compromise is kind 5 for every account: rotate `SESSION_SECRET` (everyone signs in again), tell every school's officer; push tokens alone are S4 |
+| **GitHub** | the repository, the drill's encrypted dump artifacts, the secrets the workflows use | delete the artifacts, rotate `BACKUP_PASSPHRASE` and the owner string; a readable artifact is kind 6 |
+
+Each provider's own notice is kept with the entry. We do not wait for a provider to
+classify for us: the 24-hour clock runs from our discovery, which is their notice.
+
+## 12 · Slices
+
+Migration numbers are TBD; db/114 and db/115 are taken. Every builder commits and
+pushes its branch after each step and at least every 30 minutes (CLAUDE.md, "Saving
+progress").
+
+### 12.1 By the pilot (before the 26 October freeze; documents may land to 29 October)
+
+| # | what | tier | notes |
+|---|---|---|---|
+| **P1** | The runbook text of §10.2, the four roles of §10.3, the checks of §10.4, in `PILOT_DAY_RUNBOOK.md`; a paper step in `SCORER_HELP.md` "No signal" | Haiku | word for word from this design after Kameel's edits; the lead reads it before it lands |
+| **P2** | The decision chain: Kameel names the second reader for the pilot (D6) and asks Westville for its information officer's name and the office contact; both written in `docs/policy/INFORMATION_OFFICER.md` with the deputy designation when it comes | Kameel; Haiku records | a decision, not code |
+| **P3** | `docs/policy/DATA_EVENT_TEMPLATE.md` (§7.1–7.2 as headings, no data) and the rule that the register lives where a dump may live (D16) | Haiku | the pilot's entries are files on the encrypted disk |
+| **P4** | Logging hygiene fix (D24): `server.mjs:1461`, `scorebook-api.mjs:467/502/521`, `owner-recovery-api.mjs:50/59/62` | **Opus** | four small edits where a mistake is silent; the unit test may follow (A12) |
+| **P5** | `docs/pilot/PRODUCTION_SHEET.md` (D27) and the DEPLOYING.md:9-10 correction | Haiku drafts; the lead fills the provider facts | no secret, no phone number |
+| **P6** | The checks of §10.4 run on solo run 2 and the production verify; results written on the runbook's checklist | the lead | confirms the pad's `Held` behaviour this design leans on |
+| **P7** | `docs/pilot/SECRETS_ROTATION.md` (D26) | Haiku drafts; the lead fills paths | — |
+| **P8** | Confirm on production that `scorebook_reader` is off for every school and stays off through the pilot (D30, Q14); confirm who holds `platformadmin` (D22) | the lead | a read, not a change |
+| **P9** | `keep-warm.yml` exits non-zero when health is not `ok:true, db:ok` (and, once A5 lands, when `audit_failed > 0`), so GitHub emails the owner on failure; today it only warns in its own log (`keep-warm.yml:52-57`) | **Sonnet** | one workflow change; the only alert the pilot will have |
+| **P10** | Decide Q11: whether `OWNER_RECOVERY_SECRET` is unset for the pilot week | Kameel | — |
+
+### 12.2 After the pilot
+
+| # | what | tier | notes |
+|---|---|---|---|
+| **A1** | `db/TBD`: `data_event`, `data_event_note`, `data_event_subject` (D13, D14); capabilities `compromise.read`, `compromise.manage`; role `deputyinfoofficer`; RLS as D15; `audit_log()` gains kind `event`; db/99 assertions (no body in the audit row; a school reads only its own; every read logged) | **Opus** | the register |
+| **A2** | Same or next migration: notification kind `compromise` in db/89's CHECK and `packages/policy/src/notifications.mjs`; `compromise_notify()` (D9, §7.3); the SG-9 rule holds (`recipient_id` never a pupil under 18) | **Opus** | — |
+| **A3** | `PLATFORM_MODE` read-only and closed modes (D12): middleware in `server.mjs`, `/api/health` `mode`, handover's own reason; the app's banner | **Opus** (server); Sonnet (banner) | touches every write route |
+| **A4** | `auth_epoch_bump_all()` and `auth_epoch_bump_school(school)` in `db/TBD`: a platform-wide and a per-school sign-out that does not need a secret rotation; a `system` notice to those signed out | **Opus** | replaces "rotate `SESSION_SECRET`" as the session kill switch |
+| **A5** | `db/TBD` re-creating `log_restricted_read()` returning boolean (D17); the API's fail-closed and counted paths; `audit_failed` on health; `access_log_purge_due()` (D19); the broader logging of D18 (profile reads, exports) | **Opus** | the log the Regulator is answered from |
+| **A6** | `my_child_access_log()` (D20) and the Family screen's "Who has seen his record" | **Opus** (function); Sonnet (screen) | the promise at db/08:506 |
+| **A7** | Owner-key and recovery alerts: a `compromise` row to the officer and deputy whenever `/api/auth/owner/recover` is called or a code is issued, and whenever the owner key reads a school's data outside a support session (`platform_wide` rows, db/20) | **Opus** | the deputy sees what the owner does |
+| **A8** | `platformadmin`'s `audit.read` narrowed to support sessions (D22) | **Opus** (policy, RLS) | — |
+| **A9** | One scheduler for every purge: scorebook pages (db/63:1284), lifts (db/76), register redaction (db/92), `access_log` (A5), `sign_in_log` (A10): a GitHub Actions schedule calling platform routes with a key, or `pg_cron` on Supabase; the lead picks | **Opus** design note; Sonnet build | ends "run it by hand" (DEPLOYING.md:421-426) |
+| **A10** | `sign_in_log` (D23) | **Opus** | small |
+| **A11** | The officer's register screen in Settings: open events with their clocks red past deadline, the notes, the subjects list under `compromise.manage`; an in-app "Report a data problem" form for staff and parents that opens an entry (the safeguarding form's shape, less its fields) | Sonnet over A1 | — |
+| **A12** | The logging unit test (D24); `docs/policy/` gains the s22 notice templates (Regulator; family email; website) with s22(5)'s four parts as headings, for the lawyer to mark up | **Opus** (test); Haiku (templates) | — |
+| **A13** | Doc conflicts (§14) settled as Kameel decides | Haiku | — |
+
+Not in this design, noted for their own: `retention.mjs` and `account_erase()`
+(`ACCOUNT_LIFECYCLE.md` D22, §6.3), the safeguarding purge and the SAPS/NDSO referral
+route (`SAFEGUARDING_DSO.md` §9.5). This design's A9 is the scheduler they will share.
+
+## 13 · Questions for Kameel
+
+Each with the recommendation, so "as recommended" is an answer.
+
+1. **Words.** *data event* for everything in the register, *security compromise* for
+   the s22 subset, notice kind `compromise`, table `data_event` (D1).
+   **Recommend: yes.**
+2. **The second reader.** Designate a deputy information officer in writing, not a
+   person you supervise; until then, the school's own information officer is the
+   second reader for its pupils' events; disagreement means notify (D6).
+   **Recommend: yes, and ask Westville for its officer's name at the go/no-go.**
+3. **Responsible party or operator.** SCRBRD prepares every notice; the school's
+   officer co-signs those about its pupils; one Regulator notice in both names (D4).
+   **Recommend: yes, with the lawyer confirming the standing (Q17).**
+4. **The clock.** Contain T+1h; classify and tell the school T+24h; the Regulator
+   T+72h after classifying a compromise; families with the Regulator or by T+7d;
+   review T+30d (D10). **Recommend: as written.**
+5. **The lost-phone threshold.** A locked phone whose account is disabled and signed
+   out within the hour is a data event, not a compromise; unlocked, or used after
+   loss, is a compromise (kind 1). **Recommend: yes, marked [lawyer].**
+6. **The pilot's kill switch.** Suspend the Render service; `PUBLIC_PAGES` off for
+   the public; the deputy gets a Render login before 31 October (D11). Read-only
+   mode after the pilot (D12). **Recommend: yes.**
+7. **Register retention.** 7 years after the closing note; the school's `audit.read`
+   holders read their own school's events (D15). **Recommend: yes.**
+8. **The audit log.** 5-year retention; restricted and platform reads refused when
+   they cannot be logged, ordinary reads served and counted; single-record file reads
+   and exports logged (D17–D19). **Recommend: yes.**
+9. **The parent's view** shows the reader's role and school, not the name; the office
+   gives the name on request (D20). **Recommend: yes.**
+10. **`platformadmin`'s platform-wide `audit.read`** narrowed to support sessions
+    after the pilot (D22). **Recommend: yes.**
+11. **Owner recovery during the pilot week.** Unset `OWNER_RECOVERY_SECRET` from 26
+    October to the day after the pilot, if DEPLOYING.md's gate means an unset secret
+    closes the route; set it again after. **Recommend: yes, if you will not need it
+    that week.**
+12. **The match-day decision.** Nobody switches to paper; the pad is the first
+    record and the book the second; the lead decides after play whether the importer
+    fills a gap, and writes an entry either way (D28). **Recommend: yes.**
+13. **The family route.** Email under s22(4)(b) from the officer, co-signed by the
+    school's officer; a `compromise` notice in the app; the school's channel at the
+    school's choice; the website only for a public-page scope or at the Regulator's
+    direction (D8). **Recommend: yes.**
+14. **The reader.** `scorebook_reader` stays off at every school until the sign-off's
+    item 1 (retention and training terms) is confirmed in writing; the signature of
+    2 October is read as conditional on items 1–7, as it says (D30).
+    **Recommend: yes.**
+15. **At the school.** The principal (as the school's information officer) always;
+    the DSO only for S1, through a concern; the director of sport and office for
+    what they must do (D7). **Recommend: yes.**
+16. **Keep-warm fails loud** so GitHub emails you on a failed health check (P9).
+    **Recommend: yes, before the freeze.**
+17. **A lawyer.** One hour with a South African privacy lawyer on §3.4, §4.2 (s56)
+    and D4, before the pilot if one can be found this week, otherwise before the
+    first school beyond Westville; the templates of A12 are what they mark up.
+    **Recommend: before the first school beyond Westville at the latest.**
+18. **IP addresses in the sign-in log** (D23). An IP is personal information under
+    POPIA and would make the log itself something to protect. **Recommend: no IP in
+    v1; device class and method only.**
+19. **The 72 hours.** The Act says "as soon as reasonably possible"; 72 hours is our
+    own ceiling. Keep it as a ceiling, or set a shorter one? **Recommend: keep 72 as
+    the ceiling and aim for 24 when the scope is already known.**
+
+## 14 · Doc conflicts this design needs settled
+
+From the map's §13, each with the answer this design assumes until Kameel says
+otherwise (Haiku records the decision, A13):
+
+- **Hosting.** Render and Supabase (`BACKUP_RESTORE.md`; `PILOT_DAY_RUNBOOK.md:24`),
+  not Cloud Run and Cloud SQL (`DEPLOYING.md:9-10`). Postgres version as the
+  Supabase project reports it, not `backup-drill.yml:53`'s 17 by assumption.
+- **The first match** is 31 October (`PILOT_DAY_RUNBOOK.md`), not 15 October
+  (`BACKUP_RESTORE.md:4`). The pre-pilot dump and the drill move with it.
+- **`system` notice life** is 180 days (NOTIFICATIONS.md D2) or two years (D22 there;
+  `ACCOUNT_LIFECYCLE.md:696`): this design's `compromise` notice is two years, with
+  the register; `system` is the notifications design's to settle.
+- **Lifts** are three years (db/76; DEPLOYING.md:571), not one season
+  (`ACCOUNT_LIFECYCLE.md:692`); the built code is the fact.
+- **The owner key with no school** (`SCRBRD_RISK_REGISTER.md:22`) stays open in the
+  risk file; A7 and D22 are its answer, and the risk file should say so when they
+  land.
