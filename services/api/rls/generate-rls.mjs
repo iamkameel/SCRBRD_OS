@@ -429,6 +429,15 @@ export const WITHDRAWN_SINCE_01 = {
   // team-mate is out and until when; db/55 withdraws it. (`enquiry`, a
   // coach-to-coach grant, keeps it: Kameel, 2026-09-28.)
   player: [{ after: "player.performance.read", capability: "medical.status.read" }],
+  // READERS_child_data (Kameel, 21 Oct 2026); db/116 withdraws all three.
+  // Q16: a child's own ID number is never drawn on his screen.
+  selfaccess: [{ after: "player.age.read", capability: "player.identity.read" }],
+  // Q12: the coordinator reads a trip's manifest on the day, through
+  // trip_contacts() and transport.manifest.read, never the school's contacts.
+  transportcoordinator: [{ after: "transport.manage", capability: "player.emergency.read" }],
+  // Q10: the league reads its own fixtures' records, through
+  // competition_discipline_records() and competition.discipline.read.
+  competitionadmin: [{ after: "officiating.registry.manage", capability: "discipline.read" }],
 };
 
 /**
@@ -515,6 +524,11 @@ export const ADDED_SINCE_01 = {
   "platform.reference.manage":   "75_dls_table.sql",
   // ── GA-I26a: running a training session, its plan and register (db/105) ──
   "team.training.run":           "105_development_loop.sql",
+  // ── READERS_child_data (Kameel, 21 Oct 2026): two narrow doors (db/116) ──
+  // Q10: the league's conduct read, its own competition's fixtures only.
+  "competition.discipline.read": "116_readers_privacy.sql",
+  // Q12: the transport coordinator's manifest, a trip he coordinates, on the day.
+  "transport.manifest.read":     "116_readers_privacy.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

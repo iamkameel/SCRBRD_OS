@@ -391,7 +391,13 @@ const BUNDLES = {
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read", "player.development.read",
     "medical.status.read", "medical.nature.read", "medical.details.read",
-    "player.age.read", "player.identity.read",
+    // NOT player.identity.read (READERS_child_data Q16, Kameel, 21 Oct 2026;
+    // db/116 withdraws it). His ID number is level 4, the most dangerous
+    // field about him, and a thirteen-year-old's phone is left on tables: it
+    // is never drawn on a screen of his. His right of access to it is met by
+    // the office, on request. (His guardian's player.identity.read below is
+    // a separate question, held for Kameel.)
+    "player.age.read",
     "discipline.read",
   ],
 
@@ -482,7 +488,14 @@ const BUNDLES = {
   // that pair's own sale is measured in.
   sponsorship: ["school.read", "news.read", "user.read",
                 "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
-  transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read",
+  // NOT player.emergency.read (READERS_child_data Q12, Kameel, 21 Oct 2026;
+  // db/116 withdraws it): that was every child's numbers at the school, all
+  // year, for a role that needs the boys on one bus on one day. He holds
+  // transport.manifest.read instead, which opens trip_contacts() for a trip
+  // he coordinates (transport.manage over its fixture) on the day it runs,
+  // as the driver's own path does, every read logged. No table policy names it.
+  transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage",
+    "transport.manifest.read",
     // SCRBRD-124 (db/70): oversight of lifts, in counts. A lift is not a trip.
     "transport.lift.oversee"],
   driver: ["news.read", "transport.read", "transport.drive"],
@@ -541,7 +554,15 @@ const BUNDLES = {
     // Whoever appoints officials across a league is the one who keeps the
     // panel: accreditation, grade and whether somebody still stands at all.
     "officiating.registry.manage",
-    "discipline.read", "scoring.correct", "scoring.amend.approve",
+    // NOT discipline.read (READERS_child_data Q10, Kameel, 21 Oct 2026;
+    // db/116 withdraws it). A league needs the umpire's report on its own
+    // match, not a school's file: held platform-wide, as the pilot's league
+    // account is, discipline.read read every conduct record at every school.
+    // competition.discipline.read opens competition_discipline_records()
+    // instead — the records whose fixture is in a competition it organises,
+    // every read logged — and no table policy names it.
+    "competition.discipline.read",
+    "scoring.correct", "scoring.amend.approve",
     // SCRBRD-120: he signs a scorebook import for a match in his league.
     "scoring.import.read", "scoring.import.confirm",
     "news.publish.competition",
