@@ -106,7 +106,24 @@ if (args.has("--reset-objects") && !LOCAL_HOSTS.has(hostOf(URL))
 
 if (args.has("--reset")) {
   console.log(`Resetting schema on ${URL.replace(/:[^:@]*@/, ":***@")}`);
-  psql(["-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"], "reset schema");
+  // A walk's API server can outlive the walk by a moment: its last request
+  // (the dashboard summary, in every CI case seen) is still running in an
+  // open transaction when the walk exits and the runner resets for the next
+  // one. DROP SCHEMA ... CASCADE then takes its locks object by object while
+  // that query takes its own, and Postgres kills one of them as a deadlock:
+  // "could not reset the database" on whichever walk came next (PR #167's
+  // shards 1 and 4). So wait, briefly, for the other sessions on this
+  // database to end, and if the drop still meets one, try again.
+  const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  const others = () => Number(run(["-At", "-c",
+    "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend'"]).out) || 0;
+  for (let i = 0; i < 40 && others() > 0; i++) sleep(250);
+  for (let attempt = 1; ; attempt++) {
+    const r = run(["-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"]);
+    if (r.ok) { if (r.out) console.log(r.out); console.log("✓ reset schema"); break; }
+    if (attempt < 3 && /deadlock detected/.test(r.out)) { console.log(`  reset schema met a deadlock (attempt ${attempt}); trying again`); sleep(1000); continue; }
+    console.error(`✗ reset schema\n${r.out}`); process.exit(1);
+  }
 }
 
 // ── --reset-objects: what --reset cannot be on a managed host ────

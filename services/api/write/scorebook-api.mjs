@@ -45,6 +45,7 @@ import {
 import { EVENT_COLUMNS, matchFoldContext } from "./events-api.mjs";
 import { sanitisePage } from "../io/page-image.mjs";
 import { readPages, readerConfigured, readerGate, cardFromRead, defaultProvider } from "../ai/scorebook-reader.mjs";
+import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, IdHandler, IdRequest, RawResponse } from "../api-types.mjs" */
 /** @import { ObjectStore } from "../io/object-store.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
@@ -148,7 +149,7 @@ export function scorebookRoutes({ pool, secret, store, reader = defaultReader })
       if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
-      if (status >= 500) console.error("scorebook →", e.code || "", e.message, e.detail || "");
+      if (status >= 500) console.error("scorebook →", safeErr(e));
       res.status(status).json({ error: status >= 500 && !e.status ? "internal_error" : e.message, ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };
@@ -464,7 +465,7 @@ export function scorebookRoutes({ pool, secret, store, reader = defaultReader })
       } catch (/** @type {any} */ e) {
         // The card could not be kept (a name the database refused, say): the
         // read is recorded as sent and not read, and the person types it.
-        console.error("scorebook read →", e.code || "", e.message, e.detail || "");
+        console.error("scorebook read →", safeErr(e));
         return notRead("unavailable");
       }
     }),
@@ -499,7 +500,7 @@ async function purgeDue(as, store, bearer, importId) {
       if (ok) deleted += 1; else failed += 1;
     } catch (/** @type {any} */ e) {
       failed += 1;
-      console.error("scorebook purge →", e.message, e.detail || "");
+      console.error("scorebook purge →", safeErr(e));
     }
   }
   return { due: due.length, deleted, failed };
@@ -518,7 +519,7 @@ export function scorebookFileRoutes({ pool, secret, store }) {
   const fail = (res, e) => {
     if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
     const status = e.status || 500;
-    if (status >= 500) console.error("scorebook page →", e.code || "", e.message, e.detail || "");
+    if (status >= 500) console.error("scorebook page →", safeErr(e));
     return res.status(status).json({ error: status >= 500 && !e.status ? "internal_error" : e.message,
                                       ...(e.detail !== undefined && status < 500 ? { detail: e.detail } : {}) });
   };

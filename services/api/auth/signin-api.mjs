@@ -46,6 +46,7 @@ import { AuthError } from "./auth.mjs";
 import { runAsPrincipal, mintToken } from "./auth-db.mjs";
 import { firebaseVerifier, keysFromJwks, FIREBASE_PROJECT, FRESH_SEC } from "./firebase-verify.mjs";
 import { RateLimit, clientAddress } from "../public/public-api.mjs";
+import { safeErr } from "../log-safe.mjs";
 /** @import { Pool, Handler, ApiRequest, ApiResponse, ExactHandler } from "../api-types.mjs" */
 /** @import { FirebaseVerifier } from "./firebase-verify.mjs" */
 
@@ -164,7 +165,7 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
       }
       if (e.code === "42501") return refuse("not_permitted", res);
       if (e.status && typeof e.code === "string") return res.status(e.status).json({ error: e.code });
-      console.error("sign-in route →", e.code || "", e.message);
+      console.error("sign-in route →", safeErr(e));
       return res.status(500).json({ error: "internal_error" });
     }
   };
