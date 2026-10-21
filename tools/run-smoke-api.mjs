@@ -69,6 +69,12 @@ const WALKS = [
   // re-fix, an amendment that flips a result, and the signed-out reads.
   "results",
   // ── end SCRBRD-114 phase 3a ──
+  // ── OFFICIAL_RESULT S1 (db/114): when a result becomes official — the
+  // organiser confirms a league result, a correction pending blocks it, the
+  // public page says it at once (and a second process within the TTL), a
+  // dispute and its clearing, a reopening by amendment and a re-confirmation,
+  // a withdrawal, and a friendly's confirmer who was a hand on its log. ──
+  "official",
   // ── SCRBRD-114 phase 3b (db/71): the super over ──
   // A cup tie and a friendly's, scored on the real write path; the cup tie
   // waits for its super over; the Laws and the document at the door; the
@@ -419,6 +425,13 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
   // the eighteen card, and the sign-up row — both themes, 12px and 44px.
   "browser-consent",
+  // GA-I19 slice B (db/111): the Injuries screens. The physio's Reviews due, the
+  // Record and Review forms (next review required, +7 and +14, clearing asks
+  // first), the left-the-school mark; the coach and the director read it with
+  // no review word, note or count and never ask for the worklist; the
+  // principal reads status only; the parent's and the boy's Health history;
+  // 12px, 44px, Daylight, reduced motion.
+  "browser-injuries",
   // Playing conditions, phase 1 (db/61, SCRBRD-114): a fixture arranged in a
   // league pre-filled from its conditions; the pad's words; the bowled after
   // a no-ball standing where the league says no free hit.
@@ -489,6 +502,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // are refused before anything is sent; a coach of another team and a parent
   // are offered nothing and a forced post is a 403; 12px, 44px, 390, Daylight.
   "browser-pick-side",
+  // The narrow-screen, keyboard and daylight pass (gap analysis I32): the parent, the pupil, the scorer and the coach
+  // on the real stack at 320, 375 and 414 in Daylight, 320 under lights and 200% zoom, every screen held to
+  // tools/a11y-narrow.mjs's lists (nothing sideways, clipped or overlapped; 12px; 44px; contrast), the live fixture's
+  // tabs, and Tab from the top of each Home. The mock-driven screens are smoke-a11y's.
+  "browser-narrow",
   // The live scorer scores the side the coach named: a fixture with a named
   // side opens the pad with exactly those eleven in that batting order and
   // says so; the twelfth and a withdrawn boy are not offered; a fixture with

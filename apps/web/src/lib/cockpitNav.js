@@ -7,7 +7,7 @@
  * note here and the Match Centre takes it when it mounts. In memory only: a
  * reload forgets it, which is right.
  */
-/** @type {{matchId: string, drawer: boolean, view: "coach" | "duties" | "corrections"} | null} */
+/** @type {{matchId: string, drawer: boolean, view: "coach" | "duties" | "corrections" | "result"} | null} */
 let pending = null;
 
 /** @param {string} matchId @param {boolean} [drawer] */
@@ -18,6 +18,9 @@ export function requestDuties(matchId) { pending = { matchId, drawer: false, vie
 
 /** The fixture's Corrections sheet, from the To-resolve screen's O7 row (GA-I36). @param {string} matchId */
 export function requestCorrections(matchId) { pending = { matchId, drawer: false, view: "corrections" }; }
+
+/** The fixture itself, where its Official result panel is, from a results row (OFFICIAL_RESULT). @param {string} matchId */
+export function requestResult(matchId) { pending = { matchId, drawer: false, view: "result" }; }
 
 /** Look without taking: the Match Centre waits for its fixtures to load. */
 export const peekCoach = () => pending;

@@ -12,6 +12,8 @@ import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { publicStory, read, readPar } from "./reads.js";
+import { publicOfficial } from "../lib/official.js";
+import { StateLabel } from "../ui/stateLabel.jsx";
 
 /**
  * THE PUBLIC MATCH PAGE — /live/:match and /scorecard/:match (SCRBRD-083
@@ -324,6 +326,12 @@ export function PublicMatch({ matchId, view }) {
           </h1>
           {played.length > 0 && <HeaderScores match={match} played={played} corrected={fixes?.corrected}/>}
           {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
+          {/* OFFICIAL_RESULT D11, Q3: "Provisional" or "Official result · confirmed 20:15, 11 Oct" — the
+              time only, never who, never a reason, and never "Under review" (the server says a disputed
+              result is not official). Announced when a poll changes it. */}
+          <div role="status" aria-live="polite" data-testid="public-official">
+            {(() => { const w = publicOfficial(match.result, match.status); return w ? <StateLabel kind={w.kind} why={w.why} compact/> : null; })()}
+          </div>
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
           {/* GA-I36 §5: when, team-level — never who asked, who approved or why. */}
           {fx && fixes && <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/>}

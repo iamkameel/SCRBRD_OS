@@ -337,6 +337,14 @@ export const CAPABILITIES = {
   // play. Its own capability, not competition.manage: the figures a match is
   // folded under are a different act from naming a division (db/61).
   "competition.conditions.manage": "Set a competition's playing conditions",
+  // STANDING BEHIND A RESULT (OFFICIAL_RESULT, db/114): confirming a finished
+  // match's result, so that it reads "Official result", disputing a
+  // confirmation within its window, and clearing a dispute. One name for the
+  // three acts; db/114's row checks decide which act a holder may do on which
+  // match — the organiser for a competition fixture (D2), the home school's
+  // director of sport or principal for a friendly (D3) — and the confirmer is
+  // never a hand on the log (D5): held by nobody who files a correction.
+  "result.confirm":              "Confirm a finished match's result as official, or dispute one",
 
   // ── Publishing ──
   "news.read":                   "Read news and headlines",
@@ -576,6 +584,9 @@ export const LEVEL = Object.freeze({
   "competition.read": 0, "competition.manage": 1,
   // A league's rules: no person's data in them (design §7.3).
   "competition.conditions.manage": 1,
+  // A result names sides, never a boy (db/114); a dispute's note is the
+  // sensitive part, and it is read through its function alone.
+  "result.confirm": 1,
 
   // ── Publishing ──
   "news.read": 0, "news.publish.team": 1, "news.publish.school": 1,

@@ -2377,8 +2377,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           background:T.surface.base,borderBottom:`1px solid ${T.line.normal}`}}>
           <ExitKey onExit={onExit} inBar/>
           <div style={{flex:1,minWidth:0}}>
+            {/* The two sides' names wrap on a narrow phone rather than end in an ellipsis: which match this is matters more than one line (I32). */}
             <h1 style={{margin:0,fontFamily:T.type.body,fontSize:"16px",fontWeight:600,lineHeight:1.25,color:T.content.primary,
-              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+              overflowWrap:"anywhere"}}>
               {match?.team1} v {match?.team2}
             </h1>
             <div style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.3,color:T.content.secondary,

@@ -1040,9 +1040,48 @@ function asSquadLine(r) {
 }
 
 function asInjury(r) {
+  // Dates are day-only (a calendar date has no time and no zone). The tier of
+  // each column is the server's: nextReviewOn and emergencyServices are the
+  // nature tier, recordedBy and notes the clinical tier, and arrive null where
+  // the reader does not hold them (GA-I19 D3). Screens draw nextReviewOn only
+  // for medical.write (D5): it is the physio's clock, not anybody else's.
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
-           dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
-           restricted: r.restricted, notes: r.notes, physio: r.physio, live: true };
+           dateInj: r.date_injured ? String(r.date_injured).slice(0, 10) : r.date_injured,
+           rtw: r.rtw_date ? String(r.rtw_date).slice(0, 10) : r.rtw_date, phase: r.phase,
+           restricted: r.restricted, notes: r.notes, physio: r.physio,
+           nextReviewOn: r.next_review_on ? String(r.next_review_on).slice(0, 10) : null,
+           emergencyServices: r.emergency_services ?? null, recordedBy: r.recorded_by ?? null,
+           recursInjury: r.recurs_injury_id ?? null, school: r.school_id ?? null, recordedAt: r.created_at ?? null,
+           // The day he left the injury's school, and whether he did (status tier). NULL
+           // is "not known to this reader" as much as "still enrolled": a screen marks
+           // only on a true, and never reads NULL as "at school".
+           leftOn: r.left_on ? String(r.left_on).slice(0, 10) : null, leftSchool: r.left_school === true ? true : null,
+           live: true };
+}
+
+/**
+ * One review of an injury: a dated look, and the state it left him in
+ * (db/111, injury_review_masked). `phase`, `nextReviewOn` are the nature tier
+ * and `note`, `by` the clinical tier, null where the reader may not read
+ * them; `restricted` and `rtw` are the status tier.
+ */
+function asInjuryReview(r) {
+  return { id: r.id, injury: r.injury_id, player: r.player_id, at: r.reviewed_at,
+           restricted: r.restricted_after, rtw: r.rtw_date_after ? String(r.rtw_date_after).slice(0, 10) : null,
+           phase: r.phase_after ?? null,
+           nextReviewOn: r.next_review_on ? String(r.next_review_on).slice(0, 10) : null,
+           note: r.note ?? null, by: r.reviewed_by ?? null, isRecording: r.is_recording === true, live: true };
+}
+
+/**
+ * One row of the physio's worklist (db/111 injury_worklist()): an open injury,
+ * the one reason it is on her list and its clock. Only a medical.write holder
+ * is ever sent one (D3), and nothing but her list draws it (D5).
+ */
+function asWorkItem(r) {
+  const d = (v) => (v ? String(v).slice(0, 10) : null);
+  return { injury: r.injury_id, player: r.player_id, reason: r.reason, since: d(r.since), dueOn: d(r.due_on),
+           daysOver: Number(r.days_over ?? 0), live: true };
 }
 
 /**
@@ -1265,6 +1304,8 @@ const ADAPT = {
   sponsor_categories: asSponsorCategory,
   sponsorships: asSponsorship,
   injuries: asInjury,
+  injury_reviews: asInjuryReview,
+  injury_worklist: asWorkItem,
   my_children: asChild,
   match_squad: asSquadLine,
   skills: asSkill,

@@ -140,10 +140,11 @@ export function DetailsTab({ match, result, weather, competition }) {
       <Panel>
         <dl style={{ margin: 0 }}>
           {rows.map(([k, v], i) => (
-            <div key={`${k}${i}`} style={{ display: "grid", gridTemplateColumns: "minmax(110px,160px) 1fr", gap: T.space.md,
+            // The label and its value side by side, and one over the other where they do not fit (200% zoom on a phone) (I32).
+            <div key={`${k}${i}`} style={{ display: "flex", flexWrap: "wrap", gap: `${T.space.xs} ${T.space.md}`,
               padding: `${T.space.sm} ${T.space.md}`, borderTop: i ? `1px solid ${T.line.subtle}` : "none", minHeight: "44px", alignItems: "center" }}>
-              <dt style={{ ...T.role.label, color: T.content.secondary }}>{k}</dt>
-              <dd style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>{v}</dd>
+              <dt style={{ ...T.role.label, color: T.content.secondary, flex: "0 1 160px", minWidth: "110px" }}>{k}</dt>
+              <dd style={{ ...T.role.body, color: T.content.primary, margin: 0, flex: "1 1 130px", minWidth: 0, overflowWrap: "anywhere" }}>{v}</dd>
             </div>
           ))}
         </dl>

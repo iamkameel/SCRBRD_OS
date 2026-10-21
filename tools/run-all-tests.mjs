@@ -233,9 +233,13 @@ const SUITES = [
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["decide-words", "apps/web/test/decide-words.test.mjs"],
-  // GA-I21: one label for demo / practice / read only (no "official": a result
-  // is read from the log, not stored), and the bowling-ceiling refusal in words.
+  // GA-I21: one label for demo / practice / read only — and, with the official
+  // result (db/114), provisional / under review / official, the state the
+  // server gives — and the bowling-ceiling refusal in words.
   ["state-label", "apps/web/test/state-label.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // OFFICIAL_RESULT (db/114): the public's words and staff's, every door's
+  // refusal in words, "Looks right" still this phone's, the To-resolve rows.
+  ["official", "apps/web/test/official.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["source-line", "apps/web/test/source-line.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I24-I25 S1: two players side by side — the floor at 29 and 30, the
   // pinned columns, who may be picked, no absence, types only, nothing kept.
@@ -351,6 +355,10 @@ const SUITES = [
   // client store holds the list and the count every badge reads.
   ["notif-contract", "packages/policy/test/notifications.test.mjs"],
   ["receipts", "services/api/notify/receipts.test.mjs"],
+  // No personal value in a server log (INCIDENTS_AND_BREACHES §9.1, D24):
+  // safeErr() over a duplicate email and ID number, and every console call
+  // under services/ walked for a DETAIL, an email, a name or a raw message.
+  ["log-hygiene", "services/api/log-safe.test.mjs"],
   ["notif-store", "apps/web/test/notifications-store.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an

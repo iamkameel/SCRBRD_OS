@@ -5,13 +5,14 @@ Nothing here uses any other Firebase project. Three pieces:
 
 | Piece | Where | How it gets there |
 |---|---|---|
-| Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
-| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | by hand (5), or the same workflow, from the root `Dockerfile` |
-| Database | Cloud SQL, Postgres 16, `africa-south1` | by hand, once, then by hand for every schema change |
+| Client (`apps/web`) | Render, the same service as the API (`SERVE_CLIENT`) | built and served by the API's own process on every deploy of `main` |
+| API (`services/api`) | Render, `scrbrd.onrender.com`, from `render.yaml` | Render deploys `main` by itself, from `render.yaml`; the first deploy is New → Blueprint, as in "The whole thing in one service" above |
+| Database | Supabase Postgres, Free | by hand, once, then by hand for every schema change |
 
-Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
-browser talks to one origin and the client is built with `VITE_API_BASE=""`.
-Realtime is plain HTTP, so the rewrite carries everything the client needs.
+The API serves the client from its own process, so the browser talks to one
+origin and the client is built with `VITE_API_BASE=""`. The Firebase Hosting and
+Cloud Run arrangement below (`firebase.json`, `deploy.yml`) is the alternative
+road; production does not use it.
 
 ## Where to run all of this
 
@@ -56,6 +57,11 @@ instance-hours a month. Set the repository variable `SCRBRD_HEALTH_URL`
 (Settings → Secrets and variables → Actions → Variables) to the service's
 `/api/health` address; unset, the job does nothing. Run it once by hand from
 the Actions tab to see it answer 200.
+The job also fails, and GitHub emails the repository owner, when production is
+bad: no answer, an answer other than 200, a body that is not JSON, or a body
+without `ok: true` and `db: "ok"`. It tries up to three times (75 seconds each,
+20 apart) so a sleeping server booting does not count. For the pilot this is the
+only alert there is.
 
 ### The deployed revision
 
@@ -1414,7 +1420,6 @@ should read OK). **Schema first**: the API built with it refuses to start
 without db/106 (`expected-migrations.json`), and its `matches` read asks
 `my_fixture_ends()` which end the reader is at.
 <!-- ── end db/106 ── -->
-
 <!-- ── db/107: the officials register and the grant notes, closed ── -->
 #### The officials register is its keeper's; a school's plan is its own (db/107)
 
@@ -1736,6 +1741,114 @@ The summary row "A correction takes back what it falsified" should read OK.
 (`expected-migrations.json`). No route or screen changes. Notices already
 shows withdrawn rows and stubs (S1).
 <!-- ── end db/113 ── -->
+
+<!-- ── db/114: when a result becomes official ── -->
+#### A result becomes official when a second person confirms it (db/114)
+
+`db/114_official_result.sql` is slice S1 of `docs/design/OFFICIAL_RESULT.md`
+(Kameel approved D1–D14 and Q1–Q8 on 8 October 2026, as recommended). Before
+it, nothing could honestly be called official: a finished match had a status
+and a result read off the log, and "Looks right" only hid a banner on one phone.
+
+**What it does.**
+- A result is **official** when a confirmation names the log's current head
+  (`max(seq)`) and the result's current hash, and no dispute stands on it.
+  The confirmation is stored. "Official" is never stored: it is read off the
+  row every time, so any correction (an approved amendment, a released held
+  ball, a late ball, a decision, a status change) makes the result
+  **provisional** again by itself. Three triggers stamp when and why it lapsed,
+  take back the "Official result" notice silently (`superseded`) and tell both
+  sides once, at medium, that the result was reopened. The organiser is told
+  too: the competition's scope where it has an organising school, otherwise
+  each `competitionadmin` appointed with no school, by name.
+- **Who confirms.** For a league or cup fixture, the organiser:
+  `result.confirm` and `competition.manage` at the competition's organising
+  school (its `competitionadmin`, never that school's own director of sport
+  or principal, who would otherwise sign off his own side's win), or, for a
+  competition with no organising school, a `competitionadmin` appointed with
+  no school (Q1). A competition's frozen conditions may say
+  `results.confirmed_by = home_school` or `either_school` instead. For a
+  friendly, the home school's director of sport or principal. The home
+  school's confirmation stands alone when the away side is not on SCRBRD (Q8).
+  The confirmer is never a hand on the log: not its scorer, not the requester
+  or approver of an applied correction, not the releaser of a held ball, not
+  the typist or confirmer of a scorebook import (`you_wrote_this_log`, D5).
+- **Disputes.** Within `results.dispute_days` (7 by default, Q2), either
+  school's director or principal, or the organiser, may dispute a confirmed
+  result with a note. Staff then read "Under review". The public and families
+  read "Provisional" (Q3). The organiser clears it; for a friendly, a holder at
+  either school who did not dispute it. The confirmer may withdraw his own
+  confirmation within the window (Q5). An abandoned match with no ball bowled
+  may be confirmed (Q6). Nothing waits for the word: the table, progression,
+  careers and honours read the log as before (D10). The table now says how
+  many of its results are provisional.
+
+**What it does to a live database.** One capability, `result.confirm`
+(catalogue row; held by `superadmin`, `directorofsport`, `principal` and
+`competitionadmin`). Two playing-condition keys (`results.confirmed_by`,
+`results.dispute_days`, table part, no platform default, so no document
+changes). One table, `match_result_confirmation`, empty, with its generated
+read policy and a pad guard. The application may read its plain columns
+only, never who confirmed or disputed and never a note, and may write
+nothing. A guard trigger: a row is never changed but to stamp it, once per
+stamp, and never deleted except with its match. Four triggers: one each on
+`ball_event` (per statement), `match_result_decision` and `match` (status),
+plus `public_data_changed` on the new table. Thirty new functions with a
+pinned path, all `SECURITY DEFINER` but the guard (which runs as its caller,
+as db/69's does). Seven are the application's
+(`match_confirmable`, `match_result_confirm`, `match_result_dispute`,
+`match_result_dispute_clear`, `match_result_confirmation_withdraw`,
+`match_official_state`, `results_to_confirm`). The rest are nobody's to call.
+It restates three reads, each dropped and made again because its columns
+change: `public_match_result()` gains `official` and `official_at`;
+`competition_standing_rows()` (db/73's body, otherwise exactly) and the view
+`competition_standing` gain `provisional_results`; and
+`public_competition_standing()` gains it too. Their grants are restated as
+db/69 and db/71 gave them. No existing row is changed. The file refuses a
+wrong base: it needs db/113, db/89's `notification_retract()`, db/71's public
+result and db/73's table. It checks itself. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 114` after 113, then the verify
+bundle (§91 is its proof). The summary row "A result is official when a
+second hand confirms it" should read OK. **Schema first**: an API built with
+it refuses to start without db/114 (`expected-migrations.json`). The API gains
+six routes (`GET /api/matches/:id/official`, `POST /api/matches/:id/confirm`,
+`POST /api/matches/:id/dispute`, `POST /api/results/disputes/:id/clear`,
+`POST /api/results/confirmations/:id/withdraw`, `GET /api/results/to-confirm`).
+
+**Setup step for the pilot (A7): the pilot league needs an organiser account,
+or nothing in it can become official.** Every league result stays
+"Provisional", which is true, until somebody holds `result.confirm` for the
+league. Do one of these:
+1. **Recommended (Q1).** Appoint the league's organiser as `competitionadmin`.
+   If the pilot competition has an organising school (`competition.school_id`),
+   make the assignment at that school. If it has none, as the seeded "KZN
+   Schools T20 League" has none, make the assignment with no school. That
+   person then confirms every league result, and clears disputes.
+2. **If there is no organiser to appoint**, publish a conditions version for
+   the competition that sets `results.confirmed_by` to `either_school` (or
+   `home_school`) with its source. Fixtures fixed under it are then confirmed
+   by the schools' directors of sport or principals. Fixtures already fixed
+   keep the document they were fixed with. Do not widen a role instead.
+
+Friendlies need nothing: the home school's director of sport or principal
+confirms them.
+
+**Worth knowing (no action).**
+- `results.confirmed_by` and `results.dispute_days` sit in the conditions'
+  table part, so the organiser's re-fix of a played match's table figures
+  (`match_conditions_refix_table()`) can change who may confirm it, and its
+  window, after it was played.
+- A side re-pointed on the match row (its school or team changed) moves the
+  result's hash without a lapse stamp, because no trigger watches those columns.
+  "Official" stays right: it is derived from the head and the hash on every
+  read, so the result reads provisional at once; only the audit's "when and
+  why" is missing. The next confirmation stamps the old row first.
+- Only a void that `scoring_amendment` names as an approved amendment's
+  `applied_key`, or a released ball with its accepted quarantine row, counts
+  as a two-hand change after a seal. What a void's payload says counts for
+  nothing, because the pad can write it.
+<!-- ── end db/114 ── -->
 
 ### 5 · Cloud Run, the first time
 
