@@ -841,7 +841,35 @@ async function cockpitWalk(theme) {
     await page.waitForFunction(() => !(document.querySelector('[data-testid="plan-refusal"]')?.innerText ?? "").trim(), null, { timeout: 4000 }).catch(() => {});
     ok("the refusal clears when the words change, and the field is no longer marked invalid", (await tid("plan-refusal").innerText()).trim() === ""
        && await page.locator("#plan-body").getAttribute("aria-invalid") === null && !(await tid("plan-send").isDisabled()));
-    await tid("plan-send").focus();
+    // Saved, not sent (db/110, Kameel 15 Oct): a draft never sent is his to change, send or delete.
+    await tid("plan-save").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="plan-draft"]', { timeout: 5000 }).catch(() => {});
+    ok("Save by keyboard: his draft, never sent, offers Send, Change it and Delete, each a button of 44px or more",
+       await tid("plan-draft").count() === 1 && await tid("plan-draft-send").count() === 1 && await tid("plan-draft-edit").count() === 1 && await tid("plan-draft-delete").count() === 1
+       && await page.evaluate(() => ["plan-draft-send", "plan-draft-edit", "plan-draft-delete"].every((t) => {
+         const e = document.querySelector(`[data-testid="${t}"]`); return e?.tagName === "BUTTON" && e.getBoundingClientRect().height >= 44; })));
+    await check("plandraft", '[data-testid="plan-draft"]');
+    await tid("plan-draft-delete").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    ok("Delete asks once, in words: never sent, nobody else has read it", /never sent, so nobody else has read it/.test(await tid("plan-delete-ask").innerText().catch(() => "")));
+    await check("plandelete", '[data-testid="plan-draft"]');
+    await tap("plan-delete-no", 300);
+    ok("Keep it closes the question and the draft stays", await tid("plan-delete-ask").count() === 0 && await tid("plan-draft").count() === 1);
+    await tid("plan-draft-edit").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="plan-composer"]', { timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    ok("Change it opens the composer on his words, focus in the field, with Save changes",
+       await page.evaluate(() => document.activeElement?.id) === "plan-body" && (await page.locator("#plan-body").inputValue()).startsWith("Bat first if we win the toss.")
+       && /^Save changes$/.test((await tid("plan-save").innerText()).trim()));
+    await tid("plan-cancel").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(400);
+    ok("...Cancel closes it, and focus is back on Change it", await tid("plan-composer").count() === 0
+       && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "plan-draft-edit");
+    await tid("plan-draft-send").focus();
     await page.keyboard.press("Enter");
     await page.waitForSelector('[data-testid="plan-block"]', { timeout: 5000 }).catch(() => {});
     ok("Send by keyboard: the plan is out, and the block is his own, with Withdraw and nothing to Edit", await tid("plan-block").count() === 1 && await tid("plan-withdraw").count() === 1

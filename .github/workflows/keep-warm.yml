@@ -18,6 +18,13 @@ name: Keep warm (match hours)
 # and variables → Actions → Variables), e.g. https://scrbrd.onrender.com/api/health.
 # Unset, the job says so and does nothing. Schedules run from the default
 # branch only, so this starts once it is on main.
+#
+# It is also the pilot's only alert (incidents design, P9). A failed run makes
+# GitHub email the repository owner, so the job fails when production is bad:
+# no answer, an answer other than 200, a body that is not JSON, or a body that
+# does not say ok:true with db:"ok". A sleeping server gets up to three
+# attempts, 75 seconds each with a 20 second pause, before that counts. If the
+# body carries audit_failed (not there yet), a value above 0 fails it too.
 
 on:
   schedule:
@@ -34,7 +41,8 @@ concurrency:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    # Three attempts at 75 seconds and two pauses of 20 is 265 seconds.
+    timeout-minutes: 6
     steps:
       - name: Ping /api/health
         env:
@@ -44,9 +52,36 @@ jobs:
             echo "::notice::SCRBRD_HEALTH_URL is not set; nothing to ping."
             exit 0
           fi
-          # A cold start is the case this exists for, so it may take a minute.
-          code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 120 "$URL" || true)
-          echo "GET /api/health -> $code"
-          if [ "$code" != "200" ]; then
-            echo "::warning::/api/health answered $code, not 200"
-          fi
+          # A cold start is the case this exists for: Render's free plan takes
+          # thirty to sixty seconds to boot, and may answer 502 or 503 meanwhile.
+          # So a bad first answer is retried before it counts. The three knobs
+          # have defaults here and are overridden only to test this script.
+          attempts=${ATTEMPTS:-3}
+          max_time=${MAX_TIME:-75}
+          pause=${PAUSE:-20}
+          body=$(mktemp)
+          reason=""
+          n=1
+          while [ "$n" -le "$attempts" ]; do
+            code=$(curl --silent --output "$body" --write-out '%{http_code}' --max-time "$max_time" "$URL") || code=000
+            if [ "$code" = "000" ]; then
+              reason="got no answer (unreachable, or no reply within ${max_time}s)"
+            elif [ "$code" != "200" ]; then
+              reason="answered HTTP $code, not 200"
+            elif ! jq -e . "$body" >/dev/null 2>&1; then
+              reason="answered 200 with a body that is not JSON"
+            elif ! jq -e '.ok == true and .db == "ok"' "$body" >/dev/null 2>&1; then
+              reason="reports itself unhealthy (ok=$(jq -r '.ok' "$body"), db=$(jq -r '.db' "$body"))"
+            elif ! jq -e '(.audit_failed // 0) == 0' "$body" >/dev/null 2>&1; then
+              reason="reports failed audit-log writes (audit_failed=$(jq -r '.audit_failed' "$body"))"
+            else
+              echo "GET /api/health -> 200, ok, attempt $n of $attempts"
+              exit 0
+            fi
+            echo "GET /api/health attempt $n of $attempts: $reason"
+            if [ "$n" -lt "$attempts" ]; then sleep "$pause"; fi
+            n=$((n + 1))
+          done
+          # One line for the email. The path only, never the address or a body.
+          echo "::error title=Production health check failed::GET /api/health $reason, after $attempts attempts"
+          exit 1

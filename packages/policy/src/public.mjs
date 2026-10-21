@@ -166,8 +166,14 @@ export const NEVER_PUBLIC_RULES = Object.freeze({
 export const NEVER_PUBLIC = Object.freeze({
   // ── Whole tables ──
   // N2. The injury record: availability, diagnosis and the clinical notes,
-  // every tier of it (tables.mjs masks two of three; here all three).
+  // every tier of it (tables.mjs masks two of three; here all three). Whole,
+  // so db/111's columns on it (emergency_services, next_review_on,
+  // recorded_by, recurs_injury_id, dso_notified_at) are never public too.
   injury: "N2",
+  // N2. A physio's review of an injury (GA-I19, db/111): that one happened
+  // says a boy is hurt, and its phase, clock, note and author are the
+  // clinical record. Whole, as the injury row is (GA-I19 D5).
+  injury_review: "N2",
   // N2. A family's statement about one Saturday — "unavailable, family" — is
   // "why a boy is not playing", and its status column is the bare word.
   match_availability: "N2",
@@ -243,6 +249,11 @@ export const NEVER_PUBLIC = Object.freeze({
   // disclosure — and its giver is N4 besides.
   health_monitoring_consent: "N2",
 
+  // ── db/105, GA-I26a: the development loop ──
+  // N5. A target is a coach's judgement of where a named child should be,
+  // and the score it stood on: the whole table.
+  development_target: "N5",
+
   // ── db/70, SCRBRD-124 phase 1: parent lift clubs ──
   // N4. Who travels with whom, when, and with which adult: a child's
   // movements and his family's arrangements. The row's existence is the
@@ -254,6 +265,12 @@ export const NEVER_PUBLIC = Object.freeze({
   // of her child's contacts is hers.
   lift_offer: "N4",
   lift_driver_declaration: "N4",
+
+  // ── db/109, account lifecycle slice 3 ──
+  // N4. How and why a guardian's link to a child ended: who his guardians
+  // were, and the office's words about a family (a custody order, most of
+  // all). Never on a page, never to the parent (D13); the whole table.
+  guardian_link_ending: "N4",
 });
 
 /**

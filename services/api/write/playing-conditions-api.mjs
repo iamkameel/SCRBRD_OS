@@ -33,6 +33,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { CONDITION, fixtureFormatFrom } from "@scrbrd/scoring";
+import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
 
@@ -85,7 +86,7 @@ export function playingConditionsRoutes({ pool, secret }) {
       if (e.code === "23514") return res.status(422).json({ error: "value_invalid", detail: e.message });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
-      if (status >= 500) console.error("playing-conditions →", e.code || "", e.message);
+      if (status >= 500) console.error("playing-conditions →", safeErr(e));
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };

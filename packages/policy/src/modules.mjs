@@ -95,12 +95,19 @@ export const MODULES = {
   skills: {
     kind: "module", label: "Skills", nav: "skills",
     capability: "player.development.read",
-    reads: ["skills"],
+    // skills_history: every score, withdrawn ones struck (GA-I26a, db/104);
+    // targets and "since the last look" (db/105).
+    reads: ["skills", "skills_history", "targets", "development_since"],
   },
   training: {
     kind: "module", label: "Training", nav: "training",
-    capability: "player.development.read",
-    reads: ["training", "training_attendance"],
+    // team.read, the capability training_session's own policy asks (GA-I26a
+    // AH-D8). It was player.development.read, so a parent or a pupil who may
+    // read "training moved to 06:30" could not find the screen. The register
+    // inside it is its own read under player.profile.read, and the plan names
+    // nobody; what each reader then sees is what row security gives him.
+    capability: "team.read",
+    reads: ["training", "training_attendance", "training_plan"],
   },
   injuries: {
     kind: "module", label: "Injuries", nav: "injuries",
@@ -108,7 +115,7 @@ export const MODULES = {
     // Owned outright, and the consequence is intended: a school that switches
     // off Injuries stops seeing injury rows on the dashboard and on a player's
     // profile too, not merely on the Injuries screen.
-    reads: ["injuries"],
+    reads: ["injuries", "injury_reviews", "injury_worklist"],
   },
   logistics: {
     kind: "module", label: "Logistics", nav: "logistics",
