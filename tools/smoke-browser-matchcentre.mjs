@@ -648,7 +648,9 @@ try {
   ok("filed, and says so", await until(sc.page, () => /with the director of sport .*until it is approved/i.test(document.querySelector('[data-testid="mc-confirm-said"]')?.textContent ?? ""), 6000),
      await tid(sc.page, "mc-confirm-said").innerText().catch(() => "∅"));
   await tid(sc.page, "mc-confirm-ok").click();
-  await sc.page.waitForTimeout(300);
+  // Judged on a fixed 300 ms after the click, which a busy runner can miss
+  // (1 run of 2 here): wait up to 3 s for the prompt to go, then judge.
+  await until(sc.page, () => !document.querySelector('[data-testid="mc-confirm-prompt"]'), 3000);
   ok('"Looks right" dismisses the prompt — on this device only; nothing is written for it', await tid(sc.page, "mc-confirm-prompt").count() === 0);
   ok("no console errors (scorer)", sc.errors.length === 0, sc.errors.join(" | "));
   await sc.ctx.close();

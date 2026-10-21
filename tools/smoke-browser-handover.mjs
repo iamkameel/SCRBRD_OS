@@ -153,7 +153,14 @@ const board = async (page) => ((await page.locator('[role="status"][aria-live="p
   .first().textContent({ timeout: 1500 }).catch(() => "")) || "").trim();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-const openMichaelhouse = async (page) => page.evaluate(() => {
+// Match Centre draws the fixture's card, and its scoring button, once its
+// reads answer; the callers give it a fixed 1.2 s after the click, and when
+// the list came later the search below found no button and said the fixture
+// did not open. Wait up to 10 s for a scoring button to be drawn, then search
+// exactly as before (none drawn: false, as before).
+const openMichaelhouse = async (page) => (await page.waitForFunction(() =>
+  [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")),
+  null, { timeout: 10000 }).catch(() => null), page.evaluate(() => {
   const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
   const btns = [...document.querySelectorAll("button")].filter(isBtn);
   for (const b of btns) {
@@ -165,7 +172,7 @@ const openMichaelhouse = async (page) => page.evaluate(() => {
     if (/Michaelhouse/i.test(card.textContent || "")) { b.click(); return true; }
   }
   return false;
-});
+}));
 
 let outgoing, incoming, third;
 try {
