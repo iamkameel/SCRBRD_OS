@@ -80,7 +80,7 @@ nothing in OS today.
 | Anytime | Module on/off switches | *(no direct AG equivalent — OS-specific)* | **has** — `up20` Module Switches, shipped, `ModulesView.jsx` |
 | Anytime | Platform/school audit trail | `audit-log` | **has** — `up21` Who Read What, shipped, under Settings › School |
 | Anytime | School admin settings | `settings` | **has** — `SettingsView.jsx` |
-| Anytime | Messaging / inbox | `inbox` | **missing** — `up9` In-App Parent Messaging is `planned`, nothing modelled |
+| Anytime | Messaging / inbox | `inbox` | **missing** — `up9` In-App Parent Messaging: design decided (21 Oct 2026, `docs/design/PARENT_MESSAGING.md`); slice M1 queued, nothing modelled yet |
 | Anytime | Season awards / MVP | `awards` (mock MVP calc) | **partial** — `up16` Caps, Honours & Milestones is shipped (colours, honours, captaincy, milestones on the player passport), but there is no season-end "awards ceremony" roll-up screen naming a Player/Bowler/Fielder of the Season the way AG's page sketches |
 | Anytime | School sport calendar (exam clashes etc.) | `strategic-calendar`, `planner` (coach-side; see below) | **has** — `CalendarView.jsx` for fixtures; **missing** the exam-clash/strategic overlay AG's page adds |
 

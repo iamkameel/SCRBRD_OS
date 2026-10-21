@@ -1,6 +1,6 @@
 # Messaging between the school and families (up9): the design
 
-**Status:** design for Kameel's review (Fable, 2026-10-16). Nothing is built. Opus builds the migrations,
+**Status:** decided (21 Oct 2026): Kameel accepted all fourteen questions in §10 as recommended, and slice M1 is next to build. Nothing is built yet. Design by Fable, 2026-10-16. Opus builds the migrations,
 functions and routes from §9; Sonnet builds the screens; Opus reviews anything that shows a child's name or a
 family's words before it lands.
 **Source:** `CLAUDE.md`; `docs/policy/PUBLIC_DATA.md`; `docs/design/SAFEGUARDING_DSO.md` (the DSO, raising a
@@ -46,7 +46,7 @@ notice today. The DSO reads nothing by standing. Messages are kept two years, th
 due list, never a job; a message a DSO attaches to a concern is copied into the concern record at that moment
 and lives under the concern's own period.
 
-Fourteen questions for Kameel are in §10. Everything else is decided by the documents above and is not
+Fourteen questions for Kameel were decided as recommended on 21 Oct 2026 (§10). Everything else is decided by the documents above and is not
 reopened (§12).
 
 ---
@@ -618,44 +618,58 @@ and M4 are each one small migration. M5 waits for the retention schedule to be s
 
 ## 10 · Questions for Kameel
 
-Each with the recommendation; "as recommended" answers all fourteen.
+Each with the recommendation. **Decided 21 Oct 2026 (Kameel): as recommended, all fourteen.**
 
 1. **Pupils are outside messaging entirely in v1, the eighteen-year-old at school included.** The coach's
    words to the boys stay a post to the side. *Recommendation:* **yes.** A `RESTRICTIVE` policy is a stronger
    promise than "with his guardian copied", and nothing a boy needs from the school is a message.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 2. **Both guardians of a child read his one thread, each other's messages included, and the screen says so.**
    *Recommendation:* **yes.** One record per child; a separated parent who can see what the other told the
    coach is the safer position.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 3. **Who reads a family's thread on the school's side: the side's coach, assistant and team manager; the
    office (schooladmin, sportsadmin, director of sport). Not the principal, the physio or the DSO by
    standing.** *Recommendation:* **as listed.** The principal moderates (D3) and reads a hidden body that way;
    the physio has the Health screens; the DSO has the concern.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **as listed.**
 4. **The side's thread lets parents reply, as a school switch (`parents_reply`) defaulting to on.**
    *Recommendation:* **yes, default on.** Without replies the side thread is a `news_post`; the switch lets a
    school start one-way.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes, default on.**
 5. **No private parent-to-parent messages; the lift thread is the parent-to-parent case.**
    *Recommendation:* **yes.** The platform should hold no conversation between two adults the school is not
    party to.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 6. **Health, home and discipline words: refused to staff in a child's thread, warned for a parent there;
    refused to everyone in a side or lift thread.** *Recommendation:* **yes.** A parent must be able to say
    her son has a cold; a coach must not write a boy's injury where no health policy reads it.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 7. **No read receipts and no typing indicator; the sender sees "sent" only.** *Recommendation:* **yes.**
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 8. **A hidden message shows the kind to the author and the thread, never the reason text; no unhide.**
    *Recommendation:* **yes.** The reason is the office's record; a wrongly hidden message is sent again.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 9. **Retention: two years from sending, purged by the office from a due list; a message attached to a
    concern is copied into the concern at attach time and follows the concern's period.** *Recommendation:*
    **yes**, with the period confirmed by you as information officer alongside lifecycle Q11.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.** Period: two years, confirmed by Kameel as information officer (21 Oct 2026).
 10. **Message notices are medium always: pushed, mutable by a parent's preference, never high; no quiet
     hours of their own.** *Recommendation:* **yes.** A page is for safety; a school's "not after nine" is a
     line in its policy text.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 11. **A reported message opens to the DSO with the thread's messages from the 48 hours before it; the whole
     thread only under a concern.** *Recommendation:* **yes.** Enough to read a message in its conversation,
     not enough to read a family's year.
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 12. **The module is off for every school until you grant it, and live within a school only while the
     principal's signed messaging policy stands (two keys, as lift clubs).** *Recommendation:* **yes.**
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 13. **The whole school stays `news_post`; there is no school-wide thread.** *Recommendation:* **yes.**
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 14. **The withdrawal of a message sends no second "withdrawn" notice; the stub in the thread is the
     correction.** *Recommendation:* **yes.** The phone was told only "You have a new notice."
+   **Decided: as recommended (Kameel, 21 Oct 2026).** Answer: **yes.**
 
 ---
 
