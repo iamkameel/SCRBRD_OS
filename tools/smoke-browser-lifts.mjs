@@ -199,9 +199,16 @@ try {
      /arranged between families/.test(await tid(head.page, "lift-policy-body").inputValue()));
   await tid(head.page, "lift-policy-meet").fill("the Chapel car park");
   await tid(head.page, "lift-policy-sign").click();
-  await head.page.waitForTimeout(1500);
-  ok("she signs it, and lift clubs are live", /Version 1/.test(await tid(head.page, "lift-policy-state").innerText())
-     && /live/.test(await tid(head.page, "lift-policy-state").innerText()));
+  // The panel says "No policy is signed" until the sign answers AND its
+  // re-read does; a fixed 1.5 s read that sentence whenever the two took
+  // longer (PR #167's shard 2/4 on 938b158). Wait for the sign's answer and
+  // for the state to leave "Loading…"/"No policy is signed", then judge it.
+  await tid(head.page, "lift-policy-said").waitFor({ timeout: 15000 }).catch(() => {});
+  await head.page.waitForFunction(
+    () => !/^(Loading…|No policy is signed)/.test(document.querySelector('[data-testid="lift-policy-state"]')?.textContent ?? ""),
+    null, { timeout: 15000 }).catch(() => {});
+  const signed = await tid(head.page, "lift-policy-state").innerText();
+  ok("she signs it, and lift clubs are live", /Version 1/.test(signed) && /live/.test(signed), signed);
   const pf = await floors(head.page, "lift-policy-panel");
   ok("the policy screen keeps the floors", pf.small.length === 0 && pf.tiny.length === 0, [...pf.small, ...pf.tiny].join(" · "));
 

@@ -100,5 +100,6 @@
   "102_suppression_read.sql",
   "103_plan_author_name.sql",
   "104_assessment_corrections.sql",
-  "105_development_loop.sql"
+  "105_development_loop.sql",
+  "106_reach_side.sql"
 ]
