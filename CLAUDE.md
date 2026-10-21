@@ -68,7 +68,14 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   2026-10-14, gap analysis GA-I26a: what a coach records about a child's
   skills over time and the drills that follow; who may read it, the child,
   his parents, other coaches; how long it is kept; and the coaching points
-  of coach cards slice 2 that stand on it).
+  of coach cards slice 2 that stand on it) and incidents and breaches (added
+  2026-10-21: what counts as a breach of children's data under POPIA section
+  22, who decides and who is told, the Information Regulator, the school and
+  families, and when; the match-day outage fallback to the paper scorebook and
+  the importer; and what the audit log must keep to answer for it) and who
+  sees a child's data (added 2026-10-21: one map, across every design, of who
+  may read each piece of a child's data and under what condition; where two
+  designs disagree; and the questions for Kameel that settle each one).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
@@ -125,8 +132,12 @@ the work itself:
 2. **After Kameel decides:** Haiku records the decision in the design doc, the
    backlog, the roadmap and the gap analysis plan, word for word as decided.
 3. **After a merge:** Haiku updates the status rows the merge closes (roadmap,
-   gap analysis plan, `DEPLOYING.md`'s paste list where a migration shipped).
-   It doesn't touch `db/SHIPPED.sha256`; that stays with the lead.
+   gap analysis plan, the backlog `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`,
+   `DEPLOYING.md`'s paste list where a migration shipped). In the backlog, a
+   closed entry is struck through with the PR and commit that closed it, never
+   deleted; a slice of an entry is marked partly done (added 2026-10-21,
+   Kameel, after 80 merges went unrecorded there). It doesn't touch
+   `db/SHIPPED.sha256`; that stays with the lead.
 4. **Gap lists:** where a plan says "gaps to list" (for example, acceptance
    evidence against the walks we have), Haiku lists them and Opus decides what
    to build.
