@@ -34,6 +34,10 @@ const WALKS = [
   "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
+  // GA-I26a (db/104, db/105): a score keeps its assessor and is withdrawn, the
+  // coaching point on the note tier, the target, the side's plan and register
+  // (never `injured`), "since the last look", and the export refusals.
+  "assessment-history",
   // The owner's key, minted from outside the platform, and redeemed.
   "bootstrap",
   // The way out of quarantine: who may open it, and what a released ball is.
@@ -221,8 +225,12 @@ const WALKS = [
   // the tenant line, bounded by a fixture, a window and a column list.
   "opposition",
   // The officials register: a panel that belongs to no school, read
-  // through official_masked so a name is public and a person is not.
+  // through official_panel() so a name is public and a person is not
+  // (db/107 closed the table itself to all but its keeper).
   "register",
+  // db/108 and tools/sql/fix-player-without-team.sql, pasted in the order
+  // DEPLOYING.md gives, on a database holding a team-less pupil role.
+  "player-team",
   // The gaps db/10 and db/11 could only warn about, and the one write route
   // that closes the first of them.
   "dob-gaps",

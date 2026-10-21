@@ -335,8 +335,9 @@ function asDutySuspension(r) {
  * was never on the ladder and somebody who needs to renew.
  *
  * born / idNumber / email / phone arrive NULL for every reader but the union
- * that keeps the register. That is the mask doing its job, not missing data,
- * so they are passed through as null rather than defaulted to anything.
+ * that keeps the register (and an official reading his own row): the table
+ * is closed to everybody else (db/107). That is the policy doing its job, not
+ * missing data, so they are passed through as null rather than defaulted.
  */
 function asRegisteredOfficial(r) {
   return {
