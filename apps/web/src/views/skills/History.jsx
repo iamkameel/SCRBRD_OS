@@ -128,7 +128,7 @@ export function DotSheet({ point, staff, canWrite, points, onClose, onDone }) {
         </div>
         {point.withdrawn && (
           <div data-testid="dot-withdrawn" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "8px", lineHeight: 1.5 }}>
-            Withdrawn{point.withdrawnBy ? ` by ${staff ? point.withdrawnBy : "your coach"}` : ""}{point.reason ? `: ${point.reason}` : ""}. It no longer counts toward where he stands.
+            Withdrawn{point.withdrawnBy ? ` by ${staff ? point.withdrawnBy : "your coach"}` : ""}{point.reason ? `: ${point.reason}` : ""}. It no longer counts toward where {staff ? "he stands" : "you stand"}.
           </div>
         )}
         {staff && stood.length > 0 && (

@@ -123,10 +123,14 @@ export function PlanEditor({ session, plan, drills, onClose, onDone }) {
 
 /**
  * The register for one session: the side's roster, four states, one tap each,
- * saved as a whole. Tapping the state a boy already has clears it.
+ * saved as a whole. Tapping the state a boy already has clears it, unless
+ * that mark is already saved: the route upserts and never deletes, so a saved
+ * mark is changed to another of the four, not cleared to an entry it would
+ * keep on the server while the sheet showed none.
  * @param {{ session: any, roster: any[], register: any[], onClose: () => void, onDone: () => void }} p
  */
 export function RegisterSheet({ session, roster, register, onClose, onDone }) {
+  const [saved] = useState(() => new Set(register.filter((r) => r.sessionId === session.id).map((r) => r.playerId)));
   const [marks, setMarks] = useState(() => Object.fromEntries(
     register.filter((r) => r.sessionId === session.id).map((r) => [r.playerId, r.status])));
   const [busy, setBusy] = useState(false);
@@ -153,7 +157,7 @@ export function RegisterSheet({ session, roster, register, onClose, onDone }) {
                 const on = marks[p.id] === st;
                 return (
                   <button key={st} type="button" role="radio" aria-checked={on} data-state={st} data-testid={`register-${p.id}-${st}`}
-                    onClick={() => setMarks((m) => ({ ...m, [p.id]: on ? "" : st }))}
+                    onClick={() => setMarks((m) => ({ ...m, [p.id]: on && !saved.has(p.id) ? "" : st }))}
                     style={tap({ padding: "0 6px", background: on ? D.emerald + "22" : "transparent", border: `1px solid ${on ? D.emerald : D.border}`,
                                  color: on ? D.textPrimary : D.textSecondary, fontWeight: on ? 700 : 400, textTransform: "capitalize" })}>{st}</button>
                 );
