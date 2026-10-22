@@ -523,6 +523,10 @@ const on = await serve({});
     ok("...a word where a figure belongs, and a word nobody listed", leak((b) => { b.venue.parAt = "Erasmus"; }).length > 0
        && leak((b) => { b.rrr = { now: 1, threeOversAgo: 1, trend: "D Erasmus" }; }).length > 0 && leak((b) => { b.trackOf = "names"; }).length > 0);
     ok("...a table id that is not an id", leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: "Hilton College" }; }).length > 0);
+    ok("...naming the path and the rule, never the value it found",
+       leak((b) => { b.venue.parAt = "D Erasmus"; }).some((x) => /venue\.parAt: fails its rule \(string\)/.test(x))
+       && !leak((b) => { b.venue.parAt = "D Erasmus"; }).some((x) => /Erasmus/.test(x))
+       && !leak((b) => { b.rrr = { now: 1, threeOversAgo: 1, trend: "D Erasmus" }; }).some((x) => /Erasmus/.test(x)));
     ok("...and a fraction where a whole run belongs", leak((b) => { b.venue.parAt = 12.5; }).length > 0 && leak((b) => { b.track[0].parAt = 0.5; }).length > 0);
   }
 

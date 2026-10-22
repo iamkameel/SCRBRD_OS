@@ -297,6 +297,22 @@ try {
     ok("the director reads the school", (await figures(head, "")).length > one.length);
     ok("a spectator reads none", (await figures(await login("watcher@example.invalid"))).length === 0);
     ok("a parent reads none", (await figures(await login("parent@example.invalid"))).length === 0);
+    // On the record, as the ratings are: one row per call, naming the boys.
+    await q(`delete from access_log where resource = 'rewards'`);
+    await figures(coach);
+    const logged = await q(`select record_ids, fields from access_log where resource = 'rewards'`);
+    ok("a read of the figures is logged once, with the figure as its field",
+       logged.length === 1 && logged[0].fields.join() === "figure" && logged[0].record_ids.length === one.length);
+    // Behind the Skills module: a school that switches Skills off is served no
+    // figure derived from the ratings it switched off.
+    await api("/api/admin/modules/skills/suppress", { method: "POST", token: registrar,
+      body: { schoolId: HIL, hidden: true, reason: "Rewards walk." } });
+    const off = await api("/api/rewards?teamCode=1XI", { token: coach });
+    ok("with Skills off the figure route refuses, naming the module", off.status === 403 && off.body?.error === "module_disabled"
+       && off.body?.module === "skills");
+    await api("/api/admin/modules/skills/suppress", { method: "POST", token: registrar,
+      body: { schoolId: HIL, hidden: false } });
+    ok("...and serves it again once back on", (await figures(coach)).length === one.length);
     const boy = await login("pillay@example.invalid");
     ok("a boy reads his own and nobody else's", (await figures(boy)).every((r) => r.playerId === "aaaaaaaa-0000-0000-0000-000000000005"));
     // Growth moves it. Two boys, same rating today, same evidence, no runs:

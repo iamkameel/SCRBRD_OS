@@ -814,7 +814,13 @@ export function parLeaks(body) {
   const out = [];
   /** @param {unknown} v @param {any} rule @param {string} at */
   const walk = (v, rule, at) => {
-    if (typeof rule === "function") { if (!rule(v)) out.push(`${at}: ${JSON.stringify(v)?.slice(0, 40)}`); return; }
+    // The path and what kind of value broke the rule, never the value: this
+    // list is written to the log, and a value that broke its shape is exactly
+    // the one that might be a name.
+    if (typeof rule === "function") {
+      if (!rule(v)) out.push(`${at}: fails its rule (${v === null ? "null" : Array.isArray(v) ? "a list" : typeof v})`);
+      return;
+    }
     if (v === null && rule.nullable) return;
     if (rule.list) {
       if (!Array.isArray(v)) { out.push(`${at}: not a list`); return; }
