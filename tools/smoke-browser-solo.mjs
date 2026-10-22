@@ -142,7 +142,7 @@ async function go(page, key) {
   const m = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"], [data-testid="drawer-${key}"]`).first();
   if (!(await m.count())) return false;
   try { await m.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 const wait = (page, id, ms = 6000) => tid(page, id).first().waitFor({ state: "visible", timeout: ms }).then(() => true, () => false);

@@ -139,13 +139,13 @@ async function nav(page, label) {
     const s = page.locator('[data-testid="home-competitions-section-leagues"]');
     if (!(await s.count())) return false;
     try { await s.click({ timeout: 6000 }); } catch { return false; }
-    await page.waitForTimeout(1500);
+    await afterReads(page, 1500);
     return true;
   }
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Leagues → the competition → its "Playing conditions" tab. */
@@ -191,7 +191,7 @@ async function enter(page, key, { band, value, spell, day, none, status = "uncon
   if (doc !== undefined) await ed.locator('[data-testid="pc-f-doc"]').fill(doc);
   if (clause !== undefined) await ed.locator('[data-testid="pc-f-clause"]').fill(clause);
   if (docDate !== undefined) await ed.locator('[data-testid="pc-f-docdate"]').fill(docDate);
-  if (save) { await ed.locator('[data-testid="pc-save"]').click(); await page.waitForTimeout(700); }
+  if (save) { await ed.locator('[data-testid="pc-save"]').click(); await afterReads(page, 700); }
   return ed;
 }
 

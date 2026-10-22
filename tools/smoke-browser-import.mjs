@@ -122,7 +122,7 @@ async function signIn(page, email, password = "") {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 /** To a sidebar destination, by the nav's own test id. */

@@ -170,7 +170,7 @@ async function nav(page, label) {
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Matches → the fixture's card, opened to its side panel. */
@@ -182,7 +182,7 @@ async function toFixture(page, id) {
   await card.waitFor({ timeout: 8000 }).catch(() => {});
   if (!(await card.count())) return false;
   await card.click();
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return true;
 }
 /** Every text node under the root, and every control, measured as drawn. */

@@ -166,7 +166,7 @@ async function openPad(who) {
   await who.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
   await afterReads(who.page, 1200);
   const opened = await openMichaelhouse(who.page);
-  await who.page.waitForTimeout(2000);
+  await afterReads(who.page, 2000);
   return opened;
 }
 

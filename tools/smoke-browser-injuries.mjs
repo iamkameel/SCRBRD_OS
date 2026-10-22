@@ -132,7 +132,7 @@ async function go(page, key) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return true;
 }
 /** Text under 12px, and controls under 44px, inside each root, as drawn. */

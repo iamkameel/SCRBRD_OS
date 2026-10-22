@@ -196,7 +196,7 @@ async function openFixture() {
   await afterReads(page, 2500);
   if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   // Let the pad offer its log and the server answer.
-  await page.waitForTimeout(3500);
+  await afterReads(page, 3500);
   return opened;
 }
 async function exitScorer() {

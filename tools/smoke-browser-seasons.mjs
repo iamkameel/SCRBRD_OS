@@ -107,7 +107,7 @@ async function signIn(page, who) {
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function nav(page, label) {
@@ -117,13 +117,13 @@ async function nav(page, label) {
     const s = page.locator('[data-testid="home-competitions-section-leagues"]');
     if (!(await s.count())) return false;
     try { await s.click({ timeout: 6000 }); } catch { return false; }
-    await page.waitForTimeout(1500);
+    await afterReads(page, 1500);
     return true;
   }
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 const archive = (page) => page.locator('[data-testid="season-history"]');

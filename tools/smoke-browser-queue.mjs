@@ -149,7 +149,7 @@ async function go(page, key) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return true;
 }
 /** Open To resolve and wait until every fixture has been read (the header stops saying it is reading). */

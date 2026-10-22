@@ -230,7 +230,7 @@ const signInFromLanding = async () => {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return /Match Centre|Dashboard/i.test(await text());
 };
 const openFixture = async () => {
@@ -245,7 +245,7 @@ const openFixture = async () => {
     }
     return false;
   });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   return opened;
 };
 /** Cut the innings to one over, from the pad's Revise sheet (in the pad menu since step 2). */
@@ -264,7 +264,7 @@ const playOutTheOver = async (faces) => {
   const open = await until(async () => (await tid("innings-review").count()) > 0, 5000);
   if (!open) return false;
   await tap("review-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   return true;
 };
 

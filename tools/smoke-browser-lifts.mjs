@@ -130,7 +130,7 @@ async function go(page, nav) {
   const l = tid(page, `nav-${nav}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 async function settingsTab(page, id) {
@@ -138,7 +138,7 @@ async function settingsTab(page, id) {
   const t = page.locator(`#settings-tab-${id}`);
   if (!(await t.count())) return false;
   await t.click({ timeout: 6000 });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /**
@@ -151,7 +151,7 @@ async function toFixture(page, matchId) {
   if (!(await go(page, "fixtures")) && !(await go(page, "mymatches"))) return false;
   const row = tid(page, `fixture-row-${matchId}`).first();
   try { await row.waitFor({ timeout: 6000 }); await row.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 async function liftsOn(page, matchId) {
@@ -159,7 +159,7 @@ async function liftsOn(page, matchId) {
   const panel = tid(page, "lifts-panel");
   try { await panel.waitFor({ timeout: 6000 }); } catch { return false; }
   const sel = panel.locator("select").first();
-  if (await sel.count()) { await sel.selectOption(matchId).catch(() => {}); await page.waitForTimeout(1200); }
+  if (await sel.count()) { await sel.selectOption(matchId).catch(() => {}); await afterReads(page, 1200); }
   return true;
 }
 /** Text under 12px and controls under 44px, inside one block, as drawn. */

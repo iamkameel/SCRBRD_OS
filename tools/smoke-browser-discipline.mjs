@@ -131,7 +131,7 @@ async function nav(page, id) {
   const l = tid(page, `nav-${id}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Profiles → one boy. False when he is not on this reader's roster. */
@@ -140,7 +140,7 @@ async function openProfile(page, playerId) {
   const row = tid(page, `roster-player-${playerId}`).first();
   if (!(await row.count())) return false;
   await row.click({ timeout: 6000 });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 const conductTab = (page) => tid(page, "profile-tab-conduct");
@@ -155,7 +155,7 @@ async function toMatch(page, matchId) {
   const card = tid(page, `match-card-${matchId}`).first();
   if (!(await card.count())) return false;
   await card.click({ timeout: 6000 });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Appoint the umpire to his fixture again, unless he already is. */

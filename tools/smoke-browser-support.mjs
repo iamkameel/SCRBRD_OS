@@ -123,21 +123,21 @@ async function signIn(page, email, password = "") {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function toSettings(page) {
   const l = tid(page, "nav-settings").first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 const tab = (page, id) => page.locator(`#settings-tab-${id}`);
 async function openTab(page, id) {
   if (!(await tab(page, id).count())) return false;
   await tab(page, id).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** The school's own Support access card, under Settings › School. */

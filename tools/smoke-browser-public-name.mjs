@@ -120,7 +120,7 @@ async function go(page, nav) {
   const l = (await rail.count()) ? rail : page.locator(`[data-testid="mnav-${nav}"]:visible`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 /** Text under 12px and controls under 44px inside one block, as drawn. */
@@ -160,7 +160,7 @@ async function toEdit(page) {
   try { await tid(page, `squad-card-${BEKKER}`).click({ timeout: 5000 }); } catch { return false; }
   await page.waitForTimeout(600);
   try { await tid(page, "player-edit-profile").click({ timeout: 4000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 

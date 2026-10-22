@@ -169,7 +169,7 @@ const openAs = async (email) => {
   if (await b.count()) { await b.click({ timeout: 5000 }); await p.waitForTimeout(500); }
   await p.fill("#login-email", email);
   await p.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 });
-  await p.waitForTimeout(2200);
+  await afterReads(p, 2200);
   return p;
 };
 const ptid = (/** @type {import("playwright-core").Page} */ p, /** @type {string} */ id) => p.locator(`[data-testid="${id}"]`);

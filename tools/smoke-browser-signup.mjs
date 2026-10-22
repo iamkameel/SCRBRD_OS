@@ -181,14 +181,14 @@ async function go(page, key) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return true;
 }
 /** Settings → a tab. */
 async function settingsTab(page, tab) {
   if (!(await go(page, "settings"))) return false;
   try { await page.locator(`#settings-tab-${tab}`).click({ timeout: 4000 }); } catch { return false; }
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return true;
 }
 const inShell = async (page) => (await tid(page, "os-main").count()) === 1 || (await tid(page, "persona-bar").count()) === 1;

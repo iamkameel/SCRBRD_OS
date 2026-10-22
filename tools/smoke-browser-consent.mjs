@@ -133,7 +133,7 @@ async function toMe(page) {
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await page.waitForTimeout(1000);
   try { await page.locator("#settings-tab-me").click({ timeout: 4000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Every text node under the element, and every control, measured as drawn. */

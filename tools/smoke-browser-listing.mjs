@@ -129,7 +129,7 @@ async function go(page, nav) {
     if (!(await l.count())) return false;
   }
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 /** Text under 12px and controls under 44px inside one block, as drawn. */

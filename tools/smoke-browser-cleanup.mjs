@@ -128,14 +128,14 @@ async function openDemo(role) {
       put.onsuccess = () => resolve("ok"); put.onerror = () => reject(put.error);
     };
   }), role);
-  await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
+  await c.page.reload({ waitUntil: "networkidle" }); await afterReads(c.page, 1500);
   return c;
 }
 async function go(page, nav) {
   const l = tid(page, `nav-${nav}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 /**

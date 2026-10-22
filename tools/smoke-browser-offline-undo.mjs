@@ -213,7 +213,7 @@ const openFixture = async () => {
     }
     return false;
   });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   return opened;
 };
 /** Sign in as the seeded scorer, from the landing page. */
@@ -222,7 +222,7 @@ const signIn = async () => {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return /Match Centre|Dashboard/i.test(await text());
 };
 /**

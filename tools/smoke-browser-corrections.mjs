@@ -111,7 +111,7 @@ async function go(page, key) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 async function openMatch(page, id) {
@@ -124,7 +124,7 @@ async function openMatch(page, id) {
   await btn.click({ timeout: 5000 });
   const opened = await until(page, () => !!document.querySelector('[data-testid="match-view"]'), 8000);
   if (!opened && DEBUG) console.log("    (match-view did not open)", (await text(page)).slice(0, 600));
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   return opened;
 }
 /** The 12px floor and the 44px target, measured. */

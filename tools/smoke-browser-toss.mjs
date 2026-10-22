@@ -137,7 +137,7 @@ async function openFixture(opponent) {
     return false;
   }, opponent);
   // The roster and the toss are read, the match claimed, the log offered.
-  await page.waitForTimeout(4000);
+  await afterReads(page, 4000);
   return opened;
 }
 async function exitScorer() {

@@ -102,14 +102,14 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function nav(page, id) {
   const l = tid(page, `nav-${id}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Officials → the named person's card. */
@@ -118,7 +118,7 @@ async function openOfficial(page, name) {
   const b = page.locator("button", { hasText: name }).first();
   if (!(await b.count())) return false;
   await b.click({ timeout: 6000 });
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   return true;
 }
 const panel = (page, dutyId) => page.locator(`[data-testid="duty-authority"][data-duty="${dutyId}"]`);
