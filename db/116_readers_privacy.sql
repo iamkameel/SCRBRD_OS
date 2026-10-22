@@ -66,6 +66,16 @@
 --       register, kit, passports or scouting consents. His own side's reach,
 --       through his `player` role, and his own record are untouched.
 --   Q16 A child's ID number (§1): selfaccess loses player.identity.read.
+--   A1  The passport (§9b; the red-team audit of 21 Oct 2026, finding A1,
+--       through the lead): passport() no longer carries a boy's skill
+--       ratings or the coach who gave them (GA-I26a: a judgement stays with
+--       the adults who made it; Kameel's confirmation of dropping rather than
+--       gating them is asked for); passport_open() is his family, a coach or
+--       the office at his school, and the office or a coach at a school his
+--       family named — never a team-mate, a pupil, a parent or anybody else
+--       who merely holds player.profile.read; and passport(), passport_name(),
+--       passport_open() and trip_contacts() are the application's to call,
+--       not PUBLIC's (A5).
 --
 --   Q4, Q9: no code (the code stands). Q14: no route serves a pupil the log
 --   (selfaccess holds no audit.read; separation.test.mjs holds it). Q15: the
@@ -1031,9 +1041,8 @@ CREATE POLICY player_scouting_consent_pupil_standing_only ON player_scouting_con
                player_team(player_scouting_consent.player_id), player_scouting_consent.player_id, NULL::uuid)
   );
 
--- The two doors that ask the same question as definers (and so past every
--- policy above). Each is the version in place (recognition(): db/89's;
--- passport_open(): db/08's) with the one clause.
+-- The door that asks the same question as a definer (and so past every
+-- policy above): recognition(), db/89's, with the one clause.
 CREATE OR REPLACE FUNCTION recognition(p_player uuid)
 RETURNS TABLE (family text, kind text, label text, value int, season text, on_date date,
                match_id uuid, opponent text, is_public boolean, citation text, ref_id uuid) AS $$
@@ -1066,20 +1075,102 @@ BEGIN
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Its grants are db/08's and CREATE OR REPLACE keeps them.
 
+-- passport_open() is narrowed further in §9b (the red-team's A1), past
+-- player.profile.read altogether, which also closes it to a pupil scorer.
+
+
+-- ══════════════════════════════════════════════════════════════════
+-- §9b · The passport: a cricket record, to the people it was made for (A1)
+-- ══════════════════════════════════════════════════════════════════
+-- WHO MAY OPEN IT. db/08 opened it to every player.profile.read holder over
+-- the boy — his team-mates, the scorer, media, the DSO — and, at a school
+-- his family named, to every player.profile.read holder there: its pupils,
+-- its parents, its scorer. Now:
+--   his family                     is_family_of(): his guardians and himself
+--   at his own school              a coach of his side or the office: the
+--                                  team.select or player.profile.manage of
+--                                  an assignment over him, or
+--                                  guardian.link.manage at the school (the
+--                                  office and its head). A team-mate holds
+--                                  none of the three.
+--   at a school his family named   that school's office (guardian.link.manage)
+--                                  or a coach there (team.select, any side),
+--                                  while the consent is live.
+-- Every staff test asks with a NULL fixture, so no fixture-scoped
+-- assignment (a scorer's, an umpire's) opens it.
 CREATE OR REPLACE FUNCTION passport_open(p_player uuid) RETURNS boolean AS $$
   SELECT is_family_of(p_player)
       OR EXISTS (SELECT 1 FROM player p WHERE p.id = p_player
-                    AND app_can('player.profile.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)
-                    AND (NOT app_reader_is_pupil()
-                         OR app_can('player.profile.read', p.school_id, p.team_code, p.id, NULL::uuid)))
+                    AND (app_can('team.select', p.school_id, p.team_code, p.id, NULL::uuid)
+                         OR app_can('player.profile.manage', p.school_id, p.team_code, p.id, NULL::uuid)
+                         OR app_can('guardian.link.manage', p.school_id, '*'::text,
+                                    '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid)))
       OR EXISTS (SELECT 1 FROM passport_consent c
                   WHERE c.player_id = p_player AND c.withdrawn_at IS NULL
-                    AND app_can('player.profile.read', c.to_school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
-                                '00000000-0000-0000-0000-000000000000'::uuid)
-                    AND (NOT app_reader_is_pupil()
-                         OR app_can('player.profile.read', c.to_school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid)))
+                    AND (app_can('guardian.link.manage', c.to_school_id, '*'::text,
+                                 '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid)
+                         OR app_can('team.select', c.to_school_id, '*'::text,
+                                    '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- Its grants are db/08's and CREATE OR REPLACE keeps them.
+
+-- WHAT IT SAYS. db/08's passport(), without its `rating` lines: a coach's
+-- scores and his name are a judgement, which READERS §3 H keeps from a
+-- team-mate, a parent and another school alike (GA-I26a), and a document the
+-- family carries to another school is not where they go. Career, honours,
+-- caps and milestones are db/08's, line for line.
+CREATE OR REPLACE FUNCTION passport(p_player uuid)
+RETURNS TABLE (family text, label text, value text, on_date date, source_school text,
+               recorded_by text, confidence text) AS $$
+DECLARE p player%ROWTYPE;
+BEGIN
+  SELECT * INTO p FROM player WHERE id = p_player;
+  IF NOT FOUND OR NOT passport_open(p_player) THEN RETURN; END IF;
+  RETURN QUERY
+    SELECT 'career', 'Batting', b.runs || ' runs in ' || b.innings || ' innings' || coalesce(', average ' || round(b.average, 1), ''),
+           NULL::date, (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM (SELECT count(*)::int AS innings, coalesce(sum(i.runs), 0)::int AS runs,
+                   CASE WHEN count(*) FILTER (WHERE i.out) > 0 THEN sum(i.runs)::numeric / count(*) FILTER (WHERE i.out) END AS average
+              FROM player_innings i WHERE i.player_id = p_player) b WHERE b.innings > 0
+    UNION ALL
+    SELECT 'career', 'Bowling', w.wickets || ' wickets, ' || w.runs || ' runs conceded', NULL, (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM (SELECT coalesce(sum(f.wickets), 0)::int AS wickets, coalesce(sum(f.runs_conceded), 0)::int AS runs, count(*)::int AS n
+              FROM bowler_innings_figures f WHERE f.player_id = p_player) w WHERE w.n > 0
+    UNION ALL
+    SELECT 'honour', honour_kind_label(h.kind, h.name), (SELECT sn.label FROM season sn WHERE sn.id = h.season_id), h.awarded_on,
+           (SELECT name FROM school WHERE id = h.school_id),
+           coalesce((SELECT u.name FROM app_user u WHERE u.id = h.awarded_by), 'nobody on record'),
+           CASE WHEN h.awarded_by IS NULL THEN 'seeded' ELSE 'verified' END
+      FROM honour h WHERE h.player_id = p_player AND h.withdrawn_at IS NULL
+    UNION ALL
+    SELECT 'cap', c.team_code || ' cap #' || c.cap_no, c.appearances || ' appearance' || CASE WHEN c.appearances = 1 THEN '' ELSE 's' END,
+           c.first_on, (SELECT name FROM school WHERE id = c.school_id), 'the team sheets', 'derived'
+      FROM team_cap c WHERE c.player_id = p_player
+    UNION ALL
+    SELECT 'milestone', milestone_label(m.kind, m.value), 'v ' || coalesce(m.opponent, '?'), m.played_on,
+           (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM player_milestone m WHERE m.player_id = p_player
+    ORDER BY 1, 4 DESC NULLS LAST, 2;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- passport_name(): db/08's, with its search path pinned (db/16's rule).
+CREATE OR REPLACE FUNCTION passport_name(p_player uuid) RETURNS text AS $$
+  SELECT full_name FROM player WHERE id = p_player AND passport_open(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A5: the application's to call, not PUBLIC's.
+DO $passport_grants$
+DECLARE f text; r text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)', 'passport_open(uuid)', 'trip_contacts(uuid)'] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
+      END IF;
+    END LOOP;
+  END LOOP;
+END $passport_grants$;
 
 
 -- ══════════════════════════════════════════════════════════════════
@@ -1177,6 +1268,21 @@ BEGIN
     RAISE EXCEPTION 'db/116: SG-9 does not admit a compromise notice to a pupil of eighteen';
   END IF;
 
+  -- §9b: no rating on the passport; its doors the application's alone.
+  IF (SELECT prosrc FROM pg_proc WHERE oid = 'passport(uuid)'::regprocedure) ~ '(player_skill|''rating'')' THEN
+    RAISE EXCEPTION 'db/116: passport() still carries a rating';
+  END IF;
+  IF (SELECT prosrc FROM pg_proc WHERE oid = 'passport_open(uuid)'::regprocedure) LIKE '%player.profile.read%' THEN
+    RAISE EXCEPTION 'db/116: passport_open() still opens to player.profile.read';
+  END IF;
+  FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)', 'passport_open(uuid)', 'trip_contacts(uuid)'] LOOP
+    IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
+       OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                   WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
+      RAISE EXCEPTION 'db/116: % is executable by PUBLIC, or not by scrbrd_app', f;
+    END IF;
+  END LOOP;
+
   -- Every function here: SECURITY DEFINER with a pinned search path (db/16).
   FOREACH f IN ARRAY ARRAY['school_register_rows(uuid,text)', 'player_departed_from(uuid,uuid)', 'reader_linked_to(uuid)',
                            'public_name_consent_set(uuid,boolean,text,uuid,text,date)', 'public_name_facts(uuid,text,date)',
@@ -1185,7 +1291,7 @@ BEGIN
                            'side_discipline_records(uuid)',
                            'safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)',
                            'trip_contacts(uuid)', 'app_reader_is_pupil()', 'reader_sees_on_sheet(uuid)',
-                           'recognition(uuid)', 'passport_open(uuid)'] LOOP
+                           'recognition(uuid)', 'passport_open(uuid)', 'passport(uuid)', 'passport_name(uuid)'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc
                     WHERE oid = f::regprocedure AND prosecdef
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN

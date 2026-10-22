@@ -5922,6 +5922,7 @@ BEGIN
     ARRAY['coord',     'transportcoordinator', HIL::text, '',     ''],
     ARRAY['sports',    'sportsadmin',          HIL::text, '',     ''],
     ARRAY['wesleague', 'competitionadmin',     WES::text, '',     ''],
+    ARRAY['wescoach',  'coach',                WES::text, '16XI', ''],
     ARRAY['scorer',    'scorer',               HIL::text, '',     ''],
     ARRAY['pupil',     'player',               WES::text, '16XI', o->>'p'],
     ARRAY['teen',      'player',               HIL::text, '16XI', o->>'t'],
@@ -6015,6 +6016,12 @@ BEGIN
   -- Q13: what a fixture-scoped read would have reached.
   INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
   VALUES ((ids->>'h')::uuid, HIL, '16XI', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
+
+  -- A1: his coach's rating of him, and his family's consent naming Westville.
+  INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
+  VALUES ((ids->>'h')::uuid, current_date - 5, (ids->>'coach')::uuid, 'technical', 'againstPace', 11);
+  INSERT INTO passport_consent (player_id, to_school_id, granted_by)
+  VALUES ((ids->>'h')::uuid, WES, (ids->>'parent')::uuid);
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -6065,6 +6072,7 @@ EXCEPTION WHEN check_violation THEN
   RETURN '23514:' || coalesce(nullif(v_con, ''), 'trigger');
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/116 (section 86) ─────────────────────────────────────────────
+
 
 
 -- From here on we are the unprivileged application role, so every read below
@@ -23614,6 +23622,12 @@ $v49$;
   --                  history or recognition(); the adult scorer of the same
   --                  fixture still reads the roster (the cut is a pupil's);
   --                  the pupil reads his own side as before
+  --   (A1 passport)  h's passport (his family has named Westville): open to
+  --                  his parent, the office, his coach and Westville's coach;
+  --                  shut to a team-mate, another side's coach, Westville's
+  --                  parent and DSO, Hilton's DSO, the adult scorer and the
+  --                  pupil scorer; no rating line and no assessing coach on
+  --                  it; the four doors are not PUBLIC's
   --   (Q14, Q15, Q16) a pupil holds no audit.read; a parent reads no conduct
   --                  record; a pupil's own ID number is NULL to him and not
   --                  to his parent (held)
@@ -23830,6 +23844,27 @@ $v49$;
     SELECT count(*) INTO n FROM player WHERE id = (y->>'k')::uuid;
     PERFORM _assert(n = 1, '§86 (Q13 scorer): the adult scorer lost the roster (the cut is a pupil''s alone)');
 
+    -- (A1 passport): who opens h's passport, and that no rating rides on it.
+    FOREACH got IN ARRAY ARRAY['parent:t', 'office:t', 'coach:t', 'wescoach:t',
+                               'teen:f', 'coach15:f', 'wesparent:f', 'wesdso:f', 'dso:f', 'scorer:f', 'pupil:f'] LOOP
+      PERFORM _as((y->>split_part(got, ':', 1))::uuid);
+      PERFORM _assert(passport_open((y->>'h')::uuid) = (split_part(got, ':', 2) = 't'),
+        format('§86 (A1 passport): passport_open() for the %s is %s', split_part(got, ':', 1), passport_open((y->>'h')::uuid)));
+      SELECT count(*) INTO n FROM passport((y->>'h')::uuid);
+      PERFORM _assert((n > 0) = (split_part(got, ':', 2) = 't'),
+        format('§86 (A1 passport): the %s read %s passport line(s)', split_part(got, ':', 1), n));
+      PERFORM _assert((passport_name((y->>'h')::uuid) IS NOT NULL) = (split_part(got, ':', 2) = 't'),
+        format('§86 (A1 passport): passport_name() to the %s', split_part(got, ':', 1)));
+    END LOOP;
+    PERFORM _as((y->>'office')::uuid);
+    SELECT count(*) INTO n FROM passport((y->>'h')::uuid) l WHERE l.family = 'rating' OR l.recorded_by LIKE '%Coach%';
+    PERFORM _assert(n = 0, format('§86 (A1 passport): %s rating line(s), or the assessing coach, on the passport', n));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                 WHERE p.oid IN ('passport(uuid)'::regprocedure, 'passport_name(uuid)'::regprocedure,
+                                                 'passport_open(uuid)'::regprocedure, 'trip_contacts(uuid)'::regprocedure)
+                                   AND x.grantee = 0 AND x.privilege_type = 'EXECUTE'),
+      '§86 (A1 passport): a passport door or trip_contacts() is still PUBLIC''s');
+
     -- (Q14, Q15, Q16)
     PERFORM _as(U_SELF);
     PERFORM _assert(NOT app_can('audit.read', HIL, '*'::text, NIL, NIL), '§86 (Q14): a pupil holds audit.read');
@@ -23846,6 +23881,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 86
+
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

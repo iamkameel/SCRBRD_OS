@@ -25,6 +25,8 @@ try {
   for (let i = 0; i < 60; i++) { try { const r = await api("/api/health"); if (r.body?.db === "ok") break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
   const parent = await login("parent@example.invalid"), coach = await login("coach@example.invalid"), wes = await login("coach.wes@example.invalid");
   const otherMum = await login("parent.whitfield@example.invalid"), boy = await login("pillay@example.invalid"), watcher = await login("watcher@example.invalid");
+  // A pupil of his own side (the seed's spectator@ account holds `player` on the 1st XI).
+  const mate = await login("spectator@example.invalid");
 
   group("The record stays home until the family says otherwise");
   {
@@ -32,6 +34,9 @@ try {
     ok("his own coach reads his passport", (await passport(PILLAY, coach)).length > 0);
     ok("his family reads it", (await passport(PILLAY, parent)).length > 0 && (await passport(PILLAY, boy)).length > 0);
     ok("a spectator reads none", (await passport(PILLAY, watcher)).length === 0);
+    // db/116 (the red-team's A1): a team-mate holds player.profile.read over
+    // him and no coach's or office's capability, so the passport stays shut.
+    ok("a team-mate reads none", !!mate && (await passport(PILLAY, mate)).length === 0);
     ok("a coach cannot consent for a boy", [403, 401].includes((await consent(coach, PILLAY, WES)).status));
     ok("another family cannot consent for him", [403, 401].includes((await consent(otherMum, PILLAY, WES)).status));
     ok("the other school cannot help itself", [403, 401].includes((await consent(wes, PILLAY, WES)).status));
@@ -62,7 +67,10 @@ try {
     await api("/api/honours", { method: "POST", token: head, body: { playerId: WHITFIELD, kind: "honours", season: "2026" } });
     ok("an honour signed by a named person is verified, and names her", (await passport(WHITFIELD, coach)).some((l) => l.family === "honour" && l.confidence === "verified" && /Sarah Mokoena/.test(l.recorded_by)));
     await api(`/api/players/${WHITFIELD}/assessment`, { method: "POST", token: coach, body: { scores: { mental: { composure: 12 } } } });
-    ok("a rating is asserted by the coach who gave it", (await passport(WHITFIELD, coach)).some((l) => l.family === "rating" && l.confidence === "asserted" && l.recorded_by && !/nobody/.test(l.recorded_by)));
+    // db/116 (A1; GA-I26a): a coach's score and his name are a judgement, and
+    // never travel on the passport, to his own coach or anybody else.
+    ok("a rating never rides on the passport, nor the coach who gave it",
+       !(await passport(WHITFIELD, coach)).some((l) => l.family === "rating"));
   }
   ok("the server logged no errors", serverErr.join("").trim() === "");
 } catch (e) { fail++; console.log("  ✗ threw:", e.message); }
