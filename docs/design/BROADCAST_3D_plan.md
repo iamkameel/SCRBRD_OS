@@ -1,7 +1,7 @@
 # A live match on a three.js stage: the plan
 
 **Status:** plan for future integration, written by the lead on 22 Oct 2026 at Kameel's request. Not a
-design pass and not approved. Nothing here is built until Kameel decides §6. The immersive Match Centre and
+design pass and not approved. Nothing here is built until Kameel decides §7. The immersive Match Centre and
 the ground display are Fable's design problem (SCRBRD-133, CLAUDE.md), so anything past B1 goes to a Fable
 pass first.
 
@@ -11,6 +11,10 @@ emotion", §3.6 motion), `docs/policy/PUBLIC_DATA.md` (no child's name or likene
 bundle ceilings in `tools/check-bundle.mjs`.
 
 ## 0 · In one page
+
+§6 reads Kameel's `iamkameel/3D_SCRBRD` repository: it carries a broadcast UI kit's design notes and a school
+colour engine, but no 3D code. Its best idea, school colours held as approved data, is taken; its hard-coded
+"verified" colour list and silent recolouring are not.
 
 A 3D view of the live match is mostly a matter of reusing what we already have. The investor pitch deck draws an
 innings on a three.js field (`apps/web/src/views/pitchdeck/scene.js`), loaded in its own chunk, with named camera
@@ -112,7 +116,53 @@ These improve the build whether or not 3D ever ships. Each is small and screen-o
 Timing: B0 can start after the weekly usage reset on Wed 28 Oct, in the gap analysis lane (it improves
 GA-I28's shot wheel and GA-I31's chart tables). B1 follows B0. B2 and later wait for SCRBRD-133's own phases.
 
-## 6 · Questions for Kameel
+## 6 · What `iamkameel/3D_SCRBRD` offers (read 22 Oct, commit 46ba814)
+
+That repository is an older copy of parts of SCRBRD (its `tokens.js` and write routes are behind main), plus
+an AI Studio "Athletic Broadcast UI Kit" hand-off (`public/assets/aistudio/*.md`) and one new module,
+`src/design/schoolIdentityEngine.js` (588 lines). It holds **no three.js broadcast code**: the kit's own roadmap
+says the 3D export was never available, and `scrbrd-3d-os-full-backup.tar.gz` is an HTML page, not an archive.
+The kit's interactive files (`SCRBRD_UI_KIT_INTERACTIVE.html`, `src/brand.mjs`, `src/react/ScoreStrip.tsx`, the
+branding schema, the preview images) are named but not in the repository.
+
+**Take, adapted to our rules:**
+
+1. **A school's colours are data, approved and versioned.** SCRBRD has no school colour or crest model today.
+   The kit's hierarchy (school brand revision → team kit variant → the fixture's resolved identity) is right:
+   colours stored per school with who approved them and when, scoped to the component that shows that school,
+   never a page-wide theme and never a semantic colour (danger, live, win). This is a schema change (Opus) and a
+   school-facing approval step; it is also what B2's broadcast panel and the ground display need to show two
+   schools fairly.
+2. **One ink at both ends of a team ramp.** A flat left-to-right gradient from the approved colours, with one
+   text colour reaching 4.5:1 at both ends, adjusting the *display* ramp, never the stored colour. Our
+   `tokens.js` already has `contrast()`, `inkOn()` and `luminance()`; the kit's `adjustForContrast()` (walk HSL
+   lightness until the ratio holds) is the one helper to add.
+3. **A clash warning, not a recolour.** When two schools' colours are close (the kit uses ΔE76 under 22 as a
+   rough screen), keep both and add the difference another way: crest, name, an outline or a pattern.
+4. **Score strip conventions for the board:** the batting side's colour on the score and the striker, the
+   fielding side's on the bowler's figures; one shared capsule for the two batters with a small striker marker;
+   team names wide and uppercase, batter names condensed, score figures tabular; overs as legal balls (`28.3`);
+   a wicket or milestone takeover only after the event is recorded, and never over the scorer.
+5. **A definition of done per component:** default, hover, focus, active, selected, disabled, loading, empty,
+   error, permission denied, offline, reduced motion and phone. Ours (the floors in CLAUDE.md and the walks)
+   already covers most; empty, permission denied and offline should be checked on every new screen.
+
+**Leave out:**
+
+- **The hard-coded `VERIFIED_SCHOOL_BRANDS` list** (17 real schools with colours, mottos and venues). Nothing
+  shows a school approved them, and the kit's own notes say never to call an inferred colour official. Colours
+  come from each school, through the approval step in item 1.
+- **The automatic away-kit swap** in `resolveMatchupClash()`. It silently recolours one school when colours are
+  close, which the kit's own architecture forbids; item 3 replaces it.
+- **Writing team colours onto `:root`** (`applySchoolAndMatchupTokensToRoot`). A coach's screen can show several
+  schools at once; colours are scoped to the component.
+- **New font families** (Inter Display, Noto Sans Display Condensed, Barlow Condensed) without Kameel's say:
+  each is a download on every phone and counts against the bundle and public page budgets. We already ship Syne
+  and DM Sans; a condensed face for batter names is the one worth testing.
+- **Player photography and FOX-styled artwork:** no child's photograph or likeness on a public page, and no
+  broadcaster's marks.
+
+## 7 · Questions for Kameel
 
 1. **Start with B0 (the flat wheel draws what we know) before any 3D?** *Recommendation:* yes; it is useful now,
    costs no dependency, and B1 stands on it.
@@ -122,3 +172,8 @@ GA-I28's shot wheel and GA-I31's chart tables). B1 follows B0. B2 and later wait
    on screens 960 px and wider that pass the frame test.
 4. **Ask the scorer for trajectory or line and length (B4)?** *Recommendation:* not before the pilot; decide
    from the pilot scorers' own pace, and only with a Fable pass on the pad.
+5. **School colours as approved data (§6 item 1)?** *Recommendation:* yes, after the pilot: a school's office
+   enters its colours and crest, the school approves them, and only then do they appear on the board, the ground
+   display and the public page. Until then, our neutral board. Nothing from the hard-coded list.
+6. **The score strip conventions (§6 item 4) on the Board and the ground display?** *Recommendation:* yes, with
+   neutral colours until item 5 exists; a Sonnet job with Opus review, folded into SCRBRD-133's remaining phases.
