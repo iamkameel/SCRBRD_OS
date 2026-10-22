@@ -789,7 +789,7 @@ try {
     });
     await tid(rq.page, `request-grant-${noSide.id}`).click({ timeout: 5000 });
     const refused = tid(rq.page, `request-refused-${noSide.id}`);
-    await refused.waitFor({ timeout: 6000 }).catch(() => {});
+    await refused.waitFor({ timeout: 15000 }).catch(() => {});
     ok("a refused grant is said on its own row, as an alert", await refused.count() === 1 && (await refused.getAttribute("role")) === "alert"
        && await tid(rq.page, `request-row-${noSide.id}`).locator(`[data-testid="request-refused-${noSide.id}"]`).count() === 1);
     const refusedText = (await refused.innerText().catch(() => "")).trim();
@@ -802,7 +802,7 @@ try {
     await q(`update role_request set state = 'declined', decided_by = $2, decided_at = now() where id = $1`, [answered.id, registrarId]);
     await tid(rq.page, `request-decline-${answered.id}`).click({ timeout: 5000 });
     const late = tid(rq.page, `request-refused-${answered.id}`);
-    await late.waitFor({ timeout: 6000 }).catch(() => {});
+    await late.waitFor({ timeout: 15000 }).catch(() => {});
     // The refusal is drawn at once; the row leaves when the list has been read again.
     await tid(rq.page, `request-row-${answered.id}`).waitFor({ state: "detached", timeout: 6000 }).catch(() => {});
     ok("a request answered first is refused in words, as an alert, though its row has left the list",
@@ -813,14 +813,17 @@ try {
     await q(`delete from role_request where id = $1`, [vanished.id]);
     await tid(rq.page, `request-grant-${vanished.id}`).click({ timeout: 5000 });
     const lost = tid(rq.page, `request-refused-${vanished.id}`);
-    await lost.waitFor({ timeout: 6000 }).catch(() => {});
+    await lost.waitFor({ timeout: 15000 }).catch(() => {});
     ok("a request that no longer exists is said so",
        await lost.count() === 1 && /could not be found/.test(await lost.innerText().catch(() => "")), await lost.innerText().catch(() => "(none)"));
 
     // 4. A grant that goes through: the line comes after the server's reply.
+    // (Every line in this section is drawn only once the server has answered
+    // the write, so each wait is on that reply, with 15 s as everywhere else
+    // in the walks: 6 s ran out under load in shard 3 on 22 Oct.)
     await tid(rq.page, `request-grant-${named.id}`).click({ timeout: 5000 });
     const done = tid(rq.page, `request-done-${named.id}`);
-    await done.waitFor({ timeout: 6000 }).catch(() => {});
+    await done.waitFor({ timeout: 15000 }).catch(() => {});
     ok("a grant says what happened, in a status line", await done.count() === 1 && (await done.getAttribute("role")) === "status"
        && (await done.innerText().catch(() => "")).trim() === "Granted: Coach at 1XI.", await done.innerText().catch(() => "(none)"));
     const grantedTo = await heldBy(named.person);
@@ -829,12 +832,12 @@ try {
 
     // 5. The one that was refused, granted properly this time; and a decline.
     await tid(rq.page, `request-grant-${noSide.id}`).click({ timeout: 5000 });
-    await tid(rq.page, `request-done-${noSide.id}`).waitFor({ timeout: 6000 }).catch(() => {});
+    await tid(rq.page, `request-done-${noSide.id}`).waitFor({ timeout: 15000 }).catch(() => {});
     ok("the refused request, tried again with its side, is granted and the refusal is gone",
        (await tid(rq.page, `request-done-${noSide.id}`).innerText().catch(() => "")).trim() === "Granted: Coach at 1XI."
        && await tid(rq.page, `request-refused-${noSide.id}`).count() === 0 && await stateOf(noSide.id) === "granted");
     await tid(rq.page, `request-decline-${toDecline.id}`).click({ timeout: 5000 }).catch(() => {});
-    await tid(rq.page, `request-done-${toDecline.id}`).waitFor({ timeout: 6000 }).catch(() => {});
+    await tid(rq.page, `request-done-${toDecline.id}`).waitFor({ timeout: 15000 }).catch(() => {});
     ok("a decline says 'Declined.' after the reply, and the database agrees",
        (await tid(rq.page, `request-done-${toDecline.id}`).innerText().catch(() => "")).trim() === "Declined." && await stateOf(toDecline.id) === "declined" && (await heldBy(toDecline.person)).length === 0);
     ok("no console errors", rq.errors.length === 0, rq.errors.join(" | "));
