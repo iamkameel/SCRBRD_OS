@@ -542,7 +542,8 @@ Decided 21 Oct 2026 (Kameel). Each line states what governs. The designs named i
 - **Q15 · As recommended (READERS only).** The parent's disciplinary record is deferred to the information officer's next sign-off; the app never shows a parent a record it holds about her child without telling her one exists, so the letter stays the channel and the app stays silent.
 - **Q16 · As recommended (READERS only).** A child's own ID number is never drawn on a screen; the right of access is met by the office on request.
 
-Decided 22 Oct 2026 (Kameel): a mid-over bowler change's reason stays with the bowler's own school; the other school sees that he changed, never why. Applied also to a Law 41 suspension's ground, a conduct matter (db/59), so the other school sees the suspension but not its reason (db/118, PR #193). Surname particles (van, der, du) stay out of the public news name check when they stand alone.
+Decided 22 Oct 2026 (Kameel): a mid-over bowler change's reason stays with the bowler's own school; the other school sees that he changed, never why. Surname particles (van, der, du) stay out of the public news name check when they stand alone.
+Applied by the lead (22 Oct 2026), reversible by Kameel: the same rule covers a Law 41 suspension's ground, which db/59 treats as a conduct matter, so the other school sees the suspension but not its reason (db/118, PR #193).
 
 ---
 
