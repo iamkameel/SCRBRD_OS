@@ -26538,9 +26538,11 @@ $v49$;
       '§92 (retire): Hilton''s coach lost his own boy''s reason');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, jsonb_build_object('batter', 'A Typed Name', 'reason', 'hurt'))->>'reason' = 'not out',
       '§92 (retire): a typed name read as hurt');
-    PERFORM _as(U_PARENT);
+    -- The office at his school. His own guardian is walked in smoke-cockpit
+    -- (group 7); earlier sections here change that guardian's link.
+    PERFORM _as(U_REGISTRAR);
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, v_pay)->>'reason' = 'hurt',
-      '§92 (retire): his own guardian lost the reason');
+      '§92 (retire): the office at his school lost the reason');
 
     -- (doors)
     PERFORM _assert(NOT has_function_privilege('public', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
