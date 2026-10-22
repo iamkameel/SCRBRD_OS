@@ -6694,6 +6694,11 @@ BEGIN
   INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured, phase, notes)
   VALUES (HIL, (ids->>'d')::uuid, 'Verify OneSixteen hamstring', 'moderate', current_date - 3, 'rehab', 'v116 clinical note')
   RETURNING id INTO v; ids := ids || jsonb_build_object('injury', v);
+  -- ...and the physio's review of it (db/111), with her clinical note.
+  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_by, phase_after, restricted_after,
+                             next_review_on, note)
+  VALUES (HIL, (ids->>'d')::uuid, v, (ids->>'physio')::uuid, 'rehab', true, current_date + 7, 'v116 review note')
+  RETURNING id INTO v; ids := ids || jsonb_build_object('review', v);
 
   -- Q10: the conduct records, as the umpire would file them (the author is the session's).
   PERFORM set_config('app.user_id', (ids->>'head')::text, true);
@@ -24325,9 +24330,10 @@ $v49$;
   --   (notice)     Mum reads one 'system' notice naming the school and the
   --                date, not the child, not the reason; Dad does not; a
   --                forged notice reaches her through no door
-  --   (readers)    the office and the director of sport read the kind and the
-  --                reason; Mum, the coach, the DSO and Westville's office read
-  --                no row; the DSO reads none of the child's links either (D12)
+  --   (readers)    the office reads the kind and the reason; Mum, the coach,
+  --                the DSO, the director of sport (audit.read alone, since
+  --                db/116: READERS Q2) and Westville's office read no row;
+  --                the DSO reads none of the child's links either (D12)
   --   (platform)   the platform administrator reads no row with no support
   --                session, nor inside one at Westville; inside one at Hilton
   --                it reads the kind and the reason; ended, nothing again
@@ -24472,12 +24478,15 @@ $v49$;
       '§86 (notice): Dad reads the notice written to Mum');
 
     -- (readers)
-    FOREACH k IN ARRAY ARRAY['office', 'dos'] LOOP
+    FOREACH k IN ARRAY ARRAY['office'] LOOP
       PERFORM _as((y->>k)::uuid);
       SELECT x.kind || ':' || x.reason INTO got FROM guardian_link_ending x WHERE x.link_id = L_MUM;
       PERFORM _assert(got = 'custody:' || WHY, format('§86 (readers): the %s reads %s', k, coalesce(got, 'no row')));
     END LOOP;
-    FOREACH k IN ARRAY ARRAY['mum', 'dad', 'coach', 'wesoffice', 'dso'] LOOP
+    -- The director of sport holds audit.read and not guardian.link.manage:
+    -- since db/116 (READERS Q2) a revocation's reason is the office's act's
+    -- alone, and audit.read opens the access log and nothing else.
+    FOREACH k IN ARRAY ARRAY['mum', 'dad', 'coach', 'wesoffice', 'dso', 'dos'] LOOP
       PERFORM _as(CASE k WHEN 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
       PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
         format('§86 (readers): the %s reads an ending row of the boy''s', k));
@@ -26017,11 +26026,14 @@ $v49$;
   --                  ending's reason, no amendment's reason, no staff
   --                  register; the office reads the two that are its acts,
   --                  the approver the amendment; the log still lists the
-  --                  ending, with no reason in it; the access log is read
-  --   (Q3 departed)  d's injury: the physio and his coach read it while he
-  --                  is at Hilton and not once he has left; the office and
-  --                  his parent still do; the head does not (not the office's
-  --                  key); he re-enrols and the physio reads it again
+  --                  ending, with no reason in it; the access log is read.
+  --                  A guardian link's ending (db/109) is §86's: the office
+  --                  reads it, the director of sport (audit.read) does not
+  --   (Q3 departed)  d's injury and the physio's review of it: the physio
+  --                  and his coach read them while he is at Hilton and not
+  --                  once he has left; the office and his parent still do;
+  --                  the head does not (not the office's key); he re-enrols
+  --                  and the physio reads both again
   --   (Q7 twelve)    a pupil of thirteen says no: recorded, and competent in
   --                  the facts; a yes from him is refused (not_yet_eighteen);
   --                  a no at eleven is refused (not_yet_twelve); his
@@ -26053,11 +26065,13 @@ $v49$;
   --                  fixture still reads the roster (the cut is a pupil's);
   --                  the pupil reads his own side as before
   --   (A1 passport)  h's passport (his family has named Westville): open to
-  --                  his parent, the office, his coach and Westville's coach;
-  --                  shut to a team-mate, another side's coach, Westville's
-  --                  parent and DSO, Hilton's DSO, the adult scorer and the
-  --                  pupil scorer; no rating line and no assessing coach on
-  --                  it; the four doors are not PUBLIC's
+  --                  his parent, the office, the head (guardian.link.manage),
+  --                  his coach and Westville's coach; shut to two team-mates,
+  --                  another side's coach, the physio, Westville's parent and
+  --                  DSO, Hilton's DSO, the adult scorer and the pupil
+  --                  scorer (a Westville pupil, player.profile.read there);
+  --                  no rating line and no assessing coach on it; the four
+  --                  doors and scouting_candidates() are not PUBLIC's (A5)
   --   (Q14, Q15, Q16) a pupil holds no audit.read; a parent reads no conduct
   --                  record; a pupil's own ID number is NULL to him and not
   --                  to his parent (held)
@@ -26122,22 +26136,36 @@ $v49$;
       PERFORM _as((y->>got)::uuid);
       SELECT count(*) INTO n FROM injury_masked WHERE id = (y->>'injury')::uuid;
       PERFORM _assert(n = 1, format('§91 (Q3 departed): the %s cannot read the injury of a boy at school', got));
+      SELECT count(*) INTO n FROM injury_review_masked WHERE id = (y->>'review')::uuid;
+      PERFORM _assert(n = 1, format('§91 (Q3 departed): the %s cannot read the review of a boy at school', got));
     END LOOP;
     PERFORM _v116_move((y->>'d')::uuid, NULL);
     FOREACH got IN ARRAY ARRAY['physio', 'coach', 'head'] LOOP
       PERFORM _as((y->>got)::uuid);
       SELECT count(*) INTO n FROM injury_masked WHERE id = (y->>'injury')::uuid;
       PERFORM _assert(n = 0, format('§91 (Q3 departed): the %s reads the injury of a boy who has left', got));
+      SELECT count(*) INTO n FROM injury_review_masked WHERE id = (y->>'review')::uuid;
+      PERFORM _assert(n = 0, format('§91 (Q3 departed): the %s reads the review of a boy who has left', got));
     END LOOP;
+    PERFORM _as((y->>'physio')::uuid);
+    SELECT count(*) INTO n FROM injury_worklist() w WHERE w.injury_id = (y->>'injury')::uuid;
+    PERFORM _assert(n = 0, '§91 (Q3 departed): a departed boy is on the physio''s worklist');
     FOREACH got IN ARRAY ARRAY['office', 'sports', 'parent'] LOOP
       PERFORM _as((y->>got)::uuid);
       SELECT count(*) INTO n FROM injury_masked WHERE id = (y->>'injury')::uuid;
       PERFORM _assert(n = 1, format('§91 (Q3 departed): the %s no longer reads the injury of a boy who has left', got));
     END LOOP;
+    FOREACH got IN ARRAY ARRAY['office', 'parent'] LOOP
+      PERFORM _as((y->>got)::uuid);
+      SELECT count(*) INTO n FROM injury_review_masked WHERE id = (y->>'review')::uuid;
+      PERFORM _assert(n = 1, format('§91 (Q3 departed): the %s no longer reads the review of a boy who has left', got));
+    END LOOP;
     PERFORM _v116_move((y->>'d')::uuid, '16XI');
     PERFORM _as((y->>'physio')::uuid);
     SELECT count(*) INTO n FROM injury_masked WHERE id = (y->>'injury')::uuid;
     PERFORM _assert(n = 1, '§91 (Q3 departed): re-enrolment did not reopen the physio''s read');
+    SELECT count(*) INTO n FROM injury_review_masked WHERE id = (y->>'review')::uuid;
+    PERFORM _assert(n = 1, '§91 (Q3 departed): re-enrolment did not reopen the physio''s read of the review');
 
     -- (Q7 twelve)
     PERFORM _as((y->>'teen')::uuid);
@@ -26275,8 +26303,9 @@ $v49$;
     PERFORM _assert(n = 1, '§91 (Q13 scorer): the adult scorer lost the roster (the cut is a pupil''s alone)');
 
     -- (A1 passport): who opens h's passport, and that no rating rides on it.
-    FOREACH got IN ARRAY ARRAY['parent:t', 'office:t', 'coach:t', 'wescoach:t',
-                               'teen:f', 'coach15:f', 'wesparent:f', 'wesdso:f', 'dso:f', 'scorer:f', 'pupil:f'] LOOP
+    FOREACH got IN ARRAY ARRAY['parent:t', 'office:t', 'head:t', 'coach:t', 'wescoach:t',
+                               'teen:f', 'young:f', 'coach15:f', 'physio:f', 'wesparent:f', 'wesdso:f', 'dso:f',
+                               'scorer:f', 'pupil:f'] LOOP
       PERFORM _as((y->>split_part(got, ':', 1))::uuid);
       PERFORM _assert(passport_open((y->>'h')::uuid) = (split_part(got, ':', 2) = 't'),
         format('§91 (A1 passport): passport_open() for the %s is %s', split_part(got, ':', 1), passport_open((y->>'h')::uuid)));
@@ -26291,9 +26320,12 @@ $v49$;
     PERFORM _assert(n = 0, format('§91 (A1 passport): %s rating line(s), or the assessing coach, on the passport', n));
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                                  WHERE p.oid IN ('passport(uuid)'::regprocedure, 'passport_name(uuid)'::regprocedure,
-                                                 'passport_open(uuid)'::regprocedure, 'trip_contacts(uuid)'::regprocedure)
+                                                 'passport_open(uuid)'::regprocedure, 'trip_contacts(uuid)'::regprocedure,
+                                                 'scouting_candidates()'::regprocedure)
                                    AND x.grantee = 0 AND x.privilege_type = 'EXECUTE'),
-      '§91 (A1 passport): a passport door or trip_contacts() is still PUBLIC''s');
+      '§91 (A5): a passport door, trip_contacts() or scouting_candidates() is still PUBLIC''s');
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'scouting_candidates()', 'EXECUTE'),
+      '§91 (A5): the application lost scouting_candidates()');
 
     -- (Q14, Q15, Q16)
     PERFORM _as(U_SELF);

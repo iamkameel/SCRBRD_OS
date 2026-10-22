@@ -60,7 +60,8 @@ export function asChildLink(r) {
     createdBy: r.created_by_name ?? null, createdAt: day(r.created_at),
     live: r.live === true,
     endingKind: r.ending_kind ?? null, endingOn: day(r.ending_on), endedBy: r.ended_by_name ?? null,
-    // Only to guardian.link.manage, or audit.read without the DSO's standing (D13).
+    // Only to guardian.link.manage (D13; READERS_child_data Q2, db/116: no
+    // auditor reads the office's reason).
     endingReason: r.ending_reason ?? null,
     regState: r.standing ?? null, isMinor: r.is_minor === true,
     liveLinks: Number(r.live_links ?? 0), consentedLinks: Number(r.consented_links ?? 0),

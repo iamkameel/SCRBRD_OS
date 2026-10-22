@@ -16,6 +16,10 @@
 --                                     the requester and scoring.amend.approve
 --         role_assignment_ending_read why a role was ended: user.role.assign
 --         account_status_change_read  why an account was disabled: user.invite
+--         guardian_link_ending_read   why a parent's link was ended (db/109):
+--                                     guardian.link.manage, the act's own
+--                                     capability; the director of sport and
+--                                     every other audit.read holder lose it
 --         school_register_rows()      the staff register: user.role.assign
 --       Checked and KEPT, each the log itself and carrying no reason about a
 --       person: access_log (the log), scoring_audit (who held the pen; no free
@@ -25,7 +29,7 @@
 --       the scorebook importer's audit (SCRBRD-120 §4.5: the card and its
 --       revisions, a scorecard and who typed it, never a page).
 --   Q3  A departed pupil's clinical record (§3): a RESTRICTIVE cut on
---       `injury`, false for a pupil who has left the row's school unless the
+--       `injury` and on its reviews (`injury_review`, db/111), false for a pupil who has left the row's school unless the
 --       reader is the office (player.profile.manage, school-wide) or reaches
 --       him through a live guardian or self link. A re-enrolment (an open
 --       membership at that school) reopens the physio's read on the next
@@ -74,8 +78,8 @@
 --       the office at his school, and the office or a coach at a school his
 --       family named — never a team-mate, a pupil, a parent or anybody else
 --       who merely holds player.profile.read; and passport(), passport_name(),
---       passport_open() and trip_contacts() are the application's to call,
---       not PUBLIC's (A5).
+--       passport_open(), trip_contacts() and scouting_candidates() are the
+--       application's to call, not PUBLIC's (A5).
 --
 --   Q4, Q9: no code (the code stands). Q14: no route serves a pupil the log
 --   (selfaccess holds no audit.read; separation.test.mjs holds it). Q15: the
@@ -98,8 +102,11 @@ BEGIN
      OR to_regprocedure('person_is_pupil(uuid)') IS NULL
      OR to_regprocedure('competition_organiser(uuid)') IS NULL
      OR to_regclass('account_status_change') IS NULL
-     OR to_regclass('role_assignment_ending') IS NULL THEN
-    RAISE EXCEPTION 'db/116: db/47, db/57, db/61, db/62, db/77, db/89, db/90 or db/92 is missing; apply them first';
+     OR to_regclass('role_assignment_ending') IS NULL
+     OR to_regclass('guardian_link_ending') IS NULL
+     OR to_regclass('injury_review') IS NULL
+     OR to_regprocedure('scouting_candidates()') IS NULL THEN
+    RAISE EXCEPTION 'db/116: db/08, db/47, db/57, db/61, db/62, db/77, db/89, db/90, db/92, db/109 or db/111 is missing; apply them first';
   END IF;
 END $needs$;
 
@@ -174,6 +181,22 @@ CREATE POLICY account_status_change_read ON account_status_change
                 '00000000-0000-0000-0000-000000000000'::uuid)
   );
 
+-- guardian_link_ending: db/109's, without its audit.read arm. READERS Q2
+-- names revocation reasons among the reasons that stay with their act: the
+-- office's words about a family (a custody order, a family that left) are
+-- guardian.link.manage's, the capability that wrote them. db/109 already kept
+-- the DSO out; now the director of sport and every other auditor are out
+-- too. Its RESTRICTIVE platform cut and its pad guard are db/109's and stay.
+-- The log (audit_log()) lists no link ending at all: it never did.
+DROP POLICY IF EXISTS guardian_link_ending_read ON guardian_link_ending;
+CREATE POLICY guardian_link_ending_read ON guardian_link_ending
+  FOR SELECT USING (
+    coalesce(guardian_id <> app_user_id(), false)
+    AND app_can('guardian.link.manage', school_id, '*'::text,
+                '00000000-0000-0000-0000-000000000000'::uuid,
+                '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
 -- school_register_rows(): db/92's, without the auditor's door (SCRBRD-140
 -- P2-D14, "Changed 21 Oct 2026": user.role.assign at the school, through
 -- functions; never the claimant, a pad or the public). Everything else is
@@ -243,6 +266,18 @@ CREATE POLICY injury_departed_cut ON injury AS RESTRICTIVE
     OR app_can('player.profile.manage', injury.school_id, NULL::text,
                '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
     OR reader_linked_to(injury.player_id)
+  );
+
+-- The physio's reviews of that injury (db/111): the same cut, row for row.
+-- His injury_worklist() already leaves a departed boy off (D11); this keeps
+-- the reviews themselves, and the clinical note on each, with the injury.
+DROP POLICY IF EXISTS injury_review_departed_cut ON injury_review;
+CREATE POLICY injury_review_departed_cut ON injury_review AS RESTRICTIVE
+  FOR SELECT USING (
+    NOT player_departed_from(injury_review.player_id, injury_review.school_id)
+    OR app_can('player.profile.manage', injury_review.school_id, NULL::text,
+               '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+    OR reader_linked_to(injury_review.player_id)
   );
 
 
@@ -1157,11 +1192,16 @@ CREATE OR REPLACE FUNCTION passport_name(p_player uuid) RETURNS text AS $$
   SELECT full_name FROM player WHERE id = p_player AND passport_open(p_player)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- A5: the application's to call, not PUBLIC's.
+-- A5: the application's to call, not PUBLIC's. db/08 granted all five TO
+-- PUBLIC (db/41 kept trip_contacts()'s); each body asks app_can() or
+-- is_family_of(), which say no to nobody signed in, so this is defence in
+-- depth, as db/59 grants its public reads to scrbrd_app alone.
+-- scouting_candidates() is db/08's, unchanged but for who may call it.
 DO $passport_grants$
 DECLARE f text; r text;
 BEGIN
-  FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)', 'passport_open(uuid)', 'trip_contacts(uuid)'] LOOP
+  FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)', 'passport_open(uuid)', 'trip_contacts(uuid)',
+                           'scouting_candidates()'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
@@ -1248,12 +1288,12 @@ BEGIN
   -- §3, §9: the RESTRICTIVE cuts.
   SELECT count(*) INTO n FROM pg_policies
    WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE' AND cmd = 'SELECT'
-     AND policyname IN ('injury_departed_cut', 'player_pupil_sheet_only', 'honour_pupil_standing_only',
+     AND policyname IN ('injury_departed_cut', 'injury_review_departed_cut', 'player_pupil_sheet_only', 'honour_pupil_standing_only',
                         'team_membership_pupil_standing_only', 'milestone_notice_pupil_standing_only',
                         'training_attendance_pupil_standing_only', 'equipment_issue_pupil_standing_only',
                         'passport_consent_pupil_standing_only', 'player_scouting_consent_pupil_standing_only');
-  IF n <> 9 THEN
-    RAISE EXCEPTION 'db/116: % of the nine RESTRICTIVE cuts are in place', n;
+  IF n <> 10 THEN
+    RAISE EXCEPTION 'db/116: % of the ten RESTRICTIVE cuts are in place', n;
   END IF;
 
   -- §5: the kind, the life, SG-9.
@@ -1275,7 +1315,8 @@ BEGIN
   IF (SELECT prosrc FROM pg_proc WHERE oid = 'passport_open(uuid)'::regprocedure) LIKE '%player.profile.read%' THEN
     RAISE EXCEPTION 'db/116: passport_open() still opens to player.profile.read';
   END IF;
-  FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)', 'passport_open(uuid)', 'trip_contacts(uuid)'] LOOP
+  FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)', 'passport_open(uuid)', 'trip_contacts(uuid)',
+                           'scouting_candidates()'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN

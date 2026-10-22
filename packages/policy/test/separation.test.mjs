@@ -532,7 +532,9 @@ group("READERS Q2  audit.read opens the access log, and no reason");
      naming.every((k) => ALLOWED.has(k)) && naming.includes("access_log.access_log_read"),
      naming.filter((k) => !ALLOWED.has(k)).join(" "));
   for (const k of ["scoring_amendment.scoring_amendment_read", "role_assignment_ending.role_assignment_ending_read",
-                   "account_status_change.account_status_change_read"])
+                   "account_status_change.account_status_change_read",
+                   // db/109's revocation reasons, re-written by db/116 (Q2 names them).
+                   "guardian_link_ending.guardian_link_ending_read"])
     ok(`...${k} is still there, and reads its reason under the act's own capability`,
        live.has(k) && !/'audit\.read'/.test(live.get(k) ?? ""));
   ok("...and the staff register's door asks user.role.assign alone",

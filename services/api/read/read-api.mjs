@@ -462,7 +462,9 @@ export const READ_QUERIES = {
    * parent, a coach and the DSO (who holds neither: SAFEGUARDING §1 item 2;
    * she reads a family through safeguarding_family(), inside a concern) get
    * nothing. `ending_reason` comes through guardian_link_ending's own policy
-   * (D13): guardian.link.manage, or audit.read without safeguarding.concern.read.
+   * (D13): guardian.link.manage alone since db/116 (READERS_child_data Q2:
+   * audit.read opens the access log and no reason). A reader who holds
+   * user.role.assign and not that reads the link revoked, with no ending.
    *
    * NEVER PLATFORM-WIDE (Kameel, 15 October 2026): a platform-wide holder
    * (the platform administrator, the owner's key) reads a child's links only
