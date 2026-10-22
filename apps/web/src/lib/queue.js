@@ -26,6 +26,9 @@
  *                     and one door; a failed read is a row that says so.
  *   officeReader() / officeRows()   the office list O1, O2, O3 (O6 is a tap).
  *   groupByDay() / headerOf()       date then team; the header's three numbers.
+ *   resultsReader() / resultRows()  OFFICIAL_RESULT (db/114): the results the
+ *                     reader may confirm or settle (R1 to confirm, R2 blocked,
+ *                     R3 under review), from GET /api/results/to-confirm.
  *
  * What it never says (design §5): no child's name, no medical, safeguarding or
  * disciplinary detail, and no "done", "ready" or percentage. Counts and the
@@ -277,7 +280,61 @@ export const entersQueue = (role) => !SUBJECT_SCOPED_ROLES.includes(role) && rol
  */
 export function isQueueReader(assignments) {
   return (assignments ?? []).some((/** @type {any} */ a) => !!a?.role && !!a.school && !a.fixture && (a.subjects?.length ?? 0) === 0
-    && (entersQueue(a.role) || OFFICE_CAPS.some((c) => roleGrants(a.role, c))));
+    && (entersQueue(a.role) || OFFICE_CAPS.some((c) => roleGrants(a.role, c))))
+    || resultsReader(assignments);
+}
+
+/**
+ * Does this person stand behind results (OFFICIAL_RESULT §3: the organiser's
+ * home, the director's To-resolve)? One assignment granting result.confirm
+ * that names no person and no single fixture — a league's organiser may be
+ * appointed with no school at all. Layout, not authority: the read is
+ * decided again by db/114's results_to_confirm().
+ * @param {Parameters<typeof cockpitGate>[0]} assignments
+ */
+export function resultsReader(assignments) {
+  return (assignments ?? []).some((/** @type {any} */ a) => !!a?.role && !a.fixture && (a.subjects?.length ?? 0) === 0
+    && roleGrants(a.role, "result.confirm"));
+}
+
+/** What a blocked result waits on, said on its row (D6). */
+const RESULT_BLOCK = Object.freeze({
+  innings_unsealed: "an innings is not sealed by the scorer",
+  amendment_pending: "a correction is awaiting approval",
+  ball_held: "a late ball is held for a decision",
+  you_wrote_this_log: "your hand is on its scorecard, so somebody else confirms it",
+});
+
+/**
+ * The results rows: one per match, oldest first, each with its door to the
+ * fixture. Counts and sides only — no child, no note, no person (§5).
+ * `rows` is the read's answer, `null` a read that failed.
+ * @param {{rows: any[] | null, now: number, error?: string | null}} o
+ * @returns {{rows: Row[], unread: Row[], open: number, failed: number}}
+ */
+export function resultRows({ rows, now, error = null }) {
+  if (rows == null) {
+    return { rows: [], unread: [unreadRow("results:read", "results", "the results to confirm", error)], open: 0, failed: 1 };
+  }
+  /** @type {Row[]} */
+  const out = rows.map((r) => {
+    const sides = `${r.home} v ${r.away}`;
+    const at = Date.parse(r.startsAt);
+    const ago = Number.isFinite(at) ? ageWords(at, now) : null;
+    if (r.kind === "review") {
+      const closes = r.windowClosesAt ? Date.parse(r.windowClosesAt) : null;
+      return mk({ id: `result:${r.matchId}`, rule: "R3", count: 1, fact: `Under review · ${sides}`,
+        source: "the results to confirm", owner: r.competitionId ? "the organiser" : "the school",
+        deadline: closes != null ? { clock: "record", at: closes, due: closes < now, words: `${closes < now ? "window closed" : "window closes"} ${dayWords(closes)}` } : null,
+        action: { kind: "result", label: "Settle it", matchId: r.matchId } });
+    }
+    const waits = r.kind === "blocked" ? RESULT_BLOCK[/** @type {keyof typeof RESULT_BLOCK} */ (r.blockedBy)] ?? "not yet confirmable" : null;
+    return mk({ id: `result:${r.matchId}`, rule: r.kind === "blocked" ? "R2" : "R1", count: 1,
+      fact: `Result to confirm · ${sides}${waits ? ` · ${waits}` : ""}`,
+      source: "the results to confirm", owner: "you", age: ago ? `played ${ago === "today" ? "today" : `${ago} ago`}` : null,
+      action: { kind: "result", label: r.kind === "blocked" ? "Open the fixture" : "Confirm", matchId: r.matchId } });
+  });
+  return { rows: out, unread: [], open: out.length, failed: 0 };
 }
 
 /**

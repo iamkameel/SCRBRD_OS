@@ -58,6 +58,22 @@ export const CONTRACT = Object.freeze({
 });
 
 /**
+ * D1's `fixture`: "a fixture published, moved, cancelled, or a round decided"
+ * — and, since OFFICIAL_RESULT (db/114, §3 "notices"), a result made official
+ * or reopened. No new kind and no new CHECK: these are the words
+ * result_official_notices() writes, to each side's team scope under
+ * fixture.read, naming no child, no person and no reason. `official` is low
+ * and is retracted `superseded`, saying nothing, when the result reopens;
+ * `reopened` (a correction, a decision, a status change, the confirmer's
+ * withdrawal) is medium and is the one thing said.
+ */
+export const RESULT_NOTICES = Object.freeze({
+  official: Object.freeze({ urgency: "low", title: "Official result · ", says: "was confirmed at " }),
+  reopened: Object.freeze({ urgency: "medium", title: "Result reopened · ", says: "is no longer official: ",
+                            ends: "It will be confirmed again." }),
+});
+
+/**
  * D4: a notice a person wrote is about nobody, for nobody, never high, and
  * read with news.read alone. The publish route's lock (S0) and the trigger
  * say the same thing.

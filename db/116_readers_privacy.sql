@@ -5,7 +5,7 @@
 -- HAND-WRITTEN. docs/design/READERS_child_data.md §7, "Decisions" (Q1–Q16),
 -- decided by Kameel on 21 October 2026, each recorded as a dated "Changed 21
 -- Oct 2026" line in the design it changes. This file builds the ones that
--- need SQL. Its proof is db/99 §91; packages/policy/test/separation.test.mjs
+-- need SQL. Its proof is db/99 §92; packages/policy/test/separation.test.mjs
 -- holds the model half.
 --
 -- WHAT CHANGES, by decision

@@ -18,7 +18,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { KINDS, SUBJECT_KINDS, RETRACTION_KINDS, CONTRACT, NOTICE_URGENCY, isTiered } from "../src/notifications.mjs";
+import { KINDS, SUBJECT_KINDS, RETRACTION_KINDS, CONTRACT, NOTICE_URGENCY, RESULT_NOTICES, isTiered } from "../src/notifications.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const DB = process.env.SCRBRD_DB_DIR ?? join(ROOT, "db");
@@ -145,6 +145,25 @@ ok("news.read is not tiered; anything else is",
    && isTiered({ tiered: true }) && !isTiered({ tiered: false, required_capability: "x" }));
 ok("the view holds a tiered row's body back",
    /CASE WHEN n\.required_capability = 'news\.read' THEN n\.body END AS body/.test(SQL));
+
+// ═══════════════════════════════════════════════════════════════════
+group("OFFICIAL_RESULT: the fixture kind's words for a result (db/114)");
+// ═══════════════════════════════════════════════════════════════════
+{
+  const R = readFileSync(join(DB, "114_official_result.sql"), "utf8");
+  const body = R.slice(R.indexOf("CREATE OR REPLACE FUNCTION result_official_notices"),
+                       R.indexOf("REVOKE ALL ON FUNCTION result_official_notices"));
+  ok("the result notices are a fixture kind's, retracted superseded as D2 says", body.length > 0
+     && /'fixture', v_urg/.test(body) && CONTRACT.fixture.retract.includes("superseded")
+     && /notification_retract\(v, 'superseded', false\)/.test(R));
+  for (const [what, w] of Object.entries(RESULT_NOTICES)) {
+    ok(`${what}: "${w.title}…" at ${w.urgency}, in db/114's words`,
+       body.includes(`'${w.title}'`) && body.includes(w.says) && (!("ends" in w) || body.includes(String(w.ends)))
+       && new RegExp(`v_urg := '${w.urgency}'`).test(body));
+  }
+  ok("...to each side's team scope under fixture.read, naming no child",
+     /'team', 'fixture', v_urg, v_title, v_body, 'fixture\.read'/.test(body) && !/subject_person_id/.test(body));
+}
 
 // ═══════════════════════════════════════════════════════════════════
 group("The checks can fail");

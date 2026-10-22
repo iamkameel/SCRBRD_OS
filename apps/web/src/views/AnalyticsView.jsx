@@ -12,6 +12,7 @@ import { usePlayersWithCareer, useLive } from "../lib/live.js";
 import { Metric, MetricGroup, dash } from "../ui/data.jsx";
 import { heldTeams } from "../lib/held.js";
 import { pickTeam, teamsOf } from "../lib/teamContext.js";
+import { Compare } from "./compare.jsx";
 
 // ══════════════════════════════════════════════════════
 //  ANALYTICS VIEW  — upgraded
@@ -60,13 +61,13 @@ function AnalyticsView({ role }) {
             }}>{t}</button>
           ))}
         </div>
-        <div style={{display:"flex",gap:"6px",marginLeft:"auto"}}>
-          {["performance","phases","h2h","matchups","table"].map(v=>(
-            <button key={v} onClick={()=>setSubView(v)} className="pressBtn" style={{
-              padding:"6px 14px",borderRadius:D.pill,cursor:"pointer",
+        <div role="group" aria-label="View" style={{display:"flex",gap:"6px",marginLeft:"auto",flexWrap:"wrap"}}>
+          {["performance","phases","h2h","matchups","compare","table"].map(v=>(
+            <button key={v} onClick={()=>setSubView(v)} className="pressBtn" aria-pressed={subView===v} data-testid={`analytics-view-${v}`} style={{
+              minHeight:"44px",padding:"6px 14px",borderRadius:D.pill,cursor:"pointer",
               border:`1px solid ${subView===v?D.indigo+"55":D.border}`,
               background:subView===v?D.indigo+"14":"transparent",
-              fontFamily:D.body,fontSize:"11px",fontWeight:subView===v?600:400,
+              fontFamily:D.body,fontSize:"12px",fontWeight:subView===v?600:400,
               color:subView===v?D.textPrimary:D.textMuted,textTransform:"capitalize",
             }}>{v==="h2h"?"Head-to-Head":v==="matchups"?"Match-ups":v.charAt(0).toUpperCase()+v.slice(1)}</button>
           ))}
@@ -118,6 +119,10 @@ function AnalyticsView({ role }) {
 
       {/* Keyed by the side: a batter picked for one side is not carried to another. */}
       {subView==="matchups"&&<Matchups key={teamFilter??"none"} role={role}/>}
+
+      {/* GA-I24-I25 S1: two players side by side, under analytics.read (D13).
+          Its own picker, over the players this reader holds Compare for. */}
+      {subView==="compare"&&<Compare role={role}/>}
 
       {subView==="table"&&(
         <Card>

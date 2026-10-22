@@ -356,6 +356,14 @@ export const CAPABILITIES = {
   // competition_discipline_records() for the records that arose from its own
   // competition's fixtures, every read logged, and no table policy names it.
   "competition.discipline.read": "Read the disciplinary records arising from your own competition's fixtures",
+  // STANDING BEHIND A RESULT (OFFICIAL_RESULT, db/114): confirming a finished
+  // match's result, so that it reads "Official result", disputing a
+  // confirmation within its window, and clearing a dispute. One name for the
+  // three acts; db/114's row checks decide which act a holder may do on which
+  // match — the organiser for a competition fixture (D2), the home school's
+  // director of sport or principal for a friendly (D3) — and the confirmer is
+  // never a hand on the log (D5): held by nobody who files a correction.
+  "result.confirm":              "Confirm a finished match's result as official, or dispute one",
 
   // ── Publishing ──
   "news.read":                   "Read news and headlines",
@@ -601,6 +609,9 @@ export const LEVEL = Object.freeze({
   "competition.conditions.manage": 1,
   // A conduct record about a named child, as discipline.read is.
   "competition.discipline.read": 3,
+  // A result names sides, never a boy (db/114); a dispute's note is the
+  // sensitive part, and it is read through its function alone.
+  "result.confirm": 1,
 
   // ── Publishing ──
   "news.read": 0, "news.publish.team": 1, "news.publish.school": 1,
