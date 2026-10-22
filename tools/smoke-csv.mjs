@@ -133,15 +133,12 @@ try {
     ok("THE COACH'S FILE HAS NO ADDRESS IN IT", !asCoach.includes("14 Ridge Road"));
     ok("...and no identity number", !asCoach.includes("1104075800085"));
     ok("...but does have the roster they may see", /Pillay|Botha/.test(asCoach));
-    // A module switched off closes the export too, because it closes the read.
-    await api("/api/admin/modules/training/suppress", { method: "POST", token: office,
-      body: { schoolId: HIL, hidden: true, reason: "CSV walk." } });
-    const off = await exportRaw("training", coach);
-    ok("a switched-off module refuses its export",
-       off.status === 403 && (await off.json().catch(() => null))?.error === "module_disabled");
-    await api("/api/admin/modules/training/suppress", { method: "POST", token: office,
-      body: { schoolId: HIL, hidden: false } });
-    ok("...and serves it again once back on", (await exportRaw("training", coach)).status === 200);
+    // A module's read is not a file at all: the training calendar is read on
+    // its screen, and refused as a file whether its module is on or off.
+    const cal = await exportRaw("training", coach);
+    ok("the training calendar does not leave as a file",
+       cal.status === 403 && (await cal.json().catch(() => null))?.error === "not_exported");
+    ok("...though the coach reads it on the screen", (await api("/api/read/training", { token: coach })).status === 200);
   }
 
   group("A restricted read is logged, whether it is a screen or a file");
@@ -159,7 +156,7 @@ try {
   group("A child's health, conduct, family and figures never leave as a file");
   {
     // packages/policy/src/exports.mjs: only the roster (without its masked
-    // columns), the fixtures, the league table and the training calendar
+    // columns) and the fixtures
     // leave. Each of these is read on its screen by the reader asked here,
     // and refused as a file, before anything is read.
     const dso = await login("dso@example.invalid");
@@ -176,8 +173,8 @@ try {
       ok(`${r} is refused as a file to ${who}`, e.status === 403 && body?.error === "not_exported");
     }
     ok("...refused before the read, so nothing was read to refuse it", (await logged()) === before);
-    ok("the fixtures and the league table still leave", (await exportRaw("matches", coach)).status === 200
-       && (await exportRaw("league", coach)).status === 200);
+    ok("the fixtures still leave", (await exportRaw("matches", coach)).status === 200);
+    ok("...and the league table does not", (await exportRaw("league", coach)).status === 403);
   }
 
   group("A cell is a program, and the file must be safe to open");
@@ -491,7 +488,7 @@ try {
     // The scouting list: a family's consent, withdrawn at any time.
     ok("the scouting list does not leave as a file", (await exportRaw("scouting_candidates", scout)).status === 403);
 
-    // Nothing else moved: the roster and the training calendar still export.
+    // Nothing else moved: the roster still exports.
     ok("the office's roster still exports", (await exportRaw("players", office)).status === 200);
     ok("...and the coach's own", (await exportRaw("players", coach)).status === 200);
     await api("/api/admin/features/opposition", { method: "POST", token: platform,

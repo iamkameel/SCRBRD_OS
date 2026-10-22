@@ -10,9 +10,9 @@
  * TWO LISTS, HELD APART BY A TEST (packages/policy/test/exports.test.mjs and
  * services/api/read/read.test.mjs):
  *
- *   EXPORTABLE  the short list of reads the office needs as a file: the
- *               roster without its masked columns, the fixtures, the league
- *               table and the training calendar. Nothing else leaves.
+ *   EXPORTABLE  the two reads the office needs as a file: the roster
+ *               without its masked columns, and the fixtures. Nothing else
+ *               leaves.
  *   notExported the reads that must never leave, DERIVED rather than listed:
  *                 - every read whose watched columns (the API's
  *                   RESTRICTED_FIELDS) are not all dropped from its file;
@@ -27,9 +27,11 @@
  * restricted column, or starts reading a sensitive table, fails a test
  * instead of quietly leaving as a file.
  *
- * Health and conduct records never leave as a file. Whether any of them ever
- * may (a physio's list, a disciplinary register for a hearing) is Kameel's to
- * decide; until then the answer built here is none.
+ * No health or conduct record ever leaves as a file (Kameel, 22 October
+ * 2026): injuries and their reviews, discipline, emergency and trip
+ * contacts, consents, scouting consent, a child's links, availability and
+ * its reasons, workload and breaches. The roster and the fixtures are the
+ * only files.
  */
 import { LEVEL } from "./capabilities.mjs";
 import { TABLES, maskedColumns, isCapabilityExpression } from "./tables.mjs";
@@ -50,8 +52,6 @@ const PLAYER_MASKED = Object.freeze(
 export const EXPORTABLE = Object.freeze({
   players:  Object.freeze({ drop: PLAYER_MASKED }),
   matches:  Object.freeze({ drop: Object.freeze([]) }),
-  league:   Object.freeze({ drop: Object.freeze([]) }),
-  training: Object.freeze({ drop: Object.freeze([]) }),
 });
 
 /**

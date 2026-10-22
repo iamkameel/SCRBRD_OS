@@ -24,8 +24,8 @@ const group = (/** @type {string} */ t) => console.log("\n" + t);
 group("The two lists are apart");
 {
   const allowed = Object.keys(EXPORTABLE);
-  ok("the allowlist is the roster, the fixtures, the league table and the training calendar",
-     allowed.sort().join() === "league,matches,players,training", allowed);
+  ok("the allowlist is the roster and the fixtures, and nothing else",
+     allowed.sort().join() === "matches,players", allowed);
   ok("nothing named is on the allowlist", NAMED_NOT_EXPORTED.every((r) => !allowed.includes(r)));
   ok("the health, conduct and family reads are named or derived, never allowed",
      ["injuries", "disciplinary_records", "emergency_contacts", "child_links", "bowling_breaches", "availability"]
@@ -73,7 +73,8 @@ group("Reading the tables out of a query");
 group("The door");
 {
   const refused = notExported({ restricted: {}, tablesRead: {} });
-  ok("an allowlisted read leaves", exportAllowed("players", refused) && exportAllowed("training", refused));
+  ok("an allowlisted read leaves", exportAllowed("players", refused) && exportAllowed("matches", refused));
+  ok("the league table and the training calendar do not", !exportAllowed("league", refused) && !exportAllowed("training", refused));
   ok("a named read does not", !exportAllowed("career", refused));
   ok("a read on neither list does not either", !exportAllowed("honours", refused));
   ok("a prototype name is not a read", !exportAllowed("constructor", refused) && !exportAllowed("__proto__", refused));

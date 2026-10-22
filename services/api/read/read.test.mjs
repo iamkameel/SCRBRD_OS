@@ -393,7 +393,7 @@ group("A. Exports follow the policy's two lists (packages/policy/src/exports.mjs
     ok(`${r} is a read`, Object.hasOwn(READ_QUERIES, r));
     ok(`${r} is not on the refused list`, !NOT_EXPORTED.has(r));
   }
-  ok("the allowlist is short", Object.keys(EXPORTABLE).sort().join() === "league,matches,players,training");
+  ok("the allowlist is short", Object.keys(EXPORTABLE).sort().join() === "matches,players");
   // Derived: watched columns, level-2 tables, and the named reads.
   for (const r of ["injuries", "injury_reviews", "injury_worklist", "disciplinary_records", "emergency_contacts",
                    "trip_contacts", "child_links", "users", "accounts", "clearances"])

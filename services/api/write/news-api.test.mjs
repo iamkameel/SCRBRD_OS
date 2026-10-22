@@ -9,6 +9,7 @@
  * "high" reaches no connection, the one it accepts is the one it inserts,
  * and a withdrawal asks the function, with the post's id and nothing else.
  * db/99 §70 and tools/smoke-push.mjs walk the rest against a real database.
+ * Group E: a post naming a pupil by his surname or first name alone (db/118).
  *
  * And the coach's plan (SCRBRD-138 phase B, db/96; group C): its shape, the
  * 1 000 limit, its words as the gate at publish and at send — a hit returns
@@ -28,6 +29,7 @@
  */
 import { newsRoutes, URGENCY, KINDS, PLAN_BODY_MAX } from "./news-api.mjs";
 import { signToken } from "../auth/auth.mjs";
+import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
 /** @param {string} n @param {unknown} c @param {string} [d] what was seen, on a failure */
@@ -392,6 +394,37 @@ group("D. Changing and throwing away an unsent plan (db/110, Kameel 15 Oct)");
   ok("...and nobody signed in is 403", d4.r.status === 403 && d4.r.body?.error === "not_permitted");
   const badDiscard = await call(routes.discard, undefined, { authorization: BEARER }, { id: "nope" });
   ok("an id that is no uuid is no draft, before any connection", badDiscard.status === 404 && untouchable.touched === false);
+}
+
+group("E. The home page refuses a post naming a pupil by any part of his name (db/83, db/118)");
+{
+  // The scan is SQL (news_public_names(), db/118; db/99 §62 and §91 run it
+  // against the seeded pupils). Here: the scan reads every part of a name,
+  // and the route says the refusal as a count, never a name.
+  const sql = readFileSync(new URL("../../../db/118_privacy_followups.sql", import.meta.url), "utf8");
+  const scan = sql.slice(sql.indexOf("CREATE OR REPLACE FUNCTION news_public_names"), sql.indexOf("REVOKE ALL ON FUNCTION news_public_names"));
+  ok("the scan reads the full name, the known-as and the stored surname", /ARRAY\[p\.full_name, p\.known_as, p\.surname\]/.test(scan));
+  ok("...and every word of the full name of three letters or more", /regexp_split_to_table\(btrim\(coalesce\(p\.full_name/.test(scan)
+     && /\[\^\[:alpha:\]\]', '', 'g'\)\) >= 3/.test(scan));
+  ok("...whole-word and case-blind", /~\*/.test(scan) && /\(\^\|\[\^\[:alnum:\]\]\)/.test(scan));
+  for (const [what, _body] of [["a surname alone", "PILLAY bowled beautifully on Saturday."],
+                              ["a first name alone", "Well batted, james: the first of the season."]]) {
+    /** @type {string[]} */
+    const asked = [];
+    const pool = { async connect() { return { async query(/** @type {string} */ q) {
+      asked.push(q);
+      if (q.includes("news_public_approve(")) return { rows: [{ ok: false, reason: "names_pupils", names: 1 }] };
+      return { rows: [{}] };
+    }, release() {} }; } };
+    /** @type {any[]} */
+    const changed = [];
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET, onChange: (n) => changed.push(n) }).public_approve,
+                         undefined, { authorization: BEARER }, { id: POST });
+    ok(`a post naming a pupil by ${what} is refused 422 names_pupils, with a count`,
+       r.status === 422 && r.body?.error === "names_pupils" && r.body?.count === 1, JSON.stringify(r.body));
+    ok("...and the answer carries no name", !/pillay|james/i.test(JSON.stringify(r.body)));
+    ok("...and the public cache is not told", changed.length === 0);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
