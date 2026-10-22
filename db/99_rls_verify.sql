@@ -23570,8 +23570,13 @@ $v49$;
   --   (literal)   for every person holding an assignment and every staged or
   --               seed fixture, fixture_reach() under fixture.read and
   --               transport.read equals §2.5's text spelled out over every
-  --               boy on the side and sheet (_v106_lit_fixture), and
-  --               side_reach() under team.read equals it on every side
+  --               boy on the side and sheet, and side_reach() under
+  --               team.read equals it on every side. Since db/117 (SR-2) the
+  --               text is §2.10's, "the boy's side on the fixture's day",
+  --               spelled with side_on() (_v117_lit_fixture, _v117_lit_side);
+  --               db/106's spelling, the side now (_v106_lit_fixture), is
+  --               kept and §91 (literal) asserts it answers apart for a
+  --               moved boy's family (design §8.2)
   --   (agree)     §6.1 proof 1: for every person and every fixture with a
   --               ball, ball_event_read (db/100) admits exactly the fixtures
   --               match_read does, which (shape) holds to fixture_reach();
@@ -23738,11 +23743,11 @@ $v49$;
       PERFORM _as(u);
       SELECT string_agg(format('%s/%s', x.f, x.cap), ' ') INTO bad
         FROM (SELECT f0 AS f, c.cap FROM unnest(FX || _v106_seed_matches()) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
-       WHERE fixture_reach(x.cap, x.f) IS DISTINCT FROM _v106_lit_fixture(x.cap, x.f);
+       WHERE fixture_reach(x.cap, x.f) IS DISTINCT FROM _v117_lit_fixture(x.cap, x.f);
       PERFORM _assert(bad IS NULL, format('§83 (literal): for %s fixture_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(format('%s/%s', s.school, s.team), ' ') INTO bad
         FROM _v106_sides() s
-       WHERE side_reach('team.read', s.school, s.team, ZERO) IS DISTINCT FROM _v106_lit_side('team.read', s.school, s.team, ZERO);
+       WHERE side_reach('team.read', s.school, s.team, ZERO) IS DISTINCT FROM _v117_lit_side('team.read', s.school, s.team, ZERO, sa_today());
       PERFORM _assert(bad IS NULL, format('§83 (literal): for %s side_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
     END LOOP;
 
@@ -23825,9 +23830,9 @@ $v49$;
                                AND (coalesce(t.driver_id = app_user_id(), false) OR NOT trip_fixture_driver_only(t.match_id)));
       PERFORM _assert(bad IS NULL, format('§83 (shape): for %s trip_read and fixture_end_reach() answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(coalesce(_v106_label(z, t.id), t.id::text), ' ') INTO bad
-        FROM _v106_sessions() t
+        FROM _v117_sessions() t   -- since db/117, on the session's own day
        WHERE EXISTS (SELECT 1 FROM training_session v WHERE v.id = t.id)
-             IS DISTINCT FROM side_reach('team.read', t.school_id, t.team_code, ZERO);
+             IS DISTINCT FROM side_reach_on('team.read', t.school_id, t.team_code, ZERO, t.day);
       PERFORM _assert(bad IS NULL, format('§83 (shape): for %s training_session_read and side_reach() answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(coalesce(_v106_label(z, x), x::text), ' ') INTO bad
         FROM unnest(_v106_toss_matches()) x
