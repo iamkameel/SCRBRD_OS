@@ -6809,6 +6809,108 @@ CREATE OR REPLACE FUNCTION _v114_fact(p_match uuid) RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/114 (section 91) ─────────────────────────────────────────────
 
+-- ┌── db/119 (section 98). is_family_of() reads a live link, never on a pad
+-- Invented, as the owner; every name is a placeholder. Boy F on Hilton's
+-- 16XI with his own `player` role and self-access link. His guardians, one
+-- each: `live`; `ended` (her assignment's valid_until today, so ended);
+-- `expired` (her assignment's expires_at passed); `early` (her link begins
+-- tomorrow); `linkend` (her link's valid_until today: db/62's close). `mum`,
+-- a physio at Hilton (`medical`) with a live guardian link to F. A school X
+-- with nobody at it. One passport consent F → Westville, and F's scouting
+-- decision (granted).
+CREATE OR REPLACE FUNCTION _v119_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  X uuid; F uuid; v_a uuid; ids jsonb; k text;
+BEGIN
+  INSERT INTO school (code, name, kind, province) VALUES ('V119X', 'Verify OneNineteen College', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO X;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '16XI', 'Verify OneNineteen Fam', 1191, 'batter', U15) RETURNING id INTO F;
+  ids := _v71_people('v119', ARRAY[
+    ARRAY['live',    'guardian', HIL::text, '',     ''],
+    ARRAY['ended',   'guardian', HIL::text, '',     ''],
+    ARRAY['expired', 'guardian', HIL::text, '',     ''],
+    ARRAY['early',   'guardian', HIL::text, '',     ''],
+    ARRAY['linkend', 'guardian', HIL::text, '',     ''],
+    ARRAY['fboy',    'player',   HIL::text, '16XI', F::text],
+    ARRAY['mum',     'medical',  HIL::text, '',     '']]);
+  FOREACH k IN ARRAY ARRAY['live', 'ended', 'expired', 'early', 'linkend', 'mum'] LOOP
+    PERFORM _v100_link((ids->>k)::uuid, HIL, F);
+  END LOOP;
+  UPDATE role_assignment SET valid_until = current_date
+   WHERE person_id = (ids->>'ended')::uuid AND role = 'guardian';
+  UPDATE role_assignment SET expires_at = now() - interval '1 second'
+   WHERE person_id = (ids->>'expired')::uuid AND role = 'guardian';
+  UPDATE assignment_subject s SET valid_from = current_date + 1
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = (ids->>'early')::uuid AND s.player_id = F;
+  UPDATE assignment_subject s SET valid_until = current_date
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = (ids->>'linkend')::uuid AND s.player_id = F;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'fboy')::uuid, 'selfaccess', HIL)
+  RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, F, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES (F, WES);
+  INSERT INTO player_scouting_consent (player_id, consent_state) VALUES (F, 'granted');
+  RETURN ids || jsonb_build_object('F', F, 'X', X);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The mother-physio's link to F ends today, as db/62's close ends one.
+CREATE OR REPLACE FUNCTION _v119_end_link(p_person uuid, p_player uuid) RETURNS void AS $$
+  UPDATE assignment_subject s SET valid_until = current_date
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- F's passport consents as the owner reads them: school, '(w)' when withdrawn.
+CREATE OR REPLACE FUNCTION _v119_owner_passport(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t), '') FROM (
+    SELECT CASE c.to_school_id WHEN '22222222-2222-2222-2222-222222222222'::uuid THEN 'WES'
+                               WHEN (y->>'X')::uuid THEN 'X' ELSE '?' END
+           || CASE WHEN c.withdrawn_at IS NOT NULL THEN '(w)' ELSE '' END AS t
+      FROM passport_consent c WHERE c.player_id = (y->>'F')::uuid) s
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The same, as the CALLER reads it under his own row security (an invoker).
+CREATE OR REPLACE FUNCTION _v119_passport(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t), '') FROM (
+    SELECT CASE c.to_school_id WHEN '22222222-2222-2222-2222-222222222222'::uuid THEN 'WES'
+                               WHEN (y->>'X')::uuid THEN 'X' ELSE '?' END
+           || CASE WHEN c.withdrawn_at IS NOT NULL THEN '(w)' ELSE '' END AS t
+      FROM passport_consent c WHERE c.player_id = (y->>'F')::uuid) s
+$$ LANGUAGE sql STABLE;
+
+-- F's scouting decision as the caller reads it ('' when he reads none).
+CREATE OR REPLACE FUNCTION _v119_scouting(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(c.consent_state, ','), '') FROM player_scouting_consent c WHERE c.player_id = (y->>'F')::uuid
+$$ LANGUAGE sql STABLE;
+
+-- The caller names school X for F; 'written' or 'refused'.
+CREATE OR REPLACE FUNCTION _v119_name_x(y jsonb) RETURNS text AS $$
+BEGIN
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'F')::uuid, (y->>'X')::uuid);
+  RETURN 'written';
+EXCEPTION WHEN insufficient_privilege THEN RETURN 'refused';
+END $$ LANGUAGE plpgsql;
+
+-- The caller withdraws F's consent naming p_school: how many rows moved.
+CREATE OR REPLACE FUNCTION _v119_withdraw(y jsonb, p_school uuid) RETURNS int AS $$
+DECLARE n int;
+BEGIN
+  UPDATE passport_consent SET withdrawn_at = now()
+   WHERE player_id = (y->>'F')::uuid AND to_school_id = p_school AND withdrawn_at IS NULL;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+EXCEPTION WHEN insufficient_privilege THEN RETURN -1;
+END $$ LANGUAGE plpgsql;
+-- └── db/119 (section 98) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -26440,6 +26542,135 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 91
   -- └── db/114 (section 91) ──────────────────────────────────────────
+  -- ┌── db/119 (section 98) ──────────────────────────────────────────
+  -- ── 98. His family means a link live today (db/119) ──
+  -- The Opus review of #176: is_family_of() read no date and no pad scope.
+  -- Staged by _v119_stage(); every read and write is the caller's own, under
+  -- row security (_v119_passport(), _v119_scouting(), _v119_name_x(),
+  -- _v119_withdraw()). Holds with or without db/115: Westville's consent is
+  -- read by nobody at Hilton through the policies' other terms, and the
+  -- scouting read's other terms are app_can(), which reads the same dates.
+  --
+  -- What each label holds:
+  --   (live)     a live guardian and the boy (self-access) are his family:
+  --              each reads his passport consent and scouting decision; the
+  --              guardian names school X for him and the boy withdraws it
+  --   (ended)    a guardian whose assignment's valid_until is today, one whose
+  --              expires_at has passed, and one whose link ended today (db/62)
+  --              are nobody's family: each reads neither table's row, names no
+  --              school (refused) and withdraws nothing (no row moves)
+  --   (early)    a guardian whose link begins tomorrow: the same
+  --   (pad)      on a pad's credential the live guardian and the boy are
+  --              nobody's family: no read, no write; off the pad, both again
+  --   (physio)   db/111's refusal: the physio who is F's mother may not
+  --              record his injury on her live link, nor once it has ended
+  --              (is_family_of() then says no; injury_writer_is_family() still
+  --              says yes), nor on a pad (not_permitted, and the family test
+  --              still yes)
+  --   (grants)   is_family_of() a pinned, stable definer; EXECUTE for
+  --              scrbrd_app and not PUBLIC, nor anon or authenticated where
+  --              they exist
+  --
+  -- Falsified, each change made as the owner to is_family_of() before this
+  -- section ran (the section alone, cut from this file, on 22 Oct 2026), each
+  -- red at its label:
+  --   no a.valid_until test        → (ended): ended is the boy's family
+  --   no a.expires_at test         → (ended): expired is the boy's family
+  --   no s.valid_until test        → (ended): linkend is the boy's family
+  --   no s.valid_from test         → (early): early is the boy's family
+  --   no NOT app_pad_scoped()      → (pad): the live guardian is the boy's
+  --                                   family on a pad
+  --   injury_writer_is_family() as → (physio): the mother-physio recorded her
+  --     is_family_of() alone          son's injury once her link had ended
+  --   GRANT EXECUTE ... TO PUBLIC  → (grants)
+  DECLARE
+    y    jsonb := _v119_stage();
+    F    uuid;
+    who  text;
+    T    date := sa_today();
+    v_ok boolean;
+    v_reason text;
+    v_f  oid := to_regprocedure('is_family_of(uuid)');
+  BEGIN
+    F := (y->>'F')::uuid;
+    PERFORM _assert(_v119_owner_passport(y) = 'WES', format('§98: staged consents read [%s]', _v119_owner_passport(y)));
+
+    -- (live)
+    FOREACH who IN ARRAY ARRAY['live', 'fboy'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(is_family_of(F), format('§98 (live): %s is not the boy''s family', who));
+      PERFORM _assert(_v119_passport(y) = 'WES' AND _v119_scouting(y) = 'granted',
+        format('§98 (live): %s reads [%s] and [%s]', who, _v119_passport(y), _v119_scouting(y)));
+    END LOOP;
+    PERFORM _as((y->>'live')::uuid);
+    PERFORM _assert(_v119_name_x(y) = 'written', '§98 (live): the live guardian could not name school X');
+    PERFORM _as((y->>'fboy')::uuid);
+    PERFORM _assert(_v119_withdraw(y, (y->>'X')::uuid) = 1, '§98 (live): the boy could not withdraw school X');
+    PERFORM _assert(_v119_owner_passport(y) = 'WES,X(w)', format('§98 (live): the owner reads [%s]', _v119_owner_passport(y)));
+
+    -- (ended), (early)
+    FOREACH who IN ARRAY ARRAY['ended', 'expired', 'linkend', 'early'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(NOT is_family_of(F),
+        format('§98 (%s): %s is the boy''s family', CASE who WHEN 'early' THEN 'early' ELSE 'ended' END, who));
+      PERFORM _assert(_v119_passport(y) = '' AND _v119_scouting(y) = '',
+        format('§98 (%s): %s reads [%s] and [%s]', CASE who WHEN 'early' THEN 'early' ELSE 'ended' END,
+               who, _v119_passport(y), _v119_scouting(y)));
+      PERFORM _assert(_v119_name_x(y) = 'refused',
+        format('§98 (%s): %s named school X for the boy', CASE who WHEN 'early' THEN 'early' ELSE 'ended' END, who));
+      PERFORM _assert(_v119_withdraw(y, '22222222-2222-2222-2222-222222222222'::uuid) = 0,
+        format('§98 (%s): %s withdrew the boy''s consent', CASE who WHEN 'early' THEN 'early' ELSE 'ended' END, who));
+    END LOOP;
+    PERFORM _assert(_v119_owner_passport(y) = 'WES,X(w)', format('§98 (ended): the owner reads [%s]', _v119_owner_passport(y)));
+
+    -- (pad)
+    FOREACH who IN ARRAY ARRAY['live', 'fboy'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM set_config('app.scope', 'pad', true);
+      PERFORM _assert(NOT is_family_of(F), format('§98 (pad): %s is the boy''s family on a pad', who));
+      PERFORM _assert(_v119_passport(y) = '' AND _v119_scouting(y) = '',
+        format('§98 (pad): %s on a pad reads [%s] and [%s]', who, _v119_passport(y), _v119_scouting(y)));
+      PERFORM _assert(_v119_name_x(y) = 'refused', format('§98 (pad): %s on a pad named school X', who));
+      PERFORM _assert(_v119_withdraw(y, '22222222-2222-2222-2222-222222222222'::uuid) = 0,
+        format('§98 (pad): %s on a pad withdrew the boy''s consent', who));
+      PERFORM set_config('app.scope', '', true);
+      PERFORM _assert(is_family_of(F) AND _v119_passport(y) = 'WES,X(w)',
+        format('§98 (pad): off the pad %s reads [%s]', who, _v119_passport(y)));
+    END LOOP;
+
+    -- (physio)
+    PERFORM _as((y->>'mum')::uuid);
+    PERFORM _assert(is_family_of(F) AND injury_writer_is_family(F), '§98 (physio): the mother-physio''s live link is not family');
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(F, 'Shin splints', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§98 (physio): on her live link the mother-physio recorded her son''s injury (%s / %s)', v_ok, v_reason));
+    PERFORM _v119_end_link((y->>'mum')::uuid, F);
+    PERFORM _assert(NOT is_family_of(F), '§98 (physio): the mother-physio''s ended link is still is_family_of()');
+    PERFORM _assert(injury_writer_is_family(F), '§98 (physio): injury_writer_is_family() let her ended link go');
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(F, 'Shin splints', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§98 (physio): on her ended link the mother-physio recorded her son''s injury (%s / %s)', v_ok, v_reason));
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM _assert(injury_writer_is_family(F), '§98 (physio): on a pad injury_writer_is_family() says she is not his mother');
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(F, 'Shin splints', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§98 (physio): on a pad the mother-physio''s record was answered %s / %s', v_ok, v_reason));
+    PERFORM set_config('app.scope', '', true);
+
+    -- (grants)
+    PERFORM _assert((SELECT p.prosecdef AND p.provolatile = 's'
+                            AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
+                       FROM pg_proc p WHERE p.oid = v_f),
+      '§98 (grants): is_family_of() is not a pinned, stable definer');
+    PERFORM _assert(has_function_privilege('scrbrd_app', v_f, 'EXECUTE')
+                    AND NOT has_function_privilege('public', v_f, 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname IN ('anon', 'authenticated')
+                                       AND has_function_privilege(r.oid, v_f, 'EXECUTE')),
+      '§98 (grants): is_family_of() is not scrbrd_app''s alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 98
+  -- └── db/119 (section 98) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
