@@ -1184,6 +1184,10 @@ const ADAPT = {
   users: asUser,
   // Every account, disabled ones included: People's read (account lifecycle D5).
   accounts: asUser,
+  // A child's guardian links, every state, for the office (db/109, D12). The
+  // rows as the server sends them: views/familylinks.jsx maps them with
+  // lib/familyLinks.js asChildLink(), which stays out of the entry chunk.
+  child_links: (r) => r,
   grounds: asGround,
   training: asTraining,
   training_attendance: asAttendance,

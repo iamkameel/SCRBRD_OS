@@ -1499,6 +1499,59 @@ API needs nothing new from it: a refusal comes back as `team_required`, which
 the request, enrolment and register routes already answer in words.
 <!-- ── end db/108 ── -->
 
+<!-- ── db/109: account lifecycle slice 3, a child's links ── -->
+#### A child's links, and the reason for an ending (account lifecycle slice 3, db/109)
+
+`db/109_guardian_link_ending.sql` is slice 3 of `docs/design/ACCOUNT_LIFECYCLE.md`
+(§4; D11–D14, Q8, Q10, Q13). Every ending of a guardian link is now recorded in
+a new table, `guardian_link_ending`, with a kind and, when a person ended it,
+the reason: the office revoking one (`custody`, `family_left`, `guardian_asked`,
+`office`, with a reason of ten characters or more), a guardian role ended
+(`role_ended`, the role's reason), or the boy leaving school (`majority` when
+his parents keep the link until his birthday, `left_school` when he left as an
+adult; no reason, no actor). The office and its auditors read it; the guardian
+never does, and the DSO reads only the kind and the date, inside an open
+concern. **Nobody reads it platform-wide** (Kameel, 15 October 2026): the
+platform administrator and the owner's key read a child's links and the ending
+reasons only inside a live support session at that school (db/22), as the role
+the session lent them, and the read is logged under the session. The same
+holds for ending one: a platform-wide caller is refused `not_permitted` by
+`guardian_link_revoke()` unless a support session is live at that school. The guardian is told in one notice: "Your link to a child at {school}
+ended on {date}. The school office can say why; the platform does not." Never
+the child's name, never the reason. What a revoked link takes with it is the
+existing rules', unchanged: his name off public pages until another guardian
+answers (db/47), the health consent through it (db/60), her lift seats (db/70).
+
+New routes: `POST /api/players/:id/guardians/:link/revoke { kind, reason }`, and
+the office's read `GET /api/read/child_links?playerId=…` (every link of a child,
+in every state; `user.role.assign` or `guardian.link.manage` at the school,
+never platform-wide outside a support session there; every read logged). The old `POST /api/players/:id/guardians/revoke
+{ guardianId, note }` still works, now through the new door (kind `office`
+unless one is sent; the note is the reason, so it needs ten characters).
+Squad → a pupil → Edit Profile gains a Family links panel.
+
+**What it does to a live database.** Adds the table, its indexes, its read
+policy and a RESTRICTIVE one (`guardian_link_ending_not_platform`), three functions (`guardian_link_revoke(uuid, text, text)`,
+`guardian_link_ending_notice_is_mine(uuid)`, the trigger function
+`role_assignment_ending_links()`), one trigger on `role_assignment_ending`, and
+a notification read policy (`notification_link_ended`). Re-emits db/62's
+`guardian_links_close_on_leaving()` and `guardian_links_reopen_at_school()` and
+db/57's `safeguarding_family()`, each md5-guarded against the body in place.
+**Takes EXECUTE on db/08's `guardian_link_revoke(uuid, uuid, text)`** from
+`PUBLIC`, the application and a managed host's API roles: the function stays
+(nothing is dropped), but only the owner can call it. No row is inserted,
+changed or deleted; links revoked or dated out before the paste have no ending
+row and read "no reason recorded". A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 109` (after 103, and after 104–108 if
+they have shipped; the bundle names the one it needs first), then the verify
+bundle (§86 is its proof; the summary row "A link's ending is the office's to
+read" should read OK). **Schema first**: the API built with it refuses to start
+without db/109 (`expected-migrations.json`). Between the paste and that API,
+the old API's revoke answers "not permitted" and changes nothing; everything
+else works.
+<!-- ── end db/109 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh
