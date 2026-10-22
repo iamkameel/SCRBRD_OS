@@ -4001,6 +4001,8 @@ The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/
 
 **Built: G2, par and pressure, merged #88 (2026-10-08), with db/88.**
 
+**Partly done 2026-10-22 (design):** `docs/design/BROADCAST_3D_plan.md` (Fable): what the 3D project offers, and a 3D view in phases B1–B4 after the flat wheel (B0); its six questions decided 22 Oct, as recommended (#191).
+
 Kameel: the app should be "dynamic, data-rich, informative, immersive, interesting and visually stimulating". The build order is confirmed. Fable designs first, in `docs/design/SCRBRD-133_immersive_match_centre.md`; Fable's list gained this topic with Kameel's say.
 
 1. **Ground display mode:** the pavilion screen.
@@ -4077,6 +4079,8 @@ beta-2's Intelligence drawer has five fixed cards, among them "+18% win equity",
 **Partly done 2026-10-15:** Captain's plan screens (SCRBRD-138 phase B, B5–B7): write, read, report and withdraw the plan (#152).
 
 **Partly done 2026-10-15:** db/103: the plan names its author to the side; a fixture's plan read past the 100-post cap (#158).
+
+**Partly done 2026-10-22:** db/110: the coach's draft plan, with change, delete and send again (#165).
 
 **Decided (Kameel, 2026-10-02):** D1–D11 as the design recommends. Phase A (the view over reads that exist, no migration) first; phase B (the coach's plan to the side) after.
 
