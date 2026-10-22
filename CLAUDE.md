@@ -85,6 +85,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   so it does not spend its budget exploring. Kameel may allow two at once for
   a day (he did on 2026-10-07: account lifecycle beside recognition).
 - Reviewing another agent's work stays with Opus.
+- **A read-only audit when Kameel asks** (added 2026-10-21, Kameel): beside
+  design, Fable may audit code it is given a reading list for, such as a
+  red-team of everything that reaches a child's data. It writes a findings
+  document; it does not fix, build, run tests or search beyond the list.
+  Opus fixes from the findings. One audit at a time, on Kameel's say each time.
 
 ### Opus 5.5 (`model: "opus"`) — where a mistake is expensive or silent
 
@@ -167,6 +172,49 @@ see a limit coming, so the rule is a cadence, not a trigger:
   is down (`pg_ctlcluster 16 main start`), resume each stopped agent with a
   message rather than starting it afresh, and re-read the board before
   anything else.
+
+## Pacing to the usage window
+
+Added 2026-10-22 (Kameel), after two limits in one night stopped every agent
+and the restarts burned more tokens re-reading than the work cost: manage the
+spend so a limit is not hit, rather than recovering after it.
+
+**Measure against the plan's own limits** (Kameel, 22 Oct). The plan has a
+five-hour window and a weekly window. Subagents draw on the same allowance as
+the lead. Claude Code sends both windows to the status line as `rate_limits`:
+percent used and reset time. The project's status line
+(`tools/claude/statusline.mjs`) saves them to
+`~/.claude/scrbrd-usage/rate-limits.json` and shows them as "5h 42% · wk 31%".
+`node tools/claude/usage.mjs --plan` prints them with the pacing step they
+call for. Switch the status line on in `.claude/settings.local.json` (a
+`statusLine` running `node tools/claude/statusline.mjs`, `refreshInterval` 60)
+so it refreshes while the lead waits on agents. Only if no figure has been
+recorded, pace by tokens instead: `usage.mjs --since <window start>`. A window
+lasted two to three hours at five to seven agents, about 220k to 460k output.
+
+- **Default load: three builders at once** (two Opus and one Sonnet), plus Haiku
+  for maps and records. More only on Kameel's say, for a named window.
+- **Measure at every hourly sweep** and before starting any agent
+  (`usage.mjs --plan`). Put the five-hour and weekly percentages and the reset
+  time on the Build Board's headline.
+- **Five-hour window at 50%:** start nothing new; let running agents finish
+  their current step.
+- **At 75%, at Claude Code's own 85% warning, or in a window's last hour:**
+  every running agent commits and pushes, and the lowest-priority ones pause
+  with a three-line note of where they stopped. One Opus at most keeps going.
+  Say so to Kameel in one line.
+- **Weekly window at 80%:** tell Kameel, and run at most two builders until it
+  resets. A weekly limit stops everything for days, not hours.
+- **One Fable agent costs a window's margin on its own:** start one only early in
+  a window, and nothing else heavy beside it.
+- **After a limit or a restart,** don't relaunch everything at the reset. Resume
+  by message where the agent still exists, which is far cheaper than a fresh
+  agent. A fresh agent gets a brief that names its branch's last commit and
+  what is left, so it doesn't re-read what is done. Start at most two in the
+  first hour after a reset.
+- **Don't burn on waiting:** no agent watches CI in a loop or idles on a lock.
+  CI is checked at the sweep, and a builder whose proof is queued on the
+  database lock stops and reports, rather than waiting.
 
 ## Design skills
 

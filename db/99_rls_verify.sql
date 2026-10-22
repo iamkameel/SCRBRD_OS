@@ -11207,8 +11207,9 @@ BEGIN
     -- make a reader "staff" for D11's words, and answers false under pad scope
     -- before it asks anything (NOT app_pad_scoped()); nobody's to call.
     -- ball_event_payload_seen (db/118): a payload handed in, answered back
-    -- with a retirement's reason masked unless the caller holds fixture.read
-    -- at the batter's school, asked with the event's own match as the
+    -- with a retirement's or a bowler change's reason masked unless the
+    -- caller holds fixture.read
+    -- at that boy's school, asked with the event's own match as the
     -- fixture. Under pad scope app_can() answers only the credential's own
     -- match; it can only return the payload it was given, or less.
     PERFORM _assert(detail = 'ball_event_payload_seen,competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
@@ -26475,6 +26476,9 @@ $v49$;
   --             reader with no fixture.read at the retiring boy's school,
   --             and as written to one with it; a retired-out keeps its
   --             reason; a typed name is at no school; nothing else moves
+  --   (bowler)  a bowler change keeps its reason for a reader with
+  --             fixture.read at the bowler's school, and loses it (the
+  --             change itself kept) for the other school and a typed name
   --   (doors)   the two definers are the application's and not PUBLIC's
   --
   -- Falsified once each, by replacing a function in the database and
@@ -26523,32 +26527,47 @@ $v49$;
     -- (retire)
     v_pay := jsonb_build_object('batter', P_PILLAY, 'reason', 'hurt');
     PERFORM _as(U_WCOACH);
-    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, v_pay)->>'reason' = 'not out',
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'not out',
       '§92 (retire): Westville''s coach read a Hilton boy retired hurt');
-    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, v_pay)->>'batter' = P_PILLAY::text,
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'batter' = P_PILLAY::text,
       '§92 (retire): the batter moved');
-    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', 'W', jsonb_build_object('batter', P_PILLAY, 'reason', 'out'))->>'reason' = 'out',
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', 'W', NULL, jsonb_build_object('batter', P_PILLAY, 'reason', 'out'))->>'reason' = 'out',
       '§92 (retire): a retired-out lost its reason');
-    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, jsonb_build_object('batter', P_WES, 'reason', 'hurt'))->>'reason' = 'hurt',
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, jsonb_build_object('batter', P_WES, 'reason', 'hurt'))->>'reason' = 'hurt',
       '§92 (retire): Westville''s coach lost his own boy''s reason');
-    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'ball', NULL, jsonb_build_object('reason', 'injury')) = jsonb_build_object('reason', 'injury'),
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'ball', NULL, NULL, jsonb_build_object('reason', 'injury')) = jsonb_build_object('reason', 'injury'),
       '§92 (retire): a payload that is not a retirement moved');
+    -- (bowler) A Hilton bowler replaced mid-over because he is injured: the
+    -- change reaches Westville, the reason does not; Westville's own bowler's
+    -- reason reaches Westville.
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury')) ? 'reason'),
+      '§92 (bowler): Westville''s coach read why a Hilton bowler was replaced');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
+      '§92 (bowler): Westville''s coach lost why his own bowler was replaced');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', P_PILLAY::text, 'reason', 'suspended')) ? 'reason'),
+      '§92 (bowler): a Hilton bowler named in the payload carried his reason to Westville');
     PERFORM _as(U_C2_91);
-    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, v_pay)->>'reason' = 'hurt',
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
       '§92 (retire): Hilton''s coach lost his own boy''s reason');
-    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, jsonb_build_object('batter', 'A Typed Name', 'reason', 'hurt'))->>'reason' = 'not out',
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, jsonb_build_object('batter', 'A Typed Name', 'reason', 'hurt'))->>'reason' = 'not out',
       '§92 (retire): a typed name read as hurt');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
+      '§92 (bowler): Hilton''s coach lost why his own bowler was replaced');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury')) ? 'reason'),
+      '§92 (bowler): Hilton''s coach read why a Westville bowler was replaced');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', 'A Typed Bowler', 'reason', 'injury')) ? 'reason'),
+      '§92 (bowler): a typed bowler''s reason reached a reader');
     -- The office at his school. His own guardian is walked in smoke-cockpit
     -- (group 7); earlier sections here change that guardian's link.
     PERFORM _as(U_REGISTRAR);
-    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, v_pay)->>'reason' = 'hurt',
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
       '§92 (retire): the office at his school lost the reason');
 
     -- (doors)
     PERFORM _assert(NOT has_function_privilege('public', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
-                    AND NOT has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,jsonb)'::regprocedure, 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE')
                     AND has_function_privilege('scrbrd_app', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
-                    AND has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,jsonb)'::regprocedure, 'EXECUTE'),
+                    AND has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE'),
       '§92 (doors): the definers are not the application''s alone');
   END;
   PERFORM set_config('app.user_id', '', true);

@@ -587,12 +587,13 @@ export const EVENT_COLUMNS = `
 /**
  * EVENT_COLUMNS with the payload as this reader may have it (db/118): a
  * retirement that is not a dismissal reads "not out" to a reader outside the
- * retiring boy's school, as the public page says it. The fold reads both
+ * retiring boy's school, as the public page says it; a bowler change mid-over
+ * keeps its reason only for a reader at the bowler's school. The fold reads both
  * alike. The handover's rebuild (session-routes.mjs) reads EVENT_COLUMNS: it
  * is the scorer's.
  */
 export const EVENT_COLUMNS_SEEN = EVENT_COLUMNS.replace(
-  /\bpayload\b/, "ball_event_payload_seen(match_id, kind, ball_type, payload) as payload");
+  /\bpayload\b/, "ball_event_payload_seen(match_id, kind, ball_type, bowler_id, payload) as payload");
 
 /**
  * A ball_event row as EVENT_COLUMNS reads it, through pg's default parsers:

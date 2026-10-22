@@ -516,6 +516,14 @@ try {
     await retire(2, AWAYBAT, "hurt");
     await retire(3, TYPED, "hurt");
     await retire(4, WHITFIELD, "out", true);
+    // Two bowlers replaced mid-over, injured: ours, then theirs (Kameel, 22 Oct).
+    const change = async (seq, bowler) => q(
+      `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                               client_seq, client_ts, kind, bowler_id, payload)
+       values ($1, $2, $3, 0, 1, $4, 'walk-cockpit', $5, $3, now(), 'bowler', $6, $7)`,
+      [RET, HIL, seq, SCORER, `ck-${++key}`, bowler, JSON.stringify({ reason: "injury" })]);
+    await change(5, QUICK);
+    await change(6, THEIRS);
     /** reason by seq, as this reader reads the log */
     const reasons = async (tok) => Object.fromEntries(((await log(tok, RET)) ?? []).map((e) => [e.seq, e.payload?.reason]));
     const ourCoach = await reasons(coach), theirCoach = await reasons(wes);
@@ -528,6 +536,14 @@ try {
     const fam = await reasons(awayParent), ourFam = await reasons(parent);
     ok("the Westville guardian reads our opener's as 'not out', his son's as hurt", fam[1] === "not out" && fam[2] === "hurt", fam);
     ok("our guardian reads our opener's as our school does", ourFam[1] === "hurt" && ourFam[2] === "not out", ourFam);
+    // A bowler change: who changed reaches both schools; why reaches only his own.
+    const changes = async (tok) => Object.fromEntries(((await log(tok, RET)) ?? []).filter((e) => e.kind === "bowler")
+      .map((e) => [e.seq, { bowler: e.bowler_id, reason: e.payload?.reason ?? null }]));
+    const cOurs = await changes(coach), cTheirs = await changes(wes);
+    ok("our coach reads why our bowler was replaced", cOurs[5]?.bowler === QUICK && cOurs[5]?.reason === "injury", cOurs);
+    ok("...and that theirs was replaced, not why", cOurs[6]?.bowler === THEIRS && cOurs[6]?.reason === null, cOurs);
+    ok("Westville's coach reads that our bowler was replaced, not why", cTheirs[5]?.bowler === QUICK && cTheirs[5]?.reason === null, cTheirs);
+    ok("...and why his own was", cTheirs[6]?.reason === "injury", cTheirs);
     const raw = JSON.stringify((await log(wes, RET)) ?? []);
     ok("...and the word 'hurt' rides on no Hilton boy's event the visitors read",
        !((await log(wes, RET)) ?? []).some((e) => e.payload?.batter === WHITFIELD && /hurt/.test(JSON.stringify(e))), raw.slice(0, 300));
