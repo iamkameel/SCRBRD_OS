@@ -24,6 +24,10 @@ export const NEVER_ON_THE_COCKPIT =
 export const FORBIDDEN_FIELDS = Object.freeze([
   "reason_kind", "reasonKind", "injury_type", "injuryType", "severity", "acwr", "ewma_ratio", "ewmaRatio",
   "open_flag", "openFlag", "monitored", "wellness",
+  // GA-I19 D5 (db/111): the physio's clock and a serious injury's mark never
+  // reach the cockpit or the queue; the coach reads status there, nothing more.
+  "next_review_on", "nextReviewOn", "emergency_services", "emergencyServices",
+  "phase_after", "phaseAfter", "review_reason", "reviewReason",
 ]);
 
 /**

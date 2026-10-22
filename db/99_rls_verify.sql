@@ -5122,6 +5122,178 @@ BEGIN
   RETURN ids || jsonb_build_object('boy', v_boy, 'n1', n1, 'n2', n2, 's1', s1, 'w1', w1);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/102 (section 79) ─────────────────────────────────────────────
+-- ┌── db/109 (section 86). Account lifecycle slice 3: a child's links, and the reason for an ending
+-- Written as the owner, the way the system's own definers write, each the
+-- one thing an assertion needs.
+--
+-- The stage: three Hilton boys (Boy, 15, U15A; Two, 14, U14A; Old, 19 and
+-- still at school, 1XI), the office, the director of sport, a coach, three
+-- guardians (Mum and Dad of Boy; Gran and Dad of Two; Aunt of Old) and
+-- Westville's office. Mum's links carry everything a revocation takes with
+-- it: a public-name "yes" and a health-monitoring "yes" given ten days ago
+-- through her link, and a seat she asked for on Dad's lift tomorrow. Boy has
+-- an emergency contact. The seed's DSO (N Dube) is the DSO, and an open
+-- concern names Boy.
+CREATE OR REPLACE FUNCTION _v109_link(p_person uuid, p_player uuid) RETURNS uuid AS $$
+DECLARE a uuid; l uuid;
+BEGIN
+  SELECT r.id INTO a FROM role_assignment r WHERE r.person_id = p_person AND r.role = 'guardian' AND r.active LIMIT 1;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now() - interval '20 days',
+          'granted', 'popia-2026-01', now() - interval '20 days', '88888888-0000-0000-0000-00000000000c', current_date - 30)
+  RETURNING id INTO l;
+  RETURN l;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v109_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  ids jsonb; v_boy uuid; v_two uuid; v_old uuid; l uuid; a uuid; v_m uuid; v_d uuid; v_o uuid; v_s uuid; v_c uuid; v_p uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15A', 'Verify OneOhNine Boy', 1091, 'batter', make_date(extract(year FROM sa_today())::int - 15, 3, 1))
+  RETURNING id INTO v_boy;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U14A', 'Verify OneOhNine Two', 1092, 'bowler', make_date(extract(year FROM sa_today())::int - 14, 3, 1))
+  RETURNING id INTO v_two;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneOhNine Old', 1093, 'batter', make_date(extract(year FROM sa_today())::int - 19, 3, 1))
+  RETURNING id INTO v_old;
+  ids := _v71_people('v109', ARRAY[
+    ARRAY['office',    'schooladmin',     HIL::text, '',     ''],
+    ARRAY['dos',       'directorofsport', HIL::text, '',     ''],
+    ARRAY['coach',     'coach',           HIL::text, 'U15A', ''],
+    ARRAY['mum',       'guardian',        HIL::text, '',     ''],
+    ARRAY['dad',       'guardian',        HIL::text, '',     ''],
+    ARRAY['gran',      'guardian',        HIL::text, '',     ''],
+    ARRAY['aunt',      'guardian',        HIL::text, '',     ''],
+    ARRAY['uncle',     'guardian',        HIL::text, '',     ''],
+    ARRAY['wesoffice', 'schooladmin',     WES::text, '',     '']]);
+  -- A platform administrator: one platform-wide assignment, no school.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v109.platform@example.invalid', 'V109 Platform', 'platformadmin') RETURNING id INTO v_p;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'platformadmin', NULL);
+  ids := ids || jsonb_build_object('platform', v_p);
+  -- An owner's key: a platform-wide superadmin, guardian.link.manage everywhere.
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v109.owner@example.invalid', 'V109 Owner', 'superadmin') RETURNING id INTO v_p;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_p, 'superadmin', NULL);
+  ids := ids || jsonb_build_object('owner', v_p);
+  ids := ids || jsonb_build_object('boy', v_boy, 'two', v_two, 'old', v_old,
+    'l_mum',  _v109_link((ids->>'mum')::uuid,  v_boy),
+    'l_dad',  _v109_link((ids->>'dad')::uuid,  v_boy),
+    'l_gran', _v109_link((ids->>'gran')::uuid, v_two),
+    'l_dad2', _v109_link((ids->>'dad')::uuid,  v_two),
+    'l_old',  _v109_link((ids->>'aunt')::uuid, v_old),
+    'l_uncle', _v109_link((ids->>'uncle')::uuid, v_two));
+  l := (ids->>'l_mum')::uuid;
+  SELECT g.assignment_id INTO a FROM assignment_subject g WHERE g.id = l;
+  -- What goes with her link (D14).
+  INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+  VALUES (v_boy, 'guardian', a, l, 'popia-2026-01', current_date - 10, OFFICE);
+  INSERT INTO health_monitoring_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+  VALUES (v_boy, 'guardian', a, l, 'v109', current_date - 10, OFFICE);
+  INSERT INTO emergency_contact (player_id, priority, name, relationship, phone)
+  VALUES (v_boy, 1, 'V109 Mum', 'mother', '+27 82 109 0001') RETURNING id INTO v_c;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', 'Verify OneOhNine XI', ((current_date + 3)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO v_m;
+  INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
+                                       insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
+  VALUES ((ids->>'dad')::uuid, HIL, 'Silver hatchback', 'V109 GP', 3, true, true, true, true, true, 1, current_date + 300)
+  RETURNING id INTO v_d;
+  INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at,
+                          fixture_starts_at)
+  VALUES (HIL, v_m, 'U15A', 'out', (ids->>'dad')::uuid, v_d, 3, 'school',
+          ((current_date + 3)::timestamp + time '07:30') AT TIME ZONE 'Africa/Johannesburg', now())
+  RETURNING id INTO v_o;
+  INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id,
+                         guardian_link_id, requested_by, state)
+  VALUES (v_o, HIL, v_m, 'U15A', 'out', v_boy, 'guardian', a, l, (ids->>'mum')::uuid, 'requested')
+  RETURNING id INTO v_s;
+  INSERT INTO safeguarding_concern (reference, tenant_id, school_id, about_kind, subject_player_id,
+                                    nature, certainty, account)
+  VALUES ('SG-V109-0109', HIL, HIL, 'child', v_boy, '{neglect}', 'suspicion', 'A concern raised for db/99 section 86 only.')
+  RETURNING id INTO v_c;
+  RETURN ids || jsonb_build_object('seat', v_s, 'concern', v_c);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- guardian_link_revoke() as the CALLER, its refusal as text ('ok' when it
+-- ended the link), or the SQLSTATE of whatever raised instead of answering.
+-- Not a definer.
+CREATE OR REPLACE FUNCTION _v109_revoke(p_link uuid, p_kind text, p_reason text) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  SELECT coalesce(o.reason, 'ok') INTO v FROM guardian_link_revoke(p_link, p_kind, p_reason) o;
+  RETURN v;
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+
+-- The ending row of one link, whole, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_ending(p_link uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(e) FROM guardian_link_ending e WHERE e.link_id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- One link, whole, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_link_row(p_link uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(g) FROM assignment_subject g WHERE g.id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A notice, whole, past RLS.
+CREATE OR REPLACE FUNCTION _v109_notice(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(n) FROM notification n WHERE n.id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Health consent, the one gate every health read asks (db/60), past RLS.
+CREATE OR REPLACE FUNCTION _v109_health(p_player uuid) RETURNS boolean AS $$
+  SELECT health_consent_live(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The public-name facts (db/47, db/62), as the public read path asks them.
+CREATE OR REPLACE FUNCTION _v109_facts(p_player uuid) RETURNS jsonb AS $$
+  SELECT public_name_facts(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy leaves the school system today (his open membership closes), or
+-- comes back (a new one opens), and db/62's deferred triggers are fired.
+CREATE OR REPLACE FUNCTION _v109_leave(p_player uuid) RETURNS void AS $$
+BEGIN
+  UPDATE team_membership SET left_on = current_date WHERE player_id = p_player AND left_on IS NULL;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_return(p_player uuid) RETURNS void AS $$
+BEGIN
+  INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
+  SELECT p.id, p.school_id, 'cricket', p.team_code, current_date, 'moved' FROM player p WHERE p.id = p_player;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
+  SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How many contacts a boy has, past RLS (D14: they stay).
+CREATE OR REPLACE FUNCTION _v109_contacts(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM emergency_contact WHERE player_id = p_player AND active
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The access log's child_links reads of one child, past RLS.
+CREATE OR REPLACE FUNCTION _v109_logged(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM access_log WHERE resource = 'child_links' AND p_player = ANY (record_ids)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Disable an account as the owner would (Q13), and its guardian role's id.
+CREATE OR REPLACE FUNCTION _v109_disable(p_user uuid) RETURNS void AS $$
+  UPDATE app_user SET active = false WHERE id = p_user
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_role(p_user uuid) RETURNS uuid AS $$
+  SELECT id FROM role_assignment WHERE person_id = p_user AND role = 'guardian' AND active LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A second role for a person (and its end), as the office's grant writes one.
+CREATE OR REPLACE FUNCTION _v109_grant(p_user uuid, p_role text) RETURNS uuid AS $$
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES (p_user, p_role, '11111111-1111-1111-1111-111111111111') RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v109_ungrant(p_id uuid) RETURNS void AS $$
+  UPDATE role_assignment SET active = false WHERE id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/109 (section 86) ─────────────────────────────────────────────
+
 -- ┌── db/103 (section 80). The plan's byline: who wrote the side's plan
 -- Its own sides, so §76's plans and readers do not meet it: Hilton's 10XI
 -- (the plan's side) and 11XI (another side), and Westville's 10XI. On 10XI:
@@ -5664,13 +5836,6 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v106_seed_matches() RETURNS uuid[] AS $$
   SELECT coalesce(array_agg(id), '{}') FROM match WHERE id::text LIKE '77777777-%'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- A fixture the reader reaches ONLY as the boy on its sheet (db/106 (e)):
--- not by the unnamed branch and not as anybody's guardian, as the owner.
-CREATE OR REPLACE FUNCTION _v106_self_only(p_match uuid) RETURNS boolean AS $$
-  SELECT _v106_self_sheet('fixture.read', p_match)
-     AND NOT coalesce(_v106_unnamed('fixture.read', p_match), false)
-     AND NOT (p_match = ANY (my_child_fixtures()))
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Take a boy off a sheet as a coach does (withdrawn), as the owner.
 CREATE OR REPLACE FUNCTION _v106_withdraw(p_match uuid, p_player uuid) RETURNS integer AS $$
@@ -5862,6 +6027,548 @@ CREATE OR REPLACE FUNCTION _v108_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
   END
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/108 (section 85) ─────────────────────────────────────────────
+-- ┌── db/110 (section 87). The coach's draft plan: changed, and thrown away
+-- Its own side, Hilton's 12XI, so no other section's plans meet it: its
+-- coach (the author), a second coach of the side, the team manager, a boy
+-- on it and his guardian (verified and consented). Two fixtures, 12XI at
+-- home to visitors SCRBRD does not host. As the owner; every name invented.
+CREATE OR REPLACE FUNCTION _v110_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  ids jsonb; v_p uuid; f1 uuid; f2 uuid; r record;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneTen Captain', 1101, 'batter', U15) RETURNING id INTO v_p;
+  ids := _v71_people('v110', ARRAY[
+    ARRAY['coach',    'coach',       HIL::text, '12XI', ''],
+    ARRAY['coach2',   'coach',       HIL::text, '12XI', ''],
+    ARRAY['manager',  'teammanager', HIL::text, '12XI', ''],
+    ARRAY['captain',  'player',      HIL::text, '12XI', v_p::text],
+    ARRAY['guardian', 'guardian',    HIL::text, '',     '']]);
+  FOR r IN SELECT a.id AS aid FROM role_assignment a WHERE a.person_id = (ids->>'guardian')::uuid LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, v_p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '12XI', 'Verify OneTen Visitors', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f1;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '12XI', 'Verify OneTen Second Visitors', ((sa_today() + 10)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f2;
+  RETURN ids || jsonb_build_object('f1', f1, 'f2', f2);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A plan's words changed through a door that is not db/12's update policy:
+-- as the owner, with whoever the session says is asking (app.user_id). What
+-- a later definer would be. Answers ok, or the constraint that refused.
+CREATE OR REPLACE FUNCTION _v110_door_edit(p_post uuid, p_body text) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  UPDATE news_post SET body = p_body WHERE id = p_post;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN coalesce(nullif(v_con, ''), SQLSTATE);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One post as the owner sees it: there or not, its words, and its date.
+CREATE OR REPLACE FUNCTION _v110_row(p_post uuid) RETURNS text AS $$
+  SELECT coalesce((SELECT concat_ws(' | ', n.kind, n.body, n.urgency, (n.published_at IS NOT NULL), (n.first_sent_at IS NOT NULL))
+                     FROM news_post n WHERE n.id = p_post), 'gone')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The words each sending of one post went out with, oldest first: its
+-- notices (not the "withdrawn" ones), each with whether it was retracted.
+CREATE OR REPLACE FUNCTION _v110_versions(p_post uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(x.body || CASE WHEN x.retracted_at IS NOT NULL THEN ' (retracted)' ELSE ' (live)' END,
+                             ' / ' ORDER BY x.published_at, (x.retracted_at IS NULL), x.id), '')
+    FROM notification x
+   WHERE x.kind = 'notice' AND x.subject_kind = 'news' AND x.subject_id = p_post AND x.retracts_id IS NULL
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/110 (section 87) ─────────────────────────────────────────────
+-- ┌── db/111 (section 88). The physio's injury record, its reviews and her worklist
+-- Its own sides, so no other section's injuries meet it: Hilton's 12XI (the
+-- boy, a team-mate, a boy whose mother is a physio, and a boy who leaves),
+-- Hilton's 20XI (another side), Westville's 12XI, and a boy rested for
+-- another reason. The school's staff
+-- each in one role: three physios (one a mother of a 12XI boy, one with a
+-- guardian claim on the boy still pending), the 12XI coach, assistant and
+-- manager, the 20XI coach, the director of sport, the principal, the office,
+-- the fitness coach, a scorer and a follower; a granted enquiry about the boy
+-- (the status tier alone); the boy's parent; the boy and his team-mate, each
+-- with his own self link; and Westville's physio. The seed's DSO, platform
+-- administrator and owner's key are used as they are. As the owner; every
+-- name is invented.
+CREATE OR REPLACE FUNCTION _v111_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  ids jsonb; v_boy uuid; v_mate uuid; v_rest uuid; v_own uuid; v_leaver uuid; v_side uuid; v_wes uuid; v_a uuid; r record;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Quick', 1111, 'bowler', U15) RETURNING id INTO v_boy;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Mate', 1112, 'batter', U15) RETURNING id INTO v_mate;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Physioson', 1113, 'batter', U15) RETURNING id INTO v_own;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Leaver', 1114, 'bowler', U15) RETURNING id INTO v_leaver;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '20XI', 'Verify OneEleven Otherside', 1115, 'bowler', U15) RETURNING id INTO v_side;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, '12XI', 'Verify OneEleven Westville', 1116, 'bowler', U15) RETURNING id INTO v_wes;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Rested', 1117, 'batter', U15) RETURNING id INTO v_rest;
+  ids := _v71_people('v111', ARRAY[
+    ARRAY['physio',     'medical',         HIL::text, '',     ''],
+    ARRAY['mumphysio',  'medical',         HIL::text, '',     ''],
+    ARRAY['claimphysio','medical',         HIL::text, '',     ''],
+    ARRAY['coach',      'coach',           HIL::text, '12XI', ''],
+    ARRAY['assistant',  'assistantcoach',  HIL::text, '12XI', ''],
+    ARRAY['manager',    'teammanager',     HIL::text, '12XI', ''],
+    ARRAY['coach20',    'coach',           HIL::text, '20XI', ''],
+    ARRAY['director',   'directorofsport', HIL::text, '',     ''],
+    ARRAY['principal',  'principal',       HIL::text, '',     ''],
+    ARRAY['office',     'schooladmin',     HIL::text, '',     ''],
+    ARRAY['fitness',    'fitness',         HIL::text, '',     ''],
+    ARRAY['scorer',     'scorer',          HIL::text, '',     ''],
+    ARRAY['follower',   'spectator',       HIL::text, '',     ''],
+    ARRAY['enquirer',   'enquiry',         HIL::text, '',     ''],
+    ARRAY['parent',     'guardian',        HIL::text, '',     ''],
+    ARRAY['boy',        'player',          HIL::text, '12XI', v_boy::text],
+    ARRAY['mate',       'player',          HIL::text, '12XI', v_mate::text],
+    ARRAY['wesphysio',  'medical',         WES::text, '',     '']]);
+  -- The links: the parent's to the boy, the enquiry's to the boy (verified);
+  -- the mother-physio's to her son (verified); the claiming physio's to the
+  -- boy (pending: the office has not checked it).
+  FOR r IN SELECT a.id AS aid, x.p, x.rel, x.state FROM role_assignment a,
+                  LATERAL (VALUES ((ids->>'parent')::uuid,   v_boy, 'parent', 'verified'),
+                                  ((ids->>'enquirer')::uuid, v_boy, 'enquiry', 'verified')) AS x(person, p, rel, state)
+            WHERE a.person_id = x.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, r.rel, r.state, OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'mumphysio')::uuid, 'guardian', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, v_own, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'claimphysio')::uuid, 'guardian', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, created_by, valid_from)
+  VALUES (v_a, v_boy, 'parent', 'pending', OFFICE, current_date - 1);
+  -- Each boy's own file, as the seed's pupil has his.
+  FOR r IN SELECT x.person, x.p FROM (VALUES ((ids->>'boy')::uuid, v_boy), ((ids->>'mate')::uuid, v_mate)) AS x(person, p) LOOP
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (r.person, 'selfaccess', HIL) RETURNING id INTO v_a;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (v_a, r.p, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  RETURN ids || jsonb_build_object('p_boy', v_boy, 'p_mate', v_mate, 'p_own', v_own, 'p_leaver', v_leaver,
+                                   'p_side', v_side, 'p_wes', v_wes, 'p_rest', v_rest);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One injury row as the owner reads it, past every mask.
+CREATE OR REPLACE FUNCTION _v111_injury(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(i) FROM injury i WHERE i.id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An injury's reviews, oldest first, as the owner reads them.
+CREATE OR REPLACE FUNCTION _v111_reviews(p_injury uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.reviewed_at, r.id), '[]') FROM injury_review r WHERE r.injury_id = p_injury
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v111_fitness(p_player uuid) RETURNS text AS $$
+  SELECT p.fitness FROM player p WHERE p.id = p_player
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v111_set_fitness(p_player uuid, p_fitness text) RETURNS void AS $$
+  UPDATE player SET fitness = p_fitness WHERE id = p_player
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The titles of the 'injury' notices about one injury, in title order (one
+-- transaction stamps them all with one now()).
+CREATE OR REPLACE FUNCTION _v111_notices(p_injury uuid) RETURNS text[] AS $$
+  SELECT coalesce(array_agg(n.title ORDER BY n.title), '{}')
+    FROM notification n WHERE n.kind = 'injury' AND n.subject_id = p_injury
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The safeguarding notices at a school, as the owner counts them.
+CREATE OR REPLACE FUNCTION _v111_sg_count(p_school uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM notification n WHERE n.kind = 'safeguarding' AND n.school_id = p_school
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An owner's edit of an injury, as a record already on file would be
+-- corrected: the clock moved for the worklist, or severity raised for SG-12.
+CREATE OR REPLACE FUNCTION _v111_edit(p_id uuid, p_next date, p_rtw date) RETURNS void AS $$
+  UPDATE injury SET next_review_on = p_next, rtw_date = p_rtw WHERE id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v111_serious(p_id uuid, p_severity text, p_emergency boolean) RETURNS void AS $$
+  UPDATE injury SET severity = p_severity, emergency_services = p_emergency WHERE id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A review an hour ahead of the clock, as a device with a bad clock would
+-- have written it (the owner's insert; the door refuses to follow it).
+CREATE OR REPLACE FUNCTION _v111_future_review(p_injury uuid) RETURNS void AS $$
+  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_at, reviewed_by, phase_after,
+                             restricted_after, rtw_date_after, next_review_on)
+  SELECT i.school_id, i.player_id, i.id, now() + interval '1 hour', i.recorded_by, i.phase, i.restricted,
+         i.rtw_date, i.next_review_on
+    FROM injury i WHERE i.id = p_injury
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A review naming one boy's injury and another boy: the key must refuse it,
+-- even to the owner. Returns the SQLSTATE, or 'none'.
+CREATE OR REPLACE FUNCTION _v111_mismatch(p_injury uuid, p_other uuid) RETURNS text AS $$
+BEGIN
+  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_by, phase_after, restricted_after, next_review_on)
+  SELECT i.school_id, p_other, i.id, i.recorded_by, 'rehab', true, sa_today() + 7 FROM injury i WHERE i.id = p_injury;
+  RETURN 'none';
+EXCEPTION WHEN OTHERS THEN RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy leaves the school today: his open membership closes.
+CREATE OR REPLACE FUNCTION _v111_leave(p_player uuid) RETURNS integer AS $$
+  WITH d AS (UPDATE team_membership SET left_on = sa_today() WHERE player_id = p_player AND left_on IS NULL RETURNING 1)
+  SELECT count(*)::int FROM d
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The Injuries module hidden from one person at Hilton, and shown again.
+CREATE OR REPLACE FUNCTION _v111_hide(p_person uuid, p_hide boolean) RETURNS void AS $$
+BEGIN
+  IF p_hide THEN
+    INSERT INTO feature_suppression (key, school_id, person_id, reason, hidden_by)
+    VALUES ('injuries', '11111111-1111-1111-1111-111111111111', p_person, 'v111: module off for this physio',
+            '88888888-0000-0000-0000-00000000000c');
+  ELSE
+    UPDATE feature_suppression SET lifted_at = now(), lifted_by = '88888888-0000-0000-0000-00000000000c'
+     WHERE key = 'injuries' AND person_id = p_person AND lifted_at IS NULL;
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An injury already serious when db/111 ran: severe, and no DSO stamp, as a
+-- row written before the trigger existed would be. The trigger is held off
+-- for this one insert, inside the rolled-back transaction.
+CREATE OR REPLACE FUNCTION _v111_legacy_severe(p_player uuid) RETURNS uuid AS $$
+DECLARE v_id uuid;
+BEGIN
+  ALTER TABLE injury DISABLE TRIGGER injury_serious_watch;
+  INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured, restricted)
+  SELECT p.school_id, p.id, 'Old fracture', 'severe', sa_today() - 30, true FROM player p WHERE p.id = p_player
+  RETURNING id INTO v_id;
+  ALTER TABLE injury ENABLE TRIGGER injury_serious_watch;
+  RETURN v_id;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- injury_retention_due() is the database's own (not the application's).
+CREATE OR REPLACE FUNCTION _v111_due(p_player uuid) RETURNS date AS $$ SELECT injury_retention_due(p_player) $$
+  LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/111 (section 88) ─────────────────────────────────────────────
+
+-- ┌── db/112 (section 89). A moved pupil follows his new side; the boy playing up reads his match's balls
+-- Its own sides, so no other section's rows meet it: Hilton's U14E (the side
+-- the boys start on), U15E (the side the movers go to) and U16E (the older
+-- side one boy plays up into, home at Hilton twice and away at Westville
+-- once). The boys, each with his own account (app_user.player_id) holding a
+-- `player` role on U14E, as the office grants one:
+--   mb   the mover, who also holds self-access naming himself (as R Pillay
+--        does), and whose mother (g) is linked to him
+--   sb   a mover whose account names him only through a verified self-access
+--        link (no app_user.player_id)
+--   nb   moved to no side
+--   up   plays up: on the sheet of U16E's f16a (home) and f16w (away), not of
+--        f16b; his mother (gup) is linked to him
+--   wd   was on f16a's sheet, withdrawn; his mother (gwd) is linked to him
+--   tm   up's team-mate, on no sheet
+--   pb   a boy whose would-be account (pa) is linked by a self-access claim
+--        still PENDING: not his account yet
+--   t1   a boy whose account (two) is also another boy, t2, by self-access:
+--        an account with no one side to follow
+-- Fixtures f14 (U14E), f15 (U15E), f16a, f16b, f16w, each with balls; nets
+-- s14, s15; a plan to each of U14E (p14, for f14) and U15E (p15, for f15),
+-- each from its side's coach. As the owner; every name is invented.
+CREATE OR REPLACE FUNCTION _v112_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U14 date := make_date(extract(year FROM sa_today())::int - 13, 3, 1);
+  D timestamp := (sa_today() + 3)::timestamp + time '10:00';
+  ids jsonb; z jsonb := '{}'; k text; b text; st text; v_id uuid; v_a uuid;
+  i int := 0;
+BEGIN
+  FOREACH k IN ARRAY ARRAY['mb', 'sb', 'nb', 'up', 'wd', 'tm', 'pb', 't1', 't2'] LOOP
+    i := i + 1;
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+      (HIL, 'U14E', 'Verify OneOneTwo ' || initcap(k), 1120 + i, 'batter', U14) RETURNING id INTO v_id;
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  ids := _v71_people('v112', ARRAY[
+    ARRAY['u_mb',    'player',      HIL::text, 'U14E', z->>'mb'],
+    ARRAY['u_sb',    'player',      HIL::text, 'U14E', ''],
+    ARRAY['u_nb',    'player',      HIL::text, 'U14E', z->>'nb'],
+    ARRAY['u_up',    'player',      HIL::text, 'U14E', z->>'up'],
+    ARRAY['u_wd',    'player',      HIL::text, 'U14E', z->>'wd'],
+    ARRAY['u_tm',    'player',      HIL::text, 'U14E', z->>'tm'],
+    ARRAY['u_pa',    'player',      HIL::text, 'U14E', ''],
+    ARRAY['u_two',   'player',      HIL::text, 'U14E', z->>'t1'],
+    ARRAY['g',       'guardian',    HIL::text, '',     ''],
+    ARRAY['gup',     'guardian',    HIL::text, '',     ''],
+    ARRAY['gwd',     'guardian',    HIL::text, '',     ''],
+    ARRAY['office',  'schooladmin', HIL::text, '',     ''],
+    ARRAY['coach14', 'coach',       HIL::text, 'U14E', ''],
+    ARRAY['coach15', 'coach',       HIL::text, 'U15E', '']]);
+  -- The links the office makes: the three mothers', and the self-access
+  -- links (mb's, sb's and two's verified; pa's pending).
+  PERFORM _v100_link((ids->>'g')::uuid, HIL, (z->>'mb')::uuid);
+  PERFORM _v100_link((ids->>'gup')::uuid, HIL, (z->>'up')::uuid);
+  PERFORM _v100_link((ids->>'gwd')::uuid, HIL, (z->>'wd')::uuid);
+  FOR k, b, st IN SELECT x.who, x.boy, x.state FROM (VALUES ('u_mb', 'mb', 'verified'), ('u_sb', 'sb', 'verified'),
+                                                              ('u_two', 't2', 'verified'), ('u_pa', 'pb', 'pending')) x(who, boy, state) LOOP
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>k)::uuid, 'selfaccess', HIL) RETURNING id INTO v_a;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (v_a, (z->>b)::uuid, 'self', st, OFFICE, CASE WHEN st = 'verified' THEN now() END,
+            'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, 'U14E', 'Verify OneOneTwo Fourteens', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+  z := z || jsonb_build_object('f14', v_id);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, 'U15E', 'Verify OneOneTwo Fifteens', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+  z := z || jsonb_build_object('f15', v_id);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, 'U16E', 'Verify OneOneTwo Sixteens', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+  z := z || jsonb_build_object('f16a', v_id);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (HIL, 'U16E', 'Verify OneOneTwo Sixteens Again', (D + interval '7 days') AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+  z := z || jsonb_build_object('f16b', v_id);
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (WES, 'U16E', HIL, 'U16E', 'Verify OneOneTwo Hilton', (D + interval '14 days') AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+  z := z || jsonb_build_object('f16w', v_id);
+  -- The sheets: up on f16a (home) and f16w (away); wd on f16a, then withdrawn.
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES
+    ((z->>'f16a')::uuid, (z->>'up')::uuid, 'home', 1), ((z->>'f16w')::uuid, (z->>'up')::uuid, 'away', 1),
+    ((z->>'f16a')::uuid, (z->>'wd')::uuid, 'home', 2);
+  UPDATE match_squad SET withdrawn = true WHERE match_id = (z->>'f16a')::uuid AND player_id = (z->>'wd')::uuid;
+  -- Balls on every fixture, a different number each (6, 12, 18, 24, 30).
+  PERFORM _v71_bowl((z->>'f14')::uuid,  OFFICE, ARRAY[NULL]::uuid[]);
+  PERFORM _v71_bowl((z->>'f15')::uuid,  OFFICE, ARRAY[NULL, NULL]::uuid[]);
+  PERFORM _v71_bowl((z->>'f16a')::uuid, OFFICE, ARRAY[NULL, NULL, NULL]::uuid[]);
+  PERFORM _v71_bowl((z->>'f16b')::uuid, OFFICE, ARRAY[NULL, NULL, NULL, NULL]::uuid[]);
+  PERFORM _v71_bowl((z->>'f16w')::uuid, OFFICE, ARRAY[NULL, NULL, NULL, NULL, NULL]::uuid[]);
+  INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type) VALUES
+    (HIL, 'U14E', 'V112 fourteens nets', D AT TIME ZONE 'Africa/Johannesburg', 60, 'batting') RETURNING id INTO v_id;
+  z := z || jsonb_build_object('s14', v_id);
+  INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type) VALUES
+    (HIL, 'U15E', 'V112 fifteens nets', D AT TIME ZONE 'Africa/Johannesburg', 60, 'batting') RETURNING id INTO v_id;
+  z := z || jsonb_build_object('s15', v_id);
+  INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
+  VALUES ('team', HIL, 'U14E', 'plan', (z->>'f14')::uuid, 'V112 fourteens plan', 'V112 meet at the nets', now() - interval '1 minute',
+          (ids->>'coach14')::uuid) RETURNING id INTO v_id;
+  z := z || jsonb_build_object('p14', v_id);
+  INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
+  VALUES ('team', HIL, 'U15E', 'plan', (z->>'f15')::uuid, 'V112 fifteens plan', 'V112 meet at the pavilion', now() - interval '1 minute',
+          (ids->>'coach15')::uuid) RETURNING id INTO v_id;
+  z := z || jsonb_build_object('p15', v_id);
+  RETURN ids || z;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the caller reads of the stage, under his own row security (a plain
+-- invoker): "fixtures [..] training [..] plans [..] balls [..]", each by the
+-- stage's labels, sorted. Balls are the fixtures he reads a ball of.
+CREATE OR REPLACE FUNCTION _v112_reads(z jsonb) RETURNS text AS $$
+  SELECT format('fixtures [%s] training [%s] plans [%s] balls [%s]',
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '')
+       FROM (SELECT _v106_label(z, m.id) l FROM match m
+              WHERE m.id::text IN (z->>'f14', z->>'f15', z->>'f16a', z->>'f16b', z->>'f16w')) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '')
+       FROM (SELECT _v106_label(z, s.id) l FROM training_session s WHERE s.id::text IN (z->>'s14', z->>'s15')) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '')
+       FROM (SELECT _v106_label(z, n.id) l FROM news_post n WHERE n.id::text IN (z->>'p14', z->>'p15')) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '')
+       FROM (SELECT DISTINCT _v106_label(z, b.match_id) l FROM ball_event b
+              WHERE b.match_id::text IN (z->>'f14', z->>'f15', z->>'f16a', z->>'f16b', z->>'f16w')) x))
+$$ LANGUAGE sql STABLE;
+
+-- How many balls of one fixture the caller reads, under his row security.
+CREATE OR REPLACE FUNCTION _v112_balls(p_match uuid) RETURNS int AS $$
+  SELECT count(*)::int FROM ball_event WHERE match_id = p_match
+$$ LANGUAGE sql STABLE;
+
+-- A person's `player` rows, as the owner: "TEAM:ended" then "TEAM:live",
+-- each by side, e.g. 'U14E:ended U15E:live'. (Every row here is made in the
+-- verifier's one transaction, so created_at cannot order them.)
+CREATE OR REPLACE FUNCTION _v112_roles(p_person uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(coalesce(team_code, '-') || ':' || CASE WHEN active THEN 'live' ELSE 'ended' END,
+                             ' ' ORDER BY active, team_code), '')
+    FROM role_assignment WHERE person_id = p_person AND role = 'player'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Everything about a person's assignments that a carry must leave alone:
+-- every row but his `player` rows, and every link on them, as one digest.
+CREATE OR REPLACE FUNCTION _v112_others(p_person uuid) RETURNS text AS $$
+  SELECT md5(coalesce(string_agg(concat_ws('|', a.id, a.role, a.school_id, a.team_code, a.active, a.revoked_at, a.created_at,
+                                           g.player_id, g.verification_state, g.valid_from, g.valid_until),
+                                 ';' ORDER BY a.id, g.player_id), ''))
+    FROM role_assignment a LEFT JOIN assignment_subject g ON g.assignment_id = a.id
+   WHERE a.person_id = p_person AND a.role <> 'player'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Facts, as the owner.
+CREATE OR REPLACE FUNCTION _v112_fact(p_what text, p_id uuid DEFAULT NULL) RETURNS text AS $$
+  SELECT CASE p_what
+    -- a person's ended `player` rows: who ended each, and that its time is stamped
+    WHEN 'ended_by' THEN (SELECT string_agg(coalesce(revoked_by::text, '-') || CASE WHEN revoked_at IS NULL THEN ':unstamped' ELSE '' END,
+                                            ' ' ORDER BY created_at)
+                            FROM role_assignment WHERE person_id = p_id AND role = 'player' AND NOT active)
+    -- a person's live `player` rows: who made each
+    WHEN 'made_by' THEN (SELECT string_agg(coalesce(created_by::text, '-'), ' ' ORDER BY created_at)
+                           FROM role_assignment WHERE person_id = p_id AND role = 'player' AND active)
+    WHEN 'side' THEN (SELECT coalesce(team_code, '(none)') FROM player WHERE id = p_id)
+    WHEN 'open_membership' THEN (SELECT coalesce(string_agg(team_code, ','), '(none)') FROM team_membership
+                                  WHERE player_id = p_id AND sport = 'cricket' AND left_on IS NULL)
+    WHEN 'teamless_live' THEN (SELECT count(*)::text FROM role_assignment WHERE role = 'player' AND team_code IS NULL AND active)
+    WHEN 'disagree' THEN (SELECT count(*)::text FROM player_assignment_disagreements())
+    -- the boys whose accounts' rows disagree, by id, and by name and sides
+    WHEN 'disagree_boys' THEN (SELECT coalesce(string_agg(DISTINCT d.player_id::text, ',' ORDER BY d.player_id::text), '')
+                                 FROM player_assignment_disagreements() d)
+    WHEN 'disagree_names' THEN (SELECT coalesce(string_agg(DISTINCT p.full_name || ' (' || coalesce(d.player_team, 'no side')
+                                                           || ', role on ' || d.assignment_team || ')', '; '), '')
+                                  FROM player_assignment_disagreements() d JOIN player p ON p.id = d.player_id)
+    WHEN 'owner_balls' THEN (SELECT count(*)::text FROM ball_event WHERE match_id = p_id)
+    WHEN 'seed_live' THEN (SELECT string_agg(id::text || ':' || team_code, ' ' ORDER BY id) FROM role_assignment
+                            WHERE role = 'player' AND active AND id::text LIKE 'a5510000-%')
+    WHEN 'all_assignments' THEN (SELECT md5(string_agg(concat_ws('|', id, person_id, role, team_code, active, revoked_at), ';' ORDER BY id))
+                                   FROM role_assignment)
+    WHEN 'grant_md5' THEN (SELECT md5(replace(prosrc,
+          '  -- db/108: a pupil is a pupil OF A SIDE (role_assignment_player_team_scoped).' || chr(10)
+       || '  -- No side named by the request or the decider: his own side on the roster,' || chr(10)
+       || '  -- at this school. None there either: refused by name, before anything is' || chr(10)
+       || '  -- written, as a coach with no side is.' || chr(10)
+       || '  IF r.role = ''player'' AND v_team IS NULL THEN' || chr(10)
+       || '    SELECT p.team_code INTO v_team FROM player p WHERE p.id = v_player AND p.school_id = r.school_id;' || chr(10)
+       || '    IF v_team IS NULL THEN' || chr(10)
+       || '      RETURN QUERY SELECT false, ''team_required'', NULL::uuid; RETURN;' || chr(10)
+       || '    END IF;' || chr(10)
+       || '  END IF;' || chr(10), ''))
+       FROM pg_proc WHERE oid = to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'))
+    WHEN 'child_md5' THEN (SELECT md5(prosrc) FROM pg_proc WHERE oid = to_regprocedure('my_child_fixtures()'))
+  END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A move made before this file: the side written with the carry switched off,
+-- so the assignment is left where it was, as every move before db/112 left
+-- it. As the owner.
+CREATE OR REPLACE FUNCTION _v112_move_untracked(p_player uuid, p_team text) RETURNS void AS $$
+BEGIN
+  ALTER TABLE player DISABLE TRIGGER player_assignment_follows_side;
+  UPDATE player SET team_code = p_team WHERE id = p_player;
+  ALTER TABLE player ENABLE TRIGGER player_assignment_follows_side;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A live `player` row written straight onto the table at a side, as an
+-- office did by hand before db/112. As the owner.
+CREATE OR REPLACE FUNCTION _v112_grant(p_person uuid, p_team text) RETURNS void AS $$
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES (p_person, 'player', '11111111-1111-1111-1111-111111111111', p_team)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/112's one-time correction, run again. As the owner: what it did, per
+-- boy, {"<player id>": "ended:opened"}.
+CREATE OR REPLACE FUNCTION _v112_correct() RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_object_agg(player_id::text, ended || ':' || opened), '{}')
+    FROM player_assignment_correct()
+$$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/100's three branches of ball_event_read, spelled out apart from the
+-- policy, about the caller app.user_id names, for one fixture: does he read
+-- a ball of it by one of them? p_child is my_child_fixtures() as he calls
+-- it, taken once per person. As the owner.
+CREATE OR REPLACE FUNCTION _v112_db100(p_match uuid, p_child uuid[]) RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM (SELECT DISTINCT b.school_id FROM ball_event b WHERE b.match_id = p_match) s
+                  WHERE app_can('fixture.read', s.school_id, match_team(p_match), NULL, p_match))
+      OR (EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = p_match)
+          AND (EXISTS (SELECT 1 FROM match m WHERE m.id = p_match AND m.away_school_id IS NOT NULL
+                          AND app_can('fixture.read', m.away_school_id, m.away_team_code, NULL, p_match))
+               OR p_match = ANY (p_child)))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/112 (section 89) ─────────────────────────────────────────────
+-- ┌── db/113 (section 90). A correction takes back what it falsified
+-- A Hilton side of its own (U19F): a batter who reaches a fifty on a six
+-- (D Erasmus's case), a partner whose fifty stands, a U13 pace bowler who
+-- goes past his spell, an Open bowler with a hat-trick to be made by a
+-- correction; the readers the notices reach and the ones they must not.
+-- Written as the owner, the way the scorer's pad and the amendment route
+-- reach ball_event (their own paths are the walks'); every read in the
+-- section is a person's, through scrbrd_app under RLS.
+CREATE OR REPLACE FUNCTION _v113_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U16 date := make_date(extract(year FROM sa_today())::int - 16, 3, 1);
+  U13 date := make_date(extract(year FROM sa_today())::int - 12, 3, 1);
+  OPEN date := make_date(extract(year FROM sa_today())::int - 19, 3, 1);
+  ids jsonb; v_bat uuid; v_par uuid; v_q uuid; v_h uuid; v_m uuid; r record;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U19F', 'Verify OneThirteen Opener', 1131, 'batter', U16) RETURNING id INTO v_bat;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U19F', 'Verify OneThirteen Partner', 1132, 'batter', U16) RETURNING id INTO v_par;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) VALUES
+    (HIL, 'U19F', 'Verify OneThirteen Quick', 1133, 'bowler', U13, 'F') RETURNING id INTO v_q;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) VALUES
+    (HIL, 'U19F', 'Verify OneThirteen Hattrick', 1134, 'bowler', OPEN, 'F') RETURNING id INTO v_h;
+  ids := _v71_people('v113', ARRAY[
+    ARRAY['coach',     'coach',     HIL::text, 'U19F', ''],
+    ARRAY['scorer',    'scorer',    HIL::text, '',     ''],
+    ARRAY['boy',       'player',    HIL::text, 'U19F', v_bat::text],
+    ARRAY['parent',    'guardian',  HIL::text, '',     ''],
+    ARRAY['pparent',   'guardian',  HIL::text, '',     ''],
+    ARRAY['wescoach',  'coach',     WES::text, 'U19F', ''],
+    ARRAY['follower',  'spectator', HIL::text, '',     '']]);
+  FOR r IN SELECT a.id AS aid, x.p FROM role_assignment a,
+                  LATERAL (VALUES ((ids->>'parent')::uuid, v_bat), ((ids->>'pparent')::uuid, v_par)) AS x(person, p)
+            WHERE a.person_id = x.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U19F', 'Verify OneThirteen Visitors', (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'live')
+  RETURNING id INTO v_m;
+  RETURN ids || jsonb_build_object('bat', v_bat, 'par', v_par, 'quick', v_q, 'hat', v_h, 'match', v_m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One event at the end of the match's log, as the pad appends one. Returns
+-- its key. A void names its target in the payload, as the pad and the
+-- amendment route both write it.
+CREATE OR REPLACE FUNCTION _v113_ev(p_match uuid, p_innings smallint, p_kind text, p_type text, p_value integer,
+                                    p_striker uuid, p_bowler uuid, p_dismissal text DEFAULT NULL, p_target text DEFAULT NULL)
+RETURNS text AS $$
+DECLARE s integer; k text;
+BEGIN
+  s := coalesce((SELECT max(seq) FROM ball_event WHERE match_id = p_match), 0) + 1;
+  k := 'v113-' || p_match || '-' || s;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                          striker_id, bowler_id, dismissal, payload)
+  SELECT p_match, m.school_id, s, 0, p_innings, (SELECT id FROM app_user WHERE email = 'v113.scorer@example.invalid'),
+         'v113-pad', k, s, now(), p_kind, p_type, p_value, p_striker, p_bowler, p_dismissal,
+         CASE WHEN p_kind = 'void' THEN jsonb_build_object('target', p_target) ELSE '{}'::jsonb END
+    FROM match m WHERE m.id = p_match;
+  RETURN k;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What was written about one boy, as the owner reads it (what RLS would not
+-- say): every notification whose subject he is, oldest first, whole.
+CREATE OR REPLACE FUNCTION _v113_about(p_player uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(n) ORDER BY n.published_at, n.retracts_id NULLS FIRST, n.id), '[]'::jsonb)
+    FROM notification n WHERE n.subject_person_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One mark's row, or one breach's, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v113_mark(p_player uuid, p_kind text, p_match uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(mn) FROM milestone_notice mn WHERE mn.player_id = p_player AND mn.kind = p_kind AND mn.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v113_breaches(p_player uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(b) ORDER BY b.noticed_at, b.kind), '[]'::jsonb) FROM bowling_breach b WHERE b.bowler_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/113 (section 90) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -10255,8 +10962,12 @@ BEGIN
     -- Under pad scope app_can() answers only the credential's own match, so
     -- the most it returns is the match the credential already reads; it
     -- takes no argument and answers nobody about anybody else.
+    -- my_own_sheet_fixtures (db/112): the fixtures whose sheet names the
+    -- caller himself (my_own_boy()), asked of app_can('fixture.read', …, <him>,
+    -- …) at his own side. The same bound: under pad scope app_can() answers
+    -- only the credential's own match; no argument; nobody else's sheet.
     PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,scoring_arm_handover,scoring_claim,'
+                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
@@ -20923,7 +21634,10 @@ $v49$;
   --                 school's coach) and every fixture, row security admits
   --                 exactly db/97's host and away branches: the guardian
   --                 branch gives nobody else anything. B's own coach (14XI)
-  --                 and B himself read none of f1, where B played up
+  --                 reads none of f1, where B played up. B himself reads
+  --                 every ball of f1 since db/112 (Kameel, 15 Oct 2026: the
+  --                 boy playing up reads his match's balls; §89 is its
+  --                 proof), and nothing else beyond db/97's branches
   --   (pad)         neither guardian reads f1's session, held ball or audit
   --                 row (each exists); g1 cannot write a ball to f1
   --   (text)        ball_event_read keeps db/97's two branches (match_team(
@@ -21073,15 +21787,17 @@ $v49$;
       FOREACH f IN ARRAY ARRAY[F1, F2, F3, F4, F5, F6] LOOP
         rr := _v97_rule(f);
         SELECT count(*) INTO n FROM ball_event b WHERE b.match_id = f;
-        PERFORM _assert(n = rr.either,
+        -- db/112: B, on f1's sheet at his own school's end, reads all of it.
+        PERFORM _assert(n = CASE WHEN k = 'pupilb' AND f = F1 THEN rr.total ELSE rr.either END,
           format('§77 (rule): as %s, row security admits %s balls of a fixture where db/97''s branches give %s (host %s, away %s, of %s)',
                  k, n, rr.either, rr.host, rr.away, rr.total));
       END LOOP;
     END LOOP;
     FOREACH k IN ARRAY ARRAY['coachb', 'pupilb'] LOOP
       PERFORM _as((z->>k)::uuid);
-      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = F1) = 0 AND (SELECT count(*) FROM ball_event WHERE match_id = F3) = 6,
-        format('§77 (rule): as %s, f1 (B playing up) or f3 (B''s side) reads other than db/97 gave', k));
+      PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = F1) = CASE k WHEN 'pupilb' THEN 18 ELSE 0 END
+                      AND (SELECT count(*) FROM ball_event WHERE match_id = F3) = 6,
+        format('§77 (rule): as %s, f1 (B playing up: his own since db/112, not his coach''s) or f3 (B''s side) reads other than it should', k));
     END LOOP;
 
     -- (pad)
@@ -22806,21 +23522,21 @@ $v49$;
 
     -- (agree) 1: db/100's log. For every person, the fixtures whose balls he
     -- reads are exactly the scored fixtures match_read shows him (bar the
-    -- fixture a driver reads only as its driver, and the one a boy playing up
-    -- reads only as the boy on its sheet, db/106 (e): neither shows a ball,
-    -- db/100's helper being his guardian's and not his); (shape)
-    -- below holds match_read to fixture_reach() on every one of them.
+    -- fixture a driver reads only as its driver, which shows no ball). Since
+    -- db/112 that includes the one a boy playing up reads only as the boy on
+    -- its sheet, db/106 (e): he reads its balls too (§89). (shape) below holds
+    -- match_read to fixture_reach() on every one of them.
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(x::text, ' ') INTO bad
         FROM ((SELECT DISTINCT b.match_id FROM ball_event b)
               EXCEPT (SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
-                       AND NOT trip_fixture_driver_only(m.id) AND NOT _v106_self_only(m.id))) d(x);
+                       AND NOT trip_fixture_driver_only(m.id))) d(x);
       PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads the balls of %s, which match_read does not give him', u, left(bad, 300)));
       SELECT string_agg(x::text, ' ') INTO bad
         FROM ((SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
-                AND NOT trip_fixture_driver_only(m.id) AND NOT _v106_self_only(m.id))
+                AND NOT trip_fixture_driver_only(m.id))
               EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b)) d(x);
       PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads %s through match_read and none of its balls', u, left(bad, 300)));
       n := n + (SELECT count(DISTINCT b.match_id) FROM ball_event b);
@@ -23359,6 +24075,1713 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 85
+  -- ┌── section 86: a child's links, and the reason for an ending (db/109) ──
+  -- Account lifecycle slice 3 (ACCOUNT_LIFECYCLE.md §4, D11–D14, Q8, Q10,
+  -- Q13). The API half is tools/smoke-family-links.mjs (child_links and the
+  -- two revoke routes).
+  --
+  -- What each label holds:
+  --   (q13)        a disabled parent still counts as a verified guardian
+  --   (before)     Mum's consents count, his health consent is live, her
+  --                seat stands, and no ending row exists for any link yet
+  --   (refused)    a stranger, a coach, the director of sport (no
+  --                guardian.link.manage), the parent herself and Westville's
+  --                office are not_permitted; nothing moves
+  --   (own)        nobody ends a link of their own (G1)
+  --   (words)      no_such_link, kind_required, kind_not_allowed for an
+  --                automatic kind, reason_required, reason_too_long; nothing
+  --                moves
+  --   (revoke)     the office ends Mum's link (custody): revoked, dated today,
+  --                no reason on the link (D13), her guardian role ended with
+  --                her last link, one row with the kind, the reason and the
+  --                office's name
+  --   (notice)     Mum reads one 'system' notice naming the school and the
+  --                date, not the child, not the reason; Dad does not; a
+  --                forged notice reaches her through no door
+  --   (readers)    the office and the director of sport read the kind and the
+  --                reason; Mum, the coach, the DSO and Westville's office read
+  --                no row; the DSO reads none of the child's links either (D12)
+  --   (platform)   the platform administrator reads no row with no support
+  --                session, nor inside one at Westville; inside one at Hilton
+  --                it reads the kind and the reason; ended, nothing again
+  --                (Kameel, 15 October 2026)
+  --   (owner)      the owner's key cannot end a link with no support session,
+  --                and can inside a live one at Hilton (the same day's rule)
+  --   (dso)        inside the open concern the DSO reads the kind and the date
+  --                and never the reason (Q10)
+  --   (d14)        his public-name consent through Mum's link is no longer
+  --                competent and none is (he is "Batter": db/47, unchanged);
+  --                the health consent lapsed; her seat is void; the contact
+  --                stays
+  --   (again)      no_open_link; last_verified_link for Dad, now his only one
+  --   (role)       ending Gran's guardian role (db/77) writes 'role_ended'
+  --                rows for the link it revoked, with the role's reason
+  --   (left)       Two leaves at 14: Dad keeps his link until Two's birthday,
+  --                one 'majority' row, no reason, no actor (D11); nothing was
+  --                written before he left (Q8); he comes back and the row goes
+  --   (adult)      Old leaves at 19: Aunt's link ends today, 'left_school'
+  --   (writes)     the application writes no ending row, and cannot call
+  --                db/08's door without a kind or a reason
+  --   (doors)      the functions' shape and grants, the policies
+  --
+  -- Falsified seven ways, each red for the right reason: the read policy's
+  -- DSO cut removed (red at (readers): the DSO reads the boy's ending row);
+  -- the guardian admitted to her own row (red at (readers): Mum reads it);
+  -- db/08's door given back to scrbrd_app (red at (writes)); the notice's
+  -- door answering true for any notice (red at (notice): the forged notice
+  -- reaches Mum); db/109's trigger on role_assignment_ending dropped (red at
+  -- (role): Gran's link has no row); the RESTRICTIVE platform cut dropped (red
+  -- at (platform): read with no support session); the door's platform
+  -- refusal taken out (red at (owner): the owner's key ends a link with no
+  -- support session).
+  DECLARE
+    y       jsonb := _v109_stage();
+    U_DSO   uuid := '88888888-0000-0000-0000-000000000057';
+    B       uuid := (y->>'boy')::uuid;
+    T       uuid := (y->>'two')::uuid;
+    O       uuid := (y->>'old')::uuid;
+    L_MUM   uuid := (y->>'l_mum')::uuid;
+    L_DAD   uuid := (y->>'l_dad')::uuid;
+    L_GRAN  uuid := (y->>'l_gran')::uuid;
+    L_DAD2  uuid := (y->>'l_dad2')::uuid;
+    L_OLD   uuid := (y->>'l_old')::uuid;
+    WHY     text := 'V109: a custody order of the High Court';
+    k       text;
+    got     text;
+    n       integer;
+    e       jsonb;
+    v_j     jsonb;
+    v_extra uuid;
+    v_stray uuid;
+    v_birth date;
+    v_ok    boolean;
+    v_sess  uuid;
+  BEGIN
+    -- (q13)
+    PERFORM _v109_disable((y->>'dad')::uuid);
+    PERFORM _as((y->>'office')::uuid);
+    PERFORM _assert((SELECT live_links FROM player_guardian_status WHERE player_id = B) = 2,
+      '§86 (q13): a disabled parent no longer counts as a verified guardian');
+
+    -- (before)
+    PERFORM _assert((_v109_facts(B) -> 'consents') @> '[{"by": "guardian", "competent": true}]'::jsonb,
+      format('§86 (before): Mum''s public-name consent does not count, so (d14) proves nothing: %s', _v109_facts(B)));
+    PERFORM _assert(_v109_health(B), '§86 (before): his health consent is not live, so (d14) proves nothing');
+    PERFORM _assert((_v70_seat((y->>'seat')::uuid)).state = 'requested', '§86 (before): Mum''s seat is not live');
+    PERFORM _assert(_v109_ending(L_MUM) IS NULL AND _v109_ending(L_DAD2) IS NULL AND _v109_ending(L_OLD) IS NULL,
+      '§86 (before): an ending row exists before anything ended');
+
+    -- (refused)
+    PERFORM set_config('app.user_id', '', true);
+    got := _v109_revoke(L_MUM, 'custody', WHY);
+    PERFORM _assert(got = 'not_signed_in', format('§86 (refused): nobody signed in was told %s', got));
+    FOREACH k IN ARRAY ARRAY['coach', 'dos', 'mum', 'wesoffice'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v109_revoke(L_MUM, 'custody', WHY);
+      PERFORM _assert(got = 'not_permitted', format('§86 (refused): the %s was told %s', k, got));
+    END LOOP;
+    PERFORM _assert((_v109_link_row(L_MUM))->>'verification_state' = 'verified' AND _v109_ending(L_MUM) IS NULL,
+      '§86 (refused): a refused revoke moved the link, or wrote a row');
+
+    -- (own)
+    v_extra := _v109_grant((y->>'aunt')::uuid, 'schooladmin');
+    PERFORM _as((y->>'aunt')::uuid);
+    got := _v109_revoke(L_OLD, 'office', WHY);
+    PERFORM _assert(got = 'own_link', format('§86 (own): the office ending its own link was told %s', got));
+    PERFORM _v109_ungrant(v_extra);
+
+    -- (words)
+    PERFORM _as((y->>'office')::uuid);
+    got := _v109_revoke(gen_random_uuid(), 'custody', WHY);
+    PERFORM _assert(got = 'no_such_link', format('§86 (words): a link that is not there answered %s', got));
+    got := _v109_revoke(NULL, 'custody', WHY);
+    PERFORM _assert(got = 'no_such_link', format('§86 (words): no link answered %s', got));
+    got := _v109_revoke(L_MUM, NULL, WHY);
+    PERFORM _assert(got = 'kind_required', format('§86 (words): no kind answered %s', got));
+    FOREACH k IN ARRAY ARRAY['majority', 'left_school', 'role_ended', 'whim'] LOOP
+      got := _v109_revoke(L_MUM, k, WHY);
+      PERFORM _assert(got = 'kind_not_allowed', format('§86 (words): the kind %s answered %s', k, got));
+    END LOOP;
+    got := _v109_revoke(L_MUM, 'custody', '   too short   ');
+    PERFORM _assert(got = 'reason_required', format('§86 (words): nine characters, padded, answered %s', got));
+    got := _v109_revoke(L_MUM, 'custody', repeat('x', 2001));
+    PERFORM _assert(got = 'reason_too_long', format('§86 (words): 2,001 characters answered %s', got));
+    PERFORM _assert((_v109_link_row(L_MUM))->>'verification_state' = 'verified' AND _v109_ending(L_MUM) IS NULL,
+      '§86 (words): a refused revoke moved the link, or wrote a row');
+
+    -- (revoke)
+    got := _v109_revoke(L_MUM, 'custody', '  ' || WHY || '  ');
+    PERFORM _assert(got = 'ok', format('§86 (revoke): the office was told %s', got));
+    v_j := _v109_link_row(L_MUM);
+    PERFORM _assert(v_j->>'verification_state' = 'revoked' AND (v_j->>'valid_until')::date = current_date
+                    AND v_j->>'verified_note' IS NULL,
+      format('§86 (revoke): the link reads %s', v_j));
+    PERFORM _assert(position('High Court' IN v_j::text) = 0, '§86 (revoke): the reason is on the link (D13)');
+    PERFORM _assert(_v109_role((y->>'mum')::uuid) IS NULL, '§86 (revoke): Mum''s guardian role outlived her last link');
+    e := _v109_ending(L_MUM);
+    PERFORM _assert(e->>'kind' = 'custody' AND e->>'reason' = WHY AND (e->>'ended_by')::uuid = (y->>'office')::uuid
+                    AND (e->>'ends_on')::date = current_date AND (e->>'guardian_id')::uuid = (y->>'mum')::uuid
+                    AND (e->>'player_id')::uuid = B AND e->>'notice_id' IS NOT NULL,
+      format('§86 (revoke): the ending row reads %s', e));
+
+    -- (notice)
+    v_j := _v109_notice((e->>'notice_id')::uuid);
+    PERFORM _assert(v_j->>'kind' = 'system' AND (v_j->>'recipient_id')::uuid = (y->>'mum')::uuid
+                    AND v_j->>'subject_person_id' IS NULL AND v_j->>'urgency' = 'medium'
+                    AND v_j->>'body' = 'Your link to a child at Hilton College ended on '
+                                       || to_char(current_date, 'FMDD FMMonth YYYY')
+                                       || '. The school office can say why; the platform does not.',
+      format('§86 (notice): the notice reads %s', v_j));
+    PERFORM _assert(position('OneOhNine' IN v_j::text) = 0 AND position('High Court' IN v_j::text) = 0,
+      '§86 (notice): the notice names the child or gives the reason');
+    PERFORM _as((y->>'mum')::uuid);
+    PERFORM _assert((SELECT count(*) FROM notification n WHERE n.id = (e->>'notice_id')::uuid) = 1,
+      '§86 (notice): Mum, with no role left at the school, does not read her notice');
+    v_stray := _v90_stray((y->>'mum')::uuid);
+    PERFORM _assert((SELECT count(*) FROM notification n WHERE n.id = v_stray) = 0,
+      '§86 (notice): a system notice no ending row admits reaches Mum');
+    PERFORM _as((y->>'dad')::uuid);
+    PERFORM _assert((SELECT count(*) FROM notification n WHERE n.id = (e->>'notice_id')::uuid) = 0,
+      '§86 (notice): Dad reads the notice written to Mum');
+
+    -- (readers)
+    FOREACH k IN ARRAY ARRAY['office', 'dos'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT x.kind || ':' || x.reason INTO got FROM guardian_link_ending x WHERE x.link_id = L_MUM;
+      PERFORM _assert(got = 'custody:' || WHY, format('§86 (readers): the %s reads %s', k, coalesce(got, 'no row')));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['mum', 'dad', 'coach', 'wesoffice', 'dso'] LOOP
+      PERFORM _as(CASE k WHEN 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
+      PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+        format('§86 (readers): the %s reads an ending row of the boy''s', k));
+    END LOOP;
+    PERFORM _as(U_DSO);
+    PERFORM _assert((SELECT count(*) FROM assignment_subject g WHERE g.player_id = B) = 0,
+      '§86 (readers): the DSO reads the boy''s links by standing (D12)');
+
+    -- (platform) Kameel, 15 October 2026: never platform-wide; inside a live
+    -- support session at the boy's school, and only there.
+    PERFORM _as((y->>'platform')::uuid);
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): the platform administrator reads the boy''s ending row with no support session');
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('22222222-2222-2222-2222-222222222222', 'schooladmin', 'V109: Westville asked for help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (platform): a support session at Westville could not be begun');
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): inside a session at Westville, the platform administrator reads Hilton''s ending row');
+    PERFORM support_access_end(v_sess);
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('11111111-1111-1111-1111-111111111111', 'schooladmin', 'V109: Hilton asked for help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (platform): a support session at Hilton could not be begun');
+    SELECT x.kind || ':' || x.reason INTO got FROM guardian_link_ending x WHERE x.link_id = L_MUM;
+    PERFORM _assert(got = 'custody:' || WHY,
+      format('§86 (platform): inside a session at Hilton, the platform administrator reads %s', coalesce(got, 'no row')));
+    PERFORM support_access_end(v_sess);
+    PERFORM _assert((SELECT count(*) FROM guardian_link_ending x WHERE x.player_id = B) = 0,
+      '§86 (platform): the session ended and the platform administrator still reads the row');
+
+    -- (owner) No platform role gains school authority here: the owner's key
+    -- ends a family's link only inside a live support session at that school.
+    PERFORM _as((y->>'owner')::uuid);
+    got := _v109_revoke((y->>'l_uncle')::uuid, 'office', 'V109: the school asked the platform to end it');
+    PERFORM _assert(got = 'not_permitted', format('§86 (owner): the owner''s key with no support session was told %s', got));
+    PERFORM _assert((_v109_link_row((y->>'l_uncle')::uuid))->>'verification_state' = 'verified'
+                    AND _v109_ending((y->>'l_uncle')::uuid) IS NULL,
+      '§86 (owner): a refused revoke by the owner''s key moved the link, or wrote a row');
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('11111111-1111-1111-1111-111111111111', 'schooladmin', 'V109: Hilton asked the platform to help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§86 (owner): the owner''s key could not begin a support session at Hilton');
+    got := _v109_revoke((y->>'l_uncle')::uuid, 'office', 'V109: the school asked the platform to end it');
+    PERFORM _assert(got = 'ok', format('§86 (owner): inside a session at Hilton the owner''s key was told %s', got));
+    PERFORM _assert((_v109_ending((y->>'l_uncle')::uuid))->>'kind' = 'office'
+                    AND ((_v109_ending((y->>'l_uncle')::uuid))->>'ended_by')::uuid = (y->>'owner')::uuid,
+      format('§86 (owner): the ending reads %s', _v109_ending((y->>'l_uncle')::uuid)));
+    PERFORM support_access_end(v_sess);
+
+    -- (dso)
+    PERFORM _as(U_DSO);
+    v_j := safeguarding_family((y->>'concern')::uuid);
+    PERFORM _assert(v_j -> 'ended' @> jsonb_build_array(jsonb_build_object('kind', 'custody', 'endsOn', current_date,
+                                                                          'linkId', L_MUM)),
+      format('§86 (dso): inside the concern the DSO does not read how Mum''s link ended: %s', v_j -> 'ended'));
+    PERFORM _assert(position('High Court' IN v_j::text) = 0 AND NOT (v_j -> 'ended' -> 0 ? 'reason'),
+      '§86 (dso): inside the concern the DSO reads the office''s reason (Q10)');
+
+    -- (d14)
+    PERFORM _assert(NOT ((_v109_facts(B) -> 'consents') @> '[{"competent": true}]'::jsonb),
+      format('§86 (d14): a consent through a revoked link still counts, so he is named: %s', _v109_facts(B)));
+    PERFORM _assert((_v109_facts(B) -> 'consents') @> '[{"by": "guardian", "competent": false}]'::jsonb,
+      format('§86 (d14): Mum''s consent is gone from the facts rather than read as incompetent: %s', _v109_facts(B)));
+    PERFORM _assert(NOT _v109_health(B), '§86 (d14): his health consent through a revoked link is still live');
+    PERFORM _v70_fire();
+    PERFORM _assert((_v70_seat((y->>'seat')::uuid)).state = 'void',
+      format('§86 (d14): Mum''s seat reads %s, not void', (_v70_seat((y->>'seat')::uuid)).state));
+    PERFORM _assert(_v109_contacts(B) = 1, '§86 (d14): the emergency contact went with the link');
+
+    -- (again)
+    PERFORM _as((y->>'office')::uuid);
+    got := _v109_revoke(L_MUM, 'custody', WHY);
+    PERFORM _assert(got = 'no_open_link', format('§86 (again): an ended link answered %s', got));
+    got := _v109_revoke(L_DAD, 'custody', WHY);
+    PERFORM _assert(got = 'last_verified_link', format('§86 (again): his only verified link answered %s', got));
+    got := _v109_revoke(L_DAD, NULL, NULL);
+    PERFORM _assert(got = 'last_verified_link', format('§86 (again): the last link, asked with nothing, answered %s', got));
+    PERFORM _assert((_v109_link_row(L_DAD))->>'verification_state' = 'verified' AND _v109_ending(L_DAD) IS NULL,
+      '§86 (again): his last link moved');
+
+    -- (role)
+    SELECT r.ok::text || coalesce(r.reason, '') INTO got
+      FROM role_assignment_end(_v109_role((y->>'gran')::uuid), 'V109: Gran stepped back from the family') r;
+    PERFORM _assert(got = 'true', format('§86 (role): ending Gran''s role answered %s', got));
+    e := _v109_ending(L_GRAN);
+    PERFORM _assert(e->>'kind' = 'role_ended' AND e->>'reason' = 'V109: Gran stepped back from the family'
+                    AND (e->>'ended_by')::uuid = (y->>'office')::uuid AND e->>'notice_id' IS NOT NULL
+                    AND (e->>'ends_on')::date = current_date,
+      format('§86 (role): Gran''s link reads %s', e));
+    PERFORM _assert(_v109_ending(L_DAD2) IS NULL, '§86 (role): ending Gran''s role wrote a row for Dad''s link');
+
+    -- (left)
+    PERFORM _assert(_v109_ending(L_DAD2) IS NULL AND (_v109_link_row(L_DAD2))->>'valid_until' IS NULL,
+      '§86 (left): Dad''s link to Two ends, or has a row, before Two left (Q8)');
+    PERFORM _v109_leave(T);
+    v_birth := majority_on((SELECT p.born FROM player p WHERE p.id = T));
+    e := _v109_ending(L_DAD2);
+    PERFORM _assert(e->>'kind' = 'majority' AND (e->>'ends_on')::date = v_birth
+                    AND e->>'reason' IS NULL AND e->>'ended_by' IS NULL AND e->>'notice_id' IS NULL,
+      format('§86 (left): Two left at 14 and Dad''s link reads %s', e));
+    PERFORM _assert((_v109_link_row(L_DAD2))->>'verification_state' = 'verified'
+                    AND ((_v109_link_row(L_DAD2))->>'valid_until')::date = v_birth,
+      '§86 (left): Dad does not keep his link until Two''s birthday (D11)');
+    PERFORM _as((y->>'office')::uuid);
+    PERFORM _assert((SELECT x.kind FROM guardian_link_ending x WHERE x.link_id = L_DAD2) = 'majority',
+      '§86 (left): the office does not read how Dad''s link will end');
+    PERFORM _v109_return(T);
+    PERFORM _assert(_v109_ending(L_DAD2) IS NULL AND (_v109_link_row(L_DAD2))->>'valid_until' IS NULL,
+      format('§86 (left): Two came back and Dad''s link reads %s, its row %s', _v109_link_row(L_DAD2), _v109_ending(L_DAD2)));
+
+    -- (adult)
+    PERFORM _v109_leave(O);
+    e := _v109_ending(L_OLD);
+    PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = current_date
+                    AND e->>'reason' IS NULL AND e->>'ended_by' IS NULL,
+      format('§86 (adult): Old left at 19 and Aunt''s link reads %s', e));
+
+    -- (writes)
+    PERFORM _as((y->>'office')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO guardian_link_ending (link_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on)
+      VALUES (L_DAD, B, '11111111-1111-1111-1111-111111111111', (y->>'dad')::uuid, 'office', WHY, (y->>'office')::uuid, current_date);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§86 (writes): the application wrote an ending row');
+    got := 'written';
+    BEGIN
+      UPDATE guardian_link_ending SET reason = 'V109: rewritten after the fact' WHERE link_id = L_MUM;
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§86 (writes): the application rewrote an ending row');
+    got := 'called';
+    BEGIN
+      PERFORM guardian_link_revoke((y->>'dad')::uuid, T, 'no kind, no reason'::text);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§86 (writes): db/08''s door without a kind or a reason is callable');
+
+    -- (doors)
+    FOREACH k IN ARRAY ARRAY['guardian_link_revoke(uuid,text,text)', 'guardian_link_ending_notice_is_mine(uuid)',
+                             'safeguarding_family(uuid)'] LOOP
+      PERFORM _assert((SELECT prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                         FROM pg_proc WHERE oid = to_regprocedure(k))
+                      AND has_function_privilege('scrbrd_app', to_regprocedure(k), 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                       WHERE p.oid = to_regprocedure(k) AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+        format('§86 (doors): %s is not a SECURITY DEFINER with a pinned path, the application''s alone', k));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['role_assignment_ending_links()', 'guardian_links_close_on_leaving(uuid,date)',
+                             'guardian_links_reopen_at_school(uuid)', 'guardian_link_revoke(uuid,uuid,text)'] LOOP
+      PERFORM _assert(NOT has_function_privilege('scrbrd_app', to_regprocedure(k), 'EXECUTE'),
+        format('§86 (doors): the application may call %s', k));
+    END LOOP;
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'notification'
+                               AND policyname = 'notification_link_ended' AND permissive = 'PERMISSIVE' AND cmd = 'SELECT')
+                    AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'guardian_link_ending'
+                                   AND policyname = 'pad_scope_select' AND permissive = 'RESTRICTIVE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                                       AND tablename = 'guardian_link_ending' AND cmd <> 'SELECT'),
+      '§86 (doors): the notice''s door, the pad cut, or a write policy on guardian_link_ending is wrong');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 86
+  -- ┌── db/110 (section 87) ──────────────────────────────────────────
+  -- ── 87. The coach's draft plan: changed, and thrown away (db/110) ──
+  -- Kameel, 15 Oct (final): a plan never sent is its author's to edit and to
+  -- delete; a withdrawn plan is his to edit and send again, never to delete;
+  -- a plan out with the side is not changed in place. Every write below is a
+  -- person's, through scrbrd_app under RLS, unless it says it is a door;
+  -- _v110_stage(), _v110_row() and _v110_versions() stage or only read.
+  --
+  -- What each label holds:
+  --   (draft)     the coach saves a draft plan; he changes its words and its
+  --               urgency, and it stays a plan never sent
+  --   (author)    the second coach and the team manager change nothing of it
+  --               (db/12's update policy: no row); through a door that is not
+  --               the policy, the second coach is refused
+  --               news_post_plan_author and its author is let through
+  --   (delete)    nobody but its author throws it away (no_such_draft, the
+  --               row kept), nor an anonymous session; its author does, and
+  --               it is gone; an ordinary draft post is no plan to discard;
+  --               the application still holds no DELETE on news_post
+  --   (sent)      a plan sent is dated; its words and urgency are refused
+  --               while it is out (news_post_plan_sent), and discarding it
+  --               answers plan_kept, the row kept
+  --   (withdrawn) withdrawn, it keeps its date; its author changes it, and
+  --               nobody else does; it is never discarded (plan_kept), even
+  --               after he tries to clear the date; he sends it again, and
+  --               its first date stands
+  --   (history)   the plan's two sendings stand in its notices, in order:
+  --               the first, retracted, with the words it went out with; the
+  --               second, live, with the new words; the boy reads the new
+  --               plan
+  --   (insert)    a date the caller writes on a draft is not kept; a plan
+  --               sent at once is dated at once
+  --   (post)      an ordinary post sent is still its author's to edit, as
+  --               before (the decision is the plan's)
+  --   (doors)     the guard is the trigger's alone; news_plan_discard is a
+  --               SECURITY DEFINER with a pinned path, the application's
+  --               alone
+  --
+  -- Falsified once each, by replacing the object in the database and running
+  -- this file; each went red at its label:
+  --   (withdrawn) news_plan_discard() without "OR n.first_sent_at IS NOT
+  --               NULL" (red at the withdrawn plan discarded)
+  --   (author)    news_post_plan_drafts() without its author clause (red at
+  --               the second coach's door)
+  --   (sent)      news_post_plan_drafts() without its sent clause (red at
+  --               the author changing the live plan's words)
+  DECLARE
+    y   jsonb := _v110_stage();
+    V_HIL uuid := '11111111-1111-1111-1111-111111111111';
+    F1  uuid := (y->>'f1')::uuid;
+    F2  uuid := (y->>'f2')::uuid;
+    D uuid; P uuid; X uuid; O uuid; Q uuid;
+    k   text;
+    got text;
+    ins text := $q$INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+                   VALUES ('team', %L, '12XI', %L, %L, %s, 'plan', %L) RETURNING id$q$;
+  BEGIN
+    -- (draft)
+    PERFORM _as((y->>'coach')::uuid);
+    EXECUTE format(ins, V_HIL, 'The plan: v Visitors', 'Bat first if we win it.', 'NULL', F1) INTO D;
+    got := _app_89(format('UPDATE news_post SET body = %L, urgency = ''medium'' WHERE id = %L', 'Bowl first if we win it.', D));
+    PERFORM _assert(got = 'ok' AND _v110_row(D) = 'plan | Bowl first if we win it. | medium | f | f',
+      format('§87 (draft): the author changing his draft answered %s, and it reads %s', got, _v110_row(D)));
+
+    -- (author)
+    FOREACH k IN ARRAY ARRAY['coach2', 'manager', 'captain'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _app_89(format('UPDATE news_post SET body = %L WHERE id = %L', 'Not his to change.', D));
+      PERFORM _assert(_v110_row(D) = 'plan | Bowl first if we win it. | medium | f | f',
+        format('§87 (author): the %s changed the coach''s draft (%s): %s', k, got, _v110_row(D)));
+    END LOOP;
+    PERFORM _as((y->>'coach2')::uuid);
+    got := _v110_door_edit(D, 'Not his to change.');
+    PERFORM _assert(got = 'news_post_plan_author' AND _v110_row(D) LIKE 'plan | Bowl first if we win it.%',
+      format('§87 (author): through a door, the second coach changing the draft answered %s', got));
+    PERFORM _as((y->>'coach')::uuid);
+    got := _v110_door_edit(D, 'Bowl first if we win it. Captain opens.');
+    PERFORM _assert(got = 'ok', format('§87 (author): through a door, the author changing his draft answered %s', got));
+
+    -- (delete)
+    FOREACH k IN ARRAY ARRAY['coach2', 'manager', 'captain', 'guardian'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT d.reason INTO got FROM news_plan_discard(D) d;
+      PERFORM _assert(got = 'no_such_draft' AND _v110_row(D) <> 'gone',
+        format('§87 (delete): the %s discarding the coach''s draft answered %s (%s)', k, got, _v110_row(D)));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT d.reason INTO got FROM news_plan_discard(D) d;
+    PERFORM _assert(got = 'not_permitted' AND _v110_row(D) <> 'gone', format('§87 (delete): an anonymous session answered %s', got));
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, '12XI', 'Verify 110 nets', 'Nets at three.', NULL) RETURNING id INTO O;
+    SELECT d.reason INTO got FROM news_plan_discard(O) d;
+    PERFORM _assert(got = 'no_such_draft' AND _v110_row(O) <> 'gone', format('§87 (delete): an ordinary draft post was discarded as a plan (%s)', got));
+    SELECT d.ok::text || coalesce(d.reason, '') INTO got FROM news_plan_discard(D) d;
+    PERFORM _assert(got = 'true' AND _v110_row(D) = 'gone', format('§87 (delete): the author discarding his draft answered %s (%s)', got, _v110_row(D)));
+    got := _app_89(format('DELETE FROM news_post WHERE id = %L', O));
+    PERFORM _assert(got = '42501' AND _v110_row(O) <> 'gone', format('§87 (delete): the application deleted a post directly (%s)', got));
+
+    -- (sent)
+    PERFORM _as((y->>'coach')::uuid);
+    -- Sent an hour ago, so its first date and a later sending differ (this
+    -- file is one transaction: now() does not move).
+    EXECUTE format(ins, V_HIL, 'The plan: v Visitors', 'Bat first if we win it.', 'now() - interval ''1 hour''', F1) INTO P;
+    PERFORM _assert(_v110_row(P) = 'plan | Bat first if we win it. | low | t | t', format('§87 (sent): the sent plan reads %s', _v110_row(P)));
+    FOREACH k IN ARRAY ARRAY[
+      format('UPDATE news_post SET body = %L WHERE id = %L', 'Bowl first after all.', P),
+      format('UPDATE news_post SET title = %L WHERE id = %L', 'The plan, again', P),
+      format('UPDATE news_post SET urgency = ''medium'' WHERE id = %L', P),
+      format('UPDATE news_post SET body = %L, published_at = NULL WHERE id = %L', 'Bowl first after all.', P)] LOOP
+      got := _app_89(k);
+      PERFORM _assert(got = 'news_post_plan_sent', format('§87 (sent): %s answered %s', left(k, 90), got));
+    END LOOP;
+    SELECT d.reason INTO got FROM news_plan_discard(P) d;
+    PERFORM _assert(got = 'plan_kept' AND _v110_row(P) = 'plan | Bat first if we win it. | low | t | t',
+      format('§87 (sent): discarding the live plan answered %s (%s)', got, _v110_row(P)));
+
+    -- (withdrawn)
+    PERFORM _assert(_withdraw_91(P) = 'ok', '§87 (withdrawn): the author could not withdraw the plan');
+    PERFORM _assert(_v110_row(P) = 'plan | Bat first if we win it. | low | f | t', format('§87 (withdrawn): the withdrawn plan reads %s', _v110_row(P)));
+    FOREACH k IN ARRAY ARRAY['coach2', 'manager'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _app_89(format('UPDATE news_post SET body = %L WHERE id = %L', 'Not his to change.', P));
+      PERFORM _assert(_v110_row(P) LIKE 'plan | Bat first if we win it.%', format('§87 (withdrawn): the %s changed the withdrawn plan (%s)', k, got));
+      SELECT d.reason INTO got FROM news_plan_discard(P) d;
+      PERFORM _assert(got = 'no_such_draft' AND _v110_row(P) <> 'gone', format('§87 (withdrawn): the %s discarding it answered %s', k, got));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    got := _app_89(format('UPDATE news_post SET body = %L WHERE id = %L', 'Bowl first after all. Captain opens.', P));
+    PERFORM _assert(got = 'ok' AND _v110_row(P) = 'plan | Bowl first after all. Captain opens. | low | f | t',
+      format('§87 (withdrawn): the author changing the withdrawn plan answered %s (%s)', got, _v110_row(P)));
+    SELECT d.reason INTO got FROM news_plan_discard(P) d;
+    PERFORM _assert(got = 'plan_kept' AND _v110_row(P) <> 'gone', format('§87 (withdrawn): discarding the withdrawn plan answered %s (%s)', got, _v110_row(P)));
+    got := _app_89(format('UPDATE news_post SET first_sent_at = NULL WHERE id = %L', P));
+    PERFORM _assert(_v110_row(P) LIKE '% | t', format('§87 (withdrawn): clearing the date answered %s and it reads %s', got, _v110_row(P)));
+    SELECT d.reason INTO got FROM news_plan_discard(P) d;
+    PERFORM _assert(got = 'plan_kept' AND _v110_row(P) <> 'gone', format('§87 (withdrawn): after clearing the date, discarding answered %s', got));
+    got := (SELECT first_sent_at::text FROM news_post WHERE id = P);
+    k := _app_89(format('UPDATE news_post SET published_at = now() WHERE id = %L AND published_at IS NULL', P));
+    PERFORM _assert(k = 'ok'
+                    AND _v110_row(P) = 'plan | Bowl first after all. Captain opens. | low | t | t'
+                    AND (SELECT first_sent_at::text FROM news_post WHERE id = P) = got
+                    AND (SELECT first_sent_at < published_at FROM news_post WHERE id = P),
+      format('§87 (withdrawn): sent again, it reads %s and its first date moved', _v110_row(P)));
+
+    -- (history)
+    got := _v110_versions(P);
+    PERFORM _assert(got = 'Bat first if we win it. (retracted) / Bowl first after all. Captain opens. (live)',
+      format('§87 (history): the plan''s sendings read %s', got));
+    FOREACH k IN ARRAY ARRAY['captain', 'guardian'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT n.body FROM news_post n WHERE n.id = P) = 'Bowl first after all. Captain opens.',
+        format('§87 (history): the %s does not read the plan sent again', k));
+    END LOOP;
+
+    -- (insert)
+    PERFORM _as((y->>'coach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id, first_sent_at)
+    VALUES ('team', V_HIL, '12XI', 'The plan: v Second Visitors', 'Bat first.', NULL, 'plan', F2, now() - interval '1 day') RETURNING id INTO X;
+    PERFORM _assert(_v110_row(X) = 'plan | Bat first. | low | f | f', format('§87 (insert): a forged date on a draft reads %s', _v110_row(X)));
+    SELECT d.ok::text INTO got FROM news_plan_discard(X) d;
+    PERFORM _assert(got = 'true' AND _v110_row(X) = 'gone', '§87 (insert): the draft with a forged date could not be discarded');
+
+    -- (post)
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, '12XI', 'Verify 110 nets moved', 'Nets at four.', now()) RETURNING id INTO Q;
+    got := _app_89(format('UPDATE news_post SET body = %L WHERE id = %L', 'Nets at five.', Q));
+    PERFORM _assert(got = 'ok' AND _v110_row(Q) = 'post | Nets at five. | low | t | f',
+      format('§87 (post): the author editing his sent post answered %s (%s)', got, _v110_row(Q)));
+
+    -- (doors)
+    PERFORM _assert((SELECT prosecdef AND provolatile = 'v' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                       FROM pg_proc WHERE oid = to_regprocedure('news_plan_discard(uuid)'))
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('news_plan_discard(uuid)'), 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                     WHERE p.oid = to_regprocedure('news_plan_discard(uuid)') AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                                       AND has_function_privilege(g.oid, to_regprocedure('news_plan_discard(uuid)'), 'EXECUTE')),
+      '§87 (doors): news_plan_discard is not a SECURITY DEFINER with a pinned path, the application''s alone');
+    PERFORM _assert((SELECT prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))
+                       FROM pg_proc WHERE oid = to_regprocedure('news_post_plan_drafts()'))
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('news_post_plan_drafts()'), 'EXECUTE')
+                    AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'news_post'::regclass AND tgname = 'news_post_plan_drafts'
+                                   AND tgenabled = 'O'),
+      '§87 (doors): the guard is callable by the application, or not the trigger''s');
+    PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'news_post', 'DELETE'), '§87 (doors): the application may delete a post');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 87
+  -- └── db/110 (section 87) ──────────────────────────────────────────
+  -- ┌── db/111 (section 88) ──────────────────────────────────────────
+  -- ── 88. The physio's injury record, its reviews and her worklist (db/111) ──
+  -- GA-I19 slice A, and slice C's SG-12 injury half. Every write below is a
+  -- person's, through scrbrd_app, through the two doors; _v111_stage() and the
+  -- _v111_ helpers stage and read as the owner.
+  --
+  -- What each label holds:
+  --   (doors)    the application writes neither table directly: a physio's
+  --              INSERT or UPDATE on injury and INSERT on injury_review are
+  --              refused for want of privilege (D2's REVOKE)
+  --   (record)   the physio records: recorded_by is she, the injury opens
+  --              active with its next review, one review (the recording) by
+  --              her, one "Injury recorded" notice, fitness 'injured', no
+  --              safeguarding notice for a moderate injury
+  --   (who)      every other reader is refused, by name: 12XI's coach,
+  --              assistant and manager, 20XI's coach, the director, the
+  --              principal, the office, the fitness coach, a scorer, a
+  --              follower, a granted enquiry, the boy's parent, the boy, his
+  --              team-mate, Westville's physio, the owner's key, and nobody
+  --              signed in; and the same for a review
+  --   (family)   a physio who is a boy's mother is refused for him, as
+  --              author of a record and of a review, and records another boy;
+  --              a physio whose guardian claim on the boy is still pending is
+  --              refused for him too (Q6)
+  --   (rules)    a record with no next review, one in the past, an injury in
+  --              the future, a severity outside the three, no injury named, a
+  --              return before the injury, and a boy who is not there
+  --   (module)   the Injuries module hidden from the physio: both doors say
+  --              module_off; shown again, she records
+  --   (review)   a review to rehab moves the phase and fitness and writes no
+  --              notice, keeping the restriction and return date it was not
+  --              given; refused with no next review, a phase outside the
+  --              three, a cleared boy restricted or given a next review, a
+  --              next review past, a review dated before the last; a moved
+  --              return date writes one "Return date updated"; clearing writes
+  --              one "Cleared to play", unrestricts him, ends the clock and
+  --              sets fitness 'fit'; a cleared injury is not reviewed again
+  --   (reopen)   a recurrence names the cleared injury; not another boy's,
+  --              and not an open one
+  --   (key)      a review naming one boy's injury and another boy is refused
+  --              by the key, even to the owner
+  --   (fitness)  'rehab' while one is in rehab and none active; 'injured'
+  --              while one is active; 'unavailable' set for another reason
+  --              is left when the last injury clears
+  --   (tiers)    the reviews, column by column: the physio, the parent and the
+  --              boy read every tier; 12XI's coach, assistant and manager, the
+  --              director, the office and the fitness coach read phases and
+  --              dates and never the note or its author; the principal and the
+  --              granted enquiry read that a review happened and what it left
+  --              his availability as, and nothing of the phase; 20XI's coach,
+  --              the team-mate, a scorer, a follower, Westville's physio and
+  --              the DSO read none. And injury_masked's new columns, by tier
+  --   (principal) the status tier alone (D3, Kameel 2026-10-15): of the
+  --              injury row its restriction, its dates and his fitness word;
+  --              no type, severity, phase, next review or emergency mark
+  --   (worklist) the physio's list: one reason each — overdue, return
+  --              passed, due, no return date, new — in that order, with the
+  --              clock; a quiet open injury is not on it; a boy who left is
+  --              off it and his row stays; the mother-physio's own son is off
+  --              hers, and the claiming physio's boy off hers; nobody without
+  --              medical.write gets a row, nor the owner's key, nor
+  --              Westville's physio a Hilton row
+  --   (left)     injury_left_on(): the day the leaver left, to the physio,
+  --              his coach and the principal; NULL for a boy still there and
+  --              to another side's coach. And (record)/(tiers): is_recording
+  --              marks the recording alone, read at the status tier
+  --   (support)  a support session as the physio, and as the sports office: no
+  --              review row, no worklist, both doors not_under_support; the
+  --              injury rows themselves as today (Q7)
+  --   (sg12)     a severe record writes the DSO one safeguarding notice that
+  --              names no child, no diagnosis and no id, for the school, high,
+  --              under safeguarding.concern.read; the physio and the side's
+  --              coach do not read it; a second edit and a review write no
+  --              second; a moderate record writes none until it is made
+  --              severe, then one, and none when it is eased and made severe
+  --              again; an injury already serious before db/111 writes none
+  --              on a later edit; a minor one with emergency services called
+  --              writes one; the DSO reads no injury and no review
+  --   (retention) NULL while he is at school; twelve months after he leaves
+  --   (agree)    every review row the physio reads is one the owner holds,
+  --              and the injury row's state is its latest review's
+  --   (doors2)   the functions: definers pinned, the worklist an invoker, the
+  --              application's three and nobody else's
+  --
+  -- Falsified once each, by replacing the object inside this file's own
+  -- transaction and running the section; each went red at its label:
+  --   (tiers)    the note masked at the nature tier (red at the coach: 2 notes)
+  --   (family)   injury_write_refusal() without its family line (red at the
+  --              mother-physio recording her son)
+  --   (family)   injury_writer_is_family() as is_family_of() alone (red at the
+  --              physio whose claim is pending)
+  --   (review)   the door's next-review check and the table's CHECK both gone
+  --              (red at next_review_required, answered ok)
+  --   (support)  injury_review_not_support dropped (red at the support session
+  --              as the physio: every review at the school)
+  --   (worklist) app_can('medical.status.read') where it asks medical.write
+  --              (red at the coach: 4 rows); the family cut removed (red at
+  --              the mother-physio's list holding her son's two)
+  --   (record)   injury_record() writing is_recording false (red at the recording)
+  --   (left)     injury_left_on() as a definer (red at 20XI's coach, given the date)
+  --   (tiers)    the principal's medical.nature.read row added back (red at the
+  --              principal: 5 phases and 4 next reviews where 0 were expected)
+  --   (sg12)     the boy's name in the words (red at D10's words); the stamp
+  --              guard removed (red at made severe a second time); the
+  --              "becomes" rule removed (red at the injury already serious)
+  DECLARE
+    y        jsonb := _v111_stage();
+    V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
+    U_DSO    uuid := '88888888-0000-0000-0000-000000000057';
+    U_PLAT   uuid := '88888888-0000-0000-0000-000000000014';
+    U_SUPER  uuid := '88888888-0000-0000-0000-000000000022';
+    T        date := sa_today();
+    BOY      uuid := (y->>'p_boy')::uuid;
+    MATE     uuid := (y->>'p_mate')::uuid;
+    OWN      uuid := (y->>'p_own')::uuid;
+    LEAVER   uuid := (y->>'p_leaver')::uuid;
+    SIDE     uuid := (y->>'p_side')::uuid;
+    WESBOY   uuid := (y->>'p_wes')::uuid;
+    REST     uuid := (y->>'p_rest')::uuid;
+    U_PHYSIO   uuid := (y->>'physio')::uuid;
+    sg0      int  := _v111_sg_count('11111111-1111-1111-1111-111111111111');
+    I1 uuid; I_RECUR uuid; I_MATE uuid; I_OWN uuid; I_OVER uuid; I_RET uuid; I_NORTW uuid;
+    I_QUIET uuid; I_LEFT uuid; I_SEV uuid; I_MOD uuid; I_EMS uuid; I_U uuid; v_sid uuid;
+    v_ok boolean; v_reason text; v_id uuid; j jsonb; k text; n int; got text;
+    e_rows int; e_phase int; e_note int; e_by int;
+    c_rows int; c_phase int; c_next int; c_note int; c_by int; c_status int;
+  BEGIN
+    -- ── (doors) ──
+    PERFORM _as(U_PHYSIO);
+    BEGIN
+      INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured) VALUES (V_HIL, BOY, 'Bruise', 'minor', T);
+      PERFORM _assert(false, '§88 (doors): the physio inserted an injury row directly, around the door');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE injury SET phase = 'cleared' WHERE player_id = BOY;
+      PERFORM _assert(false, '§88 (doors): the physio updated an injury row directly, around the door');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_by, phase_after, restricted_after, next_review_on)
+      SELECT i.school_id, i.player_id, i.id, U_PHYSIO, 'cleared', false, NULL FROM injury i LIMIT 1;
+      PERFORM _assert(false, '§88 (doors): the physio inserted a review directly, around the door');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- ── (record) ──
+    SELECT r.ok, r.reason, r.injury_id INTO v_ok, v_reason, I1
+      FROM injury_record(BOY, 'Grade 1 hamstring strain', 'moderate', T - 1, true, T + 21, T + 14, false,
+                         'V111 clinical: eccentric programme from day three.') r;
+    PERFORM _assert(v_ok AND I1 IS NOT NULL, format('§88 (record): the physio could not record an injury (%s)', v_reason));
+    j := _v111_injury(I1);
+    PERFORM _assert((j->>'recorded_by')::uuid = U_PHYSIO AND j->>'phase' = 'active' AND (j->>'restricted')::boolean
+                    AND (j->>'next_review_on')::date = T + 14 AND (j->>'rtw_date')::date = T + 21
+                    AND NOT (j->>'emergency_services')::boolean AND j->>'dso_notified_at' IS NULL
+                    AND j->>'physio' IS NULL AND j->>'notes' = 'V111 clinical: eccentric programme from day three.',
+      format('§88 (record): the injury row is not what she recorded: %s', j));
+    j := _v111_reviews(I1);
+    PERFORM _assert(jsonb_array_length(j) = 1 AND (j->0->>'reviewed_by')::uuid = U_PHYSIO AND j->0->>'phase_after' = 'active'
+                    AND (j->0->>'restricted_after')::boolean AND (j->0->>'next_review_on')::date = T + 14
+                    AND (j->0->>'rtw_date_after')::date = T + 21 AND j->0->>'note' IS NULL
+                    AND (j->0->>'is_recording')::boolean,
+      format('§88 (record): the recording is not one review, by her, of the state recorded: %s', j));
+    PERFORM _assert(_v111_notices(I1) = ARRAY['Injury recorded'],
+      format('§88 (record): the recording wrote %s, not one "Injury recorded"', _v111_notices(I1)));
+    PERFORM _assert(_v111_fitness(BOY) = 'injured', format('§88 (record): his fitness reads %s, not injured', _v111_fitness(BOY)));
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0, '§88 (record): a moderate injury wrote a safeguarding notice');
+
+    -- ── (who) ──
+    FOREACH k IN ARRAY ARRAY['coach', 'assistant', 'manager', 'coach20', 'director', 'principal', 'office', 'fitness',
+                             'scorer', 'follower', 'enquirer', 'parent', 'boy', 'mate', 'wesphysio'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT r.ok, r.reason INTO v_ok, v_reason
+        FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+      PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+        format('§88 (who): the %s recording an injury got %s / %s, not not_permitted', k, v_ok, v_reason));
+      SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_review_record(I1, 'cleared', false, NULL, NULL, NULL) r;
+      PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+        format('§88 (who): the %s reviewing an injury got %s / %s, not not_permitted', k, v_ok, v_reason));
+    END LOOP;
+    PERFORM _as(U_SUPER);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('§88 (who): the owner''s key recorded an injury (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_signed_in', format('§88 (who): nobody signed in got %s', v_reason));
+    PERFORM _assert(_v111_notices(I1) = ARRAY['Injury recorded'] AND jsonb_array_length(_v111_reviews(I1)) = 1,
+      '§88 (who): a refused caller changed the record');
+
+    -- ── (family) ──
+    PERFORM _as(U_PHYSIO);
+    SELECT r.injury_id INTO I_OWN FROM injury_record(OWN, 'Ankle sprain', 'minor', T - 2, true, T + 10, T + 20, false, NULL) r;
+    PERFORM _as((y->>'mumphysio')::uuid);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(OWN, 'Shin splints', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§88 (family): the physio who is his mother recorded an injury for her son (%s / %s)', v_ok, v_reason));
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_review_record(I_OWN, 'rehab', true, NULL, T + 7, 'Mum''s note') r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§88 (family): the physio who is his mother reviewed her son''s injury (%s / %s)', v_ok, v_reason));
+    SELECT r.ok, r.reason, r.injury_id INTO v_ok, v_reason, I_MATE
+      FROM injury_record(MATE, 'Bruised thumb', 'minor', T - 1, true, T + 5, T + 3, false, NULL) r;
+    PERFORM _assert(v_ok AND I_MATE IS NOT NULL, format('§88 (family): the mother-physio could not record another boy (%s)', v_reason));
+    PERFORM _as((y->>'claimphysio')::uuid);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§88 (family): a physio with a pending guardian claim on the boy recorded for him (%s / %s)', v_ok, v_reason));
+    PERFORM _assert(jsonb_array_length(_v111_reviews(I_OWN)) = 1, '§88 (family): the refused review was written');
+
+    -- ── (rules) ──
+    PERFORM _as(U_PHYSIO);
+    FOR k, v_reason IN
+      SELECT x.label, (SELECT r.reason FROM injury_record(x.p, x.t, x.s, x.d, true, x.rtw, x.nxt, false, NULL) r)
+        FROM (VALUES ('next_review_required',   BOY, 'Side strain', 'minor', T,     T + 7,  NULL::date),
+                     ('next_review_in_past',    BOY, 'Side strain', 'minor', T,     T + 7,  T - 1),
+                     ('date_injured_in_future', BOY, 'Side strain', 'minor', T + 1, T + 7,  T + 7),
+                     ('date_injured_required',  BOY, 'Side strain', 'minor', NULL,  T + 7,  T + 7),
+                     ('severity_invalid',       BOY, 'Side strain', 'mild',  T,     T + 7,  T + 7),
+                     ('injury_type_required',   BOY, '   ',         'minor', T,     T + 7,  T + 7),
+                     ('return_before_injury',   BOY, 'Side strain', 'minor', T - 1, T - 5,  T + 7),
+                     ('no_such_player',         gen_random_uuid(), 'Side strain', 'minor', T, T + 7, T + 7))
+             AS x(label, p, t, s, d, rtw, nxt) LOOP
+      PERFORM _assert(v_reason = k, format('§88 (rules): a record that should be %s was answered %s', k, coalesce(v_reason, 'ok')));
+    END LOOP;
+
+    -- ── (module) ──
+    PERFORM _v111_hide(U_PHYSIO, true);
+    SELECT r.reason INTO v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(v_reason = 'module_off', format('§88 (module): with Injuries off for her, a record got %s', coalesce(v_reason, 'ok')));
+    SELECT r.reason INTO v_reason FROM injury_review_record(I1, 'rehab', NULL, NULL, T + 7, NULL) r;
+    PERFORM _assert(v_reason = 'module_off', format('§88 (module): with Injuries off for her, a review got %s', coalesce(v_reason, 'ok')));
+    PERFORM _v111_hide(U_PHYSIO, false);
+
+    -- ── (review) ──
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_review_record(I1, 'rehab', NULL, NULL, T + 7, 'V111: strengthening, week two.') r;
+    PERFORM _assert(v_ok, format('§88 (review): the physio could not review to rehab (%s)', v_reason));
+    j := _v111_injury(I1);
+    PERFORM _assert(j->>'phase' = 'rehab' AND (j->>'restricted')::boolean AND (j->>'rtw_date')::date = T + 21
+                    AND (j->>'next_review_on')::date = T + 7,
+      format('§88 (review): rehab did not reach the injury row, or moved what it was not given: %s', j));
+    j := _v111_reviews(I1);
+    PERFORM _assert(jsonb_array_length(j) = 2 AND (j->1->>'restricted_after')::boolean AND (j->1->>'rtw_date_after')::date = T + 21
+                    AND NOT (j->1->>'is_recording')::boolean,
+      format('§88 (review): the review row does not state the whole state after it: %s', j->1));
+    PERFORM _assert(_v111_fitness(BOY) = 'rehab', format('§88 (fitness): in rehab his fitness reads %s', _v111_fitness(BOY)));
+    PERFORM _assert(_v111_notices(I1) = ARRAY['Injury recorded'],
+      format('§88 (review): a phase step wrote a notice: %s', _v111_notices(I1)));
+    FOR k, v_reason IN
+      SELECT x.label, (SELECT r.reason FROM injury_review_record(I1, x.ph, x.restr, NULL, x.nxt, NULL) r)
+        FROM (VALUES ('next_review_required',       'rehab',     NULL::boolean, NULL::date),
+                     ('phase_invalid',              'returning', NULL,          T + 7),
+                     ('cleared_is_not_restricted',  'cleared',   true,          NULL),
+                     ('cleared_has_no_next_review', 'cleared',   false,         T + 7),
+                     ('next_review_in_past',        'active',    NULL,          T - 1)) AS x(label, ph, restr, nxt) LOOP
+      PERFORM _assert(v_reason = k, format('§88 (review): a review that should be %s was answered %s', k, coalesce(v_reason, 'ok')));
+    END LOOP;
+    PERFORM _assert(jsonb_array_length(_v111_reviews(I1)) = 2, '§88 (review): a refused review was written');
+    SELECT r.ok INTO v_ok FROM injury_review_record(I1, 'rehab', true, T + 28, T + 7, NULL) r;
+    PERFORM _assert(v_ok AND _v111_notices(I1) = ARRAY['Injury recorded', 'Return date updated'],
+      format('§88 (review): moving the return date wrote %s', _v111_notices(I1)));
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_review_record(I1, 'cleared', NULL, NULL, NULL, 'V111: cleared, full training.') r;
+    PERFORM _assert(v_ok, format('§88 (review): the physio could not clear him (%s)', v_reason));
+    j := _v111_injury(I1);
+    PERFORM _assert(j->>'phase' = 'cleared' AND NOT (j->>'restricted')::boolean AND j->>'next_review_on' IS NULL,
+      format('§88 (review): clearing did not unrestrict him and end the clock: %s', j));
+    PERFORM _assert(_v111_notices(I1) = ARRAY['Cleared to play', 'Injury recorded', 'Return date updated'],
+      format('§88 (review): clearing wrote %s', _v111_notices(I1)));
+    PERFORM _assert(_v111_fitness(BOY) = 'fit', format('§88 (fitness): cleared, his fitness reads %s', _v111_fitness(BOY)));
+    SELECT r.reason INTO v_reason FROM injury_review_record(I1, 'rehab', true, NULL, T + 7, NULL) r;
+    PERFORM _assert(v_reason = 'injury_cleared', format('§88 (review): a cleared injury was reviewed again (%s)', coalesce(v_reason, 'ok')));
+    SELECT r.reason INTO v_reason FROM injury_review_record(gen_random_uuid(), 'rehab', true, NULL, T + 7, NULL) r;
+    PERFORM _assert(v_reason = 'no_such_injury', format('§88 (review): an injury that is not there got %s', coalesce(v_reason, 'ok')));
+    PERFORM _assert(jsonb_array_length(_v111_reviews(I1)) = 4 AND _v111_sg_count(V_HIL) = sg0,
+      '§88 (review): the story is not four reviews and no safeguarding notice');
+
+    -- ── (reopen) ──
+    SELECT r.ok, r.reason, r.injury_id INTO v_ok, v_reason, I_RECUR
+      FROM injury_record(BOY, 'Grade 1 hamstring strain, again', 'moderate', T, true, T + 21, T + 14, false, NULL, I1) r;
+    PERFORM _assert(v_ok AND (_v111_injury(I_RECUR)->>'recurs_injury_id')::uuid = I1,
+      format('§88 (reopen): the recurrence does not name the cleared injury (%s)', v_reason));
+    SELECT r.reason INTO v_reason FROM injury_record(BOY, 'Bruise', 'minor', T, true, T + 7, T + 7, false, NULL, I_MATE) r;
+    PERFORM _assert(v_reason = 'recurs_not_his', format('§88 (reopen): another boy''s injury was named as his (%s)', coalesce(v_reason, 'ok')));
+    SELECT r.reason INTO v_reason FROM injury_record(BOY, 'Bruise', 'minor', T, true, T + 7, T + 7, false, NULL, I_RECUR) r;
+    PERFORM _assert(v_reason = 'recurs_an_open_injury', format('§88 (reopen): an open injury was named as recurring (%s)', coalesce(v_reason, 'ok')));
+    PERFORM _assert(_v111_fitness(BOY) = 'injured', format('§88 (fitness): injured again, his fitness reads %s', _v111_fitness(BOY)));
+
+    -- ── (key) ──
+    PERFORM _assert(_v111_mismatch(I_RECUR, MATE) = '23503',
+      format('§88 (key): a review naming the boy''s injury and his team-mate was not refused by the key (%s)', _v111_mismatch(I_RECUR, MATE)));
+
+    -- ── review dated before the last ──
+    PERFORM _v111_future_review(I_MATE);
+    PERFORM _as((y->>'mumphysio')::uuid);
+    SELECT r.reason INTO v_reason FROM injury_review_record(I_MATE, 'rehab', true, NULL, T + 3, NULL) r;
+    PERFORM _assert(v_reason = 'review_before_last', format('§88 (review): a review behind the last one got %s', coalesce(v_reason, 'ok')));
+    PERFORM _as(U_PHYSIO);
+
+    -- ── (fitness) 'unavailable' for another reason is left ──
+    SELECT r.injury_id INTO I_U FROM injury_record(REST, 'Blister', 'minor', T, true, T + 3, T + 3, false, NULL) r;
+    PERFORM _v111_set_fitness(REST, 'unavailable');
+    SELECT r.ok INTO v_ok FROM injury_review_record(I_U, 'cleared', false, NULL, NULL, NULL) r;
+    PERFORM _assert(v_ok AND _v111_fitness(REST) = 'unavailable',
+      format('§88 (fitness): clearing his last injury wrote %s over unavailable', _v111_fitness(REST)));
+
+    -- ── (tiers) the boy's five reviews: I1's four, I_RECUR's one ──
+    -- Two carry a note (the rehab step and the clearance); four a next review
+    -- (all but the clearance).
+    FOR k, e_rows, e_phase, e_note, e_by IN
+      SELECT x.who, x.r, x.ph, x.nt, x.b FROM (VALUES
+        ('physio', 5, 5, 2, 5), ('parent', 5, 5, 2, 5), ('boy', 5, 5, 2, 5),
+        ('coach', 5, 5, 0, 0), ('assistant', 5, 5, 0, 0), ('manager', 5, 5, 0, 0), ('director', 5, 5, 0, 0),
+        ('office', 5, 5, 0, 0), ('fitness', 5, 5, 0, 0),
+        ('principal', 5, 0, 0, 0), ('enquirer', 5, 0, 0, 0),
+        ('coach20', 0, 0, 0, 0), ('mate', 0, 0, 0, 0), ('scorer', 0, 0, 0, 0), ('follower', 0, 0, 0, 0),
+        ('wesphysio', 0, 0, 0, 0), ('dso', 0, 0, 0, 0)) AS x(who, r, ph, nt, b) LOOP
+      PERFORM _as(CASE WHEN k = 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
+      SELECT count(*)::int, count(phase_after)::int, count(next_review_on)::int, count(note)::int, count(reviewed_by)::int,
+             (count(reviewed_at) + count(restricted_after))::int
+        INTO c_rows, c_phase, c_next, c_note, c_by, c_status
+        FROM injury_review_masked WHERE player_id = BOY;
+      PERFORM _assert(c_rows = e_rows AND c_phase = e_phase AND c_next = CASE WHEN e_phase = 5 THEN 4 ELSE 0 END
+                      AND c_note = e_note AND c_by = e_by AND c_status = 2 * e_rows,
+        format('§88 (tiers): the %s reads %s reviews of the boy, %s phases, %s next reviews, %s notes, %s authors (expected %s, %s, %s, %s)',
+               k, c_rows, c_phase, c_next, c_note, c_by, e_rows, e_phase, e_note, e_by));
+      SELECT count(*)::int INTO c_rows FROM injury_review WHERE player_id = BOY;
+      PERFORM _assert(c_rows = e_rows, format('§88 (tiers): the %s reads %s rows of the table, not %s', k, c_rows, e_rows));
+      -- is_recording is the status tier's: the two recordings (I1's, I_RECUR's), to every reader of a row.
+      SELECT count(*) FILTER (WHERE is_recording)::int INTO c_rows FROM injury_review_masked WHERE player_id = BOY;
+      PERFORM _assert(c_rows = CASE WHEN e_rows = 5 THEN 2 ELSE 0 END,
+        format('§88 (tiers): the %s reads %s recordings among the boy''s reviews', k, c_rows));
+      -- injury_masked's new columns, on the open recurrence.
+      SELECT count(*)::int, count(next_review_on)::int, count(emergency_services)::int, count(recorded_by)::int,
+             count(recurs_injury_id)::int, count(rtw_date)::int
+        INTO c_rows, c_next, c_phase, c_by, c_note, c_status
+        FROM injury_masked WHERE id = I_RECUR;
+      PERFORM _assert(c_rows = sign(e_rows) AND c_next = sign(e_phase) AND c_phase = sign(e_phase) AND c_by = sign(e_by)
+                      AND c_note = sign(e_rows) AND c_status = sign(e_rows),
+        format('§88 (tiers): the %s reads injury_masked''s new columns wrong (row %s, next %s, emergency %s, author %s, recurs %s, return %s)',
+               k, c_rows, c_next, c_phase, c_by, c_note, c_status));
+    END LOOP;
+
+    -- ── (principal) the status tier alone (D3; Kameel, 2026-10-15) ──
+    -- That the boy is out, since when and until when, and his fitness word;
+    -- never what is wrong, how bad, the phase or the physio's next date.
+    PERFORM _as((y->>'principal')::uuid);
+    SELECT count(*)::int, count(injury_type)::int + count(severity)::int + count(phase)::int
+                          + count(next_review_on)::int + count(emergency_services)::int,
+           count(restricted)::int + count(rtw_date)::int + count(date_injured)::int
+      INTO c_rows, c_phase, c_status
+      FROM injury_masked WHERE id = I_RECUR;
+    PERFORM _assert(c_rows = 1 AND c_phase = 0 AND c_status = 3,
+      format('§88 (principal): the principal reads the recurrence as %s row, %s nature columns and %s of 3 status columns', c_rows, c_phase, c_status));
+    SELECT fitness INTO got FROM player_masked WHERE id = BOY;
+    PERFORM _assert(got = 'injured', format('§88 (principal): the principal reads the boy''s fitness as %s, not injured', coalesce(got, 'null')));
+    PERFORM _assert(NOT app_can('medical.nature.read', V_HIL, '12XI', BOY, '00000000-0000-0000-0000-000000000000'::uuid),
+      '§88 (principal): the principal holds medical.nature.read');
+
+    -- ── (worklist) ──
+    PERFORM _as(U_PHYSIO);
+    SELECT r.injury_id INTO I_OVER FROM injury_record(SIDE, 'Calf strain', 'minor', T - 3, true, T + 30, T + 10, false, NULL) r;
+    PERFORM _v111_edit(I_OVER, T - 2, T + 30);
+    SELECT r.injury_id INTO I_RET FROM injury_record(SIDE, 'Groin strain', 'minor', T - 6, true, T + 5, T + 20, false, NULL) r;
+    PERFORM injury_review_record(I_RET, 'rehab', true, NULL, T + 20, NULL);
+    PERFORM _v111_edit(I_RET, T + 20, T - 1);
+    SELECT r.injury_id INTO I_NORTW FROM injury_record(OWN, 'Stress reaction, lower back', 'moderate', T - 4, true, NULL, T + 20, false, NULL) r;
+    PERFORM injury_review_record(I_NORTW, 'rehab', true, NULL, T + 20, NULL);
+    SELECT r.injury_id INTO I_QUIET FROM injury_record(SIDE, 'Finger sprain', 'minor', T - 2, true, T + 30, T + 20, false, NULL) r;
+    PERFORM injury_review_record(I_QUIET, 'rehab', true, NULL, T + 20, NULL);
+    SELECT r.injury_id INTO I_LEFT FROM injury_record(LEAVER, 'Knee sprain', 'minor', T - 1, true, T + 9, T + 3, false, NULL) r;
+    PERFORM _assert(I_OVER IS NOT NULL AND I_RET IS NOT NULL AND I_NORTW IS NOT NULL AND I_QUIET IS NOT NULL AND I_LEFT IS NOT NULL,
+      '§88 (worklist): an injury was not staged');
+    SELECT w.reason INTO got FROM injury_worklist() w WHERE w.injury_id = I_LEFT;
+    PERFORM _assert(got = 'due', format('§88 (worklist): before he leaves, the leaver''s injury reads %s', coalesce(got, 'absent')));
+    PERFORM _assert(_v111_leave(LEAVER) = 1, '§88 (worklist): the leaver had no open membership to close');
+    FOR k, got, j IN
+      SELECT x.label, x.want, x.clock FROM (VALUES
+        ('I_OVER',  'overdue',        jsonb_build_object('due', T - 2, 'over', 2, 'since', T - 2)),
+        ('I_RET',   'return_passed',  jsonb_build_object('due', T - 1, 'over', 1, 'since', T - 1)),
+        ('I_MATE',  'due',            jsonb_build_object('due', T + 3, 'over', 0)),
+        ('I_NORTW', 'no_return_date', jsonb_build_object('due', T + 20, 'over', 0, 'since', 'last_review')),
+        ('I_RECUR', 'new',            jsonb_build_object('due', T + 14, 'over', 0, 'since', 'last_review')),
+        ('I_OWN',   'new',            jsonb_build_object('due', T + 20, 'over', 0, 'since', 'last_review')),
+        ('I_QUIET', NULL,             NULL),
+        ('I_LEFT',  NULL,             NULL),
+        ('I1',      NULL,             NULL)) AS x(label, want, clock) LOOP
+      v_id := CASE k WHEN 'I_OVER' THEN I_OVER WHEN 'I_RET' THEN I_RET WHEN 'I_MATE' THEN I_MATE WHEN 'I_NORTW' THEN I_NORTW
+                     WHEN 'I_RECUR' THEN I_RECUR WHEN 'I_OWN' THEN I_OWN WHEN 'I_QUIET' THEN I_QUIET
+                     WHEN 'I_LEFT' THEN I_LEFT ELSE I1 END;
+      SELECT count(*)::int, max(w.reason), max(w.due_on - T), max(w.days_over), max(w.since - T)
+        INTO n, v_reason, c_rows, c_phase, e_rows
+        FROM injury_worklist() w WHERE w.injury_id = v_id;
+      IF got IS NULL THEN
+        PERFORM _assert(n = 0, format('§88 (worklist): %s is on the physio''s list as %s', k, v_reason));
+      ELSE
+        PERFORM _assert(n = 1 AND v_reason = got, format('§88 (worklist): %s reads %s (%s rows), not %s', k, coalesce(v_reason, 'absent'), n, got));
+        -- 'last_review': the day of the injury's latest review, from the row's
+        -- own reviewed_at, in Johannesburg. Not T: T is sa_today() at the
+        -- transaction's start, and the doors stamp clock_timestamp(), so a run
+        -- that crosses midnight in South Africa reviewed "tomorrow".
+        PERFORM _assert(T + c_rows = (j->>'due')::date AND c_phase = (j->>'over')::int
+                        AND (NOT j ? 'since'
+                             OR T + e_rows = CASE WHEN j->>'since' = 'last_review'
+                                                  THEN (SELECT (max((r->>'reviewed_at')::timestamptz) AT TIME ZONE 'Africa/Johannesburg')::date
+                                                          FROM jsonb_array_elements(_v111_reviews(v_id)) r)
+                                                  ELSE (j->>'since')::date END),
+          format('§88 (worklist): %s''s clock reads due %s, over %s, since %s, not %s', k, T + c_rows, c_phase, T + e_rows, j));
+      END IF;
+    END LOOP;
+    SELECT to_jsonb(array_agg(x.injury_id ORDER BY x.ord)) INTO j
+      FROM injury_worklist() WITH ORDINALITY AS x(injury_id, school_id, player_id, reason, since, due_on, days_over, ord)
+     WHERE x.injury_id IN (I_OVER, I_RET, I_MATE, I_NORTW, I_RECUR);
+    PERFORM _assert(j = to_jsonb(ARRAY[I_OVER, I_RET, I_MATE, I_NORTW, I_RECUR]),
+      format('§88 (worklist): the list is not overdue, return passed, due, no return date, new: %s', j));
+    SELECT count(*)::int INTO n FROM injury_masked WHERE id = I_LEFT AND injury_type IS NOT NULL;
+    PERFORM _assert(n = 1, '§88 (worklist): the physio no longer reads the injury of the boy who left');
+    -- (left) the "left the school" mark, under each reader's own RLS: the day
+    -- he left to the physio, his coach and the principal (status tier); NULL
+    -- for a boy still there; NULL to a reader of neither (20XI's coach).
+    FOREACH k IN ARRAY ARRAY['physio', 'coach', 'principal', 'coach20'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(injury_left_on(LEAVER, V_HIL) IS NOT DISTINCT FROM CASE WHEN k = 'coach20' THEN NULL ELSE T END
+                      AND injury_left_on(BOY, V_HIL) IS NULL,
+        format('§88 (left): the %s reads the leaver as left on %s and the boy as left on %s', k,
+               injury_left_on(LEAVER, V_HIL), injury_left_on(BOY, V_HIL)));
+    END LOOP;
+    PERFORM _as(U_PHYSIO);
+    PERFORM _assert((_v111_injury(I_LEFT)->>'phase') = 'active', '§88 (worklist): leaving changed his injury row');
+    PERFORM _as((y->>'mumphysio')::uuid);
+    SELECT count(*) FILTER (WHERE w.injury_id IN (I_NORTW, I_OWN))::int, count(*) FILTER (WHERE w.injury_id = I_RECUR)::int
+      INTO n, c_rows FROM injury_worklist() w;
+    PERFORM _assert(n = 0 AND c_rows = 1, format('§88 (worklist): the mother-physio''s list holds %s of her son''s injuries and %s of the boy''s', n, c_rows));
+    PERFORM _as((y->>'claimphysio')::uuid);
+    SELECT count(*) FILTER (WHERE w.injury_id = I_RECUR)::int, count(*) FILTER (WHERE w.injury_id = I_OWN)::int
+      INTO n, c_rows FROM injury_worklist() w;
+    PERFORM _assert(n = 0 AND c_rows = 1, format('§88 (worklist): the claiming physio''s list holds %s of the boy''s and %s of another', n, c_rows));
+    FOREACH k IN ARRAY ARRAY['coach', 'assistant', 'manager', 'coach20', 'director', 'principal', 'office', 'fitness',
+                             'scorer', 'follower', 'enquirer', 'parent', 'boy', 'mate', 'owner', 'dso'] LOOP
+      PERFORM _as(CASE k WHEN 'owner' THEN U_SUPER WHEN 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
+      SELECT count(*)::int INTO n FROM injury_worklist();
+      PERFORM _assert(n = 0, format('§88 (worklist): the %s reads %s worklist rows', k, n));
+    END LOOP;
+    PERFORM _as((y->>'wesphysio')::uuid);
+    SELECT count(*)::int INTO n FROM injury_worklist() w WHERE w.school_id = V_HIL;
+    PERFORM _assert(n = 0, format('§88 (worklist): Westville''s physio reads %s of Hilton''s worklist', n));
+
+    -- ── (support) ──
+    -- sportsadmin, not schooladmin: earlier sections leave the platform's own
+    -- schooladmin session at Hilton live in this transaction (already_live).
+    FOREACH k IN ARRAY ARRAY['medical', 'sportsadmin'] LOOP
+      PERFORM _as(U_PLAT);
+      SELECT r.ok, r.id, r.reason INTO v_ok, v_sid, v_reason FROM support_access_begin(V_HIL, k, 'v111: the injuries screen will not load') r;
+      PERFORM _assert(v_ok, format('§88 (support): a support session as %s did not begin (%s)', k, v_reason));
+      SELECT count(*)::int INTO n FROM injury_review;
+      SELECT count(*)::int INTO c_rows FROM injury_review_masked;
+      SELECT count(*)::int INTO c_phase FROM injury_masked WHERE player_id = BOY;
+      PERFORM _assert(n = 0 AND c_rows = 0, format('§88 (support): a support session as %s reads %s reviews (%s through the view)', k, n, c_rows));
+      PERFORM _assert(c_phase = 2, format('§88 (support): a support session as %s reads %s of the boy''s injury rows, not 2 (Q7: as today)', k, c_phase));
+      SELECT count(*)::int INTO n FROM injury_worklist();
+      PERFORM _assert(n = 0, format('§88 (support): a support session as %s reads %s worklist rows', k, n));
+      SELECT r.reason INTO v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+      PERFORM _assert(v_reason = 'not_under_support', format('§88 (support): a support session as %s recording got %s', k, coalesce(v_reason, 'ok')));
+      SELECT r.reason INTO v_reason FROM injury_review_record(I_RECUR, 'rehab', true, NULL, T + 7, NULL) r;
+      PERFORM _assert(v_reason = 'not_under_support', format('§88 (support): a support session as %s reviewing got %s', k, coalesce(v_reason, 'ok')));
+      PERFORM support_access_end(v_sid);
+    END LOOP;
+    PERFORM _assert(jsonb_array_length(_v111_reviews(I_RECUR)) = 1, '§88 (support): a support session wrote a review');
+
+    -- ── (sg12) ──
+    PERFORM _as(U_PHYSIO);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0, '§88 (sg12): nothing serious has been recorded, and a safeguarding notice was written');
+    SELECT r.injury_id INTO I_SEV FROM injury_record(SIDE, 'Compound wrist fracture', 'severe', T, true, T + 60, T + 7, false, NULL) r;
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 1, format('§88 (sg12): a severe record wrote %s safeguarding notices', _v111_sg_count(V_HIL) - sg0));
+    PERFORM _assert(_v111_injury(I_SEV)->>'dso_notified_at' IS NOT NULL, '§88 (sg12): the once-guard was not stamped');
+    PERFORM _as(U_DSO);
+    SELECT count(*)::int, max(x.title), max(x.body),
+           bool_and(x.subject_id IS NULL AND x.subject_person_id IS NULL AND x.subject_kind IS NULL AND x.team_code IS NULL
+                    AND x.recipient_id IS NULL AND x.scope_level = 'school' AND x.urgency = 'high' AND NOT x.is_public
+                    AND x.required_capability = 'safeguarding.concern.read' AND x.school_id = V_HIL)
+      INTO n, got, v_reason, v_ok
+      FROM notification x WHERE x.kind = 'safeguarding' AND x.title = 'A serious injury has been recorded';
+    PERFORM _assert(n = 1 AND v_ok, format('§88 (sg12): the DSO reads %s serious-injury notices, shaped %s', n, v_ok));
+    PERFORM _assert(v_reason = 'A pupil at your school has had a serious injury recorded by the physio today. This is for your awareness under CSA''s Safeguarding Policy; the clinical record stays with the physio. Raise a concern if there is a safeguarding question.',
+      format('§88 (sg12): the notice''s words are not D10''s: %s', v_reason));
+    PERFORM _assert(got || v_reason !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+                    AND got || v_reason !~* '(Verify|OneEleven|Otherside|fracture|wrist|compound)',
+      '§88 (sg12): the notice names a child, an id or a diagnosis');
+    SELECT count(*)::int INTO n FROM injury;
+    SELECT count(*)::int INTO c_rows FROM injury_review;
+    PERFORM _assert(n = 0 AND c_rows = 0, format('§88 (sg12): the DSO reads %s injuries and %s reviews', n, c_rows));
+    FOREACH k IN ARRAY ARRAY['physio', 'coach20', 'director'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT count(*)::int INTO n FROM notification WHERE kind = 'safeguarding';
+      PERFORM _assert(n = 0, format('§88 (sg12): the %s reads %s safeguarding notices', k, n));
+    END LOOP;
+    PERFORM _as((y->>'coach20')::uuid);
+    SELECT count(*)::int INTO n FROM notification WHERE kind = 'injury' AND subject_id = I_SEV;
+    PERFORM _assert(n = 1, format('§88 (sg12): the side''s coach reads %s "Injury recorded" notices for it (notify_injury unchanged)', n));
+    PERFORM _v111_serious(I_SEV, 'severe', true);
+    PERFORM _as(U_PHYSIO);
+    PERFORM injury_review_record(I_SEV, 'rehab', true, NULL, T + 7, NULL);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 1, '§88 (sg12): a second edit or a review wrote a second notice');
+    SELECT r.injury_id INTO I_MOD FROM injury_record(SIDE, 'Shoulder dislocation', 'moderate', T, true, T + 30, T + 7, false, NULL) r;
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 1, '§88 (sg12): a moderate record wrote a notice');
+    PERFORM _v111_serious(I_MOD, 'severe', false);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): made severe, it wrote no notice');
+    PERFORM _v111_serious(I_MOD, 'severe', true);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): told twice about one injury');
+    -- Eased, then made severe again: told once (the stamp).
+    PERFORM _v111_serious(I_MOD, 'moderate', false);
+    PERFORM _v111_serious(I_MOD, 'severe', false);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): made severe a second time, the DSO was told twice');
+    -- Serious before db/111 ran, and never stamped: a later edit tells nobody
+    -- (the notice is for an injury that BECOMES serious).
+    v_id := _v111_legacy_severe(SIDE);
+    PERFORM _v111_serious(v_id, 'severe', true);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): an edit to an injury already serious before db/111 told the DSO');
+    SELECT r.injury_id INTO I_EMS FROM injury_record(SIDE, 'Concussion, ambulance called', 'minor', T, true, T + 14, T + 2, true, NULL) r;
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 3, '§88 (sg12): emergency services called wrote no notice');
+    PERFORM _as(U_DSO);
+    SELECT count(*)::int INTO n FROM notification WHERE kind = 'safeguarding' AND title = 'A serious injury has been recorded';
+    PERFORM _assert(n = 3, format('§88 (sg12): the DSO reads %s of the three', n));
+
+    -- ── (retention) ──
+    PERFORM _assert(_v111_due(BOY) IS NULL, format('§88 (retention): at school, his record is due %s', _v111_due(BOY)));
+    PERFORM _assert(_v111_due(LEAVER) = (T + interval '12 months')::date,
+      format('§88 (retention): left today, his record is due %s', _v111_due(LEAVER)));
+
+    -- ── (agree) every door-written injury's state is its latest review's ──
+    FOREACH v_id IN ARRAY ARRAY[I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_LEFT, I_SEV, I_MOD, I_EMS] LOOP
+      j := _v111_injury(v_id);
+      PERFORM _assert((SELECT z.r->>'phase_after' = j->>'phase' AND (z.r->>'restricted_after')::boolean = (j->>'restricted')::boolean
+                              AND z.r->>'rtw_date_after' IS NOT DISTINCT FROM j->>'rtw_date'
+                              AND z.r->>'next_review_on' IS NOT DISTINCT FROM j->>'next_review_on'
+                         FROM (SELECT _v111_reviews(v_id) -> -1 AS r) z),
+        format('§88 (agree): injury %s and its latest review disagree', j->>'injury_type'));
+    END LOOP;
+    PERFORM _as(U_PHYSIO);
+    SELECT count(*)::int INTO n FROM injury_review_masked
+     WHERE injury_id IN (I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_LEFT, I_SEV, I_MOD, I_EMS, I_OVER, I_RET, I_U);
+    SELECT sum(jsonb_array_length(_v111_reviews(x)))::int INTO c_rows
+      FROM unnest(ARRAY[I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_LEFT, I_SEV, I_MOD, I_EMS, I_OVER, I_RET, I_U]) x;
+    PERFORM _assert(n = c_rows AND n > 0, format('§88 (agree): the physio reads %s of the %s reviews at her school', n, c_rows));
+
+    -- ── (doors2) ──
+    PERFORM _assert((SELECT bool_and(prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}')))
+                       FROM pg_proc WHERE oid IN (to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)'),
+                                                  to_regprocedure('injury_review_record(uuid,text,boolean,date,date,text)'),
+                                                  to_regprocedure('injury_apply_review()'), to_regprocedure('injury_serious_watch()'),
+                                                  to_regprocedure('injury_retention_due(uuid)'))),
+      '§88 (doors2): a door or a trigger is not a pinned SECURITY DEFINER');
+    PERFORM _assert((SELECT NOT prosecdef FROM pg_proc WHERE oid = to_regprocedure('injury_worklist()')),
+      '§88 (doors2): the worklist runs as its owner, past the caller''s RLS');
+    PERFORM _assert(has_function_privilege('scrbrd_app', to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)'), 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('injury_review_record(uuid,text,boolean,date,date,text)'), 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('injury_worklist()'), 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('injury_retention_due(uuid)'), 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('injury_write_refusal(uuid,uuid)'), 'EXECUTE'),
+      '§88 (doors2): the application cannot call its doors, or can call an internal');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                 WHERE p.proname IN ('injury_record', 'injury_review_record', 'injury_worklist', 'injury_writer_is_family',
+                                                     'injury_write_refusal', 'injury_apply_review', 'injury_serious_watch', 'injury_retention_due')
+                                   AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+      '§88 (doors2): PUBLIC may call one of db/111''s functions');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles g, pg_proc p WHERE g.rolname IN ('anon', 'authenticated')
+                                   AND p.proname IN ('injury_record', 'injury_review_record', 'injury_worklist')
+                                   AND has_function_privilege(g.oid, p.oid, 'EXECUTE')),
+      '§88 (doors2): a managed host''s API role can call a door');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 88
+  -- └── db/111 (section 88) ──────────────────────────────────────────
+  -- ┌── db/112 (section 89) ──────────────────────────────────────────
+  -- ── 89. A moved pupil follows his new side (SR-1); the boy playing up reads his match's balls ──
+  -- docs/design/SEASON_ROLLOVER.md §1.2 and §8 (Kameel, 15 Oct 2026, as
+  -- recommended), and the playing-up ball log (Kameel, 15 Oct 2026: yes).
+  -- Every move below is the office's own UPDATE of player.team_code, through
+  -- scrbrd_app, as the move route (roster-api.mjs) writes it; _v112_stage()
+  -- and the _v112_ helpers stage and read as the owner. The HTTP half is
+  -- tools/smoke-player-move.mjs.
+  --
+  -- What each label holds:
+  --   (before)     on U14E, mb reads U14E's fixture, nets, plan and balls and
+  --                none of U15E's
+  --   (carry)      the office moves mb to U15E: his account's `player` row on
+  --                U14E is ended (kept, stamped with the office and the time)
+  --                and one is opened on U15E, made by the office; the history
+  --                trigger's row beside it; his self-access row, its link and
+  --                his mother's row and link untouched. The same for sb, whose
+  --                account is his only by a verified self-access link
+  --   (reads)      after the move mb reads U15E's fixture, nets, plan and
+  --                balls and none of U14E's; his mother reads the same side
+  --   (whose)      a would-be account whose self-access claim is pending, and
+  --                an account that is also another boy, are not carried
+  --   (none)       the office moves nb to no side: the move is made, his row
+  --                on U14E is ended, kept, and none is opened; no live
+  --                `player` row names no side; he reads none of U14E's
+  --   (idempotent) the moves leave no row out of step but those earlier
+  --                sections staged so; the one-time correction, after moves
+  --                made before this file (the carry switched off) and rows
+  --                written by hand: it carries each boy once (tm ended 1 and
+  --                opened 1 on his side, mb's stray row ended, nb's ended: he
+  --                has no side), and the earlier sections' too; nothing then
+  --                disagrees, and a second run changes nothing at all; the
+  --                seed's two `player` rows (R Pillay's, and spectator@'s, no
+  --                boy's) are as they were
+  --   (playing up) up reads every ball of f16a (home) and f16w (away), the
+  --                matches he is on the sheet of, and none of f16b, the older
+  --                side's other match; and his own side's f14 as before. His
+  --                team-mate on no sheet reads none of the older side's
+  --   (withdrawn)  wd, withdrawn from f16a, reads none of it: no fixture, no
+  --                ball; his own side's as before
+  --   (guardians)  for every person whose every live role is a guardian's, the
+  --                new branch is empty and the balls read are db/100's three
+  --                branches exactly; up's mother reads f16a's and f16w's
+  --                balls by db/100's sheet branch, as before
+  --   (agree)      for every person holding an assignment and every scored
+  --                fixture, ball_event_read admits exactly db/100's three
+  --                branches or the boy himself on the sheet (db/106 (e)
+  --                spelled out apart, _v106_self_sheet())
+  --   (check)      db/108's CHECK as written and validated, no live team-less
+  --                `player` row, role_request_grant_as() db/92's body with
+  --                db/108's block (its md5 guard), my_child_fixtures() db/100's
+  --   (doors)      the trigger enabled; the five SR-1 functions pinned
+  --                definers no one but the owner may call; the sheet helper
+  --                scrbrd_app's alone
+  --
+  -- Falsified on 16 Oct 2026, each change made as the owner in the same
+  -- transaction before this section ran (so a ROLLBACK put it back), each
+  -- red, and green again without it:
+  --   the trigger disabled (no carry)               → (carry) red: "after the
+  --                                                    move mb's account holds
+  --                                                    U14E:live"
+  --   the carry opening the new row whatever the    → (none) red: "the move to
+  --     side (carry to NULL)                           no side was refused:
+  --                                                    role_assignment_player_
+  --                                                    team_scoped"
+  --   my_own_sheet_fixtures() without the sheet     → (before) red: mb, on no
+  --     (every fixture at his school's ends)           sheet, read the balls of
+  --                                                    f14 f15 f16a f16b f16w
+  --   my_own_sheet_fixtures() without NOT withdrawn → (withdrawn) red: wd read
+  --                                                    f16a's balls
+  DECLARE
+    z        jsonb := _v112_stage();
+    OFFICE   uuid;
+    MB uuid; SB uuid; NB uuid; UPB uuid; WD uuid; TM uuid; PB uuid; T1 uuid;
+    U_MB uuid; U_SB uuid; U_NB uuid; U_UP uuid; U_WD uuid; U_TM uuid; U_PA uuid; U_TWO uuid;
+    G uuid; GUP uuid;
+    got      text;
+    n        int;
+    v_others text;
+    v_gothers text;
+    v_seed   text;
+    v_all    text;
+    u        uuid;
+    m        uuid;
+    bad      text;
+    ppl      uuid[];
+    v_child  uuid[];
+    v_base   text;
+    j        jsonb;
+  BEGIN
+    OFFICE := (z->>'office')::uuid;
+    MB := (z->>'mb')::uuid; SB := (z->>'sb')::uuid; NB := (z->>'nb')::uuid; UPB := (z->>'up')::uuid;
+    WD := (z->>'wd')::uuid; TM := (z->>'tm')::uuid; PB := (z->>'pb')::uuid; T1 := (z->>'t1')::uuid;
+    U_MB := (z->>'u_mb')::uuid; U_SB := (z->>'u_sb')::uuid; U_NB := (z->>'u_nb')::uuid; U_UP := (z->>'u_up')::uuid;
+    U_WD := (z->>'u_wd')::uuid; U_TM := (z->>'u_tm')::uuid; U_PA := (z->>'u_pa')::uuid; U_TWO := (z->>'u_two')::uuid;
+    G := (z->>'g')::uuid; GUP := (z->>'gup')::uuid;
+    v_seed := _v112_fact('seed_live');
+    v_base := _v112_fact('disagree_boys');
+
+    -- ── (before) ──
+    PERFORM _as(U_MB);
+    got := _v112_reads(z);
+    PERFORM _assert(got = 'fixtures [f14] training [s14] plans [p14] balls [f14]',
+      format('§89 (before): on U14E mb reads %s', got));
+
+    -- ── (carry) ──
+    v_others := _v112_others(U_MB);
+    v_gothers := _v112_others(G);
+    PERFORM _as(OFFICE);
+    UPDATE player SET team_code = 'U15E' WHERE id = MB;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, '§89 (carry): the office could not move mb');
+    PERFORM _assert(_v112_roles(U_MB) = 'U14E:ended U15E:live',
+      format('§89 (carry): after the move mb''s account holds %s', _v112_roles(U_MB)));
+    PERFORM _assert(_v112_fact('ended_by', U_MB) = OFFICE::text AND _v112_fact('made_by', U_MB) = OFFICE::text,
+      format('§89 (carry): the ended row reads %s and the new one was made by %s, not the office',
+             _v112_fact('ended_by', U_MB), _v112_fact('made_by', U_MB)));
+    PERFORM _assert(_v112_fact('open_membership', MB) = 'U15E',
+      format('§89 (carry): the history trigger''s open row is %s', _v112_fact('open_membership', MB)));
+    PERFORM _assert(_v112_others(U_MB) = v_others AND _v112_others(G) = v_gothers,
+      '§89 (carry): the move touched mb''s self-access row or link, or his mother''s');
+    UPDATE player SET team_code = 'U15E' WHERE id = SB;
+    PERFORM _assert(_v112_roles(U_SB) = 'U14E:ended U15E:live',
+      format('§89 (carry): after the move sb''s account (self-access only) holds %s', _v112_roles(U_SB)));
+
+    -- ── (reads) ──
+    PERFORM _as(U_MB);
+    got := _v112_reads(z);
+    PERFORM _assert(got = 'fixtures [f15] training [s15] plans [p15] balls [f15]',
+      format('§89 (reads): after the move to U15E mb reads %s', got));
+    PERFORM _as(U_SB);
+    got := _v112_reads(z);
+    PERFORM _assert(got = 'fixtures [f15] training [s15] plans [p15] balls [f15]',
+      format('§89 (reads): after the move to U15E sb reads %s', got));
+    PERFORM _as(G);
+    got := _v112_reads(z);
+    PERFORM _assert(got = 'fixtures [f15] training [s15] plans [p15] balls [f15]',
+      format('§89 (reads): mb''s mother reads %s, not her son''s side', got));
+
+    -- ── (whose) ──
+    PERFORM _as(OFFICE);
+    UPDATE player SET team_code = 'U15E' WHERE id IN (PB, T1);
+    PERFORM _assert(_v112_roles(U_PA) = 'U14E:live' AND _v112_roles(U_TWO) = 'U14E:live',
+      format('§89 (whose): a pending claim''s account holds %s, an account of two boys %s', _v112_roles(U_PA), _v112_roles(U_TWO)));
+
+    -- ── (none) ──
+    got := 'moved';
+    BEGIN
+      UPDATE player SET team_code = NULL WHERE id = NB;
+    EXCEPTION WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS got = CONSTRAINT_NAME;
+      got := 'refused: ' || coalesce(nullif(got, ''), SQLERRM);
+    END;
+    PERFORM _assert(got = 'moved', format('§89 (none): the move to no side was %s', got));
+    PERFORM _assert(_v112_fact('side', NB) = '(none)' AND _v112_roles(U_NB) = 'U14E:ended'
+                    AND _v112_fact('ended_by', U_NB) = OFFICE::text,
+      format('§89 (none): on no side nb''s account holds [%s] (ended by %s)', _v112_roles(U_NB), _v112_fact('ended_by', U_NB)));
+    PERFORM _assert(_v112_fact('teamless_live') = '0',
+      format('§89 (none): %s live player rows name no side', _v112_fact('teamless_live')));
+    PERFORM _as(U_NB);
+    got := _v112_reads(z);
+    PERFORM _assert(got = 'fixtures [] training [] plans [] balls []', format('§89 (none): on no side nb reads %s', got));
+
+    -- ── (playing up) ──
+    PERFORM _as(U_UP);
+    PERFORM _assert(_v112_balls((z->>'f16a')::uuid) = _v112_fact('owner_balls', (z->>'f16a')::uuid)::int
+                    AND _v112_balls((z->>'f16a')::uuid) = 18
+                    AND _v112_balls((z->>'f16w')::uuid) = 30,
+      format('§89 (playing up): up reads %s of f16a''s 18 balls and %s of f16w''s 30',
+             _v112_balls((z->>'f16a')::uuid), _v112_balls((z->>'f16w')::uuid)));
+    PERFORM _assert(_v112_balls((z->>'f16b')::uuid) = 0,
+      format('§89 (playing up): up reads %s balls of f16b, the older side''s other match', _v112_balls((z->>'f16b')::uuid)));
+    got := _v112_reads(z);
+    PERFORM _assert(got = 'fixtures [f14 f16a f16w] training [s14] plans [p14] balls [f14 f16a f16w]',
+      format('§89 (playing up): up reads %s', got));
+    PERFORM _as(U_TM);
+    PERFORM _assert(_v112_balls((z->>'f16a')::uuid) = 0 AND _v112_balls((z->>'f16w')::uuid) = 0,
+      '§89 (playing up): up''s team-mate, on no sheet, reads the older side''s balls');
+    -- ...and his old team-mates on U14E read none of them either.
+    PERFORM _as(U_PA);
+    PERFORM _assert(_v112_balls((z->>'f16a')::uuid) = 0 AND _v112_balls((z->>'f16w')::uuid) = 0,
+      '§89 (playing up): a U14E player on no sheet reads the older side''s balls');
+
+    -- ── (withdrawn) ──
+    PERFORM _as(U_WD);
+    got := _v112_reads(z);
+    PERFORM _assert(got = 'fixtures [f14] training [s14] plans [p14] balls [f14]',
+      format('§89 (withdrawn): withdrawn from f16a wd reads %s', got));
+
+    -- ── (guardians) ──
+    PERFORM _as(GUP);
+    PERFORM _assert(_v112_balls((z->>'f16a')::uuid) = 18 AND _v112_balls((z->>'f16w')::uuid) = 30
+                    AND _v112_balls((z->>'f16b')::uuid) = 0,
+      '§89 (guardians): up''s mother does not read the balls of the matches he is on the sheet of, and only those');
+    PERFORM _assert(_v112_fact('child_md5') = '78db5a4d195937ed800efc92e0489516',
+      '§89 (guardians): my_child_fixtures() is not db/100''s');
+    n := 0;
+    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+      PERFORM _as(u);
+      v_child := my_child_fixtures();
+      PERFORM _assert(cardinality(my_own_sheet_fixtures()) = 0,
+        format('§89 (guardians): the guardian %s has fixtures on the new branch', u));
+      SELECT string_agg(x::text, ' ') INTO bad FROM (
+        ((SELECT DISTINCT b.match_id FROM ball_event b)
+         EXCEPT (SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child)))
+        UNION ALL
+        ((SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child))
+         EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b))) d(x);
+      PERFORM _assert(bad IS NULL, format('§89 (guardians): the guardian %s reads balls apart from db/100 at %s', u, left(bad, 300)));
+      n := n + 1;
+    END LOOP;
+    PERFORM _assert(n > 10, format('§89 (guardians): %s guardians compared: it proves nothing', n));
+
+    -- ── (idempotent) ──
+    -- The moves made through the trigger left nothing out of step: the boys
+    -- whose rows disagree are the ones earlier sections staged that way (an
+    -- account handed a side its boy is not on, a stage's shortcut), and no
+    -- more.
+    PERFORM _assert(_v112_fact('disagree_boys') = v_base,
+      format('§89 (idempotent): after the moves the boys out of step are [%s], before them [%s]: %s',
+             _v112_fact('disagree_boys'), v_base, _v112_fact('disagree_names')));
+    -- Moves made before this file: tm moved with the carry off; mb given a
+    -- second row on his old side by hand; nb, on no side, given one by hand.
+    PERFORM _v112_move_untracked(TM, 'U15E');
+    PERFORM _v112_grant(U_MB, 'U14E');
+    PERFORM _v112_grant(U_NB, 'U14E');
+    PERFORM _assert((SELECT count(*) FROM unnest(string_to_array(_v112_fact('disagree_boys'), ',')) x
+                      WHERE x::uuid IN (TM, MB, NB)) = 3,
+      format('§89 (idempotent): the stale state staged [%s]', _v112_fact('disagree_names')));
+    j := _v112_correct();
+    PERFORM _assert(j->>TM::text = '1:1' AND j->>MB::text = '1:0' AND j->>NB::text = '1:0'
+                    AND (SELECT count(*) FROM jsonb_object_keys(j)) = 3 + coalesce(cardinality(string_to_array(nullif(v_base, ''), ',')), 0),
+      format('§89 (idempotent): the correction answered %s (tm 1:1, mb 1:0, nb 1:0, and the %s staged out of step before)', j, v_base));
+    PERFORM _assert(_v112_roles(U_TM) = 'U14E:ended U15E:live'
+                    AND _v112_roles(U_MB) = 'U14E:ended U14E:ended U15E:live'
+                    AND _v112_roles(U_NB) = 'U14E:ended U14E:ended',
+      format('§89 (idempotent): after the correction tm holds [%s], mb [%s], nb [%s]',
+             _v112_roles(U_TM), _v112_roles(U_MB), _v112_roles(U_NB)));
+    PERFORM _assert(_v112_fact('disagree') = '0', '§89 (idempotent): a row still disagrees after the correction');
+    v_all := _v112_fact('all_assignments');
+    j := _v112_correct();
+    PERFORM _assert(j = '{}'::jsonb AND _v112_fact('all_assignments') = v_all,
+      format('§89 (idempotent): a second correction answered %s, or changed an assignment', j));
+    PERFORM _assert(_v112_fact('seed_live') = v_seed
+                    AND v_seed LIKE '%a5510000-0000-0000-0000-000000000001:1XI%'
+                    AND v_seed LIKE '%a5510000-0000-0000-0000-00000000000c:1XI%',
+      format('§89 (idempotent): the seed''s live player rows are now %s, were %s', _v112_fact('seed_live'), v_seed));
+    PERFORM _as(U_TM);
+    got := _v112_reads(z);
+    PERFORM _assert(got = 'fixtures [f15] training [s15] plans [p15] balls [f15]',
+      format('§89 (idempotent): corrected onto U15E tm reads %s', got));
+
+    -- ── (agree) ──
+    ppl := _v106_people();
+    n := 0;
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      v_child := my_child_fixtures();
+      SELECT string_agg(x::text, ' ') INTO bad FROM (
+        ((SELECT DISTINCT b.match_id FROM ball_event b)
+         EXCEPT (SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child) OR _v106_self_sheet('fixture.read', y)))
+        UNION ALL
+        ((SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child) OR _v106_self_sheet('fixture.read', y))
+         EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b))) d(x);
+      PERFORM _assert(bad IS NULL, format('§89 (agree): %s reads balls apart from db/100 and the sheet at %s', u, left(bad, 300)));
+      IF EXISTS (SELECT 1 FROM unnest(_v106_ball_matches()) y WHERE _v106_self_sheet('fixture.read', y) AND NOT _v112_db100(y, v_child)) THEN
+        n := n + 1;
+      END IF;
+    END LOOP;
+    PERFORM _assert(n >= 1 AND cardinality(ppl) > 20,
+      format('§89 (agree): %s of %s people read a match by the sheet alone: it proves nothing', n, cardinality(ppl)));
+
+    -- ── (check) ──
+    PERFORM _assert((SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+                      WHERE c.conrelid = to_regclass('role_assignment') AND c.conname = 'role_assignment_player_team_scoped'
+                        AND c.contype = 'c' AND c.convalidated)
+                    = 'CHECK (((role <> ''player''::text) OR (team_code IS NOT NULL) OR (NOT active)))',
+      '§89 (check): role_assignment_player_team_scoped is not db/108''s, or not validated');
+    PERFORM _assert(_v112_fact('teamless_live') = '0', '§89 (check): a live player row names no side');
+    PERFORM _assert(_v112_fact('grant_md5') = 'a9a5a09414e0629d70c873fcbeb99f75',
+      '§89 (check): role_request_grant_as() is not db/92''s body with db/108''s block');
+
+    -- ── (doors) ──
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = to_regclass('player')
+                               AND t.tgname = 'player_assignment_follows_side' AND t.tgenabled = 'O'
+                               AND t.tgfoid = to_regprocedure('player_assignment_follows_side()')),
+      '§89 (doors): the trigger is missing or disabled');
+    PERFORM _assert((SELECT bool_and(p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
+                                     AND NOT has_function_privilege('scrbrd_app', p.oid, 'EXECUTE')
+                                     AND NOT has_function_privilege('public', p.oid, 'EXECUTE'))
+                           AND count(*) = 5
+                       FROM pg_proc p
+                      WHERE p.oid IN (to_regprocedure('player_own_accounts(uuid)'), to_regprocedure('player_assignment_carry(uuid,uuid,text)'),
+                                      to_regprocedure('player_assignment_follows_side()'), to_regprocedure('player_assignment_disagreements()'),
+                                      to_regprocedure('player_assignment_correct()'))),
+      '§89 (doors): an SR-1 function is not a pinned definer, or the application or PUBLIC may call it');
+    PERFORM _assert(has_function_privilege('scrbrd_app', to_regprocedure('my_own_sheet_fixtures()'), 'EXECUTE')
+                    AND NOT has_function_privilege('public', to_regprocedure('my_own_sheet_fixtures()'), 'EXECUTE'),
+      '§89 (doors): my_own_sheet_fixtures() is not scrbrd_app''s alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 89
+  -- └── db/112 (section 89) ──────────────────────────────────────────
+  -- ┌── db/113 (section 90) ──────────────────────────────────────────
+  -- ── 90. A correction takes back what it falsified (db/113) ──
+  -- GA-I36 A2 with NOTIFICATIONS S5. A void re-asks every notice its ball
+  -- could have caused; one that no longer holds is withdrawn, once, to its
+  -- own audience, in the design's words; one that holds again returns in
+  -- place and nothing new is sent. _v113_stage() and _v113_ev() write as the
+  -- owner, as the pad and the amendment route reach the log; every read
+  -- below is a person's, through scrbrd_app under RLS.
+  --
+  -- What each label holds:
+  --   (fifty)      a six takes the batter from 46 to 52: one milestone row,
+  --                linked to one live "Fifty for …" notice his side reads
+  --   (withdrawn)  the six is voided (46): the mark and its notice are
+  --                retracted as a correction, by the system, and ONE
+  --                "withdrawn" notice goes: "A notice was withdrawn",
+  --                "'Fifty for …' was withdrawn after the scorecard was
+  --                corrected.", to exactly the original's audience, low
+  --   (live)       nobody reads the withdrawn notice as live: not in the coach's,
+  --                the boy's or his parent's list, a stub when opened
+  --                (withdrawn, no words, pointing at the withdrawal), the mark
+  --                gone from milestone_notice; the withdrawal in each list once
+  --   (audience)   another boy's parent, another school's coach and a follower
+  --                read neither the notice nor its withdrawal
+  --   (standing)   the partner's fifty, on a ball nobody voided, is untouched
+  --   (names)      no withdrawal's title names a child (the push is a pointer
+  --                whatever the row says: push-api.test.mjs); a welfare
+  --                withdrawal names nobody in its body either
+  --   (idempotent) a second void of the same ball sends no second withdrawal
+  --                and moves nothing; a void of an unrelated dot retracts
+  --                nothing
+  --   (once)       a re-entered four restores the fifty (50): the SAME row
+  --                and notice return, re-synced to 50, nothing new is sent,
+  --                and its withdrawal is superseded, unsaid; every reader
+  --                sees one live fifty and no withdrawal. Voided again, one
+  --                live withdrawal again
+  --   (breach)     a U13 bowler's sixth over of a spell: one breach and one
+  --                high welfare notice; that ball voided: the breach is hidden,
+  --                workload() counts none, the notice withdrawn at medium to
+  --                the same staff; the ball re-entered: the same breach and
+  --                notice return, nothing new
+  --   (newly)      W, dot, W, W and the dot voided: the hat-trick the
+  --                corrected history holds is noticed once, "after a
+  --                correction"; a second void sends nothing more
+  --   (doors)      the new functions are nobody's to call (not the
+  --                application's); the triggers fire on a void (and the
+  --                public one on a released ball) only
+  --
+  -- Falsified once each, by replacing the object in the database and running
+  -- this section; each went red at its label (see the commit):
+  --   (withdrawn)  milestone_retract() without its notification_retract()
+  --   (once)       milestone_notify_as() inserting a new notice on a
+  --                re-reached mark instead of un-retracting the row
+  --   (names)      notification_retract() titling the withdrawal with the
+  --                original's title ("A notice was withdrawn: Fifty for …")
+  --   (breach)     workload() without `x.retracted_at IS NULL`
+  DECLARE
+    y     jsonb := _v113_stage();
+    M     uuid := (y->>'match')::uuid;
+    BAT   uuid := (y->>'bat')::uuid;
+    PAR   uuid := (y->>'par')::uuid;
+    Q     uuid := (y->>'quick')::uuid;
+    H     uuid := (y->>'hat')::uuid;
+    SIDE  text[] := ARRAY['coach', 'boy', 'parent'];
+    AWAY  text[] := ARRAY['pparent', 'wescoach', 'follower'];
+    NAMES text[] := ARRAY['Verify OneThirteen Opener', 'Verify OneThirteen Partner', 'Verify OneThirteen Quick', 'Verify OneThirteen Hattrick'];
+    k6 text; dot text; four text; kb text; hdot text; x text;
+    F uuid; W uuid; W2 uuid; PF uuid; B uuid; BN uuid; BW uuid; HT uuid;
+    j jsonb; k text; nm text; i integer; got text; n integer;
+    saw text[] := '{}';
+  BEGIN
+    -- (fifty)
+    FOR i IN 1..9 LOOP PERFORM _v113_ev(M, 0::smallint, 'ball', 'run', 6, PAR, NULL); END LOOP;   -- the partner: 54
+    FOR i IN 1..7 LOOP PERFORM _v113_ev(M, 0::smallint, 'ball', 'run', 6, BAT, NULL); END LOOP;   -- the batter: 42
+    PERFORM _v113_ev(M, 0::smallint, 'ball', 'run', 4, BAT, NULL);                                 -- 46
+    k6 := _v113_ev(M, 0::smallint, 'ball', 'run', 6, BAT, NULL);                                   -- 52: the fifty
+    j := _v113_mark(BAT, 'fifty', M);
+    F := (j->>'notice_id')::uuid;
+    PF := (_v113_mark(PAR, 'fifty', M)->>'notice_id')::uuid;
+    PERFORM _assert(j->>'retracted_at' IS NULL AND (j->>'value')::int = 52 AND F IS NOT NULL AND PF IS NOT NULL,
+      format('§90 (fifty): the fifty was not noticed and linked: %s', j));
+    PERFORM _assert(_row_89(F)->>'title' = 'Fifty for Verify OneThirteen Opener' AND _row_89(F)->>'retracted_at' IS NULL,
+      format('§90 (fifty): the notice is not the live "Fifty for …": %s', _row_89(F)));
+    -- Who read the fifty: the withdrawal must reach exactly them (audience).
+    FOREACH k IN ARRAY SIDE || AWAY LOOP
+      PERFORM _as((y->>k)::uuid);
+      IF EXISTS (SELECT 1 FROM my_notifications WHERE id = F) THEN saw := saw || k; END IF;
+    END LOOP;
+    PERFORM _assert(saw @> SIDE AND NOT saw && ARRAY['pparent', 'wescoach'],
+      format('§90 (fifty): the fifty was read by %s, not the side alone', saw));
+
+    -- (withdrawn)
+    PERFORM _v113_ev(M, 0::smallint, 'void', NULL, NULL, NULL, NULL, NULL, k6);
+    j := _v113_mark(BAT, 'fifty', M);
+    PERFORM _assert(j->>'retracted_at' IS NOT NULL, format('§90 (withdrawn): the voided fifty''s mark stands: %s', j));
+    j := _row_89(F);
+    PERFORM _assert(j->>'retracted_at' IS NOT NULL AND j->>'retraction_kind' = 'correction' AND j->>'retracted_by' IS NULL,
+      format('§90 (withdrawn): the fifty''s notice was not retracted as the system''s correction: %s', j));
+    PERFORM _assert(_said_89(F) = 1, format('§90 (withdrawn): %s withdrawal(s) were sent, not one', _said_89(F)));
+    SELECT (e->>'id')::uuid INTO W FROM jsonb_array_elements(_v113_about(BAT)) e WHERE (e->>'retracts_id')::uuid = F;
+    j := _row_89(W);
+    -- (its title is (names)'s to hold)
+    PERFORM _assert(j->>'body' = '''Fifty for Verify OneThirteen Opener'' was withdrawn after the scorecard was corrected.'
+                    AND j->>'kind' = 'recognition' AND j->>'urgency' = 'low' AND j->>'required_capability' = 'news.read'
+                    AND j->>'retracted_at' IS NULL AND j->>'published_by' IS NULL,
+      format('§90 (withdrawn): the withdrawal is not the design''s: %s', j));
+    PERFORM _assert((j->>'school_id', j->>'team_code', j->>'scope_level', j->>'subject_person_id', j->>'recipient_id', j->>'subject_id')
+                    IS NOT DISTINCT FROM (_row_89(F)->>'school_id', _row_89(F)->>'team_code', _row_89(F)->>'scope_level',
+                                          _row_89(F)->>'subject_person_id', _row_89(F)->>'recipient_id', _row_89(F)->>'subject_id'),
+      '§90 (withdrawn): the withdrawal is not addressed to exactly the original''s audience');
+
+    -- (live)
+    FOREACH k IN ARRAY SIDE LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = F) = 0,
+        format('§90 (live): the %s reads the withdrawn fifty as live', k));
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE subject_person_id = BAT AND title LIKE 'Fifty for%') = 0,
+        format('§90 (live): the %s reads a fifty for the batter', k));
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = W AND retracts_id = F) = 1
+                      AND (SELECT count(*) FROM my_notifications WHERE retracts_id = F) = 1,
+        format('§90 (live): the %s does not read the one withdrawal', k));
+      j := notification_by_id(F);
+      PERFORM _assert((j->>'withdrawn')::boolean AND NOT (j ? 'title') AND NOT (j ? 'body') AND (j->>'withdrawal_id')::uuid = W,
+        format('§90 (live): the %s opens the withdrawn fifty as %s, not a stub', k, j));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM milestone_notice WHERE player_id = BAT AND match_id = M) = 0
+                    AND (SELECT count(*) FROM milestone_notice WHERE player_id = PAR AND match_id = M) = 1,
+      '§90 (live): the coach reads the voided mark in milestone_notice, or lost the partner''s');
+
+    -- (audience)
+    -- Exactly the original's readers read the withdrawal: whoever read the
+    -- fifty (the side, and a follower if the school's notices reach him),
+    -- and nobody who did not (another boy's parent, another school's coach).
+    FOREACH k IN ARRAY SIDE || AWAY LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(EXISTS (SELECT 1 FROM my_notifications WHERE id = W) = (k = ANY (saw)),
+        format('§90 (audience): the %s %s the withdrawal, and %s the fifty', k,
+               CASE WHEN EXISTS (SELECT 1 FROM my_notifications WHERE id = W) THEN 'reads' ELSE 'does not read' END,
+               CASE WHEN k = ANY (saw) THEN 'read' ELSE 'did not read' END));
+      IF NOT k = ANY (saw) THEN
+        PERFORM _assert((SELECT count(*) FROM my_notifications WHERE subject_person_id = BAT) = 0
+                        AND notification_by_id(W) IS NULL AND notification_by_id(F) IS NULL,
+          format('§90 (audience): the %s reads the batter''s notice or its withdrawal', k));
+      END IF;
+    END LOOP;
+    PERFORM _as((y->>'pparent')::uuid);
+    PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = PF) = 1,
+      '§90 (audience): the partner''s parent does not read his own boy''s fifty, so this proves nothing');
+
+    -- (standing)
+    j := _v113_mark(PAR, 'fifty', M);
+    PERFORM _assert(j->>'retracted_at' IS NULL AND _row_89(PF)->>'retracted_at' IS NULL AND _said_89(PF) = 0,
+      format('§90 (standing): the partner''s fifty was touched: %s / %s', j, _row_89(PF)));
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = PF) = 1, '§90 (standing): the coach lost the partner''s fifty');
+
+    -- (idempotent)
+    got := _v113_mark(BAT, 'fifty', M)->>'retracted_at';
+    n := jsonb_array_length(_v113_about(BAT));
+    PERFORM _v113_ev(M, 0::smallint, 'void', NULL, NULL, NULL, NULL, NULL, k6);
+    PERFORM _assert(_said_89(F) = 1 AND jsonb_array_length(_v113_about(BAT)) = n
+                    AND _v113_mark(BAT, 'fifty', M)->>'retracted_at' = got,
+      format('§90 (idempotent): a second void of the six moved something: %s withdrawal(s), %s notices (was %s)',
+             _said_89(F), jsonb_array_length(_v113_about(BAT)), n));
+    n := jsonb_array_length(_v113_about(PAR));
+    dot := _v113_ev(M, 0::smallint, 'ball', 'run', 0, PAR, NULL);
+    PERFORM _v113_ev(M, 0::smallint, 'void', NULL, NULL, NULL, NULL, NULL, dot);
+    PERFORM _assert(jsonb_array_length(_v113_about(PAR)) = n AND _row_89(PF)->>'retracted_at' IS NULL,
+      '§90 (idempotent): a void of the partner''s dot retracted or sent something');
+
+    -- (once)
+    four := _v113_ev(M, 0::smallint, 'ball', 'run', 4, BAT, NULL);                                 -- 50 again
+    j := _v113_mark(BAT, 'fifty', M);
+    PERFORM _assert(j->>'retracted_at' IS NULL AND (j->>'value')::int = 50 AND (j->>'notice_id')::uuid = F,
+      format('§90 (once): the re-reached fifty is not the same mark, returned at 50: %s', j));
+    j := _row_89(F);
+    PERFORM _assert(j->>'retracted_at' IS NULL AND j->>'retraction_kind' IS NULL
+                    AND j->>'body' = 'Fifty (50) against Verify OneThirteen Visitors.',
+      format('§90 (once): the fifty''s notice did not return, re-synced: %s', j));
+    PERFORM _assert((SELECT count(*) FROM jsonb_array_elements(_v113_about(BAT)) e
+                      WHERE e->>'title' = 'Fifty for Verify OneThirteen Opener') = 1,
+      '§90 (once): the re-reached fifty was sent a second time');
+    PERFORM _assert(_row_89(W)->>'retraction_kind' = 'superseded' AND _said_89(W) = 0 AND _said_89(F) = 1,
+      format('§90 (once): the withdrawal was not superseded unsaid: %s', _row_89(W)));
+    FOREACH k IN ARRAY SIDE LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE subject_person_id = BAT AND title LIKE 'Fifty for%') = 1
+                      AND (SELECT count(*) FROM my_notifications WHERE id = F) = 1
+                      AND (SELECT count(*) FROM my_notifications WHERE retracts_id = F) = 0,
+        format('§90 (once): the %s does not read one live fifty and no withdrawal', k));
+    END LOOP;
+    PERFORM _v113_ev(M, 0::smallint, 'void', NULL, NULL, NULL, NULL, NULL, four);
+    SELECT (e->>'id')::uuid INTO W2 FROM jsonb_array_elements(_v113_about(BAT)) e
+     WHERE (e->>'retracts_id')::uuid = F AND e->>'retracted_at' IS NULL;
+    PERFORM _assert(_row_89(F)->>'retracted_at' IS NOT NULL AND W2 IS NOT NULL AND W2 <> W AND _said_89(F) = 2,
+      '§90 (once): voided again, the fifty was not withdrawn once more');
+    FOREACH k IN ARRAY SIDE LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE retracts_id = F) = 1
+                      AND (SELECT count(*) FROM my_notifications WHERE id = F) = 0,
+        format('§90 (once): voided again, the %s does not read exactly one withdrawal', k));
+    END LOOP;
+
+    -- (names)
+    FOR j IN SELECT e FROM jsonb_array_elements(_v113_about(BAT) || _v113_about(PAR)) e WHERE e->>'retracts_id' IS NOT NULL LOOP
+      FOREACH nm IN ARRAY NAMES LOOP
+        PERFORM _assert(position(nm IN j->>'title') = 0, format('§90 (names): a withdrawal''s title names a child: %s', j->>'title'));
+      END LOOP;
+      PERFORM _assert(j->>'title' = 'A notice was withdrawn', format('§90 (names): a withdrawal is titled %s', j->>'title'));
+    END LOOP;
+
+    -- (breach)
+    FOR i IN 1..30 LOOP PERFORM _v113_ev(M, 1::smallint, 'ball', 'run', 0, NULL, Q); END LOOP;     -- five overs
+    PERFORM _assert(jsonb_array_length(_v113_breaches(Q)) = 0, '§90 (breach): five overs breached a U13 spell of five');
+    kb := _v113_ev(M, 1::smallint, 'ball', 'run', 0, NULL, Q);                                       -- the sixth over
+    j := _v113_breaches(Q) -> 0;
+    B := (j->>'id')::uuid; BN := (j->>'notice_id')::uuid;
+    PERFORM _assert(jsonb_array_length(_v113_breaches(Q)) = 1 AND j->>'kind' = 'spell' AND j->>'retracted_at' IS NULL
+                    AND _row_89(BN)->>'title' = 'Bowling directive exceeded' AND _row_89(BN)->>'urgency' = 'high',
+      format('§90 (breach): the sixth over did not record one breach with its notice: %s', _v113_breaches(Q)));
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM bowling_breach WHERE id = B) = 1 AND (SELECT count(*) FROM my_notifications WHERE id = BN) = 1
+                    AND (SELECT w.breaches_28d FROM workload('U19F') w WHERE w.player_id = Q) = 1,
+      '§90 (breach): the coach does not read the breach, its notice, or its count');
+    PERFORM _v113_ev(M, 1::smallint, 'void', NULL, NULL, NULL, NULL, NULL, kb);
+    j := _v113_breaches(Q) -> 0;
+    PERFORM _assert(jsonb_array_length(_v113_breaches(Q)) = 1 AND j->>'retracted_at' IS NOT NULL AND (j->>'id')::uuid = B,
+      format('§90 (breach): the voided over''s breach stands: %s', j));
+    PERFORM _assert(_row_89(BN)->>'retraction_kind' = 'correction' AND _said_89(BN) = 1,
+      format('§90 (breach): the breach''s notice was not withdrawn once: %s', _row_89(BN)));
+    SELECT (e->>'id')::uuid INTO BW FROM jsonb_array_elements(_v113_about(Q)) e WHERE (e->>'retracts_id')::uuid = BN;
+    j := _row_89(BW);
+    PERFORM _assert(j->>'title' = 'A notice was withdrawn'
+                    AND j->>'body' = '''Bowling directive exceeded'' was withdrawn after the scorecard was corrected.'
+                    AND j->>'kind' = 'welfare' AND j->>'urgency' = 'medium' AND j->>'required_capability' = 'player.workload.read'
+                    AND (j->>'subject_person_id')::uuid = Q,
+      format('§90 (breach): the welfare withdrawal is not the design''s: %s', j));
+    FOREACH nm IN ARRAY NAMES LOOP
+      PERFORM _assert(position(nm IN j->>'title') = 0 AND position(nm IN j->>'body') = 0,
+        format('§90 (names): the welfare withdrawal names a child: %s', j));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM bowling_breach WHERE id = B) = 0
+                    AND (SELECT count(*) FROM my_notifications WHERE id = BN) = 0
+                    AND (SELECT count(*) FROM my_notifications WHERE id = BW AND retracts_id = BN) = 1,
+      '§90 (breach): the coach reads the withdrawn breach or its notice as live, or not its withdrawal');
+    PERFORM _assert((SELECT w.breaches_28d FROM workload('U19F') w WHERE w.player_id = Q) = 0,
+      format('§90 (breach): workload() still counts the withdrawn breach (%s)',
+             (SELECT w.breaches_28d FROM workload('U19F') w WHERE w.player_id = Q)));
+    PERFORM _v113_ev(M, 1::smallint, 'ball', 'run', 0, NULL, Q);                                     -- the sixth over, again
+    j := _v113_breaches(Q) -> 0;
+    PERFORM _assert(jsonb_array_length(_v113_breaches(Q)) = 1 AND (j->>'id')::uuid = B AND j->>'retracted_at' IS NULL
+                    AND _row_89(BN)->>'retracted_at' IS NULL AND _row_89(BW)->>'retraction_kind' = 'superseded'
+                    AND (SELECT count(*) FROM jsonb_array_elements(_v113_about(Q)) e WHERE e->>'title' = 'Bowling directive exceeded') = 1,
+      format('§90 (breach): the re-reached breach did not return in place, once: %s', _v113_breaches(Q)));
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM bowling_breach WHERE id = B) = 1 AND (SELECT count(*) FROM my_notifications WHERE id = BN) = 1
+                    AND (SELECT count(*) FROM my_notifications WHERE retracts_id = BN) = 0
+                    AND (SELECT w.breaches_28d FROM workload('U19F') w WHERE w.player_id = Q) = 1,
+      '§90 (breach): after the re-entered ball the coach does not read the one breach, live');
+
+    -- (newly)
+    PERFORM _v113_ev(M, 2::smallint, 'ball', 'W', 0, NULL, H, 'bowled');
+    hdot := _v113_ev(M, 2::smallint, 'ball', 'run', 0, NULL, H);
+    PERFORM _v113_ev(M, 2::smallint, 'ball', 'W', 0, NULL, H, 'bowled');
+    PERFORM _v113_ev(M, 2::smallint, 'ball', 'W', 0, NULL, H, 'bowled');
+    PERFORM _assert(_v113_mark(H, 'hat_trick', M) IS NULL, '§90 (newly): W, dot, W, W was noticed as a hat-trick');
+    PERFORM _v113_ev(M, 2::smallint, 'void', NULL, NULL, NULL, NULL, NULL, hdot);
+    j := _v113_mark(H, 'hat_trick', M);
+    HT := (j->>'notice_id')::uuid;
+    PERFORM _assert(j->>'retracted_at' IS NULL AND HT IS NOT NULL
+                    AND _row_89(HT)->>'title' = 'Hat-trick for Verify OneThirteen Hattrick'
+                    AND _row_89(HT)->>'body' = 'Hat-trick against Verify OneThirteen Visitors, after a correction.',
+      format('§90 (newly): the hat-trick the correction made was not noticed, after a correction: %s / %s', j, _row_89(HT)));
+    PERFORM _v113_ev(M, 2::smallint, 'void', NULL, NULL, NULL, NULL, NULL, hdot);
+    PERFORM _assert((SELECT count(*) FROM jsonb_array_elements(_v113_about(H)) e WHERE e->>'title' LIKE 'Hat-trick for%') = 1,
+      '§90 (newly): a second void sent the hat-trick again');
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = HT) = 1, '§90 (newly): the coach does not read the hat-trick');
+
+    -- (doors)
+    FOREACH x IN ARRAY ARRAY['notification_unretract(uuid)', 'milestone_still_holds(uuid,text,uuid,smallint,integer)',
+                             'milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)',
+                             'milestone_retract()', 'bowling_breach_retract()'] LOOP
+      PERFORM _assert(NOT has_function_privilege('scrbrd_app', to_regprocedure(x), 'EXECUTE')
+                      AND NOT has_function_privilege('public', to_regprocedure(x), 'EXECUTE'),
+        format('§90 (doors): %s is callable by the application or PUBLIC', x));
+    END LOOP;
+    BEGIN
+      PERFORM notification_unretract(F);
+      PERFORM _assert(false, '§90 (doors): the application un-retracted a notice');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM _assert((SELECT count(*) FROM pg_trigger g
+                      WHERE g.tgrelid = 'ball_event'::regclass AND NOT g.tgisinternal
+                        AND g.tgname IN ('ball_event_milestone_retract', 'ball_event_breach_retract')
+                        AND pg_get_triggerdef(g.oid) LIKE '%AFTER INSERT ON public.ball_event FOR EACH ROW WHEN ((new.kind = ''void''::text))%') = 2
+                    AND EXISTS (SELECT 1 FROM pg_trigger g
+                                 WHERE g.tgrelid = 'ball_event'::regclass AND g.tgname = 'public_data_changed'
+                                   AND g.tgfoid = 'public_data_notify()'::regprocedure
+                                   AND pg_get_triggerdef(g.oid) LIKE '%WHEN (((new.kind = ''void''::text) OR new.recovered)) EXECUTE FUNCTION public_data_notify(''match'', ''match_id'')%'),
+      '§90 (doors): the void triggers, or the public one, are not what db/113 wrote');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 90
+  -- └── db/113 (section 90) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

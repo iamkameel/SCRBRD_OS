@@ -23,12 +23,21 @@
  * And what the public page is sent of a correction: the void, its time and a
  * pseudonymous target, never the reason, the requester or the approver.
  *
+ * Slice A2 (db/113, with NOTIFICATIONS S5), end to end through the API: a
+ * six that made a fifty is undone on the pad, and the coach's Notices loses
+ * the fifty and gains one "A notice was withdrawn" in the design's words; the
+ * withdrawn fifty opens as a stub; the withdrawal's push is the pointer, with
+ * no name on it; another boy's parent reads neither; the public log answers
+ * the void at once (N5) where the ordinary balls before it dropped nothing;
+ * and a four entered in its place brings the same fifty back, once, at 50.
+ *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-corrections.mjs
  */
 import { spawn } from "node:child_process";
 import pg from "pg";
-import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
+import { inningsStart, batters, bowler, ball, voidEvent, BALL_TYPE } from "@scrbrd/scoring";
+import { buildPayload } from "../services/api/notify/push-api.mjs";
 import { buildPublicFixture } from "./fixture-public.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
@@ -186,6 +195,65 @@ try {
   ok("the public log answers the released ball at once", after2.body?.last === rel.body.seq && after2.body.last > warm2.body.last,
     `${warm2.body.last} → ${after2.body?.last} (seq ${rel.body.seq})`);
   ok("...and the held list is empty", (await api(`/api/matches/${LIVE}/corrections`, { token: principal })).body?.held?.length === 0);
+
+  group("A2 · a voided six takes the fifty back, and a re-entered four restores it once (db/113)");
+  // The striker has 6 (the four, and the released two). Six no-balls hit for
+  // six take him to 42, a four to 46, and a six to 52: the fifty. The pad's
+  // undo voids the six (46); a four then makes 50.
+  const bat = { striker: P[0], nonStriker: P[1], bowler: P[2] };
+  const nb6 = Array.from({ length: 6 }, () => ball({ type: BALL_TYPE.NO_BALL, value: 6, ...bat }));
+  const fiftyRun = await post(epoch, [...nb6, ball({ type: BALL_TYPE.RUN, value: 4, ...bat }),
+    ball({ type: BALL_TYPE.RUN, value: 6, ...bat })], 30);
+  ok("the scorer scores him to 52", fiftyRun.body?.accepted?.length === 8, fiftyRun.raw);
+  const sixKey = `corr:${epoch}:37`;
+  const name = (await q(`select full_name from player where id = $1`, [P[0]]))[0].full_name;
+  /** @param {string} token */
+  const notices = async (token) => (await api(`/api/read/notifications`, { token })).body?.rows ?? [];
+  const fiftyFor = (rows) => rows.filter((n) => n.subject_person_id === P[0] && n.title === `Fifty for ${name}`);
+  const standing = fiftyFor(await notices(coach));
+  ok("the coach's Notices has the fifty, once", standing.length === 1, JSON.stringify(standing));
+  const fiftyId = standing[0]?.id;
+  // The public entry was cached at the release (N2's drop) and the eight
+  // ordinary balls since notified nothing (D3: never per ball), so the
+  // public log still answers the old head: the cache is warm and stale.
+  const liveHead = (await q(`select max(seq)::int as s from ball_event where match_id = $1`, [LIVE]))[0].s;
+  const pubWarm = await api(`/api/public/matches/${LIVE}/log`);
+  ok("an ordinary ball drops nothing: the public log is still at the cached head", Number.isInteger(pubWarm.body?.last)
+    && pubWarm.body.last < liveHead, `${pubWarm.body?.last} vs ${liveHead}`);
+
+  const undo = await post(epoch, [voidEvent({ target: sixKey })], 38);
+  ok("the pad's undo voids the six", undo.body?.accepted?.length === 1, undo.raw);
+  await new Promise((r) => setTimeout(r, 400));
+  const pubAfter = await api(`/api/public/matches/${LIVE}/log`);
+  ok("N5 · the void drops the public entry on commit: the next read answers the new head", pubAfter.body?.last === liveHead + 1
+    && pubAfter.body.events?.some((e) => e.kind === "void"), `${pubWarm.body?.last} → ${pubAfter.body?.last} (head ${liveHead + 1})`);
+  for (const [who, token] of [["the coach", coach], ["the parent of another boy", parent]]) {
+    const rows = await notices(token);
+    if (who === "the coach") {
+      ok("the coach's Notices no longer has the fifty", fiftyFor(rows).length === 0 && !rows.some((n) => n.id === fiftyId), JSON.stringify(fiftyFor(rows)));
+      const w = rows.filter((n) => n.retracts_id === fiftyId);
+      ok("...and has one notice saying it was withdrawn, in the design's words", w.length === 1
+        && w[0].title === "A notice was withdrawn"
+        && w[0].body === `'Fifty for ${name}' was withdrawn after the scorecard was corrected.`, JSON.stringify(w));
+      const push = JSON.stringify(buildPayload(w[0]));
+      ok("...whose push is the pointer: no name, no words of it", !push.includes(name) && !push.includes(name.split(" ").pop())
+        && !/Fifty|withdrawn/i.test(push), push);
+      ok("...and whose title names nobody", !w[0].title.includes(name.split(" ").pop()));
+      const opened = await api(`/api/notifications/${fiftyId}/read`, { method: "POST", token });
+      ok("opening the withdrawn fifty shows a stub: withdrawn, no words", opened.status === 200 && opened.body?.notice?.withdrawn === true
+        && !("title" in opened.body.notice) && opened.body.notice.withdrawal_id === w[0].id, opened.raw);
+    } else {
+      ok(`${who} reads neither the fifty nor its withdrawal`, !rows.some((n) => n.id === fiftyId || n.retracts_id === fiftyId), JSON.stringify(rows.map((n) => n.title)));
+    }
+  }
+  const again = await post(epoch, [ball({ type: BALL_TYPE.RUN, value: 4, ...bat })], 39);
+  ok("a four is entered in its place (50)", again.body?.accepted?.length === 1, again.raw);
+  const restored = await notices(coach);
+  ok("the fifty is back, once: the same notice, at 50", fiftyFor(restored).length === 1 && fiftyFor(restored)[0].id === fiftyId
+    && fiftyFor(restored)[0].body.startsWith("Fifty (50)"), JSON.stringify(fiftyFor(restored)));
+  ok("...and the withdrawal is gone from Notices", !restored.some((n) => n.retracts_id === fiftyId));
+  ok("...and nothing new was written about him", (await q(`select count(*)::int as n from notification where subject_person_id = $1 and title = $2`,
+    [P[0], `Fifty for ${name}`]))[0].n === 1);
 } catch (e) {
   fail++;
   console.log("\n  ✗ the walk threw:", e.message);

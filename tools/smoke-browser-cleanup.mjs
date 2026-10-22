@@ -221,8 +221,11 @@ try {
   ok("an injury can be read (the detail panel opens)", /Injury Report/.test(injText));
   ok("no Update Progress, Clear for Training or Refer to Physio", !/Update Progress|Clear for Training|Refer to Physio/.test(injText));
   ok("no Log Injury button or form", !/Log Injury/.test(injText) && await dir.page.locator('[role="dialog"], input[type="date"]').count() === 0);
-  ok("one plain line says recording is coming", /Recording and updating injuries is coming\./.test(injText)
-     && await tid(dir.page, "injury-writes-coming").count() === 1);
+  // GA-I19 slice B: recording is the physio's now (tools/smoke-browser-injuries.mjs
+  // walks it); the director holds no medical.write, so he is offered no way to.
+  ok("the 'recording is coming' line is gone, and the director is offered no Record or Review",
+     !/is coming/.test(injText) && await tid(dir.page, "injury-writes-coming").count() === 0
+     && await tid(dir.page, "record-injury-open").count() === 0 && await tid(dir.page, "review-open").count() === 0);
 
   // ── 4. Global search ──────────────────────────────────────────────
   group("Global search finds only the platform's own schools when signed in");

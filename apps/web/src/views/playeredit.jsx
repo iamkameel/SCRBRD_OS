@@ -15,6 +15,10 @@
  *   - a parent's link to him      POST /api/players/:id/guardians/verify and
  *                                 …/consent, under guardian.link.manage:
  *                                 guardianlink.jsx
+ *   - every link, and ending one    GET /api/read/child_links, POST
+ *                                 …/guardians/:link/revoke, under
+ *                                 user.role.assign or guardian.link.manage:
+ *                                 familylinks.jsx (db/109)
  *
  * Name, squad number, playing role and the rest have no route, so they have no
  * field here. The first two need player.profile.manage, the third
@@ -34,12 +38,13 @@ import { compareTeams, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 import { WhoToRing } from "./family/childfile.jsx";
 import { PublicNameStaff } from "./publicname.jsx";
 import { GuardianLinks } from "./guardianlink.jsx";
+import { FamilyLinks, mayFamilyLinks } from "./familylinks.jsx";
 import { holds } from "../lib/family.js";
 
 /** Does this person hold anything Edit Profile could offer? Signed out: nothing. */
 export function mayEditProfile(role) {
   return signedIn() && (holdsCapability(role, "player.profile.manage") || holdsCapability(role, "player.emergency.manage")
-    || mayPublicName(role));
+    || mayPublicName(role) || mayFamilyLinks(role));
 }
 
 /** The public-name section: a guardian's answer recorded by the office, or the never-public mark. */
@@ -84,6 +89,7 @@ export function EditProfile({ role, player, teams, onMoved }) {
           <WhoToRing child={{ id: player.id, name: player.name }} role={role}/>
         </div>
       )}
+      {mayFamilyLinks(role) && <FamilyLinks role={role} player={player}/>}
       {holdsCapability(role, "guardian.link.manage") && <GuardianLinks role={role} player={player}/>}
       {mayPublicName(role) && <PublicNameStaff player={player}/>}
     </div>

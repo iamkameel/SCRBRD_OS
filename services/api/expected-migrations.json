@@ -103,5 +103,10 @@
   "105_development_loop.sql",
   "106_reach_side.sql",
   "107_official_register_closed.sql",
-  "108_player_team_scoped.sql"
+  "108_player_team_scoped.sql",
+  "109_guardian_link_ending.sql",
+  "110_plan_drafts.sql",
+  "111_injury_review.sql",
+  "112_assignment_follows_side.sql",
+  "113_correction_retracts_notices.sql"
 ]

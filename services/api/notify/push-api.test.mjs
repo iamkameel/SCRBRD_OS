@@ -97,6 +97,30 @@ group("A. Every push is a pointer (D6, D14)");
   ok("the id travels as a string", buildPayload({ id: 42 }).message.data.notificationId === "42");
 }
 
+group("A2. A withdrawn notice, and the one that says so, are the same pointer (db/113, D18, D19)");
+{
+  // The rows db/113's void writes, as db/99 §90 reads them: the boy's fifty,
+  // retracted, and the "withdrawn" notice whose body quotes the fifty's title
+  // (to the same readers, in the app). Neither puts his name on a lock screen.
+  const fifty = { id: NOTICE, kind: "recognition", urgency: "low", title: "Fifty for D Erasmus",
+                  body: "Fifty (52) against Kearsney.", retracted_at: "2026-10-31T10:12:00Z", retraction_kind: "correction" };
+  const withdrawal = { id: "40170000-0000-0000-0000-0000000000a2", kind: "recognition", urgency: "low", retracts_id: NOTICE,
+                       title: "A notice was withdrawn", body: "'Fifty for D Erasmus' was withdrawn after the scorecard was corrected." };
+  const breach = { id: "40170000-0000-0000-0000-0000000000a3", kind: "welfare", urgency: "medium", retracts_id: NOTICE,
+                   title: "A notice was withdrawn", body: "'Bowling directive exceeded' was withdrawn after the scorecard was corrected." };
+  /** @type {Array<[string, { id: string }]>} */
+  const rows = [["the withdrawn fifty", fifty], ["the withdrawal", withdrawal], ["a breach's withdrawal", breach]];
+  for (const [what, row] of rows) {
+    const p = buildPayload(row);
+    const wire = JSON.stringify(p);
+    ok(`${what} travels as the pointer, and nothing else`, p.kind === "pointer"
+       && p.message.notification.title === "SCRBRD" && p.message.notification.body === "You have a new notice."
+       && Object.keys(p.message.data).join() === "notificationId" && p.message.data.notificationId === row.id);
+    ok(`...with no child's name, no word of the notice, and no "withdrawn"`,
+       !/Erasmus|Fifty|withdrawn|corrected|Bowling|recognition|welfare|retract/i.test(wire));
+  }
+}
+
 group("B. The publish and push routes are closed, before any connection (D9)");
 {
   const routes = notificationRoutes({ pool: /** @type {any} */ (untouchable), secret: SECRET, transport: echoTransport() });

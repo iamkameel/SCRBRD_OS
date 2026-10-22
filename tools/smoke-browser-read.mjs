@@ -381,10 +381,19 @@ try {
     ok("...her staff menu carries the family's Home and Family",
        await st("nav-children").count() === 1 && await st("nav-family").count() === 1 && await st("nav-dashboard").count() === 1);
     await st("nav-children").click({ timeout: 6000 }).catch(() => {});
-    await s.page.waitForTimeout(2000);
+    // Home reads my_children on arrival and says "Reading your family…"
+    // until it answers; the switcher is drawn only once it has. A fixed 2 s
+    // clock judged the placeholder on a loaded machine, the same race as the
+    // Family check below. Wait for the read to answer (his Home drawn, or a
+    // refusal said), then judge what it drew.
+    await s.page.locator('[data-testid="family-home-body"], [data-testid="family-none"]:not(:has-text("Reading your family"))')
+      .first().waitFor({ timeout: 15000 }).catch(() => {});
+    await s.page.waitForTimeout(500);
+    const switcher = await st("child-switcher").innerText().catch(() => "");
     ok("the child switcher shows her two children",
        await s.page.locator('[data-testid^="child-chip-"]').count() === 2
-       && /K Dlamini/.test(await st("child-switcher").innerText().catch(() => "")) && /D Mkhize/.test(await st("child-switcher").innerText().catch(() => "")));
+       && /K Dlamini/.test(switcher) && /D Mkhize/.test(switcher),
+       `${switcher.replace(/\s+/g, " ")} · ${(await st("family-home").innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 300)}`);
     const KD = "aaaaaaaa-0000-0000-0000-000000000006", DM = "bbbbbbbb-0000-0000-0000-000000000001";
     const SCHOOL_OTHERS = /Pillay|Bekker|Naidoo|Cele|Whitfield|Botha|Khumalo|Mahlangu|Sithole/;
     for (const [id, name, other, school] of [[KD, "K Dlamini", "D Mkhize", "Hilton College"], [DM, "D Mkhize", "K Dlamini", "Westville Boys' High"]]) {
@@ -2067,7 +2076,7 @@ try {
     // something for the rest. A blank row would be the screen falling silent
     // on the question it exists to answer, and a "pending" would be inventing
     // an obligation nobody recorded.
-    await c.page.locator('[data-testid^="match-card-"]').first().click({ timeout: 5000 }).catch(() => {});
+    await c.page.locator('[data-testid^="match-card-"]').first().click({ timeout: 5000, position: { x: 14, y: 14 } }).catch(() => {});
     await c.page.waitForTimeout(1400);
     const roster = c.page.locator('[data-testid="duty-roster"]');
     if (await roster.count() === 0) {
@@ -2325,7 +2334,7 @@ try {
     // Cross-check against the fixture's own screen — not a second opinion,
     // the same claim asked twice.
     await tid("nav-matches").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
-    await c.page.locator(`[data-testid="match-card-${MATCH}"]`).click({ timeout: 4000 });
+    await c.page.locator(`[data-testid="match-card-${MATCH}"]`).click({ timeout: 4000, position: { x: 14, y: 14 } });
     await c.page.waitForTimeout(600);
     const rosterText = await tid("duty-covered").innerText();
     ok(`the fixture's own duty roster agrees: "${rosterText.trim()}"`, rosterText.trim() === overviewText.trim());
