@@ -225,7 +225,11 @@ try {
   await page.waitForTimeout(2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  // Wait for the fixtures read to answer, rather than a fixed 1.2 s: on a
+  // loaded runner the list had not drawn yet and the walk judged an empty
+  // screen. The check below still finds the one card and judges it as before.
+  await page.waitForFunction(() => [...document.querySelectorAll("button")]
+    .some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")), null, { timeout: 15000 }).catch(() => {});
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {

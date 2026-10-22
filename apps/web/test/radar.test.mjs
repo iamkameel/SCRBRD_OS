@@ -116,7 +116,7 @@ ok("a goal of exactly 20 is the top and stands", focusAreas({ a: 13 }, { a: 20 }
 ok("no ratings, no plan", focusAreas({}).length === 0 && focusAreas(null).length === 0);
 ok("labels read as words", focusAreas({ lineAndLength: 5 })[0].label === "Line and length");
 const sk = src("SkillsView.jsx");
-ok("SkillsView draws a target only from focusAreas, and passes it no saved goals", /focusAreas\(skills\[category\]\)/.test(sk) && !/Math\.min\(v\s*\+\s*10/.test(sk) && !/v\+10/.test(sk));
+ok("SkillsView draws a target only from focusAreas, and passes it only the saved targets the targets read returned (GA-I26a), never rating + 10", /focusAreas\(skills\[category\],\s*savedTargets\(targetsRead\.rows,\s*category\)\)/.test(sk) && !/Math\.min\(v\s*\+\s*10/.test(sk) && !/v\+10/.test(sk));
 
 console.log(`\n${fail ? "✗" : "✓"} radar: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

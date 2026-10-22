@@ -518,6 +518,8 @@ export const ADDED_SINCE_01 = {
   "platform.reference.manage":   "75_dls_table.sql",
   // ── GA-I26a: running a training session, its plan and register (db/105) ──
   "team.training.run":           "105_development_loop.sql",
+  // ── OFFICIAL_RESULT S1: standing behind a result (db/114) ──
+  "result.confirm":              "114_official_result.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
@@ -829,6 +831,8 @@ export const TABLES_ADDED_SINCE_09 = Object.freeze({
   // The first later table with masked columns: its *_masked view is
   // generated into the same block, after its policies (tablesAddedIn()).
   injury_review:                 "111_injury_review.sql",
+  // ── OFFICIAL_RESULT S1: a result confirmed, pinned to its revision ──
+  match_result_confirmation:     "114_official_result.sql",
 });
 const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
 

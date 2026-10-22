@@ -63,15 +63,19 @@ const REASON = {
   },
 };
 
+// The five words are evidence_label()'s own (db/08), drawn as they are: the
+// compare screen uses the same five (GA-I24-I25 D4), so a coach reads one
+// scale everywhere. This said "no log", "too thin", "thin", "fair" and
+// "strong" until the compare build.
 const EVIDENCE = themed(() => ({
-  none:         { label: "no log",   tone: D.textMuted },
+  none:         { label: "none",         tone: D.textMuted },
   // A boy whose only innings are from a scorebook that has no balls column:
   // there is a record, but no ball to rate it on (SCRBRD-120 D12).
   unrecorded:   { label: "balls not recorded", tone: D.textMuted },
-  insufficient: { label: "too thin", tone: D.textMuted },
-  low:          { label: "thin",     tone: D.amber },
-  moderate:     { label: "fair",     tone: D.sky },
-  high:         { label: "strong",   tone: D.emerald },
+  insufficient: { label: "insufficient", tone: D.textMuted },
+  low:          { label: "low",          tone: D.amber },
+  moderate:     { label: "moderate",     tone: D.sky },
+  high:         { label: "high",         tone: D.emerald },
 }));
 
 /**

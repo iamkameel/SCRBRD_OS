@@ -4,7 +4,7 @@ import { ROLES } from "../design/roles.js";
 import { api, signedIn } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { cockpitGate } from "../lib/cockpit.js";
-import { requestCoach, requestCorrections, requestDuties } from "../lib/cockpitNav.js";
+import { requestCoach, requestCorrections, requestDuties, requestResult } from "../lib/cockpitNav.js";
 import { useLive } from "../lib/live.js";
 import { clockTime, headerWords } from "../lib/queue.js";
 import { readState } from "../lib/readState.js";
@@ -242,6 +242,7 @@ function ReadinessOverview({ role, onNav }) {
       case "requests": return page("management", "Decide");
       case "claims": return page("settings", "Confirm");
       case "register": return page("staff", "The register");
+      case "result": return a.matchId ? { label: a.label, go: () => { requestResult(/** @type {string} */ (a.matchId)); onNav("matches"); } } : null;
       default: return null;
     }
   };
@@ -265,6 +266,27 @@ function ReadinessOverview({ role, onNav }) {
             Deadlines are the queue's clock, worked from each fixture's start, not the school's rule. A row goes when its record changes; nobody closes one by hand.
           </p>
           <CorrectionsWaiting role={role} matches={matches} onOpen={openCorrections}/>
+          {q.results && (
+            // OFFICIAL_RESULT §3: the organiser's and the director's results to confirm or settle (db/114).
+            <Card sx={{ padding: 0, marginBottom: "10px" }} data-testid="queue-results">
+              <section aria-labelledby="queue-results-head">
+                <header style={{ padding: "12px 16px" }}>
+                  <h2 id="queue-results-head" style={{ margin: 0, fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: D.textMuted }}>
+                    Results to confirm
+                  </h2>
+                </header>
+                {q.results.loading ? <p style={{ ...small(true), padding: "0 16px 12px", margin: 0 }}>Reading the results…</p> : (
+                  <ul style={{ margin: 0, padding: 0 }}>
+                    {q.results.rows.map((r) => <Row key={r.id} row={r} door={doorOf(r)}/>)}
+                    {q.results.unread.map((r) => <Row key={r.id} row={r} door={null} onRetry={q.retryResults}/>)}
+                    {q.results.rows.length === 0 && q.results.unread.length === 0 && (
+                      <li data-testid="queue-results-clear" style={{ ...small(false), listStyle: "none", padding: "0 16px 12px" }}>No result waiting for you to confirm</li>
+                    )}
+                  </ul>
+                )}
+              </section>
+            </Card>
+          )}
           {matchesSaid.state === "failed" && <ReadState read={matchesSaid} compact testId="readiness-read-state" onRetry={() => setNonce((n) => n + 1)}/>}
           <div style={{ display: "grid", gap: "16px", gridTemplateColumns: q.offices.length ? "repeat(auto-fit, minmax(min(100%, 340px), 1fr))" : "1fr", alignItems: "start" }}>
             {q.offices.length > 0 && (

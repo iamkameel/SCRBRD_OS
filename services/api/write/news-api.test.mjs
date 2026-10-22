@@ -398,7 +398,7 @@ group("D. Changing and throwing away an unsent plan (db/110, Kameel 15 Oct)");
 
 group("E. The home page refuses a post naming a pupil by any part of his name (db/83, db/118)");
 {
-  // The scan is SQL (news_public_names(), db/118; db/99 §62 and §91 run it
+  // The scan is SQL (news_public_names(), db/118; db/99 §62 and §92 run it
   // against the seeded pupils). Here: the scan reads every part of a name,
   // and the route says the refusal as a count, never a name.
   const sql = readFileSync(new URL("../../../db/118_privacy_followups.sql", import.meta.url), "utf8");
