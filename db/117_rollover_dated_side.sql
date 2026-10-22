@@ -678,7 +678,12 @@ CREATE OR REPLACE FUNCTION team_membership_floor() RETURNS trigger AS $$
 DECLARE
   v text := membership_floor_refusal(NEW.joined_on, membership_joined_floor());
 BEGIN
-  IF v IS NOT NULL AND app_user_id() IS NOT NULL THEN
+  -- A person's write (app.user_id set) through db/08's trigger, which writes
+  -- as the table's owner. A row written any other way never gets here as
+  -- anyone but the owner: the table has no INSERT policy, and row security
+  -- refuses it (42501) after this trigger, so this does not answer first.
+  IF v IS NOT NULL AND app_user_id() IS NOT NULL
+     AND current_user = (SELECT pg_get_userbyid(c.relowner) FROM pg_class c WHERE c.oid = TG_RELID) THEN
     RAISE EXCEPTION '%', v USING ERRCODE = 'check_violation', SCHEMA = 'public', TABLE = 'team_membership',
                                  CONSTRAINT = 'team_membership_floor';
   END IF;
@@ -900,6 +905,8 @@ BEGIN
                   WHERE t.tgrelid = 'team_membership'::regclass AND t.tgname = 'team_membership_floor'
                     AND t.tgfoid = to_regprocedure('team_membership_floor()') AND t.tgenabled = 'O'
                     AND pg_get_triggerdef(t.oid) LIKE '%BEFORE INSERT ON public.team_membership FOR EACH ROW%')
+     OR position('current_user = (SELECT pg_get_userbyid(c.relowner) FROM pg_class c WHERE c.oid = TG_RELID)' IN
+                 coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('team_membership_floor()')), '')) = 0
      OR position('membership_floor_refusal(NEW.joined_on, membership_joined_floor())' IN
                  coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('team_membership_floor()')), '')) = 0
      OR position('season_for(sa_today(), ''school'')' IN
