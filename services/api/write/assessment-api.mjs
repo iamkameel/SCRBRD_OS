@@ -297,6 +297,23 @@ export function developmentCorrectionRoutes({ pool, secret }) {
     note_not_his: 422,
     due_in_past: 422,
   };
+  /** One definer's answer, or the refusal it gave, thrown (rolls the transaction back). */
+  const ask = async (/** @type {import("../api-types.mjs").Db} */ client, /** @type {string} */ sql, /** @type {unknown[]} */ params) => {
+    const { rows } = await client.query(sql, params);
+    const r = rows[0] ?? { ok: false, reason: "no_result" };
+    if (r.ok === false) throw err(r.reason || "refused", REFUSAL_STATUS[r.reason] ?? 403);
+    return r;
+  };
+  /** The refusal as the client reads it. @param {ApiResponse} res @param {any} e */
+  const refuse = (res, e) => {
+    // 23514: a CHECK on the row (evidence_text on a card whose lines are
+    // not the reader's to copy; db/104's note_evidence_text_tier).
+    if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
+    if (e.code === "22P02" || e.code === "22007" || e.code === "22008")
+      return res.status(400).json({ error: "bad_value" });
+    const [status, msg] = NOTE_REFUSALS[e.code] ?? [e.status || 500, e.message || "error"];
+    return res.status(status).json({ error: msg });
+  };
   /**
    * @param {string} sql
    * @param {(req: ApiRequest) => unknown[]} params
@@ -304,31 +321,41 @@ export function developmentCorrectionRoutes({ pool, secret }) {
    */
   const call = (sql, params) => async (req, res) => {
     try {
-      const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
-        const { rows } = await client.query(sql, params(req));
-        const r = rows[0] ?? { ok: false, reason: "no_result" };
-        if (r.ok === false) throw err(r.reason || "refused", REFUSAL_STATUS[r.reason] ?? 403);
-        return r;
-      });
-      res.json(out);
+      res.json(await runAsPrincipal(pool, secret, req.headers?.authorization, (client) => ask(client, sql, params(req))));
     } catch (/** @type {any} */ e) {
-      // 23514: a CHECK on the row (evidence_text on a card whose lines are
-      // not the reader's to copy; db/104's note_evidence_text_tier).
-      if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
-      if (e.code === "22P02" || e.code === "22007" || e.code === "22008")
-        return res.status(400).json({ error: "bad_value" });
-      const [status, msg] = NOTE_REFUSALS[e.code] ?? [e.status || 500, e.message || "error"];
-      res.status(status).json({ error: msg });
+      refuse(res, e);
     }
   };
   const uuidOrNull = (/** @type {unknown} */ v) =>
     typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
-  const targetSet = call(
-    `select ok, reason, id from target_set($1, $2, $3, $4, $5::date, $6, $7)`,
-    (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000",
-              req.body.category, req.body.metric, Number(req.body.targetScore),
-              typeof req.body.dueOn === "string" && req.body.dueOn ? req.body.dueOn : null,
-              uuidOrNull(req.body.drillId), uuidOrNull(req.body.noteId)]);
+  /**
+   * A target, and its "why" as a coaching point, in ONE transaction: the
+   * point is written first (standing on the score `skillId`), the target
+   * then points at it, and a refusal of either rolls both back. So a refused
+   * target leaves no reason on the boy's record, and there is no second
+   * request for a client to forget.
+   * @type {Handler}
+   */
+  const targetSet = async (req, res) => {
+    const b = req.body || {};
+    const player = uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000";
+    const why = typeof b.why === "string" ? b.why.trim() : "";
+    try {
+      res.json(await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        let noteId = uuidOrNull(b.noteId);
+        if (why) {
+          const point = await ask(client, `select ok, reason, id from coaching_point_write($1, $2, $3, $4::jsonb)`,
+            [player, null, why, JSON.stringify({ read: "skills", params: { skillId: uuidOrNull(b.skillId) } })]);
+          noteId = point.id;
+        }
+        return ask(client, `select ok, reason, id from target_set($1, $2, $3, $4, $5::date, $6, $7)`,
+          [player, b.category, b.metric, Number(b.targetScore),
+           typeof b.dueOn === "string" && b.dueOn ? b.dueOn : null, uuidOrNull(b.drillId), noteId]);
+      }));
+    } catch (/** @type {any} */ e) {
+      refuse(res, e);
+    }
+  };
   return {
     // POST /players/:id/coaching-points { matchId?, body, evidence: { read, asOf?, rule?, params?, head?, text? } }
     coachingPoint: call(
@@ -345,7 +372,9 @@ export function developmentCorrectionRoutes({ pool, secret }) {
     noteWithdraw: call(
       `select ok, reason from note_withdraw($1)`,
       (req) => [uuidOrNull(req.params.id) ?? "00000000-0000-0000-0000-000000000000"]),
-    // POST /players/:id/targets { category, metric, targetScore, dueOn?, drillId?, noteId? }
+    // POST /players/:id/targets { category, metric, targetScore, dueOn?, drillId?, noteId?, why?, skillId? }
+    // `why` (with the score it stands on, `skillId`) is written as a coaching
+    // point in the same transaction as the target (targetSet above).
     // The attribute is checked against the rubric here, as an assessment's
     // is (validateAssessment): target_set() keeps no SQL copy of TREE.
     target: async (req, res) => {
@@ -357,6 +386,9 @@ export function developmentCorrectionRoutes({ pool, secret }) {
       if (!Number.isInteger(score)) return res.status(400).json({ error: "bad_score" });
       const due = typeof b.dueOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.dueOn) ? b.dueOn : null;
       if (b.dueOn != null && b.dueOn !== "" && !due) return res.status(400).json({ error: "bad_due_on" });
+      if (b.why != null && typeof b.why !== "string") return res.status(400).json({ error: "bad_why" });
+      if (typeof b.why === "string" && b.why.trim() && !uuidOrNull(b.skillId))
+        return res.status(400).json({ error: "evidence_required" });
       return targetSet(req, res);
     },
     // POST /targets/:id/withdraw { reason }
