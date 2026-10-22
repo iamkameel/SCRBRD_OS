@@ -204,6 +204,10 @@ const SUITES = [
   // A coaching point's never-words, in JavaScript and in db/104's SQL, are
   // one list (GA-I27 §6; GA-I26a §2.2).
   ["coachingpoint", "apps/web/test/coachingPoint.test.mjs"],
+  // GA-I26a A3: the history strip, the target, "since the last look", the plan
+  // editor and the register: figures and dates and no verdict word, 44px and
+  // 12px, the register's four words and no `injured`, the plan naming nobody.
+  ["skills-history", "apps/web/test/skillsHistory.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
   // per-fixture count: "N to resolve" and "Could not read X", a failed read

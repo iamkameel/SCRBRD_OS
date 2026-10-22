@@ -14,6 +14,7 @@
  */
 import { api } from "./api.js";
 import { SCALE_MIN, SCALE_MAX, TREE, DISCIPLINES } from "@scrbrd/scoring";
+import { NEVER_ON_THE_COCKPIT } from "./cockpitNever.js";
 
 /** The most a single note may move a rating. Mirrors the column's CHECK. */
 export const NOTE_ADJUSTMENT_LIMIT = 3;
@@ -31,8 +32,12 @@ export function validScore(v) {
  * four numbers revise those four and leave the other twenty-nine standing.
  * Sending an untouched attribute would overwrite a considered judgement with a
  * default, which is why the form only sends what was moved.
+ *
+ * There is no `note` (GA-I26a §4.4): the per-row prose was copied into every
+ * row written and read back by nothing. What a coach wants to say becomes a
+ * coaching point on the row he means (writeCoachingPoint below).
  */
-export async function recordAssessment(playerId, scores, { note, assessedOn } = {}) {
+export async function recordAssessment(playerId, scores, { assessedOn } = {}) {
   const clean = {};
   for (const [group, attrs] of Object.entries(scores || {})) {
     if (!TREE[group]) throw new Error(`unknown_group:${group}`);
@@ -46,7 +51,7 @@ export async function recordAssessment(playerId, scores, { note, assessedOn } = 
   }
   if (!Object.keys(clean).length) throw new Error("nothing_to_record");
   return api(`/api/players/${playerId}/assessment`, {
-    method: "POST", body: { scores: clean, note: note || undefined, assessedOn: assessedOn || undefined },
+    method: "POST", body: { scores: clean, assessedOn: assessedOn || undefined },
   });
 }
 
@@ -73,5 +78,102 @@ export async function writeNote(playerId, { body, aboutDiscipline, adjustment } 
     method: "POST",
     body: { body: text, aboutDiscipline: aboutDiscipline || undefined,
             adjustment: adj === null || adj === 0 ? undefined : adj },
+  });
+}
+
+// ── GA-I26a A3: targets, withdrawals and coaching points ───────────────
+// Thin calls, like the ones above: the database decides who may do what, and
+// refuses in words (`already_there`, `forbidden_word`, `not_permitted`).
+
+/** A refusal from these routes, in words; the code only when there are none. */
+const WRITE_WORDS = {
+  missing_token: "You are not signed in, so nothing was saved.",
+  not_permitted: "You may not do that for this player.",
+  nothing_to_record: "Move at least one rating before saving.",
+  already_there: "He is already at or above that. Pick a higher target.",
+  forbidden_word: "That wording is not allowed here: it names a risk, a diagnosis or a figure. Say what you saw.",
+  names_another_boy: "That names another boy. Leave him out.",
+  reason_required: "Say why, in a few words.",
+  body_length: "Keep it to one line, 200 characters or fewer.",
+  body_required: "Write the reason, or leave the box empty.",
+  evidence_required: "Rate this skill first; the reason stands on a score.",
+  evidence_not_his: "That score is not his.",
+  already_withdrawn: "That was already taken back.",
+  drill_retired: "That drill is retired. Pick another.",
+  no_such_drill: "That drill is not in the library.",
+  due_in_past: "The date has passed. Pick a later one, or leave it blank.",
+  bad_due_on: "That is not a date.",
+  not_the_assessor: "Another coach gave that score. Rate it again on a row of your own.",
+  withdrawn: "A withdrawn score is not changed.",
+  minutes_invalid: "Minutes run from 5 to 180, or leave it blank for the drill's own.",
+  drills_invalid: "A plan holds up to 20 drills.",
+  drill_repeated: "A drill is on the plan once.",
+  status_invalid: "Pick present, late, excused or absent.",
+  status_not_accepted: "That word is not used on the register.",
+  player_not_at_this_school: "That boy is not at this school.",
+  no_such_session: "That session is not one you can see.",
+};
+/** A refusal as a sentence for the coach: `writeWords(err)`. */
+export function writeWords(e) {
+  const code = String(e?.code || e?.message || "").split(" ")[0];
+  if (WRITE_WORDS[code]) return WRITE_WORDS[code];
+  if (/^bad_score:/.test(code)) return "A rating is outside 1 to 20.";
+  if (code === "bad_score") return "Pick a whole number from 2 to 20.";
+  return e?.message || "Could not save just now.";
+}
+
+/** A reason is required to take a judgement back; it is shown with the strike. */
+export const REASON_MAX = 200;
+/** The "why" of a target is one line (§4.3); the column allows more. */
+export const WHY_MAX = 200;
+
+/**
+ * Set a target on one attribute. The old open target for it is withdrawn
+ * ("replaced") in the same transaction by the database, never here.
+ * `noteId` is the coaching point that says why: staff-tier prose the boy does
+ * not read.
+ */
+export async function setTarget(playerId, { category, metric, targetScore, dueOn, drillId, noteId }) {
+  const n = Number(targetScore);
+  if (!TREE[category]?.includes(metric)) throw new Error(`unknown_attribute:${category}.${metric}`);
+  if (!Number.isInteger(n) || n < 2 || n > SCALE_MAX) throw new Error("bad_score");
+  return api(`/api/players/${playerId}/targets`, {
+    method: "POST", body: { category, metric, targetScore: n, dueOn: dueOn || undefined, drillId: drillId || undefined, noteId: noteId || undefined },
+  });
+}
+
+/** Take an open target back. */
+export async function withdrawTarget(targetId, reason) {
+  const why = (reason || "").trim();
+  if (!why) throw new Error("reason_required");
+  return api(`/api/targets/${targetId}/withdraw`, { method: "POST", body: { reason: why.slice(0, REASON_MAX) } });
+}
+
+/** Take a score back. The row stays, struck, with who withdrew it and why. */
+export async function withdrawScore(skillId, reason) {
+  const why = (reason || "").trim();
+  if (!why) throw new Error("reason_required");
+  return api(`/api/skills/${skillId}/withdraw`, { method: "POST", body: { reason: why.slice(0, REASON_MAX) } });
+}
+
+/** Take a note or a coaching point back (the row stays, struck). */
+export async function withdrawNote(noteId) {
+  return api(`/api/notes/${noteId}/withdraw`, { method: "POST", body: {} });
+}
+
+/**
+ * Write the "why" of a target as a coaching point standing on the score it is
+ * about (`evidence_read: 'skills'`). The cockpit's never-words are refused
+ * here before the trip and again in the database, which is the one that holds.
+ * @returns {Promise<{ id: string }>}
+ */
+export async function writeCoachingPoint(playerId, { body, skillId }) {
+  const text = (body || "").trim();
+  if (!text) throw new Error("body_required");
+  if (text.length > WHY_MAX) throw new Error("body_length");
+  if (!skillId) throw new Error("evidence_required");
+  if (NEVER_ON_THE_COCKPIT.test(text)) throw new Error("forbidden_word");
+  return api(`/api/players/${playerId}/coaching-points`, {
+    method: "POST", body: { body: text, evidence: { read: "skills", params: { skillId } } },
   });
 }

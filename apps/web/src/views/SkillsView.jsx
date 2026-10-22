@@ -1,29 +1,17 @@
 
 import { useState } from "react";
-import { holdsAsHeld } from "../lib/held.js";
+import { holdsAsHeld, holdsForPlayer } from "../lib/held.js";
 import { D } from "../design/tokens.js";
-import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, ReadState, SectionHeader } from "../ui/primitives.jsx";
-import { useLive, useNotes, useRatings, useSkills } from "../lib/live.js";
-import { recordAssessment, writeNote, NOTE_ADJUSTMENT_LIMIT } from "../lib/development.js";
+import { useLive, useNotes, useRatings, useSkills, useBoyRead } from "../lib/live.js";
+import { recordAssessment, writeNote, writeWords, NOTE_ADJUSTMENT_LIMIT } from "../lib/development.js";
 import { TREE, DISCIPLINES, ANCHOR_POINTS, anchorFor, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
 import { signedIn } from "../lib/api.js";
 import { MIN_RADAR_AXES, RUBRIC_MAX } from "../lib/radar.js";
 import { focusAreas } from "../lib/focusAreas.js";
 import { readState, readStateFor } from "../lib/readState.js";
-
-/** A refusal from the assessment or note routes, in words; the code only when there are none. */
-const WRITE_WORDS = {
-  missing_token: "You are not signed in, so nothing was saved.",
-  not_permitted: "You may not record an assessment for this player.",
-  nothing_to_record: "Move at least one rating before saving.",
-};
-function writeWords(e) {
-  const code = String(e?.code || e?.message || "").split(" ")[0];
-  if (WRITE_WORDS[code]) return WRITE_WORDS[code];
-  if (/^bad_score:/.test(code)) return "A rating is outside 1 to 20.";
-  return e?.message || "Could not save just now.";
-}
+import { pointsFor, standingPoint, savedTargets, openTargetOn } from "../lib/assessmentHistory.js";
+import { Strip, TargetLine, DotSheet, TargetModal, SincePanel } from "./skills/History.jsx";
 
 /**
  * The anchor sentence for a value, and whether anybody has approved it.
@@ -155,6 +143,24 @@ function SkillsView({ role }) {
   // implies nothing has been written.
   const notesRead = useNotes(role, selPlayer?.id, nonce);
   const { notes } = notesRead;
+  // GA-I26a: the history, the targets and "since the last look" are reads of
+  // ONE boy, made only when there is one and the reader may read his scores.
+  // Staff-tier words (the coach's name, the coaching points on a score) go to
+  // a reader who holds player.note.read; the boy himself holds the scores and
+  // not that, and is spoken to as "you" and "your coach".
+  const staffView = holdsAsHeld(role, "player.note.read");
+  // Held for THIS boy: a pupil's own-record assignment reaches him alone, so a
+  // team-mate tapped in the list is never asked for (and never logged against).
+  // The coaching points are drawn only in a strip's dot sheet, so they are read
+  // only where the strip is: a principal (notes, not scores) is not sent them.
+  const mayReadHistory = holdsForPlayer(role, "player.development.read", selPlayer?.id);
+  const histRead = useBoyRead("skills_history", role, selPlayer?.id, nonce, mayReadHistory);
+  const targetsRead = useBoyRead("targets", role, selPlayer?.id, nonce, mayReadHistory);
+  const sinceRead = useBoyRead("development_since", role, selPlayer?.id, nonce, mayReadHistory);
+  const pointsRead = useBoyRead("coaching_points", role, selPlayer?.id, nonce,
+    mayReadHistory && holdsForPlayer(role, "player.note.read", selPlayer?.id));
+  const [openDot, setOpenDot]     = useState(null);   // a point from the history
+  const [targeting, setTargeting] = useState(null);   // { category, metric }
   const [assessing, setAssessing] = useState(false);
   const [draft, setDraft]         = useState({});   // { "group.attr": 1..20 }
   const [noteText, setNoteText]   = useState("");
@@ -223,7 +229,6 @@ function SkillsView({ role }) {
                 <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"8px"}}>{selPlayer.team} · {selPlayer.role} · {selPlayer.batHand}HB</div>
                 <div style={{display:"flex",gap:"6px"}}>
                   <Badge color={D.sky}>{selPlayer.role}</Badge>
-                  {selPlayer.fitness&&<Badge color={fitnessColor(selPlayer.fitness)}>{selPlayer.fitness}</Badge>}
                 </div>
               </div>
               {skills&&(
@@ -443,8 +448,29 @@ function SkillsView({ role }) {
             </Modal>
           )}
 
+          {openDot&&(
+            <DotSheet point={openDot} staff={staffView} canWrite={canEdit} points={pointsRead.rows}
+              onClose={()=>setOpenDot(null)} onDone={()=>{setOpenDot(null);setNonce(n=>n+1);}}/>
+          )}
+          {targeting&&(
+            <TargetModal role={role} playerId={selPlayer.id} category={targeting.category} metric={targeting.metric}
+              stood={standingPoint(pointsFor(histRead.rows,targeting.category,targeting.metric)) ?? {score:skills?.[targeting.category]?.[targeting.metric] ?? null}}
+              current={openTargetOn(targetsRead.rows,targeting.category,targeting.metric)}
+              onClose={()=>setTargeting(null)} onDone={()=>{setTargeting(null);setNonce(n=>n+1);}}/>
+          )}
+
           {skills?(
             <>
+              {/* Each of the three history reads says when it did not answer;
+                  a panel that is quietly missing reads as "nothing to say". */}
+              {[["the score history",histRead],["the targets",targetsRead],["what has happened since the last look",sinceRead]].map(([what,r])=>
+                readState(r,{what}).state==="failed"&&(
+                  <Card key={what} sx={{marginBottom:"14px"}}><ReadState compact testId="history-read-state" read={readState(r,{what})} onRetry={retry}/></Card>
+                ))}
+              {/* ── Since the last look (GA-I26a §4.2): what he attended and
+                  what the side ran, a block per discipline. ── */}
+              <SincePanel rows={sinceRead.rows} history={histRead.rows} player={selPlayer} staff={staffView} self={!staffView}/>
+
               {/* Category tabs */}
               <div style={{display:"flex",gap:"6px",marginBottom:"16px"}}>
                 {cats.map(c=>(
@@ -473,11 +499,34 @@ function SkillsView({ role }) {
                       <div style={{width:"100%",height:"8px",background:D.surf3,borderRadius:"4px",overflow:"hidden"}}>
                         <div className="skill-bar" style={{height:"100%",width:`${(val/SCALE_MAX)*100}%`,background:`linear-gradient(90deg,${SKILL_COLORS[category]||D.indigo},${progressColorForScore(val)})`,borderRadius:"4px"}}/>
                       </div>
-                      {/* The scale ratings are given on, 1 to 20. No target: none is set. */}
+                      {/* The scale ratings are given on, 1 to 20. A target is drawn only where a coach saved one. */}
                       <div data-testid="skill-axis" style={{display:"flex",justifyContent:"space-between",marginTop:"3px"}}>
                         <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>1</span>
                         <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>20</span>
                       </div>
+                      {/* The history of this one attribute (GA-I26a §4.1): every
+                          score, dated and signed, as figures and no verdict. */}
+                      {(()=>{
+                        const pts=pointsFor(histRead.rows,category,skill);
+                        const tgt=openTargetOn(targetsRead.rows,category,skill);
+                        return (
+                          <div data-testid={`history-${category}-${skill}`}>
+                            {pts.length>0&&(
+                              <Strip points={pts} staff={staffView} color={progressColorForScore(val)} target={tgt}
+                                label={skill.replace(/([A-Z])/g," $1").toLowerCase()} onOpen={setOpenDot}/>
+                            )}
+                            {tgt&&<TargetLine target={tgt}/>}
+                            {canEdit&&(
+                              <button type="button" data-testid={`set-target-${skill}`} className="pressBtn"
+                                onClick={()=>setTargeting({category,metric:skill})}
+                                style={{minHeight:"44px",minWidth:"44px",padding:"0 14px",marginTop:"2px",borderRadius:D.pill,cursor:"pointer",
+                                  border:`1px solid ${D.border}`,background:"transparent",color:D.textSecondary,fontFamily:D.body,fontSize:"12px"}}>
+                                {tgt?"Change target":"Set target"}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </Card>
@@ -502,10 +551,10 @@ function SkillsView({ role }) {
                   <Card sx={{padding:"14px"}} data-testid="focus-areas">
                     <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",marginBottom:"10px"}}>FOCUS AREAS</div>
                     {/* The lowest ratings in this category, as they stand. A
-                        target is shown only when a coach has saved one; none
-                        can be saved yet, so none is drawn, and none is made
-                        up from the rating. */}
-                    {focusAreas(skills[category]).map(f=>(
+                        target is shown only when a coach has saved one (the
+                        `targets` read, GA-I26a); none is made up from the
+                        rating. */}
+                    {focusAreas(skills[category], savedTargets(targetsRead.rows,category)).map(f=>(
                       <div key={f.skill} data-testid={`focus-${f.skill}`} style={{padding:"7px 0",borderBottom:`1px solid ${D.border}`}}>
                         <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginBottom:"3px"}}>{f.label}</div>
                         <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
@@ -518,7 +567,9 @@ function SkillsView({ role }) {
                         </div>
                       </div>
                     ))}
-                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>Lowest rated in {category}. No target is set; one appears here when a coach saves it.</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>
+                      Lowest rated in {category}.{Object.keys(savedTargets(targetsRead.rows,category)).length===0&&" No target is set; one appears here when a coach saves it."}
+                    </div>
                   </Card>
                 </div>
               </div>
