@@ -106,5 +106,6 @@
   "108_player_team_scoped.sql",
   "109_guardian_link_ending.sql",
   "110_plan_drafts.sql",
-  "111_injury_review.sql"
+  "111_injury_review.sql",
+  "113_correction_retracts_notices.sql"
 ]

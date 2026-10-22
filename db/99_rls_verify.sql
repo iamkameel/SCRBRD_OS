@@ -6263,6 +6263,89 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 CREATE OR REPLACE FUNCTION _v111_due(p_player uuid) RETURNS date AS $$ SELECT injury_retention_due(p_player) $$
   LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/111 (section 88) ─────────────────────────────────────────────
+-- ┌── db/113 (section 90). A correction takes back what it falsified
+-- A Hilton side of its own (U19F): a batter who reaches a fifty on a six
+-- (D Erasmus's case), a partner whose fifty stands, a U13 pace bowler who
+-- goes past his spell, an Open bowler with a hat-trick to be made by a
+-- correction; the readers the notices reach and the ones they must not.
+-- Written as the owner, the way the scorer's pad and the amendment route
+-- reach ball_event (their own paths are the walks'); every read in the
+-- section is a person's, through scrbrd_app under RLS.
+CREATE OR REPLACE FUNCTION _v113_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U16 date := make_date(extract(year FROM sa_today())::int - 16, 3, 1);
+  U13 date := make_date(extract(year FROM sa_today())::int - 12, 3, 1);
+  OPEN date := make_date(extract(year FROM sa_today())::int - 19, 3, 1);
+  ids jsonb; v_bat uuid; v_par uuid; v_q uuid; v_h uuid; v_m uuid; r record;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U19F', 'Verify OneThirteen Opener', 1131, 'batter', U16) RETURNING id INTO v_bat;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U19F', 'Verify OneThirteen Partner', 1132, 'batter', U16) RETURNING id INTO v_par;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) VALUES
+    (HIL, 'U19F', 'Verify OneThirteen Quick', 1133, 'bowler', U13, 'F') RETURNING id INTO v_q;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) VALUES
+    (HIL, 'U19F', 'Verify OneThirteen Hattrick', 1134, 'bowler', OPEN, 'F') RETURNING id INTO v_h;
+  ids := _v71_people('v113', ARRAY[
+    ARRAY['coach',     'coach',     HIL::text, 'U19F', ''],
+    ARRAY['scorer',    'scorer',    HIL::text, '',     ''],
+    ARRAY['boy',       'player',    HIL::text, 'U19F', v_bat::text],
+    ARRAY['parent',    'guardian',  HIL::text, '',     ''],
+    ARRAY['pparent',   'guardian',  HIL::text, '',     ''],
+    ARRAY['wescoach',  'coach',     WES::text, 'U19F', ''],
+    ARRAY['follower',  'spectator', HIL::text, '',     '']]);
+  FOR r IN SELECT a.id AS aid, x.p FROM role_assignment a,
+                  LATERAL (VALUES ((ids->>'parent')::uuid, v_bat), ((ids->>'pparent')::uuid, v_par)) AS x(person, p)
+            WHERE a.person_id = x.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U19F', 'Verify OneThirteen Visitors', (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'live')
+  RETURNING id INTO v_m;
+  RETURN ids || jsonb_build_object('bat', v_bat, 'par', v_par, 'quick', v_q, 'hat', v_h, 'match', v_m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One event at the end of the match's log, as the pad appends one. Returns
+-- its key. A void names its target in the payload, as the pad and the
+-- amendment route both write it.
+CREATE OR REPLACE FUNCTION _v113_ev(p_match uuid, p_innings smallint, p_kind text, p_type text, p_value integer,
+                                    p_striker uuid, p_bowler uuid, p_dismissal text DEFAULT NULL, p_target text DEFAULT NULL)
+RETURNS text AS $$
+DECLARE s integer; k text;
+BEGIN
+  s := coalesce((SELECT max(seq) FROM ball_event WHERE match_id = p_match), 0) + 1;
+  k := 'v113-' || p_match || '-' || s;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                          striker_id, bowler_id, dismissal, payload)
+  SELECT p_match, m.school_id, s, 0, p_innings, (SELECT id FROM app_user WHERE email = 'v113.scorer@example.invalid'),
+         'v113-pad', k, s, now(), p_kind, p_type, p_value, p_striker, p_bowler, p_dismissal,
+         CASE WHEN p_kind = 'void' THEN jsonb_build_object('target', p_target) ELSE '{}'::jsonb END
+    FROM match m WHERE m.id = p_match;
+  RETURN k;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What was written about one boy, as the owner reads it (what RLS would not
+-- say): every notification whose subject he is, oldest first, whole.
+CREATE OR REPLACE FUNCTION _v113_about(p_player uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(n) ORDER BY n.published_at, n.retracts_id NULLS FIRST, n.id), '[]'::jsonb)
+    FROM notification n WHERE n.subject_person_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One mark's row, or one breach's, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v113_mark(p_player uuid, p_kind text, p_match uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(mn) FROM milestone_notice mn WHERE mn.player_id = p_player AND mn.kind = p_kind AND mn.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v113_breaches(p_player uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(b) ORDER BY b.noticed_at, b.kind), '[]'::jsonb) FROM bowling_breach b WHERE b.bowler_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/113 (section 90) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -24858,6 +24941,312 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 88
   -- └── db/111 (section 88) ──────────────────────────────────────────
+  -- ┌── db/113 (section 90) ──────────────────────────────────────────
+  -- ── 90. A correction takes back what it falsified (db/113) ──
+  -- GA-I36 A2 with NOTIFICATIONS S5. A void re-asks every notice its ball
+  -- could have caused; one that no longer holds is withdrawn, once, to its
+  -- own audience, in the design's words; one that holds again returns in
+  -- place and nothing new is sent. _v113_stage() and _v113_ev() write as the
+  -- owner, as the pad and the amendment route reach the log; every read
+  -- below is a person's, through scrbrd_app under RLS.
+  --
+  -- What each label holds:
+  --   (fifty)      a six takes the batter from 46 to 52: one milestone row,
+  --                linked to one live "Fifty for …" notice his side reads
+  --   (withdrawn)  the six is voided (46): the mark and its notice are
+  --                retracted as a correction, by the system, and ONE
+  --                "withdrawn" notice goes: "A notice was withdrawn",
+  --                "'Fifty for …' was withdrawn after the scorecard was
+  --                corrected.", to exactly the original's audience, low
+  --   (live)       nobody reads the withdrawn notice as live: not in the coach's,
+  --                the boy's or his parent's list, a stub when opened
+  --                (withdrawn, no words, pointing at the withdrawal), the mark
+  --                gone from milestone_notice; the withdrawal in each list once
+  --   (audience)   another boy's parent, another school's coach and a follower
+  --                read neither the notice nor its withdrawal
+  --   (standing)   the partner's fifty, on a ball nobody voided, is untouched
+  --   (names)      no withdrawal's title names a child (the push is a pointer
+  --                whatever the row says: push-api.test.mjs); a welfare
+  --                withdrawal names nobody in its body either
+  --   (idempotent) a second void of the same ball sends no second withdrawal
+  --                and moves nothing; a void of an unrelated dot retracts
+  --                nothing
+  --   (once)       a re-entered four restores the fifty (50): the SAME row
+  --                and notice return, re-synced to 50, nothing new is sent,
+  --                and its withdrawal is superseded, unsaid; every reader
+  --                sees one live fifty and no withdrawal. Voided again, one
+  --                live withdrawal again
+  --   (breach)     a U13 bowler's sixth over of a spell: one breach and one
+  --                high welfare notice; that ball voided: the breach is hidden,
+  --                workload() counts none, the notice withdrawn at medium to
+  --                the same staff; the ball re-entered: the same breach and
+  --                notice return, nothing new
+  --   (newly)      W, dot, W, W and the dot voided: the hat-trick the
+  --                corrected history holds is noticed once, "after a
+  --                correction"; a second void sends nothing more
+  --   (doors)      the new functions are nobody's to call (not the
+  --                application's); the triggers fire on a void (and the
+  --                public one on a released ball) only
+  --
+  -- Falsified once each, by replacing the object in the database and running
+  -- this section; each went red at its label (see the commit):
+  --   (withdrawn)  milestone_retract() without its notification_retract()
+  --   (once)       milestone_notify_as() inserting a new notice on a
+  --                re-reached mark instead of un-retracting the row
+  --   (names)      notification_retract() titling the withdrawal with the
+  --                original's title ("A notice was withdrawn: Fifty for …")
+  --   (breach)     workload() without `x.retracted_at IS NULL`
+  DECLARE
+    y     jsonb := _v113_stage();
+    M     uuid := (y->>'match')::uuid;
+    BAT   uuid := (y->>'bat')::uuid;
+    PAR   uuid := (y->>'par')::uuid;
+    Q     uuid := (y->>'quick')::uuid;
+    H     uuid := (y->>'hat')::uuid;
+    SIDE  text[] := ARRAY['coach', 'boy', 'parent'];
+    AWAY  text[] := ARRAY['pparent', 'wescoach', 'follower'];
+    NAMES text[] := ARRAY['Verify OneThirteen Opener', 'Verify OneThirteen Partner', 'Verify OneThirteen Quick', 'Verify OneThirteen Hattrick'];
+    k6 text; dot text; four text; kb text; hdot text; x text;
+    F uuid; W uuid; W2 uuid; PF uuid; B uuid; BN uuid; BW uuid; HT uuid;
+    j jsonb; k text; nm text; i integer; got text; n integer;
+    saw text[] := '{}';
+  BEGIN
+    -- (fifty)
+    FOR i IN 1..9 LOOP PERFORM _v113_ev(M, 0::smallint, 'ball', 'run', 6, PAR, NULL); END LOOP;   -- the partner: 54
+    FOR i IN 1..7 LOOP PERFORM _v113_ev(M, 0::smallint, 'ball', 'run', 6, BAT, NULL); END LOOP;   -- the batter: 42
+    PERFORM _v113_ev(M, 0::smallint, 'ball', 'run', 4, BAT, NULL);                                 -- 46
+    k6 := _v113_ev(M, 0::smallint, 'ball', 'run', 6, BAT, NULL);                                   -- 52: the fifty
+    j := _v113_mark(BAT, 'fifty', M);
+    F := (j->>'notice_id')::uuid;
+    PF := (_v113_mark(PAR, 'fifty', M)->>'notice_id')::uuid;
+    PERFORM _assert(j->>'retracted_at' IS NULL AND (j->>'value')::int = 52 AND F IS NOT NULL AND PF IS NOT NULL,
+      format('§90 (fifty): the fifty was not noticed and linked: %s', j));
+    PERFORM _assert(_row_89(F)->>'title' = 'Fifty for Verify OneThirteen Opener' AND _row_89(F)->>'retracted_at' IS NULL,
+      format('§90 (fifty): the notice is not the live "Fifty for …": %s', _row_89(F)));
+    -- Who read the fifty: the withdrawal must reach exactly them (audience).
+    FOREACH k IN ARRAY SIDE || AWAY LOOP
+      PERFORM _as((y->>k)::uuid);
+      IF EXISTS (SELECT 1 FROM my_notifications WHERE id = F) THEN saw := saw || k; END IF;
+    END LOOP;
+    PERFORM _assert(saw @> SIDE AND NOT saw && ARRAY['pparent', 'wescoach'],
+      format('§90 (fifty): the fifty was read by %s, not the side alone', saw));
+
+    -- (withdrawn)
+    PERFORM _v113_ev(M, 0::smallint, 'void', NULL, NULL, NULL, NULL, NULL, k6);
+    j := _v113_mark(BAT, 'fifty', M);
+    PERFORM _assert(j->>'retracted_at' IS NOT NULL, format('§90 (withdrawn): the voided fifty''s mark stands: %s', j));
+    j := _row_89(F);
+    PERFORM _assert(j->>'retracted_at' IS NOT NULL AND j->>'retraction_kind' = 'correction' AND j->>'retracted_by' IS NULL,
+      format('§90 (withdrawn): the fifty''s notice was not retracted as the system''s correction: %s', j));
+    PERFORM _assert(_said_89(F) = 1, format('§90 (withdrawn): %s withdrawal(s) were sent, not one', _said_89(F)));
+    SELECT (e->>'id')::uuid INTO W FROM jsonb_array_elements(_v113_about(BAT)) e WHERE (e->>'retracts_id')::uuid = F;
+    j := _row_89(W);
+    -- (its title is (names)'s to hold)
+    PERFORM _assert(j->>'body' = '''Fifty for Verify OneThirteen Opener'' was withdrawn after the scorecard was corrected.'
+                    AND j->>'kind' = 'recognition' AND j->>'urgency' = 'low' AND j->>'required_capability' = 'news.read'
+                    AND j->>'retracted_at' IS NULL AND j->>'published_by' IS NULL,
+      format('§90 (withdrawn): the withdrawal is not the design''s: %s', j));
+    PERFORM _assert((j->>'school_id', j->>'team_code', j->>'scope_level', j->>'subject_person_id', j->>'recipient_id', j->>'subject_id')
+                    IS NOT DISTINCT FROM (_row_89(F)->>'school_id', _row_89(F)->>'team_code', _row_89(F)->>'scope_level',
+                                          _row_89(F)->>'subject_person_id', _row_89(F)->>'recipient_id', _row_89(F)->>'subject_id'),
+      '§90 (withdrawn): the withdrawal is not addressed to exactly the original''s audience');
+
+    -- (live)
+    FOREACH k IN ARRAY SIDE LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = F) = 0,
+        format('§90 (live): the %s reads the withdrawn fifty as live', k));
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE subject_person_id = BAT AND title LIKE 'Fifty for%') = 0,
+        format('§90 (live): the %s reads a fifty for the batter', k));
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = W AND retracts_id = F) = 1
+                      AND (SELECT count(*) FROM my_notifications WHERE retracts_id = F) = 1,
+        format('§90 (live): the %s does not read the one withdrawal', k));
+      j := notification_by_id(F);
+      PERFORM _assert((j->>'withdrawn')::boolean AND NOT (j ? 'title') AND NOT (j ? 'body') AND (j->>'withdrawal_id')::uuid = W,
+        format('§90 (live): the %s opens the withdrawn fifty as %s, not a stub', k, j));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM milestone_notice WHERE player_id = BAT AND match_id = M) = 0
+                    AND (SELECT count(*) FROM milestone_notice WHERE player_id = PAR AND match_id = M) = 1,
+      '§90 (live): the coach reads the voided mark in milestone_notice, or lost the partner''s');
+
+    -- (audience)
+    -- Exactly the original's readers read the withdrawal: whoever read the
+    -- fifty (the side, and a follower if the school's notices reach him),
+    -- and nobody who did not (another boy's parent, another school's coach).
+    FOREACH k IN ARRAY SIDE || AWAY LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(EXISTS (SELECT 1 FROM my_notifications WHERE id = W) = (k = ANY (saw)),
+        format('§90 (audience): the %s %s the withdrawal, and %s the fifty', k,
+               CASE WHEN EXISTS (SELECT 1 FROM my_notifications WHERE id = W) THEN 'reads' ELSE 'does not read' END,
+               CASE WHEN k = ANY (saw) THEN 'read' ELSE 'did not read' END));
+      IF NOT k = ANY (saw) THEN
+        PERFORM _assert((SELECT count(*) FROM my_notifications WHERE subject_person_id = BAT) = 0
+                        AND notification_by_id(W) IS NULL AND notification_by_id(F) IS NULL,
+          format('§90 (audience): the %s reads the batter''s notice or its withdrawal', k));
+      END IF;
+    END LOOP;
+    PERFORM _as((y->>'pparent')::uuid);
+    PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = PF) = 1,
+      '§90 (audience): the partner''s parent does not read his own boy''s fifty, so this proves nothing');
+
+    -- (standing)
+    j := _v113_mark(PAR, 'fifty', M);
+    PERFORM _assert(j->>'retracted_at' IS NULL AND _row_89(PF)->>'retracted_at' IS NULL AND _said_89(PF) = 0,
+      format('§90 (standing): the partner''s fifty was touched: %s / %s', j, _row_89(PF)));
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = PF) = 1, '§90 (standing): the coach lost the partner''s fifty');
+
+    -- (idempotent)
+    got := _v113_mark(BAT, 'fifty', M)->>'retracted_at';
+    n := jsonb_array_length(_v113_about(BAT));
+    PERFORM _v113_ev(M, 0::smallint, 'void', NULL, NULL, NULL, NULL, NULL, k6);
+    PERFORM _assert(_said_89(F) = 1 AND jsonb_array_length(_v113_about(BAT)) = n
+                    AND _v113_mark(BAT, 'fifty', M)->>'retracted_at' = got,
+      format('§90 (idempotent): a second void of the six moved something: %s withdrawal(s), %s notices (was %s)',
+             _said_89(F), jsonb_array_length(_v113_about(BAT)), n));
+    n := jsonb_array_length(_v113_about(PAR));
+    dot := _v113_ev(M, 0::smallint, 'ball', 'run', 0, PAR, NULL);
+    PERFORM _v113_ev(M, 0::smallint, 'void', NULL, NULL, NULL, NULL, NULL, dot);
+    PERFORM _assert(jsonb_array_length(_v113_about(PAR)) = n AND _row_89(PF)->>'retracted_at' IS NULL,
+      '§90 (idempotent): a void of the partner''s dot retracted or sent something');
+
+    -- (once)
+    four := _v113_ev(M, 0::smallint, 'ball', 'run', 4, BAT, NULL);                                 -- 50 again
+    j := _v113_mark(BAT, 'fifty', M);
+    PERFORM _assert(j->>'retracted_at' IS NULL AND (j->>'value')::int = 50 AND (j->>'notice_id')::uuid = F,
+      format('§90 (once): the re-reached fifty is not the same mark, returned at 50: %s', j));
+    j := _row_89(F);
+    PERFORM _assert(j->>'retracted_at' IS NULL AND j->>'retraction_kind' IS NULL
+                    AND j->>'body' = 'Fifty (50) against Verify OneThirteen Visitors.',
+      format('§90 (once): the fifty''s notice did not return, re-synced: %s', j));
+    PERFORM _assert((SELECT count(*) FROM jsonb_array_elements(_v113_about(BAT)) e
+                      WHERE e->>'title' = 'Fifty for Verify OneThirteen Opener') = 1,
+      '§90 (once): the re-reached fifty was sent a second time');
+    PERFORM _assert(_row_89(W)->>'retraction_kind' = 'superseded' AND _said_89(W) = 0 AND _said_89(F) = 1,
+      format('§90 (once): the withdrawal was not superseded unsaid: %s', _row_89(W)));
+    FOREACH k IN ARRAY SIDE LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE subject_person_id = BAT AND title LIKE 'Fifty for%') = 1
+                      AND (SELECT count(*) FROM my_notifications WHERE id = F) = 1
+                      AND (SELECT count(*) FROM my_notifications WHERE retracts_id = F) = 0,
+        format('§90 (once): the %s does not read one live fifty and no withdrawal', k));
+    END LOOP;
+    PERFORM _v113_ev(M, 0::smallint, 'void', NULL, NULL, NULL, NULL, NULL, four);
+    SELECT (e->>'id')::uuid INTO W2 FROM jsonb_array_elements(_v113_about(BAT)) e
+     WHERE (e->>'retracts_id')::uuid = F AND e->>'retracted_at' IS NULL;
+    PERFORM _assert(_row_89(F)->>'retracted_at' IS NOT NULL AND W2 IS NOT NULL AND W2 <> W AND _said_89(F) = 2,
+      '§90 (once): voided again, the fifty was not withdrawn once more');
+    FOREACH k IN ARRAY SIDE LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM my_notifications WHERE retracts_id = F) = 1
+                      AND (SELECT count(*) FROM my_notifications WHERE id = F) = 0,
+        format('§90 (once): voided again, the %s does not read exactly one withdrawal', k));
+    END LOOP;
+
+    -- (names)
+    FOR j IN SELECT e FROM jsonb_array_elements(_v113_about(BAT) || _v113_about(PAR)) e WHERE e->>'retracts_id' IS NOT NULL LOOP
+      FOREACH nm IN ARRAY NAMES LOOP
+        PERFORM _assert(position(nm IN j->>'title') = 0, format('§90 (names): a withdrawal''s title names a child: %s', j->>'title'));
+      END LOOP;
+      PERFORM _assert(j->>'title' = 'A notice was withdrawn', format('§90 (names): a withdrawal is titled %s', j->>'title'));
+    END LOOP;
+
+    -- (breach)
+    FOR i IN 1..30 LOOP PERFORM _v113_ev(M, 1::smallint, 'ball', 'run', 0, NULL, Q); END LOOP;     -- five overs
+    PERFORM _assert(jsonb_array_length(_v113_breaches(Q)) = 0, '§90 (breach): five overs breached a U13 spell of five');
+    kb := _v113_ev(M, 1::smallint, 'ball', 'run', 0, NULL, Q);                                       -- the sixth over
+    j := _v113_breaches(Q) -> 0;
+    B := (j->>'id')::uuid; BN := (j->>'notice_id')::uuid;
+    PERFORM _assert(jsonb_array_length(_v113_breaches(Q)) = 1 AND j->>'kind' = 'spell' AND j->>'retracted_at' IS NULL
+                    AND _row_89(BN)->>'title' = 'Bowling directive exceeded' AND _row_89(BN)->>'urgency' = 'high',
+      format('§90 (breach): the sixth over did not record one breach with its notice: %s', _v113_breaches(Q)));
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM bowling_breach WHERE id = B) = 1 AND (SELECT count(*) FROM my_notifications WHERE id = BN) = 1
+                    AND (SELECT w.breaches_28d FROM workload('U19F') w WHERE w.player_id = Q) = 1,
+      '§90 (breach): the coach does not read the breach, its notice, or its count');
+    PERFORM _v113_ev(M, 1::smallint, 'void', NULL, NULL, NULL, NULL, NULL, kb);
+    j := _v113_breaches(Q) -> 0;
+    PERFORM _assert(jsonb_array_length(_v113_breaches(Q)) = 1 AND j->>'retracted_at' IS NOT NULL AND (j->>'id')::uuid = B,
+      format('§90 (breach): the voided over''s breach stands: %s', j));
+    PERFORM _assert(_row_89(BN)->>'retraction_kind' = 'correction' AND _said_89(BN) = 1,
+      format('§90 (breach): the breach''s notice was not withdrawn once: %s', _row_89(BN)));
+    SELECT (e->>'id')::uuid INTO BW FROM jsonb_array_elements(_v113_about(Q)) e WHERE (e->>'retracts_id')::uuid = BN;
+    j := _row_89(BW);
+    PERFORM _assert(j->>'title' = 'A notice was withdrawn'
+                    AND j->>'body' = '''Bowling directive exceeded'' was withdrawn after the scorecard was corrected.'
+                    AND j->>'kind' = 'welfare' AND j->>'urgency' = 'medium' AND j->>'required_capability' = 'player.workload.read'
+                    AND (j->>'subject_person_id')::uuid = Q,
+      format('§90 (breach): the welfare withdrawal is not the design''s: %s', j));
+    FOREACH nm IN ARRAY NAMES LOOP
+      PERFORM _assert(position(nm IN j->>'title') = 0 AND position(nm IN j->>'body') = 0,
+        format('§90 (names): the welfare withdrawal names a child: %s', j));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM bowling_breach WHERE id = B) = 0
+                    AND (SELECT count(*) FROM my_notifications WHERE id = BN) = 0
+                    AND (SELECT count(*) FROM my_notifications WHERE id = BW AND retracts_id = BN) = 1,
+      '§90 (breach): the coach reads the withdrawn breach or its notice as live, or not its withdrawal');
+    PERFORM _assert((SELECT w.breaches_28d FROM workload('U19F') w WHERE w.player_id = Q) = 0,
+      format('§90 (breach): workload() still counts the withdrawn breach (%s)',
+             (SELECT w.breaches_28d FROM workload('U19F') w WHERE w.player_id = Q)));
+    PERFORM _v113_ev(M, 1::smallint, 'ball', 'run', 0, NULL, Q);                                     -- the sixth over, again
+    j := _v113_breaches(Q) -> 0;
+    PERFORM _assert(jsonb_array_length(_v113_breaches(Q)) = 1 AND (j->>'id')::uuid = B AND j->>'retracted_at' IS NULL
+                    AND _row_89(BN)->>'retracted_at' IS NULL AND _row_89(BW)->>'retraction_kind' = 'superseded'
+                    AND (SELECT count(*) FROM jsonb_array_elements(_v113_about(Q)) e WHERE e->>'title' = 'Bowling directive exceeded') = 1,
+      format('§90 (breach): the re-reached breach did not return in place, once: %s', _v113_breaches(Q)));
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM bowling_breach WHERE id = B) = 1 AND (SELECT count(*) FROM my_notifications WHERE id = BN) = 1
+                    AND (SELECT count(*) FROM my_notifications WHERE retracts_id = BN) = 0
+                    AND (SELECT w.breaches_28d FROM workload('U19F') w WHERE w.player_id = Q) = 1,
+      '§90 (breach): after the re-entered ball the coach does not read the one breach, live');
+
+    -- (newly)
+    PERFORM _v113_ev(M, 2::smallint, 'ball', 'W', 0, NULL, H, 'bowled');
+    hdot := _v113_ev(M, 2::smallint, 'ball', 'run', 0, NULL, H);
+    PERFORM _v113_ev(M, 2::smallint, 'ball', 'W', 0, NULL, H, 'bowled');
+    PERFORM _v113_ev(M, 2::smallint, 'ball', 'W', 0, NULL, H, 'bowled');
+    PERFORM _assert(_v113_mark(H, 'hat_trick', M) IS NULL, '§90 (newly): W, dot, W, W was noticed as a hat-trick');
+    PERFORM _v113_ev(M, 2::smallint, 'void', NULL, NULL, NULL, NULL, NULL, hdot);
+    j := _v113_mark(H, 'hat_trick', M);
+    HT := (j->>'notice_id')::uuid;
+    PERFORM _assert(j->>'retracted_at' IS NULL AND HT IS NOT NULL
+                    AND _row_89(HT)->>'title' = 'Hat-trick for Verify OneThirteen Hattrick'
+                    AND _row_89(HT)->>'body' = 'Hat-trick against Verify OneThirteen Visitors, after a correction.',
+      format('§90 (newly): the hat-trick the correction made was not noticed, after a correction: %s / %s', j, _row_89(HT)));
+    PERFORM _v113_ev(M, 2::smallint, 'void', NULL, NULL, NULL, NULL, NULL, hdot);
+    PERFORM _assert((SELECT count(*) FROM jsonb_array_elements(_v113_about(H)) e WHERE e->>'title' LIKE 'Hat-trick for%') = 1,
+      '§90 (newly): a second void sent the hat-trick again');
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM my_notifications WHERE id = HT) = 1, '§90 (newly): the coach does not read the hat-trick');
+
+    -- (doors)
+    FOREACH x IN ARRAY ARRAY['notification_unretract(uuid)', 'milestone_still_holds(uuid,text,uuid,smallint,integer)',
+                             'milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)',
+                             'milestone_retract()', 'bowling_breach_retract()'] LOOP
+      PERFORM _assert(NOT has_function_privilege('scrbrd_app', to_regprocedure(x), 'EXECUTE')
+                      AND NOT has_function_privilege('public', to_regprocedure(x), 'EXECUTE'),
+        format('§90 (doors): %s is callable by the application or PUBLIC', x));
+    END LOOP;
+    BEGIN
+      PERFORM notification_unretract(F);
+      PERFORM _assert(false, '§90 (doors): the application un-retracted a notice');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM _assert((SELECT count(*) FROM pg_trigger g
+                      WHERE g.tgrelid = 'ball_event'::regclass AND NOT g.tgisinternal
+                        AND g.tgname IN ('ball_event_milestone_retract', 'ball_event_breach_retract')
+                        AND pg_get_triggerdef(g.oid) LIKE '%AFTER INSERT ON public.ball_event FOR EACH ROW WHEN ((new.kind = ''void''::text))%') = 2
+                    AND EXISTS (SELECT 1 FROM pg_trigger g
+                                 WHERE g.tgrelid = 'ball_event'::regclass AND g.tgname = 'public_data_changed'
+                                   AND g.tgfoid = 'public_data_notify()'::regprocedure
+                                   AND pg_get_triggerdef(g.oid) LIKE '%WHEN (((new.kind = ''void''::text) OR new.recovered)) EXECUTE FUNCTION public_data_notify(''match'', ''match_id'')%'),
+      '§90 (doors): the void triggers, or the public one, are not what db/113 wrote');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 90
+  -- └── db/113 (section 90) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

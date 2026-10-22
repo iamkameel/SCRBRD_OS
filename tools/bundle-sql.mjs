@@ -564,6 +564,14 @@ SELECT
                          WHERE p.oid = to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)')
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The physio records and reviews an injury",
+  -- db/113: a void takes back the milestone and breach notices it falsified,
+  -- and a re-reached mark returns in place (GA-I36 A2, NOTIFICATIONS S5).
+  CASE WHEN to_regprocedure('milestone_retract()') IS NOT NULL
+        AND to_regprocedure('bowling_breach_retract()') IS NOT NULL
+        AND to_regprocedure('notification_unretract(uuid)') IS NOT NULL
+        AND to_regprocedure('milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)') IS NOT NULL
+        AND to_regprocedure('milestone_still_holds(uuid,text,uuid,smallint,integer)') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A correction takes back what it falsified",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
