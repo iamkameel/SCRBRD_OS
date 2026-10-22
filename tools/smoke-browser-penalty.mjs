@@ -226,6 +226,9 @@ const outboxPending = () => page.evaluate((prefix) => new Promise((resolve) => {
  * synced, so a later slice of the log was judged one row early.
  */
 const settle = async () => {
+  // Never less than the 2.6 s this replaces: an event tapped a moment ago may
+  // not have reached the outbox yet, and an empty outbox then says nothing.
+  await page.waitForTimeout(2600);
   const until = Date.now() + 15000;
   let empty = 0;
   while (Date.now() < until && empty < 2) {
