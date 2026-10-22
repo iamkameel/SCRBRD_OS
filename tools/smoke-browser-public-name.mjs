@@ -34,6 +34,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4362);
 const API_PORT = port(8899);
@@ -82,6 +83,7 @@ async function open({ theme = "floodlit", width = 1280, height = 900 } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -109,7 +111,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await tid(page, "os-main").count()) === 1 || (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, nav) {
@@ -118,7 +120,7 @@ async function go(page, nav) {
   const l = (await rail.count()) ? rail : page.locator(`[data-testid="mnav-${nav}"]:visible`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 /** Text under 12px and controls under 44px inside one block, as drawn. */
@@ -149,7 +151,7 @@ const records = async () => q(`select given_by, end_reason, ended_on is null as 
 async function toConsents(page) {
   if (!(await go(page, "family"))) return false;
   try { await tid(page, `family-open-consents-${BEKKER}`).click({ timeout: 5000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return (await tid(page, `public-name-${BEKKER}`).count()) === 1;
 }
 /** Squad → T Bekker → Edit Profile. */
@@ -158,7 +160,7 @@ async function toEdit(page) {
   try { await tid(page, `squad-card-${BEKKER}`).click({ timeout: 5000 }); } catch { return false; }
   await page.waitForTimeout(600);
   try { await tid(page, "player-edit-profile").click({ timeout: 4000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 
@@ -196,7 +198,7 @@ try {
   ok("at 390 wide: nothing under 12px, no control under 44px, nothing wider than the card", fl.small.length === 0 && fl.tiny.length === 0 && !fl.wide,
      [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
   await sw.click();
-  await mum.page.waitForTimeout(1500);
+  await afterReads(mum.page, 1500);
   ok("she turns it on: the switch says on", await sw.getAttribute("aria-checked") === "true"
      && /On since .*recorded by you/.test(await tid(mum.page, `public-name-state-${BEKKER}`).innerText()));
   const r1 = await records();
@@ -221,7 +223,7 @@ try {
   ok("the section keeps the floors", ef.small.length === 0 && ef.tiny.length === 0, [...ef.small, ...ef.tiny].slice(0, 4).join(" · "));
   await tid(office.page, "never-public-reason-input").fill(REASON);
   await tid(office.page, "never-public-set").click();
-  await office.page.waitForTimeout(1500);
+  await afterReads(office.page, 1500);
   const mark = await q(`select reason, ended_on from player_never_public where player_id = $1`, [BEKKER]);
   ok("she marks him: the database holds the mark and its reason", mark.length === 1 && mark[0].reason === REASON && mark[0].ended_on === null, JSON.stringify(mark));
   ok("...her screen says so, with the reason", /Marked since/.test(await tid(office.page, "never-public-state").innerText().catch(() => ""))
@@ -240,7 +242,7 @@ try {
      mumText.match(/never show this child|never-public|marked since/i)?.[0]);
 
   await tid(office.page, "never-public-end").click();
-  await office.page.waitForTimeout(1500);
+  await afterReads(office.page, 1500);
   ok("the office removes the mark: end-dated, not deleted", (await q(`select ended_on is not null as ended from player_never_public where player_id = $1`, [BEKKER]))
        .map((r) => r.ended).join() === "true");
   ok("...and T Bekker is named again on the next request", (await named()).includes("T Bekker"));
@@ -248,7 +250,7 @@ try {
   const g = await q(`select a.person_id from role_assignment a join assignment_subject s on s.assignment_id = a.id
                       where s.player_id = $1 and a.role = 'guardian'`, [BEKKER]);
   await tid(office.page, `public-name-withdraw-${g[0].person_id}`).click();
-  await office.page.waitForTimeout(1500);
+  await afterReads(office.page, 1500);
   const r2 = await records();
   ok("the office records a no on the family's word: her record end-dated as withdrawn", r2.length === 1 && r2[0].end_reason === "withdrawn", JSON.stringify(r2));
   ok("...the office's screen says off", /Off since .*turned off by you/.test(await tid(office.page, `public-name-guardian-state-${g[0].person_id}`).innerText().catch(() => "")));
@@ -261,7 +263,7 @@ try {
   ok("no page error on the office's screen", office.errors.length === 0, office.errors.join(" | "));
   // She says yes again, for section 3.
   await tid(mum.page, `public-name-switch-${BEKKER}`).click();
-  await mum.page.waitForTimeout(1500);
+  await afterReads(mum.page, 1500);
   ok("she says yes again, and he is named", (await named()).includes("T Bekker"));
 
   // ── 3. The director of sport ────────────────────────────────────
@@ -278,12 +280,12 @@ try {
   const nf = await floors(dos.page, `names-off-${HIL}`);
   ok("...keeping the floors", nf.small.length === 0 && nf.tiny.length === 0, [...nf.small, ...nf.tiny].slice(0, 4).join(" · "));
   await tid(dos.page, "names-off-open").click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("open sides off: the switch says so, and the database holds it", await tid(dos.page, "names-off-open").getAttribute("aria-checked") === "true"
      && (await q(`select names_off from public_names_off where school_id = $1 and age_group = 'open'`, [HIL]))[0]?.names_off === true);
   ok("...and T Bekker (1XI) is not named on the next request", !(await named()).includes("T Bekker"));
   await tid(dos.page, "names-off-open").click();
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   ok("back on: named again", await tid(dos.page, "names-off-open").getAttribute("aria-checked") === "false" && (await named()).includes("T Bekker"));
   ok("no page error on her screen", dos.errors.length === 0, dos.errors.join(" | "));
 

@@ -32,6 +32,7 @@ import { appUrl, port } from "./db-url.mjs";
 import { deriveMatch, fromRow, inningsStart, inningsSummary, inningsEnd, toRow } from "@scrbrd/scoring";
 import { bookCard } from "./book-innings.mjs";
 import { lineFor } from "../apps/web/src/lib/family.js";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4341);
 const API_PORT = port(8811);
@@ -79,17 +80,24 @@ const click = async (page, re, ms = 4000) => {
   await page.waitForTimeout(300);
   return true;
 };
-async function signIn(page, who) {
+// `{ inFlight: true }` keeps main's fixed sleep instead of waiting for the
+// page's reads: section 3 holds a read on purpose and judges what happens
+// while it is still waiting, and when it lands. Waiting for the reads there
+// would wait out the held read (or the client's 10 s abort of it) and judge
+// the card only after the late answer had already landed.
+async function signIn(page, who, { inFlight = false } = {}) {
   await click(page, /Get Started|Log In/, 5000);
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  if (inFlight) await page.waitForTimeout(2000);
+  else await afterReads(page, 2000);
   return (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
-async function signOut(page) {
+async function signOut(page, { inFlight = false } = {}) {
   await page.locator('[data-testid="persona-signout"]').click({ timeout: 4000 }).catch(() => {});
-  await page.waitForTimeout(1200);
+  if (inFlight) await page.waitForTimeout(1200);
+  else await afterReads(page, 1200);
   return (await page.locator('[data-testid="os-main"]').count()) === 0;
 }
 /** Leave Home and come back, so the card mounts again and reads the cache. */
@@ -114,6 +122,7 @@ try {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
@@ -166,7 +175,7 @@ try {
   console.log("\n3. A late answer for the last session is dropped");
   ok("he signs out", await signOut(page));
   hold = true;
-  ok("R Pillay (the pupil, his own account) signs in, and his read of the match is held on its way", await signIn(page, /pillay@example\.invalid/));
+  ok("R Pillay (the pupil, his own account) signs in, and his read of the match is held on its way", await signIn(page, /pillay@example\.invalid/, { inFlight: true }));
   ok("...a read is waiting", held.length > 0, held.length);
   const stale = held.splice(0);
   let answered = 0;
@@ -175,11 +184,11 @@ try {
       headers: { "access-control-allow-origin": `http://localhost:${WEB_PORT}` } }).then(() => true, () => false)) answered++;
   };
   hold = false;
-  ok("the pupil signs out with it still waiting", await signOut(page));
-  ok("D Pillay (parent) signs in on the same page", await signIn(page, /parent@example\.invalid/));
+  ok("the pupil signs out with it still waiting", await signOut(page, { inFlight: true }));
+  ok("D Pillay (parent) signs in on the same page", await signIn(page, /parent@example\.invalid/, { inFlight: true }));
   const mine = await card(page);
   ok("...his card reads the same match: no score recorded", NONE.test(mine), mine);
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("the pupil's read was answered late, after the parent's own", answered > 0, answered);
   ok("when the late answer lands, the parent's card is unchanged", (await card(page)) === mine, await card(page));
   await remount(page);

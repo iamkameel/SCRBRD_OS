@@ -318,17 +318,24 @@ function RadarChart({ data, max, color=D.indigo, size=160, caption }) {
 const READ_ICON = { loading: "hourglass", failed: "triangle-alert", partial: "triangle-alert",
                     forbidden: "lock", disabled: "ban", unassessed: "target", stale: "hourglass" };
 
-const ReadState = ({ read, onRetry, icon, compact = false, testId = "read-state" }) => {
+const ReadState = ({ read, onRetry, icon, compact = false, onBoard = false, testId = "read-state" }) => {
   const { state, sentence, retry } = read;
   if (state === "ok" || !sentence) return null;
   const bad = state === "failed" || state === "partial";
+  // ON THE BOARD (T.board), which is black in both themes, the page's muted
+  // text is the wrong ink: daylight's tertiary (#5e6857) read 3.32:1 on the
+  // board's face at 320px (browser-narrow, #170). The board's own inks are
+  // fixed and clear 4.5:1 in both themes: dim (6.34:1) for a read still on
+  // the wire, the painted figure (17.86:1) for a failure, which still says
+  // so in words and as role="alert".
+  const ink = onBoard ? (bad ? T.board.figure : T.board.dim) : (bad ? D.roseText : D.textMuted);
   const glyph = READ_ICON[state] ?? icon ?? "—";
   return (
     <div data-testid={testId} data-state={state}
       role={bad ? "alert" : state === "loading" ? "status" : undefined}
       style={{ padding: compact ? "10px 14px" : "32px 16px", textAlign: "center",
                fontFamily: D.body, fontSize: "13px", lineHeight: 1.5,
-               color: bad ? D.roseText : D.textMuted,
+               color: ink,
                display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
       {!compact && (
         <div style={{ fontSize: "20px", opacity: 0.7 }} aria-hidden="true">

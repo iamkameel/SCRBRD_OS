@@ -48,6 +48,7 @@ import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters
 import { buildMatchCentreFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
 import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5361);
 const API_PORT = port(8961);
@@ -100,6 +101,7 @@ async function open({ viewport = DESK, scheme = "dark", liveMs = null, init = nu
   const ctx = await browser.newContext({ viewport, colorScheme: scheme });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -131,7 +133,7 @@ async function signIn(page, who) {
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function openMatch(page, id) {
@@ -140,7 +142,7 @@ async function openMatch(page, id) {
   const btn = tid(page, `mc-open-${id}`);
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
 const tab = async (page, id) => { await tid(page, `mc-tab-${id}`).click({ timeout: 4000 }); await page.waitForTimeout(500); };
@@ -517,7 +519,7 @@ try {
   ok(`every boundary, wicket and milestone, in order (${wantHi.length})`, hi.length === wantHi.length
      && hi.every((h, i) => h.key === wantHi[i].key && h.text.includes(wantHi[i].text)), hi.slice(0, 3).map((h) => h.key).join(","));
   ok("...wickets among them", hi.some((h) => h.kind === "wicket") && hi.some((h) => h.kind === "six"));
-  await L.waitForTimeout(3500);
+  await afterReads(L, 3500);
   ok("a fresh load plays no moment and no over summary (two reads later)",
      await tid(L, "mc-moment").count() === 0 && await tid(L, "mc-over-summary").count() === 0);
 
@@ -616,7 +618,7 @@ try {
   const fin = await open();
   ok("the director of sport signs in", await signIn(fin.page, /sarah@example\.invalid|Director/));
   ok("the decided fixture opens", await openMatch(fin.page, fx.live));
-  await fin.page.waitForTimeout(2000);
+  await afterReads(fin.page, 2000);
   ok("a fresh read plays no moment a second time — nothing is replayed on load", await tid(fin.page, "mc-moment").count() === 0);
   ok("the onward links show", await tid(fin.page, "mc-onward").count() === 1);
   ok("Hilton's own next fixture (the seeded one)", await tid(fin.page, "mc-onward-next-home").count() === 1);
@@ -625,7 +627,7 @@ try {
   ok("both sides' results are one tap away", await tid(fin.page, "mc-onward-results-home").count() === 1
      && await tid(fin.page, "mc-onward-results-away").count() === 1);
   await tid(fin.page, "mc-onward-results-away").click({ timeout: 4000 });
-  await fin.page.waitForTimeout(800);
+  await afterReads(fin.page, 800);
   ok("...opens the Match Centre list, filtered to that side's results", await tid(fin.page, "mc-team-filter-clear").count() === 1
      && (await tid(fin.page, "mc-team-filter-clear").innerText()).includes("Westville"));
   ok("...showing this very match, now a result", await tid(fin.page, `match-card-${fx.live}`).count() === 1);
@@ -813,11 +815,11 @@ try {
     const cal = B.locator('[data-testid="nav-calendar"], [data-testid="mnav-calendar"]').first();
     ok("Calendar is in the director's navigation", await cal.count() === 1);
     await cal.click().catch(() => {});
-    await B.waitForTimeout(800);
+    await afterReads(B, 800);
     ok("a routed view that throws is a card inside <main>", await B.locator('[data-testid="os-main"] [data-testid="panel-error"][data-panel="Calendar"]').count() === 1);
     ok("...with the navigation and the top bar still there", await B.locator('[data-testid="nav"], [data-testid="mnav"]').first().isVisible());
     await B.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click();
-    await B.waitForTimeout(1200);
+    await afterReads(B, 1200);
     ok("...and choosing another view leaves the failure behind", await B.locator('[data-testid="panel-error"]').count() === 0
        && await B.locator('[data-testid="os-main"]').getAttribute("data-page") === "matches");
     const pageErrors = bd.errors.filter((e) => /^pageerror/.test(e));

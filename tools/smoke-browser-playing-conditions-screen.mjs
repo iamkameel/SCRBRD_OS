@@ -44,6 +44,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5392);
 const API_PORT = port(8892);
@@ -96,6 +97,7 @@ async function open(theme = "floodlit", viewport = { width: 1280, height: 900 })
   const ctx = await browser.newContext({ viewport });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   const dialogs = [];
   page.on("dialog", (d) => { dialogs.push(d.type()); d.dismiss().catch(() => {}); });
@@ -127,7 +129,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator("nav button").count()) > 0;
 }
 async function nav(page, label) {
@@ -137,13 +139,13 @@ async function nav(page, label) {
     const s = page.locator('[data-testid="home-competitions-section-leagues"]');
     if (!(await s.count())) return false;
     try { await s.click({ timeout: 6000 }); } catch { return false; }
-    await page.waitForTimeout(1500);
+    await afterReads(page, 1500);
     return true;
   }
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Leagues → the competition → its "Playing conditions" tab. */
@@ -152,7 +154,7 @@ async function toConditions(page) {
   if (!(await click(page, new RegExp(LEAGUE_NAME), 4000))) return false;
   if (!(await click(page, /^Playing conditions$/, 4000))) return false;
   await tid(page, "pc-root").waitFor({ timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return (await tid(page, "pc-root").count()) === 1;
 }
 /** Every text node under the root, and every control, measured as drawn. */
@@ -189,7 +191,7 @@ async function enter(page, key, { band, value, spell, day, none, status = "uncon
   if (doc !== undefined) await ed.locator('[data-testid="pc-f-doc"]').fill(doc);
   if (clause !== undefined) await ed.locator('[data-testid="pc-f-clause"]').fill(clause);
   if (docDate !== undefined) await ed.locator('[data-testid="pc-f-docdate"]').fill(docDate);
-  if (save) { await ed.locator('[data-testid="pc-save"]').click(); await page.waitForTimeout(700); }
+  if (save) { await ed.locator('[data-testid="pc-save"]').click(); await afterReads(page, 700); }
   return ed;
 }
 
@@ -234,7 +236,7 @@ try {
   ok("a title too short is refused beside the form, in words (no code)", /title of 3 to 120 characters/.test(await said(p, "pc-draft-error")) && !/title_invalid/.test(await said(p, "pc-draft-error")), await said(p, "pc-draft-error"));
   await tid(p, "pc-draft-title").fill("Screen walk 2026/27");
   await tap(p, "pc-draft-create");
-  await p.waitForTimeout(1200);
+  await afterReads(p, 1200);
   ok("the draft is version 1, and the page shows it", /Version 1: Screen walk 2026\/27/.test(await said(p, "pc-version-1")) && (await tid(p, "pc-version-1").getAttribute("data-standing")) === "draft");
   ok("reserved keys are under 'Recorded, not applied', all of them, for the organiser of a draft", /Recorded, not applied/.test(await said(p, "pc-reserved")) && (await tid(p, "pc-reserved").locator('[data-testid^="pc-figure-"]').count()) === cat.keys.filter((k) => k.reserved).length);
   ok("...its figures are shown, with enter buttons", /Figures of version 1/.test(await said(p, "pc-shown")) && (await tid(p, "pc-enter-format.overs_per_innings").count()) === 1);
@@ -258,7 +260,7 @@ try {
   ok("an enum is a select of its own values", (await kind.locator("select").count()) === 1 && (await kind.locator("select option").allInnerTexts()).join("|").includes("Limited overs"));
   await kind.locator("select").selectOption("limited");
   await kind.locator('[data-testid="pc-save"]').click();
-  await p.waitForTimeout(700);
+  await afterReads(p, 700);
   ok("...saved: Limited overs", /Limited overs/.test(await said(p, "pc-figure-format.kind")));
 
   // a confirmed figure: the words come first, then the refusal, then the citation
@@ -269,7 +271,7 @@ try {
   const editFloors = await floors(p);
   ok("with an editor open: nothing under 12px, nothing pressed under 44px", floorsOk(editFloors), floorsWhy(editFloors));
   await cap.locator('[data-testid="pc-save"]').click();
-  await p.waitForTimeout(700);
+  await afterReads(p, 700);
   const cit = await said(p, "pc-error-citation");
   ok("with no citation the database refuses it, and the refusal is explained beside the field",
      /must say where it comes from/.test(cit) && /document, the clause and the date/.test(cit) && !/citation_required/.test(cit), cit);
@@ -278,7 +280,7 @@ try {
   await cap.locator('[data-testid="pc-f-clause"]').fill("7.3");
   await cap.locator('[data-testid="pc-f-docdate"]').fill("2026-09-15");
   await cap.locator('[data-testid="pc-save"]').click();
-  await p.waitForTimeout(800);
+  await afterReads(p, 800);
   const capRow = await said(p, "pc-figure-bowling.max_overs_per_bowler_innings");
   ok("cited, it is saved, and its source is worded: document, clause, date", /5 overs/.test(capRow) && /KZNCU Schools Bye-laws, clause 7\.3, 15 Sep/.test(capRow), capRow);
   ok("a bad value is refused beside the field, by the figure's name, not its key", await (async () => {
@@ -309,7 +311,7 @@ try {
   const conf = await said(p, "pc-publish-confirm");
   ok("publishing asks first, in the page: the version, its day, the count", /Publish version 1/.test(conf) && new RegExp(`2 of ${M} figures are confirmed`).test(conf), conf);
   await tap(p, "pc-publish-yes");
-  await p.waitForTimeout(700);
+  await afterReads(p, 700);
   const refused = await said(p, "pc-error-publish");
   ok("for today it is refused, in plain words: a day after today, move the date",
      /after today/.test(refused) && /tomorrow or later/.test(refused) && !/effective_from_not_future/.test(refused), refused);
@@ -319,7 +321,7 @@ try {
   await tap(p, "pc-amend");
   await tid(p, "pc-amend-date").fill(d1);
   await tap(p, "pc-amend-save");
-  await p.waitForTimeout(800);
+  await afterReads(p, 800);
   ok("the draft's date is now tomorrow", new RegExp(`Starts 0?${Number(d1.slice(8))} `).test(await said(p, "pc-version-1")), await said(p, "pc-version-1"));
   await tap(p, "pc-publish");
   await tap(p, "pc-publish-yes");
@@ -334,7 +336,7 @@ try {
 
   // a new version from it; dated and published; then withdrawn
   await tap(p, "pc-newversion");
-  await p.waitForTimeout(1200);
+  await afterReads(p, 1200);
   ok("a new version copies it: version 2, a draft, showing", (await tid(p, "pc-version-2").getAttribute("data-standing")) === "draft" && /Figures of version 2/.test(await said(p, "pc-shown")));
   ok("...with the figures it copied", /30 overs/.test(await said(p, "pc-figure-format.overs_per_innings")) && (await said(p, "pc-set-count")) === `2 of ${M} figures confirmed`);
   await tap(p, "pc-amend");
@@ -344,7 +346,7 @@ try {
   await p.waitForTimeout(800);
   await tap(p, "pc-publish");
   await tap(p, "pc-publish-yes");
-  await p.waitForTimeout(1000);
+  await afterReads(p, 1000);
   ok("version 2 is published, from the day after tomorrow", (await tid(p, "pc-version-2").getAttribute("data-standing")) === "scheduled");
   await tap(p, "pc-withdraw");
   ok("withdrawing asks first, in the page, and asks why", /Withdraw version 2/.test(await said(p, "pc-withdraw-confirm")) && (await tid(p, "pc-withdraw-note").count()) === 1);

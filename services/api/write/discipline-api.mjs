@@ -102,7 +102,7 @@ export async function recordIncident(pool, secret, bearer, playerId, body) {
       `insert into disciplinary_record
          (player_id, school_id, match_id, recorded_by, body, occurred_on)
        select $1, player_school($1), $2, app_user_id(), $3,
-              coalesce($4::date, current_date)
+              coalesce($4::date, sa_today())
         where player_school($1) is not null`,
       [playerId, n.matchId, n.text, n.occurredOn]);
     // Zero rows written with no error means the player is not one this writer

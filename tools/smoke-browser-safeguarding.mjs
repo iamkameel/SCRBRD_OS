@@ -32,6 +32,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4358);
 const API_PORT = port(8858);
@@ -76,6 +77,7 @@ async function open(theme = "floodlit") {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -103,7 +105,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
   return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
@@ -111,7 +113,7 @@ async function toSafeguarding(page) {
   const l = tid(page, "nav-safeguarding").first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return (await tid(page, "safeguarding").count()) > 0;
 }
 /** Every text node under the page, and every control, measured as drawn. */
@@ -164,7 +166,7 @@ try {
   await tid(parent.page, "sg-how-told").click();
   await tid(parent.page, "sg-account").fill(ACCOUNT);
   ok("he sends it", await click(parent.page, /^Send to the DSO$/, 6000));
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   const sent = await tid(parent.page, "sg-sent").innerText().catch(() => "");
   const reference = (await tid(parent.page, "sg-reference").innerText().catch(() => "")).trim();
   ok("he is told it was received, with a reference", /Received\. The DSO has it\./.test(sent) && /^SG-[0-9A-Z]{4}-\d{4}$/.test(reference), sent);
@@ -175,7 +177,7 @@ try {
     [reference, ACCOUNT])).rows;
   ok("the database holds it, as his, word for word", held === 1);
   await click(parent.page, /^Done$/);
-  await parent.page.waitForTimeout(1200);
+  await afterReads(parent.page, 1200);
   ok("his page now lists the reference he raised", (await tid(parent.page, "sg-receipts").innerText().catch(() => "")).includes(reference));
   ok("no page error for the parent", parent.errors.length === 0, parent.errors.join(" | "));
   await parent.ctx.close();
@@ -192,13 +194,13 @@ try {
      /of 24/.test(await row.innerText().catch(() => "")) && (await row.locator('[data-testid="sg-clock"]').getAttribute("data-overdue")) === "false");
   ok("...with no name in the list", !/Pillay|D Pillay/.test(await row.innerText().catch(() => "")));
   await row.click();
-  await dso.page.waitForTimeout(1500);
+  await afterReads(dso.page, 1500);
   const record = await tid(dso.page, "sg-concern").innerText().catch(() => "");
   ok("she reads the account as written", (await tid(dso.page, "sg-account-read").innerText().catch(() => "")) === ACCOUNT);
   ok("...and who raised it", /D Pillay/.test(record), record.slice(0, 300));
   await tid(dso.page, "sg-note-body").fill("Spoke to the boy with his father. Kit room now locked after nets.");
   ok("she adds to the record", await click(dso.page, /^Add to the record$/));
-  await dso.page.waitForTimeout(1200);
+  await afterReads(dso.page, 1200);
   ok("...and it is there", /Kit room now locked after nets/.test(await tid(dso.page, "sg-notes").innerText().catch(() => "")));
   const fd = await floors(dso.page, "sg-concern");
   ok("the concern page has no type under 12px and no control under 44px", fd.small.length === 0 && fd.tiny.length === 0,
@@ -211,7 +213,7 @@ try {
   const coach = await open();
   ok("the coach signs in", await signIn(coach.page, "coach@example.invalid"));
   ok("Safeguarding opens for him too — he may raise one", await toSafeguarding(coach.page));
-  await coach.page.waitForTimeout(800);
+  await afterReads(coach.page, 800);
   ok("...but there is no inbox", (await tid(coach.page, "sg-inbox").count()) === 0);
   const page = await text(coach.page);
   ok("...no reference and no account anywhere on it", !page.includes(reference) && !page.includes("kit room"));

@@ -46,6 +46,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4329);
 const API_PORT = port(8798);
@@ -132,6 +133,7 @@ async function open() {
   const ctx = await browser.newContext({ viewport: { width: 1420, height: 900 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const refusals = [], errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
@@ -159,7 +161,7 @@ async function signIn(page, email) {
   await page.waitForTimeout(500);
   await page.locator('input[type="email"]').first().fill(email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
   return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
@@ -168,7 +170,7 @@ async function nav(page, label) {
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 
@@ -500,7 +502,7 @@ try {
     const any = await parent.page.locator('[data-testid^="dossier-open-"]').count();
     ok("no fixture offers them a dossier button", any === 0, `${any} buttons`);
     await parent.page.locator('[data-testid^="fixture-row-"]').first().click({ timeout: 4000 }).catch(() => {});
-    await parent.page.waitForTimeout(1200);
+    await afterReads(parent.page, 1200);
     ok("...nor does a fixture's own screen", await parent.page.locator('[data-testid="fixture-detail"]').count() === 1
        && await parent.page.locator('[data-testid^="dossier-open-"]').count() === 0);
     await parent.ctx.close();
@@ -516,7 +518,10 @@ try {
     await closeDossier(coach.page);
     ok("Analytics opens", await nav(coach.page, /Analytics/));
     ok("...and the Head-to-Head tab", await click(coach.page, /Head-to-Head/, 4000));
-    await coach.page.waitForTimeout(1600);
+    // Its source line is drawn only once derby_record has answered: wait for
+    // it (15 s bound), not a fixed 1.6 s, then judge what was drawn.
+    await coach.page.locator('[data-testid="source-line-h2h"]').waitFor({ timeout: 15000 }).catch(() => {});
+    await afterReads(coach.page, 300);
     const h2h = await text(coach.page);
     if (DEBUG) console.log("[debug] h2h:\n" + h2h.slice(0, 900));
     // The fabricated table this replaced, identified by ITS OWN strings
@@ -544,7 +549,13 @@ try {
   group("Match-ups say how much of the log they speak for");
   {
     ok("the Match-ups tab opens", await click(coach.page, /Match-ups/, 4000));
-    await coach.page.waitForTimeout(1600);
+    // The coverage card and its source line are drawn only once BOTH reads
+    // have answered (matchups, then matchup_coverage). A fixed 1.6 s judged
+    // the bare app chrome on a loaded runner (#166, shard 2). Wait for the
+    // line the checks below read (15 s bound: an error or a refusal draws no
+    // line, and the checks then say so), and for any read still on the wire.
+    await coach.page.locator('[data-testid="source-line-matchups"]').waitFor({ timeout: 15000 }).catch(() => {});
+    await afterReads(coach.page, 300);
     const mu = await text(coach.page);
     if (DEBUG) console.log("[debug] matchups:\n" + mu.slice(0, 900));
     ok("the coverage is stated", /Deliveries attributed/i.test(mu));
@@ -565,7 +576,10 @@ try {
   group("Phases are folded from the log, not typed in");
   {
     ok("the Phases tab opens", await click(coach.page, /^Phases$/, 4000));
-    await coach.page.waitForTimeout(1800);
+    // Drawn only once the phases read has answered: wait for its source line
+    // (15 s bound), not a fixed 1.8 s, then judge what was drawn.
+    await coach.page.locator('[data-testid="source-line-phases"]').waitFor({ timeout: 15000 }).catch(() => {});
+    await afterReads(coach.page, 300);
     const ph = await text(coach.page);
     if (DEBUG) console.log("[debug] phases:\n" + ph.slice(0, 1200));
 

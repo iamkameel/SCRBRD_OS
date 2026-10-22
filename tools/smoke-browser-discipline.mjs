@@ -34,6 +34,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4342);
 const API_PORT = port(8842);
@@ -92,6 +93,7 @@ async function open(apiBase = API) {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], reads = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -121,7 +123,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
   return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
@@ -129,7 +131,7 @@ async function nav(page, id) {
   const l = tid(page, `nav-${id}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Profiles → one boy. False when he is not on this reader's roster. */
@@ -138,14 +140,14 @@ async function openProfile(page, playerId) {
   const row = tid(page, `roster-player-${playerId}`).first();
   if (!(await row.count())) return false;
   await row.click({ timeout: 6000 });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 const conductTab = (page) => tid(page, "profile-tab-conduct");
 async function openConduct(page) {
   if (!(await conductTab(page).count())) return false;
   await conductTab(page).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return (await tid(page, "conduct-tab").count()) === 1;
 }
 async function toMatch(page, matchId) {
@@ -153,7 +155,7 @@ async function toMatch(page, matchId) {
   const card = tid(page, `match-card-${matchId}`).first();
   if (!(await card.count())) return false;
   await card.click({ timeout: 6000 });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Appoint the umpire to his fixture again, unless he already is. */
@@ -184,13 +186,13 @@ try {
     const demo = tid(d.page, "login-demo");
     ok("the demonstration is offered with no server", await demo.count() === 1);
     await demo.click({ timeout: 6000 }).catch(() => {});
-    await d.page.waitForTimeout(2000);
+    await afterReads(d.page, 2000);
     ok("the demo's profiles screen opens", await nav(d.page, "profiles"));
     await d.page.locator('[data-testid^="roster-player-"]').first().click({ timeout: 6000 }).catch(() => {});
-    await d.page.waitForTimeout(1200);
+    await afterReads(d.page, 1200);
     ok("a demo school administrator is drawn the tab (the gate is by capability)", await conductTab(d.page).count() === 1);
     await conductTab(d.page).first().click({ timeout: 6000 }).catch(() => {});
-    await d.page.waitForTimeout(800);
+    await afterReads(d.page, 800);
     ok("...which says to sign in", await tid(d.page, "conduct-signed-out").count() === 1);
     ok("...and invents no matter", await d.page.locator('[data-testid^="conduct-matter-"]').count() === 0);
     ok("...and offers no form that could not be sent", await tid(d.page, "conduct-record-form").count() === 0);
@@ -215,7 +217,7 @@ try {
   const ACCOUNT = "Left the nets without permission and was rude to the groundsman.";
   await tid(dos.page, "conduct-record-body").fill(ACCOUNT);
   await tid(dos.page, "conduct-record-submit").click();
-  await dos.page.waitForTimeout(2000);
+  await afterReads(dos.page, 2000);
   ok("she is told it was recorded", await tid(dos.page, "conduct-record-done").count() === 1);
   const [filed] = await matters(`where player_id = '${P_SELF}'`);
   ok("Postgres has the matter, about him, with no fixture, as hers",
@@ -254,7 +256,7 @@ try {
     ok("the tab shows nothing of his to her", /0 matters/.test(await tid(dos.page, "conduct-count").innerText().catch(() => "")));
     await tid(dos.page, "conduct-record-body").fill("Not a matter for this school.");
     await tid(dos.page, "conduct-record-submit").click();
-    await dos.page.waitForTimeout(1800);
+    await afterReads(dos.page, 1800);
     const said = await tid(dos.page, "conduct-record-refused").innerText().catch(() => "");
     ok("the refusal is shown in words", /Refused — your role does not reach/.test(said), said);
     ok("...not a claim that it was recorded", await tid(dos.page, "conduct-record-done").count() === 0);
@@ -271,7 +273,7 @@ try {
   ok("his fixture is in Match Centre", await toMatch(ump.page, M_STOOD));
   ok("he is offered the report", await tid(ump.page, "incident-open").count() === 1);
   await tid(ump.page, "incident-open").click();
-  await ump.page.waitForTimeout(1800);
+  await afterReads(ump.page, 1800);
   const options = await ump.page.$$eval('[data-testid="incident-player"] option', (os) => os.map((o) => ({ v: o.value, t: o.textContent })));
   if (DEBUG) console.log("[debug] who he can name:", JSON.stringify(options));
   const bowled = options.find((o) => /out, bowled/.test(o.t));
@@ -286,7 +288,7 @@ try {
   await ump.page.selectOption('[data-testid="incident-player"]', P_BEKKER);
   await tid(ump.page, "incident-body").fill("Showed dissent at an lbw decision.");
   await tid(ump.page, "incident-submit").click();
-  await ump.page.waitForTimeout(1800);
+  await afterReads(ump.page, 1800);
   const refused = await tid(ump.page, "incident-refused").innerText().catch(() => "");
   ok("with his appointment withdrawn, the refusal is shown in words", /Refused — your role does not reach/.test(refused), refused);
   ok("...and no confirmation is shown", await tid(ump.page, "incident-recorded").count() === 0);
@@ -298,7 +300,7 @@ try {
   const INCIDENT = "Threw the ball at the stumps after being bowled, and swore at the bowler.";
   await tid(ump.page, "incident-body").fill(INCIDENT);
   await tid(ump.page, "incident-submit").click();
-  await ump.page.waitForTimeout(2000);
+  await afterReads(ump.page, 2000);
   const conf = await tid(ump.page, "incident-recorded").innerText().catch(() => "");
   ok("reinstated, he is told it landed", /Recorded — the school has it/.test(conf), conf);
   const [incident] = await matters(`where match_id = '${M_STOOD}'`);
@@ -369,7 +371,7 @@ try {
     ok("...where his conduct record is behind a tap, unread", await tid(s.page, "me-conduct-show").count() === 1
        && !(await text(s.page)).includes(ACCOUNT) && s.reads.length === 0, s.reads.join(" "));
     await tid(s.page, "me-conduct-show").click({ timeout: 4000 }).catch(() => {});
-    await s.page.waitForTimeout(1500);
+    await afterReads(s.page, 1500);
     ok("he asks: the record is read once, and his own matter is there", s.reads.length === 1
        && (await tid(s.page, "me-conduct").innerText().catch(() => "")).includes(ACCOUNT), s.reads.join(" "));
     ok("he is not offered an incident report on a fixture", await tid(s.page, "incident-panel").count() === 0);

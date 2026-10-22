@@ -48,6 +48,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4343);
 const API_PORT = port(8843);
@@ -133,7 +134,7 @@ async function signIn(page, who) {
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
   return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
@@ -225,7 +226,7 @@ try {
     await dos.page.locator('[data-testid="drs-form-wickets"]').selectOption("hitting");
     await dos.page.locator('[data-testid="drs-form-notes"]').fill("Struck on the back leg, playing back.");
     ok("she submits it", await click(dos.page, /^Record review$/, 4000));
-    await dos.page.waitForTimeout(1200);
+    await afterReads(dos.page, 1200);
     afterRecord = await panel(dos.page).innerText();
     if (DEBUG) console.log("[debug] panel after recording:\n" + afterRecord);
     ok("no refusal is shown — this write was allowed", !/refused|not permitted|switched off/i.test(afterRecord));
