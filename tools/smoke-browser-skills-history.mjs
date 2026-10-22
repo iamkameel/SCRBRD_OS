@@ -25,9 +25,15 @@
  *     - the hairline has an animation, and none under prefers-reduced-motion
  *   The coach on Training: a plan edited and saved, the register marked, four
  *     states and no fifth, the plan naming nobody
- *   The boy himself and his parent: walked when their shells have a door to
- *     Skills and Training (they have none yet, and the walk says so); the
- *     unit test holds what they would be drawn
+ *   The boy himself (R Pillay), from Me, "Your skills history": his own strips,
+ *     target with its drill, and "since the last look", in "your coach"'s
+ *     words; no Set target, no Why, no notes or coaching points, no coach's
+ *     name, no team-mate (named or asked for: every history request carries
+ *     his id and no other), none of the never-words; 44px dots holding 24px
+ *     marks, nothing under 12px, date labels dropped under 360px
+ *   His parent: walked when her shell has a door to Training (it has none yet,
+ *     and the walk says so); she has no Skills and, by READERS H, reads no
+ *     score; the unit test holds what she would be drawn
  *   The director of sport: the strip, the target and the coach's name; a
  *     target for a boy of a side he does not coach is refused by the server and
  *     said in words (the screen draws from the roles held; the database
@@ -242,6 +248,17 @@ try {
   ok("the against-pace strip has two dots", await dots.count() === 2);
   const boxes = await dots.evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height]; }));
   ok("...each a 44px hit area", boxes.every(([w, h]) => w >= 44 && h >= 44), JSON.stringify(boxes));
+  const marks = await dots.evaluateAll((els) => els.map((e) => { const r = e.firstElementChild.getBoundingClientRect(); return [r.width, r.height]; }));
+  ok("...with a 24px mark inside the hit area, as the design draws it", marks.every(([w, h]) => w === 24 && h === 24), JSON.stringify(marks));
+  // The labels come and go with the viewport; wait on the DOM for each change.
+  const datesShown = (on) => strip.locator(".os-strip-dates").first().waitFor({ state: on ? "attached" : "detached", timeout: 4000 }).then(() => true, () => false);
+  ok("the date labels are there at a desktop width", await datesShown(true));
+  await c.page.setViewportSize({ width: 340, height: 800 });
+  ok("...and hidden under 360px, where each dot's label and sheet still say its date", await datesShown(false)
+     && /\d+ \w{3}/.test((await dots.first().getAttribute("aria-label")) ?? ""));
+  await c.page.setViewportSize({ width: 390, height: 800 });
+  ok("...and back at 390px", await datesShown(true));
+  await c.page.setViewportSize({ width: 1280, height: 720 });
   ok("...and a hairline joins them", await strip.locator('[data-testid="hairline"]').count() === 1);
   ok("the strip says its figures, with dates, in its label",
      /8 on .*then 11 on /.test((await strip.getAttribute("aria-label")) ?? ""), await strip.getAttribute("aria-label"));
@@ -356,34 +373,74 @@ try {
   // reader who holds the capability, so when a door opens they are walked
   // here; until then this says so and does not fail on a menu that is not ours.
   const b = await open();
+  // What his screens ask the server for, so "never a team-mate's" is held on
+  // the wire as well as on the glass.
+  const asked = [];
+  b.page.on("request", (r) => { if (r.url().includes("/api/")) asked.push(new URL(r.url())); });
   ok("R Pillay signs in", await signIn(b.page, "pillay@example.invalid"));
-  if (await tid(b.page, "nav-skills").count()) {
-    ok("he has the Skills screen", await nav(b.page, "skills"));
-    await tid(b.page, "history-strip").first().waitFor({ timeout: 12000 }).catch(() => {});
-    ok("his strip draws, with the two scores", await tid(b.page, "history-technical-againstPace").locator('button[data-testid^="history-dot-"]').count() === 2);
-    ok("...and his target", /target 14/.test(await tid(b.page, "target-line").first().innerText().catch(() => "")));
-    await b.page.setViewportSize({ width: 390, height: 844 });
-    const bdots = await tid(b.page, "history-technical-againstPace").locator('button[data-testid^="history-dot-"]').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height]; }));
-    ok("...each dot a 44px target on a phone", bdots.length === 2 && bdots.every(([w, h]) => w >= 44 && h >= 44), JSON.stringify(bdots));
-    await tid(b.page, "since-batting").waitFor({ timeout: 12000 }).catch(() => {});
-    const bsince = await tid(b.page, "since-batting").innerText().catch(() => "");
-    ok("the panel speaks to him: 'your coach', 'you were'", /\(your coach\)/.test(bsince) && /You were marked present at 1/.test(bsince) && /you were there for 1/.test(bsince), bsince);
-    ok("...and names no coach", !new RegExp(COACH).test(bsince));
-    await b.page.locator('[data-testid^="history-dot-"]').last().click();
-    await tid(b.page, "dot-sheet").waitFor({ timeout: 8000 });
-    const bsheet = await tid(b.page, "dot-sheet").innerText();
-    ok("a dot's sheet says 'your coach' and shows no coaching point", /by your coach/.test(bsheet) && !/Gets squared up early/.test(bsheet) && !/COACHING POINTS/.test(bsheet), bsheet);
-    ok("...and offers no withdrawal", await tid(b.page, "withdraw-score").count() === 0);
-    await b.page.keyboard.press("Escape");
-    const btext = await text(b.page);
-    ok("he is not offered Set target, a Why, or the notes", await b.page.locator('[data-testid^="set-target-"]').count() === 0 && await tid(b.page, "target-why").count() === 0 && !/DEVELOPMENT NOTES/.test(btext) && !/Gets squared up early/.test(btext));
-    ok("the coach's name is nowhere on his screen", !new RegExp(COACH).test(await said(b.page)));
-    ok("his list holds himself alone", await b.page.locator("button", { hasText: /Pillay/ }).count() === 1 && !/Whitfield|Naidoo|Erasmus/.test(btext));
-    const bad2 = (await said(b.page)).match(NEVER)?.[0];
-    ok("none of the never-words on his screen either", !bad2, bad2);
-  } else {
-    console.log("  (the pupil's shell has no Skills door yet: his view is held by the unit test, not walked here)");
-  }
+  ok("...to his own app, which has no staff Skills or Training in its menu", await tid(b.page, "persona-bar").count() === 1
+     && await tid(b.page, "nav-skills").count() === 0 && await tid(b.page, "nav-training").count() === 0);
+  ok("he opens Me", await nav(b.page, "me"));
+  await tid(b.page, "me-skills-open").waitFor({ timeout: 12000 });
+  const door = await tid(b.page, "me-skills-open").boundingBox();
+  ok("Me has the one door to his skills history, a 44px target", await tid(b.page, "me-skills-open").count() === 1 && door?.height >= 44 && door?.width >= 44, JSON.stringify(door));
+  ok("...and Me itself did not ask for his history until he opened it", !asked.some((u) => u.pathname === "/api/read/skills_history"));
+  await tid(b.page, "me-skills-open").click();
+  await tid(b.page, "pupil-skills-technical").waitFor({ timeout: 12000 });
+  await tid(b.page, "history-technical-againstPace").locator('[data-testid="history-strip"]').waitFor({ timeout: 12000 });
+
+  group("The boy himself: his own history, in his own words");
+  const againstPace = tid(b.page, "history-technical-againstPace");
+  ok("his strip draws, with the two scores", await againstPace.locator('button[data-testid^="history-dot-"]').count() === 2);
+  ok("...a hairline joins them", await againstPace.locator('[data-testid="hairline"]').count() === 1);
+  ok("...and the footwork strip keeps the score that was withdrawn, struck", await tid(b.page, "history-technical-footwork").locator('button[data-withdrawn="1"]').count() === 1);
+  ok("...and his target with its drill", /target 14/.test(await againstPace.locator('[data-testid="target-line"]').innerText().catch(() => ""))
+     && new RegExp(`drill: ${drill.name}`).test(await againstPace.locator('[data-testid="target-line"]').innerText().catch(() => "")));
+  await tid(b.page, "since-batting").waitFor({ timeout: 12000 });
+  const bsince = await tid(b.page, "since-batting").innerText();
+  ok("'since the last look' speaks to him: 'your coach', 'you were'", /\(your coach\)/.test(bsince) && /You were marked present at 1/.test(bsince) && /you were there for 1/.test(bsince), bsince);
+  ok("...and names no coach", !new RegExp(COACH).test(bsince));
+  const bmarks = await againstPace.locator('button[data-testid^="history-dot-"]').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(), m = e.firstElementChild.getBoundingClientRect(); return [r.width, r.height, m.width, m.height]; }));
+  ok("each dot is a 44px target holding a 24px mark", bmarks.length === 2 && bmarks.every(([w, h, mw, mh]) => w >= 44 && h >= 44 && mw === 24 && mh === 24), JSON.stringify(bmarks));
+  ok("no word on his screen is under 12px", (await smallestType(b.page, '[data-testid="pupil-skills"]')) >= 12, await smallestType(b.page, '[data-testid="pupil-skills"]'));
+  await b.page.locator('[data-testid^="history-dot-"]').last().click();
+  await tid(b.page, "dot-sheet").waitFor({ timeout: 8000 });
+  const bsheet = await tid(b.page, "dot-sheet").innerText();
+  ok("a dot's sheet says 'your coach' and shows no coaching point", /by your coach/.test(bsheet) && !/Gets squared up early/.test(bsheet) && !/COACHING POINTS/.test(bsheet), bsheet);
+  ok("...and offers no withdrawal", await tid(b.page, "withdraw-score").count() === 0);
+  await b.page.keyboard.press("Escape");
+  await tid(b.page, "dot-sheet").waitFor({ state: "detached", timeout: 4000 }).catch(() => {});
+
+  group("The boy never sees the staff words, and never a team-mate's");
+  const btext = await text(b.page);
+  ok("no Set target, no Why field, no notes, no coaching points, no assessment, no player list",
+     await b.page.locator('[data-testid^="set-target-"]').count() === 0 && await tid(b.page, "target-why").count() === 0
+     && await tid(b.page, "target-form").count() === 0 && !/DEVELOPMENT NOTES|COACHING POINTS|STAFF ONLY|Run Assessment|SELECT PLAYER/i.test(btext)
+     && !/Gets squared up early|risk of getting hit/.test(btext));
+  ok("the coach's name is nowhere on his screen, in its text or its labels", !new RegExp(COACH).test(await said(b.page)));
+  const others = (await q(`select split_part(full_name, ' ', 2) n from player where team_code = '1XI' and school_id = $1 and id <> $2 order by full_name limit 6`, [HIL, P_SELF])).map((r) => r.n).filter(Boolean);
+  ok("no team-mate is named on it", others.length > 0 && !others.some((n) => new RegExp(`\\b${n}\\b`).test(btext)), others.join());
+  const bad2 = (await said(b.page)).match(NEVER)?.[0], bad3 = (await said(b.page)).match(COCKPIT)?.[0];
+  ok("none of the design's never-words, nor the cockpit's, on it", !bad2 && !bad3, bad2 ?? bad3);
+  const history = asked.filter((u) => /\/api\/read\/(skills_history|targets|development_since|coaching_points|notes|skills)$/.test(u.pathname));
+  ok("his history, targets and 'since' were each asked for", ["skills_history", "targets", "development_since"].every((r) => history.some((u) => u.pathname.endsWith("/" + r))), history.map((u) => u.pathname).join());
+  ok("...for him alone: every such request names his own id and no other", history.length >= 3 && history.every((u) => u.searchParams.get("playerId") === P_SELF), history.map((u) => u.pathname + u.search).join(" "));
+  ok("...and the staff-tier reads (coaching points, notes) were never made", !history.some((u) => /coaching_points|notes/.test(u.pathname)));
+  ok("nothing in the app was ever asked about a team-mate's scores or targets",
+     !asked.some((u) => /\/(skills_history|targets|development_since|coaching_points)/.test(u.pathname) && u.searchParams.get("playerId") !== P_SELF));
+
+  group("The boy on a narrow phone");
+  await b.page.setViewportSize({ width: 340, height: 740 });
+  await againstPace.locator(".os-strip-dates").waitFor({ state: "detached", timeout: 4000 }).catch(() => {});
+  ok("date labels give way under 360px", await againstPace.locator(".os-strip-dates").count() === 0);
+  await b.page.setViewportSize({ width: 390, height: 844 });
+  await againstPace.locator(".os-strip-dates").first().waitFor({ timeout: 4000 }).catch(() => {});
+  ok("...and are there at 390px", await againstPace.locator(".os-strip-dates").count() === 1);
+  const phone = await b.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+  ok("the page does not scroll sideways on a phone", phone);
+  await tid(b.page, "pupil-skills-back").click();
+  await tid(b.page, "me-ratings").waitFor({ timeout: 8000 });
+  ok("Back returns to Me", await tid(b.page, "pupil-skills").count() === 0 && await tid(b.page, "me-skills-open").count() === 1);
   ok("no console errors on his session", b.errors.length === 0, b.errors.join(" | "));
   await b.ctx.close().catch(() => {});
 

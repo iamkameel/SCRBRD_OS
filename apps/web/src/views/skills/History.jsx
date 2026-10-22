@@ -13,7 +13,7 @@
  * choice it makes is words ("R Pillay, coach" to staff, "your coach" to the
  * boy), and the "Why" field exists only for a reader who may write one.
  */
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { D, T } from "../../design/tokens.js";
 import { Card, Modal } from "../../ui/primitives.jsx";
 import { useLive } from "../../lib/live.js";
@@ -25,6 +25,21 @@ import {
 import {
   setTarget, withdrawTarget, withdrawScore, withdrawNote, writeCoachingPoint, writeWords, REASON_MAX, WHY_MAX,
 } from "../../lib/development.js";
+
+/**
+ * Under 360px the strip's date labels give way to the dot's own label and
+ * sheet, which still say the date (GA-I26a §4.4). Read from the viewport here,
+ * not from the global stylesheet, so the rule loads with the strip.
+ */
+const NARROW = "(max-width: 359px)";
+const narrowNow = () => (typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(NARROW).matches : false);
+function onNarrow(cb) {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
+  const m = window.matchMedia(NARROW);
+  m.addEventListener("change", cb);
+  return () => m.removeEventListener("change", cb);
+}
+const useNarrow = () => useSyncExternalStore(onNarrow, narrowNow, () => false);
 
 /** A tap target that meets the floor: 44px each way, 12px type. */
 const tap = (extra = {}) => ({
@@ -48,6 +63,7 @@ const labelStyle = () => ({ display: "block", fontFamily: D.body, fontSize: "12p
  */
 export function Strip({ points, staff, color, label, target, onOpen }) {
   const g = stripLayout(points);
+  const narrow = useNarrow();
   return (
     <div data-testid="history-strip" role="group"
       aria-label={`${label} history. ${stripSummary(points)} Each dot opens its details.`}
@@ -78,7 +94,7 @@ export function Strip({ points, staff, color, label, target, onOpen }) {
                 style={{ position: "absolute", left: `${d.x - CELL / 2}px`, top: `${d.y - CELL / 2}px`, width: `${CELL}px`, height: `${CELL}px`,
                          background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <span aria-hidden="true" style={{
-                  display: "block", width: "16px", height: "16px", borderRadius: "50%", boxSizing: "border-box",
+                  display: "block", width: "24px", height: "24px", borderRadius: "50%", boxSizing: "border-box",
                   background: d.withdrawn
                     ? `linear-gradient(to top right, transparent 44%, ${D.textMuted} 44% 56%, transparent 56%)`
                     : dotColor,
@@ -88,12 +104,12 @@ export function Strip({ points, staff, color, label, target, onOpen }) {
             );
           })}
         </div>
-        <div aria-hidden="true" style={{ display: "flex", width: `${g.width}px` }}>
+        {!narrow && <div aria-hidden="true" className="os-strip-dates" style={{ display: "flex", width: `${g.width}px` }}>
           {g.dots.map((d) => (
             <span key={d.id} style={{ width: `${CELL}px`, textAlign: "center", fontFamily: D.mono, fontSize: "12px", color: D.textMuted,
                                       textDecoration: d.withdrawn ? "line-through" : "none" }}>{shortDate(d.assessedOn)}</span>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );

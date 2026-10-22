@@ -112,6 +112,10 @@ const WRITE_WORDS = {
   status_not_accepted: "That word is not used on the register.",
   player_not_at_this_school: "That boy is not at this school.",
   no_such_session: "That session is not one you can see.",
+  session_required: "Pick the session first.",
+  rows_invalid: "The register takes one to sixty boys at a time.",
+  player_required: "Every line on the register needs a boy.",
+  player_repeated: "A boy is on the register once.",
 };
 /** A refusal as a sentence for the coach: `writeWords(err)`. */
 export function writeWords(e) {

@@ -32,6 +32,8 @@ import { focusAreas } from "../src/lib/focusAreas.js";
 import { holdsForPlayer } from "../src/lib/held.js";
 import { moved, minutesProblem } from "../src/lib/trainingPlan.js";
 import { NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
+import { writeWords } from "../src/lib/development.js";
+import { PupilSkills } from "../src/views/family/pupilSkills.jsx";
 import { Strip, TargetLine, SincePanel, DotSheet } from "../src/views/skills/History.jsx";
 import { PlanList, PlanEditor, RegisterSheet } from "../src/views/training/PlanRegister.jsx";
 import { drillCategoriesFor } from "@scrbrd/scoring";
@@ -207,6 +209,26 @@ ok("the register code never writes the word injured", !/injured/i.test(src("../s
   ok("the history reads are gated per boy, and the points only where the strip is",
      /useBoyRead\("skills_history",[^)]*mayReadHistory\)/.test(skillsSrc)
      && /useBoyRead\("coaching_points",[\s\S]*?mayReadHistory && holdsForPlayer\(role, "player\.note\.read"/.test(skillsSrc));
+}
+// ── The pupil's door to his own history (GA-I26a §7.3) and the reviewer's follow-ups ──
+{
+  for (const code of ["rows_invalid", "player_repeated", "session_required", "player_required"]) {
+    const w = writeWords({ code });
+    ok(`${code} is said in words, not as its code`, w && w !== code && !/_/.test(w) && w !== "Could not save just now.", w);
+  }
+  const mark = renderToStaticMarkup(h(Strip, { points: hist, staff: false, color: "#0a0", label: "x", target: null, onOpen() {} }));
+  ok("a dot's mark is 24px inside its 44px hit area", /width:24px;height:24px/.test(mark) && /width:44px;height:44px/.test(mark), mark.slice(0, 200));
+  ok("the strip's date labels are drawn by default (the narrow screen drops them)", /os-strip-dates/.test(mark));
+  const pupilSrc = src("../src/views/family/pupilSkills.jsx");
+  ok("the pupil's screen reads his history, his targets and 'since' for his own id",
+     /useBoyRead\("skills_history", role, me\.id/.test(pupilSrc) && /useBoyRead\("targets", role, me\.id/.test(pupilSrc) && /useBoyRead\("development_since", role, me\.id/.test(pupilSrc));
+  ok("...gated by holdsForPlayer for him", /holdsForPlayer\(role, "player\.development\.read", me\.id\)/.test(pupilSrc));
+  ok("...and never reads coaching points, notes, the side's players, or writes anything",
+     !/coaching_points|useNotes|useLive|useSkills|useRatings|writeCoachingPoint|setTarget|withdrawScore|withdrawTarget|withdrawNote|recordAssessment|TargetModal/.test(pupilSrc.replace(/canWrite=\{false\}/, "")));
+  ok("...and the sheet is drawn for the boy: staff false, no write", /<DotSheet point=\{openDot\} staff=\{false\} canWrite=\{false\} points=\{\[\]\}/.test(pupilSrc) && /<SincePanel[^>]*staff=\{false\} self/.test(pupilSrc));
+  ok("Me opens it, from one door", /me-skills-open/.test(src("../src/views/family/pupil.jsx")) && /<PupilSkills role=\{role\} me=\{me\}/.test(src("../src/views/family/pupil.jsx")));
+  const demo = renderToStaticMarkup(h(PupilSkills, { role: "selfaccess", me: { id: "aaaaaaaa-0000-0000-0000-000000000005", name: "R Pillay", team: "1XI" }, onBack() {} }));
+  ok("with nothing read he is told his coach has not rated him, and nothing else", /Your coach has not rated you yet/.test(demo) && !/Set target|Why|COACHING|Pillay/.test(demo.replace(/aria-label="[^"]*"/g, "")), demo.replace(/<[^>]+>/g, "|").replace(/\|+/g, "|"));
 }
 ok("the assessment modal sends no note", !/note:\s*note/.test(src("../src/lib/development.js")) && !/recordAssessment\([^)]*\{[^}]*note/.test(src("../src/views/SkillsView.jsx")));
 

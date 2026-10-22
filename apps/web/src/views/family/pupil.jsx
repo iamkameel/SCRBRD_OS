@@ -14,7 +14,7 @@
  * The words are chosen so a nine-year-old can read them and an
  * eighteen-year-old is not patronised (§1.2).
  */
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive, useRatings } from "../../lib/live.js";
 import { signedIn } from "../../lib/api.js";
@@ -30,6 +30,9 @@ import { Health, TheirRecord } from "./childfile.jsx";
 import { MyLiftLine } from "../lifts.jsx";
 import { CaptainCard } from "./captain.jsx";
 import { TodoCard } from "./todo.jsx";
+
+// His skills history (GA-I26a §7.3): a screen of its own, loaded when he opens it.
+const PupilSkills = lazy(() => import("./pupilSkills.jsx").then((m) => ({ default: m.PupilSkills })));
 
 /** The pupil himself, in the shape the shared cards take: his own player row. */
 function useSelf(role) {
@@ -277,12 +280,23 @@ function HonoursTab({ me, role }) {
 export function PupilMe({ role, onNav }) {
   const { me, loading, error } = useSelf(role);
   const [show, setShow] = useState({ record: false, conduct: false });
+  const [skills, setSkills] = useState(false);
   if (!me) return <NoSelf loading={loading} error={error} testid="pupil-me"/>;
+  if (skills) {
+    return (
+      <Suspense fallback={<Page testid="pupil-skills"><Line quiet>Reading your skills…</Line></Page>}>
+        <PupilSkills role={role} me={me} onBack={() => setSkills(false)}/>
+      </Suspense>
+    );
+  }
   return (
     <Page testid="pupil-me">
       <Title>Me</Title>
       <Card label="My health" testid="me-health"><Health child={me} role={role} self/></Card>
-      <Card label="My ratings" testid="me-ratings"><MyRatings me={me} role={role}/></Card>
+      <Card label="My ratings" testid="me-ratings"
+        aside={<Action testid="me-skills-open" onClick={() => setSkills(true)}>Your skills history</Action>}>
+        <MyRatings me={me} role={role}/>
+      </Card>
       <Card label="My record" testid="me-record"
         aside={!show.record && <Action testid="me-record-show" onClick={() => setShow((s) => ({ ...s, record: true }))}>Show</Action>}>
         {show.record ? <TheirRecord child={me} role={role}/> : <Line quiet>Your date of birth, address and ID number, as the school holds them.</Line>}
