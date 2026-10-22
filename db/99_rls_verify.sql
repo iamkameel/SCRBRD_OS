@@ -6809,6 +6809,24 @@ CREATE OR REPLACE FUNCTION _v114_fact(p_match uuid) RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/114 (section 91) ─────────────────────────────────────────────
 
+-- ┌── db/118 (section 93) ──────────────────────────────────────────────
+-- A stored surname that is not in the boy's full name, as the owner writes
+-- it, so the scan is seen to read the column itself. Rolled back with
+-- everything else.
+CREATE OR REPLACE FUNCTION _seed_118_surname(p_player uuid, p_surname text) RETURNS void AS $$
+  UPDATE player SET surname = p_surname WHERE id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A full name written with punctuation in it ("Zungu, S", "Mary-Anne ...").
+CREATE OR REPLACE FUNCTION _seed_118_name(p_player uuid, p_full_name text) RETURNS void AS $$
+  UPDATE player SET full_name = p_full_name WHERE id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A fixture tomorrow between two schools, as the office would write it.
+CREATE OR REPLACE FUNCTION _seed_118_fixture(p_home uuid, p_away uuid) RETURNS void AS $$
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (p_home, '1XI', p_away, '1XI', 'Verify 118 opponents', now() + interval '1 day', 'cricket', 'T20', 20, 'scheduled');
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/118 (section 93) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -11212,7 +11230,13 @@ BEGIN
     -- result_staff (db/114): asks 'scoring.edit' among the capabilities that
     -- make a reader "staff" for D11's words, and answers false under pad scope
     -- before it asks anything (NOT app_pad_scoped()); nobody's to call.
-    PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
+    -- ball_event_payload_seen (db/118): a payload handed in, answered back
+    -- with a retirement's or a bowler change's reason masked unless the
+    -- caller holds fixture.read
+    -- at that boy's school, asked with the event's own match as the
+    -- fixture. Under pad scope app_can() answers only the credential's own
+    -- match; it can only return the payload it was given, or less.
+    PERFORM _assert(detail = 'ball_event_payload_seen,competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
                              || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,'
                              || 'result_official_notices,result_staff,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
@@ -18836,7 +18860,8 @@ $v49$;
   --   (sod)       the 2XI coach (no broadcast.publish), Westville's publisher
   --               for Hilton's post, and the director of sport for her own
   --               post cannot approve; the table refuses a requester approving
-  --   (scan)      a post naming a pupil by full name, or by known-as, is
+  --   (scan)      a post naming a pupil by full name, by known-as, by his
+  --               surname alone or by his first name alone (db/118) is
   --               refused names_pupils with a count — and no name anywhere in
   --               the answer; news_public_check() gives the count to the
   --               author and the school's publishers, and nobody else
@@ -18868,14 +18893,16 @@ $v49$;
     U_DOC  uuid := '88888888-0000-0000-0000-000000000003';   -- news.read, nothing else here
     C_POST uuid := '0c000000-0000-0000-0000-000000000003';   -- the league notice (competition)
     D_POST uuid := '0c000000-0000-0000-0000-000000000004';   -- Sarah's draft
-    P1 uuid; P2 uuid; P3 uuid; S1 uuid; v_post uuid;
+    P1 uuid; P2 uuid; P3 uuid; P4 uuid; P5 uuid; S1 uuid; v_post uuid;
     v_ok boolean; v_reason text; v_names int; n int; j jsonb; v_list text;
   BEGIN
     PERFORM _seed_83();
 
     PERFORM _as(U_C2);
+    -- P1 names no school: since db/118 the boys of the schools Hilton plays are
+    -- scanned too, and this file names some of Westville's after their school.
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
-    VALUES ('team', HIL, '2XI', 'Second XI through to the final', 'The side beat Westville by six wickets on Saturday.', now())
+    VALUES ('team', HIL, '2XI', 'Second XI through to the final', 'The side won by six wickets on Saturday.', now())
     RETURNING id INTO P1;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'A hundred on Saturday', 'Well batted, JAMES   whitfield — the first of the season.', now())
@@ -18883,6 +18910,14 @@ $v49$;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'Four wickets', 'Bekks took four for twelve.', now())
     RETURNING id INTO P3;
+    -- db/118: a surname alone, and a first name alone (James Whitfield has no
+    -- known-as), each name one pupil.
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Five for twelve', 'PILLAY bowled beautifully on Saturday.', now())
+    RETURNING id INTO P4;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Well done', 'Well batted, james: the first of the season.', now())
+    RETURNING id INTO P5;
     PERFORM _as(U_SARAH);
     INSERT INTO news_post (scope, school_id, title, body, published_at)
     VALUES ('school', HIL, 'Pavilion open on Saturday', 'Teas from three.', now())
@@ -18897,7 +18932,7 @@ $v49$;
     SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(C_POST) r;
     PERFORM _assert(NOT v_ok AND v_reason = 'scope_not_public', format('§62 (request): a competition post was asked for (%s %s)', v_ok, v_reason));
     PERFORM _as(U_C2);
-    FOREACH v_post IN ARRAY ARRAY[P1, P2, P3] LOOP
+    FOREACH v_post IN ARRAY ARRAY[P1, P2, P3, P4, P5] LOOP
       SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(v_post) r;
       PERFORM _assert(v_ok, format('§62 (request): the coach could not ask for %s (%s)', v_post, v_reason));
     END LOOP;
@@ -18929,6 +18964,13 @@ $v49$;
     SELECT r.ok, r.reason, r.names INTO v_ok, v_reason, v_names FROM news_public_approve(P3) r;
     PERFORM _assert(NOT v_ok AND v_reason = 'names_pupils' AND v_names = 1,
       format('§62 (scan): a post naming a pupil by his known-as answered %s %s %s', v_ok, v_reason, v_names));
+    SELECT r.ok, r.reason, r.names, to_jsonb(r) INTO v_ok, v_reason, v_names, j FROM news_public_approve(P4) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'names_pupils' AND v_names = 1,
+      format('§62 (scan): a post naming a pupil by his surname alone answered %s %s %s', v_ok, v_reason, v_names));
+    PERFORM _assert(j::text !~* 'pillay|aaaaaaaa', format('§62 (scan): the surname refusal carries a name: %s', j));
+    SELECT r.ok, r.reason, r.names INTO v_ok, v_reason, v_names FROM news_public_approve(P5) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'names_pupils' AND v_names = 1,
+      format('§62 (scan): a post naming a pupil by his first name alone answered %s %s %s', v_ok, v_reason, v_names));
     PERFORM _assert(news_public_check(P2) = 1 AND news_public_check(P1) = 0, '§62 (scan): the publisher''s check is not 1 and 0');
     PERFORM _as(U_C2);
     PERFORM _assert(news_public_check(P2) = 1, '§62 (scan): the author cannot see his post''s count');
@@ -18957,8 +18999,9 @@ $v49$;
     SELECT string_agg(k, ',' ORDER BY k) INTO v_list FROM jsonb_object_keys(j) k;
     PERFORM _assert(v_list = 'body,id,published_at,school,team_code,title', format('§62 (approve): the read''s columns are %s', v_list));
     PERFORM _assert(strpos(j::text, U_C2::text) = 0, '§62 (approve): the author''s id is in the row');
-    SELECT string_agg(CASE x.id WHEN P1 THEN 'p1' WHEN P2 THEN 'p2' WHEN P3 THEN 'p3' WHEN S1 THEN 's1' END, ',') INTO v_list
-      FROM public_news(20) x WHERE x.id IN (P1, P2, P3, S1);
+    SELECT string_agg(CASE x.id WHEN P1 THEN 'p1' WHEN P2 THEN 'p2' WHEN P3 THEN 'p3' WHEN P4 THEN 'p4' WHEN P5 THEN 'p5'
+                                WHEN S1 THEN 's1' END, ',') INTO v_list
+      FROM public_news(20) x WHERE x.id IN (P1, P2, P3, P4, P5, S1);
     PERFORM _assert(v_list = 'p1', format('§62 (approve): the home page answers %s (only p1 is approved)', v_list));
 
     -- (edited)
@@ -22202,7 +22245,9 @@ $v49$;
     -- (team)
     PERFORM _as((y->>'coach')::uuid);
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
-    VALUES ('team', V_HIL, 'U15A', 'Verify 101 nets', 'Nets at three on Thursday.', now()) RETURNING id INTO T;
+    -- Not 'Verify ...': this file's own pupils are called Verify, and since
+    -- db/118 any word of a pupil's name keeps a post off the home page.
+    VALUES ('team', V_HIL, 'U15A', 'Section 78 nets', 'Nets on Thursday.', now()) RETURNING id INTO T;
     PERFORM _assert(jsonb_array_length(_notices_91(T)) = 1, '§78 (team): the post did not write one notice');
     FOREACH k IN ARRAY ARRAY['aboy', 'aparent', 'coach', 'manager', 'assistant', 'director'] LOOP
       PERFORM _as((y->>k)::uuid);
@@ -22248,7 +22293,7 @@ $v49$;
     SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(T) r;
     PERFORM _assert(v_ok, format('§78 (public): the director of sport could not approve the team post (%s)', v_reason));
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _assert((SELECT count(*) FROM public_news(20) x WHERE x.id = T AND x.team_code = 'U15A' AND x.title = 'Verify 101 nets') = 1,
+    PERFORM _assert((SELECT count(*) FROM public_news(20) x WHERE x.id = T AND x.team_code = 'U15A' AND x.title = 'Section 78 nets') = 1,
       '§78 (public): the approved team post is not on the home page');
 
     -- (sheet)
@@ -26440,6 +26485,160 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 91
   -- └── db/114 (section 91) ──────────────────────────────────────────
+
+
+  -- ┌── db/118 (section 93) ──────────────────────────────────────────
+  -- Names, login emails, retirements and bowler changes (db/118). Section
+  -- 92 is db/116's.
+  --
+  --   (scan)    the surname column is read on its own: a pupil whose stored
+  --             surname is not in his full name is still found by it; a
+  --             surname particle alone ("van") names nobody
+  --   (email)   a pupil's login email (linked to a player row, or holding a
+  --             player role) reads NULL to finance and sponsorship, which
+  --             hold user.read; the office (guardian.link.manage) and the
+  --             pupil himself read it; an adult's reads as before; another
+  --             school's office is not this school's
+  --   (retire)  a retirement that is not a dismissal reads "not out" to a
+  --             reader with no fixture.read at the retiring boy's school,
+  --             and as written to one with it; a retired-out keeps its
+  --             reason; a typed name is at no school; nothing else moves
+  --   (scan)    and a word of a name written with punctuation ("Zungu, S",
+  --             "Mary-Anne"), and an opponent's boy (a fixture with his school)
+  --   (word)    the author is told the word of his post that matched, as he
+  --             wrote it; another school's office is told nothing
+  --   (suspension) a Law 41 suspension's ground, as a bowler change's reason
+  --   (bowler)  a bowler change keeps its reason for a reader with
+  --             fixture.read at the bowler's school, and loses it (the
+  --             change itself kept) for the other school and a typed name
+  --   (doors)   the two definers are the application's and not PUBLIC's
+  --
+  -- Falsified once each, by replacing a function in the database and
+  -- watching the section go red at its own assertion: the surname column
+  -- dropped from the scan (scan); the pupil test made to return the email
+  -- (email: finance read it); the school test dropped from the payload
+  -- (retire: Westville read 'hurt').
+  DECLARE
+    U_C2_91  uuid := '88888888-0000-0000-0000-00000000000a';   -- 2XI coach, Hilton
+    U_WCOACH uuid := '88888888-0000-0000-0000-00000000001a';   -- 1XI coach, Westville
+    P91 uuid; v_email text; v_pay jsonb; v_post91 uuid;
+    P_PILLAY uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
+  BEGIN
+    -- (scan) as the 2XI coach writes and asks; the director of sport approves.
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Van', 'van', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 0, '§93 (scan): a surname particle alone named a pupil');
+    SELECT p.id INTO P91 FROM player p WHERE p.school_id = HIL AND p.full_name = 'K Dlamini';
+    PERFORM _assert(P91 IS NOT NULL, '§93 (scan): K Dlamini is not seeded at Hilton');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_surname(P91, 'Zwelithini');
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Zwelithini', 'zwelithini', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§93 (scan): the stored surname was not read');
+    -- A name written with a comma, and a hyphenated first name: each word is
+    -- a word of his name.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_name(P_ADULT, 'Zungu, S');
+    PERFORM _seed_118_name(P_U13, 'Mary-Anne Mkhwanazi');
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Zungu', 'zungu', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§93 (scan): a surname written "Zungu," was not found');
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Anne', 'anne', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§93 (scan): half of "Mary-Anne" was not found');
+    -- An opponent's boy (Kameel, 22 Oct): Westville's D Mkhize, with a
+    -- Hilton-Westville fixture tomorrow. The author is told the word of his
+    -- post that matched, as he wrote it; somebody else is told nothing.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_fixture(HIL, WES);
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Opponents', 'Watch out for mKhize on Saturday', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) >= 1, '§93 (scan): a post naming an opponent''s boy was not caught');
+    PERFORM _assert(news_public_word(v_post91) = 'mKhize',
+      format('§93 (word): the author was not told the word as he wrote it (%s)', news_public_word(v_post91)));
+    PERFORM _as(U_WES_ADM);
+    PERFORM _assert(news_public_word(v_post91) IS NULL, '§93 (word): somebody neither the author nor a publisher was told the word');
+    PERFORM _as(U_C2_91);
+
+    -- (email)
+    PERFORM _as(U_BURSAR);   -- finance and sponsorship: user.read, nothing more
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email IS NULL, format('§93 (email): finance read a pupil''s login email (%s)', v_email));
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_PUPIL;
+    PERFORM _assert(v_email IS NULL, format('§93 (email): finance read the email of an account holding a player role (%s)', v_email));
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_C2_91;
+    PERFORM _assert(v_email = 'coach2@example.invalid', format('§93 (email): finance lost an adult''s email (%s)', v_email));
+    PERFORM _as(U_REGISTRAR);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email = 'pillay@example.invalid', format('§93 (email): the office lost a pupil''s email (%s)', v_email));
+    PERFORM _as(U_SELF);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email = 'pillay@example.invalid', format('§93 (email): a pupil lost his own email (%s)', v_email));
+    PERFORM _as(U_WES_ADM);
+    PERFORM _assert(app_user_email_seen(U_SELF, HIL, 'x@example.invalid') IS NULL,
+      '§93 (email): Westville''s office read a Hilton pupil''s email');
+
+    -- (retire)
+    v_pay := jsonb_build_object('batter', P_PILLAY, 'reason', 'hurt');
+    PERFORM _as(U_WCOACH);
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'not out',
+      '§93 (retire): Westville''s coach read a Hilton boy retired hurt');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'batter' = P_PILLAY::text,
+      '§93 (retire): the batter moved');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', 'W', NULL, jsonb_build_object('batter', P_PILLAY, 'reason', 'out'))->>'reason' = 'out',
+      '§93 (retire): a retired-out lost its reason');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, jsonb_build_object('batter', P_WES, 'reason', 'hurt'))->>'reason' = 'hurt',
+      '§93 (retire): Westville''s coach lost his own boy''s reason');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'ball', NULL, NULL, jsonb_build_object('reason', 'injury')) = jsonb_build_object('reason', 'injury'),
+      '§93 (retire): a payload that is not a retirement moved');
+    -- (bowler) A Hilton bowler replaced mid-over because he is injured: the
+    -- change reaches Westville, the reason does not; Westville's own bowler's
+    -- reason reaches Westville.
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury')) ? 'reason'),
+      '§93 (bowler): Westville''s coach read why a Hilton bowler was replaced');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
+      '§93 (bowler): Westville''s coach lost why his own bowler was replaced');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', P_PILLAY::text, 'reason', 'suspended')) ? 'reason'),
+      '§93 (bowler): a Hilton bowler named in the payload carried his reason to Westville');
+    -- A Law 41 suspension: Westville reads that a Hilton bowler was suspended,
+    -- and for how long, not on what ground.
+    v_pay := ball_event_payload_seen(M_OTHER, 'bowler_suspended', NULL, P_PILLAY, jsonb_build_object('reason', 'beamers', 'scope', 'match'));
+    PERFORM _assert(NOT (v_pay ? 'reason') AND v_pay->>'scope' = 'match',
+      format('§93 (suspension): Westville''s coach read the ground of a Hilton bowler''s suspension, or lost its scope: %s', v_pay));
+    v_pay := jsonb_build_object('batter', P_PILLAY, 'reason', 'hurt');
+    PERFORM _as(U_C2_91);
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
+      '§93 (retire): Hilton''s coach lost his own boy''s reason');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, jsonb_build_object('batter', 'A Typed Name', 'reason', 'hurt'))->>'reason' = 'not out',
+      '§93 (retire): a typed name read as hurt');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
+      '§93 (bowler): Hilton''s coach lost why his own bowler was replaced');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler_suspended', NULL, P_PILLAY, jsonb_build_object('reason', 'beamers', 'scope', 'match'))->>'reason' = 'beamers',
+      '§93 (suspension): Hilton''s coach lost the ground of his own bowler''s suspension');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury')) ? 'reason'),
+      '§93 (bowler): Hilton''s coach read why a Westville bowler was replaced');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', 'A Typed Bowler', 'reason', 'injury')) ? 'reason'),
+      '§93 (bowler): a typed bowler''s reason reached a reader');
+    -- The office at his school. His own guardian is walked in smoke-cockpit
+    -- (group 7); earlier sections here change that guardian's link.
+    PERFORM _as(U_REGISTRAR);
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
+      '§93 (retire): the office at his school lost the reason');
+
+    -- (doors)
+    PERFORM _assert(NOT has_function_privilege('public', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE'),
+      '§93 (doors): the definers are not the application''s alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 93
+  -- └── db/118 (section 93) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

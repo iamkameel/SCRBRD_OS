@@ -193,6 +193,18 @@ try {
     ok("an attribute the rubric lacks is refused", (await set(coach, { ...base, metric: "vibes" })).status === 400);
     const there = await set(coach, { ...base, targetScore: 9 });
     ok("a target where he already stands is refused", there.status === 422 && there.body?.error === "already_there");
+    // The why rides with the target, in one transaction: a refused target
+    // leaves no coaching point behind.
+    const [{ id: SKILL }] = await q(`select id from player_skill where player_id = $1 and withdrawn_at is null
+                                      order by assessed_on desc limit 1`, [P_SELF]);
+    const points = async () => (await q(`select count(*)::int n from development_note
+                                          where player_id = $1 and evidence_read = 'skills'`, [P_SELF]))[0].n;
+    const pointsBefore = await points();
+    const thereWhy = await set(coach, { ...base, noteId: undefined, targetScore: 9, why: "Gets squared up early.", skillId: SKILL });
+    ok("a refused target sent with its why is refused the same way", thereWhy.status === 422 && thereWhy.body?.error === "already_there");
+    ok("...and leaves no coaching point behind", (await points()) === pointsBefore);
+    ok("a why with no score to stand on is refused before anything is written",
+       (await set(coach, { ...base, noteId: undefined, why: "Gets squared up early." })).status === 400 && (await points()) === pointsBefore);
     ok("the assistant may not set one", (await set(assistant, base)).status === 403);
     ok("...nor the team manager", (await set(manager, base)).status === 403);
     const r = await set(coach, base);
@@ -207,7 +219,11 @@ try {
     ok("the coach reads the reasoning's id", (await read("targets", coach, `?playerId=${P_SELF}`)).find((t) => t.id === targetId)?.note_id === pointId);
     for (const [who, t] of /** @type {[string, string][]} */ ([["his parent", parent], ["the principal", principal], ["the team manager", manager]]))
       ok(`${who} reads none`, (await read("targets", t, `?playerId=${P_SELF}`)).length === 0);
-    const footwork = await set(coach, { category: "technical", metric: "footwork", targetScore: 14 });
+    const footwork = await set(coach, { category: "technical", metric: "footwork", targetScore: 14,
+                                        why: "Weight on the front foot.", skillId: SKILL });
+    ok("a target sent with its why is written pointing at the new coaching point",
+       footwork.status === 200 && (await points()) === pointsBefore + 1
+       && !!(await q(`select note_id from development_target where id = $1`, [footwork.body?.id]))[0]?.note_id);
     ok("the boy may not withdraw a target", (await post(`/api/targets/${footwork.body?.id}/withdraw`, pupil, { reason: "x" })).status === 403);
     ok("the coach withdraws one, with why",
        (await post(`/api/targets/${footwork.body?.id}/withdraw`, coach, { reason: "the wrong attribute" })).status === 200);
@@ -296,7 +312,7 @@ try {
     ok("...and nothing was read to refuse it", (await q(`select count(*)::int n from access_log`))[0].n === 0);
     const roster = await api("/api/export/players", { token: office });
     ok("the office still exports its roster", roster.status === 200 && String(roster.body).includes("full_name"));
-    ok("the training calendar still exports", (await api("/api/export/training", { token: coach })).status === 200);
+    ok("the fixtures still export", (await api("/api/export/matches", { token: coach })).status === 200);
   }
 } catch (/** @type {any} */ e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);
