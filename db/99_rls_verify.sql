@@ -25847,7 +25847,7 @@ $v49$;
     -- (scan) as the 2XI coach writes and asks; the director of sport approves.
     PERFORM _as(U_C2_91);
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
-    VALUES ('team', HIL, '2XI', 'Nets', 'The van leaves for nets at three.', now()) RETURNING id INTO v_post91;
+    VALUES ('team', HIL, '2XI', 'Van', 'van', now()) RETURNING id INTO v_post91;
     PERFORM _assert(news_public_check(v_post91) = 0, '§91 (scan): a surname particle alone named a pupil');
     SELECT p.id INTO P91 FROM player p WHERE p.school_id = HIL AND p.full_name = 'K Dlamini';
     PERFORM _assert(P91 IS NOT NULL, '§91 (scan): K Dlamini is not seeded at Hilton');
@@ -25855,7 +25855,7 @@ $v49$;
     PERFORM _seed_118_surname(P91, 'Zwelithini');
     PERFORM _as(U_C2_91);
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
-    VALUES ('team', HIL, '2XI', 'Fifty', 'A fine fifty from zwelithini.', now()) RETURNING id INTO v_post91;
+    VALUES ('team', HIL, '2XI', 'Zwelithini', 'zwelithini', now()) RETURNING id INTO v_post91;
     PERFORM _assert(news_public_check(v_post91) = 1, '§91 (scan): the stored surname was not read');
 
     -- (email)
