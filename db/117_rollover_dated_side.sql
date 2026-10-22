@@ -100,12 +100,25 @@
 -- satellites (my_fixture_ends()), the buses (trip_read through the same),
 -- the publication row (side_reach()), the nets (my_sides()), and the ball
 -- log (ball_event_read gains a fifth branch, my_own_side_fixtures(), db/112's
--- my_own_sheet_fixtures() shape). NOT the posts and plans: db/12's
--- news_post_read is a PERMISSIVE read under news.read at the post's side,
--- which the moved boy holds only at his new side; widening it is a new
--- permissive policy, which is Kameel's to decide, not a re-expression
--- (reported, not built). His family reads the posts (they hold news.read
--- school-wide, and the restrictive side rule is dated here).
+-- my_own_sheet_fixtures() shape). And the posts and plans (Kameel, 22
+-- October 2026: "yes", the narrowest door): db/12's news_post_read is a
+-- PERMISSIVE read under news.read at the post's side, which the moved boy
+-- holds only at his new side, so one more permissive read,
+-- news_post_read_old_side, gives him a sent team post or plan whose side and
+-- day fall inside a side he has LEFT (a closed membership row), asked through
+-- news_own_old_side(): the reader is the boy, the row is closed, and he holds
+-- news.read and team.read about himself at his own side now. The two
+-- restrictive side rules, the post's notice and the byline admit the same.
+-- A team-mate, his family (who read by the side rule, dated here) and a boy
+-- who joined the side later gain nothing from it.
+--
+-- ── 4b · THE IMPORT DATES A NEW BOY'S FIRST SIDE ─────────────────────
+-- Kameel, 22 October 2026: the players import dates a boy's first membership
+-- from the season's start unless the file gives a date. import_joined_on()
+-- gives the import the day it sets as app.effective_on for each row (db/08's
+-- trigger reads it): the file's joined_on (never a day to come), else the
+-- school season's start for a boy new to the books, else (a boy moved by the
+-- file) today, as before. The add route is unchanged.
 --
 -- ── 5 · SR-4: a move voids his seats on the side he left ───────────
 -- §3.1 step 2a: "seats on fixtures of the side he has left dated after
@@ -164,8 +177,9 @@
 --     new side's from the day he joined (and not before: Q2). A boy who has
 --     not moved: exactly as before, provided his first membership row began
 --     before the rows (see "EXISTING ROWS").
---   The moved pupil himself: his old side's season by branch (5); not its
---     posts and plans (§4).
+--   The moved pupil himself: his old side's season by branch (5), and its
+--     posts and plans dated within his time on it (§4).
+--   A boy imported with no date: his first side from the season's start.
 --   Every reader whose assignments name nobody (staff, a pupil through
 --     `player`, a spectator, the office, a driver): unchanged; branch (1) does
 --     not read the membership.
@@ -186,7 +200,9 @@
 --   + one index on team_membership (player_id, school_id, joined_on DESC)
 --   + sa_date(), side_on(), side_day(), side_reach_on(), news_post_day(),
 --     news_plan_reach(uuid, text, date), my_own_side_fixtures(),
+--     news_own_old_side(), import_joined_on(),
 --     player_move_voids_seats() and its trigger on player
+--   + news_post_read_old_side: one permissive read on news_post
 --   ~ CREATE OR REPLACE in place, signatures, owners and grants kept:
 --     side_reach(), my_fixture_ends(), my_child_fixtures(),
 --     news_plan_reach(uuid, text), news_team_notice_reach(),
@@ -519,11 +535,33 @@ CREATE OR REPLACE FUNCTION news_plan_reach(p_school uuid, p_team text) RETURNS b
   SELECT news_plan_reach(p_school, p_team, sa_today())
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- The moved boy's own old side (Kameel, 22 October 2026): the reader IS the
+-- boy (my_own_boy()), the side was his on that day by a CLOSED membership row
+-- at his school (a side he has left; his open row is today's rules'), and he
+-- holds news.read and team.read about himself at his OWN side now (his
+-- `player` assignment, kept there by db/112). Nobody else is ever a
+-- candidate: a team-mate, his family (who read by news_plan_reach()) and a
+-- boy who joined the side later each fail the first or second test.
+CREATE OR REPLACE FUNCTION news_own_old_side(p_school uuid, p_team text, p_on date) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM player p
+      JOIN team_membership tm ON tm.player_id = p.id AND tm.school_id = p.school_id AND tm.sport = 'cricket'
+     WHERE p.id = ANY (my_own_boy())
+       AND p.school_id = p_school
+       AND tm.team_code = p_team
+       AND tm.left_on IS NOT NULL
+       AND tm.joined_on <= p_on AND tm.left_on >= p_on
+       AND app_can('news.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)
+       AND app_can('team.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- db/101's, with the post's day. Every other line is db/101's.
 CREATE OR REPLACE FUNCTION news_team_notice_reach(p_post uuid) RETURNS boolean AS $$
   SELECT coalesce((SELECT CASE WHEN n.scope <> 'team' THEN true
                                WHEN n.author_id = app_user_id() THEN true
                                WHEN news_plan_reach(n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at)) THEN true
+                               WHEN news_own_old_side(n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at)) THEN true
                                WHEN n.kind = 'plan' THEN news_sheet_reach(n.fixture_id, n.school_id, n.team_code)
                                ELSE false END
                      FROM news_post n WHERE n.id = p_post), true)
@@ -533,6 +571,7 @@ CREATE OR REPLACE FUNCTION news_notice_reach(p_post uuid) RETURNS boolean AS $$
   SELECT coalesce((SELECT CASE WHEN n.kind <> 'plan' THEN true
                                WHEN n.author_id = app_user_id() THEN true
                                WHEN news_plan_reach(n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at)) THEN true
+                               WHEN news_own_old_side(n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at)) THEN true
                                ELSE news_sheet_reach(n.fixture_id, n.school_id, n.team_code) END
                      FROM news_post n WHERE n.id = p_post), true)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -551,17 +590,54 @@ CREATE OR REPLACE FUNCTION plan_author_name(p_post uuid) RETURNS text AS $$
      -- and this reader reads it: db/12's, db/96's, db/101's and db/117's policies, as they ask it
      AND (n.author_id = app_user_id()
           OR news_plan_reach(n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at))
+          OR news_own_old_side(n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at))
           OR news_sheet_reach(n.fixture_id, n.school_id, n.team_code))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 ALTER POLICY news_post_plan_side ON news_post
   USING (kind <> 'plan' OR author_id = app_user_id()
          OR news_plan_reach(school_id, team_code, news_post_day(kind, fixture_id, published_at))
+         OR news_own_old_side(school_id, team_code, news_post_day(kind, fixture_id, published_at))
          OR news_sheet_reach(fixture_id, school_id, team_code));
 ALTER POLICY news_post_team_side ON news_post
   USING (scope <> 'team' OR author_id = app_user_id()
          OR news_plan_reach(school_id, team_code, news_post_day(kind, fixture_id, published_at))
+         OR news_own_old_side(school_id, team_code, news_post_day(kind, fixture_id, published_at))
          OR (kind = 'plan' AND news_sheet_reach(fixture_id, school_id, team_code)));
+
+-- The one permissive read the moved boy's old posts need: db/12's
+-- news_post_read asks news.read AT THE POST'S SIDE, which he holds only at his
+-- new one. A sent team post (a plan is one), dated inside a side he has left.
+DROP POLICY IF EXISTS news_post_read_old_side ON news_post;
+CREATE POLICY news_post_read_old_side ON news_post
+  FOR SELECT USING (
+    scope = 'team' AND published_at IS NOT NULL AND published_at <= now()
+    AND news_own_old_side(school_id, team_code, news_post_day(kind, fixture_id, published_at)));
+
+
+-- ── 5b · The import dates a new boy's first side (Kameel, 22 Oct 2026) ──
+-- The players import (services/api/io/import-api.mjs) asks this before each
+-- row's write and sets app.effective_on to its answer, which db/08's trigger
+-- reads for the membership the row opens: the file's joined_on when it gives
+-- one (never a day still to come); else, for a boy NEW to the books, the
+-- school season's start (season_for(), db/08), so a squad loaded in March is
+-- on its side from January and Q2 does not hide its family the fixtures
+-- before the load; else (a boy already on the books, moved by the file) null:
+-- today, as before. As the caller: it reads no table but the calendar.
+CREATE OR REPLACE FUNCTION import_joined_on(p_existing boolean, p_given date) RETURNS date AS $$
+BEGIN
+  IF p_given IS NOT NULL THEN
+    IF p_given > sa_today() THEN
+      RAISE EXCEPTION 'joined_on % is a day still to come: a side is joined on a day that has happened', p_given
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN p_given;
+  END IF;
+  IF coalesce(p_existing, false) THEN
+    RETURN NULL;
+  END IF;
+  RETURN (SELECT s.starts_on FROM season_for(sa_today(), 'school') s);
+END $$ LANGUAGE plpgsql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 
 -- ── 6 · SR-4: the move voids his seats on the side he left ─────────
@@ -623,7 +699,8 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['side_on(uuid,uuid,date)', 'side_day(uuid)',
                            'side_reach_on(text,uuid,text,uuid,date)', 'my_sides(text)',
                            'my_own_side_fixtures()', 'news_post_day(text,uuid,timestamptz)',
-                           'news_plan_reach(uuid,text,date)'] LOOP
+                           'news_plan_reach(uuid,text,date)', 'news_own_old_side(uuid,text,date)',
+                           'import_joined_on(boolean,date)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
@@ -669,7 +746,11 @@ BEGIN
                                        'app_can(''fixture.read'', p.school_id, p.team_code, p.id, m.id)']),
       ('news_post_day(text,uuid,timestamptz)', ARRAY['side_day(p_fixture)', 'sa_date(p_published)']),
       ('news_plan_reach(uuid,text,date)', ARRAY['tm.joined_on <= p_on', 'p.id, ''00000000-0000-0000-0000-000000000000''::uuid']),
-      ('news_plan_reach(uuid,text)', ARRAY['news_plan_reach(p_school, p_team, sa_today())'])) x(sig, must) LOOP
+      ('news_plan_reach(uuid,text)', ARRAY['news_plan_reach(p_school, p_team, sa_today())']),
+      ('news_own_old_side(uuid,text,date)', ARRAY['p.id = ANY (my_own_boy())', 'tm.left_on IS NOT NULL',
+                                                  'tm.joined_on <= p_on AND tm.left_on >= p_on', 'tm.team_code = p_team',
+                                                  'app_can(''news.read'', p.school_id, p.team_code, p.id,',
+                                                  'app_can(''team.read'', p.school_id, p.team_code, p.id,'])) x(sig, must) LOOP
     SELECT p.prosrc INTO f FROM pg_proc p
      WHERE p.oid = to_regprocedure(r.sig) AND p.prosecdef AND p.provolatile = 's'
        AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'));
@@ -727,10 +808,37 @@ BEGIN
   END LOOP;
   FOREACH f IN ARRAY ARRAY['news_team_notice_reach(uuid)', 'news_notice_reach(uuid)', 'plan_author_name(uuid)'] LOOP
     IF position('news_post_day(n.kind, n.fixture_id, n.published_at)' IN
+                coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure(f) AND prosecdef), '')) = 0
+       OR position('news_own_old_side(n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at))' IN
                 coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure(f) AND prosecdef), '')) = 0 THEN
-      RAISE EXCEPTION 'db/117: % does not ask the side on the post''s day', f;
+      RAISE EXCEPTION 'db/117: % does not ask the side on the post''s day, or the boy''s old side', f;
     END IF;
   END LOOP;
+  -- The moved boy's old posts: both restrictions admit him, and one
+  -- permissive read, team posts only, sent, through news_own_old_side().
+  IF (SELECT count(*) FROM pg_policy p
+       WHERE p.polrelid = 'news_post'::regclass AND p.polname IN ('news_post_plan_side', 'news_post_team_side')
+         AND NOT p.polpermissive
+         AND position('news_own_old_side(school_id, team_code, news_post_day(kind, fixture_id, published_at))'
+                      IN pg_get_expr(p.polqual, p.polrelid)) > 0) <> 2 THEN
+    RAISE EXCEPTION 'db/117: the news restrictions do not admit the boy''s old side';
+  END IF;
+  SELECT pg_get_expr(p.polqual, p.polrelid) INTO q FROM pg_policy p
+   WHERE p.polrelid = 'news_post'::regclass AND p.polname = 'news_post_read_old_side' AND p.polcmd = 'r' AND p.polpermissive;
+  IF q IS NULL OR position('scope = ''team''::text' IN q) = 0 OR position('published_at IS NOT NULL' IN q) = 0
+     OR position('published_at <= now()' IN q) = 0
+     OR position('news_own_old_side(school_id, team_code, news_post_day(kind, fixture_id, published_at))' IN q) = 0 THEN
+    RAISE EXCEPTION 'db/117: news_post_read_old_side is not the policy this file wrote: %', coalesce(q, 'missing');
+  END IF;
+  -- The import's day: as the caller, for the application, not PUBLIC.
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = to_regprocedure('import_joined_on(boolean,date)') AND NOT p.prosecdef
+                    AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
+                    AND position('season_for(sa_today(), ''school'')' IN p.prosrc) > 0
+                    AND position('p_given > sa_today()' IN p.prosrc) > 0)
+     OR has_function_privilege('public', to_regprocedure('import_joined_on(boolean,date)'), 'EXECUTE')
+     OR NOT has_function_privilege('scrbrd_app', to_regprocedure('import_joined_on(boolean,date)'), 'EXECUTE') THEN
+    RAISE EXCEPTION 'db/117: import_joined_on() is missing, not the caller''s, or not granted as it should be';
+  END IF;
   -- The void: a definer trigger after the side or the school changes, the
   -- owner's alone, beside db/08's and db/112's.
   IF NOT EXISTS (SELECT 1 FROM pg_trigger t
