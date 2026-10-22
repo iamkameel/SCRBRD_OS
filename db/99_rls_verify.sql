@@ -6794,14 +6794,14 @@ CREATE OR REPLACE FUNCTION _v114_fact(p_match uuid) RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/114 (section 91) ─────────────────────────────────────────────
 
--- ┌── db/118 (section 92) ──────────────────────────────────────────────
+-- ┌── db/118 (section 93) ──────────────────────────────────────────────
 -- A stored surname that is not in the boy's full name, as the owner writes
 -- it, so the scan is seen to read the column itself. Rolled back with
 -- everything else.
 CREATE OR REPLACE FUNCTION _seed_118_surname(p_player uuid, p_surname text) RETURNS void AS $$
   UPDATE player SET surname = p_surname WHERE id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- └── db/118 (section 92) ─────────────────────────────────────────────
+-- └── db/118 (section 93) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -26461,8 +26461,9 @@ $v49$;
   -- └── db/114 (section 91) ──────────────────────────────────────────
 
 
-  -- ┌── db/118 (section 92) ──────────────────────────────────────────
-  -- Names, login emails and retirements (db/118).
+  -- ┌── db/118 (section 93) ──────────────────────────────────────────
+  -- Names, login emails, retirements and bowler changes (db/118). Section
+  -- 92 is db/116's.
   --
   --   (scan)    the surname column is read on its own: a pupil whose stored
   --             surname is not in his full name is still found by it; a
@@ -26496,83 +26497,83 @@ $v49$;
     PERFORM _as(U_C2_91);
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'Van', 'van', now()) RETURNING id INTO v_post91;
-    PERFORM _assert(news_public_check(v_post91) = 0, '§92 (scan): a surname particle alone named a pupil');
+    PERFORM _assert(news_public_check(v_post91) = 0, '§93 (scan): a surname particle alone named a pupil');
     SELECT p.id INTO P91 FROM player p WHERE p.school_id = HIL AND p.full_name = 'K Dlamini';
-    PERFORM _assert(P91 IS NOT NULL, '§92 (scan): K Dlamini is not seeded at Hilton');
+    PERFORM _assert(P91 IS NOT NULL, '§93 (scan): K Dlamini is not seeded at Hilton');
     PERFORM set_config('app.user_id', '', true);
     PERFORM _seed_118_surname(P91, 'Zwelithini');
     PERFORM _as(U_C2_91);
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'Zwelithini', 'zwelithini', now()) RETURNING id INTO v_post91;
-    PERFORM _assert(news_public_check(v_post91) = 1, '§92 (scan): the stored surname was not read');
+    PERFORM _assert(news_public_check(v_post91) = 1, '§93 (scan): the stored surname was not read');
 
     -- (email)
     PERFORM _as(U_BURSAR);   -- finance and sponsorship: user.read, nothing more
     SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
-    PERFORM _assert(v_email IS NULL, format('§92 (email): finance read a pupil''s login email (%s)', v_email));
+    PERFORM _assert(v_email IS NULL, format('§93 (email): finance read a pupil''s login email (%s)', v_email));
     SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_PUPIL;
-    PERFORM _assert(v_email IS NULL, format('§92 (email): finance read the email of an account holding a player role (%s)', v_email));
+    PERFORM _assert(v_email IS NULL, format('§93 (email): finance read the email of an account holding a player role (%s)', v_email));
     SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_C2_91;
-    PERFORM _assert(v_email = 'coach2@example.invalid', format('§92 (email): finance lost an adult''s email (%s)', v_email));
+    PERFORM _assert(v_email = 'coach2@example.invalid', format('§93 (email): finance lost an adult''s email (%s)', v_email));
     PERFORM _as(U_REGISTRAR);
     SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
-    PERFORM _assert(v_email = 'pillay@example.invalid', format('§92 (email): the office lost a pupil''s email (%s)', v_email));
+    PERFORM _assert(v_email = 'pillay@example.invalid', format('§93 (email): the office lost a pupil''s email (%s)', v_email));
     PERFORM _as(U_SELF);
     SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
-    PERFORM _assert(v_email = 'pillay@example.invalid', format('§92 (email): a pupil lost his own email (%s)', v_email));
+    PERFORM _assert(v_email = 'pillay@example.invalid', format('§93 (email): a pupil lost his own email (%s)', v_email));
     PERFORM _as(U_WES_ADM);
     PERFORM _assert(app_user_email_seen(U_SELF, HIL, 'x@example.invalid') IS NULL,
-      '§92 (email): Westville''s office read a Hilton pupil''s email');
+      '§93 (email): Westville''s office read a Hilton pupil''s email');
 
     -- (retire)
     v_pay := jsonb_build_object('batter', P_PILLAY, 'reason', 'hurt');
     PERFORM _as(U_WCOACH);
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'not out',
-      '§92 (retire): Westville''s coach read a Hilton boy retired hurt');
+      '§93 (retire): Westville''s coach read a Hilton boy retired hurt');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'batter' = P_PILLAY::text,
-      '§92 (retire): the batter moved');
+      '§93 (retire): the batter moved');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', 'W', NULL, jsonb_build_object('batter', P_PILLAY, 'reason', 'out'))->>'reason' = 'out',
-      '§92 (retire): a retired-out lost its reason');
+      '§93 (retire): a retired-out lost its reason');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, jsonb_build_object('batter', P_WES, 'reason', 'hurt'))->>'reason' = 'hurt',
-      '§92 (retire): Westville''s coach lost his own boy''s reason');
+      '§93 (retire): Westville''s coach lost his own boy''s reason');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'ball', NULL, NULL, jsonb_build_object('reason', 'injury')) = jsonb_build_object('reason', 'injury'),
-      '§92 (retire): a payload that is not a retirement moved');
+      '§93 (retire): a payload that is not a retirement moved');
     -- (bowler) A Hilton bowler replaced mid-over because he is injured: the
     -- change reaches Westville, the reason does not; Westville's own bowler's
     -- reason reaches Westville.
     PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury')) ? 'reason'),
-      '§92 (bowler): Westville''s coach read why a Hilton bowler was replaced');
+      '§93 (bowler): Westville''s coach read why a Hilton bowler was replaced');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
-      '§92 (bowler): Westville''s coach lost why his own bowler was replaced');
+      '§93 (bowler): Westville''s coach lost why his own bowler was replaced');
     PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', P_PILLAY::text, 'reason', 'suspended')) ? 'reason'),
-      '§92 (bowler): a Hilton bowler named in the payload carried his reason to Westville');
+      '§93 (bowler): a Hilton bowler named in the payload carried his reason to Westville');
     PERFORM _as(U_C2_91);
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
-      '§92 (retire): Hilton''s coach lost his own boy''s reason');
+      '§93 (retire): Hilton''s coach lost his own boy''s reason');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, jsonb_build_object('batter', 'A Typed Name', 'reason', 'hurt'))->>'reason' = 'not out',
-      '§92 (retire): a typed name read as hurt');
+      '§93 (retire): a typed name read as hurt');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
-      '§92 (bowler): Hilton''s coach lost why his own bowler was replaced');
+      '§93 (bowler): Hilton''s coach lost why his own bowler was replaced');
     PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury')) ? 'reason'),
-      '§92 (bowler): Hilton''s coach read why a Westville bowler was replaced');
+      '§93 (bowler): Hilton''s coach read why a Westville bowler was replaced');
     PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', 'A Typed Bowler', 'reason', 'injury')) ? 'reason'),
-      '§92 (bowler): a typed bowler''s reason reached a reader');
+      '§93 (bowler): a typed bowler''s reason reached a reader');
     -- The office at his school. His own guardian is walked in smoke-cockpit
     -- (group 7); earlier sections here change that guardian's link.
     PERFORM _as(U_REGISTRAR);
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
-      '§92 (retire): the office at his school lost the reason');
+      '§93 (retire): the office at his school lost the reason');
 
     -- (doors)
     PERFORM _assert(NOT has_function_privilege('public', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
                     AND NOT has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE')
                     AND has_function_privilege('scrbrd_app', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
                     AND has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE'),
-      '§92 (doors): the definers are not the application''s alone');
+      '§93 (doors): the definers are not the application''s alone');
   END;
   PERFORM set_config('app.user_id', '', true);
-  -- └── end of section 92
-  -- └── db/118 (section 92) ──────────────────────────────────────────
+  -- └── end of section 93
+  -- └── db/118 (section 93) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
