@@ -258,7 +258,7 @@ try {
   const d = await open();
   await signIn(d.page, "u14coach@example.invalid");
   await go(d.page, "matches");
-  await tid(d.page, `match-card-${M}`).click();
+  await tid(d.page, `match-card-${M}`).click({ position: { x: 14, y: 14 } });
   await d.page.waitForTimeout(800);
   ok("the fixture's Match Details has Pick the side", await tid(d.page, "pick-side-entry").count() === 1);
   await tid(d.page, "pick-side-entry").click();
@@ -326,7 +326,7 @@ try {
   ok("the 1XI coach signs in", await signIn(o.page, "coach@example.invalid"));
   await go(o.page, "matches");
   const there = await tid(o.page, `match-card-${M}`).count();
-  if (there) { await tid(o.page, `match-card-${M}`).click(); await o.page.waitForTimeout(700); }
+  if (there) { await tid(o.page, `match-card-${M}`).click({ position: { x: 14, y: 14 } }); await o.page.waitForTimeout(700); }
   ok("he is offered no Pick the side in Match Details", await tid(o.page, "pick-side-entry").count() === 0, `card on his list: ${there}`);
   if (there && await openMatch(o.page, M)) {
     ok("...and the fixture has no Coach tab for him", await tid(o.page, "mc-tab-coach").count() === 0 && await tid(o.page, "pick-side-open").count() === 0);
@@ -406,7 +406,7 @@ try {
   const u = await open();
   ok("the U14A coach signs in", await signIn(u.page, "u14coach@example.invalid"));
   await go(u.page, "matches");
-  await tid(u.page, `match-card-${M2}`).click();
+  await tid(u.page, `match-card-${M2}`).click({ position: { x: 14, y: 14 } });
   await u.page.waitForTimeout(800);
   await tid(u.page, "pick-side-entry").click();
   ok("the dialog opens", await dialog(u.page));
@@ -472,7 +472,7 @@ try {
   const uph = await open({ width: 390, height: 844, theme: "daylight" });
   await signIn(uph.page, "u14coach@example.invalid");
   await go(uph.page, "matches");
-  await tid(uph.page, `match-card-${M2}`).click();
+  await tid(uph.page, `match-card-${M2}`).click({ position: { x: 14, y: 14 } });
   await uph.page.waitForTimeout(800);
   await tid(uph.page, "pick-side-entry").click();
   await dialog(uph.page);
@@ -512,7 +512,7 @@ try {
   const homeCoach = await open();
   await signIn(homeCoach.page, "u14coach@example.invalid");
   await go(homeCoach.page, "matches");
-  await tid(homeCoach.page, `match-card-${M2}`).click();
+  await tid(homeCoach.page, `match-card-${M2}`).click({ position: { x: 14, y: 14 } });
   await homeCoach.page.waitForTimeout(800);
   await tid(homeCoach.page, "pick-side-entry").click();
   await dialog(homeCoach.page);

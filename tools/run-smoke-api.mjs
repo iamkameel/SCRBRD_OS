@@ -479,6 +479,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // are refused before anything is sent; a coach of another team and a parent
   // are offered nothing and a forced post is a 403; 12px, 44px, 390, Daylight.
   "browser-pick-side",
+  // The narrow-screen, keyboard and daylight pass (gap analysis I32): the parent, the pupil, the scorer and the coach
+  // on the real stack at 320, 375 and 414 in Daylight, 320 under lights and 200% zoom, every screen held to
+  // tools/a11y-narrow.mjs's lists (nothing sideways, clipped or overlapped; 12px; 44px; contrast), the live fixture's
+  // tabs, and Tab from the top of each Home. The mock-driven screens are smoke-a11y's.
+  "browser-narrow",
   // The live scorer scores the side the coach named: a fixture with a named
   // side opens the pad with exactly those eleven in that batting order and
   // says so; the twelfth and a withdrawn boy are not offered; a fixture with

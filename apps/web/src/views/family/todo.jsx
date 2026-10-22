@@ -159,7 +159,7 @@ export function TodoCard({ child, matches, matchesRead, onOpen, now, self = fals
           <Line strong testid="todo-count">{t.line}</Line>
         </div>
         {t.rows.length > 0 && (
-          <div style={{ display: "grid", gap: T.space.sm }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.sm }}>
             {t.rows.map((row) => row.state === "open" ? openRow(row) : (
               <div key={row.id} data-testid={`todo-unread-${row.key}`} style={{ display: "grid", gap: T.space.sm }}>
                 <Line quiet>{row.fact}</Line>
@@ -169,7 +169,7 @@ export function TodoCard({ child, matches, matchesRead, onOpen, now, self = fals
           </div>
         )}
         {t.later.line && (
-          <div style={{ display: "grid", gap: T.space.sm }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.sm }}>
             <div>
               <Action pressed={showLater} onClick={() => setShowLater((v) => !v)} testid="todo-later">{t.later.line}</Action>
             </div>

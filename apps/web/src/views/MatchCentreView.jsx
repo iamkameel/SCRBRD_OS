@@ -167,14 +167,14 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
         actions={
           <>
             {holdsCapability(role,"fixture.create")&&<Btn onClick={()=>setScheduleOpen(true)}>+ Schedule Match</Btn>}
-            {canScore(role)&&<button onClick={()=>onOpenScorer(null)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}30`,color:D.emerald,fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.05em",cursor:"pointer",display:"flex",alignItems:"center",gap:"5px"}}>
+            {canScore(role)&&<button onClick={()=>onOpenScorer(null)} className="pressBtn" style={{minHeight:"44px",padding:"5px 12px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}30`,color:D.emerald,fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.05em",cursor:"pointer",display:"flex",alignItems:"center",gap:"5px"}}>
               <div className="live-dot"/>Open SCRBRD Scorer <Icon name="arrow-up-right"/>
             </button>}
           </>
         }/>
       <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap",alignItems:"center"}}>
         {["all","live","upcoming","complete"].map(f=>(
-          <button key={f} onClick={()=>{setFilter(f);setTeamFilter(null);}} data-testid={`mc-filter-${f}`} className="pressBtn" style={{
+          <button key={f} onClick={()=>{setFilter(f);setTeamFilter(null);}} data-testid={`mc-filter-${f}`} className="pressBtn" style={{minHeight:"44px",
             padding:"5px 14px",borderRadius:D.pill,border:`1px solid ${filter===f&&!teamFilter?D.indigo+"55":D.border}`,
             background:filter===f&&!teamFilter?D.indigo+"18":"transparent",cursor:"pointer",
             fontFamily:D.body,fontSize:"12px",fontWeight:filter===f?600:400,
@@ -186,7 +186,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
             the Match Centre list itself, narrowed — so the chip says exactly
             that and clears back to the ordinary filters on a click. */}
         {teamFilter&&(
-          <button onClick={()=>setTeamFilter(null)} data-testid="mc-team-filter-clear" className="pressBtn" style={{
+          <button onClick={()=>setTeamFilter(null)} data-testid="mc-team-filter-clear" className="pressBtn" style={{minHeight:"44px",
             padding:"5px 12px",borderRadius:D.pill,border:`1px solid ${D.emerald}55`,background:D.emerald+"18",
             cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.emerald,
             display:"flex",alignItems:"center",gap:"5px",
@@ -223,9 +223,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                     {w&&<WeatherChip w={w} status={m.status} compact/>}
                     <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{humanDate(m.date)}</span>
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"12px",alignItems:"center"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto minmax(0,1fr)",gap:"12px",alignItems:"center"}}>
                     <div>
-                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary}}><SideName side={sides.home}/></div>
+                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary,overflowWrap:"anywhere"}}><SideName side={sides.home}/></div>
                       {m.scorecard?.home&&<div style={{...T.role.figure.md,color:isLive?D.emerald:D.textPrimary,marginTop:"4px"}}>{m.scorecard.home.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.home.overs})</span></div>}
                     </div>
                     <div style={{textAlign:"center"}}>
@@ -233,7 +233,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                       {m.result&&<div style={{fontFamily:D.body,fontSize:"12px",color:isLive?D.emerald:D.amber,marginTop:"4px",maxWidth:"120px"}}>{m.result}</div>}
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary}}><SideName side={sides.away}/></div>
+                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary,overflowWrap:"anywhere"}}><SideName side={sides.away}/></div>
                       {m.scorecard?.away&&<div style={{...T.role.figure.md,color:D.textPrimary,marginTop:"4px"}}>{m.scorecard.away.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.away.overs})</span></div>}
                     </div>
                   </div>

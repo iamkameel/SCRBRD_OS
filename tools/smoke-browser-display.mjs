@@ -578,7 +578,7 @@ try {
     await sleep(1500);
     await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
     await sleep(1500);
-    await tid(page, `match-card-${pub}`).click({ timeout: 6000 }).catch(() => {});
+    await tid(page, `match-card-${pub}`).click({ timeout: 6000, position: { x: 14, y: 14 } }).catch(() => {});
     const shown = await until(page, () => !!document.querySelector('[data-testid="display-setup"]'), 15000);
     ok("the fixture's Publication panel carries the Ground display section (Hilton has published)", shown, (await text(page)).slice(0, 300));
     const link = () => tid(page, "display-setup-link").innerText().catch(() => "");

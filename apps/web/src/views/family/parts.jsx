@@ -28,7 +28,7 @@ import { readState } from "../../lib/readState.js";
 export function Page({ children, testid, label }) {
   return (
     <div className="os-page" data-testid={testid} aria-label={label}
-      style={{ maxWidth: "720px", margin: "0 auto", display: "grid", gap: T.space.md, alignContent: "start" }}>
+      style={{ maxWidth: "720px", margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.md, alignContent: "start" }}>
       {children}
     </div>
   );
@@ -39,7 +39,7 @@ export function Card({ label, children, testid, aside, tone }) {
   return (
     <section data-testid={testid} aria-label={typeof label === "string" ? label : undefined}
       style={{ background: T.surface.raised, border: `1px solid ${tone ?? T.line.normal}`, borderRadius: T.radius.lg,
-        padding: `${T.space.md} ${T.space.lg}`, display: "grid", gap: T.space.sm }}>
+        padding: `${T.space.md} ${T.space.lg}`, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.sm }}>
       {(label || aside) && (
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap" }}>
           {label && <h2 style={{ ...T.role.label, color: T.content.secondary, margin: 0 }}>{label}</h2>}
@@ -85,8 +85,8 @@ export function OpenRow({ onClick, testid, children, aside, label }) {
       style={{ width: "100%", minHeight: "48px", display: "flex", alignItems: "center", gap: T.space.md, textAlign: "left",
         padding: `${T.space.sm} ${T.space.md}`, background: "transparent", border: `1px solid ${T.line.subtle}`,
         borderRadius: T.radius.md, cursor: "pointer", color: T.content.primary }}>
-      <span style={{ flex: 1, minWidth: 0, display: "grid", gap: "2px" }}>{children}</span>
-      {aside && <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary, whiteSpace: "nowrap" }}>{aside}</span>}
+      <span style={{ flex: 1, minWidth: 0, display: "grid", gap: "2px", overflowWrap: "anywhere" }}>{children}</span>
+      {aside && <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary, flex: "0 1 auto", textAlign: "right" }}>{aside}</span>}
       <Icon name="chevron-down" style={{ transform: "rotate(-90deg)", color: T.content.tertiary, flexShrink: 0 }}/>
     </button>
   );
