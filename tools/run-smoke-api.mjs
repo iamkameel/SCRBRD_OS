@@ -510,7 +510,15 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // #133: signing out on a shared tablet ends the family fold cache, and a
   // read answered late for the last session is neither cached for the next
   // person nor shown on their screen.
-  "browser-signout"];
+  "browser-signout",
+  // GA-I26a A3: the Skills history and the Training plan and register, from a
+  // browser — the strip (two dots, 44px each, a hairline, 12px type), a dot's
+  // sheet, Set target with its staff-only Why (a refused wording leaves
+  // nothing behind), "Since the last look" from the sessions, plan and
+  // register entered on Training, a wrong score withdrawn and struck, none of
+  // the design's never-words, the hairline still under reduced motion, a
+  // director refused by the server in words, four register states and no fifth.
+  "browser-skills-history"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
