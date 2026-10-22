@@ -25386,12 +25386,19 @@ $v49$;
                          FROM (SELECT _v111_reviews(v_id) -> -1 AS r) z),
         format('§88 (agree): injury %s and its latest review disagree', j->>'injury_type'));
     END LOOP;
+    -- Of the boys still at the school: I_LEFT is the leaver's, whom this
+    -- section moved off his side above (_v111_leave), and since db/116
+    -- (READERS Q3) a departed boy's reviews are the office's and his family's,
+    -- not the physio's. She reads none of his.
     PERFORM _as(U_PHYSIO);
     SELECT count(*)::int INTO n FROM injury_review_masked
-     WHERE injury_id IN (I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_LEFT, I_SEV, I_MOD, I_EMS, I_OVER, I_RET, I_U);
+     WHERE injury_id IN (I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_SEV, I_MOD, I_EMS, I_OVER, I_RET, I_U);
     SELECT sum(jsonb_array_length(_v111_reviews(x)))::int INTO c_rows
-      FROM unnest(ARRAY[I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_LEFT, I_SEV, I_MOD, I_EMS, I_OVER, I_RET, I_U]) x;
-    PERFORM _assert(n = c_rows AND n > 0, format('§88 (agree): the physio reads %s of the %s reviews at her school', n, c_rows));
+      FROM unnest(ARRAY[I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_SEV, I_MOD, I_EMS, I_OVER, I_RET, I_U]) x;
+    PERFORM _assert(n = c_rows AND n > 0, format('§88 (agree): the physio reads %s of the %s reviews of boys at her school', n, c_rows));
+    SELECT count(*)::int INTO n FROM injury_review_masked WHERE injury_id = I_LEFT;
+    PERFORM _assert(n = 0 AND jsonb_array_length(_v111_reviews(I_LEFT)) > 0,
+      format('§88 (agree): the physio reads %s review(s) of the boy who left (READERS Q3)', n));
 
     -- ── (doors2) ──
     PERFORM _assert((SELECT bool_and(prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}')))
