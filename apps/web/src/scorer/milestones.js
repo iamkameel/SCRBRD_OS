@@ -54,7 +54,7 @@ function wordsOf(m, nameOf) {
         ? { type: "fifer", label: "FIFER!", sub: `${name} takes 5 wickets`, ...ACHIEVEMENT }
         : { type: `wickets${m.wickets}`, label: `${m.wickets} WICKETS!`, sub: `${name}: ${m.wickets}/${m.runs}`, ...ACHIEVEMENT };
     case MOMENT_KIND.HAT_TRICK:
-      return { type: "hattrick", label: "HAT-TRICK!", sub: `${name} — 3 in a row!`, ...ACHIEVEMENT };
+      return { type: "hattrick", label: "HAT-TRICK!", sub: `${name} — three in three`, ...ACHIEVEMENT };
     case MOMENT_KIND.HAT_TRICK_BALL:
       // A cue to the scorer, nobody's honour: no badge.
       return { type: "hattrickball", label: "HAT-TRICK BALL", sub: `${name} — two in two` };

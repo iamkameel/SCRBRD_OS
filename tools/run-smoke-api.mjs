@@ -348,6 +348,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // wide through the pad; the board, the server's fold, match_live_score,
   // the scorecard, the career read and the public page say the same score.
   "browser-wicket-on-extra",
+  // Recognition R2: the pad's moments are the facts' (deriveFacts): every
+  // milestone a ball earns, a run out breaking a hat-trick, a wicket ball
+  // that earns two playing both; the six wickets stored as tapped.
+  "browser-pad-moments",
   // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
   // reloads with none, says "sign in to send", retries its claim, sends the
   // toss first, matches the server id for id, and clears its outbox at the end.
