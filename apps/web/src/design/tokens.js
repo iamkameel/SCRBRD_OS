@@ -811,6 +811,9 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 .live-dot{width:6px;height:6px;border-radius:50%;background:${T.brand.green};animation:livePulse 1.2s ease infinite}
 @keyframes livePulse{0%,100%{box-shadow:0 0 0 0 ${T.brand.green}66}50%{box-shadow:0 0 0 6px transparent}}
 .skill-bar{transition:width .6s cubic-bezier(.34,1.56,.64,1)}
+/* A history strip's hairline draws in 200ms; under reduced motion it is simply there (GA-I26a §4.4). */
+@keyframes hairDraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+.os-hair{stroke-dasharray:1;animation:hairDraw .2s ease-out both}
 .tab-active{position:relative}
 .tab-active::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:2px;background:${T.light.cobalt};border-radius:2px}
 
@@ -939,6 +942,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   .mc-moment,.mc-moment-big{animation:none!important}
   .os-panel-in{animation:none!important}
   .os-tick{transition:none!important}
+  .os-hair{animation:none!important}
 }
 /* The same block, by the ground display's own setting (SCRBRD-133 §4.3): a
    TV's browser has no system setting anybody can reach, so the setup's
@@ -949,6 +953,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 :root[data-reduce-motion] .os-board-flip,:root[data-reduce-motion] .os-insight-in,:root[data-reduce-motion] .mc-moment,
 :root[data-reduce-motion] .mc-moment-big,:root[data-reduce-motion] .os-panel-in{animation:none!important}
 :root[data-reduce-motion] .os-tick{transition:none!important}
+:root[data-reduce-motion] .os-hair{animation:none!important}
 
 /* ── ScrbrdOS responsive layer — mobile first ── */
 html{-webkit-text-size-adjust:100%}
