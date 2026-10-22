@@ -21985,7 +21985,7 @@ $v49$;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     -- Not 'Verify ...': this file's own pupils are called Verify, and since
     -- db/118 any word of a pupil's name keeps a post off the home page.
-    VALUES ('team', V_HIL, 'U15A', 'Section 78 nets', 'Nets at three on Thursday.', now()) RETURNING id INTO T;
+    VALUES ('team', V_HIL, 'U15A', 'Section 78 nets', 'Nets on Thursday.', now()) RETURNING id INTO T;
     PERFORM _assert(jsonb_array_length(_notices_91(T)) = 1, '§78 (team): the post did not write one notice');
     FOREACH k IN ARRAY ARRAY['aboy', 'aparent', 'coach', 'manager', 'assistant', 'director'] LOOP
       PERFORM _as((y->>k)::uuid);
