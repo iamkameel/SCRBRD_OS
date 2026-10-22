@@ -615,6 +615,17 @@ SELECT
         AND to_regprocedure('result_lapse(uuid,text)') IS NOT NULL
         AND to_regprocedure('match_verified(uuid)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A result is official when a second hand confirms it",
+  -- db/119: is_family_of() reads a live link, never on a pad, and is the
+  -- application's alone (not PUBLIC's). Only to_regprocedure(), so the row
+  -- reads PROBLEM rather than failing the query on a database without it.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_proc p
+                     WHERE p.oid = to_regprocedure('is_family_of(uuid)')
+                       AND p.prosrc LIKE '%app_pad_scoped()%'
+                       AND p.prosrc LIKE '%s.valid_until IS NULL OR s.valid_until > current_date%'
+                       AND p.prosrc LIKE '%a.valid_until IS NULL OR a.valid_until >  current_date%'
+                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
+                       AND NOT has_function_privilege('public', p.oid, 'EXECUTE'))
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "His family means a link live today",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

@@ -1850,6 +1850,35 @@ confirms them.
   nothing, because the pad can write it.
 <!-- ── end db/114 ── -->
 
+<!-- ── db/119: his family means a link live today ── -->
+#### His family means a link live today (db/119)
+
+`db/119_family_of_live.sql` re-creates `is_family_of()`, the family's way into
+a boy's passport consents and (with db/115) his scouting decision, and the
+family's way to open his passport. It used to ignore every date: a parent
+whose link had ended (he left school after eighteen, db/62; or the office
+ended it) still read and wrote his passport consents. Now the assignment and
+the link must both be live today, tested exactly as `app_can()` tests them,
+and a scoring pad's session is never anybody's family. The function's
+`search_path` is pinned, and `EXECUTE` is taken back from `PUBLIC` (and from
+`anon` and `authenticated` on Supabase) and given to `scrbrd_app`.
+
+**What it does to a live database.** One function replaced and its grants
+narrowed. No table, column, row or policy. It refuses to run if the function
+in place is not db/08's (or its own). db/111's refusal (a physio who is the
+boy's mother may not record his injury) does not move: it stands on its own
+wider test, which the file checks. A second paste changes nothing. **One
+behaviour changes on the paste:** a parent whose link to a boy has ended no
+longer sees his passport consents or opens his passport. A live family sees no
+difference.
+
+Paste `node tools/bundle-sql.mjs --apply 119` after 115 (it does not need
+db/115, but follows it), then the verify bundle (§98 is its proof). The
+summary row "His family means a link live today" should read OK. **Schema
+first**: the API built with it refuses to start without db/119
+(`expected-migrations.json`). No route changes.
+<!-- ── end db/119 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh
