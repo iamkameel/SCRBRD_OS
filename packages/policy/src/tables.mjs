@@ -638,6 +638,34 @@ export const TABLES = {
   },
   // ── end SCRBRD-114 phase 3c ──────────────────────────────────────────
 
+  // ── OFFICIAL_RESULT S1 (db/114): a result confirmed ────────────────
+  // Added after db/09 shipped: emitted into db/114 (TABLES_ADDED_SINCE_09).
+  match_result_confirmation: {
+    // A second person standing behind a finished match's result, pinned to
+    // the log's head and the result's hash (D1). Read as the result is —
+    // the fixture's readers at either side, and whoever can reach its
+    // competition — as match_result_decision is. db/114 takes INSERT, UPDATE
+    // and DELETE from the application and lets it SELECT only the plain
+    // columns (the revision, the time, the role word, the window, the lapse):
+    // who confirmed or disputed, and every note, are said through
+    // match_official_state() to whom D11 allows. Written by its doors alone.
+    read:  "fixture.read",
+    write: "result.confirm",
+    anchors: {
+      school:  "(match_school(match_result_confirmation.match_id))",
+      team:    "(match_team(match_result_confirmation.match_id))",
+      fixture: "match_id",
+    },
+    readAnchors: [
+      { school:  "(SELECT m.away_school_id FROM match m WHERE m.id = match_result_confirmation.match_id)",
+        team:    "(SELECT m.away_team_code FROM match m WHERE m.id = match_result_confirmation.match_id)",
+        fixture: "match_id" },
+    ],
+    visibleWhen: "competition_visible(match_competition_of(match_result_confirmation.match_id))",
+    masked: {},
+  },
+  // ── end OFFICIAL_RESULT S1 ────────────────────────────────────────────
+
   equipment: {
     // The school's kit: what it has, how many, in what state. Read by
     // whoever reads a side, kept by whoever manages one.

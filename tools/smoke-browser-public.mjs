@@ -327,6 +327,39 @@ try {
     await r.ctx.close();
   }
 
+  group("9. Official or provisional, and never \"under review\" (OFFICIAL_RESULT D11, Q3; db/114)");
+  {
+    const label = async (page) => {
+      await page.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
+      await page.waitForFunction(() => !!document.querySelector('[data-testid="public-official"] [data-state]'), null, { timeout: 8000 }).catch(() => {});
+      return { state: await page.locator('[data-testid="public-official"] [data-state]').getAttribute("data-state").catch(() => null),
+               words: (await tid(page, "public-official").innerText().catch(() => "")).replace(/\s+/g, " ").trim() };
+    };
+    const a = await visit(`/live/${pub2}`);
+    const before = await label(a.page);
+    ok("a finished fixture nobody has confirmed: Provisional", before.state === "provisional" && /^Provisional$/.test(before.words.trim()), JSON.stringify(before));
+    await a.ctx.close();
+    // Made official as the owner here: the door, its rules and its refusals are db/99 §91's and smoke-official's.
+    const [{ id: conf }] = await q(`insert into match_result_confirmation (match_id, head_seq, result_hash, confirmed_by, confirmed_as, window_closes_at)
+      select $1, match_head_seq($1), (select r.result_hash from match_result_compute($1) r), $2, 'home_school', now() + interval '7 days' returning id`, [pub2, SARAH]);
+    const b = await visit(`/live/${pub2}`);
+    const after = await label(b.page);
+    ok("confirmed: Official result, and when — never who", after.state === "official" && /^Official result · confirmed \d\d:\d\d/.test(after.words.trim())
+       && !/director|principal|school|Sarah|Mokoena/i.test(after.words), JSON.stringify(after));
+    const box = await b.page.locator('[data-testid="public-official"] [data-state]').evaluate((e) => parseFloat(getComputedStyle(e).fontSize)).catch(() => 0);
+    ok("...at 12px or more, in a polite live region", box >= 12 && (await tid(b.page, "public-official").getAttribute("aria-live")) === "polite", box);
+    await b.ctx.close();
+    await q(`update match_result_confirmation set disputed_by = $2, disputed_at = now(), disputed_as = 'away_school',
+             dispute_note = 'Verify: a dispute the public must never read' where id = $1`, [conf, SARAH]);
+    const c = await visit(`/live/${pub2}`);
+    const under = await label(c.page);
+    const all = await text(c.page);
+    ok("disputed: the public page reads Provisional, and no word of a review, a dispute or its note",
+       under.state === "provisional" && !/review|dispute|never read/i.test(all), JSON.stringify(under));
+    ok("no console errors (official)", a.errors.length + b.errors.length + c.errors.length === 0, [...a.errors, ...b.errors, ...c.errors].join(" | "));
+    await c.ctx.close();
+  }
+
   group("5. Not published is not found");
   {
     await as(SARAH, `select * from fixture_publish($1, 'home', false)`, [pub2]);

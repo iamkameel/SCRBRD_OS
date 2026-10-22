@@ -290,7 +290,13 @@ try {
      `${await said(hil.page, "nav-invites-badge")} | ${await tid(hil.page, "nav-competitions").getAttribute("aria-label")}`);
   ok("...the badge's own text is 12px at the least", (await tid(hil.page, "nav-invites-badge").evaluate((n) => parseFloat(getComputedStyle(n).fontSize))) >= 12);
   await tap(hil.page, "invitation-accept");
+  // The first answer must land before the second tap. With a fixed 350 ms
+  // between them, a slow answer left the first row on screen, the second tap
+  // pressed the same row's button again, and the 2XI stayed "invited" (seen
+  // on the shard-4 list: "2 accepted, 1 declined, 1 waiting").
+  await hil.page.waitForFunction(() => document.querySelectorAll('[data-testid="invitation"]').length === 1, null, { timeout: 15000 }).catch(() => {});
   await tap(hil.page, "invitation-accept");
+  await hil.page.waitForFunction(() => document.querySelectorAll('[data-testid="invitation"]').length === 0, null, { timeout: 15000 }).catch(() => {});
   ok("Hilton accepts both; the page says so", (await tid(hil.page, "invitation").count()) === 0 && /is now in Walk Schools League/.test(await said(hil.page, "invitations-status")), await said(hil.page, "invitations-status"));
   await settled(hil.page);
   ok("...and the badge goes with them", !(await has(hil.page, "nav-invites-badge")) && (await tid(hil.page, "nav-competitions").getAttribute("aria-label")) === null);

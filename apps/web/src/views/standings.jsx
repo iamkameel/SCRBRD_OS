@@ -77,6 +77,12 @@ export function Standings({ competition }) {
         <h3 style={S.h3}>The table</h3>
         {d && <p data-testid="standings-basis" data-basis={d.basis ?? ""} style={S.body}>{basisWords(d.basis)}</p>}
         {d && <p data-testid="standings-order" style={S.meta}>{orderWords(d.order)}</p>}
+        {/* OFFICIAL_RESULT D10 (db/114): the table counts every played match; it says how many are not yet official. */}
+        {d && d.provisionalResults > 0 && (
+          <p data-testid="standings-provisional" style={S.meta}>
+            Includes {d.provisionalResults} provisional {d.provisionalResults === 1 ? "result" : "results"}, not yet confirmed as official.
+          </p>
+        )}
       </div>
       <Said testid="standings-said">{said}</Said>
       {state.loading && <p style={S.body}>Loading the table…</p>}

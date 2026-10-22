@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, signedIn } from "../../lib/api.js";
 import { conditionsState, isMatchDay } from "../../lib/cockpit.js";
 import { readOnce, readQuery } from "../../lib/live.js";
-import { chooseSchoolFixtures, fixtureRows, groupByDay, headerOf, isQueueReader, liftExceptionRows, officeReader, officeRows } from "../../lib/queue.js";
+import { chooseSchoolFixtures, fixtureRows, groupByDay, headerOf, isQueueReader, liftExceptionRows, officeReader, officeRows, resultRows, resultsReader } from "../../lib/queue.js";
 import { isForbidden, isModuleOff } from "../../lib/readState.js";
 
 /**
@@ -135,6 +135,22 @@ export function useQueue({ matches, assignments, now }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needRequests, needClaims, registerKey, officeAgain]);
 
+  // ── OFFICIAL_RESULT (db/114): the results this reader may confirm or settle ──
+  const wantsResults = resultsReader(assignments);
+  const [resultsRead, setResultsRead] = useState(/** @type {{loaded: boolean, rows: any[] | null, error: string | null}} */ ({ loaded: false, rows: [], error: null }));
+  const [resultsAgain, setResultsAgain] = useState(0);
+  useEffect(() => {
+    if (!signedIn() || !wantsResults) return undefined;
+    let cancelled = false;
+    api("/api/results/to-confirm")
+      .then((d) => { if (!cancelled) setResultsRead({ loaded: true, rows: d?.rows ?? [], error: null }); })
+      .catch((e) => { if (!cancelled) setResultsRead({ loaded: true, rows: null, error: String(e?.code || "unreachable") }); });
+    return () => { cancelled = true; };
+  }, [wantsResults, resultsAgain]);
+  const results = useMemo(() => (!wantsResults ? null
+    : resultsRead.loaded ? { loading: false, ...resultRows({ rows: resultsRead.rows, now, error: resultsRead.error }) }
+      : { loading: true, rows: [], unread: [], open: 0, failed: 0 }), [wantsResults, resultsRead, now]);
+
   // ── O6, on a tap: logged by the database, so never on opening ──
   const [lifts, setLifts] = useState(/** @type {Record<string, {loading: boolean, rows: ReturnType<typeof liftExceptionRows> | null, error: string | null}>} */ ({}));
   /** @param {string} school */
@@ -162,9 +178,9 @@ export function useQueue({ matches, assignments, now }) {
   })), [offices, office, now]);
 
   const header = useMemo(() => {
-    const h = headerOf(groups, officeLists);
-    return { ...h, loading: h.loading + officeLists.filter((o) => o.loading).length };
-  }, [groups, officeLists]);
+    const h = headerOf(groups, results ? [...officeLists, results] : officeLists);
+    return { ...h, loading: h.loading + officeLists.filter((o) => o.loading).length + (results?.loading ? 1 : 0) };
+  }, [groups, officeLists, results]);
 
   return {
     /** Fixtures in the window, grouped by day then team. */
@@ -178,6 +194,9 @@ export function useQueue({ matches, assignments, now }) {
     header,
     retry,
     retryOffice: () => setOfficeAgain((n) => n + 1),
+    /** OFFICIAL_RESULT: the results to confirm or settle, or null for a reader who stands behind none. */
+    results,
+    retryResults: () => setResultsAgain((n) => n + 1),
     lifts,
     checkLifts,
     /** Is there anything this reader can be shown at all. */

@@ -181,6 +181,10 @@ try {
      && /confirmed points/.test(await words(tid(p, "standings-basis"))));
   ok("...ranked by points, then wins, then net run rate", /Ranked by points, then wins, then net run rate/.test(await words(tid(p, "standings-order"))));
   ok("Hilton's win puts it top on 4", (await table(p)) === "Hilton 1st XI=4@1 Westville 1st XI=0@2 Hilton 2nd XI=0@3", await table(p));
+  // OFFICIAL_RESULT D10 (db/114): the table counts the result, and says it is not yet official.
+  ok("...and says it includes a provisional result, not yet confirmed",
+     /^Includes 1 provisional result, not yet confirmed as official\.$/.test(await words(tid(p, "standings-provisional"))),
+     await words(tid(p, "standings-provisional")));
   const m1row = p.locator(`[data-testid="result-row"][data-match="${L.m1}"]`);
   ok("the result in words, the side by its name", (await words(m1row.locator('[data-testid="result-text"]'))) === "Hilton College 1XI won by 6 runs",
      await words(m1row));

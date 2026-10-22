@@ -15,9 +15,20 @@ import { Icon } from "./icons.jsx";
  *             says why where the reason is known (a role, a competition's
  *             organiser), instead of leaving controls silently disabled.
  *
- * There is no "official": a match's status has no such value and a result is
- * read from the log, never stored (db/69). Nothing is labelled official until
- * the system has a state to take it from.
+ * A finished match's result (OFFICIAL_RESULT D11, D12). The state comes from
+ * the server and nowhere else: GET /api/matches/:id/official, or the public
+ * result's `official`, both read off db/114's match_official_state() — a
+ * confirmation pinned to the log's head and the result's hash, so every
+ * correction makes the result provisional again by itself. A match's status
+ * never says it, and no screen decides it.
+ *   provisional  complete and not confirmed, or confirmed and since
+ *                corrected. Public. "Provisional"; `why` says when it was
+ *                corrected, or (staff) what it waits on.
+ *   review       a dispute stands. STAFF ONLY: a public page or a parent's
+ *                screen is never given this kind (Q3); the server already
+ *                reads it to them as provisional.
+ *   official     "Official result"; `why` is the time it was confirmed (the
+ *                public's), or the role word (staff): never a name.
  *
  * Text and an icon, never colour alone. 12px at the least. It is a label, not
  * a control, and draws nothing tappable. Tokens only (the style lock).
@@ -26,6 +37,9 @@ export const STATE_WORDS = Object.freeze({
   demo: "Demo",
   practice: "Practice match · kept on this phone",
   readonly: "Read only",
+  provisional: "Provisional",
+  review: "Under review",
+  official: "Official result",
 });
 
 /** The kinds, in the order the brief names them. */
@@ -35,11 +49,14 @@ const KIND = {
   demo: { icon: "sparkles", tone: () => T.semantic.warningText, weight: 700 },
   practice: { icon: "smartphone", tone: () => T.content.secondary, weight: 600 },
   readonly: { icon: "lock", tone: () => T.content.secondary, weight: 600 },
+  provisional: { icon: "hourglass", tone: () => T.content.secondary, weight: 600 },
+  review: { icon: "scale", tone: () => T.semantic.warningText, weight: 700 },
+  official: { icon: "shield-check", tone: () => T.content.primary, weight: 700 },
 };
 
 /**
  * @param {object} props
- * @param {"demo" | "practice" | "readonly"} props.kind
+ * @param {"demo" | "practice" | "readonly" | "provisional" | "review" | "official"} props.kind
  * @param {string | null} [props.why]   one short line, after the words: why it is this state, where known
  * @param {boolean} [props.compact]     12px rather than 13px (the floor is 12)
  * @param {import("react").ReactNode} [props.children]  anything that belongs on the same line (a practice match's "last saved")

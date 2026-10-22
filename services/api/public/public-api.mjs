@@ -556,6 +556,8 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       rank: r.rank, division: r.division ?? null, side: r.side, played: r.played, won: r.won, lost: r.lost, tied: r.tied,
       drawn: r.drawn, noResult: r.no_result, points: r.points == null ? null : Number(r.points),
       nrr: r.nrr == null ? null : Number(r.nrr), basis: r.basis,
+      // OFFICIAL_RESULT (db/114): the table's count of results not yet official, on every row.
+      provisionalResults: Number(r.provisional_results ?? 0),
     }));
   });
 
@@ -681,7 +683,8 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       try {
         const rows = await standings(cid, cache.hit(cid));
         if (!rows) { notFound(res, false, head); return true; }
-        send(res, 200, JSON.stringify({ competitionId: cid, rows }), { cache: TEAM_LEVEL }, head);
+        send(res, 200, JSON.stringify({ competitionId: cid, rows, provisionalResults: rows[0]?.provisionalResults ?? 0 }),
+          { cache: TEAM_LEVEL }, head);
       } catch (/** @type {any} */ err) {
         console.error(`GET ${path} (public) →`, safeErr(err));
         send(res, 503, JSON.stringify({ error: "unavailable" }), { cache: NO_STORE }, head);
@@ -849,6 +852,10 @@ export function publicResult(row, names) {
     // SCRBRD-114 phase 3b (db/71): each super over's number, state, and the
     // sides — who batted first, who won it. No figure, no boy.
     superOvers: (r.superOvers ?? []).map((p) => ({ n: p.n, state: p.state, first: p.first, winner: p.winner })),
+    // OFFICIAL_RESULT (db/114, D11, Q3): official or not, and when — never who,
+    // never a reason, never "under review" (a disputed result is not official).
+    official: row.official === true,
+    officialAt: row.official === true && row.official_at ? new Date(row.official_at).toISOString() : null,
   };
 }
 

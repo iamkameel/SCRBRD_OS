@@ -183,6 +183,9 @@ group("The screens use it, with no per-view line left beside it");
   for (const id of ["career", "batting", "bowling", "wagon"]) ok(`Profiles: ${id} has a line`, new RegExp(`testid="source-line-${id}"`).test(pr));
   ok("Profiles: the dismissal cards have one", /testid=\{`\$\{testId\}-source`\}/.test(pr));
   ok("Profiles: the floors are the package's", /MIN_BALLS_FACED/.test(pr) && /MIN_BALLS_BOWLED/.test(pr));
+  // GA-I24-I25 S1: the compare screen, a line on each of its three panels.
+  const cp = read("../src/views/compare.jsx");
+  for (const id of ["compare-batting", "compare-bowling", "compare-matchups"]) ok(`Compare: the ${id.replace("compare-", "")} panel has a line`, new RegExp(`testid="source-line-${id}"`).test(cp));
   const sh = read("../src/views/SeasonHistoryView.jsx");
   ok("The season archive's ladders have one", /testid=\{`source-line-season-ladder-\$\{comp\.id\}`\}/.test(sh));
   // The public pages must not pull it in: the only importers are the signed-in views.
@@ -195,7 +198,7 @@ group("The screens use it, with no per-view line left beside it");
     }
   };
   walk("../src/");
-  ok("only the signed-in views import it", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|demoworm)\.jsx|lib\/seasonBars\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
+  ok("only the signed-in views import it", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|demoworm|compare)\.jsx|lib\/seasonBars\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

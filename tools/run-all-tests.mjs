@@ -204,6 +204,10 @@ const SUITES = [
   // A coaching point's never-words, in JavaScript and in db/104's SQL, are
   // one list (GA-I27 §6; GA-I26a §2.2).
   ["coachingpoint", "apps/web/test/coachingPoint.test.mjs"],
+  // GA-I26a A3: the history strip, the target, "since the last look", the plan
+  // editor and the register: figures and dates and no verdict word, 44px and
+  // 12px, the register's four words and no `injured`, the plan naming nobody.
+  ["skills-history", "apps/web/test/skillsHistory.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
   // per-fixture count: "N to resolve" and "Could not read X", a failed read
@@ -233,10 +237,17 @@ const SUITES = [
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["decide-words", "apps/web/test/decide-words.test.mjs"],
-  // GA-I21: one label for demo / practice / read only (no "official": a result
-  // is read from the log, not stored), and the bowling-ceiling refusal in words.
+  // GA-I21: one label for demo / practice / read only — and, with the official
+  // result (db/114), provisional / under review / official, the state the
+  // server gives — and the bowling-ceiling refusal in words.
   ["state-label", "apps/web/test/state-label.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // OFFICIAL_RESULT (db/114): the public's words and staff's, every door's
+  // refusal in words, "Looks right" still this phone's, the To-resolve rows.
+  ["official", "apps/web/test/official.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["source-line", "apps/web/test/source-line.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I24-I25 S1: two players side by side — the floor at 29 and 30, the
+  // pinned columns, who may be picked, no absence, types only, nothing kept.
+  ["compare", "apps/web/test/compare.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I23: the Analytics performance tab's season bars are the career_by_season
   // read, per player per season, and no invented figure is drawn signed in.
   ["season-bars", "apps/web/test/season-bars.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
