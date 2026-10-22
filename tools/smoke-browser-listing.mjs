@@ -179,7 +179,7 @@ async function toSchool(page) {
 /** Match Centre → the fixture's card, opened. */
 async function toPanel(page, id) {
   if (!(await go(page, "matches"))) return false;
-  try { await tid(page, `match-card-${id}`).click({ timeout: 6000 }); } catch { return false; }
+  try { await tid(page, `match-card-${id}`).click({ timeout: 6000, position: { x: 14, y: 14 } }); } catch { return false; }
   await page.waitForTimeout(1200);
   return (await tid(page, "publish-panel").count()) === 1;
 }
@@ -294,7 +294,7 @@ try {
   await toSchool(coach.page);   // whether the tab is in a coach's Settings or not, no switch is drawn
   ok("Settings → School: no listing switch for a coach", await coach.page.locator('[data-testid^="listing-"]').count() === 0);
   const cm = await go(coach.page, "matches");
-  if (cm) { await tid(coach.page, `match-card-${today}`).click({ timeout: 5000 }).catch(() => {}); await coach.page.waitForTimeout(1000); }
+  if (cm) { await tid(coach.page, `match-card-${today}`).click({ timeout: 5000, position: { x: 14, y: 14 } }).catch(() => {}); await coach.page.waitForTimeout(1000); }
   ok("the fixture's panel, if drawn for a coach, carries no listing line", await tid(coach.page, "publish-listing").count() === 0 && await tid(coach.page, "publish-panel").count() === 0);
 
   // ── 4. The office adds a ground ─────────────────────────────────

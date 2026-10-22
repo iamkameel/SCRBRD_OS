@@ -1499,6 +1499,154 @@ API needs nothing new from it: a refusal comes back as `team_required`, which
 the request, enrolment and register routes already answer in words.
 <!-- ── end db/108 ── -->
 
+<!-- ── db/109: account lifecycle slice 3, a child's links ── -->
+#### A child's links, and the reason for an ending (account lifecycle slice 3, db/109)
+
+`db/109_guardian_link_ending.sql` is slice 3 of `docs/design/ACCOUNT_LIFECYCLE.md`
+(§4; D11–D14, Q8, Q10, Q13). Every ending of a guardian link is now recorded in
+a new table, `guardian_link_ending`, with a kind and, when a person ended it,
+the reason: the office revoking one (`custody`, `family_left`, `guardian_asked`,
+`office`, with a reason of ten characters or more), a guardian role ended
+(`role_ended`, the role's reason), or the boy leaving school (`majority` when
+his parents keep the link until his birthday, `left_school` when he left as an
+adult; no reason, no actor). The office and its auditors read it; the guardian
+never does, and the DSO reads only the kind and the date, inside an open
+concern. **Nobody reads it platform-wide** (Kameel, 15 October 2026): the
+platform administrator and the owner's key read a child's links and the ending
+reasons only inside a live support session at that school (db/22), as the role
+the session lent them, and the read is logged under the session. The same
+holds for ending one: a platform-wide caller is refused `not_permitted` by
+`guardian_link_revoke()` unless a support session is live at that school. The guardian is told in one notice: "Your link to a child at {school}
+ended on {date}. The school office can say why; the platform does not." Never
+the child's name, never the reason. What a revoked link takes with it is the
+existing rules', unchanged: his name off public pages until another guardian
+answers (db/47), the health consent through it (db/60), her lift seats (db/70).
+
+New routes: `POST /api/players/:id/guardians/:link/revoke { kind, reason }`, and
+the office's read `GET /api/read/child_links?playerId=…` (every link of a child,
+in every state; `user.role.assign` or `guardian.link.manage` at the school,
+never platform-wide outside a support session there; every read logged). The old `POST /api/players/:id/guardians/revoke
+{ guardianId, note }` still works, now through the new door (kind `office`
+unless one is sent; the note is the reason, so it needs ten characters).
+Squad → a pupil → Edit Profile gains a Family links panel.
+
+**What it does to a live database.** Adds the table, its indexes, its read
+policy and a RESTRICTIVE one (`guardian_link_ending_not_platform`), three functions (`guardian_link_revoke(uuid, text, text)`,
+`guardian_link_ending_notice_is_mine(uuid)`, the trigger function
+`role_assignment_ending_links()`), one trigger on `role_assignment_ending`, and
+a notification read policy (`notification_link_ended`). Re-emits db/62's
+`guardian_links_close_on_leaving()` and `guardian_links_reopen_at_school()` and
+db/57's `safeguarding_family()`, each md5-guarded against the body in place.
+**Takes EXECUTE on db/08's `guardian_link_revoke(uuid, uuid, text)`** from
+`PUBLIC`, the application and a managed host's API roles: the function stays
+(nothing is dropped), but only the owner can call it. No row is inserted,
+changed or deleted; links revoked or dated out before the paste have no ending
+row and read "no reason recorded". A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 109` (after 103, and after 104–108 if
+they have shipped; the bundle names the one it needs first), then the verify
+bundle (§86 is its proof; the summary row "A link's ending is the office's to
+read" should read OK). **Schema first**: the API built with it refuses to start
+without db/109 (`expected-migrations.json`). Between the paste and that API,
+the old API's revoke answers "not permitted" and changes nothing; everything
+else works.
+<!-- ── end db/109 ── -->
+
+<!-- ── db/110: the coach's draft plan, changed and thrown away ── -->
+#### A draft plan is its author's to change or delete (db/110)
+
+`db/110_plan_drafts.sql` puts Kameel's decision of 15 Oct 2026 into the
+database:
+- A plan that was never sent can be changed and deleted by its author.
+- A withdrawn plan can be changed and sent again, but never deleted.
+- A plan out with the side is not changed in place; it is withdrawn first.
+
+Withdrawing a plan makes it its author's draft again, so `news_post` gains
+`first_sent_at`, the date a plan was first sent. The trigger stamps it, it is
+never taken from the caller, and it is never cleared. Existing plans are
+dated from `published_at`, or, for a plan already withdrawn, from its first
+notice. The trigger `news_post_plan_drafts` refuses two things:
+- A change to a live plan's words or urgency (`news_post_plan_sent`).
+- A change to a plan by anybody but its author (`news_post_plan_author`),
+  whichever door the change comes through.
+
+`news_plan_discard(post)` is the only way a plan is deleted: by its author,
+and only for a plan never sent. The application still holds no `DELETE` on
+`news_post`. A withdrawn plan's first sending stays in its retracted notice
+(db/91), and sending it again writes a new notice, so both versions are kept.
+
+**What it does to a live database.**
+- Adds one column, with no table rewrite.
+- Dates the existing plans: it updates `first_sent_at` alone, which no notice
+  trigger reads.
+- Adds one trigger (`CREATE OR REPLACE TRIGGER`) and two `SECURITY DEFINER`
+  functions with a pinned search path. `news_plan_discard` is executable by
+  `scrbrd_app` only; the trigger's function by nobody.
+- Changes no policy or grant, and writes or changes no notice. Nothing is
+  dropped. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 110` after 103 (and after 104–109
+if they ship with it), then the verify bundle (§87 is its proof). The summary
+row "A draft plan is its author's to change or throw away" should read OK.
+
+**Schema first.** An API built with it refuses to start without db/110
+(`expected-migrations.json`). It serves `POST /api/news/:id/edit` and
+`POST /api/news/:id/delete`, and its `news` read returns `wasSent` and
+`urgency`. The coach's tab offers the following on his unsent plan:
+- **Change it** on any unsent plan.
+- **Delete**, asked once, on a plan never sent.
+- **Send again** on a withdrawn plan.
+<!-- ── end db/110 ── -->
+
+<!-- ── db/111: the physio's injury record, its reviews and her worklist ── -->
+#### The physio records and reviews an injury (db/111)
+
+`db/111_injury_review.sql` is GA-I19 slice A, with slice C's SG-12 injury half
+(`docs/design/GA-I19_medical_review.md`, decided 8 Oct; Q0 and Q2 confirmed
+15 Oct). Until now a physio could read every injury at her school and write
+none of them. Now she records an injury through `injury_record()` and reviews
+it through `injury_review_record()`. Each review is a dated `injury_review`
+row with the state it left the injury in (phase, restriction, return date,
+next review, note). A trigger applies it to the `injury` row, and
+`notify_injury()` sends its notices exactly as before. A trigger also derives
+`player.fitness`. `injury_worklist()` is her list of reviews due, and nobody
+without `medical.write` gets a row of it. A severe injury, or one where
+emergency services were called, sends the school's DSOs one safeguarding
+notice that names no child and no diagnosis, once per injury. The legal basis
+is the guardian-link consent (the information officer, Q2), so nothing here
+asks for health-monitoring consent.
+
+**What it does to a live database.** `injury` gains five nullable or
+defaulted columns (`recorded_by`, `emergency_services`, `next_review_on`,
+`recurs_injury_id`, `dso_notified_at`) and a unique key on
+`(id, player_id, school_id)`. No stored row is rewritten. `injury_masked` is
+rebuilt with db/09's five masks and four new ones. `injury_review` is
+created behind RLS, with the generated policies, a masked view, a RESTRICTIVE
+cut that hides it from support sessions, and the pad guard. The application
+**loses INSERT, UPDATE, DELETE and TRUNCATE on `injury`** and on
+`injury_review`, so the two functions are the only writers. Nothing in the API
+wrote `injury` before; the seed and the walks write it as the owner. The new
+functions are `SECURITY DEFINER` with a pinned path, except the worklist,
+which runs as the caller. The application may call the two doors, the
+worklist and the family check, and `PUBLIC`, `anon` and `authenticated` may
+call none of them. No capability is added. Existing rows that were already
+severe send no notice. The file checks itself and refuses to commit if
+anything above is not so. Running it a second time changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 111` after 103 (it needs db/57's
+safeguarding notice policies, db/60's `still_at_school()` and db/89's
+notification contract, all long shipped), then the verify bundle (§88 is its
+proof). The summary row "The physio records and reviews an injury" should
+read OK. **Schema first**: an API built with it refuses to start without
+db/111 (`expected-migrations.json`). Its new routes are `POST /api/injuries`
+and `POST /api/injuries/:id/reviews`, and its new reads are `injury_reviews`
+and `injury_worklist`, all behind the Injuries module. The `injuries` read
+also returns the new columns, masked by tier, and `left_on` / `left_school`
+(the day the boy left the injury's school, from `injury_left_on()`, which
+runs as the caller); `injury_reviews` returns `is_recording` (the review
+`injury_record()` wrote at the recording).
+<!-- ── end db/111 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

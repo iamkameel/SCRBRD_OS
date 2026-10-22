@@ -1135,10 +1135,10 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
         <div style={{marginBottom:"12px"}}>
           <input value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Search bowlers"
             placeholder="Search bowler…"
-            style={{width:"100%",minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
+            style={{width:"100%",minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.textMuted}`,borderRadius:D.md,
               color:D.textPrimary,fontSize:"14px",fontFamily:D.body,padding:"9px 14px"}}
             onFocus={e=>e.target.style.borderColor=D.amber+"66"}
-            onBlur={e=>e.target.style.borderColor=D.border}/>
+            onBlur={e=>e.target.style.borderColor=D.textMuted}/>
         </div>
         {/* The bowlers, likely first (SCRBRD-100 item 2) */}
         <Lbl sx={{marginBottom:"7px",color:D.textSecondary,fontSize:"12px"}}>

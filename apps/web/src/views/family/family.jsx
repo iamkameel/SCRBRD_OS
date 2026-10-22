@@ -101,7 +101,7 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
       <ChildSwitcher kids={kids} chosen={child} onChoose={(c) => { setOpen(null); choose(c); }}/>
       {/* Keyed on the child: a switch starts every card afresh, so nothing
           read for one child is ever drawn under the other's name. */}
-      <div key={child.id} data-testid="family-home-body" data-child={child.id} style={{ display: "grid", gap: T.space.md }}>
+      <div key={child.id} data-testid="family-home-body" data-child={child.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.md }}>
         <header style={{ display: "grid", gap: "2px" }}>
           <Title testid="family-child">{child.knownAs || child.name}</Title>
           <Line quiet testid="family-child-school">{schoolLine(child)}</Line>

@@ -128,8 +128,25 @@ export function cockpitApi() {
       const id = `cc000000-0000-0000-0000-0000000000${String(10 + news.length).padStart(2, "0")}`;
       news.unshift({ id, scope: "team", school_id: HIL, team_code: b.teamCode, competition_id: null, kind: b.kind, fixtureId: b.fixtureId, noticeId: b.publish ? `${id}-n` : null,
         title: b.title, body: b.body, published_at: b.publish ? new Date().toISOString() : null, created_at: new Date().toISOString(), school_name: "Hilton College", competition_name: null,
-        author_name: "C Hendricks", mine: true, may_approve: false, may_take_down: false, public_state: null, public_names: null });
+        author_name: "C Hendricks", mine: true, may_approve: false, may_take_down: false, public_state: null, public_names: null,
+        urgency: b.urgency ?? "low", wasSent: !!b.publish });
       return { status: 200, body: { id, scope: "team", published: !!b.publish, urgency: b.urgency, kind: b.kind, fixtureId: b.fixtureId } };
+    }
+    // A draft sent, changed or thrown away (db/110): as the server answers, never sent or not.
+    const act = /^\/api\/news\/([^/]+)\/(publish|edit|delete)$/.exec(pathname);
+    if (method === "POST" && act) {
+      const b = JSON.parse(reqBody ?? "{}");
+      const i = news.findIndex((x) => x.id === act[1] && x.published_at === null);
+      if (i < 0) return { status: 404, body: { error: "no_such_draft" } };
+      const n = news[i];
+      if (act[2] === "delete") {
+        if (n.wasSent) return { status: 409, body: { error: "plan_kept", message: "A plan that was sent is kept, so it cannot be deleted. You can change it and send it again." } };
+        news.splice(i, 1);
+        return { status: 200, body: { id: n.id, deleted: true } };
+      }
+      if (act[2] === "edit") { n.body = String(b.body ?? n.body).trim(); n.urgency = b.urgency ?? n.urgency; }
+      if (act[2] === "publish" || b.send === true) { n.published_at = new Date().toISOString(); n.noticeId = `${n.id}-n`; n.wasSent = true; }
+      return { status: 200, body: { id: n.id, published: n.published_at !== null, wasSent: n.wasSent } };
     }
     const withdraw = /^\/api\/news\/([^/]+)\/withdraw$/.exec(pathname);
     if (method === "POST" && withdraw) {

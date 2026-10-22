@@ -122,6 +122,8 @@ The trail is behind the same two gates as the card: the drawer's entry rule (136
 | **parent** (`guardian`) | **no** | none | none | her child's coaching point by any route here; another boy's anything |
 | **scorer, office, official, media, spectator** | no (D3; GA-I09) | none | none | — |
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q4):** the director of sport does not hold `transport.lift.oversee` (GA-I09; `roles.mjs:176-204`), and that stands. His row above loses "S4b through `transport.lift.oversee` (D10)": he reads S4a's head count, as the coach does, and no lift name or lift exception reaches his drawer.
+
 ### 3.3 What never surfaces, restated for a diff
 
 1. **No figure the rule did not read.** The trail is a view of the rule's inputs; the static test pins it (§7).

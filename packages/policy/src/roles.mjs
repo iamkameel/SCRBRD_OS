@@ -163,7 +163,10 @@ const BUNDLES = {
     "user.role.assign",
     ...READ_TEAM, "school.read", "user.read", "analytics.read",
     "competition.read", "discipline.read", "facility.read", "invoice.read",
-    "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
+    // Injuries at the STATUS tier only: that a boy is out and until when, not
+    // what or how bad (GA-I19 D3; Kameel, 2026-10-15). db/111 withdraws the
+    // nature tier the principal held from db/01.
+    "player.performance.read", "medical.status.read", "audit.read",
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
     // A child who must never appear on a public page (db/47, C5).

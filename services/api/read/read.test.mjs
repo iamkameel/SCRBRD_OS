@@ -338,6 +338,7 @@ group("A. The plan's byline and the fixture's plan (db/103, SCRBRD-138 phase B),
   const params = /** @type {(q: Record<string, string>) => unknown[]} */ (nw.params);
   ok("a post's author is the account's name where the reader may read it, and a plan's otherwise plan_author_name()",
      t.includes("coalesce(u.name, case when n.kind = 'plan' then plan_author_name(n.id) end) as author_name"));
+  ok("a draft plan says whether it was ever sent, and how loud it is to go (db/110)", t.includes(`n.urgency, (n.first_sent_at is not null) as "wasSent"`));
   ok("...the byline is asked of a plan and of nothing else", (t.match(/plan_author_name\(/g) ?? []).length === 1);
   ok("...and nothing else of the author is returned", !/u\.(email|phone|role|school_id|player_id|child_ids|teams)\b/.test(t));
   ok("fixtureId narrows to one fixture's posts and is otherwise no filter", t.includes("where ($1::uuid is null or n.fixture_id = $1::uuid)"));

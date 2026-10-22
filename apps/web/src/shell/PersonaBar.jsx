@@ -25,7 +25,7 @@ function PersonaBar({ active, onNav, onSignOut, userName }) {
   });
   return (
     <header data-testid="persona-bar" className="os-glass"
-      style={{ minHeight: "56px", borderRadius: 0, borderLeft: "none", borderRight: "none", borderTop: "none", display: "flex",
+      style={{ minHeight: "56px", borderRadius: 0, borderLeft: "none", borderRight: "none", borderTop: "none", display: "flex", flexWrap: "wrap",
         alignItems: "center", gap: T.space.sm, padding: `${T.space.xs} ${T.space.lg}`, flexShrink: 0, position: "sticky", top: 0, zIndex: 100 }}>
       <span aria-hidden="true" style={{ fontFamily: T.type.head, fontSize: "18px", fontWeight: 700, letterSpacing: "0.04em", color: T.content.primary }}>SCRBRD</span>
       <span style={{ flex: 1 }}/>

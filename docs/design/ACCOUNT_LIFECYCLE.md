@@ -243,6 +243,8 @@ alone. That is the same doubling db/77 has, and it is cheap.
 | **the public pages** | nothing; no account state reaches them |
 | **the push fan-out** | a disabled recipient is simply not told (db/85, built) |
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2):** the disable reason is read under `user.invite` at the school only; `audit.read` no longer opens it. The rows for it in §7 and §8, and D4 in §9, are read the same way.
+
 ### 2.6 Reads and routes
 
 **D5. A new read, `accounts`, includes inactive rows; `users` keeps `where active`.** `users` is read by five
@@ -519,6 +521,8 @@ change is exactly what a DSO may need to know). A pad credential reads none of i
 (`assignment_subject_read`, `a.person_id = app_user_id()`), and GA-I20 N4's `my_links` will read it; a reason
 on the row leaks on the first read.
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2):** `audit.read` opens the access log and nothing else. The revocation reason is read under `guardian.link.manage` at the school only; the `audit.read` in the paragraph above does not reach it.
+
 ### 4.4 The office's read of a child's links
 
 **D12. `child_links?playerId`**: every `assignment_subject` row for the child, in every state, newest first:
@@ -794,6 +798,8 @@ it. `platformadmin` holds none of them at a school (no `user.invite`, no `player
 
 Every one keeps the uuid of the person acted on. Nothing is deleted that an audit row points at: the
 tombstone is how an erased person stays referable.
+
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2):** of the rows above, `audit.read` no longer reads a reason. The `link revoked / ended` row's reason is read under `guardian.link.manage` only, and the `disable / enable` row's under `user.invite` only; `audit.read` keeps the access log. The other rows that name `audit.read` are not changed by this line; Opus checks them against the Q2 rule.
 
 ---
 

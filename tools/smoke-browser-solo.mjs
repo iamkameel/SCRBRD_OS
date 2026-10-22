@@ -14,6 +14,12 @@
  *      while the parents are being read it says so. The director of sport,
  *      who is on the same panel and does not hold the capability, is not
  *      offered it, and a coach is not offered Edit Profile at all.
+ *   1b. FAMILY LINKS (account lifecycle slice 3, db/109). On the same panel the
+ *      registrar reads every link with the standing on top, opens Revoke…, is
+ *      told what goes with the link before the tap, cannot send without a kind
+ *      and a ten-character reason, and ends A Walk Parent's link; the rows
+ *      carry the kind and the reason. The director reads the panel and is not
+ *      offered Revoke; a coach is offered neither.
  *   2. BOOKING A VEHICLE AND A TRIP. Logistics → transport. A transport
  *      coordinator and the registrar add a vehicle (a registration that is
  *      already there is updated, not doubled) and book a trip to a fixture the
@@ -311,6 +317,41 @@ try {
   await tid(page, "guardian-links-reread").click();
   ok("...and reading again brings the parents back", await wait(page, "guardian-links-pick"));
 
+  // Family links (account lifecycle slice 3, db/109): every link, its
+  // standing, and ending one with a kind and a reason, D14 said first.
+  group("1b. Squad → Edit Profile → Family links: the registrar reads his links and ends one");
+  ok("Family links is on the panel", await wait(page, "family-links-standing"));
+  ok("...with his standing on top: active, two verified links",
+     /^Active · 2 verified links/.test(await inner(page, "family-links-standing")), await inner(page, "family-links-standing"));
+  ok("...and a card for each link, A Walk Parent's among them",
+     await tid(page, "family-link").count() >= 2 && /A Walk Parent/.test(await inner(page, "family-links")));
+  ok("...and never his date of birth", !/born|birth date|date of birth/i.test(await inner(page, "family-links")));
+  await keepsFloors("Family links", page, "family-links");
+  const walkCard = page.locator('[data-testid="family-link"]', { hasText: "A Walk Parent" });
+  await walkCard.getByTestId("family-link-revoke").click();
+  ok("Revoke… opens the sheet, D14 said before the tap",
+     /name comes off public pages until another guardian answers/.test(await inner(page, "family-link-consequences"))
+     && /emergency contacts stay/.test(await inner(page, "family-link-consequences")));
+  ok("...and nothing can be sent before a kind and a reason", await tid(page, "family-link-yes").isDisabled());
+  await keepsFloors("The revoke sheet", page, "family-link-sheet");
+  await tid(page, "family-link-kind").selectOption("guardian_asked");
+  await tid(page, "family-link-reason-input").fill("too short");
+  ok("...nor with a reason under ten characters", await tid(page, "family-link-yes").isDisabled());
+  await tid(page, "family-link-reason-input").fill("The parent asked in writing to be removed");
+  await tid(page, "family-link-yes").click();
+  ok("revoking says so, by name, only once the server answered",
+     await wait(page, "family-links-ok") && /Revoked\. A Walk Parent's link to T Bekker has ended/.test(await inner(page, "family-links-ok")),
+     await inner(page, "family-links"));
+  const ended = (await q(`select s.verification_state as v, e.kind, e.reason from assignment_subject s
+                            join role_assignment a on a.id = s.assignment_id
+                            left join guardian_link_ending e on e.link_id = s.id
+                           where a.person_id = $1 and s.player_id = $2`, [PARENT, BEKKER]))[0];
+  ok("...and the rows say so: revoked, with the kind and the reason",
+     ended?.v === "revoked" && ended?.kind === "guardian_asked" && ended?.reason === "The parent asked in writing to be removed", JSON.stringify(ended));
+  ok("...and the card now reads ended, the reason shown to the office",
+     await page.locator('[data-testid="family-link"][data-state="ended"]', { hasText: "A Walk Parent" }).count() === 1
+     && /The parent asked in writing/.test(await inner(page, "family-links")));
+
   // Who is offered it.
   const dirc = await open(); all.push(dirc);
   ok("the director of sport signs in", await signIn(dirc.page, "sarah@example.invalid"));
@@ -323,12 +364,14 @@ try {
   await afterReads(dirc.page, 1500);
   ok("the director is on Edit Profile", await tid(dirc.page, "edit-profile").count() === 1);
   ok("...and is not offered Guardian links (she does not hold the capability)", await tid(dirc.page, "guardian-links").count() === 0 && !/Guardian links/.test(await inner(dirc.page, "edit-profile")));
+  ok("...reads Family links (she holds user.role.assign: D12), the reason among it", await wait(dirc.page, "family-links-standing") && /The parent asked in writing/.test(await inner(dirc.page, "family-links")));
+  ok("...and is not offered Revoke (no guardian.link.manage)", await tid(dirc.page, "family-link-revoke").count() === 0);
   const coach = await open(); all.push(coach);
   ok("a coach signs in", await signIn(coach.page, "coach@example.invalid"));
   ok("Squad opens (coach)", await go(coach.page, "squad"));
   await tid(coach.page, `squad-card-${BEKKER}`).click({ timeout: 6000 }).catch(() => {});
   await coach.page.waitForTimeout(600);
-  ok("the coach is offered neither Edit Profile nor Guardian links", await tid(coach.page, "player-edit-profile").count() === 0 && await tid(coach.page, "guardian-links").count() === 0);
+  ok("the coach is offered neither Edit Profile nor Guardian links nor Family links", await tid(coach.page, "player-edit-profile").count() === 0 && await tid(coach.page, "guardian-links").count() === 0 && await tid(coach.page, "family-links").count() === 0);
   // The server says the same to a forced post: a coach may not verify or record.
   const coachToken = await login("coach@example.invalid", "device-solo-coach");
   const forced = await call(`/api/players/${BEKKER}/guardians/consent`, { method: "POST", token: coachToken, body: { guardianId: PARENT, consentVersion: "popia-2026-01" } });

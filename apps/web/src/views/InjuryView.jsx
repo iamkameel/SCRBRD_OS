@@ -72,26 +72,26 @@ function InjuryView({ role }) {
               }}>
                 <div style={{display:"flex",gap:"12px",alignItems:"flex-start"}}>
                   <Avatar name={player?.name||"?"} size={40} color={sc}/>
-                  <div style={{flex:1}}>
-                    <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:"4px 8px",marginBottom:"4px"}}>
                       <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{player?.name}</span>
                       {severityWord(inj.severity)&&<Badge color={sc}>{severityWord(inj.severity)}</Badge>}
                       <Badge color={inj.restricted?D.rose:D.emerald}>{inj.restricted?"Restricted":"Cleared"}</Badge>
                     </div>
-                    <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:inj.type?sc:D.textMuted,marginBottom:"4px",fontStyle:inj.type?"normal":"italic"}}>{withheld(inj.type,"Details withheld")}</div>
-                    <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}>
+                    <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:inj.type?sc:D.textMuted,marginBottom:"4px",overflowWrap:"anywhere",fontStyle:inj.type?"normal":"italic"}}>{withheld(inj.type,"Details withheld")}</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"8px"}}>
                       Phase: <span style={{color:D.textSecondary,fontWeight:500}}>{withheld(phaseWord(inj.phase),"—")}</span> · Physio: {inj.physio}
                     </div>
                     <div style={{marginBottom:"4px"}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                        <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Recovery progress</span>
-                        <span style={{fontFamily:D.mono,fontSize:"10px",color:sc,fontWeight:600}}>{pct}%</span>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>Recovery progress</span>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",color:sc,fontWeight:600}}>{pct}%</span>
                       </div>
                       <ProgressBar pct={pct} color={sc} height={6}/>
                     </div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}>
-                      <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>Injured: {inj.dateInj}</span>
-                      <span style={{fontFamily:D.body,fontSize:"10px",color:daysLeft<=3?D.emerald:D.textMuted}}>RTW: {inj.rtw} {daysLeft===0?"TODAY":daysLeft<=3?`(${daysLeft}d)`:""}</span>
+                    <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:"0 8px"}}>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Injured: {inj.dateInj}</span>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:daysLeft<=3?D.emerald:D.textMuted}}>RTW: {inj.rtw} {daysLeft===0?"TODAY":daysLeft<=3?`(${daysLeft}d)`:""}</span>
                     </div>
                   </div>
                 </div>
@@ -121,22 +121,22 @@ function InjuryView({ role }) {
 
               {[["Phase",withheld(phaseWord(sel.phase),"—")],["Physio",withheld(sel.physio,"—")],["Date Injured",sel.dateInj],["Est. RTW",sel.rtw],["Days Remaining",`${daysLeft} days`]].map(([l,v])=>(
                 <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${D.border}`}}>
-                  <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:l==="Days Remaining"&&daysLeft<=3?D.emerald:D.textPrimary,fontWeight:500}}>{v}</span>
+                  <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:l==="Days Remaining"&&daysLeft<=3?D.emerald:D.textPrimary,fontWeight:500}}>{v}</span>
                 </div>
               ))}
 
               <div style={{marginTop:"12px",marginBottom:"12px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-                  <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em"}}>RECOVERY</span>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:sc}}>{pct}%</span>
+                  <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em"}}>RECOVERY</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:sc}}>{pct}%</span>
                 </div>
                 <ProgressBar pct={pct} color={sc} height={8}/>
               </div>
 
               <div style={{background:D.surf2,borderRadius:D.md,padding:"10px 12px",marginBottom:"12px"}}>
-                <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>CLINICAL NOTES</div>
-                <p style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>{sel.notes}</p>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>CLINICAL NOTES</div>
+                <p style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>{sel.notes}</p>
               </div>
 
             </Card>

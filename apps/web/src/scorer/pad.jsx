@@ -420,8 +420,9 @@ function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null 
             <Icon name="undo-2"/>
             <span style={{ display: "grid", minWidth: 0, textAlign: "left", lineHeight: 1.15 }}>
               <span>Undo</span>
-              <span data-testid="key-undo-what" style={{ fontSize: "14px", color: T.content.secondary, whiteSpace: "nowrap",
-                overflow: "hidden", textOverflow: "ellipsis" }}>
+              {/* Two lines are always reserved: the words wrap rather than end in an ellipsis, and a key that grows or shrinks
+                  from one ball to the next moves under the thumb (browser-padfeel) (I32). */}
+              <span data-testid="key-undo-what" style={{ fontSize: "12px", color: T.content.secondary, overflowWrap: "anywhere", minHeight: "2.3em" }}>
                 {midBall ? "this ball" : undoWhat ?? "nothing"}
               </span>
             </span>

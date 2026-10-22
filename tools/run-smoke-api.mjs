@@ -151,6 +151,10 @@ const WALKS = [
   // The notification system's missing half: publishing a notice, and getting
   // it onto a phone without re-deciding who may have it.
   "push",
+  // The coach's unsent plan (db/110, Kameel 15 Oct): a draft changed and
+  // deleted by its author alone; a plan out with the side kept and not
+  // changed; a withdrawn one changed and sent again, never deleted.
+  "plan-drafts",
   // The rewards algorithm's coefficients, and the fact that nobody can read
   // them — including the people whose boys the figure is about.
   "rewards",
@@ -171,6 +175,9 @@ const WALKS = [
   "workload",
   // SCRBRD-110 phase 1 (db/60): the nets band and the health consent, over HTTP.
   "load",
+  // GA-I19 slice A (db/111): the physio records and reviews an injury, her
+  // worklist, each reader's tier, the refusals in words, and SG-12.
+  "injury",
   // SCRBRD-110 phase 0 (db/62): the guardian link past eighteen — open while
   // he is at school, ended when he leaves — and option C for the public name.
   "link18",
@@ -193,6 +200,11 @@ const WALKS = [
   // enabled, he signs in again; the principal and the DSO refused; nobody
   // acts on their own account.
   "accounts",
+  // A child's links, and the reason for an ending (account lifecycle slice 3,
+  // db/109): the office's child_links read and who reads nothing; the revoke
+  // route's refusals; a revocation with its kind and reason, the parent's
+  // no-name notice, his name off public pages; the last verified link kept.
+  "family-links",
   // The audit log, read (SCRBRD-132 B2, db/79): under audit.read, one school
   // at a time, a child in initials, never a safeguarding row or a reason,
   // and every read of it on the record. (smoke-audit is access_log's own.)
@@ -467,6 +479,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // are refused before anything is sent; a coach of another team and a parent
   // are offered nothing and a forced post is a 403; 12px, 44px, 390, Daylight.
   "browser-pick-side",
+  // The narrow-screen, keyboard and daylight pass (gap analysis I32): the parent, the pupil, the scorer and the coach
+  // on the real stack at 320, 375 and 414 in Daylight, 320 under lights and 200% zoom, every screen held to
+  // tools/a11y-narrow.mjs's lists (nothing sideways, clipped or overlapped; 12px; 44px; contrast), the live fixture's
+  // tabs, and Tab from the top of each Home. The mock-driven screens are smoke-a11y's.
+  "browser-narrow",
   // The live scorer scores the side the coach named: a fixture with a named
   // side opens the pad with exactly those eleven in that batting order and
   // says so; the twelfth and a withdrawn boy are not offered; a fixture with

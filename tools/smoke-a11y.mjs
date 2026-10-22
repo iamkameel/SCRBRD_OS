@@ -49,6 +49,7 @@ import { signupApi } from "./a11y-signup-mock.mjs";
 import { importApi } from "./a11y-import-mock.mjs";
 import { listingApi, MATCH as LISTING_MATCH } from "./a11y-listing-mock.mjs";
 import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
+import { narrowAudit } from "./a11y-narrow.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 
@@ -83,9 +84,9 @@ const TYPE_FLOOR_CEILING = {
   // The public home page (home.html): 0 since the cinematic page (2026-10-07).
   landing:     0,
   login:       13,
-  dashboard:   17,
-  matchcentre: 17,
-  matchview:   17,
+  dashboard:   10,
+  matchcentre: 10,
+  matchview:   10,
   pad:         0,
   // Step 3b: the pad again, after an over is recorded, so the chips on the
   // board are on screen and counted. 0, like the pad.
@@ -116,8 +117,8 @@ const TYPE_FLOOR_CEILING = {
   // screens these two primitives share inherits it, and Career — the one
   // screen this walk had already found sub-floor instances on — drops
   // straight to the 18-item shell, matching Analytics.
-  analytics:   17,
-  career:      17,
+  analytics:   10,
+  career:      10,
   // SCRBRD-138 phase A (2026-10-02): the captain's view, on a phone, against
   // the walk's own API (tools/a11y-captain-mock.mjs). The card on a pupil's
   // Home, the section on his fixture, and the Captain tab fielding, batting
@@ -207,11 +208,11 @@ const TAP_FLOOR_CEILING = {
   // is counted is the shell's, not the view's: the skip link (119x34, on
   // every screen) and, on the fixture, the pupil fixture header's own "map"
   // link (29x17, STEP4 S3, found here and left for its own change).
-  captainhome:    1,
-  captainfixture: 2,
-  captainfield:   1,
-  captainbat:     1,
-  captainafter:   1,
+  captainhome:    0,
+  captainfixture: 0,
+  captainfield:   0,
+  captainbat:     0,
+  captainafter:   0,
   planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
   // SCRBRD-136/137: the cockpit's card, tab and drawer: every control 44px or more.
   cockpithome:   0,
@@ -396,6 +397,18 @@ const staleOn = (page, stale) => page.evaluate((stale) => {
 }, stale);
 
 let pass = 0, fail = 0;
+/**
+ * I32 (the narrow-screen pass): while this is set, the walks that drive a phone run AGAIN at this width (320, the
+ * narrowest phone), and `measure()` records no ratchet but holds the screen to narrowAudit's lists, every one of
+ * which must be empty: nothing sideways, off the screen, clipped or overlapped; nothing under 12px or 44px; no text,
+ * field edge or icon under its contrast. A11Y_ONLY=cockpit,pad,... runs just those walks, A11Y_NARROW_DEBUG=1 prints
+ * every list, and A11Y_SHOTS=<dir> keeps a picture of each screen.
+ * @type {{ width: number } | null}
+ */
+let NARROW = null;
+const vw = (w = 390) => NARROW?.width ?? w;
+const ONLY = process.env.A11Y_ONLY ? new Set(process.env.A11Y_ONLY.split(",")) : null;
+const want = (k) => !ONLY || ONLY.has(k);
 const ok = (n, c, detail) => { if (c) pass++; else { fail++; console.log("  ✗", n, detail ? `— ${detail}` : ""); } };
 const group = (t) => console.log("\n" + t);
 const rgbOf = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
@@ -579,8 +592,26 @@ const smallTargets = (page, root = null) => page.evaluate((root) => {
   return out;
 }, root);
 
+/** What each of narrowAudit's lists means, for the failure line. */
+const NARROW_WORDS = {
+  sideways: "no sideways scroll", offscreen: "nothing off the screen", clipped: "no text cut off", overlap: "nothing drawn over anything else",
+  small: "no text under 12px", tiny: "nothing tapped under 44px", weak: "every text, field edge and icon clears its contrast",
+};
+/** One screen at a narrow width: every list of narrowAudit must be empty. */
+const narrowCheck = async (page, theme, screen, root = null) => {
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const r = await narrowAudit(page, { root });
+  ok(`${T_} ${screen} @${NARROW.width}: the region is on the page`, r.found);
+  for (const k of /** @type {const} */ (Object.keys(NARROW_WORDS))) {
+    ok(`${T_} ${screen} @${NARROW.width}: ${NARROW_WORDS[k]}`, r[k].length === 0, `${r[k].length}: ${r[k].slice(0, 4).join(" · ")}`);
+    if (process.env.A11Y_NARROW_DEBUG && r[k].length) for (const x of r[k].slice(0, 14)) console.log(`   [${screen}@${NARROW.width}] ${k}: ${x}`);
+  }
+  if (process.env.A11Y_SHOTS) await page.screenshot({ path: join(process.env.A11Y_SHOTS, `${theme}-${screen}-${NARROW.width}.png`) }).catch(() => {});
+};
+
 /** Record the floor, contrast and emoji counts for one screen, and the tap floor where it is ratcheted. */
 const measure = async (page, theme, screen, root = null) => {
+  if (NARROW) return narrowCheck(page, theme, screen, root);
   const items = await survey(page, root);
   const small = items.filter((i) => i.size < 12);
   const weak = items.filter((i) => i.ratio != null && i.ratio < i.need);
@@ -635,7 +666,7 @@ const unnamedControlsOf = (page) => page.evaluate(() => {
 async function captainWalk(theme) {
   const scheme = theme === "daylight" ? "light" : "dark";
   const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
-  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: vw(), height: 844 }, isMobile: true, hasTouch: true });
   await offline(ctx);
   const handle = captainApi();
   await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
@@ -731,7 +762,7 @@ async function captainWalk(theme) {
 async function cockpitWalk(theme) {
   const scheme = theme === "daylight" ? "light" : "dark";
   const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
-  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: vw(), height: 844 }, isMobile: true, hasTouch: true });
   await offline(ctx);
   const handle = cockpitApi();
   await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
@@ -786,6 +817,17 @@ async function cockpitWalk(theme) {
        && /plan-honesty/.test(await page.locator("#plan-body").getAttribute("aria-describedby") ?? "") && /Read by every boy in the side and their parents/.test(await tid("plan-honesty").innerText()));
     ok("...the title is made for him and is not a field", /^The plan: v Verify Cockpit XI/.test((await tid("plan-title").innerText()).trim()) && await page.locator('#plan-body ~ input, [data-testid="plan-title"] input').count() === 0);
     await check("plancomposer", '[data-testid="plan-composer"]');
+    if (NARROW) {
+      // I32: Cancel by keyboard closes the composer and hands focus back to the button that opened it; open it again to go on.
+      await tid("plan-cancel").focus();
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(300);
+      ok(`${T_} @${NARROW.width}: Cancel closes the composer, and focus returns to Write the plan`,
+        await tid("plan-composer").count() === 0 && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "plan-write");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('[data-testid="plan-composer"]', { timeout: 6000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
     await page.keyboard.type("Naidoo is on four overs, physio says no more.");
     await page.waitForFunction(() => /physio/.test(document.querySelector('[data-testid="plan-refusal-message"]')?.innerText ?? ""), null, { timeout: 4000 }).catch(() => {});
     ok("a refusal is read out: a polite live region, the field described by it and marked invalid, the word named",
@@ -799,7 +841,35 @@ async function cockpitWalk(theme) {
     await page.waitForFunction(() => !(document.querySelector('[data-testid="plan-refusal"]')?.innerText ?? "").trim(), null, { timeout: 4000 }).catch(() => {});
     ok("the refusal clears when the words change, and the field is no longer marked invalid", (await tid("plan-refusal").innerText()).trim() === ""
        && await page.locator("#plan-body").getAttribute("aria-invalid") === null && !(await tid("plan-send").isDisabled()));
-    await tid("plan-send").focus();
+    // Saved, not sent (db/110, Kameel 15 Oct): a draft never sent is his to change, send or delete.
+    await tid("plan-save").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="plan-draft"]', { timeout: 5000 }).catch(() => {});
+    ok("Save by keyboard: his draft, never sent, offers Send, Change it and Delete, each a button of 44px or more",
+       await tid("plan-draft").count() === 1 && await tid("plan-draft-send").count() === 1 && await tid("plan-draft-edit").count() === 1 && await tid("plan-draft-delete").count() === 1
+       && await page.evaluate(() => ["plan-draft-send", "plan-draft-edit", "plan-draft-delete"].every((t) => {
+         const e = document.querySelector(`[data-testid="${t}"]`); return e?.tagName === "BUTTON" && e.getBoundingClientRect().height >= 44; })));
+    await check("plandraft", '[data-testid="plan-draft"]');
+    await tid("plan-draft-delete").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    ok("Delete asks once, in words: never sent, nobody else has read it", /never sent, so nobody else has read it/.test(await tid("plan-delete-ask").innerText().catch(() => "")));
+    await check("plandelete", '[data-testid="plan-draft"]');
+    await tap("plan-delete-no", 300);
+    ok("Keep it closes the question and the draft stays", await tid("plan-delete-ask").count() === 0 && await tid("plan-draft").count() === 1);
+    await tid("plan-draft-edit").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="plan-composer"]', { timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    ok("Change it opens the composer on his words, focus in the field, with Save changes",
+       await page.evaluate(() => document.activeElement?.id) === "plan-body" && (await page.locator("#plan-body").inputValue()).startsWith("Bat first if we win the toss.")
+       && /^Save changes$/.test((await tid("plan-save").innerText()).trim()));
+    await tid("plan-cancel").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(400);
+    ok("...Cancel closes it, and focus is back on Change it", await tid("plan-composer").count() === 0
+       && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "plan-draft-edit");
+    await tid("plan-draft-send").focus();
     await page.keyboard.press("Enter");
     await page.waitForSelector('[data-testid="plan-block"]', { timeout: 5000 }).catch(() => {});
     ok("Send by keyboard: the plan is out, and the block is his own, with Withdraw and nothing to Edit", await tid("plan-block").count() === 1 && await tid("plan-withdraw").count() === 1
@@ -1025,7 +1095,7 @@ async function listingWalk(theme, width) {
     ok("the director of sport signs in", await tid("os-main").count() === 1 || await tid("persona-bar").count() === 1);
 
     await goTo("matches");
-    await tid(`match-card-${LISTING_MATCH}`).click({ timeout: 5000 }).catch(() => {});
+    await tid(`match-card-${LISTING_MATCH}`).click({ timeout: 5000, position: { x: 14, y: 14 } }).catch(() => {});
     await page.waitForSelector('[data-testid="publish-listing"]', { timeout: 6000 }).catch(() => {});
     ok("the fixture's panel carries the listing line, the does-not-list form", /does not list/.test(await tid("publish-listing").innerText().catch(() => "")));
     await check("listingline", '[data-testid="publish-listing"]');
@@ -1211,8 +1281,8 @@ async function practiceWalk(theme) {
     await page.waitForTimeout(300);
     return true;
   };
-  const check = async (screen, { label = true } = {}) => {
-    await measure(page, theme, screen);
+  const check = async (screen, { label = true, root = null } = {}) => {
+    await measure(page, theme, screen, root);
     const unnamed = await unnamedControlsOf(page);
     ok(`${T_} ${screen}: every control has a name`, unnamed.length === 0, unnamed.slice(0, 4).join(", "));
     if (label) ok(`${T_} ${screen}: it says "${LABEL}"`, (await page.locator('[data-testid="practice-label"]').first().innerText().catch(() => "")).replace(/\s+/g, " ").startsWith(LABEL));
@@ -1231,7 +1301,7 @@ async function practiceWalk(theme) {
     await page.waitForTimeout(1000);
     await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(1500);
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: vw(), height: 844 });
     await page.waitForTimeout(300);
     ok("the scorer's start screen offers Start Practice Match", (await tid("start-practice").count()) === 1);
     await check("practicestart", { label: false });
@@ -1275,10 +1345,51 @@ async function practiceWalk(theme) {
     await page.waitForTimeout(1200);
 
     await check("practicepad");
+    if (NARROW) {
+      // I32: the pad as it is played — a ball scored (the over's chips on the board), a wicket's sheet, the pad's menu and
+      // the views on its bar — each held to the same lists, and each sheet closed by Escape with focus back on its key.
+      const back = async (name, key) => ok(`${T_} @${NARROW.width}: Escape closes ${name}, and focus is back on ${key}`,
+        await page.evaluate((k) => document.activeElement?.getAttribute("data-testid") === k || document.activeElement?.getAttribute("aria-label") === k, key));
+      // The pad's menu, by keyboard: its items, then Basic Scoring, which puts the one-tap keys and the Wicket key on the pad.
+      await tid("pad-menu").focus();
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('[data-testid="pad-menu-panel"]', { timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      await check("padmenu", { label: false, root: '[data-testid="pad-menu-panel"]' });
+      await tid("pad-basic-scoring").click({ timeout: 3000 }).catch(() => {});
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(400);
+      ok(`${T_} @${NARROW.width}: Escape closes the pad's menu`, await page.locator('[data-testid="pad-menu-panel"]').count() === 0);
+      await back("the pad's menu", "pad-menu");
+      await tap("run-1", 1900);
+      await tap("run-4", 1900);
+      await check("padover", { label: false });
+      await page.locator('button[aria-label="Wicket"]').first().focus().catch(() => {});
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('[role="dialog"]', { timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await check("padwicket", { label: false, root: '[role="dialog"]' });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(400);
+      ok(`${T_} @${NARROW.width}: Escape closes the dismissal sheet`, await page.locator('[role="dialog"]').count() === 0);
+      await back("the dismissal sheet", "Wicket");
+      for (const [view, id] of [["Cards", "padcards"], ["Analysis", "padanalysis"]]) {
+        await page.locator('[data-testid="pad-tabs"] button', { hasText: new RegExp(view) }).click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(600);
+        await check(id, { label: false });
+      }
+      for (const [sub, id] of [["Signals", "padsignals"], ["Intelligence", "padintelligence"]]) {
+        await page.locator("button", { hasText: new RegExp(`^\\s*${sub}\\s*$`) }).first().click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(500);
+        await check(id, { label: false });
+      }
+      await page.locator('[data-testid="pad-tabs"] button', { hasText: /Score/ }).click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
     await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 }).catch(() => {});
     await tap("pad-practice-weather", 600);
     await tap("pw-overcast", 150);
-    await check("practiceweather");
+    await check("practiceweather", { root: NARROW ? '[role="dialog"]' : null });
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
 
@@ -1288,7 +1399,7 @@ async function practiceWalk(theme) {
     await page.waitForTimeout(600);
     await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(1200);
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: vw(), height: 844 });
     await page.waitForTimeout(300);
     ok("back on the start screen, the practice match is offered first", (await tid("practice-resume-card").count()) === 1);
     await check("practiceresume", { label: false });
@@ -1319,7 +1430,7 @@ async function scorerHomeWalk(theme) {
   const scheme = theme === "daylight" ? "light" : "dark";
   const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
   const REGION = '[data-testid="scorer-home"]';
-  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: vw(), height: 844 }, isMobile: true, hasTouch: true });
   await offline(ctx);
   const page = await ctx.newPage();
   const errors = [];
@@ -1369,6 +1480,128 @@ async function scorerHomeWalk(theme) {
     ok(`the ${theme} scorer's home walk threw: ${/** @type {any} */ (e).message?.slice(0, 100)}`, false);
   } finally {
     await ctx.close();
+  }
+}
+
+/**
+ * I32: THE STAFF SHELL ON A NARROW PHONE — what a coach or a scorer holds on match day, at the width in NARROW. The
+ * demonstration's Head Coach, on the whole page (the bar at the top and the bar at the bottom included, which the
+ * region-scoped walks leave out): the Dashboard, the More drawer, the role menu and the search sheet, each opened by
+ * keyboard and closed by Escape with focus back on what opened it, then the Match Centre list and a fixture's own
+ * view. Held to narrowAudit's lists by measure().
+ */
+async function narrowStaffWalk(theme) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const W = vw();
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: W, height: 640 }, isMobile: true, hasTouch: true });
+  await offline(ctx);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const activeId = () => page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName);
+  /** Open an overlay from its trigger by keyboard, measure it, close it with Escape, and have focus come back. */
+  const overlay = async (trigger, opened, screen, name) => {
+    await tid(trigger).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(opened, { timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(350);
+    ok(`${T_} @${W}: Enter on ${name} opens it`, await page.locator(opened).count() > 0);
+    await measure(page, theme, screen, opened);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(350);
+    ok(`${T_} @${W}: Escape closes ${name}`, await page.locator(opened).count() === 0);
+    ok(`${T_} @${W}: ...and focus returns to ${name}'s button`, (await activeId()) === trigger, String(await activeId()));
+  };
+  try {
+    group(`${T_} @${W} — the staff shell`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+    if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    await page.locator("button:not([disabled])", { hasText: "Head Coach" }).first().click({ timeout: 4000 }).catch(() => {});
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="mnav"]', { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    ok(`${T_} @${W}: signed in, with the bar at the bottom`, await tid("mnav").count() === 1);
+    await measure(page, theme, "staffdash");
+    await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
+    await overlay("topbar-role", '[role="menu"]', "staffrolemenu", "the role menu");
+    await overlay("topbar-search", '[role="dialog"][aria-label="Search"]', "staffsearch", "search");
+
+    // The KPI tiles (ui/primitives.jsx's KPICard: Injuries, Logistics): a label, a figure and a note, each 12px at the least,
+    // and the screens that draw them fit the width. Reached by the More drawer, as a coach reaches them.
+    for (const [dest, screen] of [["injuries", "staffinjuries"], ["logistics", "stafflogistics"]]) {
+      await tid("mnav-more").click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      await tid(`drawer-${dest}`).click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(900);
+      const kpi = await page.evaluate(() => [...document.querySelectorAll('[data-testid="kpi-card"] *')]
+        .filter((e) => [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()))
+        .map((e) => parseFloat(getComputedStyle(e).fontSize)));
+      ok(`${T_} @${W}: ${dest} draws KPI tiles (${kpi.length} texts in them)`, kpi.length > 0);
+      ok(`${T_} @${W}: ...every text in a KPI tile is 12px or more`, kpi.every((n) => n >= 12), kpi.filter((n) => n < 12).join(","));
+      await measure(page, theme, screen);
+    }
+    await tid("mnav-matches").click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1000);
+    await measure(page, theme, "staffmatches");
+    await page.locator('[data-testid^="mc-open-"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(900);
+    await tid("mc-tab-scorecard").click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    ok(`${T_} @${W}: the fixture opens into its own view`, await tid("mc-scorecard").count() === 1);
+    await measure(page, theme, "staffscorecard");
+    ok(`${T_} @${W}: no page errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
+  } catch (e) {
+    ok(`the ${T_} @${W} staff shell walk threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * I32: prefers-reduced-motion, on the match-day screens at 320. With the device asking for less motion, nothing on the
+ * staff Dashboard (the live dot, the board, the rotating line), the More drawer's slide, or the ground display's panels
+ * may be running an animation longer than a cut (50ms). Falsified first, on the same screens without the preference:
+ * the same probe must see the live dot pulsing, or it is counting nothing.
+ */
+async function motionWalk() {
+  /** Running CSS animations and transitions longer than a cut, by what they animate. */
+  const moving = (page) => page.evaluate(() => document.getAnimations()
+    .filter((a) => a.playState === "running" && Number(a.effect?.getComputedTiming().activeDuration) > 50)
+    .map((a) => `${/** @type {any} */ (a).animationName ?? /** @type {any} */ (a).transitionProperty ?? "?"} on ${(a.effect?.target instanceof Element ? a.effect.target.getAttribute("data-testid") || a.effect.target.className || a.effect.target.tagName : "?")}`));
+  for (const reduce of [false, true]) {
+    const W = vw();
+    const ctx = await browser.newContext({ colorScheme: "dark", viewport: { width: W, height: 640 }, isMobile: true, hasTouch: true, reducedMotion: reduce ? "reduce" : "no-preference" });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    const which = reduce ? "reduced" : "unreduced";
+    try {
+      group(`@${W} — motion, ${which}`);
+      await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+      const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+      if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+      await page.locator("button:not([disabled])", { hasText: "Head Coach" }).first().click({ timeout: 4000 }).catch(() => {});
+      await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="mnav"]', { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1200);
+      await page.locator('[data-testid="mnav-more"]').click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(150);
+      const staff = await moving(page);
+      if (!reduce) ok(`@${W}: the probe sees motion without the preference (${staff.length} running)`, staff.length > 0, staff.join(" · "));
+      else ok(`@${W}: with the preference, nothing on the Dashboard or the drawer runs longer than a cut`, staff.length === 0, staff.slice(0, 4).join(" · "));
+      await page.goto(`http://localhost:${PORT}/display/${DISPLAY_ID}`, { waitUntil: "networkidle" });
+      await page.waitForSelector('[data-testid="display-panel"] section', { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const display = await moving(page);
+      // The display's live dot and the rotation's own fade are the motion; neither survives the preference.
+      if (reduce) ok(`@${W}: ...nor does the ground display`, display.length === 0, display.slice(0, 4).join(" · "));
+    } catch (e) {
+      ok(`the motion walk (${which}) threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);
+    } finally {
+      await ctx.close();
+    }
   }
 }
 
@@ -2023,7 +2256,8 @@ async function padFit() {
  * @param {"floodlit" | "daylight"} theme
  */
 async function displayWalk(theme) {
-  for (const [w, h, screen] of [[1920, 1080, "display1080"], [1024, 768, "display768"], [390, 844, "display390"]]) {
+  // At a narrow width (I32) the display is a phone's: the one size, at the walk's own width and a phone's height.
+  for (const [w, h, screen] of NARROW ? [[NARROW.width, 640, "display"]] : [[1920, 1080, "display1080"], [1024, 768, "display768"], [390, 844, "display390"]]) {
     const ctx = await browser.newContext({ colorScheme: theme === "daylight" ? "light" : "dark", viewport: { width: w, height: h } });
     await offline(ctx);
     const page = await ctx.newPage();
@@ -2049,10 +2283,10 @@ async function displayWalk(theme) {
       for (let i = 0; i < 5; i++) {
         panels.add(await page.evaluate(() => document.querySelector('[data-testid="display"]')?.getAttribute("data-panel")));
         await measure(page, theme, screen);
-        for (const k of /** @type {const} */ (["type", "contrast", "emoji"])) most[k] = Math.max(most[k], measured[theme][k][screen]);
+        if (!NARROW) for (const k of /** @type {const} */ (["type", "contrast", "emoji"])) most[k] = Math.max(most[k], measured[theme][k][screen]);
         await page.waitForTimeout(900);
       }
-      for (const k of /** @type {const} */ (["type", "contrast", "emoji"])) measured[theme][k][screen] = most[k];
+      if (!NARROW) for (const k of /** @type {const} */ (["type", "contrast", "emoji"])) measured[theme][k][screen] = most[k];
       ok(`${theme} ${w}×${h}: measured over the cycle's three panels (${[...panels].join(", ")})`,
          ["partnership", "overs", "bowling"].every((p) => panels.has(p)), [...panels].join(", "));
     } catch (e) {
@@ -2064,6 +2298,7 @@ async function displayWalk(theme) {
 }
 
 try {
+  if (!ONLY) {
   await walk("floodlit");
   await captainWalk("floodlit");
   await cockpitWalk("floodlit");
@@ -2089,7 +2324,28 @@ try {
 
   group("The pad's strip on a phone (§4 rule 1) — no scrolling to reach it");
   await padFit();
+  }
 
+  // ── I32: the match-day screens again, at the narrowest phone (320), in both themes ──
+  // The staff shell is also asked at 375 and 414, and the display at all three. Every list of narrowAudit is empty.
+  if (process.env.A11Y_SHOTS) await (await import("node:fs/promises")).mkdir(process.env.A11Y_SHOTS, { recursive: true });
+  if (ONLY && want("listing")) for (const th of /** @type {const} */ (["floodlit", "daylight"])) { await listingWalk(th, 1280); await listingWalk(th, 390); }
+  for (const width of (process.env.A11Y_WIDTHS ?? "320,375,414").split(",").map(Number)) {
+    NARROW = { width };
+    for (const th of /** @type {const} */ (["floodlit", "daylight"]).filter((t) => !process.env.A11Y_THEME || t === process.env.A11Y_THEME)) {
+      if (want("staff")) await narrowStaffWalk(th);
+      if (want("display")) { group(`${th} @${width} — the ground display`); await displayWalk(th); }
+      if (width !== 320) continue;
+      if (want("scorerhome")) await scorerHomeWalk(th);
+      if (want("practice")) await practiceWalk(th);
+      if (want("cockpit")) await cockpitWalk(th);
+      if (want("captain")) await captainWalk(th);
+    }
+    if (width === 320 && want("motion")) await motionWalk();
+  }
+  NARROW = null;
+
+  if (!ONLY) {
   group("The type floor (§3.2) — a ratchet");
   for (const th of ["floodlit", "daylight"]) {
     for (const [screen, ceiling] of Object.entries(TYPE_FLOOR_CEILING)) {
@@ -2124,6 +2380,7 @@ try {
       const n = measured[th].contrast[screen];
       ok(`${th} ${screen}: ${n} text below AA on what is behind it (ceiling ${ceiling})`, n != null && n <= ceiling);
     }
+  }
   }
 } finally {
   await browser.close();

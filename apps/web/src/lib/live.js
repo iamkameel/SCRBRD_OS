@@ -300,6 +300,10 @@ function asNewsPost(r) {
     // live plan's author is named to every reader of the plan (db/103), so
     // for a plan this is null only when the author's account is gone.
     authorName: r.author_name ?? null,
+    // A plan's draft (db/110): sent before (a withdrawn plan, kept) or never
+    // (its author's to delete), and how loud it is to go.
+    wasSent: r.wasSent === true,
+    urgency: r.urgency ?? "low",
     fixtureId: r.fixtureId ?? null,
     noticeId: r.noticeId ?? null,
     schoolId: r.school_id ?? null,
@@ -1184,6 +1188,10 @@ const ADAPT = {
   users: asUser,
   // Every account, disabled ones included: People's read (account lifecycle D5).
   accounts: asUser,
+  // A child's guardian links, every state, for the office (db/109, D12). The
+  // rows as the server sends them: views/familylinks.jsx maps them with
+  // lib/familyLinks.js asChildLink(), which stays out of the entry chunk.
+  child_links: (r) => r,
   grounds: asGround,
   training: asTraining,
   training_attendance: asAttendance,

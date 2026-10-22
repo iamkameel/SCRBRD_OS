@@ -514,6 +514,56 @@ SELECT
         AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'))
               LIKE '%IF r.role = ''player'' AND v_team IS NULL THEN%'
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A pupil is a pupil of a side",
+  -- db/109: every ending of a guardian link is recorded with a kind (and the
+  -- office's reason), read by the office and never by the guardian or the
+  -- DSO by standing; db/08's door without a kind or a reason is closed.
+  CASE WHEN to_regclass('guardian_link_ending') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('guardian_link_ending'))
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('guardian_link_ending') AND p.polname = 'guardian_link_ending_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app_user_id()%safeguarding.concern.read%')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('guardian_link_ending'), 'INSERT')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_revoke(uuid,text,text)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_revoke(uuid,uuid,text)'), 'EXECUTE')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_ending_notice_is_mine(uuid)'), 'EXECUTE')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'notification' AND policyname = 'notification_link_ended')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_assignment_ending_links' AND tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'guardian_link_ending'
+                     AND policyname = 'guardian_link_ending_not_platform' AND permissive = 'RESTRICTIVE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A link's ending is the office's to read",
+  -- db/110: a draft plan is changed and thrown away by its author; a sent
+  -- plan is kept, and not changed while it is out (Kameel, 15 Oct).
+  CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news_post' AND column_name = 'first_sent_at')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'news_post_plan_drafts' AND tgenabled = 'O'
+                     AND tgfoid = to_regprocedure('news_post_plan_drafts()'))
+        AND coalesce(pg_get_functiondef(to_regprocedure('news_plan_discard(uuid)')), '') LIKE '%n.first_sent_at IS NOT NULL%'
+        AND has_function_privilege('scrbrd_app', to_regprocedure('news_plan_discard(uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('news_post_plan_drafts()'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('news_plan_discard(uuid)'), to_regprocedure('news_post_plan_drafts()'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('news_post'), 'DELETE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A draft plan is its author's to change or throw away",
+  -- db/111: the physio's injury record (GA-I19 slice A, with SG-12's injury
+  -- half): two doors and the worklist, the review table hidden from support,
+  -- the application writing neither table directly, and the DSO's watch.
+  CASE WHEN to_regclass('injury_review') IS NOT NULL AND to_regclass('injury_review_masked') IS NOT NULL
+        AND to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)') IS NOT NULL
+        AND to_regprocedure('injury_review_record(uuid,text,boolean,date,date,text)') IS NOT NULL
+        AND to_regprocedure('injury_worklist()') IS NOT NULL
+        AND to_regprocedure('injury_serious_watch()') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('injury_review'))
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'injury_review'
+                       AND policyname = 'injury_review_not_support' AND permissive = 'RESTRICTIVE')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = to_regclass('injury') AND tgname = 'injury_serious_watch')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = to_regclass('injury_review') AND tgname = 'injury_apply_review')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('injury'), 'INSERT')
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('injury_review'), 'INSERT')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid = to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)')
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The physio records and reviews an injury",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
