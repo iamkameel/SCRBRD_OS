@@ -6805,6 +6805,11 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _seed_118_name(p_player uuid, p_full_name text) RETURNS void AS $$
   UPDATE player SET full_name = p_full_name WHERE id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A fixture tomorrow between two schools, as the office would write it.
+CREATE OR REPLACE FUNCTION _seed_118_fixture(p_home uuid, p_away uuid) RETURNS void AS $$
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (p_home, '1XI', p_away, '1XI', 'Verify 118 opponents', now() + interval '1 day', 'cricket', 'T20', 20, 'scheduled');
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/118 (section 93) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -26482,7 +26487,9 @@ $v49$;
   --             and as written to one with it; a retired-out keeps its
   --             reason; a typed name is at no school; nothing else moves
   --   (scan)    and a word of a name written with punctuation ("Zungu, S",
-  --             "Mary-Anne")
+  --             "Mary-Anne"), and an opponent's boy (a fixture with his school)
+  --   (word)    the author is told the word of his post that matched, as he
+  --             wrote it; another school's office is told nothing
   --   (suspension) a Law 41 suspension's ground, as a bowler change's reason
   --   (bowler)  a bowler change keeps its reason for a reader with
   --             fixture.read at the bowler's school, and loses it (the
@@ -26525,6 +26532,20 @@ $v49$;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'Anne', 'anne', now()) RETURNING id INTO v_post91;
     PERFORM _assert(news_public_check(v_post91) = 1, '§93 (scan): half of "Mary-Anne" was not found');
+    -- An opponent's boy (Kameel, 22 Oct): Westville's D Mkhize, with a
+    -- Hilton-Westville fixture tomorrow. The author is told the word of his
+    -- post that matched, as he wrote it; somebody else is told nothing.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_fixture(HIL, WES);
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Opponents', 'Watch out for mKhize on Saturday', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) >= 1, '§93 (scan): a post naming an opponent''s boy was not caught');
+    PERFORM _assert(news_public_word(v_post91) = 'mKhize',
+      format('§93 (word): the author was not told the word as he wrote it (%s)', news_public_word(v_post91)));
+    PERFORM _as(U_WES_ADM);
+    PERFORM _assert(news_public_word(v_post91) IS NULL, '§93 (word): somebody neither the author nor a publisher was told the word');
+    PERFORM _as(U_C2_91);
 
     -- (email)
     PERFORM _as(U_BURSAR);   -- finance and sponsorship: user.read, nothing more

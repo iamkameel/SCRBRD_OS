@@ -424,18 +424,38 @@ group("A. Exports follow the policy's two lists (packages/policy/src/exports.mjs
     const boy = { id: "p1", school_id: "s1", school_name: "Hilton", full_name: "A Boy", team_code: "1XI",
                   fitness: "fit", born: "2011-04-07", hometown: "Hilton", height: 170, weight: 60,
                   address: "14 Ridge Road", guardian: "Mrs Boy", id_number: "1104075800085" };
-    const { pool, log } = fakePool({ "from player_masked pm": [boy] });
+    const other = { ...boy, id: "p2", school_id: "s2", full_name: "Their Boy" };
+    const { pool, log } = fakePool({ "from player_masked pm": [boy, other], "select s.id from school s where app_can": [{ id: "s1" }] });
     const { csv, columns } = await exportResource(pool, SECRET, bearer("uOffice"), "players", {});
     ok("the roster file has no masked column", !columns.some((c) => exportDrops("players").includes(c)));
     ok("...and none of their values", !/Ridge Road|1104075800085|2011-04-07|Mrs Boy/.test(csv));
     ok("...but has the boy", /A Boy/.test(csv) && columns.includes("full_name"));
+    ok("...and no boy of a school where the caller keeps no roster", !/Their Boy/.test(csv));
+    const asked = log.find((l) => l.text.includes("select s.id from school s where app_can"));
+    ok("the roster file asks player.roster.read or player.profile.manage, before the read",
+       JSON.stringify(asked?.params) === '["player.roster.read","player.profile.manage"]'
+       && log.indexOf(/** @type {any} */ (asked)) < log.findIndex((l) => l.text.includes("from player_masked pm")));
     const entry = log.find((l) => l.text.includes("log_restricted_read"));
     ok("the file is logged, naming the boy, with no field", entry?.params?.[0] === "players"
        && JSON.stringify(entry?.params?.[1]) === '["p1"]' && JSON.stringify(entry?.params?.[2]) === "[]");
-    const { pool: empty } = fakePool({});
+    const { pool: empty } = fakePool({ "select s.id from school s where app_can": [{ id: "s1" }] });
     const none = await exportResource(empty, SECRET, bearer("uOffice"), "players", {});
     ok("an empty roster file's header drops them too", none.columns.includes("full_name")
        && !none.columns.some((c) => exportDrops("players").includes(c)));
+  }
+  // A caller who keeps no roster at any school (a parent, a pupil, a scorer,
+  // a physio) is refused the file before anything is read or logged.
+  {
+    const { pool, log } = fakePool({ "from player_masked pm": [{ id: "p1", school_id: "s1", full_name: "A Boy" }] });
+    let status = 0, code = "";
+    try { await exportResource(pool, SECRET, bearer("uParent"), "players", {}); }
+    catch (/** @type {any} */ e) { status = e.status; code = e.code; }
+    ok("no roster capability at any school: the roster file is a 403 not_exported", status === 403 && code === "not_exported");
+    ok("...with the roster never read, and nothing logged",
+       !log.some((l) => l.text.includes("from player_masked pm")) && !log.some((l) => l.text.includes("log_restricted_read")));
+    const { pool: p2 } = fakePool({ "from player_masked pm": [{ id: "p1", school_id: "s1", full_name: "A Boy" }] });
+    ok("...while the same caller's screen read is not asked about it",
+       (await readResource(p2, SECRET, bearer("uParent"), "players", {})).length === 1);
   }
   // The screen read is unchanged: the office still reads the address there.
   {

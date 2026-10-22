@@ -11,7 +11,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { OWNER_OF_READ } from "@scrbrd/policy/modules";
-import { notExported, exportAllowed, exportDrops, tablesIn } from "@scrbrd/policy/exports";
+import { notExported, exportAllowed, exportDrops, exportNeeds, tablesIn } from "@scrbrd/policy/exports";
 import { toCsv } from "../io/csv.mjs";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
@@ -988,7 +988,9 @@ export const READ_QUERIES = {
                                    '00000000-0000-0000-0000-000000000000'::uuid,
                                    '00000000-0000-0000-0000-000000000000'::uuid), false) as may_take_down,
                   pp.state as public_state,
-                  case when pp.state = 'requested' then news_public_check(n.id) end as public_names
+                  case when pp.state = 'requested' then news_public_check(n.id) end as public_names,
+                  -- db/118: the word of the post that matched, for the same readers.
+                  case when pp.state = 'requested' then news_public_word(n.id) end as public_word
              from news_post n
              left join school s      on s.id = n.school_id
              left join competition c on c.id = n.competition_id
@@ -3529,11 +3531,14 @@ const MAX_LOGGED_IDS = 500;
  * @param {string | undefined} bearer  the Authorization header, as sent
  * @param {string} resource
  * @param {Record<string, string>} [query]
- * @param {{ omit?: readonly string[], file?: boolean }} [opts]
+ * @param {{ omit?: readonly string[], file?: boolean, needsAny?: readonly string[] }} [opts]
  *   omit: columns taken off every row BEFORE the log is written, so the log
  *   records what was handed over, not what the query selected (an export's
  *   dropped columns); file: the rows leave as a file, so a read whose rows
- *   are each about a person is logged even when no watched column came back.
+ *   are each about a person is logged even when no watched column came back;
+ *   needsAny: capabilities, any one held at a row's school, without which
+ *   the read is refused before it runs (no school at all) or the row is left
+ *   out (another school).
  */
 export async function readResource(pool, secret, bearer, resource, query = {}, opts = {}) {
   // Object.hasOwn, not a bare index: READ_QUERIES is a plain object, so a URL
@@ -3571,8 +3576,25 @@ export async function readResource(pool, secret, bearer, resource, query = {}, o
         throw e;
       }
     }
+    // A FILE THAT NEEDS A CAPABILITY (exports.mjs `needsAny`): the schools
+    // where the caller holds one of them, asked before the read, so a caller
+    // who holds none at any school is refused with nothing read or logged.
+    /** @type {Set<string> | null} */
+    let held = null;
+    if (opts.needsAny?.length) {
+      const asks = opts.needsAny.map((_, i) =>
+        `app_can($${i + 1}, s.id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)`);
+      const { rows: schools } = await client.query(`select s.id from school s where ${asks.join(" or ")}`, [...opts.needsAny]);
+      if (!schools.length) {
+        const e = /** @type {DressedError} */ (new Error("not_exported"));
+        e.status = 403; e.code = "not_exported";
+        throw e;
+      }
+      held = new Set(schools.map((s) => s.id));
+    }
     const { rows: raw } = await client.query(def.text, params);
-    const composed = def.compose ? def.compose(raw) : raw;
+    const composedAll = def.compose ? def.compose(raw) : raw;
+    const composed = held ? composedAll.filter((/** @type {any} */ r) => held.has(r.school_id)) : composedAll;
     const omit = opts.omit?.length ? new Set(opts.omit) : null;
     const rows = omit
       ? composed.map((/** @type {Record<string, unknown>} */ r) =>
@@ -3716,7 +3738,8 @@ export async function exportResource(pool, secret, bearer, resource, query = {})
   // The file's dropped columns go for every reader alike: the office's roster
   // file carries no address or ID number either, though the screen shows them.
   const drop = exportDrops(resource);
-  const rows = await readResource(pool, secret, bearer, resource, query, { omit: drop, file: true });
+  const rows = await readResource(pool, secret, bearer, resource, query,
+                                  { omit: drop, file: true, needsAny: exportNeeds(resource) });
   const columns = rows.length
     ? Object.keys(rows[0])
     // An empty result still needs a header, or the file a school opens is a
