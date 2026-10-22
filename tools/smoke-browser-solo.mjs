@@ -132,7 +132,14 @@ async function signIn(page, email) {
   await afterReads(page, 2200);
   return (await tid(page, "os-main").count()) === 1;
 }
-async function go(page, key) {
+/**
+ * Open a screen. By default it waits for the screen's reads to answer, so
+ * nothing is judged mid-read. `{ inFlight: true }` keeps the old fixed 1.6 s
+ * instead: for a check that judges the screen WHILE a read is held on
+ * purpose (a gated route), where waiting for the reads would wait out the
+ * client's own abort and judge the failure, not the loading state.
+ */
+async function go(page, key, { inFlight = false } = {}) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) {
     // On a phone the less-used screens sit in the drawer under More.
@@ -142,7 +149,8 @@ async function go(page, key) {
   const m = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"], [data-testid="drawer-${key}"]`).first();
   if (!(await m.count())) return false;
   try { await m.click({ timeout: 6000 }); } catch { return false; }
-  await afterReads(page, 1600);
+  if (inFlight) await page.waitForTimeout(1600);
+  else await afterReads(page, 1600);
   return true;
 }
 const wait = (page, id, ms = 6000) => tid(page, id).first().waitFor({ state: "visible", timeout: ms }).then(() => true, () => false);
@@ -385,7 +393,7 @@ try {
   let release2; const gate2 = new Promise((r) => { release2 = r; });
   // Left in place: once the gate is open every later read passes straight through.
   await co.page.route("**/api/read/vehicles**", async (route) => { await gate2; await route.continue(); });
-  ok("Logistics opens", await go(co.page, "logistics"));
+  ok("Logistics opens", await go(co.page, "logistics", { inFlight: true }));
   ok("while the fleet is read, the panel says so and offers nothing to book", await wait(co.page, "transport-book-loading", 4000) && await tid(co.page, "transport-add-vehicle-open").count() === 0);
   release2();
   ok("the Book a bus panel is offered to the coordinator", await wait(co.page, "transport-book"));
