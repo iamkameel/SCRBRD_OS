@@ -6096,6 +6096,173 @@ CREATE OR REPLACE FUNCTION _v110_versions(p_post uuid) RETURNS text AS $$
    WHERE x.kind = 'notice' AND x.subject_kind = 'news' AND x.subject_id = p_post AND x.retracts_id IS NULL
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/110 (section 87) ─────────────────────────────────────────────
+-- ┌── db/111 (section 88). The physio's injury record, its reviews and her worklist
+-- Its own sides, so no other section's injuries meet it: Hilton's 12XI (the
+-- boy, a team-mate, a boy whose mother is a physio, and a boy who leaves),
+-- Hilton's 20XI (another side), Westville's 12XI, and a boy rested for
+-- another reason. The school's staff
+-- each in one role: three physios (one a mother of a 12XI boy, one with a
+-- guardian claim on the boy still pending), the 12XI coach, assistant and
+-- manager, the 20XI coach, the director of sport, the principal, the office,
+-- the fitness coach, a scorer and a follower; a granted enquiry about the boy
+-- (the status tier alone); the boy's parent; the boy and his team-mate, each
+-- with his own self link; and Westville's physio. The seed's DSO, platform
+-- administrator and owner's key are used as they are. As the owner; every
+-- name is invented.
+CREATE OR REPLACE FUNCTION _v111_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  ids jsonb; v_boy uuid; v_mate uuid; v_rest uuid; v_own uuid; v_leaver uuid; v_side uuid; v_wes uuid; v_a uuid; r record;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Quick', 1111, 'bowler', U15) RETURNING id INTO v_boy;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Mate', 1112, 'batter', U15) RETURNING id INTO v_mate;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Physioson', 1113, 'batter', U15) RETURNING id INTO v_own;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Leaver', 1114, 'bowler', U15) RETURNING id INTO v_leaver;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '20XI', 'Verify OneEleven Otherside', 1115, 'bowler', U15) RETURNING id INTO v_side;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (WES, '12XI', 'Verify OneEleven Westville', 1116, 'bowler', U15) RETURNING id INTO v_wes;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '12XI', 'Verify OneEleven Rested', 1117, 'batter', U15) RETURNING id INTO v_rest;
+  ids := _v71_people('v111', ARRAY[
+    ARRAY['physio',     'medical',         HIL::text, '',     ''],
+    ARRAY['mumphysio',  'medical',         HIL::text, '',     ''],
+    ARRAY['claimphysio','medical',         HIL::text, '',     ''],
+    ARRAY['coach',      'coach',           HIL::text, '12XI', ''],
+    ARRAY['assistant',  'assistantcoach',  HIL::text, '12XI', ''],
+    ARRAY['manager',    'teammanager',     HIL::text, '12XI', ''],
+    ARRAY['coach20',    'coach',           HIL::text, '20XI', ''],
+    ARRAY['director',   'directorofsport', HIL::text, '',     ''],
+    ARRAY['principal',  'principal',       HIL::text, '',     ''],
+    ARRAY['office',     'schooladmin',     HIL::text, '',     ''],
+    ARRAY['fitness',    'fitness',         HIL::text, '',     ''],
+    ARRAY['scorer',     'scorer',          HIL::text, '',     ''],
+    ARRAY['follower',   'spectator',       HIL::text, '',     ''],
+    ARRAY['enquirer',   'enquiry',         HIL::text, '',     ''],
+    ARRAY['parent',     'guardian',        HIL::text, '',     ''],
+    ARRAY['boy',        'player',          HIL::text, '12XI', v_boy::text],
+    ARRAY['mate',       'player',          HIL::text, '12XI', v_mate::text],
+    ARRAY['wesphysio',  'medical',         WES::text, '',     '']]);
+  -- The links: the parent's to the boy, the enquiry's to the boy (verified);
+  -- the mother-physio's to her son (verified); the claiming physio's to the
+  -- boy (pending: the office has not checked it).
+  FOR r IN SELECT a.id AS aid, x.p, x.rel, x.state FROM role_assignment a,
+                  LATERAL (VALUES ((ids->>'parent')::uuid,   v_boy, 'parent', 'verified'),
+                                  ((ids->>'enquirer')::uuid, v_boy, 'enquiry', 'verified')) AS x(person, p, rel, state)
+            WHERE a.person_id = x.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, r.rel, r.state, OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'mumphysio')::uuid, 'guardian', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, v_own, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'claimphysio')::uuid, 'guardian', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, created_by, valid_from)
+  VALUES (v_a, v_boy, 'parent', 'pending', OFFICE, current_date - 1);
+  -- Each boy's own file, as the seed's pupil has his.
+  FOR r IN SELECT x.person, x.p FROM (VALUES ((ids->>'boy')::uuid, v_boy), ((ids->>'mate')::uuid, v_mate)) AS x(person, p) LOOP
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (r.person, 'selfaccess', HIL) RETURNING id INTO v_a;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (v_a, r.p, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  END LOOP;
+  RETURN ids || jsonb_build_object('p_boy', v_boy, 'p_mate', v_mate, 'p_own', v_own, 'p_leaver', v_leaver,
+                                   'p_side', v_side, 'p_wes', v_wes, 'p_rest', v_rest);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One injury row as the owner reads it, past every mask.
+CREATE OR REPLACE FUNCTION _v111_injury(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(i) FROM injury i WHERE i.id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An injury's reviews, oldest first, as the owner reads them.
+CREATE OR REPLACE FUNCTION _v111_reviews(p_injury uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.reviewed_at, r.id), '[]') FROM injury_review r WHERE r.injury_id = p_injury
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v111_fitness(p_player uuid) RETURNS text AS $$
+  SELECT p.fitness FROM player p WHERE p.id = p_player
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v111_set_fitness(p_player uuid, p_fitness text) RETURNS void AS $$
+  UPDATE player SET fitness = p_fitness WHERE id = p_player
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The titles of the 'injury' notices about one injury, in title order (one
+-- transaction stamps them all with one now()).
+CREATE OR REPLACE FUNCTION _v111_notices(p_injury uuid) RETURNS text[] AS $$
+  SELECT coalesce(array_agg(n.title ORDER BY n.title), '{}')
+    FROM notification n WHERE n.kind = 'injury' AND n.subject_id = p_injury
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The safeguarding notices at a school, as the owner counts them.
+CREATE OR REPLACE FUNCTION _v111_sg_count(p_school uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM notification n WHERE n.kind = 'safeguarding' AND n.school_id = p_school
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An owner's edit of an injury, as a record already on file would be
+-- corrected: the clock moved for the worklist, or severity raised for SG-12.
+CREATE OR REPLACE FUNCTION _v111_edit(p_id uuid, p_next date, p_rtw date) RETURNS void AS $$
+  UPDATE injury SET next_review_on = p_next, rtw_date = p_rtw WHERE id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v111_serious(p_id uuid, p_severity text, p_emergency boolean) RETURNS void AS $$
+  UPDATE injury SET severity = p_severity, emergency_services = p_emergency WHERE id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A review an hour ahead of the clock, as a device with a bad clock would
+-- have written it (the owner's insert; the door refuses to follow it).
+CREATE OR REPLACE FUNCTION _v111_future_review(p_injury uuid) RETURNS void AS $$
+  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_at, reviewed_by, phase_after,
+                             restricted_after, rtw_date_after, next_review_on)
+  SELECT i.school_id, i.player_id, i.id, now() + interval '1 hour', i.recorded_by, i.phase, i.restricted,
+         i.rtw_date, i.next_review_on
+    FROM injury i WHERE i.id = p_injury
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A review naming one boy's injury and another boy: the key must refuse it,
+-- even to the owner. Returns the SQLSTATE, or 'none'.
+CREATE OR REPLACE FUNCTION _v111_mismatch(p_injury uuid, p_other uuid) RETURNS text AS $$
+BEGIN
+  INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_by, phase_after, restricted_after, next_review_on)
+  SELECT i.school_id, p_other, i.id, i.recorded_by, 'rehab', true, sa_today() + 7 FROM injury i WHERE i.id = p_injury;
+  RETURN 'none';
+EXCEPTION WHEN OTHERS THEN RETURN SQLSTATE;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy leaves the school today: his open membership closes.
+CREATE OR REPLACE FUNCTION _v111_leave(p_player uuid) RETURNS integer AS $$
+  WITH d AS (UPDATE team_membership SET left_on = sa_today() WHERE player_id = p_player AND left_on IS NULL RETURNING 1)
+  SELECT count(*)::int FROM d
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The Injuries module hidden from one person at Hilton, and shown again.
+CREATE OR REPLACE FUNCTION _v111_hide(p_person uuid, p_hide boolean) RETURNS void AS $$
+BEGIN
+  IF p_hide THEN
+    INSERT INTO feature_suppression (key, school_id, person_id, reason, hidden_by)
+    VALUES ('injuries', '11111111-1111-1111-1111-111111111111', p_person, 'v111: module off for this physio',
+            '88888888-0000-0000-0000-00000000000c');
+  ELSE
+    UPDATE feature_suppression SET lifted_at = now(), lifted_by = '88888888-0000-0000-0000-00000000000c'
+     WHERE key = 'injuries' AND person_id = p_person AND lifted_at IS NULL;
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An injury already serious when db/111 ran: severe, and no DSO stamp, as a
+-- row written before the trigger existed would be. The trigger is held off
+-- for this one insert, inside the rolled-back transaction.
+CREATE OR REPLACE FUNCTION _v111_legacy_severe(p_player uuid) RETURNS uuid AS $$
+DECLARE v_id uuid;
+BEGIN
+  ALTER TABLE injury DISABLE TRIGGER injury_serious_watch;
+  INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured, restricted)
+  SELECT p.school_id, p.id, 'Old fracture', 'severe', sa_today() - 30, true FROM player p WHERE p.id = p_player
+  RETURNING id INTO v_id;
+  ALTER TABLE injury ENABLE TRIGGER injury_serious_watch;
+  RETURN v_id;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- injury_retention_due() is the database's own (not the application's).
+CREATE OR REPLACE FUNCTION _v111_due(p_player uuid) RETURNS date AS $$ SELECT injury_retention_due(p_player) $$
+  LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/111 (section 88) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -24121,6 +24288,576 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 87
   -- └── db/110 (section 87) ──────────────────────────────────────────
+  -- ┌── db/111 (section 88) ──────────────────────────────────────────
+  -- ── 88. The physio's injury record, its reviews and her worklist (db/111) ──
+  -- GA-I19 slice A, and slice C's SG-12 injury half. Every write below is a
+  -- person's, through scrbrd_app, through the two doors; _v111_stage() and the
+  -- _v111_ helpers stage and read as the owner.
+  --
+  -- What each label holds:
+  --   (doors)    the application writes neither table directly: a physio's
+  --              INSERT or UPDATE on injury and INSERT on injury_review are
+  --              refused for want of privilege (D2's REVOKE)
+  --   (record)   the physio records: recorded_by is she, the injury opens
+  --              active with its next review, one review (the recording) by
+  --              her, one "Injury recorded" notice, fitness 'injured', no
+  --              safeguarding notice for a moderate injury
+  --   (who)      every other reader is refused, by name: 12XI's coach,
+  --              assistant and manager, 20XI's coach, the director, the
+  --              principal, the office, the fitness coach, a scorer, a
+  --              follower, a granted enquiry, the boy's parent, the boy, his
+  --              team-mate, Westville's physio, the owner's key, and nobody
+  --              signed in; and the same for a review
+  --   (family)   a physio who is a boy's mother is refused for him, as
+  --              author of a record and of a review, and records another boy;
+  --              a physio whose guardian claim on the boy is still pending is
+  --              refused for him too (Q6)
+  --   (rules)    a record with no next review, one in the past, an injury in
+  --              the future, a severity outside the three, no injury named, a
+  --              return before the injury, and a boy who is not there
+  --   (module)   the Injuries module hidden from the physio: both doors say
+  --              module_off; shown again, she records
+  --   (review)   a review to rehab moves the phase and fitness and writes no
+  --              notice, keeping the restriction and return date it was not
+  --              given; refused with no next review, a phase outside the
+  --              three, a cleared boy restricted or given a next review, a
+  --              next review past, a review dated before the last; a moved
+  --              return date writes one "Return date updated"; clearing writes
+  --              one "Cleared to play", unrestricts him, ends the clock and
+  --              sets fitness 'fit'; a cleared injury is not reviewed again
+  --   (reopen)   a recurrence names the cleared injury; not another boy's,
+  --              and not an open one
+  --   (key)      a review naming one boy's injury and another boy is refused
+  --              by the key, even to the owner
+  --   (fitness)  'rehab' while one is in rehab and none active; 'injured'
+  --              while one is active; 'unavailable' set for another reason
+  --              is left when the last injury clears
+  --   (tiers)    the reviews, column by column: the physio, the parent and the
+  --              boy read every tier; 12XI's coach, assistant and manager, the
+  --              director, the office and the fitness coach read phases and
+  --              dates and never the note or its author; the principal and the
+  --              granted enquiry read that a review happened and what it left
+  --              his availability as, and nothing of the phase; 20XI's coach,
+  --              the team-mate, a scorer, a follower, Westville's physio and
+  --              the DSO read none. And injury_masked's new columns, by tier
+  --   (principal) the status tier alone (D3, Kameel 2026-10-15): of the
+  --              injury row its restriction, its dates and his fitness word;
+  --              no type, severity, phase, next review or emergency mark
+  --   (worklist) the physio's list: one reason each — overdue, return
+  --              passed, due, no return date, new — in that order, with the
+  --              clock; a quiet open injury is not on it; a boy who left is
+  --              off it and his row stays; the mother-physio's own son is off
+  --              hers, and the claiming physio's boy off hers; nobody without
+  --              medical.write gets a row, nor the owner's key, nor
+  --              Westville's physio a Hilton row
+  --   (left)     injury_left_on(): the day the leaver left, to the physio,
+  --              his coach and the principal; NULL for a boy still there and
+  --              to another side's coach. And (record)/(tiers): is_recording
+  --              marks the recording alone, read at the status tier
+  --   (support)  a support session as the physio, and as the sports office: no
+  --              review row, no worklist, both doors not_under_support; the
+  --              injury rows themselves as today (Q7)
+  --   (sg12)     a severe record writes the DSO one safeguarding notice that
+  --              names no child, no diagnosis and no id, for the school, high,
+  --              under safeguarding.concern.read; the physio and the side's
+  --              coach do not read it; a second edit and a review write no
+  --              second; a moderate record writes none until it is made
+  --              severe, then one, and none when it is eased and made severe
+  --              again; an injury already serious before db/111 writes none
+  --              on a later edit; a minor one with emergency services called
+  --              writes one; the DSO reads no injury and no review
+  --   (retention) NULL while he is at school; twelve months after he leaves
+  --   (agree)    every review row the physio reads is one the owner holds,
+  --              and the injury row's state is its latest review's
+  --   (doors2)   the functions: definers pinned, the worklist an invoker, the
+  --              application's three and nobody else's
+  --
+  -- Falsified once each, by replacing the object inside this file's own
+  -- transaction and running the section; each went red at its label:
+  --   (tiers)    the note masked at the nature tier (red at the coach: 2 notes)
+  --   (family)   injury_write_refusal() without its family line (red at the
+  --              mother-physio recording her son)
+  --   (family)   injury_writer_is_family() as is_family_of() alone (red at the
+  --              physio whose claim is pending)
+  --   (review)   the door's next-review check and the table's CHECK both gone
+  --              (red at next_review_required, answered ok)
+  --   (support)  injury_review_not_support dropped (red at the support session
+  --              as the physio: every review at the school)
+  --   (worklist) app_can('medical.status.read') where it asks medical.write
+  --              (red at the coach: 4 rows); the family cut removed (red at
+  --              the mother-physio's list holding her son's two)
+  --   (record)   injury_record() writing is_recording false (red at the recording)
+  --   (left)     injury_left_on() as a definer (red at 20XI's coach, given the date)
+  --   (tiers)    the principal's medical.nature.read row added back (red at the
+  --              principal: 5 phases and 4 next reviews where 0 were expected)
+  --   (sg12)     the boy's name in the words (red at D10's words); the stamp
+  --              guard removed (red at made severe a second time); the
+  --              "becomes" rule removed (red at the injury already serious)
+  DECLARE
+    y        jsonb := _v111_stage();
+    V_HIL    uuid := '11111111-1111-1111-1111-111111111111';
+    U_DSO    uuid := '88888888-0000-0000-0000-000000000057';
+    U_PLAT   uuid := '88888888-0000-0000-0000-000000000014';
+    U_SUPER  uuid := '88888888-0000-0000-0000-000000000022';
+    T        date := sa_today();
+    BOY      uuid := (y->>'p_boy')::uuid;
+    MATE     uuid := (y->>'p_mate')::uuid;
+    OWN      uuid := (y->>'p_own')::uuid;
+    LEAVER   uuid := (y->>'p_leaver')::uuid;
+    SIDE     uuid := (y->>'p_side')::uuid;
+    WESBOY   uuid := (y->>'p_wes')::uuid;
+    REST     uuid := (y->>'p_rest')::uuid;
+    U_PHYSIO   uuid := (y->>'physio')::uuid;
+    sg0      int  := _v111_sg_count('11111111-1111-1111-1111-111111111111');
+    I1 uuid; I_RECUR uuid; I_MATE uuid; I_OWN uuid; I_OVER uuid; I_RET uuid; I_NORTW uuid;
+    I_QUIET uuid; I_LEFT uuid; I_SEV uuid; I_MOD uuid; I_EMS uuid; I_U uuid; v_sid uuid;
+    v_ok boolean; v_reason text; v_id uuid; j jsonb; k text; n int; got text;
+    e_rows int; e_phase int; e_note int; e_by int;
+    c_rows int; c_phase int; c_next int; c_note int; c_by int; c_status int;
+  BEGIN
+    -- ── (doors) ──
+    PERFORM _as(U_PHYSIO);
+    BEGIN
+      INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured) VALUES (V_HIL, BOY, 'Bruise', 'minor', T);
+      PERFORM _assert(false, '§88 (doors): the physio inserted an injury row directly, around the door');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE injury SET phase = 'cleared' WHERE player_id = BOY;
+      PERFORM _assert(false, '§88 (doors): the physio updated an injury row directly, around the door');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_by, phase_after, restricted_after, next_review_on)
+      SELECT i.school_id, i.player_id, i.id, U_PHYSIO, 'cleared', false, NULL FROM injury i LIMIT 1;
+      PERFORM _assert(false, '§88 (doors): the physio inserted a review directly, around the door');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- ── (record) ──
+    SELECT r.ok, r.reason, r.injury_id INTO v_ok, v_reason, I1
+      FROM injury_record(BOY, 'Grade 1 hamstring strain', 'moderate', T - 1, true, T + 21, T + 14, false,
+                         'V111 clinical: eccentric programme from day three.') r;
+    PERFORM _assert(v_ok AND I1 IS NOT NULL, format('§88 (record): the physio could not record an injury (%s)', v_reason));
+    j := _v111_injury(I1);
+    PERFORM _assert((j->>'recorded_by')::uuid = U_PHYSIO AND j->>'phase' = 'active' AND (j->>'restricted')::boolean
+                    AND (j->>'next_review_on')::date = T + 14 AND (j->>'rtw_date')::date = T + 21
+                    AND NOT (j->>'emergency_services')::boolean AND j->>'dso_notified_at' IS NULL
+                    AND j->>'physio' IS NULL AND j->>'notes' = 'V111 clinical: eccentric programme from day three.',
+      format('§88 (record): the injury row is not what she recorded: %s', j));
+    j := _v111_reviews(I1);
+    PERFORM _assert(jsonb_array_length(j) = 1 AND (j->0->>'reviewed_by')::uuid = U_PHYSIO AND j->0->>'phase_after' = 'active'
+                    AND (j->0->>'restricted_after')::boolean AND (j->0->>'next_review_on')::date = T + 14
+                    AND (j->0->>'rtw_date_after')::date = T + 21 AND j->0->>'note' IS NULL
+                    AND (j->0->>'is_recording')::boolean,
+      format('§88 (record): the recording is not one review, by her, of the state recorded: %s', j));
+    PERFORM _assert(_v111_notices(I1) = ARRAY['Injury recorded'],
+      format('§88 (record): the recording wrote %s, not one "Injury recorded"', _v111_notices(I1)));
+    PERFORM _assert(_v111_fitness(BOY) = 'injured', format('§88 (record): his fitness reads %s, not injured', _v111_fitness(BOY)));
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0, '§88 (record): a moderate injury wrote a safeguarding notice');
+
+    -- ── (who) ──
+    FOREACH k IN ARRAY ARRAY['coach', 'assistant', 'manager', 'coach20', 'director', 'principal', 'office', 'fitness',
+                             'scorer', 'follower', 'enquirer', 'parent', 'boy', 'mate', 'wesphysio'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT r.ok, r.reason INTO v_ok, v_reason
+        FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+      PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+        format('§88 (who): the %s recording an injury got %s / %s, not not_permitted', k, v_ok, v_reason));
+      SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_review_record(I1, 'cleared', false, NULL, NULL, NULL) r;
+      PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+        format('§88 (who): the %s reviewing an injury got %s / %s, not not_permitted', k, v_ok, v_reason));
+    END LOOP;
+    PERFORM _as(U_SUPER);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('§88 (who): the owner''s key recorded an injury (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_signed_in', format('§88 (who): nobody signed in got %s', v_reason));
+    PERFORM _assert(_v111_notices(I1) = ARRAY['Injury recorded'] AND jsonb_array_length(_v111_reviews(I1)) = 1,
+      '§88 (who): a refused caller changed the record');
+
+    -- ── (family) ──
+    PERFORM _as(U_PHYSIO);
+    SELECT r.injury_id INTO I_OWN FROM injury_record(OWN, 'Ankle sprain', 'minor', T - 2, true, T + 10, T + 20, false, NULL) r;
+    PERFORM _as((y->>'mumphysio')::uuid);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(OWN, 'Shin splints', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§88 (family): the physio who is his mother recorded an injury for her son (%s / %s)', v_ok, v_reason));
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_review_record(I_OWN, 'rehab', true, NULL, T + 7, 'Mum''s note') r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§88 (family): the physio who is his mother reviewed her son''s injury (%s / %s)', v_ok, v_reason));
+    SELECT r.ok, r.reason, r.injury_id INTO v_ok, v_reason, I_MATE
+      FROM injury_record(MATE, 'Bruised thumb', 'minor', T - 1, true, T + 5, T + 3, false, NULL) r;
+    PERFORM _assert(v_ok AND I_MATE IS NOT NULL, format('§88 (family): the mother-physio could not record another boy (%s)', v_reason));
+    PERFORM _as((y->>'claimphysio')::uuid);
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§88 (family): a physio with a pending guardian claim on the boy recorded for him (%s / %s)', v_ok, v_reason));
+    PERFORM _assert(jsonb_array_length(_v111_reviews(I_OWN)) = 1, '§88 (family): the refused review was written');
+
+    -- ── (rules) ──
+    PERFORM _as(U_PHYSIO);
+    FOR k, v_reason IN
+      SELECT x.label, (SELECT r.reason FROM injury_record(x.p, x.t, x.s, x.d, true, x.rtw, x.nxt, false, NULL) r)
+        FROM (VALUES ('next_review_required',   BOY, 'Side strain', 'minor', T,     T + 7,  NULL::date),
+                     ('next_review_in_past',    BOY, 'Side strain', 'minor', T,     T + 7,  T - 1),
+                     ('date_injured_in_future', BOY, 'Side strain', 'minor', T + 1, T + 7,  T + 7),
+                     ('date_injured_required',  BOY, 'Side strain', 'minor', NULL,  T + 7,  T + 7),
+                     ('severity_invalid',       BOY, 'Side strain', 'mild',  T,     T + 7,  T + 7),
+                     ('injury_type_required',   BOY, '   ',         'minor', T,     T + 7,  T + 7),
+                     ('return_before_injury',   BOY, 'Side strain', 'minor', T - 1, T - 5,  T + 7),
+                     ('no_such_player',         gen_random_uuid(), 'Side strain', 'minor', T, T + 7, T + 7))
+             AS x(label, p, t, s, d, rtw, nxt) LOOP
+      PERFORM _assert(v_reason = k, format('§88 (rules): a record that should be %s was answered %s', k, coalesce(v_reason, 'ok')));
+    END LOOP;
+
+    -- ── (module) ──
+    PERFORM _v111_hide(U_PHYSIO, true);
+    SELECT r.reason INTO v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(v_reason = 'module_off', format('§88 (module): with Injuries off for her, a record got %s', coalesce(v_reason, 'ok')));
+    SELECT r.reason INTO v_reason FROM injury_review_record(I1, 'rehab', NULL, NULL, T + 7, NULL) r;
+    PERFORM _assert(v_reason = 'module_off', format('§88 (module): with Injuries off for her, a review got %s', coalesce(v_reason, 'ok')));
+    PERFORM _v111_hide(U_PHYSIO, false);
+
+    -- ── (review) ──
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_review_record(I1, 'rehab', NULL, NULL, T + 7, 'V111: strengthening, week two.') r;
+    PERFORM _assert(v_ok, format('§88 (review): the physio could not review to rehab (%s)', v_reason));
+    j := _v111_injury(I1);
+    PERFORM _assert(j->>'phase' = 'rehab' AND (j->>'restricted')::boolean AND (j->>'rtw_date')::date = T + 21
+                    AND (j->>'next_review_on')::date = T + 7,
+      format('§88 (review): rehab did not reach the injury row, or moved what it was not given: %s', j));
+    j := _v111_reviews(I1);
+    PERFORM _assert(jsonb_array_length(j) = 2 AND (j->1->>'restricted_after')::boolean AND (j->1->>'rtw_date_after')::date = T + 21
+                    AND NOT (j->1->>'is_recording')::boolean,
+      format('§88 (review): the review row does not state the whole state after it: %s', j->1));
+    PERFORM _assert(_v111_fitness(BOY) = 'rehab', format('§88 (fitness): in rehab his fitness reads %s', _v111_fitness(BOY)));
+    PERFORM _assert(_v111_notices(I1) = ARRAY['Injury recorded'],
+      format('§88 (review): a phase step wrote a notice: %s', _v111_notices(I1)));
+    FOR k, v_reason IN
+      SELECT x.label, (SELECT r.reason FROM injury_review_record(I1, x.ph, x.restr, NULL, x.nxt, NULL) r)
+        FROM (VALUES ('next_review_required',       'rehab',     NULL::boolean, NULL::date),
+                     ('phase_invalid',              'returning', NULL,          T + 7),
+                     ('cleared_is_not_restricted',  'cleared',   true,          NULL),
+                     ('cleared_has_no_next_review', 'cleared',   false,         T + 7),
+                     ('next_review_in_past',        'active',    NULL,          T - 1)) AS x(label, ph, restr, nxt) LOOP
+      PERFORM _assert(v_reason = k, format('§88 (review): a review that should be %s was answered %s', k, coalesce(v_reason, 'ok')));
+    END LOOP;
+    PERFORM _assert(jsonb_array_length(_v111_reviews(I1)) = 2, '§88 (review): a refused review was written');
+    SELECT r.ok INTO v_ok FROM injury_review_record(I1, 'rehab', true, T + 28, T + 7, NULL) r;
+    PERFORM _assert(v_ok AND _v111_notices(I1) = ARRAY['Injury recorded', 'Return date updated'],
+      format('§88 (review): moving the return date wrote %s', _v111_notices(I1)));
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_review_record(I1, 'cleared', NULL, NULL, NULL, 'V111: cleared, full training.') r;
+    PERFORM _assert(v_ok, format('§88 (review): the physio could not clear him (%s)', v_reason));
+    j := _v111_injury(I1);
+    PERFORM _assert(j->>'phase' = 'cleared' AND NOT (j->>'restricted')::boolean AND j->>'next_review_on' IS NULL,
+      format('§88 (review): clearing did not unrestrict him and end the clock: %s', j));
+    PERFORM _assert(_v111_notices(I1) = ARRAY['Cleared to play', 'Injury recorded', 'Return date updated'],
+      format('§88 (review): clearing wrote %s', _v111_notices(I1)));
+    PERFORM _assert(_v111_fitness(BOY) = 'fit', format('§88 (fitness): cleared, his fitness reads %s', _v111_fitness(BOY)));
+    SELECT r.reason INTO v_reason FROM injury_review_record(I1, 'rehab', true, NULL, T + 7, NULL) r;
+    PERFORM _assert(v_reason = 'injury_cleared', format('§88 (review): a cleared injury was reviewed again (%s)', coalesce(v_reason, 'ok')));
+    SELECT r.reason INTO v_reason FROM injury_review_record(gen_random_uuid(), 'rehab', true, NULL, T + 7, NULL) r;
+    PERFORM _assert(v_reason = 'no_such_injury', format('§88 (review): an injury that is not there got %s', coalesce(v_reason, 'ok')));
+    PERFORM _assert(jsonb_array_length(_v111_reviews(I1)) = 4 AND _v111_sg_count(V_HIL) = sg0,
+      '§88 (review): the story is not four reviews and no safeguarding notice');
+
+    -- ── (reopen) ──
+    SELECT r.ok, r.reason, r.injury_id INTO v_ok, v_reason, I_RECUR
+      FROM injury_record(BOY, 'Grade 1 hamstring strain, again', 'moderate', T, true, T + 21, T + 14, false, NULL, I1) r;
+    PERFORM _assert(v_ok AND (_v111_injury(I_RECUR)->>'recurs_injury_id')::uuid = I1,
+      format('§88 (reopen): the recurrence does not name the cleared injury (%s)', v_reason));
+    SELECT r.reason INTO v_reason FROM injury_record(BOY, 'Bruise', 'minor', T, true, T + 7, T + 7, false, NULL, I_MATE) r;
+    PERFORM _assert(v_reason = 'recurs_not_his', format('§88 (reopen): another boy''s injury was named as his (%s)', coalesce(v_reason, 'ok')));
+    SELECT r.reason INTO v_reason FROM injury_record(BOY, 'Bruise', 'minor', T, true, T + 7, T + 7, false, NULL, I_RECUR) r;
+    PERFORM _assert(v_reason = 'recurs_an_open_injury', format('§88 (reopen): an open injury was named as recurring (%s)', coalesce(v_reason, 'ok')));
+    PERFORM _assert(_v111_fitness(BOY) = 'injured', format('§88 (fitness): injured again, his fitness reads %s', _v111_fitness(BOY)));
+
+    -- ── (key) ──
+    PERFORM _assert(_v111_mismatch(I_RECUR, MATE) = '23503',
+      format('§88 (key): a review naming the boy''s injury and his team-mate was not refused by the key (%s)', _v111_mismatch(I_RECUR, MATE)));
+
+    -- ── review dated before the last ──
+    PERFORM _v111_future_review(I_MATE);
+    PERFORM _as((y->>'mumphysio')::uuid);
+    SELECT r.reason INTO v_reason FROM injury_review_record(I_MATE, 'rehab', true, NULL, T + 3, NULL) r;
+    PERFORM _assert(v_reason = 'review_before_last', format('§88 (review): a review behind the last one got %s', coalesce(v_reason, 'ok')));
+    PERFORM _as(U_PHYSIO);
+
+    -- ── (fitness) 'unavailable' for another reason is left ──
+    SELECT r.injury_id INTO I_U FROM injury_record(REST, 'Blister', 'minor', T, true, T + 3, T + 3, false, NULL) r;
+    PERFORM _v111_set_fitness(REST, 'unavailable');
+    SELECT r.ok INTO v_ok FROM injury_review_record(I_U, 'cleared', false, NULL, NULL, NULL) r;
+    PERFORM _assert(v_ok AND _v111_fitness(REST) = 'unavailable',
+      format('§88 (fitness): clearing his last injury wrote %s over unavailable', _v111_fitness(REST)));
+
+    -- ── (tiers) the boy's five reviews: I1's four, I_RECUR's one ──
+    -- Two carry a note (the rehab step and the clearance); four a next review
+    -- (all but the clearance).
+    FOR k, e_rows, e_phase, e_note, e_by IN
+      SELECT x.who, x.r, x.ph, x.nt, x.b FROM (VALUES
+        ('physio', 5, 5, 2, 5), ('parent', 5, 5, 2, 5), ('boy', 5, 5, 2, 5),
+        ('coach', 5, 5, 0, 0), ('assistant', 5, 5, 0, 0), ('manager', 5, 5, 0, 0), ('director', 5, 5, 0, 0),
+        ('office', 5, 5, 0, 0), ('fitness', 5, 5, 0, 0),
+        ('principal', 5, 0, 0, 0), ('enquirer', 5, 0, 0, 0),
+        ('coach20', 0, 0, 0, 0), ('mate', 0, 0, 0, 0), ('scorer', 0, 0, 0, 0), ('follower', 0, 0, 0, 0),
+        ('wesphysio', 0, 0, 0, 0), ('dso', 0, 0, 0, 0)) AS x(who, r, ph, nt, b) LOOP
+      PERFORM _as(CASE WHEN k = 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
+      SELECT count(*)::int, count(phase_after)::int, count(next_review_on)::int, count(note)::int, count(reviewed_by)::int,
+             (count(reviewed_at) + count(restricted_after))::int
+        INTO c_rows, c_phase, c_next, c_note, c_by, c_status
+        FROM injury_review_masked WHERE player_id = BOY;
+      PERFORM _assert(c_rows = e_rows AND c_phase = e_phase AND c_next = CASE WHEN e_phase = 5 THEN 4 ELSE 0 END
+                      AND c_note = e_note AND c_by = e_by AND c_status = 2 * e_rows,
+        format('§88 (tiers): the %s reads %s reviews of the boy, %s phases, %s next reviews, %s notes, %s authors (expected %s, %s, %s, %s)',
+               k, c_rows, c_phase, c_next, c_note, c_by, e_rows, e_phase, e_note, e_by));
+      SELECT count(*)::int INTO c_rows FROM injury_review WHERE player_id = BOY;
+      PERFORM _assert(c_rows = e_rows, format('§88 (tiers): the %s reads %s rows of the table, not %s', k, c_rows, e_rows));
+      -- is_recording is the status tier's: the two recordings (I1's, I_RECUR's), to every reader of a row.
+      SELECT count(*) FILTER (WHERE is_recording)::int INTO c_rows FROM injury_review_masked WHERE player_id = BOY;
+      PERFORM _assert(c_rows = CASE WHEN e_rows = 5 THEN 2 ELSE 0 END,
+        format('§88 (tiers): the %s reads %s recordings among the boy''s reviews', k, c_rows));
+      -- injury_masked's new columns, on the open recurrence.
+      SELECT count(*)::int, count(next_review_on)::int, count(emergency_services)::int, count(recorded_by)::int,
+             count(recurs_injury_id)::int, count(rtw_date)::int
+        INTO c_rows, c_next, c_phase, c_by, c_note, c_status
+        FROM injury_masked WHERE id = I_RECUR;
+      PERFORM _assert(c_rows = sign(e_rows) AND c_next = sign(e_phase) AND c_phase = sign(e_phase) AND c_by = sign(e_by)
+                      AND c_note = sign(e_rows) AND c_status = sign(e_rows),
+        format('§88 (tiers): the %s reads injury_masked''s new columns wrong (row %s, next %s, emergency %s, author %s, recurs %s, return %s)',
+               k, c_rows, c_next, c_phase, c_by, c_note, c_status));
+    END LOOP;
+
+    -- ── (principal) the status tier alone (D3; Kameel, 2026-10-15) ──
+    -- That the boy is out, since when and until when, and his fitness word;
+    -- never what is wrong, how bad, the phase or the physio's next date.
+    PERFORM _as((y->>'principal')::uuid);
+    SELECT count(*)::int, count(injury_type)::int + count(severity)::int + count(phase)::int
+                          + count(next_review_on)::int + count(emergency_services)::int,
+           count(restricted)::int + count(rtw_date)::int + count(date_injured)::int
+      INTO c_rows, c_phase, c_status
+      FROM injury_masked WHERE id = I_RECUR;
+    PERFORM _assert(c_rows = 1 AND c_phase = 0 AND c_status = 3,
+      format('§88 (principal): the principal reads the recurrence as %s row, %s nature columns and %s of 3 status columns', c_rows, c_phase, c_status));
+    SELECT fitness INTO got FROM player_masked WHERE id = BOY;
+    PERFORM _assert(got = 'injured', format('§88 (principal): the principal reads the boy''s fitness as %s, not injured', coalesce(got, 'null')));
+    PERFORM _assert(NOT app_can('medical.nature.read', V_HIL, '12XI', BOY, '00000000-0000-0000-0000-000000000000'::uuid),
+      '§88 (principal): the principal holds medical.nature.read');
+
+    -- ── (worklist) ──
+    PERFORM _as(U_PHYSIO);
+    SELECT r.injury_id INTO I_OVER FROM injury_record(SIDE, 'Calf strain', 'minor', T - 3, true, T + 30, T + 10, false, NULL) r;
+    PERFORM _v111_edit(I_OVER, T - 2, T + 30);
+    SELECT r.injury_id INTO I_RET FROM injury_record(SIDE, 'Groin strain', 'minor', T - 6, true, T + 5, T + 20, false, NULL) r;
+    PERFORM injury_review_record(I_RET, 'rehab', true, NULL, T + 20, NULL);
+    PERFORM _v111_edit(I_RET, T + 20, T - 1);
+    SELECT r.injury_id INTO I_NORTW FROM injury_record(OWN, 'Stress reaction, lower back', 'moderate', T - 4, true, NULL, T + 20, false, NULL) r;
+    PERFORM injury_review_record(I_NORTW, 'rehab', true, NULL, T + 20, NULL);
+    SELECT r.injury_id INTO I_QUIET FROM injury_record(SIDE, 'Finger sprain', 'minor', T - 2, true, T + 30, T + 20, false, NULL) r;
+    PERFORM injury_review_record(I_QUIET, 'rehab', true, NULL, T + 20, NULL);
+    SELECT r.injury_id INTO I_LEFT FROM injury_record(LEAVER, 'Knee sprain', 'minor', T - 1, true, T + 9, T + 3, false, NULL) r;
+    PERFORM _assert(I_OVER IS NOT NULL AND I_RET IS NOT NULL AND I_NORTW IS NOT NULL AND I_QUIET IS NOT NULL AND I_LEFT IS NOT NULL,
+      '§88 (worklist): an injury was not staged');
+    SELECT w.reason INTO got FROM injury_worklist() w WHERE w.injury_id = I_LEFT;
+    PERFORM _assert(got = 'due', format('§88 (worklist): before he leaves, the leaver''s injury reads %s', coalesce(got, 'absent')));
+    PERFORM _assert(_v111_leave(LEAVER) = 1, '§88 (worklist): the leaver had no open membership to close');
+    FOR k, got, j IN
+      SELECT x.label, x.want, x.clock FROM (VALUES
+        ('I_OVER',  'overdue',        jsonb_build_object('due', T - 2, 'over', 2, 'since', T - 2)),
+        ('I_RET',   'return_passed',  jsonb_build_object('due', T - 1, 'over', 1, 'since', T - 1)),
+        ('I_MATE',  'due',            jsonb_build_object('due', T + 3, 'over', 0)),
+        ('I_NORTW', 'no_return_date', jsonb_build_object('due', T + 20, 'over', 0, 'since', 'last_review')),
+        ('I_RECUR', 'new',            jsonb_build_object('due', T + 14, 'over', 0, 'since', 'last_review')),
+        ('I_OWN',   'new',            jsonb_build_object('due', T + 20, 'over', 0, 'since', 'last_review')),
+        ('I_QUIET', NULL,             NULL),
+        ('I_LEFT',  NULL,             NULL),
+        ('I1',      NULL,             NULL)) AS x(label, want, clock) LOOP
+      v_id := CASE k WHEN 'I_OVER' THEN I_OVER WHEN 'I_RET' THEN I_RET WHEN 'I_MATE' THEN I_MATE WHEN 'I_NORTW' THEN I_NORTW
+                     WHEN 'I_RECUR' THEN I_RECUR WHEN 'I_OWN' THEN I_OWN WHEN 'I_QUIET' THEN I_QUIET
+                     WHEN 'I_LEFT' THEN I_LEFT ELSE I1 END;
+      SELECT count(*)::int, max(w.reason), max(w.due_on - T), max(w.days_over), max(w.since - T)
+        INTO n, v_reason, c_rows, c_phase, e_rows
+        FROM injury_worklist() w WHERE w.injury_id = v_id;
+      IF got IS NULL THEN
+        PERFORM _assert(n = 0, format('§88 (worklist): %s is on the physio''s list as %s', k, v_reason));
+      ELSE
+        PERFORM _assert(n = 1 AND v_reason = got, format('§88 (worklist): %s reads %s (%s rows), not %s', k, coalesce(v_reason, 'absent'), n, got));
+        -- 'last_review': the day of the injury's latest review, from the row's
+        -- own reviewed_at, in Johannesburg. Not T: T is sa_today() at the
+        -- transaction's start, and the doors stamp clock_timestamp(), so a run
+        -- that crosses midnight in South Africa reviewed "tomorrow".
+        PERFORM _assert(T + c_rows = (j->>'due')::date AND c_phase = (j->>'over')::int
+                        AND (NOT j ? 'since'
+                             OR T + e_rows = CASE WHEN j->>'since' = 'last_review'
+                                                  THEN (SELECT (max((r->>'reviewed_at')::timestamptz) AT TIME ZONE 'Africa/Johannesburg')::date
+                                                          FROM jsonb_array_elements(_v111_reviews(v_id)) r)
+                                                  ELSE (j->>'since')::date END),
+          format('§88 (worklist): %s''s clock reads due %s, over %s, since %s, not %s', k, T + c_rows, c_phase, T + e_rows, j));
+      END IF;
+    END LOOP;
+    SELECT to_jsonb(array_agg(x.injury_id ORDER BY x.ord)) INTO j
+      FROM injury_worklist() WITH ORDINALITY AS x(injury_id, school_id, player_id, reason, since, due_on, days_over, ord)
+     WHERE x.injury_id IN (I_OVER, I_RET, I_MATE, I_NORTW, I_RECUR);
+    PERFORM _assert(j = to_jsonb(ARRAY[I_OVER, I_RET, I_MATE, I_NORTW, I_RECUR]),
+      format('§88 (worklist): the list is not overdue, return passed, due, no return date, new: %s', j));
+    SELECT count(*)::int INTO n FROM injury_masked WHERE id = I_LEFT AND injury_type IS NOT NULL;
+    PERFORM _assert(n = 1, '§88 (worklist): the physio no longer reads the injury of the boy who left');
+    -- (left) the "left the school" mark, under each reader's own RLS: the day
+    -- he left to the physio, his coach and the principal (status tier); NULL
+    -- for a boy still there; NULL to a reader of neither (20XI's coach).
+    FOREACH k IN ARRAY ARRAY['physio', 'coach', 'principal', 'coach20'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      PERFORM _assert(injury_left_on(LEAVER, V_HIL) IS NOT DISTINCT FROM CASE WHEN k = 'coach20' THEN NULL ELSE T END
+                      AND injury_left_on(BOY, V_HIL) IS NULL,
+        format('§88 (left): the %s reads the leaver as left on %s and the boy as left on %s', k,
+               injury_left_on(LEAVER, V_HIL), injury_left_on(BOY, V_HIL)));
+    END LOOP;
+    PERFORM _as(U_PHYSIO);
+    PERFORM _assert((_v111_injury(I_LEFT)->>'phase') = 'active', '§88 (worklist): leaving changed his injury row');
+    PERFORM _as((y->>'mumphysio')::uuid);
+    SELECT count(*) FILTER (WHERE w.injury_id IN (I_NORTW, I_OWN))::int, count(*) FILTER (WHERE w.injury_id = I_RECUR)::int
+      INTO n, c_rows FROM injury_worklist() w;
+    PERFORM _assert(n = 0 AND c_rows = 1, format('§88 (worklist): the mother-physio''s list holds %s of her son''s injuries and %s of the boy''s', n, c_rows));
+    PERFORM _as((y->>'claimphysio')::uuid);
+    SELECT count(*) FILTER (WHERE w.injury_id = I_RECUR)::int, count(*) FILTER (WHERE w.injury_id = I_OWN)::int
+      INTO n, c_rows FROM injury_worklist() w;
+    PERFORM _assert(n = 0 AND c_rows = 1, format('§88 (worklist): the claiming physio''s list holds %s of the boy''s and %s of another', n, c_rows));
+    FOREACH k IN ARRAY ARRAY['coach', 'assistant', 'manager', 'coach20', 'director', 'principal', 'office', 'fitness',
+                             'scorer', 'follower', 'enquirer', 'parent', 'boy', 'mate', 'owner', 'dso'] LOOP
+      PERFORM _as(CASE k WHEN 'owner' THEN U_SUPER WHEN 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
+      SELECT count(*)::int INTO n FROM injury_worklist();
+      PERFORM _assert(n = 0, format('§88 (worklist): the %s reads %s worklist rows', k, n));
+    END LOOP;
+    PERFORM _as((y->>'wesphysio')::uuid);
+    SELECT count(*)::int INTO n FROM injury_worklist() w WHERE w.school_id = V_HIL;
+    PERFORM _assert(n = 0, format('§88 (worklist): Westville''s physio reads %s of Hilton''s worklist', n));
+
+    -- ── (support) ──
+    -- sportsadmin, not schooladmin: earlier sections leave the platform's own
+    -- schooladmin session at Hilton live in this transaction (already_live).
+    FOREACH k IN ARRAY ARRAY['medical', 'sportsadmin'] LOOP
+      PERFORM _as(U_PLAT);
+      SELECT r.ok, r.id, r.reason INTO v_ok, v_sid, v_reason FROM support_access_begin(V_HIL, k, 'v111: the injuries screen will not load') r;
+      PERFORM _assert(v_ok, format('§88 (support): a support session as %s did not begin (%s)', k, v_reason));
+      SELECT count(*)::int INTO n FROM injury_review;
+      SELECT count(*)::int INTO c_rows FROM injury_review_masked;
+      SELECT count(*)::int INTO c_phase FROM injury_masked WHERE player_id = BOY;
+      PERFORM _assert(n = 0 AND c_rows = 0, format('§88 (support): a support session as %s reads %s reviews (%s through the view)', k, n, c_rows));
+      PERFORM _assert(c_phase = 2, format('§88 (support): a support session as %s reads %s of the boy''s injury rows, not 2 (Q7: as today)', k, c_phase));
+      SELECT count(*)::int INTO n FROM injury_worklist();
+      PERFORM _assert(n = 0, format('§88 (support): a support session as %s reads %s worklist rows', k, n));
+      SELECT r.reason INTO v_reason FROM injury_record(BOY, 'Side strain', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+      PERFORM _assert(v_reason = 'not_under_support', format('§88 (support): a support session as %s recording got %s', k, coalesce(v_reason, 'ok')));
+      SELECT r.reason INTO v_reason FROM injury_review_record(I_RECUR, 'rehab', true, NULL, T + 7, NULL) r;
+      PERFORM _assert(v_reason = 'not_under_support', format('§88 (support): a support session as %s reviewing got %s', k, coalesce(v_reason, 'ok')));
+      PERFORM support_access_end(v_sid);
+    END LOOP;
+    PERFORM _assert(jsonb_array_length(_v111_reviews(I_RECUR)) = 1, '§88 (support): a support session wrote a review');
+
+    -- ── (sg12) ──
+    PERFORM _as(U_PHYSIO);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0, '§88 (sg12): nothing serious has been recorded, and a safeguarding notice was written');
+    SELECT r.injury_id INTO I_SEV FROM injury_record(SIDE, 'Compound wrist fracture', 'severe', T, true, T + 60, T + 7, false, NULL) r;
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 1, format('§88 (sg12): a severe record wrote %s safeguarding notices', _v111_sg_count(V_HIL) - sg0));
+    PERFORM _assert(_v111_injury(I_SEV)->>'dso_notified_at' IS NOT NULL, '§88 (sg12): the once-guard was not stamped');
+    PERFORM _as(U_DSO);
+    SELECT count(*)::int, max(x.title), max(x.body),
+           bool_and(x.subject_id IS NULL AND x.subject_person_id IS NULL AND x.subject_kind IS NULL AND x.team_code IS NULL
+                    AND x.recipient_id IS NULL AND x.scope_level = 'school' AND x.urgency = 'high' AND NOT x.is_public
+                    AND x.required_capability = 'safeguarding.concern.read' AND x.school_id = V_HIL)
+      INTO n, got, v_reason, v_ok
+      FROM notification x WHERE x.kind = 'safeguarding' AND x.title = 'A serious injury has been recorded';
+    PERFORM _assert(n = 1 AND v_ok, format('§88 (sg12): the DSO reads %s serious-injury notices, shaped %s', n, v_ok));
+    PERFORM _assert(v_reason = 'A pupil at your school has had a serious injury recorded by the physio today. This is for your awareness under CSA''s Safeguarding Policy; the clinical record stays with the physio. Raise a concern if there is a safeguarding question.',
+      format('§88 (sg12): the notice''s words are not D10''s: %s', v_reason));
+    PERFORM _assert(got || v_reason !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+                    AND got || v_reason !~* '(Verify|OneEleven|Otherside|fracture|wrist|compound)',
+      '§88 (sg12): the notice names a child, an id or a diagnosis');
+    SELECT count(*)::int INTO n FROM injury;
+    SELECT count(*)::int INTO c_rows FROM injury_review;
+    PERFORM _assert(n = 0 AND c_rows = 0, format('§88 (sg12): the DSO reads %s injuries and %s reviews', n, c_rows));
+    FOREACH k IN ARRAY ARRAY['physio', 'coach20', 'director'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT count(*)::int INTO n FROM notification WHERE kind = 'safeguarding';
+      PERFORM _assert(n = 0, format('§88 (sg12): the %s reads %s safeguarding notices', k, n));
+    END LOOP;
+    PERFORM _as((y->>'coach20')::uuid);
+    SELECT count(*)::int INTO n FROM notification WHERE kind = 'injury' AND subject_id = I_SEV;
+    PERFORM _assert(n = 1, format('§88 (sg12): the side''s coach reads %s "Injury recorded" notices for it (notify_injury unchanged)', n));
+    PERFORM _v111_serious(I_SEV, 'severe', true);
+    PERFORM _as(U_PHYSIO);
+    PERFORM injury_review_record(I_SEV, 'rehab', true, NULL, T + 7, NULL);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 1, '§88 (sg12): a second edit or a review wrote a second notice');
+    SELECT r.injury_id INTO I_MOD FROM injury_record(SIDE, 'Shoulder dislocation', 'moderate', T, true, T + 30, T + 7, false, NULL) r;
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 1, '§88 (sg12): a moderate record wrote a notice');
+    PERFORM _v111_serious(I_MOD, 'severe', false);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): made severe, it wrote no notice');
+    PERFORM _v111_serious(I_MOD, 'severe', true);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): told twice about one injury');
+    -- Eased, then made severe again: told once (the stamp).
+    PERFORM _v111_serious(I_MOD, 'moderate', false);
+    PERFORM _v111_serious(I_MOD, 'severe', false);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): made severe a second time, the DSO was told twice');
+    -- Serious before db/111 ran, and never stamped: a later edit tells nobody
+    -- (the notice is for an injury that BECOMES serious).
+    v_id := _v111_legacy_severe(SIDE);
+    PERFORM _v111_serious(v_id, 'severe', true);
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 2, '§88 (sg12): an edit to an injury already serious before db/111 told the DSO');
+    SELECT r.injury_id INTO I_EMS FROM injury_record(SIDE, 'Concussion, ambulance called', 'minor', T, true, T + 14, T + 2, true, NULL) r;
+    PERFORM _assert(_v111_sg_count(V_HIL) = sg0 + 3, '§88 (sg12): emergency services called wrote no notice');
+    PERFORM _as(U_DSO);
+    SELECT count(*)::int INTO n FROM notification WHERE kind = 'safeguarding' AND title = 'A serious injury has been recorded';
+    PERFORM _assert(n = 3, format('§88 (sg12): the DSO reads %s of the three', n));
+
+    -- ── (retention) ──
+    PERFORM _assert(_v111_due(BOY) IS NULL, format('§88 (retention): at school, his record is due %s', _v111_due(BOY)));
+    PERFORM _assert(_v111_due(LEAVER) = (T + interval '12 months')::date,
+      format('§88 (retention): left today, his record is due %s', _v111_due(LEAVER)));
+
+    -- ── (agree) every door-written injury's state is its latest review's ──
+    FOREACH v_id IN ARRAY ARRAY[I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_LEFT, I_SEV, I_MOD, I_EMS] LOOP
+      j := _v111_injury(v_id);
+      PERFORM _assert((SELECT z.r->>'phase_after' = j->>'phase' AND (z.r->>'restricted_after')::boolean = (j->>'restricted')::boolean
+                              AND z.r->>'rtw_date_after' IS NOT DISTINCT FROM j->>'rtw_date'
+                              AND z.r->>'next_review_on' IS NOT DISTINCT FROM j->>'next_review_on'
+                         FROM (SELECT _v111_reviews(v_id) -> -1 AS r) z),
+        format('§88 (agree): injury %s and its latest review disagree', j->>'injury_type'));
+    END LOOP;
+    PERFORM _as(U_PHYSIO);
+    SELECT count(*)::int INTO n FROM injury_review_masked
+     WHERE injury_id IN (I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_LEFT, I_SEV, I_MOD, I_EMS, I_OVER, I_RET, I_U);
+    SELECT sum(jsonb_array_length(_v111_reviews(x)))::int INTO c_rows
+      FROM unnest(ARRAY[I1, I_RECUR, I_OWN, I_MATE, I_NORTW, I_QUIET, I_LEFT, I_SEV, I_MOD, I_EMS, I_OVER, I_RET, I_U]) x;
+    PERFORM _assert(n = c_rows AND n > 0, format('§88 (agree): the physio reads %s of the %s reviews at her school', n, c_rows));
+
+    -- ── (doors2) ──
+    PERFORM _assert((SELECT bool_and(prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}')))
+                       FROM pg_proc WHERE oid IN (to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)'),
+                                                  to_regprocedure('injury_review_record(uuid,text,boolean,date,date,text)'),
+                                                  to_regprocedure('injury_apply_review()'), to_regprocedure('injury_serious_watch()'),
+                                                  to_regprocedure('injury_retention_due(uuid)'))),
+      '§88 (doors2): a door or a trigger is not a pinned SECURITY DEFINER');
+    PERFORM _assert((SELECT NOT prosecdef FROM pg_proc WHERE oid = to_regprocedure('injury_worklist()')),
+      '§88 (doors2): the worklist runs as its owner, past the caller''s RLS');
+    PERFORM _assert(has_function_privilege('scrbrd_app', to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)'), 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('injury_review_record(uuid,text,boolean,date,date,text)'), 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('injury_worklist()'), 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('injury_retention_due(uuid)'), 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('injury_write_refusal(uuid,uuid)'), 'EXECUTE'),
+      '§88 (doors2): the application cannot call its doors, or can call an internal');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                                 WHERE p.proname IN ('injury_record', 'injury_review_record', 'injury_worklist', 'injury_writer_is_family',
+                                                     'injury_write_refusal', 'injury_apply_review', 'injury_serious_watch', 'injury_retention_due')
+                                   AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+      '§88 (doors2): PUBLIC may call one of db/111''s functions');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles g, pg_proc p WHERE g.rolname IN ('anon', 'authenticated')
+                                   AND p.proname IN ('injury_record', 'injury_review_record', 'injury_worklist')
+                                   AND has_function_privilege(g.oid, p.oid, 'EXECUTE')),
+      '§88 (doors2): a managed host''s API role can call a door');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 88
+  -- └── db/111 (section 88) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

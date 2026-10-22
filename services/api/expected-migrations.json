@@ -105,5 +105,6 @@
   "107_official_register_closed.sql",
   "108_player_team_scoped.sql",
   "109_guardian_link_ending.sql",
-  "110_plan_drafts.sql"
+  "110_plan_drafts.sql",
+  "111_injury_review.sql"
 ]
