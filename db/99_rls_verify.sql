@@ -26822,7 +26822,7 @@ $v49$;
     t      date := sa_today();
     ZERO   uuid := '00000000-0000-0000-0000-000000000000';
     -- The move's day (the stage's: t-10, or this season's start in early
-    -- January), the school move's (t-5, or the move's day) and the dated
+    -- January), the school move's (t-5, or the day after the move) and the dated
     -- import's (t-20, or the season's start): each a person's write or after
     -- one, so never before db/117's floor.
     XM     int;
@@ -26837,7 +26837,7 @@ $v49$;
     FX := ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^f4');
     SELECT s.starts_on INTO v_season FROM season_for(sa_today(), 'school') s;
     XM := (z->>'day_move')::date - t;
-    XS := greatest(XM, -5);
+    XS := greatest(XM + 1, -5);   -- a day after the move back, so the rows read in one order
     XD := greatest(v_season - t, -20);
 
     -- ── (before) ──
