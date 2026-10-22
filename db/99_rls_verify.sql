@@ -26571,18 +26571,18 @@ $v49$;
   --              scrbrd_app and not PUBLIC, nor anon or authenticated where
   --              they exist
   --
-  -- Falsified, each change made as the owner to is_family_of() before this
-  -- section ran (the section alone, cut from this file, on 22 Oct 2026), each
-  -- red at its label:
-  --   no a.valid_until test        → (ended): ended is the boy's family
-  --   no a.expires_at test         → (ended): expired is the boy's family
-  --   no s.valid_until test        → (ended): linkend is the boy's family
-  --   no s.valid_from test         → (early): early is the boy's family
-  --   no NOT app_pad_scoped()      → (pad): the live guardian is the boy's
-  --                                   family on a pad
-  --   injury_writer_is_family() as → (physio): the mother-physio recorded her
-  --     is_family_of() alone          son's injury once her link had ended
-  --   GRANT EXECUTE ... TO PUBLIC  → (grants)
+  -- Falsified, each change made as the owner before this section ran (the
+  -- section alone, cut from this file, on 22 Oct 2026); unchanged it passed,
+  -- and each change went red at its label:
+  --   is_family_of() without a.valid_until  → (ended): ended is the boy's family
+  --   is_family_of() without a.expires_at   → (ended): expired is the boy's family
+  --   is_family_of() without s.valid_until  → (ended): linkend is the boy's family
+  --   is_family_of() without s.valid_from   → (early): early is the boy's family
+  --   is_family_of() without the pad test   → (pad): live is the boy's family on a pad
+  --   injury_writer_is_family() as          → (physio): injury_writer_is_family()
+  --     is_family_of() alone                   let her ended link go
+  --   GRANT EXECUTE ... TO PUBLIC           → (grants): is_family_of() is not
+  --                                            scrbrd_app's alone
   DECLARE
     y    jsonb := _v119_stage();
     F    uuid;
