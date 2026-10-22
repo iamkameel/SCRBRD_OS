@@ -94,9 +94,20 @@ if (args.has("--reset") && !LOCAL_HOSTS.has(hostOf(URL))
 // only on this machine. See the --verify step below for why. Anywhere that is
 // not local it is refused, never attempted: there is no override, because no
 // remote database needs it (db/99 grants it there inside its own transaction).
+//
+// "Local" here is narrower than --reset's rule: this machine's loopback only
+// (not the compose service `db`), and never on CI. CI's database is on
+// 127.0.0.1 too (ci.yml's Verifier, backup-drill.yml's restored copy), and it
+// must behave exactly as before: db/99's grant inside its own transaction,
+// gone at its ROLLBACK. GitHub Actions sets CI and GITHUB_ACTIONS.
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 function grantVerifierMembership() {
-  if (!LOCAL_HOSTS.has(hostOf(URL))) {
-    console.log(`  refusing to persist the verifier's role membership on ${hostOf(URL) || "an unparseable DATABASE_URL"}: not a local database. db/99 grants it inside its own transaction, as on CI and production.`);
+  if (process.env.CI || process.env.GITHUB_ACTIONS) {
+    console.log("  not persisting the verifier's role membership on CI: db/99 grants it inside its own transaction, as before.");
+    return;
+  }
+  if (!LOOPBACK.has(hostOf(URL))) {
+    console.log(`  refusing to persist the verifier's role membership on ${hostOf(URL) || "an unparseable DATABASE_URL"}: not this machine's database. db/99 grants it inside its own transaction, as on CI and production.`);
     return;
   }
   psql(["-c", `DO $persist$
@@ -226,8 +237,8 @@ if (args.has("--verify")) {
   // worktree's verify on the same cluster queued behind it for a whole run
   // (21 Oct 2026: 43 minutes waiting before one started). db/99 now grants
   // nothing when the membership is already there. Persisting it is a
-  // privilege change, so it is made only on a local cluster and refused
-  // anywhere else, on the same host rule as --reset; on CI and production
+  // privilege change, so it is made only on this machine's loopback, never on
+  // CI, and refused anywhere else (grantVerifierMembership); on CI and production
   // db/99 grants it inside its own transaction and the ROLLBACK takes it away,
   // as before.
   grantVerifierMembership();
