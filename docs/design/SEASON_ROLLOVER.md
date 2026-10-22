@@ -531,6 +531,8 @@ At most eight; each with a recommendation.
 | **Q7** | **Correcting a wrong move date.** No door exists to re-date a `team_membership` row; a too-late date cannot be moved earlier (§3.3). Build `team_membership_redate()` under `player.profile.manage`, logged? | **Not yet.** The table's worth is that no person edits it; a wrong date is rare and the office's note can say so. Revisit after one rollover if it bites. **Decided: as recommended (Kameel, 15 Oct 2026).** |
 | **Q8** | **Where the oversight of health stops.** D5's "the record" is read here as the development record (GA-I26a's three tables). Should a former coach keep sight of anything else — the injury he reported, the load he logged? | **No.** SCRBRD-110 §6.5 and K3 put health behind the current side and the physio; a former coach's sight of a boy's body is the thing the DSO policy exists to narrow. His own authorship on an `injury` row stays, unread by him. **Decided: as recommended (Kameel, 15 Oct 2026).** |
 
+**Decided 22 Oct 2026 (Kameel), as recommended:** (1) a boy moved to another side reads his old side's posts and plans from his time on it; (2) a move to another school leaves the old season with the old school; (3) the import dates a boy from the season's start unless the file gives a date (PR #190).
+
 ---
 
 ## 10 · What this document does not reopen
