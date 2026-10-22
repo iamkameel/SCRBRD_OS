@@ -11188,8 +11188,12 @@ BEGIN
     -- caller himself (my_own_boy()), asked of app_can('fixture.read', …, <him>,
     -- …) at his own side. The same bound: under pad scope app_can() answers
     -- only the credential's own match; no argument; nobody else's sheet.
+    -- my_own_side_fixtures (db/117): the fixtures of the caller's own side on
+    -- their day (my_own_boy(), his team_membership rows), asked of
+    -- app_can('fixture.read', …, <him>, …) at his own side. The same bound:
+    -- under pad scope only the credential's own match; no argument.
     PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,scoring_arm_handover,scoring_claim,'
+                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,my_own_side_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
