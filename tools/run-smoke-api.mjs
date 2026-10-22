@@ -400,6 +400,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // passport and his own file; no team-mate's injury, fitness or return date
   // (K3, db/55); 12px and 44px at phone width.
   "browser-pupil",
+  // GA-I24-I25 S1: Compare on Analytics — the picker holds only readable
+  // players (a coach's side, an analyst's school, never a boy who has left),
+  // the thirty-ball floor and the counts, no forbidden field or read, nothing
+  // kept; a pupil against one team-mate only; a parent with no Compare.
+  "browser-compare",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
   "browser-public",
   // SCRBRD-083 C1–C5: the parent's switch on her child's file, the office's
@@ -695,12 +700,22 @@ const sh = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", stdio: ["igno
 
 let allPass = true;
 const summary = [];
+// On GitHub Actions a failing walk is also written as an annotation, which
+// the check-runs API returns: a job's log is served from another host, and
+// without this the only thing readable about a red shard is "exit code 1".
+// Newlines become %0A, the workflow command's own escape.
+const annotate = (title, lines) => {
+  if (!process.env.GITHUB_ACTIONS) return;
+  const esc = (t) => String(t).replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A");
+  console.log(`::error title=${esc(title).replace(/[:,]/g, " ")}::${esc(lines.join("\n").slice(0, 3000))}`);
+};
 
 for (const walk of run) {
   const reset = sh("node", ["tools/migrate.mjs", "--reset", "--seed"]);
   if (reset.status !== 0) {
     console.log(`✗ ${walk.padEnd(14)} could not reset the database`);
     console.log((reset.stdout + reset.stderr).split("\n").slice(-6).join("\n"));
+    annotate(`${walk}: could not reset the database`, (reset.stdout + reset.stderr).split("\n").slice(-6));
     allPass = false; summary.push({ walk, ok: false, passed: 0 });
     continue;
   }
@@ -716,6 +731,7 @@ for (const walk of run) {
   // On failure show the failing assertions, not the whole walk: the group
   // headings are context and the ✗ lines are the finding.
   if (!ok) console.log(out.split("\n").filter((l) => l.includes("✗") || l.includes("Error")).slice(0, 10).join("\n"));
+  if (!ok) annotate(`${walk}: ${m ? m[0] : "no summary"}`, out.split("\n").filter((l) => l.includes("✗") || l.includes("Error")).slice(0, 10));
 }
 
 const total = summary.reduce((a, s) => a + s.passed, 0);

@@ -383,6 +383,20 @@ group("A. Another school's boys do not leave as a file (GA-I24-I25 D9, A1)");
   ok("an ordinary roster export is not refused", !NOT_EXPORTED.has("players") && !NOT_EXPORTED.has("career"));
 }
 
+group("A. bowling_spells: the directive only under player.workload.read (GA-I24-I25 A2)");
+{
+  // The band is derived from his date of birth and the limits are a reading
+  // of his load, so the join itself is the gate: a reader without the
+  // capability gets the spell with every directive column null, in SQL.
+  const t = READ_QUERIES.bowling_spells.text.replace(/\s+/g, " ");
+  ok("the gate asks player.workload.read for the boy", /app_can\('player\.workload\.read', p\.school_id, p\.team_code, p\.id,/.test(t));
+  ok("the directive is joined only on it", /left join lateral bowling_directive_for\(s\.bowler_id\) d on w\.may/.test(t));
+  ok("...and the limit flag asks it again", /case when w\.may then d\.max_overs_per_spell/.test(t));
+  const directive = ["age_band", "pace", "max_overs_per_spell", "max_overs_per_day"];
+  ok("every directive column comes from the gated join", directive.every((c) => t.includes(`d.${c}`))
+     && !/\bs\.(age_band|pace|max_overs_per_spell|max_overs_per_day)\b/.test(t));
+}
+
 group("B. Feature flags: mock vs live per resource");
 {
   /** @type {string[]} */
