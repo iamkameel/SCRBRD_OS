@@ -17,7 +17,9 @@ import { api } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
 import { humanDate } from "../../lib/format.js";
 import { holds, linkEndWords, longDate, takeDoor } from "../../lib/family.js";
+import { phaseWord, severityWord } from "../../lib/injury.js";
 import { PassportTab } from "../SettingsView.jsx";
+import { InjuryHistory } from "../injuryreview.jsx";
 import { PublicNameSwitch } from "../publicname.jsx";
 import { Action, Card, Line, OpenRow, Unread } from "./parts.jsx";
 
@@ -66,8 +68,8 @@ export function ChildFileCard({ child, role, w, todo = null }) {
         </OpenRow>
         {panel === "record" && <TheirRecord child={child} role={role}/>}
         <OpenRow onClick={() => toggle("health")} testid={`family-open-health-${child.id}`}>
-          <span style={{ ...T.role.body, fontWeight: 600 }}>Health</span>
-          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Injuries on record, and when {name} is back</span>
+          <span style={{ ...T.role.body, fontWeight: 600 }}>Health history</span>
+          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Injuries on record, how each has gone, and when {name} is back</span>
         </OpenRow>
         {panel === "health" && <Health child={child} role={role}/>}
         <OpenRow onClick={() => toggle("consents")} testid={`family-open-consents-${child.id}`}>
@@ -228,11 +230,20 @@ export function TheirRecord({ child, role, self = false }) {
 
 // ── Health ─────────────────────────────────────────────
 
-/** Injuries on record for the child, every tier a guardian holds (§2.1 P6). Notes on a tap. */
+/**
+ * The child's health history: every injury on record for him, every tier a
+ * guardian (or the boy himself) holds, and for each the dated history of the
+ * physio's looks at it (GA-I19 slice B, D3). The notes are on a tap, and so is
+ * the history, which is read only when it is opened (a disclosure the server
+ * logs). The phase is said in the school's three words, never the database's.
+ * She is not shown the physio's worklist or a due date: this is what happened,
+ * not what the physio has to do.
+ */
 export function Health({ child, role, self = false }) {
   const { rows, loading, error, disabled } = useLive("injuries", role);
   const mine = rows.filter((i) => i.player === child.id);
   const [open, setOpen] = useState(null);
+  const [seen, setSeen] = useState(null);
   if (disabled) return <Line quiet>The {self ? "" : "school's "}injury records are not in use here.</Line>;
   if (loading && !rows.length) return <Line quiet>Reading the health record…</Line>;
   if (error) return <Unread what="the health record"/>;
@@ -242,12 +253,17 @@ export function Health({ child, role, self = false }) {
       {mine.map((i) => (
         <div key={i.id} data-testid={`injury-${i.id}`} style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: T.space.md, display: "grid", gap: "2px" }}>
           <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>{i.type ?? "An injury"}</span>
-          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>
-            {[i.phase, i.severity, i.rtw ? `back ${humanDate(String(i.rtw).slice(0, 10))}` : null].filter(Boolean).join(" · ")}
+          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }} data-testid={`injury-line-${i.id}`}>
+            {[phaseWord(i.phase), severityWord(i.severity), i.rtw ? `back ${humanDate(String(i.rtw).slice(0, 10))}` : null].filter(Boolean).join(" · ")}
           </span>
           {(i.notes || i.physio) && (open === i.id
             ? <p data-testid="injury-notes" style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>{[i.notes, i.physio ? `Physio: ${i.physio}` : null].filter(Boolean).join(" · ")}</p>
             : <div><Action testid={`injury-open-${i.id}`} onClick={() => setOpen(i.id)}>The physio&apos;s notes</Action></div>)}
+          <div style={{ marginTop: T.space.xs }}>
+            {seen === i.id
+              ? <InjuryHistory injuryId={i.id} role={role} recordingNote={i.notes} testid={`injury-history-${i.id}`}/>
+              : <Action testid={`injury-history-open-${i.id}`} onClick={() => setSeen(i.id)}>How it has gone</Action>}
+          </div>
         </div>
       ))}
     </div>

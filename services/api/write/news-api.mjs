@@ -58,6 +58,7 @@ const GUARD = {
   news_post_plan_side: "fixture_not_this_side",
   news_post_plan_fixed: "plan_fixed",
   news_post_public_not_plan: "plan_not_public",
+  news_post_plan_sent: "plan_sent",
 };
 
 /**
@@ -211,8 +212,8 @@ export function newsRoutes({ pool, secret, onChange }) {
     // alone), and its words checked again before it goes (§3.4): the list
     // may have grown since it was saved, and sending is the moment it reaches
     // the side. A hit refuses and changes nothing; so does a live plan
-    // already on the fixture for the side. There is no edit route: a sent
-    // plan is changed by withdrawing it (it is a draft again) and sending it.
+    // already on the fixture for the side. A sent plan is changed by
+    // withdrawing it (it is a draft again), changing it (…/edit) and sending it.
     send: handle(async (req) => {
       const id = String(req.params?.id ?? "").toLowerCase();
       if (!UUID.test(id)) throw err("no_such_draft", 404);
@@ -254,6 +255,68 @@ export function newsRoutes({ pool, secret, onChange }) {
       // the public cache drops now rather than when the notification arrives.
       onChange?.({ k: "news", id });
       return { id, published: false };
+    }),
+
+    // POST /api/news/:id/edit { body, urgency?, send? } — change an unsent
+    // plan (db/110, Kameel 15 Oct): one never sent, or one withdrawn. Its
+    // author's alone (db/12's update policy; db/110's guard behind it). A plan
+    // out with the side is refused (409 plan_sent: withdraw it first): what
+    // the side read is not changed under it. The words are checked as on
+    // writing; `send` sends it in the same go, as the publish route does, and
+    // a live plan already on the fixture for the side is said as there. The
+    // title is the screen's, made from the fixture, and is not changed here.
+    // Editing a withdrawn plan touches no notice: what the side was sent the
+    // first time stays in its retracted notice (db/91), and sending it again
+    // writes a new one.
+    edit: handle(async (req) => {
+      const id = String(req.params?.id ?? "").toLowerCase();
+      if (!UUID.test(id)) throw err("no_such_draft", 404);
+      const b = req.body || {};
+      if (b.body != null && String(b.body).trim().length > PLAN_BODY_MAX) {
+        throw Object.assign(err("body_too_long"), { extra: { max: PLAN_BODY_MAX } });
+      }
+      const body = clean(b.body, PLAN_BODY_MAX);
+      if (!body) throw err("body_required");
+      const urgency = b.urgency == null || b.urgency === "" ? null : String(b.urgency);
+      if (urgency != null && !URGENCY.includes(urgency)) throw err("urgency_invalid");
+      const send = b.send === true;
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const plan = (await client.query(
+          `select kind, title, published_at, first_sent_at, fixture_id, school_id, team_code from news_post
+            where id = $1 and author_id = app_user_id()`, [id])).rows[0];
+        if (!plan || plan.kind !== "plan") throw err("no_such_draft", 404);
+        if (plan.published_at != null) {
+          throw Object.assign(err("plan_sent", 409), { extra: { message: "A plan that is out with the side is not changed. Withdraw it first: it comes back to you to change and send again." } });
+        }
+        checkPlanWords(plan.title, body);
+        const { rows } = await client.query(
+          `update news_post set body = $2, urgency = coalesce($3, urgency)
+            where id = $1 and published_at is null returning id`, [id, body, urgency]);
+        if (!rows.length) throw err("no_such_draft", 404);
+        if (send) {
+          const sent = await writePlan(client, `update news_post set published_at = now() where id = $1 and published_at is null returning id`,
+            [id], { fixture: plan.fixture_id, school: plan.school_id, team: plan.team_code });
+          if (!sent.rows.length) throw err("no_such_draft", 404);
+        }
+        return { id, published: send, wasSent: send || plan.first_sent_at != null };
+      });
+    }),
+
+    // POST /api/news/:id/delete — throw away a plan never sent (db/110):
+    // news_plan_discard() decides, its author's alone. A plan sent, now or
+    // before (withdrawn), is kept: 409 plan_kept. Anything else, a post that
+    // is not a plan, not his or not there, is one answer: 404 no_such_draft.
+    discard: handle(async (req) => {
+      const id = String(req.params?.id ?? "").toLowerCase();
+      if (!UUID.test(id)) throw err("no_such_draft", 404);
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = (await client.query(`select ok, reason from news_plan_discard($1)`, [id])).rows[0];
+        if (r?.ok) return { id, deleted: true };
+        if (r?.reason === "plan_kept") {
+          throw Object.assign(err("plan_kept", 409), { extra: { message: "A plan that was sent is kept, so it cannot be deleted. You can change it and send it again." } });
+        }
+        throw err(r?.reason === "not_permitted" ? "not_permitted" : "no_such_draft", r?.reason === "not_permitted" ? 403 : 404);
+      });
     }),
 
     // POST /api/news/:id/public/request · …/approve · …/withdraw

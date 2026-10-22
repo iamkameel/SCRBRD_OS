@@ -462,7 +462,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     onNav, onOpenDuties };
 
   return (
-    <div className="os-page" data-testid="match-view" data-match={match.id}>
+    <div className="os-page" data-testid="match-view" data-match={match.id} style={{ minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap", marginBottom: T.space.md }}>
         <button type="button" onClick={onClose} data-testid="mc-back" className="pressBtn os-state"
           style={{ minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,

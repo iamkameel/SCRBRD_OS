@@ -438,6 +438,9 @@ export const WITHDRAWN_SINCE_01 = {
   // Q10: the league reads its own fixtures' records, through
   // competition_discipline_records() and competition.discipline.read.
   competitionadmin: [{ after: "officiating.registry.manage", capability: "discipline.read" }],
+  // GA-I19 D3 (Kameel, 2026-10-15): the principal reads an injury at the
+  // status tier only; db/111 withdraws the nature tier.
+  principal: [{ after: "medical.status.read", capability: "medical.nature.read" }],
 };
 
 /**
@@ -765,6 +768,13 @@ const asShippedIn09 = (table, def) => withoutLaterMasks(table, REANCHORED_IN_39.
  */
 export const MASKED_SINCE_09 = Object.freeze({
   player: { file: "58_player_fitness_masked.sql", masked: { "medical.status.read": ["fitness"] } },
+  // GA-I19 (db/111): the injury row's four new sensitive columns, each on the
+  // tier D3 places it. db/111 rebuilds injury_masked with db/09's five and
+  // these, so a column the table gains never reaches a reader unmasked.
+  injury: { file: "111_injury_review.sql", masked: {
+    "medical.nature.read":  ["emergency_services", "next_review_on"],
+    "medical.details.read": ["recorded_by", "dso_notified_at"],
+  } },
 });
 
 /** @param {string} table @param {TableDef} def @returns {TableDef} */
@@ -831,6 +841,10 @@ export const TABLES_ADDED_SINCE_09 = Object.freeze({
   // ── end SCRBRD-114 phase 3a ──
   // ── SCRBRD-114 phase 3c: knockout progression ──
   match_progression:             "72_knockout_progression.sql",
+  // ── GA-I19 slice A: the physio's review of an injury ──
+  // The first later table with masked columns: its *_masked view is
+  // generated into the same block, after its policies (tablesAddedIn()).
+  injury_review:                 "111_injury_review.sql",
 });
 const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
 
@@ -844,7 +858,11 @@ export const GENERATED_END = "-- └── END GENERATED";
  */
 export function tablesAddedIn(file) {
   const tables = Object.keys(TABLES).filter((t) => TABLES_ADDED_SINCE_09[t] === file);
-  return [GENERATED_BEGIN, ...tables.map((t) => tablePolicy(t, asShippedIn(t, TABLES[t]))), "", GENERATED_END].join("\n");
+  // A later table that masks columns gets its *_masked view here too, built
+  // exactly as db/09 builds one. A table with no masks adds nothing, so the
+  // blocks already shipped (db/60 to db/72) are emitted byte for byte as before.
+  const views = tables.filter((t) => hasMasks(TABLES[t])).map((t) => maskView(t, asShippedIn(t, TABLES[t])));
+  return [GENERATED_BEGIN, ...tables.map((t) => tablePolicy(t, asShippedIn(t, TABLES[t]))), ...views, "", GENERATED_END].join("\n");
 }
 
 /**
@@ -925,15 +943,27 @@ export function maskPairs(table, def) {
     .join(", ");
 }
 
+/** Does this table mask any column? @param {TableDef} def */
+const hasMasks = (def) => Object.keys(def.masked ?? {}).length > 0 || Object.keys(def.maskedAnyTeam ?? {}).length > 0;
+
 function maskViews() {
   const out = [banner("Column-masking views")];
   for (const [table, current] of Object.entries(TABLES)) {
     if (!tableIn09(table)) continue;
     const def = asShippedIn09(table, current);
-    const masked = def.masked ?? {};
-    const maskedAnyTeam = def.maskedAnyTeam ?? {};
-    if (!Object.keys(masked).length && !Object.keys(maskedAnyTeam).length) continue;
+    if (!hasMasks(def)) continue;
+    out.push(maskView(table, def));
+  }
+  return out.join("\n");
+}
 
+/**
+ * One table's *_masked view, as the DO block that builds it. db/09 emits one
+ * per table it names (maskViews()); a table added after db/09 gets its own in
+ * the generated block of the file that creates it (tablesAddedIn()).
+ * @param {string} table @param {TableDef} def
+ */
+function maskView(table, def) {
     // column → { capability, team anchor }
     //
     // The TEAM anchor varies per capability, which is what lets one table show
@@ -948,7 +978,7 @@ function maskViews() {
     //                   home address.
     const pairs = maskPairs(table, def);
 
-    out.push(`
+    return `
 -- ${table}_masked — every column listed explicitly, each sensitive one gated
 -- by its own capability and evaluated PER ROW.
 --
@@ -993,9 +1023,7 @@ BEGIN
     'CREATE OR REPLACE VIEW ${table}_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM ${table}',
     cols);
 END
-$mask_${table}$;`);
-  }
-  return out.join("\n");
+$mask_${table}$;`;
 }
 
 function assignmentPolicies() {
