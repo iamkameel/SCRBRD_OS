@@ -73,8 +73,8 @@
 --   A1  The passport (§9b; the red-team audit of 21 Oct 2026, finding A1,
 --       through the lead): passport() no longer carries a boy's skill
 --       ratings or the coach who gave them (GA-I26a: a judgement stays with
---       the adults who made it; Kameel's confirmation of dropping rather than
---       gating them is asked for); passport_open() is his family, a coach or
+--       the adults who made it; Kameel confirmed the drop, rather than a
+--       gate, on 22 Oct 2026, through the lead); passport_open() is his family, a coach or
 --       the office at his school, and the office or a coach at a school his
 --       family named — never a team-mate, a pupil, a parent or anybody else
 --       who merely holds player.profile.read; and passport(), passport_name(),
