@@ -6,6 +6,7 @@
  *      hits the API (with bearer) when it is; failures never silently fall back.
  */
 import { readResource, READ_QUERIES, RESTRICTED_FIELDS, liveResources, NOT_EXPORTED, exportResource } from "./read-api.mjs";
+import { EXPORTABLE, exportDrops } from "@scrbrd/policy/exports";
 import { createDataClient } from "./data-client.mjs";
 import { signToken } from "../auth/auth.mjs";
 
@@ -384,7 +385,88 @@ group("A. Another school's boys do not leave as a file (GA-I24-I25 D9, A1)");
     const rows = await readResource(pool, SECRET, bearer("uCoach"), "opposition_squad", { matchId: "m1" });
     ok("the screen read still answers", rows.length === 1);
   }
-  ok("an ordinary roster export is not refused", !NOT_EXPORTED.has("players") && !NOT_EXPORTED.has("career"));
+  ok("an ordinary roster export is not refused", !NOT_EXPORTED.has("players"));
+}
+
+group("A. Exports follow the policy's two lists (packages/policy/src/exports.mjs)");
+{
+  // THE TWO LISTS HELD APART, with this file's real inputs: a read on the
+  // allowlist that gained a watched column, or began reading a table under a
+  // level-2 capability, would land on the refused list and fail here.
+  for (const r of Object.keys(EXPORTABLE)) {
+    ok(`${r} is a read`, Object.hasOwn(READ_QUERIES, r));
+    ok(`${r} is not on the refused list`, !NOT_EXPORTED.has(r));
+  }
+  ok("the allowlist is short", Object.keys(EXPORTABLE).sort().join() === "matches,players");
+  // Derived: watched columns, level-2 tables, and the named reads.
+  for (const r of ["injuries", "injury_reviews", "injury_worklist", "disciplinary_records", "emergency_contacts",
+                   "trip_contacts", "child_links", "users", "accounts", "clearances"])
+    ok(`${r} (watched columns) is refused`, NOT_EXPORTED.has(r));
+  for (const r of ["availability_history", "emergency_contact_count", "my_clearances"])
+    ok(`${r} (a level-2 table) is refused`, NOT_EXPORTED.has(r));
+  for (const r of ["bowling_breaches", "availability", "consents", "scouting_consent", "career", "career_by_season",
+                   "matchups", "matchup_coverage", "workload", "bowler_day", "load", "load_weeks"])
+    ok(`${r} (named) is refused`, NOT_EXPORTED.has(r));
+  // Not on either list: refused too, because the allowlist is the door.
+  for (const r of ["honours", "milestones", "notifications", "my_children", "access_log", "staff"]) {
+    ok(`${r} is on neither list`, !NOT_EXPORTED.has(r) && !Object.hasOwn(EXPORTABLE, r));
+    const { pool, log } = fakePool({});
+    let status = 0;
+    try { await exportResource(pool, SECRET, bearer("uOffice"), r, {}); } catch (/** @type {any} */ e) { status = e.status; }
+    ok(`...and its export is refused before the read`, status === 403 && log.length === 0);
+  }
+  {
+    const { pool } = fakePool({});
+    let status = 0;
+    try { await exportResource(pool, SECRET, bearer("uOffice"), "nonsense", {}); } catch (/** @type {any} */ e) { status = e.status; }
+    ok("an unknown read is still a 404", status === 404);
+  }
+  // THE OFFICE'S ROSTER FILE DROPS THE MASKED COLUMNS, whatever the office
+  // may read on screen; the file is still logged, naming the boys, with no
+  // watched field.
+  {
+    const boy = { id: "p1", school_id: "s1", school_name: "Hilton", full_name: "A Boy", team_code: "1XI",
+                  fitness: "fit", born: "2011-04-07", hometown: "Hilton", height: 170, weight: 60,
+                  address: "14 Ridge Road", guardian: "Mrs Boy", id_number: "1104075800085" };
+    const other = { ...boy, id: "p2", school_id: "s2", full_name: "Their Boy" };
+    const { pool, log } = fakePool({ "from player_masked pm": [boy, other], "select s.id from school s where app_can": [{ id: "s1" }] });
+    const { csv, columns } = await exportResource(pool, SECRET, bearer("uOffice"), "players", {});
+    ok("the roster file has no masked column", !columns.some((c) => exportDrops("players").includes(c)));
+    ok("...and none of their values", !/Ridge Road|1104075800085|2011-04-07|Mrs Boy/.test(csv));
+    ok("...but has the boy", /A Boy/.test(csv) && columns.includes("full_name"));
+    ok("...and no boy of a school where the caller keeps no roster", !/Their Boy/.test(csv));
+    const asked = log.find((l) => l.text.includes("select s.id from school s where app_can"));
+    ok("the roster file asks player.roster.read or player.profile.manage, before the read",
+       JSON.stringify(asked?.params) === '["player.roster.read","player.profile.manage"]'
+       && log.indexOf(/** @type {any} */ (asked)) < log.findIndex((l) => l.text.includes("from player_masked pm")));
+    const entry = log.find((l) => l.text.includes("log_restricted_read"));
+    ok("the file is logged, naming the boy, with no field", entry?.params?.[0] === "players"
+       && JSON.stringify(entry?.params?.[1]) === '["p1"]' && JSON.stringify(entry?.params?.[2]) === "[]");
+    const { pool: empty } = fakePool({ "select s.id from school s where app_can": [{ id: "s1" }] });
+    const none = await exportResource(empty, SECRET, bearer("uOffice"), "players", {});
+    ok("an empty roster file's header drops them too", none.columns.includes("full_name")
+       && !none.columns.some((c) => exportDrops("players").includes(c)));
+  }
+  // A caller who keeps no roster at any school (a parent, a pupil, a scorer,
+  // a physio) is refused the file before anything is read or logged.
+  {
+    const { pool, log } = fakePool({ "from player_masked pm": [{ id: "p1", school_id: "s1", full_name: "A Boy" }] });
+    let status = 0, code = "";
+    try { await exportResource(pool, SECRET, bearer("uParent"), "players", {}); }
+    catch (/** @type {any} */ e) { status = e.status; code = e.code; }
+    ok("no roster capability at any school: the roster file is a 403 not_exported", status === 403 && code === "not_exported");
+    ok("...with the roster never read, and nothing logged",
+       !log.some((l) => l.text.includes("from player_masked pm")) && !log.some((l) => l.text.includes("log_restricted_read")));
+    const { pool: p2 } = fakePool({ "from player_masked pm": [{ id: "p1", school_id: "s1", full_name: "A Boy" }] });
+    ok("...while the same caller's screen read is not asked about it",
+       (await readResource(p2, SECRET, bearer("uParent"), "players", {})).length === 1);
+  }
+  // The screen read is unchanged: the office still reads the address there.
+  {
+    const { pool } = fakePool({ "from player_masked pm": [{ id: "p1", school_id: "s1", address: "14 Ridge Road" }] });
+    const rows = await readResource(pool, SECRET, bearer("uOffice"), "players", {});
+    ok("the screen read keeps every column it selected", rows[0]?.address === "14 Ridge Road");
+  }
 }
 
 group("A. bowling_spells: the directive only under player.workload.read (GA-I24-I25 A2)");

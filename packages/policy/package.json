@@ -18,6 +18,7 @@
     "./date-of-birth": "./src/date-of-birth.mjs",
     "./public": "./src/public.mjs",
     "./notifications": "./src/notifications.mjs",
-    "./words": "./src/words.mjs"
+    "./words": "./src/words.mjs",
+    "./exports": "./src/exports.mjs"
   }
 }
