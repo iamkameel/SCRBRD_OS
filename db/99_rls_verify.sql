@@ -6600,10 +6600,18 @@ DECLARE
   OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
   U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
   t date := sa_today();
+  -- The office's move is a person's write, so it may not reach before this
+  -- season's start (db/117's floor): t-10, or the season's start if that is
+  -- later (1 to 10 January). Every row "on the move's day" follows it.
+  M date := greatest((SELECT s.starts_on FROM season_for(sa_today(), 'school') s), t - 10);
+  -- A day after the move's day and already past, for the past lift: t-5,
+  -- else yesterday, else (1 or 2 January: no such day) the move's day.
+  P date;
   ids jsonb; z jsonb := '{}'; v_id uuid; v_a uuid; v_d uuid; v_o uuid; l record;
   c_a uuid; c_c uuid; c_m uuid;
   k text; tm text; dd int; aw boolean;
 BEGIN
+  P := CASE WHEN t - 5 > M THEN t - 5 WHEN t - 1 > M THEN t - 1 ELSE M END;
   -- A: 14XI from t-90, then 15XI from t-60, each dated as the move route dates it.
   PERFORM set_config('app.effective_on', (t - 90)::text, true);
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
@@ -6638,7 +6646,7 @@ BEGIN
   -- The fixtures, each at 10:00 in Johannesburg on its day.
   FOR k, tm, dd, aw IN SELECT * FROM (VALUES
       ('f43a', '14XI', -100, false), ('f43b', '14XI', -75, false), ('f41a', '15XI', -30, false),
-      ('f41w', '15XI', -25, true),   ('f41d', '15XI', -10, false), ('f42d', '19XI', -10, false),
+      ('f41w', '15XI', -25, true),   ('f41d', '15XI', M - t, false), ('f42d', '19XI', M - t, false),
       ('f42a', '19XI', -30, false),  ('f41n', '15XI', 5, false),   ('f42n', '19XI', 5, false),
       ('f41s', '15XI', 12, false)) x LOOP
     IF aw THEN
@@ -6661,7 +6669,7 @@ BEGIN
     RETURNING id INTO v_id;
     z := z || jsonb_build_object('t' || substr(k, 2), v_id);
   END LOOP;
-  FOR k, tm, dd IN SELECT * FROM (VALUES ('s41a', '15XI', -30), ('s42a', '19XI', -30), ('s42d', '19XI', -10),
+  FOR k, tm, dd IN SELECT * FROM (VALUES ('s41a', '15XI', -30), ('s42a', '19XI', -30), ('s42d', '19XI', M - t),
                                          ('s41n', '15XI', 3), ('s42n', '19XI', 3)) x LOOP
     INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type)
     VALUES (HIL, tm, 'V117 ' || k, ((t + dd)::timestamp + time '15:00') AT TIME ZONE 'Africa/Johannesburg', 60, 'batting')
@@ -6701,11 +6709,11 @@ BEGIN
   UPDATE news_post SET published_at = NULL WHERE id = v_id;
   PERFORM set_config('app.user_id', '', true);
   z := z || jsonb_build_object('w41a', v_id);
-  -- A 15XI fixture already played, after the move's day (t-5): its lift's
+  -- A 15XI fixture already played, after the move's day (P): its lift's
   -- seat for A stays as it was (a backdated move does not rewrite the past).
   -- Labelled x41p, so the read strings above do not carry it.
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-  VALUES (HIL, '15XI', 'Verify OneOneSeven x41p', ((t - 5)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+  VALUES (HIL, '15XI', 'Verify OneOneSeven x41p', (P::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
   z := z || jsonb_build_object('x41p', v_id);
   -- The lifts: M's mother drives to f41n (A's seat, asked by A's mother, and
@@ -6734,7 +6742,7 @@ BEGIN
                          guardian_link_id, requested_by, state)
   VALUES ((z->>'o41n')::uuid, NULL, NULL, NULL, NULL, c_m, 'guardian', l.assignment_id, l.id, (ids->>'gm')::uuid, 'requested')
   RETURNING id INTO v_id;
-  z := z || jsonb_build_object('seat_m_41n', v_id);
+  z := z || jsonb_build_object('seat_m_41n', v_id, 'day_move', M::text);
   RETURN ids || z;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -26730,7 +26738,8 @@ $v49$;
   --                14XI fixture by branch (5); the newcomer's mother reads the
   --                19XI's from t-10 only (Q2): not f42a, its bus or its
   --                t-30 post; M's mother the 15XI's
-  --   (move)       the office moves A to the 19XI from t-10: the history's
+  --   (move)       the office moves A to the 19XI from t-10 (or this
+  --                season's start, 1 to 10 January: db/117's floor): the history's
   --                three rows; his `player` row carried (db/112); his links
   --                and consents untouched (§8.2's §49 and db/47 assertions)
   --   (after)      his mother keeps the 15XI's season up to t-10 (f41a, f41w
@@ -26812,6 +26821,13 @@ $v49$;
     bad    text;
     t      date := sa_today();
     ZERO   uuid := '00000000-0000-0000-0000-000000000000';
+    -- The move's day (the stage's: t-10, or this season's start in early
+    -- January), the school move's (t-5, or the move's day) and the dated
+    -- import's (t-20, or the season's start): each a person's write or after
+    -- one, so never before db/117's floor.
+    XM     int;
+    XS     int;
+    XD     int;
     v_season date;
     v_new  uuid;
     v_dated uuid;
@@ -26820,6 +26836,9 @@ $v49$;
     ABOY := (z->>'aboy')::uuid;
     FX := ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^f4');
     SELECT s.starts_on INTO v_season FROM season_for(sa_today(), 'school') s;
+    XM := (z->>'day_move')::date - t;
+    XS := greatest(XM, -5);
+    XD := greatest(v_season - t, -20);
 
     -- ── (before) ──
     PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..',
@@ -26844,13 +26863,13 @@ $v49$;
 
     -- ── (move) ──
     PERFORM _as(OFFICE);
-    PERFORM set_config('app.effective_on', (t - 10)::text, true);
+    PERFORM set_config('app.effective_on', (t + XM)::text, true);
     UPDATE player SET team_code = '19XI' WHERE id = A;
     GET DIAGNOSTICS n = ROW_COUNT;
     PERFORM set_config('app.effective_on', '', true);
     PERFORM _assert(n = 1, '§94 (move): the office could not move A');
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..-10 19XI:-10..',
+    PERFORM _assert(_v117_fact('rows', A) = format('14XI:-90..-60 15XI:-60..%s 19XI:%s..', XM, XM),
       format('§94 (move): A''s rows are %s', _v117_fact('rows', A)));
     PERFORM _assert(_v112_roles(ABOY) = '15XI:ended 19XI:live',
       format('§94 (move): A''s own `player` rows are %s (db/112''s carry)', _v112_roles(ABOY)));
@@ -26984,11 +27003,11 @@ $v49$;
 
     -- ── (undo) ──
     PERFORM _as(OFFICE);
-    PERFORM set_config('app.effective_on', (t - 10)::text, true);
+    PERFORM set_config('app.effective_on', (t + XM)::text, true);
     UPDATE player SET team_code = '15XI' WHERE id = A;
     PERFORM set_config('app.effective_on', '', true);
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..-10 19XI:-10..-10 15XI:-10..',
+    PERFORM _assert(_v117_fact('rows', A) = format('14XI:-90..-60 15XI:-60..%s 19XI:%s..%s 15XI:%s..', XM, XM, XM, XM),
       format('§94 (undo): A''s rows are %s', _v117_fact('rows', A)));
     FOR k, want IN SELECT * FROM (VALUES
         ('g',    'fixtures [f41a f41d f41n f41s f41w f42d f43b] trips [t41a t41n] training [s41a s41n s42d] posts [n41a n41n p41a p41n] balls [f41a f41n]'),
@@ -27006,15 +27025,15 @@ $v49$;
     -- ── (school) ──
     -- Answer 2: the old school keeps its season. A moves to Westville's 15XI
     -- from t-5.
-    PERFORM _v117_move_school(A, '22222222-2222-2222-2222-222222222222'::uuid, '15XI', t - 5);
-    PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..-10 19XI:-10..-10 15XI:-10..-5 15XI:-5..'
+    PERFORM _v117_move_school(A, '22222222-2222-2222-2222-222222222222'::uuid, '15XI', t + XS);
+    PERFORM _assert(_v117_fact('rows', A) = format('14XI:-90..-60 15XI:-60..%s 19XI:%s..%s 15XI:%s..%s 15XI:%s..', XM, XM, XM, XM, XS, XS)
                     AND _v117_fact('school', A) = '22222222-2222-2222-2222-222222222222',
       format('§94 (school): A''s rows are %s', _v117_fact('rows', A)));
     -- db/117's doors give A himself nothing of Hilton's now: not the old
     -- side's posts (news_own_old_side()), not its fixtures or balls
     -- (my_own_side_fixtures(), my_fixture_ends()'s branch (5)).
     PERFORM _as(ABOY);
-    PERFORM _assert(NOT news_own_old_side('11111111-1111-1111-1111-111111111111'::uuid, '15XI', t - 30) AND NOT news_own_old_side('11111111-1111-1111-1111-111111111111'::uuid, '15XI', t - 7)
+    PERFORM _assert(NOT news_own_old_side('11111111-1111-1111-1111-111111111111'::uuid, '15XI', t - 30) AND NOT news_own_old_side('11111111-1111-1111-1111-111111111111'::uuid, '15XI', t + XM)
                     AND NOT EXISTS (SELECT 1 FROM unnest(my_own_side_fixtures()) x
                                      WHERE x IN (SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^(f|x)4'))
                     AND NOT EXISTS (SELECT 1 FROM my_fixture_ends('fixture.read') e WHERE e.school_id = '11111111-1111-1111-1111-111111111111'::uuid),
@@ -27045,16 +27064,16 @@ $v49$;
     -- import_joined_on() before the write (services/api/io/import-api.mjs).
     PERFORM _as(OFFICE);
     PERFORM _assert(import_joined_on(false, NULL) = v_season AND import_joined_on(true, NULL) IS NULL
-                    AND import_joined_on(false, t - 20) = t - 20 AND import_joined_on(true, t - 20) = t - 20,
+                    AND import_joined_on(false, t + XD) = t + XD AND import_joined_on(true, t + XD) = t + XD,
       format('§94 (import): import_joined_on() gives %s, %s, %s, %s',
-             import_joined_on(false, NULL), import_joined_on(true, NULL), import_joined_on(false, t - 20), import_joined_on(true, t - 20)));
+             import_joined_on(false, NULL), import_joined_on(true, NULL), import_joined_on(false, t + XD), import_joined_on(true, t + XD)));
     -- a new boy, no date in the file: the season's start
     PERFORM set_config('app.effective_on', coalesce(import_joined_on(false, NULL)::text, ''), true);
     INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
     VALUES ('11111111-1111-1111-1111-111111111111'::uuid, '15XI', 'Verify OneOneSeven Imported', 1174, 'batter',
             make_date(extract(year FROM t)::int - 15, 3, 1)) RETURNING id INTO v_new;
     -- a new boy, a date in the file
-    PERFORM set_config('app.effective_on', coalesce(import_joined_on(false, t - 20)::text, ''), true);
+    PERFORM set_config('app.effective_on', coalesce(import_joined_on(false, t + XD)::text, ''), true);
     INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
     VALUES ('11111111-1111-1111-1111-111111111111'::uuid, '15XI', 'Verify OneOneSeven Dated', 1175, 'batter',
             make_date(extract(year FROM t)::int - 15, 3, 1)) RETURNING id INTO v_dated;
@@ -27065,7 +27084,7 @@ $v49$;
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert(_v117_fact('rows', v_new) = format('15XI:%s..', v_season - t),
       format('§94 (import): a new boy with no date has %s, not the season''s start (%s)', _v117_fact('rows', v_new), v_season - t));
-    PERFORM _assert(_v117_fact('rows', v_dated) = '15XI:-20..',
+    PERFORM _assert(_v117_fact('rows', v_dated) = format('15XI:%s..', XD),
       format('§94 (import): a new boy with a date has %s, not the file''s day', _v117_fact('rows', v_dated)));
     PERFORM _assert(_v117_fact('rows', (z->>'m')::uuid) = '15XI:-60..0 19XI:0..',
       format('§94 (import): a boy moved by the file with no date has %s, not a move today', _v117_fact('rows', (z->>'m')::uuid)));
