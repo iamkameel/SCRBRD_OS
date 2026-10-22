@@ -31,7 +31,7 @@ import {
 import { focusAreas } from "../src/lib/focusAreas.js";
 import { moved, minutesProblem } from "../src/lib/trainingPlan.js";
 import { NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
-import { Strip, TargetLine, SincePanel } from "../src/views/skills/History.jsx";
+import { Strip, TargetLine, SincePanel, DotSheet } from "../src/views/skills/History.jsx";
 import { PlanList, PlanEditor, RegisterSheet } from "../src/views/training/PlanRegister.jsx";
 import { drillCategoriesFor } from "@scrbrd/scoring";
 
@@ -140,6 +140,17 @@ ok("...and no type under 12px, and no verdict", fontSizes(panel).every((n) => n 
 ok("the last look is by the newest standing score of that discipline", lastLookBy([pt(1, 9, "2026-03-01", { by: "A Coach" }), pt(2, 11, "2026-09-14", { by: "R Pillay" }), pt(3, 4, "2026-10-01", { by: "X", withdrawn: true })], "batting") === "R Pillay");
 ok("nobody rated is nobody named", lastLookBy([], "batting") === null);
 
+group("A dot's sheet: staff and the boy");
+const staffSheet = renderToStaticMarkup(h(DotSheet, { point: hist[2], staff: true, canWrite: true, points: [{ id: "n1", skillId: "s3", body: "Gets squared up early.", author: "R Pillay", observedOn: "2026-09-15", withdrawn: false }], onClose() {}, onDone() {} }));
+ok("staff: the score, the date, the author by name", /Rated 11 on 14 Sep by R Pillay, coach\./.test(words(staffSheet)), words(staffSheet));
+ok("staff: the coaching point that stood on this score, and a withdrawal", /Gets squared up early/.test(staffSheet) && staffSheet.includes('data-testid="withdraw-score"'));
+const boySheet = renderToStaticMarkup(h(DotSheet, { point: hist[2], staff: false, canWrite: false, points: [{ id: "n1", skillId: "s3", body: "Gets squared up early.", author: "R Pillay", observedOn: "2026-09-15", withdrawn: false }], onClose() {}, onDone() {} }));
+ok("the boy: 'your coach', no name, no coaching point, no withdrawal", /by your coach\./.test(words(boySheet)) && !/R Pillay/.test(boySheet) && !/Gets squared up/.test(boySheet) && !boySheet.includes("withdraw-score") && !/COACHING POINTS/.test(boySheet), words(boySheet));
+const withdrawnSheet = renderToStaticMarkup(h(DotSheet, { point: { ...hist[0], withdrawn: true, withdrawnBy: "C Hendricks", reason: "wrong boy" }, staff: false, canWrite: true, points: [], onClose() {}, onDone() {} }));
+ok("a withdrawn score says so, and who (as his coach), and cannot be withdrawn again", /Withdrawn by your coach: wrong boy\./.test(words(withdrawnSheet)) && !withdrawnSheet.includes("withdraw-score"), words(withdrawnSheet));
+ok("no sheet says a direction or a miss", [staffSheet, boySheet, withdrawnSheet].every((x) => sayable(words(x))));
+ok("no type under 12px on a sheet", [staffSheet, boySheet, withdrawnSheet].every((x) => fontSizes(x).every((n) => n >= 12)));
+
 group("The drill picker only orders");
 const lib = [{ id: "a", category: "fielding" }, { id: "b", category: "batting" }, { id: "c", category: "Batting" }];
 const ord = orderDrills(lib, drillCategoriesFor("technical", "againstPace"));
@@ -176,6 +187,9 @@ const skills = src("../src/views/SkillsView.jsx") + src("../src/views/skills/His
 const asked = [...skills.matchAll(/holdsAsHeld\(\s*role\s*,\s*"([^"]+)"/g)].map((m) => m[1]);
 ok("the Skills screens ask only for the scores' and the notes' own capabilities", asked.length >= 3 && asked.every((c) => ["player.development.read", "player.development.write", "player.note.read"].includes(c)), asked);
 ok("the Skills screens do not read a load, a wellness check, the discipline record or the injuries", !/workload|wellness|bowler_day|disciplinary|injuries|medical/i.test(skills));
+const skillsSrc = src("../src/views/SkillsView.jsx");
+ok("Set target, and with it the Why, is offered only to a writer", /\{canEdit&&\(\s*<button type="button" data-testid=\{`set-target-/.test(skillsSrc));
+ok("the Skills header draws no fitness or health badge", !/fitness/i.test(skillsSrc));
 ok("the register code never writes the word injured", !/injured/i.test(src("../src/views/training/PlanRegister.jsx") + src("../src/lib/trainingPlan.js")));
 ok("the assessment modal sends no note", !/note:\s*note/.test(src("../src/lib/development.js")) && !/recordAssessment\([^)]*\{[^}]*note/.test(src("../src/views/SkillsView.jsx")));
 

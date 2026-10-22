@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { holdsAsHeld } from "../lib/held.js";
 import { D } from "../design/tokens.js";
-import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useNotes, useRatings, useSkills, useBoyRead } from "../lib/live.js";
 import { recordAssessment, writeNote, writeWords, NOTE_ADJUSTMENT_LIMIT } from "../lib/development.js";
@@ -224,7 +223,6 @@ function SkillsView({ role }) {
                 <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"8px"}}>{selPlayer.team} · {selPlayer.role} · {selPlayer.batHand}HB</div>
                 <div style={{display:"flex",gap:"6px"}}>
                   <Badge color={D.sky}>{selPlayer.role}</Badge>
-                  {selPlayer.fitness&&<Badge color={fitnessColor(selPlayer.fitness)}>{selPlayer.fitness}</Badge>}
                 </div>
               </div>
               {skills&&(
