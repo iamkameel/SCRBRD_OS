@@ -27112,7 +27112,8 @@ $v49$;
                     AND _v117_fact('rows', v_dated) = format('15XI:%s..', v_season + 1 - t),
       format('§94 (floor): on the floor %s, after it %s', _v117_fact('rows', v_new), _v117_fact('rows', v_dated)));
     -- The owner's own dated row, nobody signed in (the seed's way): stands.
-    PERFORM _assert(_v117_fact('rows', _v117_owner_joins(v_season - 30)) = format('15XI:%s..', v_season - 30 - t),
+    v_new := _v117_owner_joins(v_season - 30);
+    PERFORM _assert(_v117_fact('rows', v_new) = format('15XI:%s..', v_season - 30 - t),
       '§94 (floor): the owner''s own dated row, nobody signed in, was refused');
 
     -- ── (doors) ──
