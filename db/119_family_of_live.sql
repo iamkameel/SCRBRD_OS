@@ -100,8 +100,9 @@
 
 
 -- ── 0 · Refuse to replace a function this file was not written against ──
--- db/08 wrote it; a second paste finds this file's own. Compared with the
--- whitespace folded, so a paste that re-indents nothing still matches.
+-- db/08 wrote it; a second paste finds this file's own. Compared with every
+-- run of whitespace folded to one space, so a paste that changed only line
+-- endings or indentation still matches; any other change refuses.
 DO $guard$
 DECLARE v_src text; v_md5 text;
 BEGIN
