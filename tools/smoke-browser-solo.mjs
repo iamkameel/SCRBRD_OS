@@ -362,7 +362,16 @@ try {
   await dirc.page.waitForTimeout(1500);
   ok("the director is on Edit Profile", await tid(dirc.page, "edit-profile").count() === 1);
   ok("...and is not offered Guardian links (she does not hold the capability)", await tid(dirc.page, "guardian-links").count() === 0 && !/Guardian links/.test(await inner(dirc.page, "edit-profile")));
-  ok("...reads Family links (she holds user.role.assign: D12), the reason among it", await wait(dirc.page, "family-links-standing") && /The parent asked in writing/.test(await inner(dirc.page, "family-links")));
+  // READERS_child_data Q2 (db/116): a link's ending, and its reason, are
+  // guardian.link.manage's to read. She holds user.role.assign (D12), which
+  // reads the list, and not guardian.link.manage, so the reason is absent and
+  // the card does not claim that none was recorded.
+  ok("...reads Family links (she holds user.role.assign: D12), the ended link among it",
+     await wait(dirc.page, "family-links-standing")
+     && await dirc.page.locator('[data-testid="family-link"][data-state="ended"]', { hasText: "A Walk Parent" }).count() === 1);
+  ok("...and not the reason (it is guardian.link.manage's: READERS Q2)",
+     await tid(dirc.page, "family-link-reason").count() === 0 && !/The parent asked in writing/.test(await inner(dirc.page, "family-links"))
+     && !/no reason recorded/.test(await inner(dirc.page, "family-links")));
   ok("...and is not offered Revoke (no guardian.link.manage)", await tid(dirc.page, "family-link-revoke").count() === 0);
   const coach = await open(); all.push(coach);
   ok("a coach signs in", await signIn(coach.page, "coach@example.invalid"));

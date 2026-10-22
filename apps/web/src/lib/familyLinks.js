@@ -60,7 +60,8 @@ export function asChildLink(r) {
     createdBy: r.created_by_name ?? null, createdAt: day(r.created_at),
     live: r.live === true,
     endingKind: r.ending_kind ?? null, endingOn: day(r.ending_on), endedBy: r.ended_by_name ?? null,
-    // Only to guardian.link.manage, or audit.read without the DSO's standing (D13).
+    // Only to guardian.link.manage (D13; READERS_child_data Q2, db/116: no
+    // auditor reads the office's reason).
     endingReason: r.ending_reason ?? null,
     regState: r.standing ?? null, isMinor: r.is_minor === true,
     liveLinks: Number(r.live_links ?? 0), consentedLinks: Number(r.consented_links ?? 0),
@@ -91,16 +92,23 @@ export function standingLine(links) {
 
 /**
  * What one link is, in a few words: its state and, once ended, how.
+ *
+ * `readsEndings`: does this reader hold guardian.link.manage, the capability
+ * the ending row is read under (READERS_child_data Q2, db/116)? A reader who
+ * does not (the director of sport, who reads the list under user.role.assign)
+ * gets no ending row at all, so "no reason recorded" would be untrue for him:
+ * he is told the how and the why are the office's to read.
  * @param {ReturnType<typeof asChildLink>} l
+ * @param {{ readsEndings?: boolean }} [opts]
  */
-export function linkStateWords(l) {
+export function linkStateWords(l, { readsEndings = true } = {}) {
   if (l.live) {
     const base = l.state === "verified" ? "Verified" : "Waiting to be verified";
     if (l.endingKind) return `${base} · ${KIND_WORDS[l.endingKind] ?? l.endingKind}${l.endingOn ? ` (${l.endingOn})` : ""}`;
     return l.validUntil ? `${base} · until ${l.validUntil}` : base;
   }
   const how = l.endingKind ? KIND_WORDS[l.endingKind] ?? l.endingKind
-    : l.state === "revoked" ? "revoked, no reason recorded"
+    : l.state === "revoked" ? (readsEndings ? "revoked, no reason recorded" : "revoked; how and why are the office's to read")
     : l.state === "rejected" ? "not accepted" : "ended";
   const on = l.endingOn ?? l.validUntil;
   return `Ended${on ? ` ${on}` : ""} · ${how}`;

@@ -163,10 +163,12 @@ const BUNDLES = {
     "user.role.assign",
     ...READ_TEAM, "school.read", "user.read", "analytics.read",
     "competition.read", "discipline.read", "facility.read", "invoice.read",
-    // Injuries at the STATUS tier only: that a boy is out and until when, not
-    // what or how bad (GA-I19 D3; Kameel, 2026-10-15). db/111 withdraws the
-    // nature tier the principal held from db/01.
-    "player.performance.read", "medical.status.read", "audit.read",
+    // Injuries at the status and nature tiers: that a boy is out, until when,
+    // and what is wrong (READERS_child_data Q9, Kameel, 21 Oct 2026: "the code
+    // stands: the principal reads status and nature", later than GA-I19 D3).
+    // db/111 withdrew the nature tier; db/116 restores it. Never the clinical
+    // details tier.
+    "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
     // OFFICIAL_RESULT D3 (db/114): she confirms a friendly at her school, if
@@ -277,6 +279,12 @@ const BUNDLES = {
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read", "player.emergency.read",
+    // READERS_child_data Q5 (Kameel, 21 Oct 2026: "own side, logged";
+    // db/116). NOT discipline.read: side_discipline_records() reads the
+    // records of the boys on his own side (his assignment's team against each
+    // boy's current side), every read on the access log. The parent's read
+    // waits for the information officer (Q15).
+    "discipline.side.read",
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     // SCRBRD-124: the side's boys arriving by lift, and "with us" (db/70, §1.6).
@@ -400,7 +408,13 @@ const BUNDLES = {
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read", "player.development.read",
     "medical.status.read", "medical.nature.read", "medical.details.read",
-    "player.age.read", "player.identity.read",
+    // NOT player.identity.read (READERS_child_data Q16, Kameel, 21 Oct 2026;
+    // db/116 withdraws it). His ID number is level 4, the most dangerous
+    // field about him, and a thirteen-year-old's phone is left on tables: it
+    // is never drawn on a screen of his. His right of access to it is met by
+    // the office, on request. (His guardian's player.identity.read below is
+    // a separate question, held for Kameel.)
+    "player.age.read",
     "discipline.read",
   ],
 
@@ -491,7 +505,14 @@ const BUNDLES = {
   // that pair's own sale is measured in.
   sponsorship: ["school.read", "news.read", "user.read",
                 "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
-  transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read",
+  // NOT player.emergency.read (READERS_child_data Q12, Kameel, 21 Oct 2026;
+  // db/116 withdraws it): that was every child's numbers at the school, all
+  // year, for a role that needs the boys on one bus on one day. He holds
+  // transport.manifest.read instead, which opens trip_contacts() for a trip
+  // he coordinates (transport.manage over its fixture) on the day it runs,
+  // as the driver's own path does, every read logged. No table policy names it.
+  transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage",
+    "transport.manifest.read",
     // SCRBRD-124 (db/70): oversight of lifts, in counts. A lift is not a trip.
     "transport.lift.oversee"],
   driver: ["news.read", "transport.read", "transport.drive"],
@@ -550,7 +571,15 @@ const BUNDLES = {
     // Whoever appoints officials across a league is the one who keeps the
     // panel: accreditation, grade and whether somebody still stands at all.
     "officiating.registry.manage",
-    "discipline.read", "scoring.correct", "scoring.amend.approve",
+    // NOT discipline.read (READERS_child_data Q10, Kameel, 21 Oct 2026;
+    // db/116 withdraws it). A league needs the umpire's report on its own
+    // match, not a school's file: held platform-wide, as the pilot's league
+    // account is, discipline.read read every conduct record at every school.
+    // competition.discipline.read opens competition_discipline_records()
+    // instead — the records whose fixture is in a competition it organises,
+    // every read logged — and no table policy names it.
+    "competition.discipline.read",
+    "scoring.correct", "scoring.amend.approve",
     // OFFICIAL_RESULT D2, Q1 (db/114): the organiser confirms his league's
     // results, disputes and clears.
     "result.confirm",
