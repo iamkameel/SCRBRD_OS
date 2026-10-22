@@ -16,6 +16,11 @@
  * from. The ledger holds figures only: no prompt, no file content, no path
  * beyond the project's folder name.
  *
+ * It also keeps the plan's own usage limits, when Claude Code sends them
+ * (rate_limits: the five-hour and weekly windows), in
+ * ~/.claude/scrbrd-usage/rate-limits.json, and shows them as "5h 42% · wk 31%".
+ * The lead paces by them (CLAUDE.md "Pacing to the usage window").
+ *
  * It must never break the terminal: any error prints the shortest line it can.
  *
  * Switch it on in your own ~/.claude/settings.json (it is not set for you):
@@ -71,6 +76,29 @@ export function spentToday(now = new Date(), dir = ledgerDir()) {
   return total;
 }
 
+// ── The plan's own limits (CLAUDE.md "Pacing to the usage window") ──
+// Claude Code sends rate_limits to the status line on Pro and Max plans
+// (2.1.80 and later): the five-hour and seven-day windows, each with
+// used_percentage (0–100) and resets_at (Unix seconds). Either window may be
+// missing. The latest seen is kept in one small file, so a lead session and
+// tools/claude/usage.mjs --plan can pace by the plan's own figures.
+export const limitsFile = () => join(configDir(), "scrbrd-usage", "rate-limits.json");
+const window = (w) => {
+  const used = num(w?.used_percentage), resets = num(w?.resets_at);
+  return used == null ? null : { used_percentage: used, resets_at: resets };
+};
+/** Saves the plan's limits as last seen; returns what was written, or null. */
+export function recordLimits(input, now = new Date(), file = limitsFile()) {
+  const five = window(input?.rate_limits?.five_hour), week = window(input?.rate_limits?.seven_day);
+  if (!five && !week) return null;
+  const rec = { at: now.toISOString(), five_hour: five, seven_day: week };
+  mkdirSync(join(file, ".."), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(rec));
+  renameSync(tmp, file);
+  return rec;
+}
+
 const usd = (v) => `$${v.toFixed(2)}`;
 function elapsed(ms) {
   const m = Math.round(ms / 60000);
@@ -99,6 +127,9 @@ export function line(input, { today, branch } = {}) {
   if (today != null && today > 0) parts.push(`today ${usd(today)}`);
   const dur = num(input.cost?.total_duration_ms);
   if (dur != null) parts.push(elapsed(dur));
+  const five = num(input.rate_limits?.five_hour?.used_percentage), week = num(input.rate_limits?.seven_day?.used_percentage);
+  if (five != null) parts.push(`5h ${Math.round(five)}%`);
+  if (week != null) parts.push(`wk ${Math.round(week)}%`);
   const ctx = contextPct(input.context_window);
   if (ctx != null) parts.push(`ctx ${ctx}%`);
   else if (input.exceeds_200k_tokens === true) parts.push("ctx >200k");
@@ -119,6 +150,7 @@ function main() {
   try { input = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { /* empty line below */ }
   let today = null;
   try { record(input); today = spentToday(); } catch { /* the line still prints */ }
+  try { recordLimits(input); } catch { /* the line still prints */ }
   const branch = gitBranch(input.workspace?.current_dir || input.cwd || process.cwd());
   try { process.stdout.write(line(input, { today, branch })); } catch { process.stdout.write("Claude"); }
 }

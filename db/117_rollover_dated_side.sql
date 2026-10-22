@@ -10,7 +10,7 @@
 -- bound (decided as recommended: a boy who joins a side does not thereby read
 -- that side's fixtures from before he joined). It follows db/112 (SR-1: a
 -- moved pupil's `player` assignment follows his side). Its proof is db/99
--- §91; the HTTP walk is tools/smoke-player-move.mjs's "dated side" half.
+-- §94; the HTTP walk is tools/smoke-player-move.mjs's "dated side" half.
 --
 -- ── 1 · THE GAP ─────────────────────────────────────────────────────
 -- Every reach a family has to a SIDE's rows asked "is this the boy's side
@@ -156,9 +156,9 @@
 -- (player_id, school_id, joined_on), added here) rather than calling the
 -- definer side_on() per fixture: a definer SQL function called inside
 -- another is started afresh each call (db/106's header, THE SHAPE). db/99
--- §91 (literal) holds them equal to side_on() spelled out, for every person.
+-- §94 (literal) holds them equal to side_on() spelled out, for every person.
 --
--- WHO GAINS, WHO LOSES (db/99 §91 proves each)
+-- WHO GAINS, WHO LOSES (db/99 §94 proves each)
 --   A guardian, after her son's move: his old side's fixtures, satellites,
 --     log, buses, nets, posts and plans dated within his time on it (D1); his
 --     new side's from the day he joined (and not before: Q2). A boy who has

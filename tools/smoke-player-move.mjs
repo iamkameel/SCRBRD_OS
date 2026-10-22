@@ -18,7 +18,7 @@
  *   4. His mother reads the same side he does.
  *   5. The route still refuses a move to no side, and nothing changes.
  *
- * And db/117 (SEASON_ROLLOVER S2, the dated side; db/99 §91 is its proof):
+ * And db/117 (SEASON_ROLLOVER S2, the dated side; db/99 §94 is its proof):
  *   6. After the move his mother still reads the 1XI's fixture, bus, nets,
  *      plan and balls of last month (D1), not the 1XI's bus ahead, and none
  *      of the U16B's rows from before he joined (Q2); he keeps the same

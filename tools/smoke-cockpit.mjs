@@ -176,6 +176,11 @@ try {
     await q(`insert into app_user (school_id, email, name, role, teams) values ($1, $2, $3, $4, '{1XI}')`, [HIL, email, name, role]);
     await q(`insert into role_assignment (person_id, role, school_id, team_code) select id, $2, school_id, '1XI' from app_user where email = $1`, [email, role]);
   }
+  // The performance analyst (GA-I24-I25 A2): the compare screen's and the
+  // workspace's reader, school-wide, holding no player.workload.read and no
+  // player.age.read. The seed's analyst@ account is a scout.
+  await q(`insert into app_user (school_id, email, name, role) values ($1, 'analyst.ck@example.invalid', 'P Analyst', 'analyst')`, [HIL]);
+  await q(`insert into role_assignment (person_id, role, school_id) select id, 'analyst', school_id from app_user where email = 'analyst.ck@example.invalid'`);
   const SHARED = await fixture({ hhmm: "09:00", opponent: "Westville Boys' High 1XI", shared: true });
   const AFTERNOON = await fixture({ hhmm: "14:00", opponent: "Verify Cockpit Afternoon XI" });
   const AWAY = await fixture({ hhmm: "10:00", opponent: "Hilton College 1XI", host: WES, shared: true, daysAgo: 1 });
@@ -206,7 +211,8 @@ try {
   const self = await login("pillay@example.invalid");         // R Pillay: a pupil on the side, and self-access to his own record
   const wes = await login("coach.wes@example.invalid");       // Westville's 1XI coach
   const owner = await login("owner@example.invalid");         // the owner's key
-  ok("everyone signs in", [coach, assist, manager, medic, head, scorer, pupil, self, wes, owner].every(Boolean));
+  const analyst = await login("analyst.ck@example.invalid");  // analyst, the school: no workload, no age
+  ok("everyone signs in", [coach, assist, manager, medic, head, scorer, pupil, self, wes, owner, analyst].every(Boolean));
 
   // ══ 1 ══
   group("1 · bowling_spells: the spell is the match's; the directive beside it is the boy's load");
@@ -217,7 +223,9 @@ try {
     ok("the coach reads our quick's spell", ours.length === 1 && ours[0].overs === 6, c);
     ok("...with the U15 directive filled and the flag a boolean", ours.every(FILLED) && ours[0].age_band === "U15"
        && ours[0].max_overs_per_spell === 6 && ours[0].max_overs_per_day === 12 && ours[0].over_spell_limit === false, ours);
-    for (const [who, tok] of [["the scorer", scorer], ["a pupil", pupil], ["the team manager", manager]]) {
+    // The analyst is here for GA-I24-I25 A2: the workspace's reader reads the
+    // spell and none of the directive (band, pace, both limits, the flag).
+    for (const [who, tok] of [["the scorer", scorer], ["a pupil", pupil], ["the team manager", manager], ["the analyst", analyst]]) {
       const s = await spells(tok);
       const mine = (s ?? []).filter((r) => r.bowler_id === QUICK);
       ok(`${who} reads the same spell`, mine.length === 1 && mine[0].overs === 6 && mine[0].first_over === 0 && mine[0].last_over === 10, s);

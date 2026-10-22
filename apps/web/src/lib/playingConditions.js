@@ -32,6 +32,9 @@ export const KEY_WORDS = {
   "nrr.method":                           { label: "Net run rate", byDefault: "standard" },
   "table.order":                          { label: "Ladder order", byDefault: "points, then wins, then net run rate" },
   "over_rate.kind":                       { label: "Over-rate penalty", byDefault: "none" },
+  // OFFICIAL_RESULT (db/114): who makes a result official, and for how long it may be disputed.
+  "results.confirmed_by":                 { label: "Who confirms a result", byDefault: "the organiser" },
+  "results.dispute_days":                 { label: "Days a confirmed result may be disputed", byDefault: "7" },
   "eligibility.age_on":                   { label: "Age counted on", byDefault: "the season's cut-off date" },
   "eligibility.max_age_open":             { label: "Oldest player in an Open team", byDefault: "no limit", none: "No limit" },
   "eligibility.bona_fide_scholar":        { label: "Bona fide scholar attested", byDefault: "not asked" },
@@ -71,6 +74,7 @@ const ENUM_WORDS = {
   standard: "Standard", points: "Points", runs: "Runs",
   wins: "Wins", nrr: "Net run rate", head_to_head: "Head to head", fewer_losses: "Fewer losses",
   umpires_revision: "The umpires' revision", dls_standard: "DLS Standard Edition",
+  organiser: "The organiser", home_school: "The home school", either_school: "Either school",
 };
 
 /** @param {string} key */
