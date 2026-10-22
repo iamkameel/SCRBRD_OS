@@ -201,44 +201,130 @@ group("Tier 2 lines come from the fold, and say nothing the fold cannot");
      boardInsights({ ...inn, balls: 0 }).length === 0 && boardInsights({ ...inn, complete: true }).length === 0);
 }
 
-group("Tier 3: the hat-trick ball joins the pad's own interrupt (§10)");
+group("The pad's moments read the facts (Recognition R2; the hat-trick ball, §10)");
 {
-  const { detectMilestone } = await import("../src/scorer/panels.jsx");
-  const bow = { id: "k", name: "K Naidoo", wickets: 1 };
-  const before = (log) => ({ runs: 60, wickets: 2, battingTeam: "Hilton", batsmen: [{ id: "s", name: "S", runs: 3 }], bowlers: [bow], ballLog: log });
-  const W = (dismissal = "bowled", extra = {}) => ({ type: "W", value: 0, bowler: "k", dismissal, ...extra });
-  const now = (dismissal) => ({ type: "W", value: 0, striker: "s", bowler: "k", ...(dismissal ? { dismissal } : {}) });
-  ok("two in two: HAT-TRICK BALL", detectMilestone(now("caught"), before([{ type: "run", value: 1 }, W()]))?.type === "hattrickball");
-  ok("...over a wide in between", detectMilestone(now("lbw"), before([W(), { type: "Wd", value: 0 }]))?.type === "hattrickball");
-  ok("not when the first was a run out", detectMilestone(now("bowled"), before([W("run_out")]))?.type !== "hattrickball");
-  ok("not when this one is a run out", detectMilestone(now("run_out"), before([W()]))?.type !== "hattrickball");
-  ok("not when the first was saved by a free hit", detectMilestone(now("bowled"), before([W("bowled", { freeHitSaved: true })]))?.type !== "hattrickball");
-  ok("not when the caller does not say how he was out", detectMilestone(now(null), before([W()]))?.type !== "hattrickball");
-  ok("not another bowler's", detectMilestone(now("bowled"), before([W("bowled", { bowler: "x" })]))?.type !== "hattrickball");
-  ok("three in three is the hat-trick itself",
-     detectMilestone(now("bowled"), { ...before([W(), W()]), bowlers: [{ ...bow, wickets: 2 }] })?.type === "hattrick");
+  // The pad's milestones are deriveFacts()'s moments, read from the log the
+  // ball was just appended to (scorer/milestones.js): the cases the pad's
+  // own counter used to hold, now held through the one reducer, and the
+  // queue the engine plays them from (panels.jsx momentQueue).
+  const { ballMilestones } = await import("../src/scorer/milestones.js");
+  const { momentQueue, buildEventCfg, momentWords } = await import("../src/scorer/panels.jsx");
+  const { BoardFlash } = await import("../src/scorer/pad.jsx");
+  const { inningsStart, batters, bowler, ball } = await import("@scrbrd/scoring");
+  const squad = Array.from({ length: 11 }, (_, k) => ({ id: `s${k + 1}`, name: `Batter ${k + 1}` }));
+  const bowlers = [{ id: "k", name: "K Naidoo" }, { id: "x", name: "X Other" }];
+  const r = (v) => ball({ type: "run", value: v });
+  const W = (dismissal = "bowled", o = {}) => ball({ type: "W", value: 0, dismissal, ...o });
+  const wd = (o = {}) => ball({ type: "Wd", value: 0, ...o });
+  const nb = (v = 0, o = {}) => ball({ type: "Nb", value: v, nbType: "front_foot", ...o });
+  // A log as the pad holds it: the innings opened, `first` bowling the first
+  // over and the two taking turns; after a wicket, the next batter in (a
+  // free hit's save brings nobody, and the walks and the engine agree).
+  const logOf = (balls, first = "k") => {
+    const other = first === "k" ? "x" : "k";
+    const log = [inningsStart({ battingTeam: "Hilton", bowlingTeam: "Visitors", squad, bowlingSquad: bowlers, overs: 20 }),
+      batters({ striker: "s1", nonStriker: "s2" }), bowler({ bowler: first })];
+    let legal = 0, next = 3, over = 0;
+    for (const b of balls) {
+      log.push(b);
+      if (b.dismissal && !b.freeHit) log.push(batters({ striker: `s${next++}` }));
+      if (b.type !== "Wd" && b.type !== "Nb" && ++legal % 6 === 0) log.push(bowler({ bowler: ++over % 2 ? other : first }));
+    }
+    return log;
+  };
+  /** The milestones `ev` brings up, appended to the log of `balls`. */
+  const on = (balls, ev, first) => ballMilestones({ events: [logOf(balls, first)], curIn: 0, evs: [ev] });
+  const types = (balls, ev, first) => on(balls, ev, first).map((m) => m.type);
+  const has = (balls, ev, t, first) => types(balls, ev, first).includes(t);
+
+  ok("two in two: HAT-TRICK BALL", has([r(1), W()], W("caught"), "hattrickball"), types([r(1), W()], W("caught")));
+  ok("...over a wide in between", has([W(), wd()], W("lbw"), "hattrickball"));
+  ok("not when the first was a run out", !has([W("run_out")], W("bowled"), "hattrickball"));
+  ok("not when this one is a run out", !has([W()], W("run_out"), "hattrickball"));
+  ok("not when the first was saved by a free hit", !has([nb(), W("bowled", { freeHit: true })], W("bowled"), "hattrickball"),
+     types([nb(), W("bowled", { freeHit: true })], W("bowled")));
+  ok("not another bowler's", !has([r(0), r(0), r(0), r(0), r(0), W()], W("bowled"), "hattrickball", "x"));
+  ok("three in three is the hat-trick itself", has([W(), W()], W("bowled"), "hattrick") && !has([W(), W()], W("bowled"), "hattrickball"));
   // A wicket on a wide or a no-ball (Law 22.9, 21.17): his when stumped or
   // hit wicket; no ball of the over, so it neither makes a hat-trick nor puts
   // him on one; a free hit's save is no wicket at all.
-  const on4 = (log) => ({ ...before(log), bowlers: [{ ...bow, wickets: 4 }] });
-  const xw = (type, dismissal, extra = {}) => ({ type, value: 0, striker: "s", bowler: "k", dismissal, ...extra });
-  ok("a stumping off a wide for his fifth: FIFER", detectMilestone(xw("Wd", "stumped"), on4([]))?.type === "fifer");
-  ok("...a run out off a no-ball is not his fifth", detectMilestone(xw("Nb", "run_out"), on4([]))?.type !== "fifer");
-  ok("...nor is a run out off a W (it never was his)", detectMilestone(now("run_out"), on4([]))?.type !== "fifer");
-  ok("...nor a stumping off a wide the free hit saved", detectMilestone(xw("Wd", "stumped", { freeHitSaved: true }), on4([]))?.type !== "fifer");
-  ok("a stumping off a wide after two in two is no hat-trick",
-     detectMilestone(xw("Wd", "stumped"), { ...before([W(), W()]), bowlers: [{ ...bow, wickets: 2 }] })?.type !== "hattrick");
-  ok("...nor a hat-trick ball after one", detectMilestone(xw("Wd", "stumped"), before([{ type: "run", value: 1 }, W()]))?.type !== "hattrickball");
+  const four = [W(), r(1), W(), r(1), W(), r(1), r(0), r(0), r(0), r(0), r(0), r(0), W()];   // k: four, none in a row
+  ok("a stumping off a wide for his fifth: FIFER", has(four, wd({ dismissal: "stumped" }), "fifer"), types(four, wd({ dismissal: "stumped" })));
+  ok("...a run out off a no-ball is not his fifth", !has(four, nb(0, { dismissal: "run_out" }), "fifer"));
+  ok("...nor is a run out off a W (it never was his)", !has(four, W("run_out"), "fifer"));
+  ok("...nor a stumping off a wide the free hit saved", !has([...four, nb()], wd({ dismissal: "stumped", freeHit: true }), "fifer"),
+     types([...four, nb()], wd({ dismissal: "stumped", freeHit: true })));
+  ok("a stumping off a wide after two in two is no hat-trick", !has([W(), W()], wd({ dismissal: "stumped" }), "hattrick"));
+  ok("...nor a hat-trick ball after one", !has([r(1), W()], wd({ dismissal: "stumped" }), "hattrickball"));
   // The hat-trick itself asks what the hat-trick ball asks: three of his,
   // each standing. A run out among them, or a free hit's save, is none.
-  const on2 = (log) => ({ ...before(log), bowlers: [{ ...bow, wickets: 2 }] });
-  ok("no hat-trick when the first of the three was a run out",
-     detectMilestone(now("bowled"), on2([W("run_out"), W()]))?.type !== "hattrick");
-  ok("...nor when this one is a run out", detectMilestone(now("run_out"), on2([W(), W()]))?.type !== "hattrick");
-  ok("...nor when this one the free hit saved", detectMilestone({ ...now(null), freeHitSaved: true }, on2([W(), W()]))?.type !== "hattrick");
-  ok("a free hit's save with nine down is not ALL OUT",
-     detectMilestone({ ...now(null), freeHitSaved: true }, { ...before([]), wickets: 9 })?.type !== "allout");
+  ok("no hat-trick when the first of the three was a run out", !has([W("run_out"), W()], W("bowled"), "hattrick"));
+  ok("...nor when this one is a run out (a run out after two wickets calls no hat-trick)", !has([W(), W()], W("run_out"), "hattrick"),
+     types([W(), W()], W("run_out")));
+  ok("...nor when this one the free hit saved", !has([W(), W(), nb()], W("bowled", { freeHit: true }), "hattrick"));
+  const nine = [W(), r(0), W(), r(0), W(), r(0), W(), r(0), W(), r(0), W(), r(0), W(), r(0), W(), r(0), W()];
+  ok("a free hit's save with nine down is not ALL OUT", !has([...nine, nb()], W("bowled", { freeHit: true }), "allout"));
+  ok("...the tenth that stands is", has(nine, W("bowled"), "allout"), types(nine, W("bowled")));
+  ok("...and puts nobody on a hat-trick in an innings that is over", !has([...nine.slice(0, -2), r(0), W()], W("bowled"), "hattrickball"),
+     types([...nine.slice(0, -2), r(0), W()], W("bowled")));
 
+  // What the pad's own counter got wrong (reconciliation P6).
+  // s1: 30 off the first over; s2 takes a single off the second; s1 48, the side 49.
+  const fortyEight = [r(6), r(6), r(6), r(6), r(6), r(0), r(1), r(6), r(6), r(6)];
+  ok("runs off the bat on a no-ball count: 48, then a no-ball hit for two, is FIFTY",
+     has(fortyEight, nb(2), "fifty"), types(fortyEight, nb(2)));
+  ok("...its byes do not", !has(fortyEight, nb(2, { nbRuns: "byes" }), "fifty"));
+  ok("a sixth wicket is said too, as the commentary says it",
+     types([...four, r(0), W()], W("caught")).includes("wickets6"), types([...four, r(0), W()], W("caught")));
+  // A super over says no career milestone (SCRBRD-114 phase 3b, §4): two
+  // wickets in it would call themselves a hat-trick ball as it ended.
+  {
+    const main = logOf([r(1)]);
+    const so = [inningsStart({ battingTeam: "Hilton", bowlingTeam: "Visitors", squad, bowlingSquad: bowlers, overs: 1, superOver: 1 }),
+      batters({ striker: "s1", nonStriker: "s2" }), bowler({ bowler: "k" }), W(), batters({ striker: "s3" })];
+    const said = ballMilestones({ events: [main, [], so], curIn: 2, evs: [W("caught")] });
+    ok("no milestone in a super over, not even a hat-trick ball", said.length === 0, said);
+  }
+  ok("nothing at all when nothing was emitted", ballMilestones({ events: [logOf([])], curIn: 0, evs: [] }).length === 0);
+  ok("the reader never throws into the ball path", Array.isArray(ballMilestones({ events: null, curIn: 0, evs: [r(1)] })));
+
+  // Two milestones on one ball: both, in order, after the six.
+  const two = on(fortyEight, r(2));
+  ok("two on one ball: his fifty, then the side's fifty", two.map((m) => m.type).join() === "fifty,team50", two.map((m) => m.type));
+  const q2 = momentQueue({ ballValue: 2, miles: two });
+  ok("...both queued, in that order, with no four or six before them", q2.map((c) => c.label).join(" | ") === "FIFTY! | 50!", q2.map((c) => c.label));
+  const q6 = momentQueue({ ballValue: 6, miles: on([...fortyEight.slice(0, -1), r(2)], r(6)) });   // 44 and 45, then a six
+  ok("...a six that brings up two plays the six first", q6.map((c) => c.label).join(" | ") === "SIX! | FIFTY! | 50!", q6.map((c) => c.label));
+  ok("...each its own flash on the board", q6.every((c) => /board-flash-label/.test(html(h(BoardFlash, { event: c, onDone() {} })))));
+  ok("...non-blocking when a sheet is about to open", momentQueue({ ballValue: 6, miles: two, modalPending: true }).every((c) => c.noBlur === true));
+
+  // A wicket ball that earns two: his fifth and the hat-trick on one ball,
+  // both queued behind the wicket (the engine's wicket path used to keep one).
+  const onTwo = [W(), r(1), W(), r(1), W(), W(), r(0), r(0), r(0), r(0), r(0), r(0)];
+  const wk = on(onTwo, W("bowled"));
+  ok("a wicket ball that earns two: FIFER and HAT-TRICK", wk.map((m) => m.type).join() === "fifer,hattrick", wk.map((m) => m.type));
+  const qw = momentQueue({ wicket: { label: "WICKET!", sub: "Out" }, miles: wk, modalPending: true });
+  ok("...queued behind the wicket, in order", qw.map((c) => c.label).join(" | ") === "WICKET! | FIFER! | HAT-TRICK!", qw.map((c) => c.label));
+  ok("...every one non-blocking (a wicket always opens a sheet)", qw.every((c) => c.noBlur === true));
+
+  // The badge (spec §13): an achievement's cue is the milestone pin, dashed,
+  // with the word "Tentative" beside it; the side's marks and the hat-trick
+  // ball are nobody's honour and carry none.
+  const fifty = buildEventCfg(null, two[0]);
+  const flash = html(h(BoardFlash, { event: fifty, onDone() {} }));
+  ok("a fifty's flash carries the pin, dashed, and the word Tentative",
+     /data-testid="badge-pin"/.test(flash) && /data-tentative="true"/.test(flash) && /stroke-dasharray/.test(flash) && />Tentative</.test(flash), flash);
+  ok("...the label is still only its words", /data-testid="board-flash-label"[^>]*>FIFTY!</.test(flash));
+  ok("...nothing in it under 12px", [...flash.matchAll(/font-size:\s*(\d+)px/g)].every((m) => Number(m[1]) >= 12));
+  ok("...and a screen reader is told it is tentative", momentWords(fifty) === "FIFTY. Batter 1 reaches 50. Tentative", momentWords(fifty));
+  ok("the side's fifty carries no badge", !/badge-pin/.test(html(h(BoardFlash, { event: buildEventCfg(null, two[1]), onDone() {} }))));
+  const htb = on([r(1), W()], W("caught")).find((m) => m.type === "hattrickball");
+  ok("nor does the hat-trick ball, and its words are as they were",
+     !!htb && !/badge-pin/.test(html(h(BoardFlash, { event: buildEventCfg(null, htb), onDone() {} })))
+     && momentWords(buildEventCfg(null, htb)) === "HAT-TRICK BALL. K Naidoo — two in two", htb && momentWords(buildEventCfg(null, htb)));
+
+}
+{
   // The scorer's scorecard: a batter stumped off a wide before he faced a
   // legal ball is out on the card, 0 off 0, as the fold has him.
   const { ScorecardPanel } = await import("../src/scorer/panels.jsx");

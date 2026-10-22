@@ -53,7 +53,8 @@ import { fmtOv, isOut } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { projectMatch } from "./chartData.js";
-import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone, momentWords, wicketMomentCfg } from "./panels.jsx";
+import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, momentQueue, momentWords, wicketMomentCfg } from "./panels.jsx";
+import { ballMilestones } from "./milestones.js";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet, WideSheet } from "./sheets.jsx";
@@ -1613,18 +1614,16 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
 
     setSelSeg(null);setSelShot(null);setScoringCtx(null);setHubStage(0);setHubShot(null);
     scoreKeyRef.current++;
-    // No career-milestone words in a super over (SCRBRD-114 phase 3b, §4): two
-    // wickets would call themselves "two in two", a hat-trick ball, as it ended.
-    const mile=isSuperOver(before)?null:detectMilestone(ev,before);
-    const showBallOverlay=type==="run"&&(value===4||value===6);
-    const queue=[];
-    if(showBallOverlay)queue.push(buildEventCfg(value,null));
-    if(mile)queue.push(buildEventCfg(null,mile));
-    // If a modal is about to open (end of over/innings), mark overlays as
-    // non-blocking so the blur never covers the sheet underneath.
-    const modalPending=endedInnings||endedOver;
-    if(queue.length>0){
-      const q=modalPending?queue.map(c=>({...c,noBlur:true})):queue;
+    // DISPLAY ONLY, after the event is emitted: every milestone the ball
+    // brought up, as the facts read it (Recognition R2, milestones.js), from
+    // the log the events were just appended to. None in a super over
+    // (SCRBRD-114 phase 3b, §4).
+    const miles=ballMilestones({events,curIn,evs,ctx:scoringCtxRef.current,before,after});
+    // The four or six first, then each milestone. If a modal is about to open
+    // (end of over/innings), overlays are non-blocking so the blur never
+    // covers the sheet underneath (momentQueue).
+    const q=momentQueue({ballValue:type==="run"?value:null,miles,modalPending:endedInnings||endedOver});
+    if(q.length>0){
       milestoneQRef.current=q.slice(1);
       playMoment(q[0]);
     }
@@ -1711,12 +1710,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       // A wicket always opens a follow-up sheet (new batsman / new over /
       // innings break), so every overlay in this chain is non-blocking. One
       // the free hit saved says "not out", never WICKET!.
-      const wicketCfg={...wicketMomentCfg(stood),noBlur:true};
-      // The method rides along only when the wicket stood (a free hit can
-      // save the batter), so a hat-trick ball is never called off a not-out.
-      const mile=isSuperOver(before)?null:detectMilestone({type:ev.type,value:offExtra?ev.value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{freeHitSaved:true})},before);
-      milestoneQRef.current=(mile?[mile]:[]).map(m=>({...buildEventCfg(null,m),noBlur:true}));
-      playMoment(wicketCfg);
+      // Every milestone the wicket ball earned (a hat-trick and a fifer on
+      // one ball are two), queued behind the wicket, as the facts read it
+      // from the log the event was just appended to: a wicket the free hit
+      // saved is none of them, because the fold says so.
+      const miles=ballMilestones({events,curIn,evs:[ev],ctx:scoringCtxRef.current,before,after});
+      const q=momentQueue({wicket:wicketMomentCfg(stood),miles,modalPending:true});
+      milestoneQRef.current=q.slice(1);
+      playMoment(q[0]);
     }
     setFreeHit(after.freeHit);
     if(endedInnings)setModal("inningsReview");
