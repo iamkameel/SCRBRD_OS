@@ -145,7 +145,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator("nav button").count()) > 0;
 }
 /** Every read the page has asked for has come back (and a moment for what it did with it). */
@@ -307,7 +307,7 @@ try {
   await w1.locator('[data-testid="invitation-accept"]').click(); await wes.page.waitForTimeout(700);
   await w2.locator('[data-testid="invitation-decline"]').click(); await wes.page.waitForTimeout(300);
   ok("declining asks once, in the page, first", await has(wes.page, "invitation-decline-confirm") && (await wes.page.locator("button", { hasText: /Decline the invitation/ }).count()) === 1);
-  await tap(wes.page, "invitation-decline-yes"); await wes.page.waitForTimeout(700);
+  await tap(wes.page, "invitation-decline-yes"); await afterReads(wes.page, 700);
   ok("Westville accepts its 1st XI and declines its 2nd XI", /declined Walk Schools League/.test(await said(wes.page, "invitations-status")) && (await tid(wes.page, "invitation").count()) === 0, await said(wes.page, "invitations-status"));
   await settled(wes.page);
   ok("...and none once both are answered", !(await has(wes.page, "nav-invites-badge")));

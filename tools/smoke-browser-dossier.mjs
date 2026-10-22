@@ -161,7 +161,7 @@ async function signIn(page, email) {
   await page.waitForTimeout(500);
   await page.locator('input[type="email"]').first().fill(email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
   return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }

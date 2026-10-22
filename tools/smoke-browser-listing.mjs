@@ -113,7 +113,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await tid(page, "os-main").count()) === 1 || (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, nav) {
@@ -180,7 +180,7 @@ async function toSchool(page) {
 async function toPanel(page, id) {
   if (!(await go(page, "matches"))) return false;
   try { await tid(page, `match-card-${id}`).click({ timeout: 6000, position: { x: 14, y: 14 } }); } catch { return false; }
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return (await tid(page, "publish-panel").count()) === 1;
 }
 const line = async (page) => (await tid(page, "publish-listing").innerText().catch(() => "")).trim();
@@ -294,7 +294,7 @@ try {
   await toSchool(coach.page);   // whether the tab is in a coach's Settings or not, no switch is drawn
   ok("Settings → School: no listing switch for a coach", await coach.page.locator('[data-testid^="listing-"]').count() === 0);
   const cm = await go(coach.page, "matches");
-  if (cm) { await tid(coach.page, `match-card-${today}`).click({ timeout: 5000, position: { x: 14, y: 14 } }).catch(() => {}); await coach.page.waitForTimeout(1000); }
+  if (cm) { await tid(coach.page, `match-card-${today}`).click({ timeout: 5000, position: { x: 14, y: 14 } }).catch(() => {}); await afterReads(coach.page, 1000); }
   ok("the fixture's panel, if drawn for a coach, carries no listing line", await tid(coach.page, "publish-listing").count() === 0 && await tid(coach.page, "publish-panel").count() === 0);
 
   // ── 4. The office adds a ground ─────────────────────────────────

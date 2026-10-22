@@ -129,7 +129,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator("nav button").count()) > 0;
 }
 async function nav(page, label) {
@@ -154,7 +154,7 @@ async function toConditions(page) {
   if (!(await click(page, new RegExp(LEAGUE_NAME), 4000))) return false;
   if (!(await click(page, /^Playing conditions$/, 4000))) return false;
   await tid(page, "pc-root").waitFor({ timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return (await tid(page, "pc-root").count()) === 1;
 }
 /** Every text node under the root, and every control, measured as drawn. */

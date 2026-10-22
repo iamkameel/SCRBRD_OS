@@ -161,7 +161,7 @@ try {
   await dos.page.locator('input[placeholder="e.g. Michaelhouse 1st XI"]').fill(OPPONENT);
   await dos.page.locator('input[type="date"]').first().fill(d3);
   await comp.selectOption({ label: "KZN Schools T20 League" });
-  await dos.page.waitForTimeout(1200);   // the version in force that day is read
+  await afterReads(dos.page, 1200);   // the version in force that day is read
   const note = await dos.page.locator('[data-testid="fixture-prefill"]').innerText().catch(() => "");
   ok("choosing it pre-fills the format and overs, and says from which version", /KZN Schools T20 2026\/27 v1/.test(note), note);
   const overs = await dos.page.locator('input[type="number"]').first().inputValue().catch(() => "");

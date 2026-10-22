@@ -122,7 +122,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   // Staff land on the Dashboard; a parent or a pupil lands in their own app (step 4).
   return /Match Centre|Dashboard/i.test(await text(page)) || (await tid(page, "persona-bar").count()) === 1;
 }

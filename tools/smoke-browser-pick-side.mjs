@@ -124,7 +124,7 @@ async function signIn(page, email) {
   await page.waitForTimeout(500);
   await page.locator("#login-email").fill(email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return (await tid(page, "os-main").count()) === 1;
 }
 async function go(page, key) {
@@ -139,7 +139,7 @@ async function openMatch(page, id) {
   const btn = tid(page, `mc-open-${id}`);
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
 async function coachTab(page) {
@@ -328,7 +328,7 @@ try {
   ok("the 1XI coach signs in", await signIn(o.page, "coach@example.invalid"));
   await go(o.page, "matches");
   const there = await tid(o.page, `match-card-${M}`).count();
-  if (there) { await tid(o.page, `match-card-${M}`).click({ position: { x: 14, y: 14 } }); await o.page.waitForTimeout(700); }
+  if (there) { await tid(o.page, `match-card-${M}`).click({ position: { x: 14, y: 14 } }); await afterReads(o.page, 700); }
   ok("he is offered no Pick the side in Match Details", await tid(o.page, "pick-side-entry").count() === 0, `card on his list: ${there}`);
   if (there && await openMatch(o.page, M)) {
     ok("...and the fixture has no Coach tab for him", await tid(o.page, "mc-tab-coach").count() === 0 && await tid(o.page, "pick-side-open").count() === 0);

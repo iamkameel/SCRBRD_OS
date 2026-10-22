@@ -142,7 +142,7 @@ async function openMatch(page, id) {
   const btn = tid(page, `mc-open-${id}`);
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
 const tab = async (page, id) => { await tid(page, `mc-tab-${id}`).click({ timeout: 4000 }); await page.waitForTimeout(500); };

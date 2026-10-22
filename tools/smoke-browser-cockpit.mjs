@@ -178,7 +178,7 @@ async function signIn(page, email) {
   await page.waitForTimeout(500);
   await page.locator("#login-email").fill(email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return (await tid(page, "os-main").count()) === 1;
 }
 async function go(page, key) {
@@ -194,7 +194,7 @@ async function openMatch(page, id) {
   const btn = tid(page, `mc-open-${id}`);
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
 const tabIds = (page) => page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
@@ -257,7 +257,7 @@ async function floors(page, within = '[data-testid="os-main"], [data-testid="sig
 /** A reload loses the session on purpose (the token lives in memory): sign in again and come back to the Coach tab. */
 async function backTo(page, email, id, drawer = true) {
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   // The reload drops the token: the app comes back as its demonstration, and the coach signs in again.
   if ((await tid(page, "demo-banner").count()) > 0) { await click(page, /^Sign in$/i); await page.waitForTimeout(500); await signIn(page, email); }
   const opened = await openMatch(page, id);

@@ -411,7 +411,7 @@ try {
   await tap("run-4");
   const b3 = await board();
   ok("three balls scored: 5 for 0, 0.3 overs", b3 === "5 for 0, 0.3 overs", b3);
-  await page.waitForTimeout(800);   // the save is on its way before the tap's result
+  await afterReads(page, 800);   // the save is on its way before the tap's result
   ok("no sideways scroll at 390 on the pad", await noSideways());
   await shot("07-pad");
 

@@ -104,7 +104,7 @@ async function signIn(page, email) {
   await page.waitForTimeout(500);
   if (!(await click(page, new RegExp(email.replace(/[.]/g, "\\.")), 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator("nav button").count()) > 0;
 }
 async function go(page, key) {

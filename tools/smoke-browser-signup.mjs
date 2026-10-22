@@ -174,7 +174,7 @@ async function devSignIn(h, email) {
   await toLogin(h);
   await h.page.locator("#login-email").fill(email);
   await click(h.page, /^Sign In$/, 5000);
-  await h.page.waitForTimeout(2200);
+  await afterReads(h.page, 2200);
   return (await tid(h.page, "os-main").count()) === 1;
 }
 async function go(page, key) {

@@ -137,7 +137,7 @@ try {
   // Not on the pilot's account list — it is not a school role — so the
   // address is typed, the way the login page allows.
   await page.locator('input[type="email"]').first().fill("platform@example.invalid");
-  ok("Platform Ops signs in", await click(/^Sign In$/, 5000) && (await page.waitForTimeout(2000), /Dashboard|Match Centre/i.test(await text())));
+  ok("Platform Ops signs in", await click(/^Sign In$/, 5000) && (await afterReads(page, 2000), /Dashboard|Match Centre/i.test(await text())));
   ok("the three.js chunk has not been fetched yet", sceneRequests.length === 0, sceneRequests[0]);
   const navBtn = page.locator("nav button", { hasText: /Pitch Deck/ }).first();
   ok("Pitch Deck is on the menu", await navBtn.count() === 1);

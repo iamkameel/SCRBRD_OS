@@ -435,7 +435,7 @@ try {
   // ── F ────────────────────────────────────────────────────────
   group("F. SCRBRD-102: the wagon-wheel analysis panel — a filter, a chip, sides and areas");
   await tap("mc-tab-analytics").catch(() => {});
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   balls = await serverBalls();   // re-read: E's sector-era row went in by SQL, after the last fetch
   const panel = '[data-testid="wagon-analysis"]';
   await page.locator(panel).scrollIntoViewIfNeeded({ timeout: 4000 }).catch(() => {});

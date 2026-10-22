@@ -116,7 +116,7 @@ async function openAs(label) {
   await page.waitForTimeout(600);
   await click(label, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return { ctx, page, errors, text: () => page.$eval("body", (el) => el.innerText).catch(() => "") };
 }
 

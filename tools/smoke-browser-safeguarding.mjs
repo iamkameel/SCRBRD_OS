@@ -105,7 +105,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
   return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
@@ -113,7 +113,7 @@ async function toSafeguarding(page) {
   const l = tid(page, "nav-safeguarding").first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return (await tid(page, "safeguarding").count()) > 0;
 }
 /** Every text node under the page, and every control, measured as drawn. */

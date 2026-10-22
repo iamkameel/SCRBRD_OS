@@ -111,7 +111,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await tid(page, "os-main").count()) === 1 || (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, nav) {
@@ -151,7 +151,7 @@ const records = async () => q(`select given_by, end_reason, ended_on is null as 
 async function toConsents(page) {
   if (!(await go(page, "family"))) return false;
   try { await tid(page, `family-open-consents-${BEKKER}`).click({ timeout: 5000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return (await tid(page, `public-name-${BEKKER}`).count()) === 1;
 }
 /** Squad → T Bekker → Edit Profile. */

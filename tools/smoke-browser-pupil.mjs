@@ -153,14 +153,14 @@ async function signIn(page) {
   await page.waitForTimeout(500);
   await click(page, /pillay@example\.invalid/, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, key) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return (await tid(page, "os-main").getAttribute("data-page")) === key;
 }
 /** §3.2 and §3.5 over the main area, the header and the bar. */
@@ -416,7 +416,7 @@ try {
     await page.waitForTimeout(500);
     await page.locator("#login-email").fill(email);
     await click(page, /^Sign In$/, 5000);
-    await page.waitForTimeout(2200);
+    await afterReads(page, 2200);
     return (await tid(page, "persona-bar").count()) === 1;
   }
   /**
@@ -426,17 +426,17 @@ try {
   async function surfaces(email, { day = DAY, live = FIELD } = {}) {
     const x = await open();
     const out = { signedIn: await signInAs(x.page, email) };
-    await x.page.waitForTimeout(800);
+    await afterReads(x.page, 800);
     out.card = await tid(x.page, "captain-card").count() === 1;
     out.cardText = out.card ? await inner(x.page, "captain-card") : "";
     await go(x.page, "mymatches");
     await tid(x.page, `fixture-row-${day}`).click({ timeout: 4000 }).catch(() => {});
-    await x.page.waitForTimeout(1500);
+    await afterReads(x.page, 1500);
     out.section = await tid(x.page, "captain-section").count() === 1;
     await tid(x.page, "family-back").click({ timeout: 4000 }).catch(() => {});
     await x.page.waitForTimeout(500);
     await tid(x.page, `live-row-${live}`).click({ timeout: 4000 }).catch(() => {});
-    await x.page.waitForTimeout(2000);
+    await afterReads(x.page, 2000);
     out.tab = await tid(x.page, "mc-tab-captain").count() === 1;
     out.tabs = await x.page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
     out.errors = x.errors.length; out.refusals = x.refusals.length;

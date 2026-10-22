@@ -130,7 +130,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator("nav button").count()) > 0;
 }
 async function toLeague(page, c) {
@@ -141,7 +141,7 @@ async function toLeague(page, c) {
   const b = tid(page, `competition-${c}`);
   if (!(await b.count())) return false;
   await b.click({ timeout: 5000 });
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return (await tid(page, "standings").count()) === 1;
 }
 const table = async (page) => page.locator('[data-testid="standings-row"]').evaluateAll((els) =>

@@ -163,7 +163,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator("nav button").count()) > 0;
 }
 async function nav(page, label) {
@@ -621,7 +621,7 @@ try {
     if (!(await tid(rp, `sb-open-${RI}`).count())) return false;
     await tap(rp, `sb-open-${RI}`);
     await tid(rp, "sb-root").waitFor({ timeout: 6000 }).catch(() => {});
-    await rp.waitForTimeout(800);
+    await afterReads(rp, 800);
     if (await tid(rp, "sb-step-card").count()) await tap(rp, "sb-step-card");
     return true;
   };

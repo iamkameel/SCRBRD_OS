@@ -85,12 +85,12 @@ async function signIn(page, who) {
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 async function signOut(page) {
   await page.locator('[data-testid="persona-signout"]').click({ timeout: 4000 }).catch(() => {});
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return (await page.locator('[data-testid="os-main"]').count()) === 0;
 }
 /** Leave Home and come back, so the card mounts again and reads the cache. */

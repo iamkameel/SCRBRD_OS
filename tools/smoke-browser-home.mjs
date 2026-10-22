@@ -165,15 +165,15 @@ try {
     v.page.on("request", (r) => { if (FIREBASE.test(r.url())) google.push(r.url()); });
     const sw = v.page.locator('[data-testid="analytics-consent"]');
     ok("the switch is in the footer, and off", (await sw.count()) === 1 && (await sw.getAttribute("aria-checked")) === "false");
-    await sw.click({ timeout: 4000 }); await v.page.waitForTimeout(1500);
+    await sw.click({ timeout: 4000 }); await afterReads(v.page, 1500);
     ok("turned on, it says on", (await sw.getAttribute("aria-checked")) === "true");
     ok("...and the home page made no Firebase or Google request", google.length === 0, google.slice(0, 3).join(" | "));
-    await v.page.goto(`${BASE}/app`, { waitUntil: "networkidle" }); await v.page.waitForTimeout(2000);
+    await v.page.goto(`${BASE}/app`, { waitUntil: "networkidle" }); await afterReads(v.page, 2000);
     ok("the app at /app, on the device that said yes, starts the SDK", google.length > 0, "no Firebase request at /app after consent");
     await v.page.goto(`${BASE}/`, { waitUntil: "networkidle" });
     await v.page.locator('[data-testid="analytics-consent"]').click({ timeout: 4000 }); await v.page.waitForTimeout(500);
     const before = google.length;
-    await v.page.goto(`${BASE}/app`, { waitUntil: "networkidle" }); await v.page.waitForTimeout(1500);
+    await v.page.goto(`${BASE}/app`, { waitUntil: "networkidle" }); await afterReads(v.page, 1500);
     ok("off again, the app's next boot starts nothing", google.length === before, google.slice(before, before + 3).join(" | "));
   }
 
