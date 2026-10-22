@@ -1552,6 +1552,52 @@ the old API's revoke answers "not permitted" and changes nothing; everything
 else works.
 <!-- ── end db/109 ── -->
 
+<!-- ── db/110: the coach's draft plan, changed and thrown away ── -->
+#### A draft plan is its author's to change or delete (db/110)
+
+`db/110_plan_drafts.sql` puts Kameel's decision of 15 Oct 2026 into the
+database:
+- A plan that was never sent can be changed and deleted by its author.
+- A withdrawn plan can be changed and sent again, but never deleted.
+- A plan out with the side is not changed in place; it is withdrawn first.
+
+Withdrawing a plan makes it its author's draft again, so `news_post` gains
+`first_sent_at`, the date a plan was first sent. The trigger stamps it, it is
+never taken from the caller, and it is never cleared. Existing plans are
+dated from `published_at`, or, for a plan already withdrawn, from its first
+notice. The trigger `news_post_plan_drafts` refuses two things:
+- A change to a live plan's words or urgency (`news_post_plan_sent`).
+- A change to a plan by anybody but its author (`news_post_plan_author`),
+  whichever door the change comes through.
+
+`news_plan_discard(post)` is the only way a plan is deleted: by its author,
+and only for a plan never sent. The application still holds no `DELETE` on
+`news_post`. A withdrawn plan's first sending stays in its retracted notice
+(db/91), and sending it again writes a new notice, so both versions are kept.
+
+**What it does to a live database.**
+- Adds one column, with no table rewrite.
+- Dates the existing plans: it updates `first_sent_at` alone, which no notice
+  trigger reads.
+- Adds one trigger (`CREATE OR REPLACE TRIGGER`) and two `SECURITY DEFINER`
+  functions with a pinned search path. `news_plan_discard` is executable by
+  `scrbrd_app` only; the trigger's function by nobody.
+- Changes no policy or grant, and writes or changes no notice. Nothing is
+  dropped. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 110` after 103 (and after 104–109
+if they ship with it), then the verify bundle (§87 is its proof). The summary
+row "A draft plan is its author's to change or throw away" should read OK.
+
+**Schema first.** An API built with it refuses to start without db/110
+(`expected-migrations.json`). It serves `POST /api/news/:id/edit` and
+`POST /api/news/:id/delete`, and its `news` read returns `wasSent` and
+`urgency`. The coach's tab offers the following on his unsent plan:
+- **Change it** on any unsent plan.
+- **Delete**, asked once, on a plan never sent.
+- **Send again** on a withdrawn plan.
+<!-- ── end db/110 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

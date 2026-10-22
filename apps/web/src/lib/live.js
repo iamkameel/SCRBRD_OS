@@ -300,6 +300,10 @@ function asNewsPost(r) {
     // live plan's author is named to every reader of the plan (db/103), so
     // for a plan this is null only when the author's account is gone.
     authorName: r.author_name ?? null,
+    // A plan's draft (db/110): sent before (a withdrawn plan, kept) or never
+    // (its author's to delete), and how loud it is to go.
+    wasSent: r.wasSent === true,
+    urgency: r.urgency ?? "low",
     fixtureId: r.fixtureId ?? null,
     noticeId: r.noticeId ?? null,
     schoolId: r.school_id ?? null,
