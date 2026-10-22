@@ -11,6 +11,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { OWNER_OF_READ } from "@scrbrd/policy/modules";
+import { notExported, exportAllowed, exportDrops, tablesIn } from "@scrbrd/policy/exports";
 import { toCsv } from "../io/csv.mjs";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
@@ -3520,8 +3521,13 @@ const MAX_LOGGED_IDS = 500;
  * @param {string | undefined} bearer  the Authorization header, as sent
  * @param {string} resource
  * @param {Record<string, string>} [query]
+ * @param {{ omit?: readonly string[], file?: boolean }} [opts]
+ *   omit: columns taken off every row BEFORE the log is written, so the log
+ *   records what was handed over, not what the query selected (an export's
+ *   dropped columns); file: the rows leave as a file, so a read whose rows
+ *   are each about a person is logged even when no watched column came back.
  */
-export async function readResource(pool, secret, bearer, resource, query = {}) {
+export async function readResource(pool, secret, bearer, resource, query = {}, opts = {}) {
   // Object.hasOwn, not a bare index: READ_QUERIES is a plain object, so a URL
   // naming "constructor" or "__proto__" found Object.prototype's member, passed
   // the 404 and opened a transaction as the caller before failing elsewhere.
@@ -3558,7 +3564,12 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
       }
     }
     const { rows: raw } = await client.query(def.text, params);
-    const rows = def.compose ? def.compose(raw) : raw;
+    const composed = def.compose ? def.compose(raw) : raw;
+    const omit = opts.omit?.length ? new Set(opts.omit) : null;
+    const rows = omit
+      ? composed.map((/** @type {Record<string, unknown>} */ r) =>
+          Object.fromEntries(Object.entries(r).filter(([k]) => !omit.has(k))))
+      : composed;
 
     // Log what was ACTUALLY RECEIVED, not what was asked for. Masking is per
     // row and per capability, so two people running this same query get
@@ -3583,7 +3594,9 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
     // log_restricted_read(), never sent from here.
     const { rows: [who] } = await client.query(
       `select app_is_platform_wide() as platform, app_support_access_id() is not null as support`);
+    let logged = false;
     if (def.logsItself) {
+      logged = true;
       // The SQL has already written this read's row, at the school it asked
       // about; a second from here would count one read twice.
     } else if (def.logsReads) {
@@ -3604,6 +3617,7 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
         await client.query(
           `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
           [resource, ids, disclosed, school]);
+        logged = true;
       }
     } else if ((who?.platform || who?.support) && rows.length) {
       const disclosed = (watched ?? []).filter((f) => rows.some((r) => pick(r, f) != null));
@@ -3613,6 +3627,7 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
           `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
           [resource, idsIn(mine), disclosed, school]);
       }
+      logged = true;
     } else if (watched?.length && rows.length) {
       const disclosed = watched.filter((f) => rows.some((r) => pick(r, f) != null));
       if (disclosed.length) {
@@ -3620,7 +3635,18 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
         await client.query(
           `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
           [resource, idsIn(rows), disclosed, school]);
+        logged = true;
       }
+    }
+    // A FILE ABOUT PEOPLE IS ON THE RECORD, whatever columns it carries. A
+    // roster file with its masked columns dropped discloses no watched column,
+    // and is still every child's name leaving the platform. One row, naming
+    // them, with no fields: what left is the file.
+    if (opts.file && !logged && idCol && rows.length) {
+      const school = rows.find((r) => r.school_id)?.school_id ?? null;
+      await client.query(
+        `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
+        [resource, idsIn(rows), [], school]);
     }
     return rows;
   });
@@ -3630,26 +3656,15 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
 export function liveResources() { return Object.keys(READ_QUERIES); }
 
 /**
- * The reads the CSV route refuses (GA-I26a AH-D4): every development
- * judgement — the scores and their history, the ratings built on them, the
- * notes and coaching points, the targets and "since the last look". Until
- * db/105's build the route served `skills`, `ratings` and `notes` like any
- * other read.
- *
- * And every read that crosses the tenant line to name ANOTHER SCHOOL'S BOYS
- * (GA-I24-I25 D9, A1). Each rests on a grant that closes, and a file closes
- * with none of them: the dossier (`opposition_squad`, `opposition_context`)
- * at the first ball, the passport (`passport`, `passport_consents`) and the
- * scouting list (`scouting_candidates`) when the family withdraws. A CSV of
- * any of them is the standing file on another school's child the grant was
- * shaped to prevent. The passport carries the boy's ratings as well, which
- * are refused above by the other door. Until the compare build the route
- * served all five.
+ * The reads the CSV route refuses: a policy list (packages/policy/src/
+ * exports.mjs), derived from this file's watched columns and the tables each
+ * read's SQL names, plus the reads the policy names. The route serves only the
+ * policy's short allowlist (EXPORTABLE), and a test holds the two apart.
  */
-export const NOT_EXPORTED = Object.freeze(new Set([
-  "skills", "skills_history", "ratings", "notes", "coaching_points", "targets", "development_since",
-  "opposition_squad", "opposition_context", "passport", "passport_consents", "scouting_candidates",
-]));
+export const NOT_EXPORTED = notExported({
+  restricted: RESTRICTED_FIELDS,
+  tablesRead: Object.fromEntries(Object.entries(READ_QUERIES).map(([r, d]) => [r, tablesIn(d.text)])),
+});
 
 /**
  * The same read, as a file.
@@ -3674,21 +3689,30 @@ export const NOT_EXPORTED = Object.freeze(new Set([
  * @param {Record<string, string>} [query]
  */
 export async function exportResource(pool, secret, bearer, resource, query = {}) {
-  // A coach's judgement of a child does not leave as a file (GA-I26a AH-D4;
-  // GA-I24-I25 D9's rule, extended). Refused before the read, so nothing is
-  // read and nothing is logged: the screen is where these are seen.
-  if (NOT_EXPORTED.has(resource)) {
+  // An unknown name is the read's own 404, before the policy is asked.
+  if (!Object.hasOwn(READ_QUERIES, resource)) {
+    const e = /** @type {DressedError} */ (new Error("unknown_resource")); e.status = 404; throw e;
+  }
+  // Only the policy's short list leaves as a file (packages/policy/src/
+  // exports.mjs): a coach's judgement of a child, a child's health, conduct,
+  // family or figures, and another school's boys do not. Refused before the
+  // read, so nothing is read and nothing is logged: the screen is where these
+  // are seen.
+  if (!exportAllowed(resource, NOT_EXPORTED)) {
     const e = /** @type {DressedError} */ (new Error("not_exported"));
     e.status = 403; e.code = "not_exported";
     throw e;
   }
-  const rows = await readResource(pool, secret, bearer, resource, query);
+  // The file's dropped columns go for every reader alike: the office's roster
+  // file carries no address or ID number either, though the screen shows them.
+  const drop = exportDrops(resource);
+  const rows = await readResource(pool, secret, bearer, resource, query, { omit: drop, file: true });
   const columns = rows.length
     ? Object.keys(rows[0])
     // An empty result still needs a header, or the file a school opens is a
     // blank page rather than a roster with nobody in it. The columns come from
     // the query's own text in that case, which is the only place they exist.
-    : columnsOf(resource);
+    : columnsOf(resource).filter((c) => !drop.includes(c));
   return { csv: toCsv(rows, columns), rows: rows.length, columns };
 }
 

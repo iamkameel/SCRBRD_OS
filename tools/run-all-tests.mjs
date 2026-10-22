@@ -27,6 +27,8 @@ const SUITES = [
   // The plan's word list (SCRBRD-138 phase B §3): SG-10's words in code, the
   // one copy the news route and the composer both read.
   ["words",    "packages/policy/test/words.test.mjs"],
+  // What may leave as a file: the allowlist and the derived refusals, apart.
+  ["exports",  "packages/policy/test/exports.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   // GA-I26a §1.5: every attribute pinned to the drill categories that suit it.
