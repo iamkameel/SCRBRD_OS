@@ -277,6 +277,13 @@ export const CAPABILITIES = {
   // ── Conduct ──
   "discipline.read":             "See disciplinary matters",
   "discipline.write":            "Record and progress disciplinary matters",
+  // READERS_child_data Q5 (Kameel, 21 Oct 2026: "own side, logged"; db/116):
+  // a coach reads the conduct records of the boys on his own side, and every
+  // read is logged. Not discipline.read, which is a school's whole file: this
+  // opens side_discipline_records() alone, anchored on each boy's CURRENT
+  // side, so a boy moved at a rollover takes his record to his new coach. No
+  // table policy names it.
+  "discipline.side.read":        "Read the disciplinary records of the boys on your own side",
 
   // ── Safeguarding (CSA Safeguarding Policy; docs/design/SAFEGUARDING_DSO.md) ──
   // Held by the `dso` role and by NOBODY else — not the principal, not the
@@ -560,6 +567,8 @@ export const LEVEL = Object.freeze({
 
   // ── Conduct ──
   "discipline.read": 3, "discipline.write": 3,
+  // The same record, narrower in reach, not in kind.
+  "discipline.side.read": 3,
 
   // ── Safeguarding ──
   // A concern has no safe tier beneath it: the account, who it is about and

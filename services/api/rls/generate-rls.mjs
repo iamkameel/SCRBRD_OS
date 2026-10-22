@@ -529,6 +529,8 @@ export const ADDED_SINCE_01 = {
   "competition.discipline.read": "116_readers_privacy.sql",
   // Q12: the transport coordinator's manifest, a trip he coordinates, on the day.
   "transport.manifest.read":     "116_readers_privacy.sql",
+  // Q5: the coach's own side's conduct records, through side_discipline_records().
+  "discipline.side.read":        "116_readers_privacy.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

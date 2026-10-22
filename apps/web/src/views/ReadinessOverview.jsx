@@ -154,12 +154,13 @@ export function agoWords(ts, now = Date.now()) {
  * release — one row a fixture, a count and its age, and a door into that
  * fixture's Corrections sheet. Counts only: no reason, no requester, no
  * child's name on a school-wide row (GET /api/corrections answers none).
- * Asked only by a reader who holds the approval or the audit read (a
- * courtesy; the tables' policies decide what comes back). A read that failed
+ * Asked only by a reader who holds the approval (a courtesy; the tables'
+ * policies decide what comes back, and since db/116 audit.read opens no
+ * amendment: READERS_child_data Q2). A read that failed
  * is said as one; nothing open draws nothing.
  */
 function CorrectionsWaiting({ role, matches, onOpen }) {
-  const asks = signedIn() && (holdsCapability(role, "scoring.amend.approve") || holdsCapability(role, "audit.read"));
+  const asks = signedIn() && holdsCapability(role, "scoring.amend.approve");
   const [nonce, setNonce] = useState(0);
   const [read, setRead] = useState(/** @type {{rows: any[] | null, error: string | null}} */ ({ rows: null, error: null }));
   useEffect(() => {

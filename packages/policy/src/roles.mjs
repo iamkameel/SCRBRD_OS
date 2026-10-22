@@ -268,6 +268,12 @@ const BUNDLES = {
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read", "player.emergency.read",
+    // READERS_child_data Q5 (Kameel, 21 Oct 2026: "own side, logged";
+    // db/116). NOT discipline.read: side_discipline_records() reads the
+    // records of the boys on his own side (his assignment's team against each
+    // boy's current side), every read on the access log. The parent's read
+    // waits for the information officer (Q15).
+    "discipline.side.read",
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     // SCRBRD-124: the side's boys arriving by lift, and "with us" (db/70, §1.6).

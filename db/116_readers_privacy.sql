@@ -31,6 +31,13 @@
 --       membership at that school) reopens the physio's read on the next
 --       statement. ACCOUNT_LIFECYCLE Q9 governs; its note, rating and
 --       discipline tiers are its own slice 4.
+--   Q5  The coach and conduct (§6b; Kameel, 21 Oct 2026, through the Build
+--       Board: "own side, logged"): discipline.side.read opens
+--       side_discipline_records(), the records of the boys on the coach's
+--       own side (his assignment's team against each boy's CURRENT side, so a
+--       boy moved at the rollover takes his record to his new coach), every
+--       read logged. No coach holds discipline.read. A departed boy's record
+--       is not his (ACCOUNT_LIFECYCLE Q9). The parent waits (Q15).
 --   Q7  public_name_consent_set() and public_name_facts() (§4): a pupil's
 --       own "no" from his twelfth birthday, which stands whatever a guardian
 --       says; his "yes" still counts from eighteen.
@@ -63,8 +70,8 @@
 --   Q4, Q9: no code (the code stands). Q14: no route serves a pupil the log
 --   (selfaccess holds no audit.read; separation.test.mjs holds it). Q15: the
 --   guardian bundle holds no discipline.read; nothing here gives a parent a
---   disciplinary record. HELD, not built: Q5 (the coach's discipline view at
---   a rollover) and the guardian's player.identity.read (Q16's other half).
+--   disciplinary record. HELD, not built: the guardian's player.identity.read
+--   (Q16's other half).
 --
 -- db/01 and db/09 do not move: services/api/rls/generate-rls.mjs records the
 -- three withdrawals (WITHDRAWN_SINCE_01) and the two new capabilities
@@ -88,7 +95,7 @@ END $needs$;
 
 
 -- ══════════════════════════════════════════════════════════════════
--- §1 · Q16, Q10, Q12: the bundles
+-- §1 · Q16, Q10, Q12, Q5: the bundles
 -- ══════════════════════════════════════════════════════════════════
 -- Q16: a child's own ID number is never drawn on his screen; the office
 -- meets his right of access on request. His guardian's read is held.
@@ -98,13 +105,18 @@ DELETE FROM role_capability WHERE role = 'transportcoordinator' AND capability =
 -- Q10: no standing read of a school's conduct file.
 DELETE FROM role_capability WHERE role = 'competitionadmin' AND capability = 'discipline.read';
 
--- The two narrow doors: the catalogue row and one role_capability row per
+-- The three narrow doors: the catalogue row and one role_capability row per
 -- holder in roles.mjs (ADDED_SINCE_01; rls.test.mjs holds the list to the
 -- model). No table policy names either; each opens one function below.
 INSERT INTO capability (name) VALUES ('competition.discipline.read') ON CONFLICT (name) DO NOTHING;
 INSERT INTO role_capability (role, capability) VALUES
   ('superadmin',       'competition.discipline.read'),
   ('competitionadmin', 'competition.discipline.read')
+ON CONFLICT DO NOTHING;
+INSERT INTO capability (name) VALUES ('discipline.side.read') ON CONFLICT (name) DO NOTHING;
+INSERT INTO role_capability (role, capability) VALUES
+  ('superadmin', 'discipline.side.read'),
+  ('coach',      'discipline.side.read')
 ON CONFLICT DO NOTHING;
 INSERT INTO capability (name) VALUES ('transport.manifest.read') ON CONFLICT (name) DO NOTHING;
 INSERT INTO role_capability (role, capability) VALUES
@@ -562,6 +574,63 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 
 
 -- ══════════════════════════════════════════════════════════════════
+-- §6b · Q5: the coach reads his own side's conduct records, logged
+-- ══════════════════════════════════════════════════════════════════
+-- Kameel, 21 Oct 2026: "own side, logged" (SEASON_ROLLOVER keeps the
+-- discipline view for the coach; "Coaches now, parents later"). Not
+-- discipline.read on the coach's bundle, which db/25's policy would apply to
+-- every row it covers: a definer, so this one door is the whole of it. A
+-- record is his when the boy is at the record's school, on a side today, and
+-- discipline.side.read holds for that school and that side — a coach's
+-- assignment names his team, so it is his own side, as the boy stands now: a
+-- boy moved at the rollover takes his record to his new coach and leaves his
+-- old one. A boy who has left the school is nobody's side (ACCOUNT_LIFECYCLE
+-- Q9's cut). Every call that returns a record writes one access_log row per
+-- school, naming the boys and the watched columns (body, outcome), as the
+-- API's RESTRICTED_FIELDS.disciplinary_records would. VOLATILE: it writes
+-- the log. p_player NULL: every boy on his side.
+CREATE OR REPLACE FUNCTION side_discipline_records(p_player uuid DEFAULT NULL)
+RETURNS TABLE (id uuid, player_id uuid, full_name text, team_code text, school_id uuid, match_id uuid,
+               occurred_on date, body text, state text, outcome text,
+               created_at timestamptz, updated_at timestamptz) AS $$
+DECLARE
+  r      record;
+  v_sch  uuid[] := '{}';
+  v_ply  uuid[] := '{}';
+  v_out  boolean[] := '{}';
+  s      uuid;
+BEGIN
+  IF app_user_id() IS NULL OR app_pad_scoped() THEN RETURN; END IF;
+  FOR r IN
+    SELECT d.id, d.player_id, p.full_name, p.team_code, d.school_id, d.match_id,
+           d.occurred_on, d.body, d.state, d.outcome, d.created_at, d.updated_at
+      FROM disciplinary_record d
+      JOIN player p ON p.id = d.player_id
+     WHERE (p_player IS NULL OR d.player_id = p_player)
+       AND p.team_code IS NOT NULL
+       AND p.school_id = d.school_id
+       AND NOT player_departed_from(d.player_id, d.school_id)
+       AND app_can('discipline.side.read', d.school_id, p.team_code, d.player_id,
+                   '00000000-0000-0000-0000-000000000000'::uuid)
+     ORDER BY d.occurred_on DESC, d.created_at DESC, d.id
+  LOOP
+    id := r.id; player_id := r.player_id; full_name := r.full_name; team_code := r.team_code;
+    school_id := r.school_id; match_id := r.match_id; occurred_on := r.occurred_on; body := r.body;
+    state := r.state; outcome := r.outcome; created_at := r.created_at; updated_at := r.updated_at;
+    v_sch := v_sch || r.school_id; v_ply := v_ply || r.player_id; v_out := v_out || (r.outcome IS NOT NULL);
+    RETURN NEXT;
+  END LOOP;
+  FOR s IN SELECT DISTINCT u.sc FROM unnest(v_sch) u(sc) LOOP
+    PERFORM log_restricted_read('side_discipline_records',
+      (SELECT array_agg(DISTINCT x.pl ORDER BY x.pl) FROM unnest(v_sch, v_ply) x(sc, pl) WHERE x.sc = s),
+      CASE WHEN EXISTS (SELECT 1 FROM unnest(v_sch, v_out) x(sc, ou) WHERE x.sc = s AND x.ou)
+           THEN ARRAY['body', 'outcome'] ELSE ARRAY['body'] END,
+      s);
+  END LOOP;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+
+-- ══════════════════════════════════════════════════════════════════
 -- §7 · Q11: a concern about the other school's child
 -- ══════════════════════════════════════════════════════════════════
 -- db/57's safeguarding_concern_raise(), with READERS G2: a reporter at one
@@ -575,7 +644,9 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 --   * the reporter's own school's DSOs are told that a concern exists, held
 --     by the other school's DSO, and nothing else: no child, no reporter, no
 --     account (a notice under safeguarding.concern.read at the reporter's
---     school, which db/57's cuts keep to its DSOs).
+--     school, which db/57's cuts keep to its DSOs);
+--   * never under a pad credential (db/50): its fixture.read answers its own
+--     match, and a scoring pad is not where a boy of the other side is named.
 -- Everything else is db/57's, line for line. The reporter's own school is
 -- still the one his assignment must be live at (p_school).
 CREATE OR REPLACE FUNCTION safeguarding_concern_raise(
@@ -659,7 +730,7 @@ BEGIN
                          '00000000-0000-0000-0000-000000000000'::uuid)) THEN
         RETURN QUERY SELECT false, 'child_not_visible', NULL::text, NULL::timestamptz, NULL::boolean; RETURN;
       END IF;
-    ELSIF p_about_kind = 'child' AND EXISTS (
+    ELSIF p_about_kind = 'child' AND NOT app_pad_scoped() AND EXISTS (
       SELECT 1 FROM match_squad q JOIN match m ON m.id = q.match_id
        WHERE q.player_id = v_player.id AND NOT q.withdrawn
          AND ((q.side = 'away' AND m.away_school_id = v_player.school_id AND m.school_id = p_school
@@ -1022,7 +1093,7 @@ DECLARE f text; r text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['player_departed_from(uuid,uuid)', 'reader_linked_to(uuid)',
                            'app_reader_is_pupil()', 'reader_sees_on_sheet(uuid)',
-                           'competition_discipline_records(uuid)'] LOOP
+                           'competition_discipline_records(uuid)', 'side_discipline_records(uuid)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
@@ -1060,8 +1131,12 @@ BEGIN
                 ('competitionadmin', 'discipline.read'))) THEN
     RAISE EXCEPTION 'db/116: a withdrawn grant is still held';
   END IF;
-  IF (SELECT count(*) FROM role_capability WHERE capability IN ('competition.discipline.read', 'transport.manifest.read')) <> 4 THEN
-    RAISE EXCEPTION 'db/116: the two new capabilities are not held by exactly their four rows';
+  IF (SELECT count(*) FROM role_capability
+       WHERE capability IN ('competition.discipline.read', 'transport.manifest.read', 'discipline.side.read')) <> 6 THEN
+    RAISE EXCEPTION 'db/116: the three new capabilities are not held by exactly their six rows';
+  END IF;
+  IF EXISTS (SELECT 1 FROM role_capability WHERE role IN ('coach', 'assistantcoach', 'guardian') AND capability = 'discipline.read') THEN
+    RAISE EXCEPTION 'db/116: a coach or a parent holds discipline.read';
   END IF;
 
   -- §2, Q2: no read policy names audit.read but the log's (access_log), the
@@ -1107,6 +1182,7 @@ BEGIN
                            'public_name_consent_set(uuid,boolean,text,uuid,text,date)', 'public_name_facts(uuid,text,date)',
                            'notification_life(text,text,uuid,timestamptz)', 'person_pupil_of_age(uuid)',
                            'notification_recipient_not_pupil()', 'competition_discipline_records(uuid)',
+                           'side_discipline_records(uuid)',
                            'safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)',
                            'trip_contacts(uuid)', 'app_reader_is_pupil()', 'reader_sees_on_sheet(uuid)',
                            'recognition(uuid)', 'passport_open(uuid)'] LOOP
@@ -1118,7 +1194,8 @@ BEGIN
   END LOOP;
   -- The new ones: the application's, never PUBLIC; the trigger's helper, nobody's.
   FOREACH f IN ARRAY ARRAY['player_departed_from(uuid,uuid)', 'reader_linked_to(uuid)', 'app_reader_is_pupil()',
-                           'reader_sees_on_sheet(uuid)', 'competition_discipline_records(uuid)'] LOOP
+                           'reader_sees_on_sheet(uuid)', 'competition_discipline_records(uuid)',
+                           'side_discipline_records(uuid)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
