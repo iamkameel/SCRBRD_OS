@@ -5949,6 +5949,8 @@ BEGIN
   INSERT INTO competition (school_id, name, comp_type, format, age_group, gender, level, season_id)
   VALUES (NULL, 'Verify OneSixteen League', 'league', 'T20', '1XI', 'boys', 'school', season_named('2026', 'school'))
   RETURNING id INTO v_c;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES
+    (v_c, HIL, '16XI', 'Hilton 16'), (v_c, WES, '16XI', 'Westville 16');
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
   VALUES (HIL, '16XI', WES, '16XI', 'Verify OneSixteen Westville', (sa_today()::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled', v_c)
@@ -6072,6 +6074,8 @@ EXCEPTION WHEN check_violation THEN
   RETURN '23514:' || coalesce(nullif(v_con, ''), 'trigger');
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/116 (section 86) ─────────────────────────────────────────────
+
+
 
 
 
@@ -23747,8 +23751,8 @@ $v49$;
     PERFORM _as(U_LEAGUE);
     SELECT count(*) INTO n FROM disciplinary_record WHERE id IN ((y->>'r1')::uuid, (y->>'r2')::uuid, (y->>'r3')::uuid);
     PERFORM _assert(n = 0, format('§86 (Q10 league): the league read %s disciplinary_record row(s) by standing', n));
-    got := (SELECT string_agg(CASE r.id WHEN (y->>'r1')::uuid THEN 'r1' WHEN (y->>'r2')::uuid THEN 'r2' WHEN (y->>'r3')::uuid THEN 'r3' END, ',' ORDER BY 1)
-              FROM competition_discipline_records((y->>'c')::uuid) r);
+    got := (SELECT string_agg(z.x, ',' ORDER BY z.x) FROM (SELECT CASE r.id WHEN (y->>'r1')::uuid THEN 'r1' WHEN (y->>'r2')::uuid THEN 'r2' WHEN (y->>'r3')::uuid THEN 'r3' END AS x
+              FROM competition_discipline_records((y->>'c')::uuid) r) z);
     PERFORM _assert(got = 'r1,r2', format('§86 (Q10 league): through its door the league read %s', coalesce(got, 'nothing')));
     SELECT count(*) INTO n FROM competition_discipline_records(NULL) r WHERE r.id = (y->>'r3')::uuid;
     PERFORM _assert(n = 0, '§86 (Q10 league): the league read a record from a match in no competition');
@@ -23768,8 +23772,8 @@ $v49$;
     PERFORM _as((y->>'coach')::uuid);
     SELECT count(*) INTO n FROM disciplinary_record WHERE player_id = (y->>'h')::uuid;
     PERFORM _assert(n = 0, format('§86 (Q5 coach): the coach read %s disciplinary_record row(s) by standing', n));
-    got := (SELECT string_agg(CASE r.id WHEN (y->>'r1')::uuid THEN 'r1' WHEN (y->>'r3')::uuid THEN 'r3' ELSE 'other' END, ',' ORDER BY 1)
-              FROM side_discipline_records(NULL) r);
+    got := (SELECT string_agg(z.x, ',' ORDER BY z.x) FROM (SELECT CASE r.id WHEN (y->>'r1')::uuid THEN 'r1' WHEN (y->>'r3')::uuid THEN 'r3' ELSE 'other' END AS x
+              FROM side_discipline_records(NULL) r) z);
     PERFORM _assert(got = 'r1,r3', format('§86 (Q5 coach): his side''s records read %s', coalesce(got, 'nothing')));
     PERFORM _assert(_v116_fact('side_logged', (y->>'coach')::uuid, (y->>'h')::uuid) = '1',
       format('§86 (Q5 coach): his read was logged %s time(s)', _v116_fact('side_logged', (y->>'coach')::uuid, (y->>'h')::uuid)));
@@ -23827,8 +23831,8 @@ $v49$;
 
     -- (Q13 scorer)
     PERFORM _as((y->>'pupil')::uuid);
-    got := (SELECT string_agg(CASE p.id WHEN (y->>'h')::uuid THEN 'h' WHEN (y->>'k')::uuid THEN 'k' WHEN (y->>'d')::uuid THEN 'd' END, ',' ORDER BY 1)
-              FROM player p WHERE p.id IN ((y->>'h')::uuid, (y->>'k')::uuid, (y->>'d')::uuid));
+    got := (SELECT string_agg(z.x, ',' ORDER BY z.x) FROM (SELECT CASE p.id WHEN (y->>'h')::uuid THEN 'h' WHEN (y->>'k')::uuid THEN 'k' WHEN (y->>'d')::uuid THEN 'd' END AS x
+              FROM player p WHERE p.id IN ((y->>'h')::uuid, (y->>'k')::uuid, (y->>'d')::uuid)) z);
     PERFORM _assert(got = 'h', format('§86 (Q13 scorer): of Hilton''s boys the pupil scorer read %s', coalesce(got, 'nobody')));
     SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
     PERFORM _assert(n = 1, format('§86 (Q13 scorer): the pupil scorer read %s Hilton roster row(s)', n));
@@ -23884,6 +23888,8 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 86
+
+
 
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
