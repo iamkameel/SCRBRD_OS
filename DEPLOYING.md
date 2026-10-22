@@ -1887,10 +1887,20 @@ side he had left stayed booked.
   a date, he joins on that day (never a day still to come). A boy already
   on the books whom the file moves is dated today, as before. The add route
   is unchanged.
+- **The earliest day a membership may begin: prepared, not yet on.** A
+  guard on `team_membership` (`team_membership_floor`, before insert) asks
+  every new membership row, whichever door wrote it (the move route's
+  backdate, the import's `joined_on`, the add route), against
+  `membership_joined_floor()`. Kameel is choosing the floor; until he does
+  it returns nothing and the guard refuses nothing. When he answers, the
+  floor is that function's one line. A day before it is then refused with
+  a message naming the day and the floor (the move route answers 422
+  `invalid_move`; the import refuses the row on its line).
 - **SR-4.** A trigger on `player`, `player_move_voids_seats`, runs when a
   boy's side or school changes. Each live seat (requested, invited or
   confirmed; never a boarded one) of his on a lift to a fixture of the side
-  he left, dated **after** the move's day, that he no longer reaches (not
+  he left, dated **after** the move's day and still to come (a backdated
+  move leaves a lift already driven alone), that he no longer reaches (not
   his new side's, and he is not on its sheet) is voided. The driver is told
   "a seat was withdrawn" (never why); the family is told the seat was
   withdrawn because he is no longer on that side; the lone-passenger rule is
@@ -1908,13 +1918,15 @@ paste are dated from the season's start.
 
 **What it does to a live database.** One index on `team_membership`
 (`player_id, school_id, joined_on DESC`; not built `CONCURRENTLY`, so the
-table is locked for the build, which is a moment on a school's rows). Ten
+table is locked for the build, which is a moment on a school's rows). Thirteen
 new functions: `sa_date()` (anyone may call it, as `sa_today()`),
 `side_on()`, `side_day()`, `side_reach_on()`, `news_post_day()`,
 `news_plan_reach(uuid,text,date)`, `my_own_side_fixtures()`,
-`news_own_old_side()`, `import_joined_on()` (all for `scrbrd_app`, none
-for `PUBLIC`), and the trigger's `player_move_voids_seats()` (its owner's
-alone), with its trigger. One new permissive read policy on `news_post`,
+`news_own_old_side()`, `import_joined_on()`, `membership_joined_floor()`,
+`membership_floor_refusal()` (all for `scrbrd_app`, none for `PUBLIC`),
+and two triggers' functions, `player_move_voids_seats()` and
+`team_membership_floor()` (their owner's alone), with their triggers on
+`player` and `team_membership`. One new permissive read policy on `news_post`,
 `news_post_read_old_side`.
 `side_reach()`, `my_fixture_ends()`, `my_child_fixtures()`,
 `news_plan_reach(uuid,text)`, `news_team_notice_reach()`,

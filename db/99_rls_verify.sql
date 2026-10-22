@@ -6684,13 +6684,37 @@ BEGIN
   VALUES ('team', HIL, '15XI', 'plan', (z->>'f41n')::uuid, 'V117 p41n', 'V117 meet at the pavilion',
           now() - interval '1 minute', (ids->>'coach41')::uuid) RETURNING id INTO v_id;
   z := z || jsonb_build_object('p41n', v_id);
+  -- Two plans that are not out: d41a for f41a never sent (a draft), w41a
+  -- for f41w (the away end is his side's) sent and withdrawn (db/91's withdraw sets published_at back to null;
+  -- db/110 keeps first_sent_at). Both dated inside A's time on the 15XI, and
+  -- both written as their author: the database stamps a draft's author from
+  -- the person signed in.
+  PERFORM set_config('app.user_id', ids->>'coach41', true);
+  INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
+  VALUES ('team', HIL, '15XI', 'plan', (z->>'f41a')::uuid, 'V117 d41a', 'V117 a draft', NULL, (ids->>'coach41')::uuid)
+  RETURNING id INTO v_id;
+  z := z || jsonb_build_object('d41a', v_id);
+  -- Sent and withdrawn by its author, as db/91's doors do it (a person's acts).
+  INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
+  VALUES ('team', HIL, '15XI', 'plan', (z->>'f41w')::uuid, 'V117 w41a', 'V117 withdrawn',
+          ((t - 27)::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg', (ids->>'coach41')::uuid) RETURNING id INTO v_id;
+  UPDATE news_post SET published_at = NULL WHERE id = v_id;
+  PERFORM set_config('app.user_id', '', true);
+  z := z || jsonb_build_object('w41a', v_id);
+  -- A 15XI fixture already played, after the move's day (t-5): its lift's
+  -- seat for A stays as it was (a backdated move does not rewrite the past).
+  -- Labelled x41p, so the read strings above do not carry it.
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '15XI', 'Verify OneOneSeven x41p', ((t - 5)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+  z := z || jsonb_build_object('x41p', v_id);
   -- The lifts: M's mother drives to f41n (A's seat, asked by A's mother, and
-  -- M's) and to f41s (A's seat: he is on its sheet).
+  -- M's), to f41s (A's seat: he is on its sheet) and to x41p (past).
   INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
                                        insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
   VALUES ((ids->>'gm')::uuid, HIL, 'V117 blue estate', 'V117 GP', 3, true, true, true, true, true, 1, current_date + 300)
   RETURNING id INTO v_d;
-  FOR k IN SELECT unnest(ARRAY['f41n', 'f41s']) LOOP
+  FOR k IN SELECT unnest(ARRAY['f41n', 'f41s', 'x41p']) LOOP
     INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
     SELECT HIL, m.id, '15XI', 'out', (ids->>'gm')::uuid, v_d, 3, 'school', m.starts_at - interval '90 minutes', m.starts_at
       FROM match m WHERE m.id = (z->>k)::uuid
@@ -6772,6 +6796,8 @@ CREATE OR REPLACE FUNCTION _v117_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
     WHEN 'rows' THEN (SELECT string_agg(format('%s:%s..%s', team_code, joined_on - sa_today(), coalesce((left_on - sa_today())::text, '')),
                                         ' ' ORDER BY joined_on, coalesce(left_on, 'infinity'::date), id)
                         FROM team_membership WHERE player_id = p_id)
+    -- a boy's school now
+    WHEN 'school' THEN (SELECT school_id::text FROM player WHERE id = p_id)
     -- a seat's state, and who ended it
     WHEN 'seat' THEN (SELECT state || ':' || coalesce(ended_by::text, '-') FROM lift_seat WHERE id = p_id)
     -- lift notices to one person: their titles, sorted
@@ -6790,6 +6816,20 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v117_sessions() RETURNS TABLE (id uuid, school_id uuid, team_code text, day date) AS $$
   SELECT id, school_id, team_code, sa_date(starts_at) FROM training_session
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What player_leave() will do to his roles at the school he leaves
+-- (ACCOUNT_LIFECYCLE; not built): end his own live `player` roles there.
+CREATE OR REPLACE FUNCTION _v117_end_player_roles(p_person uuid, p_school uuid) RETURNS void AS $$
+  UPDATE role_assignment SET active = false
+   WHERE person_id = p_person AND school_id = p_school AND role = 'player' AND active
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A move to another school (answer 2, Kameel 22 Oct 2026), dated, as the
+-- owner: the office of one school cannot write a boy into another.
+CREATE OR REPLACE FUNCTION _v117_move_school(p_player uuid, p_school uuid, p_team text, p_on date) RETURNS void AS $$
+BEGIN
+  PERFORM set_config('app.effective_on', p_on::text, true);
+  UPDATE player SET school_id = p_school, team_code = p_team WHERE id = p_player;
+  PERFORM set_config('app.effective_on', '', true);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v117_posts() RETURNS TABLE (id uuid, school uuid, team text, day date) AS $$
   SELECT n.id, n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at)
     FROM news_post n WHERE n.scope = 'team'
@@ -26692,7 +26732,9 @@ $v49$;
   --                not the ones after he left (n41n, p41n) (Kameel, 22 Oct
   --                2026: news_post_read_old_side)
   --   (old posts)  news_own_old_side() answers true for A alone, and only at
-  --                the 15XI post and plan dated inside his closed rows
+  --                the 15XI posts and plans dated inside his closed rows; of
+  --                those he reads the two that are out (n41a, p41a), not the
+  --                draft (d41a) or the withdrawn plan (w41a): sent only
   --   (unchanged)  every other reader reads exactly what he read before the
   --                move: the newcomer's and M's mothers, M and C themselves
   --                (a team-mate on the 15XI and a boy who joined the 19XI
@@ -26700,7 +26742,8 @@ $v49$;
   --                the school-wide spectator, the office
   --   (seats)      A's seat on the lift to f41n (after the move, the side he
   --                left) is void, ended by the office; his seat to f41s (his
-  --                name on its sheet) and M's seat to f41n stand; the driver
+  --                name on its sheet), his seat to x41p (after the move's day
+  --                but already past) and M's seat to f41n stand; the driver
   --                and A's mother are each told, once
   --   (literal)    for every person holding an assignment and every staged or
   --                seed fixture, fixture_reach() under fixture.read and
@@ -26720,11 +26763,19 @@ $v49$;
   --   (undo)       a move back the same day (§3.3): four rows, both kept; his
   --                mother reads the 15XI's from t-10 on again and the 19XI's
   --                t-10 day only; the voided seat stays void (no un-void)
+  --   (school)     answer 2 (Kameel, 22 Oct 2026): A moves to Westville;
+  --                db/117's doors give him nothing of Hilton's; with his
+  --                Hilton `player` role ended (player_leave()'s part, not
+  --                built), his mother and he read none of Hilton's 15XI
+  --                fixtures, buses, nets, posts or plans; Hilton's 15XI coach
+  --                reads all he read before
   --   (import)     the import's day (import_joined_on(), Kameel 22 Oct 2026):
   --                a boy new to the books with no date in the file joins his
   --                side on the school season's start; with a date, on it; a
   --                boy already on the books moved by the file, today; a day
-  --                still to come is refused
+  --                still to come is refused; the membership floor (prepared,
+  --                inert until Kameel names it) refuses a day before it and
+  --                not the day itself or after, naming both
   --   (doors)      the void trigger enabled beside db/08's and db/112's;
   --                side_on() and side_day() scrbrd_app's alone; my_sides()
   --                returns the spans; no job on a clock (§8.3 item 12)
@@ -26810,6 +26861,14 @@ $v49$;
                     AND NOT EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'n41n')::uuid)
                     AND NOT EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'p41n')::uuid),
       '§94 (old posts): A does not read his old side''s post and plan of his time on it, or reads one from after he left');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'d41a')::uuid)
+                    AND NOT EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'w41a')::uuid),
+      '§94 (old posts): A reads a plan of his old side that is not out (a draft, or a withdrawn one)');
+    PERFORM _as((z->>'coach41')::uuid);
+    PERFORM _assert(EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'d41a')::uuid)
+                    AND EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'w41a')::uuid),
+      '§94 (old posts): the draft and the withdrawn plan are not their author''s to read (the test proves nothing)');
+    PERFORM _as(ABOY);
     PERFORM _assert(NOT app_can('news.read', '11111111-1111-1111-1111-111111111111'::uuid, '15XI', ZERO, ZERO)
                     AND NOT news_plan_reach('11111111-1111-1111-1111-111111111111'::uuid, '15XI', t - 30),
       '§94 (old posts): A reads the 15XI''s posts by a rule other than his old side''s (the test proves nothing)');
@@ -26819,7 +26878,7 @@ $v49$;
       PERFORM _as((z->>k)::uuid);
       SELECT coalesce(string_agg(coalesce(_v106_label(z, p.id), p.id::text), ' ' ORDER BY coalesce(_v106_label(z, p.id), p.id::text)), '') INTO got
         FROM _v117_posts() p WHERE news_own_old_side(p.school, p.team, p.day);
-      want := CASE k WHEN 'aboy' THEN 'n41a p41a' ELSE '' END;
+      want := CASE k WHEN 'aboy' THEN 'd41a n41a p41a w41a' ELSE '' END;
       PERFORM _assert(got = want, format('§94 (old posts): news_own_old_side() is true for the %s at [%s], the design gives [%s]', k, got, want));
     END LOOP;
 
@@ -26834,10 +26893,11 @@ $v49$;
     -- ── (seats) ──
     PERFORM _assert(_v117_fact('seat', (z->>'seat_a_41n')::uuid) = 'void:' || OFFICE::text
                     AND _v117_fact('seat', (z->>'seat_a_41s')::uuid) = 'requested:-'
+                    AND _v117_fact('seat', (z->>'seat_a_41p')::uuid) = 'requested:-'
                     AND _v117_fact('seat', (z->>'seat_m_41n')::uuid) = 'requested:-',
-      format('§94 (seats): after the move A''s seat to f41n is %s, to f41s %s; M''s to f41n %s',
+      format('§94 (seats): after the move A''s seat to f41n is %s, to f41s %s, to x41p (past) %s; M''s to f41n %s',
              _v117_fact('seat', (z->>'seat_a_41n')::uuid), _v117_fact('seat', (z->>'seat_a_41s')::uuid),
-             _v117_fact('seat', (z->>'seat_m_41n')::uuid)));
+             _v117_fact('seat', (z->>'seat_a_41p')::uuid), _v117_fact('seat', (z->>'seat_m_41n')::uuid)));
     PERFORM _assert(_v117_fact('lift_notices', GM) = 'A seat was withdrawn'
                     AND _v117_fact('lift_notices', G) = 'A seat on a lift was withdrawn',
       format('§94 (seats): the driver was told [%s], A''s mother [%s]', _v117_fact('lift_notices', GM), _v117_fact('lift_notices', G)));
@@ -26929,6 +26989,43 @@ $v49$;
                     AND _v117_fact('about_him', A) = v_about,
       '§94 (undo): the move back un-voided the seat, told someone again, or changed a link or consent');
 
+    -- ── (school) ──
+    -- Answer 2: the old school keeps its season. A moves to Westville's 15XI
+    -- from t-5.
+    PERFORM _v117_move_school(A, '22222222-2222-2222-2222-222222222222'::uuid, '15XI', t - 5);
+    PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..-10 19XI:-10..-10 15XI:-10..-5 15XI:-5..'
+                    AND _v117_fact('school', A) = '22222222-2222-2222-2222-222222222222',
+      format('§94 (school): A''s rows are %s', _v117_fact('rows', A)));
+    -- db/117's doors give A himself nothing of Hilton's now: not the old
+    -- side's posts (news_own_old_side()), not its fixtures or balls
+    -- (my_own_side_fixtures(), my_fixture_ends()'s branch (5)).
+    PERFORM _as(ABOY);
+    PERFORM _assert(NOT news_own_old_side('11111111-1111-1111-1111-111111111111'::uuid, '15XI', t - 30) AND NOT news_own_old_side('11111111-1111-1111-1111-111111111111'::uuid, '15XI', t - 7)
+                    AND NOT EXISTS (SELECT 1 FROM unnest(my_own_side_fixtures()) x
+                                     WHERE x IN (SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^(f|x)4'))
+                    AND NOT EXISTS (SELECT 1 FROM my_fixture_ends('fixture.read') e WHERE e.school_id = '11111111-1111-1111-1111-111111111111'::uuid),
+      '§94 (school): a db/117 door still answers for A at Hilton after he moved school');
+    -- His own Hilton `player` role is not db/117's: db/112 carries a role
+    -- within a school, and a boy leaving a school ends his roles there by
+    -- ACCOUNT_LIFECYCLE's player_leave() (not built; no route changes a
+    -- boy's school today). Ended here as that will, the boy and his mother
+    -- read nothing of Hilton's 15XI.
+    PERFORM _v117_end_player_roles(ABOY, '11111111-1111-1111-1111-111111111111'::uuid);
+    FOREACH k IN ARRAY ARRAY['g', 'aboy'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      got := _v117_reads(z);
+      PERFORM _assert(got !~ '[ftsnp]41',
+        format('§94 (school): after A moved school the %s reads %s, a Hilton 15XI row among them', k, got));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM news_post WHERE id IN ((z->>'n41a')::uuid, (z->>'p41a')::uuid, (z->>'d41a')::uuid, (z->>'w41a')::uuid))
+                      AND NOT EXISTS (SELECT 1 FROM match WHERE id IN ((z->>'f41a')::uuid, (z->>'f41d')::uuid, (z->>'x41p')::uuid)),
+        format('§94 (school): after A moved school the %s reads a Hilton 15XI post, plan or fixture', k));
+    END LOOP;
+    PERFORM _as((z->>'coach41')::uuid);
+    got := _v117_reads(z);
+    PERFORM _assert(got = v_before->>'coach41' AND got ~ 'f41a' AND got ~ 'n41a' AND got ~ 'p41a',
+      format('§94 (school): Hilton''s 15XI coach read %s before and %s after A moved school', v_before->>'coach41', got));
+    PERFORM set_config('app.user_id', '', true);
+
     -- ── (import) ──
     -- As the import writes a row: the office, app.effective_on set from
     -- import_joined_on() before the write (services/api/io/import-api.mjs).
@@ -26965,6 +27062,17 @@ $v49$;
       PERFORM _assert(false, '§94 (import): a joined_on still to come was accepted');
     EXCEPTION WHEN check_violation THEN NULL;
     END;
+    -- The floor (prepared; Kameel is choosing it): with a floor of t-20, a
+    -- day before it is refused naming both, the day itself and after stand;
+    -- and today there is none, so the dated rows above went in.
+    PERFORM _assert(membership_floor_refusal(t - 21, t - 20) LIKE '%' || (t - 21)::text || '%' || (t - 20)::text || '%'
+                    AND membership_floor_refusal(t - 20, t - 20) IS NULL
+                    AND membership_floor_refusal(t - 19, t - 20) IS NULL
+                    AND membership_floor_refusal(t - 400, NULL) IS NULL,
+      format('§94 (import): the floor rule gives [%s] before, [%s] on, [%s] after',
+             membership_floor_refusal(t - 21, t - 20), membership_floor_refusal(t - 20, t - 20), membership_floor_refusal(t - 19, t - 20)));
+    PERFORM _assert(membership_joined_floor() IS NULL,
+      format('§94 (import): a membership floor (%s) is set before Kameel named one', membership_joined_floor()));
     PERFORM set_config('app.user_id', '', true);
 
     -- ── (doors) ──
@@ -26983,7 +27091,10 @@ $v49$;
                     AND NOT has_function_privilege('public', to_regprocedure('news_own_old_side(uuid,text,date)'), 'EXECUTE')
                     AND NOT has_function_privilege('public', to_regprocedure('import_joined_on(boolean,date)'), 'EXECUTE')
                     AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'news_post'::regclass
-                                   AND p.polname = 'news_post_read_old_side' AND p.polpermissive AND p.polcmd = 'r'),
+                                   AND p.polname = 'news_post_read_old_side' AND p.polpermissive AND p.polcmd = 'r')
+                    AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'team_membership'::regclass
+                                   AND tgname = 'team_membership_floor' AND tgenabled = 'O')
+                    AND NOT has_function_privilege('scrbrd_app', to_regprocedure('team_membership_floor()'), 'EXECUTE'),
       '§94 (doors): the void trigger, the helpers'' grants, my_sides()''s spans or the dated policies are not what db/117 wrote');
     PERFORM _assert(to_regclass('cron.job') IS NULL, '§94 (doors): a job runs on a clock (cron.job exists)');
   END;

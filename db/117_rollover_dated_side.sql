@@ -120,6 +120,20 @@
 -- school season's start for a boy new to the books, else (a boy moved by the
 -- file) today, as before. The add route is unchanged.
 --
+-- ── 4c · THE EARLIEST DAY A MEMBERSHIP MAY BEGIN (prepared, inert) ──
+-- A backdated move (the route's effectiveOn) and an import's joined_on can
+-- name any past day; Kameel is choosing how far back (22 October 2026). So
+-- the guard is built and shared now, and the floor is one line:
+--   membership_joined_floor()    the floor; NULL (no floor) until Kameel
+--       answers, then the one line that changes.
+--   membership_floor_refusal(joined, floor)   the rule: a membership may not
+--       begin before the floor; the refusal names both days.
+--   team_membership_floor        BEFORE INSERT on team_membership: every
+--       membership row, whichever door wrote player.team_code (the move route,
+--       the import, the add route), raises check_violation with that refusal.
+--       The move route answers 422 invalid_move with it; the import refuses
+--       the row on its line.
+--
 -- ── 5 · SR-4: a move voids his seats on the side he left ───────────
 -- §3.1 step 2a: "seats on fixtures of the side he has left dated after
 -- effective_on: voided, the asker told, as player_leave() does … inside the
@@ -134,7 +148,8 @@
 --       the boy on a lift to a fixture at his OLD side's end (lift_seat's own
 --       school and team), dated AFTER the move's effective day (the trigger
 --       reads app.effective_on as db/08's does; on the day itself he was on
---       both sides, §1.3), which he no longer reaches: not his new side's
+--       both sides, §1.3) and still to come (a backdated move does not
+--       rewrite a lift already driven), which he no longer reaches: not his new side's
 --       end, and not on that end's sheet (a boy named to play still goes).
 --       Each: 'void', ended_at now(), ended_by the mover; the driver told as
 --       db/70 tells him; the seat's asker (lift_notify_family(), db/76: the
@@ -200,7 +215,9 @@
 --   + one index on team_membership (player_id, school_id, joined_on DESC)
 --   + sa_date(), side_on(), side_day(), side_reach_on(), news_post_day(),
 --     news_plan_reach(uuid, text, date), my_own_side_fixtures(),
---     news_own_old_side(), import_joined_on(),
+--     news_own_old_side(), import_joined_on(), membership_joined_floor(),
+--     membership_floor_refusal(), team_membership_floor() and its trigger
+--     on team_membership (inert: no floor yet, §4c),
 --     player_move_voids_seats() and its trigger on player
 --   + news_post_read_old_side: one permissive read on news_post
 --   ~ CREATE OR REPLACE in place, signatures, owners and grants kept:
@@ -640,6 +657,38 @@ BEGIN
 END $$ LANGUAGE plpgsql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 
+-- ── 5c · The earliest day a membership may begin (header §4c) ────────
+-- THE FLOOR. NULL: none yet (Kameel is choosing, 22 October 2026). His
+-- answer is this one line.
+CREATE OR REPLACE FUNCTION membership_joined_floor() RETURNS date AS $$
+  SELECT NULL::date
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+
+-- The rule, apart from the floor, so it is proved with any floor: null when
+-- the day stands, else the refusal, naming the day and the floor.
+CREATE OR REPLACE FUNCTION membership_floor_refusal(p_joined date, p_floor date) RETURNS text AS $$
+  SELECT CASE WHEN p_floor IS NOT NULL AND p_joined < p_floor
+              THEN format('a side cannot be joined on %s: the earliest day a membership may begin is %s', p_joined, p_floor) END
+$$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
+
+-- Every membership row, whichever door wrote player.team_code.
+CREATE OR REPLACE FUNCTION team_membership_floor() RETURNS trigger AS $$
+DECLARE
+  v text := membership_floor_refusal(NEW.joined_on, membership_joined_floor());
+BEGIN
+  IF v IS NOT NULL THEN
+    RAISE EXCEPTION '%', v USING ERRCODE = 'check_violation', SCHEMA = 'public', TABLE = 'team_membership',
+                                 CONSTRAINT = 'team_membership_floor';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+
+DROP TRIGGER IF EXISTS team_membership_floor ON team_membership;
+CREATE TRIGGER team_membership_floor
+  BEFORE INSERT ON team_membership
+  FOR EACH ROW EXECUTE FUNCTION team_membership_floor();
+
+
 -- ── 6 · SR-4: the move voids his seats on the side he left ─────────
 CREATE OR REPLACE FUNCTION player_move_voids_seats() RETURNS trigger AS $$
 DECLARE
@@ -663,6 +712,8 @@ BEGIN
               AND ls.state IN ('requested', 'invited', 'confirmed')
               AND ls.boarded_at IS NULL
               AND sa_date(m.starts_at) > v_on
+              -- ...and still to come: a backdated move does not void a lift already past
+              AND m.starts_at > now()
               -- ...which he no longer reaches: not his new side's end...
               AND NOT (ls.school_id = NEW.school_id AND ls.team_code IS NOT DISTINCT FROM NEW.team_code)
               -- ...and not named on that end's sheet (he still goes)
@@ -700,7 +751,8 @@ BEGIN
                            'side_reach_on(text,uuid,text,uuid,date)', 'my_sides(text)',
                            'my_own_side_fixtures()', 'news_post_day(text,uuid,timestamptz)',
                            'news_plan_reach(uuid,text,date)', 'news_own_old_side(uuid,text,date)',
-                           'import_joined_on(boolean,date)'] LOOP
+                           'import_joined_on(boolean,date)', 'membership_joined_floor()',
+                           'membership_floor_refusal(date,date)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
@@ -710,6 +762,7 @@ BEGIN
     END LOOP;
   END LOOP;
   REVOKE ALL ON FUNCTION player_move_voids_seats() FROM PUBLIC;
+  REVOKE ALL ON FUNCTION team_membership_floor() FROM PUBLIC;
   FOREACH r IN ARRAY ARRAY['scrbrd_app', 'anon', 'authenticated'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('REVOKE ALL ON FUNCTION player_move_voids_seats() FROM %I', r);
@@ -839,6 +892,19 @@ BEGIN
      OR NOT has_function_privilege('scrbrd_app', to_regprocedure('import_joined_on(boolean,date)'), 'EXECUTE') THEN
     RAISE EXCEPTION 'db/117: import_joined_on() is missing, not the caller''s, or not granted as it should be';
   END IF;
+  -- The floor: one guard on every membership row, asking the rule with the
+  -- one floor.
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger t
+                  WHERE t.tgrelid = 'team_membership'::regclass AND t.tgname = 'team_membership_floor'
+                    AND t.tgfoid = to_regprocedure('team_membership_floor()') AND t.tgenabled = 'O'
+                    AND pg_get_triggerdef(t.oid) LIKE '%BEFORE INSERT ON public.team_membership FOR EACH ROW%')
+     OR position('membership_floor_refusal(NEW.joined_on, membership_joined_floor())' IN
+                 coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('team_membership_floor()')), '')) = 0
+     OR membership_floor_refusal(DATE '2026-01-01', DATE '2026-01-02') IS NULL
+     OR membership_floor_refusal(DATE '2026-01-02', DATE '2026-01-02') IS NOT NULL
+     OR membership_floor_refusal(DATE '2026-01-01', NULL) IS NOT NULL THEN
+    RAISE EXCEPTION 'db/117: the membership floor guard is missing or not what this file wrote';
+  END IF;
   -- The void: a definer trigger after the side or the school changes, the
   -- owner's alone, beside db/08's and db/112's.
   IF NOT EXISTS (SELECT 1 FROM pg_trigger t
@@ -854,8 +920,8 @@ BEGIN
   END IF;
   SELECT prosrc INTO f FROM pg_proc WHERE oid = to_regprocedure('player_move_voids_seats()');
   IF position('ls.boarded_at IS NULL' IN f) = 0 OR position('sa_date(m.starts_at) > v_on' IN f) = 0
-     OR position('NOT q.withdrawn' IN f) = 0 THEN
-    RAISE EXCEPTION 'db/117: player_move_voids_seats() does not spare a boarded seat, the move''s own day, or the sheet';
+     OR position('m.starts_at > now()' IN f) = 0 OR position('NOT q.withdrawn' IN f) = 0 THEN
+    RAISE EXCEPTION 'db/117: player_move_voids_seats() does not spare a boarded seat, the move''s own day, a lift already past, or the sheet';
   END IF;
   -- No pad table asks a reach helper (AV-D4), and team_membership still has
   -- no write policy (the trigger is the one door).

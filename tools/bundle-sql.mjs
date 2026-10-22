@@ -627,6 +627,8 @@ SELECT
         AND to_regprocedure('player_move_voids_seats()') IS NOT NULL
         AND to_regprocedure('news_own_old_side(uuid,text,date)') IS NOT NULL
         AND to_regprocedure('import_joined_on(boolean,date)') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_trigger t
+                     WHERE t.tgrelid = to_regclass('team_membership') AND t.tgname = 'team_membership_floor' AND t.tgenabled = 'O')
         AND EXISTS (SELECT 1 FROM pg_policy p
                      WHERE p.polrelid = to_regclass('news_post') AND p.polname = 'news_post_read_old_side')
         AND position('side_reach_on(' IN coalesce((SELECT prosrc FROM pg_proc
