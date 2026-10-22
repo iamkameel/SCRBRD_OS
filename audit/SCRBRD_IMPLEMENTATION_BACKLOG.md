@@ -3962,6 +3962,8 @@ DLS line and a venue-par line on the signed-out public page (design §9, departu
 
 ### SCRBRD-132 — Prototype leftovers: invented data and dead controls (2026-10-01)
 
+**Partly done 2026-10-22:** Wave B, injury routes: the physio's injury screens (the Record and Review forms, reviews due, the review history) and the family's health history on the child's file (GA-I19 slice B, over #166's API) (#172, `ecbbf30`).
+
 The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/PROTOTYPE_LEFTOVERS.md`.
 
 - **Wave A (Sonnet, screens):** in progress. Invented audit entries come down; ground tasks are read from duties; the Equipment copy is removed in favour of the kit register; real school names; the Skills axis is 1–20; Management tabs follow capabilities; Squad availability and profile edits; dead injury buttons hidden; Fields drawing fixed. Management users show all roles, with Add role.
@@ -4731,6 +4733,8 @@ unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information of
 **Partly done 2026-10-21:** REACH R-C + R-D: officials' records closed (db/107); a pupil's role names his side (db/108) (#162).
 
 **Partly done 2026-10-21:** REACH R-A: a family reads only its child's side's fixtures, buses and training (db/106) (#167).
+
+**Partly done 2026-10-22:** SR-1 (db/112), season rollover: a moved pupil follows his new side, and a boy playing up reads his match's balls (#171, `184976c`).
 
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** design (Fable, `docs/design/STEP4_parent_pupil.md`,
 decided by Kameel 2026-09-27), built by Opus
