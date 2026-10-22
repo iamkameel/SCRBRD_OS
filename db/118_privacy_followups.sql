@@ -3,7 +3,7 @@
 -- ══════════════════════════════════════════════════════════════════
 --
 -- HAND-WRITTEN. Three small rules about children's data, each a function,
--- each proved by db/99 §91. No table changes; nothing here widens a read.
+-- each proved by db/99 §92. No table changes; nothing here widens a read.
 --
 -- 1. THE PUBLIC NEWS SCAN READS EVERY PART OF A NAME (PUBLIC_DATA §1 rules
 --    3 and 4: no full name, no first name alone, no name without consent).
