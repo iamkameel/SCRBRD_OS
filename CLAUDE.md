@@ -173,6 +173,42 @@ see a limit coming, so the rule is a cadence, not a trigger:
   message rather than starting it afresh, and re-read the board before
   anything else.
 
+## Pacing to the usage window
+
+Added 2026-10-22 (Kameel), after two limits in one night stopped every agent
+and the restarts burned more tokens re-reading than the work cost: manage the
+spend so a limit is not hit, rather than recovering after it.
+
+What is known: usage runs in five-hour windows. The resets seen so far were
+14:50, 19:50, 00:50 and 05:50 UTC, so a window starts at those times and every
+five hours on. Nothing reports the remaining allowance ahead of a limit, so
+the lead paces by what each window has already spent:
+`node tools/claude/usage.mjs --since <window start>`. With five to seven agents
+at once, a window ran out after two to three hours, having spent about 220k to
+460k output tokens and 160M to 320M input.
+
+- **Default load: three builders at once** (two Opus and one Sonnet), plus Haiku
+  for maps and records. More only on Kameel's say, for a named window.
+- **Measure at every hourly sweep** and before starting any agent: the window's
+  spend so far, and the time left until it resets. Record both on the Build
+  Board's headline.
+- **Past half** of the smaller window seen (about 110k output or 80M input):
+  start nothing new; let running agents finish their current step.
+- **Past three quarters** (about 165k output or 120M input), or in a window's
+  last hour: every running agent commits and pushes, and the lowest-priority
+  ones pause with a three-line note of where they stopped. One Opus at most
+  keeps going. Say so to Kameel in one line.
+- **One Fable agent costs a window's margin on its own:** start one only early in
+  a window, and nothing else heavy beside it.
+- **After a limit or a restart,** don't relaunch everything at the reset. Resume
+  by message where the agent still exists, which is far cheaper than a fresh
+  agent. A fresh agent gets a brief that names its branch's last commit and
+  what is left, so it doesn't re-read what is done. Start at most two in the
+  first hour after a reset.
+- **Don't burn on waiting:** no agent watches CI in a loop or idles on a lock.
+  CI is checked at the sweep, and a builder whose proof is queued on the
+  database lock stops and reports, rather than waiting.
+
 ## Design skills
 
 Installed 2026-10-07 (Kameel) to raise SCRBRD's design, UI and UX, in

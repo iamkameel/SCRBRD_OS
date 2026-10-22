@@ -19,6 +19,8 @@
  *
  *   node tools/claude/usage.mjs                 the last 7 days, this project
  *   node tools/claude/usage.mjs --days 1        today only
+ *   node tools/claude/usage.mjs --since <ISO>   from a moment, e.g. the current usage
+ *                                               window's start (CLAUDE.md "Pacing")
  *   node tools/claude/usage.mjs --all-projects  every project on this machine
  *   node tools/claude/usage.mjs --json          the same figures as JSON
  *   node tools/claude/usage.mjs --board         the Build Board's meta/usage document
@@ -176,7 +178,8 @@ export function ledgerByDay(sessions, project) {
 }
 
 /** Adds up a set of transcripts over the days asked for. */
-export function summarise(transcripts, { since, timeZone }) {
+export function summarise(transcripts, { since, sinceTs, timeZone }) {
+  const from = sinceTs ? Date.parse(sinceTs) : NaN;
   const byTier = Object.fromEntries(TIERS.map((t) => [t, blank()]));
   const byDay = {};
   const lead = blank(), agents = blank();
@@ -186,6 +189,7 @@ export function summarise(transcripts, { since, timeZone }) {
     for (const r of readMessages(t.path)) {
       const day = dayOf(r.ts, timeZone);
       if (!day || (since && day < since)) continue;
+      if (!Number.isNaN(from) && Date.parse(r.ts) < from) continue;
       add(byTier[r.tier], r);
       byDay[day] ??= Object.fromEntries(TIERS.map((x) => [x, blank()]));
       add(byDay[day][r.tier], r);
@@ -298,6 +302,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === "--days") a.days = Math.max(1, parseInt(argv[++i], 10) || 7);
+    else if (k === "--since") a.sinceTs = argv[++i];
     else if (k === "--json") a.json = true;
     else if (k === "--board") a.board = true;
     else if (k === "--all-projects") a.all = true;
@@ -316,8 +321,8 @@ export function main(argv = process.argv.slice(2), now = new Date()) {
   const folders = a.all ? (existsSync(root) ? readdirSync(root).map((f) => join(root, f)) : []) : [join(root, slug)];
   const transcripts = folders.flatMap(listTranscripts);
   const sinceDate = new Date(now.getTime() - (a.days - 1) * 86400000);
-  const since = dayOf(sinceDate.toISOString(), a.tz);
-  const s = summarise(transcripts, { since, timeZone: a.tz });
+  const since = a.sinceTs ? dayOf(new Date(a.sinceTs).toISOString(), a.tz) : dayOf(sinceDate.toISOString(), a.tz);
+  const s = summarise(transcripts, { since, sinceTs: a.sinceTs, timeZone: a.tz });
   const ledger = readLedger(join(configDir(), "scrbrd-usage", "sessions"));
   const spendAll = ledgerByDay(ledger, a.all ? null : slug);
   const spend = Object.keys(spendAll).length

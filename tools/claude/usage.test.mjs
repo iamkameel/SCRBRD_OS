@@ -84,6 +84,9 @@ try {
   ok("lead and subagent are kept apart", s.lead.messages === 2 && s.agents.messages === 1);
   ok("the task carries its tier and output", s.tasks[0]?.tier === "Haiku" && s.tasks[0]?.output === 40);
   ok("one estimate is counted", sumOf(Object.values(s.byTier)).estimated === 1);
+  const w = summarise(ts, { since: "2026-10-14", sinceTs: "2026-10-14T07:00:00Z", timeZone: TZ });
+  ok("--since counts from the moment, not the day: one Opus reply and the Haiku one",
+     w.byTier.Opus.messages === 1 && w.byTier.Haiku.messages === 1, JSON.stringify([w.byTier.Opus.messages, w.byTier.Haiku.messages]));
   const text = render(s, { label: "p", since: "2026-10-08", timeZone: TZ, spend: null });
   ok("the report names the estimate", /Output for 1 of 3 replies is estimated/.test(text));
   ok("the report prints no price of its own", !/\$/.test(text));
