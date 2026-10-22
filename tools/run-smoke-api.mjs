@@ -238,6 +238,11 @@ const WALKS = [
   // db/108 and tools/sql/fix-player-without-team.sql, pasted in the order
   // DEPLOYING.md gives, on a database holding a team-less pupil role.
   "player-team",
+  // db/112 over HTTP: the office moves a pupil and his `player` role follows
+  // him (ended on the old side, made on the new, never on no side); he reads
+  // his new side's fixtures, nets, plan and balls and none of his old side's,
+  // bar the one match he plays up into, every ball of it; his mother agrees.
+  "player-move",
   // The gaps db/10 and db/11 could only warn about, and the one write route
   // that closes the first of them.
   "dob-gaps",
