@@ -237,9 +237,13 @@ const SUITES = [
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["decide-words", "apps/web/test/decide-words.test.mjs"],
-  // GA-I21: one label for demo / practice / read only (no "official": a result
-  // is read from the log, not stored), and the bowling-ceiling refusal in words.
+  // GA-I21: one label for demo / practice / read only — and, with the official
+  // result (db/114), provisional / under review / official, the state the
+  // server gives — and the bowling-ceiling refusal in words.
   ["state-label", "apps/web/test/state-label.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // OFFICIAL_RESULT (db/114): the public's words and staff's, every door's
+  // refusal in words, "Looks right" still this phone's, the To-resolve rows.
+  ["official", "apps/web/test/official.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["source-line", "apps/web/test/source-line.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I23: the Analytics performance tab's season bars are the career_by_season
   // read, per player per season, and no invented figure is drawn signed in.

@@ -100,17 +100,19 @@ const REQUEST_REFUSAL = {
  * the Match Centre already checks, `scoring.finalise`) is asked to confirm
  * the scorecard or open the amendment flow. Nobody else sees this at all.
  *
- * THERE IS NO "CONFIRMED" STATE ON THE PLATFORM. "Looks right" dismisses this
- * banner on this device only (`localStorage`, per SCRBRD-100's own
- * instruction not to build a new confirmation store) — it writes nothing to
- * the server and nobody else's screen changes. The honest action here is the
- * other one: filing a correction through the amendment flow that already
- * exists (`POST /matches/:id/amendments`, `scoring.amend.request` — which
- * only the scorer role holds; a director of sport or the principal then
- * decides it with `scoring.amend.approve`, on a screen this product does not
- * yet have — see the report for that gap).
+ * "Looks right" is the scorer's and the coach's OWN check, and stays a
+ * device-only dismiss (`localStorage`): it writes nothing to the server and
+ * nobody else's screen changes, and it says so — it does not make the result
+ * official (OFFICIAL_RESULT D13). Official is a confirmation by the organiser
+ * (a league fixture) or the home school's director of sport or principal (a
+ * friendly), through db/114. Where the server says this reader may confirm
+ * (`official.may.confirm`: result.confirm, and his hand is not on the log, D5)
+ * "Confirm result" stands in its place, and opens the Official result sheet,
+ * which writes. The other action is filing a correction through the
+ * amendment flow (`POST /matches/:id/amendments`, `scoring.amend.request`,
+ * the scorer's; somebody else decides it).
  */
-export function ConfirmScorecardPrompt({ match, role, commentary, innings, onFiled = null }) {
+export function ConfirmScorecardPrompt({ match, role, commentary, innings, onFiled = null, official = null, onConfirm = null }) {
   const canFinalise = holdsCapability(role, "scoring.finalise");
   const canRequest = holdsCapability(role, "scoring.amend.request");
   const [hidden, setHidden] = useState(() => isDismissed(match.id));
@@ -146,10 +148,17 @@ export function ConfirmScorecardPrompt({ match, role, commentary, innings, onFil
       <div style={{ padding: T.space.md, display: "grid", gap: T.space.sm }}>
         <p style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>Check the final scorecard.</p>
         <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
-          <button type="button" data-testid="mc-confirm-ok" onClick={() => { dismiss(match.id); setHidden(true); }}
-            className="pressBtn os-state" style={{ ...linkStyle(), borderColor: T.semantic.positive, color: T.semantic.positive }}>
-            <Icon name="circle-check"/> Looks right
-          </button>
+          {official?.may?.confirm && onConfirm ? (
+            <button type="button" data-testid="mc-confirm-result" onClick={onConfirm}
+              className="pressBtn os-state" style={{ ...linkStyle(), borderColor: T.semantic.positive, color: T.semantic.positive }}>
+              <Icon name="shield-check"/> Confirm result
+            </button>
+          ) : (
+            <button type="button" data-testid="mc-confirm-ok" onClick={() => { dismiss(match.id); setHidden(true); }}
+              className="pressBtn os-state" style={{ ...linkStyle(), borderColor: T.semantic.positive, color: T.semantic.positive }}>
+              <Icon name="circle-check"/> Looks right
+            </button>
+          )}
           {canRequest && (
             <button type="button" data-testid="mc-confirm-open" aria-expanded={open} onClick={() => setOpen((o) => !o)}
               className="pressBtn os-state" style={linkStyle()}>
@@ -157,6 +166,11 @@ export function ConfirmScorecardPrompt({ match, role, commentary, innings, onFil
             </button>
           )}
         </div>
+        {!(official?.may?.confirm && onConfirm) && (
+          <p data-testid="mc-confirm-device" style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary, margin: 0 }}>
+            “Looks right” is checked on this phone only · it does not make the result official; {match.competition ? "the organiser" : "the home school’s director of sport or principal"} does that.
+          </p>
+        )}
         {!canRequest && (
           <p style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary, margin: 0 }}>
             Only the scorer can file a correction; a director of sport or the principal then decides it.
