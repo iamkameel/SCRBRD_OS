@@ -24897,7 +24897,8 @@ $v49$;
   --   (worklist) the physio's list: one reason each — overdue, return
   --              passed, due, no return date, new — in that order, with the
   --              clock; a quiet open injury is not on it; a boy who left is
-  --              off it and his row stays; the mother-physio's own son is off
+  --              off it and his row stays, which the physio no longer reads
+  --              (READERS Q3, db/116); the mother-physio's own son is off
   --              hers, and the claiming physio's boy off hers; nobody without
   --              medical.write gets a row, nor the owner's key, nor
   --              Westville's physio a Hilton row
@@ -25251,8 +25252,11 @@ $v49$;
      WHERE x.injury_id IN (I_OVER, I_RET, I_MATE, I_NORTW, I_RECUR);
     PERFORM _assert(j = to_jsonb(ARRAY[I_OVER, I_RET, I_MATE, I_NORTW, I_RECUR]),
       format('§88 (worklist): the list is not overdue, return passed, due, no return date, new: %s', j));
-    SELECT count(*)::int INTO n FROM injury_masked WHERE id = I_LEFT AND injury_type IS NOT NULL;
-    PERFORM _assert(n = 1, '§88 (worklist): the physio no longer reads the injury of the boy who left');
+    -- READERS_child_data Q3 (db/116, §91): ACCOUNT_LIFECYCLE Q9 over GA-I19
+    -- D11. Once he has left, his clinical record is the office's and his
+    -- family's, not the physio's; the row itself is untouched (below).
+    SELECT count(*)::int INTO n FROM injury_masked WHERE id = I_LEFT;
+    PERFORM _assert(n = 0, '§88 (worklist): the physio still reads the injury of the boy who left (READERS Q3)');
     -- (left) the "left the school" mark, under each reader's own RLS: the day
     -- he left to the physio, his coach and the principal (status tier); NULL
     -- for a boy still there; NULL to a reader of neither (20XI's coach).
