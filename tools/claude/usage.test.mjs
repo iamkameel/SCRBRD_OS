@@ -16,8 +16,8 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { tierOf, projectSlug, dayOf, readMessages, listTranscripts, summarise, ledgerByDay, render, sumOf } from "./usage.mjs";
-import { record, spentToday, line, contextPct } from "./statusline.mjs";
+import { tierOf, projectSlug, dayOf, readMessages, listTranscripts, summarise, ledgerByDay, render, sumOf, planVerdict } from "./usage.mjs";
+import { record, spentToday, line, contextPct, recordLimits } from "./statusline.mjs";
 
 let passes = 0, fails = 0;
 const ok = (label, cond, detail = "") => {
@@ -90,6 +90,24 @@ try {
   const text = render(s, { label: "p", since: "2026-10-08", timeZone: TZ, spend: null });
   ok("the report names the estimate", /Output for 1 of 3 replies is estimated/.test(text));
   ok("the report prints no price of its own", !/\$/.test(text));
+
+  group("The plan's limits");
+  {
+    const lf = join(root, "rate-limits.json");
+    const none = recordLimits({ cost: { total_cost_usd: 1 } }, new Date("2026-10-22T07:00:00Z"), lf);
+    ok("nothing is written without rate_limits", none === null);
+    const rec = recordLimits({ rate_limits: { five_hour: { used_percentage: 62.4, resets_at: 1792666200 }, seven_day: { used_percentage: 41, resets_at: 1793000000 } } },
+                             new Date("2026-10-22T07:00:00Z"), lf);
+    ok("both windows are kept", rec?.five_hour?.used_percentage === 62.4 && rec?.seven_day?.used_percentage === 41);
+    const saved = JSON.parse(readFileSync(lf, "utf8"));
+    ok("the file holds figures only", JSON.stringify(Object.keys(saved).sort()) === JSON.stringify(["at", "five_hour", "seven_day"]));
+    const v = planVerdict(saved, new Date("2026-10-22T07:01:00Z"), TZ);
+    ok("62% of the window: start nothing new", v.step === "no-new", v.text);
+    ok("80% pauses", planVerdict({ at: saved.at, five_hour: { used_percentage: 80, resets_at: 1 } }).step === "pause");
+    ok("30% goes", planVerdict({ at: saved.at, five_hour: { used_percentage: 30, resets_at: 1 } }).step === "go");
+    ok("no record says so plainly", planVerdict(null).ok === false);
+    ok("the line shows both windows", /5h 62% · wk 41%/.test(line({ model: { display_name: "Opus" }, rate_limits: saved })));
+  }
 
   group("The ledger");
   const ledger = join(root, "ledger");

@@ -19,6 +19,9 @@
  *
  *   node tools/claude/usage.mjs                 the last 7 days, this project
  *   node tools/claude/usage.mjs --days 1        today only
+ *   node tools/claude/usage.mjs --plan          the plan's 5-hour and weekly limits, as
+ *                                               the status line last saw them, and the
+ *                                               pacing step they call for
  *   node tools/claude/usage.mjs --since <ISO>   from a moment, e.g. the current usage
  *                                               window's start (CLAUDE.md "Pacing")
  *   node tools/claude/usage.mjs --all-projects  every project on this machine
@@ -303,6 +306,7 @@ function parseArgs(argv) {
     const k = argv[i];
     if (k === "--days") a.days = Math.max(1, parseInt(argv[++i], 10) || 7);
     else if (k === "--since") a.sinceTs = argv[++i];
+    else if (k === "--plan") a.plan = true;
     else if (k === "--json") a.json = true;
     else if (k === "--board") a.board = true;
     else if (k === "--all-projects") a.all = true;
@@ -313,9 +317,37 @@ function parseArgs(argv) {
   return a;
 }
 
+// ── The plan's limits, as the status line last saw them ──
+// The thresholds of CLAUDE.md "Pacing to the usage window", in the plan's own
+// percent of the five-hour window. The weekly window only warns.
+export const PACE = Object.freeze({ noNew: 50, pause: 75, weekWarn: 80 });
+const ago = (ms) => (ms < 90000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60000)} min`);
+/** The pacing verdict from a saved rate-limits record. */
+export function planVerdict(rec, now = new Date(), timeZone = "Africa/Johannesburg") {
+  if (!rec || (!rec.five_hour && !rec.seven_day)) return { ok: false, text: "No plan limits recorded yet: the status line has not run with rate_limits (Pro/Max, Claude Code 2.1.80+). Pace by tokens: usage.mjs --since <window start>." };
+  const t = (s) => (s ? new Date(s * 1000).toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit" }) : "?");
+  const age = now.getTime() - Date.parse(rec.at);
+  const five = rec.five_hour, week = rec.seven_day;
+  const f = five?.used_percentage;
+  const step = f == null ? "unknown" : f >= PACE.pause ? "pause" : f >= PACE.noNew ? "no-new" : "go";
+  const lines = [
+    five ? `Five-hour window: ${Math.round(five.used_percentage)}% used, resets ${t(five.resets_at)}` : "Five-hour window: not sent",
+    week ? `Weekly: ${Math.round(week.used_percentage)}% used, resets ${t(week.resets_at)}${week.used_percentage >= PACE.weekWarn ? " — over the weekly warning line: tell Kameel" : ""}` : "Weekly: not sent",
+    `As seen ${ago(age)} ago. Pacing: ${{ go: "builders may start (three at most)", "no-new": "start nothing new", pause: "push, pause the lowest priority, one Opus at most", unknown: "unknown" }[step]}.`,
+  ];
+  return { ok: true, step, five: f ?? null, week: week?.used_percentage ?? null, ageMs: age, text: lines.join("\n") };
+}
+
 export function main(argv = process.argv.slice(2), now = new Date()) {
   const a = parseArgs(argv);
   if (a.help) { console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("*/")[0]); return 0; }
+  if (a.plan) {
+    let rec = null;
+    try { rec = JSON.parse(readFileSync(join(configDir(), "scrbrd-usage", "rate-limits.json"), "utf8")); } catch { /* none yet */ }
+    const v = planVerdict(rec, now, a.tz);
+    console.log(a.json ? JSON.stringify(v) : v.text);
+    return 0;
+  }
   const root = join(configDir(), "projects");
   const slug = projectSlug(a.dir);
   const folders = a.all ? (existsSync(root) ? readdirSync(root).map((f) => join(root, f)) : []) : [join(root, slug)];
