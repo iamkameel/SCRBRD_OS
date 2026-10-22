@@ -6731,6 +6731,9 @@ BEGIN
   INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
   VALUES ((ids->>'h')::uuid, HIL, '16XI', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
 
+  -- Q16: t's ID number on file (13 digits; the format is the only rule).
+  UPDATE player SET id_number = to_char(make_date(yr - 13, 1, 1), 'YYMMDD') || '5116084' WHERE id = (ids->>'t')::uuid;
+
   -- A1: his coach's rating of him, and his family's consent naming Westville.
   INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
   VALUES ((ids->>'h')::uuid, current_date - 5, (ids->>'coach')::uuid, 'technical', 'againstPace', 11);
@@ -26109,7 +26112,6 @@ $v49$;
     NIL  uuid := '00000000-0000-0000-0000-000000000000';
     U_LEAGUE uuid := '88888888-0000-0000-0000-000000000021';
     U_SELF   uuid := '88888888-0000-0000-0000-000000000009';  -- R Pillay, his own record
-    U_PARENT uuid := '88888888-0000-0000-0000-000000000005';  -- R Pillay's guardian
     P_PILLAY uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
     got  text;
     n    int;
@@ -26357,8 +26359,14 @@ $v49$;
     PERFORM _assert(n = 0, '§91 (Q16): a pupil reads his own ID number');
     SELECT count(*) INTO n FROM player_masked WHERE id = P_PILLAY AND born IS NOT NULL;
     PERFORM _assert(n = 1, '§91 (Q16): a pupil lost his own date of birth (the withdrawal took more than the ID)');
-    PERFORM _as(U_PARENT);
-    SELECT count(*) INTO n FROM player_masked WHERE id = P_PILLAY AND id_number IS NOT NULL;
+    -- The guardian's half, on this section's own family: by now earlier
+    -- sections have moved the seed guardian's link to R Pillay (see db/55's
+    -- note), so the seed pair proves nothing here.
+    PERFORM _as((y->>'teen')::uuid);
+    SELECT count(*) INTO n FROM player_masked WHERE id = (y->>'t')::uuid AND id_number IS NOT NULL;
+    PERFORM _assert(n = 0, '§91 (Q16): the thirteen-year-old reads his own ID number');
+    PERFORM _as((y->>'parent')::uuid);
+    SELECT count(*) INTO n FROM player_masked WHERE id = (y->>'t')::uuid AND id_number IS NOT NULL;
     PERFORM _assert(n = 1, '§91 (Q16): his guardian''s read of the ID number moved (held for Kameel)');
     PERFORM _as((y->>'parent')::uuid);
     SELECT count(*) INTO n FROM disciplinary_record WHERE player_id = (y->>'h')::uuid;
