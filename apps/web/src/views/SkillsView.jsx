@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { holdsAsHeld } from "../lib/held.js";
+import { holdsAsHeld, holdsForPlayer } from "../lib/held.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useNotes, useRatings, useSkills, useBoyRead } from "../lib/live.js";
@@ -149,10 +149,16 @@ function SkillsView({ role }) {
   // a reader who holds player.note.read; the boy himself holds the scores and
   // not that, and is spoken to as "you" and "your coach".
   const staffView = holdsAsHeld(role, "player.note.read");
-  const histRead = useBoyRead("skills_history", role, selPlayer?.id, nonce, mayReadSkills);
-  const targetsRead = useBoyRead("targets", role, selPlayer?.id, nonce, mayReadSkills);
-  const sinceRead = useBoyRead("development_since", role, selPlayer?.id, nonce, mayReadSkills);
-  const pointsRead = useBoyRead("coaching_points", role, selPlayer?.id, nonce, staffView);
+  // Held for THIS boy: a pupil's own-record assignment reaches him alone, so a
+  // team-mate tapped in the list is never asked for (and never logged against).
+  // The coaching points are drawn only in a strip's dot sheet, so they are read
+  // only where the strip is: a principal (notes, not scores) is not sent them.
+  const mayReadHistory = holdsForPlayer(role, "player.development.read", selPlayer?.id);
+  const histRead = useBoyRead("skills_history", role, selPlayer?.id, nonce, mayReadHistory);
+  const targetsRead = useBoyRead("targets", role, selPlayer?.id, nonce, mayReadHistory);
+  const sinceRead = useBoyRead("development_since", role, selPlayer?.id, nonce, mayReadHistory);
+  const pointsRead = useBoyRead("coaching_points", role, selPlayer?.id, nonce,
+    mayReadHistory && holdsForPlayer(role, "player.note.read", selPlayer?.id));
   const [openDot, setOpenDot]     = useState(null);   // a point from the history
   const [targeting, setTargeting] = useState(null);   // { category, metric }
   const [assessing, setAssessing] = useState(false);

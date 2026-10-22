@@ -29,6 +29,7 @@ import {
   targetWords, targetProblem, orderDrills, sinceWords, lastLookBy, REGISTER_STATES, CELL, yOf,
 } from "../src/lib/assessmentHistory.js";
 import { focusAreas } from "../src/lib/focusAreas.js";
+import { holdsForPlayer } from "../src/lib/held.js";
 import { moved, minutesProblem } from "../src/lib/trainingPlan.js";
 import { NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
 import { Strip, TargetLine, SincePanel, DotSheet } from "../src/views/skills/History.jsx";
@@ -184,13 +185,29 @@ ok("Save is off until somebody is marked", /data-testid="register-save"[^>]*disa
 group("Nothing here widens a reader or writes a health word");
 const src = (f) => readFileSync(new URL(f, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, "$1");
 const skills = src("../src/views/SkillsView.jsx") + src("../src/views/skills/History.jsx") + src("../src/lib/assessmentHistory.js");
-const asked = [...skills.matchAll(/holdsAsHeld\(\s*role\s*,\s*"([^"]+)"/g)].map((m) => m[1]);
+const asked = [...skills.matchAll(/holds(?:AsHeld|ForPlayer)\(\s*role\s*,\s*"([^"]+)"/g)].map((m) => m[1]);
 ok("the Skills screens ask only for the scores' and the notes' own capabilities", asked.length >= 3 && asked.every((c) => ["player.development.read", "player.development.write", "player.note.read"].includes(c)), asked);
 ok("the Skills screens do not read a load, a wellness check, the discipline record or the injuries", !/workload|wellness|bowler_day|disciplinary|injuries|medical/i.test(skills));
 const skillsSrc = src("../src/views/SkillsView.jsx");
 ok("Set target, and with it the Why, is offered only to a writer", /\{canEdit&&\(\s*<button type="button" data-testid=\{`set-target-/.test(skillsSrc));
 ok("the Skills header draws no fitness or health badge", !/fitness/i.test(skillsSrc));
 ok("the register code never writes the word injured", !/injured/i.test(src("../src/views/training/PlanRegister.jsx") + src("../src/lib/trainingPlan.js")));
+{
+  // A pupil holds player.development.read through selfaccess, which names him
+  // alone: the history reads are asked for him, never for a team-mate tapped
+  // in the list. A coach's side-scoped assignment names nobody and reaches any.
+  const ME = "aaaaaaaa-0000-0000-0000-000000000005", MATE = "aaaaaaaa-0000-0000-0000-000000000006";
+  const pupil = [{ role: "player", subjects: [] }, { role: "selfaccess", subjects: [ME] }];
+  const coach = [{ role: "coach", subjects: [] }];
+  ok("a pupil may ask for his own history", holdsForPlayer("player", "player.development.read", ME, pupil));
+  ok("...and not a team-mate's", !holdsForPlayer("player", "player.development.read", MATE, pupil));
+  ok("...nor anybody's coaching points", !holdsForPlayer("player", "player.note.read", ME, pupil));
+  ok("a coach may ask for any boy's (the server decides which answer)", holdsForPlayer("coach", "player.development.read", MATE, coach));
+  ok("no boy selected, no read", !holdsForPlayer("coach", "player.development.read", null, coach));
+  ok("the history reads are gated per boy, and the points only where the strip is",
+     /useBoyRead\("skills_history",[^)]*mayReadHistory\)/.test(skillsSrc)
+     && /useBoyRead\("coaching_points",[\s\S]*?mayReadHistory && holdsForPlayer\(role, "player\.note\.read"/.test(skillsSrc));
+}
 ok("the assessment modal sends no note", !/note:\s*note/.test(src("../src/lib/development.js")) && !/recordAssessment\([^)]*\{[^}]*note/.test(src("../src/views/SkillsView.jsx")));
 
 console.log(`\n${"─".repeat(52)}\nSKILLS HISTORY: ${pass} passed, ${fail} failed`);
