@@ -6816,6 +6816,19 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v117_sessions() RETURNS TABLE (id uuid, school_id uuid, team_code text, day date) AS $$
   SELECT id, school_id, team_code, sa_date(starts_at) FROM training_session
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy written by the owner with nobody signed in, dated (the seed's way).
+CREATE OR REPLACE FUNCTION _v117_owner_joins(p_on date) RETURNS uuid AS $$
+DECLARE v uuid; v_user text := current_setting('app.user_id', true);
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.effective_on', p_on::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES ('11111111-1111-1111-1111-111111111111', '15XI', 'Verify OneOneSeven Seeded', 1179, 'batter',
+          make_date(extract(year FROM sa_today())::int - 15, 3, 1)) RETURNING id INTO v;
+  PERFORM set_config('app.effective_on', '', true);
+  PERFORM set_config('app.user_id', coalesce(v_user, ''), true);
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- What player_leave() will do to his roles at the school he leaves
 -- (ACCOUNT_LIFECYCLE; not built): end his own live `player` roles there.
 CREATE OR REPLACE FUNCTION _v117_end_player_roles(p_person uuid, p_school uuid) RETURNS void AS $$
@@ -26773,9 +26786,10 @@ $v49$;
   --                a boy new to the books with no date in the file joins his
   --                side on the school season's start; with a date, on it; a
   --                boy already on the books moved by the file, today; a day
-  --                still to come is refused; the membership floor (prepared,
-  --                inert until Kameel names it) refuses a day before it and
-  --                not the day itself or after, naming both
+  --                still to come is refused; the membership floor (Kameel,
+  --                22 Oct 2026: this season's start) refuses a person's
+  --                write of a day before it, naming both, and not the day
+  --                itself or after; the owner's own dated row (a seed) stands
   --   (doors)      the void trigger enabled beside db/08's and db/112's;
   --                side_on() and side_day() scrbrd_app's alone; my_sides()
   --                returns the spans; no job on a clock (§8.3 item 12)
@@ -27062,18 +27076,44 @@ $v49$;
       PERFORM _assert(false, '§94 (import): a joined_on still to come was accepted');
     EXCEPTION WHEN check_violation THEN NULL;
     END;
-    -- The floor (prepared; Kameel is choosing it): with a floor of t-20, a
-    -- day before it is refused naming both, the day itself and after stand;
-    -- and today there is none, so the dated rows above went in.
-    PERFORM _assert(membership_floor_refusal(t - 21, t - 20) LIKE '%' || (t - 21)::text || '%' || (t - 20)::text || '%'
-                    AND membership_floor_refusal(t - 20, t - 20) IS NULL
-                    AND membership_floor_refusal(t - 19, t - 20) IS NULL
-                    AND membership_floor_refusal(t - 400, NULL) IS NULL,
-      format('§94 (import): the floor rule gives [%s] before, [%s] on, [%s] after',
-             membership_floor_refusal(t - 21, t - 20), membership_floor_refusal(t - 20, t - 20), membership_floor_refusal(t - 19, t - 20)));
-    PERFORM _assert(membership_joined_floor() IS NULL,
-      format('§94 (import): a membership floor (%s) is set before Kameel named one', membership_joined_floor()));
+    -- The floor (Kameel, 22 October 2026): no earlier than this season's
+    -- start. The rule, then the guard on a person's write (the office, as the
+    -- import and the move route write), before, on and after the floor.
+    PERFORM _assert(membership_joined_floor() = v_season,
+      format('§94 (floor): the floor is %s, not this season''s start (%s)', membership_joined_floor(), v_season));
+    PERFORM _assert(membership_floor_refusal(v_season - 1, v_season) LIKE '%' || (v_season - 1)::text || '%' || v_season::text || '%'
+                    AND membership_floor_refusal(v_season, v_season) IS NULL
+                    AND membership_floor_refusal(v_season + 1, v_season) IS NULL,
+      format('§94 (floor): the rule gives [%s] before, [%s] on, [%s] after',
+             membership_floor_refusal(v_season - 1, v_season), membership_floor_refusal(v_season, v_season),
+             membership_floor_refusal(v_season + 1, v_season)));
+    PERFORM _as(OFFICE);
+    BEGIN
+      PERFORM set_config('app.effective_on', (v_season - 1)::text, true);
+      INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+      VALUES ('11111111-1111-1111-1111-111111111111'::uuid, '15XI', 'Verify OneOneSeven Before', 1176, 'batter', make_date(extract(year FROM t)::int - 15, 3, 1));
+      PERFORM _assert(false, '§94 (floor): the office opened a membership the day before this season''s start');
+    EXCEPTION WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+      PERFORM _assert(got LIKE '%' || (v_season - 1)::text || '%' || v_season::text || '%',
+        format('§94 (floor): the refusal does not name the day and the floor: %s', got));
+    END;
+    PERFORM set_config('app.effective_on', v_season::text, true);
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES ('11111111-1111-1111-1111-111111111111'::uuid, '15XI', 'Verify OneOneSeven OnFloor', 1177, 'batter', make_date(extract(year FROM t)::int - 15, 3, 1))
+    RETURNING id INTO v_new;
+    PERFORM set_config('app.effective_on', (v_season + 1)::text, true);
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES ('11111111-1111-1111-1111-111111111111'::uuid, '15XI', 'Verify OneOneSeven AfterFloor', 1178, 'batter', make_date(extract(year FROM t)::int - 15, 3, 1))
+    RETURNING id INTO v_dated;
+    PERFORM set_config('app.effective_on', '', true);
     PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v117_fact('rows', v_new) = format('15XI:%s..', v_season - t)
+                    AND _v117_fact('rows', v_dated) = format('15XI:%s..', v_season + 1 - t),
+      format('§94 (floor): on the floor %s, after it %s', _v117_fact('rows', v_new), _v117_fact('rows', v_dated)));
+    -- The owner's own dated row, nobody signed in (the seed's way): stands.
+    PERFORM _assert(_v117_fact('rows', _v117_owner_joins(v_season - 30)) = format('15XI:%s..', v_season - 30 - t),
+      '§94 (floor): the owner''s own dated row, nobody signed in, was refused');
 
     -- ── (doors) ──
     PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'player'::regclass AND tgname = 'player_move_voids_seats' AND tgenabled = 'O')

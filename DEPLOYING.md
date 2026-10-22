@@ -1887,15 +1887,16 @@ side he had left stayed booked.
   a date, he joins on that day (never a day still to come). A boy already
   on the books whom the file moves is dated today, as before. The add route
   is unchanged.
-- **The earliest day a membership may begin: prepared, not yet on.** A
-  guard on `team_membership` (`team_membership_floor`, before insert) asks
-  every new membership row, whichever door wrote it (the move route's
-  backdate, the import's `joined_on`, the add route), against
-  `membership_joined_floor()`. Kameel is choosing the floor; until he does
-  it returns nothing and the guard refuses nothing. When he answers, the
-  floor is that function's one line. A day before it is then refused with
-  a message naming the day and the floor (the move route answers 422
-  `invalid_move`; the import refuses the row on its line).
+- **No membership begins before this season's start** (Kameel, 22 October
+  2026). A guard on `team_membership` (`team_membership_floor`, before
+  insert) checks every membership row a person's write opens, whichever
+  door wrote it (the move route's backdate, the import's `joined_on`, the
+  add route), against `membership_joined_floor()`: the school season's
+  start, 1 January. A day before it is refused with a message naming the
+  day and the floor (the move route answers 422 `invalid_move`; the import
+  refuses the row on its line). Rows the owner writes with nobody signed in
+  (the seed's dated rows, a backfill) are not refused. Existing rows are not
+  touched.
 - **SR-4.** A trigger on `player`, `player_move_voids_seats`, runs when a
   boy's side or school changes. Each live seat (requested, invited or
   confirmed; never a boarded one) of his on a lift to a fixture of the side

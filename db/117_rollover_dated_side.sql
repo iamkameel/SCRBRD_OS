@@ -120,19 +120,21 @@
 -- school season's start for a boy new to the books, else (a boy moved by the
 -- file) today, as before. The add route is unchanged.
 --
--- ── 4c · THE EARLIEST DAY A MEMBERSHIP MAY BEGIN (prepared, inert) ──
--- A backdated move (the route's effectiveOn) and an import's joined_on can
--- name any past day; Kameel is choosing how far back (22 October 2026). So
--- the guard is built and shared now, and the floor is one line:
---   membership_joined_floor()    the floor; NULL (no floor) until Kameel
---       answers, then the one line that changes.
+-- ── 4c · THE EARLIEST DAY A MEMBERSHIP MAY BEGIN ────────────────────
+-- A backdated move (the route's effectiveOn) and an import's joined_on could
+-- name any past day. Kameel, 22 October 2026: "no earlier than this season's
+-- start". One guard, shared by every door:
+--   membership_joined_floor()    the floor: the school season's start
+--       (season_for(today), db/08: 1 January), the one line that holds it.
 --   membership_floor_refusal(joined, floor)   the rule: a membership may not
 --       begin before the floor; the refusal names both days.
---   team_membership_floor        BEFORE INSERT on team_membership: every
---       membership row, whichever door wrote player.team_code (the move route,
---       the import, the add route), raises check_violation with that refusal.
---       The move route answers 422 invalid_move with it; the import refuses
---       the row on its line.
+--   team_membership_floor        BEFORE INSERT on team_membership: a
+--       membership row a PERSON's write opened (app.user_id set: the move
+--       route, the import, the add route) raises check_violation with that
+--       refusal. The move route answers 422 invalid_move with it; the import
+--       refuses the row on its line. The owner's own writes with nobody
+--       signed in (a seed's dated rows, a backfill) are not a person's
+--       choice of day, and are not refused.
 --
 -- ── 5 · SR-4: a move voids his seats on the side he left ───────────
 -- §3.1 step 2a: "seats on fixtures of the side he has left dated after
@@ -217,7 +219,7 @@
 --     news_plan_reach(uuid, text, date), my_own_side_fixtures(),
 --     news_own_old_side(), import_joined_on(), membership_joined_floor(),
 --     membership_floor_refusal(), team_membership_floor() and its trigger
---     on team_membership (inert: no floor yet, §4c),
+--     on team_membership (§4c),
 --     player_move_voids_seats() and its trigger on player
 --   + news_post_read_old_side: one permissive read on news_post
 --   ~ CREATE OR REPLACE in place, signatures, owners and grants kept:
@@ -658,10 +660,9 @@ END $$ LANGUAGE plpgsql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 
 -- ── 5c · The earliest day a membership may begin (header §4c) ────────
--- THE FLOOR. NULL: none yet (Kameel is choosing, 22 October 2026). His
--- answer is this one line.
+-- THE FLOOR (Kameel, 22 October 2026): no earlier than this season's start.
 CREATE OR REPLACE FUNCTION membership_joined_floor() RETURNS date AS $$
-  SELECT NULL::date
+  SELECT s.starts_on FROM season_for(sa_today(), 'school') s
 $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 -- The rule, apart from the floor, so it is proved with any floor: null when
@@ -671,12 +672,13 @@ CREATE OR REPLACE FUNCTION membership_floor_refusal(p_joined date, p_floor date)
               THEN format('a side cannot be joined on %s: the earliest day a membership may begin is %s', p_joined, p_floor) END
 $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 
--- Every membership row, whichever door wrote player.team_code.
+-- Every membership row a person's write opened, whichever door wrote
+-- player.team_code.
 CREATE OR REPLACE FUNCTION team_membership_floor() RETURNS trigger AS $$
 DECLARE
   v text := membership_floor_refusal(NEW.joined_on, membership_joined_floor());
 BEGIN
-  IF v IS NOT NULL THEN
+  IF v IS NOT NULL AND app_user_id() IS NOT NULL THEN
     RAISE EXCEPTION '%', v USING ERRCODE = 'check_violation', SCHEMA = 'public', TABLE = 'team_membership',
                                  CONSTRAINT = 'team_membership_floor';
   END IF;
@@ -900,6 +902,9 @@ BEGIN
                     AND pg_get_triggerdef(t.oid) LIKE '%BEFORE INSERT ON public.team_membership FOR EACH ROW%')
      OR position('membership_floor_refusal(NEW.joined_on, membership_joined_floor())' IN
                  coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('team_membership_floor()')), '')) = 0
+     OR position('season_for(sa_today(), ''school'')' IN
+                 coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('membership_joined_floor()')), '')) = 0
+     OR membership_joined_floor() IS DISTINCT FROM (SELECT s.starts_on FROM season_for(sa_today(), 'school') s)
      OR membership_floor_refusal(DATE '2026-01-01', DATE '2026-01-02') IS NULL
      OR membership_floor_refusal(DATE '2026-01-02', DATE '2026-01-02') IS NOT NULL
      OR membership_floor_refusal(DATE '2026-01-01', NULL) IS NOT NULL THEN

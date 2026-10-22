@@ -235,6 +235,15 @@ try {
     ok("a joined_on still to come is refused on its line, and nothing is written",
        ahead.body?.committed === false && (ahead.body?.errors ?? []).some((e) => e.line === 2 && /still to come/.test(e.message))
        && (await q(`select count(*)::int c from player where full_name = 'Future Boy'`))[0].c === 0, JSON.stringify(ahead.body));
+    // Kameel, 22 October 2026: no earlier than this season's start.
+    const [{ before }] = await q(`select (s.starts_on - 1)::text before from season_for(sa_today(), 'school') s`);
+    const early = await importCsv("players", office, {
+      csv: `full_name,team_code,born,joined_on\nEarly Boy,U15A,2011-04-07,${before}\n`, schoolId: HIL, commit: true });
+    ok("a joined_on before this season's start is refused on its line, naming the day and the floor",
+       early.body?.committed === false
+       && (early.body?.errors ?? []).some((e) => e.line === 2 && e.message.includes(before) && e.message.includes(season)
+                                              && /earliest day a membership may begin/.test(e.message))
+       && (await q(`select count(*)::int c from player where full_name = 'Early Boy'`))[0].c === 0, JSON.stringify(early.body));
     const badDay = await importCsv("players", office, {
       csv: "full_name,team_code,born,joined_on\nWrong Day Boy,U15A,2011-04-07,01/02/2026\n", schoolId: HIL });
     ok("...and a day/month date is not guessed",
