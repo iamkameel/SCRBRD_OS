@@ -1,8 +1,8 @@
 -- ══════════════════════════════════════════════════════════════════
---  118 · Names, login emails and retirements: three narrower reads
+--  118 · Names, login emails, retirements and bowler changes: narrower reads
 -- ══════════════════════════════════════════════════════════════════
 --
--- HAND-WRITTEN. Three small rules about children's data, each a function,
+-- HAND-WRITTEN. Four small rules about children's data, in three functions,
 -- each proved by db/99 §92. No table changes; nothing here widens a read.
 --
 -- 1. THE PUBLIC NEWS SCAN READS EVERY PART OF A NAME (PUBLIC_DATA §1 rules
@@ -44,6 +44,17 @@
 --    that is not a dismissal leaves him not out and free to return), so a
 --    log read with the reason masked replays to the same scorecard.
 --    The pad's handover still reads the raw log; it is the scorer's.
+--
+-- 4. A BOWLER CHANGE'S REASON STAYS AT THE BOWLER'S SCHOOL (Kameel, 22
+--    October 2026). A bowler replaced during an over (Law 17.7.1) is
+--    recorded with why: injury, or suspended. The other school of the
+--    fixture sees that the bowler changed, never why: the same function
+--    drops `reason` from a `bowler` event for a reader with no fixture.read
+--    at the bowler's school. A bowler the pad knows only by a typed name is
+--    at no school here, and his reason reaches nobody through the log. The
+--    public projection already keeps only who bowls (public/redact.mjs), and
+--    the Match Centre's scorecard and commentary say no reason; the pad's
+--    words say it from the log as the reader has it.
 --
 -- GRANTS. app_user_email_seen() and ball_event_payload_seen() are definers
 -- (they look up a pupil's assignments and a boy's school past the caller's
@@ -122,28 +133,34 @@ REVOKE ALL ON FUNCTION app_user_email_seen(uuid, uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_user_email_seen(uuid, uuid, text) TO scrbrd_app;
 
 
--- ── 3 · A retirement's reason ──────────────────────────────────────
+-- ── 3 · A retirement's reason, and a bowler change's ──────────────
 /**
  * A ball_event payload of match `p_match` as this reader may have it. See (3)
- * above. The match is asked of app_can() as the fixture, so a one-fixture
- * assignment counts for its own fixture, and a pad resume credential (db/50)
- * answers for its own match only.
+ * and (4) above. The match is asked of app_can() as the fixture, so a
+ * one-fixture assignment counts for its own fixture, and a pad resume
+ * credential (db/50) answers for its own match only. `p_bowler` is the row's
+ * bowler_id; a bowler the pad knows only by a typed name is in the payload.
  */
-CREATE OR REPLACE FUNCTION ball_event_payload_seen(p_match uuid, p_kind text, p_ball_type text, p_payload jsonb)
+CREATE OR REPLACE FUNCTION ball_event_payload_seen(p_match uuid, p_kind text, p_ball_type text, p_bowler uuid, p_payload jsonb)
 RETURNS jsonb AS $$
   SELECT CASE
-    WHEN p_kind IS DISTINCT FROM 'retire' OR p_payload IS NULL OR NOT (p_payload ? 'reason') THEN p_payload
-    WHEN p_ball_type = 'W' AND p_payload->>'reason' IN ('out', 'timed_out') THEN p_payload
+    WHEN p_payload IS NULL OR NOT (p_payload ? 'reason') OR p_kind IS NULL OR p_kind NOT IN ('retire', 'bowler') THEN p_payload
+    -- A retirement that is a dismissal is on the scorecard, reason and all.
+    WHEN p_kind = 'retire' AND p_ball_type = 'W' AND p_payload->>'reason' IN ('out', 'timed_out') THEN p_payload
+    -- The reader holds fixture.read at the school of the boy the reason is about.
     WHEN EXISTS (SELECT 1 FROM player p
-                  WHERE p.id::text = lower(p_payload->>'batter')
+                  WHERE p.id::text = lower(CASE WHEN p_kind = 'retire' THEN p_payload->>'batter'
+                                                ELSE coalesce(p_bowler::text, p_payload->>'bowler') END)
                     AND app_can('fixture.read', p.school_id, '*'::text,
                                 '00000000-0000-0000-0000-000000000000'::uuid, p_match)) THEN p_payload
-    ELSE jsonb_set(p_payload, '{reason}', to_jsonb('not out'::text))
+    WHEN p_kind = 'retire' THEN jsonb_set(p_payload, '{reason}', to_jsonb('not out'::text))
+    -- A bowler change: that the bowler changed, never why.
+    ELSE p_payload - 'reason'
   END
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
-REVOKE ALL ON FUNCTION ball_event_payload_seen(uuid, text, text, jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION ball_event_payload_seen(uuid, text, text, jsonb) TO scrbrd_app;
+REVOKE ALL ON FUNCTION ball_event_payload_seen(uuid, text, text, uuid, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION ball_event_payload_seen(uuid, text, text, uuid, jsonb) TO scrbrd_app;
 
 
 -- ── Checks ─────────────────────────────────────────────────────────
@@ -154,11 +171,11 @@ BEGIN
     RAISE EXCEPTION 'db/118: news_public_names() is callable by the application, or is a definer';
   END IF;
   IF has_function_privilege('public', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
-     OR has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,jsonb)'::regprocedure, 'EXECUTE') THEN
+     OR has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE') THEN
     RAISE EXCEPTION 'db/118: a definer here is executable by PUBLIC';
   END IF;
   IF NOT has_function_privilege('scrbrd_app', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
-     OR NOT has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,jsonb)'::regprocedure, 'EXECUTE') THEN
+     OR NOT has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE') THEN
     RAISE EXCEPTION 'db/118: the application cannot execute a function its reads call';
   END IF;
 END $check$;
