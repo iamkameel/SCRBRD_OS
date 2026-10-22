@@ -19393,13 +19393,14 @@ $v49$;
     PERFORM _assert(p.ok AND p.children = 2 AND p.sessions = 0 AND p.duties = 0 AND cardinality(p.scoring_tokens) = 0,
       format('§69 (preview): a parent of two reads %s', row_to_json(p)));
 
-    -- (reader)
-    FOREACH v_row IN ARRAY ARRAY[V_OFFICE, V_HEAD] LOOP
+    -- (reader) The office (user.invite) reads why; since READERS Q2 (db/116)
+    -- the principal, who holds audit.read and not user.invite, does not.
+    FOREACH v_row IN ARRAY ARRAY[V_OFFICE] LOOP
       PERFORM _as(v_row);
       SELECT count(*) INTO n1 FROM account_status_change c WHERE c.user_id = V_SCORER;
       PERFORM _assert(n1 = _v90_changes(V_SCORER) AND n1 >= 2, format('§69 (reader): %s reads %s of the scorer''s %s rows', v_row, n1, _v90_changes(V_SCORER)));
     END LOOP;
-    FOREACH v_row IN ARRAY ARRAY[V_BURSAR, V_COACH, V_WES, V_SCORER] LOOP
+    FOREACH v_row IN ARRAY ARRAY[V_HEAD, V_BURSAR, V_COACH, V_WES, V_SCORER] LOOP
       PERFORM _as(v_row);
       SELECT count(*) INTO n1 FROM account_status_change c WHERE c.user_id = V_SCORER;
       PERFORM _assert(n1 = 0, format('§69 (reader): %s reads %s of the scorer''s rows', v_row, n1));
@@ -19409,9 +19410,11 @@ $v49$;
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM account_status_change c WHERE c.id = v_row)
                     AND EXISTS (SELECT 1 FROM account_status_change c WHERE c.user_id = V_SCORER),
       '§69 (reader): the office read a row about itself');
-    PERFORM _as(V_HEAD);
+    -- The director of sport holds user.invite at Hilton: he reads the plant,
+    -- so the office's zero above is about the office, not an empty row.
+    PERFORM _as('88888888-0000-0000-0000-000000000007');
     PERFORM _assert(EXISTS (SELECT 1 FROM account_status_change c WHERE c.id = v_row),
-      '§69 (reader): the principal cannot read the row about the office (the plant proves nothing)');
+      '§69 (reader): the director of sport cannot read the row about the office (the plant proves nothing)');
 
     -- (column)
     FOREACH v_row IN ARRAY ARRAY[V_OFFICE, V_HEAD] LOOP

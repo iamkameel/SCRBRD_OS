@@ -538,6 +538,12 @@ group("READERS Q2  audit.read opens the access log, and no reason");
   ok("...and the staff register's door asks user.role.assign alone",
      fns.has("school_register_rows") && !/audit\.read/.test(fns.get("school_register_rows") ?? "")
        && /'user\.role\.assign'/.test(fns.get("school_register_rows") ?? ""));
+  // The red-team's A1 (db/116): the passport carries no coach's judgement and
+  // opens on a coach's or the office's capability, never on the roster read
+  // a team-mate holds.
+  ok("A1  passport() carries no rating, and passport_open() does not open on player.profile.read",
+     fns.has("passport") && !/player_skill|'rating'/.test(fns.get("passport") ?? "")
+       && fns.has("passport_open") && !/player\.profile\.read/.test(fns.get("passport_open") ?? ""));
   ok("the parser is not reading nothing: it found db/09's injury_read and db/08's access_log_read",
      live.has("injury.injury_read") && live.has("access_log.access_log_read"));
   // The model half: no table in tables.mjs reads under audit.read but the
