@@ -14,10 +14,19 @@
 --    never which name. It now also reads the stored surname (db/47) and every
 --    word of the full name of three letters or more, split on anything
 --    that is not a letter ("Erasmus, D" gives Erasmus; "Mary-Anne" gives
---    Mary and Anne), whole-word and case-blind, and refuses on any hit. The surname particles (van, der, de,
---    …) are not names on their own and are not scanned as tokens; the full
---    name and the surname that carry them still are. It still answers a
---    count and never a name, and is still no definer and nobody's to call.
+--    Mary and Anne), whole-word and case-blind, and refuses on any hit. The
+--    surname particles (van, der, de, …) are not names on their own and are
+--    not scanned as words; the full name and the surname that carry them
+--    still are. Kameel's answers (22 October 2026):
+--      - the boys scanned are the post's school's AND those of every school
+--        it has a fixture with, home or away, starting in the twelve months
+--        before now or the three after: a post names the other side's boys
+--        as easily as its own;
+--      - the refusal still answers a count, and news_public_word() tells the
+--        author and the school's publishers which word of their own post
+--        matched, as the post writes it: never which boy or which school.
+--    The scan (news_public_hits, news_public_names) is no definer and
+--    nobody's to call.
 --
 -- 2. A PUPIL'S LOGIN EMAIL IS THE OFFICE'S (READERS A2-A5; PUBLIC_DATA §5a).
 --    The `users` and `accounts` reads give every user.read holder at a school
@@ -60,7 +69,7 @@
 --    the Match Centre's scorecard and commentary say no reason; the pad's
 --    words say it from the log as the reader has it.
 --
--- GRANTS. app_user_email_seen() and ball_event_payload_seen() are definers
+-- GRANTS. app_user_email_seen(), ball_event_payload_seen() and news_public_word() are definers
 -- (they look up a pupil's assignments and a boy's school past the caller's
 -- own policies), executable by scrbrd_app only: never PUBLIC, nor a
 -- managed host's anon/authenticated roles.
@@ -68,33 +77,87 @@
 
 -- ── 1 · The scan ───────────────────────────────────────────────────
 /**
- * How many of the post's school's pupils its title and body name, by full
- * name, known-as, surname, or any word of the full name of three letters or
- * more (surname particles aside), whole-word and case-blind. Internal: not a
- * definer, called only from inside db/83's definers (as their owner).
+ * Every word of the post's title and body that names a boy the scan reads:
+ * the boy and the word as the post writes it, with where it first stands.
+ * The boys are the post's school's, and those of every school it has a
+ * fixture with, home or away, starting within the twelve months before now
+ * or the three after (Kameel, 22 October 2026). The names: full name,
+ * known-as and stored surname (two letters or more), and each word of the
+ * full name of three letters or more, split on anything that is not a
+ * letter, surname particles aside; whole-word and case-blind. Internal: not
+ * a definer, called only from inside definers (as their owner), nobody's to
+ * call.
+ */
+CREATE OR REPLACE FUNCTION news_public_hits(p_post uuid)
+RETURNS TABLE (player_id uuid, word text, at integer) AS $$
+  WITH post AS (
+    SELECT n.school_id, n.title || E'\n' || n.body AS txt FROM news_post n WHERE n.id = p_post
+  ), schools AS (
+    SELECT post.school_id AS school_id FROM post
+    UNION
+    SELECT CASE WHEN m.school_id = post.school_id THEN m.away_school_id ELSE m.school_id END
+      FROM match m, post
+     WHERE (m.school_id = post.school_id OR m.away_school_id = post.school_id)
+       AND m.away_school_id IS NOT NULL
+       AND m.starts_at >= now() - interval '12 months'
+       AND m.starts_at <= now() + interval '3 months'
+  ), names AS (
+    SELECT p.id AS player_id, c.name
+      FROM player p
+      JOIN schools sc ON sc.school_id = p.school_id
+      CROSS JOIN LATERAL (
+        SELECT btrim(x) AS name
+          FROM unnest(ARRAY[p.full_name, p.known_as, p.surname]) AS x
+         WHERE length(btrim(coalesce(x, ''))) >= 2
+        UNION
+        SELECT t
+          FROM regexp_split_to_table(btrim(coalesce(p.full_name, '')), '[^[:alpha:]]+') AS t
+         WHERE length(t) >= 3
+           AND lower(t) NOT IN ('van', 'von', 'der', 'den', 'des', 'del', 'dos', 'das', 'ten', 'ter')) AS c
+  ), hits AS (
+    SELECT nm.player_id,
+           regexp_match(post.txt,
+             '(?:^|[^[:alnum:]])('
+             || regexp_replace(regexp_replace(nm.name, '([.^$*+?()\[\]{}|\\])', '\\\1', 'g'), '\s+', '\\s+', 'g')
+             || ')(?:$|[^[:alnum:]])', 'i') AS m,
+           post.txt
+      FROM names nm, post
+  )
+  SELECT h.player_id, h.m[1], strpos(h.txt, h.m[1])
+    FROM hits h
+   WHERE h.m IS NOT NULL
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+
+REVOKE ALL ON FUNCTION news_public_hits(uuid) FROM PUBLIC;
+
+/**
+ * How many boys the post names (news_public_hits()). Internal, as db/83's:
+ * called only from inside its definers.
  */
 CREATE OR REPLACE FUNCTION news_public_names(p_post uuid) RETURNS integer AS $$
-  SELECT count(DISTINCT p.id)::integer
-    FROM news_post n
-    JOIN player p ON p.school_id = n.school_id
-   WHERE n.id = p_post
-     AND EXISTS (
-       SELECT 1
-         FROM (SELECT btrim(x) AS name
-                 FROM unnest(ARRAY[p.full_name, p.known_as, p.surname]) AS x
-                WHERE length(btrim(coalesce(x, ''))) >= 2
-               UNION
-               SELECT t
-                 FROM regexp_split_to_table(btrim(coalesce(p.full_name, '')), '[^[:alpha:]]+') AS t
-                WHERE length(t) >= 3
-                  AND lower(t) NOT IN ('van', 'von', 'der', 'den', 'des', 'del', 'dos', 'das', 'ten', 'ter')) AS c
-        WHERE (n.title || E'\n' || n.body) ~* (
-                '(^|[^[:alnum:]])'
-             || regexp_replace(regexp_replace(c.name, '([.^$*+?()\[\]{}|\\])', '\\\1', 'g'), '\s+', '\\s+', 'g')
-             || '($|[^[:alnum:]])'))
+  SELECT count(DISTINCT h.player_id)::integer FROM news_public_hits(p_post) h
 $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION news_public_names(uuid) FROM PUBLIC;
+
+/**
+ * The first word in the post that names a boy, as the post writes it, for
+ * the author and the school's publishers (who already read the post), and
+ * NULL for anybody else or a post that names nobody (Kameel, 22 October
+ * 2026). The word only: never which boy, nor which school, it belongs to.
+ */
+CREATE OR REPLACE FUNCTION news_public_word(p_post uuid) RETURNS text AS $$
+  SELECT CASE WHEN (n.author_id = app_user_id() AND NOT app_pad_scoped())
+                   OR app_can('broadcast.publish', n.school_id, '*'::text,
+                              '00000000-0000-0000-0000-000000000000'::uuid,
+                              '00000000-0000-0000-0000-000000000000'::uuid)
+              THEN (SELECT h.word FROM news_public_hits(n.id) h ORDER BY h.at, h.word LIMIT 1) END
+    FROM news_post n
+   WHERE n.id = p_post AND n.scope IN ('team', 'school')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+REVOKE ALL ON FUNCTION news_public_word(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION news_public_word(uuid) TO scrbrd_app;
 
 
 -- ── 2 · A pupil's login email ──────────────────────────────────────
@@ -177,7 +240,7 @@ BEGIN
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       FOREACH f IN ARRAY ARRAY['app_user_email_seen(uuid,uuid,text)', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)',
-                               'news_public_names(uuid)'] LOOP
+                               'news_public_names(uuid)', 'news_public_hits(uuid)', 'news_public_word(uuid)'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END LOOP;
     END IF;
@@ -196,6 +259,16 @@ BEGIN
   IF has_function_privilege('scrbrd_app', 'news_public_names(uuid)'::regprocedure, 'EXECUTE')
      OR (SELECT prosecdef FROM pg_proc WHERE oid = 'news_public_names(uuid)'::regprocedure) THEN
     RAISE EXCEPTION 'db/118: news_public_names() is callable by the application, or is a definer';
+  END IF;
+  IF has_function_privilege('scrbrd_app', 'news_public_hits(uuid)'::regprocedure, 'EXECUTE')
+     OR (SELECT prosecdef FROM pg_proc WHERE oid = 'news_public_hits(uuid)'::regprocedure) THEN
+    RAISE EXCEPTION 'db/118: news_public_hits() is callable by the application, or is a definer';
+  END IF;
+  IF has_function_privilege('public', 'news_public_word(uuid)'::regprocedure, 'EXECUTE')
+     OR NOT has_function_privilege('scrbrd_app', 'news_public_word(uuid)'::regprocedure, 'EXECUTE')
+     OR EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+                  AND has_function_privilege(g.oid, 'news_public_word(uuid)'::regprocedure, 'EXECUTE')) THEN
+    RAISE EXCEPTION 'db/118: news_public_word() is not the application''s alone';
   END IF;
   IF has_function_privilege('public', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
      OR has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE') THEN

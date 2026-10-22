@@ -290,6 +290,8 @@ function asNewsPost(r) {
     mayTakeDown: r.may_take_down === true,
     publicState: r.public_state ?? null,
     publicNames: r.public_names == null ? null : Number(r.public_names),
+    // The word of the post that matched (db/118): the post's own word, never whose name.
+    publicWord: typeof r.public_word === "string" ? r.public_word : null,
     // The coach's plan (db/96, SCRBRD-138 phase B): a post is a 'post' or a
     // 'plan', and a plan names the fixture and the side it is for. `noticeId`
     // is the live plan's notice, for the block's Report (lib/captain.js planOf).

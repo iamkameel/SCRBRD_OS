@@ -11,7 +11,7 @@
  *   node packages/policy/test/exports.test.mjs
  */
 import {
-  EXPORTABLE, NAMED_NOT_EXPORTED, EXPORT_LEVEL_CEILING, notExported, exportAllowed, exportDrops, readLevelOf, tablesIn,
+  EXPORTABLE, NAMED_NOT_EXPORTED, EXPORT_LEVEL_CEILING, notExported, exportAllowed, exportDrops, exportNeeds, readLevelOf, tablesIn,
 } from "../src/exports.mjs";
 import { TABLES, maskedColumns } from "../src/tables.mjs";
 
@@ -40,6 +40,9 @@ group("The roster file drops every masked column");
   ok("...the address, the ID number, the birthday and the fitness among them",
      ["address", "id_number", "born", "fitness", "guardian"].every((c) => exportDrops("players").includes(c)));
   ok("a read off the list drops nothing, because it does not leave at all", exportDrops("injuries").length === 0);
+  ok("the roster file needs player.roster.read or player.profile.manage (Kameel, 22 Oct)",
+     exportNeeds("players").join() === "player.roster.read,player.profile.manage");
+  ok("...and the fixtures need nothing beyond their read", exportNeeds("matches").length === 0);
 }
 
 group("The derivation");

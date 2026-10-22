@@ -44,13 +44,21 @@ const PLAYER_MASKED = Object.freeze(
   [...new Set(Object.values(maskedColumns(TABLES.player)).flat())].sort());
 
 /**
- * The reads that may leave as a file, and the columns each one drops.
+ * The reads that may leave as a file, the columns each one drops, and the
+ * capabilities (any one of them, at the school) a caller must hold for the
+ * file at all.
  * `drop` is applied to every caller alike: the office's roster file carries
  * no address or ID number even though the office may read them on screen.
- * @type {Readonly<Record<string, Readonly<{ drop: readonly string[] }>>>}
+ * `needsAny`: the roster file is the staff's who keep the roster (Kameel, 22
+ * October 2026) — player.roster.read or player.profile.manage at the
+ * school. A parent, a pupil, a scorer or a physio reads the squad on the
+ * screen and gets no file; the rows of a school where the caller holds
+ * neither are left out.
+ * @type {Readonly<Record<string, Readonly<{ drop: readonly string[], needsAny?: readonly string[] }>>>}
  */
 export const EXPORTABLE = Object.freeze({
-  players:  Object.freeze({ drop: PLAYER_MASKED }),
+  players:  Object.freeze({ drop: PLAYER_MASKED,
+                            needsAny: Object.freeze(["player.roster.read", "player.profile.manage"]) }),
   matches:  Object.freeze({ drop: Object.freeze([]) }),
 });
 
@@ -144,3 +152,7 @@ export const exportAllowed = (resource, refused) =>
 /** The columns a read's file leaves out (none for a read not on the allowlist). */
 export const exportDrops = (/** @type {string} */ resource) =>
   Object.hasOwn(EXPORTABLE, resource) ? EXPORTABLE[resource].drop : [];
+
+/** The capabilities, any one at the school, a caller needs for this file ([] for none). */
+export const exportNeeds = (/** @type {string} */ resource) =>
+  Object.hasOwn(EXPORTABLE, resource) ? (EXPORTABLE[resource].needsAny ?? []) : [];

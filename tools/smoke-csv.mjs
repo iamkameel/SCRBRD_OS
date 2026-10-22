@@ -153,6 +153,27 @@ try {
        (await q(`select resource from access_log order by occurred_at desc limit 1`))[0].resource === "players");
   }
 
+  group("The roster file is the roster keepers' (Kameel, 22 Oct)");
+  {
+    // player.roster.read or player.profile.manage at the school: the office
+    // and the coach hold one; a parent, a pupil, the scorer and the physio
+    // read the squad on the screen and get no file, refused before the read.
+    const scorer = await login("scorer@example.invalid");
+    const pupil  = await login("pillay@example.invalid");
+    const logged = async () => (await q(`select count(*)::int c from access_log where resource = 'players'`))[0].c;
+    const before = await logged();
+    for (const [who, tok] of [["a parent", parent], ["a pupil", pupil], ["the scorer, who keeps no roster", scorer],
+                              ["the physio, who keeps no roster", medic]]) {
+      const e = await exportRaw("players", tok);
+      const body = await e.json().catch(() => null);
+      ok(`${who} is refused the roster file`, e.status === 403 && body?.error === "not_exported");
+    }
+    ok("...before anything was read, so nothing was logged", (await logged()) === before);
+    ok("the scorer still reads the squad on the screen", (await api("/api/read/players", { token: scorer })).status === 200);
+    ok("the office and the coach still get theirs",
+       (await exportRaw("players", office)).status === 200 && (await exportRaw("players", coach)).status === 200);
+  }
+
   group("A child's health, conduct, family and figures never leave as a file");
   {
     // packages/policy/src/exports.mjs: only the roster (without its masked

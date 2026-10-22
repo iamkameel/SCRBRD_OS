@@ -68,7 +68,7 @@ const GUARD = {
  * author nor requester, and not for a post naming a pupil), withdraw (the
  * author, or any broadcast.publish holder at the school — a decline too).
  * A refusal's code becomes its status; `names_pupils` carries the scan's
- * count and never a name.
+ * count and the word of the post that matched (db/118), never which boy.
  */
 const PUBLIC_DOOR = /** @type {const} */ ({ request: "news_public_request", approve: "news_public_approve", withdraw: "news_public_withdraw" });
 /** @type {Record<string, number>} */
@@ -323,11 +323,19 @@ export function newsRoutes({ pool, secret, onChange }) {
     ...Object.fromEntries(Object.entries(PUBLIC_DOOR).map(([door, fn]) => [`public_${door}`, handle(async (req) => {
       const id = String(req.params.id ?? "").toLowerCase();
       if (!UUID.test(id)) throw err("no_such_post", 404);
-      const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
-        (await client.query(`select * from ${fn}($1)`, [id])).rows[0]);
+      const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const row = (await client.query(`select * from ${fn}($1)`, [id])).rows[0];
+        // A post that names a boy: the word of the post that matched, as the
+        // post writes it, for its author or the approver (db/118). Never
+        // which boy, nor which school.
+        if (row && !row.ok && row.reason === "names_pupils")
+          row.word = (await client.query(`select news_public_word($1) as word`, [id])).rows[0]?.word ?? null;
+        return row;
+      });
       if (!r?.ok) {
         const reason = r?.reason ?? "refused";
-        throw Object.assign(err(reason, PUBLIC_STATUS[reason] ?? 409), r?.names != null ? { count: Number(r.names) } : {});
+        throw Object.assign(err(reason, PUBLIC_STATUS[reason] ?? 409), r?.names != null ? { count: Number(r.names) } : {},
+                            typeof r?.word === "string" ? { extra: { word: r.word } } : {});
       }
       // Committed: drop the public news before answering, as listing does.
       onChange?.({ k: "news", id });
