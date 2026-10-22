@@ -27,7 +27,9 @@
  *   7. SG-12: a severe injury tells the DSO, naming nobody; the coach is not
  *      told that.
  *   8. LEFT: the `injuries` read marks a boy who left the school, for the
- *      readers of his row, and `injury_reviews` marks the recording.
+ *      office, and `injury_reviews` marks the recording; the physio, his
+ *      coach and the head read nothing of it once he has gone (READERS Q3,
+ *      db/116).
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-injury.mjs
@@ -247,15 +249,23 @@ try {
   ok("...though he is told the injury, as before", (await rows("notifications", coach)).some((n) => n.subject_id === sev.body?.id && n.title === "Injury recorded"));
 
   // ── 8. Left the school ─────────────────────────────────────────
-  group("8. A boy who leaves is marked, for every reader of his row");
+  group("8. A boy who leaves is marked for the office, and cut from the staff who treated him");
   const stayed = (await rows("injuries", coach)).find((r) => r.id === ID);
   ok("a boy still at school is not marked", stayed?.left_school === false && stayed?.left_on == null, JSON.stringify(stayed));
   await q(`update team_membership set left_on = sa_today() where player_id = $1 and left_on is null`, [NAIDOO]);
   const today = (await q(`select sa_today()::text d`))[0].d;
-  for (const [who, token] of [["the physio", physio], ["his coach", coach], ["the principal", principal]]) {
-    const r = (await rows("injuries", token)).find((x) => x.id === sev.body?.id);
-    ok(`${who} reads him as left the school today`, r?.left_school === true && String(r?.left_on).slice(0, 10) === today, JSON.stringify(r && { left: r.left_school, on: r.left_on }));
-  }
+  // READERS_child_data Q3 (Kameel, 21 Oct 2026; db/116): ACCOUNT_LIFECYCLE
+  // Q9 governs a departed boy's clinical record over GA-I19 D11. The office
+  // and his family read it, marked; the physio, his coach and the head (not
+  // the office's key) are cut, until he enrols again.
+  const office = await login("registrar@example.invalid");
+  const r = (await rows("injuries", office)).find((x) => x.id === sev.body?.id);
+  ok("the office reads him as left the school today", r?.left_school === true && String(r?.left_on).slice(0, 10) === today, JSON.stringify(r && { left: r.left_school, on: r.left_on }));
+  for (const [who, token] of [["the physio", physio], ["his coach", coach], ["the principal", principal]])
+    ok(`${who} reads no injury of a boy who has left`, !(await rows("injuries", token)).some((x) => x.id === sev.body?.id));
+  const reviewsOf = async (token) => (await api(`/api/read/injury_reviews?injuryId=${sev.body?.id}`, { token })).body?.rows ?? [];
+  ok("...nor its reviews, which the office still reads",
+     (await reviewsOf(physio)).length === 0 && (await reviewsOf(office)).length > 0);
   ok("...and a pupil still reads no row of his", !(await rows("injuries", pupil)).some((x) => x.id === sev.body?.id));
 } catch (e) {
   ok(`the injury walk threw: ${e.message?.slice(0, 160)}`, false);
