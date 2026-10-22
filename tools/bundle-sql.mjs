@@ -601,6 +601,35 @@ SELECT
         AND to_regprocedure('milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)') IS NOT NULL
         AND to_regprocedure('milestone_still_holds(uuid,text,uuid,smallint,integer)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A correction takes back what it falsified",
+  -- db/117: a family reads the side a boy was on on the row's day (SR-2),
+  -- and a move voids his seats on the side he left (SR-4). Only
+  -- to_regprocedure()/to_regclass(), so the row reads PROBLEM rather than
+  -- failing the query on a database without db/117.
+  CASE WHEN to_regprocedure('side_on(uuid,uuid,date)') IS NOT NULL
+        AND to_regprocedure('side_day(uuid)') IS NOT NULL
+        AND to_regprocedure('side_reach_on(text,uuid,text,uuid,date)') IS NOT NULL
+        AND to_regprocedure('my_own_side_fixtures()') IS NOT NULL
+        AND to_regprocedure('news_plan_reach(uuid,text,date)') IS NOT NULL
+        AND to_regprocedure('player_move_voids_seats()') IS NOT NULL
+        AND position('side_reach_on(' IN coalesce((SELECT prosrc FROM pg_proc
+                      WHERE oid = to_regprocedure('side_reach(text,uuid,text,uuid)')), '')) > 0
+        AND EXISTS (SELECT 1 FROM pg_trigger t
+                     WHERE t.tgrelid = to_regclass('player') AND t.tgname = 'player_move_voids_seats'
+                       AND t.tgfoid = to_regprocedure('player_move_voids_seats()') AND t.tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('ball_event') AND p.polname = 'ball_event_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%my_own_side_fixtures()%')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('training_session') AND p.polname = 'training_session_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%sa_date(training_session.starts_at)%')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('player_move_voids_seats()'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('side_on(uuid,uuid,date)'),
+                                         to_regprocedure('side_reach_on(text,uuid,text,uuid,date)'),
+                                         to_regprocedure('my_own_side_fixtures()'),
+                                         to_regprocedure('player_move_voids_seats()'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A family keeps the side's season",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
