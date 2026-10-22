@@ -670,6 +670,19 @@ async function captainWalk(theme) {
     ok("...with the plan's line, which says nothing of who where the reader may not read the name", /^Plan for the side · \w{3}$/.test((await tid("captain-card-plan").innerText({ timeout: 2000 }).catch(() => "")).trim()));
     await check("captainhome");
 
+    // GA-I26a §7.3: his door to his own skills history, from Me. Measured by the same ratchets (12px, 44px, AA), every
+    // control named, and nothing a coach alone writes on it.
+    await tap("mnav-me", 1500);
+    ok("Me carries the one door to his skills history", await tid("me-skills-open").count() === 1);
+    await tap("me-skills-open", 1800);
+    ok("his skills history opens, with his strips and a 'since the last look'", await tid("pupil-skills").count() === 1
+       && await tid("history-strip").count() >= 2 && await tid("since-batting").count() === 1);
+    ok("...in his coach's words, with no way to write and no staff-only box", /your coach/i.test(await tid("since-batting").innerText({ timeout: 2000 }).catch(() => ""))
+       && await page.locator('[data-testid^="set-target-"], [data-testid="target-why"], [data-testid="withdraw-score"]').count() === 0);
+    await check("pupilskills");
+    await tap("pupil-skills-back", 600);
+    await tap("mnav-myhome", 1500);
+
     await tap("mnav-mymatches", 1500);
     await tap(`fixture-row-${MATCH.day}`, 1800);
     ok("the fixture carries the Captain section", await tid("captain-section").count() === 1);

@@ -96,6 +96,21 @@ export function captainApi() {
     ],
     players: () => ORDER.map((k) => ({ id: IDS[k], school_id: HIL, school_name: "Hilton College", full_name: NAMES[k], team_code: "1XI", squad_no: PLAYERS[k].no,
       playing_role: PLAYERS[k].role, batting_style: "R", bowling_arm: null, bowling_style: k === "naidoo" ? "F" : null, fitness: null })),
+    // GA-I26a §7.3: the pupil's own history, for him alone (the screen asks for nobody else's). Two scores against pace
+    // and a withdrawn one on footwork, a target with its drill, and the batting look since.
+    skills_history: (q) => (q.get("playerId") === IDS.pillay ? [
+      ["ca000000-0000-0000-0000-0000000000a1", "2026-04-02", "againstPace", 8, null],
+      ["ca000000-0000-0000-0000-0000000000a2", "2026-09-14", "againstPace", 11, null],
+      ["ca000000-0000-0000-0000-0000000000a3", "2026-09-14", "footwork", 10, null],
+      ["ca000000-0000-0000-0000-0000000000a4", "2026-09-16", "footwork", 2, "2026-09-17T08:00:00.000Z"],
+    ].map(([id, on, metric, score, gone]) => ({ id, player_id: IDS.pillay, assessed_on: on, category: "technical", metric, score,
+      assessed_by_name: "C Hendricks", withdrawn_at: gone, withdrawn_by_name: gone ? "C Hendricks" : null, withdrawn_reason: gone ? "rated the wrong attribute" : null })) : []),
+    targets: (q) => (q.get("playerId") === IDS.pillay ? [{ id: "ca000000-0000-0000-0000-0000000000a5", player_id: IDS.pillay, category: "technical", metric: "againstPace",
+      target_score: 14, set_on: "2026-09-14", due_on: "2026-11-30", drill_id: "ca000000-0000-0000-0000-0000000000a6", drill_name: "Throw-downs", standing_score: 11, standing_on: "2026-09-14" }] : []),
+    development_since: (q) => (q.get("playerId") === IDS.pillay ? [{ player_id: IDS.pillay, discipline: "batting", anchor: "2026-09-14", window_from: "2026-09-14",
+      sessions: 3, registered: 3, present: 2, late: 1, drills: [{ drillId: "ca000000-0000-0000-0000-0000000000a6", name: "Throw-downs", times: 2 }],
+      targets: [{ id: "ca000000-0000-0000-0000-0000000000a5", category: "technical", metric: "againstPace", target_score: 14, set_on: "2026-09-14", due_on: "2026-11-30",
+        drillId: "ca000000-0000-0000-0000-0000000000a6", drillName: "Throw-downs", drillRan: 2, drillAttended: 2 }] }] : []),
     users: () => [{ id: session.user.id, school_id: HIL, email: session.user.email, name: session.user.name, role: "player", active: true, last_seen_at: null, teams: ["1XI"], player_id: IDS.pillay }],
     matches: () => matches,
     honours: () => [{ id: "ca000000-0000-0000-0000-0000000000f1", player_id: IDS.pillay, full_name: NAMES.pillay, school_id: HIL, team_code: "1XI", kind: "captain",
