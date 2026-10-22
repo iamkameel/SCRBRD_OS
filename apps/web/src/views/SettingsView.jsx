@@ -9,6 +9,7 @@ import { useLive, useRows } from "../lib/live.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { useSports } from "../lib/features.js";
 import { holdsCapability } from "../rbac/index.js";
+import { passportConsentReader, readsScoutingOf } from "../lib/held.js";
 import { api, signedIn } from "../lib/api.js";
 import { ceilingWords } from "../lib/ceilingWords.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
@@ -926,9 +927,11 @@ function AlertsSection({ role }) {
 //  PASSPORT — where a boy's record may travel
 // ══════════════════════════════════════════════════════
 // A boy's record goes to another school only when his family names it. The
-// list is what the server lets this person see — their own grants, or the
-// ones naming their school — and the form is refused by the API for anyone
-// who is not his family; the message below says so in its words.
+// list is what the server lets this person see — their own grants, or, for
+// the office of a school named, the ones naming it (db/115: not its coaches,
+// who open the passport itself on the boy's profile) — and the form is
+// refused by the API for anyone who is not his family; the message below says
+// so in its words.
 /**
  * Whether a boy may be seen by accredited scouts. SCRBRD-055.
  *
@@ -945,9 +948,15 @@ function AlertsSection({ role }) {
  * are the same thing here — the join excludes both — and saying so is the
  * honest version.
  */
-function ScoutingConsentSection({ role, players }) {
+// REACH R-B (db/115): the decision is read by his family, the office at his
+// school and his own side's coach, and by nobody else. The card lists only the
+// boys whose decision this reader is shown, so that a team-mate's absent row
+// is never drawn as "no decision recorded"; a reader shown none is told whose
+// it is, rather than handed an empty list that reads as "nobody decided".
+function ScoutingConsentSection({ role, players: offered }) {
   const [nudge, setNudge] = useState(0);
   const [said, setSaid] = useState("");
+  const players = offered.filter((p) => readsScoutingOf(p));
   const rows = useLive("scouting_consent", role, nudge).rows;
   const decided = new Map(rows.map((r) => [r.playerId, r]));
   const set = async (playerId, granted) => {
@@ -961,7 +970,8 @@ function ScoutingConsentSection({ role, players }) {
         sub="Only an accredited scout, only with a family's yes, and only ever the cricket record. A boy nobody has decided for is not shown — there is no default yes here."/>
       {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
       {players.length === 0
-        ? <EmptyState icon="telescope" message="No player to decide for."/>
+        ? <EmptyState icon="telescope" message={offered.length === 0 ? "No player to decide for."
+            : "Not yours to see. A boy's scouting decision is read by his family, his school's office and his own coach."}/>
         : players.map((p) => {
             const c = decided.get(p.id);
             const on = c?.granted === true;
@@ -989,9 +999,17 @@ function ScoutingConsentSection({ role, players }) {
   );
 }
 
+const PASSPORT_NONE = {
+  family: "No school has been named.",
+  office: "No family has named your school.",
+  none: "Not yours to see. Where a boy's record may travel is read by his family and by the office of the school it names.",
+};
+
 // `only` (step 4 P7d): the family app opens this on ONE child's Family card,
 // and narrows the players offered and the grants listed to that child. The
 // server decides as it always has; this only keeps a child's card about him.
+// An empty list is said as the reader's (db/115): the family has named no
+// school, no family has named the office's school, or it is not his to see.
 function PassportTab({ role, only = null }) {
   const [nudge, setNudge] = useState(0);
   const [schools, setSchools] = useState([]);
@@ -1033,7 +1051,7 @@ function PassportTab({ role, only = null }) {
       </div>
       {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
       {rows.length === 0
-        ? <EmptyState icon="stamp" message="No school has been named."/>
+        ? <EmptyState icon="stamp" message={PASSPORT_NONE[passportConsentReader() ?? "none"]}/>
         : [...open, ...closed].map((r) => (
           <div key={r.id} data-testid={`passport-consent-${r.id}`} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, opacity: r.withdrawnAt ? 0.6 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>

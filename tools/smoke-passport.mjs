@@ -25,6 +25,7 @@ try {
   for (let i = 0; i < 60; i++) { try { const r = await api("/api/health"); if (r.body?.db === "ok") break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
   const parent = await login("parent@example.invalid"), coach = await login("coach@example.invalid"), wes = await login("coach.wes@example.invalid");
   const otherMum = await login("parent.whitfield@example.invalid"), boy = await login("pillay@example.invalid"), watcher = await login("watcher@example.invalid");
+  const wesOffice = await login("registrar.wes@example.invalid");
 
   group("The record stays home until the family says otherwise");
   {
@@ -47,8 +48,16 @@ try {
     ok("...nothing medical, nothing from his file, no note", !JSON.stringify(seen).match(/injur|address|id_number|note/i));
     ok("...and Whitfield's stays home", (await passport(WHITFIELD, wes)).length === 0);
     ok("the family sees what it has granted", (await api("/api/read/passport_consents", { token: parent })).body?.rows?.some((x) => x.to_school_id === WES && x.withdrawn_at === null));
-    ok("...and so does the school named", (await api("/api/read/passport_consents", { token: wes })).body?.rows?.length === 1);
+    // REACH R-B, db/115 (Kameel, 16 Oct 2026: "office only"). The consent row
+    // is the family's and the named school's office's. Westville's coach no
+    // longer reads it; he reads the passport itself, above, through passport().
+    const officeSees = (await api("/api/read/passport_consents", { token: wesOffice })).body?.rows ?? [];
+    ok("...and so does the office of the school named", officeSees.length === 1 && officeSees[0].to_school_id === WES && officeSees[0].withdrawn_at === null);
+    ok("...by the boy's name, which the family's word opens to it", officeSees[0]?.full_name === "R Pillay");
+    ok("...not the named school's coach, who reads the passport and not the consent", (await api("/api/read/passport_consents", { token: wes })).body?.rows?.length === 0);
+    ok("...nor his own coach at home", (await api("/api/read/passport_consents", { token: coach })).body?.rows?.length === 0);
     ok("Westville cannot withdraw it", (await api(`/api/passport/consent/${c.body.id}/withdraw`, { method: "POST", token: wes })).body?.withdrawn === 0);
+    ok("...nor can its office, which reads it", (await api(`/api/passport/consent/${c.body.id}/withdraw`, { method: "POST", token: wesOffice })).body?.withdrawn === 0);
     ok("his mother withdraws it", (await api(`/api/passport/consent/${c.body.id}/withdraw`, { method: "POST", token: parent })).body?.withdrawn === 1);
     ok("...and Westville reads nothing again", (await passport(PILLAY, wes)).length === 0);
     ok("...a withdrawn consent is not revived", !(await q(`set local role scrbrd_app; update passport_consent set withdrawn_at = null where id = $1`, [c.body.id]).then(() => true).catch(() => false)));
