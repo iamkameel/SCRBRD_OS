@@ -344,7 +344,7 @@ try {
     // role, as the API's doors run them.
     const [{ id: post }] = await as(COACH2,
       `insert into news_post (scope, school_id, team_code, title, body, published_at)
-       values ('team', $1, '2XI', $2, 'The side beat Westville by six wickets on Saturday. Teas in the pavilion from three.', now())
+       values ('team', $1, '2XI', $2, 'The side won by six wickets on Saturday. Teas in the pavilion after the game.', now())
        returning id`, [HIL, TITLE]);
     const [asked] = await as(COACH2, `select * from news_public_request($1)`, [post]);
     ok("the coach asks for his post", asked?.ok === true, asked?.reason);

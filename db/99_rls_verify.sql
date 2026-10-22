@@ -18884,8 +18884,10 @@ $v49$;
     PERFORM _seed_83();
 
     PERFORM _as(U_C2);
+    -- P1 names no school: since db/118 the boys of the schools Hilton plays are
+    -- scanned too, and this file names some of Westville's after their school.
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
-    VALUES ('team', HIL, '2XI', 'Second XI through to the final', 'The side beat Westville by six wickets on Saturday.', now())
+    VALUES ('team', HIL, '2XI', 'Second XI through to the final', 'The side won by six wickets on Saturday.', now())
     RETURNING id INTO P1;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'A hundred on Saturday', 'Well batted, JAMES   whitfield — the first of the season.', now())
